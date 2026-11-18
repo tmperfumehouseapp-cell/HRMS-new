@@ -364,6 +364,11 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
         $open = $pdo->prepare("SELECT 1 FROM cx_cases WHERE phone = ? AND status IN ('open', 'reopened') LIMIT 1"); $open->execute([$key]);
         if (!$open->fetchColumn()) { $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0, assigned_at = NULL, state = 'unassigned', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, '↩ The customer wrote again after the complaint was solved — the chat is back in Requests'); }
     } } catch (Throwable $e) { }
+    // 🙅 "Not now" (the campaign button, or typed): nothing to answer — if NOBODY holds the chat it is resolved at once, so it never fills Requests and never goes to a salesperson (switch off: setting wa_notnow_auto = 0)
+    try { if ($t !== 'reaction' && (string)setting_get($pdo, 'wa_notnow_auto', '1') !== '0' && preg_match('/^\s*(not\s*now|abhi\s*nahi|abhi\s*nahin|hamna\s*nahi|अभी\s*नहीं|હમણાં\s*નહીં|હમણાં\s*નહિ)\s*[.!]*\s*$/iu', $body)) {
+        $nc = $pdo->prepare("SELECT assigned_emp, cx_id, status FROM wa_contacts WHERE phone = ?"); $nc->execute([$key]); $nr = $nc->fetch();
+        if ($nr && (int)$nr['assigned_emp'] === 0 && (int)($nr['cx_id'] ?? 0) === 0) { $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ?")->execute([$now, $key]); if (function_exists('wa_event')) wa_event($pdo, $key, '🙅 The customer said “Not now” — resolved by itself. It opens again when they write something else.'); }
+    } } catch (Throwable $e) { }
     if (function_exists('wa_source_hook')) wa_source_hook($pdo, $key, $ex ? (string)$ex['last_in_at'] : null, $body, $now);   // community link / reply to a campaign
     if (function_exists('wag_after_in')) wag_after_in($pdo, $key, $m, !$ex, $ref);   // growth engine: ad id, flows that start or continue
     if (function_exists('wq_after_in')) wq_after_in($pdo, $key, $m, !$ex, $ref);   // WhatsApp Sales: type the query (never blocks)
@@ -759,7 +764,8 @@ function wa_assign_to(PDO $pdo, string $key, int $emp, int $by, string $how): vo
     if (function_exists('wq_after_assign')) wq_after_assign($pdo, $key, (int)$c['assigned_emp'], $emp, $by, $how);   // WhatsApp Sales: clears Attention needed
     if (function_exists('wa_callnow_open')) wa_callnow_open($pdo, $key, $emp, $by);   // the "call this customer now" alert
     // 🔔 someone took this chat from its holder (take over / grab): the holder sees a small notice at the top of THEIR WhatsApp (only theirs)
-    if ($emp > 0 && (int)$c['assigned_emp'] > 0 && (int)$c['assigned_emp'] !== $emp && $by === $emp && in_array($how, ['takeover', 'grab'], true)) wa_notice_add($pdo, (int)$c['assigned_emp'], $emp, $key, (string)($c['name'] ?? ''), $how);
+    if ($emp > 0 && (int)$c['assigned_emp'] > 0 && (int)$c['assigned_emp'] !== $emp && $by === $emp && in_array($how, ['takeover', 'grab'], true)) { wa_notice_add($pdo, (int)$c['assigned_emp'], $emp, $key, (string)($c['name'] ?? ''), $how);
+        if (function_exists('ct_push')) { try { ct_push($pdo, [(int)$c['assigned_emp']], 'Chat taken over', ($nm[$emp] ?? 'A colleague') . ' took over ' . (trim((string)($c['name'] ?? '')) !== '' ? $c['name'] : '+91 ' . $key) . '\'s chat. You can no longer reply to it.', '/my_chats.html', 'wa-lost-' . $key); } catch (Throwable $e) { } } }   // 📲 and a phone notification to the person who lost it (works even when the app is closed)
     wa_event($pdo, $key, $emp <= 0 ? 'Taken off ' . ($from ?: 'the team') . ' by ' . $who : ($how === 'transfer' ? $from . ' transferred this chat to ' . $to : ($from !== '' ? 'Moved from ' . $from . ' to ' . $to . ' by ' . $who : 'Given to ' . $to . ' by ' . $who)));
     if ($emp > 0 && $emp !== $by && function_exists('ct_push')) { try { ct_push($pdo, [$emp], 'New WhatsApp chat', trim(($c['name'] !== '' ? $c['name'] : '+91 ' . $key) . ' was given to you.'), '/my_chats.html?phone=' . $key, 'wa-' . $key); } catch (Throwable $e) { } }
 }
@@ -820,6 +826,24 @@ function wa_unans_cond(string $from, string $to): array
 /** 🟣 a complaint chat: it has a complaint ticket, the complaint tag, or the complaint customer-tag */
 function wa_unans_cx_sql(): string { return "(COALESCE(c.cx_id, 0) > 0 OR COALESCE(c.tag, '') = 'complaint' OR EXISTS (SELECT 1 FROM wa_ctags uct WHERE uct.phone = c.phone AND uct.tag = 'complaint'))"; }
 /** the days a button means: today · yest · 7 · 15 · 20 · 30 · 60 (days back from now) · or two dates. Returns [from, to] */
+/** 🟣 a complaint nobody is handling: the chat is a complaint, and no OPEN ticket of this number has an owner (no ticket at all counts too) */
+function wa_unans_cxfree_sql(): string { return "(" . wa_unans_cx_sql() . " AND NOT EXISTS (SELECT 1 FROM cx_cases ucx WHERE ucx.phone = c.phone AND ucx.status IN ('open','reopened') AND ucx.owner_emp > 0))"; }
+/** the open tickets of these numbers: phone => ['id','code','owner','owner_emp','days','more'] (the newest ticket; 'more' = how many other open ones) */
+function wa_unans_tickets(PDO $pdo, array $phones, array $names): array
+{
+    $phones = array_values(array_unique(array_filter(array_map('strval', $phones)))); $out = [];
+    foreach (array_chunk($phones, 400) as $ch) {
+        try {
+            $q = $pdo->prepare("SELECT id, phone, owner_emp, raised_at FROM cx_cases WHERE status IN ('open','reopened') AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") ORDER BY id DESC"); $q->execute($ch);
+            foreach ($q->fetchAll() as $t) {
+                $ph = (string)$t['phone']; if (isset($out[$ph])) { $out[$ph]['more']++; continue; }
+                $oe = (int)$t['owner_emp']; $ts = strtotime((string)$t['raised_at']);
+                $out[$ph] = ['id' => (int)$t['id'], 'code' => 'C-' . str_pad((string)(int)$t['id'], 4, '0', STR_PAD_LEFT), 'owner_emp' => $oe, 'owner' => $oe > 0 ? (string)($names[$oe] ?? ('#' . $oe)) : '', 'days' => $ts ? (int)floor((time() - $ts) / 86400) : 0, 'more' => 0];
+            }
+        } catch (Throwable $e) { return $out; }
+    }
+    return $out;
+}
 function wa_unans_range(string $d, string $f = '', string $t = ''): array
 {
     $now = time(); $to = date('Y-m-d H:i:s', $now + 60);
@@ -834,10 +858,10 @@ function wa_unans_rows(PDO $pdo, int $emp = 0): array
 {
     $run = function () use ($pdo, $emp) {
         [$cond, $par] = wa_unans_cond(date('Y-m-d 00:00:00', time() - 59 * 86400), date('Y-m-d H:i:s', time() + 60));
-        $sql = "SELECT /*+ MAX_EXECUTION_TIME(20000) */ c.last_in_at t, c.assigned_emp e, IF(" . wa_unans_cx_sql() . ", 1, 0) x FROM wa_contacts c WHERE " . $cond . ($emp > 0 ? " AND c.assigned_emp = " . (int)$emp : "");
+        $sql = "SELECT /*+ MAX_EXECUTION_TIME(20000) */ c.last_in_at t, c.assigned_emp e, IF(" . wa_unans_cx_sql() . ", 1, 0) x, IF(" . wa_unans_cxfree_sql() . ", 1, 0) xf FROM wa_contacts c WHERE " . $cond . ($emp > 0 ? " AND c.assigned_emp = " . (int)$emp : "");
         try { $q = $pdo->prepare($sql); $q->execute($par); return $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { error_log('wa_unans_rows: ' . $e->getMessage()); return []; }
     };
-    return function_exists('hrms_memo') ? hrms_memo('wa_unans_rows2:' . $emp, 60, $run) : $run();
+    return function_exists('hrms_memo') ? hrms_memo('wa_unans_rows3:' . $emp, 60, $run) : $run();
 }
 
 function wa_contact_row(array $r, array $names): array
@@ -1042,6 +1066,11 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
         case 'wa.chats': {
             // one-time clean-up (16 Nov): chats that a pre-made message re-opened into Requests although the customer never replied go back to Closed (History). Only: open, nobody has it, our template was the last thing, the customer's last message is over 24 hours old.
             try { if (setting_get($pdo, 'wa_tplfix_16nov', '') === '') { setting_set($pdo, 'wa_tplfix_16nov', date('Y-m-d H:i:s')); $pdo->exec("UPDATE wa_contacts c SET c.status = 'closed', c.closed_at = NOW() WHERE c.status = 'open' AND c.assigned_emp = 0 AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at < DATE_SUB(NOW(), INTERVAL 1 DAY) AND c.last_out_at > c.last_in_at AND c.last_out_at >= DATE_SUB(NOW(), INTERVAL 3 DAY) AND EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = c.phone AND m.dir = 'out' AND m.mtype = 'template' AND m.who = 'emp' AND m.ts = c.last_out_at)"); } } catch (Throwable $e) { }
+            // one-time clean-up (18 Nov): chats nobody holds whose LAST message from the customer is just "Not now" are resolved (they were filling Requests). Same rule as the live one above.
+            try { if (setting_get($pdo, 'wa_notnow_back_18nov', '') === '') { setting_set($pdo, 'wa_notnow_back_18nov', date('Y-m-d H:i:s'));
+                $nq = $pdo->query("SELECT c.phone FROM wa_contacts c WHERE c.status = 'open' AND c.assigned_emp = 0 AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 5 * 86400) . "' AND (SELECT m.body FROM wa_messages m WHERE m.phone = c.phone AND m.dir = 'in' ORDER BY m.id DESC LIMIT 1) REGEXP '^[[:space:]]*(not[[:space:]]*now)[[:space:][:punct:]]*$' LIMIT 3000");
+                $nps = $nq->fetchAll(PDO::FETCH_COLUMN); foreach (array_chunk($nps, 400) as $ch) { $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = NOW() WHERE assigned_emp = 0 AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")")->execute($ch); foreach ($ch as $ph) wa_event($pdo, (string)$ph, '🙅 “Not now” — resolved by itself (clean-up).'); }
+            } } catch (Throwable $e) { error_log('notnow clean-up: ' . $e->getMessage()); }
             $scope = (string)($_GET['scope'] ?? 'mine'); $q = trim((string)($_GET['q'] ?? '')); $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);   // mine=1 → the My Chats page: even an admin sees only their own
             $w = []; $p = []; $srcQ = (string)($_GET['src'] ?? ''); $numFeed = $adm && preg_match('/^num:(\d+)$/', $srcQ, $numM) ? (int)$numM[1] : 0;
             $rescueFeed = $srcQ === 'rescue' && function_exists('wq_rescue_chat_phones') ? wq_rescue_chat_phones($pdo, $emp, $adm) : null;   // 🛟 the Rescue chip: interested customers nobody followed up
@@ -1050,7 +1079,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             elseif ($scope === 'unans') {   // 🚨 Not replied: open or closed, inside or past the 24 hours — everybody who wrote last in these days and got no answer. A salesperson sees only their own chats.
                 [$uf, $ut] = wa_unans_range((string)($_GET['ud'] ?? '7'), (string)($_GET['uf'] ?? ''), (string)($_GET['ut'] ?? '')); [$uc, $up] = wa_unans_cond($uf, $ut); $w[] = $uc; foreach ($up as $x) $p[] = $x;
                 $uw = (string)($_GET['uw'] ?? ''); if ($uw === 'now') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); } elseif ($uw === 'past') { $w[] = 'c.last_in_at < ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); }
-                $uk = (string)($_GET['uk'] ?? ''); if ($uk === 'cx') $w[] = wa_unans_cx_sql(); elseif ($uk === 'sales') $w[] = 'NOT ' . wa_unans_cx_sql();   // 🟣 complaints only / everything else
+                $uk = (string)($_GET['uk'] ?? ''); if ($uk === 'cx') $w[] = wa_unans_cx_sql(); elseif ($uk === 'sales') $w[] = 'NOT ' . wa_unans_cx_sql(); elseif ($uk === 'cxfree') $w[] = wa_unans_cxfree_sql();   // 🟣 complaints only / everything else
                 if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; } else { $ue = (int)($_GET['ue'] ?? 0); if ($ue > 0) { $w[] = 'c.assigned_emp = ?'; $p[] = $ue; } elseif ($ue === -1) $w[] = 'c.assigned_emp = 0'; }
             }
             elseif (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp; $w[] = in_array($scope, ['closed', 'history'], true) ? "c.status = 'closed'" : "c.status = 'open'"; if ($scope === 'history') { $w[] = 'c.last_in_at < ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); } }
@@ -1084,6 +1113,19 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             // ☑ Select-chats filters: day of the query · ordered or not · numbers (admin)
             if ($adm) {
                 $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo); $__srcChip = (string)($_GET['src'] ?? '') !== '';   // a Query / Community / Campaign chip is already on: "Today's / Yesterday's" then means "wrote that business day" inside THAT chip (forcing source = query made Campaign / Community come out empty)
+                if (isset($_GET['bt'])) {   // 📅 the new Select-chats filter (18 Nov): All / Query / Campaign (+ Community = the same kind of customer) and, for the last two, a day: Today / Yesterday / Last 7 days / a custom date or range
+                    $bt = (string)$_GET['bt'];
+                    if ($bt === 'query') $w[] = "c.source = 'query'"; elseif ($bt === 'camp') $w[] = "c.source IN ('campaign', 'community')";
+                    if ($bt !== '') {
+                        if ($bd === 'today') { $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
+                        elseif ($bd === 'yesterday') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
+                        elseif ($bd === '7d') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 7 * 86400); }
+                        elseif ($bd === 'custom') {
+                            $f1 = (string)($_GET['bdf'] ?? ''); $f2 = (string)($_GET['bdt'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f1)) $f1 = ''; if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f2)) $f2 = $f1; if ($f2 < $f1) $f2 = $f1;
+                            if ($f1 !== '') { [$__c0, $__c1] = biz_window($pdo, $f1, $f2); $w[] = 'c.last_in_at >= ?'; $p[] = $__c0; $w[] = 'c.last_in_at <= ?'; $p[] = $__c1; }
+                        }
+                    }
+                } else
                 if ($bd === 'today') { if (!$__srcChip) $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
                 elseif ($bd === 'yesterday') { if (!$__srcChip) $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
                 elseif ($bd === '7d') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 7 * 86400); }
@@ -1215,27 +1257,29 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);
             $rows = wa_unans_rows($pdo, $adm ? 0 : max(1, $emp)); $now = time(); $day0 = strtotime(date('Y-m-d 00:00:00', $now));
             [$f, $t] = wa_unans_range((string)($_GET['ud'] ?? '7'), (string)($_GET['uf'] ?? ''), (string)($_GET['ut'] ?? '')); $f = strtotime($f); $t = strtotime($t);
-            $rg = ['today' => 0, 'yest' => 0, '7' => 0, '15' => 0, '20' => 0, '30' => 0, '60' => 0]; $tot = 0; $nowN = 0; $by = []; $uk = (string)($_GET['uk'] ?? ''); $cxN = 0; $allN = 0;
-            foreach ($rows as $r) { $ts = strtotime((string)$r[0]); $e = (int)$r[1]; $isCx = (int)($r[2] ?? 0) === 1;
-                if ($ts >= $f && $ts < $t) { $allN++; if ($isCx) $cxN++; }                    // the kind buttons always show all three numbers for the chosen days
-                if (($uk === 'cx' && !$isCx) || ($uk === 'sales' && $isCx)) continue;
+            $rg = ['today' => 0, 'yest' => 0, '7' => 0, '15' => 0, '20' => 0, '30' => 0, '60' => 0]; $tot = 0; $nowN = 0; $by = []; $uk = (string)($_GET['uk'] ?? ''); $cxN = 0; $allN = 0; $cxfN = 0;
+            foreach ($rows as $r) { $ts = strtotime((string)$r[0]); $e = (int)$r[1]; $isCx = (int)($r[2] ?? 0) === 1; $isFree = (int)($r[3] ?? 0) === 1;
+                if ($ts >= $f && $ts < $t) { $allN++; if ($isCx) $cxN++; if ($isFree) $cxfN++; }                    // the kind buttons always show all three numbers for the chosen days
+                if (($uk === 'cx' && !$isCx) || ($uk === 'sales' && $isCx) || ($uk === 'cxfree' && !$isFree)) continue;
                 if ($ts >= $day0) $rg['today']++; elseif ($ts >= $day0 - 86400) $rg['yest']++;
                 foreach ([7, 15, 20, 30, 60] as $n) if ($ts >= $day0 - ($n - 1) * 86400) $rg[(string)$n]++;
                 if ($ts >= $f && $ts < $t) { $tot++; $open = $ts >= $now - 86400; if ($open) $nowN++; if (!isset($by[$e])) $by[$e] = [0, 0]; $by[$e][0]++; if ($open) $by[$e][1]++; } }
             $names = employee_names_by_id($pdo); $list = [];
             if ($adm) { foreach ($by as $e => $v) $list[] = ['emp' => $e === 0 ? -1 : $e, 'name' => $e === 0 ? 'Nobody' : ($names[$e] ?? ('#' . $e)), 'n' => $v[0], 'now' => $v[1]]; usort($list, fn($a, $b) => $b['n'] <=> $a['n']); }
-            json_response(['ranges' => $rg, 'total' => $tot, 'now' => $nowN, 'past' => $tot - $nowN, 'by' => $list, 'admin' => $adm, 'kind' => ['all' => $allN, 'cx' => $cxN, 'sales' => $allN - $cxN]]);
+            json_response(['ranges' => $rg, 'total' => $tot, 'now' => $nowN, 'past' => $tot - $nowN, 'by' => $list, 'admin' => $adm, 'kind' => ['all' => $allN, 'cx' => $cxN, 'sales' => $allN - $cxN, 'cxfree' => $cxfN]]);
         }
         case 'wa.unans_export': {   // ⬇ the same list for Excel (up to 5,000 customers): name, number, last message, since when, who has the chat
             $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);
             [$uf, $ut] = wa_unans_range((string)($_GET['ud'] ?? '7'), (string)($_GET['uf'] ?? ''), (string)($_GET['ut'] ?? '')); [$uc, $up] = wa_unans_cond($uf, $ut); $w = [$uc]; $p = $up;
             $uw = (string)($_GET['uw'] ?? ''); if ($uw === 'now') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); } elseif ($uw === 'past') { $w[] = 'c.last_in_at < ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); }
-                $uk = (string)($_GET['uk'] ?? ''); if ($uk === 'cx') $w[] = wa_unans_cx_sql(); elseif ($uk === 'sales') $w[] = 'NOT ' . wa_unans_cx_sql();   // 🟣 complaints only / everything else
+                $uk = (string)($_GET['uk'] ?? ''); if ($uk === 'cx') $w[] = wa_unans_cx_sql(); elseif ($uk === 'sales') $w[] = 'NOT ' . wa_unans_cx_sql(); elseif ($uk === 'cxfree') $w[] = wa_unans_cxfree_sql();   // 🟣 complaints only / everything else
             if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; } else { $ue = (int)($_GET['ue'] ?? 0); if ($ue > 0) { $w[] = 'c.assigned_emp = ?'; $p[] = $ue; } elseif ($ue === -1) $w[] = 'c.assigned_emp = 0'; }
             $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(25000) */ c.phone, c.name, c.assigned_emp, c.last_in_at, c.status, IF(" . wa_unans_cx_sql() . ", 1, 0) is_cx, (SELECT lm.body FROM wa_messages lm WHERE lm.phone = c.phone AND lm.dir = 'in' ORDER BY lm.id DESC LIMIT 1) body FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY c.last_in_at DESC LIMIT " . (($__lim = (int)($_GET['limit'] ?? 0)) > 0 ? min(1000, $__lim) : 5000)); $q->execute($p);
-            $names = employee_names_by_id($pdo); $out = [];
-            foreach ($q->fetchAll() as $r) { $ts = strtotime((string)$r['last_in_at']); $h = (int)floor((time() - $ts) / 3600);
-                $out[] = ['name' => (string)$r['name'], 'phone' => (string)$r['phone'], 'last_message' => mb_substr(preg_replace('/\s+/', ' ', (string)$r['body']), 0, 300), 'wrote_at' => (string)$r['last_in_at'], 'waiting' => $h >= 48 ? floor($h / 24) . ' days' : $h . ' hours', 'can_reply' => $ts >= time() - 86400 ? 'Yes - normal reply' : 'No - template only', 'with' => (int)$r['assigned_emp'] ? ($names[(int)$r['assigned_emp']] ?? '') : 'Nobody', 'chat' => (string)$r['status'], 'kind' => (int)$r['is_cx'] === 1 ? 'Complaint' : 'Sales']; }
+            $names = employee_names_by_id($pdo); $out = []; $__ur = $q->fetchAll();
+            $__tk = wa_unans_tickets($pdo, array_map(function ($r) { return (int)$r['is_cx'] === 1 ? (string)$r['phone'] : ''; }, $__ur), $names);   // 🟣 which ticket, and who is handling it
+            foreach ($__ur as $r) { $ts = strtotime((string)$r['last_in_at']); $h = (int)floor((time() - $ts) / 3600); $tk = $__tk[(string)$r['phone']] ?? null;
+                $out[] = ['name' => (string)$r['name'], 'phone' => (string)$r['phone'], 'last_message' => mb_substr(preg_replace('/\s+/', ' ', (string)$r['body']), 0, 300), 'wrote_at' => (string)$r['last_in_at'], 'waiting' => $h >= 48 ? floor($h / 24) . ' days' : $h . ' hours', 'can_reply' => $ts >= time() - 86400 ? 'Yes - normal reply' : 'No - template only', 'with' => (int)$r['assigned_emp'] ? ($names[(int)$r['assigned_emp']] ?? '') : 'Nobody', 'chat' => (string)$r['status'], 'kind' => (int)$r['is_cx'] === 1 ? 'Complaint' : 'Sales',
+                    'ticket' => $tk ? $tk['code'] : '', 'ticket_id' => $tk ? $tk['id'] : 0, 'ticket_owner' => $tk ? ($tk['owner'] !== '' ? $tk['owner'] : 'Nobody') : '', 'ticket_days' => $tk ? $tk['days'] : 0, 'ticket_more' => $tk ? $tk['more'] : 0]; }
             json_response(['rows' => $out]);
         }
         case 'wa.people': {   // salespeople with today's presence + open chats; the first "best" one is the recommendation (a salesperson gets the short list for "Transfer to")

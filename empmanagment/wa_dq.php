@@ -22,6 +22,8 @@ if (!function_exists('wa_dq_cfg')) {
 
 function wa_dq_cfg(PDO $pdo): array
 {
+    try { if (setting_get($pdo, 'wa_dq_nolimit', '') !== '1') { foreach (['wa_dq_daily' => '1000000', 'wa_dq_budget' => '0', 'wa_dq_auto' => '0', 'wa_dq_hourly' => '60000', 'wa_dq_pace' => '0', 'wa_dq_daily_auto' => '0', 'wa_dq_stat' => ''] as $k0 => $v0) setting_set($pdo, $k0, $v0); setting_set($pdo, 'wa_dq_nolimit', '1'); } } catch (Throwable $e) { }   // owner 18 Nov 2026: no day number, no money limit, no even-pace brake; the hour number at its top (60,000). Done once, here, because this function runs on every sending round
+    try { if (setting_get($pdo, 'wa_dq_hourly15', '') !== '1') { setting_set($pdo, 'wa_dq_hourly', '15000'); setting_set($pdo, 'wa_dq_stat', ''); setting_set($pdo, 'wa_dq_hourly15', '1'); } } catch (Throwable $e0) { }   // owner 18 Nov 2026: marketing speed top = 15,000 an hour (last night 25,000-47,000 an hour ended with Meta's first spam flag 131048); no day number and no money limit
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
     $base = max(1000, min(1000000, (int)$g('wa_dq_daily', '75000'))); $auto = $g('wa_dq_auto', '1') !== '0'; $dmin = max(1000, (int)$g('wa_dq_daily_min', '40000')); $dmax = max($dmin, $base, (int)$g('wa_dq_daily_max', '90000')); $daily = $base;   // the number the owner saved is never cut down by the automatic ceiling
     $av0 = (int)$g('wa_dq_daily_auto', '0'); if ($av0 > $dmax) $dmax = min(1000000, $av0);
@@ -259,6 +261,9 @@ function wa_dq_win_counts(PDO $pdo, string $key, string $from, int $ttl): array
     if (isset($mem[$key]) && $now - $mem[$key]['at'] < $ttl) $c = $mem[$key];
     if ($c === null) { $j = json_decode((string)@file_get_contents($file), true); if (is_array($j) && isset($j['at'], $j['from'], $j['n']) && $now - (int)$j['at'] < $ttl && ($key !== 'day' || $j['from'] === $from)) $c = $j; }
     $cond = "dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template'";
+    // 💸 utility messages are NOT part of the daily plan (owner, 17 Nov 2026): they cost ₹0.15 and deliver ~90%, so they run in their own way (slow, High / Medium numbers only) and never use up the marketing allowance
+    $cond .= " AND NOT EXISTS (SELECT 1 FROM wa_camp_items ui WHERE ui.wamid = wa_messages.wamid AND ui.variant = 'U')";
+    try { if (function_exists('wa_ru_tables') && wa_ru_tables($pdo)) $cond .= " AND NOT EXISTS (SELECT 1 FROM wa_ru_log ul WHERE ul.wamid = wa_messages.wamid)"; } catch (Throwable $e) { }
     if ($c === null) {
         $till = date('Y-m-d H:i:s', $now);
         $q = $pdo->prepare("SELECT SUM(status <> 'failed') AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE $cond AND ts >= ? AND ts < ?"); $q->execute([$from, $till]); $r = $q->fetch();
@@ -304,6 +309,13 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
             $pace['slice'] = (int)ceil($needPush / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
         } catch (Throwable $e) { $pace['on'] = false; }
     }
+    // owner 18 Nov 2026: the hourly number is also kept per 10 minutes: a SIXTH of the hour's (delivered) number in any rolling 10 minutes, so the hour is not sent in its first minutes (15,000 an hour = 2,500 delivered per 10 minutes; owner 18 Nov 2026, first tried per 15 minutes)
+    try { if ($cfg['on']) { [$u15, $d15, $p15] = wa_dq_win_counts($pdo, 'q10', date('Y-m-d H:i:s', time() - 600), 20); $exp15 = (int)round($d15 + $p15 * $rate); $cap15 = (int)round($effCap / 6);
+        $left15 = max(0, min((int)ceil(($cap15 - $exp15) / $rateUsed), (int)round($cap15 * $cfg['push_mult']) - $u15));
+        // 18 Nov 2026, 19:10: at 10-14 % delivery and 55-60 % failed (Meta's 131049) the campaigns pushed 6,000+ messages per 10 minutes because failed ones were not counted; the push guard now counts EVERY message sent in the last 10 minutes, failed ones too (a failed message still counts for the number's quality)
+        try { $qa = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ? AND NOT EXISTS (SELECT 1 FROM wa_camp_items ui WHERE ui.wamid = wa_messages.wamid AND ui.variant = 'U') AND NOT EXISTS (SELECT 1 FROM wa_ru_log ul WHERE ul.wamid = wa_messages.wamid)"); $qa->execute([date('Y-m-d H:i:s', time() - 600)]);
+            $left15 = max(0, min($left15, (int)round($cap15 * $cfg['push_mult']) - (int)$qa->fetchColumn())); } catch (Throwable $e6) { }
+        $hourLeft = min($hourLeft, $left15); } } catch (Throwable $e) { }
     $hourLeft = max(0, min($hourLeft, $pushCap - $used)); if ($pace['on'] && $pace['slice'] > 0) $hourLeft = max(0, min($hourLeft, $pace['slice'] - $pace['used10'])); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
     $moneyLeft = $cfg['budget'] > 0 ? max(0.0, $cfg['budget'] - $spend) : null; $moneyPush = $moneyLeft === null ? PHP_INT_MAX : (int)floor($moneyLeft / max(0.01, $mr * max(0.2, $rate)));
     $memo = ['pace' => $pace, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft, $moneyPush), 'spend' => (int)round($spend), 'budget' => $cfg['budget'], 'push_cap' => $pushCap, 'why' => ($moneyLeft !== null && $moneyLeft <= 0) ? 'money' : ($dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : ''))]; $at = microtime(true); return $memo;

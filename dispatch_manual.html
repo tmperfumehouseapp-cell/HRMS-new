@@ -30,7 +30,7 @@
 <div class="app">
   <div id="sidebar"></div>
   <main class="main">
-    <div class="topbar"><h1>🧾 Manual orders</h1></div>
+    <div class="topbar"><h1>🧾 Manual orders</h1><a href="rto_orders.html" target="_top" class="btn" style="margin-left:auto;background:#d97706;color:#fff;text-decoration:none;padding:8px 14px;font-size:13px;font-weight:800">↩ RTO resend &amp; Exchange</a></div>
     <div class="content dm">
       <p style="font-size:13px;color:var(--muted);margin:0 0 10px">Every manual order (WhatsApp Manual order, the Sales person page): customer, address, perfumes, payment, invoice and shipping. Export it like a Shopify export.</p>
       <div class="bar">
@@ -59,6 +59,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/addon_view.js?v=1"></script>
 <script src="assets/js/fp_export.js?v=3"></script>
 <script>
   guardPage();
@@ -77,7 +78,7 @@
   // items: short names (no "| TMPerfumehouse", no "- DG / LG" suffix), "50ml", first 3 only, the rest behind "+N more"
   const nm = (t) => String(t || '').replace(/\s+[|｜Il]\s*TMPerfumehouse.*$/i, '').replace(/\s+-\s*(DG|LG|WH)\s*$/i, '').replace(/\s+/g, ' ').trim();
   const itemTxt = (l) => '<div class="it">' + l.qty + '× ' + esc(nm(l.short || l.title)) + (l.label ? ' <small>' + esc(String(l.label).replace(/\s+/g, '')) + '</small>' : '') + '</div>';
-  const itemsTxt = (r) => { const L = r.lines || [], pcs = L.reduce((a, l) => a + (+l.qty || 1), 0), ml = r.ml || 0; return '<div class="itl">' + L.slice(0, 3).map(itemTxt).join('') + (L.length > 3 ? '<div class="more" data-a="more" data-i="' + r.id + '">+ ' + (L.length - 3) + ' more…</div><div class="rest" hidden>' + L.slice(3).map(itemTxt).join('') + '</div>' : '') + '</div><div class="its">' + pcs + ' pcs' + (ml ? ' · ' + ml + ' ml' : '') + '</div>'; };
+  const itemsTxt = (r) => { const L = r.lines || [], pcs = L.reduce((a, l) => a + (+l.qty || 1), 0), ml = r.ml || 0; return '<div class="itl">' + L.slice(0, 3).map(itemTxt).join('') + (L.length > 3 ? '<div class="more" data-a="more" data-i="' + r.id + '">+ ' + (L.length - 3) + ' more…</div><div class="rest" hidden>' + L.slice(3).map(itemTxt).join('') + '</div>' : '') + '</div><div class="its">' + pcs + ' pcs' + (ml ? ' · ' + ml + ' ml' : '') + '</div>' + AddonView.block(r); };
   function draw(d) {
     ROWS = d.rows; const s = d.sum || {}, by = s.by || {};
     $('dmErr').innerHTML = d.billing && !d.billing.ok ? '<div class="err"><b>GST invoices cannot be made yet</b> — the billing details are incomplete' + (d.billing.missing && d.billing.missing.length ? ': ' + esc(d.billing.missing.join(', ')) : '') + '. Fill them in <b>Learn &amp; Setup → Cart setup → Billing</b>, then press <b>Make invoice</b> on each order.</div>' : '';
@@ -117,7 +118,7 @@
       <div class="kv"><span>Address</span><b>${c.addr1 ? esc([c.addr1, c.addr2, c.landmark].filter(Boolean).join(', ')) + ', ' + esc(c.city) + ' ' + esc(c.pin) + ', ' + esc(c.state) : 'not added yet'}</b></div>
       <div class="kv"><span>Payment</span><b>${r.pay === 'prepaid' ? 'Prepaid ' + inr(r.paid) : r.pay === 'cod' ? 'COD ' + inr(r.cod) : 'Part prepaid ' + inr(r.paid) + ' · COD ' + inr(r.cod)}</b></div>
       <div class="kv"><span>UTR / screenshot</span><b>${esc(r.utr || '—')}${r.has_shot ? ' · <a href="#" id="dmShot">view</a>' : ''}</b></div>
-      <div style="margin:8px 0"><b>Items</b>${r.lines.map((l) => `<div class="kv"><span>${l.qty} × ${esc(l.title)}${l.label ? ' · ' + esc(l.label) : ''}${l.chain ? ' (chain)' : ''}</span><b>${inr(l.total)}</b></div>`).join('')}</div>
+      <div style="margin:8px 0"><b>Items</b>${r.lines.map((l) => `<div class="kv"><span>${l.qty} × ${esc(l.title)}${l.label ? ' · ' + esc(l.label) : ''}${l.chain ? ' (chain)' : ''}</span><b>${inr(l.total)}</b></div>`).join('')}${AddonView.block(r)}</div>
       <div class="kv"><span>Invoice</span><b>${r.invoice ? esc(r.invoice.no) + (r.invoice.sent_at ? ' · sent' : '') : (r.status === 'confirmed' ? 'not made' : '—')}</b></div><div class="kv"><span>Shiprocket</span><b>${r.sr.id ? esc(r.sr.id) : 'not created'}${r.sr.note ? '<br><small>' + esc(r.sr.note) + '</small>' : ''}</b></div>
       <div class="kv"><span>Courier / AWB</span><b>${r.parcel && r.parcel.awb ? esc(r.parcel.courier) + ' · ' + esc(r.parcel.awb) + ' · ' + esc(r.parcel.status) + (r.parcel.manual ? ' · typed by hand' : ' · from Dispatch') : '—'}</b></div>
       <div style="margin-top:10px"><button class="mini" id="dmCp">Copy shipping text</button></div></div></div>`;
@@ -143,7 +144,7 @@
           Object.assign(o, { 'Email': c.email, 'Financial Status': fin, 'Paid at': (r.pay !== 'cod' && r.status === 'confirmed') ? iso(r.confirmed_at || r.created_at) : '', 'Fulfillment Status': 'unfulfilled', 'Accepts Marketing': 'no', 'Currency': 'INR', 'Subtotal': r.total, 'Shipping': 0, 'Taxes': 0, 'Total': r.total, 'Shipping Method': 'Manual', 'Created at': iso(r.created_at),
             'Billing Name': c.name, 'Billing Street': street, 'Billing Address1': c.addr1, 'Billing Address2': [c.addr2, c.landmark].filter(Boolean).join(', '), 'Billing City': c.city, 'Billing Zip': c.pin, 'Billing Province': c.state, 'Billing Country': 'IN', 'Billing Phone': c.phone || r.phone,
             'Shipping Name': c.name, 'Shipping Street': street, 'Shipping Address1': c.addr1, 'Shipping Address2': [c.addr2, c.landmark].filter(Boolean).join(', '), 'Shipping City': c.city, 'Shipping Zip': c.pin, 'Shipping Province': c.state, 'Shipping Country': 'IN', 'Shipping Phone': c.phone || r.phone,
-            'Notes': r.note, 'Cancelled at': r.status === 'cancelled' ? iso(r.created_at) : '', 'Payment Method': pm, 'Payment Reference': r.utr, 'Outstanding Balance': r.cod, 'Employee': r.emp, 'Id': 7000000000000000 + r.id, 'Tags': ['wa-manual', r.type, r.pay === 'cod' ? 'cod' : 'prepaid'].filter(Boolean).join(', '), 'Source': 'manual', 'Phone': c.phone || r.phone,
+            'Notes': [r.note, r.addon_text ? 'ADD-ON: ' + r.addon_text : ''].filter(Boolean).join('\n'), 'Cancelled at': r.status === 'cancelled' ? iso(r.created_at) : '', 'Payment Method': pm, 'Payment Reference': r.utr, 'Outstanding Balance': r.cod, 'Employee': r.emp, 'Id': 7000000000000000 + r.id, 'Tags': ['wa-manual', r.type, r.pay === 'cod' ? 'cod' : 'prepaid'].filter(Boolean).join(', '), 'Source': 'manual', 'Phone': c.phone || r.phone,
             'Order Source (Query/Campaign)': r.type, 'Order Status': r.status, 'Invoice No': r.invoice ? r.invoice.no : '', 'Courier': r.parcel ? r.parcel.courier : '', 'AWB': r.parcel ? r.parcel.awb : '', 'Shiprocket Order Id': r.sr.id });
         }
         out.push(o);

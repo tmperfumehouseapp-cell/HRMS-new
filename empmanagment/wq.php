@@ -506,7 +506,7 @@ function wq_ord_sync(PDO $pdo, float $deadline, int $max = 4000): int
         if ($cur === '') $cur = wq_dt(wq_now() - 100 * 86400);
         elseif (wq_meta_get($pdo, 'ord_behind', '') !== '1' && wq_ts(wq_meta_get($pdo, 'ord_at', '')) > wq_now() - 120 && wq_ts($cur) > wq_now() - 3 * 86400) return 0;   // caught up: look again every 2 minutes only
         $behind = wq_meta_get($pdo, 'ord_behind', '') === '1'; $from = ($first || $behind) ? $cur : wq_dt(wq_ts($cur) - 2 * 86400);   // 2-day overlap only once caught up (late-synced orders); while catching up, no overlap
-        $q = $pdo->prepare("SELECT store_key, shopify_id, order_name, phone, total, created_at, financial_status FROM shop_orders WHERE created_at >= ? ORDER BY created_at LIMIT " . (int)$max); $q->execute([$from]);
+        $q = $pdo->prepare("SELECT store_key, shopify_id, order_name, phone, total, created_at, financial_status FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? ORDER BY created_at LIMIT " . (int)$max); $q->execute([$from]);
         $ins = $pdo->prepare("INSERT INTO wq_ord (okey, phone, order_name, total, created_at) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE phone = VALUES(phone), total = VALUES(total), created_at = VALUES(created_at)");
         $last = $cur; $rows = $q->fetchAll(); $touched = [];
         foreach ($rows as $r) {

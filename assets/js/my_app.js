@@ -47,6 +47,7 @@
   function sheet(title, html) {
     const sh = document.createElement('div'); sh.className = 'sheet sm'; sh.innerHTML = '<div class="hd"><span>' + esc(title) + '</span><button type="button" class="btn" data-shut style="min-height:40px">Close</button></div><div class="bd">' + html + '</div>'; document.body.appendChild(sh);
     sh.addEventListener('click', (e) => { if (e.target.closest('[data-shut]') || e.target === sh) sh.remove(); });
+    return sh;
   }
   // 🏬 store staff: today's store sales, commission (≈), pay and bills (st_my.today) — moved from the old My Sales page
   function storeHtml(d) {
@@ -93,7 +94,7 @@
       + '<div class="t"><b>' + rs(m.sales) + (bet ? ' <span class="up">▲ vs yesterday</span>' : '') + '</b><span class="mut">' + (m.target > 0 ? 'Target ' + rs(m.target) : 'No target today') + '</span><div class="bar"><i style="width:' + pct + '%"></i></div></div></div></div>'
       + '<div class="card next" style="padding:12px 14px"><div style="flex:1;min-width:0"><small>YOUR NEXT STEP</small><b>' + esc(next) + '</b></div><a class="btn w" href="my_chats.html">Chats ▸</a></div>'
       + '<div class="tiles">'
-      + T1('t-g', '', '💰', rs(comNow), 'Earned today', comUp ? '<span class="up">+' + rs(comUp) + ' just now</span>' : 'commission')
+      + T1('t-g', 'e', '💰', rs(comNow), 'Earned today', comUp ? '<span class="up">+' + rs(comUp) + ' just now</span>' : 'tap: whole month ›')
       + T1('t-b', '', '🧾', esc(m.orders), 'Orders today', (m.ticket > 0 ? rs(m.ticket) + ' ticket' : '') + (q && q.conv != null ? ' · ' + q.conv + '% q→o' : '') + (tk && tk.orders >= 1 ? '<br><span style="font-weight:800;color:' + (tk.status === 'g' ? '#14804a' : tk.status === 'a' ? '#b86e00' : '#c0392b') + '">🎯 ' + rs(tk.goal) + (tk.status === 'g' ? ' ✓' : ' · next ' + rs(tk.need_next)) + '</span>' + (tk.pct > 0 ? (tk.earned ? ' <small>✓ ticket bonus +' + tk.pct + '% earned</small>' : ' <small>bonus +' + tk.pct + '% ≈ ' + rs(tk.bonus_est) + '</small>') : '') : ''))
       + T1('t-o', 'q', '🎯', done + '/' + Q.length, 'Quests', todo.length ? esc(todo[0].t) + ' · ' + esc(todo[0].v) : 'All done! 🎉')
       + T1('t-p', 'l', '🏆', myRank ? '#' + esc(myRank) : '—', 'Leaderboard', top.slice(0, 3).map((r, i) => ['🥇', '🥈', '🥉'][i] + ' ' + esc(String(r.name).split(' ')[0]) + ' ' + esc(r.n)).join('<br>') || 'No orders yet')
@@ -115,7 +116,8 @@
   }
   document.addEventListener('click', async (e) => {
     if (e.target.closest('#homeRetry')) { loadHome(true); return; }
-    const tl = e.target.closest('[data-tile]'); if (tl && !e.target.closest('button')) { const k = tl.dataset.tile; sheet(k === 'q' ? '🎯 Today\'s quests' : k === 'l' ? '🏆 Leaderboard · today' : '🏅 My medals', HD[k] || ''); return; }
+    const tl = e.target.closest('[data-tile]'); if (tl && !e.target.closest('button') && (tl.dataset.tile === 'e' || tl.dataset.tile === 'm')) { openMonth(); return; }
+    if (tl && !e.target.closest('button')) { const k = tl.dataset.tile; sheet(k === 'q' ? '🎯 Today\'s quests' : k === 'l' ? '🏆 Leaderboard · today' : '🏅 My medals', HD[k] || ''); return; }
     const sn = e.target.closest('[data-seen]'); if (sn) { sn.disabled = true; try { await api.post('ct.remark_seen', { id: +sn.dataset.seen }); loadHome(true); } catch (er) { toast(er.message); sn.disabled = false; } return; }
     const gf = e.target.closest('[data-gift]'); if (gf) { gf.disabled = true; try { const r = await api.post('play.gift_open', { id: +gf.dataset.gift }); celebrate(String((r && (r.prize_text || r.text || r.prize)) || 'Gift opened! 🎁')); loadHome(true); } catch (er) { toast(er.message); gf.disabled = false; } return; }
   });
@@ -128,11 +130,12 @@
   function arcHtml(rows) {
     const shown = (rows || []).filter((r) => r.n > 0 || r.tg > 0 || r.st);
     if (!shown.length) return '<div class="mut" style="padding:8px 0">Nothing recorded for this month.</div>';
-    let on = 0, os = 0, ot = 0, hit = 0, days = 0;
-    const tr = shown.map((r) => { on += r.n; os += r.ach; ot += r.tg; const p = pctOf(r.ach, r.tg); if (r.tg > 0) { days++; if (r.ach >= r.tg) hit++; }
+    const hasC = shown.some((r) => r.com != null), G = ' style="grid-template-columns:' + (hasC ? '1.45fr .55fr 1fr 1.05fr 1fr' : '1.5fr .6fr 1fr 1.1fr') + '"';
+    let on = 0, os = 0, ot = 0, oc = 0, hit = 0, days = 0;
+    const tr = shown.map((r) => { on += r.n; os += r.ach; ot += r.tg; oc += Number(r.com) || 0; const p = pctOf(r.ach, r.tg); if (r.tg > 0) { days++; if (r.ach >= r.tg) hit++; }
       const lbl = new Date(r.day + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
-      return '<div class="ar"><div>' + esc(lbl) + (ST_TXT[r.st] ? ' <span class="mut">· ' + esc(ST_TXT[r.st]) + '</span>' : '') + '</div><div class="num">' + r.n + '</div><div class="num">' + rs(r.ach) + '</div><div class="num">' + (r.tg > 0 ? rs(r.tg) : '—') + '</div><div class="num ' + (p == null ? '' : (p >= 100 ? 'ok' : 'todo')) + '">' + (p == null ? '' : p + '%') + '</div></div>'; }).join('');
-    return '<div class="ar hd"><div>Day</div><div class="num">Orders</div><div class="num">Sales</div><div class="num">Target</div><div></div></div>' + tr + '<div class="ar tot"><div>Total</div><div class="num">' + on + '</div><div class="num">' + rs(os) + '</div><div class="num">' + (ot > 0 ? rs(ot) : '—') + '</div><div></div></div>' + (days ? '<div class="mut" style="margin-top:8px">Target hit on ' + hit + ' of ' + days + ' days.</div>' : '');
+      return '<div class="ar"' + G + '><div>' + esc(lbl) + (ST_TXT[r.st] ? ' <span class="mut">· ' + esc(ST_TXT[r.st]) + '</span>' : '') + '</div><div class="num">' + r.n + '</div><div class="num">' + (r.tg > 0 ? rs(r.tg) : '—') + '</div><div class="num">' + rs(r.ach) + (p == null ? '' : '<br><small class="' + (p >= 100 ? 'ok' : 'todo') + '" style="font-weight:800">' + p + '%</small>') + '</div>' + (hasC ? '<div class="num" style="font-weight:800;color:#15803d">' + (r.com != null ? rs(r.com) : '—') + '</div>' : '') + '</div>'; }).join('');
+    return '<div class="ar hd"' + G + '><div>Day</div><div class="num">Orders</div><div class="num">Target</div><div class="num">Sales</div>' + (hasC ? '<div class="num">Commission</div>' : '') + '</div>' + tr + '<div class="ar tot"' + G + '><div>Total</div><div class="num">' + on + '</div><div class="num">' + (ot > 0 ? rs(ot) : '—') + '</div><div class="num">' + rs(os) + '</div>' + (hasC ? '<div class="num" style="color:#15803d">' + rs(oc) + '</div>' : '') + '</div>' + (days ? '<div class="mut" style="margin-top:8px">Target hit on ' + hit + ' of ' + days + ' days.</div>' : '');
   }
   async function loadEarn() {
     if (E.busy || Date.now() - E.t < 20000) return; E.busy = true; const mo = new Date().toISOString().slice(0, 7);
@@ -144,15 +147,40 @@
     const live = ((P && P.penalties) || []).filter((x) => x.status === 'applied'); const cur = C && C.business_day ? C.business_day.slice(0, 7) : mo; E.cur = cur;
     const opts = []; if (C && C.business_day) { const [y, mm] = C.business_day.split('-').map(Number); for (let i = 0; i < 6; i++) { const dt = new Date(y, mm - 1 - i, 1), v = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); opts.push('<option value="' + v + '">' + esc(dt.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })) + '</option>'); } }
     E.arc[cur] = CMn && CMn.rows;
+    E.cmn = CMn;
     $('earnBody').innerHTML =
       '<div class="tiles c2"><div class="tl t-g"><div class="ic">💰</div><div class="b">' + rs(m ? m.com_today : (CMn && CMn.today && CMn.today.amount)) + '</div><div class="l">Commission today</div><div class="s2">' + esc((CMn && CMn.todayRate) || 'from today\'s orders') + '</div></div>'
-      + '<div class="tl t-b"><div class="ic">📅</div><div class="b">' + (CMn && CMn.month ? rs(CMn.month.amount) : '—') + '</div><div class="l">Commission this month</div><div class="s2">' + esc((CMn && CMn.noRules) ? 'Commission rules not set' : ((CMn && CMn.monthRate) || (cmErr ? 'Could not load' : ''))) + '</div></div>'
+      + '<div class="tl t-b" data-tile="m" role="button" tabindex="0" style="cursor:pointer"><div class="ic">📅</div><div class="b">' + (CMn && CMn.month ? rs(CMn.month.amount) : '—') + '</div><div class="l">Commission this month</div><div class="s2">' + esc((CMn && CMn.noRules) ? 'Commission rules not set' : ((CMn && CMn.monthRate) || (cmErr ? 'Could not load' : ''))) + '</div></div>'
       + '<div class="tl"><div class="ic">🧾</div><div class="b">' + (CMn && CMn.month ? rs(CMn.month.ach) : rs(m && m.month && m.month.sales)) + '</div><div class="l">Sales this month</div><div class="s2">' + esc((CMn && CMn.month ? CMn.month.n : (m && m.month && m.month.orders) || 0)) + ' orders</div></div>'
       + '<div class="tl"><div class="ic">⚠️</div><div class="b" style="color:' + (live.length ? '#dc2626' : '#15803d') + '">' + (live.length ? '− ' + rs(live.reduce((a, x) => a + (+x.amount || 0), 0)) : '₹0') + '</div><div class="l">Penalties</div><div class="s2">' + (live.length ? live.length + ' this month' : 'none, keep it up 💚') + '</div></div></div>'
       + (CMn && CMn.note ? '<div class="rmk"><small>Note</small>' + esc(CMn.note) + '</div>' : '') + (cmErr ? '<div class="rmk"><small>Commission</small>' + esc(cmErr) + '</div>' : '') + (CMn && CMn.applicable === false && CMn.why ? '<div class="rmk"><small>Commission</small>' + esc(CMn.why) + '</div>' : '')
       + (S ? '<div class="card"><div class="h3">Salary so far <span class="mut">' + esc(mo) + '</span></div><div class="erow"><span>Earned</span><b class="big" style="font-size:24px">' + rs(S.earned) + '</b></div><div class="erow"><span class="mut">Monthly salary</span><b>' + rs(S.monthly_salary) + '</b></div><div class="erow"><span class="mut">Net pay after penalties</span><b>' + rs(S.net_pay) + '</b></div></div>' : '')
       + (opts.length ? '<div class="card"><div class="h3">Day by day <select id="arMonth" class="mo">' + opts.join('') + '</select></div><div id="arBody">' + arcHtml(CMn && CMn.rows) + '</div></div>' : '')
       + (((P && P.penalties) || []).length ? '<div class="card"><div class="h3">Penalties this month</div>' + P.penalties.slice(0, 6).map((x) => '<div class="erow"><span>' + esc(x.title || 'Penalty') + '<div class="mut">' + esc(String(x.penalty_date || '').slice(5)) + (x.status !== 'applied' ? ' · ' + esc(x.status) : '') + '</div></span><b>' + rs(x.amount) + '</b></div>').join('') + '</div>' : '');
+  }
+  // 📅 "My earnings" → the whole month, day by day: target, what I collected, the commission — tap a day for its orders
+  async function openMonth() {
+    const sh = sheet('💰 My earnings · ' + new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }), '<div class="sk"></div><div class="sk" style="height:70px"></div>'), body = sh.querySelector('.bd');
+    let M = E.cmn;
+    if (!M || !M.days) { try { const c = await api.get('my.coach'); if (c && c.business_day && window.MyCommission) { M = E.cmn = await MyCommission.month(c.business_day); } } catch (er) { body.innerHTML = '<div class="err">' + esc(er.message || 'Could not load.') + '</div>'; return; } }
+    if (!M || !M.days) { body.innerHTML = '<div class="err">' + esc((M && M.why) || 'Could not load your month.') + '</div>'; return; }
+    const D = M.days, dl = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
+    const tgT = D.reduce((a, x) => a + (x.tg || 0), 0), ach = D.reduce((a, x) => a + (x.ach || 0), 0), com = D.reduce((a, x) => a + (x.com || 0), 0), withT = D.filter((x) => x.tg > 0), met = withT.filter((x) => x.ach >= x.tg).length;
+    const bg = (x) => (!(x.tg > 0) ? '' : x.ach >= x.tg ? 'background:rgba(22,163,74,.13)' : 'background:rgba(220,38,38,.10)');
+    const list = () => {
+      body.innerHTML = '<div class="tiles c2"><div class="tl"><div class="b">' + rs(ach) + '</div><div class="l">Total sales</div><div class="s2">' + D.reduce((a, x) => a + (x.n || 0), 0) + ' orders</div></div><div class="tl t-g"><div class="b">' + rs(com) + '</div><div class="l">Total commission</div></div><div class="tl"><div class="b">' + met + ' / ' + withT.length + '</div><div class="l">Target days met</div></div><div class="tl"><div class="b">' + (tgT > 0 ? rs(tgT) : '—') + '</div><div class="l">Month target</div><div class="s2">' + (tgT > 0 ? Math.round(ach / tgT * 100) + '% done' : '') + '</div></div></div>'
+        + '<div style="display:grid;grid-template-columns:70px 1fr 1fr 70px;gap:4px;font-size:11px;font-weight:700;opacity:.65;padding:8px 10px 2px;text-transform:uppercase"><span>Day</span><span style="text-align:right">Target</span><span style="text-align:right">Achieved</span><span style="text-align:right">Comm.</span></div>'
+        + D.map((x, i) => { const p = x.tg > 0 ? Math.round(x.ach / x.tg * 100) : null, off = ST_TXT[x.st];
+          return '<div data-mday="' + i + '" role="button" tabindex="0" style="display:grid;grid-template-columns:70px 1fr 1fr 70px;gap:4px;align-items:center;padding:9px 10px;border-radius:12px;margin:4px 0;cursor:pointer;border:1px solid rgba(120,130,150,.25);' + bg(x) + (off && !x.n ? ';opacity:.6' : '') + '"><b>' + esc(dl(x.day)) + '</b><span style="text-align:right">' + (x.tg > 0 ? rs(x.tg) : '—') + '</span><span style="text-align:right"><b>' + rs(x.ach) + '</b>' + (p == null ? '' : '<br><small style="color:' + (p >= 100 ? '#15803d' : '#dc2626') + '">' + p + '%' + (p >= 100 ? ' ✓' : '') + '</small>') + '</span><span style="text-align:right"><b>' + (off && !x.n ? esc(off) : rs(x.com)) + '</b></span></div>'; }).join('')
+        + '<div style="display:grid;grid-template-columns:70px 1fr 1fr 70px;gap:4px;padding:10px;border-radius:12px;margin-top:6px;border:2px solid rgba(120,130,150,.35);font-weight:800"><span>Total</span><span style="text-align:right">' + (tgT > 0 ? rs(tgT) : '—') + '</span><span style="text-align:right">' + rs(ach) + '</span><span style="text-align:right">' + rs(com) + '</span></div><div class="mut" style="margin-top:8px;font-size:12px">Tap a day to see its orders and how each commission was counted.</div>';
+    };
+    const dayView = (i) => {
+      const x = D[i], p = x.tg > 0 ? Math.round(x.ach / x.tg * 100) : null;
+      body.innerHTML = '<button type="button" class="btn" data-mback style="margin-bottom:8px">‹ Back</button><div class="card" style="padding:12px 14px"><b>' + esc(dl(x.day)) + '</b>' + (ST_TXT[x.st] ? ' <span class="mut">· ' + esc(ST_TXT[x.st]) + '</span>' : '') + '<br>Target ' + (x.tg > 0 ? rs(x.tg) : '—') + ' · Achieved <b>' + rs(x.ach) + '</b>' + (p == null ? '' : ' (' + p + '%' + (p >= 100 ? ' ✓' : '') + ')') + '<br><b style="color:#15803d">Commission ' + rs(x.com) + '</b>' + (x.extra > 0 ? '<br><span class="mut">includes ' + rs(x.extra) + (x.xname ? ' · ' + esc(x.xname) : ' extra') + '</span>' : '') + '</div>'
+        + (x.orders.length ? '<div class="card" style="padding:10px 12px"><div class="h3">Orders (' + x.orders.length + ')</div>' + x.orders.map((o) => '<div class="erow" style="align-items:flex-start"><span><b>' + esc(o.name || 'Order') + '</b>' + (o.ml ? ' · ' + esc(o.ml) + ' ml' : '') + ' · ' + rs(o.amt) + (o.why ? '<br><span class="mut" style="font-size:12px">' + esc(o.why) + '</span>' : '') + '</span><b>' + (o.com == null ? '—' : rs(o.com)) + '</b></div>').join('') + '</div>' : '<div class="card mut">No orders this day.</div>');
+    };
+    body.addEventListener('click', (e) => { const r = e.target.closest('[data-mday]'); if (r) { dayView(+r.dataset.mday); body.scrollTop = 0; return; } if (e.target.closest('[data-mback]')) { list(); } });
+    list();
   }
   document.addEventListener('change', async (e) => {
     if (e.target.id !== 'arMonth') return; const mo = e.target.value, box = $('arBody'); if (E.arc[mo]) { box.innerHTML = arcHtml(E.arc[mo]); return; }

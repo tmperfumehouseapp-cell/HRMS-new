@@ -115,14 +115,18 @@
   // ------------------------------------------------------------------------------------------------------------------ the new order
   function open(o) {
     o = o || {}; const API = o.api || (typeof api !== 'undefined' ? api : null); if (!API) { alert('Not logged in.'); return; }
-    const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, shot2: null, proof: null, proofing: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), single: new Map(), otype: o.outside ? 'query' : '', cust: { phone: o.phone || '', name: o.name || '', addr1: '', landmark: '', pin: '', city: '', state: '' }, busy: false, order: null, seq: { perfume: 0, chain: 0, other: 0 }, cache: {}, msg: '' };
-    const { bd, ft, top } = shell('Manual order', (o.name || '') + ' · QR / UPI / COD'); top.innerHTML = '<button type="button" class="mo-lk" id="moList">Orders</button>'; top.querySelector('#moList').onclick = () => orders(o);
+    const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, shot2: null, proof: null, proofing: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), single: new Map(), otype: o.outside ? 'query' : '', cust: { phone: o.phone || '', name: o.name || '', addr1: '', landmark: '', pin: '', city: '', state: '' }, busy: false, order: null, seq: { perfume: 0, chain: 0, other: 0 }, cache: {}, msg: '', nn: { 20: { q: 0, p: 0 }, 50: { q: 0, p: 0 }, 100: { q: 0, p: 0 } }, ck: { q: 0, p: 0 } };
+    const NN = !!o.noname;   // 🏷 No Name order: no perfume is picked — sizes + prices + quantities (and a Car kit)
+    const { bd, ft, top } = shell(NN ? 'No Name order' : 'Manual order', (o.name || '') + ' · QR / UPI / COD'); top.innerHTML = '<button type="button" class="mo-lk" id="moList">Orders</button>'; top.querySelector('#moList').onclick = () => orders(o);
 
     const needShot = () => S.pay !== 'cod';
     const paidP = () => (S.pay === 'cod' ? 0 : paise(num(S.paid)));
-    const totalP = () => (S.pay === 'prepaid' ? paidP() : paise(num(S.total)));
+    const nnSum = () => { let t = 0; [20, 50, 100].forEach((m) => { t += S.nn[m].q * S.nn[m].p; }); return t + S.ck.q * S.ck.p; };
+    const nnMl = () => [20, 50, 100].reduce((a, m) => a + m * S.nn[m].q, 0);
+    const nnItems = () => [20, 50, 100].some((m) => S.nn[m].q > 0) || S.ck.q > 0;
+    const totalP = () => (NN ? nnSum() : S.pay === 'prepaid' ? paidP() : paise(num(S.total)));
     const sum = (m) => { let t = 0; m.forEach((x) => { t += x.price * x.qty; }); return t; };
-    const hasItems = () => S.perf.size > 0 || S.single.size > 0;
+    const hasItems = () => (NN ? nnItems() : S.perf.size > 0 || S.single.size > 0);
     const addrOk = () => !!o.outside && S.cust.name.trim().length >= 2 && S.cust.addr1.trim().length >= 5 && /^[1-9]\d{5}$/.test(S.cust.pin) && S.cust.city.trim() !== '' && S.cust.state.trim() !== '';   // the salesperson typed the whole address: the order is final at once, no link
     const mlOf = () => { let t = 0; S.perf.forEach((x) => { t += (x.ml || 0) * x.qty; }); return t; };
     const filled = (ml) => { let n = 0; S.perf.forEach((x) => { if (x.ml === ml) n += x.qty; }); return n; };
@@ -132,9 +136,11 @@
       const comboOk = !S.perf.size || !S.combo || S.combo.every((c) => filled(c.ml) === c.n) && Array.from(S.perf.values()).every((x) => S.combo.some((c) => c.ml === x.ml));
       const proofOk = !needShot() || (S.shot && S.shot2 && S.proof && S.proof.ok && Math.abs(pd - Math.round((S.proof.amount || 0) * 100)) <= 100);
       const why = !needShot() ? '' : !S.shot ? "Upload the customer's paid screen." : !S.shot2 ? "Upload the receiver's screen." : S.proofing ? 'Checking the two screenshots…' : !S.proof ? '' : !S.proof.ok ? S.proof.reason : (Math.abs(pd - Math.round((S.proof.amount || 0) * 100)) > 100 ? 'The amount received must equal the screenshots (' + rs(Math.round(S.proof.amount * 100)) + ').' : '');
+      const nnAct = NN ? [20, 50, 100].map((m) => S.nn[m]).concat([S.ck]).filter((x) => x.q > 0) : [];
+      const nnWhy = NN && S.pay === 'prepaid' && pd > 0 && T > 0 && Math.abs(pd - T) > 100 ? 'The customer paid ' + rs(pd) + ' but the lines add up to ' + rs(T) + ' (price of ONE piece × quantity). Change the price or the quantity so the lines add up to ' + rs(pd) + (nnAct.length === 1 && nnAct[0].q > 0 && pd % nnAct[0].q === 0 ? ' — for ' + nnAct[0].q + ' pieces that is ' + rs(pd / nnAct[0].q) + ' each' : '') + '.' : '';
       const custOk = !o.outside || (S.cust.phone.replace(/\D+/g, '').slice(-10).length === 10); const singlesOk = Array.from(S.single.values()).every((x) => x.price >= 100);
-      const ok = custOk && singlesOk && T >= 10000 && hasItems() && (S.perf.size ? P >= pieces * 1000 : P === 0) && (!needShot() || (proofOk && pd >= 100)) && !S.proofing && (S.pay !== 'partial' || (pd >= 100 && pd < T)) && comboOk && !S.reading && !S.busy;
-      return { T, C, SG, L, P, pd, cod, comboOk, ok, why, pieces };
+      const ok = custOk && singlesOk && T >= 10000 && hasItems() && (NN ? (S.pay !== 'prepaid' || Math.abs(pd - T) <= 100) : (S.perf.size ? P >= pieces * 1000 : P === 0)) && (!needShot() || (proofOk && pd >= 100)) && !S.proofing && (S.pay !== 'partial' || (pd >= 100 && pd < T)) && comboOk && !S.reading && !S.busy;
+      return { T, C, SG, L, P, pd, cod, comboOk, ok, why: why || nnWhy, pieces };
     }
 
     // ---- sections
@@ -146,15 +152,20 @@
           + '<div class="mo-h">Receiver screenshot <em>where the money arrived: business app, bank, Razorpay or Quick</em></div><div class="mo-shot"><label style="cursor:pointer;flex:none"><input type="file" id="moFile2" accept="image/*" hidden>' + (S.shot2 ? '<img alt="" src="' + esc(S.shot2.url) + '">' : '<div class="mo-btn" style="display:flex;align-items:center">📷 Upload</div>') + '</label><div class="t" id="moProof">' + proofHtml() + '</div></div>' : '')
         + '<div class="mo-h">Amounts</div><div class="mo-r2">'
         + (needShot() ? '<div><div class="mo-lab">Amount received ₹</div><div class="mo-in"><span>₹</span><input id="moPaid" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(S.paid) + '"></div></div>' : '')
-        + (S.pay === 'prepaid' ? '<div><div class="mo-lab">Order total</div><div class="mo-in"><span>₹</span><input disabled value="' + (k.T ? esc(String(k.T / 100)) : '') + '" style="color:#54656f"></div></div>' : '<div><div class="mo-lab">Agreed order total ₹</div><div class="mo-in"><span>₹</span><input id="moTot" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(S.total) + '"></div></div>') + '</div>'
+        + (S.pay === 'prepaid' || NN ? '<div><div class="mo-lab">Order total' + (NN ? ' (sum of the lines)' : '') + '</div><div class="mo-in"><span>₹</span><input disabled value="' + (k.T ? esc(String(k.T / 100)) : '') + '" style="color:#54656f"></div></div>' : '<div><div class="mo-lab">Agreed order total ₹</div><div class="mo-in"><span>₹</span><input id="moTot" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(S.total) + '"></div></div>') + '</div>'
         + (S.pay === 'prepaid' && S.shot ? '<div class="mo-lab" style="margin-top:6px">A full prepaid order is exactly what the screenshot shows. Change the amount above if Claude read it wrong.</div>' : '')
         + (S.pay === 'partial' && k.T && k.pd ? '<div class="mo-note" style="margin-top:8px">Customer pays <b>' + rs(k.cod) + '</b> on delivery.</div>' : '') + (S.pay === 'cod' && k.T ? '<div class="mo-note" style="margin-top:8px">The customer pays the whole <b>' + rs(k.T) + '</b> on delivery.</div>' : '')
-        + '<div class="mo-h">2 · How many ML?</div><div class="mo-chips" id="moMl">' + MLS.map((m) => '<button type="button" data-m="' + m + '" class="' + (S.ml === m ? 'on' : '') + '">' + m + ' ml</button>').join('') + '<input class="mo-tx" id="moMlIn" style="width:92px" inputmode="numeric" placeholder="other ml" value="' + esc(S.mlIn) + '"></div>'
+        + (NN ? nnHtml() : ('<div class="mo-h">2 · How many ML?</div><div class="mo-chips" id="moMl">' + MLS.map((m) => '<button type="button" data-m="' + m + '" class="' + (S.ml === m ? 'on' : '') + '">' + m + ' ml</button>').join('') + '<input class="mo-tx" id="moMlIn" style="width:92px" inputmode="numeric" placeholder="other ml" value="' + esc(S.mlIn) + '"></div>'
         + (S.ml ? '<div class="mo-h">Combo <em>' + S.ml + ' ml</em></div><div class="mo-chips" id="moCombo">' + combos(S.ml).map((c, i) => '<button type="button" data-c="' + i + '" class="' + (S.combo && comboLabel(S.combo) === comboLabel(c) ? 'on' : '') + '">' + esc(comboLabel(c)) + '</button>').join('') + '<button type="button" data-c="any" class="' + (S.combo === null ? 'on' : '') + '">Any mix</button></div>' : '')
         + '<div id="moLines"></div><div class="mo-h">3 · Add perfumes</div><div class="mo-sb"><input id="moQp" type="search" placeholder="Search a perfume…" autocomplete="off"></div><div class="mo-res" id="moRp"></div>'
         + '<div class="mo-h">Other products <em>shower gel, beard balm, attar … each at its own price</em></div><div id="moSg"></div><div class="mo-sb"><input id="moQo" type="search" placeholder="Search shower gel, beard balm, wax …" autocomplete="off"></div><div class="mo-res" id="moRo"></div>'
-        + '<div class="mo-h">Chain <em>optional · billed at full price</em></div><div class="mo-sb"><input id="moQc" type="search" placeholder="Search a chain…" autocomplete="off"></div><div class="mo-res" id="moRc"></div><div id="moMsg" style="margin-top:12px"></div>';
+        + '<div class="mo-h">Chain <em>optional · billed at full price</em></div><div class="mo-sb"><input id="moQc" type="search" placeholder="Search a chain…" autocomplete="off"></div><div class="mo-res" id="moRc"></div><div id="moMsg" style="margin-top:12px"></div>'));
       bindAll(); drawLines(); drawSingles(); drawFoot();
+    }
+    function nnHtml() {
+      const row = (key, ttl, sub, q, pr) => '<div class="mo-ln" data-nn="' + key + '"><div class="mid"><div class="nm">' + ttl + '</div><small>' + sub + '</small><small data-nl style="display:block;color:#12794a;font-weight:700">' + (q && pr ? rs(pr) + ' × ' + q + ' = ' + rs(pr * q) : '') + '</small></div><div class="mo-in" style="width:128px;flex:none"><span>₹</span><input data-np inputmode="decimal" autocomplete="off" placeholder="1 piece" value="' + (pr ? esc(String(pr / 100)) : '') + '"></div><div class="mo-q"><button type="button" data-nq="-1">−</button><input data-nqi inputmode="numeric" value="' + q + '" style="width:46px;text-align:center;border:1px solid #d6dbe0;border-radius:8px;padding:4px 2px;font-weight:700"><button type="button" data-nq="1">+</button></div></div>';
+      return '<div class="mo-h">2 · What was sold? <em>type the price of ONE piece and the quantity (you can type the number)</em></div><div id="moNn">' + [20, 50, 100].map((m) => row(m, '🏷 No name ' + m + ' ml', 'one bottle · commission by ML', S.nn[m].q, S.nn[m].p)).join('')
+        + '<div class="mo-h" style="margin-top:12px">Car kit <em>🚗 commission is a flat 6% of its price</em></div>' + row('ck', '🚗 Car kit', 'one piece · flat 6%', S.ck.q, S.ck.p) + '</div><div id="moMsg" style="margin-top:12px"></div>';
     }
     function custHtml() {
       const c = S.cust, v = (x) => esc(x || '');
@@ -200,7 +211,8 @@
     }
     function drawFoot() {
       const k = calc(); let sm = '';
-      if (k.T && hasItems()) { const bad = S.perf.size ? k.P < k.pieces * 1000 : k.P !== 0; sm = '<div class="mo-sum' + (bad ? ' bad' : '') + '"><div class="r big"><span>' + (S.perf.size ? 'Perfumes get' : 'Products + chain = total?') + '</span><b>' + (S.perf.size ? (k.P > 0 ? rs(k.P) : '—') : (k.P === 0 ? '✓' : 'differs by ' + rs(Math.abs(k.P)))) + '</b></div><div class="r"><span>Total ' + rs(k.T) + (S.chain.size ? ' − chain ' + rs(k.C) + ' (full price)' : '') + (S.single.size ? ' − other products ' + rs(k.SG) : '') + '</span><span>' + (k.pd ? 'paid ' + rs(k.pd) : '') + (k.cod ? ' · COD ' + rs(k.cod) : '') + '</span></div></div>'; }
+      if (NN && k.T && hasItems()) sm = '<div class="mo-sum"><div class="r big"><span>Total</span><b>' + rs(k.T) + '</b></div>' + (nnMl() ? '<div class="r"><span>No Name ML</span><b>' + nnMl() + ' ml</b></div>' : '') + (S.ck.q ? '<div class="r"><span>Car kit</span><b>' + S.ck.q + ' × ' + rs(S.ck.p) + '</b></div>' : '') + (k.why ? '<div class="r"><span style="color:#9a5b00">' + esc(k.why) + '</span></div>' : '') + '</div>';
+      else if (k.T && hasItems()) { const bad = S.perf.size ? k.P < k.pieces * 1000 : k.P !== 0; sm = '<div class="mo-sum' + (bad ? ' bad' : '') + '"><div class="r big"><span>' + (S.perf.size ? 'Perfumes get' : 'Products + chain = total?') + '</span><b>' + (S.perf.size ? (k.P > 0 ? rs(k.P) : '—') : (k.P === 0 ? '✓' : 'differs by ' + rs(Math.abs(k.P)))) + '</b></div><div class="r"><span>Total ' + rs(k.T) + (S.chain.size ? ' − chain ' + rs(k.C) + ' (full price)' : '') + (S.single.size ? ' − other products ' + rs(k.SG) : '') + '</span><span>' + (k.pd ? 'paid ' + rs(k.pd) : '') + (k.cod ? ' · COD ' + rs(k.cod) : '') + '</span></div></div>'; }
       const miss = S.combo && !k.comboOk ? '<div class="mo-note">The perfumes must match the combo (' + esc(comboLabel(S.combo)) + ') or choose “Any mix”.</div>' : '';
       ft.innerHTML = sm + miss + '<div id="moFm">' + S.msg + '</div><button type="button" class="mo-go" id="moGo"' + (k.ok ? '' : ' disabled') + '>' + (S.busy ? 'Working…' : addrOk() ? 'Create the final order' + (k.ok ? ' · ' + rs(k.T) : '') : 'Create order' + (k.ok ? ' · ' + rs(k.T) : '') + ' and send the link') + '</button>';
       ft.querySelector('#moGo').onclick = make;
@@ -218,6 +230,15 @@
         drawAll(); if (S.shot) runProof(); };
       const pd = bd.querySelector('#moPaid'); if (pd) pd.oninput = () => { const v = pd.value.replace(/[^\d.]/g, ''); if (v !== pd.value) pd.value = v; S.paid = v; refresh(); };
       const tt = bd.querySelector('#moTot'); if (tt) tt.oninput = () => { const v = tt.value.replace(/[^\d.]/g, ''); if (v !== tt.value) tt.value = v; S.total = v; refresh(); };
+      if (NN) {   // 🏷 No Name: + / − and the price of each line
+        const nb = bd.querySelector('#moNn'); const get = (el) => { const k = el.closest('[data-nn]').dataset.nn; return k === 'ck' ? S.ck : S.nn[+k]; };
+        const sub = (row) => { const k = row.dataset.nn, x = k === 'ck' ? S.ck : S.nn[+k], el = row.querySelector('[data-nl]'); if (el) el.textContent = x.q && x.p ? rs(x.p) + ' × ' + x.q + ' = ' + rs(x.p * x.q) : ''; };
+        nb.onclick = (e) => { const bt = e.target.closest('[data-nq]'); if (!bt) return; const x = get(bt), row = bt.closest('.mo-ln'); x.q = Math.max(0, Math.min(500, x.q + +bt.dataset.nq)); row.querySelector('[data-nqi]').value = x.q; sub(row); fm(''); drawAllKeep(); };
+        nb.oninput = (e) => {
+          const qi = e.target.closest('[data-nqi]'); if (qi) { const v = qi.value.replace(/\D+/g, '').slice(0, 3); if (v !== qi.value) qi.value = v; const x = get(qi); x.q = Math.min(500, +v || 0); sub(qi.closest('.mo-ln')); drawAllKeep(); return; }
+          const i = e.target.closest('[data-np]'); if (!i) return; const v = i.value.replace(/[^\d.]/g, ''); if (v !== i.value) i.value = v; get(i).p = paise(num(v)); sub(i.closest('.mo-ln')); drawAllKeep();
+        };
+      } else {
       bd.querySelector('#moMl').onclick = (e) => { const b = e.target.closest('[data-m]'); if (!b) return; S.ml = +b.dataset.m; S.mlIn = ''; S.combo = combos(S.ml)[0] || null; drawAll(); };
       bd.querySelector('#moMlIn').onchange = (e) => { const v = Math.round(num(e.target.value)); S.mlIn = e.target.value; S.ml = v >= 10 && v <= 2000 ? v : 0; S.combo = S.ml ? (combos(S.ml)[0] || null) : null; drawAll(); };
       const cb = bd.querySelector('#moCombo'); if (cb) cb.onclick = (e) => { const b = e.target.closest('[data-c]'); if (!b) return; S.combo = b.dataset.c === 'any' ? null : combos(S.ml)[+b.dataset.c]; drawAll(); };
@@ -225,6 +246,7 @@
       search('perfume', bd.querySelector('#moQp'), bd.querySelector('#moRp')); search('chain', bd.querySelector('#moQc'), bd.querySelector('#moRc')); search('other', bd.querySelector('#moQo'), bd.querySelector('#moRo'));
       const sg = bd.querySelector('#moSg'); if (sg) { sg.onclick = (e) => { const b = e.target.closest('[data-sq]'); if (!b) return; const x = S.single.get(+b.closest('.mo-ln').dataset.vid); if (!x) return; x.qty += +b.dataset.sq; if (x.qty < 1) S.single.delete(x.vid); else if (x.qty > 50) x.qty = 50; drawSingles(); drawFoot(); };
         sg.oninput = (e) => { const i = e.target.closest('[data-sp]'); if (!i) return; const x = S.single.get(+i.closest('.mo-ln').dataset.vid); if (!x) return; const v = i.value.replace(/[^\d.]/g, ''); if (v !== i.value) i.value = v; x.price = paise(num(v)); drawFoot(); const sm = i.closest('.mo-ln').querySelector('small'); if (sm) sm.textContent = (x.label ? x.label + ' · ' : '') + 'shop price ' + rs(x.mrp) + ' · line ' + rs(x.price * x.qty); }; }
+      }
       if (o.outside) {
         const g = (id) => bd.querySelector('#' + id), bind = (id, k, f) => { const el = g(id); if (el) el.oninput = () => { S.cust[k] = f ? f(el.value) : el.value; drawFoot(); }; };
         bind('cuPh', 'phone', (v) => v.replace(/[^\d+ ]/g, '')); bind('cuNm', 'name'); bind('cuAd', 'addr1'); bind('cuLm', 'landmark'); bind('cuCi', 'city'); bind('cuSt', 'state');
@@ -233,6 +255,7 @@
       }
     }
     const refresh = () => { drawFoot(); };
+    const drawAllKeep = () => { const t = bd.querySelector('input[disabled]'); if (t && NN) t.value = totalP() ? String(totalP() / 100) : ''; drawFoot(); };
     const drawComboHint = () => { /* the line header already shows x/y; the search buttons re-check on the next tap */ };
     function search(cat, inp, res) {
       let deb = 0;
@@ -261,7 +284,7 @@
       try {
         if (!S.order) {
           if (o.outside) { const st = await API.post('wmo.start', { phone: S.cust.phone, name: S.cust.name }); o.phone = st.phone; o.name = S.cust.name || st.name || ''; }
-          const r = await API.post('wmo.create', { channel: o.channel || '', otype: o.outside ? S.otype : '', cust: o.outside ? S.cust : null, singles: Array.from(S.single.values()).map((x) => ({ vid: x.vid, qty: x.qty, price: x.price / 100 })), phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot2: S.shot2 ? S.shot2.b64 : '', shot2_mime: S.shot2 ? S.shot2.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
+          const r = await API.post('wmo.create', { kind: NN ? 'noname' : '', nn: NN ? [20, 50, 100].map((m) => ({ ml: m, qty: S.nn[m].q, price: S.nn[m].p / 100 })).filter((x) => x.qty > 0) : [], ck: NN ? { qty: S.ck.q, price: S.ck.p / 100 } : null, channel: o.channel || '', otype: o.outside ? S.otype : '', cust: o.outside ? S.cust : null, singles: Array.from(S.single.values()).map((x) => ({ vid: x.vid, qty: x.qty, price: x.price / 100 })), phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot2: S.shot2 ? S.shot2.b64 : '', shot2_mime: S.shot2 ? S.shot2.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
           S.order = r.order;
         }
         if (addrOk()) { const r2 = await API.post('wmo.confirm', { id: S.order.id, cust: S.cust }); S.busy = false; S.order.order_no = r2.order_no || S.order.order_no; doneFinal(); if (o.onDone) { try { o.onDone({ stage: 'confirmed', order: S.order }); } catch (e) { } } return; }

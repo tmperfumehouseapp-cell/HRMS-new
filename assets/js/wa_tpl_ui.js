@@ -351,6 +351,18 @@
       if (sugAsked || D.id || D.category !== 'MARKETING' || D.body.trim().length < 20) return; sugAsked = true;
       approvedUtilities().then((l) => { let best = null, bs = 0; l.forEach((t) => { const x = similar(D.body, t.body); if (x > bs) { bs = x; best = t; } }); if (best && bs >= 0.45) { SUG = best; renderUtil(); } });
     }
+    // 💸 the utility versions made (and sent to Meta) AUTOMATICALLY for this marketing message: how many, in which state, and what is suggested
+    const AUT = { approved: ['✅', '#15803d', 'approved by Meta'], waiting: ['⏳', '#b45309', 'sent to Meta — waiting for approval'], queued: ['⏳', '#b45309', 'queued — goes to Meta by itself within a minute'], rejected: ['❌', '#b91c1c', 'rejected / moved to marketing by Meta'] };
+    async function renderAutoUt() {
+      const box = $(m.body, '#wtAutoUt'); if (!box) return; if (!D.id || D.category !== 'MARKETING') { box.innerHTML = ''; return; }
+      let r; try { r = await api.get('wa.tpl_utility_list', { tpl_id: D.id, mine: 1 }); } catch (e) { box.innerHTML = ''; return; }
+      const mine = (r.items || []).filter((x) => x.mine), st = (x) => (x.relabelled || ['rejected', 'disabled'].includes(x.status)) ? 'rejected' : (['approved', 'partial'].includes(x.status) ? 'approved' : (x.draft ? 'queued' : 'waiting')), n = { approved: 0, waiting: 0, queued: 0, rejected: 0 };
+      mine.forEach((x) => { n[st(x)]++; }); const target = 10, ok = n.approved, made = mine.length, sug = ok >= 3 ? ['#15803d', '✅ ' + ok + ' utility versions are approved — this message is ready to start as utility (campaign card → Start as utility; the 💡 suggestion picks the best mix).'] : made >= target ? ['#b45309', '⏳ All ' + made + ' are made and at Meta — waiting for approval. They are used by themselves as soon as they are approved.'] : ['#b45309', '⏳ ' + made + ' of ' + target + ' made — the rest are made and sent to Meta by themselves (a few every minute).'];
+      box.innerHTML = `<div class="wt-ut"><h4>💸 Utility versions — made and sent to Meta automatically <span class="wp-pill ${ok ? 'ok' : 'b'}">${made} made</span></h4>
+        <div class="wp-hint" style="margin:0 0 6px">${made ? `✅ <b>${n.approved}</b> approved · ⏳ <b>${n.waiting + n.queued}</b> waiting for Meta${n.queued ? ' (' + n.queued + ' queued, go by themselves)' : ''} · ❌ <b>${n.rejected}</b> rejected · target ${target} for every marketing message` : 'No utility version yet — they are made and sent to Meta by themselves (within a few minutes of making this message).'}</div>
+        <div style="font-size:12.5px;color:${sug[0]};margin:0 0 6px"><b>Suggestion:</b> ${sug[1]}</div>
+        ${made ? `<details><summary class="wp-hint" style="cursor:pointer;margin:0">All ${made} utility versions ▾</summary>${mine.map((x) => { const k = st(x), a = AUT[k]; return `<div class="bx" style="margin:6px 0"><b style="color:${a[1]}">${a[0]} ${esc(x.name.replace(/_/g, ' '))}</b> <span class="wp-hint" style="margin:0">— ${a[2]}</span><div style="margin-top:4px">${esc(x.body)}</div></div>`; }).join('')}</details>` : ''}</div>`;
+    }
     function renderUtil() {
       renderUtil0(); const box = $(m.body, '#wtUtil'); if (!box) return; checkSimilar();
       if (box.innerHTML && SUG) { box.insertAdjacentHTML('afterbegin', sugHtml()); const u = $(box, '#wmxUse'); if (u) u.onclick = () => { const t = SUG; m.close(); if (opts.onUse) opts.onUse(t); else toast('Use “' + t.name + '” - it is approved and ready.'); }; }
@@ -429,10 +441,10 @@
     }
     function drawB() {
       B.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px"><label class="wp-fl" style="margin:0">Buttons <small>(up to 10)</small></label><span class="wp-pill ok" id="wtBc">0 of 10</span></div>
-        <div class="wp-row" style="margin:6px 0 8px" id="wtBadd"></div><div id="wtBtns"></div><div id="wtChk"></div><div id="wtUtil"></div><div id="wtE"></div>
+        <div class="wp-row" style="margin:6px 0 8px" id="wtBadd"></div><div id="wtBtns"></div><div id="wtChk"></div><div id="wtAutoUt"></div><div id="wtUtil"></div><div id="wtE"></div>
         <div class="wp-row" style="margin-top:14px"><button type="button" class="wp-btn p" id="wtSend">Send to Meta for approval</button><button type="button" class="wp-btn" id="wtSave">Save draft</button></div>`;
       $(B, '#wtSend').onclick = () => send('one'); $(B, '#wtSave').onclick = save;
-      renderButtons(); renderCheck(); renderUtil(); renderPreview(); schedCheck();
+      renderButtons(); renderCheck(); renderUtil(); renderPreview(); schedCheck(); renderAutoUt();
     }
 
     // ---- Claude fills the form

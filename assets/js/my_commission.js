@@ -83,7 +83,7 @@
       if (day < from || day > to) return;
       const rk = '';
       const amt = Number(o.total || 0), pre = isPre(o.financial_status);
-      const x = { key: (o.store_key || o.source || '') + ':' + o.id, house: o.house || STORE_TO_GROUP[o.store_key] || '', code: o.code || '', amt, pre, ml: o.ml == null ? null : Number(o.ml), x_amt: Number(o.x_amt) || 0, x_com: Number(o.x_com) || 0, x_note: o.x_note || '', x_all: !!o.x_all, x_pct: o.x_pct == null ? null : Number(o.x_pct), day, rk, created: o.created_at };
+      const x = { key: (o.store_key || o.source || '') + ':' + o.id, house: o.house || STORE_TO_GROUP[o.store_key] || '', code: o.code || '', amt, pre, ml: o.ml == null ? null : Number(o.ml), x_amt: Number(o.x_amt) || 0, x_com: Number(o.x_com) || 0, x_note: o.x_note || '', x_all: !!o.x_all, x_pct: o.x_pct == null ? null : Number(o.x_pct), day, rk, created: o.created_at, name: String(o.name || o.order_name || '') };
       const p = calcPrice(x); x.eff = p.eff; x.flat = p.flat;
       CM.ord.push(x);
       const cell = ((CM.idx[rk] = CM.idx[rk] || {})[day] = CM.idx[rk][day] || { ach: 0, n: 0, pre: 0, eff: 0, flat: 0, orders: [] });
@@ -196,6 +196,17 @@
   const dayList = (from, to) => { const days = []; for (let x = from; x <= to; ) { days.push(x); const t = new Date(x + 'T00:00:00'); t.setDate(t.getDate() + 1); x = ymd(t); } return days; };
   let LAST = null;   // { cm, orders, dayStart, from, to } of the current month
 
+  // 📅 every day of the month for the salesperson's own sheet: target, what was collected, the commission the live engine PAYS for the day (worked out here when the engine is off) and each order of the day with its own commission
+  function dayDetail(cm, from, to) {
+    const pd = cm.paid && cm.paid.live ? cm.paid : null, po = (pd && pd.ord) || {}, dx = (pd && pd.dx) || {}, out = [];
+    dayList(from, to).forEach((d) => {
+      const cell = (CM.idx[''] || {})[d] || { ach: 0, n: 0, orders: [] };
+      const com = pd ? Number((pd.days || {})[d]) || 0 : (cell.n ? aggRow('', [d], false).amount : 0), ex = dx[d] || [0, ''];
+      const orders = (cell.orders || []).slice().sort((a, b) => String(a.created).localeCompare(String(b.created))).map((x) => { const q = po[x.key]; return { name: x.name, amt: x.amt, ml: x.ml, code: x.code, com: q ? Number(q[0]) : null, why: q ? String(q[1] || '') : '' }; });
+      out.push({ day: d, tg: dayTarget(cm, d), ach: cell.ach, n: cell.n, com, st: (cm.status || {})[d] || '', extra: Number(ex[0]) || 0, xname: String(ex[1] || ''), orders });
+    });
+    return out.reverse();
+  }
   async function month(bizDay) {
     const to = bizDay, from = to.slice(0, 8) + '01';
     const [cm, od, tm, fo] = await Promise.all([api.get('my.commission'), api.get('shopify.orders', { date_from: from, date_to: to, lite: 1 }), api.get('day_timing.get').catch(() => null), api.get('flash_offer.get').catch(() => null)]);
@@ -216,7 +227,7 @@
     }
     LAST = { cm, orders: od.orders || [], dayStart, from, to };
     const errs = (od.errors || []).filter(Boolean);
-    return { applicable: true, month: m, today: t, monthRate: m.rated ? rateTxt(m.rate, m.manual) : '', todayRate: t.rated ? rateTxt(t.rate) : '', rows: archiveRows(cm, od.orders || [], from, to, dayStart), noRules: !CM.rules.length, note: errs.length ? 'Some orders could not be loaded, so month figures may be incomplete: ' + errs.join(' · ') : '' };
+    return { applicable: true, month: m, today: t, monthRate: m.rated ? rateTxt(m.rate, m.manual) : '', todayRate: t.rated ? rateTxt(t.rate) : '', rows: (() => { const dd = dayDetail(cm, from, to), by = {}; dd.forEach((x) => { by[x.day] = x.com; }); return archiveRows(cm, od.orders || [], from, to, dayStart).map((r) => Object.assign(r, { com: by[r.day] })); })(), days: dayDetail(cm, from, to), noRules: !CM.rules.length, note: errs.length ? 'Some orders could not be loaded, so month figures may be incomplete: ' + errs.join(' · ') : '' };
   }
   async function archive(mo) {
     const from = mo + '-01', last = new Date(Number(mo.slice(0, 4)), Number(mo.slice(5, 7)), 0), to = mo + '-' + String(last.getDate()).padStart(2, '0');

@@ -87,6 +87,22 @@
     #ocOrdersCard tbody td[data-label] .sub, #resCard tbody td[data-label] .sub{flex:1 1 100%; padding-left:114px;}
     #resCard tbody td:nth-child(3){display:block;} #resCard tbody td:nth-child(3)::before{display:block; width:auto; margin-bottom:3px;}      /* matched-order text reads as one sentence */
   }
+  /* Phones, Codes → Orders list: ONE compact row per order — the order number on the left, the code on the right (the box to type it in when there is none yet) */
+  @media (max-width:600px){
+    #ocOrdersCard tbody tr:not(:has(td[colspan])){display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:1px 10px; align-items:center; padding:10px 12px; margin:0 10px 8px;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td{display:block; padding:0; border:none !important; font-size:12px; color:var(--muted);}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td::before{display:none !important;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(1){grid-column:1; grid-row:1; font-size:15px; color:inherit;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(1) .sub{display:inline; padding:0; margin-left:6px; font-size:11px;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(2){grid-column:1; grid-row:2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(2) .sub{display:none;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(3), #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(5){display:none;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(4){grid-column:1; grid-row:3;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(4) .sub{display:inline; padding:0; margin-left:5px;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(6){grid-column:2; grid-row:1 / span 3; justify-self:end; text-align:right; max-width:58vw; color:inherit;}
+    #ocOrdersCard td:nth-child(6) .inl{flex-wrap:nowrap; gap:6px;} #ocOrdersCard td:nth-child(6) .inl input{width:min(118px, 30vw); min-height:38px;} #ocOrdersCard td:nth-child(6) .inl .btn{min-height:38px; padding:6px 12px;}
+    #ocOrdersCard td:nth-child(6) .sub{padding-left:0 !important; font-size:10.5px;}
+  }
   @media (max-width:560px){
     .stat-grid{grid-template-columns:repeat(2, minmax(0, 1fr));}
     .topbar > div > input[type=date]{flex:1 1 120px; min-width:0;} .topbar > div > button{flex:1 1 120px;}
@@ -95,6 +111,14 @@
     .res .n{font-size:18px;}
   }
   @media (min-width:1500px){ .cust-stats{gap:12px;} }
+  /* order details popup (tap an order number) */
+  #odOv{position:fixed; inset:0; background:#0008; z-index:300; display:none; align-items:center; justify-content:center; padding:14px;} #odOv.open{display:flex;}
+  #odBox{background:var(--card,#fff); color:inherit; border-radius:16px; max-width:640px; width:100%; max-height:90vh; overflow:auto; padding:16px;}
+  #odBox h3{margin:0 0 2px; font-size:16px;} #odBox .osub{color:var(--muted); font-size:12.5px; margin:0 0 10px;}
+  #odBox .kv{display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px dashed var(--line); font-size:13px;} #odBox .kv b{text-align:right; overflow-wrap:anywhere;}
+  #odBox table{width:100%; border-collapse:collapse; font-size:12.5px; margin:8px 0; min-width:0;} #odBox th{text-align:left; padding:6px; font-size:11.5px; color:var(--muted);} #odBox td{padding:6px; border-top:1px solid var(--line); vertical-align:top;}
+  .oc-od{color:inherit; text-decoration:underline dotted; cursor:pointer;}
+  @media (max-width:600px){ #odOv{align-items:flex-end; padding:8px;} #odBox{border-radius:16px 16px 0 0; max-height:88vh;} }
 </style>
 </head>
 <body>
@@ -290,7 +314,7 @@
     tb.innerHTML = shown.map(o => {
       const i = rows.indexOf(o);
       return `<tr id="r${i}">
-        <td><b>${esc(o.order_name)}</b>${o.cancelled ? ' <span class="st cxl">Cancelled</span>' : ''}<div class="sub">${fmtDT(o.created_at)}</div></td>
+        <td><a href="#" class="oc-od" data-i="${i}" title="Open this order"><b>${esc(o.order_name)}</b></a>${o.cancelled ? ' <span class="st cxl">Cancelled</span>' : ''}<div class="sub">${fmtDT(o.created_at)}</div></td>
         <td>${esc(o.customer)}${o.phone ? `<div class="sub">${esc(o.phone)}</div>` : ''}</td>
         <td>${o.items}</td>
         <td>${inr(o.total)}${o.financial_status ? `<div class="sub">${esc(o.financial_status)}</div>` : ''}</td>
@@ -299,6 +323,29 @@
       </tr>`;
     }).join('');
   }
+  // ---------- order details: tap an order number ----------
+  (function () {
+    const ov = document.createElement('div'); ov.id = 'odOv'; ov.innerHTML = '<div id="odBox"></div>'; document.body.appendChild(ov);
+    const box = ov.firstChild, close = () => ov.classList.remove('open');
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('#odX')) close(); });
+    const kv = (k, v) => (v === '' || v == null) ? '' : '<div class="kv"><span>' + k + '</span><b>' + esc(v) + '</b></div>';
+    const shell = (title, sub, inner) => { box.innerHTML = '<h3>' + esc(title) + '</h3><p class="osub">' + esc(sub) + '</p>' + inner + '<div style="text-align:right;margin-top:12px"><button class="btn" id="odX" type="button">Close</button></div>'; ov.classList.add('open'); };
+    document.getElementById('tbody').addEventListener('click', async (e) => {
+      const a = e.target.closest('a.oc-od'); if (!a) return; e.preventDefault();
+      const o = curRows()[Number(a.dataset.i)]; if (!o) return;
+      const own = kv('Customer', o.customer) + kv('Mobile', o.phone) + kv('Items', o.items) + kv('Total', inr(o.total)) + kv('Payment', o.financial_status) + kv('Store', o.store) + kv('Code', o.code);
+      shell(o.order_name + ' — ' + (o.store || ''), fmtDT(o.created_at), '<div class="osub">Loading the order…</div>');
+      if (!SOURCES[o.source] || o.source === 'mysales') { shell(o.order_name + ' — ' + (o.store || ''), fmtDT(o.created_at), own); return; }      // not a Shopify order: what the list knows
+      try {
+        const d = (await api.get('shopify.order_detail', { store: o.source, id: o.id })).order;
+        const rows = (d.line_items || []).map((li) => '<tr><td>' + esc(li.title) + (li.variant ? '<div style="color:var(--muted)">' + esc(li.variant) + '</div>' : '') + ((li.props && li.props.length) ? '<div style="color:var(--muted);margin-top:3px">( ' + li.props.map((p) => esc(p.name) + ': ' + esc(p.value)).join(' · ') + ' )</div>' : '') + '</td><td>' + esc(li.quantity) + '</td><td style="text-align:right">' + esc(li.total) + '</td></tr>').join('');
+        shell((d.order_name || o.order_name) + ' — ' + (d.store || o.store || ''), d.created_at ? new Date(d.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '',
+          kv('Customer', d.customer) + kv('Mobile', d.phone) + kv('Address', (d.address || []).join(', ')) + kv('Payment', [d.financial_status, d.gateway].filter(Boolean).join(' · ')) + kv('Fulfillment', d.fulfillment_status) + kv('Tags', d.tags) + kv('Code', o.code) + kv('Note', d.note)
+          + '<table><thead><tr><th>Product</th><th>Qty</th><th style="text-align:right">Total</th></tr></thead><tbody>' + rows + '</tbody></table>'
+          + kv('Subtotal', d.subtotal) + kv('Discount', d.discounts) + kv('Shipping', d.shipping) + kv('Total', d.total));
+      } catch (err) { shell(o.order_name + ' — ' + (o.store || ''), fmtDT(o.created_at), own + '<div class="osub" style="color:#c81e1e;margin-top:8px">' + esc(err.message) + '</div>'); }
+    });
+  })();
   window.editCode = function (i) {
     const o = curRows()[i]; const old = o.code; o.code = '';
     renderOrders();

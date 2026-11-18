@@ -248,7 +248,7 @@ function fi_summary(PDO $pdo, string $from, string $to): array
     $on = ['orders' => 0, 'sales' => 0, 'cod_orders' => 0, 'cod' => 0, 'prepaid' => 0, 'items' => 0]; $lastSync = '';
     try {
         $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
-        $q = $pdo->prepare("SELECT shopify_id, store_key, created_at, total, items, financial_status, outstanding, synced_at FROM shop_orders WHERE created_at >= ? AND created_at < ?");
+        $q = $pdo->prepare("SELECT shopify_id, store_key, created_at, total, items, financial_status, outstanding, synced_at FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND created_at < ?");
         $q->execute([date('Y-m-d', strtotime($from . ' -1 day')) . ' 00:00:00', date('Y-m-d', strtotime($to . ' +2 day')) . ' 00:00:00']);
         foreach ($q->fetchAll() as $o) {
             $fs = strtolower((string)$o['financial_status']); if (in_array($fs, ['voided', 'refunded'], true) || isset($cancel[$o['store_key'] . '|' . $o['shopify_id']])) continue;

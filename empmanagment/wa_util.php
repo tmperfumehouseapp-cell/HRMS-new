@@ -19,16 +19,62 @@ if (!function_exists('wa_util_make')) {
 /** Words that make Meta call a message marketing — a utility version must not contain them. */
 function wa_util_bad_words(): array { return ['offer', 'discount', 'sale', '% off', 'off on', 'free', 'deal', 'limited time', 'hurry', 'last chance', 'buy now', 'shop now', 'coupon', 'promo', 'diwali offer', 'festive offer', 'save ', 'cashback', 'combo offer', 'best price', 'lowest price']; }
 
+/** Meta's answer when the template could not even be CREATED (a name / language that already exists, an API error): not a review of the wording, so it must not teach the writer anything. */
+function wa_util_is_creation_error(string $why): bool
+{
+    return $why !== '' && (stripos($why, 'Unsupported post request') === 0 || stripos($why, 'already has') !== false || stripos($why, 'already exists') !== false || mb_strpos($why, 'પહેલેથી') !== false || stripos($why, 'content already') !== false);
+}
+/** 🧠 LEARNING FROM META (owner, 17 Nov 2026): every utility message written so far is looked at again — what Meta APPROVED, what it REJECTED or moved to marketing, and the reason it gave.
+ *  The writer (Claude) is shown real examples of both and the words that appear in rejected messages but never in approved ones; when more than half of the last decisions are rejections it is told to write much plainer
+ *  (STRICT). The learned words are also refused locally before anything goes to Meta. Remembered for 10 minutes. Returns ['appr','rej','rate','strict','bad' => [words],'good' => [..],'badx' => [[body, reason]]]. */
+function wa_util_learn(PDO $pdo, bool $force = false): array
+{
+    static $memo = null; if ($memo !== null && !$force) return $memo;
+    $c = json_decode((string)setting_get($pdo, 'wa_util_learn', ''), true); if (!$force && is_array($c) && (int)($c['at'] ?? 0) > time() - 600) { $GLOBALS['__wa_util_learned_bad'] = (array)($c['bad'] ?? []); return $memo = $c; }
+    $o = ['at' => time(), 'appr' => 0, 'rej' => 0, 'rate' => 0, 'strict' => false, 'bad' => [], 'good' => [], 'badx' => []]; $A = []; $Rj = [];
+    try {
+        $q = $pdo->prepare("SELECT t.id, t.body, t.relabelled_at, GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 100)) SEPARATOR '|') AS st FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id
+            WHERE t.category = 'UTILITY' AND t.name LIKE 'util\\_%' AND t.created_at >= ? GROUP BY t.id, t.body, t.relabelled_at ORDER BY t.id DESC LIMIT 300"); $q->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
+        foreach ($q->fetchAll() as $r) {
+            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = ''; foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); if ($why === '' && in_array(strtoupper($p2[0]), ['REJECTED', 'PAUSED', 'DISABLED'], true)) $why = trim((string)($p2[1] ?? '')); if (strtoupper($p2[0]) === 'REJECTED' && wa_util_is_creation_error((string)($p2[1] ?? ''))) { array_pop($stt); $stt[] = 'ERROR'; } }
+            $body = (string)$r['body'];
+            if (!empty($r['relabelled_at'])) { $Rj[] = [$body, 'Meta moved it to marketing']; }
+            elseif (in_array('APPROVED', $stt, true)) { $A[] = $body; }
+            elseif (!array_intersect(['PENDING', 'IN_APPEAL', 'ERROR'], $stt) && in_array('REJECTED', $stt, true)) { $Rj[] = [$body, $why]; }
+        }
+    } catch (Throwable $e) { }
+    $o['appr'] = count($A); $o['rej'] = count($Rj); $dec = $o['appr'] + $o['rej']; $o['rate'] = $dec ? round($o['rej'] / $dec, 2) : 0; $o['strict'] = $dec >= 8 && $o['rate'] >= 0.5;
+    $words = function (string $b): array { $b = mb_strtolower(preg_replace('/\{\{\d+\}\}/', ' ', $b)); preg_match_all('/[\p{L}]{4,}/u', $b, $m); return array_values(array_unique($m[0])); };
+    $df = function (array $docs) use ($words): array { $d = []; foreach ($docs as $b) foreach ($words($b) as $w) $d[$w] = ($d[$w] ?? 0) + 1; return $d; };
+    $dr = $df(array_map(fn($x) => $x[0], $Rj)); $da = $df($A); $stop = ['this', 'that', 'with', 'have', 'your', 'from', 'about', 'please', 'reply', 'here', 'and', 'for', 'you', 'the', 'perfume', 'enquiry', 'size', 'details', 'house', 'thanks', 'kya', 'aap', 'aapka', 'aapke', 'hain', 'hai', 'main', 'tha', 'liye'];
+    $bad = []; if (count($Rj) >= 3) foreach ($dr as $w => $n) if ($n >= 3 && empty($da[$w]) && $n / count($Rj) >= 0.3 && !in_array($w, $stop, true)) $bad[$w] = $n;
+    arsort($bad); $o['bad'] = array_slice(array_keys($bad), 0, 15);
+    $o['good'] = array_map(fn($b) => mb_substr($b, 0, 260), array_slice($A, 0, 4)); $o['badx'] = array_map(fn($x) => [mb_substr($x[0], 0, 260), mb_substr($x[1], 0, 100)], array_slice($Rj, 0, 5));
+    $GLOBALS['__wa_util_learned_bad'] = $o['bad']; try { setting_set($pdo, 'wa_util_learn', json_encode($o, JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { }
+    return $memo = $o;
+}
+/** The text added to the writer's instructions: what worked, what Meta refused (with its reason), the words to avoid, and STRICT mode when most are refused. */
+function wa_util_learn_text(PDO $pdo): string
+{
+    $L = wa_util_learn($pdo); if (!$L['appr'] && !$L['rej']) return '';
+    $t = "WHAT META DID WITH THE UTILITY MESSAGES WRITTEN SO FAR (last 30 days: " . $L['appr'] . " approved, " . $L['rej'] . " rejected or moved to marketing). Learn from it and CHANGE your pattern when needed.\n";
+    if ($L['good']) { $t .= "APPROVED by Meta as utility — write in this plain style:\n"; foreach ($L['good'] as $i => $b) $t .= ($i + 1) . ') ' . $b . "\n"; }
+    if ($L['badx']) { $t .= "REJECTED / moved to marketing — do NOT write like these:\n"; foreach ($L['badx'] as $i => $x) $t .= ($i + 1) . ') ' . $x[0] . ($x[1] !== '' ? '   [Meta: ' . $x[1] . ']' : '') . "\n"; }
+    if ($L['bad']) $t .= "Words that appear in rejected messages and never in approved ones — do NOT use them: " . implode(', ', $L['bad']) . ".\n";
+    if ($L['strict']) $t .= "STRICT MODE: more than half of the recent messages were refused. Write MUCH plainer: at most two short sentences, no emojis, no exclamation marks, no sales tone, no 'ready / available / best / special / new'; only confirm what the customer did (their enquiry about {{2}}) and ask ONE neutral question about what they need next. Change the wording and structure completely from the rejected examples.\n";
+    return $t . "\n";
+}
+
 /** Why a utility body cannot be used ('' = fine): Meta's marketing words, or the variables are not right. */
 function wa_util_check(string $body): string
 {
     $body = trim($body); if ($body === '') return 'The message is empty.';
-    $low = mb_strtolower($body); $bad = array_values(array_filter(wa_util_bad_words(), fn($w) => mb_strpos($low, $w) !== false));
+    $low = mb_strtolower($body); $bad = array_values(array_filter(array_merge(wa_util_bad_words(), (array)($GLOBALS['__wa_util_learned_bad'] ?? [])), fn($w) => $w !== '' && mb_strpos($low, $w) !== false));   // + the words learned from Meta's rejections (wa_util_learn)
     if ($bad) return 'Meta would call it marketing because of: ' . implode(', ', $bad) . '.';
     preg_match_all('/\{\{(\d+)\}\}/', $body, $vm); $vars = array_map('intval', $vm[1]);
     if (!in_array(1, $vars, true) || !in_array(2, $vars, true)) return 'It must use {{1}} (customer name) and {{2}} (the perfume).';
     if (max($vars ?: [0]) > 3) return 'Only {{1}} name, {{2}} perfume and {{3}} date can be used.';
-    if (preg_match('/^\s*\{\{|\{\{\d\}\}\s*$/', $body) || preg_match('/\}\}\s*\{\{/', $body)) return 'A variable cannot be at the very start or end, or next to another variable.';
+    if (preg_match('/^\s*\{\{|\{\{\d\}\}\s*$/', $body) || preg_match('/\}\}\s*\{\{/', $body) || preg_match('/\{\{\d+\}\}[^\p{L}\p{N}{]*$/u', $body) || preg_match('/^[^\p{L}\p{N}{]*\{\{\d+\}\}/u', $body)) return 'A variable cannot be at the very start or end, or next to another variable.';
     return '';
 }
 /** The owner's edits of utility versions (before → after): Claude follows them next time. */
@@ -42,7 +88,7 @@ function wa_util_lesson_add(PDO $pdo, string $before, string $after): void
 function wa_util_submit(PDO $pdo, int $id): array
 {
     $row = wa_tpl_row($pdo, $id); if (!$row || strtoupper((string)$row['category']) !== 'UTILITY') return ['error' => 'Utility version not found.'];
-    $wabas = function_exists('wa_wabas') ? array_keys(wa_wabas($pdo)) : []; if (!$wabas) return ['error' => 'No WhatsApp account is set up.'];
+    $wabas = function_exists('wa_wabas') ? array_values(wa_wabas($pdo)) : [];   // wa_wabas() already returns the account ids (a list) — array_keys() made them 0,1,2,3 and every submit went to accounts that do not exist if (!$wabas) return ['error' => 'No WhatsApp account is set up.'];
     $budget = ['left' => count($wabas)]; $subs = [];
     foreach ($wabas as $wb) { [$ok, $note] = function_exists('wa_tpl_try_create') ? wa_tpl_try_create($pdo, $row, (string)$wb, $budget) : wa_tpl_create_at($pdo, $row, (string)$wb); $subs[] = ['waba' => (string)$wb, 'ok' => (bool)$ok, 'note' => is_string($note) ? $note : '']; }
     return ['ok' => true, 'submitted' => $subs];
@@ -62,6 +108,7 @@ function wa_util_make(PDO $pdo, int $tplId, int $n, int $by, bool $send = false)
          . "Language: " . ($lang === 'en' ? 'English, like the owner\'s message' : 'the language code ' . $lang) . ". Keep about the same length as the owner's message (max 550 characters), end with one simple question. "
          . "Make the " . $n . " versions close to the owner's message, each with a small difference. name = lowercase_with_underscores, max 40 letters, starting with util_. "
          . ($les !== '' ? "The owner corrected earlier versions — follow how the owner writes:\n" . $les : '')
+         . wa_util_learn_text($pdo)
          . "Answer {\"messages\":[{\"name\":\"util_...\",\"body\":\"...\"}]}.";
     $user = "The owner's marketing message:\n" . (string)$m['body'];
     $j = function_exists('brain_ai_json') ? brain_ai_json('internal', 'whatsapp', $sys, $user, 3000, ['ctx' => false]) : null;
@@ -134,6 +181,20 @@ function wa_util_pool_defs(): array
             'body' => "Hi {{1}}, you contacted TM Perfume House on {{2}}. Do you still need any help with your perfume choice? Reply here and we will help you."],
         'open_welcome' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Yes, please', 'Not now']),
             'body' => "Hi {{1}}, thank you for being a TM Perfume House customer. Would you like us to share news about our perfumes and help you with your next choice? Tap a button to reply."],
+        'open_hello' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Yes, please', 'Not now']),
+            'body' => "Hello {{1}}, this is TM Perfume House. Are you looking for a perfume for yourself or as a gift? Tap a button to reply."],
+        'open_help' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['I need help', 'Not now']),
+            'body' => "Hi {{1}}, we are here if you need help choosing a perfume or checking an order. Reply with a button below."],
+        'open_thanks' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Yes, please', 'Not now']),
+            'body' => "Hi {{1}}, thank you for choosing TM Perfume House earlier. May we help you with anything today? Tap a button to reply."],
+        'open_checkin' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Perfume', 'Order or delivery']),
+            'body' => "Hello {{1}}, a quick check from TM Perfume House: would you like help with a perfume, an order or delivery? Tap a button to reply."],
+        'open_catalog' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Send it', 'Not now']),
+            'body' => "Hi {{1}}, would you like us to share our perfume catalogue with you on WhatsApp? Tap a button to reply."],
+        'open_gift' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Yes, a gift', 'Not now']),
+            'body' => "Hi {{1}}, are you planning a gift? We can suggest perfumes for any budget. Tap a button to reply."],
+        'open_friendly' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Yes, please', 'Not now']),
+            'body' => "Hello {{1}}, TM Perfume House here. Is there anything we can help you with? Tap a button to reply."],
         'ask_pincode' => ['kind' => 'ask', 'labels' => ['name', 'perfume'], 'ex' => ['Rahul', 'Dior Sauvage'], 'buttons' => $qr(['Send my pincode', 'Not now']),
             'body' => "Hi {{1}}, to check the delivery time for {{2}} to your area, please reply with your pincode."],
         'order_check' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Yes, all good', 'Need help']),
@@ -185,6 +246,14 @@ function wa_util_pool_usable(PDO $pdo): array
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;
 }
+/** 💬 Last resort for Module B (owner, 17 Nov 2026: "if utility is not possible, marketing goes"): the welcome message that Meta moved to MARKETING is still approved and still sendable — it goes to the failed / held people no utility message fits.
+ *  Only the 'open' (name-only) pool kind; the other pool messages are never sent once they are relabelled. */
+function wa_util_pool_fallback(PDO $pdo): array
+{
+    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING') continue;
+        $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = 'open'; $t['as_marketing'] = true; $o[] = $t; }
+    return $o;
+}
 /** phone10 → ['order' => '#1234', 'at' => 'Y-m-d H:i:s'] — the latest Shopify order of everyone who ordered in the last $days days (one read per run). */
 function wa_util_orders(PDO $pdo, int $days): array
 {
@@ -199,7 +268,7 @@ function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs
 {
     if (!$pool || (int)($ct['optout'] ?? 0) === 1) return null; $phone = (string)$ct['phone']; $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : 'ji';
     $ask = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'ask')); $ord = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'order'));
-    $in = !empty($ct['last_in_at']) ? (int)strtotime((string)$ct['last_in_at']) : 0; $fill = function (array $t, array $v) { $o = []; foreach (array_slice($t['labels'], 0, $t['nvars']) as $l) { $x = trim((string)($v[$l] ?? '')); if ($x === '') return null; $o[] = mb_substr($x, 0, 60); } return count($o) === (int)$t['nvars'] ? $o : null; };
+    $in = !empty($ct['last_in_at']) ? (int)strtotime((string)$ct['last_in_at']) : 0; $fill = function (array $t, array $v) { $o = []; foreach (array_slice($t['labels'], 0, $t['nvars']) as $l) { $x = trim((string)($v[strtolower((string)$l)] ?? '')); if ($x === '') return null; $o[] = mb_substr($x, 0, 60); } return count($o) === (int)$t['nvars'] ? $o : null; };
     if ($ask && $in >= $nowTs - max(1, $askDays) * 86400) {
         $p = ''; try { if (function_exists('wa_camp_lazy') ? wa_camp_lazy('wa_prod_last_asked', 'wa_prod.php') : function_exists('wa_prod_last_asked')) $p = (string)wa_prod_last_asked($pdo, $phone); } catch (Throwable $e) { }
         if ($p !== '') { $t = $ask[$rot % count($ask)]; $v = $fill($t, ['name' => $name, 'perfume' => $p, 'date' => date('j M', $in)]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'ask']; }
@@ -247,20 +316,25 @@ function wa_util_offer_reply(PDO $pdo, string $key, string $text = ''): void
     } catch (Throwable $e) { error_log('wa_util_offer_reply: ' . $e->getMessage()); }
 }
 /** The utility messages a campaign can use: this message's family first, then any approved utility message. */
-function wa_util_list(PDO $pdo, int $tplId): array
+function wa_util_list(PDO $pdo, int $tplId, bool $onlyMine = false): array
 {
     $m = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $tplId) : null; $fam = $m ? (int)($m['family_id'] ?: $m['id']) : 0; $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : [];
-    $o = [];
-    foreach ($pdo->query("SELECT * FROM wa_templates WHERE category = 'UTILITY' ORDER BY id DESC LIMIT 300")->fetchAll() as $r) {
-        $st = function_exists('wa_tpl_status') ? wa_tpl_status($pdo, (int)$r['id'], $wabas) : ['status' => '?']; $status = is_array($st) ? (string)($st['status'] ?? '?') : (string)$st;
+    $o = []; $famQ = $fam > 0 ? $fam : -1;
+    // this message's own utility versions (any state) + EVERY approved utility message of every other marketing message (they can be used for any campaign): the newest 1,200
+    $sql = "SELECT t.* FROM wa_templates t WHERE t.category = 'UTILITY' AND (t.family_id = ?" . ($onlyMine ? ")" : " OR (t.relabelled_at IS NULL AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED'))) ") . " ORDER BY (t.family_id = ?) DESC, t.id DESC LIMIT 1200";
+    $q = $pdo->prepare($sql); $q->execute([$famQ, $famQ]); $rows = $q->fetchAll(); $srcIds = [];
+    foreach ($rows as $r) { $x = json_decode((string)($r['extra'] ?? ''), true); if (is_array($x) && !empty($x['utility_for'])) $srcIds[(int)$x['utility_for']] = 1; }
+    $srcName = []; if ($srcIds) { try { foreach ($pdo->query("SELECT id, name FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_keys($srcIds))) . ")")->fetchAll() as $z) $srcName[(int)$z['id']] = (string)$z['name']; } catch (Throwable $e) { } }
+    foreach ($rows as $r) {
         $mine = $fam > 0 && (int)($r['family_id'] ?? 0) === $fam;
-        if (!$mine && !in_array($status, ['approved', 'partial'], true)) continue;
+        if ($mine) { $st = function_exists('wa_tpl_status') ? wa_tpl_status($pdo, (int)$r['id'], $wabas) : ['status' => '?']; $status = is_array($st) ? (string)($st['status'] ?? '?') : (string)$st; } else $status = 'approved';
         $ex = json_decode((string)($r['examples'] ?? ''), true); $lab = is_array($ex) ? array_map('strval', (array)($ex['labels'] ?? [])) : []; preg_match_all('/\{\{(\d+)\}\}/', (string)$r['body'], $vm);
         $vars = []; foreach (array_unique(array_map('intval', $vm[1])) as $vi) $vars[] = ['n' => $vi, 'what' => ['name' => 'customer name', 'perfume' => 'perfume they asked about / ordered', 'date' => 'date they asked / ordered'][$lab[$vi - 1] ?? ''] ?? ($lab[$vi - 1] ?? '')];
-        $per = []; if ($mine) { $ws = []; $q = $pdo->prepare("SELECT waba_id, status FROM wa_tpl_waba WHERE tpl_id = ?"); $q->execute([(int)$r['id']]); foreach ($q->fetchAll() as $w) $ws[(string)$w['waba_id']] = strtolower((string)$w['status']);
+        $per = []; if ($mine) { $ws = []; $q2 = $pdo->prepare("SELECT waba_id, status FROM wa_tpl_waba WHERE tpl_id = ?"); $q2->execute([(int)$r['id']]); foreach ($q2->fetchAll() as $w) $ws[(string)$w['waba_id']] = strtolower((string)$w['status']);
             foreach (wa_util_numbers($pdo) as $n) $per[] = ['label' => $n['label'], 'status' => $ws[$n['waba']] ?? 'not sent']; }
         $draft = $mine && !array_filter($per, fn($p) => $p['status'] !== 'not sent');
-        $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'body' => (string)$r['body'], 'status' => $draft ? 'draft' : $status, 'draft' => $draft, 'relabelled' => strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || !empty($r['relabelled_at']), 'mine' => $mine, 'vars' => $vars, 'per' => $per];
+        $xx = json_decode((string)($r['extra'] ?? ''), true); $srcId = is_array($xx) ? (int)($xx['utility_for'] ?? 0) : 0;
+        $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'body' => (string)$r['body'], 'status' => $draft ? 'draft' : $status, 'draft' => $draft, 'relabelled' => strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || !empty($r['relabelled_at']), 'mine' => $mine, 'vars' => $vars, 'per' => $per, 'labels' => $lab, 'source' => $srcName[$srcId] ?? '', 'at' => (string)($r['created_at'] ?? '')];
     }
     usort($o, fn($a, $b) => [$b['mine'], $b['status'] === 'approved'] <=> [$a['mine'], $a['status'] === 'approved']);
     return $o;
@@ -274,7 +348,7 @@ if (in_array($__wut, ['wa.tpl_make_utility', 'wa.tpl_utility_list', 'wa.util_poo
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500);
     if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
     if (function_exists('wa_tpl_tables')) wa_tpl_tables($pdo);
-    if ($__wut === 'wa.tpl_utility_list') json_response(['ok' => true, 'items' => wa_util_list($pdo, (int)($_GET['tpl_id'] ?? 0))]);
+    if ($__wut === 'wa.tpl_utility_list') json_response(['ok' => true, 'items' => wa_util_list($pdo, (int)($_GET['tpl_id'] ?? 0), !empty($_GET['mine']))]);
     if ($__wut === 'wa.util_pool') json_response(['ok' => true, 'items' => wa_util_pool_view($pdo)]);
     if ($__wut === 'wa.util_pool_make') { if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405); wa_util_pool_make($pdo, (int)($auth['employee_id'] ?? 0)); json_response(['ok' => true, 'items' => wa_util_pool_view($pdo)]); }
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);

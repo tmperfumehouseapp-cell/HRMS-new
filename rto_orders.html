@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>RTO resend &amp; Exchange — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .rx{max-width:1180px;margin:0 auto;padding:6px 14px 50px;}
+  .rx-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 14px;}
+  .rx-tabs button,.rx-seg button,.rx-days button{border:1.5px solid var(--line);background:#fff;color:#111;border-radius:11px;padding:8px 14px;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;}
+  .rx-tabs button.on,.rx-days button.on{background:#111827;color:#fff;border-color:#111827;}
+  .rx-seg{display:flex;gap:8px;flex-wrap:wrap;} .rx-seg button.on{background:#d97706;color:#fff;border-color:#d97706;}
+  .rx-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;max-width:620px;}
+  .rx-card.wide{max-width:none;}
+  .rx label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin:14px 0 5px;}
+  .rx input[type=text],.rx input[type=tel],.rx input[type=number],.rx input[type=date],.rx input[type=search]{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:14px;background:#fff;color:#111;}
+  .rx .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .rx .hint{font-size:12.5px;color:var(--muted);margin:5px 0 0;line-height:1.45;}
+  .rx .note{background:#fffbeb;border:1px solid #fcd34d;border-radius:11px;padding:9px 12px;font-size:12.5px;color:#92400e;margin-top:10px;line-height:1.45;}
+  .rx .ok{background:#e7f8ee;border:1px solid #8fd6a8;color:#14532d;border-radius:12px;padding:12px;margin:0 0 12px;font-size:14px;}
+  .rx .err{background:#fdecec;border:1px solid #f1a5a5;color:#7f1d1d;border-radius:12px;padding:12px;margin:0 0 12px;font-size:14px;}
+  .rx .go{margin-top:18px;width:100%;padding:12px;font-size:15px;font-weight:800;}
+  .rx-res{border:1px solid var(--line);border-radius:11px;margin-top:6px;max-height:260px;overflow:auto;}
+  .rx-res:empty{display:none;}
+  .rx-it{padding:8px 11px;border-bottom:1px solid #f1f3f5;font-size:13.5px;} .rx-it:last-child{border-bottom:0;} .rx-it b{display:block;margin-bottom:4px;}
+  .rx-it button{border:1px solid var(--line);background:#fff;color:#111;border-radius:99px;padding:3px 10px;font:inherit;font-size:12px;font-weight:700;margin:0 5px 4px 0;cursor:pointer;} .rx-it button[disabled]{opacity:.4;cursor:default;}
+  .rx-ln{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:7px 11px;margin-top:6px;font-size:13.5px;} .rx-ln span{flex:1;min-width:0;}
+  .rx-ln button{border:1px solid var(--line);background:#fff;color:#111;border-radius:8px;width:28px;height:28px;font:inherit;font-weight:800;cursor:pointer;}
+  .rx-days{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px;} .rx-days button{padding:5px 12px;border-radius:99px;font-size:12.5px;} .rx-days input{width:auto;padding:5px 8px;font-size:12.5px;}
+  .rx-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;} .rx-tile{border:1px solid var(--line);border-radius:13px;padding:10px 13px;background:#fff;} .rx-tile b{display:block;font-size:22px;} .rx-tile small{color:var(--muted);font-size:12px;}
+  .rx-tw{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff;}
+  .rx table{border-collapse:collapse;width:100%;font-size:13px;} .rx th{text-align:left;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:8px;border-bottom:1.5px solid var(--line);white-space:nowrap;} .rx td{padding:8px;border-bottom:1px solid #f1f3f5;white-space:nowrap;} .rx td.w{white-space:normal;min-width:180px;}
+  .rx-p{display:inline-block;border-radius:99px;padding:1px 9px;font-size:11.5px;font-weight:800;} .rx-p.rto{background:#fee2e2;color:#b42318;} .rx-p.exchange{background:#ede9fe;color:#6d28d9;}
+  .rx-ppl{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 14px;max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:11px;padding:10px;margin-top:8px;} .rx-ppl label{display:flex;gap:7px;align-items:center;margin:0;font-size:13.5px;font-weight:600;color:#111;cursor:pointer;} .rx-ppl input{width:auto;}
+  html[data-theme=dark] .rx-card,html[data-theme=dark] .rx-tile,html[data-theme=dark] .rx-tw,html[data-theme=dark] .rx input,html[data-theme=dark] .rx-tabs button,html[data-theme=dark] .rx-seg button,html[data-theme=dark] .rx-days button,html[data-theme=dark] .rx-it button,html[data-theme=dark] .rx-ln button{background:#1f2430;color:#eee;border-color:#374151;}
+  html[data-theme=dark] .rx-ppl label{color:#eee;} html[data-theme=dark] .rx-tabs button.on,html[data-theme=dark] .rx-days button.on{background:#f59e0b;color:#111;border-color:#f59e0b;} html[data-theme=dark] .rx-seg button.on{background:#d97706;color:#fff;border-color:#d97706;}
+  @media (max-width:560px){.rx .row{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>RTO resend &amp; Exchange</h1></div>
+    <div class="content rx">
+      <div class="rx-tabs" id="rxTabs"></div>
+      <div id="rxBody"><p class="hint">Loading…</p></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=32"></script>
+<script>
+  guardPage();
+  renderSidebar('dispatch_manual');
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (n) => '₹' + Math.round(+n || 0).toLocaleString('en-IN');
+  const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const KIND = { rto: '↩ RTO resend', exchange: '🔁 Exchange' };
+  let A = { ok: false, admin: false, report: false }, TAB = '';
+  const F = { kind: '', old: '', phone: '', name: '', addr1: '', landmark: '', pin: '', city: '', state: '', pay: 'cod', paid: '', cod: '', items: new Map(), cat: 'perfume', q: '', draft: 0, busy: false, msg: '' };
+  const R = { range: 'today', from: '', to: '', data: null };
+
+  function tabs() {
+    const t = []; if (A.ok) t.push(['new', '＋ New order']); if (A.report) t.push(['report', '📋 Report']); if (A.admin) t.push(['access', '👤 Who can make these']);
+    $('rxTabs').innerHTML = t.map(([k, l]) => '<button type="button" data-t="' + k + '" class="' + (TAB === k ? 'on' : '') + '">' + l + '</button>').join('');
+  }
+  function show(t) { TAB = t; tabs(); if (t === 'new') drawNew(); else if (t === 'report') loadReport(); else if (t === 'access') loadAccess(); }
+  $('rxTabs').onclick = (e) => { const b = e.target.closest('[data-t]'); if (b) show(b.dataset.t); };
+
+  /* ---------- new order ---------- */
+  function keepForm() {
+    [['fOld', 'old'], ['fPhone', 'phone'], ['fName', 'name'], ['fAddr', 'addr1'], ['fLm', 'landmark'], ['fPin', 'pin'], ['fCity', 'city'], ['fState', 'state'], ['fPaid', 'paid'], ['fCod', 'cod'], ['fQ', 'q']].forEach(([id, k]) => { const x = $(id); if (x) F[k] = x.value; });
+  }
+  function drawNew() {
+    const v = (x) => esc(x || '');
+    const seg = (id, opts, cur) => '<div class="rx-seg" id="' + id + '">' + opts.map(([k, l]) => '<button type="button" data-v="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+    $('rxBody').innerHTML = '<div class="rx-card">' + (F.msg || '')
+      + '<label style="margin-top:0">1. What is it? *</label>' + seg('fKind', [['rto', KIND.rto], ['exchange', KIND.exchange]], F.kind)
+      + '<label>2. Old order number * <span style="font-weight:500">(the parcel that came back, or the order being exchanged)</span></label><input type="text" id="fOld" maxlength="40" placeholder="e.g. #67567 or WM-00012" value="' + v(F.old) + '">'
+      + '<label>3. Customer *</label><div class="row"><input type="tel" id="fPhone" inputmode="numeric" maxlength="14" placeholder="10-digit mobile number" value="' + v(F.phone) + '"><input type="text" id="fName" placeholder="Full name" value="' + v(F.name) + '"></div>'
+      + '<label>4. Address * <span style="font-weight:500">(no link goes to the customer: type it here)</span></label><input type="text" id="fAddr" placeholder="House, street, area" value="' + v(F.addr1) + '">'
+      + '<div class="row" style="margin-top:8px"><input type="text" id="fLm" placeholder="Landmark (optional)" value="' + v(F.landmark) + '"><input type="tel" id="fPin" inputmode="numeric" maxlength="6" placeholder="Pincode" value="' + v(F.pin) + '"></div>'
+      + '<div class="row" style="margin-top:8px"><input type="text" id="fCity" placeholder="City" value="' + v(F.city) + '"><input type="text" id="fState" placeholder="State" value="' + v(F.state) + '"></div>'
+      + '<label>5. Payment *</label>' + seg('fPay', [['cod', 'Full COD'], ['partial', 'Part prepaid + COD'], ['prepaid', 'Full prepaid']], F.pay)
+      + '<div class="row" style="margin-top:8px">' + (F.pay !== 'cod' ? '<div><div class="hint" style="margin:0 0 3px">Prepaid amount (₹0 or ₹1 is fine)</div><input type="number" id="fPaid" inputmode="decimal" min="0" step="1" placeholder="0" value="' + v(F.paid) + '"></div>' : '')
+      + (F.pay !== 'prepaid' ? '<div><div class="hint" style="margin:0 0 3px">COD the courier must collect</div><input type="number" id="fCod" inputmode="decimal" min="1" step="1" placeholder="e.g. 1850" value="' + v(F.cod) + '"></div>' : '') + '</div>'
+      + '<div class="note">No payment screenshot is needed here. These amounts are only for the courier — the order is <b>not</b> counted as a sale, in the daily collection or in commission.</div>'
+      + '<label>6. Perfumes / products *</label>' + seg('fCat', [['perfume', 'Perfume'], ['chain', 'Chain'], ['other', 'Other product']], F.cat)
+      + '<input type="search" id="fQ" placeholder="Search the name…" autocomplete="off" style="margin-top:8px" value="' + v(F.q) + '"><div class="rx-res" id="fRes"></div><div id="fItems"></div>'
+      + '<button class="btn go" id="fGo" type="button">✅ Create the order</button>'
+      + '<p class="hint" style="text-align:center;margin-top:8px">The order gets the next number in the same series (WM-…), goes to Dispatch and Shiprocket, and the perfumes are counted in the SKU sheet.</p></div>';
+    drawItems();
+    const pick = (id, key, redraw) => { $(id).onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; keepForm(); F[key] = b.dataset.v; F.msg = ''; if (key === 'cat') F.q = ''; drawNew(); if (redraw) redraw(); }; };
+    pick('fKind', 'kind'); pick('fPay', 'pay'); pick('fCat', 'cat', () => { $('fQ').focus(); search(); });
+    let deb = 0; $('fQ').oninput = () => { clearTimeout(deb); deb = setTimeout(search, 280); };
+    $('fPin').oninput = async () => { const p = $('fPin').value.replace(/\D+/g, ''); if (p.length !== 6) return; try { const g = await api.get('wmo.pin', { pin: p }); if ($('fPin') && $('fPin').value.replace(/\D+/g, '') === p) { if (g.city && !$('fCity').value) $('fCity').value = g.city; if (g.state && !$('fState').value) $('fState').value = g.state; } } catch (e) { /* typed by hand */ } };
+    $('fGo').onclick = create;
+    if (F.q) search();
+  }
+  let seq = 0;
+  async function search() {
+    const q = $('fQ').value.trim(), res = $('fRes'), my = ++seq, cat = F.cat;
+    if (q.length < 2) { res.innerHTML = ''; return; }
+    res.innerHTML = '<div class="rx-it">Searching…</div>';
+    let d; try { d = await api.get('wch.search', { q, cat, limit: 12 }); } catch (e) { if (my === seq) res.innerHTML = '<div class="rx-it">' + esc(e.message) + '</div>'; return; }
+    if (my !== seq || !$('fRes')) return; const items = d.items || [];
+    if (!items.length) { res.innerHTML = '<div class="rx-it">Nothing matches “' + esc(q) + '”.</div>'; return; }
+    res.innerHTML = items.map((it, i) => '<div class="rx-it" data-i="' + i + '"><b>' + esc(it.short || it.title) + '</b>' + (it.sizes || []).map((s, j) => '<button type="button" data-j="' + j + '"' + (s.in_stock ? '' : ' disabled title="Out of stock"') + '>' + esc(/^default title$/i.test(s.label || '') ? 'Add' : s.label) + '</button>').join('') + '</div>').join('');
+    res.onclick = (e) => {
+      const b = e.target.closest('button[data-j]'); if (!b || b.disabled) return; const it = items[+b.closest('.rx-it').dataset.i], s = it && it.sizes[+b.dataset.j]; if (!s) return;
+      const ex = F.items.get(s.vid), max = cat === 'chain' ? 5 : (cat === 'other' ? 50 : 20);
+      if (ex) { if (ex.qty < max) ex.qty++; } else F.items.set(s.vid, { vid: s.vid, cat, title: it.short || it.title, label: /^default title$/i.test(s.label || '') ? '' : (s.label || ''), qty: 1, max });
+      drawItems();
+    };
+  }
+  function drawItems() {
+    const el = $('fItems'); if (!el) return;
+    el.innerHTML = Array.from(F.items.values()).map((x) => '<div class="rx-ln" data-vid="' + x.vid + '"><span>' + esc(x.title) + (x.label ? ' · ' + esc(x.label) : '') + '</span><button type="button" data-d="-1">−</button><b>' + x.qty + '</b><button type="button" data-d="1">+</button></div>').join('');
+    el.onclick = (e) => { const b = e.target.closest('[data-d]'); if (!b) return; const vid = +b.closest('.rx-ln').dataset.vid, x = F.items.get(vid); if (!x) return; x.qty += +b.dataset.d; if (x.qty < 1) F.items.delete(vid); else if (x.qty > x.max) x.qty = x.max; drawItems(); };
+  }
+  function fail(m) { F.msg = '<div class="err">' + esc(m) + '</div>'; drawNew(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  async function create() {
+    if (F.busy) return; keepForm(); F.msg = '';
+    const phone = F.phone.replace(/\D+/g, '').slice(-10), pin = F.pin.replace(/\D+/g, ''), paid = F.pay === 'cod' ? 0 : Math.max(0, +F.paid || 0), cod = F.pay === 'prepaid' ? 0 : Math.max(0, +F.cod || 0);
+    if (!F.kind) return fail('Choose RTO resend or Exchange.');
+    if (F.old.replace(/^#/, '').trim().length < 3) return fail('Type the old order number. It is required.');
+    if (!/^[6-9]\d{9}$/.test(phone)) return fail('Type the customer\'s 10-digit mobile number.');
+    if (F.name.trim().length < 2) return fail('Type the customer\'s full name.');
+    if (F.addr1.trim().length < 5) return fail('Type the house / flat and street.');
+    if (!/^[1-9]\d{5}$/.test(pin)) return fail('Type the 6-digit pincode.');
+    if (!F.city.trim() || !F.state.trim()) return fail('Type the city and the state.');
+    if (F.pay !== 'prepaid' && cod < 1) return fail('Type the COD amount the courier must collect (or choose Full prepaid).');
+    if (!F.items.size) return fail('Add at least one perfume or product.');
+    const its = Array.from(F.items.values()), pk = (c) => its.filter((x) => x.cat === c).map((x) => ({ vid: x.vid, qty: x.qty }));
+    F.busy = true; const b = $('fGo'); b.disabled = true; b.textContent = 'Creating…';
+    try {
+      await api.post('wmo.start', { phone, name: F.name.trim(), rx: 1 });
+      if (F.draft) { try { await api.post('wmo.cancel', { id: F.draft }); } catch (e) { /* the old try is left as it is */ } F.draft = 0; }
+      const cust = { name: F.name.trim(), phone, addr1: F.addr1.trim(), landmark: F.landmark.trim(), pin, city: F.city.trim(), state: F.state.trim() };
+      const c = await api.post('wmo.create', { phone, otype: F.kind, old_order: F.old.trim(), pay: F.pay, paid, cod, total: paid + cod, lines: pk('perfume'), chains: pk('chain'), singles: pk('other'), cust });
+      F.draft = c.order.id;
+      const done = await api.post('wmo.confirm', { id: F.draft, cust });
+      const no = done.order_no || c.order.order_no;
+      Object.assign(F, { kind: '', old: '', phone: '', name: '', addr1: '', landmark: '', pin: '', city: '', state: '', pay: 'cod', paid: '', cod: '', q: '', draft: 0 }); F.items = new Map();
+      F.msg = '<div class="ok">✅ <b>' + esc(no) + '</b> is created. It is in Dispatch now and the Shiprocket order is being made. The customer gets the “order received” message.</div>';
+    } catch (e) { F.msg = '<div class="err">' + esc(e.message) + '</div>'; }
+    F.busy = false; drawNew(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* ---------- report ---------- */
+  function rangeOf() {
+    const t = new Date(), y = new Date(Date.now() - 86400000), back = (n) => iso(new Date(Date.now() - (n - 1) * 86400000));
+    if (R.range === 'yest') return [iso(y), iso(y)]; if (R.range === '7') return [back(7), iso(t)]; if (R.range === '30') return [back(30), iso(t)];
+    if (R.range === 'dates' && R.from && R.to) return [R.from, R.to]; return [iso(t), iso(t)];
+  }
+  async function loadReport() {
+    drawReport(true);
+    const [from, to] = rangeOf();
+    try { R.data = await api.get('wmo.rx_report', { from, to }); } catch (e) { R.data = { error: e.message }; }
+    if (TAB === 'report') drawReport(false);
+  }
+  function drawReport(loading) {
+    const D = R.data || {}, s = D.sum || {}, rows = D.rows || [];
+    let h = '<div class="rx-days" id="rDays">' + [['today', 'Today'], ['yest', 'Yesterday'], ['7', '7 days'], ['30', '30 days'], ['dates', 'Pick dates…']].map(([k, l]) => '<button type="button" data-r="' + k + '" class="' + (R.range === k ? 'on' : '') + '">' + l + '</button>').join('')
+      + (R.range === 'dates' ? '<input type="date" id="rFrom" value="' + esc(R.from) + '"> to <input type="date" id="rTo" value="' + esc(R.to) + '"><button type="button" id="rShow" class="on">Show</button>' : '')
+      + '<button type="button" id="rXl" style="margin-left:auto;background:#12a150;color:#fff;border-color:#12a150">⬇ Excel</button></div>';
+    if (loading) h += '<p class="hint">Loading…</p>';
+    else if (D.error) h += '<div class="err">' + esc(D.error) + '</div>';
+    else {
+      h += '<div class="rx-tiles"><div class="rx-tile"><b>' + (s.rto || 0) + '</b><small>RTO resend made</small></div><div class="rx-tile"><b>' + (s.exchange || 0) + '</b><small>Exchange made</small></div><div class="rx-tile"><b>' + inr(s.cod) + '</b><small>COD to collect</small></div><div class="rx-tile"><b>' + (s.tracked || 0) + ' / ' + (s.count || 0) + '</b><small>tracking ID given</small></div></div>';
+      if ((D.by || []).length) h += '<p class="hint" style="margin:0 0 10px"><b>Made by:</b> ' + D.by.map((x) => esc(x.name || '—') + ' — ' + x.rto + ' RTO, ' + x.exchange + ' exchange').join(' · ') + '</p>';
+      if ((D.days || []).length > 1) h += '<p class="hint" style="margin:0 0 10px"><b>Day by day:</b> ' + D.days.map((x) => esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + ': ' + x.rto + ' RTO, ' + x.exchange + ' exch').join(' · ') + '</p>';
+      h += rows.length ? '<div class="rx-tw"><table><tr><th>Order</th><th>Kind</th><th>Old order</th><th>Made at</th><th>Customer</th><th>Perfumes</th><th>Prepaid</th><th>COD</th><th>Made by</th><th>Tracking</th><th>Status</th></tr>'
+        + rows.map((r) => '<tr><td><b>' + esc(r.order_no) + '</b></td><td><span class="rx-p ' + esc(r.kind) + '">' + (r.kind === 'rto' ? 'RTO resend' : 'Exchange') + '</span></td><td>' + esc(r.old_order) + '</td><td>' + esc(r.created_at.slice(5, 16)) + '</td><td>' + esc(r.customer || '—') + ' · ' + esc(r.phone) + (r.city ? '<br><small style="color:var(--muted)">' + esc(r.city) + '</small>' : '') + '</td><td class="w">' + esc(r.items) + '</td><td>' + inr(r.prepaid) + '</td><td>' + inr(r.cod) + '</td><td>' + esc(r.by) + '</td><td>' + (r.tracking_no ? esc(r.tracking_no) + '<br><small style="color:var(--muted)">' + esc(r.courier) + '</small>' : '—') + '</td><td>' + esc(r.status) + (r.sr_status ? '<br><small style="color:var(--muted)">' + esc(r.sr_status) + '</small>' : '') + '</td></tr>').join('') + '</table></div>'
+        : '<p class="hint">No RTO resend or Exchange order was made in these days.</p>';
+    }
+    $('rxBody').innerHTML = '<div class="rx-card wide">' + h + '</div>';
+    $('rDays').onclick = (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.r) { R.range = b.dataset.r; if (R.range === 'dates' && !(R.from && R.to)) return drawReport(false); return loadReport(); }
+      if (b.id === 'rShow') { R.from = $('rFrom').value; R.to = $('rTo').value; if (!R.from || !R.to) return alert('Pick both dates.'); return loadReport(); }
+      if (b.id === 'rXl') return excel();
+    };
+  }
+  function excel() {
+    const rows = (R.data && R.data.rows) || []; if (!rows.length) return alert('Nothing to download for these days.');
+    const cols = [['Order', 'order_no'], ['Kind', 'kind'], ['Old order', 'old_order'], ['Made at', 'created_at'], ['Customer', 'customer'], ['Mobile', 'phone'], ['City', 'city'], ['Perfumes', 'items'], ['Payment', 'pay'], ['Prepaid', 'prepaid'], ['COD', 'cod'], ['Made by', 'by'], ['Tracking ID', 'tracking_no'], ['Courier', 'courier'], ['Status', 'status'], ['Shiprocket says', 'sr_status']];
+    const c = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const txt = [cols.map((x) => c(x[0])).join(',')].concat(rows.map((r) => cols.map((x) => c(x[1] === 'kind' ? (r.kind === 'rto' ? 'RTO resend' : 'Exchange') : r[x[1]])).join(','))).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + txt], { type: 'text/csv;charset=utf-8' })); a.download = 'rto_exchange_' + rangeOf().join('_to_') + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  /* ---------- who can make these (Admin) ---------- */
+  async function loadAccess() {
+    $('rxBody').innerHTML = '<p class="hint">Loading…</p>';
+    try { A = await api.get('wmo.rx_access'); } catch (e) { $('rxBody').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; return; }
+    if (TAB !== 'access') return;
+    $('rxBody').innerHTML = '<div class="rx-card wide"><b>Who can make RTO resend and Exchange orders?</b><p class="hint">Admin and HR always can. Tick anyone else who should make them, then press Save. Untick a person to take it away again.</p>'
+      + '<input type="search" id="aQ" placeholder="Search a name…" style="margin-top:8px;max-width:320px"><div class="rx-ppl" id="aList">' + (A.people || []).map((p) => '<label data-n="' + esc(p.name.toLowerCase()) + '"><input type="checkbox" value="' + p.id + '"' + (p.on ? ' checked' : '') + '>' + esc(p.name) + '</label>').join('') + '</div>'
+      + '<div id="aMsg"></div><button class="btn go" id="aSave" type="button" style="max-width:260px">Save</button></div>';
+    $('aQ').oninput = () => { const q = $('aQ').value.trim().toLowerCase(); $('aList').querySelectorAll('label').forEach((l) => { l.style.display = !q || l.dataset.n.indexOf(q) > -1 ? '' : 'none'; }); };
+    $('aSave').onclick = async () => {
+      const b = $('aSave'); b.disabled = true;
+      try { const r = await api.post('wmo.rx_access_save', { emps: Array.from($('aList').querySelectorAll('input:checked')).map((x) => +x.value) }); $('aMsg').innerHTML = '<div class="ok" style="margin-top:12px">' + esc(r.message) + '</div>'; }
+      catch (e) { $('aMsg').innerHTML = '<div class="err" style="margin-top:12px">' + esc(e.message) + '</div>'; }
+      b.disabled = false;
+    };
+  }
+
+  (async () => {
+    try { A = await api.get('wmo.rx_access'); } catch (e) { $('rxBody').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; return; }
+    if (!A.ok && !A.report) { $('rxBody').innerHTML = '<div class="err">RTO resend and Exchange orders are made only by the people Admin allowed. Ask Admin to tick your name on this page.</div>'; return; }
+    const want = new URLSearchParams(location.search).get('tab');
+    show(want === 'report' && A.report ? 'report' : (want === 'access' && A.admin ? 'access' : (A.ok ? 'new' : 'report')));
+  })();
+</script>
+</body>
+</html>

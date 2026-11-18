@@ -574,9 +574,17 @@ function wag_chat_info(PDO $pdo, array $c): array
 /** Every tag with how many customers carry it in total and how many were active in the last 30 / 60 / 90 days (a message, a reply or an order). */
 function wag_tag_counts(PDO $pdo): array
 {
-    wa_cust_ready($pdo); $at = (string)setting_get($pdo, 'wa_cust_at', '');
-    try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); if (is_array($c) && ($c['as_of'] ?? '') === $at && $at !== '' && (int)($c['v'] ?? 0) === 2) return $c; } catch (Throwable $e) { }   // computed once per refresh
-    $r = wag_tag_counts_calc($pdo); try { setting_set($pdo, 'wa_tag_cache', json_encode($r)); } catch (Throwable $e) { } return $r;
+    wa_cust_ready($pdo); $at = (string)setting_get($pdo, 'wa_cust_at', ''); $c = null;
+    try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); if (!is_array($c) || (int)($c['v'] ?? 0) !== 2) $c = null; } catch (Throwable $e) { $c = null; }
+    if ($c && ($c['as_of'] ?? '') === $at && $at !== '') return $c;   // computed once per refresh
+    // ⚡ 18 Nov: this count takes 13-22 s on the big tables and, every time the customer table refreshed, EVERY open screen started it at once (4 copies seen running together, database at 200% CPU,
+    // the whole HRMS slow). Now only ONE request recounts; the others — and anything asked within 15 minutes of the last count — get the previous numbers at once.
+    if ($c && (time() - (int)($c['at'] ?? 0)) < 900) return $c;
+    $got = 0; try { $got = (int)$pdo->query("SELECT GET_LOCK('wag_tags', 0)")->fetchColumn(); } catch (Throwable $e) { $got = 1; }
+    if (!$got) { if ($c) return $c;   // somebody else is counting: use the old numbers
+        for ($i = 0; $i < 25; $i++) { sleep(1); try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); } catch (Throwable $e) { $c = null; } if (is_array($c) && (int)($c['v'] ?? 0) === 2) return $c; } }   // no old numbers at all: wait (up to 25 s) for the one that is counting instead of starting a 4th copy
+    try { $r = wag_tag_counts_calc($pdo); $r['at'] = time(); try { setting_set($pdo, 'wa_tag_cache', json_encode($r)); } catch (Throwable $e) { } return $r; }
+    finally { if ($got) { try { $pdo->query("SELECT RELEASE_LOCK('wag_tags')"); } catch (Throwable $e) { } } }
 }
 function wag_tag_counts_calc(PDO $pdo): array
 {
@@ -1101,6 +1109,31 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if ($me <= 0 || !function_exists('push_send_employee')) json_response(['ok' => false, 'note' => 'Alerts are not available for this login.']);
             [$sent, $failed, $err] = push_send_employee($pdo, $me, ['title' => 'Test buzz 🔔', 'body' => 'Alerts work on this phone.', 'url' => 'my_chats.html', 'tag' => 'wa-test']);
             json_response(['ok' => $sent > 0, 'note' => $sent > 0 ? 'Buzz sent — it should arrive in a few seconds.' : 'No alert could be sent: allow alerts first (step 3).']);
+        }
+        case 'wa.g_add_check': {   // ➕ Add customer (phone app): what happens if I add this number — new / already mine / with a colleague / opted out / free to take / chatting now
+            $k = wa_key($_GET['phone'] ?? ''); if (!wa_valid_phone($k)) json_response(['state' => 'invalid', 'phone' => $k]);
+            $c = wa_contact($pdo, $k); $nm = employee_names_by_id($pdo); $o = ['state' => 'new', 'phone' => $k, 'name' => '', 'window' => false, 'orders' => 0];
+            if ($c) { $o['name'] = (string)$c['name']; $held = (int)$c['assigned_emp'];
+                if ((int)$c['optout'] === 1) $o['state'] = 'optout';
+                elseif ($held > 0 && $held !== $me && !$adm) { $o['state'] = 'other'; $o['with'] = (string)($nm[$held] ?? 'a colleague'); }
+                elseif ($held === $me && $me > 0) $o['state'] = 'mine'; else $o['state'] = 'free';
+                $o['window'] = !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > time() - 86400 && $o['state'] !== 'other' && $o['state'] !== 'optout'; }
+            try { $q = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $q->execute([$k]); $o['orders'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+            $lim = max(1, (int)setting_get($pdo, 'wa_add_daily', '30')); $used = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_assign_log WHERE how = 'added' AND by_emp = ? AND at >= ?"); $q->execute([$me, date('Y-m-d 00:00:00')]); $used = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+            $o['left'] = $adm ? 999 : max(0, $lim - $used); json_response($o);
+        }
+        case 'wa.g_add': {   // ➕ Add customer: make the chat (if the number is new) and give it to ME; the message goes next through wa.tpl_send (the 24-hour rule: a new customer gets a pre-made message)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if ($me <= 0) json_response(['error' => 'Only a salesperson login can add a customer.'], 403);
+            $k = wa_key($in['phone'] ?? ''); if (!wa_valid_phone($k)) json_response(['error' => 'Enter the 10-digit mobile number (starting with 6, 7, 8 or 9).'], 422);
+            $name = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($in['name'] ?? ''))), 0, 60); $c = wa_contact($pdo, $k);
+            if ($c && (int)$c['optout'] === 1) json_response(['error' => 'This customer opted out — do not message them.'], 422);
+            if ($c && (int)$c['assigned_emp'] > 0 && (int)$c['assigned_emp'] !== $me && !$adm) json_response(['error' => 'This customer is with ' . (employee_names_by_id($pdo)[(int)$c['assigned_emp']] ?? 'a colleague') . '. Ask your manager to transfer the chat.'], 403);
+            $mine = $c && (int)$c['assigned_emp'] === $me;
+            if (!$mine && !$adm) { $lim = max(1, (int)setting_get($pdo, 'wa_add_daily', '30')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_assign_log WHERE how = 'added' AND by_emp = ? AND at >= ?"); $q->execute([$me, date('Y-m-d 00:00:00')]); if ((int)$q->fetchColumn() >= $lim) json_response(['error' => 'You have added ' . $lim . ' customers today — that is the daily limit. Try again tomorrow.'], 429); }
+            if (!$c) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, last_number_id, state, status) VALUES (?, ?, ?, ?, 0, 'human', 'open')")->execute([$k, '91' . $k, $name, date('Y-m-d H:i:s')]); }
+            elseif ($name !== '' && trim((string)$c['name']) === '') $pdo->prepare("UPDATE wa_contacts SET name = ? WHERE phone = ?")->execute([$name, $k]);
+            if (!$mine) wa_assign_to($pdo, $k, $me, $me, 'added');
+            $c2 = wa_contact($pdo, $k); json_response(['ok' => true, 'phone' => $k, 'name' => (string)($c2['name'] ?? $name), 'window' => !empty($c2['last_in_at']) && strtotime((string)$c2['last_in_at']) > time() - 86400]);
         }
         case 'wa.g_guide_state': { json_response(['seen' => $me > 0 && (string)setting_get($pdo, 'wa_guide_' . $me, '') !== '']); }
     }

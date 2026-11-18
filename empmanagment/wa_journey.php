@@ -272,7 +272,7 @@ function wj_results(PDO $pdo, int $days): array
     } catch (Throwable $e) { }
     $byPhone = []; foreach ($rows as $r) { $k = $r['track'] . '|' . $r['step_id']; if (!isset($S[$k])) $S[$k] = ['track' => $r['track'], 'step' => $r['step_id'], 'sent' => 0, 'replied' => 0, 'ordered' => 0, 'sales' => 0.0]; $S[$k]['sent']++; $tot['sent']++; if ((int)$r['rep']) { $S[$k]['replied']++; $tot['replied']++; } $byPhone[(string)$r['phone']][] = $r; }
     foreach (array_chunk(array_keys($byPhone), 400) as $chunk) {
-        try { $in = implode(',', array_fill(0, count($chunk), '?')); $q = $pdo->prepare("SELECT RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) p, created_at, total FROM shop_orders WHERE created_at >= ? AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) IN ($in)"); $q->execute(array_merge([$since], $chunk));
+        try { $in = implode(',', array_fill(0, count($chunk), '?')); $q = $pdo->prepare("SELECT RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) p, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) IN ($in)"); $q->execute(array_merge([$since], $chunk));
             foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $o) { $ot = strtotime((string)$o['created_at']); $last = null; foreach ($byPhone[(string)$o['p']] ?? [] as $r) { $st = strtotime((string)$r['sent_at']); if ($st <= $ot && $st >= $ot - 7 * 86400) $last = $r; }
                 if ($last) { $k = $last['track'] . '|' . $last['step_id']; $S[$k]['ordered']++; $S[$k]['sales'] += (float)$o['total']; $tot['ordered']++; $tot['sales'] += (float)$o['total']; } } } catch (Throwable $e) { }
     }

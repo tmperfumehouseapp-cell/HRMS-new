@@ -43,6 +43,8 @@
 
   function parse(s) { const m = /^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)(?::(\d\d))?/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null; }
   function hhmm(d) { return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); }
+  // 📅 the day beside the time on every message (owner, 18 Nov): "Today" · "Yesterday" · "Mon 16 Nov" (with the year when it is not this year) — no scrolling up to find out which day a message is from
+  function dayLbl(d) { const n = new Date(), z = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(), df = Math.round((z(n) - z(d)) / 864e5); if (df === 0) return 'Today'; if (df === 1) return 'Yesterday'; return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + (d.getFullYear() !== n.getFullYear() ? ' ' + d.getFullYear() : ''); }
   /** WhatsApp style stamp for the chat list: the clock time of the LAST message (ours or the customer's) today ("1:58 pm"), "Yesterday", else the date. */
   function stamp(s) {
     const d = parse(s); if (!d) return ''; const n = new Date(), d0 = new Date(n.getFullYear(), n.getMonth(), n.getDate()), days = Math.round((d0 - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
@@ -113,6 +115,7 @@
   .wi-b{max-width:72%; padding:7px 11px 5px; border-radius:11px; background:#fff; box-shadow:0 1px 2px #0001; line-height:1.4; word-break:break-word; white-space:pre-wrap; align-self:flex-start;}
   .wi-b.out{align-self:flex-end; background:#dcf8c6;} .wi-b.bot{align-self:flex-end; background:#e8e4ff;}
   .wi-b small{display:block; color:#7a8594; font-size:11px; margin-top:3px; white-space:normal; text-align:right;}
+  .wi-b small .wi-dy{background:rgba(245,158,11,.22);color:inherit;border-radius:5px;padding:0 4px;font-weight:800;}
   .wi-b img{max-width:100%; max-height:300px; border-radius:8px; display:block; cursor:zoom-in;}
   .wi-b .ld{border:1px dashed #b9c0cc; background:#f7f8fa; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:700; color:#3a3f4b; font-size:12.5px;}
   .wi-b audio,.wi-b video{max-width:100%;}
@@ -527,7 +530,7 @@
       if (opts.one) return;   // one chat only (side panel): no list to load
       if (S.busyList) return; S.busyList = true;
       try {
-        const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.hrs && S.hrs.length) { p.hrs = S.hrs.join(','); if (S.hdate) p.hdate = S.hdate; } if (S.emp) p.emp = S.emp; if (!admin) p.mine = 1; if (S.emp && S.empTag) p.tag = 1; if (S.sort) p.sort = S.sort; if (S.flt.length) p.flt = S.flt.join(','); if (S.scope === 'unans' && !S.emp) { Object.assign(p, unParams()); if (!p.sort) p.sort = 'new'; } if (admin && S.bulk && S.bulk.on) { const f = S.bulk.f || {}; if (f.bd) p.bd = f.bd; if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); }
+        const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.hrs && S.hrs.length) { p.hrs = S.hrs.join(','); if (S.hdate) p.hdate = S.hdate; } if (S.emp) p.emp = S.emp; if (!admin) p.mine = 1; if (S.emp && S.empTag) p.tag = 1; if (S.sort) p.sort = S.sort; if (S.flt.length) p.flt = S.flt.join(','); if (S.scope === 'unans' && !S.emp) { Object.assign(p, unParams()); if (!p.sort) p.sort = 'new'; } if (admin && S.bulk && S.bulk.on) { const f = S.bulk.f || {}; p.bt = f.bt || ''; if (f.bd) { p.bd = f.bd; if (f.bd === 'custom') { p.bdf = f.bdf || ''; p.bdt = f.bdt || f.bdf || ''; } } if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); }
         const d = await api.get('wa.chats', p); S.chats = d.chats || []; S.counts = d.counts || {};
         if (!admin) try { const g = await api.get('wq.grab_list'); S.grab = (g.items || []).filter((x) => !x.mine); S.grabMin = g.min || 4; } catch (e) { S.grab = []; }
         auCfg(d.rules && d.rules.auto); rulesCheck(d.rules); drawTabs(); drawFeeds(); drawKpi(); drawUn(); drawList(); if (opts.onCounts) { try { opts.onCounts(S.counts); } catch (e) { } } auNext();
@@ -582,7 +585,7 @@
     }
     const capOf = (m) => { const x = /^[^:]{1,20}:\s*([\s\S]+)$/.exec(m.body || ''); return x ? x[1] : ''; };
     function bubble(m) {
-      if (m.dir === 'sys') { const d0 = parse(m.ts), t0 = d0 ? d0.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''; return `<div class="wi-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
+      if (m.dir === 'sys') { const d0 = parse(m.ts), t0 = d0 ? dayLbl(d0) + ' · ' + d0.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''; return `<div class="wi-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
       const cls = m.dir === 'in' ? '' : (m.who === 'bot' ? 'out bot' : 'out');
       let body = ''; const cap = (m.mtype === 'image' || m.mtype === 'video') ? capOf(m) : '';
       if (m.media_id && (m.mtype === 'image' || m.mtype === 'sticker')) body = (MEDIA[m.media_id] ? `<img src="${MEDIA[m.media_id]}" alt="photo">` : `<div class="ld" data-m="${esc(m.media_id)}" data-k="img">📷 Tap to open photo</div>`) + (cap ? `<div class="wi-cap">${linkify(esc(cap))}</div>` : '');
@@ -594,7 +597,7 @@
       const tg = m.mtype === 'template' ? '<span class="tg">📋 Pre-made message</span>' : '';
       const qt = m.quote ? `<div class="wi-qt" data-qid="${m.quote.id}" title="Go to that message"><b>${m.quote.dir === 'in' ? 'Customer' : 'You'}</b><span>${esc(m.quote.text)}</span></div>` : '';   // ↩ the customer swiped on this earlier message
       const rb = '<button type="button" class="wi-rb" data-rb="' + m.id + '" title="Reply to this message" aria-label="Reply">↩</button>';
-      return `<div class="wi-b ${cls}${m.mtype === 'template' ? ' tpl' : ''}" data-id="${m.id}">${rb}${tg}${qt}${body}<small>${who ? esc(who) + ' · ' : ''}${esc(m.number || '')} · ${d ? hhmm(d) : ''}${tick(m)}</small></div>`;
+      return `<div class="wi-b ${cls}${m.mtype === 'template' ? ' tpl' : ''}" data-id="${m.id}">${rb}${tg}${qt}${body}<small>${who ? esc(who) + ' · ' : ''}${esc(m.number || '')} · ${d ? '<b class="wi-dy">' + dayLbl(d) + '</b> · ' + hhmm(d) : ''}${tick(m)}</small></div>`;
     }
     // ↩ press ↩ on a message → the reply bar above the box; the next message you send answers it (the customer sees it quoted, like WhatsApp)
     document.addEventListener('click', (e) => { const b = e.target.closest('.wi-rb'); if (!b || !S.cur) return; const m = (S.cur.messages || S.cur.msgs || []).find((x) => String(x.id) === b.dataset.rb); const el = b.closest('.wi-b');
@@ -1399,7 +1402,7 @@
     // ============================================================================================================================
     // ☑ BULK: select many chats (one by one, or "all in this view") → send one pre-made message to all of them, or move them all to one person
     // ============================================================================================================================
-    S.bulk = { on: false, set: new Set(), info: {}, total: 0, f: { bd: '', ob: 'no', bn: [] } };
+    S.bulk = { on: false, set: new Set(), info: {}, total: 0, f: { bt: '', bd: '', bdf: '', bdt: '', ob: 'no', bn: [] } };
     const bkStyle = () => {
       if (document.getElementById('bkStyle')) return; const st = document.createElement('style'); st.id = 'bkStyle';
       st.textContent = `
@@ -1432,8 +1435,8 @@
       `; document.head.appendChild(st);
     };
     const bkN = () => S.bulk.set.size, bkFmt = (n) => Number(n).toLocaleString('en-IN');
-    function bkParams() { const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.hrs && S.hrs.length) { p.hrs = S.hrs.join(','); if (S.hdate) p.hdate = S.hdate; } if (S.emp) p.emp = S.emp; if (S.emp && S.empTag) p.tag = 1; if (S.flt.length) p.flt = S.flt.join(','); if (S.bulk.on) { const f = S.bulk.f || {}; if (f.bd) p.bd = f.bd; if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); } return p; }
-    function bkToggleMode(on) { bkStyle(); S.bulk.on = on == null ? !S.bulk.on : on; if (!S.bulk.on) { S.bulk.set.clear(); S.bulk.info = {}; S.bulk.f = { bd: '', ob: 'no', bn: [] }; } root.classList.toggle('bkon', S.bulk.on); drawFeeds(); if (S.bulk.on) loadList(); else drawList(); }
+    function bkParams() { const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.hrs && S.hrs.length) { p.hrs = S.hrs.join(','); if (S.hdate) p.hdate = S.hdate; } if (S.emp) p.emp = S.emp; if (S.emp && S.empTag) p.tag = 1; if (S.flt.length) p.flt = S.flt.join(','); if (S.bulk.on) { const f = S.bulk.f || {}; p.bt = f.bt || ''; if (f.bd) { p.bd = f.bd; if (f.bd === 'custom') { p.bdf = f.bdf || ''; p.bdt = f.bdt || f.bdf || ''; } } if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); } return p; }
+    function bkToggleMode(on) { bkStyle(); S.bulk.on = on == null ? !S.bulk.on : on; if (!S.bulk.on) { S.bulk.set.clear(); S.bulk.info = {}; S.bulk.f = { bt: '', bd: '', bdf: '', bdt: '', ob: 'no', bn: [] }; } root.classList.toggle('bkon', S.bulk.on); drawFeeds(); if (S.bulk.on) loadList(); else drawList(); }
     function bkToggle(ph) { if (S.bulk.set.has(ph)) S.bulk.set.delete(ph); else { S.bulk.set.add(ph); const c = S.chats.find((x) => x.phone === ph); if (c) S.bulk.info[ph] = { name: c.name || '' }; } drawList(); }
     async function bkSelectAll() {
       const btn = $('bkAll'); if (btn) { btn.textContent = 'Selecting…'; btn.disabled = true; }
@@ -1445,7 +1448,9 @@
       if (!S.bulk.on) return ''; const n = bkN(), loaded = S.chats.length, tot = Math.max(loaded, (S.counts && (S.scope === 'unassigned' ? S.counts.unassigned : S.scope === 'closed' ? S.counts.closed : S.scope === 'history' ? S.counts.history : S.counts.all)) || 0);
       const allSel = loaded > 0 && S.chats.every((c) => S.bulk.set.has(c.phone));
       return `<div class="bk-bar" id="bkBar"><div class="bk-top"><div class="bk-n">${n ? bkFmt(n) + ' selected' : 'Select chats'}<small>${n ? 'Tap a chat to add or remove it' : 'Tap chats, or select everything in this view'}</small></div><button type="button" class="bk-x" id="bkOff">✕ Done</button></div>
-        ${admin ? `<div class="bk-fl"><div class="lb">Show only</div><div class="bk-chs">${[['', 'All'], ['today', 'Today’s queries'], ['yesterday', 'Yesterday’s queries'], ['7d', 'Last 7 days'], ['camp', 'Campaign replies']].map(([k, l]) => `<button type="button" data-bf="bd:${k}" class="${(S.bulk.f.bd || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+        ${admin ? `<div class="bk-fl"><div class="lb">Show only</div><div class="bk-chs">${[['', 'All'], ['query', '🆕 Query'], ['camp', '📣 Campaign + Community']].map(([k, l]) => `<button type="button" data-bf="bt:${k}" class="${(S.bulk.f.bt || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+          ${(S.bulk.f.bt || '') !== '' ? `<div class="lb">${S.bulk.f.bt === 'query' ? 'Query came' : 'Campaign / Community replied'} on</div><div class="bk-chs">${[['', 'Any day'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'], ['custom', '📅 Custom date']].map(([k, l]) => `<button type="button" data-bf="bd:${k}" class="${(S.bulk.f.bd || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+          ${S.bulk.f.bd === 'custom' ? `<div class="bk-chs" style="align-items:center"><label style="font-size:12px;font-weight:700">From <input type="date" id="bkDf" value="${esc(S.bulk.f.bdf || '')}" style="padding:6px;border:1px solid #cbd5e1;border-radius:8px"></label><label style="font-size:12px;font-weight:700">To <input type="date" id="bkDt" value="${esc(S.bulk.f.bdt || '')}" style="padding:6px;border:1px solid #cbd5e1;border-radius:8px"></label><span style="font-size:11px;opacity:.7">only one date = that day</span></div>` : ''}` : ''}
           <div class="lb">Order status</div><div class="bk-chs">${[['no', '🆕 Not ordered yet'], ['yes', '✅ Order done'], ['', 'All']].map(([k, l]) => `<button type="button" data-bf="ob:${k}" class="${(S.bulk.f.ob || '') === k ? 'on' : ''}${k === 'yes' ? ' ex' : ''}">${l}</button>`).join('')}</div>
           <div class="lb">Number</div><div class="bk-chs">${(((S.counts || {}).src || {}).nums || []).map((x) => `<button type="button" data-bf="bn:${x.id}" class="${(S.bulk.f.bn || []).includes(x.id) ? 'on' : ''}">${esc(String(x.label || 'Number ' + x.id))}</button>`).join('')}</div></div>` : ''}
         <div class="bk-row"><button type="button" class="bk-link" id="bkAll">${allSel ? '☑ All ' + bkFmt(loaded) + ' shown are selected' : '☐ Select all in this view'}${tot > loaded ? ' (all ' + bkFmt(tot) + ')' : ''}</button>${n ? '<button type="button" class="bk-link" id="bkNone" style="margin-left:auto">Clear</button>' : ''}</div>
@@ -1456,7 +1461,8 @@
       $('bkOff').onclick = () => bkToggleMode(false); $('bkAll').onclick = bkSelectAll; if ($('bkNone')) $('bkNone').onclick = () => { S.bulk.set.clear(); drawList(); };
       $('bkSend').onclick = () => { S.bulk.retryNote = ''; bkSendOpen(); }; if ($('bkMove')) $('bkMove').onclick = bkMoveOpen;
       if ($('bkCamp')) $('bkCamp').onclick = () => { const h = {}; if (S.emp) h.emp = S.emp; const d = new Date(); window.WaCampGo = { mode: 'normal', seg: { hist: h, name: 'History · ' + d.getDate() + ' ' + d.toLocaleString('en-GB', { month: 'short' }), n: (S.counts && S.counts.history) || 0 } }; location.hash = '#campaigns'; };
-      b.querySelectorAll('[data-bf]').forEach((x) => { x.onclick = () => { const [k, v] = x.dataset.bf.split(':'); const f = S.bulk.f; if (k === 'bn') { const id = +v, i = f.bn.indexOf(id); if (i >= 0) f.bn.splice(i, 1); else f.bn.push(id); } else f[k] = v; S.bulk.set.clear(); S.bulk.info = {}; loadList(); }; });   // a different filter = a different list: the ticks start again if ($('bkNum')) if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
+      { const df = $('bkDf'), dt = $('bkDt'), ch = () => { const f = S.bulk.f; f.bdf = df ? df.value : ''; f.bdt = dt ? dt.value : ''; if (f.bdf && f.bdt && f.bdt < f.bdf) f.bdt = f.bdf; if (!f.bdf) return; S.bulk.set.clear(); S.bulk.info = {}; loadList(); }; if (df) df.onchange = ch; if (dt) dt.onchange = ch; }   // 📅 custom date: pick a day (or a range) and the list shows that day's customers
+      b.querySelectorAll('[data-bf]').forEach((x) => { x.onclick = () => { const [k, v] = x.dataset.bf.split(':'); const f = S.bulk.f; if (k === 'bn') { const id = +v, i = f.bn.indexOf(id); if (i >= 0) f.bn.splice(i, 1); else f.bn.push(id); } else { f[k] = v; if (k === 'bt') { f.bd = ''; f.bdf = ''; f.bdt = ''; } if (k === 'bd' && v === 'custom' && !f.bdf) { const d = new Date(Date.now() - 864e5), z = (n) => String(n).padStart(2, '0'); f.bdf = f.bdt = d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()); } } S.bulk.set.clear(); S.bulk.info = {}; loadList(); }; });   // a different filter = a different list: the ticks start again if ($('bkNum')) if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
     }
     // ---------- 📱 move many chats to another of our numbers (the Second number has a payment problem → Main)
     async function bkNumOpen() {

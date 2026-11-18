@@ -792,6 +792,15 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
     $names = employee_names_by_id($pdo); $me = (int)($auth['employee_id'] ?? 0);
     switch ($__wt) {
         case 'wa.tpl_list': {
+            // ⚡ the phone app's "Pre-made messages" sheet asks for the LITE list: the approved messages without the per-number matrix / utility twins / Meta check, remembered for 60 s (the full list made the sheet hang on "loading" with hundreds of messages)
+            $__lite = !empty($_GET['lite']); if ($__lite && function_exists('wa_cpc_get')) { try { $__h = wa_cpc_get($pdo, 'tpl_list_lite1'); if ($__h && $__h['age'] < 60) json_response($__h['v']); } catch (Throwable $e) { } }
+            if ($__lite) {
+                $rows = $pdo->query("SELECT * FROM wa_templates ORDER BY star DESC, used DESC, id DESC")->fetchAll();
+                $out = []; foreach ($rows as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $o1 = wa_tpl_public($pdo, $r, $wabas); if (in_array($o1['status'], ['approved', 'partial'], true)) $out[] = $o1; }
+                $out = wa_tpl_mark_auto($out, !empty($_GET['all'])); $resp = ['templates' => $out, 'lite' => 1];
+                if (function_exists('wa_cpc_put')) { try { wa_cpc_put($pdo, 'tpl_list_lite1', $resp); } catch (Throwable $e) { } }
+                json_response($resp);
+            }
             $auto = null; register_shutdown_function(function () use ($pdo) { if (function_exists('hrms_release')) hrms_release(); @set_time_limit(90); try { wa_tpl_autosync($pdo, 300); } catch (Throwable $e) { } });   // ⚡ asking Meta about waiting templates happens AFTER the list is shown (every 5 min at most) — the list opens at once
             $rows = $pdo->query("SELECT * FROM wa_templates ORDER BY star DESC, used DESC, id DESC")->fetchAll();
             $out = []; foreach ($rows as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $out[] = wa_tpl_public($pdo, $r, $wabas); }
@@ -1012,7 +1021,7 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
             wa_guard_admin($pdo, $auth); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $one = (int)(json_input()['id'] ?? 0);   // {id}: just this message, and make it now
             if ($one > 0) { $r1 = wa_tpl_row($pdo, $one); if (!$r1 || $r1['category'] !== 'MARKETING' || (int)(wa_mix_extra($r1)['utility_of'] ?? 0) > 0) json_response(['error' => 'Only a Marketing message gets a Utility version.'], 422);
-                if (wa_mix_twins($pdo, $one)) json_response(['ok' => true, 'marked' => 0, 'exists' => true]);
+                if (wa_mix_twins($pdo, $one, true)) json_response(['ok' => true, 'marked' => 0, 'exists' => true]);
                 wa_mix_extra_set($pdo, $one, ['need_twin' => 1]); ignore_user_abort(true); $run = wa_tpl_autosubmit_tick($pdo, true); json_response(['ok' => true, 'marked' => 1, 'run' => $run]); }
             $have = []; foreach ($pdo->query("SELECT extra FROM wa_templates WHERE extra LIKE '%\"utility_of\"%'")->fetchAll() as $r) { $u = (int)(wa_mix_extra($r)['utility_of'] ?? 0); if ($u) $have[$u] = true; }
             $ap = []; foreach ($pdo->query("SELECT DISTINCT tpl_id FROM wa_tpl_waba WHERE UPPER(status) = 'APPROVED'")->fetchAll() as $r) $ap[(int)$r['tpl_id']] = true; $n = 0;

@@ -1220,11 +1220,44 @@ function order_chat_type(PDO $pdo, array $c, int $t = 0): string
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || order_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30)) ? 'campaign' : 'query';
 }
-function order_auto_alloc(PDO $pdo, string $sk, array $o)
+/** 🧴 Owner (18 Nov): every order of THIS MONTH that has a shower gel belongs to TM Shower Gel. Orders that were left under TM Perfume House (no allocation, or an allocation to TM Perfume House) move to
+ *  TM Shower Gel; the salesperson, the type and who allocated it are NOT touched. An order with no allocation first gets the normal automatic allocation (the chat's salesperson, Query / Campaign — checked over the
+ *  whole month); when that cannot be done it only gets the panel (no employee), so every page counts it as a shower gel order. Runs every 10 minutes from the WhatsApp engine; an order already right is not touched again. Returns how many were changed. */
+function order_gel_fix(PDO $pdo): int
+{
+    try { if ((int)setting_get($pdo, 'gel_fix_at', '0') > time() - 600) return 0; setting_set($pdo, 'gel_fix_at', (string)time()); if (!ensure_order_allocations_table($pdo)) return 0; } catch (Throwable $e) { return 0; }
+    $n = 0;
+    try {
+        $st = $pdo->prepare("SELECT o.shopify_id AS id, o.store_key, o.order_name, o.created_at, o.phone, o.total, o.tags, o.xparts, a.alloc_id, a.house AS ah FROM shop_orders o LEFT JOIN order_allocations a ON a.source = o.store_key AND a.order_id = CAST(o.shopify_id AS CHAR)
+            WHERE o.created_at >= ? AND o.store_key = 'tmperfumehouse' AND o.xparts LIKE '%gel%' AND (a.alloc_id IS NULL OR a.house = 'tmph') AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') ORDER BY o.created_at LIMIT 400");
+        $st->execute([date('Y-m-01 00:00:00')]);
+        $up = $pdo->prepare("UPDATE order_allocations SET house = 'tmsg' WHERE alloc_id = ? AND house = 'tmph'");
+        $ins = $pdo->prepare("INSERT IGNORE INTO order_allocations (source, order_id, house, order_type, employee_id, is_direct, allocated_by) VALUES (?, ?, 'tmsg', '', 0, 0, 'auto (shower gel)')");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
+            if (!order_has_gel($pdo, (string)$o['store_key'], $o)) continue;
+            if ($o['alloc_id'] !== null) { $up->execute([(int)$o['alloc_id']]); $n += $up->rowCount(); continue; }
+            $r = ''; try { $r = order_auto_alloc($pdo, (string)$o['store_key'], $o, 40); } catch (Throwable $e) { }
+            if (is_array($r)) { $n++; continue; }
+            $ins->execute([(string)$o['store_key'], (string)$o['id']]); $n += $ins->rowCount();
+        }
+    } catch (Throwable $e) { error_log('order_gel_fix: ' . $e->getMessage()); }
+    return $n;
+}
+/** 🧴 Is there at least one shower gel in this order? Reads the order's own gel/attar/other parts (xparts); an order read from the saved copy has no 'xparts' key, so it is looked up in shop_orders. */
+function order_has_gel(PDO $pdo, string $sk, array $o): bool
+{
+    $xp = $o['xparts'] ?? null; if (is_object($xp)) $xp = json_decode(json_encode($xp), true); elseif (is_string($xp) && $xp !== '') $xp = json_decode($xp, true);
+    if (!is_array($xp)) {
+        $xp = null; $id = (string)($o['id'] ?? $o['shopify_id'] ?? '');
+        if ($id !== '') { try { $q = $pdo->prepare("SELECT xparts FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $q->execute([$sk, $id]); $j = json_decode((string)$q->fetchColumn(), true); if (is_array($j)) $xp = $j; } catch (Throwable $e) { } }
+    }
+    return is_array($xp) && (int)($xp['gel']['pcs'] ?? 0) > 0;
+}
+function order_auto_alloc(PDO $pdo, string $sk, array $o, int $maxDays = 2)
 {
     static $ready = null, $q = [];
     $oid = (string)($o['id'] ?? $o['shopify_id'] ?? ''); if ($oid === '' || $sk === '' || $sk === 'mysales' || strpos($sk, 'mysales') === 0) return '';
-    $t = strtotime((string)($o['created_at'] ?? '')); if (!$t || $t < time() - 2 * 86400) return '';   // only new orders (the last 2 days)
+    $t = strtotime((string)($o['created_at'] ?? '')); if (!$t || $t < time() - $maxDays * 86400) return '';   // only new orders (the last 2 days; the shower-gel clean-up asks for the whole month)
     if ($ready === null) {
         $ready = false;
         try {
@@ -1260,7 +1293,10 @@ function order_auto_alloc(PDO $pdo, string $sk, array $o)
         if (!$c) return $why('the WhatsApp chat is not given to any salesperson');
         if (empty($c['last_in_at'])) return $why('the customer never wrote to us on WhatsApp');
         $li = strtotime((string)$c['last_in_at']); if ($li < $t - 7 * 86400 && $li < time() - 7 * 86400) return $why('last WhatsApp message ' . date('j M', $li) . ' — older than 7 days');
-        $house = $sk === 'tmperfumehouse' ? 'tmph' : order_house($sk, (string)($o['tags'] ?? '')); if ($house === '') return $why('panel not clear from the order');
+        $house = $sk === 'tmperfumehouse' ? 'tmph' : order_house($sk, (string)($o['tags'] ?? ''));
+        if ($house === '' && $sk === 'tmsg') $house = 'tmsg';
+        if (order_has_gel($pdo, $sk, $o)) $house = 'tmsg';   // 🧴 owner (18 Nov): ANY order with a shower gel (1, 2 or more, with any other product) is TM Shower Gel — chosen by itself, then allocated like every other order
+        if ($house === '') return $why('panel not clear from the order');
         $type = order_chat_type($pdo, $c, $t);   // 📢 Campaign = a real campaign reply (chat marked Campaign / Community, or our campaign sent in the 7 days before the order); website / ad texts stay Query
         $emp = (int)$c['assigned_emp']; $q['ins']->execute([$sk, $oid, $house, $type, $emp]);
         if ($q['ins']->rowCount() < 1) return '';
@@ -12288,6 +12324,7 @@ function order_line_seg(string $t): string
     if (preg_match('/\battar|\bittar|\boud oil|\broll[- ]?on\b/u', $t)) return 'attar';
     if (preg_match('/shower ?gel|body ?wash|\bgel\b/u', $t)) return 'gel';
     if (preg_match('/\bwax\b/u', $t)) return 'other';
+    if (preg_match('/\bcar[- ]?kit\b/u', $t)) return 'carkit';      // 🚗 a car kit: its own flat % (setting carkit_pct, default 6), not the ML chart
     return 'perfume';
 }
 /** The non-perfume part of an order (from order_ml_total's parts): its money and its commission, each segment on its own price chart (pieces). */
@@ -12307,8 +12344,10 @@ function order_x_com(?PDO $pdo, $parts, int $perfMl = 0, float $total = 0): arra
     $__sum = 0.0; foreach ($parts as $p) $__sum += max(0.0, (float)($p['amt'] ?? 0)); $__k = ($total > 0 && $__sum > $total) ? $total / $__sum : 1.0;
     foreach ($parts as $sg => $p) {
         $amt = round((float)($p['amt'] ?? 0) * $__k, 2); $pcs = (int)($p['pcs'] ?? 0); if ($amt <= 0) continue; $o['x_amt'] += $amt;
-        $pc = ($pdo && function_exists('pc_pct')) ? pc_pct($pdo, (string)$sg, (float)$pcs, $amt) : null; if ($pc !== null) $o['x_com'] += $amt * $pc / 100;
-        $n[] = (function_exists('pc_segs') ? (pc_segs()[$sg] ?? $sg) : $sg) . ' ×' . $pcs . ' ₹' . round($amt) . ($pc === null ? ' (no price chart)' : ' at ' . round($pc, 2) . '%');
+        if ((string)$sg === 'carkit') { $pc = 6.0; try { if ($pdo && function_exists('setting_get')) { $cv = trim((string)setting_get($pdo, 'carkit_pct', '6')); if ($cv !== '' && is_numeric($cv)) $pc = max(0.0, min(50.0, (float)$cv)); } } catch (Throwable $e) { } }
+        else $pc = ($pdo && function_exists('pc_pct')) ? pc_pct($pdo, (string)$sg, (float)$pcs, $amt) : null;
+        if ($pc !== null) $o['x_com'] += $amt * $pc / 100;
+        $n[] = ((string)$sg === 'carkit' ? 'Car kit' : (function_exists('pc_segs') ? (pc_segs()[$sg] ?? $sg) : $sg)) . ' ×' . $pcs . ' ₹' . round($amt) . ($pc === null ? ' (no price chart)' : ' at ' . round($pc, 2) . '%');
     }
     $o['x_com'] = round($o['x_com'], 2); $o['x_note'] = implode(' · ', $n); return $o;
 }
@@ -15311,6 +15350,49 @@ function existing_login_for_employee(PDO $pdo, ?int $employeeId, int $exceptUser
     return $u === false ? null : (string)$u;
 }
 
+/** Attaches the add-ons sold onto each order to its row, so every page and every export that lists orders can show them.
+ *  Adds to each row: 'addons' = [{items:[{product_name,size_ml,qty}], price, pre, cod, has_proof, addon_group, addon_id}], 'addon_total' (sum of the add-on prices),
+ *  'addon_text' (one line: "Oud 12 ML, Musk 50 ML x2 = Rs 1,450"). Matched on the order name without "#". $nameKey = the row's order-name field. */
+function addons_attach(PDO $pdo, array &$rows, string $nameKey = 'order_name'): void
+{
+    $norm = function ($n) { return strtolower(trim(ltrim(trim((string)$n), '#'))); };
+    $names = [];
+    foreach ($rows as $r) { $k = $norm($r[$nameKey] ?? ''); if ($k !== '') $names[$k] = true; }
+    foreach ($rows as &$r0) { $r0['addons'] = []; $r0['addon_total'] = 0; $r0['addon_text'] = ''; } unset($r0);
+    if (!$names) return;
+    $by = [];
+    try {
+        if (!ensure_addons_table($pdo)) return;
+        $all = array_keys($names);
+        foreach (array_chunk($all, 400) as $chunk) {
+            $ph = []; $par = [];
+            foreach ($chunk as $k) { $ph[] = '?'; $par[] = $k; $ph[] = '?'; $par[] = '#' . $k; }
+            $st = $pdo->prepare("SELECT addon_id, order_name, addon_group, product_name, size_ml, qty, price, prepaid_amt, cod_amt, proof_path FROM employee_addons WHERE LOWER(order_name) IN (" . implode(',', $ph) . ") ORDER BY addon_id");
+            $st->execute($par);
+            foreach ($st->fetchAll() as $a) {
+                $o = $norm($a['order_name']); $g = (string)($a['addon_group'] ?: 'single-' . $a['addon_id']);
+                if (!isset($by[$o][$g])) $by[$o][$g] = ['addon_group' => $g, 'addon_id' => (int)$a['addon_id'], 'items' => [], 'price' => 0.0, 'pre' => 0.0, 'cod' => 0.0, 'has_proof' => false];
+                $by[$o][$g]['items'][] = ['product_name' => (string)$a['product_name'], 'size_ml' => (string)$a['size_ml'], 'qty' => (int)$a['qty']];
+                $by[$o][$g]['price'] += (float)$a['price']; $by[$o][$g]['pre'] += (float)$a['prepaid_amt']; $by[$o][$g]['cod'] += (float)$a['cod_amt'];
+                if ((string)$a['proof_path'] !== '') $by[$o][$g]['has_proof'] = true;
+            }
+        }
+    } catch (Throwable $e) { return; }
+    foreach ($rows as &$r) {
+        $k = $norm($r[$nameKey] ?? ''); if ($k === '' || empty($by[$k])) continue;
+        $groups = array_values($by[$k]); $tot = 0.0; $txt = [];
+        foreach ($groups as $g) {
+            $tot += $g['price'];
+            $its = array_map(function ($i) { return trim($i['product_name'] . ($i['size_ml'] !== '' ? ' ' . $i['size_ml'] . (stripos($i['size_ml'], 'ml') === false ? ' ML' : '') : '') . ($i['qty'] > 1 ? ' x' . $i['qty'] : '')); }, $g['items']);
+            $pay = [];
+            if ($g['pre'] > 0) $pay[] = 'PREPAID Rs ' . number_format($g['pre']);
+            if ($g['cod'] > 0) $pay[] = 'COLLECT Rs ' . number_format($g['cod']) . ' on delivery';
+            $txt[] = implode(', ', $its) . ' = Rs ' . number_format($g['price']) . ($pay ? ' [' . implode('; ', $pay) . ']' : '');
+        }
+        $r['addons'] = $groups; $r['addon_total'] = round($tot, 2); $r['addon_text'] = implode(' | ', $txt);
+    } unset($r);
+}
+
 function ensure_addons_table(PDO $pdo): bool
 {
     static $done = null;
@@ -15319,7 +15401,7 @@ function ensure_addons_table(PDO $pdo): bool
     // re-run on servers where an older version already created the table
     // (and so already wrote the previous flag), which is what otherwise
     // leaves the addon_group column missing and every insert failing.
-    $flag = sys_get_temp_dir() . '/hrms_addons_ok_v3';
+    $flag = sys_get_temp_dir() . '/hrms_addons_ok_v4';
     if (is_file($flag)) return $done = true;
     try {
         $pdo->exec(
@@ -15348,6 +15430,7 @@ function ensure_addons_table(PDO $pdo): bool
         }
         if (!in_array('prepaid_amt', $cols, true)) $pdo->exec("ALTER TABLE employee_addons ADD COLUMN prepaid_amt DECIMAL(12,2) NOT NULL DEFAULT 0");   // how much of the add-on the customer paid in advance
         if (!in_array('cod_amt', $cols, true)) $pdo->exec("ALTER TABLE employee_addons ADD COLUMN cod_amt DECIMAL(12,2) NOT NULL DEFAULT 0");   // how much is collected on delivery
+        if (!in_array('proof_path', $cols, true)) $pdo->exec("ALTER TABLE employee_addons ADD COLUMN proof_path VARCHAR(255) NULL");   // payment screenshot of the prepaid part (on the first row of the add-on)
 
         @file_put_contents($flag, '1');
         return $done = true;
@@ -18805,7 +18888,8 @@ if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') 
 if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_backups/.last'; if (!is_file($__lbl) || filemtime($__lbl) < time() - 86400) { require_once __DIR__ . '/learn_backup.php'; lb_schedule($pdo); } } catch (Throwable $e) {} }
 
 if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }
-if (strpos((string)$action, 'dpx.') === 0) { require_once __DIR__ . '/dispatch_push.php'; if ($action === 'dpx.feed') dpx_feed($pdo); dpx_route($pdo, (string)$action); }          // automatic send of the HRMS (manual) orders to the dispatch panel through n8n, at a set time (Admin / HR)          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
+if (strpos((string)$action, 'psum.') === 0) { require_once __DIR__ . '/prod_summary.php'; psum_route($pdo, (string)$action); }   // 🧴 shower gel + ⭐ TM Originals summary of the Orders page (read-only)
+if (strpos((string)$action, 'dpx.') === 0) { require_once __DIR__ . '/dispatch_push.php'; if ($action === 'dpx.feed') dpx_feed($pdo); if ($action === 'dpx.feed_shop') dpx_feed_shop($pdo); dpx_route($pdo, (string)$action); }          // automatic send of the HRMS (manual) orders to the dispatch panel through n8n, at a set time (Admin / HR)          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
 if (strpos((string)$action, 'sysload.') === 0 && function_exists('sysload_route')) { sysload_route($pdo, (string)$action); }          // Admin → Server load: what the server is busy with
 if (strpos((string)$action, 'll.') === 0) { require_once __DIR__ . '/learn_loop.php'; }          // the nightly review loop: log, export, suggestions
 if (strpos((string)$action, 'chg.') === 0) { require_once __DIR__ . '/changes.php'; }          // Request a change: GitHub issue -> Claude Code builds -> Admin approves -> deploy
@@ -23307,9 +23391,10 @@ switch ($action) {
         if ($mq === '') {
             try {
                 if (cm_engine_load($pdo)) {
-                    @set_time_limit(240); $pd = []; $okAll = true;
-                    for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) { $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) { $okAll = false; break; } if (isset($r['emps'][$myId])) $pd[$d] = (float)$r['emps'][$myId]['total']; }
-                    if ($okAll) $paid = ['live' => true, 'days' => (object)$pd];
+                    @set_time_limit(240); $pd = []; $px = []; $po = []; $okAll = true;
+                    for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) { $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) { $okAll = false; break; } if (isset($r['emps'][$myId])) { $pd[$d] = (float)$r['emps'][$myId]['total']; $px[$d] = [(float)$r['emps'][$myId]['extra'], (string)$r['emps'][$myId]['bonus_name']]; }
+                        foreach ((array)($r['ord'] ?? []) as $ok => $ov) if ((int)($ov[2] ?? 0) === $myId) $po[(string)$ok] = [(float)$ov[0], (string)$ov[1]]; }   // only MY orders' commission is sent
+                    if ($okAll) $paid = ['live' => true, 'days' => (object)$pd, 'dx' => (object)$px, 'ord' => (object)$po];
                 }
             } catch (Throwable $e2) { error_log('my.commission paid: ' . $e2->getMessage()); }
         }
@@ -26567,7 +26652,8 @@ switch ($action) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         ensure_addons_table($pdo);
 
-        $input = json_input();
+        // Sent as a form (payload = the JSON, proof = the payment screenshot) or as plain JSON when there is no screenshot.
+        $input = isset($_POST['payload']) ? (json_decode((string)$_POST['payload'], true) ?: []) : json_input();
         $empId = (int)($input['employee_id'] ?? 0);
         $date = trim($input['date'] ?? '');
         $groupKey = normalize_group_key($input['group_key'] ?? '');
@@ -26586,6 +26672,7 @@ switch ($action) {
         $total = round((float)($input['total_price'] ?? 0), 2);
         if ($total <= 0) json_response(['error' => 'Enter the total add-on price.'], 422);
         $pre = max(0.0, round((float)($input['prepaid_amt'] ?? 0), 2)); $cod = max(0.0, round((float)($input['cod_amt'] ?? 0), 2));
+        if ($pre + $cod <= 0) $cod = $total;   // nothing marked as paid in advance: the whole add-on is collected on delivery
         if ($pre + $cod > 0 && abs($pre + $cod - $total) > 0.99) json_response(['error' => 'Prepaid + COD must add up to the total add-on price (' . number_format($total) . ').'], 422);
 
         $clean = [];
@@ -26600,25 +26687,34 @@ switch ($action) {
         }
         if (!$clean) json_response(['error' => 'Enter a product name.'], 422);
 
+        // Anything paid in advance needs its payment screenshot (compulsory), saved with the add-on.
+        $proofPath = null;
+        if ($pre > 0) {
+            if (empty($_FILES['proof']) || ($_FILES['proof']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) json_response(['error' => 'Attach the payment screenshot: an amount is paid in advance.'], 422);
+            [$proofPath, , $perr] = proof_save_image($_FILES['proof'], $empId);
+            if ($perr !== '') json_response(['error' => $perr], 422);
+        }
+
         // Group id ties the rows of one add-on together, so the UI can show
         // and delete them as a single entry rather than loose products.
         $groupId = bin2hex(random_bytes(8));
 
         $ins = $pdo->prepare(
-            "INSERT INTO employee_addons (employee_id, addon_date, group_key, order_name, product_name, size_ml, qty, price, addon_group, created_by, prepaid_amt, cod_amt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO employee_addons (employee_id, addon_date, group_key, order_name, product_name, size_ml, qty, price, addon_group, created_by, prepaid_amt, cod_amt, proof_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $pdo->beginTransaction();
         try {
             foreach ($clean as $i => $c) {
                 $ins->execute([
                     $empId, $date, $groupKey, $orderName, $c['name'], $c['size'] ?: null,
-                    $c['qty'], $i === 0 ? $total : 0, $groupId, $auth['username'], $i === 0 ? $pre : 0, $i === 0 ? $cod : 0,
+                    $c['qty'], $i === 0 ? $total : 0, $groupId, $auth['username'], $i === 0 ? $pre : 0, $i === 0 ? $cod : 0, $i === 0 ? $proofPath : null,
                 ]);
             }
             $pdo->commit();
         } catch (PDOException $e) {
             $pdo->rollBack();
+            if ($proofPath) proof_unlink($proofPath);
             // Surface the real reason — a generic 500 here gives no clue
             // whether it's a missing column, a bad value or a dead table.
             json_response(['error' => 'Could not save the add-on: ' . $e->getMessage()], 500);
@@ -26664,15 +26760,37 @@ switch ($action) {
         $byEmp = [];
         foreach ($rows as $r) {
             $eid = (int)$r['employee_id'];
-            if (!isset($byEmp[$eid])) $byEmp[$eid] = ['count' => 0, 'total' => 0.0];
-            $byEmp[$eid]['count']++;
-            $byEmp[$eid]['total'] += (float)$r['price'] * (int)$r['qty'];
+            if (!isset($byEmp[$eid])) $byEmp[$eid] = ['count' => 0, 'total' => 0.0, 'seen' => []];
+            // One add-on = one group. Its single price sits on the first product row, so add the price as it is (never x qty)
+            // and count each add-on once, not once per product.
+            $gk = (string)($r['addon_group'] ?: 'single-' . $r['addon_id']);
+            if (!isset($byEmp[$eid]['seen'][$gk])) { $byEmp[$eid]['seen'][$gk] = 1; $byEmp[$eid]['count']++; }
+            $byEmp[$eid]['total'] += (float)$r['price'];
         }
-        foreach ($byEmp as &$b) $b['total'] = round($b['total'], 2);
+        foreach ($byEmp as &$b) { $b['total'] = round($b['total'], 2); unset($b['seen']); }
         unset($b);
 
         json_response(['date' => $date, 'addons' => $rows, 'by_employee' => $byEmp]);
         break;
+    }
+
+    case 'addons.proof': {
+        // The payment screenshot of an add-on, streamed with the login token (never a public link).
+        $auth = require_auth();
+        require_addons_access($auth);
+        ensure_addons_table($pdo);
+        $group = trim((string)($_GET['addon_group'] ?? ''));
+        $id = (int)($_GET['addon_id'] ?? 0);
+        if ($group !== '') { $q = $pdo->prepare("SELECT proof_path FROM employee_addons WHERE addon_group = ? AND proof_path IS NOT NULL LIMIT 1"); $q->execute([$group]); }
+        else { $q = $pdo->prepare("SELECT proof_path FROM employee_addons WHERE addon_id = ? AND proof_path IS NOT NULL LIMIT 1"); $q->execute([$id]); }
+        $rel = (string)$q->fetchColumn();
+        $abs = __DIR__ . '/' . $rel;
+        if ($rel === '' || strpos($rel, 'uploads/proofs/') !== 0 || strpos($rel, '..') !== false || !is_file($abs)) json_response(['error' => 'No payment screenshot for this add-on.'], 404);
+        header('Content-Type: image/jpeg');
+        header('Content-Length: ' . filesize($abs));
+        header('Cache-Control: private, max-age=300');
+        readfile($abs);
+        exit;
     }
 
     case 'addons.delete': {
@@ -26684,9 +26802,15 @@ switch ($action) {
         $group = trim((string)($input['addon_group'] ?? ''));
         $id = (int)($input['addon_id'] ?? 0);
         if ($group !== '') {
-            // Remove the whole add-on (every product recorded together).
+            // Remove the whole add-on (every product recorded together), and its payment screenshot.
+            $pq = $pdo->prepare("SELECT proof_path FROM employee_addons WHERE addon_group = ? AND proof_path IS NOT NULL");
+            $pq->execute([$group]);
+            foreach ($pq->fetchAll(PDO::FETCH_COLUMN) as $pp) proof_unlink((string)$pp);
             $pdo->prepare("DELETE FROM employee_addons WHERE addon_group = ?")->execute([$group]);
         } elseif ($id) {
+            $pq = $pdo->prepare("SELECT proof_path FROM employee_addons WHERE addon_id = ? AND proof_path IS NOT NULL");
+            $pq->execute([$id]);
+            foreach ($pq->fetchAll(PDO::FETCH_COLUMN) as $pp) proof_unlink((string)$pp);
             $pdo->prepare("DELETE FROM employee_addons WHERE addon_id = ?")->execute([$id]);
         } else {
             json_response(['error' => 'addon_group or addon_id required.'], 422);
@@ -30449,6 +30573,7 @@ switch ($action) {
                 exit;
             }
         }
+        addons_attach($pdo, $allOrders, 'order_name');   // the add-ons sold onto each order travel with it to every page and export
         json_response(['orders' => $allOrders, 'errors' => $errors, 'scope' => $scopeInfo]);
         break;
     }
@@ -30842,6 +30967,9 @@ switch ($action) {
         $type = strtolower(trim((string)($in['order_type'] ?? '')));
         $empId = (int)($in['employee_id'] ?? 0);
         $direct = !empty($in['direct']);      // Direct order: a panel, no employee
+        if ($house !== '' && $orderId !== '') {   // ↩ an RTO resend / Exchange is a parcel sent again, not a sale: it is never given to a salesperson
+            try { $rxq = $pdo->prepare("SELECT tags FROM shop_orders WHERE shopify_id = ? AND store_key = ?"); $rxq->execute([$orderId, $source]); if (stripos((string)$rxq->fetchColumn(), 'wa-rx') !== false) json_response(['error' => 'This is an RTO resend / Exchange order. It is not a sale, so it cannot be allocated.'], 422); } catch (Throwable $e) { }
+        }
         if ($direct) $empId = 0;
         $known = isset(shopify_stores()[$source]) || $source === 'mysales' || $source === 'manual';
         if (!$known || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);

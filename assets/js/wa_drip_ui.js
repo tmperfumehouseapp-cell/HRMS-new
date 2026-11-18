@@ -5,7 +5,8 @@
   const { esc, $, fmt, toast, modal, errBox, loading } = WaPanels.util;
   function open() {
     const m = modal('🔁 7-Day Drip'); m.el.classList.add('cu-wide'); m.body.innerHTML = loading;
-    Promise.all([api.get('wa.drip_get'), api.get('wa.tpl_list')]).then(([d, t]) => draw(m, d, ((t || {}).templates || []).filter((x) => (x.status === 'approved' || x.status === 'partial') && !x.auto && !x.media_header && (String(x.body || '').match(/\{\{\s*\d+\s*\}\}/g) || []).length <= 1)))
+    const tmo = (pr, nm) => Promise.race([pr, new Promise((_, rj) => setTimeout(() => rj(new Error(nm + ' is taking too long (the server is busy sending). Close this and open 7-Day Drip again in a minute.')), 45000))]);
+    Promise.all([tmo(api.get('wa.drip_get'), 'The drip settings'), tmo(api.get('wa.tpl_list', { lite: 1 }), 'The message list')]).then(([d, t]) => draw(m, d, ((t || {}).templates || []).filter((x) => (x.status === 'approved' || x.status === 'partial') && !x.auto && !x.media_header && (String(x.body || '').match(/\{\{\s*\d+\s*\}\}/g) || []).length <= 1)))
       .catch((e) => { m.body.innerHTML = errBox(e.message); });
   }
   function draw(m, D, T) {

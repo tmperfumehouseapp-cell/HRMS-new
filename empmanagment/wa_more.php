@@ -1,4 +1,5 @@
 <?php
+if (!defined('WA_TIER_MARGIN')) define('WA_TIER_MARGIN', 100.0);   // owner 18 Nov 2026: no 24-hour new-people gate of our own (it was 0.9 of Meta's limit); only the hourly plan number (15,000) holds campaigns back, Meta's own refusals are handled by the spam stop
 /**
  * wa_more.php — add-on for the WhatsApp console. Loaded by wa.php (no change to api.php). Loads wa_media.php and wa_camp.php too.
  *
@@ -185,6 +186,7 @@ function wa_auto_alloc(PDO $pdo): int
         try { wa_camp_unmark($pdo); } catch (Throwable $e) { error_log('camp2 off: ' . $e->getMessage()); }
     }
     try { wa_camp_requery($pdo, 30); } catch (Throwable $e) { }
+    try { if (function_exists('order_gel_fix')) $n += order_gel_fix($pdo); } catch (Throwable $e) { }   // 🧴 shower-gel orders of the month belong to TM Shower Gel
     return $n;
 }
 /** 📢 Did we really send this customer a campaign (our campaign template, or a sent campaign item) in the $days days before $before? */
@@ -609,11 +611,13 @@ function wa_number_caps(PDO $pdo, array $health): array
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
         if (empty($camp[$id])) { $cap = 0; $why = 'switched off for campaigns'; }
         try { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($allBlocked === false && $pb !== '' && strtotime($pb) > time() - 3 * 3600) { $cap = 0; $why = 'payment problem at Meta (131042) — campaigns go through the other number(s) now; tried again after 3 hours'; } } catch (Throwable $e) { }   // owner (9 Nov): when one number has the payment problem, everything moves to the other number by itself
+        // 🛑 Meta spam limit (131048) hit on THIS number: it rests (default 3 hours, setting wa_spam_hours) while the other numbers send; the campaign is not paused. Every number resting = nothing sends until the first one is back.
+        try { $sbk = (string)setting_get($pdo, 'wa_spamblock_' . $id, ''); $sph = max(1, min(24, (int)(setting_get($pdo, 'wa_spam_hours', '3') ?: 3))); if ($sbk !== '' && strtotime($sbk) > time() - $sph * 3600) { $cap = 0; $why = 'Meta spam limit on this number (131048) — it rests for ' . $sph . ' hours, the other numbers send'; } } catch (Throwable $e) { }
         if ($cap > 0) $sumT += $ownT;
         $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age];
     }
     $pT = ($perNum && $sumT > 0) ? $sumT : $tier;
-    $out['_port'] = ['tier' => $pT, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($pT * 0.9) - $port), 'mode' => $perNum ? 'per_number' : 'shared'];
+    $out['_port'] = ['tier' => $pT, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($pT * WA_TIER_MARGIN) - $port), 'mode' => $perNum ? 'per_number' : 'shared'];
     if ($tier >= 10000 && (string)setting_get($pdo, 'wa_camp_auto_on', '1') === '1') {   // trusted account: the owner's growing hourly cap (1,000 an hour → doubles each good hour)
         $au = wa_camp_auto_cap($pdo, $tier, $health); $out['_port']['auto'] = $au;   // this hour's speed is PER NUMBER (applied by the campaign sender only); order updates, tickets and follow-ups never wait for it
     }
