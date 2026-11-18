@@ -55,7 +55,7 @@ function wq_nt_ready(PDO $pdo): bool
 if ($__tkA === 'wq.grow_notes') {   // Admin / HR: the owner's to-do list — who needs a talking-to (behind on bigger / add-on), who left call-backs open. Open ones only; resolving needs a remark.
     $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
     if (!$adm) json_response(['error' => 'Only Admin or HR can see the notifications.'], 403);
-    $out = ['ok' => true, 'open' => [], 'resolved' => 0];
+    $out = ['ok' => true, 'open' => [], 'done' => [], 'resolved' => 0];
     try { if (wq_nt_ready($pdo)) {
         $day = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $now = date('Y-m-d H:i:s'); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
         $ins = $pdo->prepare("INSERT IGNORE INTO grow_note (nkey, day, kind, emp, text, created_at) VALUES (?, ?, ?, ?, ?, ?)");
@@ -68,7 +68,9 @@ if ($__tkA === 'wq.grow_notes') {   // Admin / HR: the owner's to-do list — wh
             foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $ins->execute(['cb:' . (int)$r['emp'] . ':' . $day, $day, 'callback', (int)$r['emp'], '📞 ' . (int)$r['n'] . ' call-backs ek ghante se zyada se pending hain. Isse bolo ki customers ko call kare.', $now]); }
         $q = $pdo->prepare("SELECT id, kind, emp, text, created_at FROM grow_note WHERE day = ? AND status = 'open' ORDER BY id DESC LIMIT 60"); $q->execute([$day]);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out['open'][] = ['id' => (int)$r['id'], 'kind' => (string)$r['kind'], 'emp' => $nm[(int)$r['emp']] ?? ('#' . $r['emp']), 'text' => (string)$r['text'], 'at' => substr((string)$r['created_at'], 11, 5)];
-        $c = $pdo->prepare("SELECT COUNT(*) FROM grow_note WHERE day = ? AND status = 'resolved'"); $c->execute([$day]); $out['resolved'] = (int)$c->fetchColumn();
+        $c = $pdo->prepare("SELECT kind, emp, text, created_at, resolved_at, resolved_by, remark FROM grow_note WHERE day = ? AND status = 'resolved' ORDER BY resolved_at DESC LIMIT 60"); $c->execute([$day]);
+        foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $out['done'][] = ['kind' => (string)$r['kind'], 'emp' => $nm[(int)$r['emp']] ?? ('#' . $r['emp']), 'text' => (string)$r['text'], 'at' => substr((string)$r['created_at'], 11, 5), 'done_at' => substr((string)$r['resolved_at'], 11, 5), 'auto' => (int)$r['resolved_by'] === 0, 'remark' => (string)$r['remark']];
+        $out['resolved'] = count($out['done']);
     } } catch (Throwable $e) { error_log('wq.grow_notes: ' . $e->getMessage()); }
     json_response($out);
 }
