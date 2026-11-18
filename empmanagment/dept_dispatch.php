@@ -164,6 +164,25 @@ function dp_dsp_sync(PDO $pdo, $now, $force = false) {
             $pdo->exec("UPDATE dp_dsp_parcels SET pend_link = NULL WHERE pend_link LIKE 'https://tracking.dtdc.com/%'");
         }
     } catch (Throwable $e) {}
+    // India Post's own site is often down (502): its tracking ID opens 17TRACK (free website, checked on a real India Post parcel). One time; a link somebody typed is not changed.
+    // The parcels that had saved India Post's generic page follow the courier list again.
+    try {
+        if (function_exists('dp_get') && dp_get('dsp_indiapost_17t1', '') === '') {
+            dp_put('dsp_indiapost_17t1', date('Y-m-d H:i:s', $now));
+            $gen = 'https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx';
+            $pdo->prepare("UPDATE dp_dsp_couriers SET link = 'https://t.17track.net/en#nums={ID}' WHERE name LIKE '%india post%' AND (link = ? OR link = '' OR link IS NULL)")->execute([$gen]);
+            $pdo->prepare("UPDATE dp_dsp_parcels SET track_link = NULL WHERE track_link = ?")->execute([$gen]);
+            $pdo->prepare("UPDATE dp_dsp_parcels SET pend_link = NULL WHERE pend_link = ?")->execute([$gen]);
+        }
+    } catch (Throwable $e) {}
+    // India Post: the Shiprocket tracking link tried on 18 Nov did not find parcels posted directly: the courier link goes back to India Post's own page (one time; a link somebody typed is not changed).
+    // The parcels that were cleared at that time follow the courier list, so they show the same page again.
+    try {
+        if (function_exists('dp_get') && dp_get('dsp_indiapost_undo1', '') === '') {
+            dp_put('dsp_indiapost_undo1', date('Y-m-d H:i:s', $now));
+            $pdo->prepare("UPDATE dp_dsp_couriers SET link = ? WHERE name LIKE '%india post%' AND link = 'https://shiprocket.co/tracking/{ID}'")->execute(['https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx']);
+        }
+    } catch (Throwable $e) {}
     try { dp_dsp_hand_seed($pdo); } catch (Throwable $e) {}
     try { dp_dsp_panel_seed($pdo, $now); } catch (Throwable $e) {}
     try { if (!function_exists('wmo_dsp_heal') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php'; if (function_exists('wmo_dsp_heal')) wmo_dsp_heal($pdo); } catch (Throwable $e) {}   // tracking IDs typed / imported on the Manual orders page reach their parcel here too

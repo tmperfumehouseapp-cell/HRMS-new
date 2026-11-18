@@ -1021,7 +1021,7 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
             wa_guard_admin($pdo, $auth); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $one = (int)(json_input()['id'] ?? 0);   // {id}: just this message, and make it now
             if ($one > 0) { $r1 = wa_tpl_row($pdo, $one); if (!$r1 || $r1['category'] !== 'MARKETING' || (int)(wa_mix_extra($r1)['utility_of'] ?? 0) > 0) json_response(['error' => 'Only a Marketing message gets a Utility version.'], 422);
-                if (wa_mix_twins($pdo, $one)) json_response(['ok' => true, 'marked' => 0, 'exists' => true]);
+                if (wa_mix_twins($pdo, $one, true)) json_response(['ok' => true, 'marked' => 0, 'exists' => true]);
                 wa_mix_extra_set($pdo, $one, ['need_twin' => 1]); ignore_user_abort(true); $run = wa_tpl_autosubmit_tick($pdo, true); json_response(['ok' => true, 'marked' => 1, 'run' => $run]); }
             $have = []; foreach ($pdo->query("SELECT extra FROM wa_templates WHERE extra LIKE '%\"utility_of\"%'")->fetchAll() as $r) { $u = (int)(wa_mix_extra($r)['utility_of'] ?? 0); if ($u) $have[$u] = true; }
             $ap = []; foreach ($pdo->query("SELECT DISTINCT tpl_id FROM wa_tpl_waba WHERE UPPER(status) = 'APPROVED'")->fetchAll() as $r) $ap[(int)$r['tpl_id']] = true; $n = 0;
