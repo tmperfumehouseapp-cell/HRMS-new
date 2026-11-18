@@ -46,6 +46,41 @@ if ($__tkA === 'wq.grow_callbacks') {   // Admin / HR: today's call-backs — op
         if ($names) { $in = implode(',', array_fill(0, count($names), '?')); $a = $pdo->prepare("SELECT COUNT(DISTINCT REPLACE(LOWER(order_name), '#', '')) n, COALESCE(SUM(price), 0) s FROM employee_addons WHERE REPLACE(LOWER(order_name), '#', '') IN ($in)"); $a->execute($names); $x = $a->fetch(PDO::FETCH_ASSOC); $out['addon_orders'] = (int)($x['n'] ?? 0); $out['addon_rs'] = (int)round((float)($x['s'] ?? 0)); } } } catch (Throwable $e) { error_log('wq.grow_callbacks: ' . $e->getMessage()); }
     json_response($out);
 }
+function wq_nt_ready(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS grow_note (id INT AUTO_INCREMENT PRIMARY KEY, nkey VARCHAR(100) NOT NULL, day DATE NULL, kind VARCHAR(12) NOT NULL DEFAULT '', emp INT NOT NULL DEFAULT 0, text VARCHAR(300) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'open', resolved_at DATETIME NULL, resolved_by INT NOT NULL DEFAULT 0, remark VARCHAR(300) NOT NULL DEFAULT '', UNIQUE KEY u_nkey (nkey), KEY k_day (day, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
+    catch (Throwable $e) { error_log('wq_nt_ready: ' . $e->getMessage()); return $ok = false; }
+}
+if ($__tkA === 'wq.grow_notes') {   // Admin / HR: the owner's to-do list — who needs a talking-to (behind on bigger / add-on), who left call-backs open. Open ones only; resolving needs a remark.
+    $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (!$adm) json_response(['error' => 'Only Admin or HR can see the notifications.'], 403);
+    $out = ['ok' => true, 'open' => [], 'resolved' => 0];
+    try { if (wq_nt_ready($pdo)) {
+        $day = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $now = date('Y-m-d H:i:s'); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        $ins = $pdo->prepare("INSERT IGNORE INTO grow_note (nkey, day, kind, emp, text, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+        $cl = wq_coach_levels($pdo);
+        foreach ($cl as $e => $v) { $lv = (int)($v['level'] ?? 0); if ($lv < 1) continue; $h1 = $v['h1'] ?? [0, 0];
+            $ins->execute(['coach:' . $e . ':' . $day . ':' . $lv, $day, 'coach', (int)$e, ($lv === 2 ? '🔴 2 ghante se lagatar: ' : '💡 Pichhle ghante: ') . (int)$h1[0] . ' orders me se ' . (int)$h1[1] . ' me bada size aur add-on dono ka offer nahi hua. Isse call karke baat karo.', $now]); }
+        // behind-notes close by themselves once the person is back in line (the owner sees it as "auto")
+        $pdo->prepare("UPDATE grow_note SET status = 'resolved', resolved_at = ?, remark = 'auto: ab peeche nahi' WHERE kind = 'coach' AND status = 'open' AND day = ? AND emp NOT IN (" . ($cl ? implode(',', array_map('intval', array_keys(array_filter($cl, function ($v) { return (int)($v['level'] ?? 0) >= 1; })))) ?: '0' : '0') . ")")->execute([$now, $day]);
+        if (wq_cb_ready($pdo)) { $q = $pdo->prepare("SELECT emp, COUNT(*) n FROM grow_callback WHERE day = ? AND status = 'open' AND created_at < ? GROUP BY emp HAVING n >= 3"); $q->execute([$day, date('Y-m-d H:i:s', time() - 3600)]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $ins->execute(['cb:' . (int)$r['emp'] . ':' . $day, $day, 'callback', (int)$r['emp'], '📞 ' . (int)$r['n'] . ' call-backs ek ghante se zyada se pending hain. Isse bolo ki customers ko call kare.', $now]); }
+        $q = $pdo->prepare("SELECT id, kind, emp, text, created_at FROM grow_note WHERE day = ? AND status = 'open' ORDER BY id DESC LIMIT 60"); $q->execute([$day]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out['open'][] = ['id' => (int)$r['id'], 'kind' => (string)$r['kind'], 'emp' => $nm[(int)$r['emp']] ?? ('#' . $r['emp']), 'text' => (string)$r['text'], 'at' => substr((string)$r['created_at'], 11, 5)];
+        $c = $pdo->prepare("SELECT COUNT(*) FROM grow_note WHERE day = ? AND status = 'resolved'"); $c->execute([$day]); $out['resolved'] = (int)$c->fetchColumn();
+    } } catch (Throwable $e) { error_log('wq.grow_notes: ' . $e->getMessage()); }
+    json_response($out);
+}
+if ($__tkA === 'wq.grow_note_resolve') {   // Admin / HR resolves one notification — a remark is required; it then disappears from the list
+    $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (!$adm) json_response(['error' => 'Only Admin or HR can resolve.'], 403);
+    $in = json_input(); $id = (int)($in['id'] ?? 0); $rm = trim((string)($in['remark'] ?? ''));
+    if ($id <= 0 || mb_strlen($rm) < 4) json_response(['error' => 'Remark likho (kam se kam 4 akshar).'], 422);
+    if (!wq_nt_ready($pdo)) json_response(['error' => 'Not available right now.'], 500);
+    $u = $pdo->prepare("UPDATE grow_note SET status = 'resolved', resolved_at = ?, resolved_by = ?, remark = ? WHERE id = ? AND status = 'open'"); $u->execute([date('Y-m-d H:i:s'), (int)($auth['employee_id'] ?? 0), mb_substr($rm, 0, 300), $id]);
+    json_response(['ok' => true, 'changed' => $u->rowCount()]);
+}
 if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today (read from the chats after the orders): four counts, stars, add-on rupees, the orders where nothing was offered, the words that worked. Only the person's own rows.
     $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     $out = ['ok' => true, 'n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'stars' => null, 'addon_rs' => 0, 'missed' => [], 'missed_n' => 0, 'missed_big' => [], 'tip' => '', 'team' => [0, 0, 0, 0], 'team_sz' => [0, 0, 0, 0], 'yd' => ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'read' => 0], 'read' => 0];
