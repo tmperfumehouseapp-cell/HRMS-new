@@ -148,6 +148,11 @@
       C.rows.sort((x, y) => x.ml - y.ml); let done = 0, skipped = 0; const ref = [];
       C.rows.forEach((r) => {
         if (full(r)) { ref.push(r); return; }
+        if (!empty(r) && Number(r.p[0]) > 0 && r.p.slice(1).every((v) => !(Number(v) > 0)) && ref.length) {   // only the first (highest) column is typed: the others follow the same proportions as the last full row
+          const b = ref[ref.length - 1], q = r.p.map((v, i) => (i === 0 ? Number(v) : Math.round(Number(r.p[0]) * Number(b.p[i]) / Number(b.p[0]) / 10) * 10));
+          for (let i = 1; i < q.length; i++) if (q[i] > q[i - 1]) q[i] = q[i - 1];
+          r.p = q; ref.push(r); done++; return;
+        }
         if (!empty(r)) return;
         if (ref.length < 2) { skipped++; return; }
         const r1 = ref[ref.length - 2], r2 = ref[ref.length - 1]; if (!(Number(r2.ml) > Number(r1.ml))) { skipped++; return; }
