@@ -780,7 +780,7 @@
     }
     async function histBulk() {
       const H = S.hist, phones = [...H.sel]; if (!phones.length) return; const sh = sheet('Send to ' + phones.length + ' chats'); sh.body.innerHTML = '<div class="wx-sk"></div>';
-      try { if (!S.tpls) S.tpls = (await api.get('wa.tpl_list')).templates || []; } catch (e) { sh.body.innerHTML = `<div class="wx-empty">${esc(e.message)}</div>`; return; }
+      try { if (!S.tpls) S.tpls = (await Promise.race([api.get('wa.tpl_list', { lite: 1 }), new Promise((_, rj) => setTimeout(() => rj(new Error('The messages are taking too long to load. Close this and open Pre-made again.')), 30000))])).templates || []; } catch (e) { sh.body.innerHTML = `<div class="wx-empty">${esc(e.message)}</div>`; return; }
       const ok = S.tpls.filter((t) => (t.status === 'approved' || t.status === 'partial') && !t.media_header && !t.auto && (t.vars || 0) <= 1).sort((a, b) => (a.category === 'UTILITY' ? 0 : 1) - (b.category === 'UTILITY' ? 0 : 1) || (b.star ? 1 : 0) - (a.star ? 1 : 0));
       const fill = (t, v) => String(t || '').replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => v[+n - 1] || m);
       const list = () => { sh.title('Send to ' + phones.length + ' chats'); sh.body.innerHTML = '<div class="wx-sub" style="margin-bottom:8px">Choose an approved pre-made message. Each customer gets their own first name. Only messages with just a name blank are listed.</div>' + (ok.length ? ok.map((t, i) => `<div class="wx-row" data-i="${i}"><div class="wx-mid"><div class="wx-nm">${esc(t.name.replace(/_/g, ' '))} <span class="wx-chip ${t.category === 'UTILITY' ? 'g' : 'o'}">${t.category === 'UTILITY' ? 'UTILITY' : 'MARKETING'}</span></div><div class="wx-sub" style="white-space:normal">${esc(t.body)}</div></div></div>`).join('') : '<div class="wx-empty">No approved message found.</div>'); sh.body.onclick = (e) => { const r = e.target.closest('[data-i]'); if (r) pickOne(ok[+r.dataset.i]); }; };
@@ -1462,7 +1462,7 @@
     }
     async function openTemplates() {
       const sh = sheet('Pre-made messages'); sh.body.innerHTML = '<div class="wx-sk"></div>'; const c = S.cur.contact;
-      try { if (!S.tpls) S.tpls = (await api.get('wa.tpl_list')).templates || []; } catch (e) { sh.body.innerHTML = `<div class="wx-empty">${esc(e.message)}</div>`; return; }
+      try { if (!S.tpls) S.tpls = (await Promise.race([api.get('wa.tpl_list', { lite: 1 }), new Promise((_, rj) => setTimeout(() => rj(new Error('The messages are taking too long to load. Close this and open Pre-made again.')), 30000))])).templates || []; } catch (e) { sh.body.innerHTML = `<div class="wx-empty">${esc(e.message)}</div>`; return; }
       const ok = S.tpls.filter((t) => (t.status === 'approved' || t.status === 'partial') && !t.media_header && !t.auto).sort((a, b) => (a.category === 'UTILITY' ? 0 : 1) - (b.category === 'UTILITY' ? 0 : 1) || (b.star ? 1 : 0) - (a.star ? 1 : 0));
       const fill = (t, v) => String(t || '').replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => v[+n - 1] || m);
       let tq = '';      // 🔎 search the pre-made messages by name or words in the message

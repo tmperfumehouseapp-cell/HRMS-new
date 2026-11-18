@@ -792,6 +792,15 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
     $names = employee_names_by_id($pdo); $me = (int)($auth['employee_id'] ?? 0);
     switch ($__wt) {
         case 'wa.tpl_list': {
+            // ⚡ the phone app's "Pre-made messages" sheet asks for the LITE list: the approved messages without the per-number matrix / utility twins / Meta check, remembered for 60 s (the full list made the sheet hang on "loading" with hundreds of messages)
+            $__lite = !empty($_GET['lite']); if ($__lite && function_exists('wa_cpc_get')) { try { $__h = wa_cpc_get($pdo, 'tpl_list_lite1'); if ($__h && $__h['age'] < 60) json_response($__h['v']); } catch (Throwable $e) { } }
+            if ($__lite) {
+                $rows = $pdo->query("SELECT * FROM wa_templates ORDER BY star DESC, used DESC, id DESC")->fetchAll();
+                $out = []; foreach ($rows as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $o1 = wa_tpl_public($pdo, $r, $wabas); if (in_array($o1['status'], ['approved', 'partial'], true)) $out[] = $o1; }
+                $out = wa_tpl_mark_auto($out, !empty($_GET['all'])); $resp = ['templates' => $out, 'lite' => 1];
+                if (function_exists('wa_cpc_put')) { try { wa_cpc_put($pdo, 'tpl_list_lite1', $resp); } catch (Throwable $e) { } }
+                json_response($resp);
+            }
             $auto = null; register_shutdown_function(function () use ($pdo) { if (function_exists('hrms_release')) hrms_release(); @set_time_limit(90); try { wa_tpl_autosync($pdo, 300); } catch (Throwable $e) { } });   // ⚡ asking Meta about waiting templates happens AFTER the list is shown (every 5 min at most) — the list opens at once
             $rows = $pdo->query("SELECT * FROM wa_templates ORDER BY star DESC, used DESC, id DESC")->fetchAll();
             $out = []; foreach ($rows as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $out[] = wa_tpl_public($pdo, $r, $wabas); }
