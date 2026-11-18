@@ -65,7 +65,7 @@ if ($__tkA === 'wq.grow_chat') {   // 📈 the live effort of ONE open chat (big
 }
 
 // ================= 🔗 Payment-link rule: no link before BOTH efforts (extra perfume + bigger size) were really offered =================
-// Settings (hrms_settings): grow_gate_mode = off | warn | lock | auto (default auto: warning-only until the day before grow_lock_from, strict from that business day) · grow_lock_from (default 2026-11-20) · grow_link_re (regex of what counts as a payment link).
+// Settings (hrms_settings): grow_gate_mode = off | warn | lock | auto (default auto: warning-only until the day before grow_lock_from, strict from that business day) · grow_lock_from (default 2026-11-19 = strict from the business day that starts tomorrow morning) · grow_link_re (regex of what counts as a payment link).
 // Only the Employee role is held (Admin / HR / managers never are). A person is never blocked because OUR side failed (AI silent, no chat read, error). Effort, not result, unlocks: one proper offer per lane, or the customer clearly refused, or the cart already reaches the ticket goal, or a written reason (counted and shown to the owner).
 function wq_grow_ready(PDO $pdo): bool
 {
@@ -76,7 +76,7 @@ function wq_grow_ready(PDO $pdo): bool
 function wq_grow_cfg(PDO $pdo): array
 {
     $m = (string)setting_get($pdo, 'grow_gate_mode', 'auto'); if (!in_array($m, ['off', 'warn', 'lock', 'auto'], true)) $m = 'auto';
-    $from = (string)setting_get($pdo, 'grow_lock_from', '2026-11-20'); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = '2026-11-20';
+    $from = (string)setting_get($pdo, 'grow_lock_from', '2026-11-19'); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = '2026-11-19';
     $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     return ['mode' => $m, 'from' => $from, 'today' => $today, 'effective' => $m === 'auto' ? ($today >= $from ? 'lock' : 'warn') : $m];
 }
