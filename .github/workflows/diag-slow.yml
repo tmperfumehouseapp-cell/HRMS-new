@@ -1,0 +1,45 @@
+# READ-ONLY: which database queries cost the most in TOTAL since the server started (the heavy hitters behind a slow HRMS).
+# Reads MySQL's own statement summary (performance_schema) — query shapes with the values removed, how many times each ran, the total seconds and the average. No phone numbers, names or data. Changes nothing.
+# Run it by hand: Actions → "Slowest queries (read-only)" → Run workflow.
+name: Slowest queries (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Heaviest queries
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/sl_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $all = function ($sql) use ($d) { try { return $d->query($sql)->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "  (n/a: " . substr($e->getMessage(), 0, 140) . ")\n"; return []; } };
+          echo "=== top 15 query shapes by TOTAL time since the server started ===\n";
+          foreach ($all("SELECT LEFT(DIGEST_TEXT, 150) q, COUNT_STAR n, ROUND(SUM_TIMER_WAIT/1e12) tot_s, ROUND(AVG_TIMER_WAIT/1e9) avg_ms, ROUND(SUM_ROWS_EXAMINED/GREATEST(COUNT_STAR,1)) rows_each FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME = DATABASE() ORDER BY SUM_TIMER_WAIT DESC LIMIT 15") as $r) echo "  " . $r["tot_s"] . " s total · " . $r["n"] . " runs · avg " . $r["avg_ms"] . " ms · " . $r["rows_each"] . " rows read each · " . $r["q"] . "\n";
+          echo "\n=== top 10 by AVERAGE time (ran at least 20 times) ===\n";
+          foreach ($all("SELECT LEFT(DIGEST_TEXT, 150) q, COUNT_STAR n, ROUND(AVG_TIMER_WAIT/1e9) avg_ms, ROUND(MAX_TIMER_WAIT/1e9) max_ms FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME = DATABASE() AND COUNT_STAR >= 20 ORDER BY AVG_TIMER_WAIT DESC LIMIT 10") as $r) echo "  avg " . $r["avg_ms"] . " ms · max " . $r["max_ms"] . " ms · " . $r["n"] . " runs · " . $r["q"] . "\n";
+          echo "\n=== the 15 biggest tables (rows, MB) ===\n";
+          foreach ($all("SELECT table_name t, table_rows r, ROUND((data_length + index_length)/1048576) mb FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY (data_length + index_length) DESC LIMIT 15") as $r) echo "  " . $r["t"] . " · " . $r["r"] . " rows · " . $r["mb"] . " MB\n";
+          PHP
+          php /tmp/sl_check.php "$P"; rm -f /tmp/sl_check.php
+          REMOTE
