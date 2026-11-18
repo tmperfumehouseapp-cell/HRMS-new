@@ -624,8 +624,11 @@
       el.innerHTML = '<div class="wx-rd" style="--c:' + col + '"><div class="u"><span class="t">' + esc(r ? r.u : life) + '</span>' + (r && life ? '<em>' + esc(life) + '</em>' : '') + '</div>' + (r ? '<div class="d">👉 Do: ' + esc(r.d) + '</div>' : '') + '</div>';
     }
     // ➕ add-on effort of this customer's last read order: [level 0-3, stars, reason, order] → a tiny coloured chip (🔴 none · 🟠 little · 🟡 tried hard · 🟢 took it)
-    const EFFS = [['🔴', '#dc2626', 'No add-on effort'], ['🟠', '#ea580c', 'Little add-on effort'], ['🟡', '#d97706', 'Tried hard, customer did not take it'], ['🟢', '#16a34a', 'Tried, and the customer took the add-on']];
-    const effChip = (e) => { const x = e && e.length ? EFFS[e[0]] : null; return x ? ` <span class="wx-chip" style="background:${x[1]};color:#fff;font-weight:800;padding:0 5px" title="${esc(x[2] + ' · order ' + (e[3] || '') + ' · ★' + e[1] + ' — ' + (e[2] || ''))}">➕${x[0]}</span>` : ''; };
+    const EFFS = [['🔴', '#dc2626', 'No add-on effort'], ['🟠', '#ea580c', 'Little add-on effort'], ['🟡', '#d97706', 'Tried hard, customer did not take the add-on'], ['🟢', '#16a34a', 'Tried, and the customer took the add-on']];
+    const EFFB = [['⚫', '#1f2937', 'No effort to sell bigger (ticket size)'], ['🟤', '#92400e', 'Little effort to sell bigger'], ['🟣', '#7c3aed', 'Tried hard to sell bigger, customer did not take'], ['🔵', '#2563eb', 'Sold bigger']];
+    // both efforts of the customer's last read order, two tiny chips: ⬆ ticket size (bigger) and ➕ add-on — [add-on level, stars, reason, order, bigger level]
+    const effChip = (e) => { if (!(e && e.length)) return ''; const a = EFFS[e[0]], b = EFFB[e[4] == null ? 0 : e[4]]; const t = esc('order ' + (e[3] || '') + ' · ★' + e[1] + ' — ' + (e[2] || ''));
+      return ' <span class="wx-chip" style="background:' + b[1] + ';color:#fff;font-weight:800;padding:0 5px" title="' + esc(b[2]) + ' · ' + t + '">⬆' + b[0] + '</span> <span class="wx-chip" style="background:' + a[1] + ';color:#fff;font-weight:800;padding:0 5px" title="' + esc(a[2]) + ' · ' + t + '">➕' + a[0] + '</span>'; };
     function badgeOf(c) { const b = c.badge || {}; return b.k === 'vip' ? '<span title="Very good customer">⭐</span>' : b.k === 'hot' ? '<span title="Ready to pay">🔥</span>' : b.k === 'repeat' ? '<span title="Repeat buyer">🔁</span>' : ''; }
     function timerOf(c) {
       if (!c.waiting || !c.window) return `<div>${hhmm(c.last_at)}</div>`;
