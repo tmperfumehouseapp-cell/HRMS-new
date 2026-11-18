@@ -47,14 +47,19 @@
   renderSidebar('analytics');
   let SA_URL = '';
   const fr = document.getElementById('saFrame'), ld = document.getElementById('saLoad');
-  fr.onload = () => { ld.style.display = 'none'; };
+  let saT = 0, saStarted = false;
+  fr.onload = () => { if (!fr.getAttribute('src')) return; clearTimeout(saT); ld.style.display = 'none'; };
+  // If the report has not appeared after 25 seconds, say so and give a way out (it used to stay on "Loading the report…" silently).
+  const saSlow = () => { ld.innerHTML = '<div style="text-align:center;padding:20px"><b>The report is taking too long to open.</b><br><span style="font-size:12.5px">Press Reload. If it still does not open, open it in its own tab:</span><br><a href="' + SA_URL.replace(/"/g, '') + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;padding:8px 14px;border-radius:99px;background:#111827;color:#fff;font-weight:700;text-decoration:none">Open the report ↗</a></div>'; };
   async function saLoad() {
-    try { const d = await api.get('analytics.url'); SA_URL = d.url; fr.src = SA_URL; }
-    catch (e) { ld.style.display = 'flex'; ld.innerHTML = '<div style="text-align:center;padding:20px"><b>' + String(e.message).replace(/[<>&]/g, '') + '</b><br><span style="font-size:12px">Ask Admin to tick "Analytics" for your role on the Roles page.</span></div>'; }
+    if (saStarted) return; saStarted = true;
+    try { const d = await api.get('analytics.url'); SA_URL = d.url; ld.style.display = 'flex'; ld.textContent = 'Loading the report…'; fr.src = SA_URL; clearTimeout(saT); saT = setTimeout(saSlow, 25000); }
+    catch (e) { saStarted = false; ld.style.display = 'flex'; ld.innerHTML = '<div style="text-align:center;padding:20px"><b>' + String(e.message).replace(/[<>&]/g, '') + '</b><br><span style="font-size:12px">Ask Admin to tick "Analytics" for your role on the Roles page.</span></div>'; }
   }
   // The report is another site inside a frame and takes a few seconds. It starts AFTER this page has finished loading, so the page itself opens at once and shows "Loading the report…".
-  if (document.readyState === 'complete') saLoad(); else window.addEventListener('load', () => setTimeout(saLoad, 0));
-  document.getElementById('saReload').onclick = () => { if (!SA_URL) { saLoad(); return; } ld.style.display = 'flex'; fr.src = SA_URL + '&_=' + Date.now(); };
+  // It no longer waits for the page's "load" event alone: if one slow file held that event back, the report never started. It also starts 1.5 s after the page is drawn.
+  if (document.readyState === 'complete') saLoad(); else { window.addEventListener('load', () => setTimeout(saLoad, 0)); setTimeout(saLoad, 1500); }
+  document.getElementById('saReload').onclick = () => { if (!SA_URL) { saStarted = false; saLoad(); return; } ld.style.display = 'flex'; ld.textContent = 'Loading the report…'; fr.src = SA_URL + '&_=' + Date.now(); clearTimeout(saT); saT = setTimeout(saSlow, 25000); };
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 </body>

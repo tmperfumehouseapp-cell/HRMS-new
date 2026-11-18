@@ -1,5 +1,5 @@
 /**
- * HRMS service worker — pages are always checked with the server; scripts and styles are served from the phone at once and refreshed in the background (so opening a page no longer waits for 5-8 network round trips). + phone notifications. (v261110.1)
+ * HRMS service worker — pages are always checked with the server; scripts and styles are served from the phone at once and refreshed in the background (so opening a page no longer waits for 5-8 network round trips). + phone notifications. (v261118.1)
  *
  * It stores NOTHING. Its jobs:
  *   - every HRMS page / script / style is checked with the server on every load
@@ -36,6 +36,9 @@ self.addEventListener('fetch', (event) => {
   let url;
   try { url = new URL(req.url); } catch (e) { return; }
   if (url.origin !== self.location.origin) return;
+  // The store report (analytics/…) and every other .php page are left to the browser. Fetching them here drops the "this is a frame" mark and follows their
+  // redirect, and a browser refuses a redirected answer for a page load — the Analytics page then sat on "Loading the report…" for ever.
+  if (url.pathname.indexOf('/analytics/') > -1 || /\.php$/i.test(url.pathname)) return;
   const isAsset = /\.(js|css)$/i.test(url.pathname) && req.mode !== 'navigate';
   if (isAsset) { event.respondWith(assetFast(event, req, url)); return; }
   const fresh = req.mode === 'navigate' || /\.(html|js|css)$/i.test(url.pathname) || url.pathname.endsWith('/');
