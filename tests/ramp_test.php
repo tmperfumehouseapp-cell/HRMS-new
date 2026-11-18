@@ -25,4 +25,8 @@ ok((int)$S['wa_ru_ramp_hold'] > time() + 1 * 3600, 'failures: no growth for 2 ho
 $S['wa_ru_hourly'] = '300'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '100' && (int)$S['wa_ru_pause_until'] > time() + 3 * 3600, 'spam: back to 100 and paused 4 hours');
 // 7) ceiling 600
 $S = ['wa_ru_hourly' => '600', 'wa_ru_ramp_base' => '100', 'wa_ru_ramp_step' => '50', 'wa_ru_ramp_at' => (string)(time() - 4000)]; $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 400, 0, 30); wa_ru_ramp($pdo, ['hourly' => 600]); ok($S['wa_ru_hourly'] === '600', 'ceiling 600');
+// 8) failing at 300 restarts at 200 (two steps below), at 150 / 200 it restarts at the base, the spam flag goes to the base
+$S['wa_ru_hourly'] = '300'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '200', 'failure at 300 restarts at 200');
+$S['wa_ru_hourly'] = '150'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '100', 'failure at 150 restarts at 100');
+$S['wa_ru_hourly'] = '400'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '100', 'spam flag restarts at the base');
 echo "ramp ok\n";
