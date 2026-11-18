@@ -227,7 +227,7 @@
     }
     LAST = { cm, orders: od.orders || [], dayStart, from, to };
     const errs = (od.errors || []).filter(Boolean);
-    return { applicable: true, month: m, today: t, monthRate: m.rated ? rateTxt(m.rate, m.manual) : '', todayRate: t.rated ? rateTxt(t.rate) : '', rows: archiveRows(cm, od.orders || [], from, to, dayStart), days: dayDetail(cm, from, to), noRules: !CM.rules.length, note: errs.length ? 'Some orders could not be loaded, so month figures may be incomplete: ' + errs.join(' · ') : '' };
+    return { applicable: true, month: m, today: t, monthRate: m.rated ? rateTxt(m.rate, m.manual) : '', todayRate: t.rated ? rateTxt(t.rate) : '', rows: (() => { const dd = dayDetail(cm, from, to), by = {}; dd.forEach((x) => { by[x.day] = x.com; }); return archiveRows(cm, od.orders || [], from, to, dayStart).map((r) => Object.assign(r, { com: by[r.day] })); })(), days: dayDetail(cm, from, to), noRules: !CM.rules.length, note: errs.length ? 'Some orders could not be loaded, so month figures may be incomplete: ' + errs.join(' · ') : '' };
   }
   async function archive(mo) {
     const from = mo + '-01', last = new Date(Number(mo.slice(0, 4)), Number(mo.slice(5, 7)), 0), to = mo + '-' + String(last.getDate()).padStart(2, '0');
