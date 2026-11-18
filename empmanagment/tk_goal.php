@@ -73,12 +73,17 @@ if ($__tkA === 'wq.grow_notes') {   // Admin / HR: the owner's to-do list — wh
             $raise('coach', (int)$e, ($lv === 2 ? '🔴 2 ghante se lagatar: ' : '💡 Pichhle ghante: ') . (int)$h1[0] . ' orders me se ' . (int)$h1[1] . ' me bada size aur add-on dono ka offer nahi hua. Isse call karke baat karo.'); }
         // the two lanes on their own + the ticket against the goal (the owner wants ticket-size instructions here too, not only the "both missing" case)
         try { $pdo->exec("DELETE FROM grow_note WHERE kind = 'ticket' AND status = 'open' AND text LIKE '%orders ka average%'"); } catch (Throwable $e) { }   // one-off: the first version of the ticket note used a different average than the Live blocks
-        $lane = []; $behind2 = ['big' => [], 'add' => [], 'ticket' => []];
+        $lane = []; $behind2 = ['big' => [], 'add' => [], 'ticket' => [], 'bigd' => [], 'addd' => []];
         try { $A = "(CASE WHEN r.worked = 1 OR r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B = "(CASE WHEN r.sz_worked = 1 OR r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
             $q = $pdo->query("SELECT r.employee_id e, COUNT(*) n, SUM($B = 0) zb, SUM($A = 0) za FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 3 AND r.rating IS NOT NULL AND r.employee_id > 0 AND o.created_at >= NOW() - INTERVAL 60 MINUTE GROUP BY r.employee_id");
             foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $n = (int)$x['n']; if ($n < 3) continue; $e = (int)$x['e'];
                 if ((int)$x['zb'] * 2 >= $n) { $behind2['big'][] = $e; $raise('big', $e, '⬆ Ticket size: pichhle ghante ' . $n . ' orders me se ' . (int)$x['zb'] . ' me bada size / value ka offer nahi hua. Isse bolo: "4 ki jagah 5 le lo, 5th pe ₹100 off" jaisa offer har order me rakhe.'); }
                 if ((int)$x['za'] * 2 >= $n) { $behind2['add'][] = $e; $raise('add', $e, '➕ Add-on: pichhle ghante ' . $n . ' orders me se ' . (int)$x['za'] . ' me extra perfume ka offer nahi hua. Isse bolo: "10ml tester sirf ₹99 mein add kar du" jaisa offer rakhe.'); } }
+            // the whole day so far: 8+ read orders and 60%+ of them without any bigger / add-on offer
+            $q = $pdo->prepare("SELECT employee_id e, COUNT(*) n, SUM($B = 0) zb, SUM($A = 0) za FROM order_rate_auto r WHERE r.day = ? AND r.sz_ok = 3 AND r.rating IS NOT NULL AND r.employee_id > 0 GROUP BY r.employee_id HAVING n >= 8"); $q->execute([$day]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $n = (int)$x['n']; $e = (int)$x['e'];
+                if ((int)$x['zb'] * 100 >= 60 * $n) { $behind2['bigd'][] = $e; $raise('bigd', $e, '⬆ Aaj ' . $n . ' orders me se ' . (int)$x['zb'] . ' me bada size / value ka offer nahi hua (' . (int)round((int)$x['zb'] * 100 / $n) . '%). Isse bolo: "4 ki jagah 5 le lo, 5th pe ₹100 off" har order me rakhe.'); }
+                if ((int)$x['za'] * 100 >= 60 * $n) { $behind2['addd'][] = $e; $raise('addd', $e, '➕ Aaj ' . $n . ' orders me se ' . (int)$x['za'] . ' me extra perfume ka offer nahi hua (' . (int)round((int)$x['za'] * 100 / $n) . '%). Isse bolo: "10ml tester sirf ₹99 mein add kar du" har order me rakhe.'); } }
             $goal = max(1, (int)setting_get($pdo, 'tk_goal', '2700'));
             // the SAME ticket the Live blocks show (clean ticket when known, else sales / orders of the business day)
             foreach ((array)(function_exists('waa_cp') ? waa_cp($pdo) : []) as $e => $r) { $n = (int)($r['n'] ?? 0); if ($n < 5 || !empty($r['off'])) continue; $a = (float)($r['ctk'] ?? 0) > 0 ? (float)$r['ctk'] : (float)($r['s'] ?? 0) / $n;

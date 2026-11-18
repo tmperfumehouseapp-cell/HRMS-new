@@ -890,9 +890,9 @@
   }
   window.effGr = async (mode, from) => { try { await api.post('wq.grow_cfg', from ? { mode, from } : { mode }); EFF.gr = await api.get('wq.grow_cfg'); renderToday(); } catch (e) { showAlert(e.message, 'error'); } };
   // 🔔 Notifications for the owner: who needs a talking-to / has pending call-backs. Resolve needs a remark; resolved ones disappear.
-  function ntHtml() {
+  function ntBox(title, isCall) {
     const N = EFF.nt; if (!N) return '';
-    const open = N.open || [], K = { big: '⬆ Bigger', add: '➕ Add-on', ticket: '🎯 Ticket', coach: '🔴 Both', callback: '📞 Call-backs' }, cnt = {};
+    const inBox = r => (r.kind === 'callback') === isCall, open = (N.open || []).filter(inBox), doneAll = (N.done || []).filter(inBox), K = { big: '⬆ Bigger (1h)', add: '➕ Add-on (1h)', bigd: '⬆ Bigger (aaj)', addd: '➕ Add-on (aaj)', ticket: '🎯 Ticket', coach: '🔴 Both', callback: '📞 Call-backs' }, cnt = {};
     open.forEach(r => { cnt[r.kind] = (cnt[r.kind] || 0) + 1; });
     const sum = Object.keys(K).filter(k => cnt[k]).map(k => K[k] + ' ' + cnt[k]).join(' · ');
     const row = 'display:flex;align-items:center;gap:8px;border-top:1px solid #eef0f4;padding:5px 0;';
@@ -900,9 +900,10 @@
     const blocks = open.map(r => `<div style="${bc}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b style="font-size:13px">${esc(r.emp)}</b><small style="color:#667781">${esc(r.at)}</small></div><div style="margin:3px 0 7px;line-height:1.4;font-size:12.5px;word-break:break-word">${esc(r.text)}</div><button type="button" onclick="effNt(${r.id})" style="display:block;width:100%;font:inherit;font-size:13px;font-weight:700;border:1px solid #86efac;background:#f0fdf4;color:#166534;border-radius:99px;padding:7px 10px;cursor:pointer">✓ Resolve</button></div>`).join('');
     const lines = open.map(r => `<details style="${row}display:block;padding:0"><summary style="${row}border-top:0;cursor:pointer;list-style:none"><b style="flex:none;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${esc(r.emp)}</b><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#444">${esc(r.text)}</span><button type="button" onclick="event.preventDefault();effNt(${r.id})" style="flex:none;font:inherit;font-size:12px;font-weight:700;border:1px solid #86efac;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 10px;cursor:pointer">✓</button></summary><div style="padding:2px 0 7px;font-size:12.5px;line-height:1.45;word-break:break-word"><small style="color:#667781">${esc(r.at)}</small> ${esc(r.text)}</div></details>`).join('');
     const rows = phone ? blocks : lines;
-    const dn = (N.done || []).map(r => `<div style="${row}display:block;font-size:12px;word-break:break-word"><b>${esc(r.emp)}</b> <small style="color:#667781">${esc(r.done_at)}</small><br>${r.auto ? '🤖 ' : '✓ '}<b>${esc(r.remark)}</b></div>`).join('');
-    return `<details class="ef-d" style="max-width:100%"><summary>🔔 Notifications — ${open.length} open · ${N.resolved || 0} resolved today<br><small style="font-weight:400;color:#667781">${sum || 'Nothing to do right now ✓'}</small></summary>${rows}${dn ? `<details style="margin-top:4px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:#166534">✓ Resolved today (${N.resolved}) — with your comments</summary>${dn}</details>` : ''}</details>`;
+    const dn = doneAll.map(r => `<div style="${row}display:block;font-size:12px;word-break:break-word"><b>${esc(r.emp)}</b> <small style="color:#667781">${esc(r.done_at)}</small><br>${r.auto ? '🤖 ' : '✓ '}<b>${esc(r.remark)}</b></div>`).join('');
+    return `<details class="ef-d" ${!isCall && open.length ? 'open' : ''} style="max-width:100%"><summary>${title} — ${open.length} open · ${doneAll.length} resolved today<br><small style="font-weight:400;color:#667781">${sum || (isCall ? 'Koi call pending nahi ✓' : 'Abhi koi peeche nahi ✓')}</small></summary>${rows}${dn ? `<details style="margin-top:4px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:#166534">✓ Resolved today (${doneAll.length}) — with your comments</summary>${dn}</details>` : ''}</details>`;
   }
+  function ntHtml() { return ntBox('📈 Ticket size · Bigger · Add-on — instructions', false) + ntBox('📞 Call instructions', true); }
   window.effNt = async (id) => { const rm = prompt('Kya baat hui / kya kiya? (remark zaroori hai)'); if (rm == null) return; if (rm.trim().length < 4) { showAlert('Remark likho (kam se kam 4 akshar).', 'error'); return; } try { await api.post('wq.grow_note_resolve', { id, remark: rm.trim() }); EFF.nt = await api.get('wq.grow_notes'); renderToday(); } catch (e) { showAlert(e.message, 'error'); } };
   function effHtml() {
     const d = EFF.d; if (!d) return '';
