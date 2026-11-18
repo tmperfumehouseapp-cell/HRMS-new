@@ -4,6 +4,11 @@ name: Growth effort check (read-only)
 
 on:
   workflow_dispatch:
+    inputs:
+      order:
+        description: "Optional: one order number (e.g. 72176) to show how its chat was judged (digit strings of 10+ are hidden)"
+        required: false
+        default: ""
 
 jobs:
   check:
@@ -24,8 +29,9 @@ jobs:
           STAGING_HOST: ${{ secrets.STAGING_HOST }}
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          ORDER_Q: ${{ github.event.inputs.order }}
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$(printf '%s' "$ORDER_Q" | tr -cd '0-9')" <<'REMOTE' || true
           P="$1"
           cat > /tmp/gr_check.php <<'PHP'
           <?php
@@ -48,7 +54,12 @@ jobs:
             }
             echo "\nlast read (strict rules): " . $d->query("SELECT MAX(at) FROM order_rate_auto WHERE sz_ok = 2")->fetchColumn() . " · server time now " . date("Y-m-d H:i:s") . "\n";
             $x = $d->query("SELECT COUNT(DISTINCT employee_id) FROM order_rate_auto WHERE sz_ok = 2")->fetchColumn(); echo "salespeople with at least one strict-rule row: $x\n";
+            $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
+            if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
+              $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
+              $hide = function ($t) { return preg_replace("/\d{10,}/", "#", (string)$t); };
+              foreach ($rows as $r) { echo "  stars " . ($r["rating"] / 2) . " · sz_ok " . $r["sz_ok"] . "\n  ADD-ON: tries " . $r["tries"] . " weak " . $r["weak"] . " worked " . $r["worked"] . " refused " . $r["refused"] . "\n  BIGGER: tries " . $r["sz_tries"] . " weak " . $r["sz_weak"] . " worked " . $r["sz_worked"] . " refused " . $r["sz_refused"] . "\n  asked: " . $hide($r["asked"]) . "\n  offered: " . $hide($r["offered"]) . "\n  reason: " . $hide($r["reason"]) . "\n  add-on words: " . $hide($r["tip"]) . "\n  bigger words: " . $hide($r["sz_tip"]) . "\n"; } }
           } catch (Throwable $e) { echo "n/a (" . substr($e->getMessage(), 0, 160) . ")\n"; }
           PHP
-          php /tmp/gr_check.php "$P"; rm -f /tmp/gr_check.php
+          php /tmp/gr_check.php "$P" "$2"; rm -f /tmp/gr_check.php
           REMOTE
