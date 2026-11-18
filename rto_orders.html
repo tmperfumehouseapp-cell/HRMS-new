@@ -97,7 +97,7 @@
       + '<button class="btn go" id="fGo" type="button">✅ Create the order</button>'
       + '<p class="hint" style="text-align:center;margin-top:8px">The order gets the next number in the same series (WM-…), goes to Dispatch and Shiprocket, and the perfumes are counted in the SKU sheet.</p></div>';
     drawItems();
-    const pick = (id, key, redraw) => { $(id).onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; keepForm(); F[key] = b.dataset.v; if (key === 'cat') F.q = ''; drawNew(); if (redraw) redraw(); }; };
+    const pick = (id, key, redraw) => { $(id).onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; keepForm(); F[key] = b.dataset.v; F.msg = ''; if (key === 'cat') F.q = ''; drawNew(); if (redraw) redraw(); }; };
     pick('fKind', 'kind'); pick('fPay', 'pay'); pick('fCat', 'cat', () => { $('fQ').focus(); search(); });
     let deb = 0; $('fQ').oninput = () => { clearTimeout(deb); deb = setTimeout(search, 280); };
     $('fPin').oninput = async () => { const p = $('fPin').value.replace(/\D+/g, ''); if (p.length !== 6) return; try { const g = await api.get('wmo.pin', { pin: p }); if ($('fPin') && $('fPin').value.replace(/\D+/g, '') === p) { if (g.city && !$('fCity').value) $('fCity').value = g.city; if (g.state && !$('fState').value) $('fState').value = g.state; } } catch (e) { /* typed by hand */ } };
