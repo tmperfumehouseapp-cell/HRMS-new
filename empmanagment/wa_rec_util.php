@@ -325,7 +325,8 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
         if ($every < 3600) {   // short steps: judge only the messages sent since the last change (15 minutes to one step-length old), the limit used in proportion to the length of that look
             $gs = max($now - $every - 900, $rat, (int)setting_get($pdo, 'wa_ru_brake_since', '0')); $q2 = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
             $q2->execute([date('Y-m-d H:i:s', $gs), date('Y-m-d H:i:s', $now - 900)]); $r2 = $q2->fetch(); $gn = (int)$r2['n']; $gf = (int)$r2['f']; $gd = (int)$r2['d']; $span = max(600, ($now - 900) - $gs); $need = max(10, (int)floor($cur * 0.6 * $span / 3600)); }
-        if ($cur < $max && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= 0.7) {
+        $dmin = $every < 3600 ? 0.5 : 0.7;   // at night many phones are off: a third of the messages stay 'sent' for a long time without any failure; for the small steps the delivered share needs to be 50% (failures still must be 5% or less and the 10% failure brake is unchanged)
+        if ($cur < $max && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
             $to = min($max, $cur + $step); setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered in the last look): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
