@@ -1282,11 +1282,9 @@ function ora_transcript(array $rows): array
     $L = array_slice($L, -70); $t = implode("\n", $L); if (mb_strlen($t) > 9000) $t = mb_substr($t, -9000);
     return [$t, $nc, $ns];
 }
-function ora_rate_one(PDO $pdo, array $o): array
+/** The strict effort judge on a chat transcript (shared by the order reader and the live chat line). $final = one closing sentence for the judge. Returns the fields of ora_store, or ['rating' => null, 'retry' => true, ...] when the AI did not answer. */
+function ora_judge_text(string $text, string $final = ''): array
 {
-    $t = strtotime((string)$o['created_at']); $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) return ['rating' => null, 'why' => 'No mobile number on the order'];
-    $q = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id ASC LIMIT 400"); $q->execute([$k, date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]);
-    [$text, $nc, $ns] = ora_transcript($q->fetchAll(PDO::FETCH_ASSOC)); if ($nc < 2 || $ns < 1) return ['rating' => null, 'why' => 'No chat with a salesperson before this order'];
     $sys = "You are the strict judge of upselling effort in ONE WhatsApp sales chat of a perfume shop. Lines: C: = customer, S: = salesperson, BOT: = automatic / campaign message (earns the salesperson NOTHING). Languages: English, Hindi, Gujarati, Hinglish. Judge ONLY the salesperson's own words (S:). "
         . "TWO SEPARATE JUDGEMENTS, never mixed. (1) BIGGER: the salesperson pushes the MAIN order up — a bigger size (100 ml instead of 50 ml), more bottles (5 instead of 4), a bigger combo or higher pack. Fields big_tries, big_weak, big_worked, big_refused, big_tip. "
         . "(2) ADD-ON: the salesperson offers an EXTRA item on top of the settled order — a 10 / 20 ml tester, a chain, a gel, a free gift item, one more small piece. Fields tries, weak, worked, refused, tip. Selling bigger earns NOTHING for the add-on, and the other way round. "
@@ -1296,7 +1294,7 @@ function ora_rate_one(PDO $pdo, array $o): array
         . "A customer who asked for a big order or an extra item by himself earns the salesperson no credit. worked / big_worked = true ONLY when the customer clearly took a PROPER offer of that kind (added the item / went bigger). refused / big_refused = true when the customer clearly said no to a proper offer of that kind. "
         . "Stars (0.5 steps, about the whole effort): 1 = no proper offer at all · 2 = only vague lines · 3 = one clear proper offer, customer did not take · 4 = proper offers, one worked a little · 5 = proper offers and a clear win (bigger order or a good add-on, or both). "
         . "asked = what the customer first asked for (short). offered = the best proper offer made (short, empty if none). reason = ONE short sentence in simple English that proves the stars from the chat. tip / big_tip = ONLY when that kind worked: the salesperson's own winning words, shortened, in the chat's language (else empty). "
-        . "Final order for reference: Rs " . round((float)$o['total']) . ($o['ml_total'] ? ', ' . (int)$o['ml_total'] . ' ml in total' : '') . '.';
+        . $final;
     $sch = ['type' => 'OBJECT', 'properties' => ['asked' => ['type' => 'STRING'], 'offered' => ['type' => 'STRING'], 'worked' => ['type' => 'BOOLEAN'], 'stars' => ['type' => 'NUMBER'], 'reason' => ['type' => 'STRING'], 'tries' => ['type' => 'NUMBER'], 'weak' => ['type' => 'NUMBER'], 'refused' => ['type' => 'BOOLEAN'], 'tip' => ['type' => 'STRING'],
         'big_worked' => ['type' => 'BOOLEAN'], 'big_tries' => ['type' => 'NUMBER'], 'big_weak' => ['type' => 'NUMBER'], 'big_refused' => ['type' => 'BOOLEAN'], 'big_tip' => ['type' => 'STRING']],
         'required' => ['asked', 'offered', 'worked', 'stars', 'reason', 'tries', 'weak', 'refused', 'tip', 'big_worked', 'big_tries', 'big_weak', 'big_refused', 'big_tip']];
@@ -1307,6 +1305,13 @@ function ora_rate_one(PDO $pdo, array $o): array
     return ['rating' => $st * 2, 'tried' => ($tr >= 1 || $wk) ? 1 : 0, 'worked' => $wk, 'tries' => max($tr, $wk ? 1 : 0), 'weak' => $n('weak'), 'refused' => !empty($v['refused']) ? 1 : 0, 'tip' => $wk ? mb_substr((string)($v['tip'] ?? ''), 0, 240) : '',
         'big_tried' => ($btr >= 1 || $bwk) ? 1 : 0, 'big_worked' => $bwk, 'big_tries' => max($btr, $bwk ? 1 : 0), 'big_weak' => $n('big_weak'), 'big_refused' => !empty($v['big_refused']) ? 1 : 0, 'big_tip' => $bwk ? mb_substr((string)($v['big_tip'] ?? ''), 0, 240) : '',
         'asked' => mb_substr((string)($v['asked'] ?? ''), 0, 200), 'offered' => mb_substr((string)($v['offered'] ?? ''), 0, 200), 'why' => mb_substr((string)($v['reason'] ?? ''), 0, 400)];
+}
+function ora_rate_one(PDO $pdo, array $o): array
+{
+    $t = strtotime((string)$o['created_at']); $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) return ['rating' => null, 'why' => 'No mobile number on the order'];
+    $q = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id ASC LIMIT 400"); $q->execute([$k, date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]);
+    [$text, $nc, $ns] = ora_transcript($q->fetchAll(PDO::FETCH_ASSOC)); if ($nc < 2 || $ns < 1) return ['rating' => null, 'why' => 'No chat with a salesperson before this order'];
+    return ora_judge_text($text, "Final order for reference: Rs " . round((float)$o['total']) . ($o['ml_total'] ? ', ' . (int)$o['ml_total'] . ' ml in total' : '') . '.');
 }
 /** Saves the suggestion as the order's real stars (only when nobody has rated it). Returns true when saved. */
 function ora_apply(PDO $pdo, string $key, array $r): bool

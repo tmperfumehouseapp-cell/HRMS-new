@@ -32,7 +32,33 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
             $tm = $pdo->prepare("SELECT tried, worked, tries FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 2 LIMIT 3000"); $tm->execute([$day]); foreach ($tm->fetchAll(PDO::FETCH_ASSOC) as $r) $out['team'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++;
         }
     } catch (Throwable $e) { error_log('wq.ad_me: ' . $e->getMessage()); }
+    // 💡 ideas from the team's own winning chats (last 7 days, no names): what to say to sell bigger / add an item. Falls back to two fixed examples until enough chats are read.
+    $ideas = ['big' => [], 'add' => []];
+    try { if (function_exists('ora_tables') && ora_tables($pdo)) { $since = date('Y-m-d H:i:s', time() - 7 * 86400);
+        foreach (['big' => "sz_worked = 1 AND sz_tip <> ''", 'add' => "worked = 1 AND tip <> ''"] as $k => $w) { $col = $k === 'big' ? 'sz_tip' : 'tip';
+            $q = $pdo->prepare("SELECT $col FROM order_rate_auto WHERE sz_ok = 2 AND $w AND at >= ? ORDER BY at DESC LIMIT 40"); $q->execute([$since]);
+            foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) { $t = trim((string)$t); if ($t !== '' && !in_array($t, $ideas[$k], true)) $ideas[$k][] = $t; if (count($ideas[$k]) >= 3) break; } } } } catch (Throwable $e) { }
+    if (!$ideas['big']) $ideas['big'][] = '4 ki jagah 5 le lo, 5th pe free 20ml';
+    if (!$ideas['add']) $ideas['add'][] = '10ml tester sirf ₹99 mein add kar du, travel ke liye best';
+    $out['ideas'] = $ideas;
     json_response($out);
+}
+if ($__tkA === 'wq.grow_chat') {   // 📈 the live effort of ONE open chat (bigger + add-on), shown only while the order is being confirmed. Own chats only (Admin / manager: any). Read from the transcript by the same strict judge; cached 45 s per last message.
+    $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0); $k = substr(preg_replace('/\D+/', '', (string)($_GET['phone'] ?? '')), -10);
+    $empty = ['ok' => true, 'big' => null, 'add' => null];
+    if (strlen($k) !== 10 || !function_exists('ora_judge_text')) json_response($empty);
+    try {
+        $c = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ? LIMIT 1"); $c->execute([$k]); $ae = (int)$c->fetchColumn();
+        $adm = function_exists('wa_is_admin') && wa_is_admin($pdo, $auth); $mgr = function_exists('wa_is_manager') && wa_is_manager($pdo, $auth);
+        if (!$adm && !$mgr && ($me <= 0 || $ae !== $me)) json_response(['error' => 'Not your chat.'], 403);
+        $q = $pdo->prepare("SELECT id, dir, who, emp_id, mtype, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND dir IN ('in', 'out') ORDER BY id ASC LIMIT 300"); $q->execute([$k, date('Y-m-d H:i:s', time() - 3 * 86400)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+        if (!$rows) json_response($empty);
+        $last = (int)end($rows)['id']; [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 1 || $ns < 1) json_response($empty);
+        $r = function_exists('hrms_memo') ? hrms_memo('growchat:' . $k . ':' . $last, 45, fn() => ora_judge_text($text, 'This chat is still running: the order is being confirmed now.')) : ora_judge_text($text, '');
+        if (!empty($r['retry']) || !is_array($r)) json_response($empty);
+        $mk = fn($tr, $wk, $wo, $rf) => ['tries' => (int)$tr, 'weak' => (int)$wk, 'worked' => (int)$wo, 'refused' => (int)$rf, 'level' => ora_effort((int)($tr >= 1 || $wo), (int)$wo, (int)$tr)];
+        json_response(['ok' => true, 'big' => $mk($r['big_tries'] ?? 0, $r['big_weak'] ?? 0, $r['big_worked'] ?? 0, $r['big_refused'] ?? 0), 'add' => $mk($r['tries'] ?? 0, $r['weak'] ?? 0, $r['worked'] ?? 0, $r['refused'] ?? 0), 'last' => $last]);
+    } catch (Throwable $e) { error_log('wq.grow_chat: ' . $e->getMessage()); json_response($empty); }
 }
 if ($__tkA === 'wq.tk_cfg') {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth();
