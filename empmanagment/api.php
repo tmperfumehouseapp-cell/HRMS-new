@@ -1360,6 +1360,61 @@ function ora_store(PDO $pdo, string $key, array $o, array $r, string $day): void
         ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (int)($r['tries'] ?? 0), (string)($r['tip'] ?? ''), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $day, (string)$o['house'], date('Y-m-d H:i:s'),
             substr(preg_replace('/\D+/', '', (string)$o['phone']), -10), (int)($r['big_tried'] ?? 0), (int)($r['big_worked'] ?? 0), (int)($r['big_tries'] ?? 0), (string)($r['big_tip'] ?? ''), (int)($r['weak'] ?? 0), (int)($r['refused'] ?? 0), (int)($r['big_weak'] ?? 0), (int)($r['big_refused'] ?? 0)]);
 }
+// ================= 📚 Growth learning feed: every 15 minutes a "pulse", every hour a digest (what was offered, what worked, which words won) is written to grow_learn_log and handed to the nightly guidebook study =================
+function grow_learn_ready(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS grow_learn_log (id INT AUTO_INCREMENT PRIMARY KEY, at DATETIME NOT NULL, kind VARCHAR(8) NOT NULL DEFAULT 'pulse', orders_read INT NOT NULL DEFAULT 0, add_tries INT NOT NULL DEFAULT 0, add_won INT NOT NULL DEFAULT 0, big_tries INT NOT NULL DEFAULT 0, big_won INT NOT NULL DEFAULT 0, plays TEXT NULL, people_behind INT NOT NULL DEFAULT 0, guide_use VARCHAR(40) NOT NULL DEFAULT '', KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
+    catch (Throwable $e) { error_log('grow_learn_ready: ' . $e->getMessage()); return $ok = false; }
+}
+/** Counts of the rows read in [$from, $to) (strict-rule rows): orders read, proper offers made and taken per lane, and the winning words. */
+function grow_learn_window(PDO $pdo, string $from, string $to): array
+{
+    $o = ['read' => 0, 'add_tries' => 0, 'add_won' => 0, 'big_tries' => 0, 'big_won' => 0, 'plays' => ['add' => [], 'big' => []]];
+    $q = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries, tip, sz_tip FROM order_rate_auto WHERE sz_ok = 3 AND rating IS NOT NULL AND at >= ? AND at < ? LIMIT 2000"); $q->execute([$from, $to]);
+    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $o['read']++;
+        if ((int)$r['tried'] || (int)$r['tries'] >= 1 || (int)$r['worked']) { $o['add_tries']++; if ((int)$r['worked']) { $o['add_won']++; $t = trim((string)$r['tip']); if ($t !== '' && !in_array($t, $o['plays']['add'], true) && count($o['plays']['add']) < 3) $o['plays']['add'][] = mb_substr($t, 0, 140); } }
+        if ((int)$r['sz_tried'] || (int)$r['sz_tries'] >= 1 || (int)$r['sz_worked']) { $o['big_tries']++; if ((int)$r['sz_worked']) { $o['big_won']++; $t = trim((string)$r['sz_tip']); if ($t !== '' && !in_array($t, $o['plays']['big'], true) && count($o['plays']['big']) < 3) $o['plays']['big'][] = mb_substr($t, 0, 140); } }
+    }
+    return $o;
+}
+/** Engine step: a 15-minute pulse and, once an hour, a digest. Returns how many log rows were written. */
+function grow_learn_tick(PDO $pdo): int
+{
+    if (!grow_learn_ready($pdo) || !function_exists('ora_tables') || !ora_tables($pdo)) return 0;
+    try { $last = (int)setting_get($pdo, 'grow_learn_at', '0'); if ($last > time() - 900) return 0; setting_set($pdo, 'grow_learn_at', (string)time()); } catch (Throwable $e) { return 0; }
+    $n = 0; $now = date('Y-m-d H:i:s'); $behind = 0;
+    try { if (function_exists('wq_coach_levels')) foreach (wq_coach_levels($pdo) as $v) if ((int)($v['level'] ?? 0) > 0) $behind++; } catch (Throwable $e) { }
+    try {
+        $w = grow_learn_window($pdo, date('Y-m-d H:i:s', time() - 900), $now);
+        $pdo->prepare("INSERT INTO grow_learn_log (at, kind, orders_read, add_tries, add_won, big_tries, big_won, plays, people_behind) VALUES (?, 'pulse', ?, ?, ?, ?, ?, ?, ?)")->execute([$now, $w['read'], $w['add_tries'], $w['add_won'], $w['big_tries'], $w['big_won'], json_encode($w['plays'], JSON_UNESCAPED_UNICODE), $behind]); $n++;
+        $hk = date('Y-m-d H'); if ((string)setting_get($pdo, 'grow_learn_hour', '') !== $hk) { setting_set($pdo, 'grow_learn_hour', $hk);
+            $h = grow_learn_window($pdo, date('Y-m-d H:i:s', time() - 3600), $now);
+            $pdo->prepare("INSERT INTO grow_learn_log (at, kind, orders_read, add_tries, add_won, big_tries, big_won, plays, people_behind, guide_use) VALUES (?, 'hourly', ?, ?, ?, ?, ?, ?, ?, 'pending')")->execute([$now, $h['read'], $h['add_tries'], $h['add_won'], $h['big_tries'], $h['big_won'], json_encode($h['plays'], JSON_UNESCAPED_UNICODE), $behind]); $n++; }
+        $pdo->exec("DELETE FROM grow_learn_log WHERE at < '" . date('Y-m-d H:i:s', time() - 14 * 86400) . "'");
+    } catch (Throwable $e) { error_log('grow_learn_tick: ' . $e->getMessage()); }
+    return $n;
+}
+/** The text added to the nightly guidebook study: what the team's proper offers did in the last 7 days (rates + the words that won). Marks the hourly digests as handed over. */
+function grow_learn_guide_text(PDO $pdo): string
+{
+    if (!grow_learn_ready($pdo)) return '';
+    try {
+        $w = grow_learn_window($pdo, date('Y-m-d H:i:s', time() - 7 * 86400), date('Y-m-d H:i:s'));
+        if ($w['read'] < 10) return '';
+        $q = $pdo->prepare("SELECT tip, COUNT(*) n FROM order_rate_auto WHERE sz_ok = 3 AND worked = 1 AND tip <> '' AND at >= ? GROUP BY tip ORDER BY n DESC, MAX(at) DESC LIMIT 8"); $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400)]); $add = $q->fetchAll(PDO::FETCH_ASSOC);
+        $q = $pdo->prepare("SELECT sz_tip tip, COUNT(*) n FROM order_rate_auto WHERE sz_ok = 3 AND sz_worked = 1 AND sz_tip <> '' AND at >= ? GROUP BY sz_tip ORDER BY n DESC, MAX(at) DESC LIMIT 8"); $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400)]); $big = $q->fetchAll(PDO::FETCH_ASSOC);
+        $pc = fn($a, $b) => $b > 0 ? round(100 * $a / $b) . '%' : 'n/a';
+        $t = "\n\nTEAM GROWTH LEARNING (last 7 days, from " . $w['read'] . " orders whose chat was read by the strict effort judge). ADD-ON = the salesperson got the customer to buy MORE PERFUME PIECES on top of what he asked; BIGGER = a bigger size / value of what he chose. A proper offer = concrete item or size + price or reason. "
+            . "Add-on: proper offer made in " . $w['add_tries'] . " orders (" . $pc($w['add_tries'], $w['read']) . "), customer took it in " . $w['add_won'] . " (" . $pc($w['add_won'], $w['add_tries']) . " of the offers). Bigger: proper offer in " . $w['big_tries'] . " (" . $pc($w['big_tries'], $w['read']) . "), taken in " . $w['big_won'] . " (" . $pc($w['big_won'], $w['big_tries']) . "). "
+            . "Use this to write a short 'sell bigger and add one more perfume' section of the guidebook: which wording worked (below, most used first), what to say when, and what the weak spots are (most orders have no bigger offer). Never invent wording that is not in the list.\nWORDS THAT WORKED FOR ADD-ON:\n";
+        foreach ($add as $x) $t .= '- "' . mb_substr((string)$x['tip'], 0, 160) . '" (' . (int)$x['n'] . "x)\n";
+        $t .= "WORDS THAT WORKED FOR BIGGER SIZE:\n"; foreach ($big as $x) $t .= '- "' . mb_substr((string)$x['tip'], 0, 160) . '" (' . (int)$x['n'] . "x)\n";
+        $pdo->exec("UPDATE grow_learn_log SET guide_use = 'sent " . date('d M') . " night' WHERE kind = 'hourly' AND guide_use = 'pending'");
+        return $t;
+    } catch (Throwable $e) { return ''; }
+}
 /** The add-on effort mark of chats: last-10-digits phone => [level 0-3, stars, one-line reason, order name]. The newest read order of that customer wins. One map for 60 s (shared by every chat list refresh). */
 function ora_phone_map(PDO $pdo, array $phones): array
 {
@@ -9461,6 +9516,7 @@ function lib_guide_write(PDO $pdo): array
         'followups' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']]], 'required' => ['summary', 'confidence', 'do', 'dont', 'openers', 'objection_replies', 'offers', 'followups', 'change_note']];
     $text = "NUMBERS:\n" . json_encode($facts, JSON_UNESCAPED_UNICODE) . "\n\n" . implode("\n\n", array_merge($win, $los));
     if ($live) $text .= "\n\nPREVIOUS GUIDEBOOK (v" . $live['version'] . "):\n" . json_encode(array_diff_key($live['body'], ['owner_corrections' => 1]), JSON_UNESCAPED_UNICODE);
+    try { if (function_exists('grow_learn_guide_text')) { $__gl = grow_learn_guide_text($pdo); if ($__gl !== '') $text .= $__gl; } } catch (Throwable $e) { }   // 📚 the team's bigger-size / add-on learning (hourly digests)
     // what the owner taught on the Teach board (selling rules + limits) WINS over the chats: a guidebook point that contradicts it is rewritten or dropped
     $ownT = ''; try { $tf0 = function_exists('teach_facts_get') ? teach_facts_get($pdo) : []; $ownT = trim((string)($tf0['style'] ?? '')) . "\n" . (function_exists('teach_limits_text') ? teach_limits_text($pdo) : ''); } catch (Throwable $e) {}
     if (trim($ownT) !== '') $text .= "\n\nTHE OWNER'S OWN SELLING RULES AND LIMITS (taught on the Teach board — they WIN over the chats and over the previous guidebook: when a point of the guidebook contradicts one of them, rewrite or drop that point, and say so in change_note):\n" . mb_substr(trim($ownT), 0, 6000);

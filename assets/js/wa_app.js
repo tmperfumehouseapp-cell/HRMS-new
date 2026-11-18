@@ -479,18 +479,18 @@
     // 🎯 one line under the title (beside the green coach strip): today's ticket, the goal, and what the next order must be
     const strip = (t) => { try { let el = document.getElementById('wxTkS'); if (!t || !(+t.goal > 0)) { if (el) el.remove(); return; } const f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), top = R.querySelector('.wx-top'); if (!top) return;
         if (!el) { el = document.createElement('div'); el.id = 'wxTkS'; el.className = 'wx-mgr wx-mgr-first'; const mg = document.getElementById('wxMgr'); (mg || top).insertAdjacentElement('afterend', el); }
-        el.textContent = !t.orders ? '🎯 ટિકિટ ગોલ ' + f(t.goal) + ' · પહેલો ઓર્ડર ' + f(t.goal) + ' કે વધુનો પાડો' : t.status === 'g' ? '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' ✓ સરસ! આમ જ ચાલુ રાખો' : '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' · આગલો ઓર્ડર ઓછામાં ઓછો ' + f(t.need_next); } catch (e) { } };
+        el.textContent = !t.orders ? '🎯 Ticket goal ' + f(t.goal) + ' · Pehla order ' + f(t.goal) + ' ya usse bada lo' : t.status === 'g' ? '🎯 Ticket ' + f(t.ticket) + ' · Goal ' + f(t.goal) + ' ✓ Badhiya! Aise hi chalu rakho' : '🎯 Ticket ' + f(t.ticket) + ' · Goal ' + f(t.goal) + ' · Agla order kam se kam ' + f(t.need_next); } catch (e) { } };
     // 🔗 the payment-link rule: a bottom sheet (used by the chat and by the cart). Resolves {action: 'offer' | 'send' | 'waive', words, reason}. 'send' only exists in the warning phase.
     window.WaGrowAsk = (d) => new Promise((resolve) => {
       const lock = d.grow_gate === 'lock', miss = d.grow_missing || [], id = d.grow_ideas || {}, wAdd = (id.add || [])[0] || '', wBig = (id.big || [])[0] || '', words = miss.indexOf('add') >= 0 ? wAdd : wBig;
       const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center';
       const done = (v) => { o.remove(); resolve(v); };
-      o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif"><b style="font-size:15px">' + (lock ? '🔒 લિંક હમણાં નહીં જાય' : '⚠️ લિંક મોકલતાં પહેલાં ઓફર કરો') + '</b>'
+      o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif"><b style="font-size:15px">' + (lock ? '🔒 Link abhi nahi jayegi' : '⚠️ Link bhejne se pehle offer karo') + '</b>'
         + '<div style="margin-top:5px">' + esc(d.error || '') + '</div>'
         + '<div style="margin-top:7px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 9px">' + (miss.indexOf('add') >= 0 ? '➕ “' + esc(wAdd) + '”<br>' : '') + (miss.indexOf('big') >= 0 ? '⬆ “' + esc(wBig) + '”' : '') + '</div>'
-        + '<button type="button" data-g="offer" style="width:100%;margin-top:9px;border:0;background:#0f6e7e;color:#fff;border-radius:10px;padding:10px;font:700 13px system-ui">✏️ પહેલાં કસ્ટમરને ઓફર કરું</button>'
-        + '<div style="margin-top:9px;border-top:1px solid #eef0f4;padding-top:8px"><b>કસ્ટમરે ના પાડી / ખરેખર જરૂર નથી?</b><div style="color:#667781;font-size:11.5px">કારણ લખો — એ નોંધાશે અને માલિકને દેખાશે.</div><input data-g="why" maxlength="200" placeholder="કારણ (ઓછામાં ઓછા 4 અક્ષર)" style="width:100%;box-sizing:border-box;margin-top:5px;padding:8px;border:1px solid #d9dde3;border-radius:8px;font:inherit"><button type="button" data-g="waive" style="width:100%;margin-top:6px;border:1px solid #d9dde3;background:#fff;border-radius:10px;padding:9px;font:700 13px system-ui">કારણ સાથે લિંક મોકલો</button></div>'
-        + (lock ? '' : '<button type="button" data-g="send" style="width:100%;margin-top:8px;border:1px dashed #d9a441;background:#fff;color:#92400e;border-radius:10px;padding:9px;font:700 12.5px system-ui">છતાં લિંક મોકલો (ચેતવણી ફક્ત આજ સુધી)</button>') + '</div>';
+        + '<button type="button" data-g="offer" style="width:100%;margin-top:9px;border:0;background:#0f6e7e;color:#fff;border-radius:10px;padding:10px;font:700 13px system-ui">✏️ Pehle customer ko offer karta hu</button>'
+        + '<div style="margin-top:9px;border-top:1px solid #eef0f4;padding-top:8px"><b>Customer ne mana kiya / sach me zarurat nahi?</b><div style="color:#667781;font-size:11.5px">Reason likho — yeh note hoga aur owner ko dikhega.</div><input data-g="why" maxlength="200" placeholder="Reason (kam se kam 4 akshar)" style="width:100%;box-sizing:border-box;margin-top:5px;padding:8px;border:1px solid #d9dde3;border-radius:8px;font:inherit"><button type="button" data-g="waive" style="width:100%;margin-top:6px;border:1px solid #d9dde3;background:#fff;border-radius:10px;padding:9px;font:700 13px system-ui">Reason ke saath link bhejo</button></div>'
+        + (lock ? '' : '<button type="button" data-g="send" style="width:100%;margin-top:8px;border:1px dashed #d9a441;background:#fff;color:#92400e;border-radius:10px;padding:9px;font:700 12.5px system-ui">Fir bhi link bhejo (warning sirf abhi ke liye)</button>') + '</div>';
       o.addEventListener('click', (e) => { const g = e.target.closest('[data-g]'); if (!g) { if (e.target === o) done({ action: 'offer', words: '' }); return; } const k = g.dataset.g;
         if (k === 'offer') done({ action: 'offer', words }); else if (k === 'send') done({ action: 'send' });
         else if (k === 'waive') { const why = (o.querySelector('[data-g="why"]').value || '').trim(); if (why.length < 4) { o.querySelector('[data-g="why"]').style.borderColor = '#dc2626'; return; } done({ action: 'waive', reason: why }); } });
@@ -503,8 +503,8 @@
       const c = window.__wxCoach; if (!c || !(c.level > 0)) return '';
       const id = window.__wxIdeas || {}, w = (id.add || [])[0] || '', n = (c.h1 || [0, 0])[0], z = (c.h1 || [0, 0])[1];
       return c.level === 2
-        ? '<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:6px 9px;margin-bottom:6px">🔴 <b>સતત બે કલાકથી ઓફર થતી નથી</b> (છેલ્લા કલાકના ' + n + ' ઓર્ડરમાંથી ' + z + ' માં ⬆ મોટી સાઇઝ અને ➕ વધારાનું પરફ્યુમ બંનેની ઓફર નથી). આ ચાલુ રહેશે તો તમારા માટે <b>Requests / Rescue</b> થોડા સમય માટે બંધ કરવામાં આવશે. <span style="opacity:.8">(અત્યારે ફક્ત ચેતવણી, કશું બંધ થયું નથી)</span>' + (w ? '<br>💡 “' + esc(w) + '”' : '') + '</div>'
-        : '<div style="background:#dbeafe;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:6px 9px;margin-bottom:6px">💡 <b>છેલ્લા કલાકના ' + n + ' ઓર્ડરમાંથી ' + z + ' માં</b> ⬆ મોટી સાઇઝ અને ➕ વધારાનું પરફ્યુમ બંનેની ઓફર થઈ નથી. આગલા ઓર્ડરમાં બંને બોલો' + (w ? ': “' + esc(w) + '”' : '') + '</div>';
+        ? '<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:6px 9px;margin-bottom:6px">🔴 <b>Do ghante se lagatar offer nahi ho raha</b> (pichhle ghante ke ' + n + ' orders me se ' + z + ' me ⬆ bada size aur ➕ extra perfume dono ka offer nahi hua). Aisa chalta raha to aapke liye <b>Requests / Rescue</b> thodi der ke liye band kiye jayenge. <span style="opacity:.8">(abhi sirf warning hai, kuch band nahi hua)</span>' + (w ? '<br>💡 “' + esc(w) + '”' : '') + '</div>'
+        : '<div style="background:#dbeafe;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:6px 9px;margin-bottom:6px">💡 <b>Pichhle ghante ke ' + n + ' orders me se ' + z + ' me</b> ⬆ bada size aur ➕ extra perfume dono ka offer nahi hua. Agle order me dono bolo' + (w ? ': “' + esc(w) + '”' : '') + '</div>';
     }
     // 📞 one small line under the card: the newest of today's orders where no add-on (extra perfume) was offered and none was added — "call this customer and ask for an add-on". Tap = open that chat.
     function nudgeLine() {
@@ -515,7 +515,7 @@
         else { const gl = document.getElementById('wxGl'); if (gl && gl.nextElementSibling !== el) gl.insertAdjacentElement('afterend', el); }
         const more = Math.max(0, (+d.missed_n || (d.missed || []).length) - 1), nm = m.name || ('#' + String(m.order).replace('#', ''));
         el.style.cssText += ';cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-        el.innerHTML = '📞 <b>' + esc(nm) + '</b> ને બોલાવો — એડ ઓન કરાવો' + (more ? ' · +' + more + ' વધુ' : '') + ' ›';
+        el.innerHTML = '📞 <b>' + esc(nm) + '</b> ko call karo — add-on karwao' + (more ? ' · +' + more + ' aur' : '') + ' ›';
         el.onclick = () => { try { openChat(m.phone, {}); } catch (e) { } };
       } catch (e) { }
     }
@@ -525,16 +525,16 @@
         if (!el) { el = document.createElement('div'); el.id = 'wxGl'; el.className = 'wx-mgr'; const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr') || top; prev.insertAdjacentElement('afterend', el); }
         else { const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr'); if (prev && prev.nextElementSibling !== el) prev.insertAdjacentElement('afterend', el); }
         const d = window.__wxAd, id = window.__wxIdeas || {}, esc2 = (x) => esc(String(x)); el.style.cssText += ';cursor:pointer;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5;display:block;height:auto'; el.onclick = () => window.__wxAdOpen && window.__wxAdOpen();
-        if (!d || !d.read) { const w = (id.big || [])[0]; el.innerHTML = coachHtml() + '📈 <b>ટિકિટ સાઇઝ અને એડ ઓન:</b> આજના ઓર્ડરની ચેટ વંચાય એટલે અહીં સાફ દેખાશે કે ક્યાં એફર્ટ નથી લગાડી.' + (w ? '<br>💡 દરેક ઓર્ડરમાં બોલો: “' + esc2(w.length > 60 ? w.slice(0, 58) + '…' : w) + '”' : ''); return; }
+        if (!d || !d.read) { const w = (id.big || [])[0]; el.innerHTML = coachHtml() + '📈 <b>Ticket size aur add-on:</b> Aaj ke orders ki chat padhi jaye to yahan saaf dikhega ki kahan effort nahi lagaya.' + (w ? '<br>💡 Har order me bolo: “' + esc2(w.length > 60 ? w.slice(0, 58) + '…' : w) + '”' : ''); return; }
         const n = d.n, z = d.sz || [0, 0, 0, 0];
         const part = (a, no, yes, doneWord) => { const bits = [];
-          bits.push(a[0] > 0 ? '<b style="color:#b91c1c">' + a[0] + ' ઓર્ડરમાં ' + no + '</b>' : '<b style="color:#15803d">બધા ઓર્ડરમાં ' + yes + ' ✓</b>');
-          if (a[1] > 0) bits.push(a[1] + ' માં ફક્ત એક વાર');
-          if (a[3] > 0) bits.push('<span style="color:#15803d">' + a[3] + ' માં ' + doneWord + ' ✓</span>');
+          bits.push(a[0] > 0 ? '<b style="color:#b91c1c">' + a[0] + ' order me ' + no + '</b>' : '<b style="color:#15803d">Sab orders me ' + yes + ' ✓</b>');
+          if (a[1] > 0) bits.push(a[1] + ' me sirf ek baar');
+          if (a[3] > 0) bits.push('<span style="color:#15803d">' + a[3] + ' me ' + doneWord + ' ✓</span>');
           return bits.join(' · '); };
         const yd = d.yd || null, tm = d.team || [0, 0, 0, 0], tz = d.team_sz || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3], pc = (arr) => { const t = arr[0] + arr[1] + arr[2] + arr[3]; return t ? Math.round(100 * (arr[1] + arr[2] + arr[3]) / t) : null; };
-        const cmpLine = (yd && yd.read ? 'ગઈકાલે: ⬆ ' + yd.sz[0] + ' અને ➕ ' + yd.n[0] + ' ઓર્ડરમાં એફર્ટ નહોતી' : '') + (tt >= 5 ? (yd && yd.read ? ' · ' : '') + 'ટીમમાં આજે ઓફર: ⬆ ' + pc(tz) + '% · ➕ ' + pc(tm) + '% (તમે ⬆ ' + pc(z) + '% · ➕ ' + pc(n) + '%)' : '');
-        el.innerHTML = coachHtml() + '📈 <b>આજના ' + d.read + ' ઓર્ડરમાં</b><br>⬆ <b>ટિકિટ સાઇઝ</b> (મોટી સાઇઝ): ' + part(z, 'એફર્ટ નથી લગાડી', 'એફર્ટ લગાડી', 'માન્યા') + '<br>➕ <b>એડ ઓન</b> (વધારાનું પરફ્યુમ): ' + part(n, 'વધારાનું પરફ્યુમ ઓફર નથી કર્યું', 'વધારાનું પરફ્યુમ ઓફર કર્યું', 'માન્યા') + ' ›' + (cmpLine ? '<br><span style="color:#64748b;font-size:11px">' + cmpLine + '</span>' : '');
+        const cmpLine = (yd && yd.read ? 'Kal: ⬆ ' + yd.sz[0] + ' aur ➕ ' + yd.n[0] + ' order me effort nahi tha' : '') + (tt >= 5 ? (yd && yd.read ? ' · ' : '') + 'Team me aaj offer: ⬆ ' + pc(tz) + '% · ➕ ' + pc(tm) + '% (aap ⬆ ' + pc(z) + '% · ➕ ' + pc(n) + '%)' : '');
+        el.innerHTML = coachHtml() + '📈 <b>Aaj ke ' + d.read + ' orders me</b><br>⬆ <b>Ticket size</b> (bada size): ' + part(z, 'effort nahi lagaya', 'effort lagaya', 'maane') + '<br>➕ <b>Add-on</b> (extra perfume): ' + part(n, 'extra perfume ka offer nahi kiya', 'extra perfume ka offer kiya', 'maane') + ' ›' + (cmpLine ? '<br><span style="color:#64748b;font-size:11px">' + cmpLine + '</span>' : '');
       } catch (e) { }
     }
     // 🎯 my ticket today against the goal (one small chip, the same number as My Sales; refreshed every 5 minutes)
@@ -545,7 +545,7 @@
 
     // 📈 my growth effort today (bigger size + add-on = extra perfume) feeds the card under the coach lines (wq.ad_me, own numbers only)
     { const paintAd = async () => { try { const d = await api.get('wq.ad_me'); window.__wxIdeas = (d && d.ideas) || null; window.__wxCoach = (d && d.coach) || null;
-          { const lv = d && d.coach ? +d.coach.level || 0 : 0, key = lv + ':' + new Date().getHours(); if (lv > 0 && window.__wxCoachKey !== key) { window.__wxCoachKey = key; try { toast(lv === 2 ? '🔴 સતત બે કલાકથી ઓફર નથી થતી — મોટી સાઇઝ + વધારાનું પરફ્યુમ ઓફર કરો' : '💡 છેલ્લા કલાકમાં ઓફર ઓછી — આગલા ઓર્ડરમાં મોટી સાઇઝ + વધારાનું પરફ્યુમ ઓફર કરો', lv === 2); } catch (e) { } } } window.__wxAd = d && +d.read > 0 ? d : null; window.__wxAdFull = d || null; growBox(); nudgeLine(); } catch (e) { /* no card */ } };
+          { const lv = d && d.coach ? +d.coach.level || 0 : 0, key = lv + ':' + new Date().getHours(); if (lv > 0 && window.__wxCoachKey !== key) { window.__wxCoachKey = key; try { toast(lv === 2 ? '🔴 Do ghante se offer nahi ho raha — bada size + extra perfume offer karo' : '💡 Pichhle ghante me offer kam — agle order me bada size + extra perfume offer karo', lv === 2); } catch (e) { } } } window.__wxAd = d && +d.read > 0 ? d : null; window.__wxAdFull = d || null; growBox(); nudgeLine(); } catch (e) { /* no card */ } };
       window.__wxAdOpen = () => { const d = window.__wxAd || { n: [0, 0, 0, 0], sz: [0, 0, 0, 0], read: 0, missed: [], tip: '' }, ID = window.__wxIdeas || { big: [], add: [] }; const n = d.n, z = d.sz || [0, 0, 0, 0], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), tm = d.team || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3];
         const box = (c, v, t) => '<div style="background:' + c + ';color:#fff;border-radius:9px;padding:5px 0;text-align:center;flex:1;line-height:1.15"><b style="font-size:19px;display:block">' + v + '</b><span style="font-size:10px;font-weight:700">' + t + '</span></div>';
         const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center'; o.onclick = (e2) => { if (e2.target === o) o.remove(); };
@@ -553,9 +553,9 @@
           + '<div style="font-weight:800;margin-top:8px">⬆ Selling bigger</div><div style="display:flex;gap:5px;margin-top:3px">' + box('#2563eb', z[3], '🔵 sold bigger') + box('#7c3aed', z[2], '🟣 tried hard') + box('#92400e', z[1], '🟤 little') + box('#1f2937', z[0], '⚫ none') + '</div>'
           + '<div style="font-weight:800;margin-top:8px">➕ Add-on</div><div style="display:flex;gap:5px;margin-top:3px">' + box('#16a34a', n[3], '🟢 took') + box('#d97706', n[2], '🟡 tried hard') + box('#ea580c', n[1], '🟠 little') + box('#dc2626', n[0], '🔴 none') + '</div>'
           + (tt ? '<div style="color:#667781;font-size:11.5px;margin-top:6px">Team today: ' + Math.round(100 * tm[3] / tt) + '% of orders took the add-on · you ' + Math.round(100 * n[3] / Math.max(1, d.read)) + '%</div>' : '')
-          + (ID.big.length || ID.add.length ? '<div style="margin-top:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:6px 9px"><b>💡 ' + (d.read ? 'ટીમમાં ચાલેલા શબ્દો' : 'આ રીતે ભરાશે — દરેક ઓર્ડરમાં આ બોલો') + '</b>' + ID.big.map((x) => '<div style="margin-top:3px">⬆ “' + esc(x) + '”</div>').join('') + ID.add.map((x) => '<div style="margin-top:3px">➕ “' + esc(x) + '”</div>').join('') + '<div style="color:#667781;font-size:11px;margin-top:4px">સ્પષ્ટ ઓફર (પરફ્યુમ + ભાવ/ફાયદો) જ ગણાશે; ચેઇન/ગિફ્ટ નહીં; "ઇક ઔર કર દૂં?" નહીં.</div></div>' : '')
+          + (ID.big.length || ID.add.length ? '<div style="margin-top:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:6px 9px"><b>💡 ' + (d.read ? 'Team me chale hue shabd' : 'Aise bharega — har order me yeh bolo') + '</b>' + ID.big.map((x) => '<div style="margin-top:3px">⬆ “' + esc(x) + '”</div>').join('') + ID.add.map((x) => '<div style="margin-top:3px">➕ “' + esc(x) + '”</div>').join('') + '<div style="color:#667781;font-size:11px;margin-top:4px">Sirf clear offer (perfume + price/fayda) ginegi; chain/gift nahi; "ek aur kar du?" nahi.</div></div>' : '')
           + (d.tip ? '<div style="margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 9px">💡 Your words that worked: “' + esc(d.tip) + '”</div>' : '')
-          + (((d.missed_big || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['⬆ મોટું વેચવાની એફર્ટ નથી — આ ઓર્ડર:', d.missed_big]) : '') + ((d.missed || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['➕ એડ ઓન ઓફર નથી — આ ઓર્ડર:', d.missed]) : ''))
+          + (((d.missed_big || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['⬆ Bada size bechne ka effort nahi — yeh orders:', d.missed_big]) : '') + ((d.missed || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['➕ Add-on offer nahi — yeh orders:', d.missed]) : ''))
           + '</div>'; document.body.appendChild(o);
         o.addEventListener('click', (e3) => { const g = e3.target.closest('[data-adopen]'); if (g) { o.remove(); try { openChat(g.dataset.adopen, {}); } catch (e4) { } } }); };
       paintAd(); setInterval(() => { if (!document.hidden) paintAd(); }, 90000); }
@@ -641,19 +641,19 @@
       const seg = (x, cols) => { const n = x.worked ? 3 : Math.min(2, x.tries); return '<span style="display:inline-flex;gap:2px;vertical-align:middle">' + [0, 1, 2].map((i) => '<i style="width:15px;height:8px;border-radius:4px;display:inline-block;background:' + (i < n ? cols[i] : (i === 0 && x.weak > 0 && !x.tries ? 'repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 2px,#fca5a5 2px,#fca5a5 4px)' : '#e5e7eb')) + '"></i>').join('') + '</span>'; };
       const lv = (x) => x.level, B = g.big, A = g.add;
       let ins = '', words = '';
-      if (lv(A) === 0) { ins = '➕ વધારાનું પરફ્યુમ ઓફર કરો'; words = '4 ki jagah 5 perfume le lo, 5th pe ₹100 off'; }
-      else if (lv(B) === 0) { ins = '⬆ મોટી સાઇઝ ઓફર કરો'; words = '50ml ki jagah 100ml le lo, per ml sasta padega'; }
-      else if (lv(B) < 3 && lv(A) < 3 && !(B.refused && A.refused)) ins = 'નવા કારણ સાથે એક વાર ફરી કહો';
-      else ins = '✓ સરસ — બંને ઓફર થઈ ગઈ';
+      if (lv(A) === 0) { ins = '➕ Extra perfume offer karo'; words = '4 ki jagah 5 perfume le lo, 5th pe ₹100 off'; }
+      else if (lv(B) === 0) { ins = '⬆ Bada size offer karo'; words = '50ml ki jagah 100ml le lo, per ml sasta padega'; }
+      else if (lv(B) < 3 && lv(A) < 3 && !(B.refused && A.refused)) ins = 'Naye reason ke saath ek baar phir bolo';
+      else ins = '✓ Badhiya — dono offer ho gaye';
       const weak = (B.weak > 0 && !B.tries) || (A.weak > 0 && !A.tries);
-      el.innerHTML = '<div style="background:#fff;border-bottom:1px solid #eceef3;padding:5px 10px;display:flex;align-items:center;gap:8px;font:600 12px/1.3 system-ui,sans-serif;flex-wrap:wrap"><span>⬆ ' + seg(B, GROW.big) + '</span><span>➕ ' + seg(A, GROW.add) + '</span><span style="flex:1;min-width:120px;color:#7a4b00;cursor:' + (words ? 'pointer' : 'default') + '"' + (words ? ' data-gw="' + esc(words) + '"' : '') + '>→ ' + esc(ins) + (words ? ' <u>Use</u>' : '') + '</span>' + (weak ? '<span style="color:#b91c1c;font-size:11px">ટૂંકી લીટી ગણાઈ નથી</span>' : '') + '</div>';
+      el.innerHTML = '<div style="background:#fff;border-bottom:1px solid #eceef3;padding:5px 10px;display:flex;align-items:center;gap:8px;font:600 12px/1.3 system-ui,sans-serif;flex-wrap:wrap"><span>⬆ ' + seg(B, GROW.big) + '</span><span>➕ ' + seg(A, GROW.add) + '</span><span style="flex:1;min-width:120px;color:#7a4b00;cursor:' + (words ? 'pointer' : 'default') + '"' + (words ? ' data-gw="' + esc(words) + '"' : '') + '>→ ' + esc(ins) + (words ? ' <u>Use</u>' : '') + '</span>' + (weak ? '<span style="color:#b91c1c;font-size:11px">Chhoti line count nahi hui</span>' : '') + '</div>';
       const w = el.querySelector('[data-gw]'); if (w) w.onclick = () => { const t = $('#wxTx'); if (t) { t.value = w.dataset.gw; t.focus(); try { t.dispatchEvent(new Event('input')); } catch (e) { } } };
     }
     let growBusy = false;
     async function growCheck() {
       try {
         const cur = S.cur, ph = cur && cur.phone, c = ph && ((S.chats || []).find((y) => y.phone === ph) || cur.row), pay = c && c.read && c.read.k === 'pay';
-        if (!pay) { growDraw(null); const el = document.getElementById('wxGrow'), ef = c && c.eff; if (el && ef && ef.length) { const A = EFFS[ef[0]], B = EFFB[ef[4] == null ? 0 : ef[4]]; el.innerHTML = '<div style="background:#f8fafc;border-bottom:1px solid #eceef3;padding:4px 10px;font:600 11.5px/1.3 system-ui,sans-serif;color:#475569">📋 છેલ્લા ઓર્ડરમાં: ⬆ ' + B[0] + ' ' + esc(B[2]) + ' · ➕ ' + A[0] + ' ' + esc(A[2]) + '</div>'; } return; } const key = ph + ':' + (cur.last || 0);
+        if (!pay) { growDraw(null); const el = document.getElementById('wxGrow'), ef = c && c.eff; if (el && ef && ef.length) { const A = EFFS[ef[0]], B = EFFB[ef[4] == null ? 0 : ef[4]]; el.innerHTML = '<div style="background:#f8fafc;border-bottom:1px solid #eceef3;padding:4px 10px;font:600 11.5px/1.3 system-ui,sans-serif;color:#475569">📋 Pichhle order me: ⬆ ' + B[0] + ' ' + esc(B[2]) + ' · ➕ ' + A[0] + ' ' + esc(A[2]) + '</div>'; } return; } const key = ph + ':' + (cur.last || 0);
         if (cur.growKey === key && cur.grow) { growDraw(cur.grow); return; } if (growBusy) return; growBusy = true;
         const d = await api.get('wq.grow_chat', { phone: ph }); growBusy = false; if (!S.cur || S.cur.phone !== ph) return; cur.growKey = key; cur.grow = d; growDraw(d);
       } catch (e) { growBusy = false; }
@@ -1410,7 +1410,7 @@
     let chLd = null;
     function chReady(cb) {
       if (window.WaCart) return cb(); if (chLd) { chLd.push(cb); return; } chLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wch_ui.js?v=ch10';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wch_ui.js?v=ch11';
       sc.onload = () => { const q = chLd || []; chLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = chLd || []; chLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     // ---- 🧾 manual order (wmo.php / wmo_ui.js): QR / UPI payment first, the customer fills the address on a link
@@ -1528,13 +1528,13 @@
         await api.post('wa.send', auto ? { phone, text, auto: true, cid } : Object.assign(tmp.reply_id ? { phone, text, cid, reply_id: tmp.reply_id } : { phone, text, cid }, gx));   // auto: the countdown reply; lets the server claim the customer message (wq no-answer flow)
         if (prod && prod.length && window.WaProd) { try { await WaProd.send(phone, prod.map((p) => p.id), 'why'); } catch (e) { toast('The text went, but the photos did not: ' + e.message, true); } }   // the photos follow the text, one by one
         if (S.cur && S.cur.phone === phone) pollChat();
-        if (S.cur && S.cur.phone === phone && S.cur.heldLink) { const t = $('#wxTx'); if (t && !t.value) { t.value = S.cur.heldLink; S.cur.heldLink = ''; try { t.dispatchEvent(new Event('input')); } catch (x) { } toast('લિંક ફરી તૈયાર છે — હવે મોકલો'); } }   // the link that was held back comes back after the offer went
+        if (S.cur && S.cur.phone === phone && S.cur.heldLink) { const t = $('#wxTx'); if (t && !t.value) { t.value = S.cur.heldLink; S.cur.heldLink = ''; try { t.dispatchEvent(new Event('input')); } catch (x) { } toast('Link phir se ready hai — ab bhejo'); } }   // the link that was held back comes back after the offer went
       }
       catch (e) {
         if (e && e.data && e.data.grow_gate) {   // 🔗 payment-link rule
           if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); }
           const ch = await window.WaGrowAsk(e.data);
-          if (ch.action === 'offer') { if (S.cur && S.cur.phone === phone) { S.cur.heldLink = text; const t = $('#wxTx'); if (t) { t.value = ch.words || ''; t.focus(); try { t.dispatchEvent(new Event('input')); } catch (x) { } } } toast('પહેલાં ઓફર મોકલો — પછી લિંક ફરી તૈયાર થશે'); return; }
+          if (ch.action === 'offer') { if (S.cur && S.cur.phone === phone) { S.cur.heldLink = text; const t = $('#wxTx'); if (t) { t.value = ch.words || ''; t.focus(); try { t.dispatchEvent(new Event('input')); } catch (x) { } } } toast('Pehle offer bhejo — phir link ready ho jayegi'); return; }
           window.__wxGrowNext = ch.action === 'waive' ? { grow_waive: ch.reason } : { grow_ok: 1 }; return sendText(text, prod, auto);
         }
         if (auto && /already (been )?(answered|replied|claimed)|someone else/i.test(e.message || '')) { if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); } toast('Already answered by the bot or a colleague. Nothing was sent twice.'); return; }   // HTTP 409 from wq: quiet
