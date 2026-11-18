@@ -26591,6 +26591,7 @@ switch ($action) {
         $total = round((float)($input['total_price'] ?? 0), 2);
         if ($total <= 0) json_response(['error' => 'Enter the total add-on price.'], 422);
         $pre = max(0.0, round((float)($input['prepaid_amt'] ?? 0), 2)); $cod = max(0.0, round((float)($input['cod_amt'] ?? 0), 2));
+        if ($pre + $cod <= 0) $cod = $total;   // nothing marked as paid in advance: the whole add-on is collected on delivery
         if ($pre + $cod > 0 && abs($pre + $cod - $total) > 0.99) json_response(['error' => 'Prepaid + COD must add up to the total add-on price (' . number_format($total) . ').'], 422);
 
         $clean = [];
@@ -26678,11 +26679,14 @@ switch ($action) {
         $byEmp = [];
         foreach ($rows as $r) {
             $eid = (int)$r['employee_id'];
-            if (!isset($byEmp[$eid])) $byEmp[$eid] = ['count' => 0, 'total' => 0.0];
-            $byEmp[$eid]['count']++;
-            $byEmp[$eid]['total'] += (float)$r['price'] * (int)$r['qty'];
+            if (!isset($byEmp[$eid])) $byEmp[$eid] = ['count' => 0, 'total' => 0.0, 'seen' => []];
+            // One add-on = one group. Its single price sits on the first product row, so add the price as it is (never x qty)
+            // and count each add-on once, not once per product.
+            $gk = (string)($r['addon_group'] ?: 'single-' . $r['addon_id']);
+            if (!isset($byEmp[$eid]['seen'][$gk])) { $byEmp[$eid]['seen'][$gk] = 1; $byEmp[$eid]['count']++; }
+            $byEmp[$eid]['total'] += (float)$r['price'];
         }
-        foreach ($byEmp as &$b) $b['total'] = round($b['total'], 2);
+        foreach ($byEmp as &$b) { $b['total'] = round($b['total'], 2); unset($b['seen']); }
         unset($b);
 
         json_response(['date' => $date, 'addons' => $rows, 'by_employee' => $byEmp]);
