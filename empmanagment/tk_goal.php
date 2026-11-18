@@ -17,7 +17,7 @@ if ($__tkA === 'wq.tk_me') {   // the salesperson's own ticket for the WhatsApp 
 }
 if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today (read from the chats after the orders): four counts, stars, add-on rupees, the orders where nothing was offered, the words that worked. Only the person's own rows.
     $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
-    $out = ['ok' => true, 'n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'stars' => null, 'addon_rs' => 0, 'missed' => [], 'missed_big' => [], 'tip' => '', 'team' => [0, 0, 0, 0], 'read' => 0];
+    $out = ['ok' => true, 'n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'stars' => null, 'addon_rs' => 0, 'missed' => [], 'missed_big' => [], 'tip' => '', 'team' => [0, 0, 0, 0], 'team_sz' => [0, 0, 0, 0], 'yd' => ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'read' => 0], 'read' => 0];
     try {
         if ($me > 0 && function_exists('ora_tables') && ora_tables($pdo)) {
             $day = biz_today($pdo); $st = 0.0; $rows = [];
@@ -30,7 +30,9 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
             }
             $n = array_sum($out['n']); $out['read'] = $n; $out['stars'] = $n ? round($st / $n, 1) : null; $out['addon_rs'] = round($out['addon_rs']);
             $t = $pdo->prepare("SELECT tip FROM order_rate_auto WHERE employee_id = ? AND worked = 1 AND tip <> '' AND at >= ? ORDER BY at DESC LIMIT 1"); $t->execute([$me, date('Y-m-d H:i:s', time() - 14 * 86400)]); $out['tip'] = (string)$t->fetchColumn();
-            $tm = $pdo->prepare("SELECT tried, worked, tries FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 3 LIMIT 3000"); $tm->execute([$day]); foreach ($tm->fetchAll(PDO::FETCH_ASSOC) as $r) $out['team'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++;
+            $tm = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 3 LIMIT 3000"); $tm->execute([$day]); foreach ($tm->fetchAll(PDO::FETCH_ASSOC) as $r) { $out['team'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++; $out['team_sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; }
+            $yd = date('Y-m-d', strtotime($day . ' -1 day')); $yq = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE employee_id = ? AND day = ? AND rating IS NOT NULL AND sz_ok = 3 LIMIT 600"); $yq->execute([$me, $yd]);
+            foreach ($yq->fetchAll(PDO::FETCH_ASSOC) as $r) { $out['yd']['n'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++; $out['yd']['sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; $out['yd']['read']++; }
         }
     } catch (Throwable $e) { error_log('wq.ad_me: ' . $e->getMessage()); }
     // 💡 ideas from the team's own winning chats (last 7 days, no names): what to say to sell bigger / add an item. Falls back to two fixed examples until enough chats are read.
@@ -60,6 +62,85 @@ if ($__tkA === 'wq.grow_chat') {   // 📈 the live effort of ONE open chat (big
         $mk = fn($tr, $wk, $wo, $rf) => ['tries' => (int)$tr, 'weak' => (int)$wk, 'worked' => (int)$wo, 'refused' => (int)$rf, 'level' => ora_effort((int)($tr >= 1 || $wo), (int)$wo, (int)$tr)];
         json_response(['ok' => true, 'big' => $mk($r['big_tries'] ?? 0, $r['big_weak'] ?? 0, $r['big_worked'] ?? 0, $r['big_refused'] ?? 0), 'add' => $mk($r['tries'] ?? 0, $r['weak'] ?? 0, $r['worked'] ?? 0, $r['refused'] ?? 0), 'last' => $last]);
     } catch (Throwable $e) { error_log('wq.grow_chat: ' . $e->getMessage()); json_response($empty); }
+}
+
+// ================= 🔗 Payment-link rule: no link before BOTH efforts (extra perfume + bigger size) were really offered =================
+// Settings (hrms_settings): grow_gate_mode = off | warn | lock | auto (default auto: warning-only until the day before grow_lock_from, strict from that business day) · grow_lock_from (default 2026-11-20) · grow_link_re (regex of what counts as a payment link).
+// Only the Employee role is held (Admin / HR / managers never are). A person is never blocked because OUR side failed (AI silent, no chat read, error). Effort, not result, unlocks: one proper offer per lane, or the customer clearly refused, or the cart already reaches the ticket goal, or a written reason (counted and shown to the owner).
+function wq_grow_ready(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS grow_gate_log (id INT AUTO_INCREMENT PRIMARY KEY, at DATETIME NOT NULL, day DATE NULL, emp INT NOT NULL DEFAULT 0, phone VARCHAR(20) NOT NULL DEFAULT '', mode VARCHAR(8) NOT NULL DEFAULT '', decision VARCHAR(12) NOT NULL DEFAULT '', add_lv TINYINT NOT NULL DEFAULT 0, big_lv TINYINT NOT NULL DEFAULT 0, reason VARCHAR(300) NOT NULL DEFAULT '', KEY k_day (day), KEY k_emp (emp)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
+    catch (Throwable $e) { error_log('wq_grow_ready: ' . $e->getMessage()); return $ok = false; }
+}
+function wq_grow_cfg(PDO $pdo): array
+{
+    $m = (string)setting_get($pdo, 'grow_gate_mode', 'auto'); if (!in_array($m, ['off', 'warn', 'lock', 'auto'], true)) $m = 'auto';
+    $from = (string)setting_get($pdo, 'grow_lock_from', '2026-11-20'); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = '2026-11-20';
+    $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
+    return ['mode' => $m, 'from' => $from, 'today' => $today, 'effective' => $m === 'auto' ? ($today >= $from ? 'lock' : 'warn') : $m];
+}
+function wq_grow_is_pay_link(PDO $pdo, string $text): bool
+{
+    if (!preg_match_all('~https?://[^\s]+~i', $text, $m)) return false;
+    $re = (string)setting_get($pdo, 'grow_link_re', ''); if ($re === '' || @preg_match($re, '') === false) $re = '~(/invoices/|/checkouts/|/cart/c/|rzp\.io|razorpay\.com|paytm|payu|cashfree|/payment)~i';
+    foreach ($m[0] as $u) if (preg_match($re, $u)) return true;
+    return false;
+}
+/** The two efforts of the running chat, read by the same strict judge (cached 45 s, shared with wq.grow_chat). null = could not be read (never blocks). */
+function wq_grow_levels(PDO $pdo, string $k): ?array
+{
+    if (strlen($k) !== 10 || !function_exists('ora_judge_text') || !function_exists('ora_transcript') || !function_exists('hrms_memo')) return null;
+    try {
+        $q = $pdo->prepare("SELECT id, dir, who, emp_id, mtype, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND dir IN ('in', 'out') ORDER BY id ASC LIMIT 300"); $q->execute([$k, date('Y-m-d H:i:s', time() - 3 * 86400)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+        if (!$rows) return null; $last = (int)end($rows)['id']; [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 1 || $ns < 1) return null;
+        $r = hrms_memo('growchat:' . $k . ':' . $last, 45, fn() => ora_judge_text($text, 'This chat is still running: the order is being confirmed now.'));
+        if (!is_array($r) || !empty($r['retry']) || !array_key_exists('tries', $r)) return null;
+        return ['add' => ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']), 'big' => ora_effort((int)($r['big_tried'] ?? 0), (int)($r['big_worked'] ?? 0), (int)($r['big_tries'] ?? 0)), 'add_ref' => !empty($r['refused']), 'big_ref' => !empty($r['big_refused'])];
+    } catch (Throwable $e) { return null; }
+}
+function wq_grow_ideas(PDO $pdo): array
+{
+    $o = ['big' => ['50ml ki jagah 100ml le lo, per ml sasta padega'], 'add' => ['4 ki jagah 5 perfume le lo, 5th pe ₹100 off']];
+    try { if (function_exists('ora_tables') && ora_tables($pdo)) { $since = date('Y-m-d H:i:s', time() - 7 * 86400);
+        foreach (['big' => ['sz_tip', "sz_worked = 1 AND sz_tip <> ''"], 'add' => ['tip', "worked = 1 AND tip <> ''"]] as $k => $d) { $q = $pdo->prepare("SELECT {$d[0]} FROM order_rate_auto WHERE sz_ok = 3 AND {$d[1]} AND at >= ? ORDER BY at DESC LIMIT 1"); $q->execute([$since]); $t = trim((string)$q->fetchColumn()); if ($t !== '') $o[$k] = [$t]; } } } catch (Throwable $e) { }
+    return $o;
+}
+function wq_grow_log(PDO $pdo, int $emp, string $phone, string $mode, string $decision, int $add, int $big, string $reason = ''): void
+{
+    if (!wq_grow_ready($pdo)) return;
+    try { $day = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
+        if (in_array($decision, ['blocked', 'warn_shown'], true)) { $q = $pdo->prepare("SELECT id FROM grow_gate_log WHERE emp = ? AND phone = ? AND decision = ? AND at >= ? LIMIT 1"); $q->execute([$emp, $phone, $decision, date('Y-m-d H:i:s', time() - 600)]); if ($q->fetchColumn()) return; }   // the same tap twice is one entry
+        $pdo->prepare("INSERT INTO grow_gate_log (at, day, emp, phone, mode, decision, add_lv, big_lv, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([date('Y-m-d H:i:s'), $day, $emp, $phone, $mode, $decision, $add, $big, mb_substr($reason, 0, 300)]); } catch (Throwable $e) { }
+}
+/** The rule. Returns ['gate' => ''] to let the link go, or ['gate' => 'warn'|'lock', 'missing' => ['add','big'], 'error' => text, 'ideas' => …]. $totalRs = the cart total in rupees when known (0 = unknown). */
+function wq_grow_check(PDO $pdo, array $auth, string $phone, array $in, int $totalRs = 0): array
+{
+    $pass = ['gate' => '']; $cfg = wq_grow_cfg($pdo); $mode = $cfg['effective'];
+    if ($mode === 'off' || strtolower(trim((string)($auth['role'] ?? ''))) !== 'employee') return $pass;
+    $emp = (int)($auth['employee_id'] ?? 0); $k = substr(preg_replace('/\D+/', '', $phone), -10);
+    $lv = wq_grow_levels($pdo, $k); if ($lv === null) return $pass;                                  // we could not read the chat: never block
+    $goal = (int)setting_get($pdo, 'tk_goal', '2700'); if ($totalRs > 0 && $goal > 0 && $totalRs >= $goal) return $pass;   // the cart already reaches the ticket goal
+    $addOk = $lv['add'] >= 1 || $lv['add_ref']; $bigOk = $lv['big'] >= 1 || $lv['big_ref'];
+    if ($addOk && $bigOk) return $pass;
+    $reason = trim((string)($in['grow_waive'] ?? '')); if (mb_strlen($reason) >= 4) { wq_grow_log($pdo, $emp, $k, $mode, 'waived', (int)$lv['add'], (int)$lv['big'], $reason); return $pass; }
+    if ($mode === 'warn' && !empty($in['grow_ok'])) { wq_grow_log($pdo, $emp, $k, $mode, 'warned_sent', (int)$lv['add'], (int)$lv['big']); return $pass; }
+    $miss = []; if (!$addOk) $miss[] = 'add'; if (!$bigOk) $miss[] = 'big';
+    wq_grow_log($pdo, $emp, $k, $mode, $mode === 'lock' ? 'blocked' : 'warn_shown', (int)$lv['add'], (int)$lv['big']);
+    $what = in_array('add', $miss, true) && in_array('big', $miss, true) ? 'વધારાનું પરફ્યુમ અને મોટી સાઇઝ, બંનેની' : (in_array('add', $miss, true) ? 'વધારાનું પરફ્યુમ (એડ ઓન) ની' : 'મોટી સાઇઝ (ટિકિટ સાઇઝ) ની');
+    return ['gate' => $mode, 'missing' => $miss, 'error' => $what . ' સાચી ઓફર હજી ચેટમાં થઈ નથી.', 'ideas' => wq_grow_ideas($pdo)];
+}
+if ($__tkA === 'wq.grow_cfg') {   // Admin / HR: the rule's switch (off / warn / lock / auto from a date) + today's numbers
+    $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (!$adm) json_response(['error' => 'Only Admin or HR can see or change the link rule.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') { $in = json_input();
+        if (isset($in['mode']) && in_array((string)$in['mode'], ['off', 'warn', 'lock', 'auto'], true)) setting_set($pdo, 'grow_gate_mode', (string)$in['mode']);
+        if (isset($in['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$in['from'])) setting_set($pdo, 'grow_lock_from', (string)$in['from']); }
+    $out = wq_grow_cfg($pdo) + ['today_counts' => ['blocked' => 0, 'warn_shown' => 0, 'warned_sent' => 0, 'waived' => 0], 'waivers' => []];
+    try { if (wq_grow_ready($pdo)) { $q = $pdo->prepare("SELECT decision, COUNT(*) n FROM grow_gate_log WHERE day = ? GROUP BY decision"); $q->execute([$out['today']]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out['today_counts'][(string)$r['decision']] = (int)$r['n'];
+        $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $w = $pdo->prepare("SELECT emp, at, reason FROM grow_gate_log WHERE day = ? AND decision = 'waived' ORDER BY id DESC LIMIT 20"); $w->execute([$out['today']]);
+        foreach ($w->fetchAll(PDO::FETCH_ASSOC) as $r) $out['waivers'][] = ['emp' => $nm[(int)$r['emp']] ?? ('#' . $r['emp']), 'at' => substr((string)$r['at'], 11, 5), 'reason' => (string)$r['reason']]; } } catch (Throwable $e) { }
+    json_response(['ok' => true] + $out);
 }
 if ($__tkA === 'wq.tk_cfg') {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth();

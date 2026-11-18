@@ -480,13 +480,30 @@
     const strip = (t) => { try { let el = document.getElementById('wxTkS'); if (!t || !(+t.goal > 0)) { if (el) el.remove(); return; } const f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), top = R.querySelector('.wx-top'); if (!top) return;
         if (!el) { el = document.createElement('div'); el.id = 'wxTkS'; el.className = 'wx-mgr wx-mgr-first'; const mg = document.getElementById('wxMgr'); (mg || top).insertAdjacentElement('afterend', el); }
         el.textContent = !t.orders ? '🎯 ટિકિટ ગોલ ' + f(t.goal) + ' · પહેલો ઓર્ડર ' + f(t.goal) + ' કે વધુનો પાડો' : t.status === 'g' ? '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' ✓ સરસ! આમ જ ચાલુ રાખો' : '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' · આગલો ઓર્ડર ઓછામાં ઓછો ' + f(t.need_next); } catch (e) { } };
+    // 🔗 the payment-link rule: a bottom sheet (used by the chat and by the cart). Resolves {action: 'offer' | 'send' | 'waive', words, reason}. 'send' only exists in the warning phase.
+    window.WaGrowAsk = (d) => new Promise((resolve) => {
+      const lock = d.grow_gate === 'lock', miss = d.grow_missing || [], id = d.grow_ideas || {}, wAdd = (id.add || [])[0] || '', wBig = (id.big || [])[0] || '', words = miss.indexOf('add') >= 0 ? wAdd : wBig;
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center';
+      const done = (v) => { o.remove(); resolve(v); };
+      o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif"><b style="font-size:15px">' + (lock ? '🔒 લિંક હમણાં નહીં જાય' : '⚠️ લિંક મોકલતાં પહેલાં ઓફર કરો') + '</b>'
+        + '<div style="margin-top:5px">' + esc(d.error || '') + '</div>'
+        + '<div style="margin-top:7px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 9px">' + (miss.indexOf('add') >= 0 ? '➕ “' + esc(wAdd) + '”<br>' : '') + (miss.indexOf('big') >= 0 ? '⬆ “' + esc(wBig) + '”' : '') + '</div>'
+        + '<button type="button" data-g="offer" style="width:100%;margin-top:9px;border:0;background:#0f6e7e;color:#fff;border-radius:10px;padding:10px;font:700 13px system-ui">✏️ પહેલાં કસ્ટમરને ઓફર કરું</button>'
+        + '<div style="margin-top:9px;border-top:1px solid #eef0f4;padding-top:8px"><b>કસ્ટમરે ના પાડી / ખરેખર જરૂર નથી?</b><div style="color:#667781;font-size:11.5px">કારણ લખો — એ નોંધાશે અને માલિકને દેખાશે.</div><input data-g="why" maxlength="200" placeholder="કારણ (ઓછામાં ઓછા 4 અક્ષર)" style="width:100%;box-sizing:border-box;margin-top:5px;padding:8px;border:1px solid #d9dde3;border-radius:8px;font:inherit"><button type="button" data-g="waive" style="width:100%;margin-top:6px;border:1px solid #d9dde3;background:#fff;border-radius:10px;padding:9px;font:700 13px system-ui">કારણ સાથે લિંક મોકલો</button></div>'
+        + (lock ? '' : '<button type="button" data-g="send" style="width:100%;margin-top:8px;border:1px dashed #d9a441;background:#fff;color:#92400e;border-radius:10px;padding:9px;font:700 12.5px system-ui">છતાં લિંક મોકલો (ચેતવણી ફક્ત આજ સુધી)</button>') + '</div>';
+      o.addEventListener('click', (e) => { const g = e.target.closest('[data-g]'); if (!g) { if (e.target === o) done({ action: 'offer', words: '' }); return; } const k = g.dataset.g;
+        if (k === 'offer') done({ action: 'offer', words }); else if (k === 'send') done({ action: 'send' });
+        else if (k === 'waive') { const why = (o.querySelector('[data-g="why"]').value || '').trim(); if (why.length < 4) { o.querySelector('[data-g="why"]').style.borderColor = '#dc2626'; return; } done({ action: 'waive', reason: why }); } });
+      document.body.appendChild(o);
+    });
+    window.__wxEffTip = (el) => { try { toast(el.getAttribute('title') || ''); } catch (e) { } };
     // 📈 ONE clear card under the coach lines: in today's read orders, where the salesperson put NO effort — selling bigger (ticket size) and the add-on — in plain words. Tap = the orders to fix + words that work.
     function growBox() {
       try {
         const top = R.querySelector('.wx-top'); if (!top) return; let el = document.getElementById('wxGl');
         if (!el) { el = document.createElement('div'); el.id = 'wxGl'; el.className = 'wx-mgr'; const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr') || top; prev.insertAdjacentElement('afterend', el); }
         else { const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr'); if (prev && prev.nextElementSibling !== el) prev.insertAdjacentElement('afterend', el); }
-        const d = window.__wxAd, id = window.__wxIdeas || {}, esc2 = (x) => esc(String(x)); el.style.cursor = 'pointer'; el.onclick = () => window.__wxAdOpen && window.__wxAdOpen();
+        const d = window.__wxAd, id = window.__wxIdeas || {}, esc2 = (x) => esc(String(x)); el.style.cssText += ';cursor:pointer;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5;display:block;height:auto'; el.onclick = () => window.__wxAdOpen && window.__wxAdOpen();
         if (!d || !d.read) { const w = (id.big || [])[0]; el.innerHTML = '📈 <b>ટિકિટ સાઇઝ અને એડ ઓન:</b> આજના ઓર્ડરની ચેટ વંચાય એટલે અહીં સાફ દેખાશે કે ક્યાં એફર્ટ નથી લગાડી.' + (w ? '<br>💡 દરેક ઓર્ડરમાં બોલો: “' + esc2(w.length > 60 ? w.slice(0, 58) + '…' : w) + '”' : ''); return; }
         const n = d.n, z = d.sz || [0, 0, 0, 0];
         const part = (a, no, yes, doneWord) => { const bits = [];
@@ -494,7 +511,9 @@
           if (a[1] > 0) bits.push(a[1] + ' માં ફક્ત એક વાર');
           if (a[3] > 0) bits.push('<span style="color:#15803d">' + a[3] + ' માં ' + doneWord + ' ✓</span>');
           return bits.join(' · '); };
-        el.innerHTML = '📈 <b>આજના ' + d.read + ' ઓર્ડરમાં</b><br>⬆ <b>ટિકિટ સાઇઝ</b> (મોટી સાઇઝ): ' + part(z, 'એફર્ટ નથી લગાડી', 'એફર્ટ લગાડી', 'માન્યા') + '<br>➕ <b>એડ ઓન</b> (વધારાનું પરફ્યુમ): ' + part(n, 'વધારાનું પરફ્યુમ ઓફર નથી કર્યું', 'વધારાનું પરફ્યુમ ઓફર કર્યું', 'માન્યા') + ' ›';
+        const yd = d.yd || null, tm = d.team || [0, 0, 0, 0], tz = d.team_sz || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3], pc = (arr) => { const t = arr[0] + arr[1] + arr[2] + arr[3]; return t ? Math.round(100 * (arr[1] + arr[2] + arr[3]) / t) : null; };
+        const cmpLine = (yd && yd.read ? 'ગઈકાલે: ⬆ ' + yd.sz[0] + ' અને ➕ ' + yd.n[0] + ' ઓર્ડરમાં એફર્ટ નહોતી' : '') + (tt >= 5 ? (yd && yd.read ? ' · ' : '') + 'ટીમમાં આજે ઓફર: ⬆ ' + pc(tz) + '% · ➕ ' + pc(tm) + '% (તમે ⬆ ' + pc(z) + '% · ➕ ' + pc(n) + '%)' : '');
+        el.innerHTML = '📈 <b>આજના ' + d.read + ' ઓર્ડરમાં</b><br>⬆ <b>ટિકિટ સાઇઝ</b> (મોટી સાઇઝ): ' + part(z, 'એફર્ટ નથી લગાડી', 'એફર્ટ લગાડી', 'માન્યા') + '<br>➕ <b>એડ ઓન</b> (વધારાનું પરફ્યુમ): ' + part(n, 'વધારાનું પરફ્યુમ ઓફર નથી કર્યું', 'વધારાનું પરફ્યુમ ઓફર કર્યું', 'માન્યા') + ' ›' + (cmpLine ? '<br><span style="color:#64748b;font-size:11px">' + cmpLine + '</span>' : '');
       } catch (e) { }
     }
     // 🎯 my ticket today against the goal (one small chip, the same number as My Sales; refreshed every 5 minutes)
@@ -612,7 +631,7 @@
     async function growCheck() {
       try {
         const cur = S.cur, ph = cur && cur.phone, c = ph && ((S.chats || []).find((y) => y.phone === ph) || cur.row), pay = c && c.read && c.read.k === 'pay';
-        if (!pay) { growDraw(null); return; } const key = ph + ':' + (cur.last || 0);
+        if (!pay) { growDraw(null); const el = document.getElementById('wxGrow'), ef = c && c.eff; if (el && ef && ef.length) { const A = EFFS[ef[0]], B = EFFB[ef[4] == null ? 0 : ef[4]]; el.innerHTML = '<div style="background:#f8fafc;border-bottom:1px solid #eceef3;padding:4px 10px;font:600 11.5px/1.3 system-ui,sans-serif;color:#475569">📋 છેલ્લા ઓર્ડરમાં: ⬆ ' + B[0] + ' ' + esc(B[2]) + ' · ➕ ' + A[0] + ' ' + esc(A[2]) + '</div>'; } return; } const key = ph + ':' + (cur.last || 0);
         if (cur.growKey === key && cur.grow) { growDraw(cur.grow); return; } if (growBusy) return; growBusy = true;
         const d = await api.get('wq.grow_chat', { phone: ph }); growBusy = false; if (!S.cur || S.cur.phone !== ph) return; cur.growKey = key; cur.grow = d; growDraw(d);
       } catch (e) { growBusy = false; }
@@ -628,7 +647,7 @@
     const EFFB = [['⚫', '#1f2937', 'No effort to sell bigger (ticket size)'], ['🟤', '#92400e', 'Little effort to sell bigger'], ['🟣', '#7c3aed', 'Tried hard to sell bigger, customer did not take'], ['🔵', '#2563eb', 'Sold bigger']];
     // both efforts of the customer's last read order, two tiny chips: ⬆ ticket size (bigger) and ➕ add-on — [add-on level, stars, reason, order, bigger level]
     const effChip = (e) => { if (!(e && e.length)) return ''; const a = EFFS[e[0]], b = EFFB[e[4] == null ? 0 : e[4]]; const t = esc('order ' + (e[3] || '') + ' · ★' + e[1] + ' — ' + (e[2] || ''));
-      return ' <span class="wx-chip" style="background:' + b[1] + ';color:#fff;font-weight:800;padding:0 5px" title="' + esc(b[2]) + ' · ' + t + '">⬆' + b[0] + '</span> <span class="wx-chip" style="background:' + a[1] + ';color:#fff;font-weight:800;padding:0 5px" title="' + esc(a[2]) + ' · ' + t + '">➕' + a[0] + '</span>'; };
+      return ' <span class="wx-chip" onclick="event.stopPropagation();window.__wxEffTip&&window.__wxEffTip(this)" style="background:' + b[1] + ';color:#fff;font-weight:800;padding:0 5px" title="' + esc(b[2]) + ' · ' + t + '">⬆' + b[0] + '</span> <span class="wx-chip" onclick="event.stopPropagation();window.__wxEffTip&&window.__wxEffTip(this)" style="background:' + a[1] + ';color:#fff;font-weight:800;padding:0 5px" title="' + esc(a[2]) + ' · ' + t + '">➕' + a[0] + '</span>'; };
     function badgeOf(c) { const b = c.badge || {}; return b.k === 'vip' ? '<span title="Very good customer">⭐</span>' : b.k === 'hot' ? '<span title="Ready to pay">🔥</span>' : b.k === 'repeat' ? '<span title="Repeat buyer">🔁</span>' : ''; }
     function timerOf(c) {
       if (!c.waiting || !c.window) return `<div>${hhmm(c.last_at)}</div>`;
@@ -1369,7 +1388,7 @@
     let chLd = null;
     function chReady(cb) {
       if (window.WaCart) return cb(); if (chLd) { chLd.push(cb); return; } chLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wch_ui.js?v=ch9';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wch_ui.js?v=ch10';
       sc.onload = () => { const q = chLd || []; chLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = chLd || []; chLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     // ---- 🧾 manual order (wmo.php / wmo_ui.js): QR / UPI payment first, the customer fills the address on a link
@@ -1483,11 +1502,19 @@
       suggStop(); S.cur.sg = null; S.cur.armed = null; $('#wxSug').innerHTML = ''; { const pp = $('#wxPp'); if (pp) pp.innerHTML = ''; }
       if (again) redrawBubble(tmp); else { S.cur.msgs.push(tmp); addBubble(tmp); } scrollEnd(true);
       try {
-        await api.post('wa.send', auto ? { phone, text, auto: true, cid } : (tmp.reply_id ? { phone, text, cid, reply_id: tmp.reply_id } : { phone, text, cid }));   // auto: the countdown reply; lets the server claim the customer message (wq no-answer flow)
+        const gx = window.__wxGrowNext || {}; window.__wxGrowNext = null;
+        await api.post('wa.send', auto ? { phone, text, auto: true, cid } : Object.assign(tmp.reply_id ? { phone, text, cid, reply_id: tmp.reply_id } : { phone, text, cid }, gx));   // auto: the countdown reply; lets the server claim the customer message (wq no-answer flow)
         if (prod && prod.length && window.WaProd) { try { await WaProd.send(phone, prod.map((p) => p.id), 'why'); } catch (e) { toast('The text went, but the photos did not: ' + e.message, true); } }   // the photos follow the text, one by one
         if (S.cur && S.cur.phone === phone) pollChat();
+        if (S.cur && S.cur.phone === phone && S.cur.heldLink) { const t = $('#wxTx'); if (t && !t.value) { t.value = S.cur.heldLink; S.cur.heldLink = ''; try { t.dispatchEvent(new Event('input')); } catch (x) { } toast('લિંક ફરી તૈયાર છે — હવે મોકલો'); } }   // the link that was held back comes back after the offer went
       }
       catch (e) {
+        if (e && e.data && e.data.grow_gate) {   // 🔗 payment-link rule
+          if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); }
+          const ch = await window.WaGrowAsk(e.data);
+          if (ch.action === 'offer') { if (S.cur && S.cur.phone === phone) { S.cur.heldLink = text; const t = $('#wxTx'); if (t) { t.value = ch.words || ''; t.focus(); try { t.dispatchEvent(new Event('input')); } catch (x) { } } } toast('પહેલાં ઓફર મોકલો — પછી લિંક ફરી તૈયાર થશે'); return; }
+          window.__wxGrowNext = ch.action === 'waive' ? { grow_waive: ch.reason } : { grow_ok: 1 }; return sendText(text, prod, auto);
+        }
         if (auto && /already (been )?(answered|replied|claimed)|someone else/i.test(e.message || '')) { if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); } toast('Already answered by the bot or a colleague. Nothing was sent twice.'); return; }   // HTTP 409 from wq: quiet
         if (/open complaint/i.test(e.message || '')) { S.cur.cxLock = true; S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); const t = $('#wxTx'); if (t) { t.value = text; t.placeholder = '📝 Note for the complaint team (the customer will not see it)'; t.classList.add('cxl'); } toast(e.message, true); return; }   // the server says: complaint team only — keep the words, send them as a note
         tmp.status = 'failed'; tmp.retry = !auto && !/opted out|window is closed|assigned to someone|not written to this number/i.test(e.message || ''); if (/not written to this number|window is closed/i.test(e.message || '') && S.cur && S.cur.phone === phone) setTimeout(() => { try { openTemplates(); } catch (x) { } }, 400);   // a chat on another number has no window yet → open the pre-made messages straight away

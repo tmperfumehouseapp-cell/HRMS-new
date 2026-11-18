@@ -817,7 +817,7 @@
   let EFF = { day: '', d: null, tok: 0 };
   async function loadEffort() {
     const day = $('datePick').value || (T && T.day); if (!day) return; const tok = ++EFF.tok;
-    try { const d = await api.get('ct.effort', { date: day }); if (tok !== EFF.tok) return; EFF.day = day; EFF.d = d; renderToday(); if (!EFF.auto && T && day === T.today && !EFF.run) { const tot = (T.emps || []).reduce((x, e) => x + Number(e.orders || 0), 0), rd = (d.team || []).reduce((x, v) => x + v, 0) + Number(d.skipped || 0); if (tot > rd) { EFF.auto = true; window.effFill(); } } } catch (e) { /* the effort boxes simply stay empty */ }
+    try { try { EFF.gr = await api.get('wq.grow_cfg'); } catch (e0) { EFF.gr = null; } const d = await api.get('ct.effort', { date: day }); if (tok !== EFF.tok) return; EFF.day = day; EFF.d = d; renderToday(); if (!EFF.auto && T && day === T.today && !EFF.run) { const tot = (T.emps || []).reduce((x, e) => x + Number(e.orders || 0), 0), rd = (d.team || []).reduce((x, v) => x + v, 0) + Number(d.skipped || 0); if (tot > rd) { EFF.auto = true; window.effFill(); } } } catch (e) { /* the effort boxes simply stay empty */ }
   }
   // ▶ reads the day's chats now, round after round (each round ~20 s on the server), until every order has been read
   window.effFill = async () => {
@@ -860,6 +860,18 @@
     return `<span class="ef4" title="${tip('Selling bigger', z)}"><em>⬆</em>${c('bw', z[3], 'Bigger: tried and the customer took it')}${c('bh', z[2], 'Bigger: tried hard, customer did not take')}${c('bl', z[1], 'Bigger: little effort')}${c('br', z[0], 'Bigger: no effort')}</span>`
       + `<span class="ef4" title="${tip('Add-on effort', n)}${wait ? ' · ' + wait + ' not read yet' : ''}${x && x.stars != null ? ' · ★' + x.stars : ''}"><em>➕</em>${c('w', n[3], 'Add-on: tried and the customer took it')}${c('h', n[2], 'Add-on: tried hard, customer did not take')}${c('l', n[1], 'Add-on: little effort')}${c('r', n[0], 'Add-on: no effort')}${wait ? `<b title="${wait} orders not read from the chat yet">⏳${wait}</b>` : ''}</span>`;
   }
+  // 🔗 the payment-link rule (Admin / HR): off · warning only · strict · auto (warning until the day before a date, strict from it) + what happened today
+  function grHtml() {
+    const g = EFF.gr; if (!g) return '';
+    const m = g.mode, c = g.today_counts || {}, sel = (v, t) => `<option value="${v}"${m === v ? ' selected' : ''}>${t}</option>`;
+    const w = (g.waivers || []).map(x => `<div><b>${esc(x.emp)}</b> ${esc(x.at)} — ${esc(x.reason)}</div>`).join('');
+    return `<div class="ef-d" style="margin:2px 0 6px;font-size:11.5px"><span>🔗 <b>Payment link rule</b> (needs ⬆ + ➕ offered):</span>
+      <select onchange="effGr(this.value)" style="font:inherit;font-size:11.5px;border:1px solid #d1d5db;border-radius:6px;padding:1px 3px">${sel('off', 'Off')}${sel('warn', 'Warning only')}${sel('lock', 'Strict')}${sel('auto', 'Auto: strict from date')}</select>
+      ${m === 'auto' ? `<input type="date" value="${esc(g.from)}" onchange="effGr('auto', this.value)" style="font:inherit;font-size:11.5px;border:1px solid #d1d5db;border-radius:6px">` : ''}
+      <span style="color:#667781">now: <b>${g.effective === 'lock' ? 'strict' : g.effective === 'warn' ? 'warning' : 'off'}</b> · today: ${c.blocked || 0} blocked · ${c.warn_shown || 0} warned · ${c.warned_sent || 0} sent anyway · ${c.waived || 0} with a reason</span>
+      ${w ? `<details style="margin-top:3px"><summary style="cursor:pointer">Reasons written today</summary>${w}</details>` : ''}</div>`;
+  }
+  window.effGr = async (mode, from) => { try { await api.post('wq.grow_cfg', from ? { mode, from } : { mode }); EFF.gr = await api.get('wq.grow_cfg'); renderToday(); } catch (e) { showAlert(e.message, 'error'); } };
   function effHtml() {
     const d = EFF.d; if (!d) return '';
     const emps = (T.emps || []).filter(e => e.role_kind !== 'head'), total = emps.reduce((x, e) => x + Number(e.orders || 0), 0), done = (d.team || []).reduce((x, v) => x + v, 0), wait = Math.max(0, total - done - Number(d.skipped || 0));
@@ -879,6 +891,7 @@
     const miss = (d.missed || []).map(m => `<tr><td><b>${esc(m.order)}</b><br><small>${esc(m.emp_name)}</small></td><td>${esc(m.customer || '')}${m.total ? '<br><small>' + inr(m.total) + '</small>' : ''}</td><td><small>${esc(m.why || m.asked || '')}</small></td><td>${m.phone ? `<a href="wa_one.html?phone=${m.phone}" target="_blank" rel="noopener">💬 Follow up</a>` : ''}</td></tr>`).join('');
     const tips = (d.tips || []).map(x => `<tr><td><b>${esc(x.emp)}</b> · ${esc(x.order)}</td><td>“${esc(x.text)}”${x.offered ? '<br><small>offered: ' + esc(x.offered) + '</small>' : ''}</td></tr>`).join('');
     return `<div class="ef"><div class="ef-h"><b>📈 Growth effort · ${esc(T.day)}</b><small>${done} of ${total} orders read from the chat${wait ? ' · ' + wait + ' still waiting' : ''}${d.skipped ? ' · ' + d.skipped + ' had no chat' : ''}${rs ? ' · add-on ₹ ' + inr(rs) : ''}${d.mode === 'off' ? ' · automatic reading is OFF (Order Allocation → 🤖)' : ''}</small>${wait || EFF.run ? `<button type="button" onclick="effFill()" ${EFF.run ? 'disabled' : ''} style="font:inherit;font-size:11.5px;font-weight:700;border:0;background:#111827;color:#fff;border-radius:99px;padding:4px 12px;cursor:pointer">${EFF.run ? '⏳ Reading chats… ' + wait + ' left' : '▶ Read chats now'}</button>` : ''}</div>
+      ${grHtml()}
       <div class="ef-r"><span class="ef-l" title="Bigger SIZE or value of what the customer chose: 50 ml instead of 20 ml, 100 ml instead of 50 ml, a bigger-ml combo (more pieces count as add-on)">⬆ Bigger</span>${boxB('bw', 3, 'sold', '🔵 Tried and the customer took a bigger order')}${boxB('bh', 2, 'tried hard', '🟣 Tried hard, customer did not take')}${boxB('bl', 1, 'little', '🟤 Little effort: asked once, left it')}${boxB('bz', 0, 'none', '⚫ No effort: never tried to sell bigger')}</div>
       <div class="ef-r"><span class="ef-l" title="More perfume on top of the order: extra bottle(s) of any size (chain, gifts and other non-perfume do not count)">➕ Add-on</span>${box('w', 3, 'took', '🟢 Tried and the customer took the add-on')}${box('h', 2, 'tried hard', '🟡 Tried hard, customer did not take')}${box('l', 1, 'little', '🟠 Little effort: asked once, left it')}${box('z', 0, 'none', '🔴 No effort: never offered more')}</div>
       <details class="ef-d"><summary>👥 Who convinced — per person</summary>${ppTable()}</details>
