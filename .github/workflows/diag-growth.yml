@@ -107,9 +107,9 @@ jobs:
             } catch (Throwable $e) { echo "  tracker n/a (" . substr($e->getMessage(), 0, 140) . ")\n"; }
             echo "\nLEARNING LOG (newest 8, counts only):\n";
             try { foreach ($d->query("SELECT at, kind, orders_read, add_tries, add_won, big_tries, big_won, people_behind, guide_use FROM grow_learn_log ORDER BY id DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  " . $x["at"] . " " . $x["kind"] . ": read " . $x["orders_read"] . " · add-on taken/offered " . $x["add_won"] . "/" . $x["add_tries"] . " · bigger " . $x["big_won"] . "/" . $x["big_tries"] . " · people behind " . $x["people_behind"] . ($x["guide_use"] !== "" ? " · guidebook: " . $x["guide_use"] : "") . "\n"; } catch (Throwable $e) { echo "  learning log: " . substr($e->getMessage(), 0, 100) . "\n"; }
-            echo "\nTICKET SIZE IMPACT (average order value in rupees; orders given to a salesperson, cancelled left out; database time = IST):\n";
+            echo "\nTICKET SIZE IMPACT (average order value in rupees; orders given to a salesperson, cancelled left out; clock = IST):\n";
             try {
-              $dbnow = strtotime((string)$d->query("SELECT NOW()")->fetchColumn()); $cc = "COLLATE utf8mb4_unicode_ci";
+              $dbnow = time() + 19800; $cc = "COLLATE utf8mb4_unicode_ci";
               $tk = function ($t0, $t1) use ($d, $cc) { $q = $d->prepare("SELECT COUNT(*) n, ROUND(SUM(o.total)) s FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc WHERE a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND o.created_at >= ? AND o.created_at < ?"); $q->execute([date("Y-m-d H:i:s", $t0), date("Y-m-d H:i:s", $t1)]); $r = $q->fetch(PDO::FETCH_NUM); return [(int)$r[0], (float)$r[1]]; };
               $fmt = function ($r) { return $r[0] > 0 ? $r[0] . " orders · average ₹" . number_format(round($r[1] / $r[0])) : "no orders"; };
               $avg = function ($r) { return $r[0] > 0 ? $r[1] / $r[0] : null; };
