@@ -43,6 +43,8 @@
 
   function parse(s) { const m = /^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)(?::(\d\d))?/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null; }
   function hhmm(d) { return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); }
+  // 📅 the day beside the time on every message (owner, 18 Nov): "Today" · "Yesterday" · "Mon 16 Nov" (with the year when it is not this year) — no scrolling up to find out which day a message is from
+  function dayLbl(d) { const n = new Date(), z = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(), df = Math.round((z(n) - z(d)) / 864e5); if (df === 0) return 'Today'; if (df === 1) return 'Yesterday'; return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + (d.getFullYear() !== n.getFullYear() ? ' ' + d.getFullYear() : ''); }
   /** WhatsApp style stamp for the chat list: the clock time of the LAST message (ours or the customer's) today ("1:58 pm"), "Yesterday", else the date. */
   function stamp(s) {
     const d = parse(s); if (!d) return ''; const n = new Date(), d0 = new Date(n.getFullYear(), n.getMonth(), n.getDate()), days = Math.round((d0 - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
@@ -113,6 +115,7 @@
   .wi-b{max-width:72%; padding:7px 11px 5px; border-radius:11px; background:#fff; box-shadow:0 1px 2px #0001; line-height:1.4; word-break:break-word; white-space:pre-wrap; align-self:flex-start;}
   .wi-b.out{align-self:flex-end; background:#dcf8c6;} .wi-b.bot{align-self:flex-end; background:#e8e4ff;}
   .wi-b small{display:block; color:#7a8594; font-size:11px; margin-top:3px; white-space:normal; text-align:right;}
+  .wi-b small .wi-dy{background:rgba(245,158,11,.22);color:inherit;border-radius:5px;padding:0 4px;font-weight:800;}
   .wi-b img{max-width:100%; max-height:300px; border-radius:8px; display:block; cursor:zoom-in;}
   .wi-b .ld{border:1px dashed #b9c0cc; background:#f7f8fa; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:700; color:#3a3f4b; font-size:12.5px;}
   .wi-b audio,.wi-b video{max-width:100%;}
@@ -582,7 +585,7 @@
     }
     const capOf = (m) => { const x = /^[^:]{1,20}:\s*([\s\S]+)$/.exec(m.body || ''); return x ? x[1] : ''; };
     function bubble(m) {
-      if (m.dir === 'sys') { const d0 = parse(m.ts), t0 = d0 ? d0.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''; return `<div class="wi-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
+      if (m.dir === 'sys') { const d0 = parse(m.ts), t0 = d0 ? dayLbl(d0) + ' · ' + d0.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''; return `<div class="wi-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
       const cls = m.dir === 'in' ? '' : (m.who === 'bot' ? 'out bot' : 'out');
       let body = ''; const cap = (m.mtype === 'image' || m.mtype === 'video') ? capOf(m) : '';
       if (m.media_id && (m.mtype === 'image' || m.mtype === 'sticker')) body = (MEDIA[m.media_id] ? `<img src="${MEDIA[m.media_id]}" alt="photo">` : `<div class="ld" data-m="${esc(m.media_id)}" data-k="img">📷 Tap to open photo</div>`) + (cap ? `<div class="wi-cap">${linkify(esc(cap))}</div>` : '');
@@ -594,7 +597,7 @@
       const tg = m.mtype === 'template' ? '<span class="tg">📋 Pre-made message</span>' : '';
       const qt = m.quote ? `<div class="wi-qt" data-qid="${m.quote.id}" title="Go to that message"><b>${m.quote.dir === 'in' ? 'Customer' : 'You'}</b><span>${esc(m.quote.text)}</span></div>` : '';   // ↩ the customer swiped on this earlier message
       const rb = '<button type="button" class="wi-rb" data-rb="' + m.id + '" title="Reply to this message" aria-label="Reply">↩</button>';
-      return `<div class="wi-b ${cls}${m.mtype === 'template' ? ' tpl' : ''}" data-id="${m.id}">${rb}${tg}${qt}${body}<small>${who ? esc(who) + ' · ' : ''}${esc(m.number || '')} · ${d ? hhmm(d) : ''}${tick(m)}</small></div>`;
+      return `<div class="wi-b ${cls}${m.mtype === 'template' ? ' tpl' : ''}" data-id="${m.id}">${rb}${tg}${qt}${body}<small>${who ? esc(who) + ' · ' : ''}${esc(m.number || '')} · ${d ? '<b class="wi-dy">' + dayLbl(d) + '</b> · ' + hhmm(d) : ''}${tick(m)}</small></div>`;
     }
     // ↩ press ↩ on a message → the reply bar above the box; the next message you send answers it (the customer sees it quoted, like WhatsApp)
     document.addEventListener('click', (e) => { const b = e.target.closest('.wi-rb'); if (!b || !S.cur) return; const m = (S.cur.messages || S.cur.msgs || []).find((x) => String(x.id) === b.dataset.rb); const el = b.closest('.wi-b');
