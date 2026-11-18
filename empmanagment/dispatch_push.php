@@ -26,7 +26,7 @@ function dpx_cols(bool $n8n = false): array
  *  Loaded once per run from employee_addons; matched on the order name without "#" (so "#71914" and "71914" are the same). */
 function dpx_addon_load(PDO $pdo): void
 {
-    $GLOBALS['dpx_addon_notes'] = [];
+    $GLOBALS['dpx_addon_notes'] = []; $GLOBALS['dpx_addon_data'] = [];
     try {
         if (function_exists('ensure_addons_table')) ensure_addons_table($pdo);
         $rows = $pdo->query("SELECT order_name, addon_group, addon_id, product_name, size_ml, qty, price, prepaid_amt, cod_amt, proof_path FROM employee_addons WHERE order_name <> '' ORDER BY addon_id")->fetchAll();
@@ -46,12 +46,20 @@ function dpx_addon_load(PDO $pdo): void
         $parts = [];
         foreach ($sets as $x) {
             $pay = [];
-            if ($x['pre'] > 0) $pay[] = 'PREPAID Rs ' . number_format($x['pre']) . ($x['proof'] ? ' (payment proof saved in HRMS)' : ' (no proof)');
+            if ($x['pre'] > 0) $pay[] = 'PREPAID Rs ' . number_format($x['pre']);
             if ($x['cod'] > 0) $pay[] = 'COLLECT Rs ' . number_format($x['cod']) . ' on delivery';
             $parts[] = 'ADD-ON: ' . implode(', ', $x['items']) . ' = Rs ' . number_format($x['total']) . ($pay ? ' [' . implode('; ', $pay) . ']' : '');
         }
         $GLOBALS['dpx_addon_notes'][$o] = implode(' | ', $parts);
+        $GLOBALS['dpx_addon_data'][$o] = array_map(fn($x) => ['items' => $x['items'], 'total' => $x['total'], 'pre' => $x['pre'], 'cod' => $x['cod']], array_values($sets));
     }
+}
+
+/** Structured add-ons of an order for the Dispatch screen: [['items' => [...], 'total', 'pre', 'cod'], ...] (empty when none). Call dpx_addon_load() first. */
+function dpx_addon_for($orderName): array
+{
+    $key = strtolower(trim(ltrim(trim((string)$orderName), '#')));
+    return (array)(($GLOBALS['dpx_addon_data'] ?? [])[$key] ?? []);
 }
 
 /** The existing note of an order plus its add-on text (if any). */

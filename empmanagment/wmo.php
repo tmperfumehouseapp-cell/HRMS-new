@@ -319,6 +319,9 @@ function wmo_dsp_rows(PDO $pdo, string $from, string $to, string $status, string
                 : ($pa && trim((string)$pa['tracking_no']) !== '' ? ['awb' => (string)$pa['tracking_no'], 'courier' => (string)$pa['courier'], 'status' => (string)$pa['status'], 'manual' => false] : null),
             'link' => in_array($r['status'], ['draft', 'sent'], true) ? wmo_link((string)$r['token']) : ''];
     }
+    // Add-ons sold onto the order after it was made: shown to Dispatch (products + amount) and put in the export Notes
+    try { if (!function_exists('dpx_addon_load') && is_file(__DIR__ . '/dispatch_push.php')) require_once __DIR__ . '/dispatch_push.php'; if (function_exists('dpx_addon_load')) dpx_addon_load($pdo); } catch (Throwable $e) { }
+    foreach ($out as &$oa) { $oa['addons'] = function_exists('dpx_addon_for') ? dpx_addon_for($oa['order_no']) : []; $oa['addon_note'] = function_exists('dpx_note_with_addon') ? trim(dpx_note_with_addon('', $oa['order_no'])) : ''; } unset($oa);
     // 🧮 weight, tax, payment gateway, commission (the day's figures are cached by the commission engine; at most 8 days are looked up per call so a long export stays light)
     $bset = null; try { if (function_exists('wch_b_get')) $bset = wch_b_get($pdo); } catch (Throwable $e) { $bset = null; }
     $store = wmo_store_key(); $paidBy = []; $nDays = 0;
