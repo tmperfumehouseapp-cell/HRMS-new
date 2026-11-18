@@ -1255,6 +1255,7 @@ function ora_tables(PDO $pdo): bool
         $cols = $pdo->query("SHOW COLUMNS FROM order_rate_auto")->fetchAll(PDO::FETCH_COLUMN);
         if (!in_array('tries', $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN tries TINYINT NOT NULL DEFAULT 0");      // how many separate times the salesperson offered more
         if (!in_array('tip', $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN tip VARCHAR(240) NOT NULL DEFAULT ''");     // the winning words, when the try worked
+        if (!in_array('phone', $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN phone VARCHAR(12) NOT NULL DEFAULT '', ADD KEY k_phone (phone)");   // last 10 digits of the customer's number: the chat list shows the effort mark per chat
         return $ok = true; }
     catch (Throwable $e) { error_log('ora_tables: ' . $e->getMessage()); return $ok = false; }
 }
@@ -1324,8 +1325,8 @@ function ora_tick(PDO $pdo): int
             if (time() - $t0 > 25) break;   // the engine step must stay short
             $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;   // an AI hiccup: try again next time
             $day = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
-            $pdo->prepare("INSERT IGNORE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, day, house, at, applied) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
-                ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (int)($r['tries'] ?? 0), (string)($r['tip'] ?? ''), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $day, (string)$o['house'], date('Y-m-d H:i:s')]);
+            $pdo->prepare("INSERT IGNORE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, day, house, at, applied, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+                ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (int)($r['tries'] ?? 0), (string)($r['tip'] ?? ''), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $day, (string)$o['house'], date('Y-m-d H:i:s'), substr(preg_replace('/\D+/', '', (string)$o['phone']), -10)]);
             if ($r['rating'] !== null && $mode === 'apply' && ora_apply($pdo, $key, ['order_name' => (string)$o['order_name'], 'employee_id' => (int)$o['employee_id'], 'day' => $day, 'house' => (string)$o['house'], 'rating' => $r['rating']])) $pdo->prepare("UPDATE order_rate_auto SET applied = 1 WHERE order_key = ?")->execute([$key]);
             $n++;
         }
@@ -1335,6 +1336,19 @@ function ora_tick(PDO $pdo): int
         }
     } catch (Throwable $e) { error_log('ora_tick: ' . $e->getMessage()); }
     return $n;
+}
+/** The add-on effort mark of chats: last-10-digits phone => [level 0-3, stars, one-line reason, order name]. The newest read order of that customer wins. One map for 60 s (shared by every chat list refresh). */
+function ora_phone_map(PDO $pdo, array $phones): array
+{
+    if (!function_exists('hrms_memo') || !ora_tables($pdo)) return [];
+    $all = hrms_memo('ora_phone_map', 60, function () use ($pdo) {
+        try { $pdo->exec("UPDATE order_rate_auto r JOIN shop_orders o ON o.store_key = SUBSTRING_INDEX(r.order_key, ':', 1) AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) SET r.phone = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) WHERE r.phone = '' AND r.at >= '" . date('Y-m-d H:i:s', time() - 30 * 86400) . "'"); } catch (Throwable $e) { /* old database without REGEXP_REPLACE: only orders read from now on carry a number */ }
+        $m = [];
+        try { foreach ($pdo->query("SELECT phone, order_name, rating, tried, worked, tries, reason FROM order_rate_auto WHERE rating IS NOT NULL AND phone <> '' AND at >= '" . date('Y-m-d H:i:s', time() - 30 * 86400) . "' ORDER BY at ASC")->fetchAll(PDO::FETCH_ASSOC) as $r) $m[(string)$r['phone']] = [ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']), round((float)$r['rating'] / 2, 1), (string)$r['reason'], (string)$r['order_name']]; } catch (Throwable $e) { }
+        return $m;
+    });
+    $out = []; foreach ($phones as $p) { $k = substr(preg_replace('/\D+/', '', (string)$p), -10); if (isset($all[$k])) $out[(string)$p] = $all[$k]; }
+    return $out;
 }
 /** Reads the chats of ONE business day now (Live → "Read chats now"): up to $secs seconds of work, newest orders first. Returns [read this round, still unread]. Works even when the automatic mode is Off (it was asked for by hand); stars are only saved in Apply mode. */
 function ora_fill_day(PDO $pdo, string $day, int $secs = 22): array
@@ -1351,8 +1365,8 @@ function ora_fill_day(PDO $pdo, string $day, int $secs = 22): array
         if (time() - $t0 > $secs) break;
         $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;
         $d = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
-        $pdo->prepare("INSERT IGNORE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, day, house, at, applied) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
-            ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (int)($r['tries'] ?? 0), (string)($r['tip'] ?? ''), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $d, (string)$o['house'], date('Y-m-d H:i:s')]);
+        $pdo->prepare("INSERT IGNORE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, day, house, at, applied, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+            ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (int)($r['tries'] ?? 0), (string)($r['tip'] ?? ''), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $d, (string)$o['house'], date('Y-m-d H:i:s'), substr(preg_replace('/\D+/', '', (string)$o['phone']), -10)]);
         if ($r['rating'] !== null && $mode === 'apply' && ora_apply($pdo, $key, ['order_name' => (string)$o['order_name'], 'employee_id' => (int)$o['employee_id'], 'day' => $d, 'house' => (string)$o['house'], 'rating' => $r['rating']])) $pdo->prepare("UPDATE order_rate_auto SET applied = 1 WHERE order_key = ?")->execute([$key]);
         $n++;
     }
