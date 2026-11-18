@@ -574,9 +574,17 @@ function wag_chat_info(PDO $pdo, array $c): array
 /** Every tag with how many customers carry it in total and how many were active in the last 30 / 60 / 90 days (a message, a reply or an order). */
 function wag_tag_counts(PDO $pdo): array
 {
-    wa_cust_ready($pdo); $at = (string)setting_get($pdo, 'wa_cust_at', '');
-    try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); if (is_array($c) && ($c['as_of'] ?? '') === $at && $at !== '' && (int)($c['v'] ?? 0) === 2) return $c; } catch (Throwable $e) { }   // computed once per refresh
-    $r = wag_tag_counts_calc($pdo); try { setting_set($pdo, 'wa_tag_cache', json_encode($r)); } catch (Throwable $e) { } return $r;
+    wa_cust_ready($pdo); $at = (string)setting_get($pdo, 'wa_cust_at', ''); $c = null;
+    try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); if (!is_array($c) || (int)($c['v'] ?? 0) !== 2) $c = null; } catch (Throwable $e) { $c = null; }
+    if ($c && ($c['as_of'] ?? '') === $at && $at !== '') return $c;   // computed once per refresh
+    // ⚡ 18 Nov: this count takes 13-22 s on the big tables and, every time the customer table refreshed, EVERY open screen started it at once (4 copies seen running together, database at 200% CPU,
+    // the whole HRMS slow). Now only ONE request recounts; the others — and anything asked within 15 minutes of the last count — get the previous numbers at once.
+    if ($c && (time() - (int)($c['at'] ?? 0)) < 900) return $c;
+    $got = 0; try { $got = (int)$pdo->query("SELECT GET_LOCK('wag_tags', 0)")->fetchColumn(); } catch (Throwable $e) { $got = 1; }
+    if (!$got) { if ($c) return $c;   // somebody else is counting: use the old numbers
+        for ($i = 0; $i < 25; $i++) { sleep(1); try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); } catch (Throwable $e) { $c = null; } if (is_array($c) && (int)($c['v'] ?? 0) === 2) return $c; } }   // no old numbers at all: wait (up to 25 s) for the one that is counting instead of starting a 4th copy
+    try { $r = wag_tag_counts_calc($pdo); $r['at'] = time(); try { setting_set($pdo, 'wa_tag_cache', json_encode($r)); } catch (Throwable $e) { } return $r; }
+    finally { if ($got) { try { $pdo->query("SELECT RELEASE_LOCK('wag_tags')"); } catch (Throwable $e) { } } }
 }
 function wag_tag_counts_calc(PDO $pdo): array
 {
