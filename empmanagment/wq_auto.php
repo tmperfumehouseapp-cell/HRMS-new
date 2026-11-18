@@ -180,7 +180,7 @@ function waa_give_now(PDO $pdo, string $phone): void
     try {
         if (!waa_tables($pdo) || !waa_engine_on($pdo)) return; $now = time();
         $q = $pdo->prepare("SELECT id, phone, src, opened_at, emp_id FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $r = $q->fetch(PDO::FETCH_ASSOC);
-        if (!$r || (int)$r['emp_id'] > 0 || !in_array((string)$r['src'], ['query', 'campaign', 'community', ''], true) || strtotime((string)$r['opened_at']) < $now - 86400 + 600) return;
+        if (!$r || !in_array((string)$r['src'], ['query', 'campaign', 'community', ''], true)) return;   // the chat itself decides (assigned / open / written in the last 24 h are checked in waa_give_one); an old query row or a stale owner on the row no longer blocks
         $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, status, optout, cx_id, tag FROM wa_contacts WHERE phone = ?"); $c->execute([$phone]); $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
         $V = waa_view($pdo, false, 900); $T = waa_tally($pdo); $dbg = waa_dbg0();
         waa_give_one($pdo, $r, $row, $V, $T, $now, $dbg);
@@ -211,7 +211,11 @@ function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
         if ($res['switched_off'] || $chg) waa_state_put($pdo, $st);
         foreach ($V['people'] as $p0) { if ($p0['present']) $dbg['present']++; if ($p0['on']) $dbg['fresh_ok']++; if ($p0['present'] && $p0['m'] !== 'off') $dbg['camp_ok']++; }
         // (2) waiting queries: nobody holds them, the customer wrote in the last 24 h, no person answered yet. NEWEST first (the oldest are mostly closed / answered / past the 24 h window).
-        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign', 'community', '') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");
+        // 18 Nov (owner: "why are these queries not given?"): the check workflow showed 25 of the 60 newest open unassigned chats were skipped only because their query ROW was opened more than 24 h ago (a customer who keeps writing
+        // inside 24 h stays in the same query), 3 because the row still named an old owner although the chat is unassigned, and the 250 scanned rows were mostly CLOSED chats. Now the list is the CHATS nobody holds that are OPEN and whose
+        // customer wrote in the last 24 h (newest first), each with its latest query row — the same rules (complaint / opt-out / a person answered / another business's auto-reply) are still applied one by one.
+        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT q.id, q.phone, q.src, q.opened_at FROM wa_contacts c JOIN wa_queries q ON q.phone = c.phone AND q.id = (SELECT MAX(q2.id) FROM wa_queries q2 WHERE q2.phone = c.phone)
+            WHERE c.assigned_emp = 0 AND c.status = 'open' AND c.optout = 0 AND c.cx_id = 0 AND c.last_in_at >= ? AND c.last_in_at <= ? AND q.src IN ('query', 'campaign', 'community', '') ORDER BY c.last_in_at DESC LIMIT 250");
         $st0->execute([$since, waa_dt($now - 2)]); $qs = $st0->fetchAll(PDO::FETCH_ASSOC);
         if ($qs) {
             $phs = array_values(array_unique(array_map(function ($r) { return (string)$r['phone']; }, $qs))); $C = [];
