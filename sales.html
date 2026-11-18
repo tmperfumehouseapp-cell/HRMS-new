@@ -98,11 +98,11 @@
   /* ---- Today blocks ---- */
   .bk{font-family:Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
   /* ➕ Add-on effort: four big boxes (won / heavy not taken / little / none) + the same four counts on every person's block */
-  .ef{margin-top:10px;background:#fff;border:1px solid #eceef3;border-radius:12px;padding:10px 12px;}
-  .ef-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;}.ef-h b{font-size:14px;}.ef-h small{font-size:11px;color:#8a90a0;}
-  .ef-g{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
-  .ef-b{border-radius:10px;padding:9px 10px;color:#fff;min-width:0;}.ef-b.w{background:#16a34a}.ef-b.h{background:#d97706}.ef-b.l{background:#ea580c}.ef-b.z{background:#dc2626}
-  .ef-b .t{font-size:11.5px;font-weight:700;opacity:.95;line-height:1.25}.ef-b .v{font-size:26px;font-weight:800;line-height:1.15}.ef-b .v small{font-size:11px;font-weight:600;opacity:.9}
+  .ef{margin-top:8px;background:#fff;border:1px solid #eceef3;border-radius:10px;padding:6px 8px;}
+  .ef-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:5px;}.ef-h b{font-size:13px;}.ef-h small{font-size:11px;color:#8a90a0;}
+  .ef-g{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;}
+  .ef-b{border-radius:8px;padding:5px 8px;color:#fff;min-width:0;text-align:center;}.ef-b.w{background:#16a34a}.ef-b.h{background:#d97706}.ef-b.l{background:#ea580c}.ef-b.z{background:#dc2626}
+  .ef-b .t{font-size:11px;font-weight:700;opacity:.95;line-height:1.2;white-space:nowrap}.ef-b .v{font-size:20px;font-weight:800;line-height:1.1}.ef-b .v small{font-size:11px;font-weight:600;opacity:.9}
   .ef-b ul{list-style:none;margin:5px 0 0;padding:0;font-size:11.5px;line-height:1.5}.ef-b li{display:flex;justify-content:space-between;gap:6px;border-top:1px solid rgba(255,255,255,.28)}
   .ef-d{margin-top:8px;font-size:12px}.ef-d summary{cursor:pointer;font-weight:700}.ef-d table{width:100%;border-collapse:collapse;margin-top:5px}.ef-d td{padding:4px 6px;border-top:1px solid #eef0f4;vertical-align:top}
   .ef-d a{color:#0f6e8c;font-weight:700;text-decoration:none}
@@ -110,7 +110,6 @@
   .bk-grid .ef4{display:flex;gap:2px;margin-top:4px;align-items:stretch}.bk-grid .ef4 i{flex:1;text-align:center;font-style:normal;font-size:12px;font-weight:800;color:#fff;border-radius:5px;padding:2px 0;line-height:1.2}
   .bk-grid .ef4 i.w{background:#16a34a}.bk-grid .ef4 i.h{background:#d97706}.bk-grid .ef4 i.l{background:#ea580c}.bk-grid .ef4 i.r{background:#dc2626}.bk-grid .ef4 i.z{opacity:.28}
   .bk-grid .ef4 b{font-size:10px;color:#8a90a0;align-self:center;padding-left:2px;font-weight:700}
-  @media (max-width:700px){.ef-g{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .bk-t{font-size:16px;font-weight:700;letter-spacing:-.2px;}.bk-s{font-size:11px;color:#8a90a0;font-weight:500;}
   .bk-strip{display:flex;margin-top:10px;background:#fff;border-radius:10px;border:1px solid #eceef3;overflow:hidden;}
   .bk-strip .k{flex:1;padding:7px 12px;border-right:1px solid #eceef3;min-width:0;}.bk-strip .k:last-child{border:0;}
@@ -856,14 +855,15 @@
     const emps = (T.emps || []).filter(e => e.role_kind !== 'head'), total = emps.reduce((x, e) => x + Number(e.orders || 0), 0), done = (d.team || []).reduce((x, v) => x + v, 0), wait = Math.max(0, total - done - Number(d.skipped || 0));
     const box = (cls, i, title, sub) => {
       const list = emps.map(e => ({ n: (effOf(e.id) || { n: [0, 0, 0, 0] }).n[i], name: e.name })).filter(x => x.n > 0).sort((a, b) => b.n - a.n);
-      return `<div class="ef-b ${cls}"><div class="t">${title}</div><div class="v">${(d.team || [])[i] || 0} <small>orders</small></div><div class="t" style="font-weight:500;opacity:.85">${sub}</div>
-        <ul>${list.length ? list.map(x => `<li><span>${esc(x.name.split(/\s+/)[0])}</span><b>${x.n}</b></li>`).join('') : '<li><span>—</span></li>'}</ul></div>`;
+      return `<div class="ef-b ${cls}" title="${sub}"><div class="t">${title}</div><div class="v">${(d.team || [])[i] || 0}</div></div>`;
     };
+    const per = (i) => emps.map(e => ({ n: (effOf(e.id) || { n: [0, 0, 0, 0] }).n[i], name: e.name })).filter(x => x.n > 0).sort((a, b) => b.n - a.n).map(x => esc(x.name.split(/\s+/)[0]) + ' <b>' + x.n + '</b>').join(' · ') || '—';
     const rs = emps.reduce((x, e) => x + Number((effOf(e.id) || {}).addon_rs || 0), 0);
     const miss = (d.missed || []).map(m => `<tr><td><b>${esc(m.order)}</b><br><small>${esc(m.emp_name)}</small></td><td>${esc(m.customer || '')}${m.total ? '<br><small>' + inr(m.total) + '</small>' : ''}</td><td><small>${esc(m.why || m.asked || '')}</small></td><td>${m.phone ? `<a href="wa_one.html?phone=${m.phone}" target="_blank" rel="noopener">💬 Follow up</a>` : ''}</td></tr>`).join('');
     const tips = (d.tips || []).map(x => `<tr><td><b>${esc(x.emp)}</b> · ${esc(x.order)}</td><td>“${esc(x.text)}”${x.offered ? '<br><small>offered: ' + esc(x.offered) + '</small>' : ''}</td></tr>`).join('');
     return `<div class="ef"><div class="ef-h"><b>➕ Add-on effort · ${esc(T.day)}</b><small>${done} of ${total} orders read from the chat${wait ? ' · ' + wait + ' still waiting' : ''}${d.skipped ? ' · ' + d.skipped + ' had no chat' : ''}${rs ? ' · add-on ₹ ' + inr(rs) : ''}${d.mode === 'off' ? ' · automatic reading is OFF (Order Allocation → 🤖)' : ''}</small>${wait || EFF.run ? `<button type="button" onclick="effFill()" ${EFF.run ? 'disabled' : ''} style="font:inherit;font-size:11.5px;font-weight:700;border:0;background:#111827;color:#fff;border-radius:99px;padding:4px 12px;cursor:pointer">${EFF.run ? '⏳ Reading chats… ' + wait + ' left' : '▶ Read chats now'}</button>` : ''}</div>
-      <div class="ef-g">${box('w', 3, '🟢 Tried and the customer took it', 'add-on done')}${box('h', 2, '🟡 Tried hard, customer did not take', 'full effort, no add-on')}${box('l', 1, '🟠 Little effort', 'asked once, left it')}${box('z', 0, '🔴 No effort', 'never offered more')}</div>
+      <div class="ef-g">${box('w', 3, '🟢 Took it', 'Tried and the customer took the add-on')}${box('h', 2, '🟡 Tried hard', 'Tried hard, customer did not take')}${box('l', 1, '🟠 Little', 'Little effort: asked once, left it')}${box('z', 0, '🔴 None', 'No effort: never offered more')}</div>
+      <details class="ef-d"><summary>👥 Per person</summary><div style="line-height:1.7;padding:4px 0">${[[3, '🟢'], [2, '🟡'], [1, '🟠'], [0, '🔴']].map(x => `<div>${x[1]} ${per(x[0])}</div>`).join('')}</div></details>
       <details class="ef-d"><summary>🔴 No effort — follow up these customers (${(d.missed || []).length})</summary>${miss ? `<table>${miss}</table>` : '<div class="sub" style="padding:6px">Nothing here yet.</div>'}</details>
       <details class="ef-d"><summary>💡 Words that worked — the ticket-size advice for everyone (${(d.tips || []).length})</summary>${tips ? `<table>${tips}</table>` : '<div class="sub" style="padding:6px">No winning add-on chat read yet today.</div>'}</details></div>`;
   }
