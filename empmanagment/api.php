@@ -1336,6 +1336,29 @@ function ora_tick(PDO $pdo): int
     } catch (Throwable $e) { error_log('ora_tick: ' . $e->getMessage()); }
     return $n;
 }
+/** Reads the chats of ONE business day now (Live → "Read chats now"): up to $secs seconds of work, newest orders first. Returns [read this round, still unread]. Works even when the automatic mode is Off (it was asked for by hand); stars are only saved in Apply mode. */
+function ora_fill_day(PDO $pdo, string $day, int $secs = 22): array
+{
+    if (!function_exists('convo_ai') || !ora_tables($pdo) || !ensure_order_allocations_table($pdo)) return [0, 0];
+    $mode = ora_mode($pdo); $cc = 'COLLATE utf8mb4_unicode_ci';
+    $from = $day . ' ' . day_start_for($pdo, $day) . ':00'; $to = date('Y-m-d H:i:s', min(time() - 120, strtotime($from) + 86400));
+    $sel = "FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
+            WHERE o.created_at >= ? AND o.created_at <= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')
+              AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc)";
+    $n = 0; $t0 = time();
+    $st = $pdo->prepare("SELECT o.store_key, o.shopify_id, o.order_name, o.created_at, o.phone, o.total, o.ml_total, a.employee_id, a.house $sel ORDER BY o.created_at DESC LIMIT 40"); $st->execute([$from, $to]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
+        if (time() - $t0 > $secs) break;
+        $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;
+        $d = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
+        $pdo->prepare("INSERT IGNORE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, day, house, at, applied) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
+            ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (int)($r['tries'] ?? 0), (string)($r['tip'] ?? ''), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $d, (string)$o['house'], date('Y-m-d H:i:s')]);
+        if ($r['rating'] !== null && $mode === 'apply' && ora_apply($pdo, $key, ['order_name' => (string)$o['order_name'], 'employee_id' => (int)$o['employee_id'], 'day' => $d, 'house' => (string)$o['house'], 'rating' => $r['rating']])) $pdo->prepare("UPDATE order_rate_auto SET applied = 1 WHERE order_key = ?")->execute([$key]);
+        $n++;
+    }
+    $c = $pdo->prepare("SELECT COUNT(*) $sel"); $c->execute([$from, $to]);
+    return [$n, (int)$c->fetchColumn()];
+}
 /** 🧴 Is there at least one shower gel in this order? Reads the order's own gel/attar/other parts (xparts); an order read from the saved copy has no 'xparts' key, so it is looked up in shop_orders. */
 function order_has_gel(PDO $pdo, string $sk, array $o): bool
 {
@@ -22610,6 +22633,7 @@ switch ($action) {
         $q = $pdo->prepare("SELECT order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL ORDER BY at DESC LIMIT 600");
         $q->execute([$day]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
         try { addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { foreach ($rows as &$r0) { $r0['addon_total'] = 0; } unset($r0); }
+        try { $sk = $pdo->prepare("SELECT COUNT(*) FROM order_rate_auto WHERE day = ? AND rating IS NULL"); $sk->execute([$day]); $out['skipped'] = (int)$sk->fetchColumn(); } catch (Throwable $e) { $out['skipped'] = 0; }   // orders with no usable chat
         $E = []; $team = [0, 0, 0, 0]; $tips = []; $miss = [];
         foreach ($rows as $r) {
             $id = (int)$r['employee_id']; if ($id <= 0) continue;
@@ -22628,6 +22652,17 @@ switch ($action) {
         foreach ($E as $id => &$e) { $e['stars'] = $e['rated'] ? round($e['stars'] / $e['rated'], 1) : null; $e['addon_rs'] = round($e['addon_rs']); } unset($e);
         $out['emps'] = $E ?: new stdClass(); $out['team'] = $team; $out['missed'] = $miss; $out['tips'] = $tips; $out['measured'] = array_sum($team);
         json_response($out);
+        break;
+    }
+
+    case 'ct.effort_fill': {
+        // ▶ "Read chats now": reads the day's still-unread orders (about 20 seconds of work per call; the page calls again until nothing is left). Admin / HR / resolvers.
+        $auth = require_auth();
+        if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
+        @set_time_limit(60);
+        $in = json_input(); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['date'] ?? '')) ? (string)$in['date'] : biz_today($pdo);
+        try { [$done, $left] = ora_fill_day($pdo, $day, 22); } catch (Throwable $e) { json_response(['error' => 'Could not read the chats: ' . mb_substr($e->getMessage(), 0, 120)], 500); }
+        json_response(['day' => $day, 'done' => $done, 'left' => $left]);
         break;
     }
 
