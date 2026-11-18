@@ -136,6 +136,13 @@ jobs:
           foreach ($all("SELECT at, ok, info FROM wa_log WHERE info LIKE '%follow-ups made%' OR info LIKE '%open_welcome%' ORDER BY id DESC LIMIT 6") as $r) echo $row($r);
           echo "\n=== log lines about utility (newest 25) ===\n";
           foreach ($all("SELECT at, kind, ok, info FROM wa_log WHERE info LIKE '%tility%' ORDER BY id DESC LIMIT 25") as $r) echo "  " . $r["at"] . " [" . $r["kind"] . "/" . ($r["ok"] ? "ok" : "FAIL") . "] " . substr($r["info"], 0, 200) . "\n";
+          echo "\n=== Module B by MESSAGE (template), last 3 h (IST clock): sent / delivered / failed / only sent ===\n";
+          $ist3 = "NOW() + INTERVAL 330 MINUTE - INTERVAL 3 HOUR";
+          foreach ($all("SELECT LEFT(t.name, 34) tpl, r.kind, COUNT(*) sent, SUM(m.status IN ('delivered','read')) delivered, SUM(r.ok = 0 OR m.status = 'failed') failed, SUM(r.ok = 1 AND m.status = 'sent') only_sent FROM wa_ru_log r JOIN wa_templates t ON t.id = r.tpl_id LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= $ist3 GROUP BY t.name, r.kind ORDER BY sent DESC LIMIT 25") as $r) echo $row($r);
+          echo "  failures by message and Meta code, last 3 h:\n";
+          foreach ($all("SELECT LEFT(t.name, 34) tpl, COALESCE(NULLIF(r.err_code, 0), m.err_code) code, COUNT(*) n FROM wa_ru_log r JOIN wa_templates t ON t.id = r.tpl_id LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= $ist3 AND (r.ok = 0 OR m.status = 'failed') GROUP BY t.name, code ORDER BY n DESC LIMIT 12") as $r) echo $row($r);
+          echo "  Module B per 10 minutes (pace), last 3 h:\n";
+          foreach ($all("SELECT DATE_FORMAT(r.at - INTERVAL (MINUTE(r.at) % 10) MINUTE, '%H:%i') slot, COUNT(*) sent, SUM(m.status IN ('delivered','read')) delivered, SUM(r.ok = 0 OR m.status = 'failed') failed FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= $ist3 GROUP BY slot ORDER BY slot DESC LIMIT 20") as $r) echo $row($r);
           echo "\n=== PENDING FOR UTILITY: failed marketing people since 17 Nov 12:00 (IST) who still have no utility message, by reason (read-only, counts only) ===\n";
           $F = "2026-11-17 12:00:00"; $NEVER = "131026,131047,131021,131051,100,131008,131009,131048";
           $known = "(i.status = 'skipped' AND ((i.err_code = 131049 AND i.err LIKE 'Held by Meta again%') OR (i.err_code = 131026 AND EXISTS (SELECT 1 FROM wa_unreach u WHERE u.phone COLLATE utf8mb4_unicode_ci = i.phone COLLATE utf8mb4_unicode_ci AND u.code = 131050) AND NOT EXISTS (SELECT 1 FROM wa_unreach u2 WHERE u2.phone COLLATE utf8mb4_unicode_ci = i.phone COLLATE utf8mb4_unicode_ci AND u2.code = 131026))))";
