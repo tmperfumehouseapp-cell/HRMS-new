@@ -42,4 +42,8 @@ $S['wa_ru_ramp_at'] = (string)(time() - 1300); $S['wa_ru_ramp_chk'] = '0'; $pdo-
 $S['wa_ru_hourly'] = '400'; $S['wa_ru_ramp_at'] = (string)(time() - 1300); $S['wa_ru_ramp_chk'] = '0'; $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 150, 0, 18); wa_ru_ramp($pdo, ['hourly' => 400]); ok($S['wa_ru_hourly'] === '400', 'small step: ceiling 400');
 $S['wa_ru_hourly'] = '400'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '300', 'failure at 400 restarts at 300');
 $S['wa_ru_hourly'] = '240'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '200', 'failure at 240 restarts at the floor 200');
+// 11) small steps at night: 40 of 60 delivered (67%), the rest only 'sent', no failure -> still grows
+$S = ['wa_ru_hourly' => '200', 'wa_ru_ramp_base' => '200', 'wa_ru_ramp_step' => '20', 'wa_ru_ramp_every' => '1200', 'wa_ru_ramp_max' => '400', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 1700)];
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 0, 18); $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE rowid % 3 = 0"); wa_ru_ramp($pdo, ['hourly' => 200]); ok($S['wa_ru_hourly'] === '220', 'small step: 67% delivered and no failure grows (got ' . $S['wa_ru_hourly'] . ')');
+$S['wa_ru_hourly'] = '220'; $S['wa_ru_ramp_at'] = (string)(time() - 1700); $S['wa_ru_ramp_chk'] = '0'; $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE rowid % 2 = 0 OR rowid % 3 = 0"); wa_ru_ramp($pdo, ['hourly' => 220]); ok($S['wa_ru_hourly'] === '220', 'small step: only 33% delivered does not grow');
 echo "ramp ok\n";
