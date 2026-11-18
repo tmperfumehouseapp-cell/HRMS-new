@@ -146,6 +146,15 @@ jobs:
               $q = $d->prepare("SELECT emp, kind, resolved_at, remark FROM grow_note WHERE day = ? AND status = 'resolved' ORDER BY resolved_at DESC LIMIT 12"); $q->execute([$nd]);
               echo "  OWNER'S REMARKS when resolving (newest first):\n"; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    " . substr((string)$x["resolved_at"], 11, 5) . " " . ($nmx[(int)$x["emp"]] ?? ("#" . $x["emp"])) . " · " . $x["kind"] . ": " . preg_replace("/\d{10,}/", "#", (string)$x["remark"]) . "\n";
             } catch (Throwable $e) { echo "  notifications: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nSPEED (server load and how long the heavy parts take, seconds):\n";
+            try {
+              echo "  load average: " . trim((string)@file_get_contents("/proc/loadavg")) . " · php-fpm/apache workers: " . trim((string)@shell_exec("ps -eo comm | grep -ciE 'php-fpm|apache2|httpd'")) . " · cpu cores: " . trim((string)@shell_exec("nproc")) . "\n";
+              $t = microtime(true); $n = (int)$d->query("SELECT COUNT(*) FROM shop_orders")->fetchColumn(); echo "  shop_orders rows $n: " . round(microtime(true) - $t, 2) . " s\n";
+              $t = microtime(true); $n = (int)$d->query("SELECT COUNT(*) FROM order_rate_auto")->fetchColumn(); echo "  order_rate_auto rows $n: " . round(microtime(true) - $t, 2) . " s\n";
+              $t = microtime(true); $d->query("SELECT r.employee_id e, COUNT(*) n FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE o.created_at >= NOW() - INTERVAL 2 HOUR GROUP BY r.employee_id")->fetchAll(); echo "  coach-levels join (runs about once a minute): " . round(microtime(true) - $t, 2) . " s\n";
+              $t = microtime(true); $d->query("SELECT COUNT(*) FROM grow_callback")->fetchColumn(); $d->query("SELECT COUNT(*) FROM grow_note")->fetchColumn(); echo "  call-back + notes tables: " . round(microtime(true) - $t, 2) . " s\n";
+              foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $p) if ((int)$p["Time"] >= 5) echo "  slow now (" . $p["Time"] . " s): " . substr(preg_replace("/\s+/", " ", (string)$p["Info"]), 0, 120) . "\n";
+            } catch (Throwable $e) { echo "  speed: " . substr($e->getMessage(), 0, 120) . "\n"; }
             $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
             if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
               $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
