@@ -74,7 +74,7 @@ function wa_ru_pool(PDO $pdo): array
 {
     wa_ru_load_util($pdo);
     if (!function_exists('wa_util_pool_usable') && is_file(__DIR__ . '/wa_util.php')) { try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { } }
-    $u = function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo) : [];
+    $u = function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo, true) : [];   // true: also the self-written messages that name an enquiry / order (wa_util_pick sends them only to customers for whom it is true)
     if (function_exists('wa_util_pool_fallback')) { try { foreach (wa_util_pool_fallback($pdo) as $f) $u[] = $f; } catch (Throwable $e) { } }   // the welcome message Meta moved to marketing still goes as a last resort (owner's rule)
     return $u;
 }

@@ -253,6 +253,13 @@ function wa_util_claims_history(string $body): bool
 {
     return (bool)preg_match('/\b(recent|your (?:recent )?(?:enquiry|inquiry|order|purchase|catalogue)|on (?:file|record)|you (?:asked|enquired|inquired|bought|purchased|ordered|received)|(?:bought|received) from us)\b/i', $body);
 }
+/** 🎯 owner, 18 Nov 2026 (night): a self-written message that names an enquiry or an order goes ONLY to a customer whose behaviour makes it true: wrote to us within the asked-days (enquiry) / ordered within the order-days (order). A claim about a catalogue is never made (we do not know what they asked). */
+function wa_util_claim_ok(string $body, bool $hasEnq, bool $hasOrd): bool
+{
+    if (preg_match('/catalogue/i', $body)) return false;
+    $e = (bool)preg_match('/\b(enquiry|inquiry|enquired|inquired|asked)\b/i', $body); $o = (bool)preg_match('/\b(orders?|purchase|purchased|bought|ordered|received)\b/i', $body);
+    if ($e && $o) return $hasEnq || $hasOrd; if ($e) return $hasEnq; if ($o) return $hasOrd; return $hasEnq || $hasOrd;
+}
 /** 🧠 Words that only appear in the messages Meta MOVED to marketing (never in the ones it kept as utility): the new message must not use them. */
 function wa_util_learn_avoid(array $keptBodies, array $movedBodies): array
 {
@@ -341,10 +348,10 @@ function wa_util_pool_view(PDO $pdo): array
     return $o;
 }
 /** The pool messages a campaign may send now (approved somewhere, not moved to marketing by Meta). */
-function wa_util_pool_usable(PDO $pdo): array
+function wa_util_pool_usable(PDO $pdo, bool $behaviour = false): array
 {
-    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING') continue; if (($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body'])) continue;   // a self-written message that claims a recent enquiry / order is never sent to anyone
-        $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue;
+    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING') continue; $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
+        $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; if ($claims) { $t['claims'] = true; $t['body'] = (string)$r['body']; }
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;
 }
@@ -371,6 +378,9 @@ function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs
     if (!$pool || (int)($ct['optout'] ?? 0) === 1) return null; $phone = (string)$ct['phone']; $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : 'ji';
     $ask = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'ask')); $ord = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'order'));
     $in = !empty($ct['last_in_at']) ? (int)strtotime((string)$ct['last_in_at']) : 0; $fill = function (array $t, array $v) { $o = []; foreach (array_slice($t['labels'], 0, $t['nvars']) as $l) { $x = trim((string)($v[strtolower((string)$l)] ?? '')); if ($x === '') return null; $o[] = mb_substr($x, 0, 60); } return count($o) === (int)$t['nvars'] ? $o : null; };
+    $hasEnq = $in >= $nowTs - max(1, $askDays) * 86400; $hasOrd = false; if ($ordDays > 0) { $oo = wa_util_orders($pdo, $ordDays)[$phone] ?? null; $hasOrd = $oo && (string)$oo['order'] !== ''; }
+    if ($hasEnq || $hasOrd) { $cl = array_values(array_filter($pool, fn($t) => !empty($t['claims']) && wa_util_claim_ok((string)($t['body'] ?? ''), $hasEnq, $hasOrd)));   // 🎯 half of the people who wrote to us / ordered get a message that says so (true for them)
+        if ($cl && $rot % 2 === 0) { $t = $cl[intdiv($rot, 2) % count($cl)]; $v = $fill($t, ['name' => $name]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'open']; } }
     if ($ask && $in >= $nowTs - max(1, $askDays) * 86400) {
         $p = ''; try { if (function_exists('wa_camp_lazy') ? wa_camp_lazy('wa_prod_last_asked', 'wa_prod.php') : function_exists('wa_prod_last_asked')) $p = (string)wa_prod_last_asked($pdo, $phone); } catch (Throwable $e) { }
         if ($p !== '') { $t = $ask[$rot % count($ask)]; $v = $fill($t, ['name' => $name, 'perfume' => $p, 'date' => date('j M', $in)]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'ask']; }
@@ -382,7 +392,7 @@ function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs
     if ($ord && $ordDays > 0) { $o = wa_util_orders($pdo, $ordDays)[$phone] ?? null;
         if ($o && $o['order'] !== '') { $t = $ord[$rot % count($ord)]; $v = $fill($t, ['name' => $name, 'order' => $o['order'], 'date' => date('j M', (int)strtotime($o['at']))]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'order']; } }
     if ($anyone) {   // 💸 utility first (owner, 17 Nov 2026): a customer with no enquiry / order on record (an old customer, an imported list) still gets the short welcome message
-        $open = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'open'));
+        $open = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'open' && empty($t['claims'])));
         if ($open) { $t = $open[$rot % count($open)]; $v = $fill($t, ['name' => $name]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'open']; }
     }
     return null;

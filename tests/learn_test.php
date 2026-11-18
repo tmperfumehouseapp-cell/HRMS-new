@@ -16,3 +16,19 @@ $src2 = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_util.php'); $p = 
 foreach (["Hi {{1}}, this is about your recent enquiry with TM Perfume House.", "Hi {{1}}, your order or enquiry details are on file with TM Perfume House.", "Hi {{1}}, this is about your recent purchase from TM Perfume House.", "Hello {{1}}, you asked about a perfume.", "Hello {{1}}, an order you received from us"] as $b) ok(wa_util_claims_history($b), 'claim found: ' . $b);
 foreach (["Hi {{1}}, this is TM Perfume House customer care. If you need help with an order or a delivery from TM Perfume House, tap a button below.", "Hello {{1}}, TM Perfume House customer care can help with the status of an order or a return. Tap a button to message our team."] as $b) ok(!wa_util_claims_history($b), 'no claim: ' . $b);
 echo "claims ok\n";
+// behaviour: a self-written message that names an enquiry / order goes only to a customer for whom it is true
+foreach (['wa_util_claim_ok', 'wa_util_pick'] as $fn) { $p = strpos($src2, "function $fn("); $i = strpos($src2, '{', $p); $d = 0; for ($j = $i; $j < strlen($src2); $j++) { if ($src2[$j] === '{') $d++; elseif ($src2[$j] === '}') { $d--; if ($d === 0) { eval(substr($src2, $p, $j - $p + 1)); break; } } } }
+ok(wa_util_claim_ok('Hi {{1}}, this is about your recent enquiry with TM.', true, false) && !wa_util_claim_ok('Hi {{1}}, this is about your recent enquiry with TM.', false, true), 'enquiry claim needs an enquiry');
+ok(wa_util_claim_ok('Hello {{1}}, about your recent order or delivery.', false, true) && !wa_util_claim_ok('Hello {{1}}, about your recent order or delivery.', true, false), 'order claim needs an order');
+ok(!wa_util_claim_ok('Hi {{1}}, your enquiry about our perfume catalogue is on record.', true, true), 'a catalogue claim is never made');
+if (!function_exists('wa_util_orders')) { function wa_util_orders($pdo, $days) { return $GLOBALS['ORD'] ?? []; } }
+$pdoT = new PDO('sqlite::memory:'); $now = time();
+$claimMsg = ['pool_kind' => 'open', 'labels' => ['name'], 'nvars' => 1, 'body' => 'Hi {{1}}, this is about your recent enquiry with TM.', 'claims' => true, 'id' => 1];
+$plain = ['pool_kind' => 'open', 'labels' => ['name'], 'nvars' => 1, 'body' => 'Hi {{1}}, customer care here.', 'id' => 2];
+$pool = [$claimMsg, $plain];
+$GLOBALS['ORD'] = []; $saw = [];
+for ($rot = 0; $rot < 8; $rot++) { $r = wa_util_pick($pdoT, $pool, ['phone' => '9000000001', 'name' => 'Raj', 'optout' => 0, 'last_in_at' => null], 180, $now, $rot, 90, true); $saw[] = $r['t']['id'] ?? 0; }
+ok(!in_array(1, $saw, true) && in_array(2, $saw, true), 'a customer who never chatted never gets the enquiry claim');
+$saw = []; for ($rot = 0; $rot < 8; $rot++) { $r = wa_util_pick($pdoT, $pool, ['phone' => '9000000002', 'name' => 'Raj', 'optout' => 0, 'last_in_at' => date('Y-m-d H:i:s', $now - 5 * 86400)], 180, $now, $rot, 90, true); $saw[] = $r['t']['id'] ?? 0; }
+ok(in_array(1, $saw, true), 'a customer who wrote to us can get the enquiry message');
+echo "behaviour ok\n";
