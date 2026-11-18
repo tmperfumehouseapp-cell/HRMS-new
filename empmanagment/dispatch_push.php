@@ -46,7 +46,7 @@ function dpx_addon_load(PDO $pdo): void
         $parts = [];
         foreach ($sets as $x) {
             $pay = [];
-            if ($x['pre'] > 0) $pay[] = 'PREPAID Rs ' . number_format($x['pre']) . ($x['proof'] ? ' (payment proof saved in HRMS)' : ' (no proof)');
+            if ($x['pre'] > 0) $pay[] = 'PREPAID Rs ' . number_format($x['pre']);
             if ($x['cod'] > 0) $pay[] = 'COLLECT Rs ' . number_format($x['cod']) . ' on delivery';
             $parts[] = 'ADD-ON: ' . implode(', ', $x['items']) . ' = Rs ' . number_format($x['total']) . ($pay ? ' [' . implode('; ', $pay) . ']' : '');
         }
