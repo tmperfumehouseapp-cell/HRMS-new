@@ -283,12 +283,41 @@ function wa_ru_reset_once(PDO $pdo): void
     try { if ((string)setting_get($pdo, 'wa_dq_nolimit', '') !== '1') { foreach (['wa_dq_daily' => '1000000', 'wa_dq_budget' => '0', 'wa_dq_auto' => '0', 'wa_dq_hourly' => '60000', 'wa_dq_pace' => '0', 'wa_dq_daily_auto' => '0', 'wa_dq_stat' => ''] as $k => $v) setting_set($pdo, $k, $v); setting_set($pdo, 'wa_dq_nolimit', '1'); } } catch (Throwable $e) { }   // owner 18 Nov 2026: the shared marketing plan has no day number, no money limit, no even-pace brake and the hour number at its top (60,000); Meta's own limit per number (3,00,000) and a number that is off / Low quality still decide
     try { if ((string)setting_get($pdo, 'wa_ru_held_off2', '') !== '1') { setting_set($pdo, 'wa_ru_pause_until', '0'); setting_set($pdo, 'wa_ru_rest', '{}'); setting_set($pdo, 'wa_ru_brake_since', (string)time()); setting_set($pdo, 'wa_ru_cursor', '0'); setting_set($pdo, 'wa_ru_held_off2', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: the pause caused by the held people's failures is cleared; the failure brake counts only messages sent from now on
 }
+/**
+ * Module B ramp (owner idea, 18 Nov 2026): while it runs well the hourly number grows a little every hour (step 25, up to 600 an hour); when failures start it goes back to the last good number and the ramp rests for 4 hours;
+ * a Meta spam flag (131048) sends it back to the base (100). Looked at most once in 10 minutes. Settings: wa_ru_ramp_on (1) · wa_ru_ramp_base 100 · wa_ru_ramp_step 25 · wa_ru_ramp_max 600 · wa_ru_ramp_good · wa_ru_ramp_at · wa_ru_ramp_hold.
+ */
+function wa_ru_ramp_back(PDO $pdo, string $why): void
+{
+    try { $base = max(10, (int)setting_get($pdo, 'wa_ru_ramp_base', '100') ?: 100); $cur = (int)setting_get($pdo, 'wa_ru_hourly', (string)$base); $good = (int)setting_get($pdo, 'wa_ru_ramp_good', (string)$base);
+        $to = $why === 'spam' ? $base : max($base, min($good, $cur)); if ($why !== 'spam' && $cur <= $good) $to = max($base, $good - 25);
+        setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_hold', (string)(time() + 4 * 3600)); setting_set($pdo, 'wa_ru_ramp_at', (string)time());
+        if ($why === 'spam') setting_set($pdo, 'wa_ru_ramp_good', (string)$base);
+        if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility follow-up (Module B): ' . $cur . ' an hour → back to ' . $to . ' an hour (' . ($why === 'spam' ? 'Meta spam flag' : 'failures started') . '); no increase for 4 hours'); } catch (Throwable $e) { }
+}
+function wa_ru_ramp(PDO $pdo, array $cfg): void
+{
+    try { if ((string)setting_get($pdo, 'wa_ru_ramp_on', '1') !== '1') return; $now = time();
+        if ((int)setting_get($pdo, 'wa_ru_ramp_chk', '0') > $now - 600) return; setting_set($pdo, 'wa_ru_ramp_chk', (string)$now);
+        $base = max(10, (int)setting_get($pdo, 'wa_ru_ramp_base', '100') ?: 100); $step = max(5, (int)setting_get($pdo, 'wa_ru_ramp_step', '25') ?: 25); $max = max($base, (int)setting_get($pdo, 'wa_ru_ramp_max', '600') ?: 600);
+        $cur = (int)$cfg['hourly']; if ($cur > $max) { setting_set($pdo, 'wa_ru_hourly', (string)$max); return; }
+        $since = max($now - 3900, (int)setting_get($pdo, 'wa_ru_brake_since', '0')); $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
+        $q->execute([date('Y-m-d H:i:s', $since), date('Y-m-d H:i:s', $now - 900)]); $r = $q->fetch(); $n = (int)$r['n']; $f = (int)$r['f']; $d = (int)$r['d'];   // messages 15 minutes to 65 minutes old: their receipts have come
+        if ($n >= 20 && $f / max(1, $n) >= 0.10) { if ((int)setting_get($pdo, 'wa_ru_ramp_hold', '0') <= $now || $cur > $base) wa_ru_ramp_back($pdo, 'fail'); return; }
+        if ((int)setting_get($pdo, 'wa_ru_ramp_hold', '0') > $now) return;
+        $rat = (int)setting_get($pdo, 'wa_ru_ramp_at', '0'); if ($rat === 0) { setting_set($pdo, 'wa_ru_ramp_at', (string)$now); return; }   // the first look only starts the hour
+        if ($now - $rat < 3600) return;
+        if ($cur < $max && $n >= (int)floor($cur * 0.6) && $f / max(1, $n) <= 0.05 && $d / max(1, $n) >= 0.8) {
+            $to = min($max, $cur + $step); setting_set($pdo, 'wa_ru_ramp_good', (string)$cur); setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $n . ' sent, ' . $f . ' failed, ' . $d . ' delivered in the last hour): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
+}
 function wa_ru_tick(PDO $pdo): array
 {
     wa_ru_load_util($pdo); wa_ru_reset_once($pdo);
     $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
     if (!wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
     $cfg = wa_ru_cfg($pdo); if (!$cfg['on']) { $res['note'] = 'off'; return $res; } if ($cfg['pause_until'] > time()) { $res['note'] = 'paused after a Meta warning'; return $res; }
+    wa_ru_ramp($pdo, $cfg);   // grows / shrinks the hourly number (checked at most once in 10 minutes)
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'ru', 50)) { $res['note'] = 'busy'; return $res; }
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $why = [];
     try { $res['made'] = wa_ru_make_tick($pdo)['made']; } catch (Throwable $e) { }   // utility versions of today's campaign messages → Meta
@@ -306,7 +335,7 @@ function wa_ru_tick(PDO $pdo): array
         if ((int)$hr['n'] >= 60 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' failed'); $res['note'] = 'paused: too many failures'; return $res; }
         // Meta's spam flag (131048) usually arrives LATER, as a delivery failure of a message we sent (owner 18 Nov 2026: 304 of them came that way at 06:15 and the old brake only saw an hour of failures): 10 or more in the last 4 hours → pause for 4 hours
         try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND m.status = 'failed' AND m.err_code = 131048"); $q->execute([date('Y-m-d H:i:s', max($nowTs - 4 * 3600, (int)setting_get($pdo, 'wa_ru_brake_since', '0')))]);
-            $spam = (int)$q->fetchColumn(); if ($spam >= 10) { setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 4 * 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for 4 hours: Meta flagged ' . $spam . ' utility messages as spam (131048)'); $res['note'] = 'paused: Meta spam flag'; return $res; } } catch (Throwable $e9) { }
+            $spam = (int)$q->fetchColumn(); if ($spam >= 10) { wa_ru_ramp_back($pdo, 'spam'); setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 4 * 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for 4 hours: Meta flagged ' . $spam . ' utility messages as spam (131048)'); $res['note'] = 'paused: Meta spam flag'; return $res; } } catch (Throwable $e9) { }
         // somebody got the utility message → the campaign's own retry of that person must not send a second one
         try { $pdo->exec("UPDATE wa_camp_items i JOIN wa_ru_log r ON r.item_id = i.id JOIN wa_messages m ON m.wamid = r.wamid SET i.status = 'skipped' WHERE (i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND r.ok = 1 AND r.wamid <> '' AND m.status IN ('delivered', 'read')"); } catch (Throwable $e) { }
         $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
@@ -353,7 +382,7 @@ function wa_ru_tick(PDO $pdo): array
                 try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at, attempt, vars_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
                     ->execute([(int)$j['it']['camp_id'], (int)$j['it']['id'], (string)$j['c']['phone'], $j['kind'], (int)$j['nid'], (int)$j['t']['id'], $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, (int)$j['ec'], $ok ? '' : mb_substr((string)$rr, 0, 190), $now, json_encode($j['vars'], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
                 if ($ok) $res['sent']++; else { $res['failed']++;
-                    if ((int)$ecs === 131048) { setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 4 * 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for 4 hours: Meta flagged messages as spam (131048)'); $stop = true; }
+                    if ((int)$ecs === 131048) { wa_ru_ramp_back($pdo, 'spam'); setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 4 * 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for 4 hours: Meta flagged messages as spam (131048)'); $stop = true; }
                     if (in_array((int)$ecs, [130429, 131056], true)) $stop = true;
                     if ((int)$ecs === 132015) { try { $pp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $pp = is_array($pp) ? $pp : []; $pp[(int)$j['pid']] = $nowTs + 6 * 3600; setting_set($pdo, 'wa_ru_tpl_pause', json_encode($pp)); } catch (Throwable $e) { } } } }
             $batch = []; return $stop;
