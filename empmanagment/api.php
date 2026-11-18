@@ -22689,7 +22689,8 @@ switch ($action) {
                 $m['customer'] = (string)($o['customer'] ?? ''); $m['phone'] = substr(preg_replace('/\D+/', '', (string)($o['phone'] ?? '')), -10); $m['total'] = (float)($o['total'] ?? 0); } catch (Throwable $e) { $m['customer'] = ''; $m['phone'] = ''; $m['total'] = 0; }
             unset($m['key']);
         } unset($m);
-        foreach ($E as $id => &$e) { $e['stars'] = $e['rated'] ? round($e['stars'] / $e['rated'], 1) : null; $e['addon_rs'] = round($e['addon_rs']); } unset($e);
+        try { $__cl = function_exists('wq_coach_levels') ? wq_coach_levels($pdo) : []; } catch (Throwable $e0) { $__cl = []; }
+        foreach ($E as $id => &$e) { $e['coach'] = (int)($__cl[$id]['level'] ?? 0); $e['stars'] = $e['rated'] ? round($e['stars'] / $e['rated'], 1) : null; $e['addon_rs'] = round($e['addon_rs']); } unset($e);
         $out['emps'] = $E ?: new stdClass(); $out['team'] = $team; $out['team_sz'] = $teamSz; $out['missed'] = $miss; $out['missed_sz'] = $missSz; $out['tips'] = $tips; $out['tips_sz'] = $tipsSz; $out['measured'] = array_sum($team);
         json_response($out);
         break;

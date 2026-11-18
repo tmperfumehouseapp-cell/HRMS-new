@@ -857,7 +857,8 @@
     const n = x ? x.n : [0, 0, 0, 0], z = x && x.sz ? x.sz : [0, 0, 0, 0], rd = n[0] + n[1] + n[2] + n[3], wait = Math.max(0, tot - rd);
     const c = (cls, v, t) => `<i class="${cls}${v ? '' : ' z'}" title="${t}">${v}</i>`;
     const tip = (k, a) => k + ' on ' + tot + ' orders: ' + a[3] + ' took it · ' + a[2] + ' tried hard · ' + a[1] + ' little · ' + a[0] + ' none';
-    return `<span class="ef4" title="${tip('Selling bigger', z)}"><em>⬆</em>${c('bw', z[3], 'Bigger: tried and the customer took it')}${c('bh', z[2], 'Bigger: tried hard, customer did not take')}${c('bl', z[1], 'Bigger: little effort')}${c('br', z[0], 'Bigger: no effort')}</span>`
+    const cm = x && x.coach ? `<b style="color:${x.coach === 2 ? '#dc2626' : '#2563eb'};font-size:10.5px" title="${x.coach === 2 ? 'Two hours in a row mostly without a bigger / add-on offer — red warning sent to this person' : 'Last hour mostly without a bigger / add-on offer — instruction sent to this person'}">${x.coach === 2 ? '🔴 2h no offer' : '💡 1h no offer'}</b>` : '';
+    return cm + `<span class="ef4" title="${tip('Selling bigger', z)}"><em>⬆</em>${c('bw', z[3], 'Bigger: tried and the customer took it')}${c('bh', z[2], 'Bigger: tried hard, customer did not take')}${c('bl', z[1], 'Bigger: little effort')}${c('br', z[0], 'Bigger: no effort')}</span>`
       + `<span class="ef4" title="${tip('Add-on effort', n)}${wait ? ' · ' + wait + ' not read yet' : ''}${x && x.stars != null ? ' · ★' + x.stars : ''}"><em>➕</em>${c('w', n[3], 'Add-on: tried and the customer took it')}${c('h', n[2], 'Add-on: tried hard, customer did not take')}${c('l', n[1], 'Add-on: little effort')}${c('r', n[0], 'Add-on: no effort')}${wait ? `<b title="${wait} orders not read from the chat yet">⏳${wait}</b>` : ''}</span>`;
   }
   // 🔗 the payment-link rule (Admin / HR): off · warning only · strict · auto (warning until the day before a date, strict from it) + what happened today
