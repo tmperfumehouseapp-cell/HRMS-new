@@ -43,17 +43,17 @@ jobs:
           try {
             $cols = $d->query("SHOW COLUMNS FROM order_rate_auto")->fetchAll(PDO::FETCH_COLUMN);
             echo "new columns present: " . implode(",", array_values(array_intersect(["phone", "tries", "tip", "sz_ok", "sz_tried", "sz_worked", "sz_tries", "weak", "refused", "sz_weak", "sz_refused"], $cols))) . "\n";
-            echo "\nrows by rule version (sz_ok: 0 = old judge, 1 = two-part judge, 2 = strict rules):\n";
+            echo "\nrows by rule version (sz_ok: 0 = old judge, 1 = two-part judge, 3 = strict rules, add-on = extra perfume):\n";
             foreach ($d->query("SELECT sz_ok, COUNT(*) n, SUM(rating IS NULL) nochat, SUM(phone <> '') withphone FROM order_rate_auto GROUP BY sz_ok ORDER BY sz_ok")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  sz_ok=" . $x["sz_ok"] . ": " . $x["n"] . " rows · no chat " . $x["nochat"] . " · with customer number " . $x["withphone"] . "\n";
             $lv = function ($t, $w, $n) { return "CASE WHEN $w = 1 THEN 3 WHEN $n >= 2 THEN 2 WHEN $t = 1 OR $n >= 1 THEN 1 ELSE 0 END"; };
             $A = $lv("tried", "worked", "tries"); $B = $lv("sz_tried", "sz_worked", "sz_tries");
             foreach (["today (newest 24 h)" => "at >= '" . date("Y-m-d H:i:s", time() - 86400) . "'", "all strict-rule rows" => "1 = 1"] as $lab => $w) {
               echo "\n$lab, rows read under the strict rules, rating not empty:\n";
-              $r = $d->query("SELECT COUNT(*) n, SUM(($A) = 0) a0, SUM(($A) = 1) a1, SUM(($A) = 2) a2, SUM(($A) = 3) a3, SUM(($B) = 0) b0, SUM(($B) = 1) b1, SUM(($B) = 2) b2, SUM(($B) = 3) b3, SUM(weak > 0) weak_a, SUM(sz_weak > 0) weak_b FROM order_rate_auto WHERE sz_ok = 2 AND rating IS NOT NULL AND $w")->fetch(PDO::FETCH_ASSOC);
+              $r = $d->query("SELECT COUNT(*) n, SUM(($A) = 0) a0, SUM(($A) = 1) a1, SUM(($A) = 2) a2, SUM(($A) = 3) a3, SUM(($B) = 0) b0, SUM(($B) = 1) b1, SUM(($B) = 2) b2, SUM(($B) = 3) b3, SUM(weak > 0) weak_a, SUM(sz_weak > 0) weak_b FROM order_rate_auto WHERE sz_ok = 3 AND rating IS NOT NULL AND $w")->fetch(PDO::FETCH_ASSOC);
               echo "  read " . $r["n"] . " · BIGGER none/little/tried hard/sold: " . $r["b0"] . "/" . $r["b1"] . "/" . $r["b2"] . "/" . $r["b3"] . " · ADD-ON none/little/tried hard/took: " . $r["a0"] . "/" . $r["a1"] . "/" . $r["a2"] . "/" . $r["a3"] . " · with vague-only lines (bigger/add-on): " . $r["weak_b"] . "/" . $r["weak_a"] . "\n";
             }
-            echo "\nlast read (strict rules): " . $d->query("SELECT MAX(at) FROM order_rate_auto WHERE sz_ok = 2")->fetchColumn() . " · server time now " . date("Y-m-d H:i:s") . "\n";
-            $x = $d->query("SELECT COUNT(DISTINCT employee_id) FROM order_rate_auto WHERE sz_ok = 2")->fetchColumn(); echo "salespeople with at least one strict-rule row: $x\n";
+            echo "\nlast read (strict rules): " . $d->query("SELECT MAX(at) FROM order_rate_auto WHERE sz_ok = 3")->fetchColumn() . " · server time now " . date("Y-m-d H:i:s") . "\n";
+            $x = $d->query("SELECT COUNT(DISTINCT employee_id) FROM order_rate_auto WHERE sz_ok = 3")->fetchColumn(); echo "salespeople with at least one strict-rule row: $x\n";
             $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
             if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
               $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
