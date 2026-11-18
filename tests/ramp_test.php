@@ -6,7 +6,10 @@ $pdo = new PDO('sqlite::memory:'); $pdo->exec("CREATE TABLE wa_ru_log (at TEXT, 
 function fill($pdo, $n, $failed, $ageMin) { static $c = 0; for ($i = 0; $i < $n; $i++) { $w = 'w' . (++$c); $st = $i < $failed ? 'failed' : 'delivered'; $pdo->prepare("INSERT INTO wa_ru_log VALUES (?, 1, ?)")->execute([date('Y-m-d H:i:s', time() - $ageMin * 60), $w]); $pdo->prepare("INSERT INTO wa_messages VALUES (?, ?)")->execute([$w, $st]); } }
 function ok($c, $m) { if (!$c) { echo "FAIL: $m\n"; exit(1); } }
 $S = ['wa_ru_hourly' => '100', 'wa_ru_ramp_base' => '100', 'wa_ru_ramp_step' => '50', 'wa_ru_ramp_at' => (string)(time() - 4000)];
-// 1) a good hour: 90 sent, all delivered -> 150
+// 1b) 75% delivered, none failed, the rest only 'sent' -> still good
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 80, 0, 30); $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE rowid % 4 = 0"); $S = ['wa_ru_hourly' => '100', 'wa_ru_ramp_base' => '100', 'wa_ru_ramp_step' => '50', 'wa_ru_ramp_at' => (string)(time() - 4000)]; wa_ru_ramp($pdo, ['hourly' => 100]); ok($S['wa_ru_hourly'] === '150', '75% delivered grows to 150 (got ' . $S['wa_ru_hourly'] . ')');
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages");
+// 1) a good hour: 90 sent, all delivered -> 150 (75% delivered and the rest only 'sent' also counts as good: see 1b)
 fill($pdo, 90, 0, 30); wa_ru_ramp($pdo, ['hourly' => 100]); ok($S['wa_ru_hourly'] === '150', 'good hour grows to 150 (got ' . $S['wa_ru_hourly'] . ')');
 // 2) the next look (within the hour) does not grow again
 $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 150]); ok($S['wa_ru_hourly'] === '150', 'no second increase within the hour');

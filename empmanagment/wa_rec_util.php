@@ -288,7 +288,7 @@ function wa_ru_reset_once(PDO $pdo): void
 }
 /**
  * Module B ramp (owner idea, 18 Nov 2026): it starts at 100 an hour; every good hour it grows by 50 (100 → 150 → 200 … up to 600 an hour); when failures start it STOPS for 4 hours and then starts again at 100 and grows again.
- * Good hour = the limit is really used (60%+ of it sent), 5% or fewer failed, 80%+ delivered (only messages 15-65 minutes old, their receipts have come). Failures = 10%+ failed (20+ messages) or a Meta spam flag (131048).
+ * Good hour = the limit is really used (60%+ of it sent), 5% or fewer failed, 70%+ delivered (a message that is only 'sent' is not a failure; only messages 15-65 minutes old, their receipts have come). Failures = 10%+ failed (20+ messages) or a Meta spam flag (131048).
  * Looked at most once in 10 minutes. Settings: wa_ru_ramp_on (1) · wa_ru_ramp_base 100 · wa_ru_ramp_step 50 · wa_ru_ramp_max 600 · wa_ru_ramp_at (last change) · wa_ru_ramp_hold.
  */
 function wa_ru_ramp_back(PDO $pdo, string $why): void
@@ -309,7 +309,7 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
         if ((int)setting_get($pdo, 'wa_ru_ramp_hold', '0') > $now) return;
         $rat = (int)setting_get($pdo, 'wa_ru_ramp_at', '0'); if ($rat === 0) { setting_set($pdo, 'wa_ru_ramp_at', (string)$now); return; }   // the first look only starts the hour
         if ($now - $rat < 3600) return;
-        if ($cur < $max && $n >= (int)floor($cur * 0.6) && $f / max(1, $n) <= 0.05 && $d / max(1, $n) >= 0.8) {
+        if ($cur < $max && $n >= (int)floor($cur * 0.6) && $f / max(1, $n) <= 0.05 && $d / max(1, $n) >= 0.7) {
             $to = min($max, $cur + $step); setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $n . ' sent, ' . $f . ' failed, ' . $d . ' delivered in the last hour): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
