@@ -319,6 +319,22 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
             $to = min($max, $cur + $step); setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $n . ' sent, ' . $f . ' failed, ' . $d . ' delivered in the last hour): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
+/** 🛤 owner, 18 Nov 2026 (night): two lanes. Lane A = the safest people (wrote to us within the asked-days, or ordered within the order-days): about one third of the sends. Lane B = people to whom NOTHING has ever been delivered (every message to them failed): about two thirds. Everybody else (lane C) comes after both. Inside a lane the order stays oldest first. Pattern B, B, A, B, B, A … (when one lane is empty the other goes on).
+ *  $ever = phones that already got any message delivered / read; $ordMap = phones with an order in the window; $askCut = unix time: wrote to us after this = safe. */
+function wa_ru_lane_order(array $items, array $ct, array $ever, array $ordMap, int $askCut): array
+{
+    $A = []; $B = []; $C = [];
+    foreach ($items as $it) { $ph = (string)$it['phone']; $c = $ct[$ph] ?? null;
+        $safe = ($c && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) >= $askCut) || isset($ordMap[$ph]);
+        if ($safe) $A[] = $it; elseif (!isset($ever[$ph])) $B[] = $it; else $C[] = $it; }
+    $mix = []; $ia = 0; $ib = 0; $na = count($A); $nb = count($B);
+    while ($ia < $na || $ib < $nb) {
+        for ($k = 0; $k < 2 && $ib < $nb; $k++) $mix[] = $B[$ib++];
+        if ($ia < $na) $mix[] = $A[$ia++];
+        if ($ib >= $nb) while ($ia < $na) $mix[] = $A[$ia++];
+    }
+    return array_merge($mix, $C);
+}
 function wa_ru_tick(PDO $pdo): array
 {
     wa_ru_load_util($pdo); wa_ru_reset_once($pdo);
@@ -374,6 +390,11 @@ function wa_ru_tick(PDO $pdo): array
         $got = []; $q3 = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE phone IN ($pin) AND dir = 'out' AND mtype = 'template' AND status IN ('delivered', 'read') AND ts >= ?"); $q3->execute([date('Y-m-d H:i:s', strtotime($from) - 86400)]); foreach ($q3->fetchAll(PDO::FETCH_COLUMN) as $p) $got[(string)$p] = 1;
         $recent = []; $q4 = $pdo->prepare("SELECT DISTINCT phone FROM wa_ru_log WHERE at >= ?"); $q4->execute([date('Y-m-d H:i:s', $nowTs - 86400)]); foreach ($q4->fetchAll(PDO::FETCH_COLUMN) as $p) $recent[(string)$p] = 1;
         $rec = []; if (function_exists('wa_rec_tables') && wa_rec_tables($pdo)) { foreach ($pdo->query("SELECT item_id, COUNT(*) AS n, MAX(at) AS last FROM wa_rec_log WHERE item_id IN ($in) GROUP BY item_id")->fetchAll() as $r) $rec[(int)$r['item_id']] = $r; }
+        if ((string)setting_get($pdo, 'wa_ru_lanes', '1') !== '0') { try {   // 🛤 safest people and never-reached people first (see wa_ru_lane_order)
+            $ever = []; $qe = $pdo->query("SELECT DISTINCT phone FROM wa_messages WHERE phone IN ($pin) AND dir = 'out' AND status IN ('delivered', 'read')"); foreach ($qe->fetchAll(PDO::FETCH_COLUMN) as $p) $ever[(string)$p] = 1;
+            $ordMap = function_exists('wa_util_orders') ? wa_util_orders($pdo, max(1, (int)$cfg['ord_days'])) : [];
+            $items = wa_ru_lane_order($items, $ct, $ever, is_array($ordMap) ? $ordMap : [], $nowTs - max(1, (int)$cfg['ask_days']) * 86400);
+        } catch (Throwable $e) { } }
         $cache = []; $seen = []; $rot = 0; $lastId = $cursor; $broke = false; $numSt = wa_ru_numbers($pdo, $nowTs); $mixDays = function_exists('wa_mix_cfg') ? (int)wa_mix_cfg($pdo, 'wa_mix_days', 30) : 30; $shift = max(0, $cfg['ask_days'] - $mixDays) * 86400;
         $sk = function (string $k) use (&$res, &$why) { $res['skipped']++; $why[$k] = ($why[$k] ?? 0) + 1; };
         $batch = []; $bsz = max(5, min(100, (int)setting_get($pdo, 'wa_ru_parallel', '40')));
@@ -401,7 +422,7 @@ function wa_ru_tick(PDO $pdo): array
         };
         foreach ($items as $it) {
             if (microtime(true) - $t0 > 38 || $left <= 0) { $broke = true; break; }
-            $ph = (string)$it['phone']; $iid = (int)$it['id']; $lastId = $iid; $ec = (int)$it['err_code']; if ((string)$it['status'] === 'skipped' && $ec === 131026) $ec = 131050;   // skipped before sending because Meta had already stopped marketing to them (the skip text says 131026)
+            $ph = (string)$it['phone']; $iid = (int)$it['id']; $lastId = max($lastId, $iid); $ec = (int)$it['err_code']; if ((string)$it['status'] === 'skipped' && $ec === 131026) $ec = 131050;   // skipped before sending because Meta had already stopped marketing to them (the skip text says 131026)
             $cls = wa_ru_class($ec);
             if ($cls === 'never') { $sk('Meta will not deliver this one'); continue; }
             if (isset($recent[$ph]) || isset($seen[$ph])) { $sk('already got a utility message in the last 24 hours'); continue; }
