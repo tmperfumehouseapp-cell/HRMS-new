@@ -11,6 +11,7 @@ window.StoreCommReport = (function () {
   function ruleTag(b) {
     if (b.rule === 'offer') return '<span class="sx-pill good" style="background:#fff4e0;color:#b45309">🎁 Offer ' + f2(b.pct) + '%</span>';
     if (b.rule === 'flash offer') return '<span class="sx-pill good" style="background:#fff4e0;color:#b45309">⚡ Flash ' + f2(b.pct) + '%</span>';
+    if (b.rule === 'flat') return '<span class="sx-pill" style="background:#ecfdf5;color:#047857">📏 Flat ' + f2(b.pct) + '% (above the chart)</span>';
     if (b.rule === 'chart') return '<span class="sx-pill" style="background:#eef2ff;color:#3730a3">💰 Chart ' + f2(b.pct) + '%</span>';
     return '<span class="sx-pill bad">' + esc(b.rule === 'ML not priced' ? 'ML not in the chart' : (b.rule || '—')) + '</span>';
   }
