@@ -113,6 +113,14 @@ function wq_grow_log(PDO $pdo, int $emp, string $phone, string $mode, string $de
         if (in_array($decision, ['blocked', 'warn_shown'], true)) { $q = $pdo->prepare("SELECT id FROM grow_gate_log WHERE emp = ? AND phone = ? AND decision = ? AND at >= ? LIMIT 1"); $q->execute([$emp, $phone, $decision, date('Y-m-d H:i:s', time() - 600)]); if ($q->fetchColumn()) return; }   // the same tap twice is one entry
         $pdo->prepare("INSERT INTO grow_gate_log (at, day, emp, phone, mode, decision, add_lv, big_lv, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([date('Y-m-d H:i:s'), $day, $emp, $phone, $mode, $decision, $add, $big, mb_substr($reason, 0, 300)]); } catch (Throwable $e) { }
 }
+/** 🛟 Safety brake: in the last 2 hours, if more than grow_breaker_pct % (default 40) of the link attempts that reached a decision would have been held back (blocked + warned vs passed; at least 10 attempts), the strict rule steps down to a warning by itself until the share is lower again — so the rule can never starve the orders. Returns [active, share %, attempts]. */
+function wq_grow_breaker(PDO $pdo): array
+{
+    if (!wq_grow_ready($pdo)) return [false, 0, 0];
+    try { $pct = max(10, min(90, (int)setting_get($pdo, 'grow_breaker_pct', '40')));
+        $q = $pdo->prepare("SELECT SUM(decision IN ('blocked', 'warn_shown')) b, SUM(decision = 'passed') p FROM grow_gate_log WHERE at >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 7200)]); $r = $q->fetch(PDO::FETCH_ASSOC); $b = (int)($r['b'] ?? 0); $p = (int)($r['p'] ?? 0); $n = $b + $p;
+        $share = $n > 0 ? (int)round($b * 100 / $n) : 0; return [$n >= 10 && $share > $pct, $share, $n]; } catch (Throwable $e) { return [false, 0, 0]; }
+}
 /** The rule. Returns ['gate' => ''] to let the link go, or ['gate' => 'warn'|'lock', 'missing' => ['add','big'], 'error' => text, 'ideas' => …]. $totalRs = the cart total in rupees when known (0 = unknown). */
 function wq_grow_check(PDO $pdo, array $auth, string $phone, array $in, int $totalRs = 0): array
 {
@@ -120,9 +128,10 @@ function wq_grow_check(PDO $pdo, array $auth, string $phone, array $in, int $tot
     if ($mode === 'off' || strtolower(trim((string)($auth['role'] ?? ''))) !== 'employee') return $pass;
     $emp = (int)($auth['employee_id'] ?? 0); $k = substr(preg_replace('/\D+/', '', $phone), -10);
     $lv = wq_grow_levels($pdo, $k); if ($lv === null) return $pass;                                  // we could not read the chat: never block
-    $goal = (int)setting_get($pdo, 'tk_goal', '2700'); if ($totalRs > 0 && $goal > 0 && $totalRs >= $goal) return $pass;   // the cart already reaches the ticket goal
+    $goal = (int)setting_get($pdo, 'tk_goal', '2700'); if ($totalRs > 0 && $goal > 0 && $totalRs >= $goal) { wq_grow_log($pdo, $emp, $k, $mode, 'passed', (int)$lv['add'], (int)$lv['big'], 'goal'); return $pass; }   // the cart already reaches the ticket goal
     $addOk = $lv['add'] >= 1 || $lv['add_ref']; $bigOk = $lv['big'] >= 1 || $lv['big_ref'];
-    if ($addOk && $bigOk) return $pass;
+    if ($addOk && $bigOk) { wq_grow_log($pdo, $emp, $k, $mode, 'passed', (int)$lv['add'], (int)$lv['big']); return $pass; }
+    if ($mode === 'lock' && wq_grow_breaker($pdo)[0]) $mode = 'warn';   // 🛟 too many links would be held: warning only for now
     $reason = trim((string)($in['grow_waive'] ?? '')); if (mb_strlen($reason) >= 4) { wq_grow_log($pdo, $emp, $k, $mode, 'waived', (int)$lv['add'], (int)$lv['big'], $reason); return $pass; }
     if ($mode === 'warn' && !empty($in['grow_ok'])) { wq_grow_log($pdo, $emp, $k, $mode, 'warned_sent', (int)$lv['add'], (int)$lv['big']); return $pass; }
     $miss = []; if (!$addOk) $miss[] = 'add'; if (!$bigOk) $miss[] = 'big';
@@ -135,8 +144,10 @@ if ($__tkA === 'wq.grow_cfg') {   // Admin / HR: the rule's switch (off / warn /
     if (!$adm) json_response(['error' => 'Only Admin or HR can see or change the link rule.'], 403);
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') { $in = json_input();
         if (isset($in['mode']) && in_array((string)$in['mode'], ['off', 'warn', 'lock', 'auto'], true)) setting_set($pdo, 'grow_gate_mode', (string)$in['mode']);
-        if (isset($in['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$in['from'])) setting_set($pdo, 'grow_lock_from', (string)$in['from']); }
-    $out = wq_grow_cfg($pdo) + ['today_counts' => ['blocked' => 0, 'warn_shown' => 0, 'warned_sent' => 0, 'waived' => 0], 'waivers' => []];
+        if (isset($in['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$in['from'])) setting_set($pdo, 'grow_lock_from', (string)$in['from']);
+        if (isset($in['breaker_pct'])) setting_set($pdo, 'grow_breaker_pct', (string)max(10, min(90, (int)$in['breaker_pct']))); }
+    [$__ba, $__bs, $__bn] = wq_grow_breaker($pdo);
+    $out = wq_grow_cfg($pdo) + ['breaker' => ['active' => $__ba, 'share' => $__bs, 'attempts' => $__bn, 'limit' => max(10, min(90, (int)setting_get($pdo, 'grow_breaker_pct', '40')))], 'today_counts' => ['blocked' => 0, 'warn_shown' => 0, 'warned_sent' => 0, 'waived' => 0, 'passed' => 0], 'waivers' => []];
     try { if (wq_grow_ready($pdo)) { $q = $pdo->prepare("SELECT decision, COUNT(*) n FROM grow_gate_log WHERE day = ? GROUP BY decision"); $q->execute([$out['today']]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out['today_counts'][(string)$r['decision']] = (int)$r['n'];
         $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $w = $pdo->prepare("SELECT emp, at, reason FROM grow_gate_log WHERE day = ? AND decision = 'waived' ORDER BY id DESC LIMIT 20"); $w->execute([$out['today']]);
         foreach ($w->fetchAll(PDO::FETCH_ASSOC) as $r) $out['waivers'][] = ['emp' => $nm[(int)$r['emp']] ?? ('#' . $r['emp']), 'at' => substr((string)$r['at'], 11, 5), 'reason' => (string)$r['reason']]; } } catch (Throwable $e) { }
