@@ -175,10 +175,8 @@ if ($__wc === 'wa.overview' || $__wc === 'wa.send_media' || $__wc === 'wa.client
             if ($unpicked > 0) $att[] = ['level' => 'bad', 'text' => $unpicked . ' chat' . ($unpicked === 1 ? '' : 's') . ' waiting over 3 minutes — nobody has taken ' . ($unpicked === 1 ? 'it' : 'them') . '.', 'go' => 'chats'];
             $late = null; if (!function_exists('wa_late_scan') && is_file(__DIR__ . '/wa_late.php')) require_once __DIR__ . '/wa_late.php';   // this file runs before wa_more.php loads it
             if (function_exists('wa_late_scan')) { try { wa_late_scan($pdo); $late = wa_late_summary($pdo); } catch (Throwable $e) { $late = null; } }
-            if ($late && $late['now_total'] > 0) {   // ⏰ late replies come FIRST, red, with the names: these customers are waiting right now
-                $who = implode(' · ', array_map(fn($p) => $p['name'] . ' ' . $p['n'] . ' (longest ' . ($p['longest'] >= 60 ? floor($p['longest'] / 60) . 'h ' . ($p['longest'] % 60) . 'm' : $p['longest'] . ' min') . ')', array_slice($late['now'], 0, 4)));
-                array_unshift($att, ['level' => 'bad', 'text' => '⏰ ' . $late['now_total'] . ' assigned chat' . ($late['now_total'] === 1 ? '' : 's') . ' waiting over ' . $late['min'] . ' minutes for a reply — ' . $who, 'go' => 'grab', 'kind' => 'late']);
-            } elseif ($slow > 0) $att[] = ['level' => 'bad', 'text' => $slow . ' assigned chat' . ($slow === 1 ? '' : 's') . ' waiting over 10 minutes for a reply.', 'go' => 'grab'];
+            // owner (18 Nov): the late-reply alerts (the red "N assigned chats waiting over 10 minutes" list and the "late replies today" line) are removed; the scan above still runs, only nothing is shown
+            $late = null;
             foreach ($numbers as $h) {
                 $nm = $h['label'];
                 if ($h['error'] !== '' && $h['status'] === '') $att[] = ['level' => 'bad', 'text' => $nm . ': Meta did not answer — ' . $h['error'], 'go' => 'setup'];
@@ -190,7 +188,7 @@ if ($__wc === 'wa.overview' || $__wc === 'wa.send_media' || $__wc === 'wa.client
             }
             if ($tpl['rejected'] > 0) $att[] = ['level' => 'warn', 'text' => $tpl['rejected'] . ' pre-made message' . ($tpl['rejected'] === 1 ? ' was' : 's were') . ' rejected by Meta.', 'go' => 'premade'];
             usort($att, fn($a, $b) => ($a['level'] === 'bad' ? 0 : 1) <=> ($b['level'] === 'bad' ? 0 : 1));
-            $hideAtt = ((string)($auth['role'] ?? '') === 'Admin') || (string)setting_get($pdo, 'wa_att_show', '0') !== '1';   // owner (18 Nov): the whole "Needs your attention" box is removed for everybody (setting wa_att_show = 1 brings it back for the roles that had it) if (!$hideAtt && (int)($auth['employee_id'] ?? 0) > 0) { try { $dq = $pdo->prepare("SELECT designation FROM employees WHERE employee_id = ?"); $dq->execute([(int)$auth['employee_id']]); $hideAtt = (bool)preg_match('/sales\s*head/i', (string)$dq->fetchColumn()); } catch (Throwable $e) { } }   // the "Needs your attention" box is not shown to the Admin and the Sales Head (owner, 14 Nov)
+            $hideAtt = ((string)($auth['role'] ?? '') === 'Admin'); if (!$hideAtt && (int)($auth['employee_id'] ?? 0) > 0) { try { $dq = $pdo->prepare("SELECT designation FROM employees WHERE employee_id = ?"); $dq->execute([(int)$auth['employee_id']]); $hideAtt = (bool)preg_match('/sales\s*head/i', (string)$dq->fetchColumn()); } catch (Throwable $e) { } }   // the "Needs your attention" box is not shown to the Admin and the Sales Head (owner, 14 Nov)
             json_response(['sources' => $src, 'chats' => $chats, 'numbers' => $numbers, 'limit' => ['tier' => $limit, 'used' => $used], 'templates' => $tpl, 'attention' => $hideAtt ? [] : $att, 'late' => $hideAtt ? null : $late, 'hide_attention' => $hideAtt, 'at' => date('Y-m-d H:i:s')]);
         }
     }
