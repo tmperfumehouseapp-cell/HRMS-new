@@ -44,6 +44,7 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
     if (!$ideas['big']) $ideas['big'][] = '50ml ki jagah 100ml le lo, per ml sasta padega';
     if (!$ideas['add']) $ideas['add'][] = '4 ki jagah 5 perfume le lo, 5th pe ₹100 off';
     $out['ideas'] = $ideas;
+    try { $cl = wq_coach_levels($pdo); $out['coach'] = $cl[$me] ?? ['level' => 0, 'h1' => [0, 0], 'h2' => [0, 0]]; } catch (Throwable $e) { $out['coach'] = ['level' => 0, 'h1' => [0, 0], 'h2' => [0, 0]]; }
     json_response($out);
 }
 if ($__tkA === 'wq.grow_chat') {   // 📈 the live effort of ONE open chat (bigger + add-on), shown only while the order is being confirmed. Own chats only (Admin / manager: any). Read from the transcript by the same strict judge; cached 45 s per last message.
@@ -75,7 +76,7 @@ function wq_grow_ready(PDO $pdo): bool
 }
 function wq_grow_cfg(PDO $pdo): array
 {
-    $m = (string)setting_get($pdo, 'grow_gate_mode', 'auto'); if (!in_array($m, ['off', 'warn', 'lock', 'auto'], true)) $m = 'auto';
+    $m = (string)setting_get($pdo, 'grow_gate_mode', 'warn'); if (!in_array($m, ['off', 'warn', 'lock', 'auto'], true)) $m = 'warn';   // notification-only for everybody until the owner switches it on step by step
     $from = (string)setting_get($pdo, 'grow_lock_from', '2026-11-19'); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = '2026-11-19';
     $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     return ['mode' => $m, 'from' => $from, 'today' => $today, 'effective' => $m === 'auto' ? ($today >= $from ? 'lock' : 'warn') : $m];
@@ -112,6 +113,23 @@ function wq_grow_log(PDO $pdo, int $emp, string $phone, string $mode, string $de
     try { $day = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
         if (in_array($decision, ['blocked', 'warn_shown'], true)) { $q = $pdo->prepare("SELECT id FROM grow_gate_log WHERE emp = ? AND phone = ? AND decision = ? AND at >= ? LIMIT 1"); $q->execute([$emp, $phone, $decision, date('Y-m-d H:i:s', time() - 600)]); if ($q->fetchColumn()) return; }   // the same tap twice is one entry
         $pdo->prepare("INSERT INTO grow_gate_log (at, day, emp, phone, mode, decision, add_lv, big_lv, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([date('Y-m-d H:i:s'), $day, $emp, $phone, $mode, $decision, $add, $big, mb_substr($reason, 0, 300)]); } catch (Throwable $e) { }
+}
+/** 💬 Hourly coaching level of every salesperson (NOTIFICATION ONLY): from the orders made in the last 60 minutes and the 60 before, read by the strict judge.
+ *  An order is "no effort" when neither a proper bigger-size nor a proper add-on offer was made. A person is "behind" in a window with at least 3 orders and at least half of them no effort.
+ *  level 0 = fine / too few orders · 1 = behind in the last hour (a blue instruction) · 2 = behind two hours in a row (a red warning). Nothing is blocked. Cached 60 s. emp => ['level', 'h1' => [orders, no effort], 'h2' => […]] */
+function wq_coach_levels(PDO $pdo): array
+{
+    if (!function_exists('hrms_memo') || !function_exists('ora_tables')) return [];
+    return hrms_memo('wq_coach_levels', 60, function () use ($pdo) {
+        $out = [];
+        try { if (!ora_tables($pdo)) return [];
+            $A = "(CASE WHEN r.worked = 1 OR r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B = "(CASE WHEN r.sz_worked = 1 OR r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
+            $q = $pdo->query("SELECT r.employee_id e, CASE WHEN o.created_at >= NOW() - INTERVAL 60 MINUTE THEN 1 ELSE 2 END w, COUNT(*) n, SUM($A = 0 AND $B = 0) z FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 3 AND r.rating IS NOT NULL AND r.employee_id > 0 AND o.created_at >= NOW() - INTERVAL 120 MINUTE GROUP BY r.employee_id, w");
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) $out[(int)$x['e']]['h' . (int)$x['w']] = [(int)$x['n'], (int)$x['z']];
+            foreach ($out as $e => $v) { $h1 = $v['h1'] ?? [0, 0]; $h2 = $v['h2'] ?? [0, 0]; $b1 = $h1[0] >= 3 && $h1[1] * 2 >= $h1[0]; $b2 = $h2[0] >= 3 && $h2[1] * 2 >= $h2[0]; $out[$e] = ['level' => $b1 ? ($b2 ? 2 : 1) : 0, 'h1' => $h1, 'h2' => $h2]; }
+        } catch (Throwable $e) { error_log('wq_coach_levels: ' . $e->getMessage()); return []; }
+        return $out;
+    });
 }
 /** 🛟 Safety brake: in the last 2 hours, if more than grow_breaker_pct % (default 40) of the link attempts that reached a decision would have been held back (blocked + warned vs passed; at least 10 attempts), the strict rule steps down to a warning by itself until the share is lower again — so the rule can never starve the orders. Returns [active, share %, attempts]. */
 function wq_grow_breaker(PDO $pdo): array

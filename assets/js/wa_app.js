@@ -498,13 +498,21 @@
     });
     window.__wxEffTip = (el) => { try { toast(el.getAttribute('title') || ''); } catch (e) { } };
     // 📈 ONE clear card under the coach lines: in today's read orders, where the salesperson put NO effort — selling bigger (ticket size) and the add-on — in plain words. Tap = the orders to fix + words that work.
+    // 💬 hourly coaching (notification only): level 1 = the last hour's orders mostly had no bigger/add-on offer (blue instruction) · level 2 = two hours in a row (red warning). Nothing is blocked.
+    function coachHtml() {
+      const c = window.__wxCoach; if (!c || !(c.level > 0)) return '';
+      const id = window.__wxIdeas || {}, w = (id.add || [])[0] || '', n = (c.h1 || [0, 0])[0], z = (c.h1 || [0, 0])[1];
+      return c.level === 2
+        ? '<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:6px 9px;margin-bottom:6px">🔴 <b>સતત બે કલાકથી ઓફર થતી નથી</b> (છેલ્લા કલાકના ' + n + ' ઓર્ડરમાંથી ' + z + ' માં ⬆ મોટી સાઇઝ અને ➕ વધારાનું પરફ્યુમ બંનેની ઓફર નથી). આ ચાલુ રહેશે તો તમારા માટે <b>Requests / Rescue</b> થોડા સમય માટે બંધ કરવામાં આવશે. <span style="opacity:.8">(અત્યારે ફક્ત ચેતવણી, કશું બંધ થયું નથી)</span>' + (w ? '<br>💡 “' + esc(w) + '”' : '') + '</div>'
+        : '<div style="background:#dbeafe;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:6px 9px;margin-bottom:6px">💡 <b>છેલ્લા કલાકના ' + n + ' ઓર્ડરમાંથી ' + z + ' માં</b> ⬆ મોટી સાઇઝ અને ➕ વધારાનું પરફ્યુમ બંનેની ઓફર થઈ નથી. આગલા ઓર્ડરમાં બંને બોલો' + (w ? ': “' + esc(w) + '”' : '') + '</div>';
+    }
     function growBox() {
       try {
         const top = R.querySelector('.wx-top'); if (!top) return; let el = document.getElementById('wxGl');
         if (!el) { el = document.createElement('div'); el.id = 'wxGl'; el.className = 'wx-mgr'; const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr') || top; prev.insertAdjacentElement('afterend', el); }
         else { const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr'); if (prev && prev.nextElementSibling !== el) prev.insertAdjacentElement('afterend', el); }
         const d = window.__wxAd, id = window.__wxIdeas || {}, esc2 = (x) => esc(String(x)); el.style.cssText += ';cursor:pointer;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5;display:block;height:auto'; el.onclick = () => window.__wxAdOpen && window.__wxAdOpen();
-        if (!d || !d.read) { const w = (id.big || [])[0]; el.innerHTML = '📈 <b>ટિકિટ સાઇઝ અને એડ ઓન:</b> આજના ઓર્ડરની ચેટ વંચાય એટલે અહીં સાફ દેખાશે કે ક્યાં એફર્ટ નથી લગાડી.' + (w ? '<br>💡 દરેક ઓર્ડરમાં બોલો: “' + esc2(w.length > 60 ? w.slice(0, 58) + '…' : w) + '”' : ''); return; }
+        if (!d || !d.read) { const w = (id.big || [])[0]; el.innerHTML = coachHtml() + '📈 <b>ટિકિટ સાઇઝ અને એડ ઓન:</b> આજના ઓર્ડરની ચેટ વંચાય એટલે અહીં સાફ દેખાશે કે ક્યાં એફર્ટ નથી લગાડી.' + (w ? '<br>💡 દરેક ઓર્ડરમાં બોલો: “' + esc2(w.length > 60 ? w.slice(0, 58) + '…' : w) + '”' : ''); return; }
         const n = d.n, z = d.sz || [0, 0, 0, 0];
         const part = (a, no, yes, doneWord) => { const bits = [];
           bits.push(a[0] > 0 ? '<b style="color:#b91c1c">' + a[0] + ' ઓર્ડરમાં ' + no + '</b>' : '<b style="color:#15803d">બધા ઓર્ડરમાં ' + yes + ' ✓</b>');
@@ -513,7 +521,7 @@
           return bits.join(' · '); };
         const yd = d.yd || null, tm = d.team || [0, 0, 0, 0], tz = d.team_sz || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3], pc = (arr) => { const t = arr[0] + arr[1] + arr[2] + arr[3]; return t ? Math.round(100 * (arr[1] + arr[2] + arr[3]) / t) : null; };
         const cmpLine = (yd && yd.read ? 'ગઈકાલે: ⬆ ' + yd.sz[0] + ' અને ➕ ' + yd.n[0] + ' ઓર્ડરમાં એફર્ટ નહોતી' : '') + (tt >= 5 ? (yd && yd.read ? ' · ' : '') + 'ટીમમાં આજે ઓફર: ⬆ ' + pc(tz) + '% · ➕ ' + pc(tm) + '% (તમે ⬆ ' + pc(z) + '% · ➕ ' + pc(n) + '%)' : '');
-        el.innerHTML = '📈 <b>આજના ' + d.read + ' ઓર્ડરમાં</b><br>⬆ <b>ટિકિટ સાઇઝ</b> (મોટી સાઇઝ): ' + part(z, 'એફર્ટ નથી લગાડી', 'એફર્ટ લગાડી', 'માન્યા') + '<br>➕ <b>એડ ઓન</b> (વધારાનું પરફ્યુમ): ' + part(n, 'વધારાનું પરફ્યુમ ઓફર નથી કર્યું', 'વધારાનું પરફ્યુમ ઓફર કર્યું', 'માન્યા') + ' ›' + (cmpLine ? '<br><span style="color:#64748b;font-size:11px">' + cmpLine + '</span>' : '');
+        el.innerHTML = coachHtml() + '📈 <b>આજના ' + d.read + ' ઓર્ડરમાં</b><br>⬆ <b>ટિકિટ સાઇઝ</b> (મોટી સાઇઝ): ' + part(z, 'એફર્ટ નથી લગાડી', 'એફર્ટ લગાડી', 'માન્યા') + '<br>➕ <b>એડ ઓન</b> (વધારાનું પરફ્યુમ): ' + part(n, 'વધારાનું પરફ્યુમ ઓફર નથી કર્યું', 'વધારાનું પરફ્યુમ ઓફર કર્યું', 'માન્યા') + ' ›' + (cmpLine ? '<br><span style="color:#64748b;font-size:11px">' + cmpLine + '</span>' : '');
       } catch (e) { }
     }
     // 🎯 my ticket today against the goal (one small chip, the same number as My Sales; refreshed every 5 minutes)
@@ -523,7 +531,8 @@
       paintTk(); setInterval(() => { if (!document.hidden) paintTk(); }, 90000); }
 
     // 📈 my growth effort today (bigger size + add-on = extra perfume) feeds the card under the coach lines (wq.ad_me, own numbers only)
-    { const paintAd = async () => { try { const d = await api.get('wq.ad_me'); window.__wxIdeas = (d && d.ideas) || null; window.__wxAd = d && +d.read > 0 ? d : null; growBox(); } catch (e) { /* no card */ } };
+    { const paintAd = async () => { try { const d = await api.get('wq.ad_me'); window.__wxIdeas = (d && d.ideas) || null; window.__wxCoach = (d && d.coach) || null;
+          { const lv = d && d.coach ? +d.coach.level || 0 : 0, key = lv + ':' + new Date().getHours(); if (lv > 0 && window.__wxCoachKey !== key) { window.__wxCoachKey = key; try { toast(lv === 2 ? '🔴 સતત બે કલાકથી ઓફર નથી થતી — મોટી સાઇઝ + વધારાનું પરફ્યુમ ઓફર કરો' : '💡 છેલ્લા કલાકમાં ઓફર ઓછી — આગલા ઓર્ડરમાં મોટી સાઇઝ + વધારાનું પરફ્યુમ ઓફર કરો', lv === 2); } catch (e) { } } } window.__wxAd = d && +d.read > 0 ? d : null; growBox(); } catch (e) { /* no card */ } };
       window.__wxAdOpen = () => { const d = window.__wxAd || { n: [0, 0, 0, 0], sz: [0, 0, 0, 0], read: 0, missed: [], tip: '' }, ID = window.__wxIdeas || { big: [], add: [] }; const n = d.n, z = d.sz || [0, 0, 0, 0], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), tm = d.team || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3];
         const box = (c, v, t) => '<div style="background:' + c + ';color:#fff;border-radius:9px;padding:5px 0;text-align:center;flex:1;line-height:1.15"><b style="font-size:19px;display:block">' + v + '</b><span style="font-size:10px;font-weight:700">' + t + '</span></div>';
         const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center'; o.onclick = (e2) => { if (e2.target === o) o.remove(); };
