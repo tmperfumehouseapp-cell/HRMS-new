@@ -17,12 +17,12 @@ $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 150]); ok($S['wa_ru_ho
 $S['wa_ru_ramp_at'] = (string)(time() - 3700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 150]); ok($S['wa_ru_hourly'] === '200', 'grows to 200 (got ' . $S['wa_ru_hourly'] . ')');
 // 4) limit not used (few messages) -> no growth
 $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 30, 0, 30); $S['wa_ru_ramp_at'] = (string)(time() - 3700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 200]); ok($S['wa_ru_hourly'] === '200', 'no growth when the limit is not used');
-// 5) failures (10 of 40) -> stopped for 4 hours, back to 100
+// 5) failures (10 of 40) -> stopped for 2 hours, back to 100
 $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 40, 10, 30); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 200]);
-ok($S['wa_ru_hourly'] === '100', 'failures: back to 100'); ok((int)$S['wa_ru_pause_until'] > time() + 4 * 3600 - 60 && (int)$S['wa_ru_pause_until'] < time() + 4 * 3600 + 60, 'failures: paused for 4 hours');
-ok((int)$S['wa_ru_ramp_hold'] > time() + 3 * 3600, 'failures: no growth for 4 hours');
+ok($S['wa_ru_hourly'] === '100', 'failures: back to 100'); ok((int)$S['wa_ru_pause_until'] > time() + 2 * 3600 - 60 && (int)$S['wa_ru_pause_until'] < time() + 2 * 3600 + 60, 'failures: paused for 2 hours');
+ok((int)$S['wa_ru_ramp_hold'] > time() + 1 * 3600, 'failures: no growth for 2 hours');
 // 6) a spam flag sends it back too
-$S['wa_ru_hourly'] = '300'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '100' && (int)$S['wa_ru_pause_until'] > time() + 3 * 3600, 'spam: back to 100 and paused');
+$S['wa_ru_hourly'] = '300'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '100' && (int)$S['wa_ru_pause_until'] > time() + 3 * 3600, 'spam: back to 100 and paused 4 hours');
 // 7) ceiling 600
 $S = ['wa_ru_hourly' => '600', 'wa_ru_ramp_base' => '100', 'wa_ru_ramp_step' => '50', 'wa_ru_ramp_at' => (string)(time() - 4000)]; $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 400, 0, 30); wa_ru_ramp($pdo, ['hourly' => 600]); ok($S['wa_ru_hourly'] === '600', 'ceiling 600');
 echo "ramp ok\n";
