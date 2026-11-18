@@ -1,0 +1,54 @@
+# READ-ONLY: how far the chat reading for the growth efforts (bigger + add-on) has got. Counts only — no phone numbers, names or order numbers. Changes nothing.
+# Run it by hand: Actions → "Growth effort check (read-only)" → Run workflow.
+name: Growth effort check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Samples
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/gr_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "(not set)" : (string)$v; } catch (Throwable $e) { return "n/a"; } };
+          echo "mode (order_auto_rate) = " . $s("order_auto_rate") . "\n";
+          try {
+            $cols = $d->query("SHOW COLUMNS FROM order_rate_auto")->fetchAll(PDO::FETCH_COLUMN);
+            echo "new columns present: " . implode(",", array_values(array_intersect(["phone", "tries", "tip", "sz_ok", "sz_tried", "sz_worked", "sz_tries", "weak", "refused", "sz_weak", "sz_refused"], $cols))) . "\n";
+            echo "\nrows by rule version (sz_ok: 0 = old judge, 1 = two-part judge, 2 = strict rules):\n";
+            foreach ($d->query("SELECT sz_ok, COUNT(*) n, SUM(rating IS NULL) nochat, SUM(phone <> '') withphone FROM order_rate_auto GROUP BY sz_ok ORDER BY sz_ok")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  sz_ok=" . $x["sz_ok"] . ": " . $x["n"] . " rows · no chat " . $x["nochat"] . " · with customer number " . $x["withphone"] . "\n";
+            $lv = function ($t, $w, $n) { return "CASE WHEN $w = 1 THEN 3 WHEN $n >= 2 THEN 2 WHEN $t = 1 OR $n >= 1 THEN 1 ELSE 0 END"; };
+            $A = $lv("tried", "worked", "tries"); $B = $lv("sz_tried", "sz_worked", "sz_tries");
+            foreach (["today (newest 24 h)" => "at >= '" . date("Y-m-d H:i:s", time() - 86400) . "'", "all strict-rule rows" => "1 = 1"] as $lab => $w) {
+              echo "\n$lab, rows read under the strict rules, rating not empty:\n";
+              $r = $d->query("SELECT COUNT(*) n, SUM(($A) = 0) a0, SUM(($A) = 1) a1, SUM(($A) = 2) a2, SUM(($A) = 3) a3, SUM(($B) = 0) b0, SUM(($B) = 1) b1, SUM(($B) = 2) b2, SUM(($B) = 3) b3, SUM(weak > 0) weak_a, SUM(sz_weak > 0) weak_b FROM order_rate_auto WHERE sz_ok = 2 AND rating IS NOT NULL AND $w")->fetch(PDO::FETCH_ASSOC);
+              echo "  read " . $r["n"] . " · BIGGER none/little/tried hard/sold: " . $r["b0"] . "/" . $r["b1"] . "/" . $r["b2"] . "/" . $r["b3"] . " · ADD-ON none/little/tried hard/took: " . $r["a0"] . "/" . $r["a1"] . "/" . $r["a2"] . "/" . $r["a3"] . " · with vague-only lines (bigger/add-on): " . $r["weak_b"] . "/" . $r["weak_a"] . "\n";
+            }
+            echo "\nlast read (strict rules): " . $d->query("SELECT MAX(at) FROM order_rate_auto WHERE sz_ok = 2")->fetchColumn() . " · server time now " . date("Y-m-d H:i:s") . "\n";
+            $x = $d->query("SELECT COUNT(DISTINCT employee_id) FROM order_rate_auto WHERE sz_ok = 2")->fetchColumn(); echo "salespeople with at least one strict-rule row: $x\n";
+          } catch (Throwable $e) { echo "n/a (" . substr($e->getMessage(), 0, 160) . ")\n"; }
+          PHP
+          php /tmp/gr_check.php "$P"; rm -f /tmp/gr_check.php
+          REMOTE
