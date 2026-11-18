@@ -87,6 +87,22 @@
     #ocOrdersCard tbody td[data-label] .sub, #resCard tbody td[data-label] .sub{flex:1 1 100%; padding-left:114px;}
     #resCard tbody td:nth-child(3){display:block;} #resCard tbody td:nth-child(3)::before{display:block; width:auto; margin-bottom:3px;}      /* matched-order text reads as one sentence */
   }
+  /* Phones, Codes → Orders list: ONE compact row per order — the order number on the left, the code on the right (the box to type it in when there is none yet) */
+  @media (max-width:600px){
+    #ocOrdersCard tbody tr:not(:has(td[colspan])){display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:1px 10px; align-items:center; padding:10px 12px; margin:0 10px 8px;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td{display:block; padding:0; border:none !important; font-size:12px; color:var(--muted);}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td::before{display:none !important;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(1){grid-column:1; grid-row:1; font-size:15px; color:inherit;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(1) .sub{display:inline; padding:0; margin-left:6px; font-size:11px;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(2){grid-column:1; grid-row:2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(2) .sub{display:none;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(3), #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(5){display:none;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(4){grid-column:1; grid-row:3;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(4) .sub{display:inline; padding:0; margin-left:5px;}
+    #ocOrdersCard tbody tr:not(:has(td[colspan])) td:nth-child(6){grid-column:2; grid-row:1 / span 3; justify-self:end; text-align:right; max-width:58vw; color:inherit;}
+    #ocOrdersCard td:nth-child(6) .inl{flex-wrap:nowrap; gap:6px;} #ocOrdersCard td:nth-child(6) .inl input{width:min(118px, 30vw); min-height:38px;} #ocOrdersCard td:nth-child(6) .inl .btn{min-height:38px; padding:6px 12px;}
+    #ocOrdersCard td:nth-child(6) .sub{padding-left:0 !important; font-size:10.5px;}
+  }
   @media (max-width:560px){
     .stat-grid{grid-template-columns:repeat(2, minmax(0, 1fr));}
     .topbar > div > input[type=date]{flex:1 1 120px; min-width:0;} .topbar > div > button{flex:1 1 120px;}
