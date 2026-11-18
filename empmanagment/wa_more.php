@@ -609,6 +609,8 @@ function wa_number_caps(PDO $pdo, array $health): array
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
         if (empty($camp[$id])) { $cap = 0; $why = 'switched off for campaigns'; }
         try { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($allBlocked === false && $pb !== '' && strtotime($pb) > time() - 3 * 3600) { $cap = 0; $why = 'payment problem at Meta (131042) — campaigns go through the other number(s) now; tried again after 3 hours'; } } catch (Throwable $e) { }   // owner (9 Nov): when one number has the payment problem, everything moves to the other number by itself
+        // 🛑 Meta spam limit (131048) hit on THIS number: it rests (default 3 hours, setting wa_spam_hours) while the other numbers send; the campaign is not paused. Every number resting = nothing sends until the first one is back.
+        try { $sbk = (string)setting_get($pdo, 'wa_spamblock_' . $id, ''); $sph = max(1, min(24, (int)(setting_get($pdo, 'wa_spam_hours', '3') ?: 3))); if ($sbk !== '' && strtotime($sbk) > time() - $sph * 3600) { $cap = 0; $why = 'Meta spam limit on this number (131048) — it rests for ' . $sph . ' hours, the other numbers send'; } } catch (Throwable $e) { }
         if ($cap > 0) $sumT += $ownT;
         $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age];
     }

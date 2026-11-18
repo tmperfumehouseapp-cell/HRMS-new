@@ -26,7 +26,7 @@ function wa_diag_codes(): array
         131026 => ['The number cannot receive WhatsApp messages (not on WhatsApp, very old app, or it blocked business messages).', 'Clean the list: these numbers will keep failing.'],
         131050 => ['The customer turned off marketing messages from your business.', 'Do not send marketing to them; they still get replies and utility messages.'],
         131047 => ['More than 24 hours since the customer wrote — only an approved template can go.', 'This happens when a plain text is sent outside the window.'],
-        131048 => ['Meta flagged the sends as spam (too many blocks / reports).', 'Pause, change the message and the audience, send only to people who know you.'],
+        131048 => ['Meta limited this NUMBER (too many of its messages were blocked or reported as spam). Campaigns keep sending from the other numbers; this number rests for 3 hours.', 'Send only to people who know you (delivered / read / replied lately), keep a gap between campaigns, use a message with a clear opt-out, and keep the speed low.'],
         131056 => ['Too many messages to the same customer in a short time.', 'Space them out.'],
         130429 => ['Sent too fast for Meta.', 'Lower the speed.'],
         131042 => ['A payment problem on the WhatsApp account (no card / failed charge).', 'Fix the payment method in Meta Business Settings → Billing.'],

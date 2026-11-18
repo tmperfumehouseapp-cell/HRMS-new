@@ -962,6 +962,10 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                     }
                     $msg = mb_substr(wa_err(is_array($d) ? $d : null), 0, 190); $back = ($was[(int)$it['id']] ?? 'queued');
                     if (function_exists('wa_fail_raw')) wa_fail_raw($pdo, 'send', (string)$it['phone'], '', $ec, ['http' => $code, 'answer' => $d]);
+                    if ($ec === 131048) {   // Meta's spam limit is on the NUMBER (too many of its messages were blocked / reported), not on this customer: the item goes back in the queue, the number rests for a few hours, the OTHER numbers carry on — the campaign is not paused and the customer is not marked as unreachable
+                        try { setting_set($pdo, 'wa_spamblock_' . (int)$nid, date('Y-m-d H:i:s')); } catch (Throwable $e9) { }
+                        $pdo->prepare("UPDATE wa_camp_items SET status = ?, err = '' WHERE id = ?")->execute([$back, $it['id']]); continue;
+                    }
                     if (in_array($ec, [130429, 131056], true)) { $pdo->prepare("UPDATE wa_camp_items SET status = ?, err = '' WHERE id = ?")->execute([$back, $it['id']]); $stop = 'Meta asked us to slow down'; continue; }
                     if (in_array($ec, [131042, 132000, 132001, 132005, 132007, 132012, 132015, 132016, 190, 131031], true) || $code === 401) {
                         $pdo->prepare("UPDATE wa_camp_items SET status = ?, err = '' WHERE id = ?")->execute([$back, $it['id']]);
