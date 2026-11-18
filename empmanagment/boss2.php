@@ -2955,7 +2955,7 @@ function cm_paid_day(PDO $pdo, $day) {
         foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }
-        $ver = substr(md5('v3w60|' . implode('|', $p)), 0, 12);
+        $ver = substr(md5('v3w61|' . implode('|', $p)), 0, 12);
     }
     $ttl = $day >= date('Y-m-d', strtotime($today . ' -1 day')) ? 120 : 1800;
     try {
@@ -2976,7 +2976,7 @@ function cm_paid_day(PDO $pdo, $day) {
                 : (strpos((string)$l['rule'], 'offer') === 0 ? 'Offer ' . $l['pct'] . '%' : ucfirst((string)$l['rule']));
             if ((float)($l['x'] ?? 0) > 0) $why .= ' + gel / attar / others';
             if (!$l['code'] && !$x['code_ok'] && (float)$l['com'] > 0) $why .= ' · no code: half';
-            $out['ord'][(string)$l['key']] = [(float)$l['paid'], $why];
+            $out['ord'][(string)$l['key']] = [(float)$l['paid'], $why, (int)$x['id']];   // 3rd = whose order it is (the salesperson's own month sheet shows only his own orders)
         }
     }
     try { $pdo->prepare("REPLACE INTO cm_paid_cache (day, ver, at, data) VALUES (?, ?, ?, ?)")->execute([$day, $ver, time(), json_encode($out)]); } catch (Throwable $e) {}

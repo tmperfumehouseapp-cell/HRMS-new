@@ -23368,9 +23368,10 @@ switch ($action) {
         if ($mq === '') {
             try {
                 if (cm_engine_load($pdo)) {
-                    @set_time_limit(240); $pd = []; $okAll = true;
-                    for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) { $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) { $okAll = false; break; } if (isset($r['emps'][$myId])) $pd[$d] = (float)$r['emps'][$myId]['total']; }
-                    if ($okAll) $paid = ['live' => true, 'days' => (object)$pd];
+                    @set_time_limit(240); $pd = []; $px = []; $po = []; $okAll = true;
+                    for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) { $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) { $okAll = false; break; } if (isset($r['emps'][$myId])) { $pd[$d] = (float)$r['emps'][$myId]['total']; $px[$d] = [(float)$r['emps'][$myId]['extra'], (string)$r['emps'][$myId]['bonus_name']]; }
+                        foreach ((array)($r['ord'] ?? []) as $ok => $ov) if ((int)($ov[2] ?? 0) === $myId) $po[(string)$ok] = [(float)$ov[0], (string)$ov[1]]; }   // only MY orders' commission is sent
+                    if ($okAll) $paid = ['live' => true, 'days' => (object)$pd, 'dx' => (object)$px, 'ord' => (object)$po];
                 }
             } catch (Throwable $e2) { error_log('my.commission paid: ' . $e2->getMessage()); }
         }
