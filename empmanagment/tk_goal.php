@@ -34,6 +34,23 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
     } catch (Throwable $e) { error_log('wq.ad_me: ' . $e->getMessage()); }
     json_response($out);
 }
+if ($__tkA === 'wq.grow_chat') {   // 📈 the live effort of ONE open chat (bigger + add-on), shown only while the order is being confirmed. Own chats only (Admin / manager: any). Read from the transcript by the same strict judge; cached 45 s per last message.
+    $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0); $k = substr(preg_replace('/\D+/', '', (string)($_GET['phone'] ?? '')), -10);
+    $empty = ['ok' => true, 'big' => null, 'add' => null];
+    if (strlen($k) !== 10 || !function_exists('ora_judge_text')) json_response($empty);
+    try {
+        $c = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ? LIMIT 1"); $c->execute([$k]); $ae = (int)$c->fetchColumn();
+        $adm = function_exists('wa_is_admin') && wa_is_admin($pdo, $auth); $mgr = function_exists('wa_is_manager') && wa_is_manager($pdo, $auth);
+        if (!$adm && !$mgr && ($me <= 0 || $ae !== $me)) json_response(['error' => 'Not your chat.'], 403);
+        $q = $pdo->prepare("SELECT id, dir, who, emp_id, mtype, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND dir IN ('in', 'out') ORDER BY id ASC LIMIT 300"); $q->execute([$k, date('Y-m-d H:i:s', time() - 3 * 86400)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+        if (!$rows) json_response($empty);
+        $last = (int)end($rows)['id']; [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 1 || $ns < 1) json_response($empty);
+        $r = function_exists('hrms_memo') ? hrms_memo('growchat:' . $k . ':' . $last, 45, fn() => ora_judge_text($text, 'This chat is still running: the order is being confirmed now.')) : ora_judge_text($text, '');
+        if (!empty($r['retry']) || !is_array($r)) json_response($empty);
+        $mk = fn($tr, $wk, $wo, $rf) => ['tries' => (int)$tr, 'weak' => (int)$wk, 'worked' => (int)$wo, 'refused' => (int)$rf, 'level' => ora_effort((int)($tr >= 1 || $wo), (int)$wo, (int)$tr)];
+        json_response(['ok' => true, 'big' => $mk($r['big_tries'] ?? 0, $r['big_weak'] ?? 0, $r['big_worked'] ?? 0, $r['big_refused'] ?? 0), 'add' => $mk($r['tries'] ?? 0, $r['weak'] ?? 0, $r['worked'] ?? 0, $r['refused'] ?? 0), 'last' => $last]);
+    } catch (Throwable $e) { error_log('wq.grow_chat: ' . $e->getMessage()); json_response($empty); }
+}
 if ($__tkA === 'wq.tk_cfg') {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth();
     $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);

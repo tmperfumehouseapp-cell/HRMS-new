@@ -582,9 +582,35 @@
     // ------------------------------------------------------------------ chats list
     const SRC = { query: ['Query', 'o'], community: ['Community', 'g'], campaign: ['Campaign', 'b'] };
     const RDC = { pay: '#16a34a', addr: '#0284c7', neg: '#d97706', think: '#7c3aed', ask: '#475569', cold: '#64748b', cx: '#7c3aed' };
+    // 📈 live growth line INSIDE an open chat — only while the order is being confirmed (the chat reads "Ready to pay"): two 3-step bars (bigger · add-on) filled by real, proper offers, and one instruction (wq.grow_chat; no lock yet)
+    const GROW = { big: ['#92400e', '#7c3aed', '#2563eb'], add: ['#ea580c', '#d97706', '#16a34a'] };
+    function growDraw(g) {
+      const el = document.getElementById('wxGrow'); if (!el) return;
+      if (!g || !g.big || !g.add) { el.innerHTML = ''; return; }
+      const seg = (x, cols) => { const n = x.worked ? 3 : Math.min(2, x.tries); return '<span style="display:inline-flex;gap:2px;vertical-align:middle">' + [0, 1, 2].map((i) => '<i style="width:15px;height:8px;border-radius:4px;display:inline-block;background:' + (i < n ? cols[i] : (i === 0 && x.weak > 0 && !x.tries ? 'repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 2px,#fca5a5 2px,#fca5a5 4px)' : '#e5e7eb')) + '"></i>').join('') + '</span>'; };
+      const lv = (x) => x.level, B = g.big, A = g.add;
+      let ins = '', words = '';
+      if (lv(B) === 0) { ins = '⬆ મોટું ઓફર કરો'; words = '4 ki jagah 5 le lo, 5th pe free 20ml'; }
+      else if (lv(A) === 0) { ins = '➕ ટેસ્ટર/ચેઇન ઓફર કરો'; words = '10ml tester sirf ₹99 mein add kar du, travel ke liye best'; }
+      else if (lv(B) < 3 && lv(A) < 3 && !(B.refused && A.refused)) ins = 'નવા કારણ સાથે એક વાર ફરી કહો';
+      else ins = '✓ સરસ — હવે લિંક મોકલી શકો';
+      const weak = (B.weak > 0 && !B.tries) || (A.weak > 0 && !A.tries);
+      el.innerHTML = '<div style="background:#fff;border-bottom:1px solid #eceef3;padding:5px 10px;display:flex;align-items:center;gap:8px;font:600 12px/1.3 system-ui,sans-serif;flex-wrap:wrap"><span>⬆ ' + seg(B, GROW.big) + '</span><span>➕ ' + seg(A, GROW.add) + '</span><span style="flex:1;min-width:120px;color:#7a4b00;cursor:' + (words ? 'pointer' : 'default') + '"' + (words ? ' data-gw="' + esc(words) + '"' : '') + '>→ ' + esc(ins) + (words ? ' <u>Use</u>' : '') + '</span>' + (weak ? '<span style="color:#b91c1c;font-size:11px">ટૂંકી લીટી ગણાઈ નથી</span>' : '') + '</div>';
+      const w = el.querySelector('[data-gw]'); if (w) w.onclick = () => { const t = $('#wxTx'); if (t) { t.value = w.dataset.gw; t.focus(); try { t.dispatchEvent(new Event('input')); } catch (e) { } } };
+    }
+    let growBusy = false;
+    async function growCheck() {
+      try {
+        const cur = S.cur, ph = cur && cur.phone, c = ph && ((S.chats || []).find((y) => y.phone === ph) || cur.row), pay = c && c.read && c.read.k === 'pay';
+        if (!pay) { growDraw(null); return; } const key = ph + ':' + (cur.last || 0);
+        if (cur.growKey === key && cur.grow) { growDraw(cur.grow); return; } if (growBusy) return; growBusy = true;
+        const d = await api.get('wq.grow_chat', { phone: ph }); growBusy = false; if (!S.cur || S.cur.phone !== ph) return; cur.growKey = key; cur.grow = d; growDraw(d);
+      } catch (e) { growBusy = false; }
+    }
+    setInterval(() => { if (!document.hidden && S.cur) growCheck(); }, 25000);
     function readLines() {
       const el = document.getElementById('wxRd'); if (!el) return; const ph = S.cur && S.cur.phone, c = ph && ((S.chats || []).find((y) => y.phone === ph) || S.cur.row), r = c && c.read, life = (S.cur && S.cur.life) || '';
-      if (!r && !life) { el.innerHTML = ''; return; } const col = r ? (RDC[r.k] || '#64748b') : '#3730a3';
+      growCheck(); if (!r && !life) { el.innerHTML = ''; return; } const col = r ? (RDC[r.k] || '#64748b') : '#3730a3';
       el.innerHTML = '<div class="wx-rd" style="--c:' + col + '"><div class="u"><span class="t">' + esc(r ? r.u : life) + '</span>' + (r && life ? '<em>' + esc(life) + '</em>' : '') + '</div>' + (r ? '<div class="d">👉 Do: ' + esc(r.d) + '</div>' : '') + '</div>';
     }
     // ➕ add-on effort of this customer's last read order: [level 0-3, stars, reason, order] → a tiny coloured chip (🔴 none · 🟠 little · 🟡 tried hard · 🟢 took it)
@@ -1094,7 +1120,7 @@
       v.innerHTML = `<div class="wx-ch"><button class="bk" id="wxBk" aria-label="Back">‹</button><div class="wx-av" style="background:hsl(${hue(c.phone)} 55% 48%);width:34px;height:34px;font-size:12px">${esc(initials(c.name, c.phone))}</div>
         <div class="wx-mid" id="wxCi" style="cursor:pointer"><div class="wx-nm" id="wxCn">${esc(c.name || pretty(c.phone))} ${badgeOf(r)}</div><div class="wx-sub" id="wxCs">${esc(pretty(c.phone))}</div><div id="wxOs"></div></div>
         ${S.me && S.me.team ? `${r.emp && r.emp === S.me.emp_id || S.me.can_to === false ? '' : '<button class="wx-ib g" id="wxTk" title="Take this chat for yourself — one tap">✋<small>Take over</small></button>'}${S.me.can_as === false ? '' : '<button class="wx-ib" id="wxAs" title="Give this chat to a salesperson">👤<small>Assign</small></button>'}` : ''}<button class="wx-ib g" id="wxRs" title="Resolve: one tap — the chat is closed and leaves your list (and the inbox)">✅<small>Resolve</small></button><button class="wx-ib" id="wxFin" title="Done: say how the chat ended (order, later, price …) and close it">✔<small>Done</small></button><button class="wx-ib" id="wxMore" aria-haspopup="dialog" title="More: complaint, report, journey, customer">⋯<small>More</small></button></div>
-        <div id="wxRd"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
+        <div id="wxRd"></div><div id="wxGrow"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
       $('#wxBk').onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; $('#wxCi').onclick = openCustomer; $('#wxFin').onclick = openFinish; $('#wxRs').onclick = async function () { this.disabled = true; const phone = S.cur.phone; try { await api.post('wa.close', { phone, quick: 1 }); closeChat(); toast('Resolved ✓ — removed from your chats'); loadList(true); } catch (e) { toast(e.message, true); this.disabled = false; } }; $('#wxMore').onclick = openMore;
       if ($('#wxToB')) $('#wxToB').onclick = takeOver;
       if ($('#wxTk')) $('#wxTk').onclick = function () { this.disabled = true; takeOver().then(() => { const t = $('#wxTk'); if (S.cur && S.cur.row && S.cur.row.emp === (S.me && S.me.emp_id) && t) t.remove(); else if (t) t.disabled = false; }); };   // ✋ manager / admin: one tap, no confirmation
