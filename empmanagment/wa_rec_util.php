@@ -299,9 +299,9 @@ function wa_ru_reset_once(PDO $pdo): void
  */
 function wa_ru_ramp_back(PDO $pdo, string $why): void
 {
-    try { $base = max(10, (int)setting_get($pdo, 'wa_ru_ramp_base', '100') ?: 100); $cur = (int)setting_get($pdo, 'wa_ru_hourly', (string)$base); $now = time(); $hrs = $why === 'spam' ? 4 : 2; $until = $now + $hrs * 3600;   // owner 18 Nov 2026 (evening): the stop after failures is 2 hours (was 4); the Meta spam flag (131048) keeps its 4 hours
-        setting_set($pdo, 'wa_ru_hourly', (string)$base); setting_set($pdo, 'wa_ru_pause_until', (string)$until); setting_set($pdo, 'wa_ru_ramp_hold', (string)$until); setting_set($pdo, 'wa_ru_ramp_at', (string)$until); setting_set($pdo, 'wa_ru_brake_since', (string)$now);
-        if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility follow-up (Module B): ' . $cur . ' an hour → stopped for ' . $hrs . ' hours (' . ($why === 'spam' ? 'Meta spam flag' : 'failures started') . '), then it starts again at ' . $base . ' an hour'); } catch (Throwable $e) { }
+    try { $base = max(10, (int)setting_get($pdo, 'wa_ru_ramp_base', '100') ?: 100); $cur = (int)setting_get($pdo, 'wa_ru_hourly', (string)$base); $now = time(); $hrs = $why === 'spam' ? 4 : 2; $until = $now + $hrs * 3600; $stp = max(10, (int)setting_get($pdo, 'wa_ru_ramp_step', '50') ?: 50); $back = $why === 'spam' ? $base : max($base, $cur - 2 * $stp);   // owner 18 Nov 2026 (night): after failures it does not fall to the bottom — it restarts two steps below where it failed (failed at 300 → restarts at 200); the spam flag still goes back to the base   // owner 18 Nov 2026 (evening): the stop after failures is 2 hours (was 4); the Meta spam flag (131048) keeps its 4 hours
+        setting_set($pdo, 'wa_ru_hourly', (string)$back); setting_set($pdo, 'wa_ru_pause_until', (string)$until); setting_set($pdo, 'wa_ru_ramp_hold', (string)$until); setting_set($pdo, 'wa_ru_ramp_at', (string)$until); setting_set($pdo, 'wa_ru_brake_since', (string)$now);
+        if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility follow-up (Module B): ' . $cur . ' an hour → stopped for ' . $hrs . ' hours (' . ($why === 'spam' ? 'Meta spam flag' : 'failures started') . '), then it starts again at ' . $back . ' an hour'); } catch (Throwable $e) { }
 }
 function wa_ru_ramp(PDO $pdo, array $cfg): void
 {
