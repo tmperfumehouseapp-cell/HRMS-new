@@ -30845,6 +30845,9 @@ switch ($action) {
         $type = strtolower(trim((string)($in['order_type'] ?? '')));
         $empId = (int)($in['employee_id'] ?? 0);
         $direct = !empty($in['direct']);      // Direct order: a panel, no employee
+        if ($house !== '' && $orderId !== '') {   // ↩ an RTO resend / Exchange is a parcel sent again, not a sale: it is never given to a salesperson
+            try { $rxq = $pdo->prepare("SELECT tags FROM shop_orders WHERE shopify_id = ? AND store_key = ?"); $rxq->execute([$orderId, $source]); if (stripos((string)$rxq->fetchColumn(), 'wa-rx') !== false) json_response(['error' => 'This is an RTO resend / Exchange order. It is not a sale, so it cannot be allocated.'], 422); } catch (Throwable $e) { }
+        }
         if ($direct) $empId = 0;
         $known = isset(shopify_stores()[$source]) || $source === 'mysales' || $source === 'manual';
         if (!$known || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);

@@ -68,7 +68,7 @@ function wab_report(PDO $pdo, string $from, string $to, string $by = 'day', stri
     $byPhone = []; foreach ($msgs as $i => $m) { $msgs[$i]['t'] = strtotime((string)$m['ts']); $byPhone[(string)$m['phone']][] = $i; }
     $credit = [];
     try {
-        $q = $pdo->prepare("SELECT phone, created_at, total, financial_status FROM shop_orders WHERE created_at BETWEEN ? AND ? AND phone <> ''"); $q->execute([$f0, date('Y-m-d H:i:s', strtotime($t0) + 7 * 86400)]);
+        $q = $pdo->prepare("SELECT phone, created_at, total, financial_status FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at BETWEEN ? AND ? AND phone <> ''"); $q->execute([$f0, date('Y-m-d H:i:s', strtotime($t0) + 7 * 86400)]);
         foreach ($q->fetchAll() as $o) {
             if (preg_match('/void|refund/i', (string)$o['financial_status'])) continue;
             $k = function_exists('wa_key') ? wa_key($o['phone']) : substr(preg_replace('/\D/', '', (string)$o['phone']), -10); if (!isset($byPhone[$k])) continue; $ot = strtotime((string)$o['created_at']); $best = -1;
