@@ -165,9 +165,12 @@ function wa_ru_make_tick(PDO $pdo): array
     // 2) make the missing utility versions of the marketing messages (newest / today's first)
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'rumake', 55)) { $o['note'] = 'recent'; return $o; }
     try {
-        if ((string)setting_get($pdo, 'wa_ru_pool_auto', '0') === '1' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < $now - 600) {   // owner 18 Nov 2026 (night): missing follow-up messages are NOT made / sent to Meta by themselves any more (setting wa_ru_pool_auto = 1 brings it back); the button 'Create the messages' still works   // a missing standard follow-up (e.g. the welcome message) is made within 10 minutes, not 6 hours; a complete set costs one count query
+        if ((string)setting_get($pdo, 'wa_ru_pool_auto', '1') !== '0' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < $now - 600) {   // setting wa_ru_pool_auto = 0 switches the automatic making of missing standard messages off   // a missing standard follow-up (e.g. the welcome message) is made within 10 minutes, not 6 hours; a complete set costs one count query
             setting_set($pdo, 'wa_ru_pool_at', (string)$now);
             if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
+        }
+        if (function_exists('wa_util_pool_learn') && (int)setting_get($pdo, 'wa_ru_learn_at', '0') < $now - 600) {   // 🧠 a follow-up that Meta moved to marketing gets a new utility replacement written like the ones Meta kept (setting wa_ru_learn = 0 switches it off)
+            setting_set($pdo, 'wa_ru_learn_at', (string)$now); $lr = wa_util_pool_learn($pdo, 0); $o['made'] += count($lr['made'] ?? []); if (!empty($lr['made'])) return $o;
         }
         $want = wa_ru_want($pdo); $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
         $fail = json_decode((string)setting_get($pdo, 'wa_ru_fail', ''), true); $fail = is_array($fail) ? array_filter($fail, fn($t) => (int)$t > $now - 1800) : [];
@@ -323,7 +326,8 @@ function wa_ru_tick(PDO $pdo): array
     if (!wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
     $cfg = wa_ru_cfg($pdo); if (!$cfg['on']) { $res['note'] = 'off'; return $res; } if ($cfg['pause_until'] > time()) {
         // the 4-hour stop only holds back SENDING to customers: the standard follow-up messages that are missing (e.g. the new welcome / experience / request ones) are still made and sent to Meta for approval, so they are ready when sending restarts (owner, 18 Nov 2026)
-        try { if ((string)setting_get($pdo, 'wa_ru_pool_auto', '0') === '1' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_pool_at', (string)time()); if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $mk = wa_util_pool_make($pdo, 0); $res['made'] = count($mk['made'] ?? []); } } } catch (Throwable $e) { }
+        try { if ((string)setting_get($pdo, 'wa_ru_pool_auto', '1') !== '0' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_pool_at', (string)time()); if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $mk = wa_util_pool_make($pdo, 0); $res['made'] = count($mk['made'] ?? []); } } } catch (Throwable $e) { }
+        try { if (function_exists('wa_util_pool_learn') && (int)setting_get($pdo, 'wa_ru_learn_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_learn_at', (string)time()); $lr = wa_util_pool_learn($pdo, 0); $res['made'] = (int)($res['made'] ?? 0) + count($lr['made'] ?? []); } } catch (Throwable $e) { }
         $res['note'] = 'paused after a Meta warning'; return $res; }
     wa_ru_ramp($pdo, $cfg);   // grows / shrinks the hourly number (checked at most once in 10 minutes)
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'ru', 50)) { $res['note'] = 'busy'; return $res; }
