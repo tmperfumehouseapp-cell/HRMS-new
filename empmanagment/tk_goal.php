@@ -157,8 +157,15 @@ function wq_grow_check(PDO $pdo, array $auth, string $phone, array $in, int $tot
     if ($mode === 'warn' && !empty($in['grow_ok'])) { wq_grow_log($pdo, $emp, $k, $mode, 'warned_sent', (int)$lv['add'], (int)$lv['big']); return $pass; }
     $miss = []; if (!$addOk) $miss[] = 'add'; if (!$bigOk) $miss[] = 'big';
     wq_grow_log($pdo, $emp, $k, $mode, $mode === 'lock' ? 'blocked' : 'warn_shown', (int)$lv['add'], (int)$lv['big']);
-    $what = in_array('add', $miss, true) && in_array('big', $miss, true) ? 'વધારાનું પરફ્યુમ અને મોટી સાઇઝ, બંનેની' : (in_array('add', $miss, true) ? 'વધારાનું પરફ્યુમ (એડ ઓન) ની' : 'મોટી સાઇઝ (ટિકિટ સાઇઝ) ની');
-    return ['gate' => $mode, 'missing' => $miss, 'error' => $what . ' સાચી ઓફર હજી ચેટમાં થઈ નથી.', 'ideas' => wq_grow_ideas($pdo)];
+    $what = in_array('add', $miss, true) && in_array('big', $miss, true) ? 'Extra perfume aur bada size, dono ki' : (in_array('add', $miss, true) ? 'Extra perfume (add-on) ki' : 'Bada size (ticket size) ki');
+    return ['gate' => $mode, 'missing' => $miss, 'error' => $what . ' sahi offer abhi chat me nahi hui.', 'ideas' => wq_grow_ideas($pdo)];
+}
+if ($__tkA === 'wq.grow_learn') {   // Admin / HR: the learning feed (every 15 minutes a pulse, every hour a digest) and what went to the guidebook
+    $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (!$adm) json_response(['error' => 'Only Admin or HR can see the learning feed.'], 403);
+    $rows = [];
+    try { if (function_exists('grow_learn_ready') && grow_learn_ready($pdo)) { foreach ($pdo->query("SELECT at, kind, orders_read, add_tries, add_won, big_tries, big_won, plays, people_behind, guide_use FROM grow_learn_log ORDER BY id DESC LIMIT 24")->fetchAll(PDO::FETCH_ASSOC) as $r) { $r['plays'] = json_decode((string)$r['plays'], true) ?: ['add' => [], 'big' => []]; $rows[] = $r; } } } catch (Throwable $e) { }
+    json_response(['ok' => true, 'rows' => $rows, 'guide_note' => (string)setting_get($pdo, 'lib_guide_nightly_note', ''), 'server_time' => date('H:i')]);
 }
 if ($__tkA === 'wq.grow_cfg') {   // Admin / HR: the rule's switch (off / warn / lock / auto from a date) + today's numbers
     $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);

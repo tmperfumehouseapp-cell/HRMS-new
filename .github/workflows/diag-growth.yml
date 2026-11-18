@@ -105,6 +105,8 @@ jobs:
                 echo "  $lab: $o orders by $p people · add-on offered in $oa · bigger offered in $ob · people with NO effort in any order: $none · one lane only: $one · both lanes in at least one order: $both\n";
               }
             } catch (Throwable $e) { echo "  tracker n/a (" . substr($e->getMessage(), 0, 140) . ")\n"; }
+            echo "\nLEARNING LOG (newest 8, counts only):\n";
+            try { foreach ($d->query("SELECT at, kind, orders_read, add_tries, add_won, big_tries, big_won, people_behind, guide_use FROM grow_learn_log ORDER BY id DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  " . $x["at"] . " " . $x["kind"] . ": read " . $x["orders_read"] . " · add-on taken/offered " . $x["add_won"] . "/" . $x["add_tries"] . " · bigger " . $x["big_won"] . "/" . $x["big_tries"] . " · people behind " . $x["people_behind"] . ($x["guide_use"] !== "" ? " · guidebook: " . $x["guide_use"] : "") . "\n"; } catch (Throwable $e) { echo "  learning log: " . substr($e->getMessage(), 0, 100) . "\n"; }
             $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
             if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
               $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
