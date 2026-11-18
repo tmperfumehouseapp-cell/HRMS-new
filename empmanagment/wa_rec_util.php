@@ -135,7 +135,7 @@ function wa_ru_make_tick(PDO $pdo): array
     // 0) one-time repair: the old submit used the wrong account ids and wrote "REJECTED — Unsupported post request" rows for accounts that do not exist; remove them so those messages are sent to Meta for real
     try { if ((string)setting_get($pdo, 'wa_ru_waba_fix', '') !== '2') { $real = array_map('strval', function_exists('wa_wabas') ? wa_wabas($pdo) : []);
             if ($real) { $in = implode(',', array_map(fn($w) => $pdo->quote($w), $real)); $n9 = $pdo->exec("DELETE w FROM wa_tpl_waba w JOIN wa_templates t ON t.id = w.tpl_id WHERE t.category = 'UTILITY' AND w.status = 'REJECTED' AND w.reason LIKE 'Unsupported post request%' AND w.waba_id NOT IN ($in)");
-                foreach (['wa_util_learn', 'wa_ru_fail', 'wa_ru_bf', 'wa_ru_fam', 'wa_ru_submit_pause'] as $k9) setting_set($pdo, $k9, '');
+                foreach (['wa_util_learn', 'wa_ru_fail', 'wa_ru_bf', 'wa_ru_fam', 'wa_ru_submit_pause'] as $k9) setting_set($pdo, $k9, ''); if (function_exists('hrms_memo_drop')) hrms_memo_drop('wa_ru_fam');
                 setting_set($pdo, 'wa_ru_waba_fix', '2'); if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility repair: ' . (int)$n9 . ' wrong "rejected" rows (accounts that do not exist) removed — those messages are now sent to Meta'); } } } catch (Throwable $e) { }
     // 0b) the "put back" marker moved from the err column (overwritten when a batch is taken) to the variant 'R': move the people already put back, 20,000 at a time
     try { if ((string)setting_get($pdo, 'wa_ru_marker_fix', '') !== '1') { $n8 = (int)$pdo->exec("UPDATE wa_camp_items SET variant = 'R', err = '' WHERE (err = 'restart-utility' OR (status = 'sending' AND camp_id IN (SELECT id FROM wa_campaigns WHERE extra LIKE '%u_restart%'))) AND COALESCE(variant, 'M') <> 'U' LIMIT 20000"); if ($n8 === 0) setting_set($pdo, 'wa_ru_marker_fix', '1'); } } catch (Throwable $e) { }
@@ -540,17 +540,23 @@ function wa_ru_number_view(PDO $pdo): array
 function wa_ru_fam_count(PDO $pdo): int
 {
     wa_ru_load_util($pdo);
-    $c = json_decode((string)setting_get($pdo, 'wa_ru_fam', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 120) return (int)$c['n'];
+    return (int)hrms_memo('wa_ru_fam', 120, function () use ($pdo) { return wa_ru_fam_calc($pdo); });
+}
+function wa_ru_fam_calc(PDO $pdo): int
+{
     $n = 0; $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
     try { $q = $pdo->prepare("SELECT DISTINCT tpl_id FROM wa_campaigns WHERE COALESCE(started_at, created_at) >= ? LIMIT 30"); $q->execute([$from]);
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $tp) if (function_exists('wa_util_usable')) $n += count(wa_util_usable($pdo, (int)$tp)); } catch (Throwable $e) { }
-    try { setting_set($pdo, 'wa_ru_fam', json_encode(['n' => $n, 'at' => time()])); } catch (Throwable $e) { }
     return $n;
 }
 /** What is waiting today (the business day), by reason — remembered for 2 minutes. */
 function wa_ru_diag(PDO $pdo, int $ordDays): array
 {
-    $c = json_decode((string)setting_get($pdo, 'wa_ru_diag', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 120) return $c;
+    // ⚡ remembered 2 minutes, in a shared file: ONE request works it out (14 s on a busy day); the others use the last copy meanwhile (it was kept in the settings table: every save made every page read the whole table again)
+    return hrms_memo('wa_ru_diag_' . $ordDays . '_' . (function_exists('wa_bizday_start') ? md5(wa_bizday_start($pdo)) : date('Ymd')), 120, function () use ($pdo, $ordDays) { return wa_ru_diag_calc($pdo, $ordDays); });
+}
+function wa_ru_diag_calc(PDO $pdo, int $ordDays): array
+{
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
     $o = ['failed_total' => 0, 'never' => 0, 'now' => 0, 'after_rec' => 0, 'util_ok' => 0, 'util_no' => 0, 'done' => 0, 'from' => $from, 'at' => time()];
     try {
@@ -561,7 +567,6 @@ function wa_ru_diag(PDO $pdo, int $ordDays): array
         $ph = array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN));
         if ($ph && function_exists('wa_util_split')) { $sp = wa_util_split($pdo, $ph, $ordDays, (int)wa_ru_cfg($pdo)['ask_days']); $o['util_ok'] = (int)$sp['ask'] + (int)$sp['order'] + (int)$sp['none']; $o['util_no'] = 0; }
     } catch (Throwable $e) { }
-    try { setting_set($pdo, 'wa_ru_diag', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** Everything the status line / card shows: settings, the last round, and how it did in a time range (default: the business day). */

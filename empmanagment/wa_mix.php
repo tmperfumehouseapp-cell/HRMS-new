@@ -178,11 +178,12 @@ function wa_mix_on_relabel(PDO $pdo, int $uTplId): void
 }
 
 // ---------------------------------------------------------------------------------------------------------------- twins and families
-function wa_mix_twins(PDO $pdo, int $mId): array
+function wa_mix_twins(PDO $pdo, int $mId, bool $fresh = false): array
 {
-    $o = []; foreach ($pdo->query("SELECT * FROM wa_templates WHERE extra LIKE '%\"utility_of\"%'")->fetchAll() as $r) {
-        $x = wa_mix_extra($r); if ((int)($x['utility_of'] ?? 0) !== $mId) continue; $r['ex'] = $x; $r['ver'] = (int)($r['version'] ?? 0) ?: (int)($x['utility_v'] ?? 1); $o[] = $r;
-    }
+    // ⚡ every campaign of a list asked this with its own full read of the templates table: the twin rows are read ONCE per request and sorted per message ($fresh = read again: used right before a twin is made)
+    static $all = null, $at = 0;      // inside a long engine run the copy is read again after 20 seconds
+    if ($all === null || $fresh || time() - $at > 20) { $at = time(); $all = []; foreach ($pdo->query("SELECT * FROM wa_templates WHERE extra LIKE '%\"utility_of\"%'")->fetchAll() as $r) { $x = wa_mix_extra($r); $r['ex'] = $x; $r['ver'] = (int)($r['version'] ?? 0) ?: (int)($x['utility_v'] ?? 1); $all[] = $r; } }
+    $o = []; foreach ($all as $r) if ((int)($r['ex']['utility_of'] ?? 0) === $mId) $o[] = $r;
     usort($o, fn($a, $b) => $a['ver'] <=> $b['ver'] ?: (int)$a['id'] <=> (int)$b['id']); return $o;
 }
 /** Every message of a family (the original and all its versions and utility twins). */
@@ -516,7 +517,7 @@ function wa_mix_name(string $base, string $suffix): string { return substr($base
 function wa_mix_make_twin(PDO $pdo, array $m, int $ver, int $retryOf, array &$budget, int $by = 0, ?array $ready = null): array
 {
     $res = ['ok' => false, 'id' => 0, 'name' => '', 'errors' => [], 'made' => false];
-    foreach (wa_mix_twins($pdo, (int)$m['id']) as $tw) if ((int)$tw['ver'] === $ver) { $res['ok'] = true; $res['id'] = (int)$tw['id']; $res['name'] = (string)$tw['name']; return $res; }
+    foreach (wa_mix_twins($pdo, (int)$m['id'], true) as $tw) if ((int)$tw['ver'] === $ver) { $res['ok'] = true; $res['id'] = (int)$tw['id']; $res['name'] = (string)$tw['name']; return $res; }
     $src = $m; $src['header_lib_id'] = (int)($m['header_lib_id'] ?? 0); [$t, $err] = wa_tpl_clean($src, true); if ($err !== '') { $res['errors'][] = $err; return $res; }
     $u = $ready ?: wa_tpl_utility_build($t, max(0, $ver - 1))['draft']; $u['category'] = 'UTILITY'; $u['language'] = $t['language']; $u['name'] = wa_mix_name((string)$m['name'], $ver > 1 ? '_u' . $ver : '_u');
     [$cu, $uerr] = wa_tpl_clean($u); if ($uerr === '') $uerr = wa_tpl_media_check($pdo, $cu); if ($uerr !== '') { $res['errors'][] = $uerr; return $res; }
