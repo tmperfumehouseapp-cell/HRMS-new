@@ -3834,7 +3834,7 @@
       const c = o.colors || {}, bt = [['DG', c.dg], ['LG', c.lg], ['WH', c.wh], ['Other', c.other]].filter(x => Number(x[1]) > 0).map(x => x[0] + '-' + x[1]).join(' ');
       const pay = od <= 0 ? '<span class="pay p">Prepaid</span>' : (od < amt - 0.5 ? `<span class="pay c">COD ${inr(od)}</span> <small>${inr(amt - od)} paid</small>` : '<span class="pay c">COD</span>');
       const tp = orderTagType(o.tags);
-      return `<div class="xr"><span class="n">${i + 1}</span><span><b>${esEsc(o.order_name || '')}</b></span><span>${t}</span><span class="r"><b>${inr(amt)}</b></span><span>${pay}</span><span>${String(o.code || '').trim() ? '<span class="cd">' + esEsc(o.code) + '</span>' : '<span class="mut">no code</span>'}</span><span><span class="kd ${tp}">${KN[tp]}</span></span><span class="mut">${bt || '—'}</span><span class="xrt">${rtCell(o)}</span></div>`;   // ⭐ right after Bottles (owner's choice) — same rating as Order Allocation   // ⭐ the same rating as the Order Allocation page: shown if given, a manager / sales head can give or change it here
+      return `<div class="xr"><span class="n">${i + 1}</span><span><a href="#" class="es-od" data-i="${o._i}" title="Open this order" style="font-weight:800;text-decoration:underline dotted;">${esEsc(o.order_name || '')}</a></span><span>${t}</span><span class="r"><b>${inr(amt)}</b></span><span>${pay}</span><span>${String(o.code || '').trim() ? '<span class="cd">' + esEsc(o.code) + '</span>' : '<span class="mut">no code</span>'}</span><span><span class="kd ${tp}">${KN[tp]}</span></span><span class="mut">${bt || '—'}</span><span class="xrt">${rtCell(o)}</span></div>`;   // ⭐ right after Bottles (owner's choice) — same rating as Order Allocation   // ⭐ the same rating as the Order Allocation page: shown if given, a manager / sales head can give or change it here
     }).join('');
     const pc = (v) => tot > 0 ? Math.round(v / tot * 100) : 0, n = list.length;
     const who = lk.closest('tr') ? (lk.closest('tr').querySelector('.emp b, .emp a, .emp') || {}).textContent : '';
@@ -3845,6 +3845,7 @@
     else { const card = lk.closest('.mt') || lk.closest('.tob') || lk.parentElement; box = document.createElement('div'); box.className = 'es-xp'; box.innerHTML = html; card.after(box); }
     box.id = 'esXp'; box.dataset.k = (isOt ? '*other*' : lk.dataset.n) + '|' + lk.dataset.b + '|' + lk.dataset.lk;
     box.querySelector('.xp-x').onclick = (ev) => { ev.stopPropagation(); box.remove(); };
+    box.addEventListener('click', (ev) => { const a = ev.target.closest('a.es-od'); if (!a) return; ev.preventDefault(); ev.stopPropagation(); if (typeof openDetail === 'function') openDetail(Number(a.dataset.i)); });   // tap an order number → its details
     box.querySelector('.xp-all').onclick = (ev) => { ev.stopPropagation(); box.remove(); esPick(lk.dataset.n, '', lk.dataset.b, false, isOt); esView(kind); window.scrollTo({ top: esEl('vtabs').offsetTop - 10, behavior: 'smooth' }); };
     try { box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (x) { }
   }
