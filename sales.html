@@ -811,8 +811,19 @@
   let EFF = { day: '', d: null, tok: 0 };
   async function loadEffort() {
     const day = $('datePick').value || (T && T.day); if (!day) return; const tok = ++EFF.tok;
-    try { const d = await api.get('ct.effort', { date: day }); if (tok !== EFF.tok) return; EFF.day = day; EFF.d = d; renderToday(); } catch (e) { /* the effort boxes simply stay empty */ }
+    try { const d = await api.get('ct.effort', { date: day }); if (tok !== EFF.tok) return; EFF.day = day; EFF.d = d; renderToday(); if (!EFF.auto && T && day === T.today && !EFF.run) { const tot = (T.emps || []).reduce((x, e) => x + Number(e.orders || 0), 0), rd = (d.team || []).reduce((x, v) => x + v, 0) + Number(d.skipped || 0); if (tot > rd) { EFF.auto = true; window.effFill(); } } } catch (e) { /* the effort boxes simply stay empty */ }
   }
+  // ▶ reads the day's chats now, round after round (each round ~20 s on the server), until every order has been read
+  window.effFill = async () => {
+    if (EFF.run) return; EFF.run = true; renderToday();
+    try {
+      for (let i = 0; i < 60; i++) {
+        const day = $('datePick').value || T.day, r = await api.post('ct.effort_fill', { date: day });
+        await loadEffort(); if (!r.left || !r.done) { if (r.left && !r.done) showAlert(r.left + ' orders could not be read just now (the AI did not answer). Try again in a minute.', 'error'); break; }
+      }
+    } catch (e) { showAlert(e.message || 'Could not read the chats.', 'error'); }
+    EFF.run = false; renderToday();
+  };
   const effOf = (id) => { const x = EFF.d && EFF.d.emps && EFF.d.emps[id]; return x && x.n ? x : null; };
   // the four counts on one person's block: won · heavy not taken · little · none (+ average stars)
   function effTag(e) {
@@ -842,7 +853,7 @@
   }
   function effHtml() {
     const d = EFF.d; if (!d) return '';
-    const emps = (T.emps || []).filter(e => e.role_kind !== 'head'), total = emps.reduce((x, e) => x + Number(e.orders || 0), 0), done = (d.team || []).reduce((x, v) => x + v, 0), wait = Math.max(0, total - done);
+    const emps = (T.emps || []).filter(e => e.role_kind !== 'head'), total = emps.reduce((x, e) => x + Number(e.orders || 0), 0), done = (d.team || []).reduce((x, v) => x + v, 0), wait = Math.max(0, total - done - Number(d.skipped || 0));
     const box = (cls, i, title, sub) => {
       const list = emps.map(e => ({ n: (effOf(e.id) || { n: [0, 0, 0, 0] }).n[i], name: e.name })).filter(x => x.n > 0).sort((a, b) => b.n - a.n);
       return `<div class="ef-b ${cls}"><div class="t">${title}</div><div class="v">${(d.team || [])[i] || 0} <small>orders</small></div><div class="t" style="font-weight:500;opacity:.85">${sub}</div>
@@ -851,7 +862,7 @@
     const rs = emps.reduce((x, e) => x + Number((effOf(e.id) || {}).addon_rs || 0), 0);
     const miss = (d.missed || []).map(m => `<tr><td><b>${esc(m.order)}</b><br><small>${esc(m.emp_name)}</small></td><td>${esc(m.customer || '')}${m.total ? '<br><small>' + inr(m.total) + '</small>' : ''}</td><td><small>${esc(m.why || m.asked || '')}</small></td><td>${m.phone ? `<a href="wa_one.html?phone=${m.phone}" target="_blank" rel="noopener">💬 Follow up</a>` : ''}</td></tr>`).join('');
     const tips = (d.tips || []).map(x => `<tr><td><b>${esc(x.emp)}</b> · ${esc(x.order)}</td><td>“${esc(x.text)}”${x.offered ? '<br><small>offered: ' + esc(x.offered) + '</small>' : ''}</td></tr>`).join('');
-    return `<div class="ef"><div class="ef-h"><b>➕ Add-on effort · ${esc(T.day)}</b><small>${done} of ${total} orders read from the chat${wait ? ' · ' + wait + ' still waiting' : ''}${rs ? ' · add-on ₹ ' + inr(rs) : ''}${d.mode === 'off' ? ' · automatic reading is OFF (Order Allocation → 🤖)' : ''}</small></div>
+    return `<div class="ef"><div class="ef-h"><b>➕ Add-on effort · ${esc(T.day)}</b><small>${done} of ${total} orders read from the chat${wait ? ' · ' + wait + ' still waiting' : ''}${d.skipped ? ' · ' + d.skipped + ' had no chat' : ''}${rs ? ' · add-on ₹ ' + inr(rs) : ''}${d.mode === 'off' ? ' · automatic reading is OFF (Order Allocation → 🤖)' : ''}</small>${wait || EFF.run ? `<button type="button" onclick="effFill()" ${EFF.run ? 'disabled' : ''} style="font:inherit;font-size:11.5px;font-weight:700;border:0;background:#111827;color:#fff;border-radius:99px;padding:4px 12px;cursor:pointer">${EFF.run ? '⏳ Reading chats… ' + wait + ' left' : '▶ Read chats now'}</button>` : ''}</div>
       <div class="ef-g">${box('w', 3, '🟢 Tried and the customer took it', 'add-on done')}${box('h', 2, '🟡 Tried hard, customer did not take', 'full effort, no add-on')}${box('l', 1, '🟠 Little effort', 'asked once, left it')}${box('z', 0, '🔴 No effort', 'never offered more')}</div>
       <details class="ef-d"><summary>🔴 No effort — follow up these customers (${(d.missed || []).length})</summary>${miss ? `<table>${miss}</table>` : '<div class="sub" style="padding:6px">Nothing here yet.</div>'}</details>
       <details class="ef-d"><summary>💡 Words that worked — the ticket-size advice for everyone (${(d.tips || []).length})</summary>${tips ? `<table>${tips}</table>` : '<div class="sub" style="padding:6px">No winning add-on chat read yet today.</div>'}</details></div>`;
