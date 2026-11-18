@@ -309,8 +309,8 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
             $pace['slice'] = (int)ceil($needPush / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
         } catch (Throwable $e) { $pace['on'] = false; }
     }
-    // owner 18 Nov 2026: the hourly number is also kept per 15 minutes: a QUARTER of the hour's (delivered) number in any rolling 15 minutes, so the hour is not sent in its first minutes (15,000 an hour = 3,750 per 15 minutes)
-    try { if ($cfg['on']) { [$u15, $d15, $p15] = wa_dq_win_counts($pdo, 'q15', date('Y-m-d H:i:s', time() - 900), 20); $exp15 = (int)round($d15 + $p15 * $rate); $cap15 = (int)round($effCap / 4);
+    // owner 18 Nov 2026: the hourly number is also kept per 10 minutes: a SIXTH of the hour's (delivered) number in any rolling 10 minutes, so the hour is not sent in its first minutes (15,000 an hour = 2,500 delivered per 10 minutes; owner 18 Nov 2026, first tried per 15 minutes)
+    try { if ($cfg['on']) { [$u15, $d15, $p15] = wa_dq_win_counts($pdo, 'q10', date('Y-m-d H:i:s', time() - 600), 20); $exp15 = (int)round($d15 + $p15 * $rate); $cap15 = (int)round($effCap / 6);
         $left15 = max(0, min((int)ceil(($cap15 - $exp15) / $rateUsed), (int)round($cap15 * $cfg['push_mult']) - $u15)); $hourLeft = min($hourLeft, $left15); } } catch (Throwable $e) { }
     $hourLeft = max(0, min($hourLeft, $pushCap - $used)); if ($pace['on'] && $pace['slice'] > 0) $hourLeft = max(0, min($hourLeft, $pace['slice'] - $pace['used10'])); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
     $moneyLeft = $cfg['budget'] > 0 ? max(0.0, $cfg['budget'] - $spend) : null; $moneyPush = $moneyLeft === null ? PHP_INT_MAX : (int)floor($moneyLeft / max(0.01, $mr * max(0.2, $rate)));
