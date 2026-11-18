@@ -494,7 +494,7 @@
           if (a[1] > 0) bits.push(a[1] + ' માં ફક્ત એક વાર');
           if (a[3] > 0) bits.push('<span style="color:#15803d">' + a[3] + ' માં ' + doneWord + ' ✓</span>');
           return bits.join(' · '); };
-        el.innerHTML = '📈 <b>આજના ' + d.read + ' ઓર્ડરમાં</b><br>⬆ <b>ટિકિટ સાઇઝ</b> (મોટું વેચવું): ' + part(z, 'એફર્ટ નથી લગાડી', 'એફર્ટ લગાડી', 'માન્યા') + '<br>➕ <b>એડ ઓન</b>: ' + part(n, 'એડ ઓન ઓફર નથી કરી', 'એડ ઓન ઓફર કરી', 'માન્યા') + ' ›';
+        el.innerHTML = '📈 <b>આજના ' + d.read + ' ઓર્ડરમાં</b><br>⬆ <b>ટિકિટ સાઇઝ</b> (મોટી સાઇઝ): ' + part(z, 'એફર્ટ નથી લગાડી', 'એફર્ટ લગાડી', 'માન્યા') + '<br>➕ <b>એડ ઓન</b> (વધારાનું પરફ્યુમ): ' + part(n, 'વધારાનું પરફ્યુમ ઓફર નથી કર્યું', 'વધારાનું પરફ્યુમ ઓફર કર્યું', 'માન્યા') + ' ›';
       } catch (e) { }
     }
     // 🎯 my ticket today against the goal (one small chip, the same number as My Sales; refreshed every 5 minutes)
@@ -512,7 +512,7 @@
           + '<div style="font-weight:800;margin-top:8px">⬆ Selling bigger</div><div style="display:flex;gap:5px;margin-top:3px">' + box('#2563eb', z[3], '🔵 sold bigger') + box('#7c3aed', z[2], '🟣 tried hard') + box('#92400e', z[1], '🟤 little') + box('#1f2937', z[0], '⚫ none') + '</div>'
           + '<div style="font-weight:800;margin-top:8px">➕ Add-on</div><div style="display:flex;gap:5px;margin-top:3px">' + box('#16a34a', n[3], '🟢 took') + box('#d97706', n[2], '🟡 tried hard') + box('#ea580c', n[1], '🟠 little') + box('#dc2626', n[0], '🔴 none') + '</div>'
           + (tt ? '<div style="color:#667781;font-size:11.5px;margin-top:6px">Team today: ' + Math.round(100 * tm[3] / tt) + '% of orders took the add-on · you ' + Math.round(100 * n[3] / Math.max(1, d.read)) + '%</div>' : '')
-          + (ID.big.length || ID.add.length ? '<div style="margin-top:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:6px 9px"><b>💡 ' + (d.read ? 'ટીમમાં ચાલેલા શબ્દો' : 'આ રીતે ભરાશે — દરેક ઓર્ડરમાં આ બોલો') + '</b>' + ID.big.map((x) => '<div style="margin-top:3px">⬆ “' + esc(x) + '”</div>').join('') + ID.add.map((x) => '<div style="margin-top:3px">➕ “' + esc(x) + '”</div>').join('') + '<div style="color:#667781;font-size:11px;margin-top:4px">સ્પષ્ટ ઓફર (વસ્તુ + ભાવ/ફાયદો) જ ગણાશે; "ઇક ઔર કર દૂં?" નહીં.</div></div>' : '')
+          + (ID.big.length || ID.add.length ? '<div style="margin-top:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:6px 9px"><b>💡 ' + (d.read ? 'ટીમમાં ચાલેલા શબ્દો' : 'આ રીતે ભરાશે — દરેક ઓર્ડરમાં આ બોલો') + '</b>' + ID.big.map((x) => '<div style="margin-top:3px">⬆ “' + esc(x) + '”</div>').join('') + ID.add.map((x) => '<div style="margin-top:3px">➕ “' + esc(x) + '”</div>').join('') + '<div style="color:#667781;font-size:11px;margin-top:4px">સ્પષ્ટ ઓફર (પરફ્યુમ + ભાવ/ફાયદો) જ ગણાશે; ચેઇન/ગિફ્ટ નહીં; "ઇક ઔર કર દૂં?" નહીં.</div></div>' : '')
           + (d.tip ? '<div style="margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 9px">💡 Your words that worked: “' + esc(d.tip) + '”</div>' : '')
           + (((d.missed_big || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['⬆ મોટું વેચવાની એફર્ટ નથી — આ ઓર્ડર:', d.missed_big]) : '') + ((d.missed || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['➕ એડ ઓન ઓફર નથી — આ ઓર્ડર:', d.missed]) : ''))
           + '</div>'; document.body.appendChild(o);
@@ -600,8 +600,8 @@
       const seg = (x, cols) => { const n = x.worked ? 3 : Math.min(2, x.tries); return '<span style="display:inline-flex;gap:2px;vertical-align:middle">' + [0, 1, 2].map((i) => '<i style="width:15px;height:8px;border-radius:4px;display:inline-block;background:' + (i < n ? cols[i] : (i === 0 && x.weak > 0 && !x.tries ? 'repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 2px,#fca5a5 2px,#fca5a5 4px)' : '#e5e7eb')) + '"></i>').join('') + '</span>'; };
       const lv = (x) => x.level, B = g.big, A = g.add;
       let ins = '', words = '';
-      if (lv(B) === 0) { ins = '⬆ મોટું ઓફર કરો'; words = '4 ki jagah 5 le lo, 5th pe free 20ml'; }
-      else if (lv(A) === 0) { ins = '➕ ટેસ્ટર/ચેઇન ઓફર કરો'; words = '10ml tester sirf ₹99 mein add kar du, travel ke liye best'; }
+      if (lv(A) === 0) { ins = '➕ વધારાનું પરફ્યુમ ઓફર કરો'; words = '4 ki jagah 5 perfume le lo, 5th pe ₹100 off'; }
+      else if (lv(B) === 0) { ins = '⬆ મોટી સાઇઝ ઓફર કરો'; words = '50ml ki jagah 100ml le lo, per ml sasta padega'; }
       else if (lv(B) < 3 && lv(A) < 3 && !(B.refused && A.refused)) ins = 'નવા કારણ સાથે એક વાર ફરી કહો';
       else ins = '✓ સરસ — હવે લિંક મોકલી શકો';
       const weak = (B.weak > 0 && !B.tries) || (A.weak > 0 && !A.tries);
