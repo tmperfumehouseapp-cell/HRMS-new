@@ -130,11 +130,12 @@
   function arcHtml(rows) {
     const shown = (rows || []).filter((r) => r.n > 0 || r.tg > 0 || r.st);
     if (!shown.length) return '<div class="mut" style="padding:8px 0">Nothing recorded for this month.</div>';
-    let on = 0, os = 0, ot = 0, hit = 0, days = 0;
-    const tr = shown.map((r) => { on += r.n; os += r.ach; ot += r.tg; const p = pctOf(r.ach, r.tg); if (r.tg > 0) { days++; if (r.ach >= r.tg) hit++; }
+    const hasC = shown.some((r) => r.com != null), G = ' style="grid-template-columns:' + (hasC ? '1.45fr .55fr 1fr 1.05fr 1fr' : '1.5fr .6fr 1fr 1.1fr') + '"';
+    let on = 0, os = 0, ot = 0, oc = 0, hit = 0, days = 0;
+    const tr = shown.map((r) => { on += r.n; os += r.ach; ot += r.tg; oc += Number(r.com) || 0; const p = pctOf(r.ach, r.tg); if (r.tg > 0) { days++; if (r.ach >= r.tg) hit++; }
       const lbl = new Date(r.day + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
-      return '<div class="ar"><div>' + esc(lbl) + (ST_TXT[r.st] ? ' <span class="mut">· ' + esc(ST_TXT[r.st]) + '</span>' : '') + '</div><div class="num">' + r.n + '</div><div class="num">' + rs(r.ach) + '</div><div class="num">' + (r.tg > 0 ? rs(r.tg) : '—') + '</div><div class="num ' + (p == null ? '' : (p >= 100 ? 'ok' : 'todo')) + '">' + (p == null ? '' : p + '%') + '</div></div>'; }).join('');
-    return '<div class="ar hd"><div>Day</div><div class="num">Orders</div><div class="num">Sales</div><div class="num">Target</div><div></div></div>' + tr + '<div class="ar tot"><div>Total</div><div class="num">' + on + '</div><div class="num">' + rs(os) + '</div><div class="num">' + (ot > 0 ? rs(ot) : '—') + '</div><div></div></div>' + (days ? '<div class="mut" style="margin-top:8px">Target hit on ' + hit + ' of ' + days + ' days.</div>' : '');
+      return '<div class="ar"' + G + '><div>' + esc(lbl) + (ST_TXT[r.st] ? ' <span class="mut">· ' + esc(ST_TXT[r.st]) + '</span>' : '') + '</div><div class="num">' + r.n + '</div><div class="num">' + (r.tg > 0 ? rs(r.tg) : '—') + '</div><div class="num">' + rs(r.ach) + (p == null ? '' : '<br><small class="' + (p >= 100 ? 'ok' : 'todo') + '" style="font-weight:800">' + p + '%</small>') + '</div>' + (hasC ? '<div class="num" style="font-weight:800;color:#15803d">' + (r.com != null ? rs(r.com) : '—') + '</div>' : '') + '</div>'; }).join('');
+    return '<div class="ar hd"' + G + '><div>Day</div><div class="num">Orders</div><div class="num">Target</div><div class="num">Sales</div>' + (hasC ? '<div class="num">Commission</div>' : '') + '</div>' + tr + '<div class="ar tot"' + G + '><div>Total</div><div class="num">' + on + '</div><div class="num">' + (ot > 0 ? rs(ot) : '—') + '</div><div class="num">' + rs(os) + '</div>' + (hasC ? '<div class="num" style="color:#15803d">' + rs(oc) + '</div>' : '') + '</div>' + (days ? '<div class="mut" style="margin-top:8px">Target hit on ' + hit + ' of ' + days + ' days.</div>' : '');
   }
   async function loadEarn() {
     if (E.busy || Date.now() - E.t < 20000) return; E.busy = true; const mo = new Date().toISOString().slice(0, 7);
