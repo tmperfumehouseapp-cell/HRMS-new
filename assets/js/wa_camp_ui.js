@@ -1020,18 +1020,20 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       function loBox() {
         const st = (pv && pv.stats) || {}, fr = pushOf()[2], on = (v) => v !== 0 && v !== '0' && v !== false;
         const row = (id, chk, txt, n) => `<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px"><input type="checkbox" id="${id}" ${chk ? 'checked' : ''} style="width:18px;height:18px;margin-top:1px"><span>${txt}${n ? ' <b style="color:#b45309">(' + fmt(n) + ' left out now)</b>' : (chk ? '' : ' <b style="color:#166534">(included)</b>')}</span></label>`;
-        const loN = [on(W.A.skip_unreach), W.A.gap_days === undefined || +W.A.gap_days > 0, on(W.A.skip_got)].filter(Boolean).length, loOut = (st.unreach || 0) + (st.recent || 0) + (st.got || 0);
+        const tkOn = W.A.skip_talking === undefined || +W.A.skip_talking > 0, loN = [on(W.A.skip_unreach), W.A.gap_days === undefined || +W.A.gap_days > 0, on(W.A.skip_got), tkOn].filter(Boolean).length, loOut = (st.unreach || 0) + (st.recent || 0) + (st.got || 0) + (st.talking || 0);
         return `<details id="cuLo" class="wcs-sec wcs-acc" ${W.loOpen ? 'open' : ''}><summary class="wcs-h"><span>🚫 Who to leave out</span><span class="wcs-sum on">${loN} ticked${loOut ? ' · ' + fmt(loOut) + ' left out' : ''}</span></summary><div class="wp-note" style="margin:0 0 4px;background:#f8fafc;border:1px solid #e2e8f0;color:#0f172a"><span style="color:#64748b;font-size:12px">tick = leave them out · untick = send to them too</span>
           ${row('cuLoUn', on(W.A.skip_unreach), '⛔ Customers <b>Meta held / blocked lately</b> (Meta did not deliver to them)', st.unreach)}
           ${row('cuLoRc', W.A.gap_days === undefined || +W.A.gap_days > 0, '📬 Customers who <b>got a campaign message in the last ' + fr + ' day' + (fr === 1 ? '' : 's') + '</b>', st.recent)}
+          ${row('cuLoTk', tkOn, '💬 Customers <b>chatting with us in the last 3 days</b> (a salesperson is talking to them)', st.talking)}
           ${row('cuLoGt', on(W.A.skip_got), '🔁 Customers who <b>already got this same message</b>', st.got)}
-          <div style="font-size:12px;color:#64748b;margin-top:4px">Always left out: customers who opted out or asked us to stop${st.optout ? ' (' + fmt(st.optout) + ' now)' : ''}. “Chatting with us in the last 3 days” is the tick above.</div></div></details>`;
+          <div style="font-size:12px;color:#64748b;margin-top:4px">Always left out: customers who opted out or asked us to stop${st.optout ? ' (' + fmt(st.optout) + ' now)' : ''}.</div></div></details>`;
       }
       function bindLo() {
         { const lb = $(m.body, '#cuLo'); if (lb) lb.addEventListener('toggle', () => { W.loOpen = lb.open; }); }
         const fr = pushOf()[2], again = () => { readF(); pv = null; clearTimeout(pvT); pvT = setTimeout(preview, 300); };
         const un = $(m.body, '#cuLoUn'); if (un) un.onchange = () => { W.A.skip_unreach = un.checked ? 1 : 0; W.extra.keep_unreach = un.checked ? 0 : 1; again(); };
         const rc = $(m.body, '#cuLoRc'); if (rc) rc.onchange = () => { W.A.gap_days = rc.checked ? fr : 0; W.extra.gap_days = rc.checked ? fr : 0; again(); };
+        const tk = $(m.body, '#cuLoTk'); if (tk) tk.onchange = () => { W.A.skip_talking = tk.checked ? 3 : 0; again(); };
         const gt = $(m.body, '#cuLoGt'); if (gt) gt.onchange = () => { W.A.skip_got = gt.checked ? 1 : 0; again(); };
       }
       async function preview() {
