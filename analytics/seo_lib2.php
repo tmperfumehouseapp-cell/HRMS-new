@@ -220,7 +220,7 @@ function seo_issues(PDO $db, string $store, array $shopCfg): array {
   foreach ($ok as $p) {
     $t = (string)$p['title']; $l = mb_strlen($t);
     if ($t === '') $miss[] = ['url' => $p['url'], 'note' => $where[$p['type']] ?? $where['other']];
-    elseif ($l < 25) $short[] = ['url' => $p['url'], 'note' => "$l letters: “$t”"];
+    elseif ($l < 25) $short[] = ['url' => $p['url'], 'note' => "$l letters: “{$t}”"];
     elseif ($l > 65) $long[] = ['url' => $p['url'], 'note' => "$l letters (Google cuts after about 60): “" . mb_substr($t, 0, 70) . "…”"];
   }
   $c = []; foreach ($ok as $p) if ($p['title'] !== '') $c[mb_strtolower($p['title'])][] = $p['url'];
