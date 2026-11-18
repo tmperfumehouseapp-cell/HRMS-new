@@ -318,7 +318,8 @@ function wa_util_pool_learn(PDO $pdo, int $by = 0): array
             $t['extra'] = ['util_pool' => $newKey, 'util_kind' => $kind, 'util_base' => $base, 'util_try' => $g['try'] + 1, 'util_learned' => date('Y-m-d H:i:s')];
             $id = wa_tpl_insert($pdo, $t, $by, 'Utility follow-up (learned): ' . $kind, 'Replacement of ' . $base . ' (Meta moved it to marketing), written like the messages Meta kept as utility'); $row = wa_tpl_row($pdo, $id);
             foreach ($wabas as $w) wa_tpl_try_create($pdo, $row, (string)$w, $budget);
-            $res['made'][] = $newKey; $round++; $cnt++; setting_set($pdo, 'wa_ru_learn_day', json_encode(['d' => $day, 'n' => $cnt]));
+            $res['made'][] = $newKey; $allBodies[] = $body; $round++; $cnt++;   // the next one of this round must not get the same wording
+             setting_set($pdo, 'wa_ru_learn_day', json_encode(['d' => $day, 'n' => $cnt]));
             if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility follow-up learned: ' . $newKey . ' made and sent to Meta (Meta moved ' . $base . ' to marketing; the new one follows the pattern of the messages Meta kept as utility)');
         }
     } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'Utility follow-up learn error: ' . mb_substr($e->getMessage(), 0, 140)); }
