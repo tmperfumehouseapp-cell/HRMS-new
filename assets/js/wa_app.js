@@ -506,18 +506,48 @@
         ? '<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:6px 9px;margin-bottom:6px">🔴 <b>Do ghante se lagatar offer nahi ho raha</b> (pichhle ghante ke ' + n + ' orders me se ' + z + ' me ⬆ bada size aur ➕ extra perfume dono ka offer nahi hua). Aisa chalta raha to aapke liye <b>Requests / Rescue</b> thodi der ke liye band kiye jayenge. <span style="opacity:.8">(abhi sirf warning hai, kuch band nahi hua)</span>' + (w ? '<br>💡 “' + esc(w) + '”' : '') + '</div>'
         : '<div style="background:#dbeafe;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:6px 9px;margin-bottom:6px">💡 <b>Pichhle ghante ke ' + n + ' orders me se ' + z + ' me</b> ⬆ bada size aur ➕ extra perfume dono ka offer nahi hua. Agle order me dono bolo' + (w ? ': “' + esc(w) + '”' : '') + '</div>';
     }
-    // 📞 one small line under the card: the newest of today's orders where no add-on (extra perfume) was offered and none was added — "call this customer and ask for an add-on". Tap = open that chat.
+    // 📞 call-backs: ONE line under the card ("N customer ko call karo — add-on karwao ›"); tap = a sheet with each customer (Call / Chat · ✓ Resolve). Resolve needs what happened + a remark; an add-on that gets recorded resolves it by itself.
     function nudgeLine() {
       try {
-        const top = R.querySelector('.wx-top'); let el = document.getElementById('wxNt'); const d = window.__wxAdFull, m = d && (d.missed || [])[0];
-        if (!m || !m.phone) { if (el) el.remove(); return; }
+        let el = document.getElementById('wxNt'); const d = window.__wxAdFull, list = (d && d.missed) || [], n = +((d && d.missed_n) || list.length);
+        if (!n) { if (el) el.remove(); return; }
         if (!el) { el = document.createElement('div'); el.id = 'wxNt'; el.className = 'wx-mgr'; const gl = document.getElementById('wxGl'); if (!gl) return; gl.insertAdjacentElement('afterend', el); }
         else { const gl = document.getElementById('wxGl'); if (gl && gl.nextElementSibling !== el) gl.insertAdjacentElement('afterend', el); }
-        const more = Math.max(0, (+d.missed_n || (d.missed || []).length) - 1), nm = m.name || ('#' + String(m.order).replace('#', ''));
         el.style.cssText += ';cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-        el.innerHTML = '📞 <b>' + esc(nm) + '</b> ko call karo — add-on karwao' + (more ? ' · +' + more + ' aur' : '') + ' ›';
-        el.onclick = () => { try { openChat(m.phone, {}); } catch (e) { } };
+        const f = list[0], nm = f ? (f.name || ('#' + String(f.order).replace('#', ''))) : '';
+        el.innerHTML = '📞 ' + (n === 1 ? '<b>' + esc(nm) + '</b> ko call karo' : '<b>' + n + ' customer</b> ko call karo' + (nm ? ' (' + esc(nm) + ' …)' : '')) + ' — add-on karwao ›';
+        el.onclick = () => cbSheet();
       } catch (e) { }
+    }
+    function cbSheet() {
+      const d = window.__wxAdFull, list = (d && d.missed) || []; if (!list.length) return;
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center'; o.onclick = (e) => { if (e.target === o) o.remove(); };
+      const draw = () => { const cur = ((window.__wxAdFull || {}).missed || []);
+        o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:12px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif;max-height:80vh;overflow:auto"><b style="font-size:15px">📞 Inhe call karo — add-on karwao</b><div style="color:#667781;font-size:11.5px">Order ho chuka hai, extra perfume ka offer nahi hua. Customer se baat karke add-on karwao, phir Resolve karo (remark ke saath).</div>'
+          + (cur.length ? cur.map((m, i) => '<div style="display:flex;align-items:center;gap:8px;border-top:1px solid #fde7cf;padding:8px 0"><div style="flex:1;min-width:0"><b>' + esc(m.name || ('#' + String(m.order).replace('#', ''))) + '</b> · ' + esc(m.order) + '</div><button type="button" data-cb="call" data-i="' + i + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:5px 11px;font-weight:700;font-size:11.5px">📞 Call / Chat</button><button type="button" data-cb="res" data-i="' + i + '" style="border:1px solid #d9dde3;background:#fff;color:#166534;border-radius:99px;padding:5px 11px;font-weight:700;font-size:11.5px">✓ Resolve</button></div>').join('') : '<div style="padding:10px 0;color:#15803d;font-weight:700">✓ Sab resolve ho gaye</div>') + '</div>'; };
+      draw();
+      o.addEventListener('click', (e) => { const b = e.target.closest('[data-cb]'); if (!b) return; const m = ((window.__wxAdFull || {}).missed || [])[+b.dataset.i]; if (!m) return;
+        if (b.dataset.cb === 'call') { o.remove(); try { openChat(m.phone, {}); } catch (x) { } return; }
+        resolveSheet(m, () => { const A = window.__wxAdFull; if (A && A.missed) { A.missed = A.missed.filter((x) => x.key !== m.key); A.missed_n = A.missed.length; } nudgeLine(); draw(); if (window.__wxPaintAd) window.__wxPaintAd(); }); });
+      document.body.appendChild(o);
+    }
+    function resolveSheet(m, done) {
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:110;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center'; let oc = '';
+      o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:12px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif"><b style="font-size:15px">✓ ' + esc(m.name || m.order) + ' — kya hua?</b>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">' + [['addon_done', '✅ Add-on kar diya'], ['declined', '🙅 Customer ne mana kiya'], ['no_answer', '📵 Call nahi laga']].map((x) => '<span data-oc="' + x[0] + '" style="border:1px solid #d9dde3;border-radius:99px;padding:6px 11px;font-weight:700;font-size:12px;cursor:pointer">' + x[1] + '</span>').join('') + '</div>'
+        + '<textarea data-rm rows="2" maxlength="280" placeholder="Remark likho (kam se kam 4 akshar) — kya baat hui, kya add kiya" style="width:100%;box-sizing:border-box;margin-top:8px;padding:8px;border:1px solid #d9dde3;border-radius:8px;font:inherit"></textarea>'
+        + '<div style="color:#667781;font-size:11px;margin-top:3px">Remark owner ko dikhta hai. “Add-on kar diya” ke baad order me add-on dikhna chahiye.</div>'
+        + '<button type="button" data-go style="width:100%;margin-top:8px;border:0;background:#0f6e7e;color:#fff;border-radius:10px;padding:10px;font:700 13px system-ui">Resolve karo</button>'
+        + '<button type="button" data-later style="width:100%;margin-top:6px;border:1px solid #d9dde3;background:#fff;border-radius:10px;padding:9px;font:700 12.5px system-ui">⏳ Baad me karunga (30 min)</button></div>';
+      o.addEventListener('click', async (e) => {
+        if (e.target === o) { o.remove(); return; }
+        const c = e.target.closest('[data-oc]'); if (c) { oc = c.dataset.oc; o.querySelectorAll('[data-oc]').forEach((x) => { x.style.background = x === c ? '#dcfce7' : '#fff'; x.style.borderColor = x === c ? '#86efac' : '#d9dde3'; }); return; }
+        const later = e.target.closest('[data-later]'), go = e.target.closest('[data-go]'); if (!later && !go) return;
+        const rm = (o.querySelector('[data-rm]').value || '').trim();
+        if (go && (!oc || rm.length < 4)) { o.querySelector('[data-rm]').style.borderColor = '#dc2626'; toast(!oc ? 'Pehle batao kya hua' : 'Remark likho (kam se kam 4 akshar)', true); return; }
+        try { await api.post('wq.grow_resolve', { key: m.key, outcome: later ? 'later' : oc, remark: later ? '' : rm }); o.remove(); toast(later ? 'Theek hai, 30 min baad yaad dilayenge' : '✓ Resolve ho gaya'); done(); }
+        catch (er) { toast(er.message || 'Resolve nahi hua', true); } });
+      document.body.appendChild(o);
     }
     function growBox() {
       try {
@@ -558,7 +588,7 @@
           + (((d.missed_big || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['⬆ Bada size bechne ka effort nahi — yeh orders:', d.missed_big]) : '') + ((d.missed || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['➕ Add-on offer nahi — yeh orders:', d.missed]) : ''))
           + '</div>'; document.body.appendChild(o);
         o.addEventListener('click', (e3) => { const g = e3.target.closest('[data-adopen]'); if (g) { o.remove(); try { openChat(g.dataset.adopen, {}); } catch (e4) { } } }); };
-      paintAd(); setInterval(() => { if (!document.hidden) paintAd(); }, 90000); }
+      window.__wxPaintAd = paintAd; paintAd(); setInterval(() => { if (!document.hidden) paintAd(); }, 90000); }
 
     // 📣 Performance popups: a morning briefing (goes away by itself) and a summary about every 4–5 hours (stays until closed). Each shown once per slot; all numbers come from My Sales (my.coach).
     { const SLOTS = [['m', 0, 'Good morning'], ['a', 14.5, 'Afternoon check'], ['e', 19, 'Evening check']], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };

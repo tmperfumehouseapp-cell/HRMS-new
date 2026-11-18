@@ -15,19 +15,56 @@ if ($__tkA === 'wq.tk_me') {   // the salesperson's own ticket for the WhatsApp 
         elseif ((int)($x['sw'] ?? 0) > 0 && (int)($x['sw']) > time() - 3600) $slow = ['state' => 'warn', 'since' => (int)$x['sw']]; } } catch (Throwable $e) { }
     json_response(['ok' => true, 'tk' => $card, 'slow' => $slow]);
 }
+// ================= 📞 Call-backs: today's orders where no add-on (extra perfume) was offered and none was added. The salesperson calls / chats, then RESOLVES with a remark; an added add-on resolves it by itself. =================
+function wq_cb_ready(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS grow_callback (id INT AUTO_INCREMENT PRIMARY KEY, order_key VARCHAR(80) NOT NULL, order_name VARCHAR(40) NOT NULL DEFAULT '', emp INT NOT NULL DEFAULT 0, phone VARCHAR(20) NOT NULL DEFAULT '', day DATE NULL, created_at DATETIME NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'open', resolved_at DATETIME NULL, outcome VARCHAR(16) NOT NULL DEFAULT '', remark VARCHAR(300) NOT NULL DEFAULT '', snooze_until DATETIME NULL, UNIQUE KEY u_order (order_key), KEY k_emp (emp, status), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
+    catch (Throwable $e) { error_log('wq_cb_ready: ' . $e->getMessage()); return $ok = false; }
+}
+if ($__tkA === 'wq.grow_resolve') {   // the salesperson resolves one of their own call-backs (needs a remark) or snoozes it for 30 minutes
+    $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0); $in = json_input();
+    $key = trim((string)($in['key'] ?? '')); $oc = (string)($in['outcome'] ?? ''); $rm = trim((string)($in['remark'] ?? ''));
+    if ($me <= 0 || $key === '' || !in_array($oc, ['addon_done', 'declined', 'no_answer', 'later'], true)) json_response(['error' => 'Choose what happened.'], 422);
+    if ($oc !== 'later' && mb_strlen($rm) < 4) json_response(['error' => 'Remark likho (kam se kam 4 akshar).'], 422);
+    if (!wq_cb_ready($pdo)) json_response(['error' => 'Not available right now.'], 500);
+    $adm = function_exists('wa_is_admin') && wa_is_admin($pdo, $auth);
+    if ($oc === 'later') $u = $pdo->prepare("UPDATE grow_callback SET snooze_until = ? WHERE order_key = ? AND status = 'open' AND (emp = ? OR ?)");
+    else $u = $pdo->prepare("UPDATE grow_callback SET status = 'resolved', resolved_at = ?, outcome = ?, remark = ? WHERE order_key = ? AND status = 'open' AND (emp = ? OR ?)");
+    if ($oc === 'later') $u->execute([date('Y-m-d H:i:s', time() + 1800), $key, $me, $adm ? 1 : 0]); else $u->execute([date('Y-m-d H:i:s'), $oc, mb_substr($rm, 0, 300), $key, $me, $adm ? 1 : 0]);
+    json_response(['ok' => true, 'changed' => $u->rowCount()]);
+}
+if ($__tkA === 'wq.grow_callbacks') {   // Admin / HR: today's call-backs — open and resolved with the remarks, and what the add-ons brought afterwards
+    $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (!$adm) json_response(['error' => 'Only Admin or HR can see the call-backs.'], 403);
+    $out = ['ok' => true, 'rows' => [], 'open' => 0, 'resolved' => 0, 'by_outcome' => [], 'addon_rs' => 0, 'addon_orders' => 0];
+    try { if (wq_cb_ready($pdo)) { $day = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        $q = $pdo->prepare("SELECT order_key, order_name, emp, phone, created_at, status, resolved_at, outcome, remark FROM grow_callback WHERE day = ? ORDER BY (status = 'open') DESC, id DESC LIMIT 200"); $q->execute([$day]); $names = [];
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { if ($r['status'] === 'open') $out['open']++; else { $out['resolved']++; $out['by_outcome'][$r['outcome']] = ($out['by_outcome'][$r['outcome']] ?? 0) + 1; if ($r['outcome'] === 'addon_done') $names[] = strtolower(ltrim((string)$r['order_name'], '#')); }
+            if (count($out['rows']) < 60) { $cn = ''; try { $c = $pdo->prepare("SELECT name FROM wa_contacts WHERE phone = ? LIMIT 1"); $c->execute([substr(preg_replace('/\D+/', '', (string)$r['phone']), -10)]); $cn = trim((string)$c->fetchColumn()); } catch (Throwable $e) { }
+                $out['rows'][] = ['order' => (string)$r['order_name'], 'emp' => $nm[(int)$r['emp']] ?? ('#' . $r['emp']), 'customer' => $cn, 'at' => substr((string)$r['created_at'], 11, 5), 'status' => (string)$r['status'], 'done_at' => $r['resolved_at'] ? substr((string)$r['resolved_at'], 11, 5) : '', 'outcome' => (string)$r['outcome'], 'remark' => (string)$r['remark'], 'mins' => $r['status'] === 'open' ? (int)round((time() - strtotime((string)$r['created_at'])) / 60) : ($r['resolved_at'] ? (int)round((strtotime((string)$r['resolved_at']) - strtotime((string)$r['created_at'])) / 60) : 0)]; } }
+        if ($names) { $in = implode(',', array_fill(0, count($names), '?')); $a = $pdo->prepare("SELECT COUNT(DISTINCT REPLACE(LOWER(order_name), '#', '')) n, COALESCE(SUM(price), 0) s FROM employee_addons WHERE REPLACE(LOWER(order_name), '#', '') IN ($in)"); $a->execute($names); $x = $a->fetch(PDO::FETCH_ASSOC); $out['addon_orders'] = (int)($x['n'] ?? 0); $out['addon_rs'] = (int)round((float)($x['s'] ?? 0)); } } } catch (Throwable $e) { error_log('wq.grow_callbacks: ' . $e->getMessage()); }
+    json_response($out);
+}
 if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today (read from the chats after the orders): four counts, stars, add-on rupees, the orders where nothing was offered, the words that worked. Only the person's own rows.
     $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     $out = ['ok' => true, 'n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'stars' => null, 'addon_rs' => 0, 'missed' => [], 'missed_n' => 0, 'missed_big' => [], 'tip' => '', 'team' => [0, 0, 0, 0], 'team_sz' => [0, 0, 0, 0], 'yd' => ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'read' => 0], 'read' => 0];
     try {
         if ($me > 0 && function_exists('ora_tables') && ora_tables($pdo)) {
-            $day = biz_today($pdo); $st = 0.0; $rows = [];
+            $day = biz_today($pdo); $st = 0.0; $rows = []; $cbRows = [];
             $q = $pdo->prepare("SELECT order_key, order_name, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries, reason, phone FROM order_rate_auto WHERE employee_id = ? AND day = ? AND rating IS NOT NULL AND sz_ok = 3 ORDER BY at DESC LIMIT 400"); $q->execute([$me, $day]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
             try { if (function_exists('addons_attach')) addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { }
             foreach ($rows as $r) {
                 $lv = ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']); $out['n'][$lv]++; $out['sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; $st += (float)$r['rating'] / 2; $out['addon_rs'] += (float)($r['addon_total'] ?? 0);
-                if ($lv === 0 && (float)($r['addon_total'] ?? 0) <= 0) { $out['missed_n'] = (int)($out['missed_n'] ?? 0) + 1; } if ($lv === 0 && (float)($r['addon_total'] ?? 0) <= 0 && count($out['missed']) < 8) { $out['missed'][] = ['order' => (string)$r['order_name'], 'phone' => (string)$r['phone'], 'why' => mb_substr((string)$r['reason'], 0, 140)]; }
+                if ($lv === 0 && wq_cb_ready($pdo)) { $cbRows[] = [(string)$r['order_key'], (string)$r['order_name'], (string)$r['phone'], (float)($r['addon_total'] ?? 0)]; }
                 if (ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']) === 0 && count($out['missed_big']) < 5) { $out['missed_big'][] = ['order' => (string)$r['order_name'], 'phone' => (string)$r['phone'], 'why' => mb_substr((string)$r['reason'], 0, 140)]; }
             }
+            // 📞 call-backs: every order of today without an add-on offer becomes (once) an open call-back; an add-on that got recorded resolves it by itself; the list shown is the OPEN ones (not snoozed)
+            try { if ($cbRows && wq_cb_ready($pdo)) {
+                $ins = $pdo->prepare("INSERT IGNORE INTO grow_callback (order_key, order_name, emp, phone, day, created_at) VALUES (?, ?, ?, ?, ?, ?)"); $auto = $pdo->prepare("UPDATE grow_callback SET status = 'resolved', resolved_at = ?, outcome = 'addon_done', remark = 'auto: add-on recorded on the order' WHERE order_key = ? AND status = 'open'");
+                foreach ($cbRows as $c) { if ($c[3] > 0) $auto->execute([date('Y-m-d H:i:s'), $c[0]]); else $ins->execute([$c[0], $c[1], $me, substr(preg_replace('/\D+/', '', $c[2]), -10), $day, date('Y-m-d H:i:s')]); } } } catch (Throwable $e) { error_log('wq.ad_me callbacks: ' . $e->getMessage()); }
+            try { if (wq_cb_ready($pdo)) { $oq = $pdo->prepare("SELECT order_key, order_name, phone FROM grow_callback WHERE emp = ? AND day = ? AND status = 'open' AND (snooze_until IS NULL OR snooze_until < ?) ORDER BY id DESC LIMIT 30"); $oq->execute([$me, $day, date('Y-m-d H:i:s')]);
+                foreach ($oq->fetchAll(PDO::FETCH_ASSOC) as $c) $out['missed'][] = ['key' => (string)$c['order_key'], 'order' => (string)$c['order_name'], 'phone' => (string)$c['phone'], 'why' => '']; $out['missed_n'] = count($out['missed']); } } catch (Throwable $e) { }
             $n = array_sum($out['n']); $out['read'] = $n; $out['stars'] = $n ? round($st / $n, 1) : null; $out['addon_rs'] = round($out['addon_rs']);
             $t = $pdo->prepare("SELECT tip FROM order_rate_auto WHERE employee_id = ? AND worked = 1 AND tip <> '' AND at >= ? ORDER BY at DESC LIMIT 1"); $t->execute([$me, date('Y-m-d H:i:s', time() - 14 * 86400)]); $out['tip'] = (string)$t->fetchColumn();
             $tm = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 3 LIMIT 3000"); $tm->execute([$day]); foreach ($tm->fetchAll(PDO::FETCH_ASSOC) as $r) { $out['team'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++; $out['team_sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; }
