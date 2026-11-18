@@ -1965,7 +1965,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             wa_ru_load_util($pdo); if (!function_exists('wa_util_make')) json_response(['error' => 'The utility module is not loaded.'], 500); @set_time_limit(120);
             $r = wa_util_make($pdo, (int)$c['tpl_id'], min(6, wa_ru_want($pdo)), (int)($auth['employee_id'] ?? 0), true);
             if (isset($r['error'])) json_response($r, 502);
-            try { setting_set($pdo, 'wa_ru_made_' . (int)$c['tpl_id'], (string)time()); setting_set($pdo, 'wa_ru_fam', ''); } catch (Throwable $e) { }
+            try { setting_set($pdo, 'wa_ru_made_' . (int)$c['tpl_id'], (string)time()); setting_set($pdo, 'wa_ru_fam', ''); if (function_exists('hrms_memo_drop')) hrms_memo_drop('wa_ru_fam'); } catch (Throwable $e) { }
             if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility versions for campaign #' . (int)$c['id'] . ' made by hand: ' . count($r['made'] ?? []) . ' sent to Meta');
             json_response(['ok' => true, 'made' => count($r['made'] ?? []), 'skipped' => $r['skipped'] ?? []]);
         }
