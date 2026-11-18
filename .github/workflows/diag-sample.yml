@@ -1,0 +1,51 @@
+# READ-ONLY: samples what the database is busy with, once a second for 60 seconds, and adds it up — which query shapes are running most often / for the longest.
+# Query shapes only (numbers and values replaced by #), no data, no phone numbers or names. Changes nothing. Needs no special database right.
+# Run it by hand: Actions → "Busy queries sample (read-only)" → Run workflow.
+name: Busy queries sample (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Sample the database for 60 seconds
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/sm_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $agg = []; $n = 0; $busy = 0; $t0 = time();
+          while (time() - $t0 < 60) {
+            try {
+              foreach ($d->query("SELECT time, LEFT(REGEXP_REPLACE(REGEXP_REPLACE(info, '\\'[^\\']*\\'', '?'), '[0-9]+', '#'), 130) q FROM information_schema.processlist WHERE command <> 'Sleep' AND info IS NOT NULL AND info NOT LIKE '%information_schema.processlist%'")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $k = (string)$r["q"]; if (!isset($agg[$k])) $agg[$k] = ["seen" => 0, "sec" => 0, "max" => 0]; $agg[$k]["seen"]++; $agg[$k]["sec"] += (int)$r["time"]; $agg[$k]["max"] = max($agg[$k]["max"], (int)$r["time"]); $busy++;
+              }
+            } catch (Throwable $e) { echo "  (n/a: " . substr($e->getMessage(), 0, 120) . ")\n"; break; }
+            $n++; sleep(1);
+          }
+          echo "sampled $n times over 60 s; on average " . ($n ? round($busy / $n, 1) : 0) . " queries were running at the same moment\n";
+          uasort($agg, function ($a, $b) { return $b["seen"] <=> $a["seen"]; });
+          echo "\n=== query shapes seen running most often (seen = how many of the samples it was running in) ===\n";
+          $i = 0; foreach ($agg as $q => $x) { echo "  seen " . $x["seen"] . "x · longest " . $x["max"] . " s · " . $q . "\n"; if (++$i >= 18) break; }
+          PHP
+          php /tmp/sm_check.php "$P"; rm -f /tmp/sm_check.php
+          REMOTE
