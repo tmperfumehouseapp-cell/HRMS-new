@@ -22,6 +22,8 @@ if (!function_exists('wa_dq_cfg')) {
 
 function wa_dq_cfg(PDO $pdo): array
 {
+    try { if (setting_get($pdo, 'wa_dq_nolimit', '') !== '1') { foreach (['wa_dq_daily' => '1000000', 'wa_dq_budget' => '0', 'wa_dq_auto' => '0', 'wa_dq_hourly' => '60000', 'wa_dq_pace' => '0', 'wa_dq_daily_auto' => '0', 'wa_dq_stat' => ''] as $k0 => $v0) setting_set($pdo, $k0, $v0); setting_set($pdo, 'wa_dq_nolimit', '1'); } } catch (Throwable $e) { }   // owner 18 Nov 2026: no day number, no money limit, no even-pace brake; the hour number at its top (60,000). Done once, here, because this function runs on every sending round
+    try { if (setting_get($pdo, 'wa_dq_hourly15', '') !== '1') { setting_set($pdo, 'wa_dq_hourly', '15000'); setting_set($pdo, 'wa_dq_stat', ''); setting_set($pdo, 'wa_dq_hourly15', '1'); } } catch (Throwable $e0) { }   // owner 18 Nov 2026: marketing speed top = 15,000 an hour (last night 25,000-47,000 an hour ended with Meta's first spam flag 131048); no day number and no money limit
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
     $base = max(1000, min(1000000, (int)$g('wa_dq_daily', '75000'))); $auto = $g('wa_dq_auto', '1') !== '0'; $dmin = max(1000, (int)$g('wa_dq_daily_min', '40000')); $dmax = max($dmin, $base, (int)$g('wa_dq_daily_max', '90000')); $daily = $base;   // the number the owner saved is never cut down by the automatic ceiling
     $av0 = (int)$g('wa_dq_daily_auto', '0'); if ($av0 > $dmax) $dmax = min(1000000, $av0);

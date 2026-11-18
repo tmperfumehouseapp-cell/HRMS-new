@@ -1,0 +1,54 @@
+# READ-ONLY look at how busy the server is: CPU load, the busiest processes, memory, the database's running queries and its newest slow ones, how many sending rounds run at once.
+# Counts and process names only. Changes nothing. Run it by hand: Actions → "Server load check (read-only)" → Run workflow.
+name: Server load check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Server load
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          echo "=== now ==="; date; uptime; echo "cpu cores: $(nproc)"
+          echo; echo "=== load samples (3 x 5 s) ==="; for i in 1 2 3; do cat /proc/loadavg; sleep 5; done
+          echo; echo "=== memory ==="; free -m | head -3
+          echo; echo "=== busiest processes (CPU %, memory %, command name only) ==="
+          ps -eo pcpu,pmem,etimes,comm --sort=-pcpu | head -15
+          echo; echo "=== how many of each ==="
+          for n in php-fpm php mysqld mariadbd nginx apache2 httpd; do c=$(pgrep -c -x "$n" 2>/dev/null || echo 0); [ "$c" != "0" ] && echo "$n: $c"; done
+          echo; echo "=== php processes running longer than 60 s (script names only) ==="
+          ps -eo pid,etimes,pcpu,args | awk '$2>60 && /php/ && !/php-fpm: pool|grep/ {n=split($4,a,"/"); print $1, "age="$2"s", "cpu="$3"%", a[n]}' | head -15
+          cat > /tmp/ld_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $all = function ($sql) use ($d) { try { return $d->query($sql)->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "  (n/a: " . substr($e->getMessage(), 0, 120) . ")\n"; return []; } };
+          echo "\n=== database: running queries now (longest first, first 90 characters, no values) ===\n";
+          foreach ($all("SELECT id, time, state, LEFT(REGEXP_REPLACE(info, '[0-9]{4,}', '#'), 90) q FROM information_schema.processlist WHERE command <> 'Sleep' AND info IS NOT NULL AND info NOT LIKE '%information_schema.processlist%' ORDER BY time DESC LIMIT 12") as $r) echo "  " . $r["time"] . "s · " . $r["q"] . "\n";
+          echo "\n=== database: connections ===\n";
+          foreach ($all("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected','Threads_running','Slow_queries','Questions','Uptime')") as $r) echo "  " . $r["Variable_name"] . " = " . $r["Value"] . "\n";
+          echo "\n=== sending rounds in the last 10 minutes ===\n";
+          foreach ($all("SELECT kind, COUNT(*) n FROM wa_log WHERE at >= NOW() - INTERVAL 10 MINUTE GROUP BY kind ORDER BY n DESC LIMIT 8") as $r) echo "  " . $r["kind"] . ": " . $r["n"] . "\n";
+          foreach ($all("SELECT COUNT(*) n FROM wa_ru_log WHERE at >= NOW() - INTERVAL 10 MINUTE") as $r) echo "  utility messages (Module B) in 10 min: " . $r["n"] . "\n";
+          PHP
+          php /tmp/ld_check.php "$P"; rm -f /tmp/ld_check.php
+          REMOTE
