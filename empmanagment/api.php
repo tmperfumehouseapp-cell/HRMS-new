@@ -1220,6 +1220,16 @@ function order_chat_type(PDO $pdo, array $c, int $t = 0): string
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || order_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30)) ? 'campaign' : 'query';
 }
+/** 🧴 Is there at least one shower gel in this order? Reads the order's own gel/attar/other parts (xparts); an order read from the saved copy has no 'xparts' key, so it is looked up in shop_orders. */
+function order_has_gel(PDO $pdo, string $sk, array $o): bool
+{
+    $xp = $o['xparts'] ?? null; if (is_object($xp)) $xp = json_decode(json_encode($xp), true);
+    if (!is_array($xp)) {
+        $xp = null; $id = (string)($o['id'] ?? $o['shopify_id'] ?? '');
+        if ($id !== '') { try { $q = $pdo->prepare("SELECT xparts FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $q->execute([$sk, $id]); $j = json_decode((string)$q->fetchColumn(), true); if (is_array($j)) $xp = $j; } catch (Throwable $e) { } }
+    }
+    return is_array($xp) && (int)($xp['gel']['pcs'] ?? 0) > 0;
+}
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
 {
     static $ready = null, $q = [];
@@ -1260,7 +1270,10 @@ function order_auto_alloc(PDO $pdo, string $sk, array $o)
         if (!$c) return $why('the WhatsApp chat is not given to any salesperson');
         if (empty($c['last_in_at'])) return $why('the customer never wrote to us on WhatsApp');
         $li = strtotime((string)$c['last_in_at']); if ($li < $t - 7 * 86400 && $li < time() - 7 * 86400) return $why('last WhatsApp message ' . date('j M', $li) . ' — older than 7 days');
-        $house = $sk === 'tmperfumehouse' ? 'tmph' : order_house($sk, (string)($o['tags'] ?? '')); if ($house === '') return $why('panel not clear from the order');
+        $house = $sk === 'tmperfumehouse' ? 'tmph' : order_house($sk, (string)($o['tags'] ?? ''));
+        if ($house === '' && $sk === 'tmsg') $house = 'tmsg';
+        if (order_has_gel($pdo, $sk, $o)) $house = 'tmsg';   // 🧴 owner (18 Nov): ANY order with a shower gel (1, 2 or more, with any other product) is TM Shower Gel — chosen by itself, then allocated like every other order
+        if ($house === '') return $why('panel not clear from the order');
         $type = order_chat_type($pdo, $c, $t);   // 📢 Campaign = a real campaign reply (chat marked Campaign / Community, or our campaign sent in the 7 days before the order); website / ad texts stay Query
         $emp = (int)$c['assigned_emp']; $q['ins']->execute([$sk, $oid, $house, $type, $emp]);
         if ($q['ins']->rowCount() < 1) return '';
