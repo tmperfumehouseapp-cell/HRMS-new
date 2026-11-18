@@ -94,6 +94,17 @@ jobs:
             try { $cnt = []; $tot = 0; $q = $d->query("SELECT body, emp_id FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date("Y-m-d H:i:s", time() + 19800 - 30 * 3600) . "' AND body LIKE '%http%' ORDER BY id DESC LIMIT 1500");
               foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { if (preg_match_all('~https?://([^/\s?#]+)(/[^\s?#]*)?([?#][^\s]*)?~i', (string)$x["body"], $m, PREG_SET_ORDER)) foreach ($m as $u) { $tot++; $path = isset($u[2]) ? $u[2] : ""; $first = preg_replace("/[0-9]+/", "N", implode("/", array_slice(explode("/", $path), 0, 3))); $q2 = isset($u[3]) ? preg_replace("/=[^&]*/", "=*", substr($u[3], 0, 40)) : ""; $k = strtolower($u[1]) . $first . $q2; $cnt[$k] = ($cnt[$k] ?? 0) + 1; } }
               arsort($cnt); echo "  total links: $tot\n"; $i = 0; foreach ($cnt as $k => $n) { echo "  " . $n . " x " . substr($k, 0, 90) . "\n"; if (++$i >= 14) break; } } catch (Throwable $e) { echo "  n/a (" . substr($e->getMessage(), 0, 120) . ")\n"; }
+            echo "\nHOURLY TRACKER (orders by the hour they were made, IST; each person counted once per hour):\n";
+            try {
+              $J2 = "FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 3 AND r.rating IS NOT NULL";
+              $A2 = "(CASE WHEN r.worked = 1 THEN 3 WHEN r.tries >= 2 THEN 2 WHEN r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B2 = "(CASE WHEN r.sz_worked = 1 THEN 3 WHEN r.sz_tries >= 2 THEN 2 WHEN r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
+              $now = time() + 19800;
+              foreach (["last 60 min" => [$now - 3600, $now], "the 60 min before" => [$now - 7200, $now - 3600], "same hour yesterday" => [$now - 86400 - 3600, $now - 86400]] as $lab => [$t0, $t1]) {
+                $rows = $d->query("SELECT r.employee_id e, COUNT(*) n, SUM($A2 >= 1) a, SUM($B2 >= 1) b, SUM($A2 >= 1 AND $B2 >= 1) ab $J2 AND o.created_at >= '" . date("Y-m-d H:i:s", $t0) . "' AND o.created_at < '" . date("Y-m-d H:i:s", $t1) . "' GROUP BY r.employee_id")->fetchAll(PDO::FETCH_ASSOC);
+                $p = count($rows); $none = 0; $one = 0; $both = 0; $o = 0; $oa = 0; $ob = 0; foreach ($rows as $x) { $o += (int)$x["n"]; $oa += (int)$x["a"]; $ob += (int)$x["b"]; $s = (int)$x["a"] + (int)$x["b"]; if ($s == 0) $none++; elseif ((int)$x["ab"] > 0) $both++; else $one++; }
+                echo "  $lab: $o orders by $p people · add-on offered in $oa · bigger offered in $ob · people with NO effort in any order: $none · one lane only: $one · both lanes in at least one order: $both\n";
+              }
+            } catch (Throwable $e) { echo "  tracker n/a (" . substr($e->getMessage(), 0, 140) . ")\n"; }
             $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
             if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
               $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
