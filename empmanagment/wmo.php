@@ -331,6 +331,7 @@ function wmo_dsp_rows(PDO $pdo, string $from, string $to, string $status, string
                 : ($pa && trim((string)$pa['tracking_no']) !== '' ? ['awb' => (string)$pa['tracking_no'], 'courier' => (string)$pa['courier'], 'status' => (string)$pa['status'], 'manual' => false] : null),
             'link' => in_array($r['status'], ['draft', 'sent'], true) ? wmo_link((string)$r['token']) : ''];
     }
+    if (function_exists('addons_attach')) addons_attach($pdo, $out, 'order_no');   // add-ons sold onto the order: shown to Dispatch and put in the exports
     // 🧮 weight, tax, payment gateway, commission (the day's figures are cached by the commission engine; at most 8 days are looked up per call so a long export stays light)
     $bset = null; try { if (function_exists('wch_b_get')) $bset = wch_b_get($pdo); } catch (Throwable $e) { $bset = null; }
     $store = wmo_store_key(); $paidBy = []; $nDays = 0;

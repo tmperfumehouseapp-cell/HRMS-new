@@ -46,7 +46,7 @@ function dpx_addon_load(PDO $pdo): void
         $parts = [];
         foreach ($sets as $x) {
             $pay = [];
-            if ($x['pre'] > 0) $pay[] = 'PREPAID Rs ' . number_format($x['pre']) . ($x['proof'] ? ' (payment proof saved in HRMS)' : ' (no proof)');
+            if ($x['pre'] > 0) $pay[] = 'PREPAID Rs ' . number_format($x['pre']);
             if ($x['cod'] > 0) $pay[] = 'COLLECT Rs ' . number_format($x['cod']) . ' on delivery';
             $parts[] = 'ADD-ON: ' . implode(', ', $x['items']) . ' = Rs ' . number_format($x['total']) . ($pay ? ' [' . implode('; ', $pay) . ']' : '');
         }
@@ -66,11 +66,12 @@ function dpx_note_with_addon($note, $orderName): string
 /** The same rows as sheetRows() in dispatch_manual.html (one row per product; the order's own columns on its first row only). $orders = the rows of wmo_dsp_rows().
  *  $n8n = true makes the rows the n8n workflow expects from a Shopify export: dates as "2026-11-16 19:05:11 +0530" (the workflow splits them at the space; the ISO form of the CSV button ends up whole in the date column),
  *  the state NAME in the "Province Name" columns (it decides CGST + SGST for Gujarat, IGST elsewhere) and the order's real GST in "Taxes". */
-function dpx_sheet_rows(array $orders, bool $n8n = false): array
+function dpx_sheet_rows(array $orders, bool $n8n = false, array $addons = []): array
 {
     $iso = $n8n ? function ($s) { $s = (string)$s; return $s !== '' ? $s . ' +0530' : ''; } : function ($s) { $s = (string)$s; return $s !== '' ? preg_replace('/ /', 'T', $s, 1) . '+05:30' : ''; };
     $out = [];
     foreach ($orders as $r) {
+        $__start = count($out);
         $c = (array)($r['cust'] ?? []); $st = (string)($r['status'] ?? ''); $pay = (string)($r['pay'] ?? '');
         $fin = $st === 'cancelled' ? 'voided' : ($pay === 'prepaid' ? 'paid' : ($pay === 'partial' ? 'partially_paid' : 'pending'));
         $pm = $pay === 'prepaid' ? 'QR / UPI' : ($pay === 'cod' ? 'Cash on Delivery (COD)' : 'QR / UPI + COD');
@@ -91,13 +92,15 @@ function dpx_sheet_rows(array $orders, bool $n8n = false): array
                     'Fulfillment Status' => 'unfulfilled', 'Accepts Marketing' => 'no', 'Currency' => 'INR', 'Subtotal' => $r['total'], 'Shipping' => 0, 'Taxes' => 0, 'Total' => $r['total'], 'Shipping Method' => 'Manual', 'Created at' => $iso($r['created_at'] ?? ''),
                     'Billing Name' => $c['name'] ?? '', 'Billing Street' => $street, 'Billing Address1' => $a1, 'Billing Address2' => $addr2, 'Billing City' => $c['city'] ?? '', 'Billing Zip' => $c['pin'] ?? '', 'Billing Province' => $c['state'] ?? '', 'Billing Country' => 'IN', 'Billing Phone' => $phone,
                     'Shipping Name' => $c['name'] ?? '', 'Shipping Street' => $street, 'Shipping Address1' => $a1, 'Shipping Address2' => $addr2, 'Shipping City' => $c['city'] ?? '', 'Shipping Zip' => $c['pin'] ?? '', 'Shipping Province' => $c['state'] ?? '', 'Shipping Country' => 'IN', 'Shipping Phone' => $phone,
-                    'Notes' => dpx_note_with_addon($r['note'] ?? '', $r['order_no'] ?? ''), 'Cancelled at' => $st === 'cancelled' ? $iso($r['created_at'] ?? '') : '', 'Payment Method' => $pm, 'Payment Reference' => $r['utr'] ?? '', 'Outstanding Balance' => $r['cod'], 'Employee' => $r['emp'] ?? '',
+                    'Notes' => $addons ? (string)($r['note'] ?? '') : dpx_note_with_addon($r['note'] ?? '', $r['order_no'] ?? ''), 'Cancelled at' => $st === 'cancelled' ? $iso($r['created_at'] ?? '') : '', 'Payment Method' => $pm, 'Payment Reference' => $r['utr'] ?? '', 'Outstanding Balance' => $r['cod'], 'Employee' => $r['emp'] ?? '',
                     'Id' => 7000000000000000 + (int)$r['id'], 'Tags' => $tags, 'Source' => 'manual', 'Phone' => $phone, 'Order Source (Query/Campaign)' => $r['type'] ?? '', 'Order Status' => $st,
                     'Invoice No' => is_array($inv) ? ($inv['no'] ?? '') : '', 'Courier' => is_array($par) ? ($par['courier'] ?? '') : '', 'AWB' => is_array($par) ? ($par['awb'] ?? '') : '', 'Shiprocket Order Id' => $r['sr']['id'] ?? '']);
                 if ($n8n) { $o['Billing Province Name'] = $c['state'] ?? ''; $o['Shipping Province Name'] = $c['state'] ?? ''; if (isset($r['tax']) && is_numeric($r['tax'])) $o['Taxes'] = $r['tax']; }
             }
             $out[] = $o;
         }
+        $__ad = $addons[strtolower(trim(ltrim((string)($r['order_no'] ?? ''), '#')))] ?? null;      // ➕ add-ons of this order (only the n8n feed passes them)
+        if ($__ad && $out && count($out) > $__start) { $out[$__start]['Total'] = round((float)$out[$__start]['Total'] + $__ad['total'], 2); $out[$__start]['Outstanding Balance'] = round((float)$out[$__start]['Outstanding Balance'] + $__ad['cod'], 2); foreach (dpx_addon_lines((string)$r['order_no'], $__ad, array_fill_keys(dpx_cols($n8n), '')) as $x) $out[] = $x; }
     }
     return $out;
 }
@@ -215,9 +218,63 @@ function dpx_feed(PDO $pdo): void
     if ((strtotime($to) - strtotime($from)) > 31 * 86400) json_response(['error' => 'Ask for at most 31 days.'], 422);
     $tot = 0; $sum = []; $orders = wmo_dsp_rows($pdo, $from, $to, 'confirmed', '', '', 5000, 0, $tot, $sum);
     $orders = array_values(array_filter($orders, fn($o) => !empty($o['lines'])));
-    $csv = dpx_csv(dpx_sheet_rows($orders, true), true);
+    // ➕ an add-on put on an OLDER manual order must still reach dispatch
+    $have = []; foreach ($orders as $o0) $have[strtolower((string)$o0['order_no'])] = 1;
+    foreach (array_slice(array_filter(dpx_addon_names_in($pdo, $from, $to), fn($n) => stripos($n, 'WM-') === 0 && !isset($have[strtolower($n)])), 0, 40) as $nm) {
+        $t1 = 0; $s1 = []; foreach (wmo_dsp_rows($pdo, '2020-01-01', $to, 'confirmed', '', $nm, 5, 0, $t1, $s1) as $x) if (strcasecmp((string)$x['order_no'], $nm) === 0 && !empty($x['lines'])) { $orders[] = $x; $have[strtolower($nm)] = 1; }
+    }
+    $addons = dpx_addons_map($pdo, array_map(fn($o0) => (string)$o0['order_no'], $orders));
+    $csv = dpx_csv(dpx_sheet_rows($orders, true, $addons), true);
     header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="hrms_orders_' . $to . '.csv"'); header('Cache-Control: no-store');
     echo $csv; exit;
+}
+
+/** ➕ Add-ons put on orders in the HRMS (table employee_addons): [normalised order name => ['groups' => [[items, price, pre, cod]], 'total', 'cod']]. */
+function dpx_addons_map(PDO $pdo, array $names): array
+{
+    $norm = fn($n) => strtolower(trim(ltrim(trim((string)$n), '#'))); $keys = []; foreach ($names as $n) { $k = $norm($n); if ($k !== '') $keys[$k] = 1; }
+    $by = []; if (!$keys || !function_exists('ensure_addons_table')) return [];
+    try {
+        if (!ensure_addons_table($pdo)) return [];
+        foreach (array_chunk(array_keys($keys), 400) as $chunk) {
+            $ph = []; $par = []; foreach ($chunk as $k) { $ph[] = '?'; $par[] = $k; $ph[] = '?'; $par[] = '#' . $k; }
+            $st = $pdo->prepare("SELECT addon_id, order_name, addon_group, product_name, size_ml, qty, price, prepaid_amt, cod_amt FROM employee_addons WHERE LOWER(order_name) IN (" . implode(',', $ph) . ") ORDER BY addon_id"); $st->execute($par);
+            foreach ($st->fetchAll() as $a) {
+                $o = $norm($a['order_name']); $g = (string)($a['addon_group'] ?: 'single-' . $a['addon_id']);
+                if (!isset($by[$o]['groups'][$g])) $by[$o]['groups'][$g] = ['items' => [], 'price' => 0.0, 'pre' => 0.0, 'cod' => 0.0];
+                $by[$o]['groups'][$g]['items'][] = ['product' => (string)$a['product_name'], 'size' => (string)$a['size_ml'], 'qty' => max(1, (int)$a['qty'])];
+                $by[$o]['groups'][$g]['price'] += (float)$a['price']; $by[$o]['groups'][$g]['pre'] += (float)$a['prepaid_amt']; $by[$o]['groups'][$g]['cod'] += (float)$a['cod_amt'];
+            }
+        }
+    } catch (Throwable $e) { return []; }
+    foreach ($by as $o => &$v) { $v['groups'] = array_values($v['groups']); $v['total'] = 0.0; $v['cod'] = 0.0; foreach ($v['groups'] as $g) { $v['total'] += $g['price']; $v['cod'] += $g['cod']; } } unset($v);
+    return $by;
+}
+
+/** The order names that got an add-on in a day range (the add-on may be put on an order of an earlier day: it must still reach dispatch). */
+function dpx_addon_names_in(PDO $pdo, string $from, string $to): array
+{
+    try {
+        if (!function_exists('ensure_addons_table') || !ensure_addons_table($pdo)) return [];
+        $st = $pdo->prepare("SELECT DISTINCT order_name FROM employee_addons WHERE order_name <> '' AND (addon_date BETWEEN ? AND ? OR (created_at >= ? AND created_at < ?))");
+        $st->execute([$from, $to, $from . ' 00:00:00', date('Y-m-d', strtotime($to . ' +1 day')) . ' 00:00:00']);
+        return array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN));
+    } catch (Throwable $e) { return []; }
+}
+
+/** The rows of the add-ons of ONE order: every product is its own line "➕ ADD-ON · product", the add-on price is on its first product (the line price is per piece). */
+function dpx_addon_lines(string $orderNo, array $add, array $blank): array
+{
+    $out = [];
+    foreach ((array)($add['groups'] ?? []) as $g) {
+        foreach ((array)$g['items'] as $i => $it) {
+            $r = $blank; $r['Name'] = $orderNo; $q = max(1, (int)$it['qty']);
+            $r['Lineitem name'] = '➕ ADD-ON · ' . trim($it['product'] . ($it['size'] !== '' ? ' ' . $it['size'] . (stripos($it['size'], 'ml') === false ? ' ml' : '') : ''));
+            $r['Lineitem quantity'] = $q; $r['Lineitem price'] = $i === 0 ? number_format($g['price'] / $q, 2, '.', '') : '0.00'; $r['Lineitem requires shipping'] = 'true'; $r['Lineitem taxable'] = 'true';
+            $out[] = $r;
+        }
+    }
+    return $out;
 }
 
 /** 🛍 The SHOPIFY orders of a day range, straight from Shopify (like the SKU sheet reads them): [orders, errors]. Cancelled orders are left out. */
@@ -246,8 +303,25 @@ function dpx_shop_fetch(PDO $pdo, string $from, string $to): array
     return [$out, $errs];
 }
 
+/** One Shopify order by its name (#71674): [orders, errors]. */
+function dpx_shop_fetch_name(PDO $pdo, string $name): array
+{
+    $out = []; $errs = [];
+    foreach (shopify_stores() as $key => $store) {
+        if (strpos((string)($store['client_id'] ?? ''), 'PASTE_') !== false) continue;
+        $tok = shopify_get_token($key, $store); if (is_array($tok)) { $errs[] = (string)($tok['error'] ?? 'no access'); continue; }
+        $url = "https://{$store['domain']}/admin/api/2024-10/orders.json?" . http_build_query(['status' => 'any', 'name' => $name, 'limit' => 5,
+            'fields' => 'id,name,created_at,cancelled_at,email,phone,financial_status,fulfillment_status,total_price,subtotal_price,total_tax,total_discounts,total_outstanding,currency,discount_codes,shipping_lines,note,note_attributes,tags,payment_gateway_names,billing_address,shipping_address,line_items,customer,source_name']);
+        $ch = curl_init($url); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_HTTPHEADER => ['X-Shopify-Access-Token: ' . $tok]]);
+        $resp = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if ($resp === false || $code !== 200) { $errs[] = 'HTTP ' . $code; continue; }
+        foreach ((array)(json_decode((string)$resp, true)['orders'] ?? []) as $o) { if (!empty($o['cancelled_at']) || strcasecmp((string)($o['name'] ?? ''), $name) !== 0) continue; $o['_store'] = $key; $out[] = $o; }
+    }
+    return [$out, $errs];
+}
+
 /** Shopify orders → rows in the Shopify EXPORT format (one row per product, the order's own columns on its first row) — what the n8n "Shopify Order Processor" code reads. */
-function dpx_shop_rows(array $orders): array
+function dpx_shop_rows(array $orders, array $addons = []): array
 {
     $cols = dpx_cols(true); $out = [];
     $ist = function ($s) { try { $d = new DateTime((string)$s); $d->setTimezone(new DateTimeZone('Asia/Kolkata')); return $d->format('Y-m-d H:i:s') . ' +0530'; } catch (Throwable $e) { return (string)$s; } };
@@ -255,7 +329,7 @@ function dpx_shop_rows(array $orders): array
         $sh = (array)($o['shipping_address'] ?? []); $bl = (array)($o['billing_address'] ?? []); if (!$sh) $sh = $bl; if (!$bl) $bl = $sh;
         $na = []; foreach ((array)($o['note_attributes'] ?? []) as $a) if (is_array($a) && (string)($a['name'] ?? '') !== '') $na[] = $a['name'] . ': ' . (is_scalar($a['value'] ?? '') ? $a['value'] : json_encode($a['value']));
         $phone = (string)(($bl['phone'] ?? '') ?: ($sh['phone'] ?? '') ?: ($o['phone'] ?? '') ?: ($o['customer']['phone'] ?? ''));
-        $first = true;
+        $first = true; $__start = count($out);
         foreach ((array)($o['line_items'] ?? []) as $li) {
             $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;
             $r = array_fill_keys($cols, ''); $r['Name'] = (string)($o['name'] ?? '');
@@ -274,11 +348,13 @@ function dpx_shop_rows(array $orders): array
                     'Billing City' => (string)($bl['city'] ?? ''), 'Billing Zip' => (string)($bl['zip'] ?? ''), 'Billing Province' => (string)($bl['province_code'] ?? ''), 'Billing Province Name' => (string)($bl['province'] ?? ''), 'Billing Country' => (string)($bl['country_code'] ?? ''), 'Billing Phone' => (string)($bl['phone'] ?? $phone),
                     'Shipping Name' => (string)($sh['name'] ?? ''), 'Shipping Street' => trim((string)($sh['address1'] ?? '') . ' ' . (string)($sh['address2'] ?? '')), 'Shipping Address1' => (string)($sh['address1'] ?? ''), 'Shipping Address2' => (string)($sh['address2'] ?? ''), 'Shipping Company' => (string)($sh['company'] ?? ''),
                     'Shipping City' => (string)($sh['city'] ?? ''), 'Shipping Zip' => (string)($sh['zip'] ?? ''), 'Shipping Province' => (string)($sh['province_code'] ?? ''), 'Shipping Province Name' => (string)($sh['province'] ?? ''), 'Shipping Country' => (string)($sh['country_code'] ?? ''), 'Shipping Phone' => (string)($sh['phone'] ?? ''),
-                    'Notes' => dpx_note_with_addon((string)($o['note'] ?? ''), $o['name'] ?? ''), 'Note Attributes' => implode("\n", $na), 'Payment Method' => implode(', ', (array)($o['payment_gateway_names'] ?? [])), 'Outstanding Balance' => (string)($o['total_outstanding'] ?? '0'),
+                    'Notes' => $addons ? (string)($o['note'] ?? '') : dpx_note_with_addon((string)($o['note'] ?? ''), $o['name'] ?? ''), 'Note Attributes' => implode("\n", $na), 'Payment Method' => implode(', ', (array)($o['payment_gateway_names'] ?? [])), 'Outstanding Balance' => (string)($o['total_outstanding'] ?? '0'),
                     'Id' => (string)($o['id'] ?? ''), 'Tags' => (string)($o['tags'] ?? ''), 'Source' => (string)($o['source_name'] ?? ''), 'Phone' => $phone]);
             }
             $out[] = $r;
         }
+        $__ad = $addons[strtolower(trim(ltrim((string)($o['name'] ?? ''), '#')))] ?? null;      // ➕ add-ons of this order
+        if ($__ad && count($out) > $__start) { $out[$__start]['Total'] = round((float)$out[$__start]['Total'] + $__ad['total'], 2); $out[$__start]['Outstanding Balance'] = round((float)$out[$__start]['Outstanding Balance'] + $__ad['cod'], 2); foreach (dpx_addon_lines((string)($o['name'] ?? ''), $__ad, array_fill_keys($cols, '')) as $x) $out[] = $x; }
     }
     return $out;
 }
@@ -297,9 +373,13 @@ function dpx_feed_shop(PDO $pdo): void
     $to = $d($_GET['to'] ?? '') ?: biz_today($pdo); $from = $d($_GET['from'] ?? '') ?: date('Y-m-d', strtotime($to . ' -1 day')); if ($from > $to) $from = $to;
     if ((strtotime($to) - strtotime($from)) > 31 * 86400) json_response(['error' => 'Ask for at most 31 days.'], 422);
     [$orders, $errs] = dpx_shop_fetch($pdo, $from, $to);
+    // ➕ an add-on put on an OLDER order must still reach dispatch: that order is read again too (its other lines are skipped there as duplicates)
+    $have = []; foreach ($orders as $o0) $have[strtolower(ltrim((string)($o0['name'] ?? ''), '#'))] = 1;
+    foreach (array_slice(array_filter(dpx_addon_names_in($pdo, $from, $to), fn($n) => $n !== '' && $n[0] === '#' && !isset($have[strtolower(ltrim($n, '#'))])), 0, 40) as $nm) { [$o1] = dpx_shop_fetch_name($pdo, $nm); foreach ($o1 as $x) { $orders[] = $x; $have[strtolower(ltrim($nm, '#'))] = 1; } }
+    $addons = dpx_addons_map($pdo, array_map(fn($o0) => (string)($o0['name'] ?? ''), $orders));
     if ($errs && !$orders) json_response(['error' => implode('; ', $errs)], 502);      // never send an empty file when Shopify could not be read: n8n shows the run as failed
     $cols = dpx_cols(true); array_splice($cols, array_search('Notes', $cols), 0, ['Lineitem properties', '_partialPaymentProduct']);
-    $rows = dpx_shop_rows($orders); $f = fopen('php://temp', 'r+'); fputcsv($f, $cols); foreach ($rows as $r) { $line = []; foreach ($cols as $c) $line[] = $r[$c] ?? ''; fputcsv($f, $line); } rewind($f); $csv = stream_get_contents($f); fclose($f);
+    $rows = dpx_shop_rows($orders, $addons); $f = fopen('php://temp', 'r+'); fputcsv($f, $cols); foreach ($rows as $r) { $line = []; foreach ($cols as $c) $line[] = $r[$c] ?? ''; fputcsv($f, $line); } rewind($f); $csv = stream_get_contents($f); fclose($f);
     header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="shopify_orders_' . $to . '.csv"'); header('Cache-Control: no-store');
     echo $csv; exit;
 }

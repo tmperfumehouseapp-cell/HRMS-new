@@ -738,6 +738,7 @@
         </div>
       </div>
 
+      <div id="prodSum" style="display:none; margin-bottom:16px;"></div>
       <div class="stat-grid" id="summaryGrid" style="display:none;"></div>
 
       <!-- Platform summary: query / campaign / totals per platform for the selected dates -->
@@ -945,6 +946,7 @@
 <script src="assets/js/layout.js?v=32"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261116a"></script>
+<script src="assets/js/addon_view.js?v=1"></script>
 <script src="assets/js/wmo_edit.js?v=1"></script>
 <script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
 <style>.wm-upd{display:inline-block;margin-left:6px;border:1px solid #16a34a;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 9px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}.wm-upd:hover{background:#dcfce7}</style>
@@ -1336,7 +1338,37 @@
     el.hidden = false;
   }
   function renderAll() {
-    renderSummary(); renderPlatformSummary(); applyFilters(); renderTeamSheet(); renderPanelChips();
+    renderSummary(); renderPlatformSummary(); applyFilters(); renderTeamSheet(); renderPanelChips(); loadProdSum();
+  }
+
+  // ---- 🧴 Shower gel + ⭐ TM Originals for the chosen dates. A view INSIDE the total collection (not a second collection); read-only (psum.day). ----
+  let PSUM = { key: '', d: null, at: 0, busy: '' };
+  function psumHtml(d) {
+    const R = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN'), N = (v) => (Number(v) || 0).toLocaleString('en-IN'), g = d.gel || {}, q = d.gel_queries || {}, o = d.originals || {}, all = d.all || {};
+    const pct = (a, b) => (b > 0 ? Math.round(a / b * 100) + '%' : '—');
+    const row = (k, v) => `<div style="display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:3px 0;"><span style="color:var(--muted)">${k}</span><b>${v}</b></div>`;
+    const card = (title, big, sub, rows, note) => `<div class="stat-card" style="flex:1 1 300px; min-width:0;"><div class="label">${title}</div><div style="font-size:24px; font-weight:800; margin:2px 0 2px;">${big}</div><div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">${sub}</div>${rows}<div style="font-size:11.5px; color:var(--muted); margin-top:8px; line-height:1.4;">${note}</div></div>`;
+    const gel = card('🧴 Shower gel', R(g.amt) + ' <small style="font-size:14px; font-weight:700; color:var(--muted)">from shower gel</small>', N(g.pcs) + ' piece' + (g.pcs === 1 ? '' : 's') + ' in ' + N(g.orders) + ' order' + (g.orders === 1 ? '' : 's') + ' · ' + pct(g.amt, all.amt) + ' of the collection',
+      row('Only shower gel', N(g.only) + ' order' + (g.only === 1 ? '' : 's')) + row('Shower gel + perfume', N(g.with_perfume) + ' order' + (g.with_perfume === 1 ? '' : 's')) + row('Query · Campaign', N(g.query) + ' · ' + N(g.campaign) + (g.other ? ' · ' + N(g.other) + ' not allocated' : '')) + row('Value of these orders', R(g.order_value))
+      + (q.ok === false ? row('Shower gel queries', 'not available') : row('Shower gel queries', N(q.asked) + ' customer' + (q.asked === 1 ? '' : 's')) + row('New numbers among them', N(q.new)) + row('Of them ordered shower gel', N(q.ordered) + ' (' + pct(q.ordered, q.asked) + ')')),
+      'A query = a customer whose WhatsApp message in these days speaks of shower gel (the ad’s ready-made message).');
+    const org = card('⭐ TM Originals <span style="font-weight:500; color:var(--muted)">(Dress to Impress)</span>', N(o.bottles) + ' <small style="font-size:14px; font-weight:700; color:var(--muted)">bottle' + (o.bottles === 1 ? '' : 's') + ' in ' + N(o.orders) + ' order' + (o.orders === 1 ? '' : 's') + '</small>', 'Value of these orders ' + R(o.order_value) + ' · ' + pct(o.order_value, all.amt) + ' of the collection',
+      row('Set of 3', N(o.s3)) + row('Set of 2', N(o.s2)) + row('Single', N(o.s1)) + row('Dark Side · Compliment Getter · Caffeine Club', N(o.ds) + ' · ' + N(o.cg) + ' · ' + N(o.cc)) + row('Query · Campaign', N(o.query) + ' · ' + N(o.campaign) + (o.other ? ' · ' + N(o.other) + ' not allocated' : '')),
+      'The value is the whole order (other perfumes in the same order are inside it).');
+    return `<div style="font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;">Inside the collection · ${R(all.amt)} in ${N(all.orders)} orders</div><div style="display:flex; gap:14px; flex-wrap:wrap;">${gel}${org}</div>`;
+  }
+  async function loadProdSum() {
+    const el = document.getElementById('prodSum'); if (!el) return;
+    if (EMP_VIEW) { el.style.display = 'none'; return; }
+    const from = document.getElementById('dateFrom').value, to = document.getElementById('dateTo').value; if (!from || !to) return;
+    const key = from + '|' + to;
+    if (PSUM.key === key && PSUM.d) { el.innerHTML = psumHtml(PSUM.d); el.style.display = ''; if (PSUM.at > Date.now() - 90000) return; }
+    if (PSUM.busy === key) return; PSUM.busy = key;
+    try {
+      const d = await api.get('psum.day', { from, to });
+      if (document.getElementById('dateFrom').value === from && document.getElementById('dateTo').value === to) { PSUM = { key, d, at: Date.now(), busy: '' }; el.innerHTML = psumHtml(d); el.style.display = ''; }
+    } catch (e) { if (PSUM.key !== key) el.style.display = 'none'; }
+    if (PSUM.busy === key) PSUM.busy = '';
   }
 
   function applyFilters() {
@@ -1857,7 +1889,7 @@
     const tm = (t) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
     document.getElementById('ohTitle').textContent = (k === 'night' ? 'Overnight · ' + ohNightLbl() : ohHr(Number(k))) + (t === 'query' ? ' · Query' : t === 'campaign' ? ' · Campaign' : '') + (ohPanel ? ' · ' + (PANEL_NAME[ohPanel] || ohPanel) : '');
     document.getElementById('ohSub').textContent = base.length + ' order' + (base.length === 1 ? '' : 's') + ' · ' + fmtMoney(base.reduce((a, o) => a + (Number(o.total) || 0), 0), 'INR') + ' · tap an order number to open it';
-    document.getElementById('ohBody').innerHTML = base.length ? `<div style="overflow-x:auto;"><table class="no-stack ohtab"><thead><tr><th>Order</th><th>Time</th><th>Salesman</th><th>Code</th><th style="text-align:right;">Amount</th></tr></thead><tbody>${base.map(o => `<tr><td><a href="#" data-ohi="${o._i}" style="font-weight:800;">${esEsc(o.order_name)}</a>${ohPanel ? '' : `<div style="font-size:11px; color:var(--muted);">${esEsc(PANEL_NAME[panelOf(o)] || '')}</div>`}</td><td style="white-space:nowrap;">${tm(o.created_at)}</td><td>${esEsc(o.salesman || '—')}</td><td>${o.code ? `<span class="ocd">${esEsc(o.code)}</span>` : '<span class="ocd no">no code</span>'}</td><td style="text-align:right; font-weight:700; white-space:nowrap;">${fmtMoney(o.total, o.currency)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No orders.</p>';
+    document.getElementById('ohBody').innerHTML = base.length ? `<div style="overflow-x:auto;"><table class="no-stack ohtab"><thead><tr><th>Order</th><th>Time</th><th>Salesman</th><th>Code</th><th style="text-align:right;">Amount</th></tr></thead><tbody>${base.map(o => `<tr><td><a href="#" data-ohi="${o._i}" style="font-weight:800;">${esEsc(o.order_name)}</a>${AddonView.tag(o)}${ohPanel ? '' : `<div style="font-size:11px; color:var(--muted);">${esEsc(PANEL_NAME[panelOf(o)] || '')}</div>`}</td><td style="white-space:nowrap;">${tm(o.created_at)}</td><td>${esEsc(o.salesman || '—')}</td><td>${o.code ? `<span class="ocd">${esEsc(o.code)}</span>` : '<span class="ocd no">no code</span>'}</td><td style="text-align:right; font-weight:700; white-space:nowrap;">${fmtMoney(o.total, o.currency)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No orders.</p>';
     ohPush();
   }
   document.getElementById('summaryGrid').addEventListener('click', (ev) => {
@@ -2934,8 +2966,8 @@
           <td>${new Date(o.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
           <td>${o.customer}</td>
           <td style="white-space:nowrap;">${o.phone || '—'}</td>
-          <td>${o.items}</td>
-          <td style="font-weight:600;">${fmtMoney(o.total, o.currency)}</td>
+          <td>${o.items}${AddonView.block(o)}</td>
+          <td style="font-weight:600;">${fmtMoney(o.total, o.currency)}${AddonView.has(o) ? `<div style="font-size:11px;color:#5b2bbd;font-weight:700;" title="Order amount + add-on">+ ${fmtMoney(o.addon_total, o.currency)} add-on = ${fmtMoney(AddonView.total(o), o.currency)}</div>` : ''}</td>
           ${mlCells(o)}
           <td><span class="badge ${o.financial_status === 'paid' ? '' : 'inactive'}">${o.financial_status || '—'}</span></td>
           <td><span class="badge ${o.fulfillment_status === 'fulfilled' ? '' : 'inactive'}">${o.fulfillment_status || 'unfulfilled'}</span></td>
@@ -3152,6 +3184,7 @@
         detailRow('Customer', o.customer) +
         detailRow('Mobile', esc(o.phone || '') + chatBtn(o.phone)) +
         detailRow('Items', o.items) +
+        (AddonView.has(o) ? detailRow('Add-on', AddonView.block(o)) + detailRow('Total with add-on', '<b>' + fmtMoney(AddonView.total(o), o.currency) + '</b>') : '') +
         detailRow('Total', fmtMoney(o.total, o.currency)) +
         detailRow('Payment', o.financial_status) +
         detailRow('Fulfillment', o.fulfillment_status) +
@@ -3219,6 +3252,7 @@
         detailRow('Tags', d.tags) +
         detailRow('Counted under', isCounted(o) ? houseReason(o, d.tags) : 'Not counted — not allocated yet (Order Allocation page)') +
         itemsHtml +
+        (AddonView.has(o) ? `<div style="margin:6px 0 10px;"><div style="font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase;">Add-on sold on this order</div>${AddonView.block(o)}<div style="text-align:right; font-weight:700; margin-top:6px;">Total with add-on: ${fmtMoney(AddonView.total(o), o.currency)}</div></div>` : '') +
         totalsHtml;
       odRemarkInit(o);
     } catch (err) {
@@ -4434,9 +4468,9 @@
     }
 
     // ---- order rows
-    const ORD_HEAD = ['Order', 'Business day', 'Date & time', 'Store', 'Panel', 'Salesman', 'Code', 'Type', 'Status', 'Amount', 'Payment', 'Rating (★ of 5)', 'Commission ₹', 'Commission rule'];
-    const ORD_FMT = [0, 0, 0, 0, 0, 0, 0, 0, 0, money, 0, stars, '#,##0.00', 0];
-    const ORD_W = [14, 13, 17, 20, 18, 22, 12, 11, 14, 12, 14, 13, 13, 80];
+    const ORD_HEAD = ['Order', 'Business day', 'Date & time', 'Store', 'Panel', 'Salesman', 'Code', 'Type', 'Status', 'Amount', 'Payment', 'Rating (★ of 5)', 'Commission ₹', 'Commission rule', 'Add-on products', 'Add-on ₹', 'Total with add-on ₹'];
+    const ORD_FMT = [0, 0, 0, 0, 0, 0, 0, 0, 0, money, 0, stars, '#,##0.00', 0, 0, money, money];
+    const ORD_W = [14, 13, 17, 20, 18, 22, 12, 11, 14, 12, 14, 13, 13, 80, 40, 11, 14];
     function ordSheet(list) {
       const aoa = [ORD_HEAD], rows = list.slice().sort((a, b) => String(a.created_at) < String(b.created_at) ? -1 : 1);
       let sum = 0, cs = 0, hasC = false;
@@ -4446,9 +4480,9 @@
         sum += amt; if (cm) { cs += cm[0]; hasC = true; }
         aoa.push([o.order_name || '', ok ? bizDayOf(d) : '', ok ? ymdOf(d) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : '', o.store || '', PANEL_NAME[panelOf(o)] || '', o.salesman || '', o.code || '',
           ty === 'query' ? 'Query' : (ty === 'campaign' ? 'Campaign' : 'Other'), o.cancelled ? 'Cancelled' : (isCounted(o) ? 'Counted' : 'Not allocated'), rd(amt), o.financial_status || '',
-          o.ticket_rating == null ? '' : rd(Number(o.ticket_rating) / 2), cm ? cm[0] : '', cm ? cm[1] : '']);
+          o.ticket_rating == null ? '' : rd(Number(o.ticket_rating) / 2), cm ? cm[0] : '', cm ? cm[1] : ''].concat(AddonView.cols(o)));
       });
-      if (rows.length) aoa.push(['TOTAL', '', '', '', '', '', '', '', rows.length + ' orders', rd(sum), '', '', hasC ? rd(cs) : '', '']);
+      if (rows.length) aoa.push(['TOTAL', '', '', '', '', '', '', '', rows.length + ' orders', rd(sum), '', '', hasC ? rd(cs) : '', '', '', rd(rows.reduce((t, o) => t + (Number(o.addon_total) || 0), 0)), rd(sum + rows.reduce((t, o) => t + (Number(o.addon_total) || 0), 0))]);
       return { aoa, fmt: ORD_FMT, w: ORD_W, bold: rows.length ? [aoa.length - 1] : [], filter: rows.length > 0 };
     }
     const ordersFor = (tab, panel) => allOrders.filter(o => (!panel || panelOf(o) === panel) && TAB_TEST[tab](o) && panelAllowed(panelOf(o)));

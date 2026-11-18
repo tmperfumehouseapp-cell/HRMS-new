@@ -58,6 +58,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=34"></script>
+<script src="assets/js/addon_view.js?v=1"></script>
 <script>
   guardPage();
   renderSidebar('dispatch_manual');
@@ -78,11 +79,11 @@
   const grams = (g) => g ? (g >= 1000 ? (g / 1000).toFixed(2).replace(/0$/, '') + ' kg' : g + ' g') : '—';
 
   // ---- the export: ONE row per order, every perfume in one cell ("Name 20 ml / Name 50 ml ×2"). AWB stays empty until the AWB automation is switched on (pending).
-  const HEAD = ['Date', 'Order ID', 'AWB', 'Courier service', 'Name', 'Number', 'Alternative number', 'Products', 'Total products', 'Total weight (g)', 'Address', 'City', 'State', 'Pincode', 'Country', 'Mode', 'Prepaid', 'COD', 'Total', 'Tax', 'Payment gateway', 'UTR', 'Order type', 'Placed by', 'Commission', 'Tracking status'];
+  const HEAD = ['Date', 'Order ID', 'AWB', 'Courier service', 'Name', 'Number', 'Alternative number', 'Products', 'Total products', 'Total weight (g)', 'Address', 'City', 'State', 'Pincode', 'Country', 'Mode', 'Prepaid', 'COD', 'Total', 'Tax', 'Payment gateway', 'UTR', 'Order type', 'Placed by', 'Commission', 'Tracking status', 'Add-on products', 'Add-on amount', 'Total with add-on'];
   function sheetRow(r) {
     const c = r.cust || {};
     return [dt(r.created_at), r.order_no, (r.parcel && r.parcel.awb) || '', (r.parcel && r.parcel.courier) || '', c.name || '', c.phone || r.phone || '', c.phone2 || '', prodCell(r), pieces(r), r.weight_g || '', [c.addr1, c.addr2, c.landmark].filter(Boolean).join(', '), c.city || '', c.state || '', c.pin || '', 'India',
-      modeName(r), Math.round(Number(r.paid) || 0), Math.round(Number(r.cod) || 0), Math.round(Number(r.total) || 0), r.tax == null ? '' : Math.round(r.tax * 100) / 100, r.gateway || '', r.utr || '', r.type === 'campaign' ? 'Campaign' : r.type === 'query' ? 'Query' : '', r.emp || '', r.commission == null ? '' : Math.round(r.commission), stName(r)];
+      modeName(r), Math.round(Number(r.paid) || 0), Math.round(Number(r.cod) || 0), Math.round(Number(r.total) || 0), r.tax == null ? '' : Math.round(r.tax * 100) / 100, r.gateway || '', r.utr || '', r.type === 'campaign' ? 'Campaign' : r.type === 'query' ? 'Query' : '', r.emp || '', r.commission == null ? '' : Math.round(r.commission), stName(r)].concat(AddonView.cols({ addons: r.addons, addon_total: r.addon_total, total: r.total }));
   }
 
   function draw(d) {
@@ -92,7 +93,7 @@
     $('dmRows').innerHTML = d.rows.length ? d.rows.map((r, i) => {
       const c = r.cust || {}, stC = r.status === 'confirmed' ? 'g' : r.status === 'cancelled' ? 'r' : 'y', payC = r.pay === 'prepaid' ? 'g' : r.pay === 'cod' ? 'y' : 'b';
       return `<tr data-i="${i}"><td style="white-space:nowrap">${esc(dt(r.created_at))}</td><td style="white-space:nowrap"><a href="#" class="oid" data-i="${i}"><b>${esc(r.order_no)}</b></a><div><span class="pill ${r.type === 'campaign' ? 'y' : 'b'}" style="margin:2px 0 0">${r.type === 'campaign' ? 'Campaign' : r.type === 'query' ? 'Query' : '—'}</span></div></td>`
-        + `<td><b>${esc(c.name || '—')}</b><br><small>${esc(c.phone || r.phone || '')}</small></td><td class="itc"><div class="it">${esc(prodCell(r) || '—')}</div><div class="its">${pieces(r)} pcs</div></td><td class="n">${esc(grams(r.weight_g))}</td><td class="n"><b>${inr(r.total)}</b></td>`
+        + `<td><b>${esc(c.name || '—')}</b><br><small>${esc(c.phone || r.phone || '')}</small></td><td class="itc"><div class="it">${esc(prodCell(r) || '—')}</div><div class="its">${pieces(r)} pcs</div>${AddonView.block(r)}</td><td class="n">${esc(grams(r.weight_g))}</td><td class="n"><b>${inr(r.total)}</b>${AddonView.has(r) ? `<div style="font-size:11px;color:#5b2bbd;font-weight:700">+ ${inr(r.addon_total)} add-on = ${inr(AddonView.total(r))}</div>` : ''}</td>`
         + `<td><span class="pill ${payC}">${esc(payName(r))}</span>${(+r.cod > 0 && +r.paid > 0) ? '<br><small>' + inr(r.paid) + ' paid · ' + inr(r.cod) + ' COD</small>' : ''}</td><td>${r.gateway ? '<span class="pill g">' + esc(r.gateway) + '</span>' : (r.pay === 'cod' ? '<small>—</small>' : '<small style="color:#b45309">not set</small>')}</td><td>${esc(r.emp || '—')}</td>`
         + `<td class="n">${r.commission == null ? '<small>—</small>' : '<b>' + inr(r.commission) + '</b>'}</td><td><span class="pill ${stC}">${esc(stName(r))}</span></td></tr>`; }).join('')
       : '<tr><td colspan="11" style="padding:20px;text-align:center;color:#64748b">No manual orders for these filters.</td></tr>';

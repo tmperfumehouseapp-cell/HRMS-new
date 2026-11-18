@@ -837,6 +837,16 @@
       detailRow('Counted under', countedUnder(o)) +
       (note ? `<div class="sub" style="margin-top:8px;">${note}</div>` : '');
   }
+  // Add-on products inside the order's product table (purple rows), with the add-on price and how it is paid.
+  function adDetailRows(o, th, td, cur) {
+    let g = []; try { g = adGroups(o); } catch (e) { g = []; }
+    if (!g.length) return '';
+    const bg = 'background:#f0e8ff;';
+    return g.map(x => x.items.map((it, i) => `<tr>
+        ${td('<b style="color:#5b2bbd;">➕ Add-on</b> ' + esc(it.product_name) + (it.size_ml ? `<div style="font-size:12px; color:var(--muted);">${esc(it.size_ml)}${/ml/i.test(it.size_ml) ? '' : ' ML'}</div>` : ''), 'left', bg)}
+        ${td(Number(it.qty) || 1, 'center', bg)}${td('', 'right', bg)}${td(i === 0 ? '<b>' + fmtMoney(x.price, cur) + '</b>' : '', 'right', bg)}
+      </tr>`).join('') + (x.pre + x.cod > 0 ? `<tr>${td(`<span style="font-size:12px;">${x.pre > 0 ? 'Add-on prepaid ' + fmtMoney(x.pre, cur) : ''}${x.pre > 0 && x.cod > 0 ? ' · ' : ''}${x.cod > 0 ? '<b>Add-on COD ' + fmtMoney(x.cod, cur) + ' (collect on delivery)</b>' : ''}</span>`, 'left', bg)}${td('', 'center', bg)}${td('', 'right', bg)}${td('', 'right', bg)}</tr>` : '')).join('');
+  }
   window.openDetail = async function (k) {
     const o = orders.find(x => key(x) === k) || custOrders.find(x => key(x) === k);
     if (!o) return;
@@ -859,7 +869,7 @@
           <tbody>${(d.line_items || []).map(li => `<tr>
             ${td(esc(li.title) + (li.variant ? `<div style="font-size:12px; color:var(--muted);">${esc(li.variant)}</div>` : '') + ((li.props && li.props.length) ? `<div style="font-size:12px; color:var(--muted); margin-top:3px;">( ${li.props.map(p => esc(p.name) + ': ' + esc(p.value)).join(' &nbsp;·&nbsp; ')} )</div>` : ''), 'left', 'font-size:13.5px;')}
             ${td(li.quantity, 'center')}${td(fmtMoney(li.price, d.currency), 'right')}${td(fmtMoney(li.total, d.currency), 'right', 'font-weight:600;')}
-          </tr>`).join('')}</tbody>
+          </tr>`).join('')}${adDetailRows(o, th, td, d.currency)}</tbody>
         </table>`;
       const line = (l, v, st) => `<div style="display:flex; justify-content:space-between; padding:3px 0; ${st || ''}"><span>${l}</span><span>${v}</span></div>`;
       const totalsHtml = `
@@ -869,6 +879,7 @@
           ${line('Shipping', fmtMoney(d.shipping, d.currency))}
           ${Number(d.tax) > 0 ? line('Tax', fmtMoney(d.tax, d.currency)) : ''}
           ${line('Total', fmtMoney(d.total, d.currency), 'padding:6px 0; border-top:1px solid var(--line); font-weight:700;')}
+          ${addonSum(o) > 0 ? line('Add-on', '+' + fmtMoney(addonSum(o), d.currency), 'color:#5b2bbd; font-weight:700;') + line('Total with add-on', fmtMoney(Number(d.total || 0) + addonSum(o), d.currency), 'padding:6px 0; border-top:1px solid var(--line); font-weight:800; color:#0f7a41;') : ''}
           ${d.manual ? line('Prepaid (paid)', fmtMoney(d.manual.prepaid, d.currency), 'color:#0f7a41; font-weight:700;') + line('COD (to pay on delivery)', fmtMoney(d.manual.cod, d.currency), 'font-weight:700;') : (d.financial_status === 'partially_paid' && d.paid != null ? line('Paid', fmtMoney(d.paid, d.currency), 'color:#0f7a41; font-weight:700;') + (d.outstanding != null ? line('To pay (COD)', fmtMoney(d.outstanding, d.currency)) : '') : '')}
         </div>`;
       const trackingHtml = (d.tracking || []).length
