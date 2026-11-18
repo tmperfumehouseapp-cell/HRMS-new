@@ -1,4 +1,5 @@
 <?php
+if (!defined('WA_TIER_MARGIN')) define('WA_TIER_MARGIN', 100.0);   // owner 18 Nov 2026: no 24-hour new-people gate of our own (it was 0.9 of Meta's limit); only the hourly plan number (15,000) holds campaigns back, Meta's own refusals are handled by the spam stop
 /**
  * wa_more.php — add-on for the WhatsApp console. Loaded by wa.php (no change to api.php). Loads wa_media.php and wa_camp.php too.
  *
@@ -615,7 +616,7 @@ function wa_number_caps(PDO $pdo, array $health): array
         $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age];
     }
     $pT = ($perNum && $sumT > 0) ? $sumT : $tier;
-    $out['_port'] = ['tier' => $pT, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($pT * 0.9) - $port), 'mode' => $perNum ? 'per_number' : 'shared'];
+    $out['_port'] = ['tier' => $pT, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($pT * WA_TIER_MARGIN) - $port), 'mode' => $perNum ? 'per_number' : 'shared'];
     if ($tier >= 10000 && (string)setting_get($pdo, 'wa_camp_auto_on', '1') === '1') {   // trusted account: the owner's growing hourly cap (1,000 an hour → doubles each good hour)
         $au = wa_camp_auto_cap($pdo, $tier, $health); $out['_port']['auto'] = $au;   // this hour's speed is PER NUMBER (applied by the campaign sender only); order updates, tickets and follow-ups never wait for it
     }
