@@ -580,10 +580,13 @@ function dp_dsp_who(PDO $pdo, array $list): array
             $on = strtolower(ltrim((string)$c['order_name'], '#')); if ($on !== '' && !isset($cxO[$on])) $cxO[$on] = $cx;
         }
     } catch (Throwable $e) { }   // no complaint tables on this install
+    $rxK = [];   // ↩ RTO resend / 🔁 Exchange manual orders: a parcel sent again, tagged on the row (it has no salesperson)
+    $wm = array_values(array_filter(array_keys($ords), function ($o) { return strpos((string)$o, 'wm-') === 0; }));
+    if ($wm) { try { $q = $pdo->prepare("SELECT order_no, otype, old_order FROM wmo_order WHERE otype IN ('rto','exchange') AND order_no IN (" . implode(',', array_fill(0, count($wm), '?')) . ")"); $q->execute($wm); foreach ($q->fetchAll() as $x) $rxK[strtolower((string)$x['order_no'])] = [(string)$x['otype'], (string)$x['old_order']]; } catch (Throwable $e) { } }
     foreach ($list as $r) {
         $a = $alloc[$r['store_key'] . '|' . $r['shopify_id']] ?? null; $ph = $p10($r['phone'] ?? ''); $on = strtolower(ltrim((string)$r['order_name'], '#'));
-        $emp = $a ? (int)$a['employee_id'] : (int)($chatEmp[$ph] ?? 0);
-        $out[(int)$r['id']] = ['sp' => $emp ? ($names[$emp] ?? ('#' . $emp)) : '', 'sp_type' => $a ? (string)$a['order_type'] : '', 'chat' => $ph, 'cx' => $cxO[$on] ?? ($ph !== '' ? ($cxP[$ph] ?? null) : null)];
+        $emp = $a ? (int)$a['employee_id'] : (int)($chatEmp[$ph] ?? 0); $rx = $rxK[$on] ?? null; if ($rx) $emp = 0;
+        $out[(int)$r['id']] = ['sp' => $emp ? ($names[$emp] ?? ('#' . $emp)) : '', 'sp_type' => $a ? (string)$a['order_type'] : '', 'chat' => $ph, 'cx' => $cxO[$on] ?? ($ph !== '' ? ($cxP[$ph] ?? null) : null)] + ($rx ? ['rx' => $rx[0], 'rx_old' => $rx[1]] : []);
     }
     return $out;
 }

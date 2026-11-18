@@ -25,7 +25,7 @@ function wa_sales_orders(PDO $pdo, string $since): array
 {
     $o = [];
     try {
-        $st = $pdo->prepare("SELECT SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10) AS k, created_at, total, financial_status FROM shop_orders WHERE created_at >= ? AND phone <> '' ORDER BY created_at LIMIT 100000");
+        $st = $pdo->prepare("SELECT SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10) AS k, created_at, total, financial_status FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone <> '' ORDER BY created_at LIMIT 100000");
         $st->execute([date('Y-m-d H:i:s', strtotime($since) - 86400)]);
         foreach ($st->fetchAll() as $r) {
             $fs = strtolower((string)$r['financial_status']); if ($fs === 'voided' || $fs === 'refunded') continue;

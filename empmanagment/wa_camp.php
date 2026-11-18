@@ -1030,7 +1030,7 @@ function wa_camp_result(PDO $pdo, array $c, array $cfg, bool $withMix = false): 
     $orders = 0; $rev = 0; $cust = [];
     if ($sentAt && $c['started_at']) {
         try {
-            $q = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $q->execute([$c['started_at']]);
+            $q = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $q->execute([$c['started_at']]);
             foreach ($q->fetchAll() as $o) { $k = wa_key($o['phone']); $ts = strtotime((string)$o['created_at']); if (isset($sentAt[$k]) && $ts > $sentAt[$k] && $ts <= $ordTo) { $orders++; $rev += (int)round((float)$o['total']); $cust[$k] = true; } }
         } catch (PDOException $e) { }
     }

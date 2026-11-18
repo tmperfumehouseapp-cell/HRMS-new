@@ -1075,7 +1075,7 @@ function wsm_attribution(PDO $pdo, array $camps, int $days): array
     while ($r = $st->fetch()) { $ts = (int)$r['ts']; $sent[(string)$r['phone']][] = [$ts, (int)$r['camp_id'], (int)$r['number_id'], (string)$r['v']]; if ($min === null || $ts < $min) $min = $ts; if ($ts > $max) $max = $ts; }
     if (!$sent) return $o;
     try {
-        $q = $pdo->prepare("SELECT phone, UNIX_TIMESTAMP(created_at) ts, total FROM shop_orders WHERE created_at >= ? AND created_at <= ? AND phone IS NOT NULL AND phone <> '' LIMIT 100000"); $q->execute([wsm_dt($min), wsm_dt($max + $days * 86400)]);
+        $q = $pdo->prepare("SELECT phone, UNIX_TIMESTAMP(created_at) ts, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND created_at <= ? AND phone IS NOT NULL AND phone <> '' LIMIT 100000"); $q->execute([wsm_dt($min), wsm_dt($max + $days * 86400)]);
         while ($r = $q->fetch()) {
             $k = function_exists('wa_key') ? wa_key((string)$r['phone']) : substr(preg_replace('/\D/', '', (string)$r['phone']), -10); if (!isset($sent[$k])) continue; $ots = (int)$r['ts']; $hit = null;
             foreach ($sent[$k] as $s) if ($s[0] < $ots && $ots <= $s[0] + $days * 86400 && ($hit === null || $s[0] > $hit[0])) $hit = $s;
