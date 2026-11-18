@@ -248,6 +248,74 @@ function wa_util_pool_make(PDO $pdo, int $by): array
     if (function_exists('wa_log') && $made) wa_log($pdo, 'template', !$err, 'Utility follow-ups made: ' . implode(', ', $made) . ($err ? ' — ' . $err[0] : ''));
     return ['ok' => true, 'made' => $made, 'errors' => $err];
 }
+/** 🧠 Words that only appear in the messages Meta MOVED to marketing (never in the ones it kept as utility): the new message must not use them. */
+function wa_util_learn_avoid(array $keptBodies, array $movedBodies): array
+{
+    $tok = function (string $b): array { $b = preg_replace('/\{\{\d+\}\}/', ' ', mb_strtolower($b)); preg_match_all('/[a-z]{4,}/', (string)$b, $m); return array_values(array_unique($m[0])); };
+    $keep = []; foreach ($keptBodies as $b) foreach ($tok((string)$b) as $w) $keep[$w] = 1;
+    $out = []; foreach ($movedBodies as $b) foreach ($tok((string)$b) as $w) if (!isset($keep[$w]) && !in_array($w, ['this', 'that', 'with', 'from', 'your', 'have', 'will', 'tell'], true)) $out[$w] = ($out[$w] ?? 0) + 1;
+    arsort($out); return array_slice(array_keys($out), 0, 12);
+}
+/** Safe wordings (the pattern of the messages Meta kept: an order, a delivery, a request, the team) used when the AI cannot answer; [body, buttons] or null. */
+function wa_util_learn_fallback(string $kind, array $usedBodies, int $n): ?array
+{
+    $bank = ['open' => [
+        ["Hi {{1}}, this is TM Perfume House customer care. If you need help with an order or a delivery you received from us, tap a button below.", ['Order help', 'Not now']],
+        ["Hello {{1}}, you are a TM Perfume House customer, so this line is open for your order and delivery questions. Tap a button to reach our team.", ['Delivery help', 'Not now']],
+        ["Hi {{1}}, if you need to track, change or ask about an order placed with TM Perfume House, tap a button and our team will reply.", ['Track my order', 'Change my order']],
+        ["Hello {{1}}, TM Perfume House customer care can help with the status of an order or a return. Tap a button to message our team.", ['Order status', 'Not now']]],
+        'order' => [
+        ["Hi {{1}}, a quick check on your order {{2}} placed on {{3}}: did it reach you in good condition? Tap a button to tell our team.", ['Yes, received', 'I need help']],
+        ["Hello {{1}}, this is TM Perfume House customer care about your order {{2}} of {{3}}. If anything is missing or damaged, tap a button and we will fix it.", ['All good', 'Report a problem']]]];
+    $used = array_map(fn($b) => preg_replace('/\s+/', ' ', trim((string)$b)), $usedBodies); $list = $bank[$kind] ?? []; if (!$list) return null;
+    for ($i = 0; $i < count($list); $i++) { $c = $list[($n + $i) % count($list)]; if (!in_array($c[0], $used, true)) return $c; }
+    return null;
+}
+/** 🧠 owner, 18 Nov 2026 (night): a standard follow-up that Meta MOVED to marketing gets a NEW UTILITY replacement, written in the pattern of the ones Meta KEPT as utility (the AI sees both groups and the words only the moved ones use; if it cannot answer, a safe wording from the bank is used).
+ *  At most 2 replacements per message, 2 made per round, 8 a day; the new one goes to Meta on every account. Switch off: setting wa_ru_learn = 0. Returns ['made' => [keys], 'note' => ''] */
+function wa_util_pool_learn(PDO $pdo, int $by = 0): array
+{
+    $res = ['made' => [], 'note' => ''];
+    if ((string)setting_get($pdo, 'wa_ru_learn', '1') === '0') { $res['note'] = 'off'; return $res; }
+    try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_ru_learn', 0)")->fetchColumn(); } catch (Throwable $e) { $got = 0; } if ($got !== 1) { $res['note'] = 'busy'; return $res; }
+    try {
+        $appr = []; foreach ($pdo->query("SELECT tpl_id, SUM(status = 'APPROVED') ok FROM wa_tpl_waba GROUP BY tpl_id")->fetchAll() as $w) $appr[(int)$w['tpl_id']] = (int)$w['ok'];
+        $G = []; $keptBodies = []; $movedBodies = []; $allBodies = [];
+        foreach ($pdo->query("SELECT * FROM wa_templates WHERE extra LIKE '%util_pool%' ORDER BY id")->fetchAll() as $r) {
+            $x = json_decode((string)($r['extra'] ?? ''), true); if (!is_array($x) || empty($x['util_pool'])) continue; $k = (string)$x['util_pool']; $base = (string)($x['util_base'] ?? preg_replace('/_r\d+$/', '', $k)); $try = (int)($x['util_try'] ?? 0); $kind = (string)($x['util_kind'] ?? 'open');
+            $moved = !empty($r['relabelled_at']) || strtoupper((string)$r['category']) === 'MARKETING'; $allBodies[] = (string)$r['body'];
+            if ($moved) $movedBodies[] = (string)$r['body']; elseif (($appr[(int)$r['id']] ?? 0) > 0) $keptBodies[] = (string)$r['body'];
+            $g = &$G[$base]; if (!isset($g)) $g = ['kind' => $kind, 'kept' => 0, 'moved' => 0, 'try' => 0, 'row' => $r, 'keys' => []]; $g['keys'][$k] = 1; $g['try'] = max($g['try'], $try);
+            if ($moved) $g['moved']++; else $g['kept']++; unset($g);
+        }
+        if (!$keptBodies) { $res['note'] = 'no kept utility message to learn from yet'; return $res; }
+        $day = date('Y-m-d'); $cnt = json_decode((string)setting_get($pdo, 'wa_ru_learn_day', ''), true); $cnt = (is_array($cnt) && ($cnt['d'] ?? '') === $day) ? (int)$cnt['n'] : 0;
+        $avoid = wa_util_learn_avoid($keptBodies, $movedBodies); $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 6 * max(1, count($wabas))]; $round = 0;
+        foreach ($G as $base => $g) {
+            if ($g['kept'] > 0 || $g['moved'] < 1 || $g['try'] >= 2 || $round >= 2 || $cnt >= 8) continue;
+            $r = $g['row']; $kind = $g['kind']; $newKey = $base . '_r' . ($g['try'] + 1); $ex = json_decode((string)($r['examples'] ?? ''), true); $ex = is_array($ex) ? $ex : []; $labels = array_map('strval', (array)($ex['labels'] ?? [])); $exv = array_map('strval', (array)($ex['body'] ?? [])); $nv = count($labels);
+            $body = ''; $buttons = [];
+            if (function_exists('wa_tpl_model')) {
+                $sys = "You write ONE WhatsApp UTILITY message for TM Perfume House (a perfume shop in Surat, India). Meta decides the category: it KEPT the messages listed as KEPT as utility (clearly about the customer's own order, delivery, purchase, request or customer care) and MOVED the ones listed as MOVED to marketing (soft relationship / welcome / invitation wording). Write a NEW message with the same purpose and exactly the same variables ({{1}}" . ($nv > 1 ? ' … {{' . $nv . '}}' : '') . ") in the same order as the MOVED one, built like the KEPT ones: name the order, delivery, purchase or customer-care reason openly, a plain helpful tone, no offer, no price, no emoji, no capital shouting, under 300 characters, never start or end with a variable. Do not use these words: " . implode(', ', $avoid) . ". Give two short buttons (max 20 characters each).";
+                $ctx = "KEPT as utility:\n- " . implode("\n- ", array_slice($keptBodies, 0, 8)) . "\n\nMOVED to marketing:\n- " . implode("\n- ", array_slice($movedBodies, 0, 6)) . "\n\nThe message to replace (kind " . $kind . "): " . (string)$r['body'];
+                $sch = ['type' => 'OBJECT', 'properties' => ['body' => ['type' => 'STRING'], 'button1' => ['type' => 'STRING'], 'button2' => ['type' => 'STRING']], 'required' => ['body', 'button1', 'button2']];
+                try { [$ok, $v] = wa_tpl_model($sys, $ctx, $sch, 1200); } catch (Throwable $e) { $ok = false; $v = null; }
+                if ($ok && is_array($v)) { $b = trim((string)($v['body'] ?? '')); $bad = false; foreach ($avoid as $w) if (stripos($b, $w) !== false) $bad = true;
+                    if ($b !== '' && !$bad && mb_strlen($b) <= 400 && count(wa_tpl_vars($b)) === $nv && !in_array(preg_replace('/\s+/', ' ', $b), array_map(fn($z) => preg_replace('/\s+/', ' ', trim($z)), $allBodies), true)) { $body = $b; $buttons = [mb_substr(trim((string)$v['button1']), 0, 20), mb_substr(trim((string)$v['button2']), 0, 20)]; } }
+            }
+            if ($body === '') { $fb = wa_util_learn_fallback($kind, $allBodies, $g['try']); if (!$fb || count(wa_tpl_vars($fb[0])) !== $nv) continue; $body = $fb[0]; $buttons = $fb[1]; }
+            [$t, $e] = wa_tpl_clean(['name' => 'tmph_fu_' . $newKey, 'language' => 'en', 'category' => 'UTILITY', 'body' => $body, 'footer' => '', 'buttons' => array_map(fn($b0) => ['type' => 'QUICK_REPLY', 'text' => $b0], array_filter($buttons, fn($b0) => $b0 !== '')), 'examples' => ['body' => $exv, 'labels' => $labels], 'folder' => 'utility']);
+            if ($e !== '') { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'Utility follow-up learned: ' . $newKey . ' not made: ' . $e); continue; }
+            $t['extra'] = ['util_pool' => $newKey, 'util_kind' => $kind, 'util_base' => $base, 'util_try' => $g['try'] + 1, 'util_learned' => date('Y-m-d H:i:s')];
+            $id = wa_tpl_insert($pdo, $t, $by, 'Utility follow-up (learned): ' . $kind, 'Replacement of ' . $base . ' (Meta moved it to marketing), written like the messages Meta kept as utility'); $row = wa_tpl_row($pdo, $id);
+            foreach ($wabas as $w) wa_tpl_try_create($pdo, $row, (string)$w, $budget);
+            $res['made'][] = $newKey; $round++; $cnt++; setting_set($pdo, 'wa_ru_learn_day', json_encode(['d' => $day, 'n' => $cnt]));
+            if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility follow-up learned: ' . $newKey . ' made and sent to Meta (Meta moved ' . $base . ' to marketing; the new one follows the pattern of the messages Meta kept as utility)');
+        }
+    } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'Utility follow-up learn error: ' . mb_substr($e->getMessage(), 0, 140)); }
+    try { $pdo->query("SELECT RELEASE_LOCK('wa_ru_learn')"); } catch (Throwable $e) { }
+    return $res;
+}
 /** For the screens: every pool message with its text, variables and status on each number. */
 function wa_util_pool_view(PDO $pdo): array
 {
