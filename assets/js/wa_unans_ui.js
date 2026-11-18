@@ -29,6 +29,7 @@
   .un-r .go{border:1px solid #9a3412; color:#9a3412; background:#fff; border-radius:99px; padding:6px 0; font:inherit; font-size:12px; font-weight:800; cursor:pointer; text-align:center;}
   .un-e{padding:34px 16px; text-align:center; color:#6b7684;} .un-more{padding:10px; text-align:center; font-size:12px; color:#6b7684; background:#f8fafc;}
   .un-r .k{display:none;}
+  .un-tk{display:block; margin-top:3px; font-size:11.5px; line-height:1.35; color:#475569;} .un-tk a{color:#6d28d9; font-weight:700; text-decoration:underline;} .un-r .nm .un-tk b{display:inline; font-size:inherit; font-weight:700; color:#1f2937;} .un-r .nm .un-tk .bad{color:#b42318;}
   @media (max-width:820px){
     .un-h{flex-direction:column; padding:12px 14px;} .un-xl{align-self:stretch;}
     .un-f .row{flex-wrap:nowrap; overflow-x:auto; padding-bottom:3px; -webkit-overflow-scrolling:touch; scrollbar-width:none;} .un-f .row::-webkit-scrollbar{display:none;} .un-f button{flex:0 0 auto; min-height:38px;}
@@ -52,7 +53,7 @@
       q('unT').textContent = U.admin ? '🚨 Customers nobody replied to' : '🚨 Customers you never replied to';
       q('unF').innerHTML = `<div class="lb">When did the customer write?</div><div class="row">${D.map(([k, l]) => `<button type="button" data-d="${k}" class="${U.d === k ? 'on' : ''}">${l}${n(rg[k])}</button>`).join('')}<button type="button" data-d="dates" class="${U.d === 'dates' ? 'on' : ''}">📅 Pick dates…</button></div>
         ${U.d === 'dates' ? `<div class="dt"><input type="date" id="unDf" value="${esc(U.f)}"> to <input type="date" id="unDt" value="${esc(U.t)}"><button type="button" id="unDg" class="on">Show</button></div>` : ''}
-        <div class="lb">Which customers?</div><div class="row"><button type="button" data-k="" class="${!U.k ? 'on' : ''}">All${n(kd.all)}</button><button type="button" data-k="cx" class="${U.k === 'cx' ? 'on' : ''}">🟣 Complaints${n(kd.cx)}</button><button type="button" data-k="sales" class="${U.k === 'sales' ? 'on' : ''}">🛍 Sales${n(kd.sales)}</button></div>
+        <div class="lb">Which customers?</div><div class="row"><button type="button" data-k="" class="${!U.k ? 'on' : ''}">All${n(kd.all)}</button><button type="button" data-k="cx" class="${U.k === 'cx' ? 'on' : ''}">🟣 Complaints${n(kd.cx)}</button><button type="button" data-k="cxfree" class="r ${U.k === 'cxfree' ? 'on' : ''}" title="Complaints that nobody is handling: no ticket yet, or a ticket with no owner">🟣 Complaints with no owner${n(kd.cxfree)}</button><button type="button" data-k="sales" class="${U.k === 'sales' ? 'on' : ''}">🛍 Sales${n(kd.sales)}</button></div>
         <div class="lb">Can we still reply?</div><div class="row"><button type="button" data-w="" class="${!U.w ? 'on' : ''}">All${n(st.total)}</button><button type="button" data-w="now" class="g ${U.w === 'now' ? 'on' : ''}">✅ Can reply now (inside 24 hours)${n(st.now)}</button><button type="button" data-w="past" class="r ${U.w === 'past' ? 'on' : ''}">⏰ Past 24 hours — template only${n(st.past)}</button></div>
         ${U.admin ? `<div class="lb">Who has the chat?</div><div class="row"><button type="button" data-e="0" class="${!U.e ? 'on' : ''}">Everyone${n(st.total)}</button>${(st.by || []).map((x) => `<button type="button" data-e="${x.emp}" class="${U.e === x.emp ? 'on' : ''}">${esc(x.name)}${n(x.n)}</button>`).join('')}</div>` : ''}`;
       const F = q('unF');
@@ -62,18 +63,25 @@
       F.querySelectorAll('[data-e]').forEach((b) => { b.onclick = () => { U.e = +b.dataset.e; load(); }; });
       if (q('unDg')) q('unDg').onclick = () => { U.f = q('unDf').value; U.t = q('unDt').value; if (!U.f || !U.t) { alert('Pick both dates.'); return; } load(); };
     }
+    /* 🟣 which ticket this complaint is, who is handling it and for how long - or that nobody raised a ticket yet */
+    function tk(r) {
+      if (!r.ticket) return '<span class="un-tk"><b class="bad">no ticket yet</b></span>';
+      const d = +r.ticket_days || 0, own = r.ticket_owner && r.ticket_owner !== 'Nobody';
+      const code = U.admin && r.ticket_id ? `<a href="complaints.html?case=${+r.ticket_id}" target="_blank" rel="noopener" title="Open the ticket">${esc(r.ticket)}</a>` : `<b>${esc(r.ticket)}</b>`;
+      return `<span class="un-tk">${code} · with ${own ? '<b>' + esc(r.ticket_owner) + '</b>' : '<b class="bad">nobody yet</b>'} · open ${d < 1 ? 'today' : d + ' d'}${+r.ticket_more ? ' · +' + (+r.ticket_more) + ' more' : ''}</span>`;
+    }
     function drawL() {
       const L = q('unL'), R = U.rows;
       q('unS').textContent = R.length ? (R.length >= 300 ? 'Showing the newest 300 — narrow the days or download Excel for all.' : R.length + ' customer' + (R.length === 1 ? '' : 's') + ' waiting for an answer') : '';
       if (!R.length) { L.innerHTML = '<div class="un-e">🎉 Nobody is waiting for an answer in these days.</div>'; return; }
       L.innerHTML = `<div class="un-th"><span>Customer</span><span>Their last message</span><span>Waiting</span><span>Chat is with</span><span>Can we reply?</span><span></span></div>` + R.map((r) => `<div class="un-r" data-p="${esc(r.phone)}">
-        <div class="nm"><b>${esc(r.name || '+91 ' + r.phone)}</b><small>+91 ${esc(r.phone)}</small>${r.kind === 'Complaint' ? '<br><span class="un-p cx">🟣 Complaint</span>' : ''}</div>
+        <div class="nm"><b>${esc(r.name || '+91 ' + r.phone)}</b><small>+91 ${esc(r.phone)}</small>${r.kind === 'Complaint' ? '<br><span class="un-p cx">🟣 Complaint</span>' + tk(r) : ''}</div>
         <div class="ms">${esc(r.last_message || '(photo / voice / file)')}</div>
         <div class="wt"><span class="un-p w">⏳ ${esc(r.waiting)}</span></div>
         <div class="who"><span class="k">Chat is with: </span>${r.with === 'Nobody' ? '<span class="un-p nb">Nobody</span>' : '👤 ' + esc(r.with)}</div>
         <div class="cr"><span class="un-p ${r.can_reply.indexOf('Yes') === 0 ? 'ok' : 'no'}">${r.can_reply.indexOf('Yes') === 0 ? '✅ Reply now' : '⏰ Template only'}</span></div>
         <button type="button" class="go">Open chat ›</button></div>`).join('');
-      L.querySelectorAll('.un-r').forEach((x) => { x.onclick = () => { if (opt.openChat) opt.openChat(x.dataset.p); }; });
+      L.querySelectorAll('.un-r').forEach((x) => { x.onclick = (e) => { if (e.target.closest && e.target.closest('.un-tk a')) return; if (opt.openChat) opt.openChat(x.dataset.p); }; });
     }
     async function load() {
       if (U.busy) return; U.busy = true; drawF();
@@ -85,7 +93,7 @@
       U.busy = false;
     }
     q('unX').onclick = async () => { const b = q('unX'); b.disabled = true; b.textContent = 'Making…';
-      try { const d = await api.get('wa.unans_export', params(0)); const cols = [['Customer', 'name'], ['Number', 'phone'], ['Kind', 'kind'], ['Last message from the customer', 'last_message'], ['Wrote at', 'wrote_at'], ['Waiting', 'waiting'], ['Can reply now?', 'can_reply'], ['Chat is with', 'with'], ['Chat', 'chat']];
+      try { const d = await api.get('wa.unans_export', params(0)); const cols = [['Customer', 'name'], ['Number', 'phone'], ['Kind', 'kind'], ['Ticket', 'ticket'], ['Complaint is with', 'ticket_owner'], ['Last message from the customer', 'last_message'], ['Wrote at', 'wrote_at'], ['Waiting', 'waiting'], ['Can reply now?', 'can_reply'], ['Chat is with', 'with'], ['Chat', 'chat']];
         const c = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
         const txt = [cols.map((x) => c(x[0])).join(',')].concat((d.rows || []).map((r) => cols.map((x) => c(r[x[1]])).join(','))).join('\r\n');
         const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + txt], { type: 'text/csv;charset=utf-8' })); a.download = 'not_replied_' + new Date().toISOString().slice(0, 10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
