@@ -109,7 +109,7 @@
     h += '<div class="wrap"><table><thead><tr><th style="text-align:left;padding-left:10px">Size / pieces</th>' + C0.map((c, i) => '<th>' + (ro ? pct(c) + '%' : '<input data-col="' + i + '" type="number" step="0.1" value="' + pct(c) + '">%') + (ro ? '<span class="nm">' + esc(names()[i] || '') + '</span>' : '<input class="nm" data-name="' + i + '" placeholder="name" value="' + esc(names()[i] || '') + '">') + '</th>').join('') + (ro ? '' : '<th></th>') + '</tr></thead><tbody>';
     SECS.forEach(([seg, title, how]) => {
       const C = S.charts[seg]; if (!C) return; const mix = seg === 'mix';
-      h += '<tr class="sec"><td colspan="' + (n + 2) + '">' + title + '<small>' + esc(how) + '</small>' + (ro ? '' : '<span class="acts">' + (S.hist.some((x) => x.seg === seg) ? '<button type="button" class="b s" data-a="undo" data-seg="' + seg + '">↩ Undo</button>' : '') + '<button type="button" class="b s" data-a="sug" data-seg="' + seg + '">✨ Suggest</button><button type="button" class="b s" data-a="row" data-seg="' + seg + '">+ Row</button></span>') + '</td></tr>';
+      h += '<tr class="sec"><td colspan="' + (n + 2) + '">' + title + '<small>' + esc(how) + '</small>' + (ro ? '' : '<span class="acts">' + (S.hist.some((x) => x.seg === seg) ? '<button type="button" class="b s" data-a="undo" data-seg="' + seg + '">↩ Undo</button>' : '') + '<button type="button" class="b s" data-a="sug" data-seg="' + seg + '">✨ Suggest</button>' + (seg !== 'mix' ? '<button type="button" class="b s" data-a="fill" data-seg="' + seg + '" title="Fill the empty rows with the same step as the last two filled rows">🪄 Fill blank rows</button>' : '') + '<button type="button" class="b s" data-a="row" data-seg="' + seg + '">+ Row</button></span>') + '</td></tr>';
       if (!C.rows.length) h += '<tr class="empty"><td colspan="' + (n + 2) + '">Empty' + (ro ? '' : ' — press ✨ Suggest, then type the prices') + '.</td></tr>';
       C.rows.forEach((r, ri) => {
         const bad = r.p.some((v, i) => i > 0 && Number(v) > 0 && Number(r.p[i - 1]) > 0 && Number(v) > Number(r.p[i - 1]));
@@ -142,6 +142,21 @@
       if (seg === 'mix') { const k = (r) => (r.perf || 0) + '|' + r.gel + '|' + r.attar + '|' + r.other, seen = new Set(C.rows.map(k)); (a === 'sug' ? C.suggest : [{ perf: 100, gel: 1, attar: 1, other: 0 }]).forEach((x) => { const r = { perf: x.perf || 0, gel: x.gel, attar: x.attar, other: x.other, p: blank() }; if (a === 'row' || !seen.has(k(r))) { C.rows.push(r); seen.add(k(r)); } }); }
       else { const have = new Set(C.rows.map((r) => Number(r.ml))); const last = C.rows.length ? Number(C.rows[C.rows.length - 1].ml) : 0; (a === 'sug' ? C.suggest : [last + (seg === 'perfume' ? 10 : 1)]).forEach((ml) => { if (ml > 0 && !have.has(ml)) { C.rows.push({ ml, p: blank() }); have.add(ml); } }); C.rows.sort((x, y) => x.ml - y.ml); }
       mark(seg); draw(); return;
+    }
+    if (a === 'fill') {   // 🪄 empty rows (no price at all) get the same step per column as the last two filled rows, rounded to ₹10; nothing is saved until you press Save
+      const full = (r) => r.p.length && r.p.every((v) => Number(v) > 0), empty = (r) => r.p.every((v) => !(Number(v) > 0));
+      C.rows.sort((x, y) => x.ml - y.ml); let done = 0, skipped = 0; const ref = [];
+      C.rows.forEach((r) => {
+        if (full(r)) { ref.push(r); return; }
+        if (!empty(r)) return;
+        if (ref.length < 2) { skipped++; return; }
+        const r1 = ref[ref.length - 2], r2 = ref[ref.length - 1]; if (!(Number(r2.ml) > Number(r1.ml))) { skipped++; return; }
+        const q = r.p.map((_, i) => { const slope = (Number(r2.p[i]) - Number(r1.p[i])) / (Number(r2.ml) - Number(r1.ml)); return Math.max(0, Math.round((Number(r2.p[i]) + slope * (Number(r.ml) - Number(r2.ml))) / 10) * 10); });
+        for (let i = 1; i < q.length; i++) if (q[i] > q[i - 1]) q[i] = q[i - 1];   // the columns must go down from left to right
+        r.p = q; ref.push(r); done++;
+      });
+      if (!done) { say(skipped ? 'Not enough filled rows above the empty ones to follow (two are needed).' : 'There are no empty rows.', true); return; }
+      mark(seg); draw(); say('🪄 ' + done + ' empty row' + (done === 1 ? '' : 's') + ' filled with the same step as the rows above. Check the numbers, then press 💾 Save the price chart.'); return;
     }
     if (a === 'del') { C.rows.splice(Number(b.dataset.r), 1); mark(seg); draw(); return; }
     if (a === 'cbpv' || a === 'cbgo') {
