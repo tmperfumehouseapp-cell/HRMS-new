@@ -177,6 +177,89 @@ function dpx_feed(PDO $pdo): void
     echo $csv; exit;
 }
 
+/** 🛍 The SHOPIFY orders of a day range, straight from Shopify (like the SKU sheet reads them): [orders, errors]. Cancelled orders are left out. */
+function dpx_shop_fetch(PDO $pdo, string $from, string $to): array
+{
+    $out = []; $errs = []; $win = biz_window($pdo, $from, $to);
+    $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
+    foreach (shopify_stores() as $key => $store) {
+        if (strpos((string)($store['client_id'] ?? ''), 'PASTE_') !== false) continue;
+        $tok = shopify_get_token($key, $store); if (is_array($tok)) { $errs[] = ($store['label'] ?? $key) . ': ' . ($tok['error'] ?? 'no access'); continue; }
+        $url = "https://{$store['domain']}/admin/api/2024-10/orders.json?" . http_build_query(['status' => 'any', 'limit' => 250, 'created_at_min' => str_replace(' ', 'T', $win[0]) . '+05:30', 'created_at_max' => str_replace(' ', 'T', $win[1]) . '+05:30',
+            'fields' => 'id,name,created_at,cancelled_at,email,phone,financial_status,fulfillment_status,total_price,subtotal_price,total_tax,total_discounts,total_outstanding,currency,discount_codes,shipping_lines,note,note_attributes,tags,payment_gateway_names,billing_address,shipping_address,line_items,customer,source_name']);
+        for ($page = 0; $page < 40 && $url; $page++) {
+            $hdr = []; $ch = curl_init($url);
+            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 40, CURLOPT_HTTPHEADER => ['X-Shopify-Access-Token: ' . $tok, 'Content-Type: application/json'], CURLOPT_HEADERFUNCTION => function ($c, $h) use (&$hdr) { $hdr[] = $h; return strlen($h); }]);
+            $resp = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+            if ($code === 429) { usleep(1200000); $page--; static $retry = 0; if (++$retry > 8) { $errs[] = 'Shopify is busy (429)'; break; } continue; }
+            if ($resp === false || $code !== 200) { $errs[] = ($store['label'] ?? $key) . ': Shopify answered HTTP ' . $code; break; }
+            foreach ((array)(json_decode((string)$resp, true)['orders'] ?? []) as $o) {
+                if (!empty($o['cancelled_at']) || isset($cancel[$key . '|' . (string)($o['id'] ?? '')])) continue;
+                $o['_store'] = $key; $out[] = $o;
+            }
+            $url = ''; foreach ($hdr as $h) if (stripos($h, 'link:') === 0 && preg_match('/<([^>]+)>;\s*rel="next"/i', $h, $m)) $url = $m[1];
+        }
+    }
+    return [$out, $errs];
+}
+
+/** Shopify orders → rows in the Shopify EXPORT format (one row per product, the order's own columns on its first row) — what the n8n "Shopify Order Processor" code reads. */
+function dpx_shop_rows(array $orders): array
+{
+    $cols = dpx_cols(true); $out = [];
+    $ist = function ($s) { try { $d = new DateTime((string)$s); $d->setTimezone(new DateTimeZone('Asia/Kolkata')); return $d->format('Y-m-d H:i:s') . ' +0530'; } catch (Throwable $e) { return (string)$s; } };
+    foreach ($orders as $o) {
+        $sh = (array)($o['shipping_address'] ?? []); $bl = (array)($o['billing_address'] ?? []); if (!$sh) $sh = $bl; if (!$bl) $bl = $sh;
+        $na = []; foreach ((array)($o['note_attributes'] ?? []) as $a) if (is_array($a) && (string)($a['name'] ?? '') !== '') $na[] = $a['name'] . ': ' . (is_scalar($a['value'] ?? '') ? $a['value'] : json_encode($a['value']));
+        $phone = (string)(($bl['phone'] ?? '') ?: ($sh['phone'] ?? '') ?: ($o['phone'] ?? '') ?: ($o['customer']['phone'] ?? ''));
+        $first = true;
+        foreach ((array)($o['line_items'] ?? []) as $li) {
+            $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;
+            $r = array_fill_keys($cols, ''); $r['Name'] = (string)($o['name'] ?? '');
+            $r['Lineitem quantity'] = $q; $r['Lineitem name'] = (string)($li['name'] ?? $li['title'] ?? ''); $r['Lineitem price'] = (string)($li['price'] ?? '0'); $r['Lineitem sku'] = (string)($li['sku'] ?? '');
+            $r['Lineitem requires shipping'] = !empty($li['requires_shipping']) ? 'true' : 'false'; $r['Lineitem taxable'] = !empty($li['taxable']) ? 'true' : 'false';
+            $pr = []; $partial = '';
+            foreach ((array)($li['properties'] ?? []) as $p) { if (!is_array($p) || (string)($p['name'] ?? '') === '') continue; $v = is_scalar($p['value'] ?? '') ? (string)$p['value'] : json_encode($p['value']); $pr[] = $p['name'] . ': ' . $v; if ($p['name'] === '_partialPaymentProduct' && strtolower($v) === 'true') $partial = 'true'; }
+            $r['Lineitem properties'] = implode("\n", $pr); $r['_partialPaymentProduct'] = $partial;
+            if ($first) {
+                $first = false;
+                $r = array_merge($r, [
+                    'Email' => (string)($o['email'] ?? ''), 'Financial Status' => (string)($o['financial_status'] ?? ''), 'Fulfillment Status' => (string)(($o['fulfillment_status'] ?? '') ?: 'unfulfilled'), 'Currency' => (string)($o['currency'] ?? 'INR'),
+                    'Subtotal' => (string)($o['subtotal_price'] ?? ''), 'Shipping' => (string)($o['shipping_lines'][0]['price'] ?? '0'), 'Taxes' => (string)($o['total_tax'] ?? '0'), 'Total' => (string)($o['total_price'] ?? ''),
+                    'Discount Code' => (string)($o['discount_codes'][0]['code'] ?? ''), 'Discount Amount' => (string)($o['total_discounts'] ?? '0'), 'Shipping Method' => (string)($o['shipping_lines'][0]['title'] ?? ''), 'Created at' => $ist($o['created_at'] ?? ''),
+                    'Billing Name' => (string)($bl['name'] ?? ''), 'Billing Street' => trim((string)($bl['address1'] ?? '') . ' ' . (string)($bl['address2'] ?? '')), 'Billing Address1' => (string)($bl['address1'] ?? ''), 'Billing Address2' => (string)($bl['address2'] ?? ''), 'Billing Company' => (string)($bl['company'] ?? ''),
+                    'Billing City' => (string)($bl['city'] ?? ''), 'Billing Zip' => (string)($bl['zip'] ?? ''), 'Billing Province' => (string)($bl['province_code'] ?? ''), 'Billing Province Name' => (string)($bl['province'] ?? ''), 'Billing Country' => (string)($bl['country_code'] ?? ''), 'Billing Phone' => (string)($bl['phone'] ?? $phone),
+                    'Shipping Name' => (string)($sh['name'] ?? ''), 'Shipping Street' => trim((string)($sh['address1'] ?? '') . ' ' . (string)($sh['address2'] ?? '')), 'Shipping Address1' => (string)($sh['address1'] ?? ''), 'Shipping Address2' => (string)($sh['address2'] ?? ''), 'Shipping Company' => (string)($sh['company'] ?? ''),
+                    'Shipping City' => (string)($sh['city'] ?? ''), 'Shipping Zip' => (string)($sh['zip'] ?? ''), 'Shipping Province' => (string)($sh['province_code'] ?? ''), 'Shipping Province Name' => (string)($sh['province'] ?? ''), 'Shipping Country' => (string)($sh['country_code'] ?? ''), 'Shipping Phone' => (string)($sh['phone'] ?? ''),
+                    'Notes' => (string)($o['note'] ?? ''), 'Note Attributes' => implode("\n", $na), 'Payment Method' => implode(', ', (array)($o['payment_gateway_names'] ?? [])), 'Outstanding Balance' => (string)($o['total_outstanding'] ?? '0'),
+                    'Id' => (string)($o['id'] ?? ''), 'Tags' => (string)($o['tags'] ?? ''), 'Source' => (string)($o['source_name'] ?? ''), 'Phone' => $phone]);
+            }
+            $out[] = $r;
+        }
+    }
+    return $out;
+}
+
+/** GET api.php?action=dpx.feed_shop&from=&to= — the Shopify orders as a Shopify-export CSV for n8n (same key as dpx.feed). Default: yesterday + today of the business day. */
+function dpx_feed_shop(PDO $pdo): void
+{
+    $key = (string)($_SERVER['HTTP_X_API_KEY'] ?? ''); if ($key === '') $key = (string)($_GET['key'] ?? '');
+    $okKey = false;
+    if ($key !== '') { $h = (string)setting_get($pdo, 'dpx_feed_key', ''); if ($h !== '' && hash_equals($h, hash('sha256', $key))) $okKey = true; }
+    if (!$okKey && $key !== '' && defined('API_KEY') && (string)API_KEY !== '' && hash_equals((string)API_KEY, $key)) $okKey = true;
+    if (!$okKey) json_response(['error' => 'Forbidden.'], 403);
+    @set_time_limit(120); ignore_user_abort(true);
+    $d = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) ? (string)$v : '';
+    $to = $d($_GET['to'] ?? '') ?: biz_today($pdo); $from = $d($_GET['from'] ?? '') ?: date('Y-m-d', strtotime($to . ' -1 day')); if ($from > $to) $from = $to;
+    if ((strtotime($to) - strtotime($from)) > 31 * 86400) json_response(['error' => 'Ask for at most 31 days.'], 422);
+    [$orders, $errs] = dpx_shop_fetch($pdo, $from, $to);
+    if ($errs && !$orders) json_response(['error' => implode('; ', $errs)], 502);      // never send an empty file when Shopify could not be read: n8n shows the run as failed
+    $cols = dpx_cols(true); array_splice($cols, array_search('Notes', $cols), 0, ['Lineitem properties', '_partialPaymentProduct']);
+    $rows = dpx_shop_rows($orders); $f = fopen('php://temp', 'r+'); fputcsv($f, $cols); foreach ($rows as $r) { $line = []; foreach ($cols as $c) $line[] = $r[$c] ?? ''; fputcsv($f, $line); } rewind($f); $csv = stream_get_contents($f); fclose($f);
+    header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="shopify_orders_' . $to . '.csv"'); header('Cache-Control: no-store');
+    echo $csv; exit;
+}
+
 function dpx_route(PDO $pdo, string $action): void
 {
     $auth = require_auth(); if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin or HR can set up the automatic send.'], 403);
