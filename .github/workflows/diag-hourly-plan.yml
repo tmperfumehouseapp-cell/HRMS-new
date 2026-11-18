@@ -1,0 +1,61 @@
+# READ-ONLY: hour-by-hour shape of the orders (Query / Campaign / not yet typed) over the last 10 complete business days (10 AM -> 10 AM) and what TODAY has done so far.
+# Used to plan how a collection target (spend x ROAS) is reached hour by hour. Totals per hour only: no phone numbers, names or order numbers. Changes nothing.
+# Run it by hand: Actions -> "Hourly order shape (read-only)" -> Run workflow.
+name: Hourly order shape (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Hourly shape
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/hp_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          date_default_timezone_set("Asia/Kolkata");
+          $now = time(); $bdNow = date("G") >= 10 ? date("Y-m-d") : date("Y-m-d", $now - 86400);   // today's business day
+          $from = date("Y-m-d 10:00:00", strtotime($bdNow . " -10 day"));
+          echo "now (IST) " . date("Y-m-d H:i") . " · business day today = $bdNow · history = the 10 complete business days before it\n";
+          $sql = "SELECT DATE(DATE_SUB(o.created_at, INTERVAL 10 HOUR)) bd, HOUR(o.created_at) h, COALESCE(NULLIF(a.order_type, ''), 'none') t, COUNT(*) n, ROUND(SUM(o.total)) amt
+                  FROM shop_orders o LEFT JOIN order_allocations a ON a.source = o.store_key AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
+                  WHERE o.store_key = 'tmperfumehouse' AND o.created_at >= ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') GROUP BY bd, h, t";
+          try { $q = $d->prepare($sql); $q->execute([$from]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 160) . "\n"; exit; }
+          $days = []; $hist = []; $today = [];
+          foreach ($rows as $r) { $t = in_array($r["t"], ["query", "campaign"], true) ? $r["t"] : "none"; if ($r["bd"] === $bdNow) { $today[$r["h"]][$t]["n"] = ($today[$r["h"]][$t]["n"] ?? 0) + $r["n"]; $today[$r["h"]][$t]["a"] = ($today[$r["h"]][$t]["a"] ?? 0) + $r["amt"]; } else { $days[$r["bd"]] = 1; $hist[$r["h"]][$t]["n"] = ($hist[$r["h"]][$t]["n"] ?? 0) + $r["n"]; $hist[$r["h"]][$t]["a"] = ($hist[$r["h"]][$t]["a"] ?? 0) + $r["amt"]; } }
+          $nd = max(1, count($days)); echo "complete business days found: $nd\n\n";
+          $order = array_merge(range(10, 23), range(0, 9)); $tot = ["query" => ["n" => 0, "a" => 0], "campaign" => ["n" => 0, "a" => 0], "none" => ["n" => 0, "a" => 0]];
+          foreach ($order as $h) foreach (["query", "campaign", "none"] as $t) { $tot[$t]["n"] += $hist[$h][$t]["n"] ?? 0; $tot[$t]["a"] += $hist[$h][$t]["a"] ?? 0; }
+          $all = $tot["query"]["a"] + $tot["campaign"]["a"] + $tot["none"]["a"];
+          echo "AVERAGE DAY (last $nd days): collection Rs " . round($all / $nd) . " · orders " . round(($tot["query"]["n"] + $tot["campaign"]["n"] + $tot["none"]["n"]) / $nd, 1) . "\n";
+          foreach (["query", "campaign", "none"] as $t) echo "  " . str_pad($t, 9) . " Rs " . str_pad(round($tot[$t]["a"] / $nd), 8) . " (" . ($all > 0 ? round(100 * $tot[$t]["a"] / $all) : 0) . "%) · orders/day " . round($tot[$t]["n"] / $nd, 1) . " · avg ticket Rs " . ($tot[$t]["n"] ? round($tot[$t]["a"] / $tot[$t]["n"]) : 0) . "\n";
+          echo "\nhour | avg/day: query Rs (orders) · campaign Rs (orders) · untyped Rs (orders) | TODAY so far: query · campaign · untyped (Rs / orders)\n";
+          foreach ($order as $h) {
+            $o = []; foreach (["query", "campaign", "none"] as $t) $o[] = round(($hist[$h][$t]["a"] ?? 0) / $nd) . " (" . round(($hist[$h][$t]["n"] ?? 0) / $nd, 1) . ")";
+            $td = []; foreach (["query", "campaign", "none"] as $t) $td[] = ($today[$h][$t]["a"] ?? 0) . "/" . ($today[$h][$t]["n"] ?? 0);
+            echo str_pad(sprintf("%02d-%02d", $h, ($h + 1) % 24), 6) . "| " . implode(" · ", $o) . " | " . implode(" · ", $td) . "\n";
+          }
+          $ta = 0; $tn = 0; foreach ($today as $hh) foreach ($hh as $x) { $ta += $x["a"]; $tn += $x["n"]; } echo "\nTODAY so far (business day $bdNow): collection Rs $ta · orders $tn\n";
+          PHP
+          php /tmp/hp_check.php "$P"; rm -f /tmp/hp_check.php
+          REMOTE

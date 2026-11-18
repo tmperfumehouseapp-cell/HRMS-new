@@ -228,6 +228,34 @@ function wag_sig(PDO $pdo, int $emp): string
     } catch (Throwable $e) { return 'x' . mt_rand(); }
 }
 // ---------------------------------------------------------------------------------------------------------------- the phone inbox
+// ---------------------------------------------------------------------------------------------------------------- 🏷 MY OWN TAGS (a salesperson's private labels on customers: VIP, Birthday Nov, Call karvo …)
+/** Each person has their own tags (nobody else sees them). A customer can carry up to 10 of a person's tags; a person can have up to 60 tags. Colour = 0..4. */
+function wag_ut_tables(PDO $pdo): void
+{
+    static $ok = false; if ($ok) return; $ok = true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wa_utags (id INT AUTO_INCREMENT PRIMARY KEY, emp_id INT NOT NULL, name VARCHAR(40) NOT NULL, color TINYINT NOT NULL DEFAULT 0, created_at DATETIME NULL, UNIQUE KEY u_emp_name (emp_id, name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wa_utag_map (tag_id INT NOT NULL, phone VARCHAR(12) NOT NULL, at DATETIME NULL, PRIMARY KEY (tag_id, phone), KEY k_phone (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Throwable $e) { error_log('wag_ut_tables: ' . $e->getMessage()); }
+}
+function wag_ut_list(PDO $pdo, int $emp): array
+{
+    wag_ut_tables($pdo); $o = [];
+    try { $q = $pdo->prepare("SELECT t.id, t.name, t.color, (SELECT COUNT(*) FROM wa_utag_map m WHERE m.tag_id = t.id) n FROM wa_utags t WHERE t.emp_id = ? ORDER BY t.name"); $q->execute([$emp]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'color' => (int)$r['color'], 'n' => (int)$r['n']]; } catch (Throwable $e) { }
+    return $o;
+}
+function wag_ut_of(PDO $pdo, int $emp, string $phone): array
+{
+    wag_ut_tables($pdo);
+    try { $q = $pdo->prepare("SELECT m.tag_id FROM wa_utag_map m JOIN wa_utags t ON t.id = m.tag_id WHERE t.emp_id = ? AND m.phone = ?"); $q->execute([$emp, $phone]); return array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { return []; }
+}
+/** phone => [tag ids] for one person's tags (the list rows). */
+function wag_ut_map(PDO $pdo, int $emp, array $phones): array
+{
+    wag_ut_tables($pdo); $o = []; if ($emp <= 0 || !$phones) return $o;
+    try { foreach (array_chunk(array_values($phones), 400) as $ch) { $q = $pdo->prepare("SELECT m.phone, m.tag_id FROM wa_utag_map m JOIN wa_utags t ON t.id = m.tag_id WHERE t.emp_id = ? AND m.phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute(array_merge([$emp], $ch)); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $o[(string)$r['phone']][] = (int)$r['tag_id']; } } catch (Throwable $e) { }
+    return $o;
+}
 function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false, bool $wide = false): array
 {
     $now = time(); $cut = $now - $cfg['unans_min'] * 60; $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
@@ -240,7 +268,7 @@ function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false,
                 : ($all ? "c.status = 'open' AND c.last_in_at IS NOT NULL AND c.last_in_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "' AND c.assigned_emp > 0"
                     : "c.status = 'open' AND c.assigned_emp = " . (int)$emp . " AND ((c.last_in_at IS NOT NULL AND c.last_in_at >= '" . ($wide ? date('Y-m-d 00:00:00', strtotime('-1 day')) : date('Y-m-d H:i:s', $now - 86400)) . "') OR " . $fa . ")"))   // 📥 a chat given to me that no person has answered yet shows here even if the customer wrote long ago
             . " ORDER BY IF(fresh_agent = 1, 0, 1), GREATEST(COALESCE(c.last_in_at, '1970-01-01'), IF(fresh_agent = 1, c.assigned_at, '1970-01-01')) DESC LIMIT " . ($tag ? 400 : 250);   // 24 hours after the customer's last message a chat leaves the inbox and sits in History
-    $rows = $pdo->query($sql)->fetchAll(); $om = wa_order_map($pdo); $oc = wag_outcome_map($pdo); $ct = wag_ctag_map($pdo); $ks = array_column($rows, 'phone'); $om->prefetch($ks); $oc->prefetch($ks); $ct->prefetch($ks); $nums = wag_nums($pdo); $out = []; $cnt = ['all' => 0, 'waiting' => 0, 'overdue' => 0, 'hot' => 0];
+    $rows = $pdo->query($sql)->fetchAll(); $om = wa_order_map($pdo); $oc = wag_outcome_map($pdo); $ct = wag_ctag_map($pdo); $ks = array_column($rows, 'phone'); $om->prefetch($ks); $oc->prefetch($ks); $ct->prefetch($ks); $utm = $emp > 0 ? wag_ut_map($pdo, $emp, $ks) : [];   // 🏷 my own tags of these chats $nums = wag_nums($pdo); $out = []; $cnt = ['all' => 0, 'waiting' => 0, 'overdue' => 0, 'hot' => 0];
     $hf = function_exists('wa_heat_flags') ? wa_heat_flags($pdo, $ks) : [];
     $ot = function_exists('wa_owner_tags') ? wa_owner_tags($pdo, $ks) : [];
     $org = function_exists('wa_origin_chips') ? wa_origin_chips($pdo, $ks) : [];   // 📍 where the customer said they came from (Instagram / ad / friend)
@@ -253,7 +281,7 @@ function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false,
         $out[] = ['phone' => $k, 'name' => (string)$r['name'], 'preview' => mb_substr($prev, 0, 70), 'mine' => $r['last_dir'] === 'out', 'unread' => (int)$r['unread'], 'waiting' => $waiting, 'overdue' => $overdue, 'wait_min' => $waiting ? max(0, (int)floor(($now - $in) / 60)) : 0,
             'fresh' => (int)($r['fresh_agent'] ?? 0) === 1, 'wait_sec' => $waiting ? max(0, $now - $in) : 0, 'last_at' => (string)$r['last_in_at'], 'hot' => (int)$r['hot'] === 1, 'remind_at' => $r['remind_at'], 'window' => $win, 'src' => (string)$r['source'], 'ad' => (string)$r['ad_head'],
             'heat' => function_exists('wa_heat') ? wa_heat($r, ($hf[$k] ?? []) + (($bdg['k'] ?? '') === 'bad' ? ['cx' => 1] : []), (int)$cfg['unans_min']) : '', 'biz' => !empty($hf[$k]['biz']),
-            'read' => wag_read($r, $waiting, $win, (int)$r['hot'] === 1, (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', (int)($x['n'] ?? 0), $now), 'badge' => $bdg, 'origin' => (string)($org[$k] ?? ''), 'noresp' => ($hum[(string)$r['phone']] ?? 0) < $in, 'first_emp' => (int)($ot[$k]['first'] ?? 0), 'first_name' => $names[(int)($ot[$k]['first'] ?? 0)] ?? '', 'not_mine' => $tag && (int)$r['assigned_emp'] !== $emp, 'cx' => (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', 'num' => $nums[(int)$r['last_number_id']] ?? '', 'emp' => (int)$r['assigned_emp'], 'emp_name' => $names[(int)$r['assigned_emp']] ?? '', 'result' => $oc[$k]['code'] ?? '', 'tags' => array_slice($tags, 0, 3)];
+            'read' => wag_read($r, $waiting, $win, (int)$r['hot'] === 1, (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', (int)($x['n'] ?? 0), $now), 'badge' => $bdg, 'origin' => (string)($org[$k] ?? ''), 'noresp' => ($hum[(string)$r['phone']] ?? 0) < $in, 'first_emp' => (int)($ot[$k]['first'] ?? 0), 'first_name' => $names[(int)($ot[$k]['first'] ?? 0)] ?? '', 'not_mine' => $tag && (int)$r['assigned_emp'] !== $emp, 'ut' => $utm[$k] ?? [], 'cx' => (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', 'num' => $nums[(int)$r['last_number_id']] ?? '', 'emp' => (int)$r['assigned_emp'], 'emp_name' => $names[(int)$r['assigned_emp']] ?? '', 'result' => $oc[$k]['code'] ?? '', 'tags' => array_slice($tags, 0, 3)];
         if ($tag && (int)$r['assigned_emp'] !== $emp) continue;   // someone else's now: in the list, not in my counters
         $cnt['all']++; if ($waiting) $cnt['waiting']++; if ($overdue) $cnt['overdue']++; if ((int)$r['hot'] === 1) $cnt['hot']++;
     }
@@ -1109,6 +1137,31 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if ($me <= 0 || !function_exists('push_send_employee')) json_response(['ok' => false, 'note' => 'Alerts are not available for this login.']);
             [$sent, $failed, $err] = push_send_employee($pdo, $me, ['title' => 'Test buzz 🔔', 'body' => 'Alerts work on this phone.', 'url' => 'my_chats.html', 'tag' => 'wa-test']);
             json_response(['ok' => $sent > 0, 'note' => $sent > 0 ? 'Buzz sent — it should arrive in a few seconds.' : 'No alert could be sent: allow alerts first (step 3).']);
+        }
+        case 'wa.g_utags': {   // 🏷 my own tags with how many customers carry each (+ the tags of one customer when ?phone= is given)
+            if ($me <= 0) json_response(['tags' => [], 'mine' => []]);
+            $o = ['tags' => wag_ut_list($pdo, $me), 'mine' => []]; if (!empty($_GET['phone'])) $o['mine'] = wag_ut_of($pdo, $me, wa_key($_GET['phone'])); json_response($o);
+        }
+        case 'wa.g_utag_set': {   // 🏷 set the tags of ONE customer (mine): ids = the tags to keep, create = new tags to make and add [{name, color}]
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if ($me <= 0) json_response(['error' => 'Only a salesperson login can use tags.'], 403);
+            $c = $chatOf((string)($in['phone'] ?? '')); $k = (string)$c['phone']; wag_ut_tables($pdo);
+            $have = wag_ut_list($pdo, $me); $mineIds = array_column($have, 'id'); $want = []; foreach ((array)($in['ids'] ?? []) as $i) { $i = (int)$i; if (in_array($i, $mineIds, true)) $want[$i] = $i; }
+            foreach (array_slice((array)($in['create'] ?? []), 0, 5) as $nw) {
+                $nm = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($nw['name'] ?? ''))), 0, 30); if ($nm === '') continue; $col = max(0, min(4, (int)($nw['color'] ?? 0))); $id = 0;
+                foreach ($have as $h) if (mb_strtolower($h['name']) === mb_strtolower($nm)) { $id = (int)$h['id']; break; }
+                if ($id === 0) { if (count($have) >= 60) json_response(['error' => 'You already have 60 tags — delete one you do not use first.'], 422); $pdo->prepare("INSERT INTO wa_utags (emp_id, name, color, created_at) VALUES (?, ?, ?, ?)")->execute([$me, $nm, $col, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); $have[] = ['id' => $id, 'name' => $nm, 'color' => $col, 'n' => 0]; }
+                $want[$id] = $id;
+            }
+            if (count($want) > 10) json_response(['error' => 'A customer can have at most 10 tags.'], 422);
+            $pdo->prepare("DELETE m FROM wa_utag_map m JOIN wa_utags t ON t.id = m.tag_id WHERE t.emp_id = ? AND m.phone = ?")->execute([$me, $k]);
+            $ins = $pdo->prepare("INSERT IGNORE INTO wa_utag_map (tag_id, phone, at) VALUES (?, ?, ?)"); foreach ($want as $id) $ins->execute([$id, $k, date('Y-m-d H:i:s')]);
+            json_response(['ok' => true, 'tags' => wag_ut_list($pdo, $me), 'mine' => array_values($want)]);
+        }
+        case 'wa.g_utag_del': {   // 🗑 delete one of MY tags (it comes off every customer)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if ($me <= 0) json_response(['error' => 'Only a salesperson login can use tags.'], 403); wag_ut_tables($pdo); $id = (int)($in['id'] ?? 0);
+            $q = $pdo->prepare("SELECT 1 FROM wa_utags WHERE id = ? AND emp_id = ?"); $q->execute([$id, $me]); if (!$q->fetchColumn()) json_response(['error' => 'Tag not found.'], 404);
+            $pdo->prepare("DELETE FROM wa_utag_map WHERE tag_id = ?")->execute([$id]); $pdo->prepare("DELETE FROM wa_utags WHERE id = ? AND emp_id = ?")->execute([$id, $me]);
+            json_response(['ok' => true, 'tags' => wag_ut_list($pdo, $me)]);
         }
         case 'wa.g_add_check': {   // ➕ Add customer (phone app): what happens if I add this number — new / already mine / with a colleague / opted out / free to take / chatting now
             $k = wa_key($_GET['phone'] ?? ''); if (!wa_valid_phone($k)) json_response(['state' => 'invalid', 'phone' => $k]);
