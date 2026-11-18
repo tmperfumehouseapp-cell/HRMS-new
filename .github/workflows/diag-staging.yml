@@ -35,6 +35,25 @@ jobs:
           echo "=== counts ==="; echo "php-fpm processes: $(ps -e -o args | grep -c '[p]hp-fpm')"; echo "mysqld processes: $(ps -e -o args | grep -c '[m]ysqld')"
           echo "=== longest running php processes (seconds) ==="; ps -eo etimes,user,args --sort=-etimes | grep '[p]hp' | cut -c1-150 | head -8
           echo "=== connections ==="; ss -s | head -6
+          echo "=== ANALYTICS report (the Analytics page frame) ==="
+          ls -la "${P}analytics/" 2>&1 | cut -c1-120 | head -30
+          echo "data folder:"; ls -la "${P}analytics/data/" 2>&1 | cut -c1-120 | head -20; du -sh "${P}analytics/data" 2>/dev/null
+          php -r '
+            $d = $argv[1] . "analytics/"; $f = $d . "config.php"; if (!is_file($f)) { echo "analytics/config.php: MISSING\n"; exit; }
+            echo "analytics/config.php: present, " . filesize($f) . " bytes, readable=" . (is_readable($f) ? "yes" : "no") . "\n";
+            try { $c = require $f; } catch (Throwable $e) { echo "config.php throws: " . $e->getMessage() . "\n"; exit; }
+            if (!is_array($c)) { echo "config.php does not return a list (returns " . gettype($c) . ")\n"; exit; }
+            echo "config keys: " . implode(", ", array_keys($c)) . "\n"; $vk = (string)($c["viewkey"] ?? ""); echo "viewkey: " . ($vk === "" ? "EMPTY" : "set (" . strlen($vk) . " chars)") . "\n"; if ($vk === "") exit;
+            foreach (["https://fourpirates.space/analytics/report.php?k=" . rawurlencode($vk)] as $u) {
+              $h = []; $ch = curl_init($u); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 60, CURLOPT_FOLLOWLOCATION => true, CURLOPT_COOKIEFILE => "", CURLOPT_HTTPHEADER => ["Sec-Fetch-Dest: iframe"], CURLOPT_HEADERFUNCTION => function ($c2, $l) use (&$h) { $h[] = trim($l); return strlen($l); }]);
+              $t = microtime(true); $b = curl_exec($ch); $ms = (int)round((microtime(true) - $t) * 1000); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); $er = curl_error($ch); curl_close($ch);
+              echo "GET report.php -> HTTP " . $code . " in " . $ms . " ms, " . strlen((string)$b) . " bytes" . ($er ? ", error: " . $er : "") . "\n";
+              foreach ($h as $l) if (preg_match("/^(HTTP\\/|x-frame-options|content-security-policy|location|set-cookie|content-type|server)/i", $l)) echo "  header: " . substr(str_replace($vk, "KEY", preg_replace("/tm_rep=[^;]+/", "tm_rep=…", $l)), 0, 200) . "\n";
+              echo "  body starts: " . substr(preg_replace("/\\s+/", " ", strip_tags(str_replace($vk, "KEY", (string)$b))), 0, 300) . "\n";
+              if (preg_match_all("/(Fatal error|Warning|Parse error|Uncaught)[^<]{0,200}/", (string)$b, $mm)) foreach (array_slice($mm[0], 0, 5) as $x) echo "  PHP message in page: " . str_replace($vk, "KEY", $x) . "\n";
+            }
+          ' "$P" 2>&1 | head -60
+          echo "php error log (analytics lines):"; for L in "${P}analytics/error_log" "${P}error_log" /home/*/logs/php/error.log /home/*/logs/nginx/error.log; do [ -f "$L" ] && { echo "-- $L"; grep -i "analytics" "$L" 2>/dev/null | tail -8 | cut -c1-300; }; done
           echo "=== database activity (SHOW FULL PROCESSLIST, no passwords) ==="
           php -r '
             $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
