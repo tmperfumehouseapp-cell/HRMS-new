@@ -251,6 +251,10 @@ function wa_ru_global_usable(PDO $pdo, int $limit = 12): array
 /** One-time resets that must run even while Module B is paused (they were inside the making round, which is never reached while paused: the pause could not be cleared). */
 function wa_ru_reset_once(PDO $pdo): void
 {
+    try { if ((string)setting_get($pdo, 'wa_ru_hold260', '') !== '1') {   // owner 19 Nov 2026 (02:50): Module B stays at 260 while Meta's spam flag is on (9 of 10 on Module B, marketing flags came back); no climbing, and no extra sending for the delivered share. Growth to 280, 300 … comes later, step by step, when everything runs well
+            setting_set($pdo, 'wa_ru_hold260', '1'); setting_set($pdo, 'wa_ru_ramp_max', '260'); setting_set($pdo, 'wa_ru_cap_on', '0');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) held at 260 an hour while the Meta spam flag is on');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_trim_517_518', '') !== '1') {   // owner 18 Nov 2026: Meta paused #517 / #518 as spam (131048). Fewer people: only those who were REACHED (a delivered message) in the last 30 days stay; the others are held back (they can be sent later with "Send to skipped"). The campaigns start again by themselves at 10:00, the start of the business day.
             setting_set($pdo, 'wa_trim_517_518', '1');
             $n = (int)$pdo->exec("UPDATE wa_camp_items i SET i.status = 'skipped', i.err = 'Held back: not reached in the last 30 days (Meta spam flag)', i.err_code = 0 WHERE i.camp_id IN (517, 518) AND i.status = 'queued' AND NOT EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone COLLATE utf8mb4_unicode_ci = i.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'out' AND m.status IN ('delivered', 'read') AND m.ts >= DATE_SUB(NOW(), INTERVAL 30 DAY))");
@@ -349,7 +353,7 @@ function wa_ru_lane_order(array $items, array $ct, array $ever, array $ordMap, i
 /** 🎯 owner 19 Nov 2026 (night): the hourly number (240 …) means DELIVERED messages, not messages sent. When only some of the messages arrive (the share that was delivered or read among those 15–75 minutes old), more are sent so that about `hourly` arrive: e.g. 240 delivered at a delivered share of 80% = 300 sent. Never more than 1.5 times the number (the share counts at least 67%), absolute 600 an hour; with fewer than 30 messages to judge by it stays 1 : 1. The failure brakes are unchanged. */
 function wa_ru_send_cap(PDO $pdo, int $hourly, int $nowTs): int
 {
-    $cap = $hourly;
+    $cap = $hourly; if ((string)setting_get($pdo, 'wa_ru_cap_on', '0') !== '1') return $hourly;   // switched off by the owner on 19 Nov 2026 until the spam flag is quiet
     try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
         $q->execute([date('Y-m-d H:i:s', $nowTs - 4500), date('Y-m-d H:i:s', $nowTs - 900)]); $r = $q->fetch(); $n = (int)$r['n'];
         if ($n >= 30) { $rate = max(0.67, min(1.0, (int)$r['d'] / $n)); $cap = (int)ceil($hourly / $rate); } } catch (Throwable $e) { }
