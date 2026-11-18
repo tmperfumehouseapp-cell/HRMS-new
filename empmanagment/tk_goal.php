@@ -32,6 +32,15 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
             $tm = $pdo->prepare("SELECT tried, worked, tries FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 2 LIMIT 3000"); $tm->execute([$day]); foreach ($tm->fetchAll(PDO::FETCH_ASSOC) as $r) $out['team'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++;
         }
     } catch (Throwable $e) { error_log('wq.ad_me: ' . $e->getMessage()); }
+    // 💡 ideas from the team's own winning chats (last 7 days, no names): what to say to sell bigger / add an item. Falls back to two fixed examples until enough chats are read.
+    $ideas = ['big' => [], 'add' => []];
+    try { if (function_exists('ora_tables') && ora_tables($pdo)) { $since = date('Y-m-d H:i:s', time() - 7 * 86400);
+        foreach (['big' => "sz_worked = 1 AND sz_tip <> ''", 'add' => "worked = 1 AND tip <> ''"] as $k => $w) { $col = $k === 'big' ? 'sz_tip' : 'tip';
+            $q = $pdo->prepare("SELECT $col FROM order_rate_auto WHERE sz_ok = 2 AND $w AND at >= ? ORDER BY at DESC LIMIT 40"); $q->execute([$since]);
+            foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) { $t = trim((string)$t); if ($t !== '' && !in_array($t, $ideas[$k], true)) $ideas[$k][] = $t; if (count($ideas[$k]) >= 3) break; } } } } catch (Throwable $e) { }
+    if (!$ideas['big']) $ideas['big'][] = '4 ki jagah 5 le lo, 5th pe free 20ml';
+    if (!$ideas['add']) $ideas['add'][] = '10ml tester sirf ₹99 mein add kar du, travel ke liye best';
+    $out['ideas'] = $ideas;
     json_response($out);
 }
 if ($__tkA === 'wq.grow_chat') {   // 📈 the live effort of ONE open chat (bigger + add-on), shown only while the order is being confirmed. Own chats only (Admin / manager: any). Read from the transcript by the same strict judge; cached 45 s per last message.
