@@ -12,3 +12,7 @@ $fb = wa_util_learn_fallback('open', [], 0); ok($fb && strpos($fb[0], '{{1}}') !
 $fb2 = wa_util_learn_fallback('open', [$fb[0]], 0); ok($fb2 && $fb2[0] !== $fb[0], 'a used wording is not used again');
 ok(wa_util_learn_fallback('order', [], 0) !== null && wa_util_learn_fallback('ask', [], 0) === null, 'order has a fallback, ask has none');
 echo "learn ok\n";
+$src2 = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_util.php'); $p = strpos($src2, 'function wa_util_claims_history('); $i = strpos($src2, '{', $p); $d = 0; for ($j = $i; $j < strlen($src2); $j++) { if ($src2[$j] === '{') $d++; elseif ($src2[$j] === '}') { $d--; if ($d === 0) { eval(substr($src2, $p, $j - $p + 1)); break; } } }
+foreach (["Hi {{1}}, this is about your recent enquiry with TM Perfume House.", "Hi {{1}}, your order or enquiry details are on file with TM Perfume House.", "Hi {{1}}, this is about your recent purchase from TM Perfume House.", "Hello {{1}}, you asked about a perfume.", "Hello {{1}}, an order you received from us"] as $b) ok(wa_util_claims_history($b), 'claim found: ' . $b);
+foreach (["Hi {{1}}, this is TM Perfume House customer care. If you need help with an order or a delivery from TM Perfume House, tap a button below.", "Hello {{1}}, TM Perfume House customer care can help with the status of an order or a return. Tap a button to message our team."] as $b) ok(!wa_util_claims_history($b), 'no claim: ' . $b);
+echo "claims ok\n";
