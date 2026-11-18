@@ -506,6 +506,19 @@
         ? '<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:6px 9px;margin-bottom:6px">🔴 <b>સતત બે કલાકથી ઓફર થતી નથી</b> (છેલ્લા કલાકના ' + n + ' ઓર્ડરમાંથી ' + z + ' માં ⬆ મોટી સાઇઝ અને ➕ વધારાનું પરફ્યુમ બંનેની ઓફર નથી). આ ચાલુ રહેશે તો તમારા માટે <b>Requests / Rescue</b> થોડા સમય માટે બંધ કરવામાં આવશે. <span style="opacity:.8">(અત્યારે ફક્ત ચેતવણી, કશું બંધ થયું નથી)</span>' + (w ? '<br>💡 “' + esc(w) + '”' : '') + '</div>'
         : '<div style="background:#dbeafe;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:6px 9px;margin-bottom:6px">💡 <b>છેલ્લા કલાકના ' + n + ' ઓર્ડરમાંથી ' + z + ' માં</b> ⬆ મોટી સાઇઝ અને ➕ વધારાનું પરફ્યુમ બંનેની ઓફર થઈ નથી. આગલા ઓર્ડરમાં બંને બોલો' + (w ? ': “' + esc(w) + '”' : '') + '</div>';
     }
+    // 📞 one small line under the card: the newest of today's orders where no add-on (extra perfume) was offered and none was added — "call this customer and ask for an add-on". Tap = open that chat.
+    function nudgeLine() {
+      try {
+        const top = R.querySelector('.wx-top'); let el = document.getElementById('wxNt'); const d = window.__wxAdFull, m = d && (d.missed || [])[0];
+        if (!m || !m.phone) { if (el) el.remove(); return; }
+        if (!el) { el = document.createElement('div'); el.id = 'wxNt'; el.className = 'wx-mgr'; const gl = document.getElementById('wxGl'); if (!gl) return; gl.insertAdjacentElement('afterend', el); }
+        else { const gl = document.getElementById('wxGl'); if (gl && gl.nextElementSibling !== el) gl.insertAdjacentElement('afterend', el); }
+        const more = Math.max(0, (+d.missed_n || (d.missed || []).length) - 1), nm = m.name || ('#' + String(m.order).replace('#', ''));
+        el.style.cssText += ';cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+        el.innerHTML = '📞 <b>' + esc(nm) + '</b> ને બોલાવો — એડ ઓન કરાવો' + (more ? ' · +' + more + ' વધુ' : '') + ' ›';
+        el.onclick = () => { try { openChat(m.phone, {}); } catch (e) { } };
+      } catch (e) { }
+    }
     function growBox() {
       try {
         const top = R.querySelector('.wx-top'); if (!top) return; let el = document.getElementById('wxGl');
@@ -532,7 +545,7 @@
 
     // 📈 my growth effort today (bigger size + add-on = extra perfume) feeds the card under the coach lines (wq.ad_me, own numbers only)
     { const paintAd = async () => { try { const d = await api.get('wq.ad_me'); window.__wxIdeas = (d && d.ideas) || null; window.__wxCoach = (d && d.coach) || null;
-          { const lv = d && d.coach ? +d.coach.level || 0 : 0, key = lv + ':' + new Date().getHours(); if (lv > 0 && window.__wxCoachKey !== key) { window.__wxCoachKey = key; try { toast(lv === 2 ? '🔴 સતત બે કલાકથી ઓફર નથી થતી — મોટી સાઇઝ + વધારાનું પરફ્યુમ ઓફર કરો' : '💡 છેલ્લા કલાકમાં ઓફર ઓછી — આગલા ઓર્ડરમાં મોટી સાઇઝ + વધારાનું પરફ્યુમ ઓફર કરો', lv === 2); } catch (e) { } } } window.__wxAd = d && +d.read > 0 ? d : null; growBox(); } catch (e) { /* no card */ } };
+          { const lv = d && d.coach ? +d.coach.level || 0 : 0, key = lv + ':' + new Date().getHours(); if (lv > 0 && window.__wxCoachKey !== key) { window.__wxCoachKey = key; try { toast(lv === 2 ? '🔴 સતત બે કલાકથી ઓફર નથી થતી — મોટી સાઇઝ + વધારાનું પરફ્યુમ ઓફર કરો' : '💡 છેલ્લા કલાકમાં ઓફર ઓછી — આગલા ઓર્ડરમાં મોટી સાઇઝ + વધારાનું પરફ્યુમ ઓફર કરો', lv === 2); } catch (e) { } } } window.__wxAd = d && +d.read > 0 ? d : null; window.__wxAdFull = d || null; growBox(); nudgeLine(); } catch (e) { /* no card */ } };
       window.__wxAdOpen = () => { const d = window.__wxAd || { n: [0, 0, 0, 0], sz: [0, 0, 0, 0], read: 0, missed: [], tip: '' }, ID = window.__wxIdeas || { big: [], add: [] }; const n = d.n, z = d.sz || [0, 0, 0, 0], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), tm = d.team || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3];
         const box = (c, v, t) => '<div style="background:' + c + ';color:#fff;border-radius:9px;padding:5px 0;text-align:center;flex:1;line-height:1.15"><b style="font-size:19px;display:block">' + v + '</b><span style="font-size:10px;font-weight:700">' + t + '</span></div>';
         const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center'; o.onclick = (e2) => { if (e2.target === o) o.remove(); };

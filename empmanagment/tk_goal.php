@@ -17,7 +17,7 @@ if ($__tkA === 'wq.tk_me') {   // the salesperson's own ticket for the WhatsApp 
 }
 if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today (read from the chats after the orders): four counts, stars, add-on rupees, the orders where nothing was offered, the words that worked. Only the person's own rows.
     $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
-    $out = ['ok' => true, 'n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'stars' => null, 'addon_rs' => 0, 'missed' => [], 'missed_big' => [], 'tip' => '', 'team' => [0, 0, 0, 0], 'team_sz' => [0, 0, 0, 0], 'yd' => ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'read' => 0], 'read' => 0];
+    $out = ['ok' => true, 'n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'stars' => null, 'addon_rs' => 0, 'missed' => [], 'missed_n' => 0, 'missed_big' => [], 'tip' => '', 'team' => [0, 0, 0, 0], 'team_sz' => [0, 0, 0, 0], 'yd' => ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'read' => 0], 'read' => 0];
     try {
         if ($me > 0 && function_exists('ora_tables') && ora_tables($pdo)) {
             $day = biz_today($pdo); $st = 0.0; $rows = [];
@@ -25,7 +25,7 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
             try { if (function_exists('addons_attach')) addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { }
             foreach ($rows as $r) {
                 $lv = ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']); $out['n'][$lv]++; $out['sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; $st += (float)$r['rating'] / 2; $out['addon_rs'] += (float)($r['addon_total'] ?? 0);
-                if ($lv === 0 && count($out['missed']) < 5) { $out['missed'][] = ['order' => (string)$r['order_name'], 'phone' => (string)$r['phone'], 'why' => mb_substr((string)$r['reason'], 0, 140)]; }
+                if ($lv === 0 && (float)($r['addon_total'] ?? 0) <= 0) { $out['missed_n'] = (int)($out['missed_n'] ?? 0) + 1; } if ($lv === 0 && (float)($r['addon_total'] ?? 0) <= 0 && count($out['missed']) < 8) { $out['missed'][] = ['order' => (string)$r['order_name'], 'phone' => (string)$r['phone'], 'why' => mb_substr((string)$r['reason'], 0, 140)]; }
                 if (ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']) === 0 && count($out['missed_big']) < 5) { $out['missed_big'][] = ['order' => (string)$r['order_name'], 'phone' => (string)$r['phone'], 'why' => mb_substr((string)$r['reason'], 0, 140)]; }
             }
             $n = array_sum($out['n']); $out['read'] = $n; $out['stars'] = $n ? round($st / $n, 1) : null; $out['addon_rs'] = round($out['addon_rs']);
@@ -36,6 +36,7 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
         }
     } catch (Throwable $e) { error_log('wq.ad_me: ' . $e->getMessage()); }
     // 💡 ideas from the team's own winning chats (last 7 days, no names): what to say to sell bigger / add an item. Falls back to two fixed examples until enough chats are read.
+    try { foreach ($out['missed'] as &$__m) { $__m['name'] = ''; $nq = $pdo->prepare("SELECT name FROM wa_contacts WHERE phone = ? LIMIT 1"); $nq->execute([substr(preg_replace('/\D+/', '', (string)$__m['phone']), -10)]); $__m['name'] = trim((string)$nq->fetchColumn()); } unset($__m); } catch (Throwable $e) { }
     $ideas = ['big' => [], 'add' => []];
     try { if (function_exists('ora_tables') && ora_tables($pdo)) { $since = date('Y-m-d H:i:s', time() - 7 * 86400);
         foreach (['big' => "sz_worked = 1 AND sz_tip <> ''", 'add' => "worked = 1 AND tip <> ''"] as $k => $w) { $col = $k === 'big' ? 'sz_tip' : 'tip';
