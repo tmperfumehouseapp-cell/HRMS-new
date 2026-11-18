@@ -29,4 +29,8 @@ $S = ['wa_ru_hourly' => '600', 'wa_ru_ramp_base' => '100', 'wa_ru_ramp_step' => 
 $S['wa_ru_hourly'] = '300'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '200', 'failure at 300 restarts at 200');
 $S['wa_ru_hourly'] = '150'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '100', 'failure at 150 restarts at 100');
 $S['wa_ru_hourly'] = '400'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '100', 'spam flag restarts at the base');
+// 9) ladder 200 / 250 / 300: floor 200
+$S['wa_ru_ramp_base'] = '200'; $S['wa_ru_hourly'] = '300'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '200', 'ladder: failure at 300 restarts at 200');
+$S['wa_ru_hourly'] = '250'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '200', 'ladder: failure at 250 restarts at 200');
+$S['wa_ru_hourly'] = '300'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '200', 'ladder: spam flag restarts at the floor 200');
 echo "ramp ok\n";
