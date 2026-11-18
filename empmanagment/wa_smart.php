@@ -1,4 +1,5 @@
 <?php
+if (!defined('WA_TIER_MARGIN')) define('WA_TIER_MARGIN', 100.0);   // owner 18 Nov 2026: no 24-hour new-people gate of our own
 /**
  * wa_smart.php — Smart campaigns (Claude plans a whole campaign from one line) + the Normal-campaign upgrade helpers. Loaded by wa_more.php (after wa_camp.php).
  *
@@ -567,7 +568,7 @@ function wsm_speed(PDO $pdo, int $size, string $speed): array
     }
     $port = (int)($caps['_port']['left'] ?? $left); $room = min($left, $port); $nn = count(array_filter($rows, fn($r) => $r['usable']));
     $minutes = $perMin > 0 ? (int)ceil($size / $perMin) : 0; $days = 1; $why = '';
-    if ($size > $room) { $days = 1 + (int)ceil(($size - $room) / max(1, min($cap, (int)floor((int)($caps['_port']['tier'] ?? $cap) * 0.9)))); $why = 'limited by the numbers\' room today (' . wsm_n($room) . ') and Meta\'s daily limit'; }
+    if ($size > $room) { $days = 1 + (int)ceil(($size - $room) / max(1, min($cap, (int)floor((int)($caps['_port']['tier'] ?? $cap) * WA_TIER_MARGIN)))); $why = 'limited by the numbers\' room today (' . wsm_n($room) . ') and Meta\'s daily limit'; }
     $text = $nn === 0 ? 'No number can send right now.' : ($days > 1 ? 'About ' . $days . ' days (' . $nn . ' number' . ($nn === 1 ? '' : 's') . ', ' . $speed . ') — ' . $why : wsm_n($size) . ' messages in about ' . ($minutes >= 120 ? round($minutes / 60, 1) . ' hours' : $minutes . ($minutes == 1 ? ' minute' : ' minutes')) . ' (' . $nn . ' number' . ($nn === 1 ? '' : 's') . ', ' . $speed . ')');
     return ['speed' => $speed, 'numbers' => $rows, 'numbers_used' => $nn, 'per_min' => $perMin, 'room_today' => $room, 'cap_day' => $cap, 'minutes' => $minutes, 'days' => $days, 'text' => $text, 'rate' => max(1, min(1500, $perMin)),
         'push' => ['gentle' => 'careful', 'normal' => 'normal', 'fast' => 'aggressive'][$speed], 'retries_default' => 3, 'portfolio' => $caps['_port'] ?? null];
