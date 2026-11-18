@@ -83,7 +83,7 @@ function wq_grow_cfg(PDO $pdo): array
 function wq_grow_is_pay_link(PDO $pdo, string $text): bool
 {
     if (!preg_match_all('~https?://[^\s]+~i', $text, $m)) return false;
-    $re = (string)setting_get($pdo, 'grow_link_re', ''); if ($re === '' || @preg_match($re, '') === false) $re = '~(/invoices/|/checkouts/|/cart/c/|rzp\.io|razorpay\.com|paytm|payu|cashfree|/payment)~i';
+    $re = (string)setting_get($pdo, 'grow_link_re', ''); if ($re === '' || @preg_match($re, '') === false) $re = '~(/invoices/|/checkouts/|/cart/|go\.kwik\.pe|kwik\.pe|rzp\.io|razorpay\.com|paytm|payu|cashfree|/payment)~i';
     foreach ($m[0] as $u) if (preg_match($re, $u)) return true;
     return false;
 }
