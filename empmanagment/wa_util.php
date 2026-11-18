@@ -289,6 +289,9 @@ function wa_util_pool_learn(PDO $pdo, int $by = 0): array
 {
     $res = ['made' => [], 'note' => ''];
     if ((string)setting_get($pdo, 'wa_ru_learn', '1') === '0') { $res['note'] = 'off'; return $res; }
+    if ((int)setting_get($pdo, 'wa_ru_learn_block', '0') > time()) { $res['note'] = 'Meta weekly limit for new utility messages'; return $res; }
+    try { $lim = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba w JOIN wa_templates t ON t.id = w.tpl_id WHERE t.extra LIKE '%util_learned%' AND t.created_at >= ? AND w.status = 'ERROR' AND w.reason LIKE '%weekly limit%'"); $lim->execute([gmdate('Y-m-d H:i:s', time() + 19800 - 43200)]);
+        if ((int)$lim->fetchColumn() > 0) { setting_set($pdo, 'wa_ru_learn_block', (string)(time() + 12 * 3600)); if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'Utility follow-up learn paused for 12 hours: Meta says the business reached the weekly limit for creating utility messages'); $res['note'] = 'Meta weekly limit'; return $res; } } catch (Throwable $e) { }   // no more new messages while Meta refuses them (the limit renews weekly)
     try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_ru_learn', 0)")->fetchColumn(); } catch (Throwable $e) { $got = 0; } if ($got !== 1) { $res['note'] = 'busy'; return $res; }
     try {
         if ((int)setting_get($pdo, 'wa_ru_learn_done', '0') > time() - 540) { $res['note'] = 'recent'; try { $pdo->query("SELECT RELEASE_LOCK('wa_ru_learn')"); } catch (Throwable $e) { } return $res; }   // two ticks at once must not both run a round
