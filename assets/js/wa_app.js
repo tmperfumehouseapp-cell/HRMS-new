@@ -503,7 +503,7 @@
         el.innerHTML = '<i style="width:8px;height:8px;border-radius:50%;background:' + col + ';display:inline-block;flex:none"></i>' + (t.orders ? f(t.ticket) + '<span class="wx-tmt"> / ' + f(t.goal) + '</span>' : '<span class="wx-tmt">goal </span>' + f(t.goal)); b.title = 'Ticket today ' + f(t.ticket) + ' · goal ' + f(t.goal) + (t.status === 'g' ? ' ✓' : ' · next order ' + f(t.need_next)); } catch (e) { } };
       paintTk(); setInterval(() => { if (!document.hidden) paintTk(); }, 90000); }
 
-    // 📈 my growth effort today (bigger order + add-on): it lives INSIDE the one ticket line above the chat list (tap it for the sheet) — no extra chips or lines (wq.ad_me, own numbers only)
+    // 📈 my growth effort today (bigger size + add-on = extra perfume) feeds the card under the coach lines (wq.ad_me, own numbers only)
     { const paintAd = async () => { try { const d = await api.get('wq.ad_me'); window.__wxIdeas = (d && d.ideas) || null; window.__wxAd = d && +d.read > 0 ? d : null; growBox(); } catch (e) { /* no card */ } };
       window.__wxAdOpen = () => { const d = window.__wxAd || { n: [0, 0, 0, 0], sz: [0, 0, 0, 0], read: 0, missed: [], tip: '' }, ID = window.__wxIdeas || { big: [], add: [] }; const n = d.n, z = d.sz || [0, 0, 0, 0], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), tm = d.team || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3];
         const box = (c, v, t) => '<div style="background:' + c + ';color:#fff;border-radius:9px;padding:5px 0;text-align:center;flex:1;line-height:1.15"><b style="font-size:19px;display:block">' + v + '</b><span style="font-size:10px;font-weight:700">' + t + '</span></div>';
@@ -603,7 +603,7 @@
       if (lv(A) === 0) { ins = '➕ વધારાનું પરફ્યુમ ઓફર કરો'; words = '4 ki jagah 5 perfume le lo, 5th pe ₹100 off'; }
       else if (lv(B) === 0) { ins = '⬆ મોટી સાઇઝ ઓફર કરો'; words = '50ml ki jagah 100ml le lo, per ml sasta padega'; }
       else if (lv(B) < 3 && lv(A) < 3 && !(B.refused && A.refused)) ins = 'નવા કારણ સાથે એક વાર ફરી કહો';
-      else ins = '✓ સરસ — હવે લિંક મોકલી શકો';
+      else ins = '✓ સરસ — બંને ઓફર થઈ ગઈ';
       const weak = (B.weak > 0 && !B.tries) || (A.weak > 0 && !A.tries);
       el.innerHTML = '<div style="background:#fff;border-bottom:1px solid #eceef3;padding:5px 10px;display:flex;align-items:center;gap:8px;font:600 12px/1.3 system-ui,sans-serif;flex-wrap:wrap"><span>⬆ ' + seg(B, GROW.big) + '</span><span>➕ ' + seg(A, GROW.add) + '</span><span style="flex:1;min-width:120px;color:#7a4b00;cursor:' + (words ? 'pointer' : 'default') + '"' + (words ? ' data-gw="' + esc(words) + '"' : '') + '>→ ' + esc(ins) + (words ? ' <u>Use</u>' : '') + '</span>' + (weak ? '<span style="color:#b91c1c;font-size:11px">ટૂંકી લીટી ગણાઈ નથી</span>' : '') + '</div>';
       const w = el.querySelector('[data-gw]'); if (w) w.onclick = () => { const t = $('#wxTx'); if (t) { t.value = w.dataset.gw; t.focus(); try { t.dispatchEvent(new Event('input')); } catch (e) { } } };
