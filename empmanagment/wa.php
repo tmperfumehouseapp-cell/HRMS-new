@@ -1113,6 +1113,19 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             // ☑ Select-chats filters: day of the query · ordered or not · numbers (admin)
             if ($adm) {
                 $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo); $__srcChip = (string)($_GET['src'] ?? '') !== '';   // a Query / Community / Campaign chip is already on: "Today's / Yesterday's" then means "wrote that business day" inside THAT chip (forcing source = query made Campaign / Community come out empty)
+                if (isset($_GET['bt'])) {   // 📅 the new Select-chats filter (18 Nov): All / Query / Campaign (+ Community = the same kind of customer) and, for the last two, a day: Today / Yesterday / Last 7 days / a custom date or range
+                    $bt = (string)$_GET['bt'];
+                    if ($bt === 'query') $w[] = "c.source = 'query'"; elseif ($bt === 'camp') $w[] = "c.source IN ('campaign', 'community')";
+                    if ($bt !== '') {
+                        if ($bd === 'today') { $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
+                        elseif ($bd === 'yesterday') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
+                        elseif ($bd === '7d') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 7 * 86400); }
+                        elseif ($bd === 'custom') {
+                            $f1 = (string)($_GET['bdf'] ?? ''); $f2 = (string)($_GET['bdt'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f1)) $f1 = ''; if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f2)) $f2 = $f1; if ($f2 < $f1) $f2 = $f1;
+                            if ($f1 !== '') { [$__c0, $__c1] = biz_window($pdo, $f1, $f2); $w[] = 'c.last_in_at >= ?'; $p[] = $__c0; $w[] = 'c.last_in_at <= ?'; $p[] = $__c1; }
+                        }
+                    }
+                } else
                 if ($bd === 'today') { if (!$__srcChip) $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
                 elseif ($bd === 'yesterday') { if (!$__srcChip) $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
                 elseif ($bd === '7d') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 7 * 86400); }
