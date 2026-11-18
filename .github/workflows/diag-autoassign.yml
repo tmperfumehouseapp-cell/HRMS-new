@@ -58,6 +58,31 @@ jobs:
           echo "unheld fresh/campaign queries, newest 23 h counted by the DATABASE clock: " . $n("SELECT COUNT(*) FROM wa_queries WHERE emp_id = 0 AND src IN ('query','campaign','') AND opened_at >= NOW() - INTERVAL 23 HOUR AND opened_at <= NOW() - INTERVAL 10 SECOND") . " · newest opened_at = " . $n("SELECT MAX(opened_at) FROM wa_queries WHERE emp_id = 0 AND src IN ('query','campaign')") . "\n";
           echo "the 12 newest unheld queries and what blocks them (no numbers):\n";
           try { foreach ($d->query("SELECT q.src, q.opened_at, c.assigned_emp, c.status, c.optout, c.cx_id, c.tag, c.last_in_at, (SELECT COUNT(*) FROM wa_ctags g WHERE g.phone = q.phone AND g.tag = 'business_autoreply') biz FROM wa_queries q LEFT JOIN wa_contacts c ON c.phone = q.phone WHERE q.emp_id = 0 ORDER BY q.id DESC LIMIT 12")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  src=" . $r["src"] . " opened " . $r["opened_at"] . " · contact held by " . ($r["assigned_emp"] ?? "?") . " · status " . ($r["status"] ?? "?") . " · optout " . ($r["optout"] ?? "?") . " · complaint " . (($r["cx_id"] > 0 || $r["tag"] === "complaint") ? "yes" : "no") . " · business-autoreply " . ($r["biz"] ? "yes" : "no") . " · last_in " . ($r["last_in_at"] ?? "?") . "\n"; } catch (Throwable $e) { echo "  n/a (" . substr($e->getMessage(), 0, 100) . ")\n"; }
+          echo "\n=== OPEN chats nobody holds right now (the Requests list) and the FIRST thing that stops each one (no numbers / names) ===\n";
+          try {
+            $now = time(); $lim = date("Y-m-d H:i:s", $now - 86400 + 600); $why = []; $n = 0; $lines = [];
+            $hs = "h.dir = 'out' AND (h.emp_id > 0 OR h.who IN ('emp','phone')) AND h.ts >= c.last_in_at AND (h.mtype IN ('image','video','audio','document','template','interactive') OR CHAR_LENGTH(TRIM(COALESCE(h.body,''))) >= 30)";
+            foreach ($d->query("SELECT c.phone, c.status, c.optout, c.cx_id, c.tag, c.last_in_at, c.source, c.last_number_id FROM wa_contacts c WHERE c.assigned_emp = 0 AND c.status = 'open' AND c.optout = 0 ORDER BY c.last_in_at DESC LIMIT 60")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+              $q = $d->prepare("SELECT id, src, opened_at, emp_id FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$c["phone"]]); $r = $q->fetch(PDO::FETCH_ASSOC);
+              if (!$r) $w = "NO query row (not counted as a query)";
+              elseif ((int)$r["emp_id"] > 0) $w = "query row already owned by a person but the chat is unassigned";
+              elseif (!in_array((string)$r["src"], ["query","campaign","community",""], true)) $w = "query type " . $r["src"] . " is not given by the engine";
+              elseif (strtotime((string)$r["opened_at"]) < $now - 86400 + 600) $w = "the query opened more than 24 h ago (customer wrote again inside the same query)";
+              elseif ((int)$c["cx_id"] > 0 || (string)$c["tag"] === "complaint") $w = "complaint";
+              elseif (!$c["last_in_at"] || strtotime((string)$c["last_in_at"]) < $now - 86400 + 600) $w = "last customer message older than 24 h";
+              else {
+                $h = $d->prepare("SELECT 1 FROM wa_messages h JOIN wa_contacts c ON c.phone = h.phone WHERE c.phone = ? AND $hs LIMIT 1"); $h->execute([$c["phone"]]);
+                $b = $d->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1"); $b->execute([$c["phone"]]);
+                if ($h->fetchColumn()) $w = "a person already answered the customer (human reply after their last message)";
+                elseif ($b->fetchColumn()) $w = "another business's auto-reply";
+                else $w = "ELIGIBLE - should be given within seconds (check the buttons / who is on)";
+              }
+              $why[$w] = ($why[$w] ?? 0) + 1; $n++;
+              if (count($lines) < 15) $lines[] = "  last_in " . $c["last_in_at"] . " · src " . ($r["src"] ?? "-") . " · contact source " . $c["source"] . " · " . $w;
+            }
+            echo "checked the newest $n open unassigned chats:\n"; arsort($why); foreach ($why as $k => $v) echo "  $v x $k\n";
+            echo "newest 15:\n" . implode("\n", $lines) . "\n";
+          } catch (Throwable $e) { echo "  n/a (" . substr($e->getMessage(), 0, 120) . ")\n"; }
           echo "\n=== the engine's own log lines about auto assign / errors (newest 15) ===\n";
           try { foreach ($d->query("SELECT at, kind, ok, info FROM wa_log WHERE info LIKE '%auto assign%' OR info LIKE '%waa%' OR (kind = 'engine' AND ok = 0) ORDER BY id DESC LIMIT 15")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . $r["at"] . " [" . $r["kind"] . "/" . ($r["ok"] ? "ok" : "FAIL") . "] " . substr($r["info"], 0, 200) . "\n"; } catch (Throwable $e) { echo "  n/a\n"; }
           PHP
