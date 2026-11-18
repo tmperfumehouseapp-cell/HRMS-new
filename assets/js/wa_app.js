@@ -477,26 +477,34 @@
         if (!el) { el = document.createElement('div'); el.id = 'wxSlow'; el.setAttribute('role', 'alert'); el.style.cssText = 'position:sticky;top:0;z-index:50;padding:8px 12px;font:600 13px/1.35 system-ui,sans-serif;color:#fff;text-align:center'; R.insertBefore(el, R.firstChild); }
         el.style.background = hold ? '#c0392b' : '#c97a07'; el.textContent = msg; if (!el.dataset.k || el.dataset.k !== sl.state) { el.dataset.k = sl.state; try { toast(msg, true); } catch (e) { } try { if (window.Notification && Notification.permission === 'granted') new Notification('Slow replies', { body: msg }); } catch (e) { } } } catch (e) { } };
     // 🎯 one line under the title (beside the green coach strip): today's ticket, the goal, and what the next order must be
-    const strip = (t) => { try { let el = document.getElementById('wxTkS'); const hasT = !!(t && +t.goal > 0), f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), top = R.querySelector('.wx-top'); if (!top) return;
+    const strip = (t) => { try { let el = document.getElementById('wxTkS'); if (!t || !(+t.goal > 0)) { if (el) el.remove(); return; } const f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), top = R.querySelector('.wx-top'); if (!top) return;
         if (!el) { el = document.createElement('div'); el.id = 'wxTkS'; el.className = 'wx-mgr wx-mgr-first'; const mg = document.getElementById('wxMgr'); (mg || top).insertAdjacentElement('afterend', el); }
-        // ONE growth line, always there: ticket (when a goal is set) · bigger · add-on · one instruction. Before any order of today is read it shows empty bars, so it is never invisible.
-        const base = !hasT ? '' : !t.orders ? '🎯 ટિકિટ ગોલ ' + f(t.goal) + ' · પહેલો ઓર્ડર ' + f(t.goal) + ' કે વધુનો પાડો' : t.status === 'g' ? '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' ✓ સરસ! આમ જ ચાલુ રાખો' : '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' · આગલો ઓર્ડર ઓછામાં ઓછો ' + f(t.need_next),
-          grow = window.__wxAdLine || '⬆ ▯▯▯ · ➕ ▯▯▯ · ઓર્ડરની ચેટ વંચાય એટલે અહીં ભરાશે';
-        el.innerHTML = (base ? esc(base) + ' · ' : '📈 ') + grow + ' ›'; el.style.cursor = 'pointer'; el.onclick = () => (window.__wxAdOpen ? window.__wxAdOpen() : toast('આજે હજી ઓર્ડર વંચાયા નથી'));
-      } catch (e) { } };
+        el.textContent = !t.orders ? '🎯 ટિકિટ ગોલ ' + f(t.goal) + ' · પહેલો ઓર્ડર ' + f(t.goal) + ' કે વધુનો પાડો' : t.status === 'g' ? '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' ✓ સરસ! આમ જ ચાલુ રાખો' : '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' · આગલો ઓર્ડર ઓછામાં ઓછો ' + f(t.need_next); } catch (e) { } };
+    // 📈 ONE clear card under the coach lines: in today's read orders, where the salesperson put NO effort — selling bigger (ticket size) and the add-on — in plain words. Tap = the orders to fix + words that work.
+    function growBox() {
+      try {
+        const top = R.querySelector('.wx-top'); if (!top) return; let el = document.getElementById('wxGl');
+        if (!el) { el = document.createElement('div'); el.id = 'wxGl'; el.className = 'wx-mgr'; const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr') || top; prev.insertAdjacentElement('afterend', el); }
+        else { const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr'); if (prev && prev.nextElementSibling !== el) prev.insertAdjacentElement('afterend', el); }
+        const d = window.__wxAd, id = window.__wxIdeas || {}, esc2 = (x) => esc(String(x)); el.style.cursor = 'pointer'; el.onclick = () => window.__wxAdOpen && window.__wxAdOpen();
+        if (!d || !d.read) { const w = (id.big || [])[0]; el.innerHTML = '📈 <b>ટિકિટ સાઇઝ અને એડ ઓન:</b> આજના ઓર્ડરની ચેટ વંચાય એટલે અહીં સાફ દેખાશે કે ક્યાં એફર્ટ નથી લગાડી.' + (w ? '<br>💡 દરેક ઓર્ડરમાં બોલો: “' + esc2(w.length > 60 ? w.slice(0, 58) + '…' : w) + '”' : ''); return; }
+        const n = d.n, z = d.sz || [0, 0, 0, 0];
+        const part = (a, no, yes, doneWord) => { const bits = [];
+          bits.push(a[0] > 0 ? '<b style="color:#b91c1c">' + a[0] + ' ઓર્ડરમાં ' + no + '</b>' : '<b style="color:#15803d">બધા ઓર્ડરમાં ' + yes + ' ✓</b>');
+          if (a[1] > 0) bits.push(a[1] + ' માં ફક્ત એક વાર');
+          if (a[3] > 0) bits.push('<span style="color:#15803d">' + a[3] + ' માં ' + doneWord + ' ✓</span>');
+          return bits.join(' · '); };
+        el.innerHTML = '📈 <b>આજના ' + d.read + ' ઓર્ડરમાં</b><br>⬆ <b>ટિકિટ સાઇઝ</b> (મોટું વેચવું): ' + part(z, 'એફર્ટ નથી લગાડી', 'એફર્ટ લગાડી', 'માન્યા') + '<br>➕ <b>એડ ઓન</b>: ' + part(n, 'એડ ઓન ઓફર નથી કરી', 'એડ ઓન ઓફર કરી', 'માન્યા') + ' ›';
+      } catch (e) { }
+    }
     // 🎯 my ticket today against the goal (one small chip, the same number as My Sales; refreshed every 5 minutes)
-    { const paintTk = async () => { try { const d = await api.get('wq.tk_me'), t = d && d.tk; window.__wxTk = t; const el = R.querySelector('#wxTkT'), b = R.querySelector('#wxTk'); slowBanner(d && d.slow); strip(t); if (!el || !b) return; if (!t || !(+t.goal > 0)) { b.hidden = true; return; } b.hidden = false;
+    { const paintTk = async () => { try { const d = await api.get('wq.tk_me'), t = d && d.tk; window.__wxTk = t; const el = R.querySelector('#wxTkT'), b = R.querySelector('#wxTk'); slowBanner(d && d.slow); strip(t); growBox(); if (!el || !b) return; if (!t || !(+t.goal > 0)) { b.hidden = true; return; } b.hidden = false;
         const col = t.status === 'g' ? '#7cffb2' : t.status === 'a' ? '#ffd166' : '#ff8a80', f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN');
         el.innerHTML = '<i style="width:8px;height:8px;border-radius:50%;background:' + col + ';display:inline-block;flex:none"></i>' + (t.orders ? f(t.ticket) + '<span class="wx-tmt"> / ' + f(t.goal) + '</span>' : '<span class="wx-tmt">goal </span>' + f(t.goal)); b.title = 'Ticket today ' + f(t.ticket) + ' · goal ' + f(t.goal) + (t.status === 'g' ? ' ✓' : ' · next order ' + f(t.need_next)); } catch (e) { } };
       paintTk(); setInterval(() => { if (!document.hidden) paintTk(); }, 90000); }
 
     // 📈 my growth effort today (bigger order + add-on): it lives INSIDE the one ticket line above the chat list (tap it for the sheet) — no extra chips or lines (wq.ad_me, own numbers only)
-    { const paintAd = async () => { try { const d = await api.get('wq.ad_me'), n = d && d.n ? d.n : [0, 0, 0, 0], z = d && d.sz ? d.sz : [0, 0, 0, 0], tot = d ? +d.read || 0 : 0;
-          window.__wxIdeas = (d && d.ideas) || null;
-          if (!tot) { const id = window.__wxIdeas, pick = id ? ((id.big || [])[0] || '') : ''; window.__wxAdLine = '⬆ ▯▯▯ · ➕ ▯▯▯ → 💡 ' + (pick ? '“' + esc(pick.length > 46 ? pick.slice(0, 44) + '…' : pick) + '”' : 'ઓર્ડરમાં મોટું અને એડ ઓન ઓફર કરો'); window.__wxAd = null; strip(window.__wxTk); return; } window.__wxAd = d;
-          const dot = (v, c) => '<b style="color:' + c + '">' + v + '</b>', ins = z[0] > 0 ? '⬆ આગલા ઓર્ડરમાં મોટું ઓફર કરો' : (n[0] > 0 ? '➕ એડ ઓન ઓફર કરો' : (z[1] + n[1] > 0 ? '⬆➕ એક વાર વધુ પ્રયત્ન કરો' : '✓ સરસ'));
-          window.__wxAdLine = '⬆ ' + dot(z[3], '#1d4ed8') + '/' + dot(z[0], '#111827') + ' · ➕ ' + dot(n[3], '#15803d') + '/' + dot(n[0], '#b91c1c') + ' → ' + ins; strip(window.__wxTk);
-        } catch (e) { /* no line */ } };
+    { const paintAd = async () => { try { const d = await api.get('wq.ad_me'); window.__wxIdeas = (d && d.ideas) || null; window.__wxAd = d && +d.read > 0 ? d : null; growBox(); } catch (e) { /* no card */ } };
       window.__wxAdOpen = () => { const d = window.__wxAd || { n: [0, 0, 0, 0], sz: [0, 0, 0, 0], read: 0, missed: [], tip: '' }, ID = window.__wxIdeas || { big: [], add: [] }; const n = d.n, z = d.sz || [0, 0, 0, 0], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), tm = d.team || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3];
         const box = (c, v, t) => '<div style="background:' + c + ';color:#fff;border-radius:9px;padding:5px 0;text-align:center;flex:1;line-height:1.15"><b style="font-size:19px;display:block">' + v + '</b><span style="font-size:10px;font-weight:700">' + t + '</span></div>';
         const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center'; o.onclick = (e2) => { if (e2.target === o) o.remove(); };
@@ -506,7 +514,7 @@
           + (tt ? '<div style="color:#667781;font-size:11.5px;margin-top:6px">Team today: ' + Math.round(100 * tm[3] / tt) + '% of orders took the add-on · you ' + Math.round(100 * n[3] / Math.max(1, d.read)) + '%</div>' : '')
           + (ID.big.length || ID.add.length ? '<div style="margin-top:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:6px 9px"><b>💡 ' + (d.read ? 'ટીમમાં ચાલેલા શબ્દો' : 'આ રીતે ભરાશે — દરેક ઓર્ડરમાં આ બોલો') + '</b>' + ID.big.map((x) => '<div style="margin-top:3px">⬆ “' + esc(x) + '”</div>').join('') + ID.add.map((x) => '<div style="margin-top:3px">➕ “' + esc(x) + '”</div>').join('') + '<div style="color:#667781;font-size:11px;margin-top:4px">સ્પષ્ટ ઓફર (વસ્તુ + ભાવ/ફાયદો) જ ગણાશે; "ઇક ઔર કર દૂં?" નહીં.</div></div>' : '')
           + (d.tip ? '<div style="margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 9px">💡 Your words that worked: “' + esc(d.tip) + '”</div>' : '')
-          + ((d.missed || []).length ? '<div style="margin-top:8px"><b>🔴 Nothing offered on:</b>' + d.missed.map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>' : '')
+          + (((d.missed_big || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['⬆ મોટું વેચવાની એફર્ટ નથી — આ ઓર્ડર:', d.missed_big]) : '') + ((d.missed || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['➕ એડ ઓન ઓફર નથી — આ ઓર્ડર:', d.missed]) : ''))
           + '</div>'; document.body.appendChild(o);
         o.addEventListener('click', (e3) => { const g = e3.target.closest('[data-adopen]'); if (g) { o.remove(); try { openChat(g.dataset.adopen, {}); } catch (e4) { } } }); };
       paintAd(); setInterval(() => { if (!document.hidden) paintAd(); }, 90000); }
