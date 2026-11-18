@@ -357,6 +357,7 @@
         <div><label for="addonPre" style="font-size:12px;">Prepaid amount (paid in advance)</label><input type="number" id="addonPre" min="0" step="1" placeholder="0" style="width:150px;"></div>
         <div><label for="addonCod" style="font-size:12px;">COD amount (collect on delivery)</label><input type="number" id="addonCod" min="0" step="1" placeholder="0" style="width:150px;"></div>
       </div>
+      <div id="addonProofSlot" style="margin-top:12px;"></div>
     </div>
     <div class="actions" style="align-items:center; justify-content:space-between;">
       <span style="font-size:12.5px; color:var(--muted);">Order total <span id="addonTotal" style="color:var(--ink); font-weight:600;">₹0</span></span>
@@ -392,6 +393,7 @@
 <script src="assets/js/config.js?v=260928b"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/addon_proof.js?v=1"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261116a"></script>
 <script>window.FO_SIZE = 'slim'; if (window.HRMS_EMBED) window.FO_HIDE = true;</script>
@@ -940,7 +942,8 @@
     const h = adHouse(o), g = {}, ord = [];
     addonRows.filter(a => adNm(a.order_name) === adNm(o.order_name) && (!a.group_key || !h || a.group_key === h)).forEach(a => {
       const k = a.addon_group || ('single-' + a.addon_id);
-      if (!g[k]) { g[k] = { key: k, addon_id: a.addon_id, price: 0, pre: 0, cod: 0, items: [] }; ord.push(k); }
+      if (!g[k]) { g[k] = { key: k, addon_id: a.addon_id, price: 0, pre: 0, cod: 0, items: [], proof: false }; ord.push(k); }
+      if (a.proof_path) g[k].proof = true;
       g[k].price += Number(a.price); g[k].pre += Number(a.prepaid_amt || 0); g[k].cod += Number(a.cod_amt || 0); g[k].items.push(a);
     });
     return ord.map(k => g[k]);
@@ -1023,6 +1026,7 @@
     document.getElementById('addonOrder').value = o.order_name || '';
     document.getElementById('addonItems').innerHTML = addonItemRow() + addonItemRow();
     document.getElementById('addonPrice').value = ''; document.getElementById('addonPre').value = ''; document.getElementById('addonCod').value = '';
+    AddonProof.reset(); AddonProof.show(false);
     document.getElementById('addonModalAlert').innerHTML = '';
     recalcAddonTotal();      // addonKey is set, so this shows "order + add-on = new total"
     document.getElementById('addonModal').classList.add('open');
@@ -1042,7 +1046,7 @@
             <button type="button" onclick="deleteAddon('${esc(x.key)}', ${Number(x.addon_id)})" title="Remove this add-on" style="background:none; border:none; cursor:pointer; color:var(--bad-fg); font-size:14px; padding:0; min-height:0;">&times;</button>
           </span>
         </div>
-        ${x.pre + x.cod > 0 ? `<div style="font-size:12px; margin-top:3px;">${x.pre > 0 ? `<span style="color:#0f7a41; font-weight:600;">Prepaid ${inr(x.pre)}</span>` : ''}${x.pre > 0 && x.cod > 0 ? ' · ' : ''}${x.cod > 0 ? `<span style="color:#b45309; font-weight:600;">COD ${inr(x.cod)}</span>` : ''}</div>` : ''}
+        ${x.pre + x.cod > 0 ? `<div style="font-size:12px; margin-top:3px;">${x.pre > 0 ? `<span style="color:#0f7a41; font-weight:600;">Prepaid ${inr(x.pre)}</span>` : ''}${x.pre > 0 && x.cod > 0 ? ' · ' : ''}${x.cod > 0 ? `<span style="color:#b45309; font-weight:600;">COD ${inr(x.cod)}</span>` : ''}${x.proof ? ` · <a href="#" onclick="AddonProof.view('${String(x.key).startsWith('single-') ? '' : esc(x.key)}', ${Number(x.addon_id)}); return false;">View payment proof</a>` : (x.pre > 0 ? ' · <span style="color:#b45309;">no proof saved</span>' : '')}</div>` : ''}
         <div style="font-size:12px; color:var(--muted); margin-top:3px;">${x.items.map(it => `${esc(it.product_name)}${it.size_ml ? ' ' + esc(it.size_ml) + ' ML' : ''}${Number(it.qty) > 1 ? ' ×' + Number(it.qty) : ''}`).join(' · ')}</div>
       </div>`).join('') : '<div class="empty-state" style="padding:20px;">No add-ons for this order.</div>';
     document.getElementById('addonListModal').classList.add('open');
@@ -1067,6 +1071,9 @@
   // typing the prepaid amount fills the COD amount (and the other way round), so the two always add up to the add-on price
   document.getElementById('addonPre').addEventListener('input', () => { const t = Number(document.getElementById('addonPrice').value || 0); document.getElementById('addonCod').value = String(Math.max(0, t - Number(document.getElementById('addonPre').value || 0))); });
   document.getElementById('addonCod').addEventListener('input', () => { const t = Number(document.getElementById('addonPrice').value || 0); document.getElementById('addonPre').value = String(Math.max(0, t - Number(document.getElementById('addonCod').value || 0))); });
+  const adProofSync = () => AddonProof.show(Number(document.getElementById('addonPre').value || 0) > 0);
+  ['addonPrice', 'addonPre', 'addonCod'].forEach(i => document.getElementById(i).addEventListener('input', () => setTimeout(adProofSync, 0)));
+  AddonProof.mount('addonProofSlot');
   document.getElementById('btnAddonSave').addEventListener('click', async () => {
     const box = document.getElementById('addonModalAlert');
     const o = orders.find(x => key(x) === addonKey);
@@ -1080,10 +1087,12 @@
     if (!items.length) { box.innerHTML = '<div class="alert error">Enter at least one product name.</div>'; return; }
     const totalPrice = Number(document.getElementById('addonPrice').value || 0);
     if (!(totalPrice > 0)) { box.innerHTML = '<div class="alert error">Enter the total add-on price.</div>'; return; }
+    const preAmt = Number(document.getElementById('addonPre').value || 0);
+    if (preAmt > 0 && !AddonProof.file()) { box.innerHTML = '<div class="alert error">Payment proof is required: paste or choose the screenshot of the prepaid amount.</div>'; return; }
     const btn = document.getElementById('btnAddonSave');
     btn.disabled = true;
     try {
-      const d = await api.post('addons.save', { employee_id: effEmp(o, pending[addonKey] || {}), date: adDate(o), group_key: adHouse(o) || '', order_name: o.order_name, total_price: totalPrice, prepaid_amt: Number(document.getElementById('addonPre').value || 0), cod_amt: Number(document.getElementById('addonCod').value || 0), items });
+      const d = await AddonProof.save({ employee_id: effEmp(o, pending[addonKey] || {}), date: adDate(o), group_key: adHouse(o) || '', order_name: o.order_name, total_price: totalPrice, prepaid_amt: preAmt, cod_amt: Number(document.getElementById('addonCod').value || 0), items });
       closeAddon();
       showAlert(d.message || 'Add-on saved.');
       await loadAddons(document.getElementById('dateFrom').value, document.getElementById('dateTo').value);

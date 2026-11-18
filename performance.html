@@ -182,6 +182,11 @@
         <input type="number" id="addonPrice" min="0" step="1" placeholder="950" style="width:150px;">
         <span id="addonCovers" style="font-size:11.5px; color:var(--muted);">for the products above</span>
       </div>
+      <div style="display:flex; gap:12px; margin-top:12px; flex-wrap:wrap;">
+        <div><label for="addonPre" style="font-size:12px;">Prepaid amount (paid in advance)</label><input type="number" id="addonPre" min="0" step="1" placeholder="0" style="width:150px;"></div>
+        <div><label for="addonCod" style="font-size:12px;">COD amount (collect on delivery)</label><input type="number" id="addonCod" min="0" step="1" placeholder="0" style="width:150px;"></div>
+      </div>
+      <div id="addonProofSlot" style="margin-top:12px;"></div>
     </div>
 
     <div class="actions" style="align-items:center; justify-content:space-between;">
@@ -208,6 +213,7 @@
 <script src="assets/js/config.js?v=260929d"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/addon_proof.js?v=1"></script>
 <script>
   guardPage();
   renderSidebar('performance');
@@ -574,7 +580,8 @@
       + (groupLabel ? ' · ' + groupLabel : '');
     document.getElementById('addonOrder').value = '';
     document.getElementById('addonItems').innerHTML = addonItemRow() + addonItemRow();
-    document.getElementById('addonPrice').value = '';
+    document.getElementById('addonPrice').value = ''; document.getElementById('addonPre').value = ''; document.getElementById('addonCod').value = '';
+    AddonProof.reset(); AddonProof.show(false);
     document.getElementById('addonModalAlert').innerHTML = '';
     recalcAddonTotal();
     document.getElementById('addonModal').classList.add('open');
@@ -592,8 +599,8 @@
     const order = [];
     mine.forEach(a => {
       const k = a.addon_group || ('single-' + a.addon_id);
-      if (!groups[k]) { groups[k] = { order_name: a.order_name, price: 0, items: [], key: k, addon_id: a.addon_id }; order.push(k); }
-      groups[k].price += Number(a.price);
+      if (!groups[k]) { groups[k] = { order_name: a.order_name, price: 0, pre: 0, cod: 0, proof: false, items: [], key: k, addon_id: a.addon_id }; order.push(k); }
+      groups[k].price += Number(a.price); groups[k].pre += Number(a.prepaid_amt || 0); groups[k].cod += Number(a.cod_amt || 0); if (a.proof_path) groups[k].proof = true;
       groups[k].items.push(a);
     });
 
@@ -612,6 +619,7 @@
                   style="background:none; border:none; cursor:pointer; color:var(--bad-fg); font-size:14px; padding:0; min-height:0;">&times;</button>
               </span>
             </div>
+            ${g.pre + g.cod > 0 ? `<div style="font-size:12px; margin-top:3px;">${g.pre > 0 ? `<span style="color:#0f7a41; font-weight:600;">Prepaid ${inrShort(g.pre)}</span>` : ''}${g.pre > 0 && g.cod > 0 ? ' · ' : ''}${g.cod > 0 ? `<span style="color:#b45309; font-weight:600;">COD ${inrShort(g.cod)}</span>` : ''}${g.proof ? ` · <a href="#" onclick="AddonProof.view('${String(g.key).startsWith('single-') ? '' : g.key}', ${g.addon_id}); return false;">View payment proof</a>` : (g.pre > 0 ? ' · <span style="color:#b45309;">no proof saved</span>' : '')}</div>` : ''}
             <div style="font-size:12px; color:var(--muted); margin-top:3px;">
               ${g.items.map(it => `${it.product_name}${it.size_ml ? ' ' + it.size_ml + ' ML' : ''}${Number(it.qty) > 1 ? ' ×' + it.qty : ''}`).join(' · ')}
             </div>
@@ -1055,7 +1063,12 @@
   document.getElementById('addonItems').addEventListener('input', (e) => {
     if (e.target.classList.contains('ad-name')) recalcAddonTotal();
   });
-  document.getElementById('addonPrice').addEventListener('input', recalcAddonTotal);
+  document.getElementById('addonPrice').addEventListener('input', () => { recalcAddonTotal(); const t = Number(document.getElementById('addonPrice').value || 0), p = Number(document.getElementById('addonPre').value || 0); if (document.getElementById('addonPre').value !== '' || document.getElementById('addonCod').value !== '') document.getElementById('addonCod').value = String(Math.max(0, t - p)); });
+  // typing the prepaid amount fills the COD amount (and the other way round), so the two always add up to the add-on price
+  document.getElementById('addonPre').addEventListener('input', () => { const t = Number(document.getElementById('addonPrice').value || 0); document.getElementById('addonCod').value = String(Math.max(0, t - Number(document.getElementById('addonPre').value || 0))); });
+  document.getElementById('addonCod').addEventListener('input', () => { const t = Number(document.getElementById('addonPrice').value || 0); document.getElementById('addonPre').value = String(Math.max(0, t - Number(document.getElementById('addonCod').value || 0))); });
+  AddonProof.mount('addonProofSlot');
+  ['addonPrice', 'addonPre', 'addonCod'].forEach(i => document.getElementById(i).addEventListener('input', () => setTimeout(() => AddonProof.show(Number(document.getElementById('addonPre').value || 0) > 0), 0)));
 
   document.getElementById('btnAddonSave').addEventListener('click', async () => {
     const alertBox = document.getElementById('addonModalAlert');
@@ -1079,15 +1092,22 @@
       return;
     }
 
+    const preAmt = Number(document.getElementById('addonPre').value || 0);
+    if (preAmt > 0 && !AddonProof.file()) {
+      alertBox.innerHTML = '<div class="alert error">Payment proof is required: paste or choose the screenshot of the prepaid amount.</div>';
+      return;
+    }
     const btn = document.getElementById('btnAddonSave');
     btn.disabled = true;
     try {
-      const d = await api.post('addons.save', {
+      const d = await AddonProof.save({
         employee_id: Number(document.getElementById('addonEmpId').value),
         date: currentDay,
         group_key: document.getElementById('addonGroupKey').value,
         order_name: document.getElementById('addonOrder').value.trim(),
         total_price: totalPrice,
+        prepaid_amt: preAmt,
+        cod_amt: Number(document.getElementById('addonCod').value || 0),
         items,
       });
       closeAddon();

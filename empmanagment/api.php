@@ -15322,7 +15322,7 @@ function ensure_addons_table(PDO $pdo): bool
     // re-run on servers where an older version already created the table
     // (and so already wrote the previous flag), which is what otherwise
     // leaves the addon_group column missing and every insert failing.
-    $flag = sys_get_temp_dir() . '/hrms_addons_ok_v3';
+    $flag = sys_get_temp_dir() . '/hrms_addons_ok_v4';
     if (is_file($flag)) return $done = true;
     try {
         $pdo->exec(
@@ -15351,6 +15351,7 @@ function ensure_addons_table(PDO $pdo): bool
         }
         if (!in_array('prepaid_amt', $cols, true)) $pdo->exec("ALTER TABLE employee_addons ADD COLUMN prepaid_amt DECIMAL(12,2) NOT NULL DEFAULT 0");   // how much of the add-on the customer paid in advance
         if (!in_array('cod_amt', $cols, true)) $pdo->exec("ALTER TABLE employee_addons ADD COLUMN cod_amt DECIMAL(12,2) NOT NULL DEFAULT 0");   // how much is collected on delivery
+        if (!in_array('proof_path', $cols, true)) $pdo->exec("ALTER TABLE employee_addons ADD COLUMN proof_path VARCHAR(255) NULL");   // payment screenshot of the prepaid part (on the first row of the add-on)
 
         @file_put_contents($flag, '1');
         return $done = true;
@@ -26570,7 +26571,8 @@ switch ($action) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         ensure_addons_table($pdo);
 
-        $input = json_input();
+        // Sent as a form (payload = the JSON, proof = the payment screenshot) or as plain JSON when there is no screenshot.
+        $input = isset($_POST['payload']) ? (json_decode((string)$_POST['payload'], true) ?: []) : json_input();
         $empId = (int)($input['employee_id'] ?? 0);
         $date = trim($input['date'] ?? '');
         $groupKey = normalize_group_key($input['group_key'] ?? '');
@@ -26603,25 +26605,34 @@ switch ($action) {
         }
         if (!$clean) json_response(['error' => 'Enter a product name.'], 422);
 
+        // Anything paid in advance needs its payment screenshot (compulsory), saved with the add-on.
+        $proofPath = null;
+        if ($pre > 0) {
+            if (empty($_FILES['proof']) || ($_FILES['proof']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) json_response(['error' => 'Attach the payment screenshot: an amount is paid in advance.'], 422);
+            [$proofPath, , $perr] = proof_save_image($_FILES['proof'], $empId);
+            if ($perr !== '') json_response(['error' => $perr], 422);
+        }
+
         // Group id ties the rows of one add-on together, so the UI can show
         // and delete them as a single entry rather than loose products.
         $groupId = bin2hex(random_bytes(8));
 
         $ins = $pdo->prepare(
-            "INSERT INTO employee_addons (employee_id, addon_date, group_key, order_name, product_name, size_ml, qty, price, addon_group, created_by, prepaid_amt, cod_amt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO employee_addons (employee_id, addon_date, group_key, order_name, product_name, size_ml, qty, price, addon_group, created_by, prepaid_amt, cod_amt, proof_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $pdo->beginTransaction();
         try {
             foreach ($clean as $i => $c) {
                 $ins->execute([
                     $empId, $date, $groupKey, $orderName, $c['name'], $c['size'] ?: null,
-                    $c['qty'], $i === 0 ? $total : 0, $groupId, $auth['username'], $i === 0 ? $pre : 0, $i === 0 ? $cod : 0,
+                    $c['qty'], $i === 0 ? $total : 0, $groupId, $auth['username'], $i === 0 ? $pre : 0, $i === 0 ? $cod : 0, $i === 0 ? $proofPath : null,
                 ]);
             }
             $pdo->commit();
         } catch (PDOException $e) {
             $pdo->rollBack();
+            if ($proofPath) proof_unlink($proofPath);
             // Surface the real reason — a generic 500 here gives no clue
             // whether it's a missing column, a bad value or a dead table.
             json_response(['error' => 'Could not save the add-on: ' . $e->getMessage()], 500);
@@ -26678,6 +26689,25 @@ switch ($action) {
         break;
     }
 
+    case 'addons.proof': {
+        // The payment screenshot of an add-on, streamed with the login token (never a public link).
+        $auth = require_auth();
+        require_addons_access($auth);
+        ensure_addons_table($pdo);
+        $group = trim((string)($_GET['addon_group'] ?? ''));
+        $id = (int)($_GET['addon_id'] ?? 0);
+        if ($group !== '') { $q = $pdo->prepare("SELECT proof_path FROM employee_addons WHERE addon_group = ? AND proof_path IS NOT NULL LIMIT 1"); $q->execute([$group]); }
+        else { $q = $pdo->prepare("SELECT proof_path FROM employee_addons WHERE addon_id = ? AND proof_path IS NOT NULL LIMIT 1"); $q->execute([$id]); }
+        $rel = (string)$q->fetchColumn();
+        $abs = __DIR__ . '/' . $rel;
+        if ($rel === '' || strpos($rel, 'uploads/proofs/') !== 0 || strpos($rel, '..') !== false || !is_file($abs)) json_response(['error' => 'No payment screenshot for this add-on.'], 404);
+        header('Content-Type: image/jpeg');
+        header('Content-Length: ' . filesize($abs));
+        header('Cache-Control: private, max-age=300');
+        readfile($abs);
+        exit;
+    }
+
     case 'addons.delete': {
         $auth = require_auth();
         require_addons_access($auth);
@@ -26687,9 +26717,15 @@ switch ($action) {
         $group = trim((string)($input['addon_group'] ?? ''));
         $id = (int)($input['addon_id'] ?? 0);
         if ($group !== '') {
-            // Remove the whole add-on (every product recorded together).
+            // Remove the whole add-on (every product recorded together), and its payment screenshot.
+            $pq = $pdo->prepare("SELECT proof_path FROM employee_addons WHERE addon_group = ? AND proof_path IS NOT NULL");
+            $pq->execute([$group]);
+            foreach ($pq->fetchAll(PDO::FETCH_COLUMN) as $pp) proof_unlink((string)$pp);
             $pdo->prepare("DELETE FROM employee_addons WHERE addon_group = ?")->execute([$group]);
         } elseif ($id) {
+            $pq = $pdo->prepare("SELECT proof_path FROM employee_addons WHERE addon_id = ? AND proof_path IS NOT NULL");
+            $pq->execute([$id]);
+            foreach ($pq->fetchAll(PDO::FETCH_COLUMN) as $pp) proof_unlink((string)$pp);
             $pdo->prepare("DELETE FROM employee_addons WHERE addon_id = ?")->execute([$id]);
         } else {
             json_response(['error' => 'addon_group or addon_id required.'], 422);
