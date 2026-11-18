@@ -71,6 +71,7 @@ body.waui .cu-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;} bod
 body.waui .cu-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;} body.waui .cu-2>div{min-width:0;}
 body.waui .cu-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;align-items:start;} body.waui .cu-main{min-width:0;}
 body.waui .cu-side{position:sticky;top:0;}
+body.waui .cu-stick{position:sticky;bottom:-1px;z-index:8;background:#fff;border-top:1px solid #e2e8f0;padding:10px 0 8px;margin-top:12px!important;box-shadow:0 -6px 10px -8px rgba(15,23,42,.25);} html.wxdk body.waui .cu-stick,body.dark.waui .cu-stick{background:#111b21;border-top-color:#2a3942;}
 body.waui .cu-ai{background:linear-gradient(135deg,#f4f0ff,#eef6ff);border:1px solid #ddd6fe;border-radius:14px;padding:11px 14px;margin:10px 0;font-size:13px;line-height:1.5;color:#2f2a55;}
 body.waui .cu-ai .also{margin-top:6px;font-size:12.5px;} body.waui .cu-ai .also a{color:#5b3fd6;text-decoration:none;font-weight:600;white-space:nowrap;}
 body.waui .cu-ai .wp-btn{margin-left:6px;vertical-align:middle;}
@@ -1009,7 +1010,8 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       }
       const head = () => typedBar() + `<div class="wp-seg">${['Who', 'What', 'When & retries'].map((l, i) => `<button type="button" class="${step === i + 1 ? 'on' : ''}" ${i + 1 > step ? 'disabled' : ''} data-s="${i + 1}">${i + 1} ${l}</button>`).join('')}</div>`;
       const bind = () => m.body.querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { step = +b.dataset.s; go(); }; });
-      const go = () => { if (step === 1) draw1(); else if (step === 2) draw2(); else draw3(); m.body.scrollTop = 0; };
+      const go = () => { if (step === 1) draw1(); else if (step === 2) draw2(); else draw3(); m.body.scrollTop = 0; stick(); };
+      const stick = () => { try { m.body.querySelectorAll('#cuNext,#cuGo').forEach((x) => { const r = x.closest('.wp-row'); if (r) r.classList.add('cu-stick'); }); } catch (e) { } };   // the Next / Send buttons stay at the bottom of the window — no scrolling to find them
       W.util = isU; if (isU) { W.extra.ord_days = W.extra.ord_days || 60; W.mix = false; }
       const tpl = () => D.templates.find((x) => x.id === W.tpl_id);
       const pushOf = () => PUSH.find((p) => p[0] === W.push) || PUSH[2];
