@@ -1251,8 +1251,20 @@ function ora_mode(PDO $pdo): string { $m = (string)setting_get($pdo, 'order_auto
 function ora_tables(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok;
-    try { $pdo->exec("CREATE TABLE IF NOT EXISTS order_rate_auto (order_key VARCHAR(80) NOT NULL PRIMARY KEY, order_name VARCHAR(60) NOT NULL DEFAULT '', employee_id INT NOT NULL DEFAULT 0, rating DECIMAL(3,1) NULL, tried TINYINT NOT NULL DEFAULT 0, worked TINYINT NOT NULL DEFAULT 0, asked VARCHAR(200) NOT NULL DEFAULT '', offered VARCHAR(200) NOT NULL DEFAULT '', reason VARCHAR(400) NOT NULL DEFAULT '', day DATE NULL, house VARCHAR(10) NOT NULL DEFAULT '', at DATETIME NOT NULL, applied TINYINT NOT NULL DEFAULT 0, KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS order_rate_auto (order_key VARCHAR(80) NOT NULL PRIMARY KEY, order_name VARCHAR(60) NOT NULL DEFAULT '', employee_id INT NOT NULL DEFAULT 0, rating DECIMAL(3,1) NULL, tried TINYINT NOT NULL DEFAULT 0, worked TINYINT NOT NULL DEFAULT 0, asked VARCHAR(200) NOT NULL DEFAULT '', offered VARCHAR(200) NOT NULL DEFAULT '', reason VARCHAR(400) NOT NULL DEFAULT '', day DATE NULL, house VARCHAR(10) NOT NULL DEFAULT '', at DATETIME NOT NULL, applied TINYINT NOT NULL DEFAULT 0, KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $cols = $pdo->query("SHOW COLUMNS FROM order_rate_auto")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('tries', $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN tries TINYINT NOT NULL DEFAULT 0");      // how many separate times the salesperson offered more
+        if (!in_array('tip', $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN tip VARCHAR(240) NOT NULL DEFAULT ''");     // the winning words, when the try worked
+        return $ok = true; }
     catch (Throwable $e) { error_log('ora_tables: ' . $e->getMessage()); return $ok = false; }
+}
+/** Add-on effort of one order: 3 = tried hard (or at least tried) and the customer took it · 2 = tried hard (2+ offers), customer did not take · 1 = a little effort (one try) · 0 = no effort. */
+function ora_effort(int $tried, int $worked, int $tries): int
+{
+    if ($worked) return 3;
+    if ($tries >= 2) return 2;
+    if ($tried || $tries >= 1) return 1;
+    return 0;
 }
 /** The conversation up to the order as text lines: C = customer, S = salesperson, BOT = automatic / campaign message. Returns [text, customer messages, salesperson messages]. */
 function ora_transcript(array $rows): array
@@ -1277,11 +1289,12 @@ function ora_rate_one(PDO $pdo, array $o): array
         . "'with this you can also take …'. Judge ONLY the salesperson's own words. A customer who asked for a big order by himself earns the salesperson no credit for the size. "
         . "Stars (0.5 steps): 1 = just took the order, never offered more · 2 = one weak or vague try · 3 = a clear try but the customer did not take more · 4 = the try worked a little (a small add-on, +10 ml, a bit more) · 5 = the try clearly worked (200 ml instead of 100 ml, two instead of one, a combo) or several good offers. "
         . "asked = what the customer first asked for (short). offered = what the salesperson offered more (short, empty if nothing). reason = ONE short sentence in simple English that proves the stars from the chat. "
+        . "tries = how many SEPARATE times the salesperson offered the customer more (0 if never, count each new offer or push). tip = ONLY when the try worked: the salesperson's own winning words, shortened, in the chat's language (else empty). "
         . "Final order for reference: Rs " . round((float)$o['total']) . ($o['ml_total'] ? ', ' . (int)$o['ml_total'] . ' ml in total' : '') . '.';
-    $sch = ['type' => 'OBJECT', 'properties' => ['asked' => ['type' => 'STRING'], 'offered' => ['type' => 'STRING'], 'tried' => ['type' => 'BOOLEAN'], 'worked' => ['type' => 'BOOLEAN'], 'stars' => ['type' => 'NUMBER'], 'reason' => ['type' => 'STRING']], 'required' => ['asked', 'offered', 'tried', 'worked', 'stars', 'reason']];
+    $sch = ['type' => 'OBJECT', 'properties' => ['asked' => ['type' => 'STRING'], 'offered' => ['type' => 'STRING'], 'tried' => ['type' => 'BOOLEAN'], 'worked' => ['type' => 'BOOLEAN'], 'stars' => ['type' => 'NUMBER'], 'reason' => ['type' => 'STRING'], 'tries' => ['type' => 'NUMBER'], 'tip' => ['type' => 'STRING']], 'required' => ['asked', 'offered', 'tried', 'worked', 'stars', 'reason', 'tries', 'tip']];
     [$ok, $v, $why] = convo_ai($sys, [['text' => $text]], $sch, false, 500, 'claude'); if (!$ok || !is_array($v)) return ['rating' => null, 'why' => 'Claude could not rate it: ' . mb_substr((string)$why, 0, 120), 'retry' => true];
     $st = round(max(1.0, min(5.0, (float)($v['stars'] ?? 1))) * 2) / 2;
-    return ['rating' => $st * 2, 'tried' => !empty($v['tried']) ? 1 : 0, 'worked' => !empty($v['worked']) ? 1 : 0, 'asked' => mb_substr((string)($v['asked'] ?? ''), 0, 200), 'offered' => mb_substr((string)($v['offered'] ?? ''), 0, 200), 'why' => mb_substr((string)($v['reason'] ?? ''), 0, 400)];
+    return ['rating' => $st * 2, 'tried' => !empty($v['tried']) ? 1 : 0, 'worked' => !empty($v['worked']) ? 1 : 0, 'tries' => (int)max(0, min(9, round((float)($v['tries'] ?? 0)))), 'tip' => !empty($v['worked']) ? mb_substr((string)($v['tip'] ?? ''), 0, 240) : '', 'asked' => mb_substr((string)($v['asked'] ?? ''), 0, 200), 'offered' => mb_substr((string)($v['offered'] ?? ''), 0, 200), 'why' => mb_substr((string)($v['reason'] ?? ''), 0, 400)];
 }
 /** Saves the suggestion as the order's real stars (only when nobody has rated it). Returns true when saved. */
 function ora_apply(PDO $pdo, string $key, array $r): bool
@@ -1305,15 +1318,14 @@ function ora_tick(PDO $pdo): int
         $st = $pdo->prepare("SELECT o.store_key, o.shopify_id, o.order_name, o.created_at, o.phone, o.total, o.ml_total, a.employee_id, a.house FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
             WHERE o.created_at >= ? AND o.created_at <= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')
               AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc)
-              AND NOT EXISTS (SELECT 1 FROM order_ratings x WHERE x.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND x.ticket_rating IS NOT NULL)
-            ORDER BY o.created_at DESC LIMIT 5");
+            ORDER BY o.created_at DESC LIMIT 5");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
         $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400), date('Y-m-d H:i:s', time() - 600)]);
         $t0 = time(); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
             if (time() - $t0 > 25) break;   // the engine step must stay short
             $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;   // an AI hiccup: try again next time
             $day = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
-            $pdo->prepare("INSERT IGNORE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, asked, offered, reason, day, house, at, applied) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
-                ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $day, (string)$o['house'], date('Y-m-d H:i:s')]);
+            $pdo->prepare("INSERT IGNORE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, day, house, at, applied) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
+                ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (int)($r['tries'] ?? 0), (string)($r['tip'] ?? ''), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $day, (string)$o['house'], date('Y-m-d H:i:s')]);
             if ($r['rating'] !== null && $mode === 'apply' && ora_apply($pdo, $key, ['order_name' => (string)$o['order_name'], 'employee_id' => (int)$o['employee_id'], 'day' => $day, 'house' => (string)$o['house'], 'rating' => $r['rating']])) $pdo->prepare("UPDATE order_rate_auto SET applied = 1 WHERE order_key = ?")->execute([$key]);
             $n++;
         }
@@ -22583,6 +22595,39 @@ switch ($action) {
         $S['team'] = array_merge($S['team'], ct_roas_block($pdo, $day, $day === $today, get_bearer_token(), (float)$S['team']['sales'], (float)($S['cfg']['roas_goal'] ?? 3)));
         json_response(['day' => $day, 'today' => $today, 'now' => $S['now'], 'team' => $S['team'], 'emps' => $emps, 'alerts' => $alerts, 'cfg' => $S['cfg'], 'theme' => ct_theme($pdo),
             'leaders' => ct_leaders($pdo, $S, $day), 'can_settings' => convo_is_admin($auth), 'names' => array_map(fn($e) => ['id' => $e['id'], 'name' => $e['name']], $emps)]);
+        break;
+    }
+
+    case 'ct.effort': {
+        // ➕ Add-on effort of the day: per salesperson how many orders had NO / a LITTLE / a HEAVY (customer did not take) / a HEAVY-and-WON add-on effort, read from the chat by the automatic judge (order_rate_auto).
+        // Also the add-on rupees, the orders where nothing was tried (for a follow-up), and the words that won. Admin / HR / resolvers.
+        $auth = require_auth();
+        if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
+        $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? (string)$_GET['date'] : biz_today($pdo);
+        $out = ['day' => $day, 'mode' => ora_mode($pdo), 'emps' => new stdClass(), 'team' => [0, 0, 0, 0], 'missed' => [], 'tips' => [], 'measured' => 0];
+        if (!ora_tables($pdo)) json_response($out);
+        $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
+        $q = $pdo->prepare("SELECT order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL ORDER BY at DESC LIMIT 600");
+        $q->execute([$day]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+        try { addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { foreach ($rows as &$r0) { $r0['addon_total'] = 0; } unset($r0); }
+        $E = []; $team = [0, 0, 0, 0]; $tips = []; $miss = [];
+        foreach ($rows as $r) {
+            $id = (int)$r['employee_id']; if ($id <= 0) continue;
+            $lv = ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']);
+            if (!isset($E[$id])) $E[$id] = ['n' => [0, 0, 0, 0], 'addon_rs' => 0, 'addon_orders' => 0, 'stars' => 0.0, 'rated' => 0, 'name' => $names[$id] ?? ('#' . $id)];
+            $E[$id]['n'][$lv]++; $team[$lv]++; $E[$id]['stars'] += (float)$r['rating'] / 2; $E[$id]['rated']++;
+            $ad = (float)($r['addon_total'] ?? 0); if ($ad > 0) { $E[$id]['addon_rs'] += $ad; $E[$id]['addon_orders']++; }
+            if ($lv === 3 && trim((string)$r['tip']) !== '' && count($tips) < 12) $tips[] = ['text' => (string)$r['tip'], 'emp' => $E[$id]['name'], 'order' => (string)$r['order_name'], 'offered' => (string)$r['offered']];
+            if ($lv === 0 && count($miss) < 40) $miss[] = ['key' => (string)$r['order_key'], 'order' => (string)$r['order_name'], 'emp' => $id, 'emp_name' => $E[$id]['name'], 'asked' => (string)$r['asked'], 'why' => (string)$r['reason']];
+        }
+        foreach ($miss as &$m) {        // customer, amount and number of the orders to follow up
+            try { [$sk, $sid] = array_pad(explode(':', $m['key'], 2), 2, ''); $oq = $pdo->prepare("SELECT customer, phone, total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $oq->execute([$sk, $sid]); $o = $oq->fetch(PDO::FETCH_ASSOC) ?: [];
+                $m['customer'] = (string)($o['customer'] ?? ''); $m['phone'] = substr(preg_replace('/\D+/', '', (string)($o['phone'] ?? '')), -10); $m['total'] = (float)($o['total'] ?? 0); } catch (Throwable $e) { $m['customer'] = ''; $m['phone'] = ''; $m['total'] = 0; }
+            unset($m['key']);
+        } unset($m);
+        foreach ($E as $id => &$e) { $e['stars'] = $e['rated'] ? round($e['stars'] / $e['rated'], 1) : null; $e['addon_rs'] = round($e['addon_rs']); } unset($e);
+        $out['emps'] = $E ?: new stdClass(); $out['team'] = $team; $out['missed'] = $miss; $out['tips'] = $tips; $out['measured'] = array_sum($team);
+        json_response($out);
         break;
     }
 
