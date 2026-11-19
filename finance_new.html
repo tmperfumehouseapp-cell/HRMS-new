@@ -33,6 +33,7 @@
   .cb{font-weight:800;text-decoration:underline;padding:8px 14px 4px;font-size:13px}
   .tb{width:100%;border-collapse:collapse;font-size:13px}.tb th{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--sx-mut);text-align:right;padding:4px 6px}.tb th:first-child,.tb td:first-child{text-align:left}
   .tb td{padding:7px 6px;border-top:1px solid var(--sx-line);text-align:right}.tb tr.void td{opacity:.45;text-decoration:line-through}
+  .pen{opacity:.35;font-size:12px;padding:0 4px;cursor:pointer;margin-left:4px}.ln:hover .pen{opacity:1}.pen:hover{color:var(--sx-accent)}
   .pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800}.pill.in{background:#e3f6ee;color:#0d7a55}.pill.out{background:#fdecea;color:#b42318}
 </style>
 </head>
@@ -67,7 +68,7 @@
   const note = (id, m, bad) => { const e = $(id); if (e) e.innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
 
   // ---------- the sheet
-  const lines = (arr, side) => arr.map((l) => `<div class="ln ${l.amount ? '' : 'z'}" data-add="${side}" data-head="${l.id}" title="Add an entry for ${esc(l.name)}"><span>${esc(l.name)}${l.n > 1 ? ' <small class="sx-mut">(' + l.n + ')</small>' : ''}</span><b>${l.amount ? num(l.amount) : ''}</b></div>`).join('') || '<div class="ln h"><span class="sx-mut">No lines yet: add them under “Lines”.</span></div>';
+  const lines = (arr, side) => arr.map((l) => `<div class="ln ${l.amount ? '' : 'z'}" data-add="${side}" data-head="${l.id}" title="Add an entry for ${esc(l.name)}"><span>${esc(l.name)}${l.n > 1 ? ' <small class="sx-mut">(' + l.n + ')</small>' : ''}<span class="pen" data-hed="${l.id}" title="Rename or hide this line">✎</span></span><b>${l.amount ? num(l.amount) : ''}</b></div>`).join('') || '<div class="ln h"><span class="sx-mut">No lines yet: add them under “Lines”.</span></div>';
   function draw() {
     const R = D.receipts, P = D.payments, C = D.closing, canNext = day < D.today;
     const warn = Math.abs(D.check) > 0.004 ? `<div class="sx-card" style="margin-bottom:12px"><div class="sx-msg warn">${sxi('alert')}<span>The sheet is out by <b>${m2(D.check)}</b>. Money dated <b>before a bank's opening-balance day</b> is not counted in that bank's balance. Check the bank's opening-balance day under “Banks”.</span></div></div>` : '';
@@ -90,7 +91,7 @@
             <div class="ln tt"><span>TOTAL</span><b>${num(C.with_expenses)}</b></div></div>
         </div></div>
       <div class="sx-card" style="margin-top:12px"><div class="sx-f" style="margin-bottom:6px">Entries of this day <small class="sx-mut">${D.entries.filter((e) => e.status === 'ok').length}</small></div>
-        ${D.entries.length ? `<table class="tb"><tr><th>What</th><th>Bank</th><th>Note</th><th>Amount</th><th></th></tr>${D.entries.map((e) => `<tr class="${e.status === 'void' ? 'void' : ''}"><td><span class="pill ${e.side}">${e.side === 'in' ? 'Receipt' : 'Payment'}</span> ${esc(e.head)}</td><td>${esc(e.account)}</td><td style="text-align:left">${esc(e.note)}${e.status === 'void' ? ' <small>(cancelled: ' + esc(e.void_reason) + ')</small>' : ''}</td><td><b>${num(e.amount)}</b></td><td>${e.status === 'ok' ? `<button class="sx-btn" data-void="${e.id}" style="padding:2px 10px">Cancel</button>` : ''}</td></tr>`).join('')}</table>` : '<div class="sx-mut">Nothing entered for this day yet. Click a line on the sheet, or use “+ Receipt” / “+ Payment”.</div>'}</div>`;
+        ${D.entries.length ? `<table class="tb"><tr><th>What</th><th>Bank</th><th>Note</th><th>Amount</th><th></th></tr>${D.entries.map((e) => `<tr class="${e.status === 'void' ? 'void' : ''}"><td><span class="pill ${e.side}">${e.side === 'in' ? 'Receipt' : 'Payment'}</span> ${esc(e.head)}</td><td>${esc(e.account)}</td><td style="text-align:left">${esc(e.note)}${e.status === 'void' ? ' <small>(cancelled: ' + esc(e.void_reason) + ')</small>' : ''}${e.edited ? ' <small class="sx-mut">(edited)</small>' : ''}</td><td><b>${num(e.amount)}</b></td><td style="white-space:nowrap">${e.status === 'ok' ? `<button class="sx-btn" data-eent="${e.id}" style="padding:2px 10px">Edit</button> <button class="sx-btn" data-void="${e.id}" style="padding:2px 10px">Cancel</button>` : ''}</td></tr>`).join('')}</table>` : '<div class="sx-mut">Nothing entered for this day yet. Click a line on the sheet, or use “+ Receipt” / “+ Payment”.</div>'}</div>`;
   }
   async function load(d) {
     try { D = await api.get('fn.day', d ? { date: d } : {}); day = D.date; draw(); }
@@ -99,23 +100,24 @@
   async function loadLists() { ACC = (await api.get('fn.accounts')).accounts; HEADS = (await api.get('fn.heads')).heads; }
 
   // ---------- add an entry
-  async function entryDrawer(side, headId) {
-    await loadLists(); const accs = ACC.filter((a) => a.active);
+  async function entryDrawer(side, headId, ent) {
+    await loadLists(); const accs = ent ? ACC : ACC.filter((a) => a.active);
     if (!accs.length) { accDrawer(); return; }
-    const heads = (s) => HEADS.filter((h) => h.side === s && h.active);
+    if (ent) { side = ent.side; headId = ent.head_id; }
+    const heads = (s) => HEADS.filter((h) => h.side === s && (h.active || (ent && h.id === ent.head_id)));
     const headOpts = (s, sel) => heads(s).map((h) => `<option value="${h.id}" ${+sel === h.id ? 'selected' : ''}>${esc(h.name)}</option>`).join('');
-    open(side === 'in' ? 'Add a receipt' : 'Add a payment', `<div class="sx-card">
+    open(ent ? 'Edit this entry' : side === 'in' ? 'Add a receipt' : 'Add a payment', `<div class="sx-card">
       <div class="sx-r2"><label class="sx-f">Type<select class="sx-in" id="eS"><option value="in" ${side === 'in' ? 'selected' : ''}>Receipt (money in)</option><option value="out" ${side === 'out' ? 'selected' : ''}>Payment (money out)</option></select></label>
-      <label class="sx-f">Date<input class="sx-in" id="eD" type="date" value="${esc(day)}" max="${esc(D.today)}"></label></div>
+      <label class="sx-f">Date<input class="sx-in" id="eD" type="date" value="${esc(ent ? ent.day : day)}" max="${esc(D.today)}"></label></div>
       <label class="sx-f" style="margin-top:10px">What is it<select class="sx-in" id="eH">${headOpts(side, headId)}</select></label>
-      <label class="sx-f" style="margin-top:10px">Bank / cash box<select class="sx-in" id="eA">${accs.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label>
-      <label class="sx-f" style="margin-top:10px">Amount (₹)<input class="sx-in" id="eM" type="number" step="0.01" inputmode="decimal" placeholder="0"></label>
-      <label class="sx-f" style="margin-top:10px">Note (optional)<input class="sx-in" id="eN" maxlength="255" autocomplete="off"></label><div id="eMsg" style="margin-top:8px"></div></div>`,
-      `<button class="sx-btn big" id="eOk">Save</button>`);
+      <label class="sx-f" style="margin-top:10px">Bank / cash box<select class="sx-in" id="eA">${accs.map((a) => `<option value="${a.id}" ${ent && ent.account_id === a.id ? 'selected' : ''}>${esc(a.name)}${a.active ? '' : ' (hidden)'}</option>`).join('')}</select></label>
+      <label class="sx-f" style="margin-top:10px">Amount (₹)<input class="sx-in" id="eM" type="number" step="0.01" inputmode="decimal" placeholder="0" value="${ent ? ent.amount : ''}"></label>
+      <label class="sx-f" style="margin-top:10px">Note (optional)<input class="sx-in" id="eN" maxlength="255" autocomplete="off" value="${ent ? esc(ent.note) : ''}"></label><div id="eMsg" style="margin-top:8px"></div></div>`,
+      `<button class="sx-btn big" id="eOk">${ent ? 'Save changes' : 'Save'}</button>`);
     $('eS').onchange = () => { $('eH').innerHTML = headOpts($('eS').value, 0); };
     $('eM').focus();
     $('eOk').onclick = async () => {
-      try { await api.post('fn.entry_save', { date: $('eD').value, side: $('eS').value, head_id: +$('eH').value, account_id: +$('eA').value, amount: $('eM').value, note: $('eN').value }); close(); await load($('eD').value); }
+      try { await api.post(ent ? 'fn.entry_update' : 'fn.entry_save', { id: ent ? ent.id : 0, date: $('eD').value, side: $('eS').value, head_id: +$('eH').value, account_id: +$('eA').value, amount: $('eM').value, note: $('eN').value }); close(); await load($('eD').value); }
       catch (e) { note('eMsg', e.message, 1); }
     };
   }
@@ -137,7 +139,7 @@
   }
 
   // ---------- lines (the receipt / payment heads of the sheet)
-  async function headsDrawer() {
+  async function headsDrawer(startId) {
     await loadLists(); let edit = 0;
     const list = (s) => HEADS.filter((h) => h.side === s).map((h) => `<div class="ln" style="cursor:default"><span>${esc(h.name)}${h.active ? '' : ' <small class="sx-mut">hidden</small>'}</span><span><button class="sx-btn" data-eh="${h.id}" style="padding:2px 10px">Edit</button></span></div>`).join('') || '<div class="sx-mut">None yet.</div>';
     open('Lines of the sheet', `<div class="sx-card"><div class="sx-f" style="margin-bottom:6px">Receipt lines</div>${list('in')}</div><div class="sx-card"><div class="sx-f" style="margin-bottom:6px">Payment lines</div>${list('out')}</div>
@@ -146,6 +148,7 @@
         <label class="sx-f" id="hHW" style="display:none;margin-top:8px;flex-direction:row;gap:6px;align-items:center"><input type="checkbox" id="hH"> Hide this line</label><div id="hM" style="margin-top:8px"></div></div>`,
       `<button class="sx-btn big" id="hOk">Add line</button>`);
     document.querySelectorAll('[data-eh]').forEach((b) => { b.onclick = () => { const h = HEADS.find((x) => x.id === +b.dataset.eh); if (!h) return; edit = h.id; $('hN').value = h.name; $('hS').value = h.side; $('hS').disabled = true; $('hT').textContent = 'Edit: ' + h.name; $('hOk').textContent = 'Save changes'; $('hHW').style.display = 'flex'; $('hH').checked = !h.active; $('hN').focus(); }; });
+    if (startId) { const sb = document.querySelector('[data-eh="' + startId + '"]'); if (sb) sb.click(); }
     $('hOk').onclick = async () => {
       try { await api.post('fn.head_save', { id: edit, side: $('hS').value, name: $('hN').value, active: edit && $('hH').checked ? 0 : 1 }); await load(day); headsDrawer(); }
       catch (e) { note('hM', e.message, 1); }
@@ -153,9 +156,11 @@
   }
 
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('button, [data-add]'); if (!t) return;
+    const t = e.target.closest('button, [data-hed], [data-add]'); if (!t) return;
     if (t.id === 'pv') load(addDays(day, -1)); else if (t.id === 'nx' && !t.disabled) load(addDays(day, 1)); else if (t.id === 'tdy') load('');
     else if (t.id === 'bAcc') accDrawer(); else if (t.id === 'bHeads') headsDrawer();
+    else if (t.dataset.hed) headsDrawer(+t.dataset.hed);
+    else if (t.dataset.eent) entryDrawer('', 0, D.entries.find((x) => x.id === +t.dataset.eent));
     else if (t.dataset.add) entryDrawer(t.dataset.add, t.dataset.head || 0);
     else if (t.dataset.void) {
       const why = prompt('Why is this entry cancelled?'); if (!why) return;

@@ -26,6 +26,7 @@ function fn_ensure(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS fn_accounts (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL, opening_balance DECIMAL(14,2) NOT NULL DEFAULT 0, opening_date DATE NULL, active TINYINT NOT NULL DEFAULT 1, sort_no INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fn_heads (id INT AUTO_INCREMENT PRIMARY KEY, side VARCHAR(3) NOT NULL, name VARCHAR(80) NOT NULL, active TINYINT NOT NULL DEFAULT 1, sort_no INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL, KEY idx_fn_h (side, active, sort_no)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fn_entries (id INT AUTO_INCREMENT PRIMARY KEY, day DATE NOT NULL, side VARCHAR(3) NOT NULL, head_id INT NOT NULL, account_id INT NOT NULL, amount DECIMAL(14,2) NOT NULL, note VARCHAR(255) NOT NULL DEFAULT '', status VARCHAR(6) NOT NULL DEFAULT 'ok', void_reason VARCHAR(200) NOT NULL DEFAULT '', created_by VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, KEY idx_fn_e_day (day, status), KEY idx_fn_e_acc (account_id, day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fn_edits (id INT AUTO_INCREMENT PRIMARY KEY, entry_id INT NOT NULL, old_json TEXT NOT NULL, edited_by VARCHAR(80) NOT NULL DEFAULT '', edited_at DATETIME NOT NULL, KEY idx_fn_ed (entry_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");      // what an entry looked like before each edit
         // first time only: the lines of the owner's day sheet, so the screen looks like it from the start (all can be renamed / hidden / added to)
         if (!(int)$pdo->query("SELECT COUNT(*) FROM fn_heads")->fetchColumn()) {
             $in = ['HDFC', 'ICICI', 'Razorpay', 'Rapidshyp COD', 'Snapmint', 'PayU IDFC', 'Other Income', 'Myntra', 'ShipRocket COD', 'Easebuzz', 'From Nova', 'Retail Shop', 'Salary Return', 'Nova Enterprise'];
@@ -86,7 +87,8 @@ switch ($action) {
             $lines[$h['side']][] = ['id' => (int)$h['id'], 'name' => $h['name'], 'amount' => fn_m($s[0]), 'n' => $s[1], 'active' => (int)$h['active']]; $tot[$h['side']] += $s[0];
         }
         $q = $pdo->prepare("SELECT e.*, h.name AS head_name, a.name AS account_name FROM fn_entries e LEFT JOIN fn_heads h ON h.id = e.head_id LEFT JOIN fn_accounts a ON a.id = e.account_id WHERE e.day = ? ORDER BY e.id DESC"); $q->execute([$day]);
-        $entries = array_map(fn($e) => ['id' => (int)$e['id'], 'side' => $e['side'], 'head' => (string)$e['head_name'], 'account' => (string)$e['account_name'], 'amount' => (float)$e['amount'], 'note' => $e['note'], 'status' => $e['status'], 'void_reason' => $e['void_reason'], 'by' => $e['created_by'], 'at' => $e['created_at']], $q->fetchAll());
+        $edN = []; try { $ids = array_map(fn($e) => (int)$e['id'], $q->fetchAll()); $q->execute([$day]); if ($ids) foreach ($pdo->query("SELECT entry_id, COUNT(*) n FROM fn_edits WHERE entry_id IN (" . implode(',', $ids) . ") GROUP BY entry_id")->fetchAll() as $x) $edN[(int)$x['entry_id']] = (int)$x['n']; } catch (Throwable $e) {}
+        $entries = array_map(fn($e) => ['id' => (int)$e['id'], 'side' => $e['side'], 'head_id' => (int)$e['head_id'], 'account_id' => (int)$e['account_id'], 'day' => $e['day'], 'edited' => $edN[(int)$e['id']] ?? 0, 'head' => (string)$e['head_name'], 'account' => (string)$e['account_name'], 'amount' => (float)$e['amount'], 'note' => $e['note'], 'status' => $e['status'], 'void_reason' => $e['void_reason'], 'by' => $e['created_by'], 'at' => $e['created_at']], $q->fetchAll());
         $accounts = []; $closeAcc = 0; foreach ($bal as $b) { if (!$b['active'] && $b['close'] === 0 && $b['before'] === 0 && $b['in'] === 0 && $b['out'] === 0) continue; $accounts[] = ['id' => $b['id'], 'name' => $b['name'], 'opening' => fn_m($b['before']), 'in' => fn_m($b['in']), 'out' => fn_m($b['out']), 'closing' => fn_m($b['close']), 'active' => $b['active']]; $closeAcc += $b['close']; }
         json_response(['date' => $day, 'today' => $today, 'opening' => fn_m($openP), 'receipts' => ['lines' => $lines['in'], 'total_in' => fn_m($tot['in']), 'total' => fn_m($openP + $tot['in'])],
             'payments' => ['lines' => $lines['out'], 'total_expenses' => fn_m($tot['out'])], 'closing' => ['accounts' => $accounts, 'total' => fn_m($closeAcc), 'with_expenses' => fn_m($closeAcc + $tot['out'])], 'check' => fn_m($openP + $tot['in'] - $tot['out'] - $closeAcc), 'entries' => $entries]);
@@ -137,6 +139,25 @@ switch ($action) {
         $note = trim(mb_substr((string)($in['note'] ?? ''), 0, 255));
         $pdo->prepare("INSERT INTO fn_entries (day, side, head_id, account_id, amount, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)")->execute([$day, $side, (int)$in['head_id'], (int)$in['account_id'], $amt, $note, fn_who($auth), date('Y-m-d H:i:s')]);
         json_response(['ok' => true, 'id' => (int)$pdo->lastInsertId()]);
+        break;
+    }
+    // change an entry (amount, line, bank, day, note); what it was is kept in fn_edits
+    case 'fn.entry_update': {
+        $in = json_input(); $today = fn_today($pdo); $id = (int)($in['id'] ?? 0);
+        $old = $pdo->prepare("SELECT * FROM fn_entries WHERE id = ? AND status = 'ok'"); $old->execute([$id]); $o = $old->fetch(); if (!$o) fn_err('Entry not found, or it was cancelled.', 404);
+        $day = fn_day($in['date'] ?? ''); if ($day === '') fn_err('Choose the date.'); if ($day > $today) fn_err('The date is in the future.');
+        $side = (string)($in['side'] ?? ''); if (!in_array($side, ['in', 'out'], true)) fn_err('Choose Receipt or Payment.');
+        $amt = round((float)($in['amount'] ?? 0), 2); if ($amt <= 0) fn_err('Enter the amount.'); if ($amt > 1000000000) fn_err('That amount looks wrong.');
+        $h = $pdo->prepare("SELECT id FROM fn_heads WHERE id = ? AND side = ?"); $h->execute([(int)($in['head_id'] ?? 0), $side]); if (!$h->fetchColumn()) fn_err('Choose the line (what this money is).');
+        $a = $pdo->prepare("SELECT id FROM fn_accounts WHERE id = ?"); $a->execute([(int)($in['account_id'] ?? 0)]); if (!$a->fetchColumn()) fn_err('Choose the bank / cash box the money went through.');
+        $note = trim(mb_substr((string)($in['note'] ?? ''), 0, 255));
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("INSERT INTO fn_edits (entry_id, old_json, edited_by, edited_at) VALUES (?,?,?,?)")->execute([$id, json_encode(['day' => $o['day'], 'side' => $o['side'], 'head_id' => (int)$o['head_id'], 'account_id' => (int)$o['account_id'], 'amount' => (float)$o['amount'], 'note' => $o['note']]), fn_who($auth), date('Y-m-d H:i:s')]);
+            $pdo->prepare("UPDATE fn_entries SET day = ?, side = ?, head_id = ?, account_id = ?, amount = ?, note = ? WHERE id = ?")->execute([$day, $side, (int)$in['head_id'], (int)$in['account_id'], $amt, $note, $id]);
+            $pdo->commit();
+        } catch (Throwable $e) { $pdo->rollBack(); error_log('fn.entry_update: ' . $e->getMessage()); fn_err('Could not save the change. Nothing was changed.', 500); }
+        json_response(['ok' => true]);
         break;
     }
     case 'fn.entry_void': {
