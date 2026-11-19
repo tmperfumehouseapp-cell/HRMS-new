@@ -1,0 +1,52 @@
+# READ-ONLY: for the newest campaigns, the DELIVERED / READ counts the Campaigns page shows (a join of every item with wa_messages) next to the same counts taken from the campaign item's own last_status column (no join), with the time each takes. No names, numbers or messages. Changes nothing.
+# Run it by hand: Actions -> "Campaign delivery counts compare (read-only)" -> Run workflow.
+name: Campaign delivery counts compare (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Compare
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/cd_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "database: " . $e->getMessage() . "\n"; exit; }
+          $d->exec("SET SESSION MAX_EXECUTION_TIME = 20000");
+          echo "campaign | status | items with wamid | JOIN delivered/read (ms) | last_status delivered/read (ms) | same?\n";
+          foreach ($d->query("SELECT id, status FROM wa_campaigns ORDER BY id DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            $id = (int)$c["id"];
+            try {
+              $n = (int)$d->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND wamid <> ''")->fetchColumn();
+              $t = microtime(true); $a = ["delivered" => 0, "read" => 0];
+              foreach ($d->query("SELECT m.status AS s, COUNT(*) AS n FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid WHERE i.camp_id = $id AND i.wamid != '' GROUP BY m.status")->fetchAll(PDO::FETCH_ASSOC) as $r) { if ($r["s"] === "delivered") $a["delivered"] += (int)$r["n"]; if ($r["s"] === "read") { $a["delivered"] += (int)$r["n"]; $a["read"] += (int)$r["n"]; } }
+              $ta = round((microtime(true) - $t) * 1000);
+              $t = microtime(true); $b = ["delivered" => 0, "read" => 0];
+              foreach ($d->query("SELECT last_status AS s, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND wamid != '' GROUP BY last_status")->fetchAll(PDO::FETCH_ASSOC) as $r) { if ($r["s"] === "delivered") $b["delivered"] += (int)$r["n"]; if ($r["s"] === "read") { $b["delivered"] += (int)$r["n"]; $b["read"] += (int)$r["n"]; } }
+              $tb = round((microtime(true) - $t) * 1000);
+              echo "#$id | " . $c["status"] . " | $n | " . $a["delivered"] . "/" . $a["read"] . " (" . $ta . " ms) | " . $b["delivered"] . "/" . $b["read"] . " (" . $tb . " ms) | " . ($a === $b ? "SAME" : "DIFFERENT by " . ($b["delivered"] - $a["delivered"]) . "/" . ($b["read"] - $a["read"])) . "\n";
+            } catch (Throwable $e) { echo "#$id | " . $c["status"] . " | " . substr($e->getMessage(), 0, 100) . "\n"; }
+          }
+          PHP
+          php /tmp/cd_check.php "$P"; rm -f /tmp/cd_check.php
+          REMOTE
