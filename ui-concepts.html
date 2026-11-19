@@ -1,0 +1,221 @@
+<title>Perfume Explore UI Ideas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+Gujarati:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: sticky top bar (search) -> concept tabs -> one mock screen -> sticky combo tray at bottom. Zero images, text-first. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --fg:#12161b; --muted:#5d6872; --line:#d7dde3;
+  --accent:#e8590c; --accent-soft:#fde8dc; --accent-ink:#ffffff; --good:#1b7f55;
+  --display:"Space Grotesk","Noto Sans Gujarati",system-ui,sans-serif;
+  --body:"Inter","Noto Sans Gujarati",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1318; --panel:#171d24; --fg:#e8edf2; --muted:#93a0ac; --line:#2a333d;
+  --accent:#ff7a33; --accent-soft:#3a2213; --accent-ink:#1a0d04; --good:#4cc790; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1318; --panel:#171d24; --fg:#e8edf2; --muted:#93a0ac; --line:#2a333d;
+  --accent:#ff7a33; --accent-soft:#3a2213; --accent-ink:#1a0d04; --good:#4cc790; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--body);padding-block:0 0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1080px;margin:0 auto;padding-block:20px 150px}
+h1{font:700 26px/1.2 var(--display);margin:0 0 6px;text-wrap:balance}
+.lead{color:var(--muted);margin:0 0 16px;max-width:68ch}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+.tab{font:600 13px var(--body);padding:8px 12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;cursor:pointer}
+.tab[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.search{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:0 10px;min-width:200px;flex:0 1 260px}
+.search input{border:0;background:transparent;color:var(--fg);font:14px var(--body);padding:9px 0;width:100%;outline:none}
+.search:focus-within{border-color:var(--accent)}
+.screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;min-height:360px}
+.why{margin:0 0 14px;color:var(--muted);font-size:13px}
+.why b{color:var(--fg)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* A: market board */
+.board{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:20px}
+@media(max-width:760px){.board{grid-template-columns:1fr}}
+.sec{font:600 11px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.row{display:grid;grid-template-columns:22px minmax(0,1fr) 70px 54px 28px;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--line);cursor:grab}
+.row:hover{background:var(--accent-soft)}
+.rk{font:700 13px var(--display);color:var(--muted)}
+.nm{min-width:0}.nm b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nm span{font-size:12px;color:var(--muted)}
+.meter{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent)}
+.pr{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
+.add{width:26px;height:26px;border-radius:6px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-weight:700}
+.add:hover{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.tree{display:flex;flex-wrap:wrap;gap:4px}
+.tile{border:0;border-radius:6px;padding:8px 10px;text-align:left;cursor:pointer;background:var(--accent-soft);min-height:62px;display:flex;flex-direction:column;justify-content:space-between}
+.tile b{font:700 14px var(--display)}.tile span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tile[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.tile[aria-pressed="true"] span{color:var(--accent-ink)}
+.detail{margin-top:12px;border-top:2px solid var(--fg);padding-top:10px}
+.detail h3{font:700 16px var(--display);margin:0 0 6px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.card{border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:grab;display:flex;flex-direction:column;gap:2px;position:relative}
+.card:hover{border-color:var(--accent)}
+.card b{font-weight:600;padding-right:26px}.card small{color:var(--muted);font-variant-numeric:tabular-nums}
+.card .add{position:absolute;right:6px;top:6px}
+.hot{color:var(--accent);font-weight:600}
+
+/* B: bubbles */
+.bubbles{position:relative;height:460px;overflow:hidden;border-radius:8px;background:radial-gradient(circle at 50% 50%,var(--accent-soft),transparent 70%)}
+.bub{position:absolute;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.15;padding:4px;cursor:grab;border:1.5px solid var(--accent);background:var(--panel);color:var(--fg);animation:bob 6s ease-in-out infinite}
+.bub b{font:600 11px var(--body);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;max-width:92%}
+.bub span{font:700 12px var(--display);color:var(--accent)}
+.bub.top{background:var(--accent);color:var(--accent-ink)}.bub.top span{color:var(--accent-ink)}
+.bub.dim{opacity:.18}
+.bub:hover{z-index:5;transform:scale(1.08)}
+@keyframes bob{0%,100%{translate:0 0}50%{translate:0 -6px}}
+@media(prefers-reduced-motion:reduce){.bub{animation:none}}
+
+/* C: brand wall */
+.alpha{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px}
+.alpha span{font:600 12px var(--body);padding:3px 7px;border-radius:5px;background:var(--bg);color:var(--muted)}
+.alpha span.on{background:var(--fg);color:var(--bg)}
+.wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:10px;text-align:left;cursor:pointer}
+.chip b{display:block;font:700 14px var(--display)}.chip span{font-size:12px;color:var(--muted)}
+.chip[aria-expanded="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip[aria-expanded="true"] span{color:var(--bg);opacity:.8}
+.open{grid-column:1/-1;border:2px solid var(--fg);border-radius:8px;padding:10px}
+.empty{color:var(--muted);padding:20px 0}
+
+/* combo tray */
+.tray{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:2px solid var(--fg);padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));z-index:20}
+.tray-in{max-width:1080px;margin:0 auto;display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+.tt{font:700 13px var(--display);width:100%;display:flex;justify-content:space-between;gap:8px}
+.slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex:1 1 360px}
+.slot{border:1.5px dashed var(--line);border-radius:8px;padding:8px 10px;min-height:52px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--muted)}
+.slot.over{border-color:var(--accent);background:var(--accent-soft)}
+.slot.full{border-style:solid;border-color:var(--fg);color:var(--fg)}
+.slot b{font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slot small{color:var(--muted);display:block}
+.slot .x{border:0;background:transparent;cursor:pointer;font-size:16px;color:var(--muted)}
+.sum{flex:0 0 auto;min-width:150px;display:flex;flex-direction:column;justify-content:center;font-variant-numeric:tabular-nums}
+.sum s{color:var(--muted);font-size:12px}.sum strong{font:700 20px var(--display)}
+.sum em{font-style:normal;color:var(--good);font-size:12px;font-weight:600}
+.cta{margin-top:4px;border:0;background:var(--accent);color:var(--accent-ink);font-weight:600;border-radius:6px;padding:7px 10px;cursor:pointer}
+.cta:disabled{opacity:.4;cursor:not-allowed}
+</style>
+
+<div class="wrap">
+  <h1>Explore પેજ: ત્રણ UI આઈડિયા</h1>
+  <p class="lead">ફોટા વગર, ફક્ત લખાણ અને આંકડા. બધું સેમ્પલ ડેટા છે (તમારા 450 પરફ્યુમ નહીં). કોઈપણ પરફ્યુમને નીચેના Combo ટ્રેમાં ખેંચીને મૂકો, અથવા + દબાવો. સર્ચ ઉપર જમણે છે.</p>
+
+  <div class="bar">
+    <div class="tabs" role="tablist" id="tabs">
+      <button class="tab" role="tab" data-t="board" aria-selected="true">A · માર્કેટ બોર્ડ (મારી પસંદ)</button>
+      <button class="tab" role="tab" data-t="bub" aria-selected="false">B · બબલ</button>
+      <button class="tab" role="tab" data-t="wall" aria-selected="false">C · બ્રાન્ડ વૉલ</button>
+    </div>
+    <label class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="પરફ્યુમ કે બ્રાન્ડ શોધો" aria-label="Search"></label>
+  </div>
+
+  <div class="screen" id="screen"></div>
+</div>
+
+<div class="tray" id="tray"></div>
+
+<script>
+const RAW={
+ "Dior":[["Sauvage EDP",8900,212],["Fahrenheit",6200,64],["Homme Intense",7800,91],["Hypnotic Poison",7400,48]],
+ "Creed":[["Aventus",24500,176],["Silver Mountain",21800,58],["Green Irish Tweed",19900,42]],
+ "Chanel":[["Bleu de Chanel",9800,158],["Coco Mademoiselle",10200,121],["No.5",9400,73],["Allure Homme",8700,39]],
+ "Tom Ford":[["Oud Wood",16800,84],["Tobacco Vanille",18400,69],["Black Orchid",12900,52]],
+ "YSL":[["Y EDP",8400,134],["Libre",9100,96],["La Nuit de L'Homme",7600,88],["Black Opium",8200,102]],
+ "Armani":[["Acqua di Gio",7900,189],["Stronger With You",7400,141],["Code",7100,66],["Si",8600,57]],
+ "Versace":[["Eros",6400,147],["Dylan Blue",5900,119],["Bright Crystal",5600,77]],
+ "Hugo Boss":[["Bottled",5200,97],["The Scent",5800,83],["Boss Orange",4700,31]],
+ "Davidoff":[["Cool Water",4600,128],["Champion",5100,44],["Adventure",4500,29]],
+ "Rasasi":[["Hawas",4200,161],["La Yuqawam",4800,72],["Daarej",3900,38]],
+ "Lattafa":[["Asad",3200,171],["Khamrah",3600,193],["Fakhar",3100,86],["Yara",3300,124]],
+ "Afnan":[["9PM",3800,152],["Supremacy",3500,54],["Turathi",4100,47]]
+};
+const P=[];let id=0;
+for(const b in RAW)for(const [n,p,s] of RAW[b])P.push({id:++id,b,n,p,s});
+const byId=Object.fromEntries(P.map(x=>[x.id,x]));
+const brands=Object.keys(RAW).map(b=>({b,items:P.filter(x=>x.b===b),tot:P.filter(x=>x.b===b).reduce((a,x)=>a+x.s,0)})).sort((a,b)=>b.tot-a.tot);
+const top=[...P].sort((a,b)=>b.s-a.s);
+const maxS=top[0].s;
+const inr=n=>"₹"+n.toLocaleString("en-IN");
+let tab="board",q="",openBoard=brands[0].b,openWall=null,combo=[];
+
+const match=x=>!q||(x.n+" "+x.b).toLowerCase().includes(q);
+const add=i=>{if(combo.length<3&&!combo.includes(i))combo.push(i);renderTray()};
+const pf=x=>`data-id="${x.id}" draggable="true"`;
+
+function board(){
+  const list=top.filter(match).slice(0,10);
+  const bs=brands.filter(b=>b.items.some(match));
+  const sel=bs.find(b=>b.b===openBoard)||bs[0];
+  return `<p class="why"><b>એક નજરે:</b> ડાબે ટોપ 10 વેચાણ લિસ્ટ, જમણે બ્રાન્ડનું નકશો (મોટું ખાનું = વધારે વેચાણ). બ્રાન્ડ દબાવો, નીચે તે જ જગ્યાએ તેના બધા પરફ્યુમ ખુલે.</p>
+  <div class="board"><div><p class="sec">ટોપ સેલિંગ, છેલ્લા 30 દિવસ</p>
+   ${list.map((x,i)=>`<div class="row" ${pf(x)}><span class="rk">${i+1}</span><div class="nm"><b>${x.n}</b><span>${x.b} · ${x.s} વેચાયા</span></div><div class="meter"><i style="width:${x.s/maxS*100}%"></i></div><span class="pr">${inr(x.p)}</span><button class="add" data-add="${x.id}" aria-label="Add ${x.n}">+</button></div>`).join("")||'<p class="empty">કંઈ મળ્યું નહીં</p>'}
+  </div><div><p class="sec">બ્રાન્ડ નકશો · ${bs.length} બ્રાન્ડ</p>
+   <div class="tree">${bs.map(b=>`<button class="tile" data-brand="${b.b}" aria-pressed="${sel&&sel.b===b.b}" style="flex:${b.tot} 1 ${Math.max(88,b.tot*.32)}px"><b>${b.b}</b><span>${b.items.length} પરફ્યુમ · ${b.tot} વેચાયા</span></button>`).join("")}</div>
+   ${sel?`<div class="detail"><h3>${sel.b}</h3><div class="cards">${sel.items.filter(match).sort((a,b)=>b.s-a.s).map(x=>card(x)).join("")}</div></div>`:""}
+  </div></div>`;
+}
+const card=x=>`<div class="card" ${pf(x)}><b>${x.n}</b><small>${inr(x.p)} · <span class="${x.s>150?'hot':''}">${x.s} વેચાયા</span></small><button class="add" data-add="${x.id}" aria-label="Add ${x.n}">+</button></div>`;
+
+function bub(){
+  return `<p class="why"><b>બબલ:</b> મોટો બબલ = વધારે વેચાણ. દેખાવમાં મજા આવે, પણ નામ વાંચવા અઘરા, એટલે હું આને ફક્ત ટોપ 36 માટે રાખું. (સેમ્પલ ડેટામાં ફક્ત ${P.length} છે.)</p><div class="bubbles" id="bubs"></div>`;
+}
+function pack(){
+  const el=document.getElementById("bubs");if(!el)return;
+  const W=el.clientWidth,H=el.clientHeight,placed=[];let html="";
+  top.slice(0,36).forEach((x,k)=>{
+    const r=Math.min(64,17+Math.sqrt(x.s)*3.3);
+    for(let s=0;s<5000;s++){
+      const a=s*.37,d=s*.55,cx=W/2+Math.cos(a)*d*1.5,cy=H/2+Math.sin(a)*d;
+      if(cx-r<4||cx+r>W-4||cy-r<4||cy+r>H-4)continue;
+      if(placed.every(c=>Math.hypot(c.x-cx,c.y-cy)>=c.r+r+3)){
+        placed.push({x:cx,y:cy,r});
+        html+=`<div class="bub ${k<5?'top':''} ${match(x)?'':'dim'}" ${pf(x)} title="${x.b} · ${x.n} · ${x.s} વેચાયા · ${inr(x.p)}" style="width:${r*2}px;height:${r*2}px;left:${cx-r}px;top:${cy-r}px;animation-delay:${-(k*.7)}s">${r>=36?`<b>${x.n}</b>`:""}<span>${x.s}</span></div>`;
+        break;
+      }
+    }
+  });
+  el.innerHTML=html;
+}
+
+function wall(){
+  const bs=[...brands].sort((a,b)=>a.b.localeCompare(b.b)).filter(b=>b.items.some(match));
+  const letters=[..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];const have=new Set(bs.map(b=>b.b[0]));
+  return `<p class="why"><b>બ્રાન્ડ વૉલ:</b> A–Z ક્રમમાં બધી બ્રાન્ડ. દબાવો એટલે નીચે જ ખુલે, બીજું પેજ નહીં. સૌથી સલામત અને સમજવામાં સહેલું.</p>
+  <div class="alpha">${letters.map(l=>`<span class="${have.has(l)?'on':''}">${l}</span>`).join("")}</div>
+  <div class="wall">${bs.map(b=>`<button class="chip" data-wall="${b.b}" aria-expanded="${openWall===b.b}"><b>${b.b}</b><span>${b.items.length} પરફ્યુમ · ${b.tot} વેચાયા</span></button>${openWall===b.b?`<div class="open"><div class="cards">${b.items.filter(match).sort((a,c)=>c.s-a.s).map(card).join("")}</div></div>`:""}`).join("")}</div>`;
+}
+
+function render(){
+  const s=document.getElementById("screen");
+  s.innerHTML=tab==="board"?board():tab==="bub"?bub():wall();
+  if(tab==="bub")pack();
+}
+function renderTray(){
+  const items=combo.map(i=>byId[i]),sum=items.reduce((a,x)=>a+x.p,0),disc=items.length===3?Math.round(sum*.1):0;
+  document.getElementById("tray").innerHTML=`<div class="tray-in"><div class="tt"><span>તમારો કોમ્બો (3 પરફ્યુમ)</span><span style="font-weight:400;color:var(--muted)">3 ભરો તો 10% છૂટ (સેમ્પલ નિયમ)</span></div>
+  <div class="slots">${[0,1,2].map(n=>{const x=items[n];return x?`<div class="slot full" data-slot><div style="min-width:0"><b>${x.n}</b><small>${x.b} · ${inr(x.p)}</small></div><button class="x" data-rm="${x.id}" aria-label="Remove">×</button></div>`:`<div class="slot" data-slot>અહીં ખેંચીને મૂકો</div>`}).join("")}</div>
+  <div class="sum">${disc?`<s>${inr(sum)}</s>`:""}<strong>${inr(sum-disc)}</strong>${disc?`<em>${inr(disc)} બચત</em>`:""}<button class="cta" ${items.length<3?"disabled":""}>${items.length<3?`${3-items.length} વધુ ઉમેરો`:"કાર્ટમાં ઉમેરો"}</button></div></div>`;
+}
+
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-t]");if(t){tab=t.dataset.t;document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected",b===t));render();return}
+  const a=e.target.closest("[data-add]");if(a){add(+a.dataset.add);return}
+  const r=e.target.closest("[data-rm]");if(r){combo=combo.filter(i=>i!==+r.dataset.rm);renderTray();return}
+  const b=e.target.closest("[data-brand]");if(b){openBoard=b.dataset.brand;render();return}
+  const w=e.target.closest("[data-wall]");if(w){openWall=openWall===w.dataset.wall?null:w.dataset.wall;render()}
+});
+document.getElementById("q").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();render()});
+document.addEventListener("dragstart",e=>{const d=e.target.closest("[data-id]");if(d){e.dataTransfer.setData("text/plain",d.dataset.id);e.dataTransfer.effectAllowed="copy"}});
+const tray=document.getElementById("tray");
+tray.addEventListener("dragover",e=>{e.preventDefault();const s=e.target.closest("[data-slot]");tray.querySelectorAll(".slot").forEach(x=>x.classList.toggle("over",x===s))});
+tray.addEventListener("dragleave",e=>{if(!tray.contains(e.relatedTarget))tray.querySelectorAll(".slot").forEach(x=>x.classList.remove("over"))});
+tray.addEventListener("drop",e=>{e.preventDefault();const i=+e.dataTransfer.getData("text/plain");if(i)add(i)});
+addEventListener("resize",()=>{if(tab==="bub")pack()});
+render();renderTray();
+</script>
