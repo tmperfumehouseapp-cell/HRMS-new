@@ -905,19 +905,22 @@
     const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
     function pushPrompt() {
       if (S.push === 'on' || S.push === 'gone') return ''; if (!('Notification' in window)) return iOS && !standalone ? '<div class="wx-banner b">🔔 iPhone: tap Share → <b>Add to Home Screen</b>, open from the icon, then allow alerts.</div>' : '';
-      if (Notification.permission === 'granted') { subscribePush(false); return ''; } if (Notification.permission === 'denied') return '';
+      // ⚡ this runs on EVERY redraw of the list: it registered the phone again each time until the first answer came back (hundreds of push.key / push.subscribe calls per 5 minutes on the server).
+      // Now: once per day per phone (remembered), never two at once, and a failed try waits 10 minutes.
+      if (Notification.permission === 'granted') { let day = ''; try { day = localStorage.getItem('wa_push_day') || ''; } catch (e) { } if (day === new Date().toDateString()) { S.push = 'on'; return ''; } if (!S.pushBusy && Date.now() - (S.pushFailAt || 0) > 600000) subscribePush(false); return ''; } if (Notification.permission === 'denied') return '';
       const asked = +localStorage.getItem('wa_push_asked') || 0; if (Date.now() - asked < 3 * 864e5) return '';
       if (iOS && !standalone) return '<div class="wx-banner b">🔔 Want an alert when a query is given to you? iPhone: tap Share → <b>Add to Home Screen</b>, open from the icon, then allow.</div>';
       return '<div class="wx-banner g">🔔 <span style="flex:1">Get an alert the moment a query is given to you</span><button class="wx-btn" data-push="allow" style="padding:6px 12px;min-height:32px">Allow</button><button class="wx-btn gh" data-push="later" style="padding:6px 10px;min-height:32px">Later</button></div>';
     }
     async function subscribePush(interactive) {
+      if (S.pushBusy) return false; S.pushBusy = true;
       try {
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false; const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }); await navigator.serviceWorker.ready;
         if (Notification.permission !== 'granted') { if (!interactive) return false; if ((await Notification.requestPermission()) !== 'granted') return false; }
         const k = await api.get('push.key'); const toKey = (b64) => { const pad = '='.repeat((4 - b64.length % 4) % 4); const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/')); const o = new Uint8Array(raw.length); for (let i = 0; i < raw.length; i++) o[i] = raw.charCodeAt(i); return o; };
         let sub = await reg.pushManager.getSubscription(); if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKey(k.key) });
-        const j = sub.toJSON(); await api.post('push.subscribe', { endpoint: j.endpoint, keys: j.keys, device: navigator.userAgent.slice(0, 160) }); S.push = 'on'; return true;
-      } catch (e) { return false; }
+        const j = sub.toJSON(); await api.post('push.subscribe', { endpoint: j.endpoint, keys: j.keys, device: navigator.userAgent.slice(0, 160) }); S.push = 'on'; try { localStorage.setItem('wa_push_day', new Date().toDateString()); } catch (e) { } return true;
+      } catch (e) { S.pushFailAt = Date.now(); return false; } finally { S.pushBusy = false; }
     }
     async function pushAction(a) {
       localStorage.setItem('wa_push_asked', String(Date.now()));
