@@ -552,6 +552,19 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
 }
 function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UPDATE wa_campaigns SET status = 'paused', note = ? WHERE id = ?")->execute([mb_substr($why, 0, 200), $id]); wa_log($pdo, 'campaign', false, '#' . $id . ' paused: ' . $why); }
 
+/** 🧮 Campaigns whose CURRENT message is a UTILITY template have their own limit (owner, 19 Nov 2026, 15:20): at most 700 messages in any rolling hour (wa_ucat_hour), spread evenly (at most 130% of a sixth of that in any 10 minutes), counted over all campaigns together;
+ *  campaigns on MARKETING templates keep the marketing speed (wa_dq_*). Module B (utility follow-ups) has its own limit. The sends are kept as a small list [[unix, n], ...] in setting wa_ucat_log. Returns how many may still be sent now. */
+function wa_cat_util_room(PDO $pdo, int $now): int
+{
+    try { $cap = max(10, min(100000, (int)setting_get($pdo, 'wa_ucat_hour', '700'))); $L = json_decode((string)setting_get($pdo, 'wa_ucat_log', ''), true); $L = is_array($L) ? $L : []; $u60 = 0; $u10 = 0;
+        foreach ($L as $r) { $t = (int)($r[0] ?? 0); $n = (int)($r[1] ?? 0); if ($t >= $now - 3600) $u60 += $n; if ($t >= $now - 600) $u10 += $n; }
+        return max(0, min($cap - $u60, (int)ceil($cap / 6 * 1.3) - $u10)); } catch (Throwable $e) { return 0; }
+}
+function wa_cat_util_note(PDO $pdo, int $now, int $n): void
+{
+    if ($n <= 0) return;
+    try { $L = json_decode((string)setting_get($pdo, 'wa_ucat_log', ''), true); $L = is_array($L) ? $L : []; $L = array_values(array_filter($L, fn($r) => (int)($r[0] ?? 0) >= $now - 3600)); $L[] = [$now, $n]; setting_set($pdo, 'wa_ucat_log', json_encode($L)); } catch (Throwable $e) { }
+}
 /** 🔀 Campaigns that run on a plain pool message (the utility "open" reminders and their Meta-relabelled marketing twins) do not stay on ONE message (owner, 19 Nov 2026, 15:00): every 20 minutes each such running campaign moves to the next message of ALL the suitable ones
  *  (name-only, no claims, approved on every number that can send), campaigns start at different places of the list, so no single message carries everything and one that Meta pauses or moves is left out by itself. Only campaigns whose CURRENT message is a pool message are touched, never an owner's own marketing message.
  *  Checked every 5 minutes. Returns how many campaigns were moved. Switch off: wa_widen_tpl = 0. */
@@ -849,7 +862,9 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         $push = wa_camp_push((string)$c['push']); $rate = (int)$c['rate'] * $push['mult']; if ($c['win_end']) { $left = max(1, (strtotime((string)$c['win_end']) - $nowTs) / 60); $rate = (int)ceil($rem / $left); }
         if (!$c['win_end'] && (int)$c['own_hour'] !== 1 && !empty($c['started_at'])) { $tm = (int)setting_get($pdo, 'wa_camp_target_min', '6'); if ($tm > 0) { $leftMin = max(1.0, $tm - ($nowTs - strtotime((string)$c['started_at'])) / 60); $rate = max($rate, (int)ceil($rem / $leftMin)); } }   // "everyone together" campaigns aim to be finished about 6 minutes after the start (setting wa_camp_target_min; 0 = use the slow speed)
         $el = $c['last_tick'] ? min(5, max(0.5, ($nowTs - strtotime((string)$c['last_tick'])) / 60)) : 1; $quota = min($burstLeft > 0 ? 6000 : 3000, max(1, (int)ceil($rate * $el))); if ($burstLeft > 0) $quota = min($quota, $burstLeft);
-        if ($poolOn && $burstLeft <= 0) {
+        $catUtil = strtoupper((string)($t['category'] ?? 'MARKETING')) === 'UTILITY';   // owner 19 Nov 2026: a campaign on a UTILITY template has the utility limit (700 an hour), not the marketing speed
+        if ($catUtil && $burstLeft <= 0) { $uR = wa_cat_util_room($pdo, $nowTs); if ($uR <= 0) { $res[$id] = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'stop' => 'utility limit']; continue; } $quota = min(3000, $uR); }
+        elseif ($poolOn && $burstLeft <= 0) {
             if ($poolLeft <= 0) {
                 $hasRs = !empty($c['extra']['u_restart']) && (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND variant = 'R'")->fetchColumn() > 0;   // 💸 people put back by "Start as utility" are outside the daily plan: this campaign still gets its round (utility only, at its own per-minute limit)
                 if (!$hasRs) { $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ? AND status = 'running'")->execute([wa_dq_why_text($dq), $id]); $res[$id] = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'stop' => 'daily plan']; continue; }
@@ -906,9 +921,11 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         if ($wts) { $ctx['w'] = []; foreach ($wts as $nid0 => $w0) if (isset($ctx['nums'][(int)$nid0])) $ctx['w'][(int)$nid0] = $w0; $ctx['wsent'] = [];
             foreach ($pdo->query("SELECT number_id, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY number_id")->fetchAll() as $nr) $ctx['wsent'][(int)$nr['number_id']] = (int)$nr['n']; }
         $resolveM = function (array $tm, array $ct, array $it, int $iid) use ($pdo, $specs, &$usedPieces) { return wa_camp_resolve_vars($pdo, (int)$tm['nvars'], $specs, $ct, (string)($it['name'] ?: $ct['name']), $iid, $usedPieces); };
+        $cuLast = 0;
         while ($sent + $failed + $skipped < $quota && microtime(true) < $cDead && !$stop) {
             $ucond = '';
-            if ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left'];
+            if ($catUtil && $burstLeft <= 0) { if ($sent > $cuLast) { wa_cat_util_note($pdo, time(), $sent - $cuLast); $cuLast = $sent; } $poolLeft = wa_cat_util_room($pdo, time()); if ($poolLeft <= 0) { $stop = 'Utility limit: 700 an hour is reached — it continues by itself.'; break; } }
+            elseif ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left'];
                 if ($poolLeft <= 0) {   // 💸 the marketing allowance is used: the people put back by "Start as utility" still go (utility only — utility is outside the daily plan); everybody else waits
                     $rq = $uFirst ? (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND variant = 'R'")->fetchColumn() : 0;
                     if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 60), counted over all campaigns; the marketing allowance is not touched
@@ -1044,6 +1061,7 @@ if ($ec === 131042) { try { setting_set($pdo, 'wa_payblock_' . (int)$nid, date('
         elseif ($stop !== '') $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ?")->execute([mb_substr($stop, 0, 200), $id]);
         else $pdo->prepare("UPDATE wa_campaigns SET note = '' WHERE id = ? AND status = 'running'")->execute([$id]);
         if ($stop === '' && (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND (status IN ('queued', 'sending') OR (status = 'retry' AND next_try <= '" . date('Y-m-d H:i:s', $nowTs) . "'))")->fetchColumn() === 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'done', finished_at = ?, note = '' WHERE id = ? AND status = 'running'")->execute([date('Y-m-d H:i:s', $nowTs), $id]);
+        if ($catUtil && $sent > $cuLast) { wa_cat_util_note($pdo, time(), $sent - $cuLast); $cuLast = $sent; }
         $hard = false; $res[$id] = ['sent' => $sent, 'failed' => $failed, 'skipped' => $skipped, 'stop' => $stop];
         if ($plan) $res[$id]['mix'] = ['u_status' => $plan['u_status'], 'target' => $plan['target'], 'achieved' => $plan['achieved'], 'per_number' => array_map(fn($p) => ['share' => $p['share'], 'state' => $p['u_state'], 'u_given' => $p['u_given'], 'elig' => $p['elig']], $plan['per_number'])];
     }
