@@ -1040,7 +1040,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                 if (!$okReq && $variant === 'U') {   // the utility message cannot be put together for this person: marketing instead
                     $variant = 'M'; $tSent = $tUse; $vars = $resolveM($tSent, $ct, $it, $iid); $extra = (array)$c['extra']; [$okReq, $req] = wa_camp_request($pdo, $tSent, $ctx['nums'][$nid], (string)($ct['wa_id'] ?: '91' . $ct['phone']), $vars, $extra);
                 }
-                $vj = json_encode($vars, JSON_UNESCAPED_UNICODE); $tuId = (int)$tSent['id'] === (int)$c['tpl_id'] ? 0 : (int)$tSent['id'];
+                $vj = json_encode($vars, JSON_UNESCAPED_UNICODE); $tuId = (int)$tSent['id'] === (int)$c['tpl_id'] ? 0 : (int)$tSent['id']; if ($variant !== 'U' && strtoupper((string)($tSent['category'] ?? '')) === 'UTILITY') $tuId = (int)$tSent['id'];   /* owner 19 Nov 2026, 21:20: a message sent with a UTILITY template is marked (tpl_used) so the campaign colour line can show it in blue */
                 if (!$okReq) { $pdo->prepare("UPDATE wa_camp_items SET status = 'failed', number_id = ?, err = ?, vars_json = ?, tries = ?, variant = ?, tpl_used = ? WHERE id = ?")->execute([$nid, mb_substr(trim((string)$req) !== '' ? (string)$req : 'HRMS could not build the message (not sent to Meta)', 0, 190), $vj, $attempt, $variant, $tuId, $iid]); $failed++; continue; }
                 $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $reqs[] = $req; $batch[] = [$it, $nid, $vars, $attempt, $vj, $variant, $tSent, $tuId];
             }
