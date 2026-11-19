@@ -31,6 +31,8 @@
   .dm .sk tr.tt td{background:#1F2A44;color:#fff;font-weight:800}.dm .sk tr.gt td{background:#9BA232;color:#111;font-weight:800;font-size:14px}
   .dm .box{border-radius:12px;padding:12px 14px;margin:0 0 12px;font-size:13px;line-height:1.5}.dm .box.bad{background:#fdecec;border:1px solid #f1a5a5;color:#7f1d1d}.dm .box.ok{background:#e7f7ee;border:1px solid #b7e3c8;color:#0b5e3a}.dm .box.info{background:#eef4ff;border:1px solid #c5d8fb;color:#1e3a8a}
   .dm .box table{font-size:12.5px;margin-top:8px;background:#fff;border-radius:8px}.dm .box th{position:static;background:#fbe3e3 !important;color:#7f1d1d !important}.dm .box td{color:#111}
+  .dm .sk-sr{margin:0 0 10px}.dm .sk-sr input{width:100%;min-height:44px;font-size:16px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#fff;color:#111}
+  .dm .sk td.hl{background:#fff3c4 !important;outline:2px solid #f59e0b;outline-offset:-2px}.dm .sk-ord{font-size:13px;line-height:1.55}.dm .sk-ord .olist{display:inline}
   .dm .sk td.cl{cursor:pointer;font-weight:800;color:#1d4ed8;text-decoration:underline dotted}.dm .sk td.cl:hover{background:#eef6ff}
   .dm .olist button{display:inline-flex;gap:6px;align-items:center;border:1px solid #cfd8e3;border-radius:10px;background:#fff;color:#111;font:inherit;font-weight:700;font-size:13px;padding:8px 12px;margin:4px 6px 4px 0;cursor:pointer}.dm .olist button:hover{background:#eef6ff}.dm .olist button small{color:#64748b;font-weight:600}
   .dm .md h3{margin:0 0 4px;font-size:16px}.dm .md .sub{color:#64748b;font-size:12.5px;margin:0 0 10px}.dm .md table{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0}.dm .md th{position:static;background:#f1f4f8;text-align:left;padding:6px;font-size:11.5px}.dm .md td{padding:6px;border-top:1px solid #edf0f4;vertical-align:top}
@@ -63,6 +65,8 @@
         <input type="file" id="fUp" accept=".xlsx,.xls,.csv" style="display:none">
         <button class="btn" type="button" id="bXlsx" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
       </div>
+      <div class="sk-sr"><input type="search" id="skQ" placeholder="Search an order number or a perfume name…" autocomplete="off" aria-label="Search the SKU sheet"></div>
+      <div id="skFound"></div>
       <div id="skTop"></div>
       <div class="wrap"><table class="sk"><thead id="skHead"></thead><tbody id="skRows"><tr><td style="padding:20px">Reading the orders…</td></tr></tbody></table></div>
     </div>
@@ -80,6 +84,29 @@
   const dmy = (d) => d.split('-').reverse().join('-');
   let D = null, seq = 0;
   try { if (/^(Admin|HR)$/.test(String((api.currentUser() || {}).role || ''))) $('bUp').style.display = ''; } catch (e) { }
+  // ---- search: an order number shows its perfumes (and lights their cells), a perfume name or SKU filters the rows
+  const nrm = (t) => String(t == null ? '' : t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const onrm = (t) => String(t == null ? '' : t).toLowerCase().replace(/^#/, '').replace(/\s+/g, '');
+  function renderRows() {
+    const d = D; if (!d) return; const q = ($('skQ').value || '').trim();
+    let rows = d.rows, hits = {}, orderNames = [];
+    if (q) {
+      const qn = nrm(q), qo = onrm(q);
+      d.rows.forEach((r) => Object.keys(r.o || {}).forEach((c) => (r.o[c] || []).forEach((x) => { const k = onrm(x[0]); if (qo.length >= 2 && (k === qo || (qo.length >= 3 && k.indexOf(qo) !== -1))) (hits[x[0]] = hits[x[0]] || []).push({ name: r.name, col: +c, n: x[1] }); })));
+      orderNames = Object.keys(hits);
+      rows = d.rows.filter((r) => (qn && nrm(r.name + ' ' + r.sku).indexOf(qn) !== -1) || Object.keys(r.o || {}).some((c) => (r.o[c] || []).some((x) => orderNames.indexOf(x[0]) !== -1)));
+    }
+    // the orders found: their perfumes, sizes and pieces, and a button to open each
+    let fnd = '';
+    if (q && orderNames.length) fnd = orderNames.slice(0, 6).map((on) => { const L = hits[on], tot = L.reduce((a, x) => a + x.n, 0);
+      return '<div class="box info sk-ord"><b>Order ' + esc(on) + '</b> · ' + tot + ' piece' + (tot === 1 ? '' : 's') + ' in the sheet <span class="olist"><button type="button" data-on="' + esc(on) + '">Open order</button></span><br>' + L.map((x) => esc(x.name) + ' <small>' + esc(d.cols[x.col]) + ' × ' + x.n + '</small>').join(' · ') + '</div>'; }).join('') + (orderNames.length > 6 ? '<div class="sub" style="margin:0 0 8px">+' + (orderNames.length - 6) + ' more orders match; type more of the number.</div>' : '');
+    else if (q && !rows.length) fnd = '<div class="box info">Nothing found for <b>' + esc(q) + '</b> on this day. Check the day, or type the order number or part of the perfume name.</div>';
+    $('skFound').innerHTML = fnd;
+    $('skRows').innerHTML = rows.length ? rows.map((r) => '<tr><td><b>' + esc(r.sku) + '</b></td><td class="nm">' + esc(r.name) + '</td>' + r.q.map((v, i) => { const hl = orderNames.length && (r.o && r.o[i] || []).some((x) => orderNames.indexOf(x[0]) !== -1); return '<td class="' + (v ? 'cl' : 'z') + (hl ? ' hl' : '') + '"' + (v ? ' data-s="' + esc(r.sku) + '" data-c="' + i + '" title="Tap to see the orders"' : '') + '>' + v + '</td>'; }).join('') + '<td><b>' + r.total + '</b></td></tr>').join('')
+      + (q ? '<tr class="tt"><td colspan="2">Showing ' + rows.length + ' of ' + d.rows.length + ' SKUs</td><td colspan="11"></td></tr>' : '<tr class="tt"><td colspan="2">TOTAL</td>' + d.totals.map((v) => '<td>' + v + '</td>').join('') + '<td>' + d.pieces + '</td></tr><tr class="gt"><td colspan="2" style="background:#1F2A44"></td><td colspan="11">' + num(d.pieces) + '</td></tr>')
+      : '<tr><td colspan="13" style="padding:20px;color:#64748b">' + (q ? 'No SKU matches.' : 'No product was counted for this day.') + '</td></tr>';
+  }
+  let skT = 0; $('skQ').addEventListener('input', () => { clearTimeout(skT); skT = setTimeout(renderRows, 200); });
   function draw(d) {
     D = d; $('bXlsx').disabled = !d.rows.length;
     // ---- on top: everything that could not be put in the sheet
@@ -95,9 +122,7 @@
       + ((d.left_out || []).length ? ' · left out on purpose: ' + d.left_out.map((u) => esc(u.text) + ' ×' + u.qty).join(', ') : '') + '</div>';
     $('skTop').innerHTML = top;
     $('skHead').innerHTML = '<tr><th>SKU</th><th style="text-align:left;max-width:none">Perfume Name (Original)</th>' + d.cols.map((c) => '<th>' + esc(c) + '</th>').join('') + '<th>Total</th></tr>';
-    $('skRows').innerHTML = d.rows.length ? d.rows.map((r) => '<tr><td><b>' + esc(r.sku) + '</b></td><td class="nm">' + esc(r.name) + '</td>' + r.q.map((v, i) => '<td class="' + (v ? 'cl' : 'z') + '"' + (v ? ' data-s="' + esc(r.sku) + '" data-c="' + i + '" title="Tap to see the orders"' : '') + '>' + v + '</td>').join('') + '<td><b>' + r.total + '</b></td></tr>').join('')
-      + '<tr class="tt"><td colspan="2">TOTAL</td>' + d.totals.map((v) => '<td>' + v + '</td>').join('') + '<td>' + d.pieces + '</td></tr><tr class="gt"><td colspan="2" style="background:#1F2A44"></td><td colspan="11">' + num(d.pieces) + '</td></tr>'
-      : '<tr><td colspan="13" style="padding:20px;color:#64748b">No product was counted for this day.</td></tr>';
+    renderRows();
   }
   async function load() {
     const my = ++seq; $('bRef').disabled = true; $('skRows').innerHTML = '<tr><td colspan="13" style="padding:20px">Reading the orders of the day from Shopify…</td></tr>'; $('skTop').innerHTML = ''; $('bXlsx').disabled = true;
@@ -168,15 +193,15 @@
   document.querySelector('.dm').addEventListener('click', async (e) => {
     const b = e.target.closest('.olist button'); if (!b) return;
     const on = b.dataset.on, ref = (D && D.oid && D.oid[on]) || null; if (!ref) { alert('This order cannot be opened from here.'); return; }
-    const back = $('pop').innerHTML; openPop('<p class="sub">Loading ' + esc(on) + '…</p>');
+    const back = $('pop') ? $('pop').innerHTML : ''; openPop('<p class="sub">Loading ' + esc(on) + '…</p>');
     try {
       const d = (await api.get('shopify.order_detail', { store: ref[0], id: ref[1] })).order, kv = (k, v) => (v === '' || v == null) ? '' : '<div class="kv"><span>' + k + '</span><b>' + esc(v) + '</b></div>';
       openPop('<h3>' + esc(d.order_name || on) + ' — ' + esc(d.store || '') + '</h3><p class="sub">' + esc(d.created_at ? new Date(d.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '') + '</p>'
         + kv('Customer', d.customer) + kv('Mobile', d.phone) + kv('Address', (d.address || []).join(', ')) + kv('Payment', [d.financial_status, d.gateway].filter(Boolean).join(' · ')) + kv('Fulfillment', d.fulfillment_status) + kv('Tags', d.tags) + kv('Note', d.note)
         + '<table><thead><tr><th>Product</th><th>Qty</th><th style="text-align:right">Total</th></tr></thead><tbody>' + (d.line_items || []).map((li) => '<tr><td>' + esc(li.title) + (li.variant ? '<div style="color:#64748b">' + esc(li.variant) + '</div>' : '') + ((li.props && li.props.length) ? '<div style="color:#64748b;margin-top:3px">( ' + li.props.map((p) => esc(p.name) + ': ' + esc(p.value)).join(' · ') + ' )</div>' : '') + '</td><td>' + esc(li.quantity) + '</td><td style="text-align:right">' + esc(li.total) + '</td></tr>').join('') + '</tbody></table>'
         + kv('Subtotal', d.subtotal) + kv('Discount', d.discounts) + kv('Shipping', d.shipping) + kv('Total', d.total)
-        + '<div style="text-align:right;margin-top:10px"><button class="btn" type="button" id="popB" style="background:#fff;color:#111;border:1px solid var(--line);margin-right:6px">← Back</button><button class="btn" type="button" id="popX" style="background:#fff;color:#111;border:1px solid var(--line)">Close</button></div>');
-      $('popX').onclick = closePop; $('popB').onclick = () => { openPop(back.replace(/^<div class="md">|<\/div>$/g, '')); $('popX') && ($('popX').onclick = closePop); };
+        + '<div style="text-align:right;margin-top:10px">' + (back ? '<button class="btn" type="button" id="popB" style="background:#fff;color:#111;border:1px solid var(--line);margin-right:6px">← Back</button>' : '') + '<button class="btn" type="button" id="popX" style="background:#fff;color:#111;border:1px solid var(--line)">Close</button></div>');
+      $('popX').onclick = closePop; if ($('popB')) $('popB').onclick = () => { openPop(back.replace(/^<div class="md">|<\/div>$/g, '')); $('popX') && ($('popX').onclick = closePop); };
     } catch (err) { openPop('<p class="sub" style="color:#9a2620">' + esc(err.message) + '</p><div style="text-align:right"><button class="btn" type="button" id="popX">Close</button></div>'); $('popX').onclick = closePop; }
   });
   load();
