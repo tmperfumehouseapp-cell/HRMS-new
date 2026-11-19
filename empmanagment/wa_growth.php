@@ -607,7 +607,7 @@ function wag_tag_counts(PDO $pdo): array
     if ($c && ($c['as_of'] ?? '') === $at && $at !== '') return $c;   // computed once per refresh
     // ⚡ 18 Nov: this count takes 13-22 s on the big tables and, every time the customer table refreshed, EVERY open screen started it at once (4 copies seen running together, database at 200% CPU,
     // the whole HRMS slow). Now only ONE request recounts; the others — and anything asked within 15 minutes of the last count — get the previous numbers at once.
-    if ($c && (time() - (int)($c['at'] ?? 0)) < 900) return $c;
+    if ($c && (time() - (int)($c['at'] ?? 0)) < 1800) return $c;   // ⚡ 15 → 30 minutes: the biggest count of the database (13-22 s) now runs half as often
     $got = 0; try { $got = (int)$pdo->query("SELECT GET_LOCK('wag_tags', 0)")->fetchColumn(); } catch (Throwable $e) { $got = 1; }
     if (!$got) { if ($c) return $c;   // somebody else is counting: use the old numbers
         for ($i = 0; $i < 25; $i++) { sleep(1); try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); } catch (Throwable $e) { $c = null; } if (is_array($c) && (int)($c['v'] ?? 0) === 2) return $c; } }   // no old numbers at all: wait (up to 25 s) for the one that is counting instead of starting a 4th copy

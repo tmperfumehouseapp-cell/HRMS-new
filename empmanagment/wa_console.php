@@ -166,8 +166,13 @@ if ($__wc === 'wa.overview' || $__wc === 'wa.send_media' || $__wc === 'wa.client
             $unpicked = $cnt("assigned_emp = 0 AND $wait AND last_in_at < ?", [$ago3]); $slow = $cnt("assigned_emp > 0 AND $wait AND last_in_at < ?", [$ago10]);
             $numbers = wa_health_all($pdo, !empty($_GET['live']));
             $tpl = ['approved' => 0, 'pending' => 0, 'rejected' => 0];
-            if (function_exists('wa_tpl_tables') && wa_tpl_tables($pdo)) { try { $wb = function_exists('wa_wabas') ? wa_wabas($pdo) : [];
-                foreach ($pdo->query("SELECT * FROM wa_templates")->fetchAll() as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $p = wa_tpl_public($pdo, $r, $wb); if (isset($tpl[$p['status']])) $tpl[$p['status']]++; } } catch (Throwable $e) { } }
+            // ⚡ the three message counts were worked out by reading EVERY pre-made message (hundreds) on every Overview refresh (every 45 s per open page). They are now kept for 60 s for everybody; any change to the messages (wa_tpl_dirty) makes a fresh count at once.
+            if (function_exists('wa_tpl_tables') && wa_tpl_tables($pdo)) { try {
+                $__cnt = function () use ($pdo, $tpl) { $wb = function_exists('wa_wabas') ? wa_wabas($pdo) : [];
+                    foreach ($pdo->query("SELECT * FROM wa_templates")->fetchAll() as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $p = wa_tpl_public($pdo, $r, $wb); if (isset($tpl[$p['status']])) $tpl[$p['status']]++; }
+                    return $tpl; };
+                $tpl = function_exists('hrms_memo') ? hrms_memo('wa_ov_tpl:' . (int)setting_get($pdo, 'wa_tpl_dirty', '0'), 60, $__cnt) : $__cnt();
+            } catch (Throwable $e) { } }
             $tiers = array_filter(array_column($numbers, 'tier'), fn($t) => $t !== null); $limit = $tiers ? (in_array(-1, $tiers, true) ? -1 : max($tiers)) : null;   // the limit is shared by every number of the portfolio
             require_once __DIR__ . '/wa_lim.php'; $used = wa_lim_used($pdo, date('Y-m-d H:i:s', time() - 86400))['all'];
             $att = [];

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Help · System doctor</title>
 <style>
 :root{--bg:#eef0f3;--card:#fff;--ink:#14161a;--mut:#6b7280;--line:#e6e8ec;--or:#ff7a2f;--g:#16a34a;--gs:#e8f7ee;--a:#d97706;--as:#fff4e0;--r:#dc2626;--rs:#fdeaea;--b:#2563eb}
@@ -761,7 +761,7 @@ function fcReport(R){
 }
 function fcPrompt(R){
   var f=fcAll(),L=[];
-  L.push('You are my senior developer. My system is the HRMS of TM Perfume House: GitHub repo jaimin69-tm/HRMS (HTML pages in the root, PHP backend in empmanagment/), live at fourpirates.space on Hostinger shared hosting. I am not a developer.','');
+  L.push('You are my senior developer. My system is the HRMS of TM Perfume House: GitHub repo tmperfumehouseapp-cell/HRMS-new (HTML pages in the root, PHP backend in empmanagment/), live at fourpirates.space on Hostinger shared hosting. I am not a developer.','');
   L.push('GOAL: make EVERYTHING listed below strong — zero failing, zero weak — and the Help page Health at 95 or more. Find the real root cause of each item and fix it properly in the code. Do not hide problems and do not change the Help scoring rules to look better.','');
   L.push('RULES:','- Work directly on the repo and commit to main (and the working branch). Never touch config.php, uploads/ or other server-only files.','- Test what you change (php -l, run the page in a browser where you can) and tell me honestly what you could and could not verify.','- Items that are only Hostinger settings (database connection limit, cron job, SSL) — give me exact click-by-click steps, do not pretend code fixes them.','- At the end give me: (1) the list of changed files with their full paths, (2) exact upload steps for Hostinger File Manager, (3) what I should check on the Help page afterwards.','');
   L.push('FULL CHECK RESULT:');R.forEach(function(r){L.push('- '+r.n+': '+(r.st||'').toUpperCase()+' — '+(r.note||''));(r.list||[]).forEach(function(x){L.push('    · '+x)})});L.push('');

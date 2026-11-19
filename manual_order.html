@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#111827">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -61,7 +61,7 @@
 </div>
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
-<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/layout.js?v=33"></script>
 <script>
   guardPage();
   renderSidebar('manual_order');
@@ -69,7 +69,7 @@
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function loadUi(cb) {
     if (window.WaManual) return cb();
-    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=12'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
+    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=13'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
   }
   async function start(listOnly) {
     $('moMsg').innerHTML = '';

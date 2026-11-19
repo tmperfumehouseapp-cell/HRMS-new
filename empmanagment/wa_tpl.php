@@ -782,14 +782,36 @@ function wa_tpl_utility_build(array $t, int $strict = 0): array
 
 }   // function_exists guard
 
+
+/** The full message list (what the Messages / Pre-made page shows). Heavy with hundreds of messages (a status and a utility look-up for each), so the router remembers it: see wa.tpl_list. */
+function wa_tpl_full_list(PDO $pdo, array $wabas, array $auth, bool $all): array
+{
+    $_GET['all'] = $all ? '1' : ''; {
+            $auto = null;
+            $rows = $pdo->query("SELECT * FROM wa_templates ORDER BY star DESC, used DESC, id DESC")->fetchAll();
+            $out = []; foreach ($rows as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $out[] = wa_tpl_public($pdo, $r, $wabas); }
+            $out = wa_tpl_mark_auto($out, !empty($_GET['all']));   // 🎫 complaint / follow-up messages are sent by the system: marked 'auto', their old versions left out
+            $cnt = ['approved' => 0, 'pending' => 0, 'rejected' => 0, 'other' => 0]; foreach ($out as $o) { if (isset($cnt[$o['status']])) $cnt[$o['status']]++; else $cnt['other']++; }
+            $fol = []; foreach (['Offers', 'Reminders', 'Order updates'] as $f) $fol[$f] = 0; foreach ($out as $o) if ($o['folder'] !== '') $fol[$o['folder']] = ($fol[$o['folder']] ?? 0) + 1;
+            $fl = []; foreach ($fol as $k => $n) $fl[] = ['name' => (string)$k, 'count' => $n];
+            try { $out = wa_mix_decorate($pdo, $out); $auto = wa_tpl_auto_status($pdo); } catch (Throwable $e) { $auto = null; }
+            return ['templates' => $out, 'counts' => $cnt, 'accounts' => count($wabas), 'can_edit' => wa_is_admin($pdo, $auth), 'folders' => $fl, 'app_id_set' => wa_cfg_val('WA_APP_ID') !== '', 'auto' => $auto];
+    }
+}
+
 // ------------------------------------------------------------------------------------------------------------------------ router
 $__wt = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.tpl_make_utility', 'wa.tpl_utility_list'], true)) {   // these three are answered by wa_diag.php / wa_util.php (loaded later)   // wa.tpl_diagnose is answered by wa_diag.php (loaded later)
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth();
     if (!wa_tables($pdo) || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
-    $wabas = wa_wabas($pdo);
-    $names = employee_names_by_id($pdo); $me = (int)($auth['employee_id'] ?? 0);
+    // ⚡ wa.tpl_send is called ~50 times a minute (every pre-made message sent from a chat or a bulk send). It changes NO message of the library, but it used to mark the whole library 'changed' every time:
+    //    that writes the settings table and makes EVERY request of the server read the whole settings table (about 9,000 rows) again, throws away the remembered Pre-made list (a rebuild of 'a minute and more')
+    //    and the Overview's message counts, each time. It also read the WhatsApp account list and all employee names, which a send does not use. A send now skips all of that.
+    $__send = ($__wt === 'wa.tpl_send');
+    $wabas = $__send ? [] : wa_wabas($pdo);
+    if ($isPost && !$__send) { try { setting_set($pdo, 'wa_tpl_dirty', (string)time()); } catch (Throwable $e) { } }   // any change throws the remembered list away
+    $names = $__send ? [] : employee_names_by_id($pdo); $me = (int)($auth['employee_id'] ?? 0);
     switch ($__wt) {
         case 'wa.tpl_list': {
             // ⚡ the phone app's "Pre-made messages" sheet asks for the LITE list: the approved messages without the per-number matrix / utility twins / Meta check, remembered for 60 s (the full list made the sheet hang on "loading" with hundreds of messages)
@@ -801,15 +823,19 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
                 if (function_exists('wa_cpc_put')) { try { wa_cpc_put($pdo, 'tpl_list_lite1', $resp); } catch (Throwable $e) { } }
                 json_response($resp);
             }
-            $auto = null; register_shutdown_function(function () use ($pdo) { if (function_exists('hrms_release')) hrms_release(); @set_time_limit(90); try { wa_tpl_autosync($pdo, 300); } catch (Throwable $e) { } });   // ⚡ asking Meta about waiting templates happens AFTER the list is shown (every 5 min at most) — the list opens at once
-            $rows = $pdo->query("SELECT * FROM wa_templates ORDER BY star DESC, used DESC, id DESC")->fetchAll();
-            $out = []; foreach ($rows as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $out[] = wa_tpl_public($pdo, $r, $wabas); }
-            $out = wa_tpl_mark_auto($out, !empty($_GET['all']));   // 🎫 complaint / follow-up messages are sent by the system: marked 'auto', their old versions left out
-            $cnt = ['approved' => 0, 'pending' => 0, 'rejected' => 0, 'other' => 0]; foreach ($out as $o) { if (isset($cnt[$o['status']])) $cnt[$o['status']]++; else $cnt['other']++; }
-            $fol = []; foreach (['Offers', 'Reminders', 'Order updates'] as $f) $fol[$f] = 0; foreach ($out as $o) if ($o['folder'] !== '') $fol[$o['folder']] = ($fol[$o['folder']] ?? 0) + 1;
-            $fl = []; foreach ($fol as $k => $n) $fl[] = ['name' => (string)$k, 'count' => $n];
-            try { $out = wa_mix_decorate($pdo, $out); $auto = wa_tpl_auto_status($pdo); } catch (Throwable $e) { $auto = null; }
-            json_response(['templates' => $out, 'counts' => $cnt, 'accounts' => count($wabas), 'can_edit' => wa_is_admin($pdo, $auth), 'folders' => $fl, 'app_id_set' => wa_cfg_val('WA_APP_ID') !== '', 'auto' => $auto]);
+            // ⚡ the full list is heavy with hundreds of messages (a minute and more): it is remembered. A copy up to 90 s old is shown at once; an older one is shown at once TOO and rebuilt after the answer is sent;
+            //    any change to the messages (a POST on a wa.tpl_ action) throws the copy away.
+            $__ck = 'tpl_list_full' . (!empty($_GET['all']) ? 'A' : 'B'); $__dirty = (int)setting_get($pdo, 'wa_tpl_dirty', '0'); $__h = null; try { $__h = function_exists('wa_cpc_get') ? wa_cpc_get($pdo, $__ck) : null; } catch (Throwable $e) { }
+            $__all = !empty($_GET['all']); $__canEdit = wa_is_admin($pdo, $auth);
+            register_shutdown_function(function () use ($pdo) { if (function_exists('hrms_release')) hrms_release(); @set_time_limit(90); try { wa_tpl_autosync($pdo, 300); } catch (Throwable $e) { } });   // ⚡ asking Meta about waiting templates happens AFTER the list is shown (every 5 min at most)
+            if ($__h && is_array($__h['v'] ?? null) && (time() - (int)$__h['age']) > $__dirty && (int)$__h['age'] < 86400) {
+                $__v = $__h['v']; $__v['can_edit'] = $__canEdit;
+                if ((int)$__h['age'] >= 90 && function_exists('wa_cpc_put') && (int)setting_get($pdo, 'wa_tpl_rebuild_at', '0') < time() - 120 && setting_set($pdo, 'wa_tpl_rebuild_at', (string)time()) !== false) register_shutdown_function(function () use ($pdo, $wabas, $auth, $__all, $__ck) { if (function_exists('hrms_release')) hrms_release(); @set_time_limit(180); try { $r = wa_tpl_full_list($pdo, $wabas, $auth, $__all); wa_cpc_put($pdo, $__ck, $r); } catch (Throwable $e) { } });
+                json_response($__v);
+            }
+            ignore_user_abort(true); @set_time_limit(300);   // nothing remembered yet: finish and remember it even if the browser gives up waiting — the next open is instant
+            $__r = wa_tpl_full_list($pdo, $wabas, $auth, $__all); if (function_exists('wa_cpc_put')) { try { wa_cpc_put($pdo, $__ck, $__r); } catch (Throwable $e) { } }
+            json_response($__r);
         }
         case 'wa.tpl_sync': {
             wa_guard_admin($pdo, $auth); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

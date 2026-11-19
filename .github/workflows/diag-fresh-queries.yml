@@ -1,0 +1,61 @@
+# READ-ONLY: why FRESH queries (src query / empty) are not given by Auto assign while campaign queries are. Prints counts and flags only (no phone numbers, no names).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Fresh queries check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Fresh queries
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/fq_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; require $f;
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $ref = $d->query("SELECT MAX(opened_at) FROM wa_queries")->fetchColumn(); $t = strtotime($ref); $since = date("Y-m-d H:i:s", $t - 86400 + 600); $day = date("Y-m-d 10:00:00", $t - 36000 >= strtotime(date("Y-m-d 00:00:00", $t)) ? $t : $t - 86400);
+          echo "newest query row: $ref · window since $since\n";
+          echo "=== queries opened since 10:00 today by type: total / given to a person / still nobody ===\n";
+          foreach ($d->query("SELECT src, COUNT(*) n, SUM(emp_id > 0) given, SUM(emp_id = 0) nobody FROM wa_queries WHERE opened_at >= '$day' GROUP BY src") as $r) echo "  src=[" . $r["src"] . "] total " . $r["n"] . " · given " . $r["given"] . " · nobody " . $r["nobody"] . "\n";
+          echo "=== fresh queries (src query or empty) that nobody holds, newest 24 h: the FIRST thing that stops each (no numbers) ===\n";
+          $now = $t; $why = []; $lines = [];
+          $hs = "h.dir = 'out' AND (h.emp_id > 0 OR h.who IN ('emp','phone')) AND h.ts >= c.last_in_at AND (h.mtype IN ('image','video','audio','document','template','interactive') OR CHAR_LENGTH(TRIM(COALESCE(h.body,''))) >= 30)";
+          foreach ($d->query("SELECT q.id, q.phone, q.src, q.opened_at FROM wa_queries q WHERE q.emp_id = 0 AND q.src IN ('query','') AND q.opened_at >= '$since' ORDER BY q.id DESC LIMIT 80")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $c = $d->prepare("SELECT assigned_emp, status, optout, cx_id, tag, last_in_at FROM wa_contacts WHERE phone = ?"); $c->execute([$r["phone"]]); $c = $c->fetch(PDO::FETCH_ASSOC);
+            if (!$c) $w = "no contact row"; elseif ((int)$c["assigned_emp"] > 0) $w = "contact already held by a person";
+            elseif ($c["status"] !== "open") $w = "chat status " . $c["status"] . " (not open)"; elseif ((int)$c["optout"] === 1 || (int)$c["cx_id"] > 0 || $c["tag"] === "complaint") $w = "optout / complaint";
+            elseif (!$c["last_in_at"] || strtotime($c["last_in_at"]) < $now - 86400 + 600) $w = "customer last wrote > 24 h ago";
+            else { $h = $d->prepare("SELECT 1 FROM wa_messages h JOIN wa_contacts c ON c.phone = h.phone WHERE c.phone = ? AND $hs LIMIT 1"); $h->execute([$r["phone"]]); $b = $d->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1"); $b->execute([$r["phone"]]);
+              if ($h->fetchColumn()) $w = "a person already answered"; elseif ($b->fetchColumn()) $w = "business auto-reply"; else $w = "ELIGIBLE - should have been given"; }
+            $why[$w] = ($why[$w] ?? 0) + 1; if (count($lines) < 15) $lines[] = "  opened " . $r["opened_at"] . " · src [" . $r["src"] . "] · " . $w;
+          }
+          arsort($why); foreach ($why as $k => $v) echo "  $v x $k\n"; echo "newest 15:\n" . implode("\n", $lines) . "\n";
+          echo "=== open unassigned chats whose NEWEST query row is older than 24 h but the customer wrote in the last 24 h (a returning customer: no new query row is made) ===\n";
+          echo "  count: " . $d->query("SELECT COUNT(*) FROM wa_contacts c WHERE c.assigned_emp = 0 AND c.status='open' AND c.optout=0 AND c.last_in_at >= '$since' AND (SELECT MAX(q.opened_at) FROM wa_queries q WHERE q.phone = c.phone) < '$since'")->fetchColumn() . "\n";
+          echo "  ...of them with source: "; foreach ($d->query("SELECT c.source, COUNT(*) n FROM wa_contacts c WHERE c.assigned_emp = 0 AND c.status='open' AND c.optout=0 AND c.last_in_at >= '$since' AND (SELECT MAX(q.opened_at) FROM wa_queries q WHERE q.phone = c.phone) < '$since' GROUP BY c.source") as $r) echo "[" . $r["source"] . "]=" . $r["n"] . " "; echo "\n";
+          echo "=== fresh queries given by anybody today, with how (waa_log kinds today) ===\n";
+          foreach ($d->query("SELECT kind, COUNT(*) n FROM waa_log WHERE at >= '$day' GROUP BY kind") as $r) echo "  " . $r["kind"] . ": " . $r["n"] . "\n";
+          echo "fresh people state: "; $j = json_decode($d->query("SELECT setting_value FROM hrms_settings WHERE setting_key='waa_st'")->fetchColumn(), true); $m = ["on"=>0,"off"=>0,"ao"=>0]; foreach ((array)($j["e"] ?? []) as $x) { if (($x["m"] ?? "") === "on") $m["on"]++; if (($x["m"] ?? "") === "off") $m["off"]++; if (!empty($x["ao"])) $m["ao"]++; if (!empty($x["sh"])) $m["slow_hold"] = ($m["slow_hold"] ?? 0) + 1; if (!empty($x["sw"])) $m["slow_warn"] = ($m["slow_warn"] ?? 0) + 1; } echo json_encode($m) . "\n";
+          echo "waa_last: " . $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key='waa_last'")->fetchColumn() . "\n";
+          
+          PHP
+          php /tmp/fq_check.php "$P"; rm -f /tmp/fq_check.php
+          REMOTE

@@ -238,6 +238,7 @@ function wa_camp_requery(PDO $pdo, int $days = 7): int
 function wa_tick(PDO $pdo, bool $force = false): array
 {
     if (!$force && !wa_lock($pdo, 'tick', 8)) return ['skipped' => true];
+    try { if (function_exists('wa_status_flush')) wa_status_flush($pdo, true); } catch (Throwable $e) { }   // ⚡ whatever delivery receipts still wait (the block is normally applied by the webhook itself every 7 s)
     $__ts = []; $__lt = microtime(true); $__mk = function (string $k) use (&$__ts, &$__lt) { $n = microtime(true); $d = $n - $__lt; $__lt = $n; if ($d >= 0.5) $__ts[$k] = round(($__ts[$k] ?? 0) + $d, 1); };   // ⏱ which part of the tick takes the time (only parts of 0.5 s and more are kept)
     if ($force && !defined('WA_IN_WEBHOOK') && (int)date('G') >= 3 && (string)setting_get($pdo, 'pvb_day', '') !== date('Y-m-d') && function_exists('wcr_pvb_run')) { try { wcr_pvb_run($pdo); } catch (Throwable $e) { } } $__mk('wcr_pvb_run');   // person vs bot: once a day, early morning
     $o = ['assigned' => 0]; $__late = function (): bool { return !empty($GLOBALS['__wa_dl']) && microtime(true) > (float)$GLOBALS['__wa_dl']; };   // ⏱ the engine run has a time budget: after its deadline the non-essential jobs below wait for the next run
@@ -250,6 +251,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('cfun_fast') && !defined('WA_IN_WEBHOOK')) $o['cfun_fast'] = cfun_fast($pdo, 2000, 8, 20); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'funnel fast: ' . $e->getMessage()); }   // ⚡ customers whose status changed are recounted every run
     try { if (function_exists('waa_tick') && !defined('WA_IN_WEBHOOK')) $o['auto'] = waa_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto assign (new): ' . $e->getMessage()); } $__mk('waa_tick');   // 🏪 new queries → salespeople by the rules
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); } $__mk('wa_auto_alloc');   // 🤖 orders → the salesperson of the chat
+    if (!$__late()) try { if (function_exists('ora_catchup') && !defined('WA_IN_WEBHOOK')) $o['ora'] = ora_catchup($pdo); } catch (Throwable $e) { } $__mk('ora_catchup');   // 📈 today's unread orders are read by themselves (growth effort): nobody has to press Read chats now
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); } $__mk('wa_callnow_scan');
     if (!$__late()) try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); } $__mk('wq_urgent_push');   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
     if (!$__late()) try { if (function_exists('wa_proof_scan')) { $pr = wa_proof_scan($pdo); $o['proofs'] = $pr['made']; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order proof: ' . $e->getMessage()); } $__mk('wa_proof_scan');

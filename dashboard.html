@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#111827">
 <meta name="mobile-web-app-capable" content="yes">
@@ -70,7 +70,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
-<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/layout.js?v=33"></script>
 <script>
   guardPage();
   renderSidebar('dashboard');
@@ -125,7 +125,7 @@
         <div class="stat-grid" id="statsArea">
           <div class="stat-card"><div class="label">Active Employees</div><div class="value">${data.total_employees}</div></div>
           <div class="stat-card"><div class="label">Departments</div><div class="value">${data.total_departments}</div></div>
-          <div class="stat-card"><div class="label">Expiring/Expired Docs</div><div class="value">${expiringTotal}</div></div>
+          <div class="stat-card"><div class="label">Expiring Docs</div><div class="value">${expiringTotal}</div></div>
           <div class="stat-card"><div class="label">Pending Documents</div><div class="value">${pendingTotal}</div></div>
         </div>`;
 

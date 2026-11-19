@@ -93,6 +93,7 @@
       + '<div class="card" style="padding:12px 14px"><div class="ring"><svg width="68" height="68" viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#e6e9ee" stroke-width="11"/><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#16a34a" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + CIRC.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 52 52)"/><text x="52" y="60" text-anchor="middle" font-size="26" font-weight="800" fill="currentColor">' + (m.target > 0 ? Math.round(pct) + '%' : '—') + '</text></svg>'
       + '<div class="t"><b>' + rs(m.sales) + (bet ? ' <span class="up">▲ vs yesterday</span>' : '') + '</b><span class="mut">' + (m.target > 0 ? 'Target ' + rs(m.target) : 'No target today') + '</span><div class="bar"><i style="width:' + pct + '%"></i></div></div></div></div>'
       + '<div class="card next" style="padding:12px 14px"><div style="flex:1;min-width:0"><small>YOUR NEXT STEP</small><b>' + esc(next) + '</b></div><a class="btn w" href="my_chats.html">Chats ▸</a></div>'
+      + '<button type="button" class="btn w" data-ofv style="width:100%;margin:0 0 10px;min-height:46px;text-align:left">🏷 Running offers <span class="mut" style="font-weight:600">— view only</span> ›</button>'
       + '<div class="tiles">'
       + T1('t-g', 'e', '💰', rs(comNow), 'Earned today', comUp ? '<span class="up">+' + rs(comUp) + ' just now</span>' : 'tap: whole month ›')
       + T1('t-b', '', '🧾', esc(m.orders), 'Orders today', (m.ticket > 0 ? rs(m.ticket) + ' ticket' : '') + (q && q.conv != null ? ' · ' + q.conv + '% q→o' : '') + (tk && tk.orders >= 1 ? '<br><span style="font-weight:800;color:' + (tk.status === 'g' ? '#14804a' : tk.status === 'a' ? '#b86e00' : '#c0392b') + '">🎯 ' + rs(tk.goal) + (tk.status === 'g' ? ' ✓' : ' · next ' + rs(tk.need_next)) + '</span>' + (tk.pct > 0 ? (tk.earned ? ' <small>✓ ticket bonus +' + tk.pct + '% earned</small>' : ' <small>bonus +' + tk.pct + '% ≈ ' + rs(tk.bonus_est) + '</small>') : '') : ''))
@@ -116,6 +117,7 @@
   }
   document.addEventListener('click', async (e) => {
     if (e.target.closest('#homeRetry')) { loadHome(true); return; }
+    if (e.target.closest('[data-ofv]')) { if (!window.OffersView) return; const sh = sheet('🏷 Running offers', '<div class="sk"></div>'), bd = sh.querySelector('.bd'); OffersView.load().then((h) => { bd.innerHTML = h; OffersView.wire(bd); }); return; }
     const tl = e.target.closest('[data-tile]'); if (tl && !e.target.closest('button') && (tl.dataset.tile === 'e' || tl.dataset.tile === 'm')) { openMonth(); return; }
     if (tl && !e.target.closest('button')) { const k = tl.dataset.tile; sheet(k === 'q' ? '🎯 Today\'s quests' : k === 'l' ? '🏆 Leaderboard · today' : '🏅 My medals', HD[k] || ''); return; }
     const sn = e.target.closest('[data-seen]'); if (sn) { sn.disabled = true; try { await api.post('ct.remark_seen', { id: +sn.dataset.seen }); loadHome(true); } catch (er) { toast(er.message); sn.disabled = false; } return; }

@@ -1,0 +1,36 @@
+# READ-ONLY: how long a call from the server to Meta (graph.facebook.com) takes, split into DNS / connect / TLS / waiting. No token is sent, nothing is changed.
+# Run it by hand: Actions -> "Meta call timing (read-only)" -> Run workflow.
+name: Meta call timing (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Timing
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' <<'REMOTE' || true
+          F='dns=%{time_namelookup}s connect=%{time_connect}s tls=%{time_appconnect}s first_byte=%{time_starttransfer}s total=%{time_total}s http=%{http_code} ip=%{remote_ip}\n'
+          echo "IPv6 default route on this server:"; (ip -6 route show default 2>/dev/null | head -2) || true; [ -z "$(ip -6 route show default 2>/dev/null)" ] && echo "  none (no IPv6 route)"
+          echo; echo "default (curl chooses IPv4 or IPv6), 6 calls:"
+          for i in 1 2 3 4 5 6; do curl -s -o /dev/null -m 20 -w "$F" -X POST https://graph.facebook.com/v21.0/0/messages; done
+          echo; echo "forced IPv4, 6 calls:"
+          for i in 1 2 3 4 5 6; do curl -4 -s -o /dev/null -m 20 -w "$F" -X POST https://graph.facebook.com/v21.0/0/messages; done
+          echo; echo "default again, same connection reused for 3 calls (what keep-alive would give):"
+          curl -s -m 30 -o /dev/null -w "$F" -X POST https://graph.facebook.com/v21.0/0/messages -o /dev/null -w "$F" -X POST https://graph.facebook.com/v21.0/0/messages -o /dev/null -w "$F" -X POST https://graph.facebook.com/v21.0/0/messages
+          REMOTE

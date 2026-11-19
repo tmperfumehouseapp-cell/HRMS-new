@@ -31,6 +31,17 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   } catch (e) { /* the assistant is optional */ }
 })();
 
+// Phone navigation: bottom tab bar + "More" sheet below 768 px (assets/js/mobile_nav.js reads the menu this page draws; it does nothing on desktop, inside a frame or on WhatsApp).
+(function () {
+  try {
+    if (window.top !== window.self || window.__mnavLoad) return; window.__mnavLoad = 1;
+    var cs = document.currentScript;
+    var src = (cs && cs.src) ? cs.src.replace(/layout\.js.*$/, 'mobile_nav.js?v=2') : 'assets/js/mobile_nav.js?v=2';
+    var s = document.createElement('script'); s.src = src; s.defer = true;
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) { /* phone navigation is optional */ }
+})();
+
 // Voice: a start / stop microphone next to every Claude box (Boss chat, Claude questions, Brain teach boxes). Loaded in hub frames too.
 (function () {
   try {
@@ -111,7 +122,7 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
 // Compact phone layout: one shared stylesheet for every page, and every table gets its own sideways-scroll box on small screens.
 (function () {
   try {
-    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=9';
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=10';
     document.head.appendChild(l);
     const ph = document.createElement('link'); ph.rel = 'stylesheet'; ph.href = 'assets/css/phone.css?v=11'; document.head.appendChild(ph);   // the one compact phone style (html.ph)
     const mq = window.matchMedia('(max-width:820px)');
@@ -334,6 +345,7 @@ window.WS = (function () {
     { key: 'store', label: 'Store', icon: 'retail_store', sub: 'Everything about the Surat store', tabs: [['store_dashboard', 'Dashboard', 'store_dashboard.html', 'rsm'], ['store_billing', 'Billing', 'store_billing.html', 'rs'], ['store_messages', 'Messages', 'store_messages.html', 'rs'], ['store_team', 'Team', 'store_team.html', 'rsm'], ['store_commission', 'Store Commission', 'store_commission.html', 'rsm'], ['store_inventory', 'Inventory', 'store_inventory.html', 'rs'], ['store_cleaning', 'Cleaning & Pantry', 'store_cleaning.html', 'boss'], ['store_contacts', 'Customer follow-up', 'store_contacts.html', 'rsm'], ['flyers', 'Flyers', 'flyers.html', 'fl'], ['flyer_map', 'Flyer Map', 'flyer_map.html', 'flm'], ['store_logins', 'Store logins', 'store_logins.html', 'admin']] },
     { key: 'inventory', label: 'Inventory', icon: 'inventory', sub: 'Oils, perfumes, orders and dealers: what you have, what you need, what will be late', tabs: [['iv_dash', 'Dashboard', 'inventory.html', '', 'dashboard'], ['iv_oils', 'Oil stock', 'inventory.html', '', 'oils'], ['iv_perf', 'Perfumes', 'inventory.html', '', 'perfumes'], ['iv_calc', 'Oil calculator', 'inventory.html', '', 'calc'], ['iv_orders', 'Orders', 'inventory.html', '', 'orders'], ['iv_sup', 'Dealers', 'inventory.html', '', 'dealers'], ['iv_alerts', 'Alerts', 'inventory.html', '', 'alerts'], ['iv_rep', 'Reports', 'inventory.html', '', 'reports']] },
     { key: 'finance', label: 'Finance', icon: 'finance', sub: 'Money in, money out, bank checks', tabs: [['finance_sum', 'Summary', 'finance_sum.html', ''], ['finance_in', 'Incoming', 'finance_in.html', ''], ['finance_parcels', 'Refunds & closed', 'finance_parcels.html', '']] },
+    { key: 'finance_new', label: 'Finance New', icon: 'finance', sub: 'A fresh Finance built from scratch (the original Finance is untouched)', tabs: [['fn_summary', 'Summary', 'finance_new_summary.html', ''], ['fn_sum', 'Receipt and Payment', 'finance_new.html', ''], ['fn_in', 'Incoming', 'finance_new_in.html', ''], ['fn_out', 'Outgoing', 'finance_new_out.html', ''], ['fn_banks', 'Bank Accounts', 'finance_new_banks.html', '']] },
     { key: 'analytics', label: 'Analytics', icon: 'analytics', sub: 'Store analytics report', tabs: [['analytics', 'Analytics', 'analytics.html', 'an']] },
     { key: 'people', label: 'People', icon: 'employees', hidden: true, sub: 'Old People pages (opened from Boss → People)', tabs: [['employees', 'Employees', 'employees.html', ''], ['people_admin', 'Admin team', 'people_admin.html', 'admin'], ['attendance_admin', 'Attendance', 'attendance_admin.html', ''], ['my_day', 'My Day', 'my_day.html', 'punch'], ['leave_requests', 'Leave', 'leave_requests.html', ''], ['salary', 'Salary', 'salary.html', ''], ['penalties', 'Penalty list', 'penalties.html', ''], ['approvals', 'Approvals', 'approvals.html', ''], ['documents', 'Documents', 'documents.html', ''], ['doc_check', 'Doc Check', 'doc_check.html', ''], ['agreements', 'Agreements', 'agreements.html', ''], ['handover', 'Handover', 'handover.html', ''], ['ex_employees', 'Ex-employees', 'ex_employees.html', ''], ['history', 'Decline history', 'history.html', ''], ['leave', 'My Leave', 'leave.html', 'emp']] },
     { key: 'offices', label: 'Offices', icon: 'departments', sub: 'Cleaning, buying and repairs for every office, checked by Claude first', tabs: [['office_care', 'Offices', 'office_care.html', 'boss'], ['dept_work', 'To buy', 'dept_work.html', 'boss'], ['dept_fix', 'To fix', 'dept_fix.html', 'boss']] },
@@ -345,7 +357,7 @@ window.WS = (function () {
     'dashboard.html': 'dashboard', 'whatsapp_groups.html': 'whatsapp_groups', 'penalties.html': 'penalties', 'store_dashboard.html': 'rs_manage', 'store_inventory.html': 'rs_manage', 'store_billing.html': 'rs_counter', 'store_messages.html': 'rs_counter', 'store_team.html': 'rs_manage', 'store_commission.html': 'rs_manage', 'store_contacts.html': 'rs_manage', 'dept_restock.html': 'dispatch_restock',
     'people.html': 'employees', 'employees.html': 'employees', 'ex_employees.html': 'employees', 'attendance_admin.html': 'attendance', 'leave_requests.html': 'leave_requests', 'salary.html': 'salary',
     'approvals.html': 'approvals', 'documents.html': 'documents', 'agreements.html': 'agreements', 'history.html': 'decline_history', 'users.html': 'users', 'roles.html': 'users', 'changes.html': 'users', 'rates_weights.html': 'users', 'whats_new.html': 'users',
-    'inventory.html': 'inventory', 'finance_in.html': 'finance', 'finance_sum.html': 'finance', 'finance_parcels.html': 'finance', 'analytics.html': 'analytics', 'departments.html': 'departments', 'offices.html': 'offices', 'excel_files.html': 'excel_files', 'doc_check.html': 'documents', 'handover.html': 'employees',
+    'inventory.html': 'inventory', 'finance_in.html': 'finance', 'finance_new.html': 'finance', 'finance_new_summary.html': 'finance', 'finance_new_in.html': 'finance', 'finance_new_out.html': 'finance', 'finance_new_banks.html': 'finance', 'finance_sum.html': 'finance', 'finance_parcels.html': 'finance', 'analytics.html': 'analytics', 'departments.html': 'departments', 'offices.html': 'offices', 'excel_files.html': 'excel_files', 'doc_check.html': 'documents', 'handover.html': 'employees',
     'detailed_report.html': 'detailed_report', 'retail_shops.html': 'retail', 'retail_inventory.html': 'retail', 'total_budgeting.html': 'commission', 'commission_new.html': 'commission', 'commission.html': 'commission', 'leaders.html': 'commission',
   };
   const ICON_OF = {};  W.forEach((w) => { ICON_OF[w.key] = w.icon; });
@@ -520,6 +532,23 @@ window.WS = (function () {
     const tabs = visibleTabs(w, ctx);
     if (!tabs.length) { $('wsLoad').hidden = true; $('wsHost').innerHTML = '<div class="ws-empty">Nothing is open for your login here yet — ask Admin.</div>'; return; }
     const frames = {}; let cur = null;
+    // ⚡ a section you switched away from used to keep running: it is only hidden, and a page inside a frame cannot see that (its "is this tab visible?" answer follows the whole browser tab),
+    // so every section opened in this workspace kept refreshing itself in the background. Now a hidden section tells its page "hidden" (the same answer a hidden browser tab gives, which the pages
+    // already respect) and "visible" again when you come back (the pages refresh at that moment). Chat screens are left running: they must keep alerting.
+    const HUB_KEEP = /(^|\/)(whatsapp|my_chats|wa_)[^\/?#]*\.html/;
+    function hubPatch(f) {
+      try {
+        const d = f.contentDocument, W = f.contentWindow; if (!d || !W || f.__hubDoc === d) return;
+        const hd = Object.getOwnPropertyDescriptor(W.Document.prototype, 'hidden'), vd = Object.getOwnPropertyDescriptor(W.Document.prototype, 'visibilityState'); if (!hd || !hd.get) return;
+        Object.defineProperty(d, 'hidden', { configurable: true, get() { return f.__hubHide === true || hd.get.call(d); } });
+        if (vd && vd.get) Object.defineProperty(d, 'visibilityState', { configurable: true, get() { return f.__hubHide === true ? 'hidden' : vd.get.call(d); } });
+        f.__hubDoc = d;
+      } catch (e) { /* not the same origin: leave the page alone */ }
+    }
+    function hubVis(f, show) {
+      hubPatch(f); const hide = !show && !HUB_KEEP.test(String(f.getAttribute('src') || '')); if ((f.__hubHide === true) === hide) return; f.__hubHide = hide;
+      try { f.contentDocument.dispatchEvent(new f.contentWindow.Event('visibilitychange')); } catch (e) { }
+    }
     const urlFor = (t, q) => { const s = t[2] + (q ? (t[2].indexOf('?') < 0 ? '?' : '&') + q.replace(/^\?/, '') : ''); return s + (s.indexOf('?') < 0 ? '?' : '&') + 'in=sales' + (t[4] ? '#' + t[4] : ''); };
     const bar = () => {
       $('wsTabs').innerHTML = tabs.length < 2 ? '' : tabs.map((t) => '<button type="button" class="ws-pill' + (cur === t ? ' on' : '') + '" data-t="' + t[0] + '">' + esc(t[1]) + (t[0] === 'boss_engine' && ctx.bd && ((Number(ctx.bd.inbox) || 0) + (Number(ctx.bd.be) || 0)) > 0 ? '<em>' + ((Number(ctx.bd.inbox) || 0) + (Number(ctx.bd.be) || 0)) + '</em>' : '') + '</button>').join('');
@@ -546,6 +575,7 @@ window.WS = (function () {
       if (!hubStarted || noPush || !changed) history.replaceState(history.state, '', url); else history.pushState({ hubTab: t[0] }, '', url); hubStarted = true;
       const fk = t[4] ? t[2] : t[0];                                   // the Boss Engine views share one page: one frame, the view is its #hash
       Object.keys(frames).forEach((k) => { frames[k].hidden = k !== fk; });
+      Object.keys(frames).forEach((k) => hubVis(frames[k], k === fk));
       let f = frames[fk];
       if (f && t[4]) {
         try { if (f.contentWindow.location.hash.slice(1) !== t[4]) f.contentWindow.location.hash = '#' + t[4]; } catch (e) { /* the frame reloads below */ }
@@ -555,7 +585,7 @@ window.WS = (function () {
       if (!f) {
         f = document.createElement('iframe'); f.setAttribute('allow', 'camera; microphone; geolocation; clipboard-read; clipboard-write; fullscreen'); f.className = 'ws-frame'; f.title = t[1];
         f.setAttribute('allow', 'camera; microphone; geolocation; clipboard-write');
-        f.addEventListener('load', () => { if (frames[fk] === f && cur && (t[4] ? cur[2] === t[2] : cur === t)) $('wsLoad').hidden = true; guard(f, t); });
+        f.addEventListener('load', () => { hubVis(f, !f.hidden); if (frames[fk] === f && cur && (t[4] ? cur[2] === t[2] : cur === t)) $('wsLoad').hidden = true; guard(f, t); });
         frames[fk] = f; $('wsHost').appendChild(f); $('wsLoad').hidden = false; f.src = urlFor(t, q);
       } else $('wsLoad').hidden = true;
       bar(); document.title = t[1] + ' · ' + w.label + ' — HRMS';
@@ -998,7 +1028,7 @@ function renderSidebarCore(active) {
       allowed.push('flyers', 'complaints', 'my_complaints', 'social_inbox', 'staff_progress', 'dispatch_manual', 'manual_sheet', 'sku_sheet');      // Manual orders and the SKU sheet: the server lets in the Dispatch department, Sales Heads and the ticked roles   // staff_progress: the server (bd.staff_report) lets in only the complaints boss / top boss / deputy
       if (d.is_sales) allowed.push('my_sales', 'orders', 'my_chats', 'wasales', 'my_orders', 'manual_order');
       // Home page after login: sales people open My Sales (their numbers, rating, offer); everyone else opens Attendance. Remembered for index.html.
-      try { localStorage.setItem('hrms_home', 'my_day.html'); } catch (e) { /* private mode */ }
+      try { localStorage.setItem('hrms_home', d.is_sales ? 'my_app.html' : 'my_day.html'); } catch (e) { /* private mode */ }   // a salesperson's app opens on My Sales (their numbers, chats, offers); everybody else on My Day
       // replace(): the refused page never enters the history, so the back
       // button goes to the previous employee page, not back to this one.
       if (!allowed.includes(active)) { try { localStorage.removeItem(empOkKey); } catch (e) { /* ignore */ } window.location.replace('my_day.html'); return; }

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#111827">
 <meta name="mobile-web-app-capable" content="yes">
@@ -13,6 +13,7 @@
 <title>Orders — HRMS</title>
 <link rel="stylesheet" href="assets/css/style.css?v=4">
 <style>
+  .plat-cards[hidden]{display:none;}
   .plat-cards{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;}
   .plat-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px 14px 10px; border-top:4px solid var(--c);}
   .plat-card h3{margin:0 0 8px; font-size:14px; color:var(--c); display:flex; justify-content:space-between; align-items:baseline;}
@@ -743,8 +744,8 @@
 
       <!-- Platform summary: query / campaign / totals per platform for the selected dates -->
       <div id="platformCard" style="display:none; margin-bottom:20px;">
-        <div style="display:flex; justify-content:space-between; align-items:baseline; margin:0 0 10px;"><h2 style="font-size:15px; margin:0;">Platform summary</h2><span id="platformSub" style="font-size:12px; color:var(--muted);"></span></div>
-        <div class="plat-cards" id="platCards"></div>
+        <div id="platToggle" role="button" tabindex="0" title="Tap to show / hide the platform details" style="cursor:pointer; display:flex; justify-content:space-between; align-items:baseline; margin:0 0 10px;"><h2 style="font-size:15px; margin:0;"><span id="platArrow">▸</span> Platform summary <span style="font-size:11.5px; font-weight:400; color:var(--muted);">(tap to show details)</span></h2><span id="platformSub" style="font-size:12px; color:var(--muted);"></span></div>
+        <div class="plat-cards" id="platCards" hidden></div>
       </div>
 
       <div class="unalloc-note" id="unallocNote" hidden></div>
@@ -834,6 +835,7 @@
         </div>
       </div>
       </div><!-- /paneOrders -->
+
     </div>
   </main>
 </div>
@@ -943,9 +945,10 @@
 
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
-<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/layout.js?v=33"></script>
+<script src="assets/js/must3.js?v=2"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
-<script src="assets/js/ml_slab.js?v=261116a"></script>
+<script src="assets/js/ml_slab.js?v=261119a"></script>
 <script src="assets/js/addon_view.js?v=1"></script>
 <script src="assets/js/wmo_edit.js?v=1"></script>
 <script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
@@ -1487,11 +1490,12 @@
       <div class="hl"><div class="r hd"><span>Hour</span><span>Query</span><span>Camp.</span></div>${list}${eq || ec ? `<div class="r"><span>Earlier</span><b class="q">${eq}</b><b class="c">${ec}</b></div>` : ''}</div>
       ${can ? '' : '<div class="ro">Totals of the panels — type in a single panel box.</div>'}</details></div>`;
   }
-  document.getElementById('summaryGrid').addEventListener('toggle', (ev) => {
+  const gridOn = (t, fn, o) => ['summaryGrid', 'summaryGrid2'].forEach(id => { const e = document.getElementById(id); if (e) e.addEventListener(t, fn, o); });   // the cards of both grids use the same click / change handlers
+  gridOn('toggle', (ev) => {
     const d = ev.target; if (!d.matches || !d.matches('details[data-qid]')) return;
     d.open ? qhOpen.add(d.dataset.qid) : qhOpen.delete(d.dataset.qid);
   }, true);
-  document.getElementById('summaryGrid').addEventListener('change', async (ev) => {
+  gridOn('change', async (ev) => {
     const i = ev.target.closest && ev.target.closest('input[data-qh]'); if (!i || !hourFor) return;
     const v = Math.max(0, Math.min(9999, parseInt(i.value, 10) || 0));
     i.disabled = true;
@@ -1629,7 +1633,7 @@
       (rows.length ? `<div style="overflow-x:auto;"><table><thead><tr><th>#</th><th>Employee</th><th>Status</th></tr></thead><tbody>${rows.map((p, i) => `<tr><td>${i + 1}</td><td>${esEsc(p.name)}${p.code ? ` <span style="color:var(--muted); font-size:11px;">${esEsc(p.code)}</span>` : ''}</td><td>${tag(p)}</td></tr>`).join('')}</tbody></table></div>`
         : `<div class="rl"><span class="n">Nobody here.</span></div>`);
   }
-  document.getElementById('summaryGrid').addEventListener('click', (ev) => { const b = ev.target.closest('[data-tm]'); if (b) tmOpen(b.dataset.k, b.dataset.tm); });
+  gridOn('click', (ev) => { const b = ev.target.closest('[data-tm]'); if (b) tmOpen(b.dataset.k, b.dataset.tm); });
   document.getElementById('tmX').addEventListener('click', tmClose);
   document.getElementById('tmOv').addEventListener('click', (ev) => { if (ev.target.id === 'tmOv') { tmClose(); return; } const t = ev.target.closest('[data-tms]'); if (t && tmCur) { tmCur.side = t.dataset.tms; tmDraw(); } });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !document.getElementById('tmOv').hidden) tmClose(); });
@@ -1658,7 +1662,7 @@
       esReload();          // fresh figures from the server
     } catch (er) { alert(er.message); }
   }
-  document.getElementById('summaryGrid').addEventListener('click', (ev) => {
+  gridOn('click', (ev) => {
     const b = ev.target.closest('[data-pt]'); if (!b) return;
     const k = b.dataset.k, act = b.dataset.pt;
     if (act === 'edit') { ptEdit = k; rsEdit = ''; renderSummary(); const i = document.getElementById('ptIn'); if (i) { i.focus(); i.select(); } }
@@ -1666,7 +1670,7 @@
     else if (act === 'save') { const raw = String((document.getElementById('ptIn') || {}).value || '').trim(); ptSave(k, raw === '' || !(Number(raw) >= 0) ? null : Number(raw)); }   // empty = back to automatic; 0 is saved as a real target of 0
     else if (act === 'rev') ptSave(k, null);
   });
-  document.getElementById('summaryGrid').addEventListener('keydown', (ev) => {
+  gridOn('keydown', (ev) => {
     if (ev.target.id !== 'ptIn') return;
     if (ev.key === 'Enter') { const b = document.querySelector('#summaryGrid [data-pt="save"]'); if (b) b.click(); }
     if (ev.key === 'Escape') { ptEdit = ''; renderSummary(); }
@@ -1735,7 +1739,7 @@
       renderSummary();
     } catch (er) { alert(/unknown action/i.test(er.message || '') ? 'Your server api.php is old — upload the latest api.php' : er.message); }
   }
-  document.getElementById('summaryGrid').addEventListener('click', (ev) => {
+  gridOn('click', (ev) => {
     const b = ev.target.closest('[data-rs]'); if (!b) return;
     const k = b.dataset.k, act = b.dataset.rs;
     if (act === 'edit') { rsEdit = k; ptEdit = ''; renderSummary(); const i = document.getElementById('rsIn'); if (i) { i.focus(); i.select(); } }
@@ -1759,7 +1763,7 @@
       renderSummary();
     } catch (er) { alert(/unknown action/i.test(er.message || '') ? 'Your server api.php is old — upload the latest api.php' : er.message); }
   }
-  document.getElementById('summaryGrid').addEventListener('keydown', (ev) => {
+  gridOn('keydown', (ev) => {
     if (ev.target.classList && ev.target.classList.contains('rt-in')) {
       if (ev.key === 'Enter') { const b = document.querySelector('#summaryGrid [data-rs="gsave"]'); if (b) b.click(); }
       if (ev.key === 'Escape') { goalEdit = false; renderSummary(); }
@@ -1892,7 +1896,7 @@
     document.getElementById('ohBody').innerHTML = base.length ? `<div style="overflow-x:auto;"><table class="no-stack ohtab"><thead><tr><th>Order</th><th>Time</th><th>Salesman</th><th>Code</th><th style="text-align:right;">Amount</th></tr></thead><tbody>${base.map(o => `<tr><td><a href="#" data-ohi="${o._i}" style="font-weight:800;">${esEsc(o.order_name)}</a>${AddonView.tag(o)}${ohPanel ? '' : `<div style="font-size:11px; color:var(--muted);">${esEsc(PANEL_NAME[panelOf(o)] || '')}</div>`}</td><td style="white-space:nowrap;">${tm(o.created_at)}</td><td>${esEsc(o.salesman || '—')}</td><td>${o.code ? `<span class="ocd">${esEsc(o.code)}</span>` : '<span class="ocd no">no code</span>'}</td><td style="text-align:right; font-weight:700; white-space:nowrap;">${fmtMoney(o.total, o.currency)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No orders.</p>';
     ohPush();
   }
-  document.getElementById('summaryGrid').addEventListener('click', (ev) => {
+  gridOn('click', (ev) => {
     const p = ev.target.closest('[data-ohp]');
     if (p) { ohPanel = p.dataset.ohp; renderSummary(); return; }
     const n = ev.target.closest('[data-oh]');
@@ -2269,7 +2273,7 @@
     body.scrollTop = 0;
     ohPush();
   }
-  document.getElementById('summaryGrid').addEventListener('click', (ev) => {
+  gridOn('click', (ev) => {
     const p = ev.target.closest('[data-cslp]');
     if (p) { cslPanel = p.dataset.cslp; renderSummary(); return; }
     const r = ev.target.closest('[data-csl]');
@@ -2591,7 +2595,7 @@
     const a = ev.target.closest('[data-rtemp]'); if (a) { ev.preventDefault(); ev.stopPropagation(); rtEmp(Number(a.dataset.rtemp)); return; }
     const v = ev.target.closest('[data-rtview]'); if (v) { ev.preventDefault(); ev.stopPropagation(); RTG.view = v.dataset.rtview; if (RTG.d[RTG.view] && !RTG.d[RTG.view].error) { OHH.pop(); rtGrid(); renderSummary(); } else rtLoad(true); }
   }, true);
-  document.getElementById('summaryGrid').addEventListener('click', (ev) => {
+  gridOn('click', (ev) => {
     const rv = ev.target.closest('[data-rtview]'); if (rv) { ev.preventDefault(); RTG.view = rv.dataset.rtview; renderSummary(); return; }
     const rg = ev.target.closest('[data-rtgrid]'); if (rg) { ev.preventDefault(); rtGrid(); return; }
     const re = ev.target.closest('[data-rtemp]'); if (re) { ev.preventDefault(); rtEmp(Number(re.dataset.rtemp)); return; }
@@ -2601,7 +2605,7 @@
     const qi = ev.target.closest('[data-cqid]'); if (qi) { ev.preventDefault(); Convo.open({ id: Number(qi.dataset.cqid), admin: true, onChange: () => cqLoad(true) }); return; }
   });
 
-  document.getElementById('summaryGrid').addEventListener('click', (ev) => {
+  gridOn('click', (ev) => {
     const t = ev.target.closest('[data-tco]'); if (t) { ev.preventDefault(); tcoOpen(t.dataset.tco); return; }
     const e = ev.target.closest('[data-tcoemp]'); if (e) { ev.preventDefault(); tcoEmp(e.dataset.tcoemp); }
   });
@@ -2630,7 +2634,7 @@
     }).join('')}</tbody></table></div>`;
     ohPush();
   }
-  document.getElementById('summaryGrid').addEventListener('click', async (ev) => {
+  gridOn('click', async (ev) => {
     const p = ev.target.closest('[data-dtip]');
     if (p) { dtiPanel = p.dataset.dtip; renderSummary(); return; }
     const n = ev.target.closest('[data-dti]');
@@ -2671,7 +2675,7 @@
     document.getElementById('ohBody').innerHTML = list.length ? `<div style="overflow-x:auto;"><table class="no-stack ohtab"><thead><tr><th>Order</th><th>Time</th><th>Salesman</th><th>Code</th><th style="text-align:right;">Amount</th></tr></thead><tbody>${list.map(o => `<tr><td><a href="#" data-ohi="${o._i}" style="font-weight:800;">${esEsc(o.order_name)}</a>${label ? '' : `<div style="font-size:11px; color:var(--muted);">${esEsc(PANEL_NAME[panelOf(o)] || '')}</div>`}</td><td style="white-space:nowrap;">${tm(o.created_at)}</td><td>${esEsc(o.salesman || '—')}</td><td>${o.code ? `<span class="ocd">${esEsc(o.code)}</span>` : '<span class="ocd no">no code</span>'}</td><td style="text-align:right; font-weight:700; white-space:nowrap;">${fmtMoney(o.total, o.currency)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No orders.</p>';
     ohPush();
   }
-  document.getElementById('summaryGrid').addEventListener('click', (ev) => { const t = ev.target.closest('[data-cd]'); if (t) { ev.preventDefault(); cdOpen(t.dataset.cdl || '', t.dataset.cd); } });
+  gridOn('click', (ev) => { const t = ev.target.closest('[data-cd]'); if (t) { ev.preventDefault(); cdOpen(t.dataset.cdl || '', t.dataset.cd); } });
 
   function renderSummary() {
     const base = scopedOrders();
@@ -2760,11 +2764,13 @@
       ${qdCardHtml()}
       ${dtiCardHtml()}
       ${cslCardHtml()}
-      ${lcCardHtml(base)}
       ${pmCardHtml()}
+      ${lcCardHtml(base)}
+      <div id="m3Host" style="grid-column:1 / -1; min-width:0;"></div>
     `;
     grid.style.display = 'grid';
     idealLoad(); queryIdealLoad();
+    if (window.Must3 && !EMP_VIEW) Must3.mount(document.getElementById('m3Host'), (typeof idDay === 'function' ? idDay() : '') || '');   // ✅ 3 must-send check, right under the day-by-day chart
     renderUnallocNote();
   }
   // One line saying how many orders are left out because they are not allocated yet.
@@ -2811,8 +2817,8 @@
   let ML_CHART = null;
   // The chart for this order's day and salesman (📅 special days from Commission Rules applied).
   const mlDay = (o) => ML_CHART && MLSLAB.forDay ? MLSLAB.forDay(ML_CHART, o.biz_date || '', o.employee_id) : ML_CHART;
-  let CM_OFFERS = [], CM_WIN = 60;
-  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; CM_OFFERS = (d && d.offers) || []; CM_WIN = d && d.offer_window ? Number(d.offer_window) : 60; if (allOrders.length) try { renderPage(); summaryRefresh(); } catch (e) {} }).catch(() => {});
+  let CM_OFFERS = [], CM_WIN = 110;
+  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; CM_OFFERS = (d && d.offers) || []; CM_WIN = d && d.offer_window ? Number(d.offer_window) : 110; if (allOrders.length) try { renderPage(); summaryRefresh(); } catch (e) {} }).catch(() => {});
   function mlInfo(o) {
     const m = window.MLSLAB ? MLSLAB.parts(o) : null;
     const key = (o.store_key || o.source || '') + ':' + o.id;
@@ -4564,6 +4570,10 @@
   esEl('esWhoX').addEventListener('click', () => { if (!ES_ALLOWED || TIME_SEGS.includes(listType)) listType = ''; esPick(''); });
 
   // Platform card: click Query order / Campaign order / Total order (or the collection) to see only those orders of that platform.
+  // Platform summary is folded away until it is tapped
+  (() => { const t = document.getElementById('platToggle'), c = document.getElementById('platCards'), ar = document.getElementById('platArrow'); if (!t || !c) return;
+    const flip = () => { c.hidden = !c.hidden; ar.textContent = c.hidden ? '▸' : '▾'; };
+    t.addEventListener('click', flip); t.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); flip(); } }); })();
   document.getElementById('platCards').addEventListener('click', (ev) => {
     const mb = ev.target.closest('.li[data-mb]'); if (mb) { const [mh, ms] = mb.dataset.mb.split('|'); mbOpen(mh, ms); return; }
     const li = ev.target.closest('.li[data-go]'); if (!li) return;

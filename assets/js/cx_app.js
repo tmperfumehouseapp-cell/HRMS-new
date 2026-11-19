@@ -19,18 +19,33 @@ window.CX = (function () {
   const PLAYED = {};   // 🎬 video id → its file, so a refresh of the chat keeps the player
 
   /* ------------------------------ look ------------------------------ */
+  const I = (p) => '<svg viewBox="0 0 24 24" aria-hidden="true">' + p + '</svg>';
+  const IC = { ticket: I('<path d="M3 9a2 2 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a2 2 0 0 1 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1z"/><path d="M13 5v14" stroke-dasharray="2 3"/>'), chart: I('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'), undo: I('<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'), wallet: I('<path d="M3 7h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 7l12-3v3M17 14h2"/>'), star: I('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>'), file: I('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>'), gear: I('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'), phone: I('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>'), search: I('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'), plus: I('<path d="M12 5v14M5 12h14"/>'), more: I('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>') };
   function css() {
     if (document.getElementById('cxCss')) return;
     const s = document.createElement('style'); s.id = 'cxCss';
     s.textContent = `
-.cx{--g:#008069;--a:#00a884;--ln:#e9edef;--mut:#667781;--red:#d92d20;font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;color:#111b21;font-size:13.5px;line-height:1.4;min-height:100%;background:#f0f2f5}
-.cx-ov{--g:#008069;--a:#00a884;--ln:#e9edef;--mut:#667781;--red:#d92d20;font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;color:#111b21;font-size:13.5px;line-height:1.4}.cx-ov *{box-sizing:border-box}.cx-ov button{font-family:inherit}
+.cx{--g:#e8651a;--a:#ff7a2f;--ln:#e9edef;--mut:#667781;--red:#d92d20;font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;color:#111b21;font-size:13.5px;line-height:1.4;min-height:100%;background:#f0f2f5}
+.cx-ov{--g:#e8651a;--a:#ff7a2f;--ln:#e9edef;--mut:#667781;--red:#d92d20;font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;color:#111b21;font-size:13.5px;line-height:1.4}.cx-ov *{box-sizing:border-box}.cx-ov button{font-family:inherit}
 .cx *{box-sizing:border-box}.cx button{font-family:inherit}
 .cx-top{background:#fff;border-bottom:1px solid var(--ln);padding:10px 16px 0;position:sticky;top:0;z-index:5}
 .cx-t1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.cx-t1 h1{font-size:19px;margin:0;font-weight:800}.cx-t1 .sub{color:var(--mut);font-size:12.5px;flex:1;min-width:160px}
 .cx-tabs{display:flex;gap:2px;margin-top:6px;overflow-x:auto;scrollbar-width:none}.cx-tabs::-webkit-scrollbar{display:none}
 .cx-tab{flex:none;border:0;background:none;padding:9px 14px;font-size:14px;font-weight:700;color:var(--mut);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}.cx-tab.on{color:var(--g);border-color:var(--g)}
-.cx-body{padding:14px 16px 40px}
+.cx-top.one{display:flex;align-items:center;gap:12px;height:56px;padding:0 16px}
+.cx-top.one .cx-tabs{flex:1;min-width:0;margin:0;height:100%;align-items:stretch;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.cx-top.one .cx-tabs.mn-more{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 34px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 34px),transparent)}
+.cx-top.one .cx-tabs.mn-end{-webkit-mask-image:none;mask-image:none}
+.cx-top.one .cx-tab{display:inline-flex;align-items:center;gap:7px;padding:0 14px;scroll-snap-align:start}.cx-top.one .cx-tab.on{color:#14161a;border-color:var(--a)}
+.cx-tab svg,.cx-btn svg,.cx-ico svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.cx-act{display:flex;align-items:center;gap:8px;flex:none;position:relative}
+.cx-btn{border-radius:8px}.cx-btn.ol{background:#fff;border:1px solid #14161a;color:#14161a}.cx-btn.gh{border-radius:8px}
+.cx-act .cx-ov3{display:none;padding:8px 10px}
+.cx-menu{position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--ln);border-radius:12px;box-shadow:0 12px 30px rgba(20,22,26,.18);padding:6px;min-width:190px;z-index:20}.cx-menu[hidden]{display:none}
+.cx-menu button{display:flex;width:100%;align-items:center;gap:8px;border:0;background:none;padding:12px;border-radius:8px;font:inherit;font-weight:700;font-size:14px;color:#14161a;cursor:pointer;text-align:left;min-height:44px}.cx-menu button:hover{background:#f0f2f5}
+@media (min-width:768px){.cx-rm{display:none}}
+@media (max-width:767px){.cx-rd{display:none}.cx-top.one{height:52px;min-height:0;padding:0 10px;gap:8px}.cx-top.one .cx-sec{display:none}.cx-act .cx-ov3{display:inline-flex}.cx-top.one .cx-tab{padding:0 12px;font-size:14px}}
+.cx-body{padding:14px 16px 96px}
 .cx-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:999px;padding:8px 15px;font-weight:800;font-size:13px;background:var(--a);color:#fff;cursor:pointer;white-space:nowrap}.cx-btn.gh{background:#fff;border:1px solid var(--ln);color:#111b21}.cx-btn.red{background:#fde4e4;color:#b3261e}.cx-btn.s{padding:5px 11px;font-size:12px}.cx-btn[disabled]{opacity:.5}
 .cx-pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700;background:#f0f2f5;color:#54656f;white-space:nowrap}
 .cx-pill.g{background:#d9fdd3;color:#008069}.cx-pill.r{background:#fde4e4;color:#b3261e}.cx-pill.o{background:#fff1d6;color:#9a6200}.cx-pill.b{background:#e0ecff;color:#1d4ed8}.cx-pill.p{background:#ede7ff;color:#5b34b5}
@@ -90,7 +105,7 @@ window.CX = (function () {
  .cx-case{height:100vh}.cx-cb{display:block;position:relative;overflow:hidden}
  .cx-l,.cx-r{position:absolute;inset:0;border:0}.cx-case.v-l .cx-r{display:none}.cx-case.v-r .cx-l{display:none}
  .cx-seg{display:flex;background:#fff;border-bottom:1px solid var(--ln)}.cx-seg button{flex:1;border:0;background:none;padding:10px;font-weight:800;color:var(--mut);border-bottom:3px solid transparent;font-size:14px}.cx-seg button.on{color:var(--g);border-color:var(--g)}
- .cx-msgs{padding:10px 8px}.cx-m{max-width:86%}.cx-body{padding:12px 10px 40px}.cx-top{padding:8px 10px 0 62px;min-height:60px}.cx-chd{padding:8px 10px 8px 62px}.cx-t1 h1{font-size:18px}.cx-t1 .sub{display:none}.cx-chd h2{font-size:15px}.cx-case{height:100dvh}}
+ .cx-msgs{padding:10px 8px}.cx-m{max-width:86%}.cx-body{padding:12px 10px 40px}.cx-top{padding:8px 10px 0;min-height:56px}.cx-chd{padding:8px 10px}.cx-t1 h1{font-size:18px}.cx-t1 .sub{display:none}.cx-chd h2{font-size:15px}.cx-case{height:100dvh}}
 @media (max-width:900px){.cx-chd{flex-wrap:nowrap !important;overflow-x:auto;scrollbar-width:none;gap:6px !important;padding:6px 8px !important}.cx-chd::-webkit-scrollbar{display:none}.cx-chd>*{flex:none}.cx-chd>span[style*="flex:1"]{display:none}
  .cx-chd h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56vw}.cx-ph{display:none}.cx-win{padding:6px 10px;font-size:12.5px;gap:6px}.cx-win span{flex-basis:100%}}
 .cx-wt{font-size:12px;color:#7a4b00;opacity:.85}
@@ -143,12 +158,23 @@ window.CX = (function () {
       mine(); return;
     }
     const V2 = !!(window.CXM && CXM.ready); if (!V2 && !{ tickets: 1, board: 1, list: 1, report: 1, settings: 1, dash: 1 }[S.tab]) S.tab = 'tickets'; if (S.tab === 'today' || S.tab === 'board' || S.tab === 'list') S.tab = 'tickets';   // 🎫 the new ticket list replaced the old Today / Board / List screens (same data)
-    const tabs = V2 ? [['tickets', '🎫 Tickets'], ['dash', '📊 Dashboard'], ['qc', 'Return check'], ['credit', 'Store credit'], ['reviews', '⭐ Reviews'], ['report', 'Reports'], ['settings', 'Settings']] : [['tickets', '🎫 Tickets'], ['dash', '📊 Dashboard'], ['report', 'Reports'], ['settings', 'Settings']];
-    H.innerHTML = '<div class="cx-top"><div class="cx-t1"><h1>🎫 Complaint tickets</h1><div class="sub">Every ticket line by line, day by day · 📍 Tracking and 🛠 Complaint</div><span id="cxLate"></span>' + (V2 ? '<button class="cx-btn gh" id="cxCall" type="button" aria-label="Log a call">☎<span class="cx-lg"> Log a call</span></button>' : '') + '<button class="cx-btn gh" id="cxTrk" type="button" aria-label="Track an order" title="Phone, order number or tracking number → live status from Shiprocket and the Shopify orders">🔎<span class="cx-lg"> Track</span></button><button class="cx-btn" id="cxNew" type="button" title="Any customer — just the phone number (also customers on our old phone)">⚠ Raise<span class="cx-lg"> a complaint</span></button></div><div class="cx-tabs">' + tabs.map((t) => '<button class="cx-tab" data-t="' + t[0] + '" type="button">' + t[1] + '</button>').join('') + '</div></div><div class="cx-body" id="cxBody"></div>';
+    const tabs = V2 ? [['tickets', IC.ticket + 'Tickets'], ['dash', IC.chart + 'Dashboard'], ['qc', IC.undo + 'Return check'], ['credit', IC.wallet + 'Store credit'], ['reviews', IC.star + 'Reviews'], ['report', IC.file + 'Reports'], ['settings', IC.gear + 'Settings']] : [['tickets', IC.ticket + 'Tickets'], ['dash', IC.chart + 'Dashboard'], ['report', IC.file + 'Reports'], ['settings', IC.gear + 'Settings']];
+    H.innerHTML = '<div class="cx-top one"><div class="cx-tabs" id="cxTabs" role="tablist">' + tabs.map((t) => '<button class="cx-tab" data-t="' + t[0] + '" type="button" role="tab">' + t[1] + '</button>').join('') + '</div><div class="cx-act"><span id="cxLate"></span>'
+      + (V2 ? '<button class="cx-btn ol cx-sec" id="cxCall" type="button">' + IC.phone + '<span>Log a call</span></button>' : '')
+      + '<button class="cx-btn ol cx-sec" id="cxTrk" type="button" title="Phone, order number or tracking number → live status from Shiprocket and the Shopify orders">' + IC.search + '<span>Track</span></button>'
+      + '<button class="cx-btn" id="cxNew" type="button" title="Any customer — just the phone number (also customers on our old phone)">' + IC.plus + '<span class="cx-rd">Raise a complaint</span><span class="cx-rm">Raise complaint</span></button>'
+      + '<button class="cx-btn ol cx-ov3" id="cxMore" type="button" aria-label="More actions" aria-haspopup="menu">' + IC.more + '</button><div class="cx-menu" id="cxMenu" hidden role="menu">' + (V2 ? '<button type="button" id="cxCall2">' + IC.phone + 'Log a call</button>' : '') + '<button type="button" id="cxTrk2">' + IC.search + 'Track an order</button></div></div></div><div class="cx-body" id="cxBody"></div>';
     H.querySelectorAll('.cx-tab').forEach((b) => b.onclick = () => go(b.dataset.t));
     $('#cxNew', H).onclick = () => CXR.open({ askCustomer: true, source: 'call', onDone: (r) => { if (r && r.id) openCase(r.id); else go(S.tab); } });
     const cb = $('#cxCall', H); if (cb) cb.onclick = () => CXM.callSheet({});
     $('#cxTrk', H).onclick = () => trackSheet('');
+    { const mn = $('#cxMenu', H), mb = $('#cxMore', H);
+      mb.onclick = (e) => { e.stopPropagation(); mn.hidden = !mn.hidden; };
+      document.addEventListener('click', () => { mn.hidden = true; });
+      const c2 = $('#cxCall2', H); if (c2) c2.onclick = () => { mn.hidden = true; CXM.callSheet({}); };
+      $('#cxTrk2', H).onclick = () => { mn.hidden = true; trackSheet(''); };
+      const tb = $('#cxTabs', H), fade = () => { const more = tb.scrollWidth > tb.clientWidth + 4; tb.classList.toggle('mn-more', more); tb.classList.toggle('mn-end', !more || tb.scrollLeft + tb.clientWidth >= tb.scrollWidth - 4); };
+      tb.addEventListener('scroll', fade, { passive: true }); window.addEventListener('resize', fade); setTimeout(fade, 50); setTimeout(fade, 600); }
     go(S.tab);
   }
   function stopTimers() { clearInterval(timer); clearInterval(thTimer); timer = thTimer = null; }
@@ -354,6 +380,8 @@ window.CX = (function () {
     const m = modal('<h3>Hand to…</h3>' + (ppl.length ? '<label>Person</label><select class="cx-sel" id="hdP">' + ppl.map((e) => '<option value="' + e.id + '"' + (e.id === C.case.owner ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('') + '</select>' : '<div class="cx-warn">Nobody is on the Complaint team yet. Choose people in Settings.</div>') + '<div class="ac"><button class="cx-btn gh" type="button" id="hdNo">Cancel</button>' + (ppl.length ? '<button class="cx-btn" type="button" id="hdOk">Give</button>' : '') + '</div>');
     $('#hdNo', m.el).onclick = m.close; const ok = $('#hdOk', m.el); if (ok) ok.onclick = async () => { const r = await call(() => api.post('bd.cx_assign', { id: C.case.id, emp_id: Number($('#hdP', m.el).value) })); if (r) { m.close(); refresh(); loadThread(true); } };
   }
+  // the Resolve button inside the embedded chat asks for the TICKET to be resolved (how it was solved, cost, note) - one Resolve, one meaning
+  window.addEventListener('message', (e) => { try { if (e.origin !== location.origin || !e.data || !e.data.cxResolve) return; if (C && C.case && Number(C.case.id) === Number(e.data.cxResolve) && !document.querySelector('#rsOk')) resolveSheet(); } catch (x) { /* not for us */ } });
   function resolveSheet() {
     const v = C.case; const canHappy = v.phone && T && T.window_open && !T.optout;
     const m = modal('<h3>✔ Mark resolved</h3><label>How was it solved?</label><select class="cx-sel" id="rsHow">' + Object.keys(C.resolutions).map((k) => '<option value="' + k + '">' + esc(C.resolutions[k]) + '</option>').join('') + '</select>'
