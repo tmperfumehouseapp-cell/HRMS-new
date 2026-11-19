@@ -1538,7 +1538,7 @@
     async function bkSafety(all) { const r = { ordered: [], blocked: {} }; for (let i = 0; i < all.length; i += 2500) { const x = await api.post('wa.bulk_ordered', { phones: all.slice(i, i + 2500) }); (x.ordered || []).forEach((p) => r.ordered.push(p)); Object.assign(r.blocked, x.blocked || {}); } return r; }
     async function bkSendOpen() {
       const n = bkN(); if (!n) return; let box = sheet('Send to ' + bkFmt(n) + ' chats'); box.innerHTML = '<div class="wi-empty">Loading messages…</div>'; let list = [];
-      try { list = ((await api.get('wa.tpl_list')).templates || []).filter((t) => !t.auto && sendable(t)); } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
+      try { list = ((await Promise.race([api.get('wa.tpl_list', { lite: 1 }), new Promise((_, rj) => setTimeout(() => rj(new Error('The message list is taking too long — close this and try again in a minute.')), 45000))])).templates || []).filter((t) => !t.auto && sendable(t)); } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
       let q = '';
       const pickList = () => {
         const rows = list.filter((t) => !q || (t.name + ' ' + t.body).toLowerCase().includes(q.toLowerCase()));
