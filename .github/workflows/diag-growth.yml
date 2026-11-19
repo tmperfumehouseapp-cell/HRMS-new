@@ -155,6 +155,16 @@ jobs:
               $t = microtime(true); $d->query("SELECT COUNT(*) FROM grow_callback")->fetchColumn(); $d->query("SELECT COUNT(*) FROM grow_note")->fetchColumn(); echo "  call-back + notes tables: " . round(microtime(true) - $t, 2) . " s\n";
               foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $p) if ((int)$p["Time"] >= 5) echo "  slow now (" . $p["Time"] . " s): " . substr(preg_replace("/\s+/", " ", (string)$p["Info"]), 0, 120) . "\n";
             } catch (Throwable $e) { echo "  speed: " . substr($e->getMessage(), 0, 120) . "\n"; }
+            echo "\nLOAD DETAILS (read-only; who uses the CPU):\n";
+            try {
+              echo "  top processes by CPU (command shortened, no arguments):\n";
+              foreach (explode("\n", trim((string)@shell_exec("ps -eo pcpu,etimes,comm --sort=-pcpu | head -12"))) as $l) echo "    " . $l . "\n";
+              echo "  process counts: " . trim((string)@shell_exec("ps -eo comm | sort | uniq -c | sort -rn | head -6 | tr '\\n' ';'")) . "\n";
+              foreach (["/var/log/nginx/access.log", "/var/log/apache2/access.log", "/var/log/httpd/access_log"] as $lg) { if (!is_readable($lg)) continue;
+                $acts = []; $n = 0; foreach (explode("\n", (string)@shell_exec("tail -n 4000 " . escapeshellarg($lg))) as $ln) { if ($ln === "") continue; $n++; if (preg_match('~[?&]action=([A-Za-z0-9_.]+)~', $ln, $m)) { $acts[$m[1]] = ($acts[$m[1]] ?? 0) + 1; } elseif (preg_match('~"(?:GET|POST) (/[^ ?"]*)~', $ln, $m)) { $k = preg_replace('~[0-9a-f]{8,}~', '#', $m[1]); $acts[$k] = ($acts[$k] ?? 0) + 1; } }
+                arsort($acts); echo "  busiest requests in the last $n log lines of $lg (action / path, count; no IPs):\n"; $i = 0; foreach ($acts as $k => $c) { echo "    $c x $k\n"; if (++$i >= 14) break; } break; }
+              echo "  fpm max children (config): " . trim((string)@shell_exec("grep -rhE '^(pm\\.max_children|pm )' /etc/php/*/fpm/pool.d/*.conf 2>/dev/null | head -4 | tr '\\n' ';'")) . "\n";
+            } catch (Throwable $e) { echo "  load details: " . substr($e->getMessage(), 0, 100) . "\n"; }
             $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
             if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
               $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
