@@ -56,6 +56,32 @@ function fn_ensure2(PDO $pdo): bool
         @file_put_contents($flag, '1'); return true;
     } catch (Throwable $e) { error_log('fn_ensure2: ' . $e->getMessage()); return false; }
 }
+/** v3: the last 4 digits of a bank account, and (once) the banks of the original Finance brought over. The original is only READ. A bank that is already here (same name, "Bank of Baroda" = "BOB", "Axis Bank" = "AXIS") only gets its last 4 digits; the others are added. */
+function fn_ensure3(PDO $pdo): bool
+{
+    $flag = sys_get_temp_dir() . '/hrms_fn_tables_v3_' . substr(md5(__DIR__), 0, 8);
+    if (is_file($flag)) return true;
+    try {
+        try { $pdo->query("SELECT last4 FROM fn_accounts LIMIT 1")->fetch(); } catch (Throwable $e) { $pdo->exec("ALTER TABLE fn_accounts ADD COLUMN last4 VARCHAR(8) NOT NULL DEFAULT ''"); }
+        $norm = function ($n) { $n = mb_strtolower(trim((string)$n)); $n = preg_replace('/\bbank of baroda\b/', 'bob', $n); $n = preg_replace('/\b(bank|first|ltd|limited|current|savings|account)\b/', '', $n); return preg_replace('/[^a-z0-9]/', '', $n); };
+        $orig = []; try { $orig = $pdo->query("SELECT * FROM fi_accounts ORDER BY id")->fetchAll(); } catch (Throwable $e) { $orig = []; }
+        if ($orig) {
+            $mine = $pdo->query("SELECT * FROM fn_accounts")->fetchAll(); $by = []; foreach ($mine as $m) $by[$norm($m['name'])] = $m;
+            $mx = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fn_accounts")->fetchColumn(); $now = date('Y-m-d H:i:s');
+            foreach ($orig as $o) {
+                $k = $norm($o['name']); if ($k === '') continue; $ob = round((float)($o['opening_balance'] ?? 0), 2); $od = (string)($o['opening_date'] ?? ''); $l4 = substr(preg_replace('/\D/', '', (string)($o['last4'] ?? '')), -4);
+                if (isset($by[$k])) {
+                    $m = $by[$k]; if ((string)$m['last4'] === '' && $l4 !== '') $pdo->prepare("UPDATE fn_accounts SET last4 = ? WHERE id = ?")->execute([$l4, (int)$m['id']]);
+                    if ((string)($m['opening_date'] ?? '') === '' && $od !== '') $pdo->prepare("UPDATE fn_accounts SET opening_balance = ?, opening_date = ? WHERE id = ?")->execute([$ob, $od, (int)$m['id']]);
+                } else {
+                    $mx += 10; $pdo->prepare("INSERT INTO fn_accounts (name, opening_balance, opening_date, active, sort_no, created_at, last4) VALUES (?,?,?,?,?,?,?)")->execute([mb_substr(trim((string)$o['name']), 0, 80), $ob, $od !== '' ? $od : null, (int)($o['active'] ?? 1) ? 1 : 0, $mx, $now, $l4]);
+                    $by[$k] = ['name' => $o['name']];
+                }
+            }
+        }
+        @file_put_contents($flag, '1'); return true;
+    } catch (Throwable $e) { error_log('fn_ensure3: ' . $e->getMessage()); return false; }
+}
 function fn_p($x): int { return (int)round(((float)$x) * 100); }      // rupees -> paise: all sums are integer paise
 function fn_m(int $p): float { return round($p / 100, 2); }
 function fn_day($s): string { $s = trim((string)$s); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return ''; $t = strtotime($s); return ($t && date('Y-m-d', $t) === $s) ? $s : ''; }
@@ -77,7 +103,7 @@ function fn_balances(PDO $pdo, string $day): array
     return $out;
 }
 
-if (!fn_ensure($pdo) || !fn_ensure2($pdo)) fn_err('Could not create the Finance New tables.', 500);
+if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo)) fn_err('Could not create the Finance New tables.', 500);
 $auth = require_auth();
 
 switch ($action) {
@@ -110,7 +136,7 @@ switch ($action) {
 
     case 'fn.accounts': {
         $rows = $pdo->query("SELECT * FROM fn_accounts ORDER BY active DESC, sort_no, name")->fetchAll();
-        json_response(['accounts' => array_map(fn($a) => ['id' => (int)$a['id'], 'name' => $a['name'], 'opening_balance' => round((float)$a['opening_balance'], 2), 'opening_date' => (string)($a['opening_date'] ?? ''), 'active' => (int)$a['active']], $rows)]);
+        json_response(['accounts' => array_map(fn($a) => ['id' => (int)$a['id'], 'name' => $a['name'], 'last4' => (string)($a['last4'] ?? ''), 'opening_balance' => round((float)$a['opening_balance'], 2), 'opening_date' => (string)($a['opening_date'] ?? ''), 'active' => (int)$a['active']], $rows)]);
         break;
     }
     case 'fn.account_save': {
@@ -119,10 +145,26 @@ switch ($action) {
         $ob = round((float)($in['opening_balance'] ?? 0), 2); if (abs($ob) > 100000000000) fn_err('That opening balance looks wrong.');
         $od = fn_day($in['opening_date'] ?? ''); if ($od === '' && $ob != 0) $od = fn_today($pdo);      // a balance without a day counts from today
         if ($od > fn_today($pdo)) fn_err('The opening balance day cannot be in the future.');
-        $act = !isset($in['active']) || !empty($in['active']) ? 1 : 0;
-        if ($id) { $pdo->prepare("UPDATE fn_accounts SET name = ?, opening_balance = ?, opening_date = ?, active = ? WHERE id = ?")->execute([$name, $ob, $od !== '' ? $od : null, $act, $id]); }
-        else { $mx = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fn_accounts")->fetchColumn(); $pdo->prepare("INSERT INTO fn_accounts (name, opening_balance, opening_date, active, sort_no, created_at) VALUES (?,?,?,1,?,?)")->execute([$name, $ob, $od !== '' ? $od : null, $mx + 10, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); }
+        $act = !isset($in['active']) || !empty($in['active']) ? 1 : 0; $l4 = substr(preg_replace('/\D/', '', (string)($in['last4'] ?? '')), -4);
+        if ($id) {
+            $pdo->prepare("UPDATE fn_accounts SET name = ?, opening_balance = ?, opening_date = ?, active = ? WHERE id = ?")->execute([$name, $ob, $od !== '' ? $od : null, $act, $id]);
+            if (array_key_exists('last4', $in)) $pdo->prepare("UPDATE fn_accounts SET last4 = ? WHERE id = ?")->execute([$l4, $id]);      // an older screen that does not send it keeps what is saved
+        }
+        else { $mx = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fn_accounts")->fetchColumn(); $pdo->prepare("INSERT INTO fn_accounts (name, opening_balance, opening_date, active, sort_no, created_at, last4) VALUES (?,?,?,1,?,?,?)")->execute([$name, $ob, $od !== '' ? $od : null, $mx + 10, date('Y-m-d H:i:s'), $l4]); $id = (int)$pdo->lastInsertId(); }
         json_response(['ok' => true, 'id' => $id]);
+        break;
+    }
+
+    // the BANK ACCOUNTS tab: every bank / cash box with its opening balance, what came in and went out since, and the balance today
+    case 'fn.banks': {
+        $today = fn_today($pdo); $rows = $pdo->query("SELECT * FROM fn_accounts ORDER BY active DESC, sort_no, name")->fetchAll(); $acc = [];
+        foreach ($rows as $a) { $od = (string)($a['opening_date'] ?? ''); $acc[(int)$a['id']] = ['a' => $a, 'od' => $od !== '' ? $od : '1970-01-01', 'in' => 0, 'out' => 0]; }
+        $q = $pdo->prepare("SELECT account_id, side, day, SUM(amount) s FROM fn_entries WHERE status = 'ok' AND day <= ? GROUP BY account_id, side, day"); $q->execute([$today]);
+        foreach ($q->fetchAll() as $r) { $k = (int)$r['account_id']; if (!isset($acc[$k]) || $r['day'] < $acc[$k]['od']) continue; $acc[$k][$r['side'] === 'in' ? 'in' : 'out'] += fn_p($r['s']); }
+        $list = []; $tot = 0;
+        foreach ($acc as $k => $x) { $a = $x['a']; $bal = fn_p($a['opening_balance']) + $x['in'] - $x['out']; if ((int)$a['active']) $tot += $bal;
+            $list[] = ['id' => $k, 'name' => $a['name'], 'last4' => (string)($a['last4'] ?? ''), 'active' => (int)$a['active'], 'opening_balance' => round((float)$a['opening_balance'], 2), 'opening_date' => (string)($a['opening_date'] ?? ''), 'in' => fn_m($x['in']), 'out' => fn_m($x['out']), 'balance' => fn_m($bal)]; }
+        json_response(['today' => $today, 'banks' => $list, 'total' => fn_m($tot)]);
         break;
     }
 
