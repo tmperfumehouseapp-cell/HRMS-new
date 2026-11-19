@@ -834,8 +834,7 @@
         </div>
       </div>
       </div><!-- /paneOrders -->
-      <!-- second page: Ideal day (Campaign / Query), Dress to impress, Commission slabs, Pre-messages — below the orders list -->
-      <div class="stat-grid" id="summaryGrid2" style="display:none; margin-top:16px;"></div>
+
     </div>
   </main>
 </div>
@@ -2759,13 +2758,16 @@
           `<div class="cg-tot"><span>Total</span><b>${tot}</b></div></div>`;
         return `<div class="stat-card rs-card"><div class="label"><span class="lbl-full">${r ? 'Ad spend &amp; ROAS' : 'DG / LG / WH / Other'}</span><span class="lbl-short">${r ? 'Ad spend &amp; ROAS' : 'DG/LG/WH/Other'}</span></div>${r}${colours}</div>`;
       })()}
+      ${ohCardHtml(base)}
+      ${idCardHtml()}
+      ${qdCardHtml()}
+      ${dtiCardHtml()}
+      ${cslCardHtml()}
+      ${pmCardHtml()}
       ${lcCardHtml(base)}
       <div id="m3Host" style="grid-column:1 / -1; min-width:0;"></div>
-      ${ohCardHtml(base)}
     `;
     grid.style.display = 'grid';
-    const grid2 = document.getElementById('summaryGrid2');
-    if (grid2) { grid2.innerHTML = `${idCardHtml()}${qdCardHtml()}${dtiCardHtml()}${cslCardHtml()}${pmCardHtml()}`; grid2.style.display = 'grid'; }
     idealLoad(); queryIdealLoad();
     if (window.Must3 && !EMP_VIEW) Must3.mount(document.getElementById('m3Host'), (typeof idDay === 'function' ? idDay() : '') || '');   // ✅ 3 must-send check, right under the day-by-day chart
     renderUnallocNote();
