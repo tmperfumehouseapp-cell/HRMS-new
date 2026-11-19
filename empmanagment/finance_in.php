@@ -660,7 +660,10 @@ switch ($action) {
         $last4 = preg_replace('/\D/', '', (string)($in['last4'] ?? '')); $last4 = substr($last4, -4);
         if (mb_strlen($name) < 2) fi_err('Give the account a name (for example "HDFC current ••1234" or "Store cash box").');
         $dup = $pdo->prepare("SELECT COUNT(*) FROM fi_accounts WHERE LOWER(name) = LOWER(?) AND id <> ?"); $dup->execute([$name, $id]); if ((int)$dup->fetchColumn()) fi_err('There is already an account with this name.');
-        if ($id) { $pdo->prepare("UPDATE fi_accounts SET name = ?, kind = ?, last4 = ?, active = ? WHERE id = ?")->execute([$name, $kind, $last4, isset($in['active']) ? (!empty($in['active']) ? 1 : 0) : 1, $id]); }
+        if ($id) {
+            $pdo->prepare("UPDATE fi_accounts SET name = ?, kind = ?, last4 = ?, active = ? WHERE id = ?")->execute([$name, $kind, $last4, isset($in['active']) ? (!empty($in['active']) ? 1 : 0) : 1, $id]);
+            $pdo->prepare("UPDATE fi_receipts SET account_name = ? WHERE account_id = ?")->execute([$name, $id]);      // every receipt keeps a copy of the account name: a rename updates the old receipts too (nothing else about them changes)
+        }
         else { $pdo->prepare("INSERT INTO fi_accounts (name, kind, last4, active, created_at) VALUES (?,?,?,1,?)")->execute([$name, $kind, $last4, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); }
         json_response(['ok' => true, 'id' => $id]);
         break;
