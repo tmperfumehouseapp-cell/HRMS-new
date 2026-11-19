@@ -20,7 +20,7 @@
  */
 if (!function_exists('wa_dq_cfg')) {
 
-/** 🛑 owner 19 Nov 2026 (13:30): automatic hold. When Meta's spam flag (131048) hits many campaign messages sent in the last hour (100 or more, counted only after the last hold ended), all campaigns wait for 3 hours by themselves; then they restart at no more than 3,000 an hour. Checked at most once a minute. wa_dq_auto_hold_n changes the number (0 = off). */
+/** 🛑 owner 19 Nov 2026 (13:30): automatic hold. When Meta's spam flag (131048) hits many campaign messages sent in the last hour (100 or more, counted only after the last hold ended), all campaigns wait for 30 minutes by themselves (owner, 19 Nov 2026, 14:20); then they restart at 5,000 an hour. Checked at most once a minute. wa_dq_auto_hold_n changes the number (0 = off). */
 function wa_dq_hold_active(PDO $pdo): bool
 {
     try { return (int)setting_get($pdo, 'wa_dq_hold_until', '0') > time(); } catch (Throwable $e) { return false; }
@@ -31,7 +31,8 @@ function wa_dq_auto_hold(PDO $pdo): void
         if ((int)setting_get($pdo, 'wa_dq_auto_hold_at', '0') > time() - 60) return; setting_set($pdo, 'wa_dq_auto_hold_at', (string)time());
         $from = max(time() - 3600, (int)setting_get($pdo, 'wa_dq_hold_end', '0'));
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE err_code = 131048 AND sent_at >= ?"); $q->execute([date('Y-m-d H:i:s', $from)]); $n = (int)$q->fetchColumn();
-        if ($n >= $lim) { setting_set($pdo, 'wa_dq_hold_until', (string)(time() + 3 * 3600)); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing put on hold for 3 hours by itself: Meta flagged ' . $n . ' campaign messages as spam (131048) in the last hour'); }
+        if ($n >= $lim) { setting_set($pdo, 'wa_dq_hold_until', (string)(time() + 1800));   // owner 19 Nov 2026 (14:20): only 30 minutes, then it restarts at 5,000
+             setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing put on hold for 30 minutes by itself (then it restarts at 5,000 an hour): Meta flagged ' . $n . ' campaign messages as spam (131048) in the last hour'); }
     } catch (Throwable $e) { }
 }
 /** 📈 owner 19 Nov 2026 (13:40): after a hold the campaigns restart at 5,000 an hour (owner 19 Nov 2026, 14:00) and the number follows the delivery: every 30 minutes (the first look 45 minutes after the restart) the messages sent since the restart (15 to 75 minutes old, at least 200 of them) are looked at. Good (35% or more delivered and under 25% failed) → +1,000 an hour (5,000, 6,000 … no ceiling of its own); bad (under 20% delivered or 40% or more failed) → back to 5,000 and it keeps sending, then it climbs again; in between nothing changes. */
