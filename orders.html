@@ -948,7 +948,7 @@
 <script src="assets/js/layout.js?v=32"></script>
 <script src="assets/js/must3.js?v=2"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
-<script src="assets/js/ml_slab.js?v=261116a"></script>
+<script src="assets/js/ml_slab.js?v=261119a"></script>
 <script src="assets/js/addon_view.js?v=1"></script>
 <script src="assets/js/wmo_edit.js?v=1"></script>
 <script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
@@ -2817,8 +2817,8 @@
   let ML_CHART = null;
   // The chart for this order's day and salesman (📅 special days from Commission Rules applied).
   const mlDay = (o) => ML_CHART && MLSLAB.forDay ? MLSLAB.forDay(ML_CHART, o.biz_date || '', o.employee_id) : ML_CHART;
-  let CM_OFFERS = [], CM_WIN = 60;
-  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; CM_OFFERS = (d && d.offers) || []; CM_WIN = d && d.offer_window ? Number(d.offer_window) : 60; if (allOrders.length) try { renderPage(); summaryRefresh(); } catch (e) {} }).catch(() => {});
+  let CM_OFFERS = [], CM_WIN = 110;
+  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; CM_OFFERS = (d && d.offers) || []; CM_WIN = d && d.offer_window ? Number(d.offer_window) : 110; if (allOrders.length) try { renderPage(); summaryRefresh(); } catch (e) {} }).catch(() => {});
   function mlInfo(o) {
     const m = window.MLSLAB ? MLSLAB.parts(o) : null;
     const key = (o.store_key || o.source || '') + ':' + o.id;
