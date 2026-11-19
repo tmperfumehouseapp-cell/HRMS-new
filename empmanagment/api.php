@@ -1256,7 +1256,7 @@ function ora_tables(PDO $pdo): bool
         if (!in_array('tries', $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN tries TINYINT NOT NULL DEFAULT 0");      // how many separate times the salesperson offered more
         if (!in_array('tip', $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN tip VARCHAR(240) NOT NULL DEFAULT ''");     // the winning words, when the try worked
         foreach (['sz_ok' => 'TINYINT NOT NULL DEFAULT 0', 'sz_tried' => 'TINYINT NOT NULL DEFAULT 0', 'sz_worked' => 'TINYINT NOT NULL DEFAULT 0', 'sz_tries' => 'TINYINT NOT NULL DEFAULT 0', 'sz_tip' => "VARCHAR(240) NOT NULL DEFAULT ''", 'weak' => 'TINYINT NOT NULL DEFAULT 0', 'refused' => 'TINYINT NOT NULL DEFAULT 0', 'sz_weak' => 'TINYINT NOT NULL DEFAULT 0', 'sz_refused' => 'TINYINT NOT NULL DEFAULT 0'] as $__c => $__d)
-            if (!in_array($__c, $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN $__c $__d");   // the SECOND effort: selling BIGGER (sz_*). tried/worked/tries now mean the ADD-ON only. sz_ok = 3 once a row was judged by the two-part judge
+            if (!in_array($__c, $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN $__c $__d");   // the SECOND effort: selling BIGGER (sz_*). tried/worked/tries now mean the ADD-ON only. sz_ok = 4 once a row was judged by the two-part judge
         if (!in_array('phone', $cols, true)) $pdo->exec("ALTER TABLE order_rate_auto ADD COLUMN phone VARCHAR(12) NOT NULL DEFAULT '', ADD KEY k_phone (phone)");   // last 10 digits of the customer's number: the chat list shows the effort mark per chat
         return $ok = true; }
     catch (Throwable $e) { error_log('ora_tables: ' . $e->getMessage()); return $ok = false; }
@@ -1286,14 +1286,14 @@ function ora_transcript(array $rows): array
 function ora_judge_text(string $text, string $final = ''): array
 {
     $sys = "You are the strict judge of upselling effort in ONE WhatsApp sales chat of a perfume shop. Lines: C: = customer, S: = salesperson, BOT: = automatic / campaign message (earns the salesperson NOTHING). Languages: English, Hindi, Gujarati, Hinglish. Judge ONLY the salesperson's own words (S:). "
-        . "TWO SEPARATE JUDGEMENTS, never mixed. (1) ADD-ON = the salesperson gets the customer to buy MORE PERFUME on top of what the customer asked: one or more extra perfume bottles / pieces of ANY size (8 pieces -> 10 pieces, 4 -> 5 perfumes, one extra 10 ml or 20 ml perfume for a price). Fields tries, weak, worked, refused, tip. "
-        . "A chain, jewellery, gel, free gift or any other NON-perfume item is NOT an add-on and counts for nothing. A perfume that is only given FREE as a gift is not sold, so it counts for nothing either; but offering an extra perfume that the customer pays for (even with a discount or a free gift attached) is an add-on offer. "
-        . "(2) BIGGER = the salesperson upgrades the SIZE or VALUE of what the customer chose WITHOUT counting more pieces: 50 ml instead of 20 ml, 100 ml instead of 50 ml, a bigger-ml combo, a premium variant. Fields big_tries, big_weak, big_worked, big_refused, big_tip. More pieces are ALWAYS add-on, never bigger. "
-        . "A PROPER OFFER (counted in tries / big_tries) is ONE S: message that names a concrete item, quantity or size AND gives a price, a saving or a reason why it is good for the customer. Proper add-on: '4 ki jagah 5 le lo, 5th pe Rs 100 off', '10 x 20ml kardu 2349 main ho jayega'. Proper bigger: '50ml ki jagah 100ml le lo, per ml sasta padega'. "
+        . "TWO SEPARATE JUDGEMENTS, split by WHEN in the chat they happen. (1) BIGGER (ticket size) = BEFORE the order is finalised, while the customer is still deciding / building the order, the salesperson convinces the customer to take MORE than the customer came for: more perfume pieces (came for 5, convinced to 7; came for 7, convinced to 9; came for 1, convinced to 5) OR a bigger size / higher value (50 ml instead of 20 ml, a bigger-ml combo, a premium variant). Fields big_tries, big_weak, big_worked, big_refused, big_tip. "
+        . "(2) ADD-ON = AFTER the order is already agreed / finalised (the customer said ok / done / confirm, asked for the payment link or COD, or the order is clearly settled), the salesperson gets the customer to ADD one or more extra perfume bottles on top of that final order (an extra 10 ml or 20 ml perfume, one more bottle). Fields tries, weak, worked, refused, tip. "
+        . "A chain, jewellery, gel, free gift or any other NON-perfume item is NOT an add-on and counts for nothing. A perfume that is only given FREE as a gift is not sold, so it counts for nothing either; but offering an extra perfume that the customer pays for (even with a discount or a free gift attached) counts. "
+        . "A PROPER OFFER (counted in tries / big_tries) is ONE S: message that names a concrete item, quantity or size AND gives a price, a saving or a reason why it is good for the customer. Proper bigger: '4 ki jagah 5 le lo, 5th pe Rs 100 off', '10 x 20ml kardu 2349 main ho jayega', '50ml ki jagah 100ml le lo, per ml sasta padega' (said while the order is still being decided). Proper add-on (said after the order is final): '10ml tester sirf Rs 99 mein add kar du, travel ke liye best', 'ek extra 20ml 199 me jod du?'. "
         . "A second proper offer counts only when it brings a NEW item, size or reason / price; repeating the same words is not a new try. "
         . "NOT AN OFFER (counted only in weak / big_weak, never in tries): vague questions without a concrete item or benefit — 'ek aur kar du?', 'kuch aur chahiye?', 'anything else?', 'aur lena hai?' — a bare thank-you, repeating the customer's own order, quoting the price of the same order, a discount on the same items, BOT / campaign messages. "
-        . "A customer who asked for the bigger / extra thing by himself earns the salesperson no credit. worked / big_worked = true ONLY when the customer clearly took a PROPER offer of that kind (added perfume pieces / went to the bigger size). refused / big_refused = true when the customer clearly said no to a proper offer of that kind. Read the order of the messages carefully: a customer who first stays with the old quantity and LATER agrees to the new one has taken the offer. "
-        . "Stars (0.5 steps, about the whole effort): 1 = no proper offer at all · 2 = only vague lines · 3 = one clear proper offer, customer did not take · 4 = proper offers, one worked a little · 5 = proper offers and a clear win (more perfumes or a bigger size, or both). "
+        . "A customer who asked for the bigger / extra thing by himself earns the salesperson no credit. worked / big_worked = true ONLY when the customer clearly took a PROPER offer of that kind (took the higher quantity / bigger size before the order was final for bigger; added the extra perfume after the order was final for add-on). refused / big_refused = true when the customer clearly said no to a proper offer of that kind. Read the order of the messages carefully: a customer who first stays with the old quantity and LATER agrees to the new one has taken the offer. "
+        . "Stars (0.5 steps, about the whole effort): 1 = no proper offer at all · 2 = only vague lines · 3 = one clear proper offer, customer did not take · 4 = proper offers, one worked a little · 5 = proper offers and a clear win (a bigger order, an add-on, or both). "
         . "asked = what the customer first asked for (short). offered = the best proper offer made (short, empty if none). reason = ONE short sentence in simple English that proves the stars from the chat. tip / big_tip = ONLY when that kind worked: the salesperson's own winning words, shortened, in the chat's language (else empty). "
         . $final;
     $sch = ['type' => 'OBJECT', 'properties' => ['asked' => ['type' => 'STRING'], 'offered' => ['type' => 'STRING'], 'worked' => ['type' => 'BOOLEAN'], 'stars' => ['type' => 'NUMBER'], 'reason' => ['type' => 'STRING'], 'tries' => ['type' => 'NUMBER'], 'weak' => ['type' => 'NUMBER'], 'refused' => ['type' => 'BOOLEAN'], 'tip' => ['type' => 'STRING'],
@@ -1326,7 +1326,7 @@ function ora_apply(PDO $pdo, string $key, array $r): bool
         $c = $pdo->prepare("SELECT 1 FROM order_ratings WHERE order_key = ? AND ticket_by = 'Claude (auto)'"); $c->execute([$key]); return (bool)$c->fetchColumn();
     } catch (Throwable $e) { error_log('ora_apply: ' . $e->getMessage()); return false; }
 }
-/** Engine step (every ~3 min): rates up to 5 new allocated orders of the last 30 days (newest first, so today is always read before the older ones); in 'apply' mode also applies waiting suggestions. Returns how many orders were rated. */
+/** Engine step (every ~3 min): rates up to 8 new allocated orders of the current business day (from its start) (newest first, so today is always read before the older ones); in 'apply' mode also applies waiting suggestions. Returns how many orders were rated. */
 function ora_tick(PDO $pdo): int
 {
     $mode = ora_mode($pdo); if ($mode === 'off' || !function_exists('convo_ai')) return 0;
@@ -1335,9 +1335,9 @@ function ora_tick(PDO $pdo): int
     try {
         $st = $pdo->prepare("SELECT o.store_key, o.shopify_id, o.order_name, o.created_at, o.phone, o.total, o.ml_total, a.employee_id, a.house FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
             WHERE o.created_at >= ? AND o.created_at <= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')
-              AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 3)
+              AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 4)
             ORDER BY o.created_at DESC LIMIT 8");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
-        $st->execute([date('Y-m-d H:i:s', time() - 30 * 86400), date('Y-m-d H:i:s', time() - 600)]);
+        $bd = biz_today($pdo); $st->execute([$bd . ' ' . day_start_for($pdo, $bd) . ':00', date('Y-m-d H:i:s', time() - 600)]);   // only the orders of the current business day (from its 10:00 start) are read
         $t0 = time(); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
             if (time() - $t0 > 28) break;   // the engine step must stay short
             $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;   // an AI hiccup: try again next time
@@ -1356,7 +1356,7 @@ function ora_tick(PDO $pdo): int
 /** Saves one judged order (replaces an older row of the same order: rows from before the two-part judge are read again and corrected). */
 function ora_store(PDO $pdo, string $key, array $o, array $r, string $day): void
 {
-    $pdo->prepare("REPLACE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, day, house, at, applied, phone, sz_ok, sz_tried, sz_worked, sz_tries, sz_tip, weak, refused, sz_weak, sz_refused) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 3, ?, ?, ?, ?, ?, ?, ?, ?)")
+    $pdo->prepare("REPLACE INTO order_rate_auto (order_key, order_name, employee_id, rating, tried, worked, tries, tip, asked, offered, reason, day, house, at, applied, phone, sz_ok, sz_tried, sz_worked, sz_tries, sz_tip, weak, refused, sz_weak, sz_refused) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 4, ?, ?, ?, ?, ?, ?, ?, ?)")
         ->execute([$key, (string)$o['order_name'], (int)$o['employee_id'], $r['rating'], (int)($r['tried'] ?? 0), (int)($r['worked'] ?? 0), (int)($r['tries'] ?? 0), (string)($r['tip'] ?? ''), (string)($r['asked'] ?? ''), (string)($r['offered'] ?? ''), (string)$r['why'], $day, (string)$o['house'], date('Y-m-d H:i:s'),
             substr(preg_replace('/\D+/', '', (string)$o['phone']), -10), (int)($r['big_tried'] ?? 0), (int)($r['big_worked'] ?? 0), (int)($r['big_tries'] ?? 0), (string)($r['big_tip'] ?? ''), (int)($r['weak'] ?? 0), (int)($r['refused'] ?? 0), (int)($r['big_weak'] ?? 0), (int)($r['big_refused'] ?? 0)]);
 }
@@ -1371,7 +1371,7 @@ function grow_learn_ready(PDO $pdo): bool
 function grow_learn_window(PDO $pdo, string $from, string $to): array
 {
     $o = ['read' => 0, 'add_tries' => 0, 'add_won' => 0, 'big_tries' => 0, 'big_won' => 0, 'plays' => ['add' => [], 'big' => []]];
-    $q = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries, tip, sz_tip FROM order_rate_auto WHERE sz_ok = 3 AND rating IS NOT NULL AND at >= ? AND at < ? LIMIT 2000"); $q->execute([$from, $to]);
+    $q = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries, tip, sz_tip FROM order_rate_auto WHERE sz_ok = 4 AND rating IS NOT NULL AND at >= ? AND at < ? LIMIT 2000"); $q->execute([$from, $to]);
     foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $o['read']++;
         if ((int)$r['tried'] || (int)$r['tries'] >= 1 || (int)$r['worked']) { $o['add_tries']++; if ((int)$r['worked']) { $o['add_won']++; $t = trim((string)$r['tip']); if ($t !== '' && !in_array($t, $o['plays']['add'], true) && count($o['plays']['add']) < 3) $o['plays']['add'][] = mb_substr($t, 0, 140); } }
@@ -1403,8 +1403,8 @@ function grow_learn_guide_text(PDO $pdo): string
     try {
         $w = grow_learn_window($pdo, date('Y-m-d H:i:s', time() - 7 * 86400), date('Y-m-d H:i:s'));
         if ($w['read'] < 10) return '';
-        $q = $pdo->prepare("SELECT tip, COUNT(*) n FROM order_rate_auto WHERE sz_ok = 3 AND worked = 1 AND tip <> '' AND at >= ? GROUP BY tip ORDER BY n DESC, MAX(at) DESC LIMIT 8"); $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400)]); $add = $q->fetchAll(PDO::FETCH_ASSOC);
-        $q = $pdo->prepare("SELECT sz_tip tip, COUNT(*) n FROM order_rate_auto WHERE sz_ok = 3 AND sz_worked = 1 AND sz_tip <> '' AND at >= ? GROUP BY sz_tip ORDER BY n DESC, MAX(at) DESC LIMIT 8"); $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400)]); $big = $q->fetchAll(PDO::FETCH_ASSOC);
+        $q = $pdo->prepare("SELECT tip, COUNT(*) n FROM order_rate_auto WHERE sz_ok = 4 AND worked = 1 AND tip <> '' AND at >= ? GROUP BY tip ORDER BY n DESC, MAX(at) DESC LIMIT 8"); $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400)]); $add = $q->fetchAll(PDO::FETCH_ASSOC);
+        $q = $pdo->prepare("SELECT sz_tip tip, COUNT(*) n FROM order_rate_auto WHERE sz_ok = 4 AND sz_worked = 1 AND sz_tip <> '' AND at >= ? GROUP BY sz_tip ORDER BY n DESC, MAX(at) DESC LIMIT 8"); $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400)]); $big = $q->fetchAll(PDO::FETCH_ASSOC);
         $pc = fn($a, $b) => $b > 0 ? round(100 * $a / $b) . '%' : 'n/a';
         $t = "\n\nTEAM GROWTH LEARNING (last 7 days, from " . $w['read'] . " orders whose chat was read by the strict effort judge). ADD-ON = the salesperson got the customer to buy MORE PERFUME PIECES on top of what he asked; BIGGER = a bigger size / value of what he chose. A proper offer = concrete item or size + price or reason. "
             . "Add-on: proper offer made in " . $w['add_tries'] . " orders (" . $pc($w['add_tries'], $w['read']) . "), customer took it in " . $w['add_won'] . " (" . $pc($w['add_won'], $w['add_tries']) . " of the offers). Bigger: proper offer in " . $w['big_tries'] . " (" . $pc($w['big_tries'], $w['read']) . "), taken in " . $w['big_won'] . " (" . $pc($w['big_won'], $w['big_tries']) . "). "
@@ -1422,7 +1422,7 @@ function ora_phone_map(PDO $pdo, array $phones): array
     $all = hrms_memo('ora_phone_map', 60, function () use ($pdo) {
         try { $pdo->exec("UPDATE order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) SET r.phone = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) WHERE r.phone = '' AND r.at >= '" . date('Y-m-d H:i:s', time() - 30 * 86400) . "'"); } catch (Throwable $e) { /* old database without REGEXP_REPLACE: only orders read from now on carry a number */ }
         $m = [];
-        try { foreach ($pdo->query("SELECT phone, order_name, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries, reason FROM order_rate_auto WHERE rating IS NOT NULL AND sz_ok = 3 AND phone <> '' AND at >= '" . date('Y-m-d H:i:s', time() - 30 * 86400) . "' ORDER BY at ASC")->fetchAll(PDO::FETCH_ASSOC) as $r) $m[(string)$r['phone']] = [ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']), round((float)$r['rating'] / 2, 1), (string)$r['reason'], (string)$r['order_name'], ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]; } catch (Throwable $e) { }
+        try { foreach ($pdo->query("SELECT phone, order_name, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries, reason FROM order_rate_auto WHERE rating IS NOT NULL AND sz_ok = 4 AND phone <> '' AND at >= '" . date('Y-m-d H:i:s', time() - 30 * 86400) . "' ORDER BY at ASC")->fetchAll(PDO::FETCH_ASSOC) as $r) $m[(string)$r['phone']] = [ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']), round((float)$r['rating'] / 2, 1), (string)$r['reason'], (string)$r['order_name'], ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]; } catch (Throwable $e) { }
         return $m;
     });
     $out = []; foreach ($phones as $p) { $k = substr(preg_replace('/\D+/', '', (string)$p), -10); if (isset($all[$k])) $out[(string)$p] = $all[$k]; }
@@ -1436,7 +1436,7 @@ function ora_fill_day(PDO $pdo, string $day, int $secs = 22): array
     $from = $day . ' ' . day_start_for($pdo, $day) . ':00'; $to = date('Y-m-d H:i:s', min(time() - 120, strtotime($from) + 86400));
     $sel = "FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
             WHERE o.created_at >= ? AND o.created_at <= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')
-              AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 3)";
+              AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 4)";
     $n = 0; $t0 = time();
     $st = $pdo->prepare("SELECT o.store_key, o.shopify_id, o.order_name, o.created_at, o.phone, o.total, o.ml_total, a.employee_id, a.house $sel ORDER BY o.created_at DESC LIMIT 40"); $st->execute([$from, $to]);
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
@@ -22722,10 +22722,10 @@ switch ($action) {
         $out = ['day' => $day, 'mode' => ora_mode($pdo), 'emps' => new stdClass(), 'team' => [0, 0, 0, 0], 'team_sz' => [0, 0, 0, 0], 'missed_sz' => [], 'tips_sz' => [], 'missed' => [], 'tips' => [], 'measured' => 0];
         if (!ora_tables($pdo)) json_response($out);
         $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
-        $q = $pdo->prepare("SELECT order_key, order_name, employee_id, rating, tried, worked, tries, tip, sz_tried, sz_worked, sz_tries, sz_tip, asked, offered, reason, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 3 ORDER BY at DESC LIMIT 600");
+        $q = $pdo->prepare("SELECT order_key, order_name, employee_id, rating, tried, worked, tries, tip, sz_tried, sz_worked, sz_tries, sz_tip, asked, offered, reason, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 4 ORDER BY at DESC LIMIT 600");
         $q->execute([$day]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
         try { addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { foreach ($rows as &$r0) { $r0['addon_total'] = 0; } unset($r0); }
-        try { $sk = $pdo->prepare("SELECT COUNT(*) FROM order_rate_auto WHERE day = ? AND rating IS NULL AND sz_ok = 3"); $sk->execute([$day]); $out['skipped'] = (int)$sk->fetchColumn(); } catch (Throwable $e) { $out['skipped'] = 0; }   // orders with no usable chat
+        try { $sk = $pdo->prepare("SELECT COUNT(*) FROM order_rate_auto WHERE day = ? AND rating IS NULL AND sz_ok = 4"); $sk->execute([$day]); $out['skipped'] = (int)$sk->fetchColumn(); } catch (Throwable $e) { $out['skipped'] = 0; }   // orders with no usable chat
         $E = []; $team = [0, 0, 0, 0]; $teamSz = [0, 0, 0, 0]; $tips = []; $tipsSz = []; $miss = []; $missSz = [];
         foreach ($rows as $r) {
             $id = (int)$r['employee_id']; if ($id <= 0) continue;
@@ -22772,7 +22772,7 @@ switch ($action) {
         $out = ['day' => $day, 'lane' => $lane, 'lv' => $lv, 'emp' => $emp, 'rows' => [], 'total' => 0, 'people' => []]; $pc = [];
         if (!ora_tables($pdo)) json_response($out);
         $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
-        $q = $pdo->prepare("SELECT order_key, order_name, employee_id, tried, worked, tries, sz_tried, sz_worked, sz_tries, asked, offered, reason, phone, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 3" . ($emp > 0 ? " AND employee_id = ?" : "") . " ORDER BY at DESC LIMIT 800");
+        $q = $pdo->prepare("SELECT order_key, order_name, employee_id, tried, worked, tries, sz_tried, sz_worked, sz_tries, asked, offered, reason, phone, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 4" . ($emp > 0 ? " AND employee_id = ?" : "") . " ORDER BY at DESC LIMIT 800");
         $q->execute($emp > 0 ? [$day, $emp] : [$day]);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $l = $lane === 'big' ? ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']) : ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']);
@@ -22792,7 +22792,7 @@ switch ($action) {
         $today = biz_today($pdo); $from = $days > 0 ? date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')) : '2000-01-01';
         $out = ['emp' => $emp, 'days' => $days, 'rows' => [], 'tot' => [0, 0, 0, 0], 'stars' => null, 'addon_rs' => 0, 'since' => null];
         if ($emp <= 0 || !ora_tables($pdo)) json_response($out);
-        $q = $pdo->prepare("SELECT order_name, day, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE employee_id = ? AND day >= ? AND day <= ? AND rating IS NOT NULL AND sz_ok = 3 ORDER BY day DESC LIMIT 3000");
+        $q = $pdo->prepare("SELECT order_name, day, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE employee_id = ? AND day >= ? AND day <= ? AND rating IS NOT NULL AND sz_ok = 4 ORDER BY day DESC LIMIT 3000");
         $q->execute([$emp, $from, $today]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
         try { addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { foreach ($rows as &$r0) { $r0['addon_total'] = 0; } unset($r0); }
         $D = []; $tot = [0, 0, 0, 0]; $totSz = [0, 0, 0, 0]; $st = 0.0; $ad = 0.0;
