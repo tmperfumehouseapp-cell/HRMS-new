@@ -14,13 +14,13 @@ $S['wa_dq_hold_until'] = '0'; $S['wa_dq_hold_end'] = (string)(time() - 60); $S['
 // 3) speed: good delivery -> +1,000
 $S = ['wa_dq_hold_end' => (string)(time() - 7200), 'wa_dq_hourly' => '5000']; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 160, 40, 30);
 wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000', 'good: 5,000 -> 6,000 (got ' . $S['wa_dq_hourly'] . ')');
-// 4) the usual top is 6,000: good checks at 6,000 stay there; the 4th good check in a row (2 hours) tries 7,000 for one hour; never above 7,000
+// 4) the usual top is 6,000: good checks at 6,000 stay there; the 4th good check in a row (2 hours) goes to 7,000 and stays while it keeps going well; never above 7,000
 $S = ['wa_dq_hold_end' => (string)(time() - 7200), 'wa_dq_hourly' => '6000']; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 220, 20, 30);
 for ($i = 1; $i <= 3; $i++) { $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000', 'good check ' . $i . ' at 6,000: stays 6,000 (got ' . $S['wa_dq_hourly'] . ')'); }
-$S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '7000' && (int)$S['wa_dq_trial_until'] > time() + 3500, '4th good check: 7,000 for one hour (got ' . $S['wa_dq_hourly'] . ')');
-$S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '7000', 'inside the trial hour: stays 7,000, never 8,000 (got ' . $S['wa_dq_hourly'] . ')');
-$S['wa_dq_trial_until'] = (string)(time() - 5); $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000', 'trial hour over: back to 6,000 (got ' . $S['wa_dq_hourly'] . ')');
-$S['wa_dq_hourly'] = '9000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000', 'anything above 7,000 comes back to 6,000');
+$S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '7000', '4th good check: 7,000 (got ' . $S['wa_dq_hourly'] . ')');
+for ($i = 1; $i <= 4; $i++) { $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '7000', 'keeps going well: stays 7,000, never 8,000 (got ' . $S['wa_dq_hourly'] . ')'); }
+$pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 200, 100, 30); $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '5000', 'stalls (25% failed): starts again from 5,000');
+$pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 220, 20, 30); $S['wa_dq_hourly'] = '9000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000', 'anything above 7,000 comes back to 6,000');
 // 5) in between: nothing changes
 $S['wa_dq_hourly'] = '6000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 100, 60, 30); wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000' && !wa_dq_hold_active($pdo), '25% delivered: nothing changes');
 // 5b) failed rising (15% to 25%): the last step stays; the next check still the same: back to 5,000; failed 25%+: back at once
