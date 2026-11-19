@@ -383,6 +383,7 @@ function wa_ru_tick(PDO $pdo): array
         try { if ((string)setting_get($pdo, 'wa_ru_pool_auto', '1') !== '0' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_pool_at', (string)time()); if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $mk = wa_util_pool_make($pdo, 0); $res['made'] = count($mk['made'] ?? []); } } } catch (Throwable $e) { }
         try { if (function_exists('wa_util_pool_learn') && (int)setting_get($pdo, 'wa_ru_learn_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_learn_at', (string)time()); $lr = wa_util_pool_learn($pdo, 0); $res['made'] = (int)($res['made'] ?? 0) + count($lr['made'] ?? []); } } catch (Throwable $e) { }
         $res['note'] = 'paused after a Meta warning'; return $res; }
+    try { if ((int)setting_get($pdo, 'wa_dq_hold_until', '0') > time()) { $res['note'] = 'marketing hold (131048) running: Module B waits too'; return $res; } } catch (Throwable $e) { }   /* owner 19 Nov 2026, 16:20: while the marketing hold runs, Module B sends nothing; it restarts when the hold ends */
     wa_ru_ramp($pdo, $cfg);   // grows / shrinks the hourly number (checked at most once in 10 minutes)
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'ru', 50)) { $res['note'] = 'busy'; return $res; }
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $why = [];
@@ -618,21 +619,24 @@ function wa_ru_fam_calc(PDO $pdo): int
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $tp) if (function_exists('wa_util_usable')) $n += count(wa_util_usable($pdo, (int)$tp)); } catch (Throwable $e) { }
     return $n;
 }
-/** What is waiting today (the business day), by reason — remembered for 2 minutes. */
+/** What is waiting today (the business day), by reason — remembered for 15 minutes. */
 function wa_ru_diag(PDO $pdo, int $ordDays): array
 {
     // ⚡ remembered 2 minutes, in a shared file: ONE request works it out (14 s on a busy day); the others use the last copy meanwhile (it was kept in the settings table: every save made every page read the whole table again)
-    return hrms_memo('wa_ru_diag_' . $ordDays . '_' . (function_exists('wa_bizday_start') ? md5(wa_bizday_start($pdo)) : date('Ymd')), 120, function () use ($pdo, $ordDays) { return wa_ru_diag_calc($pdo, $ordDays); });
+    return hrms_memo('wa_ru_diag_' . $ordDays . '_' . (function_exists('wa_bizday_start') ? md5(wa_bizday_start($pdo)) : date('Ymd')), 900, function () use ($pdo, $ordDays) { return wa_ru_diag_calc($pdo, $ordDays); });   // ⚡ 5 → 15 minutes: it is only the 'waiting today, by reason' panel; the count takes 14 s on a busy day
 }
 function wa_ru_diag_calc(PDO $pdo, int $ordDays): array
 {
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
     $o = ['failed_total' => 0, 'never' => 0, 'now' => 0, 'after_rec' => 0, 'util_ok' => 0, 'util_no' => 0, 'done' => 0, 'from' => $from, 'at' => time()];
     try {
-        $q = $pdo->prepare("SELECT i.err_code, COUNT(*) AS n FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed') OR " . wa_ru_known_sql() . ") GROUP BY i.err_code"); $q->execute([$from, $from]);
+        // ⚡ the OR across two tables made MySQL read all 2 million rows of wa_camp_items (EXPLAIN: ALL). Two separate reads (campaigns started today via camp_id, items sent today via the new index k_sent) joined with UNION give the same rows.
+        $__rest = "COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed') OR " . wa_ru_known_sql() . ")";
+        $q = $pdo->prepare("SELECT x.err_code, COUNT(*) AS n FROM (SELECT i.id, i.err_code FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.started_at >= ? AND " . $__rest . " UNION SELECT i.id, i.err_code FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.sent_at >= ? AND " . $__rest . ") x GROUP BY x.err_code"); $q->execute([$from, $from]);
         foreach ($q->fetchAll() as $r) { $n = (int)$r['n']; $o['failed_total'] += $n; $cl = wa_ru_class((int)$r['err_code']); if ($cl === 'never') $o['never'] += $n; elseif ($cl === 'now') $o['now'] += $n; else $o['after_rec'] += $n; }
         if (wa_ru_tables($pdo)) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([$from]); $o['done'] = (int)$q->fetchColumn(); }
-        $q = $pdo->prepare("SELECT DISTINCT i.phone FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed')) AND i.err_code NOT IN (" . (function_exists('wa_rec_never_sql') ? implode(',', array_diff(WA_REC_NEVER, WA_RU_MARKETING_ONLY)) : '0') . ") LIMIT 6000"); $q->execute([$from, $from]);
+        $__rest2 = "COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed')) AND i.err_code NOT IN (" . (function_exists('wa_rec_never_sql') ? implode(',', array_diff(WA_REC_NEVER, WA_RU_MARKETING_ONLY)) : '0') . ")";
+        $q = $pdo->prepare("SELECT x.p FROM (SELECT i.phone AS p FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.started_at >= ? AND " . $__rest2 . " UNION SELECT i.phone AS p FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.sent_at >= ? AND " . $__rest2 . ") x LIMIT 6000"); $q->execute([$from, $from]);
         $ph = array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN));
         if ($ph && function_exists('wa_util_split')) { $sp = wa_util_split($pdo, $ph, $ordDays, (int)wa_ru_cfg($pdo)['ask_days']); $o['util_ok'] = (int)$sp['ask'] + (int)$sp['order'] + (int)$sp['none']; $o['util_no'] = 0; }
     } catch (Throwable $e) { }

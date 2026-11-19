@@ -1196,13 +1196,14 @@ if (strpos((string)$action, 'bd.') === 0) {
     case 'bd.menu_ctx': {
         if (is_file(__DIR__ . '/flyers.php')) { try { require_once __DIR__ . '/flyers.php'; } catch (Throwable $e) { } }
         $cap = function (callable $f) { $GLOBALS['__jr_cap'] = true; $r = null; try { $f(); } catch (JrCapture $c) { $r = ((int)$c->httpCode >= 400) ? null : $c->data; } catch (Throwable $e) { $r = null; } $GLOBALS['__jr_cap'] = false; return $r; };
-        $out = [
+        // ⚡ every page asks for these numbers when it opens (11 requests at once on Agreements): the same person gets the same answer for 15 s, so the five counts are not recounted on every page. Per person, so nobody sees another person's numbers.
+        $out = hrms_memo('bd_menu_ctx:' . (string)($auth['username'] ?? ('e' . (int)$w['emp'])) . ':' . (int)$w['emp'], 15, function () use ($cap, $pdo, $auth, $w, $by) { return [
             'flags' => $cap(function () use ($pdo, $auth) { json_response(me_flags_data($pdo, $auth)); }),
             'bd' => $cap(function () use ($pdo, $w) { json_response(bd_badge_data($pdo, $w)); }),
             'fl' => function_exists('fl_badge_data') ? $cap(function () use ($pdo, $auth) { json_response(fl_badge_data($pdo, $auth)); }) : null,
             'cx' => function_exists('cx_dispatch') ? $cap(function () use ($pdo, $auth, $w, $by) { cx_dispatch($pdo, 'bd.cx_badge', $auth, $w, $by, [], false); }) : null,
             'sx' => function_exists('sx_dispatch') ? $cap(function () use ($pdo, $auth, $w, $by) { sx_dispatch($pdo, 'bd.sx_badge', $auth, $w, $by, [], false); }) : null,
-        ];
+        ]; });
         json_response($out);
     }
 
