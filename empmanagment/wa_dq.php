@@ -49,8 +49,8 @@ function wa_dq_auto_step(PDO $pdo): void
         $good = ($d >= 0.35 && $f < 0.15); $tu = (int)setting_get($pdo, 'wa_dq_trial_until', '0');
         if ($good) { setting_set($pdo, 'wa_dq_freeze_n', '0');
             if ($cur > 7000) $to = 6000;
-            elseif ($cur === 7000) { if ($now >= $tu) { $to = 6000; setting_set($pdo, 'wa_dq_good_n', '0'); } }
-            elseif ($cur >= 6000) { $gn = (int)setting_get($pdo, 'wa_dq_good_n', '0') + 1; if ($gn >= 4) { $to = 7000; $gn = 0; setting_set($pdo, 'wa_dq_trial_until', (string)($now + 3600)); } setting_set($pdo, 'wa_dq_good_n', (string)$gn); }
+            elseif ($cur === 7000) { if ($now >= $tu) { if ((string)setting_get($pdo, 'wa_dq_trial_ext', '0') !== '1') { setting_set($pdo, 'wa_dq_trial_ext', '1'); setting_set($pdo, 'wa_dq_trial_until', (string)($now + 3600)); } else { $to = 6000; setting_set($pdo, 'wa_dq_good_n', '0'); } } }   /* owner 19 Nov 2026 (17:10): if 7,000 went well, one more hour at 7,000 (once), then back to 6,000 */
+            elseif ($cur >= 6000) { $gn = (int)setting_get($pdo, 'wa_dq_good_n', '0') + 1; if ($gn >= 4) { $to = 7000; $gn = 0; setting_set($pdo, 'wa_dq_trial_until', (string)($now + 3600)); setting_set($pdo, 'wa_dq_trial_ext', '0'); } setting_set($pdo, 'wa_dq_good_n', (string)$gn); }
             else $to = min(6000, $cur + 1000); }
         else { setting_set($pdo, 'wa_dq_good_n', '0'); $fz = (int)setting_get($pdo, 'wa_dq_freeze_n', '0') + 1; if ($fz >= 2 && $cur > 5000) { $to = 5000; $fz = 0; } elseif ($cur > 7000) $to = 6000; elseif ($cur === 7000 && $now >= $tu) $to = 6000; setting_set($pdo, 'wa_dq_freeze_n', (string)$fz); }
         setting_set($pdo, 'wa_dq_step_last', (string)$till);
