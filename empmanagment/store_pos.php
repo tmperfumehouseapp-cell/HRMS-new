@@ -1350,6 +1350,25 @@ try {
             break;
         }
 
+        case 'st_bill.set_amount': {       // the bill was made with a wrong amount (e.g. 5550 instead of 5050): a manager corrects it. Commission, day totals and the payment split follow the new amount.
+            $auth = require_auth();
+            require_role(['Admin', 'HR'], $auth);
+            $in = json_input(); $id = (int)($in['bill_id'] ?? 0); $new = round((float)($in['amount'] ?? 0), 2);
+            if ($new <= 0 || $new > 10000000) json_response(['error' => 'Type the correct bill amount.'], 400);
+            $q = $pdo->prepare("SELECT bill_no, status, total, pay_mode, cash_amt, online_amt, inv_id FROM st_bills WHERE bill_id = ?"); $q->execute([$id]); $b = $q->fetch();
+            if (!$b) json_response(['error' => 'Bill not found.'], 404);
+            if ($b['status'] !== 'ok') json_response(['error' => 'This bill is cancelled; its amount cannot be changed.'], 409);
+            if ((int)$b['inv_id'] > 0) json_response(['error' => 'This bill has a GST invoice. Cancel it and make it again.'], 409);
+            $old = (float)$b['total']; $cash = (float)$b['cash_amt']; $online = (float)$b['online_amt'];
+            if ($b['pay_mode'] === 'cash') { $cash = $new; $online = 0.0; }
+            elseif ($b['pay_mode'] === 'online') { $online = $new; $cash = 0.0; }
+            else { if ($cash >= $new) { $cash = $new; $online = 0.0; } else { $online = $new - $cash; } }      // Cash + online: the cash part stays, online takes the rest (use Payment to change)
+            $pdo->prepare("UPDATE st_bills SET total = ?, cash_amt = ?, online_amt = ? WHERE bill_id = ? AND status = 'ok'")->execute([$new, $cash, $online, $id]);
+            if (function_exists('bd_log')) { try { bd_log('store', $id, 'Bill ' . $b['bill_no'] . ' amount changed: ₹' . number_format($old) . ' -> ₹' . number_format($new), (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'message' => $b['bill_no'] . ': ₹' . number_format($old) . ' → ₹' . number_format($new) . '.']);
+            break;
+        }
+
         case 'st_bill.void': {
             $auth = require_auth();
             require_role(['Admin', 'HR'], $auth);
