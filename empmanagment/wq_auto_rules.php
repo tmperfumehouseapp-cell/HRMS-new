@@ -89,10 +89,13 @@ function waa_tier(int $q, int $qo, float $team): int
  */
 function waa_pick_tiers(array $c, int $min = WAA_MIN_Q): int
 {
+    // one query at a time: a person who was given a query a moment ago ('rest') is skipped while somebody else can take it — green first, but never 2-4 at once (owner, 19 Nov)
     foreach ([false, true] as $ignoreFull) {
-        foreach ([1, 2] as $t) {
-            $g = array_filter($c, function ($x) use ($t, $ignoreFull) { return (int)($x['tier'] ?? 2) === $t && ($ignoreFull || empty($x['full'])); });
-            if ($g) return waa_pick($g, $t === 2 ? $min : 0);
+        foreach ([false, true] as $ignoreRest) {
+            foreach ([1, 2] as $t) {
+                $g = array_filter($c, function ($x) use ($t, $ignoreFull, $ignoreRest) { return (int)($x['tier'] ?? 2) === $t && ($ignoreFull || empty($x['full'])) && ($ignoreRest || empty($x['rest'])); });
+                if ($g) return waa_pick($g, $t === 2 ? $min : 0);
+            }
         }
     }
     return 0;

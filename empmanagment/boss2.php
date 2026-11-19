@@ -2932,7 +2932,8 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         }
         $tkExtra = $tkPct > 0 ? ($chartCom + $offerCom + $xcomTotal) * $tkPct / 100 : 0.0;
         // each order's own commission, WITHOUT the day's extra: the extra is one line on the day's total
-        foreach ($lines as &$ln) { $ln['paid'] = round((float)$ln['com'] + (float)($ln['x'] ?? 0), 2); } unset($ln);
+        $__ad = []; foreach ($list as $__o) if (!empty($__o['addon'])) $__ad[preg_replace('/\|/', ':', (string)($__o['key'] ?? ''), 1)] = (float)$__o['addon'];
+        foreach ($lines as &$ln) { $ln['paid'] = round((float)$ln['com'] + (float)($ln['x'] ?? 0), 2); if (isset($__ad[(string)($ln['key'] ?? '')])) $ln['addon'] = round($__ad[(string)$ln['key']]); } unset($ln);
         $old = null;
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
         $total = round($chartCom + $offerCom + $extra + $tkExtra + $xcomTotal + $fixTotal, 2);

@@ -8152,6 +8152,22 @@ function order_paid_amt(float $total, string $fs, $outstanding): float
     if ($fs === '' || strpos($fs, 'cod') !== false || strpos($fs, 'pending') !== false || strpos($fs, 'partially_paid') !== false || strpos($fs, 'authorized') !== false) return 0.0;
     return $total;
 }
+/** ➕ Add-ons put on orders (table employee_addons): normalised order name (no "#", lower case) => ['amt' => add-on price, 'ml' => add-on ML, 'paid' => paid in advance].
+ *  The commission counts an order together with its add-ons (order 1000 + add-on 500 = 1500), so the sales, the ML and the price the chart is read at all include them. */
+function addon_sum_by_order(PDO $pdo, array $names): array
+{
+    $out = []; $norm = [];
+    foreach ($names as $n) { $k = strtolower(ltrim(trim((string)$n), '#')); if ($k !== '') $norm[$k] = 1; }
+    if (!$norm) return $out;
+    try {
+        foreach (array_chunk(array_keys($norm), 400) as $part) {
+            $st = $pdo->prepare("SELECT REPLACE(LOWER(order_name), '#', '') k, COALESCE(SUM(price), 0) amt, COALESCE(SUM(COALESCE(size_ml, 0) * qty), 0) ml, COALESCE(SUM(prepaid_amt), 0) paid FROM employee_addons WHERE REPLACE(LOWER(order_name), '#', '') IN (" . implode(',', array_fill(0, count($part), '?')) . ") GROUP BY k");
+            $st->execute($part);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(string)$r['k']] = ['amt' => (float)$r['amt'], 'ml' => (int)round((float)$r['ml']), 'paid' => (float)$r['paid']];
+        }
+    } catch (Throwable $e) { }   // no add-ons table yet = no add-ons
+    return $out;
+}
 function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): array
 {
     static $memo = [];
@@ -8212,6 +8228,15 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
                 'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? ''))];
         }
     } catch (Throwable $e) { error_log('coach_sales_load manual orders: ' . $e->getMessage()); }
+    // ➕ add-ons: an order is paid on its own amount PLUS its add-ons (1000 + 500 = 1500), so the add-on money, ML and advance count on the same order
+    $__nm = []; foreach ($sale as $__l) foreach ($__l as $__o) $__nm[] = (string)($__o['name'] ?? '');
+    $__ad = addon_sum_by_order($pdo, $__nm);
+    if ($__ad) foreach ($sale as $__k => $__l) foreach ($__l as $__i => $__o) {
+        $__a = $__ad[strtolower(ltrim(trim((string)($__o['name'] ?? '')), '#'))] ?? null; if (!$__a || $__a['amt'] <= 0) continue;
+        $sale[$__k][$__i]['amt'] += $__a['amt']; $sale[$__k][$__i]['paid'] = ($sale[$__k][$__i]['paid'] ?? 0) + $__a['paid'];
+        if (($__o['ml'] ?? null) !== null && (int)$__o['ml'] > 0) $sale[$__k][$__i]['ml'] = (int)$__o['ml'] + $__a['ml'];
+        $sale[$__k][$__i]['addon'] = $__a['amt'];
+    }
     return $memo[$mk] = $sale;
 }
 
@@ -30334,6 +30359,9 @@ switch ($action) {
         if (!$tagMap && !$allocMap) json_response(['error' => 'No employee has an Order Tag set yet — add tags on the Employees page first.'], 422);
 
         $results = shopify_fetch_all($stores, $tokens, $monthStart, $monthEnd, 40, true);
+        // ➕ add-ons count with their order (order 1000 + add-on 500 = 1500)
+        $__nm = []; foreach ($results as $__st) foreach ((array)($__st['orders'] ?? []) as $__o) $__nm[] = (string)($__o['order_name'] ?? $__o['name'] ?? '');
+        $addonMap = addon_sum_by_order($pdo, $__nm);
 
         // Which house each real Shopify store belongs to.
         $storeToGroup = ['tmperfumehouse' => 'tmph'];
@@ -30355,7 +30383,7 @@ switch ($action) {
                 alloc_override($allocMap, $storeKey, $o['id'], $gk, $sm);   // Order Allocation page wins over both
                 if ($sm) {
                     $key = $sm['id'] . '|' . $gk;
-                    $total = (float)$o['total'];
+                    $total = (float)$o['total'] + (float)($addonMap[strtolower(ltrim(trim((string)($o['order_name'] ?? $o['name'] ?? '')), '#'))]['amt'] ?? 0);
                     $sums[$key] = ($sums[$key] ?? 0) + $total;
                     $counts[$key] = ($counts[$key] ?? 0) + 1;
                     // COD/cash-on-delivery orders are not prepaid; everything
@@ -30373,11 +30401,13 @@ switch ($action) {
         }
 
         // MySales orders moved to a house on the Order Allocation page.
-        foreach (allocated_house_orders($pdo, $monthStart, $monthEnd, $errors) as $o) {
+        $__ho = allocated_house_orders($pdo, $monthStart, $monthEnd, $errors);
+        $addonMap += addon_sum_by_order($pdo, array_column($__ho, 'order_name'));
+        foreach ($__ho as $o) {
             if (!$o['emp_id']) { $unmatched++; continue; }
             $touchedGroups[$o['house']] = true;
             $key = $o['emp_id'] . '|' . $o['house'];
-            $total = (float)$o['total'];
+            $total = (float)$o['total'] + (float)($addonMap[strtolower(ltrim(trim((string)$o['order_name']), '#'))]['amt'] ?? 0);
             $sums[$key] = ($sums[$key] ?? 0) + $total;
             $counts[$key] = ($counts[$key] ?? 0) + 1;
             $fs = strtolower((string)$o['financial_status']);
