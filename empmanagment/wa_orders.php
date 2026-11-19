@@ -1020,6 +1020,56 @@ function wo_is_cx_parcel(PDO $pdo, array $p): bool
     $awb = trim((string)($p['tracking_no'] ?? '')); if ($awb === '') return false;
     try { $q = $pdo->prepare("SELECT 1 FROM cx_links WHERE awb = ? AND kind IN ('replacement','resend') AND status <> 'cancelled' LIMIT 1"); $q->execute([$awb]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
 }
+/** 📬 CATCH-UP. For every parcel ordered in the last $days days: the update that fits where the parcel is NOW (tracking ID given / shipped / out for delivery / delivered / failed / delayed),
+ *  if that update never went to the customer. $go = false only counts (the preview); $go = true puts them in the queue - the normal sender then sends them, with every usual check
+ *  (still true? template approved? quiet hours, opted out). One update per parcel and status, ever (uq_once), so pressing it twice sends nothing twice. */
+function wo_catchup(PDO $pdo, int $days, bool $go, ?int $nowTs = null): array
+{
+    $nowTs = $nowTs ?? wo_now(); $days = max(1, min(7, $days)); $cfg = wo_cfg($pdo); $defs = wo_send_defs();
+    $o = ['days' => $days, 'parcels' => 0, 'already' => 0, 'todo' => [], 'waiting' => [], 'off' => [], 'nothing' => 0, 'queued' => 0, 'on' => $cfg['on'], 'total_todo' => 0];
+    if (!wo_tables($pdo)) return $o;
+    $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE created_at >= ? AND status IN ('tracked','transit','delivered') AND phone IS NOT NULL AND phone <> '' ORDER BY id DESC LIMIT 6000"); $q->execute([wo_dt($nowTs - $days * 86400)]); $rows = $q->fetchAll();
+    $have = []; foreach (array_chunk(array_map(fn($p) => (int)$p['id'], $rows), 800) as $ch) { if (!$ch) continue; foreach ($pdo->query("SELECT parcel_id, status FROM wa_ord_sent WHERE parcel_id IN (" . implode(',', $ch) . ")")->fetchAll() as $r) $have[(int)$r['parcel_id'] . '|' . $r['status']] = 1; }
+    $tplOk = []; $due = wo_dt(wo_next_open($nowTs)); $ins = $pdo->prepare("INSERT IGNORE INTO wa_ord_sent (parcel_id, phone, order_name, status, tpl_name, state, created_at, due_at) VALUES (?,?,?,?,?, 'queued', ?, ?)");
+    foreach ($rows as $p) {
+        $o['parcels']++; $st = wo_send_status(wo_class($p, $nowTs)); if ($st === '') { $o['nothing']++; continue; }
+        if (in_array($st, ['shipped', 'tracking'], true) && trim((string)$p['tracking_no']) === '') { $o['nothing']++; continue; }
+        if ($st === 'tracking' && strcasecmp(trim((string)$p['tracking_no']), 'Office Pickup') === 0) { $o['nothing']++; continue; }
+        $key = wo_key($p['phone']); if ($key === '' || (function_exists('wa_valid_phone') && !wa_valid_phone($key))) { $o['nothing']++; continue; }
+        if (isset($have[(int)$p['id'] . '|' . $st])) { $o['already']++; continue; }
+        if (wo_is_cx_parcel($pdo, $p)) { $o['nothing']++; continue; }
+        $lab = $defs[$st][1] ?? $st;
+        if (empty($cfg['statuses'][$st])) { $o['off'][$lab] = ($o['off'][$lab] ?? 0) + 1; continue; }
+        if (!array_key_exists($st, $tplOk)) $tplOk[$st] = wo_tpl_for($pdo, $st) !== null;
+        if (!$tplOk[$st]) { $o['waiting'][$lab] = ($o['waiting'][$lab] ?? 0) + 1; continue; }
+        $o['todo'][$lab] = ($o['todo'][$lab] ?? 0) + 1; $o['total_todo']++;
+        if ($go && $cfg['on']) { $ins->execute([(int)$p['id'], $key, (string)$p['order_name'], $st, $defs[$st][0], wo_dt($nowTs), $due]); if ($ins->rowCount() > 0) $o['queued']++; }
+    }
+    if ($go && function_exists('wa_log')) wa_log($pdo, 'orders', true, 'Catch-up: ' . $o['queued'] . ' order updates queued for the parcels of the last ' . $days . ' day(s)');
+    return $o;
+}
+/** 📬 Who got which update: the parcels ordered in the last $days days (newest first, 400 at most) with every update of each - sent, waiting, skipped or failed and why. */
+function wo_sent_log(PDO $pdo, int $days, string $find = '', string $only = ''): array
+{
+    $now = wo_now(); $days = max(1, min(14, $days)); $from = wo_dt($now - $days * 86400); $defs = wo_send_defs(); $w = "p.created_at >= ? AND p.status IN ('tracked','transit','delivered','rto')"; $a = [$from];
+    $tot = ['parcels' => 0, 'told' => 0, 'none' => 0, 'queued' => 0, 'failed' => 0];
+    if (!wo_tables($pdo)) return ['rows' => [], 'totals' => $tot, 'days' => $days];
+    try {
+        $c = $pdo->prepare("SELECT COUNT(*) n, SUM(EXISTS (SELECT 1 FROM wa_ord_sent s WHERE s.parcel_id = p.id AND s.state = 'sent' AND s.status IN ('tracking','shipped','out_for_delivery','delivered','failed','delayed'))) told FROM dp_dsp_parcels p WHERE $w"); $c->execute($a); $r = $c->fetch();
+        $tot['parcels'] = (int)$r['n']; $tot['told'] = (int)$r['told']; $tot['none'] = $tot['parcels'] - $tot['told'];
+        $c = $pdo->prepare("SELECT s.state, COUNT(*) n FROM wa_ord_sent s JOIN dp_dsp_parcels p ON p.id = s.parcel_id WHERE $w AND s.state IN ('queued','failed') GROUP BY s.state"); $c->execute($a); foreach ($c->fetchAll() as $r) $tot[$r['state']] = (int)$r['n'];
+    } catch (Throwable $e) { }
+    $find = trim($find); if ($find !== '') { $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], ltrim($find, '#')) . '%'; $w .= " AND (p.order_name LIKE ? OR p.phone LIKE ? OR p.customer LIKE ? OR p.tracking_no LIKE ?)"; array_push($a, $l, $l, $l, $l); }
+    if ($only === 'none') $w .= " AND NOT EXISTS (SELECT 1 FROM wa_ord_sent s WHERE s.parcel_id = p.id AND s.state = 'sent' AND s.status IN ('tracking','shipped','out_for_delivery','delivered','failed','delayed'))";
+    $q = $pdo->prepare("SELECT p.* FROM dp_dsp_parcels p WHERE $w ORDER BY p.id DESC LIMIT 400"); $q->execute($a); $rows = $q->fetchAll(); $ups = [];
+    if ($rows) foreach ($pdo->query("SELECT parcel_id, status, state, err, sent_at, due_at, at FROM wa_ord_sent WHERE parcel_id IN (" . implode(',', array_map(fn($p) => (int)$p['id'], $rows)) . ") ORDER BY id")->fetchAll() as $s2) {
+        $ups[(int)$s2['parcel_id']][] = ['label' => $defs[$s2['status']][1] ?? $s2['status'], 'state' => (string)$s2['state'], 'at' => substr((string)($s2['sent_at'] ?: ($s2['state'] === 'queued' ? $s2['due_at'] : $s2['at'])), 0, 16), 'why' => (string)$s2['err']];
+    }
+    $out = [];
+    foreach ($rows as $p) { $cls = wo_class($p, $now);
+        $out[] = ['order' => (string)$p['order_name'], 'customer' => (string)$p['customer'], 'phone' => wo_key($p['phone']), 'created' => substr((string)$p['created_at'], 0, 16), 'now' => wo_class_label($cls), 'courier' => (string)$p['courier'], 'tracking_no' => (string)$p['tracking_no'], 'link' => wo_track_link($pdo, $p), 'updates' => $ups[(int)$p['id']] ?? []]; }
+    return ['rows' => $out, 'totals' => $tot, 'days' => $days];
+}
 /** One queued message. Returns ['out' => 'sent'|'skipped'|'failed'|'waiting', 'stop' => text?]. */
 function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
 {
@@ -1136,7 +1186,7 @@ function wa_ord_tick(PDO $pdo): array
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__woa = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__woa, ['wa.bday_get', 'wa.bday_set', 'wa.ord_for', 'wa.ord_share', 'wa.ord_sum', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
+if (in_array($__woa, ['wa.ord_log', 'wa.ord_catchup', 'wa.bday_get', 'wa.bday_set', 'wa.ord_for', 'wa.ord_share', 'wa.ord_sum', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo) || !wo_tables($pdo)) json_response(['error' => 'Order storage is not available — check database permissions.'], 500);
     $in = $isPost ? json_input() : $_GET; $adm = wa_is_admin($pdo, $auth); $needPost = function () use ($isPost) { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
@@ -1289,6 +1339,16 @@ if (in_array($__woa, ['wa.bday_get', 'wa.bday_set', 'wa.ord_for', 'wa.ord_share'
             $pdo->prepare("INSERT INTO wa_store_info (k, v, updated_at, updated_by) VALUES ('info', ?, ?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v), updated_at = VALUES(updated_at), updated_by = VALUES(updated_by)")->execute([json_encode($clean, JSON_UNESCAPED_UNICODE), wo_dt(wo_now()), $me]);
             if (function_exists('kb_touch')) kb_touch($pdo, 'Store info');
             json_response(['ok' => true, 'info' => wa_store_info($pdo), 'open_now' => wa_store_open_now($pdo)]);
+        }
+        case 'wa.ord_log': {   // 📬 who got which update (Admin / HR)
+            wa_guard_admin($pdo, $auth); @set_time_limit(60);
+            json_response(['ok' => true] + wo_sent_log($pdo, (int)($_GET['days'] ?? 3), (string)($_GET['q'] ?? ''), (string)($_GET['only'] ?? '')));
+        }
+        case 'wa.ord_catchup': {   // 📬 GET = count what is missing for the parcels of the last N days; POST {days, go:1} = queue them
+            wa_guard_admin($pdo, $auth); @set_time_limit(120); $dd = (int)($in['days'] ?? 3);
+            if ($isPost && empty($in['go'])) json_response(['error' => 'Nothing was sent: confirm first.'], 422);
+            $r = wo_catchup($pdo, $dd, $isPost);
+            json_response(['ok' => true] + $r + ['message' => $isPost ? ($r['on'] ? $r['queued'] . ' update' . ($r['queued'] === 1 ? '' : 's') . ' queued. They go out now, about 40 a minute (9 PM - 8 AM: at 8 AM).' : 'The automatic order updates are switched off. Switch them on first.') : '']);
         }
         case 'wa.ord_seed': {
             $needPost(); wa_guard_admin($pdo, $auth); @set_time_limit(120); $r = wa_ord_seed_templates($pdo, ['retry' => !empty($in['retry'])]); wo_put($pdo, 'wa_ord_seeded', wo_dt(wo_now()));
