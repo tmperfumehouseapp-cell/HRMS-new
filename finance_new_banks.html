@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Finance New · Bank Accounts — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  .ov{position:fixed;inset:0;background:rgba(20,22,26,.42);opacity:0;pointer-events:none;transition:opacity .18s;z-index:40}.ov.on{opacity:1;pointer-events:auto}
+  .dr{position:fixed;top:0;right:0;bottom:0;width:min(500px,96vw);background:var(--sx-bg);z-index:41;display:flex;flex-direction:column;transform:translateX(104%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:-18px 0 50px rgba(20,22,26,.22);border-radius:26px 0 0 26px}.dr.on{transform:none}
+  .dr.wide{width:min(720px,96vw)}@media (max-width:640px){.dr,.dr.wide{width:100%;border-radius:0}}
+  .dr-h{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:26px 0 0 0;box-shadow:0 1px 0 var(--sx-line)}@media (max-width:640px){.dr-h{border-radius:0}}
+  .dr-h b{font-size:16px;flex:1}.dr-x{border:0;background:var(--sx-bg);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;font-weight:700}
+  .dr-b{flex:1;overflow-y:auto;padding:12px 14px;display:grid;gap:10px;align-content:start}.dr-f{padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;box-shadow:0 -1px 0 var(--sx-line)}
+  .dr .sx-card{padding:12px 14px;border-radius:18px;box-shadow:none;border:1px solid var(--sx-line)}.dr .sx-in{min-height:38px;padding:7px 10px;font-size:14px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.bar .sp{flex:1}
+  .tb{width:100%;border-collapse:collapse;font-size:13px}.tb th{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--sx-mut);text-align:right;padding:4px 6px}.tb th:first-child,.tb td:first-child{text-align:left}
+  .tb td{padding:7px 6px;border-top:1px solid var(--sx-line);text-align:right}.tb tr.void td{opacity:.45;text-decoration:line-through}
+  .bk{width:100%;border-collapse:collapse;font-size:13.5px}.bk th{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--sx-mut);text-align:right;padding:8px 10px;white-space:nowrap}
+  .bk th:first-child,.bk td:first-child{text-align:left}.bk td{padding:11px 10px;border-top:1px solid var(--sx-line);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .bk td small{display:block;color:var(--sx-mut);font-size:11px;font-weight:600}.bk tr.off td{opacity:.5}.bk tr.tot td{font-weight:800;border-top:2px solid var(--sx-ink);background:#eef0f6}
+  .wrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Finance New · Bank Accounts</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">All your banks and cash boxes: opening balance, money in, money out and the balance today</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<div class="ov" id="ov"></div>
+<aside class="dr" id="dr" aria-hidden="true"><div class="dr-h"><b id="drT"></b><button class="dr-x" id="drX" aria-label="Close">×</button></div><div class="dr-b" id="drB"></div><div class="dr-f" id="drF"></div></aside>
+
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('fn_banks');
+  const m2 = (n) => { n = Number(n || 0); return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  const dShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  let D = null;
+  const open = (title, body, foot) => { $('drT').textContent = title; $('drB').innerHTML = body; $('drF').innerHTML = foot || ''; $('drF').style.display = foot ? '' : 'none'; $('dr').classList.add('on'); $('ov').classList.add('on'); $('dr').setAttribute('aria-hidden', 'false'); };
+  const close = () => { $('dr').classList.remove('on'); $('ov').classList.remove('on'); $('dr').setAttribute('aria-hidden', 'true'); };
+  $('drX').onclick = close; $('ov').onclick = close; document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  const note = (id, m, bad) => { const e = $(id); if (e) e.innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
+
+  function draw() {
+    const rows = D.banks.map((b) => `<tr class="${b.active ? '' : 'off'}"><td><b>${esc(b.name)}</b>${b.last4 ? ' <span class="sx-mut">••' + esc(b.last4) + '</span>' : ''}${b.active ? '' : ' <small>hidden</small>'}</td>
+        <td>${b.opening_date ? m2(b.opening_balance) + '<small>as of ' + esc(dShort(b.opening_date)) + '</small>' : '<span class="sx-mut">not set</span>'}</td><td>${m2(b.in)}</td><td>${m2(b.out)}</td><td><b>${m2(b.balance)}</b></td>
+        <td><button class="sx-btn" data-ed="${b.id}" style="padding:2px 12px">Edit</button></td></tr>`).join('');
+    $('root').innerHTML = `<div class="bar"><span class="sx-mut" style="font-size:12.5px">Balance = opening balance + money in − money out, counted from the opening-balance day, up to today (${esc(dShort(D.today))}).</span><span class="sp"></span><button class="sx-btn" id="bAdd">+ Add bank</button></div>
+      <div class="sx-card wrap">${D.banks.length ? `<table class="bk"><tr><th>Bank</th><th>Opening balance</th><th>Money in</th><th>Money out</th><th>Balance today</th><th></th></tr>${rows}
+        <tr class="tot"><td>TOTAL (active banks)</td><td></td><td></td><td></td><td>${m2(D.total)}</td><td></td></tr></table>` : '<div class="sx-mut">No bank yet. Click “+ Add bank”.</div>'}</div>`;
+  }
+  async function load() {
+    try { D = await api.get('fn.banks'); draw(); }
+    catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  function bankDrawer(id) {
+    const b = id ? D.banks.find((x) => x.id === id) : null;
+    open(b ? 'Edit: ' + b.name : 'Add a bank or cash box', `<div class="sx-card">
+      <label class="sx-f">Name<input class="sx-in" id="bN" autocomplete="off" placeholder="e.g. HDFC, Store cash box" value="${b ? esc(b.name) : ''}"></label>
+      <label class="sx-f" style="margin-top:10px">Last 4 digits of the account (optional)<input class="sx-in" id="bL" inputmode="numeric" maxlength="4" value="${b ? esc(b.last4) : ''}"></label>
+      <div class="sx-r2" style="margin-top:10px"><label class="sx-f">Opening balance (₹)<input class="sx-in" id="bO" type="number" step="0.01" inputmode="decimal" placeholder="0" value="${b && b.opening_date ? b.opening_balance : ''}"></label>
+      <label class="sx-f">Balance as of<input class="sx-in" id="bD" type="date" value="${esc(b && b.opening_date ? b.opening_date : D.today)}" max="${esc(D.today)}"></label></div>
+      ${b ? `<label class="sx-f" style="margin-top:8px;display:flex;flex-direction:row;gap:6px;align-items:center"><input type="checkbox" id="bH" ${b.active ? '' : 'checked'}> Hide this bank</label>` : ''}<div id="bM" style="margin-top:8px"></div></div>`,
+      `<button class="sx-btn big" id="bS">${b ? 'Save changes' : 'Add bank'}</button>`);
+    $('bN').focus();
+    $('bS').onclick = async () => {
+      try { await api.post('fn.account_save', { id: id || 0, name: $('bN').value, last4: $('bL').value, opening_balance: $('bO').value, opening_date: $('bO').value !== '' ? $('bD').value : '', active: b && $('bH').checked ? 0 : 1 }); close(); await load(); }
+      catch (e) { note('bM', e.message, 1); }
+    };
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return;
+    if (t.id === 'bAdd') bankDrawer(0); else if (t.dataset.ed) bankDrawer(+t.dataset.ed);
+  });
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
