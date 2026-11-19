@@ -1270,6 +1270,13 @@ function ora_effort(int $tried, int $worked, int $tries): int
     if ($tried || $tries >= 1) return 1;
     return 0;
 }
+/** ONE result per order for the owner's 4 buttons: 2 = done (the customer took more, in either lane) · 1 = tried (a push was made, customer did not take) · 0 = none (sold what he came for, nothing more). */
+function ora_up_bucket(int $tried, int $worked, int $tries, int $szTried, int $szWorked, int $szTries): int
+{
+    if ($worked || $szWorked) return 2;
+    if ($tried || $tries >= 1 || $szTried || $szTries >= 1) return 1;
+    return 0;
+}
 /** The conversation up to the order as text lines: C = customer, S = salesperson, BOT = automatic / campaign message. Returns [text, customer messages, salesperson messages]. */
 function ora_transcript(array $rows): array
 {
@@ -1294,7 +1301,7 @@ function ora_judge_text(string $text, string $final = '', int $finalMl = 0): arr
         . "A PROPER OFFER (counted in tries / big_tries) is ONE S: message that names a concrete item, quantity or size AND gives a price, a saving or a reason why it is good for the customer. Proper bigger: '4 ki jagah 5 le lo, 5th pe Rs 100 off', '10 x 20ml kardu 2349 main ho jayega', '50ml ki jagah 100ml le lo, per ml sasta padega' (said while the order is still being decided). Proper add-on (said after the order is final): '10ml tester sirf Rs 99 mein add kar du, travel ke liye best', 'ek extra 20ml 199 me jod du?'. "
         . "A second proper offer counts only when it brings a NEW item, size or reason / price; repeating the same words is not a new try. "
         . "NOT AN OFFER (counted only in weak / big_weak, never in tries): vague questions without a concrete item or benefit — 'ek aur kar du?', 'kuch aur chahiye?', 'anything else?', 'aur lena hai?' — a bare thank-you, repeating the customer's own order, quoting the price of the same order, a discount on the same items, BOT / campaign messages. "
-        . "A customer who bargains the PRICE while confirming the quantity ('3500 kar dijiye, 8 x 50 le lunga') HAS taken the quantity (big_worked = true); a customer who only says 'ok' to a clear offer and then orders exactly that quantity / price has taken it too. A customer who asked for the bigger / extra thing by himself earns the salesperson no credit. A customer who flatly says NO to the salesperson's push for more (came for 10, the salesperson asked for 12 or 15, the customer refused at once) means the salesperson TRIED: set refused / big_refused = true and tries / big_tries to at least 1, even when the offer was one short line. Only when no push at all can be found is it 'none'. WORK OUT THE BASE ORDER: from the chat find what the customer had agreed BEFORE the salesperson's offer (for example 8 x 20ml = 160 ml for Rs 1999). If the final order has MORE ml / pieces / price than that base (for example 200 ml / Rs 2,4xx after a base of 160 ml / Rs 1999), the extra was added, so the offer was TAKEN (worked = true for an offer made after the order details, big_worked = true for one made before), even if the final price differs a little because of a discount. A customer who answers yes / ok / haan / done to the offer and the salesperson then confirms the new total ('total 2499 done, cart bhej deti hu') TOOK it. COMPARE WITH THE FINAL ORDER given at the end: if the final order's total price, number of pieces or ml equals what the salesperson offered (for example the offer was 10 x 20ml for Rs 2399 and the final order is Rs 2399 / 200 ml), the customer TOOK that offer, even if he only said 'ok' in between and then talked about something else.  worked / big_worked = true ONLY when the customer clearly took a PROPER offer of that kind (took the higher quantity / bigger size before the order was final for bigger; added the extra perfume after the order was final for add-on). refused / big_refused = true when the customer clearly said no to a proper offer of that kind. Read the order of the messages carefully: a customer who first stays with the old quantity and LATER agrees to the new one has taken the offer. "
+        . "A customer who bargains the PRICE while confirming the quantity ('3500 kar dijiye, 8 x 50 le lunga') HAS taken the quantity (big_worked = true); a customer who only says 'ok' to a clear offer and then orders exactly that quantity / price has taken it too. A customer who asked for the bigger / extra thing by himself earns the salesperson no credit; a customer who came with his own list or quantity (for example 820 ml, 300 ml or 650 ml) and the salesperson simply sold exactly that, with nothing added, earns NO credit (tries = 0, no offer). A customer who flatly says NO to the salesperson's push for more (came for 10, the salesperson asked for 12 or 15, the customer refused at once) means the salesperson TRIED: set refused / big_refused = true and tries / big_tries to at least 1, even when the offer was one short line. Only when no push at all can be found is it 'none'. WORK OUT THE BASE ORDER: from the chat find what the customer had agreed BEFORE the salesperson's offer (for example 8 x 20ml = 160 ml for Rs 1999). If the final order has MORE ml / pieces / price than that base (for example 200 ml / Rs 2,4xx after a base of 160 ml / Rs 1999), the extra was added, so the offer was TAKEN (worked = true for an offer made after the order details, big_worked = true for one made before), even if the final price differs a little because of a discount. A customer who answers yes / ok / haan / done to the offer and the salesperson then confirms the new total ('total 2499 done, cart bhej deti hu') TOOK it. COMPARE WITH THE FINAL ORDER given at the end: if the final order's total price, number of pieces or ml equals what the salesperson offered (for example the offer was 10 x 20ml for Rs 2399 and the final order is Rs 2399 / 200 ml), the customer TOOK that offer, even if he only said 'ok' in between and then talked about something else.  worked / big_worked = true ONLY when the customer clearly took a PROPER offer of that kind (took the higher quantity / bigger size before the order was final for bigger; added the extra perfume after the order was final for add-on). refused / big_refused = true when the customer clearly said no to a proper offer of that kind. Read the order of the messages carefully: a customer who first stays with the old quantity and LATER agrees to the new one has taken the offer. "
         . "Stars (0.5 steps, about the whole effort): 1 = no proper offer at all · 2 = only vague lines · 3 = one clear proper offer, customer did not take · 4 = proper offers, one worked a little · 5 = proper offers and a clear win (a bigger order, an add-on, or both). "
         . "asked = what the customer first asked for (short). offered = the best proper offer made (short, empty if none). reason = ONE short sentence in simple English about the ADD-ON judgement ONLY (what happened after the order was final) · big_reason = ONE short sentence in simple English about the BIGGER judgement ONLY (what happened before the order was final); never mix the two. base_ml = the total ml the customer had agreed BEFORE the salesperson's add-on offer (e.g. 8 x 20ml = 160; 0 if unknown); extra_ml = the total ml of the extra perfume offered as add-on (e.g. 2 x 20ml = 40; 0 if none or unknown).  tip / big_tip = ONLY when that kind worked: the salesperson's own winning words, shortened, in the chat's language (else empty). "
         . $final;
@@ -22849,18 +22856,19 @@ switch ($action) {
         $q->execute([$day]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
         try { addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { foreach ($rows as &$r0) { $r0['addon_total'] = 0; } unset($r0); }
         try { $sk = $pdo->prepare("SELECT COUNT(*) FROM order_rate_auto WHERE day = ? AND rating IS NULL AND sz_ok = 7"); $sk->execute([$day]); $out['skipped'] = (int)$sk->fetchColumn(); } catch (Throwable $e) { $out['skipped'] = 0; }   // orders with no usable chat
-        $E = []; $team = [0, 0, 0, 0]; $teamSz = [0, 0, 0, 0]; $tips = []; $tipsSz = []; $miss = []; $missSz = [];
+        $E = []; $team = [0, 0, 0, 0]; $teamSz = [0, 0, 0, 0]; $teamUp = [0, 0, 0, 0]; $tips = []; $tipsSz = []; $miss = []; $missSz = [];
         foreach ($rows as $r) {
             $id = (int)$r['employee_id']; if ($id <= 0) continue;
             $lv = ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']);
             $lb = ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']);
-            if (!isset($E[$id])) $E[$id] = ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'addon_rs' => 0, 'addon_orders' => 0, 'stars' => 0.0, 'rated' => 0, 'name' => $names[$id] ?? ('#' . $id)];
+            if (!isset($E[$id])) $E[$id] = ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'up' => [0, 0, 0, 0], 'addon_rs' => 0, 'addon_orders' => 0, 'stars' => 0.0, 'rated' => 0, 'name' => $names[$id] ?? ('#' . $id)];
+            $ub = ora_up_bucket((int)$r['tried'], (int)$r['worked'], (int)$r['tries'], (int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']); $E[$id]['up'][$ub]++; $teamUp[$ub]++;
             $E[$id]['n'][$lv]++; $team[$lv]++; $E[$id]['sz'][$lb]++; $teamSz[$lb]++;
             if ($lb === 3 && trim((string)$r['sz_tip']) !== '' && count($tipsSz) < 12) $tipsSz[] = ['text' => (string)$r['sz_tip'], 'emp' => $E[$id]['name'], 'order' => (string)$r['order_name']];
             if ($lb === 0 && count($missSz) < 40) $missSz[] = ['key' => (string)$r['order_key'], 'order' => (string)$r['order_name'], 'emp' => $id, 'emp_name' => $E[$id]['name'], 'asked' => (string)$r['asked'], 'why' => (string)($r['sz_reason'] !== '' ? $r['sz_reason'] : $r['reason'])]; $E[$id]['stars'] += (float)$r['rating'] / 2; $E[$id]['rated']++;
             $ad = (float)($r['addon_total'] ?? 0); if ($ad > 0) { $E[$id]['addon_rs'] += $ad; $E[$id]['addon_orders']++; }
             if ($lv === 3 && trim((string)$r['tip']) !== '' && count($tips) < 12) $tips[] = ['text' => (string)$r['tip'], 'emp' => $E[$id]['name'], 'order' => (string)$r['order_name'], 'offered' => (string)$r['offered']];
-            if ($lv === 0 && count($miss) < 40) $miss[] = ['key' => (string)$r['order_key'], 'order' => (string)$r['order_name'], 'emp' => $id, 'emp_name' => $E[$id]['name'], 'asked' => (string)$r['asked'], 'why' => (string)$r['reason']];
+            if ($ub === 0 && count($miss) < 40) $miss[] = ['key' => (string)$r['order_key'], 'order' => (string)$r['order_name'], 'emp' => $id, 'emp_name' => $E[$id]['name'], 'asked' => (string)$r['asked'], 'why' => trim((string)$r['reason'] . ' ' . (string)$r['sz_reason'])];
         }
         foreach ($missSz as &$m0) { unset($m0['key']); } unset($m0);
         foreach ($miss as &$m) {        // customer, amount and number of the orders to follow up
@@ -22868,9 +22876,13 @@ switch ($action) {
                 $m['customer'] = (string)($o['customer'] ?? ''); $m['phone'] = substr(preg_replace('/\D+/', '', (string)($o['phone'] ?? '')), -10); $m['total'] = (float)($o['total'] ?? 0); } catch (Throwable $e) { $m['customer'] = ''; $m['phone'] = ''; $m['total'] = 0; }
             unset($m['key']);
         } unset($m);
+        try {   // ⚪ chat not found: the order's number has no usable chat with a salesperson (kept apart, never counted as 'none')
+            $nf = $pdo->prepare("SELECT employee_id, COUNT(*) FROM order_rate_auto WHERE day = ? AND rating IS NULL AND sz_ok = 7 AND employee_id > 0 GROUP BY employee_id"); $nf->execute([$day]);
+            foreach ($nf->fetchAll(PDO::FETCH_NUM) as [$ne, $nn]) { $ne = (int)$ne; if (!isset($E[$ne])) $E[$ne] = ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'up' => [0, 0, 0, 0], 'addon_rs' => 0, 'addon_orders' => 0, 'stars' => 0.0, 'rated' => 0, 'name' => $names[$ne] ?? ('#' . $ne)]; $E[$ne]['up'][3] = (int)$nn; $teamUp[3] += (int)$nn; }
+        } catch (Throwable $e0) { }
         try { $__cl = function_exists('wq_coach_levels') ? wq_coach_levels($pdo) : []; } catch (Throwable $e0) { $__cl = []; }
         foreach ($E as $id => &$e) { $e['coach'] = (int)($__cl[$id]['level'] ?? 0); $e['stars'] = $e['rated'] ? round($e['stars'] / $e['rated'], 1) : null; $e['addon_rs'] = round($e['addon_rs']); } unset($e);
-        $out['emps'] = $E ?: new stdClass(); $out['team'] = $team; $out['team_sz'] = $teamSz; $out['missed'] = $miss; $out['missed_sz'] = $missSz; $out['tips'] = $tips; $out['tips_sz'] = $tipsSz; $out['measured'] = array_sum($team);
+        $out['emps'] = $E ?: new stdClass(); $out['team'] = $team; $out['team_sz'] = $teamSz; $out['team_up'] = $teamUp; $out['missed'] = $miss; $out['missed_sz'] = $missSz; $out['tips'] = $tips; $out['tips_sz'] = $tipsSz; $out['measured'] = array_sum($team);
         json_response($out);
         break;
     }
@@ -22939,6 +22951,28 @@ switch ($action) {
             } catch (Throwable $e) { error_log('ct.must3: ' . $e->getMessage()); }
             return $res;
         });
+        json_response($out);
+        break;
+    }
+    case 'ct.up_orders': {
+        // Which orders are behind one of the 4 buttons: ?lv=2 done · 1 tried · 0 none · 3 chat not found [&emp=] [&date=]. Admin / HR / resolvers.
+        $auth = require_auth();
+        if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
+        $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? (string)$_GET['date'] : biz_today($pdo);
+        $lv = max(0, min(3, (int)($_GET['lv'] ?? 0))); $emp = (int)($_GET['emp'] ?? 0);
+        $out = ['day' => $day, 'lv' => $lv, 'emp' => $emp, 'rows' => [], 'total' => 0, 'people' => []]; $pc = [];
+        if (!ora_tables($pdo)) json_response($out);
+        $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
+        $q = $pdo->prepare("SELECT order_key, order_name, employee_id, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries, asked, offered, reason, sz_reason, phone, at FROM order_rate_auto WHERE day = ? AND sz_ok = 7 AND employee_id > 0" . ($emp > 0 ? " AND employee_id = ?" : "") . " ORDER BY at DESC LIMIT 900");
+        $q->execute($emp > 0 ? [$day, $emp] : [$day]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $b = $r['rating'] === null ? 3 : ora_up_bucket((int)$r['tried'], (int)$r['worked'], (int)$r['tries'], (int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']);
+            if ($b !== $lv) continue; $e = (int)$r['employee_id']; $out['total']++; $pc[$e] = ($pc[$e] ?? 0) + 1; if (count($out['rows']) >= 200) continue;
+            $cust = ''; $tot = 0.0; try { [$sk, $sid] = array_pad(explode(':', (string)$r['order_key'], 2), 2, ''); $oq = $pdo->prepare("SELECT customer, total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $oq->execute([$sk, $sid]); $o = $oq->fetch(PDO::FETCH_ASSOC) ?: []; $cust = (string)($o['customer'] ?? ''); $tot = (float)($o['total'] ?? 0); } catch (Throwable $e1) { }
+            $why = $b === 3 ? (string)$r['reason'] : trim((string)$r['reason'] . ' ' . (string)$r['sz_reason']);
+            $out['rows'][] = ['order' => (string)$r['order_name'], 'eid' => $e, 'emp' => $names[$e] ?? ('#' . $e), 'customer' => $cust, 'total' => round($tot), 'phone' => substr(preg_replace('/\D+/', '', (string)$r['phone']), -10), 'why' => mb_substr($why, 0, 260), 'offered' => mb_substr((string)$r['offered'], 0, 200), 'at' => substr((string)$r['at'], 11, 5)];
+        }
+        arsort($pc); foreach ($pc as $e => $n) $out['people'][] = ['id' => (int)$e, 'name' => $names[(int)$e] ?? ('#' . (int)$e), 'n' => $n];
         json_response($out);
         break;
     }
