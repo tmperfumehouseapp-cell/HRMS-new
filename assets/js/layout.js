@@ -36,7 +36,7 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   try {
     if (window.top !== window.self || window.__mnavLoad) return; window.__mnavLoad = 1;
     var cs = document.currentScript;
-    var src = (cs && cs.src) ? cs.src.replace(/layout\.js.*$/, 'mobile_nav.js?v=1') : 'assets/js/mobile_nav.js?v=1';
+    var src = (cs && cs.src) ? cs.src.replace(/layout\.js.*$/, 'mobile_nav.js?v=2') : 'assets/js/mobile_nav.js?v=2';
     var s = document.createElement('script'); s.src = src; s.defer = true;
     (document.head || document.documentElement).appendChild(s);
   } catch (e) { /* phone navigation is optional */ }
@@ -122,7 +122,7 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
 // Compact phone layout: one shared stylesheet for every page, and every table gets its own sideways-scroll box on small screens.
 (function () {
   try {
-    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=9';
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=10';
     document.head.appendChild(l);
     const ph = document.createElement('link'); ph.rel = 'stylesheet'; ph.href = 'assets/css/phone.css?v=11'; document.head.appendChild(ph);   // the one compact phone style (html.ph)
     const mq = window.matchMedia('(max-width:820px)');
