@@ -34,16 +34,16 @@ function wa_dq_auto_hold(PDO $pdo): void
         if ($n >= $lim) { setting_set($pdo, 'wa_dq_hold_until', (string)(time() + 3 * 3600)); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing put on hold for 3 hours by itself: Meta flagged ' . $n . ' campaign messages as spam (131048) in the last hour'); }
     } catch (Throwable $e) { }
 }
-/** 📈 owner 19 Nov 2026 (13:40): after a hold the campaigns restart at 3,000 an hour and the number follows the delivery: every 30 minutes the messages sent since the restart (15 to 75 minutes old, at least 200 of them) are looked at. Good (35% or more delivered and under 25% failed) → +500 an hour (never above 7,500); bad (under 20% delivered or 40% or more failed) → -1,000 an hour (never below 1,000); in between nothing changes. */
+/** 📈 owner 19 Nov 2026 (13:40): after a hold the campaigns restart at 3,000 an hour and the number follows the delivery: every 30 minutes (the first look 45 minutes after the restart) the messages sent since the restart (15 to 75 minutes old, at least 200 of them) are looked at. Good (35% or more delivered and under 25% failed) → +1,000 an hour (3,000, 4,000 … never above 8,000); bad (under 20% delivered or 40% or more failed) → -1,000 an hour (back down towards 3,000, never below it); then it climbs again from there; in between nothing changes. */
 function wa_dq_auto_step(PDO $pdo): void
 {
-    try { if ((string)setting_get($pdo, 'wa_dq_step_on', '1') !== '1' || wa_dq_hold_active($pdo)) return; $now = time(); $end = (int)setting_get($pdo, 'wa_dq_hold_end', '0'); if ($end <= 0 || $now < $end + 3600) return;
+    try { if ((string)setting_get($pdo, 'wa_dq_step_on', '1') !== '1' || wa_dq_hold_active($pdo)) return; $now = time(); $end = (int)setting_get($pdo, 'wa_dq_hold_end', '0'); if ($end <= 0 || $now < $end + 2700) return;
         if ((int)setting_get($pdo, 'wa_dq_step_at', '0') > $now - 1800) return; setting_set($pdo, 'wa_dq_step_at', (string)$now);
         $from = max($now - 4500, $end, (int)setting_get($pdo, 'wa_dq_step_last', '0')); $till = $now - 900; if ($till - $from < 900) return;
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'failed') AS f FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ? AND ts < ?");
         $q->execute([date('Y-m-d H:i:s', $from), date('Y-m-d H:i:s', $till)]); $r = $q->fetch(); $n = (int)$r['n']; if ($n < 200) return; $d = (int)$r['d'] / $n; $f = (int)$r['f'] / $n;
         $cur = max(500, (int)setting_get($pdo, 'wa_dq_hourly', '3000')); $to = $cur;
-        if ($d < 0.20 || $f >= 0.40) $to = max(1000, $cur - 1000); elseif ($d >= 0.35 && $f < 0.25) $to = min(7500, $cur + 500);
+        if ($d < 0.20 || $f >= 0.40) $to = max(3000, $cur - 1000); elseif ($d >= 0.35 && $f < 0.25) $to = min(8000, $cur + 1000);
         setting_set($pdo, 'wa_dq_step_last', (string)$till);
         if ($to !== $cur) { setting_set($pdo, 'wa_dq_hourly', (string)$to); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', $to > $cur, 'Marketing speed ' . $cur . ' → ' . $to . ' an hour (' . $n . ' messages looked at: ' . round($d * 100) . '% delivered, ' . round($f * 100) . '% failed)'); }
     } catch (Throwable $e) { }
