@@ -319,6 +319,15 @@ function wa_dq_win_counts(PDO $pdo, string $key, string $from, int $ttl): array
     $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE $cond AND status <> 'failed' AND ts >= ?"); $q->execute([$c['till']]); $new = (int)$q->fetchColumn();      // pushed since the big count: a short stretch of time, a few rows
     return [$c['n'] + $new, $c['d'], $c['p'] + $new];
 }
+/** 🧱 Push guard that sees the other campaigns at once: how many more marketing messages may be taken in the rolling 10 minutes, counted from the campaign items themselves (a person is marked the moment a batch is taken, so a second campaign working at the same time sees it);
+ *  the limit is a sixth of the hourly number x the push multiplier (5,000 an hour = 1,250 per 10 minutes). Utility-variant people are not counted. (owner 19 Nov 2026, 17:45: 2,500-2,900 went out in one burst against 1,250 because several campaigns each looked at counts that lag) */
+function wa_dq_items_room(PDO $pdo): int
+{
+    try { $h = max(500, (int)setting_get($pdo, 'wa_dq_hourly', '5000')); $m = max(1.0, min(5.0, (float)(setting_get($pdo, 'wa_dq_push_mult', '1.5') ?: 1.5)));
+        $cap = (int)round($h / 6 * $m);
+        $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE sent_at >= ? AND (variant IS NULL OR variant <> 'U')"); $q->execute([date('Y-m-d H:i:s', time() - 600)]);
+        return max(0, $cap - (int)$q->fetchColumn()); } catch (Throwable $e) { return PHP_INT_MAX; }
+}
 function wa_dq_left(PDO $pdo, bool $fresh = false): array
 {
     static $memo = null, $at = 0; if (!$fresh && $memo !== null && microtime(true) - $at < 15) return $memo;

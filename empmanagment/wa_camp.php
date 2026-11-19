@@ -926,7 +926,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         while ($sent + $failed + $skipped < $quota && microtime(true) < $cDead && !$stop) {
             $ucond = '';
             if ($catUtil && $burstLeft <= 0) { if ($sent > $cuLast) { wa_cat_util_note($pdo, time(), $sent - $cuLast); $cuLast = $sent; } $poolLeft = wa_cat_util_room($pdo, time()); if ($poolLeft <= 0) { $stop = 'Utility limit: 700 an hour is reached — it continues by itself.'; break; } }
-            elseif ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left'];
+            elseif ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = min((int)$dqF['left'], wa_dq_items_room($pdo));
                 if ($poolLeft <= 0) {   // 💸 the marketing allowance is used: the people put back by "Start as utility" still go (utility only — utility is outside the daily plan); everybody else waits
                     $rq = $uFirst ? (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND variant = 'R'")->fetchColumn() : 0;
                     if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 60), counted over all campaigns; the marketing allowance is not touched
