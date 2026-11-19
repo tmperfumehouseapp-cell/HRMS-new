@@ -109,7 +109,12 @@ function st_engine_warm(PDO $pdo): void
 function st_fixed_rules(PDO $pdo): array
 {
     $j = null; try { $j = json_decode((string)setting_get($pdo, 'st_fixed_prices', ''), true); } catch (Throwable $e) { }
-    $out = []; foreach ((array)$j as $r) { $t = trim((string)($r['text'] ?? '')); $ml = (int)($r['ml'] ?? 0); $pr = (float)($r['price'] ?? 0); if ($t !== '' && $ml > 0 && $pr > 0) $out[] = ['text' => $t, 'ml' => $ml, 'price' => round($pr, 2)]; }
+    $out = [];
+    foreach ((array)$j as $r) {
+        $t = trim((string)($r['text'] ?? '')); $ml = (int)($r['ml'] ?? 0); $pr = (float)($r['price'] ?? 0); if ($t === '' || $ml <= 0 || $pr <= 0) continue;
+        $dq = (int)($r['deal_qty'] ?? 0); $dp = (float)($r['deal_price'] ?? 0); if ($dq < 2 || $dp <= 0) { $dq = 0; $dp = 0.0; }      // optional DEAL: dq bottles for dp (e.g. 3 for 2700)
+        $out[] = ['text' => $t, 'ml' => $ml, 'price' => round($pr, 2), 'deal_qty' => $dq, 'deal_price' => round($dp, 2)];
+    }
     return $out;
 }
 /** The fixed price of one bottle (a sale bottle whose title has the rule's text and whose size is the rule's ml), or null. */
@@ -119,19 +124,30 @@ function st_fixed_price_of(array $bottle, array $rules): ?float
     foreach ($rules as $r) if ((int)$bottle['ml'] === $r['ml'] && mb_stripos((string)($bottle['title'] ?? ''), $r['text']) !== false) return (float)$r['price'];
     return null;
 }
+/** The money of all fixed-price bottles of a cart: [sum, ml, titles]. A rule with a DEAL (3 for 2700) charges every full group of that many bottles at the deal price and the rest one by one. */
+function st_fixed_sum(array $bottles, array $rules): array
+{
+    $cnt = []; $ml = 0; $names = [];
+    foreach ($bottles as $b) {
+        if (($b['kind'] ?? 'sale') !== 'sale') continue;
+        foreach ($rules as $ri => $r) if ((int)$b['ml'] === $r['ml'] && mb_stripos((string)($b['title'] ?? ''), $r['text']) !== false) { $cnt[$ri] = ($cnt[$ri] ?? 0) + 1; $ml += (int)$b['ml']; $names[(string)($b['title'] ?? '')] = 1; break; }
+    }
+    $sum = 0.0;
+    foreach ($cnt as $ri => $n) { $r = $rules[$ri]; if ($r['deal_qty'] >= 2) { $sum += intdiv($n, $r['deal_qty']) * $r['deal_price'] + ($n % $r['deal_qty']) * $r['price']; } else $sum += $n * $r['price']; }
+    return [$sum, $ml, array_keys($names)];
+}
 /** Price options for the bottles scanned so far. Fixed-price bottles add their own price; the rest of the ml is priced from the chart as always. */
 function st_quote(PDO $pdo, int $totalMl, int $empId, array $bottles = []): array
 {
     $rules = $bottles ? st_fixed_rules($pdo) : [];
     if ($rules) {
-        $fixSum = 0.0; $fixMl = 0; $names = [];
-        foreach ($bottles as $b) { $fp = st_fixed_price_of($b, $rules); if ($fp !== null) { $fixSum += $fp; $fixMl += (int)$b['ml']; $names[(string)($b['title'] ?? '')] = 1; } }
+        [$fixSum, $fixMl, $names] = st_fixed_sum($bottles, $rules);
         if ($fixMl > 0) {
             $chart = ml_slab_for(ml_slab_get($pdo), st_day(), $empId); $rest = $totalMl - $fixMl; $cols = [];
             $pctOf = function (float $price) use ($chart, $totalMl) { $pc = !empty($chart['on']) ? coach_slab_pct($chart, $totalMl, $price, false) : null; return $pc === null ? null : round($pc, 2); };
             if ($rest <= 0) $cols[] = ['col' => 0, 'price' => round($fixSum, 2), 'pct' => $pctOf($fixSum), 'label' => 'Fixed price', 'fixed' => true];
             else { $q0 = st_quote($pdo, $rest, $empId); foreach ($q0['columns'] as $i => $c) { if (!empty($c['offer'])) continue; $pr = round($fixSum + (float)$c['price'], 2); $cols[] = ['col' => count($cols), 'price' => $pr, 'pct' => $pctOf($pr), 'label' => (string)($c['label'] ?? '')]; } }
-            if ($cols) return ['total_ml' => $totalMl, 'in_chart' => true, 'columns' => $cols, 'chart_on' => !empty($chart['on']), 'flash' => null, 'fixed_names' => array_keys($names)];
+            if ($cols) return ['total_ml' => $totalMl, 'in_chart' => true, 'columns' => $cols, 'chart_on' => !empty($chart['on']), 'flash' => null, 'fixed_names' => $names];
         }
     }
     $day = st_day();
@@ -1263,7 +1279,9 @@ try {
             $auth = require_auth(); $in = json_input(); $rows = [];
             foreach ((array)($in['rules'] ?? []) as $r) { $t = trim((string)($r['text'] ?? '')); $ml = (int)($r['ml'] ?? 0); $pr = (float)($r['price'] ?? 0);
                 if ($t === '' && !$ml && !$pr) continue; if ($t === '' || $ml < 1 || $ml > 5000 || $pr <= 0) json_response(['error' => 'Each line needs the perfume name (a part of it), the ml and the price.'], 422);
-                $rows[] = ['text' => mb_substr($t, 0, 80), 'ml' => $ml, 'price' => round($pr, 2)]; }
+                $dq = (int)($r['deal_qty'] ?? 0); $dp = (float)($r['deal_price'] ?? 0);
+                if (($dq || $dp) && ($dq < 2 || $dp <= 0)) json_response(['error' => 'A deal needs both: how many bottles (2 or more) and the price for them.'], 422);
+                $rows[] = ['text' => mb_substr($t, 0, 80), 'ml' => $ml, 'price' => round($pr, 2), 'deal_qty' => $dq, 'deal_price' => round($dp, 2)]; }
             if (count($rows) > 60) json_response(['error' => 'At most 60 lines.'], 422);
             setting_set($pdo, 'st_fixed_prices', json_encode($rows, JSON_UNESCAPED_UNICODE)); json_response(['ok' => true, 'rules' => $rows]); break;
         }
@@ -1329,6 +1347,25 @@ try {
             $pdo->prepare("UPDATE st_bills SET biz_date = ? WHERE bill_id = ?")->execute([$to, $id]);
             if (function_exists('bd_log')) { try { bd_log('store', $id, 'Bill ' . $b['bill_no'] . ' moved from day ' . $b['biz_date'] . ' to ' . $to, (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
             json_response(['ok' => true, 'message' => $b['bill_no'] . ' now counts on ' . $to . '.']);
+            break;
+        }
+
+        case 'st_bill.set_amount': {       // the bill was made with a wrong amount (e.g. 5550 instead of 5050): a manager corrects it. Commission, day totals and the payment split follow the new amount.
+            $auth = require_auth();
+            require_role(['Admin', 'HR'], $auth);
+            $in = json_input(); $id = (int)($in['bill_id'] ?? 0); $new = round((float)($in['amount'] ?? 0), 2);
+            if ($new <= 0 || $new > 10000000) json_response(['error' => 'Type the correct bill amount.'], 400);
+            $q = $pdo->prepare("SELECT bill_no, status, total, pay_mode, cash_amt, online_amt, inv_id FROM st_bills WHERE bill_id = ?"); $q->execute([$id]); $b = $q->fetch();
+            if (!$b) json_response(['error' => 'Bill not found.'], 404);
+            if ($b['status'] !== 'ok') json_response(['error' => 'This bill is cancelled; its amount cannot be changed.'], 409);
+            if ((int)$b['inv_id'] > 0) json_response(['error' => 'This bill has a GST invoice. Cancel it and make it again.'], 409);
+            $old = (float)$b['total']; $cash = (float)$b['cash_amt']; $online = (float)$b['online_amt'];
+            if ($b['pay_mode'] === 'cash') { $cash = $new; $online = 0.0; }
+            elseif ($b['pay_mode'] === 'online') { $online = $new; $cash = 0.0; }
+            else { if ($cash >= $new) { $cash = $new; $online = 0.0; } else { $online = $new - $cash; } }      // Cash + online: the cash part stays, online takes the rest (use Payment to change)
+            $pdo->prepare("UPDATE st_bills SET total = ?, cash_amt = ?, online_amt = ? WHERE bill_id = ? AND status = 'ok'")->execute([$new, $cash, $online, $id]);
+            if (function_exists('bd_log')) { try { bd_log('store', $id, 'Bill ' . $b['bill_no'] . ' amount changed: ₹' . number_format($old) . ' -> ₹' . number_format($new), (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'message' => $b['bill_no'] . ': ₹' . number_format($old) . ' → ₹' . number_format($new) . '.']);
             break;
         }
 
