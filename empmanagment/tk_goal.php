@@ -159,11 +159,19 @@ if ($__tkA === 'wq.grow_chat') {   // 📈 the live effort of ONE open chat (big
         $c = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ? LIMIT 1"); $c->execute([$k]); $ae = (int)$c->fetchColumn();
         $adm = function_exists('wa_is_admin') && wa_is_admin($pdo, $auth); $mgr = function_exists('wa_is_manager') && wa_is_manager($pdo, $auth);
         if (!$adm && !$mgr && ($me <= 0 || $ae !== $me)) json_response(['error' => 'Not your chat.'], 403);
-        $q = $pdo->prepare("SELECT id, dir, who, emp_id, mtype, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND dir IN ('in', 'out') ORDER BY id ASC LIMIT 300"); $q->execute([$k, date('Y-m-d H:i:s', time() - 3 * 86400)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
-        if (!$rows) json_response($empty);
-        $last = (int)end($rows)['id']; [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 1 || $ns < 1) json_response($empty);
-        $r = function_exists('hrms_memo') ? hrms_memo('growchat:' . $k . ':' . $last, 300, fn() => ora_judge_text($text, 'This chat is still running: the order is being confirmed now.')) : ora_judge_text($text, '');
-        if (!empty($r['retry']) || !is_array($r)) json_response($empty);
+        // ⚡ most calls find the chat already judged (the answer is kept per chat and last message). They used to load up to 300 whole messages and build the transcript just to find that out. Now: ONLY the ids first
+        // (the last one is the key), and the messages are loaded and the AI is asked only when there is no kept answer. Same key, same transcript (messages up to that id), same answer.
+        $since = date('Y-m-d H:i:s', time() - 3 * 86400);
+        $qi = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND ts >= ? AND dir IN ('in', 'out') ORDER BY id ASC LIMIT 300"); $qi->execute([$k, $since]); $ids = $qi->fetchAll(PDO::FETCH_COLUMN);
+        if (!$ids) json_response($empty);
+        $last = (int)end($ids);
+        $judge = function () use ($pdo, $k, $since, $last) {
+            $q = $pdo->prepare("SELECT id, dir, who, emp_id, mtype, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND dir IN ('in', 'out') AND id <= ? ORDER BY id ASC LIMIT 300"); $q->execute([$k, $since, $last]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+            if (!$rows) return ['__empty' => 1]; [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 1 || $ns < 1) return ['__empty' => 1];
+            return ora_judge_text($text, 'This chat is still running: the order is being confirmed now.');
+        };
+        $r = function_exists('hrms_memo') ? hrms_memo('growchat:' . $k . ':' . $last, 300, $judge) : $judge();
+        if (!is_array($r) || !empty($r['__empty']) || !empty($r['retry'])) json_response($empty);
         $mk = fn($tr, $wk, $wo, $rf) => ['tries' => (int)$tr, 'weak' => (int)$wk, 'worked' => (int)$wo, 'refused' => (int)$rf, 'level' => ora_effort((int)($tr >= 1 || $wo), (int)$wo, (int)$tr)];
         json_response(['ok' => true, 'big' => $mk($r['big_tries'] ?? 0, $r['big_weak'] ?? 0, $r['big_worked'] ?? 0, $r['big_refused'] ?? 0), 'add' => $mk($r['tries'] ?? 0, $r['weak'] ?? 0, $r['worked'] ?? 0, $r['refused'] ?? 0), 'last' => $last]);
     } catch (Throwable $e) { error_log('wq.grow_chat: ' . $e->getMessage()); json_response($empty); }

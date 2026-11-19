@@ -805,9 +805,13 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth();
     if (!wa_tables($pdo) || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
-    $wabas = wa_wabas($pdo);
-    if ($isPost) { try { setting_set($pdo, 'wa_tpl_dirty', (string)time()); } catch (Throwable $e) { } }   // any change throws the remembered list away
-    $names = employee_names_by_id($pdo); $me = (int)($auth['employee_id'] ?? 0);
+    // ⚡ wa.tpl_send is called ~50 times a minute (every pre-made message sent from a chat or a bulk send). It changes NO message of the library, but it used to mark the whole library 'changed' every time:
+    //    that writes the settings table and makes EVERY request of the server read the whole settings table (about 9,000 rows) again, throws away the remembered Pre-made list (a rebuild of 'a minute and more')
+    //    and the Overview's message counts, each time. It also read the WhatsApp account list and all employee names, which a send does not use. A send now skips all of that.
+    $__send = ($__wt === 'wa.tpl_send');
+    $wabas = $__send ? [] : wa_wabas($pdo);
+    if ($isPost && !$__send) { try { setting_set($pdo, 'wa_tpl_dirty', (string)time()); } catch (Throwable $e) { } }   // any change throws the remembered list away
+    $names = $__send ? [] : employee_names_by_id($pdo); $me = (int)($auth['employee_id'] ?? 0);
     switch ($__wt) {
         case 'wa.tpl_list': {
             // ⚡ the phone app's "Pre-made messages" sheet asks for the LITE list: the approved messages without the per-number matrix / utility twins / Meta check, remembered for 60 s (the full list made the sheet hang on "loading" with hundreds of messages)
