@@ -383,6 +383,7 @@ function wa_ru_tick(PDO $pdo): array
         try { if ((string)setting_get($pdo, 'wa_ru_pool_auto', '1') !== '0' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_pool_at', (string)time()); if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $mk = wa_util_pool_make($pdo, 0); $res['made'] = count($mk['made'] ?? []); } } } catch (Throwable $e) { }
         try { if (function_exists('wa_util_pool_learn') && (int)setting_get($pdo, 'wa_ru_learn_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_learn_at', (string)time()); $lr = wa_util_pool_learn($pdo, 0); $res['made'] = (int)($res['made'] ?? 0) + count($lr['made'] ?? []); } } catch (Throwable $e) { }
         $res['note'] = 'paused after a Meta warning'; return $res; }
+    try { if ((int)setting_get($pdo, 'wa_dq_hold_until', '0') > time()) { $res['note'] = 'marketing hold (131048) running: Module B waits too'; return $res; } } catch (Throwable $e) { }   /* owner 19 Nov 2026, 16:20: while the marketing hold runs, Module B sends nothing; it restarts when the hold ends */
     wa_ru_ramp($pdo, $cfg);   // grows / shrinks the hourly number (checked at most once in 10 minutes)
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'ru', 50)) { $res['note'] = 'busy'; return $res; }
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $why = [];

@@ -1302,7 +1302,7 @@ function wq_grab_list(PDO $pdo, int $me, int $limit = 60): array
     if ($phs) {
         try { $q = $pdo->prepare("SELECT k, v FROM wq_meta WHERE k IN (" . wq_in($phs) . ")"); $q->execute(array_map(fn($p) => 'typing:' . $p, $phs)); foreach ($q->fetchAll() as $t) $typing[substr((string)$t['k'], 7)] = (string)$t['v']; }
         catch (Throwable $e) { foreach ($phs as $p) $typing[$p] = wq_meta_get($pdo, 'typing:' . $p, ''); }
-        try { $q = $pdo->prepare("SELECT m.phone, m.body FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs); foreach ($q->fetchAll() as $t) $lastIn[(string)$t['phone']] = (string)$t['body']; } catch (Throwable $e) { }
+        try { foreach (wq_last_in_rows($pdo, $phs) as $t) $lastIn[(string)$t['phone']] = (string)$t['body']; } catch (Throwable $e) { }
     }
     $o = [];
     foreach ($rows as $r) {
@@ -1572,11 +1572,15 @@ function wq_grab(PDO $pdo, string $phone, int $me): array
 function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
 {
     $now = wq_now(); $rows = [];
+    // ⚡ the unassigned chats do not depend on who asks: 20 open Requests screens read them every 5 s. One read serves everybody for 5 s (what each person may see is decided below, per person).
+    $__rd = function () use ($pdo, $now, $limit) { $rows = [];
     try { $st = $pdo->prepare("SELECT phone, name, last_in_at, last_out_at, source FROM wa_contacts WHERE (assigned_emp IS NULL OR assigned_emp = 0) AND status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ?
             AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag != 'complaint') AND NOT EXISTS (SELECT 1 FROM wa_ctags ctx WHERE ctx.phone = wa_contacts.phone AND ctx.tag = 'complaint') AND NOT EXISTS (SELECT 1 FROM cx_cases cxx WHERE cxx.phone = wa_contacts.phone AND cxx.status IN ('open','reopened')) ORDER BY last_in_at DESC LIMIT " . (int)$limit); $st->execute([wq_dt($now - 2 * 86400)]); $rows = $st->fetchAll(); }
     catch (Throwable $e) { $st = $pdo->prepare("SELECT phone, name, last_in_at, last_out_at FROM wa_contacts WHERE (assigned_emp IS NULL OR assigned_emp = 0) AND status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? ORDER BY last_in_at DESC LIMIT " . (int)$limit); $st->execute([wq_dt($now - 2 * 86400)]); $rows = $st->fetchAll(); }
+        return $rows; };
+    $rows = (function_exists('hrms_memo') && !defined('WQ_NOW')) ? hrms_memo('wq_req_rows:' . (int)$limit, 5, $__rd) : $__rd();
     $phs = array_values(array_map(fn($r) => (string)$r['phone'], $rows)); $lastIn = [];
-    if ($phs) { try { $q = $pdo->prepare("SELECT m.phone, m.body, m.mtype FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs); foreach ($q->fetchAll() as $t) $lastIn[(string)$t['phone']] = trim((string)$t['body']) !== '' ? (string)$t['body'] : '[' . (string)$t['mtype'] . ']'; } catch (Throwable $e) { } }
+    if ($phs) { try { foreach (wq_last_in_rows($pdo, $phs) as $t) $lastIn[(string)$t['phone']] = trim((string)$t['body']) !== '' ? (string)$t['body'] : '[' . (string)$t['mtype'] . ']'; } catch (Throwable $e) { } }
     $o = []; foreach ($rows as $r) { $ph = (string)$r['phone']; $in = wq_ts($r['last_in_at']); $o[] = ['phone' => $ph, 'name' => (string)$r['name'], 'mins' => max(0, (int)floor(($now - $in) / 60)), 'answered' => wq_ts($r['last_out_at'] ?? '') >= $in, 'last_in' => mb_substr((string)($lastIn[$ph] ?? ''), 0, 120), 'src' => (string)($r['source'] ?? '')]; }
     // ⏱ pinned on top: customers waiting wq_grab_min (4) min+ with no reply from anyone — unassigned ones AND ones with a person who did not answer (taken with wq.grab)
     $late = []; try { $g = wq_grab_list($pdo, $me); foreach ($g['items'] as $x) if (empty($x['mine'])) $late[] = $x; } catch (Throwable $e) { }
@@ -1600,12 +1604,21 @@ function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
     return ['ok' => true, 'count' => count($o) + count($late), 'items' => $o, 'late' => $late, 'late_min' => wq_late_min($pdo), 'needs' => $nd, 'needs_hold' => count($hi), 'needs_hold_cx' => count(array_filter($hi, fn($x) => $x['kind'] === 'cx')), 'backlog_min' => (int)(wq_get($pdo, 'wq_backlog_min', null) ?: 5), 'needs_hold_items' => $hi];
 }
 /** The customer's last message per phone, for the Requests list: text (or the caption), else 📷 Photo / 🎤 Voice note / … */
+/** ⚡ The newest message each of these customers SENT (phone, body, mtype). Three lists (Requests, waiting chats, the customer's last message) asked this same question for the same
+ *  customers on every open screen every 5 s; it is now read once and kept for 5 s for everybody. Same rows as before, a few seconds old at most. */
+function wq_last_in_rows(PDO $pdo, array $phs): array
+{
+    $phs = array_values(array_unique(array_filter(array_map('strval', $phs)))); if (!$phs) return [];
+    $__rd = function () use ($pdo, $phs) { try { $q = $pdo->prepare("SELECT m.phone, m.body, m.mtype FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs); return $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { return []; } };
+    $k = $phs; sort($k); return (function_exists('hrms_memo') && !defined('WQ_NOW')) ? hrms_memo('wq_last_in:' . md5(implode(',', $k)), 5, $__rd) : $__rd();
+}
 function wq_req_last(PDO $pdo, array $phs): array
 {
     $phs = array_values(array_unique(array_filter(array_map('strval', $phs)))); if (!$phs) return []; $out = [];
     $nm = ['image' => '📷 Photo', 'audio' => '🎤 Voice note', 'voice' => '🎤 Voice note', 'video' => '🎥 Video', 'document' => '📄 Document', 'sticker' => '🙂 Sticker', 'location' => '📍 Location', 'contacts' => '👤 Contact'];
-    try { $q = $pdo->prepare("SELECT m.phone, m.body, m.mtype FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs);
-        foreach ($q->fetchAll() as $t) { $b = trim(preg_replace('/\s+/u', ' ', (string)$t['body'])); $ty = strtolower((string)$t['mtype']); $pre = isset($nm[$ty]) ? $nm[$ty] : '';
+    $__all = wq_last_in_rows($pdo, $phs);
+    try {
+        foreach ($__all as $t) { $b = trim(preg_replace('/\s+/u', ' ', (string)$t['body'])); $ty = strtolower((string)$t['mtype']); $pre = isset($nm[$ty]) ? $nm[$ty] : '';
             $out[(string)$t['phone']] = mb_substr($pre !== '' ? ($b !== '' && !preg_match('/^\[.*\]$/', $b) ? $pre . ' · ' . $b : $pre) : ($b !== '' ? $b : 'Message'), 0, 220); } } catch (Throwable $e) { }
     return $out;
 }
