@@ -300,34 +300,57 @@ function ck_accuracy(PDO $pdo) {
 }
 
 /* ============================== the nightly run ============================== */
+/** ⚡ WHEN each part of the checks runs. It used to run EVERYTHING once an hour, started by whichever request came first after the hour, and a run took up to 6 minutes (377 s seen in the Server load list as
+ *  "chk.badge", 29% of all request time in that 5-minute slice). Documents (missing / expiring / read by the AI) and the data checks do not change by the hour:
+ *  - the DOCUMENT part runs at night only (02:00-07:00 IST, at most every 50 minutes, so a few reads of the AI per night; 36 h without a run = once at any time),
+ *  - the DATA part (attendance, leave, penalty cap, empty seats, people who left, offices) every 6 hours,
+ *  - "Run check now" (force) runs both at once. Returns [docsDue, dataDue]. */
+function ck_plan(int $now, int $lastDocs, int $lastData, bool $force): array
+{
+    $ist = (int)gmdate('G', $now + 19800); $quiet = $ist >= 2 && $ist < 7;
+    return [$force || ($quiet && $now - $lastDocs >= 3000) || ($now - $lastDocs >= 129600), $force || ($now - $lastData >= 21600)];
+}
+function ck_due_file(): string { return rtrim(sys_get_temp_dir(), '/') . '/hrms_ck_due_' . substr(md5(__DIR__), 0, 6); }
 function ck_run(PDO $pdo, $force = false) {
     $res = ['ran' => false];
     $got = true; try { $got = (bool)$pdo->query("SELECT GET_LOCK('ck_run', 0)")->fetchColumn(); } catch (Throwable $e) {}
     if (!$got) return $res;
     try {
-        $last = strtotime(ck_get('last_run', '2000-01-01'));
-        if (!$force && time() - $last < 3600) { $pdo->query("SELECT RELEASE_LOCK('ck_run')"); return $res; }
+        $now = time(); $lastRun = ck_get('last_run', '2000-01-01');   // a first run after this change counts the last full run as the last document and data run
+        [$docsDue, $dataDue] = ck_plan($now, (int)strtotime(ck_get('last_docs', $lastRun)), (int)strtotime(ck_get('last_data', $lastRun)), (bool)$force);
+        if (!$docsDue && !$dataDue) { @file_put_contents(ck_due_file(), (string)($now + 600)); $pdo->query("SELECT RELEASE_LOCK('ck_run')"); return $res; }
         ck_put('last_run', bd_now());
-        $seen = []; $res = ['ran' => true];
-        $res['docs'] = ck_check_documents($pdo, $seen);
-        $res['reads'] = ck_read_documents($pdo, $seen, $force ? 6 : 3);
-        $res['data'] = ck_check_data($pdo, $seen);
-        if (function_exists('of_check_offices')) { try { $res['offices'] = of_check_offices($pdo, $seen); } catch (Throwable $e) { $res['offices'] = 'error: ' . $e->getMessage(); } }
-        $kinds = ['doc_missing', 'doc_expiry', 'doc_check', 'doc_bad', 'seat_empty', 'leaver', 'of_zone', 'of_stale'];
-        foreach (['att_open', 'att_dup', 'leave_overlap', 'pen_cap'] as $k) if (($res['data'][$k] ?? 'n/a') !== 'n/a') $kinds[] = $k;
-        if (isset($res['offices']) && is_string($res['offices'])) $kinds = array_diff($kinds, ['of_zone', 'of_stale']);
-        $res['closed'] = ck_close_unseen($pdo, $kinds, $seen);
+        $seen = []; $res = ['ran' => true, 'docs_part' => $docsDue, 'data_part' => $dataDue]; $kinds = [];
+        if ($docsDue) {
+            ck_put('last_docs', bd_now());
+            $res['docs'] = ck_check_documents($pdo, $seen);
+            $res['reads'] = ck_read_documents($pdo, $seen, $force ? 6 : 8);
+            $kinds = array_merge($kinds, ['doc_missing', 'doc_expiry', 'doc_check', 'doc_bad']);
+        }
+        if ($dataDue) {
+            ck_put('last_data', bd_now());
+            $res['data'] = ck_check_data($pdo, $seen);
+            if (function_exists('of_check_offices')) { try { $res['offices'] = of_check_offices($pdo, $seen); } catch (Throwable $e) { $res['offices'] = 'error: ' . $e->getMessage(); } }
+            $kinds = array_merge($kinds, ['seat_empty', 'leaver', 'of_zone', 'of_stale']);
+            foreach (['att_open', 'att_dup', 'leave_overlap', 'pen_cap'] as $k) if (($res['data'][$k] ?? 'n/a') !== 'n/a') $kinds[] = $k;
+            if (isset($res['offices']) && is_string($res['offices'])) $kinds = array_diff($kinds, ['of_zone', 'of_stale']);
+        }
+        $res['closed'] = ck_close_unseen($pdo, $kinds, $seen);   // only the kinds of the parts that ran just now are closed: a part that did not run keeps its findings
         // inbox items that belong to a problem that is gone
         $pdo->exec("UPDATE bd_inbox SET status = 'done', resolved_at = NOW(), resolved_by = 'Claude (fixed by itself)' WHERE status = 'open' AND kind = 'handover' AND NOT EXISTS (SELECT 1 FROM ck_findings f WHERE f.ref_key = CONCAT('leaver:', SUBSTRING_INDEX(bd_inbox.ref_key, ':', -1)) AND f.status = 'open')");
         $res['spot'] = ck_spot_pick($pdo);
         ck_put('last_summary', json_encode(ck_summary_numbers($pdo)));
+        @file_put_contents(ck_due_file(), (string)(time() + 600));
     } catch (Throwable $e) { error_log('check.php run: ' . $e->getMessage()); $res['error'] = mb_substr($e->getMessage(), 0, 200); }
     try { $pdo->query("SELECT RELEASE_LOCK('ck_run')"); } catch (Throwable $e) {}
     return $res;
 }
+/** Registered at the end of EVERY request (line ~580): the checks run after the answer is sent. Cheap now: a request first looks at a small file (next time something may be due) and only
+ *  then asks the database; it used to start 3 database statements (lock, last run, unlock) at the end of every single request. */
 function ck_run_after(PDO $pdo) {
     static $set = false; if ($set) return; $set = true;
     register_shutdown_function(function () use ($pdo) {
+        if ((int)@file_get_contents(ck_due_file()) > time()) return;
         if (function_exists('hrms_release')) hrms_release(); elseif (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
         try { bd_ensure($pdo); ck_ensure($pdo); ck_run($pdo, false); } catch (Throwable $e) { error_log('check.php: ' . $e->getMessage()); }
     });
