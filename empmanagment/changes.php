@@ -17,7 +17,7 @@
  */
 if (!isset($pdo) || !function_exists('json_response')) { return; }
 
-function chg_repo() { $r = trim((string)tmph_cfg('GITHUB_REPO', 'jaimin69-tm/HRMS')); return preg_match('#^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$#', $r) ? $r : ''; }
+function chg_repo() { $r = trim((string)tmph_cfg('GITHUB_REPO', 'tmperfumehouseapp-cell/HRMS-new')); return preg_match('#^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$#', $r) ? $r : ''; }
 function chg_token() { return trim((string)tmph_cfg('GITHUB_TOKEN', '')); }
 function chg_ready() { return chg_token() !== '' && chg_repo() !== ''; }
 

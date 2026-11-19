@@ -36,7 +36,7 @@ define('API_KEY', 'optional-dev-api-key');
 
 // Request a change (Admin -> Changes): lets the Admin ask for new features that Claude Code builds and he approves.
 //   define('GITHUB_TOKEN', 'github_pat_...');   // fine-grained token for THIS repository only: Contents, Issues, Pull requests = read & write
-//   define('GITHUB_REPO',  'owner/name');       // optional, default jaimin69-tm/HRMS
+//   define('GITHUB_REPO',  'owner/name');       // optional, default tmperfumehouseapp-cell/HRMS-new
 // The assistant's strongest model and step budget (defaults: claude-opus-5-5, 8 steps; '' = use TMPH_MODEL):
 //   define('TMPH_ASSISTANT_MODEL', 'claude-opus-5-5');
 //   define('TMPH_MAX_STEPS', 8);
