@@ -1,0 +1,59 @@
+# READ-ONLY: the database's tables (row counts), their indexes, the memory settings, and EXPLAIN of the heaviest queries. No phone numbers, names or customer data are printed. Changes nothing.
+# Run it by hand: Actions -> "Database indexes check (read-only)" -> Run workflow.
+name: Database indexes check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Tables, indexes, memory, EXPLAIN
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/dbidx_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "database: " . $e->getMessage() . "\n"; exit; }
+          echo "server: " . $d->query("SELECT VERSION()")->fetchColumn() . "\n";
+          echo "\nmemory / limits (bytes unless a count):\n";
+          foreach (["innodb_buffer_pool_size", "innodb_buffer_pool_instances", "innodb_log_file_size", "innodb_flush_log_at_trx_commit", "max_connections", "tmp_table_size", "max_heap_table_size", "sort_buffer_size", "join_buffer_size", "table_open_cache", "thread_cache_size", "slow_query_log", "long_query_time", "query_cache_size"] as $v) {
+            try { $r = $d->query("SHOW VARIABLES LIKE '$v'")->fetch(PDO::FETCH_NUM); echo "  $v = " . ($r ? $r[1] : "(n/a)") . "\n"; } catch (Throwable $e) { }
+          }
+          foreach (["Threads_connected", "Threads_running", "Max_used_connections", "Innodb_buffer_pool_read_requests", "Innodb_buffer_pool_reads", "Created_tmp_disk_tables", "Created_tmp_tables", "Slow_queries", "Uptime"] as $v) {
+            try { $r = $d->query("SHOW GLOBAL STATUS LIKE '$v'")->fetch(PDO::FETCH_NUM); echo "  status $v = " . ($r ? $r[1] : "(n/a)") . "\n"; } catch (Throwable $e) { }
+          }
+          echo "\nlargest tables (rows are estimates; data+index in MB):\n";
+          try { foreach ($d->query("SELECT table_name, table_rows, ROUND(data_length/1048576) dmb, ROUND(index_length/1048576) imb FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY (data_length + index_length) DESC LIMIT 25")->fetchAll(PDO::FETCH_NUM) as $x) echo "  " . str_pad($x[0], 28) . str_pad($x[1], 12, " ", STR_PAD_LEFT) . " rows  data " . str_pad($x[2], 6, " ", STR_PAD_LEFT) . " MB  index " . $x[3] . " MB\n"; } catch (Throwable $e) { echo "  " . $e->getMessage() . "\n"; }
+          echo "\nindexes of the tables behind the heaviest queries:\n";
+          foreach (["wa_messages", "wa_contacts", "wa_camp_items", "wa_campaigns", "wa_tagidx", "wa_cust", "convo_messages", "convo_uploads", "lib_best", "wa_templates", "wa_ctags", "dp_items", "bd_tasks", "shop_orders", "hrms_settings", "wq_meta"] as $t) {
+            try { $by = []; foreach ($d->query("SHOW INDEX FROM `$t`")->fetchAll(PDO::FETCH_ASSOC) as $x) $by[$x["Key_name"]][(int)$x["Seq_in_index"]] = $x["Column_name"] . ($x["Index_type"] === "FULLTEXT" ? "(FT)" : ""); echo "  $t:\n"; foreach ($by as $k => $c) { ksort($c); echo "    " . str_pad($k, 26) . implode(", ", $c) . "\n"; } if (!$by) echo "    (no indexes)\n"; } catch (Throwable $e) { echo "  $t: (missing)\n"; }
+          }
+          echo "\nEXPLAIN of the heaviest queries (type / key / rows; ALL or no key on a big table = a full scan):\n";
+          $ex = function ($name, $sql, $p = []) use ($d) { echo "  $name\n"; try { $q = $d->prepare("EXPLAIN " . $sql); $q->execute($p); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) echo "    table=" . ($r["table"] ?? "?") . " type=" . ($r["type"] ?? "?") . " key=" . ($r["key"] ?? "NONE") . " rows=" . ($r["rows"] ?? "?") . " extra=" . substr((string)($r["Extra"] ?? ""), 0, 60) . "\n"; } catch (Throwable $e) { echo "    FAIL " . substr($e->getMessage(), 0, 140) . "\n"; } };
+          $d30 = date("Y-m-d H:i:s", time() - 30 * 86400); $d60 = date("Y-m-d H:i:s", time() - 60 * 86400); $d90 = date("Y-m-d H:i:s", time() - 90 * 86400); $today = date("Y-m-d 10:00:00");
+          $ex("Q2 tag counts (wa_tagidx + wa_contacts + wa_cust)", "SELECT t.tag, COUNT(*) a, SUM(s.act_at >= ?) d30, SUM(s.act_at >= ?) d60, SUM(s.act_at >= ?) d90 FROM wa_tagidx t JOIN wa_contacts c ON c.phone = t.phone AND c.optout = 0 LEFT JOIN wa_cust s ON s.phone = t.phone GROUP BY t.tag", [$d30, $d60, $d90]);
+          $ex("Q4 campaign failures today (wa_camp_items + wa_campaigns)", "SELECT i.err_code, COUNT(*) AS n FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed')) GROUP BY i.err_code", [$today, $today]);
+          $ex("Q3 customer's last message (wa_messages)", "SELECT m.phone, m.body FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN ('0000000001', '0000000002') GROUP BY phone) x ON x.mid = m.id");
+          $ex("Q1 winning chats by words (convo_messages LIKE)", "SELECT u.id, COUNT(*) AS c, MAX(b.upload_id IS NOT NULL) AS star FROM convo_messages m JOIN convo_uploads u ON u.id = m.upload_id LEFT JOIN lib_best b ON b.upload_id = u.id WHERE u.kind = 'order' AND u.status = 'done' AND u.flag_wrong = 0 AND u.id <> 0 AND m.src = 'chat' AND m.who = 'customer' AND (m.msg_text LIKE '%price%') GROUP BY u.id ORDER BY star DESC, c DESC, u.score DESC, u.id DESC LIMIT 3");
+          $ex("Settings read (hrms_settings)", "SELECT setting_key, IF(LENGTH(setting_value) > 4096, NULL, setting_value) AS v, LENGTH(setting_value) > 4096 AS big FROM hrms_settings");
+          PHP
+          php /tmp/dbidx_check.php "$P"; rm -f /tmp/dbidx_check.php
+          REMOTE
