@@ -552,6 +552,31 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
 }
 function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UPDATE wa_campaigns SET status = 'paused', note = ? WHERE id = ?")->execute([mb_substr($why, 0, 200), $id]); wa_log($pdo, 'campaign', false, '#' . $id . ' paused: ' . $why); }
 
+/** 🔔 A campaign Meta flagged as spam (131048) is carried on by itself with an approved plain UTILITY "perfume reminder" message (owner, 19 Nov 2026). Only name-only pool messages (no offer, no price);
+ *  a campaign is switched at most 2 times, 3 hours apart. Switch off: setting wa_spam_rescue = 0. Returns how many campaigns were switched. */
+function wa_camp_spam_rescue(PDO $pdo): int
+{
+    try {
+        if ((string)setting_get($pdo, 'wa_spam_rescue', '1') === '0') return 0;
+        if (!function_exists('wa_util_pool_usable') && is_file(__DIR__ . '/wa_util.php')) { try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { } }   // $pdo is in scope here, which the file needs
+        if (!function_exists('wa_util_pool_usable')) return 0;
+        $now = time(); if ((int)setting_get($pdo, 'wa_rescue_at', '0') > $now - 120) return 0; setting_set($pdo, 'wa_rescue_at', (string)$now);
+        $rows = $pdo->query("SELECT id, tpl_id, note FROM wa_campaigns WHERE status = 'paused' AND note LIKE '%131048%' ORDER BY id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC); if (!$rows) return 0;
+        $pool = []; foreach (wa_util_pool_usable($pdo) as $t) { if (($t['pool_kind'] ?? '') === 'open' && (int)($t['nvars'] ?? 0) <= 1 && empty($t['claims'])) $pool[] = $t; }
+        if (!$pool) return 0; usort($pool, function ($a, $b) { return (strpos((string)$a['name'], '_rem_') !== false ? 0 : 1) <=> (strpos((string)$b['name'], '_rem_') !== false ? 0 : 1); });
+        $done = 0;
+        foreach ($rows as $c) {
+            $id = (int)$c['id']; $st = json_decode((string)setting_get($pdo, 'wa_rescue_' . $id, ''), true); $st = is_array($st) ? $st : ['n' => 0, 'at' => 0, 'used' => []];
+            if ((int)$st['n'] >= 2 || (int)$st['at'] > $now - 3 * 3600) continue;
+            $pick = null; foreach ($pool as $t) { if ((int)$t['id'] === (int)$c['tpl_id'] || in_array((int)$t['id'], (array)$st['used'], true)) continue; $pick = $t; break; } if (!$pick) continue;
+            $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, status = 'running', note = ? WHERE id = ? AND status = 'paused'")->execute([(int)$pick['id'], 'Switched by itself to the utility reminder "' . str_replace('_', ' ', (string)$pick['name']) . '" after Meta\'s spam flag', $id]);
+            $st['n'] = (int)$st['n'] + 1; $st['at'] = $now; $st['used'][] = (int)$pick['id']; setting_set($pdo, 'wa_rescue_' . $id, json_encode($st)); $done++;
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, '#' . $id . ' carried on with the utility reminder "' . (string)$pick['name'] . '" after Meta\'s spam flag (switch ' . $st['n'] . ' of 2)');
+        }
+        return $done;
+    } catch (Throwable $e) { error_log('wa_camp_spam_rescue: ' . $e->getMessage()); return 0; }
+}
+
 // ---------------------------------------------------------------------------------------------------------------- campaigns: failures and retries
 /** What to do with a failed message: ['final'|'retry'|'skip'|'pause', why]. $attempt = how many tries were made so far (the one that just failed included). */
 function wa_camp_fail_plan(int $ec, int $attempt, bool $retryOn, int $maxTries = 3): array
@@ -699,6 +724,7 @@ function wa_camp_start_due(PDO $pdo): void
     try {
         $nowTs = wa_camp_now(); if ((int)setting_get($pdo, 'wa_due_at', '0') > $nowTs - 20) return; setting_set($pdo, 'wa_due_at', (string)$nowTs); $now = date('Y-m-d H:i:s', $nowTs);
         if (function_exists('wsm_tick') || wa_camp_lazy('wsm_tick', 'wa_smart.php')) { try { wsm_tick($pdo, $nowTs); } catch (Throwable $e) { } }
+        try { wa_camp_spam_rescue($pdo); } catch (Throwable $e) { }
         $sp = ''; try { $pdo->query("SELECT smart_plan FROM wa_campaigns LIMIT 0"); $sp = ' AND smart_plan = 0'; } catch (PDOException $e) { }
         $pdo->prepare("UPDATE wa_campaigns SET status = 'running', started_at = COALESCE(started_at, ?) WHERE status = 'scheduled' AND start_at IS NOT NULL AND start_at <= ?" . $sp)->execute([$now, $now]);
     } catch (Throwable $e) { }
