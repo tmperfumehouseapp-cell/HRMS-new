@@ -206,19 +206,19 @@
 
   // ---------- accounts
   function accDrawer() {
-    const list = () => ACC.map((a) => `<div class="ol"><span><b>${esc(a.name)}</b>${a.last4 ? ' ••' + esc(a.last4) : ''} <small class="sx-mut">${esc(a.kind)}${a.active ? '' : ' · hidden'}</small></span><span><b>${m2(a.received_total)}</b> <small class="sx-mut">received</small> <button class="sx-btn" data-ed="${a.id}" style="padding:2px 10px;margin-left:6px">Edit</button></span></div>`).join('') || '<div class="sx-mut">No account yet.</div>';
+    const list = () => ACC.map((a) => `<div class="ol"><span><b>${esc(a.name)}</b>${a.last4 ? ' ••' + esc(a.last4) : ''} <small class="sx-mut">${esc(a.kind)}${a.active ? '' : ' · hidden'}</small></span><span>${a.balance == null ? '<small class="sx-mut">no opening balance yet</small>' : `<b>${m2(a.balance)}</b> <small class="sx-mut">balance (opening ${m2(a.opening_balance)} on ${esc(a.opening_date)})</small>`}<br><small class="sx-mut">${m2(a.received_total)} received in total</small> <button class="sx-btn" data-ed="${a.id}" style="padding:2px 10px;margin-left:6px">Edit</button></span></div>`).join('') || '<div class="sx-mut">No account yet.</div>';
     open('Bank accounts and cash boxes', `<div class="sx-card"><div class="sx-f" style="margin-bottom:6px">Your accounts</div>${list()}</div>
       <div class="sx-card"><div class="sx-f" style="margin-bottom:6px" id="aT">Add one</div><label class="sx-f">Name<input class="sx-in" id="aN" placeholder="e.g. HDFC current, Store cash box" autocomplete="off"></label>
-        <div class="sx-r2" style="margin-top:10px"><label class="sx-f">Type<select class="sx-in" id="aK"><option value="bank">Bank</option><option value="cash">Cash box</option><option value="wallet">Wallet / gateway</option></select></label><label class="sx-f">Last 4 digits<input class="sx-in" id="aL" inputmode="numeric" maxlength="4"></label></div><div id="aM" style="margin-top:8px"></div></div>`,
+        <div class="sx-r2" style="margin-top:10px"><label class="sx-f">Type<select class="sx-in" id="aK"><option value="bank">Bank</option><option value="cash">Cash box</option><option value="wallet">Wallet / gateway</option></select></label><label class="sx-f">Last 4 digits<input class="sx-in" id="aL" inputmode="numeric" maxlength="4"></label></div><div class="sx-r2" style="margin-top:10px"><label class="sx-f">Opening balance (₹)<input class="sx-in" id="aO" type="number" step="0.01" inputmode="decimal" placeholder="0"></label><label class="sx-f">Balance as of<input class="sx-in" id="aD" type="date" value="${esc(D.today)}" max="${esc(D.today)}"></label></div><div id="aM" style="margin-top:8px"></div></div>`,
       `<button class="sx-btn big" id="aS">Add account</button>`);
     let editId = 0;
     document.querySelectorAll('[data-ed]').forEach((b) => { b.onclick = () => {
       const a = ACC.find((x) => x.id === +b.dataset.ed); if (!a) return; editId = a.id;
-      $('aN').value = a.name; $('aK').value = a.kind; $('aL').value = a.last4 || ''; $('aT').textContent = 'Edit: ' + a.name; $('aS').textContent = 'Save changes';
+      $('aN').value = a.name; $('aK').value = a.kind; $('aL').value = a.last4 || ''; $('aO').value = a.opening_date ? a.opening_balance : ''; $('aD').value = a.opening_date || D.today; $('aT').textContent = 'Edit: ' + a.name; $('aS').textContent = 'Save changes';
       if (!$('aH')) $('aM').insertAdjacentHTML('beforebegin', '<label class="sx-f" style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox" id="aH"> Hide this account (no new receipts can use it)</label>');
       $('aH').checked = !a.active; $('aN').focus();
     }; });
-    $('aS').onclick = async () => { try { await api.post('fi.account_save', { id: editId, name: $('aN').value, kind: $('aK').value, last4: $('aL').value, active: editId && $('aH') && $('aH').checked ? 0 : 1 }); await load(day); accDrawer(); } catch (e) { note('aM', e.message, 1); } };
+    $('aS').onclick = async () => { try { await api.post('fi.account_save', { id: editId, name: $('aN').value, kind: $('aK').value, last4: $('aL').value, opening_balance: $('aO').value, opening_date: $('aO').value !== '' ? $('aD').value : '', active: editId && $('aH') && $('aH').checked ? 0 : 1 }); await load(day); accDrawer(); } catch (e) { note('aM', e.message, 1); } };
   }
 
   // ---------- Upload Excel: Claude reads it, you confirm
