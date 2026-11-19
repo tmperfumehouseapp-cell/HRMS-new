@@ -2725,6 +2725,7 @@
         <div class="label"><span class="lbl-full">All Orders &amp; Revenue</span><span class="lbl-short">Orders &amp; Revenue</span></div>
         <div class="value vline"><span>${fmtMoney(grandTotal, 'INR')}</span><span>/ ${base.length}</span></div>
         <div class="tkr"><span>Ticket size</span> <b>${ticket(grandTotal, base.length, 'INR')}</b></div>
+        ${(() => { const tm = base.filter(o => !o.cancelled && Number(o.allocated) === 1), tmS = tm.reduce((x, o) => x + (Number(o.total) || 0), 0); return tm.length && tm.length !== base.length ? `<div class="tkr" title="Only the orders given to a salesperson (${tm.length} orders): the same ticket as the Team ticket on the Sales Live page"><span>Team ticket <small style="color:var(--muted)">(${tm.length} given)</small></span> <b>${ticket(tmS, tm.length, 'INR')}</b></div>` : ''; })()}
         <div class="tkr"><span>Query order</span> <b class="n">${qOrders}</b></div>
         ${EMP_VIEW ? '' : `<div class="tkr"><span>Query ratio</span> ${qRatio(qOrders, qTotal)}</div>`}
         <div class="tkr"><span>Campaign order</span> <b class="n">${cOrders}</b></div>
