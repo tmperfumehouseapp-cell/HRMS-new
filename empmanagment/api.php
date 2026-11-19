@@ -22769,17 +22769,18 @@ switch ($action) {
         if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
         $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? (string)$_GET['date'] : biz_today($pdo);
         $lane = (string)($_GET['lane'] ?? 'add') === 'big' ? 'big' : 'add'; $lv = max(0, min(3, (int)($_GET['lv'] ?? 0))); $emp = (int)($_GET['emp'] ?? 0);
-        $out = ['day' => $day, 'lane' => $lane, 'lv' => $lv, 'emp' => $emp, 'rows' => [], 'total' => 0];
+        $out = ['day' => $day, 'lane' => $lane, 'lv' => $lv, 'emp' => $emp, 'rows' => [], 'total' => 0, 'people' => []]; $pc = [];
         if (!ora_tables($pdo)) json_response($out);
         $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
         $q = $pdo->prepare("SELECT order_key, order_name, employee_id, tried, worked, tries, sz_tried, sz_worked, sz_tries, asked, offered, reason, phone, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 3" . ($emp > 0 ? " AND employee_id = ?" : "") . " ORDER BY at DESC LIMIT 800");
         $q->execute($emp > 0 ? [$day, $emp] : [$day]);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $l = $lane === 'big' ? ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']) : ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']);
-            if ($l !== $lv) continue; $out['total']++; if (count($out['rows']) >= 80) continue;
+            if ($l !== $lv) continue; $out['total']++; $pc[(int)$r['employee_id']] = ($pc[(int)$r['employee_id']] ?? 0) + 1; if (count($out['rows']) >= 150) continue;
             $cust = ''; $tot = 0.0; try { [$sk, $sid] = array_pad(explode(':', (string)$r['order_key'], 2), 2, ''); $oq = $pdo->prepare("SELECT customer, total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $oq->execute([$sk, $sid]); $o = $oq->fetch(PDO::FETCH_ASSOC) ?: []; $cust = (string)($o['customer'] ?? ''); $tot = (float)($o['total'] ?? 0); } catch (Throwable $e) { }
-            $out['rows'][] = ['order' => (string)$r['order_name'], 'emp' => $names[(int)$r['employee_id']] ?? ('#' . (int)$r['employee_id']), 'customer' => $cust, 'total' => round($tot), 'phone' => substr(preg_replace('/\D+/', '', (string)$r['phone']), -10), 'why' => mb_substr((string)$r['reason'], 0, 200), 'offered' => mb_substr((string)$r['offered'], 0, 120), 'at' => substr((string)$r['at'], 11, 5)];
+            $out['rows'][] = ['order' => (string)$r['order_name'], 'emp' => $names[(int)$r['employee_id']] ?? ('#' . (int)$r['employee_id']), 'customer' => $cust, 'total' => round($tot), 'phone' => substr(preg_replace('/\D+/', '', (string)$r['phone']), -10), 'why' => mb_substr((string)$r['reason'], 0, 200), 'offered' => mb_substr((string)$r['offered'], 0, 120), 'at' => substr((string)$r['at'], 11, 5), 'eid' => (int)$r['employee_id']];
         }
+        arsort($pc); foreach ($pc as $e => $n) $out['people'][] = ['id' => (int)$e, 'name' => $names[(int)$e] ?? ('#' . (int)$e), 'n' => $n];
         json_response($out);
         break;
     }
