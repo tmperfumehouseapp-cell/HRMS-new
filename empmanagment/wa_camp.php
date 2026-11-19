@@ -552,6 +552,26 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
 }
 function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UPDATE wa_campaigns SET status = 'paused', note = ? WHERE id = ?")->execute([mb_substr($why, 0, 200), $id]); wa_log($pdo, 'campaign', false, '#' . $id . ' paused: ' . $why); }
 
+/** 🔀 A running campaign whose message is a plain utility pool message that is approved on FEWER numbers than the best pool message is moved to the best one (owner, 19 Nov 2026, 14:50: "tmph_fu_open_thanks" was PAUSED on 3 of 4 numbers, so only one number could send and the campaigns ran at about 10 messages in 10 minutes).
+ *  Only campaigns whose CURRENT message is a pool message (never an owner's own marketing message), checked every 5 minutes. Returns how many were moved. Switch off: wa_widen_tpl = 0. */
+function wa_camp_widen_tpl(PDO $pdo): int
+{
+    try {
+        if ((string)setting_get($pdo, 'wa_widen_tpl', '1') === '0') return 0;
+        if (!function_exists('wa_util_pool_usable') && is_file(__DIR__ . '/wa_util.php')) { try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { } }
+        if (!function_exists('wa_util_pool_usable')) return 0;
+        $now = time(); if ((int)setting_get($pdo, 'wa_widen_at', '0') > $now - 300) return 0; setting_set($pdo, 'wa_widen_at', (string)$now);
+        $pool = []; foreach (wa_util_pool_usable($pdo) as $t) { if (($t['pool_kind'] ?? '') === 'open' && (int)($t['nvars'] ?? 0) <= 1 && empty($t['claims'])) $pool[(int)$t['id']] = $t; }
+        if (!$pool) return 0; $best = null; foreach ($pool as $t) { if ($best === null || count((array)($t['ok_wabas'] ?? [])) > count((array)($best['ok_wabas'] ?? []))) $best = $t; }
+        $bn = count((array)($best['ok_wabas'] ?? [])); if ($bn <= 0) return 0; $done = 0;
+        foreach ($pdo->query("SELECT id, tpl_id FROM wa_campaigns WHERE status = 'running'")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            $cur = $pool[(int)$c['tpl_id']] ?? null; if (!$cur || (int)$best['id'] === (int)$c['tpl_id'] || count((array)($cur['ok_wabas'] ?? [])) >= $bn) continue;
+            $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, note = ? WHERE id = ? AND status = 'running'")->execute([(int)$best['id'], 'Message moved to "' . str_replace('_', ' ', (string)$best['name']) . '" (approved on ' . $bn . ' numbers; the old one only on ' . count((array)($cur['ok_wabas'] ?? [])) . ')', (int)$c['id']]); $done++;
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, '#' . (int)$c['id'] . ' message moved from "' . (string)$cur['name'] . '" (approved on ' . count((array)($cur['ok_wabas'] ?? [])) . ' numbers) to "' . (string)$best['name'] . '" (approved on ' . $bn . ')');
+        }
+        return $done;
+    } catch (Throwable $e) { error_log('wa_camp_widen_tpl: ' . $e->getMessage()); return 0; }
+}
 /** 🔔 A campaign Meta flagged as spam (131048) is carried on by itself with an approved plain UTILITY "perfume reminder" message (owner, 19 Nov 2026). Only name-only pool messages (no offer, no price);
  *  a campaign is switched at most 2 times, 3 hours apart. Switch off: setting wa_spam_rescue = 0. Returns how many campaigns were switched. */
 function wa_camp_spam_rescue(PDO $pdo): int
@@ -563,7 +583,7 @@ function wa_camp_spam_rescue(PDO $pdo): int
         $now = time(); if ((int)setting_get($pdo, 'wa_rescue_at', '0') > $now - 120) return 0; setting_set($pdo, 'wa_rescue_at', (string)$now);
         $rows = $pdo->query("SELECT id, tpl_id, note FROM wa_campaigns WHERE status = 'paused' AND note LIKE '%131048%' ORDER BY id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC); if (!$rows) return 0;
         $pool = []; foreach (wa_util_pool_usable($pdo) as $t) { if (($t['pool_kind'] ?? '') === 'open' && (int)($t['nvars'] ?? 0) <= 1 && empty($t['claims'])) $pool[] = $t; }
-        if (!$pool) return 0; usort($pool, function ($a, $b) { return (strpos((string)$a['name'], '_rem_') !== false ? 0 : 1) <=> (strpos((string)$b['name'], '_rem_') !== false ? 0 : 1); });
+        if (!$pool) return 0; usort($pool, function ($a, $b) { return [-count((array)($a['ok_wabas'] ?? [])), (strpos((string)$a['name'], '_rem_') !== false ? 0 : 1)] <=> [-count((array)($b['ok_wabas'] ?? [])), (strpos((string)$b['name'], '_rem_') !== false ? 0 : 1)]; });   // owner 19 Nov 2026 (14:50): the message approved on the MOST numbers first (one that is paused on 3 of 4 numbers lets only one number send: 10 messages in 10 minutes)
         $done = 0;
         foreach ($rows as $c) {
             $id = (int)$c['id']; $st = json_decode((string)setting_get($pdo, 'wa_rescue_' . $id, ''), true); $st = is_array($st) ? $st : ['n' => 0, 'at' => 0, 'used' => []];
@@ -725,6 +745,7 @@ function wa_camp_start_due(PDO $pdo): void
         $nowTs = wa_camp_now(); if ((int)setting_get($pdo, 'wa_due_at', '0') > $nowTs - 20) return; setting_set($pdo, 'wa_due_at', (string)$nowTs); $now = date('Y-m-d H:i:s', $nowTs);
         if (function_exists('wsm_tick') || wa_camp_lazy('wsm_tick', 'wa_smart.php')) { try { wsm_tick($pdo, $nowTs); } catch (Throwable $e) { } }
         try { wa_camp_spam_rescue($pdo); } catch (Throwable $e) { }
+        try { wa_camp_widen_tpl($pdo); } catch (Throwable $e) { }
         $sp = ''; try { $pdo->query("SELECT smart_plan FROM wa_campaigns LIMIT 0"); $sp = ' AND smart_plan = 0'; } catch (PDOException $e) { }
         $pdo->prepare("UPDATE wa_campaigns SET status = 'running', started_at = COALESCE(started_at, ?) WHERE status = 'scheduled' AND start_at IS NOT NULL AND start_at <= ?" . $sp)->execute([$now, $now]);
     } catch (Throwable $e) { }
