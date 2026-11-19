@@ -2892,21 +2892,20 @@ function push_encrypt(string $payload, string $p256dh, string $authKey): ?string
     return $salt . pack('N', 4096) . chr(65) . $asPub . $ct . $tag;
 }
 
-/** Deliver one push. Returns ['ok'=>bool,'status'=>int,'gone'=>bool,'error'=>string]. */
-function push_deliver(PDO $pdo, array $sub, array $payload): array
+/** Everything needed to send ONE push, without sending it: ['result' => <the failed result>] when it cannot be sent at all, else ['endpoint' => url, 'opts' => curl options]. */
+function push_request(PDO $pdo, array $sub, array $payload): array
 {
     $keys = push_vapid($pdo);
-    if (!$keys) return ['ok' => false, 'status' => 0, 'gone' => false, 'error' => 'No VAPID keys (openssl missing?)'];
+    if (!$keys) return ['result' => ['ok' => false, 'status' => 0, 'gone' => false, 'error' => 'No VAPID keys (openssl missing?)']];
     [$pub, $pem] = $keys;
     $endpoint = (string)$sub['endpoint'];
     $u = parse_url($endpoint);
-    if (empty($u['scheme']) || empty($u['host'])) return ['ok' => false, 'status' => 0, 'gone' => true, 'error' => 'Bad endpoint'];
-    if (!function_exists('openssl_pkey_derive')) return ['ok' => false, 'status' => 0, 'gone' => false, 'error' => 'This server\'s PHP/OpenSSL is too old for phone notifications (needs PHP 7.3+).'];
+    if (empty($u['scheme']) || empty($u['host'])) return ['result' => ['ok' => false, 'status' => 0, 'gone' => true, 'error' => 'Bad endpoint']];
+    if (!function_exists('openssl_pkey_derive')) return ['result' => ['ok' => false, 'status' => 0, 'gone' => false, 'error' => 'This server\'s PHP/OpenSSL is too old for phone notifications (needs PHP 7.3+).']];
     $body = push_encrypt(json_encode($payload, JSON_UNESCAPED_UNICODE), (string)$sub['p256dh'], (string)$sub['auth_key']);
-    if ($body === null) return ['ok' => false, 'status' => 0, 'gone' => true, 'error' => 'Could not encrypt for this phone'];
+    if ($body === null) return ['result' => ['ok' => false, 'status' => 0, 'gone' => true, 'error' => 'Could not encrypt for this phone']];
     $jwt = push_vapid_jwt($u['scheme'] . '://' . $u['host'], $pem);
-    $ch = curl_init($endpoint);
-    curl_setopt_array($ch, [
+    return ['endpoint' => $endpoint, 'opts' => [
         CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_CONNECTTIMEOUT => 5,
         CURLOPT_POSTFIELDS => $body,
         CURLOPT_HTTPHEADER => [
@@ -2914,14 +2913,54 @@ function push_deliver(PDO $pdo, array $sub, array $payload): array
             'TTL: 3600', 'Urgency: high', 'Topic: hrms-punch',
             'Authorization: vapid t=' . $jwt . ', k=' . $pub,
         ],
-    ]);
+    ]];
+}
+/** What the push service answered -> ['ok','status','gone','error'] (the same reading for a single and a parallel send). */
+function push_read_answer($resp, int $status, string $cerr): array
+{
+    if ($resp === false || $resp === null) return ['ok' => false, 'status' => 0, 'gone' => false, 'error' => 'Network: ' . $cerr];
+    $ok = $status >= 200 && $status < 300;
+    return ['ok' => $ok, 'status' => $status, 'gone' => in_array($status, [404, 410], true), 'error' => $ok ? '' : ('Push service HTTP ' . $status . ' ' . trim(strip_tags((string)$resp)))];
+}
+/** Deliver one push. Returns ['ok'=>bool,'status'=>int,'gone'=>bool,'error'=>string]. */
+function push_deliver(PDO $pdo, array $sub, array $payload): array
+{
+    $rq = push_request($pdo, $sub, $payload); if (isset($rq['result'])) return $rq['result'];
+    $ch = curl_init($rq['endpoint']);
+    curl_setopt_array($ch, $rq['opts']);
     $resp = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $cerr = curl_error($ch);
     curl_close($ch);
-    if ($resp === false) return ['ok' => false, 'status' => 0, 'gone' => false, 'error' => 'Network: ' . $cerr];
-    $ok = $status >= 200 && $status < 300;
-    return ['ok' => $ok, 'status' => $status, 'gone' => in_array($status, [404, 410], true), 'error' => $ok ? '' : ('Push service HTTP ' . $status . ' ' . trim(strip_tags((string)$resp)))];
+    return push_read_answer($resp, $status, $cerr);
+}
+/** ⚡ Send many pushes AT THE SAME TIME (curl_multi, at most $maxPar open at once) instead of one after another: each push is a call to the phone's push service (0.2-1 s each), and 15 people x
+ *  several phones took more than 12 s in the engine. $reqs = [key => ['endpoint' => url, 'opts' => curl options]] (from push_request); returns [key => ['ok','status','gone','error']] read exactly like push_deliver. */
+function push_curl_multi(array $reqs, int $maxPar = 20): array
+{
+    $out = []; if (!$reqs) return $out;
+    $hid = function ($ch) { return is_object($ch) ? spl_object_id($ch) : (int)$ch; };
+    $mh = curl_multi_init(); $by = []; $queue = array_keys($reqs); $active = 0;
+    $start = function ($k) use (&$by, &$active, $mh, $reqs, $hid) { $ch = curl_init($reqs[$k]['endpoint']); curl_setopt_array($ch, $reqs[$k]['opts']); curl_multi_add_handle($mh, $ch); $by[$hid($ch)] = $k; $active++; };
+    while ($queue && $active < $maxPar) $start(array_shift($queue));
+    $t0 = microtime(true);
+    while ($active > 0) {
+        $running = 0; curl_multi_exec($mh, $running);
+        while ($info = curl_multi_info_read($mh)) {
+            $ch = $info['handle']; $k = $by[$hid($ch)] ?? null; $active--;
+            if ($k !== null) {
+                $resp = ((int)$info['result'] === 0) ? curl_multi_getcontent($ch) : false;
+                $out[$k] = push_read_answer($resp, (int)curl_getinfo($ch, CURLINFO_HTTP_CODE), (string)curl_error($ch) ?: (function_exists('curl_strerror') ? curl_strerror((int)$info['result']) : 'curl error ' . (int)$info['result']));
+            }
+            curl_multi_remove_handle($mh, $ch); curl_close($ch);
+            if ($queue) $start(array_shift($queue));
+        }
+        if ($active > 0) { if ($running > 0) curl_multi_select($mh, 0.2); else usleep(2000); }
+        if (microtime(true) - $t0 > 40) break;   // never hang the engine: 8 s per push at most, this is the outer safety
+    }
+    curl_multi_close($mh);
+    foreach (array_keys($reqs) as $k) if (!isset($out[$k])) $out[$k] = ['ok' => false, 'status' => 0, 'gone' => false, 'error' => 'Network: no answer'];
+    return $out;
 }
 
 /** Phone entries the push service said are gone (expired / unsubscribed). They are never saved again,
@@ -2960,6 +2999,27 @@ function push_send_employee(PDO $pdo, int $empId, array $payload): array
         }
     }
     return [$sent, $failed, $err];
+}
+
+/** The same as push_send_employee() for SEVERAL employees, but all their phones are called at the same time. Returns how many phones were reached. The bookkeeping per phone is exactly the same
+ *  (last_sent / fail_count, a gone phone is deleted and marked dead). */
+function push_send_many(PDO $pdo, array $empIds, array $payload): int
+{
+    if (!$empIds || !ensure_push_table($pdo)) return 0;
+    $st = $pdo->prepare("SELECT * FROM push_subscriptions WHERE employee_id IN (" . implode(',', array_fill(0, count($empIds), '?')) . ")");
+    $st->execute(array_map('intval', $empIds));
+    $subs = $st->fetchAll(); if (!$subs) return 0;
+    $res = []; $reqs = [];
+    foreach ($subs as $i => $sub) { try { $rq = push_request($pdo, $sub, $payload); } catch (Throwable $e) { $res[$i] = ['ok' => false, 'status' => 0, 'gone' => false, 'error' => 'prepare: ' . $e->getMessage()]; continue; } if (isset($rq['result'])) $res[$i] = $rq['result']; else $reqs[$i] = $rq; }
+    foreach (push_curl_multi($reqs) as $i => $r) $res[$i] = $r;
+    $sent = 0;
+    foreach ($subs as $i => $sub) {
+        $r = $res[$i] ?? ['ok' => false, 'gone' => false, 'error' => 'no result'];
+        if (!empty($r['ok'])) { $sent++; $pdo->prepare("UPDATE push_subscriptions SET last_sent = ?, fail_count = 0 WHERE endpoint_hash = ?")->execute([date('Y-m-d H:i:s'), $sub['endpoint_hash']]); }
+        elseif (!empty($r['gone'])) { $pdo->prepare("DELETE FROM push_subscriptions WHERE endpoint_hash = ?")->execute([$sub['endpoint_hash']]); push_mark_dead($pdo, (string)$sub['endpoint_hash']); }
+        else $pdo->prepare("UPDATE push_subscriptions SET fail_count = fail_count + 1 WHERE endpoint_hash = ?")->execute([$sub['endpoint_hash']]);
+    }
+    return $sent;
 }
 
 /**
@@ -11106,8 +11166,11 @@ function ct_admin_emp_ids(PDO $pdo): array
 }
 function ct_push(PDO $pdo, array $empIds, string $title, string $body, string $url, string $tag): int
 {
+    $payload = ['title' => $title, 'body' => $body, 'url' => $url, 'tag' => $tag];
+    $ids = array_values(array_unique(array_filter(array_map('intval', $empIds))));
+    if (count($ids) > 1) { try { return push_send_many($pdo, $ids, $payload); } catch (Throwable $e) { error_log('ct_push parallel: ' . $e->getMessage()); return 0; } }   // ⚡ everybody's phones at the same time
     $n = 0;
-    foreach (array_unique($empIds) as $id) { try { [$sent] = push_send_employee($pdo, (int)$id, ['title' => $title, 'body' => $body, 'url' => $url, 'tag' => $tag]); $n += (int)$sent; } catch (Throwable $e) {} }
+    foreach ($ids as $id) { try { [$sent] = push_send_employee($pdo, (int)$id, $payload); $n += (int)$sent; } catch (Throwable $e) {} }
     return $n;
 }
 
