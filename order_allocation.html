@@ -319,7 +319,7 @@
         </div>
         <div class="tscroll">
         <table>
-          <thead><tr><th>Order</th><th style="width:112px;" title="Order code — type it here, or upload the Excel on the Order Codes page and it fills in">Code</th><th>Employee</th><th>Customer</th><th>Items</th><th>Total</th><th style="width:150px;" title="Total ML of the order (free 10 ml pieces shown as extra) and what it earns on the ML price slab">ML</th><th>Payment</th><th>Type</th><th>Panel</th><th style="width:92px;" title="Chain order — Yes or No">Chain</th><th style="width:92px;" title="Address — Yes or No">Address</th><th style="width:100px;" title="Old or New price — which price list this order was sold on">Old / New price</th><th style="width:124px;" title="Ticket size convincing — same per-order rating as the Performance page">Rating</th><th id="thAddon" style="width:120px;" title="Extra products sold onto this order — same as the Add-on on the Performance page">Add-on</th><th style="width:84px;"></th></tr></thead>
+          <thead><tr><th>Order</th><th style="width:112px;" title="Order code — type it here, or upload the Excel on the Order Codes page and it fills in">Code</th><th>Employee</th><th>Customer</th><th>Items</th><th>Total</th><th style="width:150px;" title="Total ML of the order (free 10 ml pieces shown as extra) and what it earns on the ML price slab">ML</th><th>Payment</th><th>Type</th><th>Panel</th><th style="width:92px;" title="Chain order — Yes or No">Chain</th><th style="width:92px;" title="Address — Yes or No">Address</th><th style="width:100px;" title="Old or New price — which price list this order was sold on">Old / New price</th><th style="width:124px;" title="Ticket size convincing — same per-order rating as the Performance page">Rating<div id="autoModeBox" style="font-weight:600;font-size:11px;margin-top:3px" hidden>🤖 <select id="autoMode" title="Automatic stars from the chat: Off · Suggest = shown light, not saved · Apply = saved as the stars (a rating a person gave is never changed)" style="font-size:11px;padding:1px 2px;border:1px solid #d1d5db;border-radius:6px"><option value="off">Off</option><option value="suggest">Suggest</option><option value="apply">Apply</option></select></div></th><th id="thAddon" style="width:120px;" title="Extra products sold onto this order — same as the Add-on on the Performance page">Add-on</th><th style="width:84px;"></th></tr></thead>
           <tbody id="tbody"><tr><td colspan="16" class="loading">Loading...</td></tr></tbody>
         </table>
         </div>
@@ -498,6 +498,12 @@
   // The Employee role has no Add-on column at all (it can't add or see add-ons here).
   const NCOL = IS_EMP ? 15 : 16;
   if (IS_EMP) document.getElementById('thAddon').remove();
+  // 🤖 automatic stars from the chat: Admin / HR (not the Employee role) can switch Off / Suggest / Apply
+  (function autoMode() {
+    if (IS_EMP) return; const box = document.getElementById('autoModeBox'), sel = document.getElementById('autoMode'); if (!box || !sel) return;
+    api.get('order_ratings.auto_mode').then((r) => { sel.value = r.mode || 'suggest'; box.hidden = false; sel.title += ' · so far ' + (r.rated || 0) + ' rated, ' + (r.applied || 0) + ' applied'; }).catch(() => { });
+    sel.onchange = async () => { if (sel.value === 'apply' && !confirm('Apply: the automatic stars are saved as the order stars (shown "by Claude (auto)") for the orders nobody has rated. A rating a person gave is never changed. Continue?')) { sel.value = 'suggest'; return; } try { await api.post('order_ratings.auto_mode', { mode: sel.value }); showAlert(sel.value === 'off' ? 'Automatic stars are off.' : sel.value === 'suggest' ? 'Automatic stars are shown as light suggestions.' : 'Automatic stars will be saved on the orders (about 5 every 3 minutes).', 'success'); } catch (e) { showAlert(e.message, 'error'); } };
+  })();
   const RATE_WORDS = ['Not rated','Very poor','Poor','Weak','Fair','Okay','Good','Very good','Great','Excellent','Outstanding'];
   function starCells(v) {
     return Array.from({ length: 5 }, (_, i) => {
@@ -507,8 +513,11 @@
   }
   // Under the stars: who gave them and when (empty when not rated).
   const ratingBy = (o) => o.ticket_rating != null && o.rating_by ? `<span class="sub rs-by">by ${esc(o.rating_by)}${o.rating_at ? ' · ' + fmtDT(o.rating_at) : ''}</span>` : '';
+  // 🤖 Claude's suggestion (from the chat) shows as light stars until a person rates the order
+  const autoOf = (o) => (o.ticket_rating == null && o.auto_rating != null ? Math.max(1, Math.min(10, Math.round(Number(o.auto_rating)))) : 0);
   function ratingCell(o, empSel, offMsg) {
-    const v = o.ticket_rating == null ? 0 : Math.max(0, Math.min(10, Math.round(Number(o.ticket_rating))));
+    const v = o.ticket_rating == null ? 0 : Math.max(0, Math.min(10, Math.round(Number(o.ticket_rating)))), av = autoOf(o);
+    if (av && !IS_EMP) { const off0 = !(empSel > 0); return `<span class="rs rs-auto ${off0 ? 'off' : ''}" data-k="${key(o)}" data-val="0" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0" title="🤖 Claude's suggestion from the chat: ${av / 2} of 5 — ${esc(o.auto_why || '')}. Click the stars to give your own."><span class="rs-stars" style="opacity:.5">${starCells(av)}</span><span class="rs-num">🤖 ${av / 2}</span></span><span class="sub rs-by" title="${esc(o.auto_why || '')}">suggestion · ${esc(String(o.auto_why || '').slice(0, 60))}</span>`; }
     if (IS_EMP) return `<span class="rs ro" title="${v ? v / 2 + ' of 5' : 'Not rated'}"><span class="rs-stars">${starCells(v)}</span><span class="rs-num">${v ? String(v / 2) : '—'}</span></span>${ratingBy(o)}`;
     const off = !(empSel > 0);
     return `<span class="rs ${off ? 'off' : ''}" data-k="${key(o)}" data-val="${v}" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="10" aria-valuenow="${v}"

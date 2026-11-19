@@ -1,0 +1,46 @@
+# READ-ONLY: the newest automatic star ratings (from the chat) — stars, whether the salesperson tried to sell more and whether it worked, and Claude's one-line reason. No phone numbers, customer names or order numbers (the employee is only a number). Changes nothing.
+# Run it by hand: Actions → "Automatic stars samples (read-only)" → Run workflow.
+name: Automatic stars samples (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Samples
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/ar_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "(not set = suggest)" : (string)$v; } catch (Throwable $e) { return "n/a"; } };
+          echo "mode (order_auto_rate) = " . $s("order_auto_rate") . " · last engine round (ora_at) = " . (ctype_digit($s("ora_at")) ? date("Y-m-d H:i:s", (int)$s("ora_at")) : $s("ora_at")) . "\n";
+          try {
+            $r = $d->query("SELECT COUNT(*) n, SUM(rating IS NOT NULL) rated, SUM(rating IS NULL) skipped, SUM(applied = 1) applied, ROUND(AVG(rating)/2, 2) avg_stars, SUM(tried = 1) tried, SUM(worked = 1) worked FROM order_rate_auto")->fetch(PDO::FETCH_ASSOC);
+            echo "orders handled: " . $r["n"] . " · rated " . $r["rated"] . " · skipped (no chat) " . $r["skipped"] . " · applied " . $r["applied"] . " · average " . $r["avg_stars"] . " stars · the salesperson tried to sell more in " . $r["tried"] . " · it worked in " . $r["worked"] . "\n";
+            echo "\nstars spread (rated orders):\n"; foreach ($d->query("SELECT ROUND(rating/2, 1) st, COUNT(*) n FROM order_rate_auto WHERE rating IS NOT NULL GROUP BY st ORDER BY st")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  " . $x["st"] . " stars: " . $x["n"] . "\n";
+            echo "\nnewest 20 (employee number · stars · tried/worked · asked → offered · reason):\n";
+            foreach ($d->query("SELECT employee_id, rating, tried, worked, asked, offered, reason, reason AS r2 FROM order_rate_auto ORDER BY at DESC LIMIT 20")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  emp " . $x["employee_id"] . " · " . ($x["rating"] === null ? "no stars" : ($x["rating"] / 2) . "★") . " · " . ($x["tried"] ? "tried" : "no try") . "/" . ($x["worked"] ? "worked" : "no") . " · asked: " . substr(preg_replace("/\d{10}/", "#", $x["asked"]), 0, 60) . " → offered: " . substr(preg_replace("/\d{10}/", "#", $x["offered"]), 0, 60) . " · " . substr(preg_replace("/\d{10}/", "#", $x["reason"]), 0, 140) . "\n";
+          } catch (Throwable $e) { echo "n/a (" . substr($e->getMessage(), 0, 120) . ")\n"; }
+          PHP
+          php /tmp/ar_check.php "$P"; rm -f /tmp/ar_check.php
+          REMOTE

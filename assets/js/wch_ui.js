@@ -766,8 +766,10 @@ html.wxdk .wch-hdl,html.wchdk .wch-hdl,.wch-dk .wch-hdl{color:#53bdeb}
       if (a === 'cancelyes') { b.disabled = true; try { const r = await A.post('wch.cart_cancel', { id: c.id, reason: ($('wchCr') || {}).value || '', notify: !!($('wchCn') || {}).checked }); S.cart = r.cart; S.cancelOpen = false; toast('Cart cancelled'); notify(); close(); } catch (e) { b.disabled = false; toast(E(e), true); } return; }
       if (a === 'link') {
         S.busy = 'link'; paintProgress();
-        try { const r = await A.post('wch.cart_link', { id: c.id }); S.cart = r.cart; S.busy = ''; toast(r.resent ? 'Link sent again' : 'Cart link sent to ' + first(nm())); notify(); await refreshProgress(false); }
-        catch (e) { S.busy = ''; const cd = code(e); let t = E(e), title = 'The cart link was not sent';
+        try { const r = await A.post('wch.cart_link', Object.assign({ id: c.id }, window.__wxGrowNext || {})); window.__wxGrowNext = null; S.cart = r.cart; S.busy = ''; toast(r.resent ? 'Link sent again' : 'Cart link sent to ' + first(nm())); notify(); await refreshProgress(false); }
+        catch (e) { S.busy = ''; const cd = code(e);
+          if (cd === 'growth_gate' && window.WaGrowAsk) { paintProgress(); const ch = await window.WaGrowAsk(e.data || {}); if (ch.action === 'offer') { const tx = document.getElementById('wxTx'); if (tx) { tx.value = ch.words || ''; try { tx.dispatchEvent(new Event('input')); } catch (x) { } } toast('Pehle chat me offer karo, phir link bhejo'); try { close(); } catch (x) { } return; } window.__wxGrowNext = ch.action === 'waive' ? { grow_waive: ch.reason } : { grow_ok: 1 }; b.click(); return; }
+          let t = E(e), title = 'The cart link was not sent';
           if (cd === 'scope_missing') title = 'Shopify needs one more permission'; else if (cd === 'billing_incomplete') title = 'Billing is not complete'; else if (cd === 'window_closed') title = 'The 24-hour reply window is closed'; else if (cd === 'off') title = 'Chain orders are switched off'; else if (cd === 'no_choice') title = 'Wait for the choice first';
           await refreshProgress(false).catch(() => { }); const ban = $('wchBan'); if (ban && S.view === 'progress') ban.insertAdjacentHTML('afterbegin', banner('red', 'warn', title, t)); }
         return;

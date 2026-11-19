@@ -186,7 +186,9 @@ function wa_auto_alloc(PDO $pdo): int
         try { wa_camp_unmark($pdo); } catch (Throwable $e) { error_log('camp2 off: ' . $e->getMessage()); }
     }
     try { wa_camp_requery($pdo, 30); } catch (Throwable $e) { }
-    try { if (function_exists('order_gel_fix')) $n += order_gel_fix($pdo); } catch (Throwable $e) { }   // 🧴 shower-gel orders of the month belong to TM Shower Gel
+    try { if (function_exists('order_gel_fix')) $n += order_gel_fix($pdo); } catch (Throwable $e) { }
+    try { if (function_exists('ora_tick')) ora_tick($pdo); } catch (Throwable $e) { }
+    try { if (function_exists('grow_learn_tick')) grow_learn_tick($pdo); } catch (Throwable $e) { }   // 📚 15-minute learning pulse + hourly digest for the guidebook   // ⭐ the stars of new orders are worked out from the chat   // 🧴 shower-gel orders of the month belong to TM Shower Gel
     return $n;
 }
 /** 📢 Did we really send this customer a campaign (our campaign template, or a sent campaign item) in the $days days before $before? */

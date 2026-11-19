@@ -201,6 +201,29 @@ function wa_util_pool_defs(): array
             'body' => "Hi {{1}}, did your order {{2}} placed on {{3}} reach you in good condition? Reply here if you need any help with it."],
         'order_care' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Ask a question', 'All good']),
             'body' => "Hello {{1}}, this is about your order {{2}} from {{3}}. If you have any question about using or storing your perfume, just reply here and we will help."],
+        // 💬 owner, 18 Nov 2026 (evening): 5 more welcome messages (the first set was moved to marketing by Meta / paused for low quality), and 3 new kinds — the order experience, the experience with TM Perfume House, a request to the team. All are about the customer's own relationship with the shop: no offer, no price, no promotion words.
+        'open_w_care' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['I need help', 'Not now']),
+            'body' => "Hi {{1}}, thank you for being a TM Perfume House customer. We are here to help with your orders, deliveries and any question about your perfume. Tap a button to reply."],
+        'open_w_team' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Order help', 'Not now']),
+            'body' => "Hello {{1}}, this is the TM Perfume House customer care team. If you need help with an order, a delivery or a perfume you bought from us, tap a button below."],
+        'open_w_saved' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['I need help', 'Not now']),
+            'body' => "Hi {{1}}, your contact is saved with TM Perfume House, so we can help you faster with any order or question. Reply with a button below whenever you need us."],
+        'open_w_back' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Order status', 'Perfume help']),
+            'body' => "Hello {{1}}, welcome back to TM Perfume House. You can reply here any time for order status, delivery updates or help with a perfume. Tap a button to reply."],
+        'open_w_customer' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Yes, I need help', 'Not now']),
+            'body' => "Hi {{1}}, this message is from TM Perfume House, where you are a registered customer. Reply here if you need help with an order, a delivery or a product."],
+        'order_exp_how' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['It was great', 'I had an issue']),
+            'body' => "Hi {{1}}, your order {{2}} placed on {{3}} should have reached you by now. How was your experience with it? Tap a button to share."],
+        'order_exp_share' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Share experience', 'All good']),
+            'body' => "Hello {{1}}, we hope you are enjoying the perfume from your order {{2}} of {{3}}. Please share your experience with us by replying here."],
+        'open_exp_tm' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Very good', 'Could be better']),
+            'body' => "Hi {{1}}, thank you for shopping with TM Perfume House. How was your experience with us overall? Tap a button to share."],
+        'open_exp_feedback' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Share feedback', 'Not now']),
+            'body' => "Hello {{1}}, your feedback on TM Perfume House matters to us. Please tell us how we did, in one short reply."],
+        'open_req_help' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['I have a request', 'No request']),
+            'body' => "Hi {{1}}, do you have any request for TM Perfume House, such as an order change, a delivery question or a product query? Tap a button and we will help you."],
+        'open_req_team' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Raise a request', 'Not now']),
+            'body' => "Hello {{1}}, if you want to request anything from TM Perfume House, for example a return, a replacement or an invoice, reply here and our team will assist you."],
     ];
 }
 /** The pool rows that exist: key => template row (+ kind). */
@@ -225,6 +248,94 @@ function wa_util_pool_make(PDO $pdo, int $by): array
     if (function_exists('wa_log') && $made) wa_log($pdo, 'template', !$err, 'Utility follow-ups made: ' . implode(', ', $made) . ($err ? ' — ' . $err[0] : ''));
     return ['ok' => true, 'made' => $made, 'errors' => $err];
 }
+/** A message to "anyone" (the open kind) must not claim a recent enquiry, order, purchase or saved details: the customer may never have done that (a false claim makes people report the message as spam). Used for the messages the system writes by itself. */
+function wa_util_claims_history(string $body): bool
+{
+    return (bool)preg_match('/\b(recent|your (?:recent )?(?:enquiry|inquiry|order|purchase|catalogue)|on (?:file|record)|you (?:asked|enquired|inquired|bought|purchased|ordered|received)|(?:bought|received) from us)\b/i', $body);
+}
+/** 🎯 owner, 18 Nov 2026 (night): a self-written message that names an enquiry or an order goes ONLY to a customer whose behaviour makes it true: wrote to us within the asked-days (enquiry) / ordered within the order-days (order). A claim about a catalogue is never made (we do not know what they asked). */
+function wa_util_claim_ok(string $body, bool $hasEnq, bool $hasOrd): bool
+{
+    if (preg_match('/catalogue/i', $body)) return false;
+    $e = (bool)preg_match('/\b(enquiry|inquiry|enquired|inquired|asked)\b/i', $body); $o = (bool)preg_match('/\b(orders?|purchase|purchased|bought|ordered|received)\b/i', $body);
+    if ($e && $o) return $hasEnq || $hasOrd; if ($e) return $hasEnq; if ($o) return $hasOrd; return $hasEnq || $hasOrd;
+}
+/** 🧠 Words that only appear in the messages Meta MOVED to marketing (never in the ones it kept as utility): the new message must not use them. */
+function wa_util_learn_avoid(array $keptBodies, array $movedBodies): array
+{
+    $tok = function (string $b): array { $b = preg_replace('/\{\{\d+\}\}/', ' ', mb_strtolower($b)); preg_match_all('/[a-z]{4,}/', (string)$b, $m); return array_values(array_unique($m[0])); };
+    $keep = []; foreach ($keptBodies as $b) foreach ($tok((string)$b) as $w) $keep[$w] = 1;
+    $out = []; foreach ($movedBodies as $b) foreach ($tok((string)$b) as $w) if (!isset($keep[$w]) && !in_array($w, ['this', 'that', 'with', 'from', 'your', 'have', 'will', 'tell'], true)) $out[$w] = ($out[$w] ?? 0) + 1;
+    arsort($out); return array_slice(array_keys($out), 0, 12);
+}
+/** Safe wordings (the pattern of the messages Meta kept: an order, a delivery, a request, the team) used when the AI cannot answer; [body, buttons] or null. */
+function wa_util_learn_fallback(string $kind, array $usedBodies, int $n): ?array
+{
+    $bank = ['open' => [
+        ["Hi {{1}}, this is TM Perfume House customer care. If you need help with an order or a delivery from TM Perfume House, tap a button below.", ['Order help', 'Not now']],
+        ["Hello {{1}}, you are a TM Perfume House customer, so this line is open for your order and delivery questions. Tap a button to reach our team.", ['Delivery help', 'Not now']],
+        ["Hi {{1}}, if you need to track, change or ask about an order placed with TM Perfume House, tap a button and our team will reply.", ['Track my order', 'Change my order']],
+        ["Hello {{1}}, TM Perfume House customer care can help with the status of an order or a return. Tap a button to message our team.", ['Order status', 'Not now']]],
+        'order' => [
+        ["Hi {{1}}, a quick check on your order {{2}} placed on {{3}}: did it reach you in good condition? Tap a button to tell our team.", ['Yes, received', 'I need help']],
+        ["Hello {{1}}, this is TM Perfume House customer care about your order {{2}} of {{3}}. If anything is missing or damaged, tap a button and we will fix it.", ['All good', 'Report a problem']]]];
+    $used = array_map(fn($b) => preg_replace('/\s+/', ' ', trim((string)$b)), $usedBodies); $list = $bank[$kind] ?? []; if (!$list) return null;
+    for ($i = 0; $i < count($list); $i++) { $c = $list[($n + $i) % count($list)]; if (!in_array($c[0], $used, true)) return $c; }
+    return null;
+}
+/** 🧠 owner, 18 Nov 2026 (night): a standard follow-up that Meta MOVED to marketing gets a NEW UTILITY replacement, written in the pattern of the ones Meta KEPT as utility (the AI sees both groups and the words only the moved ones use; if it cannot answer, a safe wording from the bank is used).
+ *  At most 2 replacements per message, 2 made per round, 16 a day; the new one goes to Meta on every account. Switch off: setting wa_ru_learn = 0. Returns ['made' => [keys], 'note' => ''] */
+function wa_util_pool_learn(PDO $pdo, int $by = 0): array
+{
+    $res = ['made' => [], 'note' => ''];
+    if ((string)setting_get($pdo, 'wa_ru_learn', '1') === '0') { $res['note'] = 'off'; return $res; }
+    if ((int)setting_get($pdo, 'wa_ru_learn_block', '0') > time()) { $res['note'] = 'Meta weekly limit for new utility messages'; return $res; }
+    try { $lim = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba w JOIN wa_templates t ON t.id = w.tpl_id WHERE t.extra LIKE '%util_learned%' AND t.created_at >= ? AND w.status = 'ERROR' AND w.reason LIKE '%weekly limit%'"); $lim->execute([gmdate('Y-m-d H:i:s', time() + 19800 - 43200)]);
+        if ((int)$lim->fetchColumn() > 0) { setting_set($pdo, 'wa_ru_learn_block', (string)(time() + 12 * 3600)); if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'Utility follow-up learn paused for 12 hours: Meta says the business reached the weekly limit for creating utility messages'); $res['note'] = 'Meta weekly limit'; return $res; } } catch (Throwable $e) { }   // no more new messages while Meta refuses them (the limit renews weekly)
+    try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_ru_learn', 0)")->fetchColumn(); } catch (Throwable $e) { $got = 0; } if ($got !== 1) { $res['note'] = 'busy'; return $res; }
+    try {
+        if ((int)setting_get($pdo, 'wa_ru_learn_done', '0') > time() - 540) { $res['note'] = 'recent'; try { $pdo->query("SELECT RELEASE_LOCK('wa_ru_learn')"); } catch (Throwable $e) { } return $res; }   // two ticks at once must not both run a round
+        setting_set($pdo, 'wa_ru_learn_done', (string)time());
+        $appr = []; foreach ($pdo->query("SELECT tpl_id, SUM(status = 'APPROVED') ok FROM wa_tpl_waba GROUP BY tpl_id")->fetchAll() as $w) $appr[(int)$w['tpl_id']] = (int)$w['ok'];
+        $G = []; $keptBodies = []; $movedBodies = []; $allBodies = [];
+        foreach ($pdo->query("SELECT * FROM wa_templates WHERE extra LIKE '%util_pool%' ORDER BY id")->fetchAll() as $r) {
+            $x = json_decode((string)($r['extra'] ?? ''), true); if (!is_array($x) || empty($x['util_pool'])) continue; $k = (string)$x['util_pool']; $base = (string)($x['util_base'] ?? preg_replace('/_r\d+$/', '', $k)); $try = (int)($x['util_try'] ?? 0); $kind = (string)($x['util_kind'] ?? 'open');
+            $moved = !empty($r['relabelled_at']) || strtoupper((string)$r['category']) === 'MARKETING'; if (!$moved && $kind === 'open' && !empty($x['util_learned']) && wa_util_claims_history((string)$r['body'])) $moved = true;   // it claims a recent enquiry / order: treated as a failed try, the next one is written without it
+            $allBodies[] = (string)$r['body'];
+            if ($moved) $movedBodies[] = (string)$r['body']; elseif (($appr[(int)$r['id']] ?? 0) > 0) $keptBodies[] = (string)$r['body'];
+            $g = &$G[$base]; if (!isset($g)) $g = ['kind' => $kind, 'kept' => 0, 'moved' => 0, 'try' => 0, 'row' => $r, 'keys' => []]; $g['keys'][$k] = 1; $g['try'] = max($g['try'], $try);
+            if ($moved) $g['moved']++; else $g['kept']++; unset($g);
+        }
+        if (!$keptBodies) { $res['note'] = 'no kept utility message to learn from yet'; return $res; }
+        $day = date('Y-m-d'); $cnt = json_decode((string)setting_get($pdo, 'wa_ru_learn_day', ''), true); $cnt = (is_array($cnt) && ($cnt['d'] ?? '') === $day) ? (int)$cnt['n'] : 0;
+        $avoid = wa_util_learn_avoid($keptBodies, $movedBodies); $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 6 * max(1, count($wabas))]; $round = 0;
+        foreach ($G as $base => $g) {
+            if ($g['kept'] > 0 || $g['moved'] < 1 || $g['try'] >= 2 || $round >= 2 || $cnt >= 16) continue;
+            $r = $g['row']; $kind = $g['kind']; $newKey = $base . '_r' . ($g['try'] + 1); $ex = json_decode((string)($r['examples'] ?? ''), true); $ex = is_array($ex) ? $ex : []; $labels = array_map('strval', (array)($ex['labels'] ?? [])); $exv = array_map('strval', (array)($ex['body'] ?? [])); $nv = count($labels);
+            $body = ''; $buttons = [];
+            if (function_exists('wa_tpl_model')) {
+                $sys = "You write ONE WhatsApp UTILITY message for TM Perfume House (a perfume shop in Surat, India). Meta decides the category: it KEPT the messages listed as KEPT as utility (clearly about the customer's own order, delivery, purchase, request or customer care) and MOVED the ones listed as MOVED to marketing (soft relationship / welcome / invitation wording). Write a NEW message with the same purpose and exactly the same variables ({{1}}" . ($nv > 1 ? ' … {{' . $nv . '}}' : '') . ") in the same order as the MOVED one, built like the KEPT ones: name the order, delivery, purchase or customer-care reason openly, a plain helpful tone, no offer, no price, no emoji, no capital shouting, under 300 characters, never start or end with a variable. IMPORTANT: the message also goes to customers who never enquired or ordered, so it must NEVER claim that the customer asked, enquired, ordered, bought or received anything, or that you hold their details, and never say 'recent' (only a message that has an order number {{2}} may name the order). Say only that TM Perfume House customer care is here to help with orders, deliveries and questions. Do not use these words: " . implode(', ', $avoid) . ". Give two short buttons (max 20 characters each).";
+                $ctx = "KEPT as utility:\n- " . implode("\n- ", array_slice($keptBodies, 0, 8)) . "\n\nMOVED to marketing:\n- " . implode("\n- ", array_slice($movedBodies, 0, 6)) . "\n\nThe message to replace (kind " . $kind . "): " . (string)$r['body'];
+                $sch = ['type' => 'OBJECT', 'properties' => ['body' => ['type' => 'STRING'], 'button1' => ['type' => 'STRING'], 'button2' => ['type' => 'STRING']], 'required' => ['body', 'button1', 'button2']];
+                try { [$ok, $v] = wa_tpl_model($sys, $ctx, $sch, 1200); } catch (Throwable $e) { $ok = false; $v = null; }
+                if ($ok && is_array($v)) { $b = trim((string)($v['body'] ?? '')); $bad = false; foreach ($avoid as $w) if (stripos($b, $w) !== false) $bad = true;
+                    if ($kind === 'open' && wa_util_claims_history($b)) $bad = true;
+                    if ($b !== '' && !$bad && mb_strlen($b) <= 400 && count(wa_tpl_vars($b)) === $nv && !in_array(preg_replace('/\s+/', ' ', $b), array_map(fn($z) => preg_replace('/\s+/', ' ', trim($z)), $allBodies), true)) { $body = $b; $buttons = [mb_substr(trim((string)$v['button1']), 0, 20), mb_substr(trim((string)$v['button2']), 0, 20)]; } }
+            }
+            if ($body === '') { $fb = wa_util_learn_fallback($kind, $allBodies, $g['try']); if (!$fb || count(wa_tpl_vars($fb[0])) !== $nv) continue; $body = $fb[0]; $buttons = $fb[1]; }
+            [$t, $e] = wa_tpl_clean(['name' => 'tmph_fu_' . $newKey, 'language' => 'en', 'category' => 'UTILITY', 'body' => $body, 'footer' => '', 'buttons' => array_map(fn($b0) => ['type' => 'QUICK_REPLY', 'text' => $b0], array_filter($buttons, fn($b0) => $b0 !== '')), 'examples' => ['body' => $exv, 'labels' => $labels], 'folder' => 'utility']);
+            if ($e !== '') { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'Utility follow-up learned: ' . $newKey . ' not made: ' . $e); continue; }
+            $t['extra'] = ['util_pool' => $newKey, 'util_kind' => $kind, 'util_base' => $base, 'util_try' => $g['try'] + 1, 'util_learned' => date('Y-m-d H:i:s')];
+            $id = wa_tpl_insert($pdo, $t, $by, 'Utility follow-up (learned): ' . $kind, 'Replacement of ' . $base . ' (Meta moved it to marketing), written like the messages Meta kept as utility'); $row = wa_tpl_row($pdo, $id);
+            foreach ($wabas as $w) wa_tpl_try_create($pdo, $row, (string)$w, $budget);
+            $res['made'][] = $newKey; $allBodies[] = $body; $round++; $cnt++;   // the next one of this round must not get the same wording
+             setting_set($pdo, 'wa_ru_learn_day', json_encode(['d' => $day, 'n' => $cnt]));
+            if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility follow-up learned: ' . $newKey . ' made and sent to Meta (Meta moved ' . $base . ' to marketing; the new one follows the pattern of the messages Meta kept as utility)');
+        }
+    } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'Utility follow-up learn error: ' . mb_substr($e->getMessage(), 0, 140)); }
+    try { $pdo->query("SELECT RELEASE_LOCK('wa_ru_learn')"); } catch (Throwable $e) { }
+    return $res;
+}
 /** For the screens: every pool message with its text, variables and status on each number. */
 function wa_util_pool_view(PDO $pdo): array
 {
@@ -240,9 +351,10 @@ function wa_util_pool_view(PDO $pdo): array
     return $o;
 }
 /** The pool messages a campaign may send now (approved somewhere, not moved to marketing by Meta). */
-function wa_util_pool_usable(PDO $pdo): array
+function wa_util_pool_usable(PDO $pdo, bool $behaviour = false): array
 {
-    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING') continue; $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue;
+    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING') continue; $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
+        $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; if ($claims) { $t['claims'] = true; $t['body'] = (string)$r['body']; }
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;
 }
@@ -250,7 +362,7 @@ function wa_util_pool_usable(PDO $pdo): array
  *  Only the 'open' (name-only) pool kind; the other pool messages are never sent once they are relabelled. */
 function wa_util_pool_fallback(PDO $pdo): array
 {
-    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING') continue;
+    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body'])) continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING') continue;
         $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = 'open'; $t['as_marketing'] = true; $o[] = $t; }
     return $o;
 }
@@ -269,6 +381,9 @@ function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs
     if (!$pool || (int)($ct['optout'] ?? 0) === 1) return null; $phone = (string)$ct['phone']; $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : 'ji';
     $ask = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'ask')); $ord = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'order'));
     $in = !empty($ct['last_in_at']) ? (int)strtotime((string)$ct['last_in_at']) : 0; $fill = function (array $t, array $v) { $o = []; foreach (array_slice($t['labels'], 0, $t['nvars']) as $l) { $x = trim((string)($v[strtolower((string)$l)] ?? '')); if ($x === '') return null; $o[] = mb_substr($x, 0, 60); } return count($o) === (int)$t['nvars'] ? $o : null; };
+    $hasEnq = $in >= $nowTs - max(1, $askDays) * 86400; $hasOrd = false; if ($ordDays > 0) { $oo = wa_util_orders($pdo, $ordDays)[$phone] ?? null; $hasOrd = $oo && (string)$oo['order'] !== ''; }
+    if ($hasEnq || $hasOrd) { $cl = array_values(array_filter($pool, fn($t) => !empty($t['claims']) && wa_util_claim_ok((string)($t['body'] ?? ''), $hasEnq, $hasOrd)));   // 🎯 half of the people who wrote to us / ordered get a message that says so (true for them)
+        if ($cl && $rot % 2 === 0) { $t = $cl[intdiv($rot, 2) % count($cl)]; $v = $fill($t, ['name' => $name]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'open']; } }
     if ($ask && $in >= $nowTs - max(1, $askDays) * 86400) {
         $p = ''; try { if (function_exists('wa_camp_lazy') ? wa_camp_lazy('wa_prod_last_asked', 'wa_prod.php') : function_exists('wa_prod_last_asked')) $p = (string)wa_prod_last_asked($pdo, $phone); } catch (Throwable $e) { }
         if ($p !== '') { $t = $ask[$rot % count($ask)]; $v = $fill($t, ['name' => $name, 'perfume' => $p, 'date' => date('j M', $in)]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'ask']; }
@@ -280,7 +395,7 @@ function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs
     if ($ord && $ordDays > 0) { $o = wa_util_orders($pdo, $ordDays)[$phone] ?? null;
         if ($o && $o['order'] !== '') { $t = $ord[$rot % count($ord)]; $v = $fill($t, ['name' => $name, 'order' => $o['order'], 'date' => date('j M', (int)strtotime($o['at']))]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'order']; } }
     if ($anyone) {   // 💸 utility first (owner, 17 Nov 2026): a customer with no enquiry / order on record (an old customer, an imported list) still gets the short welcome message
-        $open = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'open'));
+        $open = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'open' && empty($t['claims'])));
         if ($open) { $t = $open[$rot % count($open)]; $v = $fill($t, ['name' => $name]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'open']; }
     }
     return null;
