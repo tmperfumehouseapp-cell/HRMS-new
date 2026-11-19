@@ -552,8 +552,9 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
 }
 function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UPDATE wa_campaigns SET status = 'paused', note = ? WHERE id = ?")->execute([mb_substr($why, 0, 200), $id]); wa_log($pdo, 'campaign', false, '#' . $id . ' paused: ' . $why); }
 
-/** 🔀 A running campaign whose message is a plain utility pool message that is approved on FEWER numbers than the best pool message is moved to the best one (owner, 19 Nov 2026, 14:50: "tmph_fu_open_thanks" was PAUSED on 3 of 4 numbers, so only one number could send and the campaigns ran at about 10 messages in 10 minutes).
- *  Only campaigns whose CURRENT message is a pool message (never an owner's own marketing message), checked every 5 minutes. Returns how many were moved. Switch off: wa_widen_tpl = 0. */
+/** 🔀 Campaigns that run on a plain pool message (the utility "open" reminders and their Meta-relabelled marketing twins) do not stay on ONE message (owner, 19 Nov 2026, 15:00): every 20 minutes each such running campaign moves to the next message of ALL the suitable ones
+ *  (name-only, no claims, approved on every number that can send), campaigns start at different places of the list, so no single message carries everything and one that Meta pauses or moves is left out by itself. Only campaigns whose CURRENT message is a pool message are touched, never an owner's own marketing message.
+ *  Checked every 5 minutes. Returns how many campaigns were moved. Switch off: wa_widen_tpl = 0. */
 function wa_camp_widen_tpl(PDO $pdo): int
 {
     try {
@@ -561,13 +562,17 @@ function wa_camp_widen_tpl(PDO $pdo): int
         if (!function_exists('wa_util_pool_usable') && is_file(__DIR__ . '/wa_util.php')) { try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { } }
         if (!function_exists('wa_util_pool_usable')) return 0;
         $now = time(); if ((int)setting_get($pdo, 'wa_widen_at', '0') > $now - 300) return 0; setting_set($pdo, 'wa_widen_at', (string)$now);
-        $pool = []; foreach (wa_util_pool_usable($pdo) as $t) { if (($t['pool_kind'] ?? '') === 'open' && (int)($t['nvars'] ?? 0) <= 1 && empty($t['claims'])) $pool[(int)$t['id']] = $t; }
-        if (!$pool) return 0; $best = null; foreach ($pool as $t) { if ($best === null || count((array)($t['ok_wabas'] ?? [])) > count((array)($best['ok_wabas'] ?? []))) $best = $t; }
-        $bn = count((array)($best['ok_wabas'] ?? [])); if ($bn <= 0) return 0; $done = 0;
-        foreach ($pdo->query("SELECT id, tpl_id FROM wa_campaigns WHERE status = 'running'")->fetchAll(PDO::FETCH_ASSOC) as $c) {
-            $cur = $pool[(int)$c['tpl_id']] ?? null; if (!$cur || (int)$best['id'] === (int)$c['tpl_id'] || count((array)($cur['ok_wabas'] ?? [])) >= $bn) continue;
-            $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, note = ? WHERE id = ? AND status = 'running'")->execute([(int)$best['id'], 'Message moved to "' . str_replace('_', ' ', (string)$best['name']) . '" (approved on ' . $bn . ' numbers; the old one only on ' . count((array)($cur['ok_wabas'] ?? [])) . ')', (int)$c['id']]); $done++;
-            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, '#' . (int)$c['id'] . ' message moved from "' . (string)$cur['name'] . '" (approved on ' . count((array)($cur['ok_wabas'] ?? [])) . ' numbers) to "' . (string)$best['name'] . '" (approved on ' . $bn . ')');
+        $all = []; foreach (wa_util_pool_usable($pdo) as $t) { if (($t['pool_kind'] ?? '') === 'open' && (int)($t['nvars'] ?? 0) <= 1 && empty($t['claims'])) $all[(int)$t['id']] = $t; }
+        if (function_exists('wa_util_pool_fallback')) { foreach (wa_util_pool_fallback($pdo) as $t) { if ((int)($t['nvars'] ?? 0) <= 1 && empty($t['claims']) && !isset($all[(int)$t['id']])) $all[(int)$t['id']] = $t; } }
+        if (!$all) return 0; $bn = 0; foreach ($all as $t) $bn = max($bn, count((array)($t['ok_wabas'] ?? []))); if ($bn <= 0) return 0;
+        $cand = []; foreach ($all as $id => $t) { if (count((array)($t['ok_wabas'] ?? [])) >= $bn) $cand[] = $t; } usort($cand, fn($x, $y) => (int)$x['id'] <=> (int)$y['id']); $n = count($cand); if ($n < 1) return 0;
+        $poolIds = []; foreach (function_exists('wa_util_pool_rows') ? wa_util_pool_rows($pdo) : [] as $r) $poolIds[(int)$r['id']] = 1; foreach ($all as $id => $t) $poolIds[(int)$id] = 1;
+        $slot = intdiv($now, 1200); $done = 0; $k = 0;
+        foreach ($pdo->query("SELECT id, tpl_id FROM wa_campaigns WHERE status = 'running' ORDER BY id")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            if (empty($poolIds[(int)$c['tpl_id']])) continue;   // the campaign's own message: never touched
+            $pick = $cand[($slot + $k++) % $n]; if ((int)$pick['id'] === (int)$c['tpl_id']) continue;
+            $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, note = ? WHERE id = ? AND status = 'running'")->execute([(int)$pick['id'], 'Message rotates every 20 minutes between ' . $n . ' approved messages (now "' . str_replace('_', ' ', (string)$pick['name']) . '")', (int)$c['id']]); $done++;
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, '#' . (int)$c['id'] . ' message rotated to "' . (string)$pick['name'] . '" (' . $n . ' suitable messages, each approved on ' . $bn . ' numbers)');
         }
         return $done;
     } catch (Throwable $e) { error_log('wa_camp_widen_tpl: ' . $e->getMessage()); return 0; }
