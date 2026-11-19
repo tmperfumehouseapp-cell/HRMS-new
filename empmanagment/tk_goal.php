@@ -75,12 +75,12 @@ if ($__tkA === 'wq.grow_notes') {   // Admin / HR: the owner's to-do list — wh
         try { $pdo->exec("DELETE FROM grow_note WHERE kind = 'ticket' AND status = 'open' AND text LIKE '%orders ka average%'"); } catch (Throwable $e) { }   // one-off: the first version of the ticket note used a different average than the Live blocks
         $lane = []; $behind2 = ['big' => [], 'add' => [], 'ticket' => [], 'bigd' => [], 'addd' => []];
         try { $A = "(CASE WHEN r.worked = 1 OR r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B = "(CASE WHEN r.sz_worked = 1 OR r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
-            $q = $pdo->query("SELECT r.employee_id e, COUNT(*) n, SUM($B = 0) zb, SUM($A = 0) za FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 4 AND r.rating IS NOT NULL AND r.employee_id > 0 AND o.created_at >= NOW() - INTERVAL 60 MINUTE GROUP BY r.employee_id");
+            $q = $pdo->query("SELECT r.employee_id e, COUNT(*) n, SUM($B = 0) zb, SUM($A = 0) za FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 5 AND r.rating IS NOT NULL AND r.employee_id > 0 AND o.created_at >= NOW() - INTERVAL 60 MINUTE GROUP BY r.employee_id");
             foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $n = (int)$x['n']; if ($n < 3) continue; $e = (int)$x['e'];
                 if ((int)$x['zb'] * 2 >= $n) { $behind2['big'][] = $e; $raise('big', $e, '⬆ Ticket size: pichhle ghante ' . $n . ' orders me se ' . (int)$x['zb'] . ' me bada size / value ka offer nahi hua. Isse bolo: "4 ki jagah 5 le lo, 5th pe ₹100 off" jaisa offer har order me rakhe.'); }
                 if ((int)$x['za'] * 2 >= $n) { $behind2['add'][] = $e; $raise('add', $e, '➕ Add-on: pichhle ghante ' . $n . ' orders me se ' . (int)$x['za'] . ' me extra perfume ka offer nahi hua. Isse bolo: "10ml tester sirf ₹99 mein add kar du" jaisa offer rakhe.'); } }
             // the whole day so far: 8+ read orders and 60%+ of them without any bigger / add-on offer
-            $q = $pdo->prepare("SELECT employee_id e, COUNT(*) n, SUM($B = 0) zb, SUM($A = 0) za FROM order_rate_auto r WHERE r.day = ? AND r.sz_ok = 4 AND r.rating IS NOT NULL AND r.employee_id > 0 GROUP BY r.employee_id HAVING n >= 8"); $q->execute([$day]);
+            $q = $pdo->prepare("SELECT employee_id e, COUNT(*) n, SUM($B = 0) zb, SUM($A = 0) za FROM order_rate_auto r WHERE r.day = ? AND r.sz_ok = 5 AND r.rating IS NOT NULL AND r.employee_id > 0 GROUP BY r.employee_id HAVING n >= 8"); $q->execute([$day]);
             foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $n = (int)$x['n']; $e = (int)$x['e'];
                 if ((int)$x['zb'] * 100 >= 60 * $n) { $behind2['bigd'][] = $e; $raise('bigd', $e, '⬆ Aaj ' . $n . ' orders me se ' . (int)$x['zb'] . ' me bada size / value ka offer nahi hua (' . (int)round((int)$x['zb'] * 100 / $n) . '%). Isse bolo: "4 ki jagah 5 le lo, 5th pe ₹100 off" har order me rakhe.'); }
                 if ((int)$x['za'] * 100 >= 60 * $n) { $behind2['addd'][] = $e; $raise('addd', $e, '➕ Aaj ' . $n . ' orders me se ' . (int)$x['za'] . ' me extra perfume ka offer nahi hua (' . (int)round((int)$x['za'] * 100 / $n) . '%). Isse bolo: "10ml tester sirf ₹99 mein add kar du" har order me rakhe.'); } }
@@ -117,12 +117,12 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
     try {
         if ($me > 0 && function_exists('ora_tables') && ora_tables($pdo)) {
             $day = biz_today($pdo); $st = 0.0; $rows = []; $cbRows = [];
-            $q = $pdo->prepare("SELECT order_key, order_name, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries, reason, phone FROM order_rate_auto WHERE employee_id = ? AND day = ? AND rating IS NOT NULL AND sz_ok = 4 ORDER BY at DESC LIMIT 400"); $q->execute([$me, $day]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+            $q = $pdo->prepare("SELECT order_key, order_name, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries, reason, sz_reason, phone FROM order_rate_auto WHERE employee_id = ? AND day = ? AND rating IS NOT NULL AND sz_ok = 5 ORDER BY at DESC LIMIT 400"); $q->execute([$me, $day]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
             try { if (function_exists('addons_attach')) addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { }
             foreach ($rows as $r) {
                 $lv = ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']); $out['n'][$lv]++; $out['sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; $st += (float)$r['rating'] / 2; $out['addon_rs'] += (float)($r['addon_total'] ?? 0);
                 if ($lv === 0 && wq_cb_ready($pdo)) { $cbRows[] = [(string)$r['order_key'], (string)$r['order_name'], (string)$r['phone'], (float)($r['addon_total'] ?? 0)]; }
-                if (ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']) === 0 && count($out['missed_big']) < 5) { $out['missed_big'][] = ['order' => (string)$r['order_name'], 'phone' => (string)$r['phone'], 'why' => mb_substr((string)$r['reason'], 0, 140)]; }
+                if (ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']) === 0 && count($out['missed_big']) < 5) { $out['missed_big'][] = ['order' => (string)$r['order_name'], 'phone' => (string)$r['phone'], 'why' => mb_substr((string)($r['sz_reason'] !== '' ? $r['sz_reason'] : $r['reason']), 0, 140)]; }
             }
             // 📞 call-backs: every order of today without an add-on offer becomes (once) an open call-back; an add-on that got recorded resolves it by itself; the list shown is the OPEN ones (not snoozed)
             try { if ($cbRows && wq_cb_ready($pdo)) {
@@ -132,8 +132,8 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
                 foreach ($oq->fetchAll(PDO::FETCH_ASSOC) as $c) $out['missed'][] = ['key' => (string)$c['order_key'], 'order' => (string)$c['order_name'], 'phone' => (string)$c['phone'], 'why' => '']; $out['missed_n'] = count($out['missed']); } } catch (Throwable $e) { }
             $n = array_sum($out['n']); $out['read'] = $n; $out['stars'] = $n ? round($st / $n, 1) : null; $out['addon_rs'] = round($out['addon_rs']);
             $t = $pdo->prepare("SELECT tip FROM order_rate_auto WHERE employee_id = ? AND worked = 1 AND tip <> '' AND at >= ? ORDER BY at DESC LIMIT 1"); $t->execute([$me, date('Y-m-d H:i:s', time() - 14 * 86400)]); $out['tip'] = (string)$t->fetchColumn();
-            $tm = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 4 LIMIT 3000"); $tm->execute([$day]); foreach ($tm->fetchAll(PDO::FETCH_ASSOC) as $r) { $out['team'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++; $out['team_sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; }
-            $yd = date('Y-m-d', strtotime($day . ' -1 day')); $yq = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE employee_id = ? AND day = ? AND rating IS NOT NULL AND sz_ok = 4 LIMIT 600"); $yq->execute([$me, $yd]);
+            $tm = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 5 LIMIT 3000"); $tm->execute([$day]); foreach ($tm->fetchAll(PDO::FETCH_ASSOC) as $r) { $out['team'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++; $out['team_sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; }
+            $yd = date('Y-m-d', strtotime($day . ' -1 day')); $yq = $pdo->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE employee_id = ? AND day = ? AND rating IS NOT NULL AND sz_ok = 5 LIMIT 600"); $yq->execute([$me, $yd]);
             foreach ($yq->fetchAll(PDO::FETCH_ASSOC) as $r) { $out['yd']['n'][ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries'])]++; $out['yd']['sz'][ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries'])]++; $out['yd']['read']++; }
         }
     } catch (Throwable $e) { error_log('wq.ad_me: ' . $e->getMessage()); }
@@ -142,7 +142,7 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
     $ideas = ['big' => [], 'add' => []];
     try { if (function_exists('ora_tables') && ora_tables($pdo)) { $since = date('Y-m-d H:i:s', time() - 7 * 86400);
         foreach (['big' => "sz_worked = 1 AND sz_tip <> ''", 'add' => "worked = 1 AND tip <> ''"] as $k => $w) { $col = $k === 'big' ? 'sz_tip' : 'tip';
-            $q = $pdo->prepare("SELECT $col FROM order_rate_auto WHERE sz_ok = 4 AND $w AND at >= ? ORDER BY at DESC LIMIT 40"); $q->execute([$since]);
+            $q = $pdo->prepare("SELECT $col FROM order_rate_auto WHERE sz_ok = 5 AND $w AND at >= ? ORDER BY at DESC LIMIT 40"); $q->execute([$since]);
             foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) { $t = trim((string)$t); if ($t !== '' && !in_array($t, $ideas[$k], true)) $ideas[$k][] = $t; if (count($ideas[$k]) >= 3) break; } } } } catch (Throwable $e) { }
     if (!$ideas['big']) $ideas['big'][] = '50ml ki jagah 100ml le lo, per ml sasta padega';
     if (!$ideas['add']) $ideas['add'][] = '4 ki jagah 5 perfume le lo, 5th pe ₹100 off';
@@ -208,7 +208,7 @@ function wq_grow_ideas(PDO $pdo): array
 {
     $o = ['big' => ['50ml ki jagah 100ml le lo, per ml sasta padega'], 'add' => ['4 ki jagah 5 perfume le lo, 5th pe ₹100 off']];
     try { if (function_exists('ora_tables') && ora_tables($pdo)) { $since = date('Y-m-d H:i:s', time() - 7 * 86400);
-        foreach (['big' => ['sz_tip', "sz_worked = 1 AND sz_tip <> ''"], 'add' => ['tip', "worked = 1 AND tip <> ''"]] as $k => $d) { $q = $pdo->prepare("SELECT {$d[0]} FROM order_rate_auto WHERE sz_ok = 4 AND {$d[1]} AND at >= ? ORDER BY at DESC LIMIT 1"); $q->execute([$since]); $t = trim((string)$q->fetchColumn()); if ($t !== '') $o[$k] = [$t]; } } } catch (Throwable $e) { }
+        foreach (['big' => ['sz_tip', "sz_worked = 1 AND sz_tip <> ''"], 'add' => ['tip', "worked = 1 AND tip <> ''"]] as $k => $d) { $q = $pdo->prepare("SELECT {$d[0]} FROM order_rate_auto WHERE sz_ok = 5 AND {$d[1]} AND at >= ? ORDER BY at DESC LIMIT 1"); $q->execute([$since]); $t = trim((string)$q->fetchColumn()); if ($t !== '') $o[$k] = [$t]; } } } catch (Throwable $e) { }
     return $o;
 }
 function wq_grow_log(PDO $pdo, int $emp, string $phone, string $mode, string $decision, int $add, int $big, string $reason = ''): void
@@ -228,7 +228,7 @@ function wq_coach_levels(PDO $pdo): array
         $out = [];
         try { if (!ora_tables($pdo)) return [];
             $A = "(CASE WHEN r.worked = 1 OR r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B = "(CASE WHEN r.sz_worked = 1 OR r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
-            $q = $pdo->query("SELECT r.employee_id e, CASE WHEN o.created_at >= NOW() - INTERVAL 60 MINUTE THEN 1 ELSE 2 END w, COUNT(*) n, SUM($A = 0 AND $B = 0) z FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 4 AND r.rating IS NOT NULL AND r.employee_id > 0 AND o.created_at >= NOW() - INTERVAL 120 MINUTE GROUP BY r.employee_id, w");
+            $q = $pdo->query("SELECT r.employee_id e, CASE WHEN o.created_at >= NOW() - INTERVAL 60 MINUTE THEN 1 ELSE 2 END w, COUNT(*) n, SUM($A = 0 AND $B = 0) z FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 5 AND r.rating IS NOT NULL AND r.employee_id > 0 AND o.created_at >= NOW() - INTERVAL 120 MINUTE GROUP BY r.employee_id, w");
             foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) $out[(int)$x['e']]['h' . (int)$x['w']] = [(int)$x['n'], (int)$x['z']];
             foreach ($out as $e => $v) { $h1 = $v['h1'] ?? [0, 0]; $h2 = $v['h2'] ?? [0, 0]; $b1 = $h1[0] >= 3 && $h1[1] * 2 >= $h1[0]; $b2 = $h2[0] >= 3 && $h2[1] * 2 >= $h2[0]; $out[$e] = ['level' => $b1 ? ($b2 ? 2 : 1) : 0, 'h1' => $h1, 'h2' => $h2]; }
         } catch (Throwable $e) { error_log('wq_coach_levels: ' . $e->getMessage()); return []; }
