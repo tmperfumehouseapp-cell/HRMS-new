@@ -10418,8 +10418,8 @@ function lib_guide_nightly_x(PDO $pdo, int $budget): ?string
         [$ok, $msg, $ver] = lib_guide_write($pdo);
         if ($ok) { $d2 = lib_guide_row($pdo, 'draft'); if ($d2 && ($d2['source'] ?? '') === 'ai') {
                 $lv = lib_guide_public(lib_guide_row($pdo, 'live')); $dp = lib_guide_public($d2); [$ad, $de, $pc] = $lv ? lib_guide_change($lv['body'], $dp['body']) : [0, 0, 0];
-                if ($lv && $pc > 60) $note = 'The new guidebook v' . (int)$d2['version'] . ' changes ' . $pc . '% of the points (+' . $ad . ' / −' . $de . ') — kept as a DRAFT for you to check; the live one is unchanged.';
-                else { lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live' . ($lv ? ' (+' . $ad . ' new, −' . $de . ' removed points)' : '') . '.'; }
+                // the owner asked for full auto: every AI-written guidebook goes live by itself (a draft written from numbers only, without real points, still waits)
+                lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live by itself' . ($lv ? ' (' . $pc . '% of the points changed: +' . $ad . ' new, −' . $de . ' removed)' : '') . '.';
             } else $note = 'Written from numbers only, kept as a draft.'; }
         else $note = 'Not updated: ' . $msg;
     }
