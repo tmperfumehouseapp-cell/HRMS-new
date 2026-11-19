@@ -272,6 +272,10 @@ function wa_ru_reset_once(PDO $pdo): void
             setting_set($pdo, 'wa_ru_grid30', '1'); setting_set($pdo, 'wa_ru_ramp_base', '180'); setting_set($pdo, 'wa_ru_ramp_step', '60'); setting_set($pdo, 'wa_ru_ramp_max', '350'); setting_set($pdo, 'wa_ru_ramp_every', '600'); setting_set($pdo, 'wa_ru_hourly', (string)$g0); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): steps of steps 180 / 240 / 300 / 350 an hour (' . $g0 . ' an hour now, it goes on from there), a look every 10 minutes; rising failures hold it, a second bad look sends it back to 30 (owner)');
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_to510', '') !== '1') {   /* owner 19 Nov 2026 (00:55): above 350 the next levels 410, 450, 510 come one by one, each after 2 good hours */
+            setting_set($pdo, 'wa_ru_to510', '1'); setting_set($pdo, 'wa_ru_ramp_max', '510');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): above 350 the levels 410, 450, 510 an hour follow, each after 2 good hours (owner)');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_trim_517_518', '') !== '1') {   // owner 18 Nov 2026: Meta paused #517 / #518 as spam (131048). Fewer people: only those who were REACHED (a delivered message) in the last 30 days stay; the others are held back (they can be sent later with "Send to skipped"). The campaigns start again by themselves at 10:00, the start of the business day.
             setting_set($pdo, 'wa_trim_517_518', '1');
             $n = (int)$pdo->exec("UPDATE wa_camp_items i SET i.status = 'skipped', i.err = 'Held back: not reached in the last 30 days (Meta spam flag)', i.err_code = 0 WHERE i.camp_id IN (517, 518) AND i.status = 'queued' AND NOT EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone COLLATE utf8mb4_unicode_ci = i.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'out' AND m.status IN ('delivered', 'read') AND m.ts >= DATE_SUB(NOW(), INTERVAL 30 DAY))");
@@ -358,9 +362,10 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
             if ($fz >= 2 && $cur > $base) { setting_set($pdo, 'wa_ru_hourly', (string)$base); setting_set($pdo, 'wa_ru_freeze_n', '0'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility follow-up (Module B): second bad look in a row (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered): ' . $cur . ' -> back to ' . $base . ' an hour'); }
             else { setting_set($pdo, 'wa_ru_freeze_n', (string)$fz); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility follow-up (Module B): failures rising (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered): it stays at ' . $cur . ' an hour'); }
             return; }
+        if ($every <= 600 && $cur >= 350 && $now - $rat < 7200) return;   /* owner 19 Nov 2026 (00:55): from 350 upward every level must run well for 2 hours (a bad look restarts the 2 hours) before the next level: 350, 410, 450, 510 */
         if ($cur < $max && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
             setting_set($pdo, 'wa_ru_freeze_n', '0');
-            $to = min($max, $cur + $step);   /* owner 19 Nov 2026 (23:30): +10 messages per 10 minutes every 10 minutes = +60 an hour (260 -> 320 -> 350 top); 180 an hour = 30 per 10 minutes is the floor */
+            $to = min($max, $cur + $step); if ($every <= 600) { if ($cur >= 350) { $to = $max; foreach ([350, 410, 450, 510] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } } else $to = min(350, $max, $cur + $step); }   /* owner 19 Nov 2026: +10 messages per 10 minutes at every 10-minute look up to 350 (260 -> 320 -> 350), above 350 a level every 2 good hours: 410, 450, 510 */
             setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered in the last look): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
