@@ -486,7 +486,7 @@ function fi_file_rows(array $rows, array $a): array
         if ($net > 0 && $net <= $amt) $fee = round($amt - $net, 2);      // the file says the net settled amount itself
         elseif ($fee > 0 && $fee <= $amt * 0.3) $net = round($amt - $fee, 2);      // gross minus what the gateway kept
         else { $fee = 0.0; $net = 0.0; }      // no fee columns, or a "fee" bigger than 30% of the payment is not a fee
-        if ($net > 0 && $fee > 0) { $out[$last]['amount'] = $net; $out[$last]['charge'] = $fee; }
+        if ($net > 0 && $fee > 0) { $out[$last]['charge'] = $fee; }      // the amount stays what the customer paid; what the gateway kept goes to Spends once (fi_charges), so it is never taken off twice
     }
     return $out;
 }
