@@ -479,12 +479,116 @@
     // 🎯 one line under the title (beside the green coach strip): today's ticket, the goal, and what the next order must be
     const strip = (t) => { try { let el = document.getElementById('wxTkS'); if (!t || !(+t.goal > 0)) { if (el) el.remove(); return; } const f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), top = R.querySelector('.wx-top'); if (!top) return;
         if (!el) { el = document.createElement('div'); el.id = 'wxTkS'; el.className = 'wx-mgr wx-mgr-first'; const mg = document.getElementById('wxMgr'); (mg || top).insertAdjacentElement('afterend', el); }
-        el.textContent = !t.orders ? '🎯 ટિકિટ ગોલ ' + f(t.goal) + ' · પહેલો ઓર્ડર ' + f(t.goal) + ' કે વધુનો પાડો' : t.status === 'g' ? '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' ✓ સરસ! આમ જ ચાલુ રાખો' : '🎯 ટિકિટ ' + f(t.ticket) + ' · ગોલ ' + f(t.goal) + ' · આગલો ઓર્ડર ઓછામાં ઓછો ' + f(t.need_next); } catch (e) { } };
+        el.textContent = !t.orders ? '🎯 Ticket goal ' + f(t.goal) + ' · Pehla order ' + f(t.goal) + ' ya usse bada lo' : t.status === 'g' ? '🎯 Ticket ' + f(t.ticket) + ' · Goal ' + f(t.goal) + ' ✓ Badhiya! Aise hi chalu rakho' : '🎯 Ticket ' + f(t.ticket) + ' · Goal ' + f(t.goal) + ' · Agla order kam se kam ' + f(t.need_next); } catch (e) { } };
+    // 🔗 the payment-link rule: a bottom sheet (used by the chat and by the cart). Resolves {action: 'offer' | 'send' | 'waive', words, reason}. 'send' only exists in the warning phase.
+    window.WaGrowAsk = (d) => new Promise((resolve) => {
+      const lock = d.grow_gate === 'lock', miss = d.grow_missing || [], id = d.grow_ideas || {}, wAdd = (id.add || [])[0] || '', wBig = (id.big || [])[0] || '', words = miss.indexOf('add') >= 0 ? wAdd : wBig;
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center';
+      const done = (v) => { o.remove(); resolve(v); };
+      o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif"><b style="font-size:15px">' + (lock ? '🔒 Link abhi nahi jayegi' : '⚠️ Link bhejne se pehle offer karo') + '</b>'
+        + '<div style="margin-top:5px">' + esc(d.error || '') + '</div>'
+        + '<div style="margin-top:7px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 9px">' + (miss.indexOf('add') >= 0 ? '➕ “' + esc(wAdd) + '”<br>' : '') + (miss.indexOf('big') >= 0 ? '⬆ “' + esc(wBig) + '”' : '') + '</div>'
+        + '<button type="button" data-g="offer" style="width:100%;margin-top:9px;border:0;background:#0f6e7e;color:#fff;border-radius:10px;padding:10px;font:700 13px system-ui">✏️ Pehle customer ko offer karta hu</button>'
+        + '<div style="margin-top:9px;border-top:1px solid #eef0f4;padding-top:8px"><b>Customer ne mana kiya / sach me zarurat nahi?</b><div style="color:#667781;font-size:11.5px">Reason likho — yeh note hoga aur owner ko dikhega.</div><input data-g="why" maxlength="200" placeholder="Reason (kam se kam 4 akshar)" style="width:100%;box-sizing:border-box;margin-top:5px;padding:8px;border:1px solid #d9dde3;border-radius:8px;font:inherit"><button type="button" data-g="waive" style="width:100%;margin-top:6px;border:1px solid #d9dde3;background:#fff;border-radius:10px;padding:9px;font:700 13px system-ui">Reason ke saath link bhejo</button></div>'
+        + (lock ? '' : '<button type="button" data-g="send" style="width:100%;margin-top:8px;border:1px dashed #d9a441;background:#fff;color:#92400e;border-radius:10px;padding:9px;font:700 12.5px system-ui">Fir bhi link bhejo (warning sirf abhi ke liye)</button>') + '</div>';
+      o.addEventListener('click', (e) => { const g = e.target.closest('[data-g]'); if (!g) { if (e.target === o) done({ action: 'offer', words: '' }); return; } const k = g.dataset.g;
+        if (k === 'offer') done({ action: 'offer', words }); else if (k === 'send') done({ action: 'send' });
+        else if (k === 'waive') { const why = (o.querySelector('[data-g="why"]').value || '').trim(); if (why.length < 4) { o.querySelector('[data-g="why"]').style.borderColor = '#dc2626'; return; } done({ action: 'waive', reason: why }); } });
+      document.body.appendChild(o);
+    });
+    window.__wxEffTip = (el) => { try { toast(el.getAttribute('title') || ''); } catch (e) { } };
+    // 📈 ONE clear card under the coach lines: in today's read orders, where the salesperson put NO effort — selling bigger (ticket size) and the add-on — in plain words. Tap = the orders to fix + words that work.
+    // 💬 hourly coaching (notification only): level 1 = the last hour's orders mostly had no bigger/add-on offer (blue instruction) · level 2 = two hours in a row (red warning). Nothing is blocked.
+    function coachHtml() {
+      const c = window.__wxCoach; if (!c || !(c.level > 0)) return '';
+      const id = window.__wxIdeas || {}, w = (id.add || [])[0] || '', n = (c.h1 || [0, 0])[0], z = (c.h1 || [0, 0])[1];
+      return c.level === 2
+        ? '<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:6px 9px;margin-bottom:6px">🔴 <b>Do ghante se lagatar offer nahi ho raha</b> (pichhle ghante ke ' + n + ' orders me se ' + z + ' me ⬆ bada size aur ➕ extra perfume dono ka offer nahi hua). Aisa chalta raha to aapke liye <b>Requests / Rescue</b> thodi der ke liye band kiye jayenge. <span style="opacity:.8">(abhi sirf warning hai, kuch band nahi hua)</span>' + (w ? '<br>💡 “' + esc(w) + '”' : '') + '</div>'
+        : '<div style="background:#dbeafe;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:6px 9px;margin-bottom:6px">💡 <b>Pichhle ghante ke ' + n + ' orders me se ' + z + ' me</b> ⬆ bada size aur ➕ extra perfume dono ka offer nahi hua. Agle order me dono bolo' + (w ? ': “' + esc(w) + '”' : '') + '</div>';
+    }
+    // 📞 call-backs: ONE line under the card ("N customer ko call karo — add-on karwao ›"); tap = a sheet with each customer (Call / Chat · ✓ Resolve). Resolve needs what happened + a remark; an add-on that gets recorded resolves it by itself.
+    function nudgeLine() {
+      try {
+        let el = document.getElementById('wxNt'); const d = window.__wxAdFull, list = (d && d.missed) || [], n = +((d && d.missed_n) || list.length);
+        if (!n) { if (el) el.remove(); return; }
+        if (!el) { el = document.createElement('div'); el.id = 'wxNt'; el.className = 'wx-mgr'; const gl = document.getElementById('wxGl'); if (!gl) return; gl.insertAdjacentElement('afterend', el); }
+        else { const gl = document.getElementById('wxGl'); if (gl && gl.nextElementSibling !== el) gl.insertAdjacentElement('afterend', el); }
+        el.style.cssText += ';cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+        const f = list[0], nm = f ? (f.name || ('#' + String(f.order).replace('#', ''))) : '';
+        el.innerHTML = '📞 ' + (n === 1 ? '<b>' + esc(nm) + '</b> ko call karo' : '<b>' + n + ' customer</b> ko call karo' + (nm ? ' (' + esc(nm) + ' …)' : '')) + ' — add-on karwao ›';
+        el.onclick = () => cbSheet();
+      } catch (e) { }
+    }
+    function cbSheet() {
+      const d = window.__wxAdFull, list = (d && d.missed) || []; if (!list.length) return;
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center'; o.onclick = (e) => { if (e.target === o) o.remove(); };
+      const draw = () => { const cur = ((window.__wxAdFull || {}).missed || []);
+        o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:12px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif;max-height:80vh;overflow:auto"><b style="font-size:15px">📞 Inhe call karo — add-on karwao</b><div style="color:#667781;font-size:11.5px">Order ho chuka hai, extra perfume ka offer nahi hua. Customer se baat karke add-on karwao, phir Resolve karo (remark ke saath).</div>'
+          + (cur.length ? cur.map((m, i) => '<div style="display:flex;align-items:center;gap:8px;border-top:1px solid #fde7cf;padding:8px 0"><div style="flex:1;min-width:0"><b>' + esc(m.name || ('#' + String(m.order).replace('#', ''))) + '</b> · ' + esc(m.order) + '</div><button type="button" data-cb="call" data-i="' + i + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:5px 11px;font-weight:700;font-size:11.5px">📞 Call / Chat</button><button type="button" data-cb="res" data-i="' + i + '" style="border:1px solid #d9dde3;background:#fff;color:#166534;border-radius:99px;padding:5px 11px;font-weight:700;font-size:11.5px">✓ Resolve</button></div>').join('') : '<div style="padding:10px 0;color:#15803d;font-weight:700">✓ Sab resolve ho gaye</div>') + '</div>'; };
+      draw();
+      o.addEventListener('click', (e) => { const b = e.target.closest('[data-cb]'); if (!b) return; const m = ((window.__wxAdFull || {}).missed || [])[+b.dataset.i]; if (!m) return;
+        if (b.dataset.cb === 'call') { o.remove(); try { openChat(m.phone, {}); } catch (x) { } return; }
+        resolveSheet(m, () => { const A = window.__wxAdFull; if (A && A.missed) { A.missed = A.missed.filter((x) => x.key !== m.key); A.missed_n = A.missed.length; } nudgeLine(); draw(); if (window.__wxPaintAd) window.__wxPaintAd(); }); });
+      document.body.appendChild(o);
+    }
+    function resolveSheet(m, done) {
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:110;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center'; let oc = '';
+      o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:12px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif"><b style="font-size:15px">✓ ' + esc(m.name || m.order) + ' — kya hua?</b>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">' + [['addon_done', '✅ Add-on kar diya'], ['declined', '🙅 Customer ne mana kiya'], ['no_answer', '📵 Call nahi laga']].map((x) => '<span data-oc="' + x[0] + '" style="border:1px solid #d9dde3;border-radius:99px;padding:6px 11px;font-weight:700;font-size:12px;cursor:pointer">' + x[1] + '</span>').join('') + '</div>'
+        + '<textarea data-rm rows="2" maxlength="280" placeholder="Remark likho (kam se kam 4 akshar) — kya baat hui, kya add kiya" style="width:100%;box-sizing:border-box;margin-top:8px;padding:8px;border:1px solid #d9dde3;border-radius:8px;font:inherit"></textarea>'
+        + '<div style="color:#667781;font-size:11px;margin-top:3px">Remark owner ko dikhta hai. “Add-on kar diya” ke baad order me add-on dikhna chahiye.</div>'
+        + '<button type="button" data-go style="width:100%;margin-top:8px;border:0;background:#0f6e7e;color:#fff;border-radius:10px;padding:10px;font:700 13px system-ui">Resolve karo</button>'
+        + '<button type="button" data-later style="width:100%;margin-top:6px;border:1px solid #d9dde3;background:#fff;border-radius:10px;padding:9px;font:700 12.5px system-ui">⏳ Baad me karunga (30 min)</button></div>';
+      o.addEventListener('click', async (e) => {
+        if (e.target === o) { o.remove(); return; }
+        const c = e.target.closest('[data-oc]'); if (c) { oc = c.dataset.oc; o.querySelectorAll('[data-oc]').forEach((x) => { x.style.background = x === c ? '#dcfce7' : '#fff'; x.style.borderColor = x === c ? '#86efac' : '#d9dde3'; }); return; }
+        const later = e.target.closest('[data-later]'), go = e.target.closest('[data-go]'); if (!later && !go) return;
+        const rm = (o.querySelector('[data-rm]').value || '').trim();
+        if (go && (!oc || rm.length < 4)) { o.querySelector('[data-rm]').style.borderColor = '#dc2626'; toast(!oc ? 'Pehle batao kya hua' : 'Remark likho (kam se kam 4 akshar)', true); return; }
+        try { await api.post('wq.grow_resolve', { key: m.key, outcome: later ? 'later' : oc, remark: later ? '' : rm }); o.remove(); toast(later ? 'Theek hai, 30 min baad yaad dilayenge' : '✓ Resolve ho gaya'); done(); }
+        catch (er) { toast(er.message || 'Resolve nahi hua', true); } });
+      document.body.appendChild(o);
+    }
+    function growBox() {
+      try {
+        const top = R.querySelector('.wx-top'); if (!top) return; let el = document.getElementById('wxGl');
+        if (!el) { el = document.createElement('div'); el.id = 'wxGl'; el.className = 'wx-mgr'; const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr') || top; prev.insertAdjacentElement('afterend', el); }
+        else { const prev = document.getElementById('wxTkS') || document.getElementById('wxMgr'); if (prev && prev.nextElementSibling !== el) prev.insertAdjacentElement('afterend', el); }
+        const d = window.__wxAd, id = window.__wxIdeas || {}, esc2 = (x) => esc(String(x)); el.style.cssText += ';cursor:pointer;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5;display:block;height:auto'; el.onclick = () => window.__wxAdOpen && window.__wxAdOpen();
+        if (!d || !d.read) { const w = (id.big || [])[0]; el.innerHTML = coachHtml() + '📈 <b>Ticket size aur add-on:</b> Aaj ke orders ki chat padhi jaye to yahan saaf dikhega ki kahan effort nahi lagaya.' + (w ? '<br>💡 Har order me bolo: “' + esc2(w.length > 60 ? w.slice(0, 58) + '…' : w) + '”' : ''); return; }
+        const n = d.n, z = d.sz || [0, 0, 0, 0];
+        const part = (a, no, yes, doneWord) => { const bits = [];
+          bits.push(a[0] > 0 ? '<b style="color:#b91c1c">' + a[0] + ' order me ' + no + '</b>' : '<b style="color:#15803d">Sab orders me ' + yes + ' ✓</b>');
+          if (a[1] > 0) bits.push(a[1] + ' me sirf ek baar');
+          if (a[3] > 0) bits.push('<span style="color:#15803d">' + a[3] + ' me ' + doneWord + ' ✓</span>');
+          return bits.join(' · '); };
+        const yd = d.yd || null, tm = d.team || [0, 0, 0, 0], tz = d.team_sz || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3], pc = (arr) => { const t = arr[0] + arr[1] + arr[2] + arr[3]; return t ? Math.round(100 * (arr[1] + arr[2] + arr[3]) / t) : null; };
+        const cmpLine = (yd && yd.read ? 'Kal: ⬆ ' + yd.sz[0] + ' aur ➕ ' + yd.n[0] + ' order me effort nahi tha' : '') + (tt >= 5 ? (yd && yd.read ? ' · ' : '') + 'Team me aaj offer: ⬆ ' + pc(tz) + '% · ➕ ' + pc(tm) + '% (aap ⬆ ' + pc(z) + '% · ➕ ' + pc(n) + '%)' : '');
+        el.innerHTML = coachHtml() + '📈 <b>Aaj ke ' + d.read + ' orders me</b><br>⬆ <b>Ticket size</b> (bada size): ' + part(z, 'effort nahi lagaya', 'effort lagaya', 'maane') + '<br>➕ <b>Add-on</b> (extra perfume): ' + part(n, 'extra perfume ka offer nahi kiya', 'extra perfume ka offer kiya', 'maane') + ' ›' + (cmpLine ? '<br><span style="color:#64748b;font-size:11px">' + cmpLine + '</span>' : '');
+      } catch (e) { }
+    }
     // 🎯 my ticket today against the goal (one small chip, the same number as My Sales; refreshed every 5 minutes)
-    { const paintTk = async () => { try { const d = await api.get('wq.tk_me'), t = d && d.tk, el = R.querySelector('#wxTkT'), b = R.querySelector('#wxTk'); slowBanner(d && d.slow); strip(t); if (!el || !b) return; if (!t || !(+t.goal > 0)) { b.hidden = true; return; } b.hidden = false;
+    { const paintTk = async () => { try { const d = await api.get('wq.tk_me'), t = d && d.tk; window.__wxTk = t; const el = R.querySelector('#wxTkT'), b = R.querySelector('#wxTk'); slowBanner(d && d.slow); strip(t); growBox(); if (!el || !b) return; if (!t || !(+t.goal > 0)) { b.hidden = true; return; } b.hidden = false;
         const col = t.status === 'g' ? '#7cffb2' : t.status === 'a' ? '#ffd166' : '#ff8a80', f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN');
         el.innerHTML = '<i style="width:8px;height:8px;border-radius:50%;background:' + col + ';display:inline-block;flex:none"></i>' + (t.orders ? f(t.ticket) + '<span class="wx-tmt"> / ' + f(t.goal) + '</span>' : '<span class="wx-tmt">goal </span>' + f(t.goal)); b.title = 'Ticket today ' + f(t.ticket) + ' · goal ' + f(t.goal) + (t.status === 'g' ? ' ✓' : ' · next order ' + f(t.need_next)); } catch (e) { } };
       paintTk(); setInterval(() => { if (!document.hidden) paintTk(); }, 90000); }
+
+    // 📈 my growth effort today (bigger size + add-on = extra perfume) feeds the card under the coach lines (wq.ad_me, own numbers only)
+    { const paintAd = async () => { try { const d = await api.get('wq.ad_me'); window.__wxIdeas = (d && d.ideas) || null; window.__wxCoach = (d && d.coach) || null;
+          { const lv = d && d.coach ? +d.coach.level || 0 : 0, key = lv + ':' + new Date().getHours(); if (lv > 0 && window.__wxCoachKey !== key) { window.__wxCoachKey = key; try { toast(lv === 2 ? '🔴 Do ghante se offer nahi ho raha — bada size + extra perfume offer karo' : '💡 Pichhle ghante me offer kam — agle order me bada size + extra perfume offer karo', lv === 2); } catch (e) { } } } window.__wxAd = d && +d.read > 0 ? d : null; window.__wxAdFull = d || null; growBox(); nudgeLine(); } catch (e) { /* no card */ } };
+      window.__wxAdOpen = () => { const d = window.__wxAd || { n: [0, 0, 0, 0], sz: [0, 0, 0, 0], read: 0, missed: [], tip: '' }, ID = window.__wxIdeas || { big: [], add: [] }; const n = d.n, z = d.sz || [0, 0, 0, 0], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), tm = d.team || [0, 0, 0, 0], tt = tm[0] + tm[1] + tm[2] + tm[3];
+        const box = (c, v, t) => '<div style="background:' + c + ';color:#fff;border-radius:9px;padding:5px 0;text-align:center;flex:1;line-height:1.15"><b style="font-size:19px;display:block">' + v + '</b><span style="font-size:10px;font-weight:700">' + t + '</span></div>';
+        const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center'; o.onclick = (e2) => { if (e2.target === o) o.remove(); };
+        o.innerHTML = '<div style="background:#fff;color:#111b21;width:100%;max-width:430px;border-radius:16px 16px 0 0;padding:12px 14px calc(14px + env(safe-area-inset-bottom));font:13px/1.45 system-ui,sans-serif"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:15px">📈 Growth · today</b><span style="color:#667781;font-size:12px">' + (d.read ? d.read + ' orders read' : 'no order read yet') + (d.stars != null ? ' · ★' + d.stars : '') + (d.addon_rs ? ' · ' + f(d.addon_rs) : '') + '</span></div>'
+          + '<div style="font-weight:800;margin-top:8px">⬆ Selling bigger</div><div style="display:flex;gap:5px;margin-top:3px">' + box('#2563eb', z[3], '🔵 sold bigger') + box('#7c3aed', z[2], '🟣 tried hard') + box('#92400e', z[1], '🟤 little') + box('#1f2937', z[0], '⚫ none') + '</div>'
+          + '<div style="font-weight:800;margin-top:8px">➕ Add-on</div><div style="display:flex;gap:5px;margin-top:3px">' + box('#16a34a', n[3], '🟢 took') + box('#d97706', n[2], '🟡 tried hard') + box('#ea580c', n[1], '🟠 little') + box('#dc2626', n[0], '🔴 none') + '</div>'
+          + (tt ? '<div style="color:#667781;font-size:11.5px;margin-top:6px">Team today: ' + Math.round(100 * tm[3] / tt) + '% of orders took the add-on · you ' + Math.round(100 * n[3] / Math.max(1, d.read)) + '%</div>' : '')
+          + (ID.big.length || ID.add.length ? '<div style="margin-top:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:6px 9px"><b>💡 ' + (d.read ? 'Team me chale hue shabd' : 'Aise bharega — har order me yeh bolo') + '</b>' + ID.big.map((x) => '<div style="margin-top:3px">⬆ “' + esc(x) + '”</div>').join('') + ID.add.map((x) => '<div style="margin-top:3px">➕ “' + esc(x) + '”</div>').join('') + '<div style="color:#667781;font-size:11px;margin-top:4px">Sirf clear offer (perfume + price/fayda) ginegi; chain/gift nahi; "ek aur kar du?" nahi.</div></div>' : '')
+          + (d.tip ? '<div style="margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 9px">💡 Your words that worked: “' + esc(d.tip) + '”</div>' : '')
+          + (((d.missed_big || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['⬆ Bada size bechne ka effort nahi — yeh orders:', d.missed_big]) : '') + ((d.missed || []).length ? ((l) => '<div style="margin-top:8px"><b>' + l[0] + '</b>' + l[1].map((m) => '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eef0f4;padding:5px 0"><span>#' + esc(String(m.order).replace('#', '')) + '</span>' + (m.phone ? '<button type="button" data-adopen="' + esc(m.phone) + '" style="border:0;background:#25d366;color:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:11.5px">💬 Follow up</button>' : '') + '</div>').join('') + '</div>')(['➕ Add-on offer nahi — yeh orders:', d.missed]) : ''))
+          + '</div>'; document.body.appendChild(o);
+        o.addEventListener('click', (e3) => { const g = e3.target.closest('[data-adopen]'); if (g) { o.remove(); try { openChat(g.dataset.adopen, {}); } catch (e4) { } } }); };
+      window.__wxPaintAd = paintAd; paintAd(); setInterval(() => { if (!document.hidden) paintAd(); }, 90000); }
 
     // 📣 Performance popups: a morning briefing (goes away by itself) and a summary about every 4–5 hours (stays until closed). Each shown once per slot; all numbers come from My Sales (my.coach).
     { const SLOTS = [['m', 0, 'Good morning'], ['a', 14.5, 'Afternoon check'], ['e', 19, 'Evening check']], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
@@ -559,11 +663,43 @@
     // ------------------------------------------------------------------ chats list
     const SRC = { query: ['Query', 'o'], community: ['Community', 'g'], campaign: ['Campaign', 'b'] };
     const RDC = { pay: '#16a34a', addr: '#0284c7', neg: '#d97706', think: '#7c3aed', ask: '#475569', cold: '#64748b', cx: '#7c3aed' };
+    // 📈 live growth line INSIDE an open chat — only while the order is being confirmed (the chat reads "Ready to pay"): two 3-step bars (bigger · add-on) filled by real, proper offers, and one instruction (wq.grow_chat; no lock yet)
+    const GROW = { big: ['#92400e', '#7c3aed', '#2563eb'], add: ['#ea580c', '#d97706', '#16a34a'] };
+    function growDraw(g) {
+      const el = document.getElementById('wxGrow'); if (!el) return;
+      if (!g || !g.big || !g.add) { el.innerHTML = ''; return; }
+      const seg = (x, cols) => { const n = x.worked ? 3 : Math.min(2, x.tries); return '<span style="display:inline-flex;gap:2px;vertical-align:middle">' + [0, 1, 2].map((i) => '<i style="width:15px;height:8px;border-radius:4px;display:inline-block;background:' + (i < n ? cols[i] : (i === 0 && x.weak > 0 && !x.tries ? 'repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 2px,#fca5a5 2px,#fca5a5 4px)' : '#e5e7eb')) + '"></i>').join('') + '</span>'; };
+      const lv = (x) => x.level, B = g.big, A = g.add;
+      let ins = '', words = '';
+      if (lv(A) === 0) { ins = '➕ Extra perfume offer karo'; words = '4 ki jagah 5 perfume le lo, 5th pe ₹100 off'; }
+      else if (lv(B) === 0) { ins = '⬆ Bada size offer karo'; words = '50ml ki jagah 100ml le lo, per ml sasta padega'; }
+      else if (lv(B) < 3 && lv(A) < 3 && !(B.refused && A.refused)) ins = 'Naye reason ke saath ek baar phir bolo';
+      else ins = '✓ Badhiya — dono offer ho gaye';
+      const weak = (B.weak > 0 && !B.tries) || (A.weak > 0 && !A.tries);
+      el.innerHTML = '<div style="background:#fff;border-bottom:1px solid #eceef3;padding:5px 10px;display:flex;align-items:center;gap:8px;font:600 12px/1.3 system-ui,sans-serif;flex-wrap:wrap"><span>⬆ ' + seg(B, GROW.big) + '</span><span>➕ ' + seg(A, GROW.add) + '</span><span style="flex:1;min-width:120px;color:#7a4b00;cursor:' + (words ? 'pointer' : 'default') + '"' + (words ? ' data-gw="' + esc(words) + '"' : '') + '>→ ' + esc(ins) + (words ? ' <u>Use</u>' : '') + '</span>' + (weak ? '<span style="color:#b91c1c;font-size:11px">Chhoti line count nahi hui</span>' : '') + '</div>';
+      const w = el.querySelector('[data-gw]'); if (w) w.onclick = () => { const t = $('#wxTx'); if (t) { t.value = w.dataset.gw; t.focus(); try { t.dispatchEvent(new Event('input')); } catch (e) { } } };
+    }
+    let growBusy = false;
+    async function growCheck() {
+      try {
+        const cur = S.cur, ph = cur && cur.phone, c = ph && ((S.chats || []).find((y) => y.phone === ph) || cur.row), pay = c && c.read && c.read.k === 'pay';
+        if (!pay) { growDraw(null); const el = document.getElementById('wxGrow'), ef = c && c.eff; if (el && ef && ef.length) { const A = EFFS[ef[0]], B = EFFB[ef[4] == null ? 0 : ef[4]]; el.innerHTML = '<div style="background:#f8fafc;border-bottom:1px solid #eceef3;padding:4px 10px;font:600 11.5px/1.3 system-ui,sans-serif;color:#475569">📋 Pichhle order me: ⬆ ' + B[0] + ' ' + esc(B[2]) + ' · ➕ ' + A[0] + ' ' + esc(A[2]) + '</div>'; } return; } const key = ph + ':' + (cur.last || 0);
+        if (cur.growKey === key && cur.grow) { growDraw(cur.grow); return; } if (growBusy) return; growBusy = true;
+        const d = await api.get('wq.grow_chat', { phone: ph }); growBusy = false; if (!S.cur || S.cur.phone !== ph) return; cur.growKey = key; cur.grow = d; growDraw(d);
+      } catch (e) { growBusy = false; }
+    }
+    setInterval(() => { if (!document.hidden && S.cur) growCheck(); }, 25000);
     function readLines() {
       const el = document.getElementById('wxRd'); if (!el) return; const ph = S.cur && S.cur.phone, c = ph && ((S.chats || []).find((y) => y.phone === ph) || S.cur.row), r = c && c.read, life = (S.cur && S.cur.life) || '';
-      if (!r && !life) { el.innerHTML = ''; return; } const col = r ? (RDC[r.k] || '#64748b') : '#3730a3';
+      growCheck(); if (!r && !life) { el.innerHTML = ''; return; } const col = r ? (RDC[r.k] || '#64748b') : '#3730a3';
       el.innerHTML = '<div class="wx-rd" style="--c:' + col + '"><div class="u"><span class="t">' + esc(r ? r.u : life) + '</span>' + (r && life ? '<em>' + esc(life) + '</em>' : '') + '</div>' + (r ? '<div class="d">👉 Do: ' + esc(r.d) + '</div>' : '') + '</div>';
     }
+    // ➕ add-on effort of this customer's last read order: [level 0-3, stars, reason, order] → a tiny coloured chip (🔴 none · 🟠 little · 🟡 tried hard · 🟢 took it)
+    const EFFS = [['🔴', '#dc2626', 'No add-on effort'], ['🟠', '#ea580c', 'Little add-on effort'], ['🟡', '#d97706', 'Tried hard, customer did not take the add-on'], ['🟢', '#16a34a', 'Tried, and the customer took the add-on']];
+    const EFFB = [['⚫', '#1f2937', 'No effort to sell bigger (ticket size)'], ['🟤', '#92400e', 'Little effort to sell bigger'], ['🟣', '#7c3aed', 'Tried hard to sell bigger, customer did not take'], ['🔵', '#2563eb', 'Sold bigger']];
+    // both efforts of the customer's last read order, two tiny chips: ⬆ ticket size (bigger) and ➕ add-on — [add-on level, stars, reason, order, bigger level]
+    const effChip = (e) => { if (!(e && e.length)) return ''; const a = EFFS[e[0]], b = EFFB[e[4] == null ? 0 : e[4]]; const t = esc('order ' + (e[3] || '') + ' · ★' + e[1] + ' — ' + (e[2] || ''));
+      return ' <span class="wx-chip" onclick="event.stopPropagation();window.__wxEffTip&&window.__wxEffTip(this)" style="background:' + b[1] + ';color:#fff;font-weight:800;padding:0 5px" title="' + esc(b[2]) + ' · ' + t + '">⬆' + b[0] + '</span> <span class="wx-chip" onclick="event.stopPropagation();window.__wxEffTip&&window.__wxEffTip(this)" style="background:' + a[1] + ';color:#fff;font-weight:800;padding:0 5px" title="' + esc(a[2]) + ' · ' + t + '">➕' + a[0] + '</span>'; };
     function badgeOf(c) { const b = c.badge || {}; return b.k === 'vip' ? '<span title="Very good customer">⭐</span>' : b.k === 'hot' ? '<span title="Ready to pay">🔥</span>' : b.k === 'repeat' ? '<span title="Repeat buyer">🔁</span>' : ''; }
     function timerOf(c) {
       if (!c.waiting || !c.window) return `<div>${hhmm(c.last_at)}</div>`;
@@ -639,7 +775,7 @@
     }
     function row(c) {
       const src = SRC[c.src], h = hue(c.phone);
-      return `<div class="wx-row ${c.heat ? 'h-' + c.heat : ''}${S.cur && S.cur.phone === c.phone ? ' sel' : ''}" data-p="${c.phone}"><div class="wx-av" style="background:hsl(${h} 55% 48%)">${esc(initials(c.name, c.phone))}</div><div class="wx-mid"><div class="wx-nm">${esc(c.name || pretty(c.phone))} ${badgeOf(c)}</div>
+      return `<div class="wx-row ${c.heat ? 'h-' + c.heat : ''}${S.cur && S.cur.phone === c.phone ? ' sel' : ''}" data-p="${c.phone}"><div class="wx-av" style="background:hsl(${h} 55% 48%)">${esc(initials(c.name, c.phone))}</div><div class="wx-mid"><div class="wx-nm">${esc(c.name || pretty(c.phone))} ${badgeOf(c)}${effChip(c.eff)}</div>
         <div class="wx-sub">${c.mine ? '✓ ' : ''}${esc(c.preview)}</div>${utRow(c)}${c.read ? `<div class="wx-rd1" style="color:${RDC[c.read.k] || '#64748b'}">${esc(c.read.u.split(' · ')[0])} → ${esc(c.read.d)}</div>` : ''}<div style="margin-top:2px">${c.life ? `<span class="wx-chip" style="background:${({ new: '#fee2e2;color:#991b1b', waiting: '#ffedd5;color:#9a3412', hot: '#fee2e2;color:#991b1b', rescue: '#ede9fe;color:#5b21b6', bot: '#e0f2fe;color:#075985', ordered: '#dcfce7;color:#166534', complaint: '#f3e8ff;color:#6b21a8', talking: '#dcfce7;color:#166534' })[c.life.key] || '#f1f5f9;color:#475569'};font-weight:800">${esc(c.life.label)}</span>` : ''}${c.life && (c.life.want_label || c.life.day != null) ? `<span class="wx-chip" style="background:#f1f5f9;color:#475569">${esc(c.life.want_label || '')}${c.life.day != null ? (c.life.want_label ? ' · ' : '') + 'day ' + c.life.day : ''}</span>` : ''}${c.not_mine ? `<span class="wx-chip" style="background:#fef3c7;color:#92400e">🏷 now with ${esc(c.emp_name || 'nobody')}</span>` : ''}${src ? `<span class="wx-chip ${src[1]}">${src[0]}</span>` : ''}${c.origin ? `<span class="wx-chip" style="background:#fdf2f8;color:#9d174d">${esc(c.origin)}</span>` : ''}${c.num ? `<span class="wx-chip m">${esc(String(c.num).replace(/^Number\s*/i, 'N').slice(0, 8))}</span>` : ''}${c.hot ? '<span class="wx-chip r">PAY NOW</span>' : ''}${c.biz ? '<span class="wx-chip m">🏢 Business</span>' : ''}${c.team && c.emp_name ? `<span class="wx-chip b">👤 ${esc(c.emp_name)}</span>` : ''}</div></div>
         <div class="wx-tm">${c.fresh ? '<span class="wx-new" title="New for you — it stays until you reply"></span>' : ''}${timerOf(c)}${c.unread ? `<span class="wx-dot">${c.unread}</span>` : ''}</div></div>`;
     }
@@ -1068,7 +1204,7 @@
       v.innerHTML = `<div class="wx-ch"><button class="bk" id="wxBk" aria-label="Back">‹</button><div class="wx-av" style="background:hsl(${hue(c.phone)} 55% 48%);width:34px;height:34px;font-size:12px">${esc(initials(c.name, c.phone))}</div>
         <div class="wx-mid" id="wxCi" style="cursor:pointer"><div class="wx-nm" id="wxCn">${esc(c.name || pretty(c.phone))} ${badgeOf(r)}</div><div class="wx-sub" id="wxCs">${esc(pretty(c.phone))}</div><div id="wxOs"></div></div>
         ${S.me && S.me.team ? `${r.emp && r.emp === S.me.emp_id || S.me.can_to === false ? '' : '<button class="wx-ib g" id="wxTk" title="Take this chat for yourself — one tap">✋<small>Take over</small></button>'}${S.me.can_as === false ? '' : '<button class="wx-ib" id="wxAs" title="Give this chat to a salesperson">👤<small>Assign</small></button>'}` : ''}<button class="wx-ib g" id="wxRs" title="Resolve: one tap — the chat is closed and leaves your list (and the inbox)">✅<small>Resolve</small></button><button class="wx-ib" id="wxFin" title="Done: say how the chat ended (order, later, price …) and close it">✔<small>Done</small></button><button class="wx-ib" id="wxMore" aria-haspopup="dialog" title="More: complaint, report, journey, customer">⋯<small>More</small></button></div>
-        <div id="wxRd"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
+        <div id="wxRd"></div><div id="wxGrow"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
       $('#wxBk').onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; $('#wxCi').onclick = openCustomer; $('#wxFin').onclick = openFinish; $('#wxRs').onclick = async function () { this.disabled = true; const phone = S.cur.phone; try { await api.post('wa.close', { phone, quick: 1 }); closeChat(); toast('Resolved ✓ — removed from your chats'); loadList(true); } catch (e) { toast(e.message, true); this.disabled = false; } }; $('#wxMore').onclick = openMore;
       if ($('#wxToB')) $('#wxToB').onclick = takeOver;
       if ($('#wxTk')) $('#wxTk').onclick = function () { this.disabled = true; takeOver().then(() => { const t = $('#wxTk'); if (S.cur && S.cur.row && S.cur.row.emp === (S.me && S.me.emp_id) && t) t.remove(); else if (t) t.disabled = false; }); };   // ✋ manager / admin: one tap, no confirmation
@@ -1304,7 +1440,7 @@
     let chLd = null;
     function chReady(cb) {
       if (window.WaCart) return cb(); if (chLd) { chLd.push(cb); return; } chLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wch_ui.js?v=ch9';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wch_ui.js?v=ch11';
       sc.onload = () => { const q = chLd || []; chLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = chLd || []; chLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     // ---- 🧾 manual order (wmo.php / wmo_ui.js): QR / UPI payment first, the customer fills the address on a link
@@ -1418,11 +1554,19 @@
       suggStop(); S.cur.sg = null; S.cur.armed = null; $('#wxSug').innerHTML = ''; { const pp = $('#wxPp'); if (pp) pp.innerHTML = ''; }
       if (again) redrawBubble(tmp); else { S.cur.msgs.push(tmp); addBubble(tmp); } scrollEnd(true);
       try {
-        await api.post('wa.send', auto ? { phone, text, auto: true, cid } : (tmp.reply_id ? { phone, text, cid, reply_id: tmp.reply_id } : { phone, text, cid }));   // auto: the countdown reply; lets the server claim the customer message (wq no-answer flow)
+        const gx = window.__wxGrowNext || {}; window.__wxGrowNext = null;
+        await api.post('wa.send', auto ? { phone, text, auto: true, cid } : Object.assign(tmp.reply_id ? { phone, text, cid, reply_id: tmp.reply_id } : { phone, text, cid }, gx));   // auto: the countdown reply; lets the server claim the customer message (wq no-answer flow)
         if (prod && prod.length && window.WaProd) { try { await WaProd.send(phone, prod.map((p) => p.id), 'why'); } catch (e) { toast('The text went, but the photos did not: ' + e.message, true); } }   // the photos follow the text, one by one
         if (S.cur && S.cur.phone === phone) pollChat();
+        if (S.cur && S.cur.phone === phone && S.cur.heldLink) { const t = $('#wxTx'); if (t && !t.value) { t.value = S.cur.heldLink; S.cur.heldLink = ''; try { t.dispatchEvent(new Event('input')); } catch (x) { } toast('Link phir se ready hai — ab bhejo'); } }   // the link that was held back comes back after the offer went
       }
       catch (e) {
+        if (e && e.data && e.data.grow_gate) {   // 🔗 payment-link rule
+          if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); }
+          const ch = await window.WaGrowAsk(e.data);
+          if (ch.action === 'offer') { if (S.cur && S.cur.phone === phone) { S.cur.heldLink = text; const t = $('#wxTx'); if (t) { t.value = ch.words || ''; t.focus(); try { t.dispatchEvent(new Event('input')); } catch (x) { } } } toast('Pehle offer bhejo — phir link ready ho jayegi'); return; }
+          window.__wxGrowNext = ch.action === 'waive' ? { grow_waive: ch.reason } : { grow_ok: 1 }; return sendText(text, prod, auto);
+        }
         if (auto && /already (been )?(answered|replied|claimed)|someone else/i.test(e.message || '')) { if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); } toast('Already answered by the bot or a colleague. Nothing was sent twice.'); return; }   // HTTP 409 from wq: quiet
         if (/open complaint/i.test(e.message || '')) { S.cur.cxLock = true; S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); const t = $('#wxTx'); if (t) { t.value = text; t.placeholder = '📝 Note for the complaint team (the customer will not see it)'; t.classList.add('cxl'); } toast(e.message, true); return; }   // the server says: complaint team only — keep the words, send them as a note
         tmp.status = 'failed'; tmp.retry = !auto && !/opted out|window is closed|assigned to someone|not written to this number/i.test(e.message || ''); if (/not written to this number|window is closed/i.test(e.message || '') && S.cur && S.cur.phone === phone) setTimeout(() => { try { openTemplates(); } catch (x) { } }, 400);   // a chat on another number has no window yet → open the pre-made messages straight away

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#111827">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -88,6 +88,8 @@
     if ((d.unmatched || []).length) top += '<div class="box bad"><b>⚠ ' + num(d.unmatched_pieces) + ' piece' + (d.unmatched_pieces === 1 ? '' : 's') + ' in ' + d.unmatched.length + ' product' + (d.unmatched.length === 1 ? '' : 's') + ' could NOT be put in the sheet.</b> They are not counted below. A product "matches no SKU" when its name is not in the SKU list: add that name in the third column of the SKU file and upload it (one SKU can have several names in that cell: separate them with <b>;</b>), or show this list to Claude.'
       + '<div style="overflow-x:auto"><table><thead><tr><th style="text-align:left">Product as written on the order</th><th>Pieces</th><th style="text-align:left">Why</th><th style="text-align:left">Orders</th></tr></thead><tbody>'
       + d.unmatched.map((u) => '<tr><td style="text-align:left"><b>' + esc(u.text) + '</b></td><td style="text-align:center">' + u.qty + '</td><td>' + esc(u.why) + '</td><td>' + esc(u.orders.join(', ')) + (u.orders.length >= 12 ? ' …' : '') + '</td></tr>').join('') + '</tbody></table></div></div>';
+    if ((d.noted || []).length) top += '<div class="box info" style="background:#fff7e0;border-color:#f3d48a;color:#7a5200"><b>ℹ ' + num(d.noted.reduce((a, x) => a + x.qty, 0)) + ' box item' + (d.noted.reduce((a, x) => a + x.qty, 0) === 1 ? '' : 's') + ' are not in the SKU list.</b> They ARE counted in the sheet below, on the row <b>"Not in SKU list"</b>, in their size column. To count them as the right perfume, add these names in the third column of the SKU file: '
+      + d.noted.map((u) => '<b>' + esc(u.text.replace(/\s*\(inside:.*$/, '')) + '</b> ×' + u.qty + ' (' + esc((u.orders || []).join(', ')) + ')').join(' · ') + '</div>';
     else if (d.rows.length) top += '<div class="box ok"><b>✓ Every product of the day was matched to a SKU.</b></div>';
     top += '<div class="box info"><b>' + dmy(d.day) + '</b> · ' + num(d.orders) + ' Shopify order' + (d.orders === 1 ? '' : 's') + ' + ' + num(d.manual) + ' manual order' + (d.manual === 1 ? '' : 's') + ' read · ' + num(d.lines) + ' product lines · <b>' + num(d.pieces) + ' pieces</b> in the sheet · ' + d.rows.length + ' SKUs' + (d.cancelled ? ' · ' + d.cancelled + ' cancelled order' + (d.cancelled === 1 ? '' : 's') + ' left out' : '')
       + ((d.left_out || []).length ? ' · left out on purpose: ' + d.left_out.map((u) => esc(u.text) + ' ×' + u.qty).join(', ') : '') + '</div>';

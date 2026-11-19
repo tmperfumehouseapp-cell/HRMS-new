@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#111827">
 <meta name="mobile-web-app-capable" content="yes">
@@ -97,6 +97,26 @@
   .ct-tab .n{display:inline-block; margin-left:6px; background:#e02424; color:#fff; border-radius:10px; padding:0 7px; font-size:11px;}
   /* ---- Today blocks ---- */
   .bk{font-family:Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  /* ➕ Add-on effort: four big boxes (won / heavy not taken / little / none) + the same four counts on every person's block */
+  .ef{margin-top:8px;background:#fff;border:1px solid #eceef3;border-radius:10px;padding:6px 8px;}
+  .ef-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:5px;}.ef-h b{font-size:13px;}.ef-h small{font-size:11px;color:#8a90a0;}
+  .ef-g{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;}
+  .ef-b{border-radius:8px;padding:5px 8px;color:#fff;min-width:0;text-align:center;}.ef-b.w{background:#16a34a}.ef-b.h{background:#d97706}.ef-b.l{background:#ea580c}.ef-b.z{background:#dc2626}
+  .ef-b .t{font-size:11px;font-weight:700;opacity:.95;line-height:1.2;white-space:nowrap}.ef-b .v{font-size:20px;font-weight:800;line-height:1.1}.ef-b .v small{font-size:11px;font-weight:600;opacity:.9}
+  .ef-b ul{list-style:none;margin:5px 0 0;padding:0;font-size:11.5px;line-height:1.5}.ef-b li{display:flex;justify-content:space-between;gap:6px;border-top:1px solid rgba(255,255,255,.28)}
+  .ef-d{margin-top:8px;font-size:12px}.ef-d summary{cursor:pointer;font-weight:700}.ef-d table{width:100%;border-collapse:collapse;margin-top:5px}.ef-d td{padding:4px 6px;border-top:1px solid #eef0f4;vertical-align:top}
+  .ef-d a{color:#0f6e8c;font-weight:700;text-decoration:none}
+  .bk-grid .b em.ef{font-style:normal;font-weight:700}
+  .bk-grid .ef4{display:flex;gap:2px;margin-top:4px;align-items:stretch}.bk-grid .ef4 i{flex:1;text-align:center;font-style:normal;font-size:12px;font-weight:800;color:#fff;border-radius:5px;padding:2px 0;line-height:1.2}
+  .bk-grid .ef4 i.w{background:#16a34a}.bk-grid .ef4 i.h{background:#d97706}.bk-grid .ef4 i.l{background:#ea580c}.bk-grid .ef4 i.r{background:#dc2626}.bk-grid .ef4 i.z{opacity:.28}
+  .bk-grid .ef4 i.bw,.ef-hb .ef4 i.bw{background:#2563eb}.bk-grid .ef4 i.bh,.ef-hb .ef4 i.bh{background:#7c3aed}.bk-grid .ef4 i.bl,.ef-hb .ef4 i.bl{background:#92400e}.bk-grid .ef4 i.br,.ef-hb .ef4 i.br{background:#1f2937}
+  .ef-b.bw{background:#2563eb}.ef-b.bh{background:#7c3aed}.ef-b.bl{background:#92400e}.ef-b.bz{background:#1f2937}
+  .ef-r{display:grid;grid-template-columns:58px repeat(4,minmax(0,1fr));gap:4px;align-items:stretch;margin-top:4px}.ef-l{font-size:11px;font-weight:800;align-self:center;color:#444}
+  .ef-r .ef-b{display:flex;flex-direction:row-reverse;align-items:baseline;justify-content:center;gap:5px;padding:3px 4px}.ef-r .ef-b .v{font-size:17px}.ef-r .ef-b .t{font-size:10px;font-weight:600}
+  .ef-pp{width:100%;border-collapse:collapse;font-size:11.5px}.ef-pp td{padding:2px 3px;border-top:1px solid #eef0f4}.ef-pp i{display:inline-block;min-width:22px;text-align:center;font-style:normal;font-weight:800;color:#fff;border-radius:5px}
+  .ef-pp i.w{background:#16a34a}.ef-pp i.h{background:#d97706}.ef-pp i.l{background:#ea580c}.ef-pp i.r{background:#dc2626}.ef-pp i.bw{background:#2563eb}.ef-pp i.bh{background:#7c3aed}.ef-pp i.bl{background:#92400e}.ef-pp i.br{background:#1f2937}.ef-pp i.z{opacity:.25}
+  .ef-lab{font-size:11.5px;font-weight:800;margin:6px 0 3px;color:#444}.bk-grid .ef4 em{font-style:normal;font-size:10px;flex:none;align-self:center;width:13px}
+  .bk-grid .ef4 b{font-size:10px;color:#8a90a0;align-self:center;padding-left:2px;font-weight:700}
   .bk-t{font-size:16px;font-weight:700;letter-spacing:-.2px;}.bk-s{font-size:11px;color:#8a90a0;font-weight:500;}
   .bk-strip{display:flex;margin-top:10px;background:#fff;border-radius:10px;border:1px solid #eceef3;overflow:hidden;}
   .bk-strip .k{flex:1;padding:7px 12px;border-right:1px solid #eceef3;min-width:0;}.bk-strip .k:last-child{border:0;}
@@ -135,6 +155,14 @@
 .bk-grid .rp{flex-wrap:wrap}.bk-grid .rp em.wt{border-radius:99px;padding:0 7px;line-height:17px;background:#eef0f3;color:#475569;cursor:pointer}.bk-grid .rp em.wt.g{background:#dcfce7;color:#15803d}.bk-grid .rp em.wt.a{background:#fef3c7;color:#b45309}.bk-grid .rp em.wt.r{background:#fee2e2;color:#b91c1c}
   .wt-l{font-size:13px;margin-top:8px;color:#374151}
   .bk-strip .k[data-go]{cursor:pointer}.bk-strip .k[data-go]::after{content:'Open full report ›';display:block;margin-top:6px;color:#2563eb;font-size:11.5px;font-weight:700;text-decoration:underline;text-underline-offset:2px}
+  /* nothing in a person block may be wider than the block (phones): rows shrink / wrap instead of pushing the page wider */
+  .bk-grid{grid-template-columns:repeat(auto-fill,minmax(min(150px,100%),1fr))}
+  .bk-grid .b{min-width:0;max-width:100%}
+  .bk-grid .b .nm .nn{max-width:calc(100% - 14px)}.bk-grid .b .pn{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+  .bk-grid .b .c{min-width:0;max-width:100%}.bk-grid .b .c b{flex:none}.bk-grid .b .c i{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .bk-grid .b .kv{white-space:normal;word-break:break-word}
+  .bk-grid .b .rp,.bk-grid .b .ef4{max-width:100%;min-width:0}
+  .bk-grid .kv{display:block;margin-top:3px;font-size:11.5px;color:#4a4f5c;white-space:nowrap}.bk-grid .kv b{font-weight:800;color:#1b1d22}.bk-grid .kv b.g{color:#16a34a}.bk-grid .kv b.a{color:#d98a06}.bk-grid .kv b.r{color:#dc3a3a}.bk-grid .kv em{font-style:normal;font-weight:800;color:#dc3a3a}
   .bk-grid .tg{display:flex;flex-wrap:wrap;gap:1px 5px;margin-top:3px;font-size:11px;font-weight:700;letter-spacing:-.1px;}.bk-grid .tg em{font-style:normal;white-space:nowrap;}
   .bk-grid em.g{color:#16a34a}.bk-grid em.a{color:#d98a06}.bk-grid em.r{color:#dc3a3a}.bk-grid em.n{color:#b5bac5}
   .bk-grid .bdg{position:absolute;top:-5px;right:-4px;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:#e11d48;color:#fff;font-size:11px;font-weight:700;line-height:15px;text-align:center;box-shadow:0 0 0 2px #fff;}
@@ -475,7 +503,7 @@
 
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
-<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/layout.js?v=33"></script>
 <script>
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -516,7 +544,7 @@
     const b = e.target.closest('.ct-tab'); if (!b) return;
     tab = b.dataset.t;
     document.querySelectorAll('.ct-tab').forEach(x => x.classList.toggle('on', x === b));
-    ['focus', 'today', 'alerts', 'md', 'qb', 'rt', 'bench', 'lib', 'conv', 'set'].forEach(k => $('p-' + k).style.display = (k === tab || (tab === 'today' && k === 'alerts')) ? '' : 'none');      // Alerts now sit under the Blocks on the Live page
+    ['focus', 'today', 'alerts', 'md', 'qb', 'rt', 'bench', 'lib', 'conv', 'set'].forEach(k => $('p-' + k).style.display = (k === tab) ? '' : 'none');      // Alerts now sit under the Blocks on the Live page
     if (tab === 'today') { loadHist(); if (RC) loadRecon(); loadRemToday(); }
     if (tab === 'focus') loadFocus();
     if (tab === 'qb') loadGive();
@@ -785,11 +813,144 @@
       if (!$('datePick').value) $('datePick').value = T.day;
       $('tabSet').style.display = T.can_settings ? '' : 'none'; $('tabLib').style.display = T.can_settings ? '' : 'none'; $('tabConv').style.display = T.can_settings ? '' : 'none';
       renderToday(); renderAlerts(); renderQb(); ofChips(); renderDayStrip(); loadPaceCards(); rxTileLoad();
+      loadEffort();
       try { if (typeof GQ !== 'undefined' && GQ) renderGive(); } catch (e2) { /* those tabs draw when opened */ }
       const open = (T.alerts || []).filter(a => a.status === 'open' && a.kind !== 'digest').length;
       const nAl = $('nAl'); nAl.textContent = open; nAl.style.display = open ? '' : 'none';
       if (tab === 'set') renderSettings();
     } catch (err) { $('p-today').innerHTML = `<div class="card">${errHtml(err)}</div>`; }
+  }
+
+  // ➕ Add-on effort (ct.effort): read from the chat by the automatic judge. EFF.d = {emps:{id:{n:[none,little,heavy,won],stars,addon_rs}}, team, missed, tips}
+  let EFF = { day: '', d: null, tok: 0 };
+  async function loadEffort() {
+    const day = $('datePick').value || (T && T.day); if (!day) return; const tok = ++EFF.tok;
+    try { const pg = (k, f) => api.get(k).then(f, () => f(null)); const dP = api.get('ct.effort', { date: day }); await Promise.all([pg('wq.grow_cfg', v => { EFF.gr = v; }), pg('wq.grow_learn', v => { EFF.ln = v; }), pg('wq.grow_callbacks', v => { EFF.cb = v; }), pg('wq.grow_notes', v => { EFF.nt = v; })]); const d = await dP; if (tok !== EFF.tok) return; EFF.day = day; EFF.d = d; renderToday(); if (!EFF.auto && T && day === T.today && !EFF.run) { const tot = (T.emps || []).reduce((x, e) => x + Number(e.orders || 0), 0), rd = (d.team || []).reduce((x, v) => x + v, 0) + Number(d.skipped || 0); if (tot > rd) { EFF.auto = true; window.effFill(); } } } catch (e) { /* the effort boxes simply stay empty */ }
+  }
+  // ▶ reads the day's chats now, round after round (each round ~20 s on the server), until every order has been read
+  window.effFill = async () => {
+    if (EFF.run) return; EFF.run = true; renderToday();
+    try {
+      for (let i = 0; i < 60; i++) {
+        const day = $('datePick').value || T.day, r = await api.post('ct.effort_fill', { date: day });
+        await loadEffort(); if (!r.left || !r.done) { if (r.left && !r.done) showAlert(r.left + ' orders could not be read just now (the AI did not answer). Try again in a minute.', 'error'); break; }
+      }
+    } catch (e) { showAlert(e.message || 'Could not read the chats.', 'error'); }
+    EFF.run = false; renderToday();
+  };
+  const effOf = (id) => { const x = EFF.d && EFF.d.emps && EFF.d.emps[id]; return x && x.n ? x : null; };
+  // the four counts on one person's block: won · heavy not taken · little · none (+ average stars)
+  function effTag(e) {
+    const x = effOf(e.id); if (!x) return null; const n = x.n, tot = n[0] + n[1] + n[2] + n[3]; if (!tot) return null;
+    const cls = n[3] >= n[0] + n[1] ? 'g' : n[0] > n[3] ? 'r' : 'a';
+    return ['➕ ' + n[3] + '🟢 ' + n[2] + '🟡 ' + n[1] + '🟠 ' + n[0] + '🔴' + (x.stars != null ? ' ★' + x.stars : ''), cls + ' ef', 'Add-on effort on ' + tot + ' orders read from the chat: ' + n[3] + ' tried and the customer took it · ' + n[2] + ' tried hard, not taken · ' + n[1] + ' little effort · ' + n[0] + ' no effort' + (x.stars != null ? ' · average add-on stars ' + x.stars + ' of 5' : '') + (x.addon_rs ? ' · add-on ₹ ' + Math.round(x.addon_rs).toLocaleString('en-IN') : '')];
+  }
+  // ➕ one person's earlier days (opened on tap, never loaded by itself): 7 days · 30 days · everything read so far
+  window.effHist = async (id, days, el) => {
+    const box = el.querySelector('.ef-hb'); box.innerHTML = '<div class="sub">Loading…</div>';
+    try {
+      const d = await api.get('ct.effort_hist', { emp: id, days }), n = d.tot, all = n[0] + n[1] + n[2] + n[3];
+      const btn = (v, t) => `<button type="button" class="${days === v ? 'on' : ''}" style="font:inherit;font-size:11px;font-weight:700;border:1px solid #d9dce3;background:${days === v ? '#111827' : '#fff'};color:${days === v ? '#fff' : '#444'};border-radius:99px;padding:3px 10px;margin-right:4px;cursor:pointer" onclick="effHist(${id},${v},this.closest('details'))">${t}</button>`;
+      const cells = (a) => `<span class="ef4" style="display:inline-flex;gap:2px;min-width:150px"><i class="w${a[3] ? '' : ' z'}">${a[3]}</i><i class="h${a[2] ? '' : ' z'}">${a[2]}</i><i class="l${a[1] ? '' : ' z'}">${a[1]}</i><i class="r${a[0] ? '' : ' z'}">${a[0]}</i></span>`;
+      const cellsB = (a) => `<span class="ef4" style="display:inline-flex;gap:2px;min-width:150px"><i class="bw${a[3] ? '' : ' z'}">${a[3]}</i><i class="bh${a[2] ? '' : ' z'}">${a[2]}</i><i class="bl${a[1] ? '' : ' z'}">${a[1]}</i><i class="br${a[0] ? '' : ' z'}">${a[0]}</i></span>`, zt = d.tot_sz || [0, 0, 0, 0];
+      box.innerHTML = `<div>${btn(7, '7 days')}${btn(30, '30 days')}${btn(0, 'Everything')}</div>
+        <div class="sub" style="margin:6px 0">${all ? '<b>' + all + '</b> orders read' + (d.since ? ' since ' + esc(d.since) : '') + (d.stars != null ? ' · average ★' + d.stars : '') + (d.addon_rs ? ' · add-on ' + inr(d.addon_rs) : '') : 'Nothing read from the chat for this period yet.'} <span style="opacity:.7">(➕ 🟢 took · 🟡 tried hard · 🟠 little · 🔴 none — ⬆ 🔵 · 🟣 · 🟤 · ⚫)</span></div>
+        ${all ? `<style>.ef-hb .ef4 i{flex:1;text-align:center;font-style:normal;font-size:12px;font-weight:800;color:#fff;border-radius:5px;padding:2px 0}.ef-hb .ef4 i.w{background:#16a34a}.ef-hb .ef4 i.h{background:#d97706}.ef-hb .ef4 i.l{background:#ea580c}.ef-hb .ef4 i.r{background:#dc2626}.ef-hb .ef4 i.z{opacity:.28}</style>
+        <table><tr><td><b>Total</b></td><td>${cells(n)}<br>${cellsB(zt)}</td><td>${all}</td></tr>${d.rows.map(r => `<tr><td>${esc(r.day.slice(5))}</td><td>${cells(r.n)}<br>${cellsB(r.sz || [0, 0, 0, 0])}</td><td>${r.n[0] + r.n[1] + r.n[2] + r.n[3]}${r.addon_rs ? ' <small>' + inr(r.addon_rs) + '</small>' : ''}</td></tr>`).join('')}</table>` : ''}`;
+    } catch (e) { box.innerHTML = '<div class="sub">Could not load: ' + esc(e.message || e) + '</div>'; }
+  };
+  // 4 side-by-side cells at the bottom of a person's block: his orders split by add-on effort — won · heavy not taken · little · none (sum = his orders; grey ⏳ = not read from the chat yet)
+  function effRow(e) {
+    const x = effOf(e.id), tot = Number(e.orders || 0); if (!tot && !x) return '';
+    const n = x ? x.n : [0, 0, 0, 0], z = x && x.sz ? x.sz : [0, 0, 0, 0], rd = n[0] + n[1] + n[2] + n[3], wait = Math.max(0, tot - rd);
+    const c = (cls, v, t, ln, lv) => `<i class="${cls}${v ? '' : ' z'}" title="${t}"${v && ln ? ` onclick="event.stopPropagation();effOrd('${ln}',${lv},${e.id})" style="cursor:pointer"` : ''}>${v}</i>`;
+    const tip = (k, a) => k + ' on ' + tot + ' orders: ' + a[3] + ' took it · ' + a[2] + ' tried hard · ' + a[1] + ' little · ' + a[0] + ' none';
+    const cm = x && x.coach ? `<b style="color:${x.coach === 2 ? '#dc2626' : '#2563eb'};font-size:10.5px" title="${x.coach === 2 ? 'Two hours in a row mostly without a bigger / add-on offer — red warning sent to this person' : 'Last hour mostly without a bigger / add-on offer — instruction sent to this person'}">${x.coach === 2 ? '🔴 2h no offer' : '💡 1h no offer'}</b>` : '';
+    return cm + `<span class="ef4" title="${tip('Selling bigger', z)}"><em>⬆</em>${c('bw', z[3], 'Bigger: tried and the customer took it', 'big', 3)}${c('bh', z[2], 'Bigger: tried hard, customer did not take', 'big', 2)}${c('bl', z[1], 'Bigger: little effort', 'big', 1)}${c('br', z[0], 'Bigger: no effort', 'big', 0)}</span>`
+      + `<span class="ef4" title="${tip('Add-on effort', n)}${wait ? ' · ' + wait + ' not read yet' : ''}${x && x.stars != null ? ' · ★' + x.stars : ''}"><em>➕</em>${c('w', n[3], 'Add-on: tried and the customer took it', 'add', 3)}${c('h', n[2], 'Add-on: tried hard, customer did not take', 'add', 2)}${c('l', n[1], 'Add-on: little effort', 'add', 1)}${c('r', n[0], 'Add-on: no effort', 'add', 0)}${wait ? `<b title="${wait} orders not read from the chat yet">⏳${wait}</b>` : ''}</span>`;
+  }
+  // 🔗 the payment-link rule (Admin / HR): off · warning only · strict · auto (warning until the day before a date, strict from it) + what happened today
+  function grHtml() {
+    const g = EFF.gr; if (!g) return '';
+    const m = g.mode, c = g.today_counts || {}, sel = (v, t) => `<option value="${v}"${m === v ? ' selected' : ''}>${t}</option>`;
+    const w = (g.waivers || []).map(x => `<div><b>${esc(x.emp)}</b> ${esc(x.at)} — ${esc(x.reason)}</div>`).join('');
+    return `<div class="ef-d" style="margin:2px 0 6px;font-size:11.5px"><span>🔗 <b>Payment link rule</b> (needs ⬆ + ➕ offered):</span>
+      <select onchange="effGr(this.value)" style="font:inherit;font-size:11.5px;border:1px solid #d1d5db;border-radius:6px;padding:1px 3px">${sel('off', 'Off')}${sel('warn', 'Warning only')}${sel('lock', 'Strict')}${sel('auto', 'Auto: strict from date')}</select>
+      ${m === 'auto' ? `<input type="date" value="${esc(g.from)}" onchange="effGr('auto', this.value)" style="font:inherit;font-size:11.5px;border:1px solid #d1d5db;border-radius:6px">` : ''}
+      <span style="color:#667781">now: <b>${g.effective === 'lock' ? (g.breaker && g.breaker.active ? 'strict — PAUSED to warning by the safety brake' : 'strict') : g.effective === 'warn' ? 'warning' : 'off'}</b> · 🛟 safety brake: <label><input type="checkbox" ${g.breaker && g.breaker.on ? 'checked' : ''} onchange="effBr(this.checked)"> ${g.breaker && g.breaker.on ? 'ON (until ' + esc(g.breaker.off_from) + ')' : 'OFF'}</label> · last 2 h: ${g.breaker ? g.breaker.share + '% of ' + g.breaker.attempts + ' links would be held (limit ' + g.breaker.limit + '%)' : '—'} · today: ${c.blocked || 0} blocked · ${c.warn_shown || 0} warned · ${c.warned_sent || 0} sent anyway · ${c.waived || 0} with a reason · ${c.passed || 0} passed</span>
+      ${w ? `<details style="margin-top:3px"><summary style="cursor:pointer">Reasons written today</summary>${w}</details>` : ''}</div>`;
+  }
+  window.effBr = async (on) => { try { await api.post('wq.grow_cfg', { breaker_on: on ? 1 : 0 }); EFF.gr = await api.get('wq.grow_cfg'); renderToday(); } catch (e) { showAlert(e.message, 'error'); } };
+  // 📞 call-backs of today: orders with no add-on offer. The salesperson calls and resolves with a remark (an add-on on the order resolves it by itself).
+  function cbHtml() {
+    const C = EFF.cb; if (!C) return '';
+    const lab = { addon_done: ['✓ add-on kar diya', '#16a34a'], declined: ['mana kiya', '#6b7280'], no_answer: ['call nahi laga', '#d97706'], later: ['baad me', '#6b7280'] };
+    const rows = (C.rows || []).map(r => `<tr><td>${esc(r.at)}</td><td>${esc(r.emp)}</td><td>${esc(r.customer || '')} · ${esc(r.order)}</td><td>${r.status === 'open' ? `<span class="chip" style="background:#ea580c">OPEN ${r.mins} min</span>` : `<span class="chip" style="background:${(lab[r.outcome] || ['', '#6b7280'])[1]}">${esc((lab[r.outcome] || [r.outcome])[0])}</span> <small>${r.mins} min</small>`}</td><td><small>${esc(r.remark || '')}</small></td></tr>`).join('');
+    return `<details class="ef-d"><summary>📞 Call-backs today — open ${C.open || 0} · resolved ${C.resolved || 0}${C.addon_orders ? ' · add-on recorded on ' + C.addon_orders + ' of the "add-on kar diya" orders (₹' + Number(C.addon_rs || 0).toLocaleString('en-IN') + ')' : ''}</summary>${rows ? `<table><tr><th>Time</th><th>Salesperson</th><th>Customer · order</th><th>Status</th><th>Remark</th></tr>${rows}</table>` : '<div class="sub" style="padding:6px">No call-backs yet.</div>'}</details>`;
+  }
+  // 📚 the learning feed: a pulse every 15 minutes, a digest every hour (handed to the nightly guidebook study)
+  function lnHtml() {
+    const L = EFF.ln; if (!L) return '';
+    const rows = L.rows || [], hh = (a) => esc(String(a).slice(11, 16));
+    const body = rows.map(r => { const p = r.plays || {}, words = [].concat((p.big || []).slice(0, 1).map(x => '⬆ “' + esc(x) + '”'), (p.add || []).slice(0, 1).map(x => '➕ “' + esc(x) + '”')).join(' · ');
+      return `<tr><td>${hh(r.at)}</td><td>${r.kind === 'hourly' ? '🕐 hourly' : '⏱ 15 min'}</td><td>${r.orders_read} read · ⬆ ${r.big_won}/${r.big_tries} · ➕ ${r.add_won}/${r.add_tries}${r.people_behind ? ' · 💡 ' + r.people_behind + ' people behind' : ''}${words ? '<br><small>' + words + '</small>' : ''}</td><td>${r.kind === 'hourly' ? esc(r.guide_use || '') : ''}</td></tr>`; }).join('');
+    return `<details class="ef-d"><summary>📚 Learning log — new line every 15 min · hourly digest goes to the guidebook (${rows.length})</summary><div class="sub" style="padding:4px 2px">⬆ / ➕ = taken / proper offers in that window · the guidebook study runs every night 02:00 (reads all "pending" digests)${L.guide_note ? ' · last study: ' + esc(L.guide_note) : ''}</div>${body ? `<table>${body}</table>` : '<div class="sub" style="padding:6px">The first line appears within 15 minutes.</div>'}</details>`;
+  }
+  window.effGr = async (mode, from) => { try { await api.post('wq.grow_cfg', from ? { mode, from } : { mode }); EFF.gr = await api.get('wq.grow_cfg'); renderToday(); } catch (e) { showAlert(e.message, 'error'); } };
+  // 🔔 Notifications for the owner: who needs a talking-to / has pending call-backs. Resolve needs a remark; resolved ones disappear.
+  function ntBox(title, isCall) {
+    const N = EFF.nt; if (!N) return '';
+    const inBox = r => (r.kind === 'callback') === isCall, open = (N.open || []).filter(inBox), doneAll = (N.done || []).filter(inBox), K = { big: '⬆ Bigger (1h)', add: '➕ Add-on (1h)', bigd: '⬆ Bigger (aaj)', addd: '➕ Add-on (aaj)', ticket: '🎯 Ticket', coach: '🔴 Both', callback: '📞 Call-backs' }, cnt = {};
+    open.forEach(r => { cnt[r.kind] = (cnt[r.kind] || 0) + 1; });
+    const sum = Object.keys(K).filter(k => cnt[k]).map(k => K[k] + ' ' + cnt[k]).join(' · ');
+    const row = 'display:flex;align-items:center;gap:8px;border-top:1px solid #eef0f4;padding:5px 0;';
+    const phone = window.matchMedia && window.matchMedia('(max-width:700px)').matches, bc = 'border:1px solid #e5e7eb;border-radius:10px;padding:8px 10px;margin:6px 0;background:#fff;';
+    const blocks = open.map(r => `<div style="${bc}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b style="font-size:13px">${esc(r.emp)}</b><small style="color:#667781">${esc(r.at)}</small></div><div style="margin:3px 0 7px;line-height:1.4;font-size:12.5px;word-break:break-word">${esc(r.text)}</div><button type="button" onclick="effNt(${r.id})" style="display:block;width:100%;font:inherit;font-size:13px;font-weight:700;border:1px solid #86efac;background:#f0fdf4;color:#166534;border-radius:99px;padding:7px 10px;cursor:pointer">✓ Resolve</button></div>`).join('');
+    const lines = open.map(r => `<details style="${row}display:block;padding:0"><summary style="${row}border-top:0;cursor:pointer;list-style:none"><b style="flex:none;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${esc(r.emp)}</b><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#444">${esc(r.text)}</span><button type="button" onclick="event.preventDefault();effNt(${r.id})" style="flex:none;font:inherit;font-size:12px;font-weight:700;border:1px solid #86efac;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 10px;cursor:pointer">✓</button></summary><div style="padding:2px 0 7px;font-size:12.5px;line-height:1.45;word-break:break-word"><small style="color:#667781">${esc(r.at)}</small> ${esc(r.text)}</div></details>`).join('');
+    const rows = phone ? blocks : lines;
+    const dn = doneAll.map(r => `<div style="${row}display:block;font-size:12px;word-break:break-word"><b>${esc(r.emp)}</b> <small style="color:#667781">${esc(r.done_at)}</small><br>${r.auto ? '🤖 ' : '✓ '}<b>${esc(r.remark)}</b></div>`).join('');
+    return `<details class="ef-d" ${!isCall && open.length ? 'open' : ''} style="max-width:100%"><summary>${title} — ${open.length} open · ${doneAll.length} resolved today<br><small style="font-weight:400;color:#667781">${sum || (isCall ? 'Koi call pending nahi ✓' : 'Abhi koi peeche nahi ✓')}</small></summary>${rows}${dn ? `<details style="margin-top:4px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:#166534">✓ Resolved today (${doneAll.length}) — with your comments</summary>${dn}</details>` : ''}</details>`;
+  }
+  function ntHtml() { return ntBox('📞 Call instructions', true); }   // the ticket-size / bigger / add-on notes are no longer listed here: tap the 8 numbers to see who (the notes are still written for the half-hourly reports)
+  window.effNt = async (id) => { const rm = prompt('Kya baat hui / kya kiya? (remark zaroori hai)'); if (rm == null) return; if (rm.trim().length < 4) { showAlert('Remark likho (kam se kam 4 akshar).', 'error'); return; } try { await api.post('wq.grow_note_resolve', { id, remark: rm.trim() }); EFF.nt = await api.get('wq.grow_notes'); renderToday(); } catch (e) { showAlert(e.message, 'error'); } };
+  // 🔎 tap a number: which orders / chats are behind it
+  window.effOrd = async (lane, lv, emp) => {
+    const L = { big: '⬆ Bigger', add: '➕ Add-on' }[lane], V = { big: ['none', 'little', 'tried hard', 'sold'], add: ['none', 'little', 'tried hard', 'took'] }[lane][lv];
+    let ov = document.getElementById('effOv'); if (!ov) { ov = document.createElement('div'); ov.id = 'effOv'; ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center'; ov.onclick = (ev) => { if (ev.target === ov) ov.remove(); }; document.body.appendChild(ov); }
+    const box = (h) => { ov.innerHTML = `<div style="background:#fff;width:100%;max-width:720px;max-height:85vh;overflow:auto;border-radius:16px 16px 0 0;padding:12px 14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:14px">${L} · ${V}${emp ? '' : ' · whole team'}</b><button type="button" onclick="document.getElementById('effOv').remove()" style="font:inherit;border:0;background:#eef0f4;border-radius:99px;padding:4px 12px;cursor:pointer">✕</button></div>${h}</div>`; };
+    box('<div class="sub" style="padding:10px">Loading…</div>');
+    try { const d = await api.get('ct.effort_orders', { date: $('datePick').value || (T && T.day) || '', lane, lv, emp });
+      const one = (r) => `<div style="border-top:1px solid #eef0f4;padding:6px 0"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(r.order)}</b><span style="color:#667781;font-size:11.5px">${esc(r.at)}${r.total ? ' · ₹' + Number(r.total).toLocaleString('en-IN') : ''}</span></div>${r.customer ? `<div style="font-size:12px;color:#444">${esc(r.customer)}</div>` : ''}${r.offered ? `<div style="font-size:12px;color:#166534">offered: ${esc(r.offered)}</div>` : ''}${r.why ? `<div style="font-size:11.5px;color:#667781;word-break:break-word">${esc(r.why)}</div>` : ''}${r.phone ? `<a href="wa_one.html?phone=${esc(r.phone)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:3px;font-size:12px;font-weight:700;color:#0f6e7e">💬 Open chat</a>` : ''}</div>`;
+      const ppl = (d.people || []).map((q, i) => { const mine = (d.rows || []).filter(r => r.eid === q.id); return `<details style="border:1px solid #e5e7eb;border-radius:10px;margin:6px 0;padding:6px 10px"${emp || i === 0 ? ' open' : ''}><summary style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;list-style:none"><b>${esc(q.name)}</b><span style="font-weight:800">${q.n} order${q.n === 1 ? '' : 's'}</span></summary>${mine.map(one).join('')}</details>`; }).join('');
+      box(`<div class="sub" style="padding:4px 0">${d.total} order${d.total === 1 ? '' : 's'} today · ${(d.people || []).length} salespeople (most first — tap a name for the orders)</div>${ppl || '<div class="sub" style="padding:8px">None.</div>'}`); } catch (e) { box(`<div class="sub" style="padding:10px;color:#b91c1c">${esc(e.message || 'Could not load')}</div>`); }
+  };
+  function effHtml() {
+    const d = EFF.d; if (!d) return '';
+    const emps = (T.emps || []).filter(e => e.role_kind !== 'head'), total = emps.reduce((x, e) => x + Number(e.orders || 0), 0), done = (d.team || []).reduce((x, v) => x + v, 0), wait = Math.max(0, total - done - Number(d.skipped || 0));
+    const box = (cls, i, title, sub) => {
+      const list = emps.map(e => ({ n: (effOf(e.id) || { n: [0, 0, 0, 0] }).n[i], name: e.name })).filter(x => x.n > 0).sort((a, b) => b.n - a.n);
+      return `<div class="ef-b ${cls}" title="${sub}" onclick="effOrd('add',${i},0)" style="cursor:pointer"><div class="t">${title}</div><div class="v">${(d.team || [])[i] || 0}</div></div>`;
+    };
+    const boxB = (cls, i, title, sub) => `<div class="ef-b ${cls}" title="${sub}" onclick="effOrd('big',${i},0)" style="cursor:pointer"><div class="t">${title}</div><div class="v">${(d.team_sz || [])[i] || 0}</div></div>`;
+    const perB = (i) => emps.map(e => ({ n: ((effOf(e.id) || {}).sz || [0, 0, 0, 0])[i], name: e.name })).filter(x => x.n > 0).sort((a, b) => b.n - a.n).map(x => esc(x.name.split(/\s+/)[0]) + ' <b>' + x.n + '</b>').join(' · ') || '—';
+    const per = (i) => emps.map(e => ({ n: (effOf(e.id) || { n: [0, 0, 0, 0] }).n[i], name: e.name })).filter(x => x.n > 0).sort((a, b) => b.n - a.n).map(x => esc(x.name.split(/\s+/)[0]) + ' <b>' + x.n + '</b>').join(' · ') || '—';
+    const ppTable = () => {
+      const rows = emps.map(e => { const x = effOf(e.id); return x ? { id: e.id, name: e.name, b: x.sz || [0, 0, 0, 0], a: x.n } : null; }).filter(r => r && (r.a[0] + r.a[1] + r.a[2] + r.a[3] + r.b[0] + r.b[1] + r.b[2] + r.b[3]) > 0).sort((p, q) => (q.b[3] + q.a[3]) - (p.b[3] + p.a[3]) || (p.b[0] + p.a[0]) - (q.b[0] + q.a[0]));
+      const c = (cls, v, ln, lv, id) => `<i class="${cls}${v ? '' : ' z'}"${v ? ` onclick="effOrd('${ln}',${lv},${id})" style="cursor:pointer"` : ''}>${v}</i>`;
+      return rows.length ? `<table class="ef-pp"><tr><td></td><td colspan="4"><b>⬆ Bigger</b></td><td colspan="4"><b>➕ Add-on</b></td></tr>${rows.map(r => `<tr><td>${esc(r.name.split(/\s+/).slice(0, 2).join(' '))}</td>${[3, 2, 1, 0].map((k, n) => `<td>${c(['bw', 'bh', 'bl', 'br'][n], r.b[k], 'big', k, r.id)}</td>`).join('')}${[3, 2, 1, 0].map((k, n) => `<td>${c(['w', 'h', 'l', 'r'][n], r.a[k], 'add', k, r.id)}</td>`).join('')}</tr>`).join('')}</table>` : '<div class="sub" style="padding:6px">Nothing read yet.</div>';
+    };
+    const rs = emps.reduce((x, e) => x + Number((effOf(e.id) || {}).addon_rs || 0), 0);
+    const miss = (d.missed || []).map(m => `<tr><td><b>${esc(m.order)}</b><br><small>${esc(m.emp_name)}</small></td><td>${esc(m.customer || '')}${m.total ? '<br><small>' + inr(m.total) + '</small>' : ''}</td><td><small>${esc(m.why || m.asked || '')}</small></td><td>${m.phone ? `<a href="wa_one.html?phone=${m.phone}" target="_blank" rel="noopener">💬 Follow up</a>` : ''}</td></tr>`).join('');
+    const tips = (d.tips || []).map(x => `<tr><td><b>${esc(x.emp)}</b> · ${esc(x.order)}</td><td>“${esc(x.text)}”${x.offered ? '<br><small>offered: ' + esc(x.offered) + '</small>' : ''}</td></tr>`).join('');
+    return `<div class="ef"><div class="ef-h"><b>📈 Growth effort · ${esc(T.day)}</b><small>${done} of ${total} orders read from the chat${wait ? ' · ' + wait + ' still waiting' : ''}${d.skipped ? ' · ' + d.skipped + ' had no chat' : ''}${rs ? ' · add-on ₹ ' + inr(rs) : ''}${d.mode === 'off' ? ' · automatic reading is OFF (Order Allocation → 🤖)' : ''}</small>${wait || EFF.run ? `<button type="button" onclick="effFill()" ${EFF.run ? 'disabled' : ''} style="font:inherit;font-size:11.5px;font-weight:700;border:0;background:#111827;color:#fff;border-radius:99px;padding:4px 12px;cursor:pointer">${EFF.run ? '⏳ Reading chats… ' + wait + ' left' : '▶ Read chats now'}</button>` : ''}</div>
+      ${ntHtml()}${grHtml()}${cbHtml()}${lnHtml()}
+      <div class="ef-r"><span class="ef-l" title="Ticket size: BEFORE the order is final, the salesperson convinced the customer to take more than he came for (5 → 7 pieces, 1 → 5 pieces, or a bigger size / value)">⬆ Bigger</span>${boxB('bw', 3, 'sold', '🔵 Tried and the customer took a bigger order')}${boxB('bh', 2, 'tried hard', '🟣 Tried hard, customer did not take')}${boxB('bl', 1, 'little', '🟤 Little effort: asked once, left it')}${boxB('bz', 0, 'none', '⚫ No effort: never tried to sell bigger')}</div>
+      <div class="ef-r"><span class="ef-l" title="AFTER the order is final: extra perfume bottle(s) added on top (chain, gifts and other non-perfume do not count)">➕ Add-on</span>${box('w', 3, 'took', '🟢 Tried and the customer took the add-on')}${box('h', 2, 'tried hard', '🟡 Tried hard, customer did not take')}${box('l', 1, 'little', '🟠 Little effort: asked once, left it')}${box('z', 0, 'none', '🔴 No effort: never offered more')}</div>
+      <details class="ef-d"><summary>👥 Who convinced — per person</summary>${ppTable()}</details>
+      <details class="ef-d"><summary>🔴 No effort — follow up these customers (${(d.missed || []).length})</summary>${miss ? `<table>${miss}</table>` : '<div class="sub" style="padding:6px">Nothing here yet.</div>'}</details>
+      <details class="ef-d"><summary>⚫ No bigger-order offer (${(d.missed_sz || []).length})</summary><div class="sub" style="padding:4px 2px">Bigger = before the order is final, the customer was convinced to take more than he came for (more pieces or a bigger size). Extra perfume added after the order is final is ➕ Add-on. The note below describes the whole chat.</div>${(d.missed_sz || []).length ? `<table>${(d.missed_sz || []).map(m => `<tr><td><b>${esc(m.order)}</b><br><small>${esc(m.emp_name)}</small></td><td><small>${esc(m.why || m.asked || '')}</small></td></tr>`).join('')}</table>` : '<div class="sub" style="padding:6px">Nothing here yet.</div>'}</details>
+      <details class="ef-d"><summary>💡 Words that sold bigger (${(d.tips_sz || []).length})</summary>${(d.tips_sz || []).length ? `<table>${(d.tips_sz || []).map(x => `<tr><td><b>${esc(x.emp)}</b> · ${esc(x.order)}</td><td>“${esc(x.text)}”</td></tr>`).join('')}</table>` : '<div class="sub" style="padding:6px">No winning "bigger" chat read yet today.</div>'}</details>
+      <details class="ef-d"><summary>💡 Words that worked — the ticket-size advice for everyone (${(d.tips || []).length})</summary>${tips ? `<table>${tips}</table>` : '<div class="sub" style="padding:6px">No winning add-on chat read yet today.</div>'}</details></div>`;
   }
 
   // Every refresh (resolve, remark, auto-reload) keeps the sections you opened and the scroll position — the panel no longer jumps / folds up.
@@ -953,7 +1114,7 @@
       return `<button type="button" class="b ${st0[i]}${e.mark === 'wfh' ? ' wfh' : ''}" onclick="bkOpen(${e.id})" title="${esc(e.name)} ${sv != null ? ' · pace ' + sv.toFixed(2) + '×' : ''}${hasT ? ' · target ' + inr(e.target) : ''}"><span class="nm"><span class="nn"><i class="rk" title="Rank by collection today">#${i + 1}</i><span class="pn">${esc((() => { const w = String(e.name || '').trim().split(/\s+/); return w.length > 1 ? w[0] + ' ' + w[w.length - 1].charAt(0) + '.' : (w[0] || ''); })())}</span></span></span>${n ? `<span class="bdg">${n > 9 ? '9+' : n}</span>` : ''}
         <span class="c"><b>${inr(e.sales || 0)}</b>${hasT ? `<i>${pc >= 100 ? Math.round(pc) + '%' : Math.round(pc) + '%/' + tk}</i>` : ''}</span>
         ${hasT ? `<span class="mb"><u class="${sc}" style="width:${Math.max(0, Math.min(100, pc))}%"></u>${sv != null ? `<s style="left:${Math.max(0, Math.min(100, Number(e.exp_arr || 0)))}%"></s>` : ''}</span>` : ''}
-        <span class="tg">${tg.map(x => `<em class="${x[1]}"${x[2] ? ` title="${esc(x[2])}"` : ''}>${x[0]}</em>`).join('')}</span>${(() => { const z = paceOf(e.id); return `<span class="rp"><em class="${(() => { const vd = ((PACE7[e.id] || PACE[e.id] || {}).verdict || {}).key; return vd === 'red' ? 'r rv' : vd === 'star' ? 'g' : z.r ? pgc(z.r[0].grade) : ''; })()}" title="Typical (median) reply time: half of the replies are faster than this${z.r ? z.r[1] + ' · ' + z.r[0].n + ' replies · average ' + pfm(z.r[0].avg) : ' — no replies yet'}">${(((PACE7[e.id] || PACE[e.id] || {}).verdict || {}).key === 'star') ? '⭐' : '⚡'} ${z.r ? pfm(z.r[0].median) : '–'}${z.r && z.r[1] ? '<small>7d</small>' : ''}</em><em class="cl" title="Average time to close an order, counted from when the query came${z.c ? z.c[1] + ' · ' + z.c[0].n + ' orders' : ' — no order closed yet'}">🧾 ${z.c ? pfm(z.c[0].avg) : '–'}${z.c && z.c[1] ? '<small>7d</small>' : ''}</em>${(() => { const w = WAIT[e.id]; return w && w.n ? `<em class="wt ${wtCls(w)}" role="button" tabindex="0" title="${w.n} customer(s) waiting — tap to see who and send a reminder" onclick="event.stopPropagation();wtOpen(${e.id})">⏳${w.n}·${w.longest}m</em>` : ''; })()}</span>`; })()}</button>`;
+        <span class="kv" title="📦 orders today · 🎫 average ticket (goal ${inr(tkTop)})">📦 <b>${e.orders || 0}</b> · 🎫 <b class="${tagT(e)[1]}">${Number(e.orders) > 0 ? inr(e.ticket) : '—'}</b>${e.no_target ? ' <em class="r">🎯 none</em>' : ''}</span>${(() => { const z = paceOf(e.id); return `<span class="rp"><em class="${(() => { const vd = ((PACE7[e.id] || PACE[e.id] || {}).verdict || {}).key; return vd === 'red' ? 'r rv' : vd === 'star' ? 'g' : z.r ? pgc(z.r[0].grade) : ''; })()}" title="Typical (median) reply time: half of the replies are faster than this${z.r ? z.r[1] + ' · ' + z.r[0].n + ' replies · average ' + pfm(z.r[0].avg) : ' — no replies yet'}">${(((PACE7[e.id] || PACE[e.id] || {}).verdict || {}).key === 'star') ? '⭐' : '⚡'} ${z.r ? pfm(z.r[0].median) : '–'}${z.r && z.r[1] ? '<small>7d</small>' : ''}</em><em class="cl" title="Average time to close an order, counted from when the query came${z.c ? z.c[1] + ' · ' + z.c[0].n + ' orders' : ' — no order closed yet'}">🧾 ${z.c ? pfm(z.c[0].avg) : '–'}${z.c && z.c[1] ? '<small>7d</small>' : ''}</em>${(() => { const w = WAIT[e.id]; return w && w.n ? `<em class="wt ${wtCls(w)}" role="button" tabindex="0" title="${w.n} customer(s) waiting — tap to see who and send a reminder" onclick="event.stopPropagation();wtOpen(${e.id})">⏳${w.n}·${w.longest}m</em>` : ''; })()}</span>`; })()}${effRow(e)}</button>`;
     })() : ''; };
     const blocksOf = (wfh) => order.filter(i => (emps[i].mark === 'wfh') === wfh).map(blockOf).join('');
     const blocks = blocksOf(false), wfhBlocks = blocksOf(true), wfhN = order.filter(i => emps[i].mark === 'wfh' && keep(emps[i], i)).length;
@@ -975,20 +1136,13 @@
     if (teamSp == null) bkWarns.push(['a', '🏃 <b>Team pace can\'t be judged</b> — ' + paceWhy + '.', '']);
     const bkWarn = bkWarns.length ? `<div class="bk-warn">${bkWarns.map(w => `<div class="w ${w[0]}"><span>${w[1]}</span>${w[2]}</div>`).join('')}</div>` : '';
     const bkHead = `<div class="bk-top"><div><div class="bk-t">Today · ${esc(T.day)}</div><div class="bk-s">10 AM → 10 AM · updated ${esc((T.now || '').slice(11, 16))} · highest collection first</div></div></div>
-      ${bkWarn}<div class="bk-strip">${kp(qCls, 'Query orders', (t.query_orders ?? 0) + '<em> / ' + qGoal + '</em>', (t.q_conv != null ? Math.round(t.q_conv) + '%' : '—') + ' · goal ' + qPct + '%</span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">' + (t.queries ?? 0) + ' queries given' + slabChips(t.slab_q))}${kp((t.community_orders || 0) >= commGoal ? 'g' : '', 'Campaign', (t.community_orders ?? 0) + '<em> / ' + commGoal + '</em>', 'goal ' + commGoal + ' · ' + inr(cS) + '</span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">' + (t.cq ?? 0) + ' campaign queries' + slabChips(t.slab_c))}${t.pre_n == null ? '' : kp(preCls === 'ok' ? 'g' : preCls === 'warn' ? 'a' : preCls === 'red' ? 'r' : '', '💳 Prepaid', prePct == null ? '—' : Math.round(prePct) + '%', (hasPay ? 'COD ' + (prePct == null ? '—' : Math.round(100 - prePct) + '%') + (preGoal > 0 ? ' · goal ' + preGoal + '%' : '') + '</span><span class="pbar"><i class="p" style="width:' + (prePct || 0) + '%"></i><i class="c" style="width:' + (prePct == null ? 0 : 100 - prePct) + '%"></i></span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">' + Number(t.pre_full || 0) + ' prepaid · ' + Number(t.pre_part || 0) + ' part-paid' : preN + ' of ' + ordN + ' orders' + (preGoal > 0 ? ' · goal ' + preGoal + '%' : '') + '</span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">Query ' + preQ + ' · Campaign ' + preC))}${(() => { if (!PACET || !PACET.a) return ''; const tp = PACET.a.pace && PACET.a.pace.n > 0 ? PACET.a.pace : PACET.b.pace; let n = 0, sm = 0; Object.values(PACE).forEach(p => { if (p.close) { n += p.close.n; sm += p.close.n * p.close.avg; } }); if (!n) Object.values(PACE7).forEach(p => { if (p.close) { n += p.close.n; sm += p.close.n * p.close.avg; } }); return kp(pgc(tp.grade), '⚡ Reply pace', pfm(tp.median), 'typical time to reply · ' + tp.n + ' replies</span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">🧾 order closes in ' + (n ? pfm(sm / n) : '–'), 'pace.html'); })()}${roasK}${kp(tgDue != null && tgSum ? (tgAch / tgSum * 100 >= tgDue ? 'g' : tgAch / tgSum * 100 >= tgDue * 0.7 ? 'a' : 'r') : '', 'Collection', inr(tot), (tgSum ? Math.round(tgAch / tgSum * 100) + '% · due ' + tgDue + '%' : '') + (hasPay ? '</span><span class="pbar"><i class="p" style="width:' + (prePct || 0) + '%"></i><i class="c" style="width:' + (prePct == null ? 0 : 100 - prePct) + '%"></i></span><span class="pl"><i class="pg">Prepaid ' + inr(paidM) + '</i><i class="po">COD ' + inr(codM) + '</i></span><span style="display:none">' : ''))}${kp(tkCls === 'ok' ? 'g' : tkCls === 'warn' ? 'a' : 'r', 'Ticket', inr(tk), 'goal ' + inr(tkTop))}${kp(teamSp == null ? 'warnc' : spCls(teamSp), '🏃 Team pace', teamSp == null ? '⚠ No data' : teamSp.toFixed(2) + '×', teamSp == null ? paceWhy : spSlow + ' slow · ' + spClose + ' close', 'pace.html')}${kp(codeP == null ? '' : codeP >= 65 ? 'g' : codeP >= 50 ? 'a' : 'r', 'Codes', codeP == null ? '—' : Math.round(codeP) + '%', 'goal 65%')}${kp(emps.length && onTime >= emps.length * 0.9 ? 'g' : 'a', 'On time', onTime + ' / ' + emps.length, '')}</div>
+      ${bkWarn}${effHtml()}<div class="bk-strip">${kp(qCls, 'Query orders', (t.query_orders ?? 0) + '<em> / ' + qGoal + '</em>', (t.q_conv != null ? Math.round(t.q_conv) + '%' : '—') + ' · goal ' + qPct + '%</span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">' + (t.queries ?? 0) + ' queries given</span><span style="display:block;margin:0;color:#0f6e8c;font-weight:800;">💰 ' + inr(qS) + ' · 🎯 ticket ' + tkOf(qS, t.query_orders) + slabChips(t.slab_q))}${kp((t.community_orders || 0) >= commGoal ? 'g' : '', 'Campaign', (t.community_orders ?? 0) + '<em> / ' + commGoal + '</em>', 'goal ' + commGoal + ' · ' + inr(cS) + '</span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">' + (t.cq ?? 0) + ' campaign queries</span><span style="display:block;margin:0;color:#0f6e8c;font-weight:800;">💰 ' + inr(cS) + ' · 🎯 ticket ' + tkOf(cS, t.community_orders) + slabChips(t.slab_c))}${t.pre_n == null ? '' : kp(preCls === 'ok' ? 'g' : preCls === 'warn' ? 'a' : preCls === 'red' ? 'r' : '', '💳 Prepaid', prePct == null ? '—' : Math.round(prePct) + '%', (hasPay ? 'COD ' + (prePct == null ? '—' : Math.round(100 - prePct) + '%') + (preGoal > 0 ? ' · goal ' + preGoal + '%' : '') + '</span><span class="pbar"><i class="p" style="width:' + (prePct || 0) + '%"></i><i class="c" style="width:' + (prePct == null ? 0 : 100 - prePct) + '%"></i></span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">' + Number(t.pre_full || 0) + ' prepaid · ' + Number(t.pre_part || 0) + ' part-paid' : preN + ' of ' + ordN + ' orders' + (preGoal > 0 ? ' · goal ' + preGoal + '%' : '') + '</span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">Query ' + preQ + ' · Campaign ' + preC))}${(() => { if (!PACET || !PACET.a) return ''; const tp = PACET.a.pace && PACET.a.pace.n > 0 ? PACET.a.pace : PACET.b.pace; let n = 0, sm = 0; Object.values(PACE).forEach(p => { if (p.close) { n += p.close.n; sm += p.close.n * p.close.avg; } }); if (!n) Object.values(PACE7).forEach(p => { if (p.close) { n += p.close.n; sm += p.close.n * p.close.avg; } }); return kp(pgc(tp.grade), '⚡ Reply pace', pfm(tp.median), 'typical time to reply · ' + tp.n + ' replies</span><span style="display:block;margin:0;color:#1f2937;font-weight:700;">🧾 order closes in ' + (n ? pfm(sm / n) : '–'), 'pace.html'); })()}${roasK}${kp(tgDue != null && tgSum ? (tgAch / tgSum * 100 >= tgDue ? 'g' : tgAch / tgSum * 100 >= tgDue * 0.7 ? 'a' : 'r') : '', 'Collection', inr(tot), (tgSum ? Math.round(tgAch / tgSum * 100) + '% · due ' + tgDue + '%' : '') + (hasPay ? '</span><span class="pbar"><i class="p" style="width:' + (prePct || 0) + '%"></i><i class="c" style="width:' + (prePct == null ? 0 : 100 - prePct) + '%"></i></span><span class="pl"><i class="pg">Prepaid ' + inr(paidM) + '</i><i class="po">COD ' + inr(codM) + '</i></span><span style="display:none">' : ''))}${kp(tkCls === 'ok' ? 'g' : tkCls === 'warn' ? 'a' : 'r', 'Ticket', inr(tk), 'goal ' + inr(tkTop))}${kp(teamSp == null ? 'warnc' : spCls(teamSp), '🏃 Team pace', teamSp == null ? '⚠ No data' : teamSp.toFixed(2) + '×', teamSp == null ? paceWhy : spSlow + ' slow · ' + spClose + ' close', 'pace.html')}${kp(codeP == null ? '' : codeP >= 65 ? 'g' : codeP >= 50 ? 'a' : 'r', 'Codes', codeP == null ? '—' : Math.round(codeP) + '%', 'goal 65%')}${kp(emps.length && onTime >= emps.length * 0.9 ? 'g' : 'a', 'On time', onTime + ' / ' + emps.length, '')}</div>
       <div class="bk-tools"><button type="button" class="of-chip" onclick="openOff()">${OFFSET.size ? '🚫 ' + OFFSET.size + ' not working · manage' : '👥 Working today · manage'}</button><div class="bk-seg">${[['all', 'All'], ['behind', 'Behind'], ['alerts', 'Alerts'], ['track', 'On track']].map(f => `<button type="button" class="${BKF === f[0] ? 'on' : ''}" onclick="bkFilter('${f[0]}')">${f[1]} ${cnt[f[0]]}</button>`).join('')}</div>
         <div class="bk-seg"><span style="font-size:11px;color:#8a90a0;font-weight:600;align-self:center;margin-right:2px;">Sort</span>${[['coll', 'Collection', 'Highest collection first'], ['speed', '🏃 Behind target', 'Furthest behind the collection target first'], ['reply', '🐢 Slowest reply', 'Slowest average reply time first'], ['target', 'Target %', 'Lowest % of target first']].map(f => `<button type="button" title="${f[2]}" class="${BKS === f[0] ? 'on' : ''}" onclick="bkSort('${f[0]}')">${f[1]}</button>`).join('')}</div>
         <div class="bk-lg"><span>><span><i class="h"></i>hit</span><span><i class="g"></i>on track</span><span><i class="a"></i>close</span><span><i class="r"></i>behind</span><span><i class="n"></i>no target</span></div></div>`;
     const bkFoot = `<div class="bk-foot"><span><b>Q</b> query orders · ratio</span><span><b>C</b> campaign orders</span><span><b>T</b> ticket (₹k)</span><span><b>K</b> codes %</span><span><b>●</b> on time</span><span><b>⚡</b> typical (median) time to reply</span><span><b>⏳</b> customers waiting now · longest wait · tap to see who</span><span><b>🧾</b> average time to close an order (7d = last 7 days, when none today)</span><span><b>🏃</b> behind target = % of target done ÷ % he should have done by now · bar tick = where he should be now</span><span>Number on a block = open alerts · tap a block for details, remark and resolve</span></div>
       <div class="bk-side"><span>🎯 Targets · assigned <b>${inr(tgSum)}</b> · collected <b>${inr(tgAch)}</b>${tgSum ? ' (' + Math.round(tgAch / tgSum * 100) + '%)' : ''} · <b>${tgHit}</b> of ${esT.length} at target</span></div>`;
-    $('p-today').innerHTML = `<div class="bk">${bkHead}${wfhBlocks && blocks ? '<div class="bk-h">In office</div>' : ''}<div class="bk-grid">${blocks || (wfhBlocks ? '' : '<div class="empty">No sales team data for this day.</div>')}</div>${wfhBlocks ? `<div class="bk-h">🏠 Work from home <em>${wfhN}</em></div><div class="bk-grid">${wfhBlocks}</div>` : ''}${bkFoot}
-      <details class="bk-d"><summary>📋 Person-wise table <small>(collection per person)</small></summary>${people}</details>
-      <details class="bk-d"><summary>🔔 Needs attention <small>(${open.length})</small></summary>${alerts}</details>
-      <details class="bk-d"><summary>🕐 Hour by hour &amp; last days</summary><div id="histBox"></div></details>
-      <details class="bk-d"><summary>✍️ Remarks sent</summary><div id="remToday"></div></details>
-      <details class="bk-d"><summary>🧮 Check the numbers</summary><div id="reconBox"></div></details>
-      <details class="bk-d"><summary>📊 Full numbers <small>(old tiles)</small></summary><div class="cl-top">${coll}${tiles}</div></details></div>`;
-    renderHist(); renderRecon(); loadRemToday();
+    $('p-today').innerHTML = `<div class="bk">${bkHead}${wfhBlocks && blocks ? '<div class="bk-h">In office</div>' : ''}<div class="bk-grid">${blocks || (wfhBlocks ? '' : '<div class="empty">No sales team data for this day.</div>')}</div>${wfhBlocks ? `<div class="bk-h">🏠 Work from home <em>${wfhN}</em></div><div class="bk-grid">${wfhBlocks}</div>` : ''}${bkFoot}</div>`;
   }
 
   // ---------- Today blocks: filter + tap pop-up (details, remark, resolve with a comment) ----------
@@ -1121,6 +1275,7 @@
       ${row('Codes', e.code_rate == null ? '—' : Math.round(e.code_rate) + '%' + (e.code_left > 0 ? ' <small>' + e.code_left + ' more</small>' : ''))}
       ${row('Commission', inr(e.com || 0) + (e.com_night != null ? ' <small>→ ~' + inr(e.com_night) + ' by night</small>' : ''))}
       ${row('Rating', '<span id="bkRate">…</span>')}
+      <details class="ef-d" ontoggle="if(this.open)effHist(${id},7,this)"><summary>📈 Growth effort · earlier days</summary><div class="ef-hb" style="padding:6px 0">…</div></details>
       ${bkLadder(e)}
       <div id="bkRem">${remBox(id, first)}</div>
       <div class="bk-al">${bkAlHtml(id)}</div>

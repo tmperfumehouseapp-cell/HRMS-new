@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chat — HRMS</title>
 <!-- ONE chat, no list: opened in the side panel of WhatsApp → Give queries / Late replies / Signals / Contacts (whatsapp.html), so the admin reads, replies
      and assigns without leaving that list. wa_one.html?phone=9876543210 — tells the page around it when the chat was assigned or closed (postMessage). -->
@@ -50,7 +50,7 @@
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx9"></script>
-<script src="assets/js/wa_inbox.js?v=wa77"></script>
+<script src="assets/js/wa_inbox.js?v=wa81"></script>
 <script>
   if (!api.token()) { parent.postMessage({ wa: 'close' }, location.origin); }
   else WaInbox.start({ mode: 'admin', root: 'wi', one: true });

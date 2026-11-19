@@ -2246,7 +2246,7 @@ if (strpos($__wca, 'wch.') === 0 && in_array($__wca, ['wch.below_reason', 'wch.s
     $needPost = function () use ($isPost) { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $needGet = function () use ($isPost) { if ($isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $needAdmin = function () use ($adm) { if (!$adm) json_response(['error' => 'Only Admin, HR or the control tower can do this.'], 403); };
-    $http = function (string $code): int { static $m = ['off' => 409, 'billing_incomplete' => 409, 'window_closed' => 409, 'already_sent' => 409, 'not_sent' => 409, 'no_choice' => 409, 'conflict' => 409, 'busy' => 409, 'optout' => 409, 'not_paid' => 409, 'cart_exists' => 409, 'locked' => 409,
+    $http = function (string $code): int { static $m = ['off' => 409, 'billing_incomplete' => 409, 'window_closed' => 409, 'already_sent' => 409, 'not_sent' => 409, 'no_choice' => 409, 'conflict' => 409, 'busy' => 409, 'optout' => 409, 'not_paid' => 409, 'cart_exists' => 409, 'locked' => 409, 'growth_gate' => 409,
         'ml_mismatch' => 422, 'empty' => 422, 'choose' => 422, 'gone' => 422, 'no_options' => 422, 'bad_pick' => 422, 'plan' => 422, 'state_missing' => 422, 'no_plan' => 422, 'no_order' => 409, 'send_failed' => 502, 'scope_missing' => 502, 'shopify_error' => 502, 'issue_failed' => 500, 'not_found' => 404, 'internal' => 500]; return $m[$code] ?? 422; };
     $fail = function (string $err, string $code, array $extra = []) use ($http) { json_response(['error' => $err, 'code' => $code] + $extra, $http($code)); };
     $cartOf = function (int $id) use ($pdo, $adm, $auth, $names) {   // the cart row; a salesperson only for chats they may open
@@ -2321,7 +2321,8 @@ if (strpos($__wca, 'wch.') === 0 && in_array($__wca, ['wch.below_reason', 'wch.s
             [$ok, $e, $cd, $d] = wch_chain_pick($pdo, $c, $p, 'salesperson', $me); if (!$ok) $fail($e, $cd); json_response(['ok' => true, 'on' => $on, 'cart' => $cartOut((int)$c['id']), 'confirmation_sent' => $d['confirmation_sent']]);
         }
         case 'wch.cart_link': {
-            $needPost(); $c = $cartOf((int)($in['id'] ?? 0)); @set_time_limit(60); [$ok, $e, $cd, $d] = wch_cart_link($pdo, $c, $cfg, $me); if (!$ok) $fail($e, $cd, is_array($d) ? $d : []);
+            $needPost(); $c = $cartOf((int)($in['id'] ?? 0)); @set_time_limit(60);
+            if (function_exists('wq_grow_check')) { $__gg = wq_grow_check($pdo, $auth, (string)$c['phone'], $in, (int)round(((int)$c['total_p']) / 100)); if ($__gg['gate'] !== '') $fail($__gg['error'], 'growth_gate', ['grow_gate' => $__gg['gate'], 'grow_missing' => $__gg['missing'], 'grow_ideas' => $__gg['ideas'] ?? null]); }   // 🔗 both efforts first (warning, later strict) [$ok, $e, $cd, $d] = wch_cart_link($pdo, $c, $cfg, $me); if (!$ok) $fail($e, $cd, is_array($d) ? $d : []);
             json_response(['ok' => true, 'on' => $on, 'cart' => $cartOut((int)$c['id']), 'link' => ['url' => $d['url'], 'draft_name' => $d['draft_name']], 'resent' => $d['resent']]);
         }
         case 'wch.cart_status': { $needGet(); $c = $cartOf((int)($in['id'] ?? 0)); json_response(wch_cart_status($pdo, $c, $cfg)); }

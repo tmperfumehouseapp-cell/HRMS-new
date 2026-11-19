@@ -379,6 +379,10 @@
   };
     function pills(c) {
       let h = c.life ? `<span class="wi-p" style="background:${LC[c.life.key] || '#f1f5f9'};font-weight:800" title="Where this customer is right now">${esc(c.life.label)}</span>` : '';
+      if (c.eff && c.eff.length) {   // both efforts of the last read order: [add-on level, stars, reason, order, bigger level]
+        const E = [['🔴', '#dc2626', 'No add-on effort'], ['🟠', '#ea580c', 'Little add-on effort'], ['🟡', '#d97706', 'Tried hard, customer did not take the add-on'], ['🟢', '#16a34a', 'Tried, and the customer took the add-on']][c.eff[0]] || null, B = [['⚫', '#1f2937', 'No effort to sell bigger'], ['🟤', '#92400e', 'Little effort to sell bigger'], ['🟣', '#7c3aed', 'Tried hard to sell bigger, customer did not take'], ['🔵', '#2563eb', 'Sold bigger']][c.eff[4] == null ? 0 : c.eff[4]] || null, tt = ' · order ' + (c.eff[3] || '') + ' · ★' + c.eff[1] + ' — ' + (c.eff[2] || '');
+        if (E && B) h = `<span class="wi-p" style="background:${B[1]};color:#fff;font-weight:800" title="${esc(B[2] + tt)}">⬆ ${B[0]}</span><span class="wi-p" style="background:${E[1]};color:#fff;font-weight:800" title="${esc(E[2] + tt)}">➕ ${E[0]}</span>` + h;
+      }
       if (c.life && (c.life.want_label || c.life.day != null)) h += `<span class="wi-p" style="background:#f1f5f9" title="What the customer wants · days since their last message">${esc(c.life.want_label || '')}${c.life.day != null ? (c.life.want_label ? ' · ' : '') + 'day ' + c.life.day : ''}</span>`;
       if (c.life && c.life.plan) h += `<span class="wi-p" style="background:#ede9fe;color:#5b21b6;cursor:pointer" title="Tap: this customer’s timeline — what is next, what already went" onclick="event.stopPropagation();window.waPlanOpen&&waPlanOpen('${esc(c.phone || '')}')">📍 ${esc(c.life.plan)}</span>`;
       h += c.hot ? '<span class="wi-p r">🔥 Hot</span>' : '';

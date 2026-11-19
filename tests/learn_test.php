@@ -1,0 +1,34 @@
+<?php
+// Utility follow-up "learning" helpers: the words only the moved messages use, and the safe fallback bank.
+$src = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_util.php');
+foreach (['wa_util_learn_avoid', 'wa_util_learn_fallback'] as $fn) { $p = strpos($src, "function $fn("); if ($p === false) { echo "missing $fn\n"; exit(1); } $i = strpos($src, '{', $p); $d = 0; for ($j = $i; $j < strlen($src); $j++) { if ($src[$j] === '{') $d++; elseif ($src[$j] === '}') { $d--; if ($d === 0) { eval(substr($src, $p, $j - $p + 1)); break; } } } }
+function ok($c, $m) { if (!$c) { echo "FAIL: $m\n"; exit(1); } }
+$kept = ["Hi {{1}}, this is the TM Perfume House customer care team. If you need help with an order, a delivery or a perfume you bought from us, tap a button below."];
+$moved = ["Hi {{1}}, your contact is saved with TM Perfume House, so we can help you faster with any order or question. Reply whenever you need us.", "Hello {{1}}, welcome back to TM Perfume House. Tap a button to reply."];
+$av = wa_util_learn_avoid($kept, $moved);
+ok(in_array('saved', $av, true) && in_array('welcome', $av, true) && in_array('whenever', $av, true), 'words only the moved messages use are found');
+ok(!in_array('order', $av, true) && !in_array('delivery', $av, true), 'words of the kept messages are never avoided');
+$fb = wa_util_learn_fallback('open', [], 0); ok($fb && strpos($fb[0], '{{1}}') !== false && count($fb[1]) === 2, 'fallback for the open kind');
+$fb2 = wa_util_learn_fallback('open', [$fb[0]], 0); ok($fb2 && $fb2[0] !== $fb[0], 'a used wording is not used again');
+ok(wa_util_learn_fallback('order', [], 0) !== null && wa_util_learn_fallback('ask', [], 0) === null, 'order has a fallback, ask has none');
+echo "learn ok\n";
+$src2 = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_util.php'); $p = strpos($src2, 'function wa_util_claims_history('); $i = strpos($src2, '{', $p); $d = 0; for ($j = $i; $j < strlen($src2); $j++) { if ($src2[$j] === '{') $d++; elseif ($src2[$j] === '}') { $d--; if ($d === 0) { eval(substr($src2, $p, $j - $p + 1)); break; } } }
+foreach (["Hi {{1}}, this is about your recent enquiry with TM Perfume House.", "Hi {{1}}, your order or enquiry details are on file with TM Perfume House.", "Hi {{1}}, this is about your recent purchase from TM Perfume House.", "Hello {{1}}, you asked about a perfume.", "Hello {{1}}, an order you received from us"] as $b) ok(wa_util_claims_history($b), 'claim found: ' . $b);
+foreach (["Hi {{1}}, this is TM Perfume House customer care. If you need help with an order or a delivery from TM Perfume House, tap a button below.", "Hello {{1}}, TM Perfume House customer care can help with the status of an order or a return. Tap a button to message our team."] as $b) ok(!wa_util_claims_history($b), 'no claim: ' . $b);
+echo "claims ok\n";
+// behaviour: a self-written message that names an enquiry / order goes only to a customer for whom it is true
+foreach (['wa_util_claim_ok', 'wa_util_pick'] as $fn) { $p = strpos($src2, "function $fn("); $i = strpos($src2, '{', $p); $d = 0; for ($j = $i; $j < strlen($src2); $j++) { if ($src2[$j] === '{') $d++; elseif ($src2[$j] === '}') { $d--; if ($d === 0) { eval(substr($src2, $p, $j - $p + 1)); break; } } } }
+ok(wa_util_claim_ok('Hi {{1}}, this is about your recent enquiry with TM.', true, false) && !wa_util_claim_ok('Hi {{1}}, this is about your recent enquiry with TM.', false, true), 'enquiry claim needs an enquiry');
+ok(wa_util_claim_ok('Hello {{1}}, about your recent order or delivery.', false, true) && !wa_util_claim_ok('Hello {{1}}, about your recent order or delivery.', true, false), 'order claim needs an order');
+ok(!wa_util_claim_ok('Hi {{1}}, your enquiry about our perfume catalogue is on record.', true, true), 'a catalogue claim is never made');
+if (!function_exists('wa_util_orders')) { function wa_util_orders($pdo, $days) { return $GLOBALS['ORD'] ?? []; } }
+$pdoT = new PDO('sqlite::memory:'); $now = time();
+$claimMsg = ['pool_kind' => 'open', 'labels' => ['name'], 'nvars' => 1, 'body' => 'Hi {{1}}, this is about your recent enquiry with TM.', 'claims' => true, 'id' => 1];
+$plain = ['pool_kind' => 'open', 'labels' => ['name'], 'nvars' => 1, 'body' => 'Hi {{1}}, customer care here.', 'id' => 2];
+$pool = [$claimMsg, $plain];
+$GLOBALS['ORD'] = []; $saw = [];
+for ($rot = 0; $rot < 8; $rot++) { $r = wa_util_pick($pdoT, $pool, ['phone' => '9000000001', 'name' => 'Raj', 'optout' => 0, 'last_in_at' => null], 180, $now, $rot, 90, true); $saw[] = $r['t']['id'] ?? 0; }
+ok(!in_array(1, $saw, true) && in_array(2, $saw, true), 'a customer who never chatted never gets the enquiry claim');
+$saw = []; for ($rot = 0; $rot < 8; $rot++) { $r = wa_util_pick($pdoT, $pool, ['phone' => '9000000002', 'name' => 'Raj', 'optout' => 0, 'last_in_at' => date('Y-m-d H:i:s', $now - 5 * 86400)], 180, $now, $rot, 90, true); $saw[] = $r['t']['id'] ?? 0; }
+ok(in_array(1, $saw, true), 'a customer who wrote to us can get the enquiry message');
+echo "behaviour ok\n";

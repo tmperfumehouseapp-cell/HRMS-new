@@ -20,15 +20,51 @@
  */
 if (!function_exists('wa_dq_cfg')) {
 
+/** 🛑 owner 19 Nov 2026 (13:30): automatic hold. When Meta's spam flag (131048) hits many campaign messages sent in the last hour (100 or more, counted only after the last hold ended), all campaigns wait for 1 hour by themselves (owner, 19 Nov 2026, 14:35); then they restart at 5,000 an hour. Checked at most once a minute. wa_dq_auto_hold_n changes the number (0 = off). */
+function wa_dq_hold_active(PDO $pdo): bool
+{
+    try { return (int)setting_get($pdo, 'wa_dq_hold_until', '0') > time(); } catch (Throwable $e) { return false; }
+}
+function wa_dq_auto_hold(PDO $pdo): void
+{
+    try { $lim = (int)setting_get($pdo, 'wa_dq_auto_hold_n', '100'); if ($lim <= 0 || wa_dq_hold_active($pdo)) return;
+        if ((int)setting_get($pdo, 'wa_dq_auto_hold_at', '0') > time() - 60) return; setting_set($pdo, 'wa_dq_auto_hold_at', (string)time());
+        $from = max(time() - 3600, (int)setting_get($pdo, 'wa_dq_hold_end', '0'));
+        $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE err_code = 131048 AND sent_at >= ?"); $q->execute([date('Y-m-d H:i:s', $from)]); $n = (int)$q->fetchColumn();
+        if ($n >= $lim) { setting_set($pdo, 'wa_dq_hold_until', (string)(time() + 3600));   // owner 19 Nov 2026 (14:35): 1 hour (first 30 minutes), then it restarts at 5,000
+             setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing put on hold for 1 hour by itself (then it restarts at 5,000 an hour): Meta flagged ' . $n . ' campaign messages as spam (131048) in the last hour'); }
+    } catch (Throwable $e) { }
+}
+/** 📈 owner 19 Nov 2026 (13:40): after a hold the campaigns restart at 5,000 an hour (owner 19 Nov 2026, 14:00) and the number follows the delivery: every 30 minutes (the first look 45 minutes after the restart) the messages sent since the restart (15 to 75 minutes old, at least 200 of them) are looked at. Good (35% or more delivered and under 25% failed) → +1,000 an hour (5,000, 6,000 … no ceiling of its own); bad (under 20% delivered or 40% or more failed) → back to 5,000 and it keeps sending, then it climbs again; in between nothing changes. */
+function wa_dq_auto_step(PDO $pdo): void
+{
+    try { if ((string)setting_get($pdo, 'wa_dq_step_on', '1') !== '1' || wa_dq_hold_active($pdo)) return; $now = time(); $end = (int)setting_get($pdo, 'wa_dq_hold_end', '0'); if ($end <= 0 || $now < $end + 2700) return;
+        if ((int)setting_get($pdo, 'wa_dq_step_at', '0') > $now - 1800) return; setting_set($pdo, 'wa_dq_step_at', (string)$now);
+        $from = max($now - 4500, $end, (int)setting_get($pdo, 'wa_dq_step_last', '0')); $till = $now - 900; if ($till - $from < 900) return;
+        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'failed') AS f FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ? AND ts < ?");
+        $q->execute([date('Y-m-d H:i:s', $from), date('Y-m-d H:i:s', $till)]); $r = $q->fetch(); $n = (int)$r['n']; if ($n < 200) return; $d = (int)$r['d'] / $n; $f = (int)$r['f'] / $n;
+        $cur = max(500, (int)setting_get($pdo, 'wa_dq_hourly', '3000')); $to = $cur;
+        if ($d < 0.20 || $f >= 0.40) { setting_set($pdo, 'wa_dq_step_last', (string)$till); if ($cur > 5000) { setting_set($pdo, 'wa_dq_hourly', '5000'); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing speed ' . $cur . ' → 5,000 an hour (bad delivery: ' . $n . ' messages looked at, ' . round($d * 100) . '% delivered, ' . round($f * 100) . '% failed); it keeps sending at 5,000'); } return; }   // owner 19 Nov 2026 (14:10): bad delivery does not stop the sending: it goes back to 5,000 delivered an hour (2,500 per 30 minutes) and keeps going; only the automatic 131048 hold (3 hours) stops it
+        if ($d >= 0.35 && $f < 0.25) $to = min(60000, $cur + 1000);   // owner 19 Nov 2026: no ceiling of its own (60,000 is only the technical limit of the hourly number)
+        setting_set($pdo, 'wa_dq_step_last', (string)$till);
+        if ($to !== $cur) { setting_set($pdo, 'wa_dq_hourly', (string)$to); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', $to > $cur, 'Marketing speed ' . $cur . ' → ' . $to . ' an hour (' . $n . ' messages looked at: ' . round($d * 100) . '% delivered, ' . round($f * 100) . '% failed)'); }
+    } catch (Throwable $e) { }
+}
 function wa_dq_cfg(PDO $pdo): array
 {
     try { if (setting_get($pdo, 'wa_dq_nolimit', '') !== '1') { foreach (['wa_dq_daily' => '1000000', 'wa_dq_budget' => '0', 'wa_dq_auto' => '0', 'wa_dq_hourly' => '60000', 'wa_dq_pace' => '0', 'wa_dq_daily_auto' => '0', 'wa_dq_stat' => ''] as $k0 => $v0) setting_set($pdo, $k0, $v0); setting_set($pdo, 'wa_dq_nolimit', '1'); } } catch (Throwable $e) { }   // owner 18 Nov 2026: no day number, no money limit, no even-pace brake; the hour number at its top (60,000). Done once, here, because this function runs on every sending round
     try { if (setting_get($pdo, 'wa_dq_hourly15', '') !== '1') { setting_set($pdo, 'wa_dq_hourly', '15000'); setting_set($pdo, 'wa_dq_stat', ''); setting_set($pdo, 'wa_dq_hourly15', '1'); } } catch (Throwable $e0) { }   // owner 18 Nov 2026: marketing speed top = 15,000 an hour (last night 25,000-47,000 an hour ended with Meta's first spam flag 131048); no day number and no money limit
+    try { if (setting_get($pdo, 'wa_dq_hold0230', '') !== '1') { setting_set($pdo, 'wa_dq_hold0230', '1'); setting_set($pdo, 'wa_dq_hold_until', '1795050000'); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing stopped until 06:30 IST (Meta spam flag 131048 came back at 02:29); it restarts at 7,500 an hour (owner, 19 Nov 2026)'); } } catch (Throwable $e0) { }
+    try { $hu = (int)setting_get($pdo, 'wa_dq_hold_until', '0'); if ($hu > 0 && time() >= $hu) { setting_set($pdo, 'wa_dq_hold_until', '0'); setting_set($pdo, 'wa_dq_hold_end', (string)time()); setting_set($pdo, 'wa_dq_hourly', '5000'); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing restarts after the stop at 5,000 delivered an hour'); } } catch (Throwable $e0) { }
+    try { if (setting_get($pdo, 'wa_dq_hold3_1330', '') !== '1') { setting_set($pdo, 'wa_dq_hold3_1330', '1'); setting_set($pdo, 'wa_dq_hold_until', (string)(time() + 3 * 3600)); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing on hold for 3 hours (owner order, Meta spam flag 131048 surge); it restarts at 5,000 delivered an hour'); } } catch (Throwable $e0) { }
+    try { if (setting_get($pdo, 'wa_dq_start_1410', '') !== '1') { setting_set($pdo, 'wa_dq_start_1410', '1'); setting_set($pdo, 'wa_dq_hold_until', '0'); setting_set($pdo, 'wa_dq_hold_end', (string)time()); setting_set($pdo, 'wa_dq_hourly', '5000'); setting_set($pdo, 'wa_dq_step_last', (string)time()); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing hold ended by the owner: campaigns run at 5,000 delivered an hour (2,500 per 30 minutes), then +1,000 an hour every 30 minutes while delivery is good'); } } catch (Throwable $e0) { }
+    try { if (setting_get($pdo, 'wa_dq_no4th_1430', '') !== '1') { setting_set($pdo, 'wa_dq_no4th_1430', '1'); $n4 = (int)$pdo->exec("UPDATE wa_numbers SET camp_ok = 0 WHERE label LIKE '%4th%'"); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'The 4th number is switched off for campaigns (owner, 19 Nov 2026): ' . $n4 . ' number(s)'); } } catch (Throwable $e0) { }   // owner 19 Nov 2026: the 4th number must not be used by campaigns (camp_ok = 0; Module B and the inbox are not touched)
+    wa_dq_auto_hold($pdo); wa_dq_auto_step($pdo);
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
     $base = max(1000, min(1000000, (int)$g('wa_dq_daily', '75000'))); $auto = $g('wa_dq_auto', '1') !== '0'; $dmin = max(1000, (int)$g('wa_dq_daily_min', '40000')); $dmax = max($dmin, $base, (int)$g('wa_dq_daily_max', '90000')); $daily = $base;   // the number the owner saved is never cut down by the automatic ceiling
     $av0 = (int)$g('wa_dq_daily_auto', '0'); if ($av0 > $dmax) $dmax = min(1000000, $av0);
     if ($auto) { $av = (int)$g('wa_dq_daily_auto', '0'); if ($av > 0) $daily = max($dmin, min($dmax, $av)); }
-    return ['on' => $g('wa_dq_on', '1') !== '0', 'hourly' => max(500, min(60000, (int)$g('wa_dq_hourly', '10000'))), 'daily' => $daily, 'base' => $base, 'auto' => $auto, 'dmin' => $dmin, 'dmax' => $dmax, 'smart' => $g('wa_dq_smart', '1') !== '0', 'budget' => max(0, (int)$g('wa_dq_budget', '0')), 'pace' => $g('wa_dq_pace', '1') !== '0', 'good_floor' => max(0.0, min(0.95, (float)$g('wa_dq_good_floor', '0.45'))), 'push_mult' => max(1.0, min(5.0, (float)$g('wa_dq_push_mult', '1.5')))];
+    return ['on' => $g('wa_dq_on', '1') !== '0', 'hourly' => ((int)$g('wa_dq_hold_until', '0') > time() ? 500 : max(500, min(60000, (int)$g('wa_dq_hourly', '10000')))), 'daily' => $daily, 'base' => $base, 'auto' => $auto, 'dmin' => $dmin, 'dmax' => $dmax, 'smart' => $g('wa_dq_smart', '1') !== '0', 'budget' => max(0, (int)$g('wa_dq_budget', '0')), 'pace' => $g('wa_dq_pace', '1') !== '0', 'good_floor' => max(0.0, min(0.95, (float)$g('wa_dq_good_floor', '0.45'))), 'push_mult' => max(1.0, min(5.0, (float)$g('wa_dq_push_mult', '1.5')))];
 }
 /** Pushed / delivered campaign messages in a time range (for the day-cap judgement). */
 function wa_dq_counts(PDO $pdo, string $a, string $b): array
@@ -316,6 +352,7 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
         try { $qa = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ? AND NOT EXISTS (SELECT 1 FROM wa_camp_items ui WHERE ui.wamid = wa_messages.wamid AND ui.variant = 'U') AND NOT EXISTS (SELECT 1 FROM wa_ru_log ul WHERE ul.wamid = wa_messages.wamid)"); $qa->execute([date('Y-m-d H:i:s', time() - 600)]);
             $left15 = max(0, min($left15, (int)round($cap15 * $cfg['push_mult']) - (int)$qa->fetchColumn())); } catch (Throwable $e6) { }
         $hourLeft = min($hourLeft, $left15); } } catch (Throwable $e) { }
+    if (wa_dq_hold_active($pdo)) $hourLeft = 0;   // owner 19 Nov 2026: marketing on hold
     $hourLeft = max(0, min($hourLeft, $pushCap - $used)); if ($pace['on'] && $pace['slice'] > 0) $hourLeft = max(0, min($hourLeft, $pace['slice'] - $pace['used10'])); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
     $moneyLeft = $cfg['budget'] > 0 ? max(0.0, $cfg['budget'] - $spend) : null; $moneyPush = $moneyLeft === null ? PHP_INT_MAX : (int)floor($moneyLeft / max(0.01, $mr * max(0.2, $rate)));
     $memo = ['pace' => $pace, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft, $moneyPush), 'spend' => (int)round($spend), 'budget' => $cfg['budget'], 'push_cap' => $pushCap, 'why' => ($moneyLeft !== null && $moneyLeft <= 0) ? 'money' : ($dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : ''))]; $at = microtime(true); return $memo;

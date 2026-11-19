@@ -1,0 +1,194 @@
+# READ-ONLY: how far the chat reading for the growth efforts (bigger + add-on) has got. Counts only — no phone numbers, names or order numbers. Changes nothing.
+# Run it by hand: Actions → "Growth effort check (read-only)" → Run workflow.
+name: Growth effort check (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      order:
+        description: "Optional: one order number (e.g. 72176) to show how its chat was judged (digit strings of 10+ are hidden)"
+        required: false
+        default: ""
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Samples
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          ORDER_Q: ${{ github.event.inputs.order }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$(printf '%s' "$ORDER_Q" | tr -cd '0-9')" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/gr_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "(not set)" : (string)$v; } catch (Throwable $e) { return "n/a"; } };
+          echo "mode (order_auto_rate) = " . $s("order_auto_rate") . "\n";
+          try {
+            $cols = $d->query("SHOW COLUMNS FROM order_rate_auto")->fetchAll(PDO::FETCH_COLUMN);
+            echo "new columns present: " . implode(",", array_values(array_intersect(["phone", "tries", "tip", "sz_ok", "sz_tried", "sz_worked", "sz_tries", "weak", "refused", "sz_weak", "sz_refused"], $cols))) . "\n";
+            echo "\nrows by rule version (sz_ok: 0 = old judge, 1 = two-part judge, 3 = strict rules, add-on = extra perfume):\n";
+            foreach ($d->query("SELECT sz_ok, COUNT(*) n, SUM(rating IS NULL) nochat, SUM(phone <> '') withphone FROM order_rate_auto GROUP BY sz_ok ORDER BY sz_ok")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  sz_ok=" . $x["sz_ok"] . ": " . $x["n"] . " rows · no chat " . $x["nochat"] . " · with customer number " . $x["withphone"] . "\n";
+            $lv = function ($t, $w, $n) { return "CASE WHEN $w = 1 THEN 3 WHEN $n >= 2 THEN 2 WHEN $t = 1 OR $n >= 1 THEN 1 ELSE 0 END"; };
+            $A = $lv("tried", "worked", "tries"); $B = $lv("sz_tried", "sz_worked", "sz_tries");
+            foreach (["today (newest 24 h)" => "at >= '" . date("Y-m-d H:i:s", time() - 86400) . "'", "all strict-rule rows" => "1 = 1"] as $lab => $w) {
+              echo "\n$lab, rows read under the strict rules, rating not empty:\n";
+              $r = $d->query("SELECT COUNT(*) n, SUM(($A) = 0) a0, SUM(($A) = 1) a1, SUM(($A) = 2) a2, SUM(($A) = 3) a3, SUM(($B) = 0) b0, SUM(($B) = 1) b1, SUM(($B) = 2) b2, SUM(($B) = 3) b3, SUM(weak > 0) weak_a, SUM(sz_weak > 0) weak_b FROM order_rate_auto WHERE sz_ok = 4 AND rating IS NOT NULL AND $w")->fetch(PDO::FETCH_ASSOC);
+              echo "  read " . $r["n"] . " · BIGGER none/little/tried hard/sold: " . $r["b0"] . "/" . $r["b1"] . "/" . $r["b2"] . "/" . $r["b3"] . " · ADD-ON none/little/tried hard/took: " . $r["a0"] . "/" . $r["a1"] . "/" . $r["a2"] . "/" . $r["a3"] . " · with vague-only lines (bigger/add-on): " . $r["weak_b"] . "/" . $r["weak_a"] . "\n";
+            }
+            echo "\nlast read (strict rules): " . $d->query("SELECT MAX(at) FROM order_rate_auto WHERE sz_ok = 4")->fetchColumn() . " · server time now " . date("Y-m-d H:i:s") . "\n";
+            $x = $d->query("SELECT COUNT(DISTINCT employee_id) FROM order_rate_auto WHERE sz_ok = 4")->fetchColumn(); echo "salespeople with at least one strict-rule row: $x\n";
+            echo "\nSQL smoke tests (the exact queries the screens use; a failure here = a silent empty screen):\n";
+            $t = function ($name, $fn) { try { echo "  OK   " . $name . " -> " . $fn() . "\n"; } catch (Throwable $e) { echo "  FAIL " . $name . " -> " . substr($e->getMessage(), 0, 150) . "\n"; } };
+            $today = date("Y-m-d"); $emp = (int)$d->query("SELECT employee_id FROM order_rate_auto WHERE sz_ok = 4 ORDER BY at DESC LIMIT 1")->fetchColumn();
+            $t("Live boxes (ct.effort rows)", function () use ($d) { $q = $d->prepare("SELECT order_key, order_name, employee_id, rating, tried, worked, tries, tip, sz_tried, sz_worked, sz_tries, sz_tip, asked, offered, reason, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 4 ORDER BY at DESC LIMIT 600"); $q->execute([date("Y-m-d")]); return count($q->fetchAll()) . " rows for day " . date("Y-m-d"); });
+            $t("Live: no-chat count", function () use ($d) { $q = $d->prepare("SELECT COUNT(*) FROM order_rate_auto WHERE day = ? AND rating IS NULL AND sz_ok = 4"); $q->execute([date("Y-m-d")]); return $q->fetchColumn(); });
+            $t("history of one person (ct.effort_hist)", function () use ($d, $emp) { $q = $d->prepare("SELECT order_name, day, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries FROM order_rate_auto WHERE employee_id = ? AND day >= ? AND day <= ? AND rating IS NOT NULL AND sz_ok = 4 ORDER BY day DESC LIMIT 3000"); $q->execute([$emp, "2000-01-01", date("Y-m-d")]); return count($q->fetchAll()) . " rows"; });
+            $t("salesperson card (wq.ad_me own rows)", function () use ($d, $emp) { $q = $d->prepare("SELECT order_key, order_name, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries, reason, phone FROM order_rate_auto WHERE employee_id = ? AND day = ? AND rating IS NOT NULL AND sz_ok = 4 ORDER BY at DESC LIMIT 400"); $q->execute([$emp, date("Y-m-d")]); return count($q->fetchAll()) . " rows today for the newest person"; });
+            $t("words from winning chats (ideas)", function () use ($d) { $q = $d->prepare("SELECT sz_tip FROM order_rate_auto WHERE sz_ok = 4 AND sz_worked = 1 AND sz_tip <> '' AND at >= ? ORDER BY at DESC LIMIT 40"); $q->execute([date("Y-m-d H:i:s", time() - 7 * 86400)]); $a = count($q->fetchAll()); $q = $d->prepare("SELECT tip FROM order_rate_auto WHERE sz_ok = 4 AND worked = 1 AND tip <> '' AND at >= ? ORDER BY at DESC LIMIT 40"); $q->execute([date("Y-m-d H:i:s", time() - 7 * 86400)]); return "bigger words " . $a . ", add-on words " . count($q->fetchAll()); });
+            $t("chat tags map (ora_phone_map select)", function () use ($d) { return count($d->query("SELECT phone, order_name, rating, tried, worked, tries, sz_tried, sz_worked, sz_tries, reason FROM order_rate_auto WHERE rating IS NOT NULL AND sz_ok = 4 AND phone <> '' AND at >= '" . date("Y-m-d H:i:s", time() - 30 * 86400) . "' ORDER BY at ASC")->fetchAll()) . " customers"; });
+            $t("phone back-fill join + REGEXP_REPLACE (select only)", function () use ($d) { return $d->query("SELECT COUNT(*), MAX(RIGHT(REGEXP_REPLACE('+91 98765-43210', '[^0-9]', ''), 10)) FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.phone = ''")->fetch(PDO::FETCH_NUM)[0] . " rows still without a number"; });
+            $t("orders still UNREAD in the last 24 h (Read chats now queue)", function () use ($d) { $cc = "COLLATE utf8mb4_unicode_ci"; $q = $d->prepare("SELECT COUNT(*) FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc WHERE o.created_at >= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 4)"); $q->execute([date("Y-m-d H:i:s", time() - 86400)]); return $q->fetchColumn() . " unread"; });
+            echo "\nPAYMENT-LINK RULE: mode = " . $s("grow_gate_mode") . " · strict from = " . $s("grow_lock_from") . " (not set = auto / default date)\n";
+            try { foreach (["today" => date("Y-m-d"), "yesterday" => date("Y-m-d", time() - 86400)] as $lab => $dy) { $q = $d->prepare("SELECT decision, COUNT(*) n, COUNT(DISTINCT emp) people FROM grow_gate_log WHERE day = ? GROUP BY decision"); $q->execute([$dy]); $r = $q->fetchAll(PDO::FETCH_ASSOC); echo "  gate log $lab (" . $dy . "): " . ($r ? implode(" · ", array_map(function ($x) { return $x["decision"] . " " . $x["n"] . " (" . $x["people"] . " people)"; }, $r)) : "nothing yet") . "\n"; }
+              echo "  newest 6 written reasons (people hidden): "; foreach ($d->query("SELECT reason FROM grow_gate_log WHERE decision = 'waived' ORDER BY id DESC LIMIT 6")->fetchAll(PDO::FETCH_COLUMN) as $x) echo "[" . preg_replace("/\d{10,}/", "#", substr($x, 0, 60)) . "] "; echo "\n"; } catch (Throwable $e) { echo "  gate log: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nGUIDEBOOK (the existing daily study):\n";
+            $hide = function ($t) { return preg_replace("/\d{10,}/", "#", (string)$t); };
+            echo "  last nightly run date = " . $s("lib_guide_nightly") . "\n  last nightly note = " . $hide(substr($s("lib_guide_nightly_note"), 0, 220)) . "\n";
+            $lg = json_decode($s("lib_guide_log"), true); if (is_array($lg)) { echo "  went-live log (newest 6): "; foreach (array_slice($lg, -6) as $x) echo "v" . ($x["v"] ?? "?") . " " . ($x["at"] ?? "") . " by " . $hide($x["by"] ?? "") . " | "; echo "\n"; }
+            try { foreach ($d->query("SELECT version, status, source, created_at, change_note FROM lib_guide ORDER BY version DESC LIMIT 6")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  guidebook v" . $x["version"] . " " . $x["status"] . " (" . $x["source"] . ") made " . $x["created_at"] . " — " . $hide(substr((string)$x["change_note"], 0, 100)) . "\n"; } catch (Throwable $e) { echo "  lib_guide: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            try { echo "  saved chats the study reads (convo_uploads by kind/outcome): "; foreach ($d->query("SELECT kind, COUNT(*) n FROM convo_uploads GROUP BY kind")->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["kind"] . "=" . $x["n"] . " "; echo "\n"; } catch (Throwable $e) { echo "n/a\n"; }
+            try { $lf = $d->query("SELECT SUM(rating = -1) bad, SUM(rating = 1) good, SUM(rating = -1 AND better <> '' AND used = 0) waiting FROM lib_feedback")->fetch(PDO::FETCH_ASSOC); echo "  owner feedback: good " . $lf["good"] . " · bad " . $lf["bad"] . " · corrections waiting for the next guidebook " . $lf["waiting"] . "\n"; } catch (Throwable $e) { echo "  lib_feedback n/a\n"; }
+            echo "\nIMPACT (strict-rule rows; order time = IST like the database; counts only):\n";
+            try {
+              $J = "FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 4 AND r.rating IS NOT NULL AND o.created_at >= '" . date("Y-m-d H:i:s", time() + 19800 - 36 * 3600) . "'";
+              $A = "(CASE WHEN r.worked = 1 THEN 3 WHEN r.tries >= 2 THEN 2 WHEN r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B = "(CASE WHEN r.sz_worked = 1 THEN 3 WHEN r.sz_tries >= 2 THEN 2 WHEN r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
+              echo "  hour of the order (IST) · orders · with a proper ADD-ON offer · with a proper BIGGER offer · both · people\n";
+              foreach ($d->query("SELECT DATE_FORMAT(o.created_at, '%d %H:00') h, COUNT(*) n, SUM($A >= 1) a, SUM($B >= 1) b, SUM($A >= 1 AND $B >= 1) ab, COUNT(DISTINCT r.employee_id) p $J GROUP BY h ORDER BY h DESC LIMIT 20")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  " . $x["h"] . " · " . $x["n"] . " · " . $x["a"] . " · " . $x["b"] . " · " . $x["ab"] . " · " . $x["p"] . "\n";
+              $cut = "2026-11-18 23:10:00";
+              foreach (["BEFORE the new card and chips (orders before $cut)" => "o.created_at < '$cut'", "AFTER (orders from $cut)" => "o.created_at >= '$cut'"] as $lab => $w) { $r = $d->query("SELECT COUNT(*) n, SUM($A >= 1) a, SUM($B >= 1) b, SUM($A >= 1 AND $B >= 1) ab, COUNT(DISTINCT r.employee_id) p $J AND $w")->fetch(PDO::FETCH_ASSOC); echo "  $lab: " . $r["n"] . " orders · add-on offered " . $r["a"] . " · bigger offered " . $r["b"] . " · both " . $r["ab"] . " · " . $r["p"] . " people\n"; }
+              $pp = $d->query("SELECT r.employee_id e, SUM(o.created_at < '$cut') n0, SUM(o.created_at < '$cut' AND $A >= 1) a0, SUM(o.created_at < '$cut' AND $B >= 1) b0, SUM(o.created_at >= '$cut') n1, SUM(o.created_at >= '$cut' AND $A >= 1) a1, SUM(o.created_at >= '$cut' AND $B >= 1) b1 $J GROUP BY r.employee_id")->fetchAll(PDO::FETCH_ASSOC);
+              $withAfter = 0; $better = 0; $worse = 0; $same = 0; $firstTime = 0;
+              foreach ($pp as $x) { if ((int)$x["n1"] < 1) continue; $withAfter++; $s0 = (int)$x["n0"] > 0 ? ((int)$x["a0"] + (int)$x["b0"]) / (2 * (int)$x["n0"]) : null; $s1 = ((int)$x["a1"] + (int)$x["b1"]) / (2 * (int)$x["n1"]); if ((int)$x["a1"] + (int)$x["b1"] > 0 && ((int)$x["a0"] + (int)$x["b0"]) == 0) $firstTime++; if ($s0 === null) continue; if ($s1 > $s0 + 0.05) $better++; elseif ($s1 < $s0 - 0.05) $worse++; else $same++; }
+              echo "  people with orders after the cut: $withAfter · offer rate better $better / same $same / lower $worse · people who offered for the first time today after the cut: $firstTime\n";
+              $pats = ["ki jagah 5 perfume", "ki jagah 100ml", "per ml sasta", "5th pe", "tester sirf"]; $likes = implode(" OR ", array_map(function ($p) { return "body LIKE '%" . $p . "%'"; }, $pats));
+              foreach (["before $cut" => "ts < '$cut'", "after $cut" => "ts >= '$cut'"] as $lab => $w) { $r = $d->query("SELECT COUNT(*) n, COUNT(DISTINCT emp_id) p FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date("Y-m-d H:i:s", time() + 19800 - 30 * 3600) . "' AND $w AND ($likes)")->fetch(PDO::FETCH_ASSOC); echo "  messages that look like our suggested words, sent by a person ($lab, last 30 h): " . $r["n"] . " by " . $r["p"] . " people\n"; }
+            } catch (Throwable $e) { echo "  impact n/a (" . substr($e->getMessage(), 0, 160) . ")\n"; }
+            echo "\nLINK SHAPES sent by people in the last 30 h (host + first path part, digits and tokens removed; counts only):\n";
+            try { $cnt = []; $tot = 0; $q = $d->query("SELECT body, emp_id FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date("Y-m-d H:i:s", time() + 19800 - 30 * 3600) . "' AND body LIKE '%http%' ORDER BY id DESC LIMIT 1500");
+              foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { if (preg_match_all('~https?://([^/\s?#]+)(/[^\s?#]*)?([?#][^\s]*)?~i', (string)$x["body"], $m, PREG_SET_ORDER)) foreach ($m as $u) { $tot++; $path = isset($u[2]) ? $u[2] : ""; $first = preg_replace("/[0-9]+/", "N", implode("/", array_slice(explode("/", $path), 0, 3))); $q2 = isset($u[3]) ? preg_replace("/=[^&]*/", "=*", substr($u[3], 0, 40)) : ""; $k = strtolower($u[1]) . $first . $q2; $cnt[$k] = ($cnt[$k] ?? 0) + 1; } }
+              arsort($cnt); echo "  total links: $tot\n"; $i = 0; foreach ($cnt as $k => $n) { echo "  " . $n . " x " . substr($k, 0, 90) . "\n"; if (++$i >= 14) break; } } catch (Throwable $e) { echo "  n/a (" . substr($e->getMessage(), 0, 120) . ")\n"; }
+            echo "\nHOURLY TRACKER (orders by the hour they were made, IST; each person counted once per hour):\n";
+            try {
+              $J2 = "FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 4 AND r.rating IS NOT NULL";
+              $A2 = "(CASE WHEN r.worked = 1 THEN 3 WHEN r.tries >= 2 THEN 2 WHEN r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B2 = "(CASE WHEN r.sz_worked = 1 THEN 3 WHEN r.sz_tries >= 2 THEN 2 WHEN r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
+              $now = time() + 19800;
+              foreach (["last 60 min" => [$now - 3600, $now], "the 60 min before" => [$now - 7200, $now - 3600], "same hour yesterday" => [$now - 86400 - 3600, $now - 86400]] as $lab => [$t0, $t1]) {
+                $rows = $d->query("SELECT r.employee_id e, COUNT(*) n, SUM($A2 >= 1) a, SUM($B2 >= 1) b, SUM($A2 >= 1 AND $B2 >= 1) ab $J2 AND o.created_at >= '" . date("Y-m-d H:i:s", $t0) . "' AND o.created_at < '" . date("Y-m-d H:i:s", $t1) . "' GROUP BY r.employee_id")->fetchAll(PDO::FETCH_ASSOC);
+                $p = count($rows); $none = 0; $one = 0; $both = 0; $o = 0; $oa = 0; $ob = 0; foreach ($rows as $x) { $o += (int)$x["n"]; $oa += (int)$x["a"]; $ob += (int)$x["b"]; $s = (int)$x["a"] + (int)$x["b"]; if ($s == 0) $none++; elseif ((int)$x["ab"] > 0) $both++; else $one++; }
+                echo "  $lab: $o orders by $p people · add-on offered in $oa · bigger offered in $ob · people with NO effort in any order: $none · one lane only: $one · both lanes in at least one order: $both\n";
+              }
+            } catch (Throwable $e) { echo "  tracker n/a (" . substr($e->getMessage(), 0, 140) . ")\n"; }
+            echo "\nLEARNING LOG (newest 8, counts only):\n";
+            try { foreach ($d->query("SELECT at, kind, orders_read, add_tries, add_won, big_tries, big_won, people_behind, guide_use FROM grow_learn_log ORDER BY id DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  " . $x["at"] . " " . $x["kind"] . ": read " . $x["orders_read"] . " · add-on taken/offered " . $x["add_won"] . "/" . $x["add_tries"] . " · bigger " . $x["big_won"] . "/" . $x["big_tries"] . " · people behind " . $x["people_behind"] . ($x["guide_use"] !== "" ? " · guidebook: " . $x["guide_use"] : "") . "\n"; } catch (Throwable $e) { echo "  learning log: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nTICKET SIZE IMPACT (average order value in rupees; orders given to a salesperson, cancelled left out; clock = IST):\n";
+            try {
+              $dbnow = time() + 19800; $cc = "COLLATE utf8mb4_unicode_ci";
+              $tk = function ($t0, $t1) use ($d, $cc) { $q = $d->prepare("SELECT COUNT(*) n, ROUND(SUM(o.total)) s FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc WHERE a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND o.created_at >= ? AND o.created_at < ?"); $q->execute([date("Y-m-d H:i:s", $t0), date("Y-m-d H:i:s", $t1)]); $r = $q->fetch(PDO::FETCH_NUM); return [(int)$r[0], (float)$r[1]]; };
+              $fmt = function ($r) { return $r[0] > 0 ? $r[0] . " orders · average ₹" . number_format(round($r[1] / $r[0])) : "no orders"; };
+              $avg = function ($r) { return $r[0] > 0 ? $r[1] / $r[0] : null; };
+              $diff = function ($now, $base) { return ($now === null || $base === null || $base <= 0) ? "n/a" : (($now >= $base ? "+" : "−") . "₹" . number_format(round(abs($now - $base))) . " (" . ($now >= $base ? "+" : "−") . round(abs(100 * ($now - $base) / $base), 1) . "%)"); };
+              $dayStart = strtotime(date("Y-m-d", $dbnow - 10 * 3600) . " 10:00:00");
+              $win = ["last 30 min" => [$dbnow - 1800, $dbnow + 1], "previous 30 min" => [$dbnow - 3600, $dbnow - 1800], "last 60 min" => [$dbnow - 3600, $dbnow + 1], "today since day start (10:00)" => [$dayStart, $dbnow + 1]];
+              $res = []; foreach ($win as $lab => [$t0, $t1]) { $res[$lab] = $tk($t0, $t1); echo "  $lab: " . $fmt($res[$lab]) . "\n"; }
+              $yd = $tk($dayStart - 86400, $dbnow - 86400 + 1); echo "  same window yesterday: " . $fmt($yd) . "\n";
+              $n7 = 0; $s7 = 0.0; for ($k = 1; $k <= 7; $k++) { $r = $tk($dayStart - $k * 86400, $dbnow - $k * 86400 + 1); $n7 += $r[0]; $s7 += $r[1]; } $b7 = [$n7, $s7]; echo "  same window, average of the previous 7 days: " . $fmt($b7) . "\n";
+              echo "  DIFFERENCE today vs yesterday (same window): " . $diff($avg($res["today since day start (10:00)"]), $avg($yd)) . " · vs previous 7 days: " . $diff($avg($res["today since day start (10:00)"]), $avg($b7)) . "\n";
+              echo "  DIFFERENCE last 60 min vs the same hour yesterday: " . $diff($avg($res["last 60 min"]), $avg($tk($dbnow - 86400 - 3600, $dbnow - 86400 + 1))) . "\n";
+              $live = strtotime("2026-11-18 23:10:00"); $a1 = $tk($live, $dbnow + 1); $b1 = [0, 0.0]; for ($k = 1; $k <= 7; $k++) { $r = $tk($live - $k * 86400, $dbnow - $k * 86400 + 1); $b1[0] += $r[0]; $b1[1] += $r[1]; }
+              echo "  since the new card and chips went live (18 Nov 23:10): " . $fmt($a1) . " · vs the same clock window of the previous 7 days: " . $fmt($b1) . " → " . $diff($avg($a1), $avg($b1)) . "\n";
+              $A3 = "(CASE WHEN r.worked = 1 OR r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B3 = "(CASE WHEN r.sz_worked = 1 OR r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
+              $q = $d->prepare("SELECT ($A3 + $B3) g, COUNT(*) n, ROUND(AVG(o.total)) a FROM order_rate_auto r JOIN shop_orders o ON o.store_key $cc = SUBSTRING_INDEX(r.order_key, ':', 1) $cc AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 4 AND r.rating IS NOT NULL AND o.total > 0 AND o.created_at >= ? GROUP BY g ORDER BY g"); $q->execute([date("Y-m-d H:i:s", $dayStart)]);
+              $names = [0 => "no proper offer in either lane", 1 => "one lane offered", 2 => "both lanes offered"]; echo "  today, average order value by effort (a link between the two, not proof of cause): "; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo $names[(int)$x["g"]] . " = " . $x["n"] . " orders · ₹" . number_format((int)$x["a"]) . " | "; echo "\n";
+            } catch (Throwable $e) { echo "  ticket impact n/a (" . substr($e->getMessage(), 0, 160) . ")\n"; }
+            echo "\nCALL-BACKS (orders with no add-on offer -> the salesperson calls and resolves with a remark):\n";
+            try {
+              foreach (["today" => date("Y-m-d", time() + 19800 - 10 * 3600), "yesterday" => date("Y-m-d", time() + 19800 - 34 * 3600)] as $lab => $dy) { $q = $d->prepare("SELECT status, outcome, COUNT(*) n, ROUND(AVG(CASE WHEN resolved_at IS NULL THEN NULL ELSE TIMESTAMPDIFF(MINUTE, created_at, resolved_at) END)) mins, COUNT(DISTINCT emp) p FROM grow_callback WHERE day = ? GROUP BY status, outcome"); $q->execute([$dy]); $r = $q->fetchAll(PDO::FETCH_ASSOC);
+                echo "  $lab ($dy): " . ($r ? implode(" · ", array_map(function ($x) { return $x["status"] . ($x["outcome"] !== "" ? "/" . $x["outcome"] : "") . " " . $x["n"] . " (" . $x["p"] . " people" . ($x["mins"] !== null ? ", avg " . $x["mins"] . " min to resolve" : "") . ")"; }, $r)) : "nothing yet") . "\n"; }
+              $done = $d->query("SELECT REPLACE(LOWER(order_name), '#', '') o FROM grow_callback WHERE outcome = 'addon_done' AND day >= '" . date("Y-m-d", time() + 19800 - 34 * 3600) . "'")->fetchAll(PDO::FETCH_COLUMN);
+              if ($done) { $in = implode(",", array_fill(0, count($done), "?")); $a2 = $d->prepare("SELECT COUNT(DISTINCT REPLACE(LOWER(order_name), '#', '')) n, COALESCE(ROUND(SUM(price)), 0) s FROM employee_addons WHERE REPLACE(LOWER(order_name), '#', '') IN ($in)"); $a2->execute($done); $x = $a2->fetch(PDO::FETCH_ASSOC); echo "  resolved as 'add-on kar diya': " . count($done) . " orders -> add-on really recorded on " . $x["n"] . " of them, ₹" . number_format((int)$x["s"]) . " added\n"; }
+              echo "  newest remarks written when resolving (people hidden, digits cut): "; foreach ($d->query("SELECT outcome, remark FROM grow_callback WHERE status = 'resolved' AND remark <> '' AND remark NOT LIKE 'auto:%' ORDER BY id DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "[" . $x["outcome"] . ": " . preg_replace("/\d{6,}/", "#", mb_substr((string)$x["remark"], 0, 70)) . "] "; echo "\n";
+            } catch (Throwable $e) { echo "  call-backs: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nOWNER NOTIFICATIONS (the Live panel box: who needs a talking-to; resolved by the owner with a remark; repeats are counted):\n";
+            try {
+              $nd = date("Y-m-d", time() + 19800 - 10 * 3600); $nmx = []; foreach ($d->query("SELECT employee_id, full_name FROM employees")->fetchAll(PDO::FETCH_ASSOC) as $e) $nmx[(int)$e["employee_id"]] = preg_split("/\s+/", trim((string)$e["full_name"]))[0];
+              $q = $d->prepare("SELECT status, COUNT(*) n FROM grow_note WHERE day = ? GROUP BY status"); $q->execute([$nd]); echo "  today ($nd): "; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["status"] . " " . $x["n"] . " · "; echo "\n";
+              $q = $d->prepare("SELECT kind, emp, COUNT(*) n, SUM(status = 'open') o FROM grow_note WHERE day = ? GROUP BY kind, emp ORDER BY n DESC"); $q->execute([$nd]);
+              echo "  REPEATS today (times the same problem was raised for the same person; 3+ = the owner wants it named):\n"; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    " . ($nmx[(int)$x["emp"]] ?? ("#" . $x["emp"])) . " · " . $x["kind"] . " · " . $x["n"] . "x" . ((int)$x["o"] ? " (one still open)" : "") . ($x["n"] >= 3 ? "  <== " . $x["n"] . "th time" : "") . "\n";
+              $q = $d->prepare("SELECT kind, emp, COUNT(DISTINCT day) days FROM grow_note WHERE day >= ? GROUP BY kind, emp HAVING days >= 2 ORDER BY days DESC LIMIT 15"); $q->execute([date("Y-m-d", strtotime($nd . " -6 day"))]);
+              echo "  DAILY HABIT (same problem on 2+ of the last 7 days):\n"; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    " . ($nmx[(int)$x["emp"]] ?? ("#" . $x["emp"])) . " · " . $x["kind"] . " · " . $x["days"] . " days\n";
+              $q = $d->prepare("SELECT emp, kind, resolved_at, remark FROM grow_note WHERE day = ? AND status = 'resolved' ORDER BY resolved_at DESC LIMIT 12"); $q->execute([$nd]);
+              echo "  OWNER'S REMARKS when resolving (newest first):\n"; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    " . substr((string)$x["resolved_at"], 11, 5) . " " . ($nmx[(int)$x["emp"]] ?? ("#" . $x["emp"])) . " · " . $x["kind"] . ": " . preg_replace("/\d{10,}/", "#", (string)$x["remark"]) . "\n";
+            } catch (Throwable $e) { echo "  notifications: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nSPEED (server load and how long the heavy parts take, seconds):\n";
+            try {
+              echo "  load average: " . trim((string)@file_get_contents("/proc/loadavg")) . " · php-fpm/apache workers: " . trim((string)@shell_exec("ps -eo comm | grep -ciE 'php-fpm|apache2|httpd'")) . " · cpu cores: " . trim((string)@shell_exec("nproc")) . "\n";
+              $t = microtime(true); $n = (int)$d->query("SELECT COUNT(*) FROM shop_orders")->fetchColumn(); echo "  shop_orders rows $n: " . round(microtime(true) - $t, 2) . " s\n";
+              $t = microtime(true); $n = (int)$d->query("SELECT COUNT(*) FROM order_rate_auto")->fetchColumn(); echo "  order_rate_auto rows $n: " . round(microtime(true) - $t, 2) . " s\n";
+              $t = microtime(true); $d->query("SELECT r.employee_id e, COUNT(*) n FROM order_rate_auto r JOIN shop_orders o ON o.store_key COLLATE utf8mb4_unicode_ci = SUBSTRING_INDEX(r.order_key, ':', 1) COLLATE utf8mb4_unicode_ci AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE o.created_at >= NOW() - INTERVAL 2 HOUR GROUP BY r.employee_id")->fetchAll(); echo "  coach-levels join (runs about once a minute): " . round(microtime(true) - $t, 2) . " s\n";
+              $t = microtime(true); $d->query("SELECT COUNT(*) FROM grow_callback")->fetchColumn(); $d->query("SELECT COUNT(*) FROM grow_note")->fetchColumn(); echo "  call-back + notes tables: " . round(microtime(true) - $t, 2) . " s\n";
+              foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $p) if ((int)$p["Time"] >= 5) echo "  slow now (" . $p["Time"] . " s): " . substr(preg_replace("/\s+/", " ", (string)$p["Info"]), 0, 120) . "\n";
+            } catch (Throwable $e) { echo "  speed: " . substr($e->getMessage(), 0, 120) . "\n"; }
+            echo "\nLOAD DETAILS (read-only; who uses the CPU):\n";
+            try {
+              echo "  top processes by CPU (command shortened, no arguments):\n";
+              echo "  (the %CPU of ps below is the average since the process started, not now) CURRENT CPU by top, one 2-second sample:\n"; foreach (explode("\n", trim((string)@shell_exec("top -b -d 2 -n 2 -w 160 | awk '/^top -/{c++} c==2' | head -16"))) as $l) echo "    " . substr($l, 0, 110) . "\n";
+              foreach (explode("\n", trim((string)@shell_exec("ps -eo pcpu,etimes,comm --sort=-pcpu | head -12"))) as $l) echo "    " . $l . "\n";
+              echo "  process counts: " . trim((string)@shell_exec("ps -eo comm | sort | uniq -c | sort -rn | head -6 | tr '\\n' ';'")) . "\n";
+              foreach (["/var/log/nginx/access.log", "/var/log/apache2/access.log", "/var/log/httpd/access_log"] as $lg) { if (!is_readable($lg)) continue;
+                $acts = []; $n = 0; foreach (explode("\n", (string)@shell_exec("tail -n 4000 " . escapeshellarg($lg))) as $ln) { if ($ln === "") continue; $n++; if (preg_match('~[?&]action=([A-Za-z0-9_.]+)~', $ln, $m)) { $acts[$m[1]] = ($acts[$m[1]] ?? 0) + 1; } elseif (preg_match('~"(?:GET|POST) (/[^ ?"]*)~', $ln, $m)) { $k = preg_replace('~[0-9a-f]{8,}~', '#', $m[1]); $acts[$k] = ($acts[$k] ?? 0) + 1; } }
+                arsort($acts); echo "  busiest requests in the last $n log lines of $lg (action / path, count; no IPs):\n"; $i = 0; foreach ($acts as $k => $c) { echo "    $c x $k\n"; if (++$i >= 14) break; } break; }
+              echo "  fpm max children (config): " . trim((string)@shell_exec("grep -rhE '^(pm\\.max_children|pm )' /etc/php/*/fpm/pool.d/*.conf 2>/dev/null | head -4 | tr '\\n' ';'")) . "\n";
+            } catch (Throwable $e) { echo "  load details: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nDATABASE LOAD (mysqld is the heavy process; statement shapes only, values replaced by ?):\n";
+            try {
+              $n = 0; foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $p) { if (($p["Command"] ?? "") === "Sleep" || !$p["Info"] || stripos((string)$p["Info"], "PROCESSLIST") !== false) continue; $n++; if ($n <= 8) echo "  running now (" . $p["Time"] . " s): " . substr(preg_replace(["/\\s+/", "/'[^']*'/", "/\\b\\d{3,}\\b/"], [" ", "?", "#"], (string)$p["Info"]), 0, 220) . "\n"; }
+              echo "  non-sleeping statements right now: $n\n";
+              try { $q = $d->query("SELECT LEFT(DIGEST_TEXT, 230) t, COUNT_STAR c, ROUND(SUM_TIMER_WAIT/1000000000000, 1) tot, ROUND(AVG_TIMER_WAIT/1000000000000, 3) av, SUM_ROWS_EXAMINED rx FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12");
+                echo "  statements by total time since the server started (total s | calls | avg s | rows examined):\n"; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    " . $x["tot"] . " s | " . $x["c"] . "x | " . $x["av"] . " s | rx " . $x["rx"] . " | " . preg_replace("/\\s+/", " ", $x["t"]) . "\n"; }
+              catch (Throwable $e) { echo "  performance_schema not readable: " . substr($e->getMessage(), 0, 100) . "\n"; }
+              $g = $d->query("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_running','Slow_queries','Questions','Uptime','Innodb_buffer_pool_wait_free','Created_tmp_disk_tables')")->fetchAll(PDO::FETCH_KEY_PAIR); echo "  status: " . json_encode($g) . "\n";
+            } catch (Throwable $e) { echo "  database load: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nDATABASE SAMPLING (360 looks over ~90 s at the running statements; shape = values replaced; counts = how often it was seen running):\n";
+            try {
+              $seen = []; for ($i = 0; $i < 360; $i++) { foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $p) { if (($p["Command"] ?? "") === "Sleep" || !$p["Info"] || stripos((string)$p["Info"], "PROCESSLIST") !== false) continue; $k = substr(preg_replace(["/\\s+/", "/'[^']*'/", "/\\b\\d+\\b/", "/\\(\\?(,\\s*\\?)+\\)/", "/IN \\([^)]*\\)/"], [" ", "?", "?", "(?)", "IN (...)"], (string)$p["Info"]), 0, 200); $seen[$k] = ($seen[$k] ?? 0) + 1; } usleep(250000); }
+              arsort($seen); $j = 0; foreach ($seen as $k => $c) { echo "    seen $c x: $k\n"; if (++$j >= 16) break; } if (!$seen) echo "    nothing was running in 360 looks\n";
+              foreach ($d->query("SHOW GLOBAL VARIABLES WHERE Variable_name IN ('innodb_buffer_pool_size','max_connections','long_query_time','slow_query_log','query_cache_type','table_open_cache')")->fetchAll(PDO::FETCH_KEY_PAIR) as $k => $v) echo "    $k = $v\n";
+              foreach ($d->query("SHOW INDEX FROM wa_messages")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    wa_messages index " . $x["Key_name"] . " col " . $x["Seq_in_index"] . " " . $x["Column_name"] . " (card " . $x["Cardinality"] . ")\n";
+              $r = $d->query("SELECT TABLE_ROWS, ROUND(DATA_LENGTH/1048576) dm, ROUND(INDEX_LENGTH/1048576) im FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wa_messages'")->fetch(PDO::FETCH_ASSOC); echo "    wa_messages rows ~" . ($r["TABLE_ROWS"] ?? "?") . " data " . ($r["dm"] ?? "?") . " MB index " . ($r["im"] ?? "?") . " MB\n";
+            } catch (Throwable $e) { echo "  sampling: " . substr($e->getMessage(), 0, 120) . "\n"; }
+            $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
+            if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
+              $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
+              $hide = function ($t) { return preg_replace("/\d{10,}/", "#", (string)$t); };
+              foreach ($rows as $r) { echo "  stars " . ($r["rating"] / 2) . " · sz_ok " . $r["sz_ok"] . "\n  ADD-ON: tries " . $r["tries"] . " weak " . $r["weak"] . " worked " . $r["worked"] . " refused " . $r["refused"] . "\n  BIGGER: tries " . $r["sz_tries"] . " weak " . $r["sz_weak"] . " worked " . $r["sz_worked"] . " refused " . $r["sz_refused"] . "\n  asked: " . $hide($r["asked"]) . "\n  offered: " . $hide($r["offered"]) . "\n  reason: " . $hide($r["reason"]) . "\n  add-on words: " . $hide($r["tip"]) . "\n  bigger words: " . $hide($r["sz_tip"]) . "\n"; } }
+          } catch (Throwable $e) { echo "n/a (" . substr($e->getMessage(), 0, 160) . ")\n"; }
+          PHP
+          php /tmp/gr_check.php "$P" "$2"; rm -f /tmp/gr_check.php
+          REMOTE
