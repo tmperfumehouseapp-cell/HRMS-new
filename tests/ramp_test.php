@@ -78,4 +78,9 @@ $S['wa_ru_ramp_at'] = (string)(time() - 7300); $S['wa_ru_ramp_chk'] = '0'; wa_ru
 $S['wa_ru_ramp_at'] = (string)(time() - 7300); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 510]); ok($S['wa_ru_hourly'] === '510', 'above 350: ceiling 510');
 $S = $H; $S['wa_ru_hourly'] = '300'; $S['wa_ru_ramp_at'] = (string)(time() - 700); wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '350', 'below 350 the 10-minute step still works: 300 -> 350 (got ' . $S['wa_ru_hourly'] . ')');
 $S = $H; $S['wa_ru_hourly'] = '410'; $S['wa_ru_ramp_at'] = (string)(time() - 7300); $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 5, 20); wa_ru_ramp($pdo, ['hourly' => 410]); ok($S['wa_ru_hourly'] === '410' && ($S['wa_ru_freeze_n'] ?? '') === '1', 'a bad look at 410 holds and restarts the 2 hours');
+// 15) owner 20 Nov 2026 (02:00): the floor is 260 an hour, never 180
+$S = ['wa_ru_hourly' => '350', 'wa_ru_ramp_base' => '260', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '510', 'wa_ru_ramp_drop' => '100', 'wa_ru_freeze_n' => '1', 'wa_ru_ramp_at' => (string)(time() - 700)];
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 0, 20); $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE rowid % 4 <> 0");   /* only 25% delivered, no failure */
+wa_ru_ramp($pdo, ['hourly' => 350]); ok($S['wa_ru_hourly'] === '260', 'second bad look goes back to the floor 260, not 180 (got ' . $S['wa_ru_hourly'] . ')');
+$S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 0, 20); wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '320', 'from the floor 260 the next step is 320 (got ' . $S['wa_ru_hourly'] . ')');
 echo "ramp ok\n";
