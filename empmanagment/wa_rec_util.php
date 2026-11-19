@@ -360,7 +360,7 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
             return; }
         if ($cur < $max && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
             setting_set($pdo, 'wa_ru_freeze_n', '0');
-            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([180, 240, 300, 350] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 19 Nov 2026: the ladder 180 / 240 / 300 / 350 an hour (30 / 40 / 50 / 58 per 10 minutes); from 260 the next is 300 */
+            $to = min($max, $cur + $step);   /* owner 19 Nov 2026 (23:30): +10 messages per 10 minutes every 10 minutes = +60 an hour (260 -> 320 -> 350 top); 180 an hour = 30 per 10 minutes is the floor */
             setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered in the last look): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
