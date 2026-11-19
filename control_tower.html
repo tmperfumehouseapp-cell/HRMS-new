@@ -215,7 +215,6 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
-<script src="assets/js/must3.js?v=1"></script>
 <script>
   guardPage();
   renderSidebar('control_tower');
@@ -354,8 +353,8 @@
       <div class="cl-ph"><div class="cl-pr cl-ph-h"><span>Name</span><span>Query ₹</span><span>Campaign ₹</span><span>Total ₹</span></div>${(T.emps || []).map(e => `<details class="cl-pr"><summary><span class="n">${esc(e.name)}<small>${e.orders ?? 0} orders · ${e.queries ?? 0} queries</small></span><span><b class="clq">${inr(e.qsales || 0)}</b><small>${e.qo ?? 0} orders</small></span><span><b class="clc">${inr(e.csales || 0)}</b><small>${e.co ?? 0} orders</small></span><span><b class="clt">${inr(e.sales || 0)}</b></span></summary>
         <div class="cl-more">${e.target ? tgBar(e.sales, e.target, e.pct != null ? Math.round(e.pct) : null) : ''}Ticket ${inr(e.ticket)} (clean ${inr(e.clean_ticket)}) · Codes ${e.code_rate == null ? '—' : Math.round(e.code_rate) + '%'}${e.code_left > 0 ? ' (' + e.code_left + ' more)' : ''} · Colour mix ${(e.mix || {}).pct == null ? '—' : Math.round(e.mix.pct) + '%'} ${e.conv != null ? ' · conv ' + Math.round(e.conv) + '%' : ''}</div></details>`).join('')}
         ${(T.emps || []).length ? `<div class="cl-pr cl-ptot"><span class="n">Team</span><span><b class="clq">${inr(qS)}</b></span><span><b class="clc">${inr(cS)}</b></span><span><b class="clt">${inr(tot)}</b></span></div>` : ''}</div></div>`;
-    $('p-today').innerHTML = `<div class="cl-top">${coll}${tiles}</div><div id="reconBox"></div><div id="histBox"></div><div id="m3Host"></div><div id="remToday"></div>` + alerts + people;
-    renderHist(); if (window.Must3) Must3.mount($('m3Host'), $('datePick').value || (T && T.day) || ''); renderRecon(); loadRemToday();
+    $('p-today').innerHTML = `<div class="cl-top">${coll}${tiles}</div><div id="reconBox"></div><div id="histBox"></div><div id="remToday"></div>` + alerts + people;
+    renderHist(); renderRecon(); loadRemToday();
   }
 
   // ---------- Today tab → ✍️ Remarks: pick a person, write, send → it pops up on that person's My Sales. Below: every remark given (count, seen / not seen) ----------

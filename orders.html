@@ -944,6 +944,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/must3.js?v=1"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261116a"></script>
 <script src="assets/js/addon_view.js?v=1"></script>
@@ -2755,16 +2756,18 @@
           `<div class="cg-tot"><span>Total</span><b>${tot}</b></div></div>`;
         return `<div class="stat-card rs-card"><div class="label"><span class="lbl-full">${r ? 'Ad spend &amp; ROAS' : 'DG / LG / WH / Other'}</span><span class="lbl-short">${r ? 'Ad spend &amp; ROAS' : 'DG/LG/WH/Other'}</span></div>${r}${colours}</div>`;
       })()}
+      ${lcCardHtml(base)}
+      <div id="m3Host" style="grid-column:1 / -1; min-width:0;"></div>
       ${ohCardHtml(base)}
       ${idCardHtml()}
       ${qdCardHtml()}
       ${dtiCardHtml()}
       ${cslCardHtml()}
-      ${lcCardHtml(base)}
       ${pmCardHtml()}
     `;
     grid.style.display = 'grid';
     idealLoad(); queryIdealLoad();
+    if (window.Must3 && !EMP_VIEW) Must3.mount(document.getElementById('m3Host'), (typeof idDay === 'function' ? idDay() : '') || '');   // ✅ 3 must-send check, right under the day-by-day chart
     renderUnallocNote();
   }
   // One line saying how many orders are left out because they are not allocated yet.
