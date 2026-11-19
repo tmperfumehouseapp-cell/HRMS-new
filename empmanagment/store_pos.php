@@ -81,7 +81,7 @@ function st_bottle_out(array $b): array
 {
     return [
         'bottle_id' => (int)$b['bottle_id'], 'code' => (string)$b['code'], 'product_id' => (int)$b['product_id'],
-        'title' => (string)($b['title'] ?? ''), 'ml' => (int)$b['ml'], 'ptype' => (string)($b['ptype'] ?? 'perfume'), 'kind' => (string)$b['kind'], 'status' => (string)$b['status'],
+        'title' => (string)($b['title'] ?? ''), 'ml' => (int)$b['ml'], 'kind' => (string)$b['kind'], 'status' => (string)$b['status'],
         'batch' => (string)$b['batch'], 'mfg_date' => (string)$b['mfg_date'], 'exp_date' => (string)$b['exp_date'], 'print_count' => (int)($b['print_count'] ?? 0), 'printed_at' => (string)($b['printed_at'] ?? ''),
     ];
 }
@@ -92,10 +92,10 @@ function st_find_bottles(PDO $pdo, array $codes, bool $lock = false): array
     if (!$codes) return [];
     $in = implode(',', array_fill(0, count($codes), '?'));
     if ($lock) { $lk = $pdo->prepare("SELECT bottle_id FROM st_bottles WHERE code IN ($in) FOR UPDATE"); $lk->execute($codes); }   // lock the bottles only, never the perfume rows
-    $st = $pdo->prepare("SELECT b.*, p.title, p.ptype FROM st_bottles b JOIN st_products p ON p.product_id = b.product_id WHERE b.code IN ($in)");
+    $st = $pdo->prepare("SELECT b.*, p.title FROM st_bottles b JOIN st_products p ON p.product_id = b.product_id WHERE b.code IN ($in)");
     $st->execute($codes);
     $by = [];
-    foreach ($st->fetchAll() as $r) { $r['ptype'] = st_ptype($r); $by[(string)$r['code']] = $r; }
+    foreach ($st->fetchAll() as $r) $by[(string)$r['code']] = $r;
     return $by;
 }
 
@@ -119,17 +119,9 @@ function st_fixed_price_of(array $bottle, array $rules): ?float
     foreach ($rules as $r) if ((int)$bottle['ml'] === $r['ml'] && mb_stripos((string)($bottle['title'] ?? ''), $r['text']) !== false) return (float)$r['price'];
     return null;
 }
-/** Price options (one per % column) for a bill with shower gel / solid perfume. */
-function st_pieces_quote(PDO $pdo, int $perfMl, int $gel, int $solid): array
-{
-    $r = st_pieces_row($pdo, $perfMl, $gel, $solid); $cols = [];
-    if ($r['row']) foreach ($r['row'] as $i => $p) if ($p > 0 && isset($r['cols'][$i])) $cols[] = ['col' => count($cols), 'price' => round((float)$p, 2), 'pct' => round((float)$r['cols'][$i], 2), 'label' => (string)($r['names'][$i] ?? '')];
-    return ['total_ml' => $perfMl, 'gel_pcs' => $gel, 'solid_pcs' => $solid, 'in_chart' => (bool)$cols, 'columns' => $cols, 'chart_on' => true, 'flash' => null, 'label' => $r['label'], 'need' => $cols ? '' : $r['need']];
-}
 /** Price options for the bottles scanned so far. Fixed-price bottles add their own price; the rest of the ml is priced from the chart as always. */
 function st_quote(PDO $pdo, int $totalMl, int $empId, array $bottles = []): array
 {
-    if ($bottles) { $tt = st_totals($bottles); if ($tt['gel_pcs'] > 0 || $tt['solid_pcs'] > 0) return st_pieces_quote($pdo, $totalMl, (int)$tt['gel_pcs'], (int)$tt['solid_pcs']); }
     $rules = $bottles ? st_fixed_rules($pdo) : [];
     if ($rules) {
         $fixSum = 0.0; $fixMl = 0; $names = [];
@@ -274,20 +266,13 @@ try {
     switch ($action) {
 
         // ====================================================== inventory
-        case 'st_inv.set_ptype': {      // the owner says what a product is: perfume / gel (shower gel) / solid (solid perfume); '' = work it out from the title
-            require_auth(); $in = json_input(); $pid = (int)($in['product_id'] ?? 0); $t = (string)($in['ptype'] ?? '');
-            if (!$pid || !in_array($t, ['', 'perfume', 'gel', 'solid'], true)) json_response(['error' => 'Choose the product and its type.'], 400);
-            $pdo->prepare("UPDATE st_products SET ptype = ? WHERE product_id = ?")->execute([$t, $pid]);
-            $r0 = $pdo->prepare("SELECT title, ptype FROM st_products WHERE product_id = ?"); $r0->execute([$pid]); $r1 = $r0->fetch() ?: [];
-            json_response(['ok' => true, 'ptype' => st_ptype($r1), 'sizes_ok' => st_sizes_for(st_ptype($r1))]); break;
-        }
         case 'st_inv.products': {
             require_auth();
-            $rows = $pdo->query("SELECT p.product_id, p.title, p.image, p.ptype,
+            $rows = $pdo->query("SELECT p.product_id, p.title, p.image,
                     SUM(b.status = 'stock' AND b.kind = 'sale') AS stock_sale, SUM(b.status = 'stock' AND b.kind = 'tester') AS stock_tester, SUM(b.status = 'generated') AS waiting
                 FROM st_products p LEFT JOIN st_bottles b ON b.product_id = p.product_id
                 WHERE p.active = 1 GROUP BY p.product_id ORDER BY p.title")->fetchAll();
-            foreach ($rows as &$r) { $r['ptype_set'] = (string)$r['ptype']; $r['ptype'] = st_ptype($r); $r['sizes_ok'] = st_sizes_for($r['ptype']); $r['product_id'] = (int)$r['product_id']; $r['stock_sale'] = (int)$r['stock_sale']; $r['stock_tester'] = (int)$r['stock_tester']; $r['waiting'] = (int)$r['waiting']; }
+            foreach ($rows as &$r) { $r['product_id'] = (int)$r['product_id']; $r['stock_sale'] = (int)$r['stock_sale']; $r['stock_tester'] = (int)$r['stock_tester']; $r['waiting'] = (int)$r['waiting']; }
             $rk = st_rank_cached($pdo); $srcOn = ['store' => 0, 'pos' => 0, 'online' => 0];
             foreach ($rows as &$r) { $x = $rk[$r['product_id']] ?? null; $r['score'] = $x ? $x['score'] : 0; $r['q30'] = $x ? $x['q30'] : 0; $r['q90'] = $x ? $x['q90'] : 0; $r['rank'] = $x ? $x['rank'] : 0; $r['badge'] = $x ? $x['badge'] : 'none'; $r['src'] = $x ? $x['src'] : $srcOn; if ($x) foreach ($x['src'] as $k => $v) $srcOn[$k] += $v; }
             unset($r);
@@ -321,9 +306,7 @@ try {
                 $pid = (int)($it['product_id'] ?? 0); $ml = (int)($it['ml'] ?? 0); $qty = (int)($it['qty'] ?? 0);
                 $kind = ($it['kind'] ?? 'sale') === 'tester' ? 'tester' : 'sale';
                 if ($qty <= 0) continue;
-                if (!$pid || !in_array($ml, ST_SIZES, true)) json_response(['error' => 'Pick a product and one of its sizes.'], 400);
-                $pr0 = $pdo->prepare("SELECT title, ptype FROM st_products WHERE product_id = ?"); $pr0->execute([$pid]); $pr1 = $pr0->fetch() ?: [];
-                if (!in_array($ml, st_sizes_for(st_ptype($pr1)), true)) json_response(['error' => (string)($pr1['title'] ?? 'This product') . ' is a ' . st_ptype($pr1) . ': its barcode size is ' . implode(' / ', st_sizes_for(st_ptype($pr1))) . ' (' . $ml . ' is not allowed).'], 400);
+                if (!$pid || !in_array($ml, ST_SIZES, true)) json_response(['error' => 'Pick a perfume and one of the sizes ' . implode(', ', ST_SIZES) . ' ml.'], 400);
                 $plan[] = [$pid, $ml, $qty, $kind]; $n += $qty;
             }
             if (!$plan) json_response(['error' => 'Add at least one perfume with a quantity.'], 400);
@@ -927,7 +910,7 @@ try {
             elseif ((float)($in['custom_price'] ?? 0) > 0) {
                 if (!user_can($auth, 'rs_manage')) { $pdo->rollBack(); json_response(['error' => 'Pick a price from the chart. Only a manager can type a different price.'], 403); }
                 $list = round((float)$in['custom_price'], 2); $col = null;
-            } else { $pdo->rollBack(); json_response(['error' => $q['in_chart'] ? 'Pick a price column.' : ((string)($q['need'] ?? '') !== '' ? (string)$q['need'] : ('The price chart has no row for ' . $t['total_ml'] . ' ml — a manager must type the price.'))], 400); }
+            } else { $pdo->rollBack(); json_response(['error' => $q['in_chart'] ? 'Pick a price column.' : ('The price chart has no row for ' . $t['total_ml'] . ' ml — a manager must type the price.')], 400); }
             if ($discount > $list) $discount = $list;
             $total = round($list - $discount, 2);
             $chainRow = null; $chainSplit = null;
@@ -1015,7 +998,7 @@ try {
             foreach ($ppl as &$x) { if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $m = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $billNo, 'total' => $total], $cs); $x['wa_url'] = $m['url']; $x['wa_url2'] = $m['url2']; } }
             unset($x);
             json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'commission_amount' => $cmx ? (float)$cmx['com'] : null, 'no_code' => $code === '', 'code_rule' => $codeRule, 'people' => $ppl] + $invOut + [
-                'message' => 'Bill ' . $billNo . ' saved: ' . implode(' + ', array_filter([$t['total_ml'] || !($t['gel_pcs'] || $t['solid_pcs']) ? $t['total_ml'] . ' ml' : '', $t['gel_pcs'] ? $t['gel_pcs'] . ' gel' : '', $t['solid_pcs'] ? $t['solid_pcs'] . ' solid' : ''])) . ', ₹' . number_format($total) . '.']);
+                'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml, ₹' . number_format($total) . '.']);
             break;
         }
 

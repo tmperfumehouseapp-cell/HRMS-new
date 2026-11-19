@@ -337,9 +337,7 @@
   $('gcIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gcCheck(); } });
   $('gcIn').addEventListener('input', () => { if (bv) { bv = null; $('gcOut').innerHTML = ''; refresh(); } });
   $('gcOut').addEventListener('click', (e) => { if (e.target.id === 'gcClear') { bv = null; $('gcIn').value = ''; renderGc(); refresh(); } });
-  const szClass = (b) => b.gift ? 'tester' : b.kind === 'tester' ? 'tester' : (b.ptype === 'gel' || b.ptype === 'solid') ? 'tester' : 's' + b.ml;
-  const sizeTag = (b) => b.ptype === 'gel' ? 'GEL' : b.ptype === 'solid' ? 'SOLID' : b.ml;      // shower gel and solid perfume are sold by the piece, not by ml
-  const isPcs = (b) => b.ptype === 'gel' || b.ptype === 'solid';
+  const szClass = (b) => b.gift ? 'tester' : b.kind === 'tester' ? 'tester' : 's' + b.ml;
   const PAY = { cash: 'Cash', online: 'Online', split: 'Split' };
 
   // ---------- open / close the New bill panel
@@ -377,12 +375,11 @@
     renderQuote();
   }
   function renderCart() {
-    $('chips').innerHTML = (chain ? `<span class="bchip"><span class="sz" style="background:#b8860b;color:#fff">CHAIN</span><span class="nm">${esc(chain.name)} · ${chain.split_pct || 50}% of bill</span><button data-xc="1" aria-label="Remove chain">×</button></span>` : '') + cart.map((b) => `<span class="bchip ${szClass(b)}"><span class="sz">${b.gift ? '🎁 ' : b.kind === 'tester' ? 'T ' : ''}${sizeTag(b)}</span><span class="nm">${esc(b.title)}</span>${b.kind !== 'tester' && b.ml === 50 && (b.gift || giftSlots() > cart.filter((x) => x.gift).length) ? `<button data-g="${b.code}" aria-label="Birthday gift" title="${b.gift ? 'Remove the birthday gift' : 'Give this 50 ml as the birthday gift (free)'}" style="font-size:12px;width:auto;padding:0 7px;border-radius:999px">${b.gift ? 'gift ✓' : '🎁 gift?'}</button>` : ''}<button data-x="${b.code}" aria-label="Remove">×</button></span>`).join('');
-    const sale = cart.filter((b) => !free(b)), ml = sale.filter((b) => !isPcs(b)).reduce((a, b) => a + b.ml, 0), gel = sale.filter((b) => b.ptype === 'gel').length, sol = sale.filter((b) => b.ptype === 'solid').length, t = cart.length - sale.length;
-    const totTxt = [ml ? ml + ' ml' : '', gel ? gel + ' gel' : '', sol ? sol + ' solid' : ''].filter(Boolean).join(' + ') || '0 ml';
-    $('totMl').textContent = totTxt;
+    $('chips').innerHTML = (chain ? `<span class="bchip"><span class="sz" style="background:#b8860b;color:#fff">CHAIN</span><span class="nm">${esc(chain.name)} · ${chain.split_pct || 50}% of bill</span><button data-xc="1" aria-label="Remove chain">×</button></span>` : '') + cart.map((b) => `<span class="bchip ${szClass(b)}"><span class="sz">${b.gift ? '🎁 ' : b.kind === 'tester' ? 'T ' : ''}${b.ml}</span><span class="nm">${esc(b.title)}</span>${b.kind !== 'tester' && b.ml === 50 && (b.gift || giftSlots() > cart.filter((x) => x.gift).length) ? `<button data-g="${b.code}" aria-label="Birthday gift" title="${b.gift ? 'Remove the birthday gift' : 'Give this 50 ml as the birthday gift (free)'}" style="font-size:12px;width:auto;padding:0 7px;border-radius:999px">${b.gift ? 'gift ✓' : '🎁 gift?'}</button>` : ''}<button data-x="${b.code}" aria-label="Remove">×</button></span>`).join('');
+    const sale = cart.filter((b) => !free(b)), ml = sale.reduce((a, b) => a + b.ml, 0), t = cart.length - sale.length;
+    $('totMl').textContent = ml + ' ml';
     $('totSub').textContent = cart.length || chain ? `${sale.length} bottle${sale.length === 1 ? '' : 's'}${t - cart.filter((b) => b.gift).length ? ' + ' + (t - cart.filter((b) => b.gift).length) + ' tester' + ((t - cart.filter((b) => b.gift).length) > 1 ? 's' : '') : ''}${cart.some((b) => b.gift) ? ' + 🎁 birthday gift' : ''}` : 'Nothing scanned yet';
-    $('bcSub').textContent = cart.length ? totTxt : '';
+    $('bcSub').textContent = cart.length ? ml + ' ml' : '';
   }
   const listPrice = () => (quote && pickedCol !== null && quote.columns[pickedCol]) ? quote.columns[pickedCol].price : ((!quote || !quote.in_chart) ? (+$('customPrice').value || 0) : 0);
   function renderQuote() {
@@ -390,7 +387,7 @@
     $('customRow').style.display = noChart && isManager ? '' : 'none';
     $('prices').innerHTML = !quote ? '<span class="sx-mut" style="grid-column:1/-1">Scan a bottle to see prices.</span>'
       : quote.in_chart ? quote.columns.map((c) => `<button class="pr ${pickedCol === c.col ? 'on' : ''}" data-c="${c.col}" ${c.offer ? 'style="border-color:#f59e0b;background:#fff8e6" title="' + esc(c.note || 'Offer running now') + '"' : ''}><b>${inr(c.price)}</b><small>${c.offer ? '🎁 Offer · ' : ''}${c.pct == null ? '&nbsp;' : c.pct + '%'}</small></button>`).join('')
-      : `<span class="sx-mut" style="grid-column:1/-1">${quote.need ? esc(quote.need) : 'No price row for ' + quote.total_ml + ' ml'}${isManager ? ' — type the price below' : ' — ask a manager'}.</span>`;
+      : `<span class="sx-mut" style="grid-column:1/-1">No price row for ${quote.total_ml} ml${isManager ? ' — type it below' : ' — ask a manager'}.</span>`;
     updatePay();
   }
   $('prices').addEventListener('click', (e) => { const c = e.target.closest('[data-c]'); if (!c) return; pickedCol = +c.dataset.c; renderQuote(); });
