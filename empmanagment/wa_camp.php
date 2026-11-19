@@ -529,9 +529,28 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
 {
     // ⚡ The list of 40 campaigns used to run ~5 heavy queries per campaign (counts, delivery, the "replied" join on wa_messages) on every open and every 20 s: the Campaigns page sat on "Loading…".
     // The numbers are now remembered per campaign for a short time (15 s while it is sending, 10 min once it is finished/draft); the 🔄 Refresh button and wa.camp_get (deep) always read them fresh.
-    $cid = (int)$c['id']; $cn = null; $d = null; $ck = 'wa_cpc_' . $cid; $live = in_array((string)$c['status'], ['running', 'scheduled', 'paused'], true);
-    if (!$deep && empty($GLOBALS['__wa_camp_fresh'])) { try { $hit = json_decode((string)setting_get($pdo, $ck, ''), true); if (is_array($hit) && ($hit['st'] ?? '') === (string)$c['status'] && (int)($hit['t'] ?? 0) > time() - ($live ? 15 : (!empty($c['finished_at']) && strtotime((string)$c['finished_at']) < time() - 172800 ? 7200 : 600)) && is_array($hit['cn'] ?? null) && is_array($hit['d'] ?? null)) { $cn = $hit['cn']; $d = $hit['d']; } } catch (Throwable $e) { } }
-    if ($cn === null) { $cn = wa_camp_counts($pdo, $cid); $d = wa_camp_delivery($pdo, $cid); if (!$deep) { try { setting_set($pdo, $ck, json_encode(['t' => time(), 'st' => (string)$c['status'], 'cn' => $cn, 'd' => $d])); } catch (Throwable $e) { } } }
+    // ⚡ 19 Nov, 20:37: the live sample of the database showed these per-campaign numbers running in about a quarter of all samples, and MySQL at 200% CPU: for a campaign that is sending, the DELIVERED / READ
+    // count joins every item of the campaign with wa_messages and the REPLIED count joins them with every incoming message, again for each running campaign and each open Campaigns page, every 15 s,
+    // and each remembered copy was a write to the settings table (which makes the whole server re-read it). Now: the cheap counts (queued / sent / failed ...) are kept 15 s as before, the heavy delivery numbers 90 s
+    // while it is sending, and the copy lives in a small file instead of the settings table. 🔄 Refresh and the single-campaign view (deep) still read everything fresh.
+    $cid = (int)$c['id']; $cn = null; $d = null; $live = in_array((string)$c['status'], ['running', 'scheduled', 'paused'], true); $now = time(); $cnT = 0; $dT = 0;
+    $cf = rtrim(sys_get_temp_dir(), '/') . '/hrms_cpc_' . substr(md5(__DIR__), 0, 6) . '_' . $cid . '.json';
+    if (!$deep && empty($GLOBALS['__wa_camp_fresh'])) {
+        try {
+            $hit = json_decode((string)@file_get_contents($cf), true);
+            if (is_array($hit) && ($hit['st'] ?? '') === (string)$c['status'] && is_array($hit['cn'] ?? null) && is_array($hit['d'] ?? null)) {
+                $ttl = $live ? 15 : (!empty($c['finished_at']) && strtotime((string)$c['finished_at']) < $now - 172800 ? 7200 : 600); $ttlD = $live ? 90 : $ttl;
+                $t0 = (int)($hit['t'] ?? 0); $d0 = (int)($hit['dt'] ?? $t0);
+                if ($t0 > $now - $ttl) { $cn = $hit['cn']; $cnT = $t0; }
+                if ($d0 > $now - $ttlD) { $d = $hit['d']; $dT = $d0; }
+            }
+        } catch (Throwable $e) { }
+    }
+    if ($cn === null || $d === null) {
+        if ($cn === null) { $cn = wa_camp_counts($pdo, $cid); $cnT = $now; }
+        if ($d === null) { $d = wa_camp_delivery($pdo, $cid); $dT = $now; }
+        if (!$deep) { try { $tmp = $cf . '.' . getmypid(); if (@file_put_contents($tmp, json_encode(['t' => $cnT, 'dt' => $dT, 'st' => (string)$c['status'], 'cn' => $cn, 'd' => $d])) !== false) { @chmod($tmp, 0600); @rename($tmp, $cf); } } catch (Throwable $e) { } }
+    }
     $t = null; $lib = null;
     if ((int)$c['tpl_id']) { try { $t = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { } }
     if ((int)($c['media_lib_id'] ?? 0) && function_exists('wa_lib_row')) { try { $lib = wa_lib_row($pdo, (int)$c['media_lib_id']); } catch (Throwable $e) { } }
