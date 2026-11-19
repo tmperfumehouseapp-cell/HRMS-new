@@ -1,0 +1,52 @@
+# READ-ONLY: what the database is busy with in the next 60 seconds (statement shapes with ? instead of values, counts and time), whether the delivery-receipt waiting list is healthy, and thread counts. No customer data, changes nothing.
+# Run it by hand: Actions -> "Database busy now (read-only)" -> Run workflow. It takes about 70 seconds.
+name: Database busy now (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Sample
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/load_now.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "database: " . $e->getMessage() . "\n"; exit; }
+          echo "server time " . date("Y-m-d H:i:s") . "\n";
+          foreach (["Threads_connected", "Threads_running"] as $v) { $r = $d->query("SHOW GLOBAL STATUS LIKE '$v'")->fetch(PDO::FETCH_NUM); echo "  $v = " . $r[1] . "\n"; }
+          echo "\nload average: " . trim((string)@file_get_contents("/proc/loadavg")) . "\n";
+          echo "\ndelivery-receipt waiting list (wa_status_q):\n";
+          try { $r = $d->query("SELECT COUNT(*) n, MIN(at) o, MAX(at) m FROM wa_status_q")->fetch(PDO::FETCH_ASSOC); echo "  waiting rows: " . $r["n"] . " · oldest " . ($r["o"] ?: "-") . " · newest " . ($r["m"] ?: "-") . "\n"; } catch (Throwable $e) { echo "  (table not there yet: " . substr($e->getMessage(), 0, 80) . ")\n"; }
+          echo "\nstatements running right now (shape only):\n";
+          try { foreach ($d->query("SELECT TIME, COMMAND, LEFT(INFO, 160) q FROM information_schema.PROCESSLIST WHERE COMMAND <> 'Sleep' AND ID <> CONNECTION_ID() ORDER BY TIME DESC LIMIT 12")->fetchAll(PDO::FETCH_NUM) as $x) echo "  " . str_pad($x[0], 4) . "s " . preg_replace('/\s+/', ' ', (string)$x[2]) . "\n"; } catch (Throwable $e) { echo "  " . substr($e->getMessage(), 0, 100) . "\n"; }
+          $snap = function () use ($d) { $o = []; foreach ($d->query("SELECT SCHEMA_NAME, DIGEST, DIGEST_TEXT, COUNT_STAR c, SUM_TIMER_WAIT t, SUM_ROWS_EXAMINED re FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME = DATABASE()")->fetchAll(PDO::FETCH_ASSOC) as $r) $o[$r["DIGEST"]] = $r; return $o; };
+          try {
+            $a = $snap(); sleep(60); $b = $snap(); $rows = [];
+            foreach ($b as $k => $r) { $p = $a[$k] ?? ["c" => 0, "t" => 0, "re" => 0]; $dc = $r["c"] - $p["c"]; $dt = ($r["t"] - $p["t"]) / 1e12; if ($dc > 0) $rows[] = [$dt, $dc, $r["re"] - $p["re"], $r["DIGEST_TEXT"]]; }
+            usort($rows, fn($x, $y) => $y[0] <=> $x[0]); $tot = array_sum(array_column($rows, 0));
+            echo "\nheaviest statements over the last 60 s (database time in seconds; total " . round($tot, 1) . " s of database time in 60 s):\n";
+            foreach (array_slice($rows, 0, 14) as $r) echo "  " . str_pad(round($r[0], 1) . "s", 8) . str_pad(round(100 * $r[0] / max($tot, 0.001)) . "%", 5) . str_pad($r[1] . "x", 8) . "rows examined " . str_pad($r[2], 10) . substr(preg_replace('/\s+/', ' ', (string)$r[3]), 0, 170) . "\n";
+          } catch (Throwable $e) { echo "\nperformance_schema is not readable here: " . substr($e->getMessage(), 0, 120) . "\n"; }
+          PHP
+          php /tmp/load_now.php "$P"; rm -f /tmp/load_now.php
+          REMOTE

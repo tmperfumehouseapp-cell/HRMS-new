@@ -436,6 +436,122 @@ function wa_webhook_status(PDO $pdo, array $s): int
     return $moved;
 }
 
+// ---------------------------------------------------------------------------------------------------------------- ⚡ delivery receipts in blocks
+// About half of all calls to this server are Meta's delivery receipts (sent / delivered / read). Each one cost 4-5 database statements (look the message up, update it, update the campaign
+// person, mark the customer for a recount). Now a receipt is written to a small waiting list (wa_status_q) and the list is applied as ONE block: when the last block is more than 7 seconds old
+// (so a quiet moment is applied at once, the receipt of a single message does not wait), or by the engine every round. A block looks the messages up with one query and updates them in groups.
+// FAILED receipts never wait: they go through wa_webhook_status() at once, exactly as before. Kill switch: setting wa_stq = 0 (everything goes the old way).
+function wa_stq_ready(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try {
+        if (function_exists('schema_ok') && schema_ok($pdo, 'wa_status_q')) return $ok = true;
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wa_status_q (id BIGINT AUTO_INCREMENT PRIMARY KEY, wamid VARCHAR(120) NOT NULL, st VARCHAR(10) NOT NULL, phone VARCHAR(20) NOT NULL DEFAULT '', pc VARCHAR(16) NULL, pb TINYINT NULL, at DATETIME NOT NULL, KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if (function_exists('schema_set')) schema_set($pdo, 'wa_status_q', ['wa_status_q']);
+        return $ok = true;
+    } catch (Throwable $e) { return $ok = false; }
+}
+if (!function_exists('wa_stq_mark_dirty')) {
+    /** the customers whose delivery numbers changed are recounted within a minute (cfun_dirty, many at once) */
+    function wa_stq_mark_dirty(PDO $pdo, array $phones): void
+    {
+        if (!$phones || !function_exists('cfun_tables')) return;
+        try { if (!cfun_tables($pdo)) return; foreach (array_chunk(array_values($phones), 200) as $ch) $pdo->prepare("INSERT INTO wa_cfun_dirty (phone, at) VALUES " . implode(',', array_fill(0, count($ch), '(?, NOW())')) . " ON DUPLICATE KEY UPDATE at = NOW()")->execute($ch); } catch (Throwable $e) { }
+    }
+}
+/** One receipt as a row of the waiting list [wamid, status, customer phone, billing category, billable]; null when it is not a usable receipt. */
+function wa_stq_row(array $s): ?array
+{
+    $new = (string)($s['status'] ?? ''); $id = (string)($s['id'] ?? ''); if ($id === '' || wa_status_rank($new) === 0) return null;
+    $pc = null; $pb = null;
+    if (!empty($s['pricing']) && is_array($s['pricing'])) {   // exactly as wa_webhook_status() reads it
+        $pc = mb_substr(strtolower((string)($s['pricing']['category'] ?? '')), 0, 16); $pt = strtolower((string)($s['pricing']['type'] ?? ''));
+        $pb = strpos($pt, 'free') === 0 ? 0 : (array_key_exists('billable', $s['pricing']) ? ((bool)$s['pricing']['billable'] ? 1 : 0) : null);
+    }
+    return [mb_substr($id, 0, 120), $new, wa_key($s['recipient_id'] ?? ''), $pc, $pb];
+}
+/** The receipts of one call: queued, then applied when a block is due. Returns how many messages moved forward right now. */
+function wa_status_intake(PDO $pdo, array $list): int
+{
+    $old = function () use ($pdo, $list) { $n = 0; foreach ($list as $s) $n += wa_webhook_status($pdo, (array)$s); return $n; };
+    try { if ((string)setting_get($pdo, 'wa_stq', '1') !== '1' || !wa_stq_ready($pdo)) return $old(); } catch (Throwable $e) { return $old(); }
+    $rows = []; foreach ($list as $s) { $r = wa_stq_row((array)$s); if ($r !== null) $rows[] = $r; }
+    if (!$rows) return 0;
+    try {
+        $now = date('Y-m-d H:i:s');
+        foreach (array_chunk($rows, 200) as $ch) { $par = []; foreach ($ch as $r) { $par[] = $r[0]; $par[] = $r[1]; $par[] = $r[2]; $par[] = $r[3]; $par[] = $r[4]; $par[] = $now; } $pdo->prepare("INSERT INTO wa_status_q (wamid, st, phone, pc, pb, at) VALUES " . implode(',', array_fill(0, count($ch), '(?, ?, ?, ?, ?, ?)')))->execute($par); }
+    } catch (Throwable $e) { return $old(); }   // could not be queued: apply them now, the old way
+    return wa_status_flush($pdo, false);
+}
+/** Applies the waiting block when it is due (last block more than 7 s ago) or $force (the engine). One block at a time (database lock). Returns how many messages moved forward. */
+function wa_status_flush(PDO $pdo, bool $force): int
+{
+    $f = rtrim(sys_get_temp_dir(), '/') . '/hrms_wa_stq_' . substr(md5(__DIR__), 0, 6);
+    if (!$force && time() - (int)@filemtime($f) < 7) return 0;
+    $got = 0; try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_stq', 0)")->fetchColumn(); } catch (Throwable $e) { return 0; }
+    if ($got !== 1) return 0;
+    $moved = 0;
+    try {
+        @touch($f);
+        for ($pass = 0; $pass < 4; $pass++) {
+            $rs = $pdo->query("SELECT id, wamid, st, phone, pc, pb FROM wa_status_q ORDER BY id LIMIT 1500")->fetchAll(PDO::FETCH_ASSOC);
+            if (!$rs) break;
+            $moved += wa_status_apply($pdo, $rs);
+            foreach (array_chunk(array_column($rs, 'id'), 400) as $ch) $pdo->prepare("DELETE FROM wa_status_q WHERE id IN (" . implode(',', array_fill(0, count($ch), '?')) . ")")->execute($ch);   // exactly the rows that were applied
+            if (count($rs) < 1500) break;
+        }
+        if (mt_rand(1, 50) === 1) $pdo->exec("DELETE FROM wa_status_q WHERE at < DATE_SUB(NOW(), INTERVAL 1 DAY)");   // a stuck row never piles up
+    } catch (Throwable $e) { error_log('wa_status_flush: ' . $e->getMessage()); }
+    finally { try { $pdo->query("SELECT RELEASE_LOCK('wa_stq')"); } catch (Throwable $e) { } }
+    return $moved;
+}
+/** One block of receipts ([id, wamid, st, phone, pc, pb] in arrival order): the same end state as wa_webhook_status() applied one by one, with a few grouped statements. */
+function wa_status_apply(PDO $pdo, array $rs): int
+{
+    $by = [];
+    foreach ($rs as $r) {
+        $id = (string)$r['wamid']; $st = (string)$r['st'];
+        if (!isset($by[$id])) $by[$id] = ['st' => $st, 'ph' => (string)$r['phone'], 'bill' => false, 'pc' => null, 'pb' => null];
+        elseif (wa_status_rank($st) > wa_status_rank($by[$id]['st'])) $by[$id]['st'] = $st;
+        if ($by[$id]['ph'] === '' && (string)$r['phone'] !== '') $by[$id]['ph'] = (string)$r['phone'];
+        if ($r['pc'] !== null) { $by[$id]['bill'] = true; $by[$id]['pc'] = (string)$r['pc']; $by[$id]['pb'] = $r['pb'] === null ? null : (int)$r['pb']; }   // the last receipt with billing info wins
+    }
+    if (!$by) return 0;
+    $marks = function (array $ids) { return implode(',', array_fill(0, count($ids), '?')); };
+    $old = [];
+    foreach (array_chunk(array_keys($by), 400) as $ch) { $q = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . $marks($ch) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_NUM) as $x) $old[(string)$x[0]] = (string)$x[1]; }
+    $g1 = []; $g2 = []; $g3 = []; $camp = []; $dirty = []; $moved = 0;
+    foreach ($by as $id => $b) {
+        $new = $b['st']; $camp[$new][] = $id;   // the campaign person is updated whether or not the message row is here
+        if (!array_key_exists($id, $old)) continue;
+        $bk = json_encode([$b['pc'], $b['pb']]);
+        if (wa_status_rank($new) > wa_status_rank($old[$id])) {
+            $moved++;
+            if ($b['bill']) $g1[$new . '|' . $bk][] = $id; else $g2[$new][] = $id;
+            if (in_array($new, ['delivered', 'read'], true) && $b['ph'] !== '') $dirty[$b['ph']] = $b['ph'];
+        } elseif ($b['bill']) $g3[$bk][] = $id;
+    }
+    $skipM = ['sent' => "'sent', 'delivered', 'read', 'failed'", 'delivered' => "'delivered', 'read', 'failed'", 'read' => "'read', 'failed'"];
+    $run = function (string $sql, array $ids, array $lead = []) use ($pdo, $marks) { foreach (array_chunk($ids, 400) as $ch) $pdo->prepare(str_replace('{IN}', $marks($ch), $sql))->execute(array_merge($lead, $ch)); };
+    $billed = function () use ($g1, $g3, $skipM, $run) {
+        foreach ($g1 as $k => $ids) { [$st, $bk] = explode('|', $k, 2); [$pc, $pb] = json_decode($bk, true); $run("UPDATE wa_messages SET status = ?, bill_cat = ?, billable = ? WHERE wamid IN ({IN}) AND status NOT IN (" . ($skipM[$st] ?? "'failed'") . ")", $ids, [$st, $pc, $pb]); }
+        foreach ($g3 as $bk => $ids) { [$pc, $pb] = json_decode($bk, true); $run("UPDATE wa_messages SET bill_cat = ?, billable = ? WHERE wamid IN ({IN})", $ids, [$pc, $pb]); }
+    };
+    try { $billed(); }
+    catch (PDOException $e) {   // the billing columns are missing (as in the single path): add them once, then do it again; status alone if that still fails
+        try { $pdo->exec("ALTER TABLE wa_messages ADD COLUMN bill_cat VARCHAR(16) NOT NULL DEFAULT ''"); } catch (PDOException $e2) { }
+        try { $pdo->exec("ALTER TABLE wa_messages ADD COLUMN billable TINYINT NULL"); } catch (PDOException $e2) { }
+        try { $billed(); } catch (PDOException $e3) { foreach ($g1 as $k => $ids) { $st = explode('|', $k, 2)[0]; $g2[$st] = array_merge($g2[$st] ?? [], $ids); } }
+    }
+    foreach ($g2 as $st => $ids) $run("UPDATE wa_messages SET status = ? WHERE wamid IN ({IN}) AND status NOT IN (" . ($skipM[$st] ?? "'failed'") . ")", $ids, [$st]);
+    try {   // campaign people keep the latest delivery state
+        if (function_exists('wa_more_tables')) wa_more_tables($pdo);
+        foreach ($camp as $st => $ids) $run("UPDATE wa_camp_items SET last_status = ? WHERE wamid IN ({IN}) AND last_status NOT IN (" . ($skipM[$st] ?? "'failed'") . ")", $ids, [$st]);
+    } catch (Throwable $e) { }
+    wa_stq_mark_dirty($pdo, array_values($dirty));
+    return $moved;
+}
+
 function wa_sig_ok(string $raw): bool
 {
     $sec = wa_cfg_val('WA_APP_SECRET'); if ($sec === '') return false;
@@ -910,7 +1026,8 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                     foreach ((array)($th['messages'] ?? []) as $m) { $out = wa_key($m['from'] ?? '') !== $ck; if (wa_store_phone_msg($pdo, (array)$m, $ck, $nid, $out ? 'out' : 'in', true) !== '') $n++; } } continue; }
                 $names = []; foreach ((array)($v['contacts'] ?? []) as $ct) $names[wa_key($ct['wa_id'] ?? '')] = (string)($ct['profile']['name'] ?? '');
                 foreach ((array)($v['messages'] ?? []) as $m) { $k = wa_store_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); if ($k !== '') { $n++; $__keys[$k] = true; } }
-                foreach ((array)($v['statuses'] ?? []) as $s) $st += wa_webhook_status($pdo, (array)$s);   // one delivery receipt (sent / delivered / read / failed) of a message
+                $__pend = []; foreach ((array)($v['statuses'] ?? []) as $s) { if ((string)(((array)$s)['status'] ?? '') === 'failed') $st += wa_webhook_status($pdo, (array)$s); else $__pend[] = (array)$s; }   // a FAILED receipt is handled at once, as before
+                if ($__pend) $st += wa_status_intake($pdo, $__pend);   // sent / delivered / read receipts: queued and applied as one block (every 7 s when busy, at once when quiet)
             }
             if ($n && function_exists('wa_tick')) { try { wa_more_tables($pdo); wa_tick($pdo); } catch (Throwable $e) { } }   // assignment + call-now alerts react right away
             if ($n || $st) wa_log($pdo, 'webhook', true, $n . ' message' . ($n === 1 ? '' : 's') . ', ' . $st . ' status update' . ($st === 1 ? '' : 's'));

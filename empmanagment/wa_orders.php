@@ -1094,7 +1094,7 @@ function wo_diag_text(PDO $pdo): string
     $L[] = ''; $L[] = '=== END ==='; return implode("\n", $L);
 }
 /** 📬 Who got which update: the parcels ordered in the last $days days (newest first, 400 at most) with every update of each - sent, waiting, skipped or failed and why. */
-function wo_sent_log(PDO $pdo, int $days, string $find = '', string $only = ''): array
+function wo_sent_log(PDO $pdo, int $days, string $find = '', string $only = '', string $stage = ''): array
 {
     $now = wo_now(); $days = max(1, min(14, $days)); $from = wo_dt($now - $days * 86400); $defs = wo_send_defs(); $w = "p.created_at >= ? AND p.status IN ('tracked','transit','delivered','rto')"; $a = [$from];
     $tot = ['parcels' => 0, 'told' => 0, 'none' => 0, 'queued' => 0, 'failed' => 0];
@@ -1104,16 +1104,31 @@ function wo_sent_log(PDO $pdo, int $days, string $find = '', string $only = ''):
         $tot['parcels'] = (int)$r['n']; $tot['told'] = (int)$r['told']; $tot['none'] = $tot['parcels'] - $tot['told'];
         $c = $pdo->prepare("SELECT s.state, COUNT(*) n FROM wa_ord_sent s JOIN dp_dsp_parcels p ON p.id = s.parcel_id WHERE $w AND s.state IN ('queued','failed') GROUP BY s.state"); $c->execute($a); foreach ($c->fetchAll() as $r) $tot[$r['state']] = (int)$r['n'];
     } catch (Throwable $e) { }
+    // 📊 stage by stage: where the parcels of these days are NOW, which message belongs to that stage, and how many customers got it
+    $stages = [];
+    try {
+        $sq = $pdo->prepare("SELECT p.* FROM dp_dsp_parcels p WHERE $w ORDER BY p.id DESC LIMIT 6000"); $sq->execute($a); $all = $sq->fetchAll(); $got = [];
+        foreach (array_chunk(array_map(fn($p) => (int)$p['id'], $all), 800) as $ch) { if (!$ch) continue; foreach ($pdo->query("SELECT parcel_id, status, state FROM wa_ord_sent WHERE parcel_id IN (" . implode(',', $ch) . ")")->fetchAll() as $r) $got[(int)$r['parcel_id'] . '|' . $r['status']] = (string)$r['state']; }
+        $ord = ['packed' => 1, 'shipped' => 2, 'ofd' => 3, 'delivered' => 4, 'failed' => 5, 'delayed' => 6, 'rto' => 7];
+        foreach ($all as $p) {
+            $cls = wo_class($p, $now); $st = wo_pick_status($pdo, $p, $now); $k = $cls;
+            if (!isset($stages[$k])) $stages[$k] = ['key' => $k, 'stage' => $cls === 'packed' ? 'Tracking ID given, waiting for the courier' : wo_class_label($cls), 'message' => $st !== '' ? ($defs[$st][1] ?? $st) : 'no message for this stage', 'parcels' => 0, 'sent' => 0, 'waiting' => 0, 'not' => 0, 'sort' => $ord[$cls] ?? 9];
+            $stages[$k]['parcels']++; if ($st === '') continue;
+            $g = $got[(int)$p['id'] . '|' . $st] ?? ''; if ($g === 'sent') $stages[$k]['sent']++; elseif ($g === 'queued') $stages[$k]['waiting']++; else $stages[$k]['not']++;
+        }
+        usort($stages, fn($x, $y) => $x['sort'] <=> $y['sort']);
+    } catch (Throwable $e) { $stages = []; }
     $find = trim($find); if ($find !== '') { $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], ltrim($find, '#')) . '%'; $w .= " AND (p.order_name LIKE ? OR p.phone LIKE ? OR p.customer LIKE ? OR p.tracking_no LIKE ?)"; array_push($a, $l, $l, $l, $l); }
     if ($only === 'none') $w .= " AND NOT EXISTS (SELECT 1 FROM wa_ord_sent s WHERE s.parcel_id = p.id AND s.state = 'sent' AND s.status IN ('tracking','shipped','out_for_delivery','delivered','failed','delayed'))";
-    $q = $pdo->prepare("SELECT p.* FROM dp_dsp_parcels p WHERE $w ORDER BY p.id DESC LIMIT 400"); $q->execute($a); $rows = $q->fetchAll(); $ups = [];
+    $q = $pdo->prepare("SELECT p.* FROM dp_dsp_parcels p WHERE $w ORDER BY p.id DESC LIMIT " . ($stage !== '' ? 6000 : 400)); $q->execute($a); $rows = $q->fetchAll(); $ups = [];
+    if ($stage !== '') $rows = array_slice(array_values(array_filter($rows, function ($p) use ($stage, $now) { return wo_class($p, $now) === $stage; })), 0, 400);   // one stage picked in the table: only the parcels that are there now
     if ($rows) foreach ($pdo->query("SELECT parcel_id, status, state, err, sent_at, due_at, at FROM wa_ord_sent WHERE parcel_id IN (" . implode(',', array_map(fn($p) => (int)$p['id'], $rows)) . ") ORDER BY id")->fetchAll() as $s2) {
         $ups[(int)$s2['parcel_id']][] = ['label' => $defs[$s2['status']][1] ?? $s2['status'], 'state' => (string)$s2['state'], 'at' => substr((string)($s2['sent_at'] ?: ($s2['state'] === 'queued' ? $s2['due_at'] : $s2['at'])), 0, 16), 'why' => (string)$s2['err']];
     }
     $out = [];
     foreach ($rows as $p) { $cls = wo_class($p, $now);
         $out[] = ['order' => (string)$p['order_name'], 'customer' => (string)$p['customer'], 'phone' => wo_key($p['phone']), 'created' => substr((string)$p['created_at'], 0, 16), 'now' => wo_class_label($cls), 'courier' => (string)$p['courier'], 'tracking_no' => (string)$p['tracking_no'], 'link' => wo_track_link($pdo, $p), 'updates' => $ups[(int)$p['id']] ?? []]; }
-    return ['rows' => $out, 'totals' => $tot, 'days' => $days];
+    return ['rows' => $out, 'totals' => $tot, 'days' => $days, 'stages' => array_values($stages)];
 }
 /** One queued message. Returns ['out' => 'sent'|'skipped'|'failed'|'waiting', 'stop' => text?]. */
 function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
@@ -1405,7 +1420,7 @@ if (in_array($__woa, ['wa.ord_log', 'wa.ord_diag', 'wa.ord_catchup', 'wa.bday_ge
         case 'wa.ord_diag': { wa_guard_admin($pdo, $auth); @set_time_limit(90); json_response(['ok' => true, 'text' => wo_diag_text($pdo)]); }   // 🩺 read-only report for the builder
         case 'wa.ord_log': {   // 📬 who got which update (Admin / HR)
             wa_guard_admin($pdo, $auth); @set_time_limit(60);
-            json_response(['ok' => true] + wo_sent_log($pdo, (int)($_GET['days'] ?? 3), (string)($_GET['q'] ?? ''), (string)($_GET['only'] ?? '')));
+            json_response(['ok' => true] + wo_sent_log($pdo, (int)($_GET['days'] ?? 3), (string)($_GET['q'] ?? ''), (string)($_GET['only'] ?? ''), preg_replace('/[^a-z]/', '', (string)($_GET['stage'] ?? ''))));
         }
         case 'wa.ord_catchup': {   // 📬 GET = count what is missing for the parcels of the last N days; POST {days, go:1} = queue them
             wa_guard_admin($pdo, $auth); @set_time_limit(120); $dd = (int)($in['days'] ?? 3);
