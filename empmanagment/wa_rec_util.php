@@ -339,7 +339,7 @@ function wa_ru_ramp_back(PDO $pdo, string $why): void
 function wa_ru_ramp(PDO $pdo, array $cfg): void
 {
     try { if ((string)setting_get($pdo, 'wa_ru_ramp_on', '1') !== '1') return; $now = time();
-        $every = (int)setting_get($pdo, 'wa_ru_ramp_every', '3600'); if ($every < 600 || $every > 3600) $every = 3600; if ((int)setting_get($pdo, 'wa_ru_ramp_chk', '0') > $now - ($every < 3600 ? 300 : 600)) return; setting_set($pdo, 'wa_ru_ramp_chk', (string)$now);   // owner 19 Nov 2026: with wa_ru_ramp_every (seconds, default one hour) the speed grows in small steps, e.g. +20 every 20 minutes
+        $every = (int)setting_get($pdo, 'wa_ru_ramp_every', '3600'); if ($every < 600 || $every > 3600) $every = 3600; if ((int)setting_get($pdo, 'wa_ru_ramp_chk', '0') > $now - ($every <= 600 ? 50 : ($every < 3600 ? 300 : 600))) return; setting_set($pdo, 'wa_ru_ramp_chk', (string)$now);   // owner 19 Nov 2026: with wa_ru_ramp_every (seconds, default one hour) the speed grows in small steps, e.g. +20 every 20 minutes
         $base = max(10, (int)setting_get($pdo, 'wa_ru_ramp_base', '100') ?: 100); $step = max(5, (int)setting_get($pdo, 'wa_ru_ramp_step', '50') ?: 50); $max = max($base, (int)setting_get($pdo, 'wa_ru_ramp_max', '600') ?: 600);
         $cur = (int)$cfg['hourly']; if ($cur > $max) { setting_set($pdo, 'wa_ru_hourly', (string)$max); return; }
         $since = max($now - 3900, (int)setting_get($pdo, 'wa_ru_brake_since', '0')); $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
@@ -347,7 +347,7 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
         if ($n >= 20 && $f / max(1, $n) >= 0.10) { wa_ru_ramp_back($pdo, 'fail'); return; }
         if ((int)setting_get($pdo, 'wa_ru_ramp_hold', '0') > $now) return;
         $rat = (int)setting_get($pdo, 'wa_ru_ramp_at', '0'); if ($rat === 0) { setting_set($pdo, 'wa_ru_ramp_at', (string)$now); return; }   // the first look only starts the hour
-        if ($now - $rat < $every) return;
+        if ($now - $rat < $every - ($every <= 600 ? 20 : 0)) return;   /* 10-minute looks: a look a few seconds early must not wait for the next look */
         $gn = $n; $gf = $f; $gd = $d; $need = (int)floor($cur * 0.6);
         if ($every < 3600) {   // short steps: judge only the messages sent since the last change (15 minutes to one step-length old), the limit used in proportion to the length of that look
             $gs = max($now - $every - 900, ($every <= 600 ? 0 : $rat), (int)setting_get($pdo, 'wa_ru_brake_since', '0'));   /* 10-minute looks: the receipts are 15 minutes late, so every look judges the messages 15 to 25 minutes old (not only those after the last change) */ $q2 = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
