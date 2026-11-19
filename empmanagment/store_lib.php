@@ -165,14 +165,11 @@ function st_pieces_row(PDO $pdo, int $perfMl, int $gel, int $solid): array
     foreach ((array)$m['rows'] as $r) if ((int)$r['perf'] === $perfMl && (int)$r['gel'] === $gel && (int)$r['attar'] === $solid && (int)($r['other'] ?? 0) === 0) { $row = array_map('floatval', (array)$r['p']); break; }
     return ['cols' => (array)$m['cols'], 'names' => (array)$m['names'], 'row' => $row, 'label' => $label, 'need' => $row ? '' : 'No Combos row for ' . $label . ' — add it in Learn & Setup → Pricing → Combos, or a manager types the price.'];
 }
-/** What kind of product a row is: perfume (sold by ml), gel (shower gel, by piece), solid (solid perfume, by piece). The owner's choice if set, else worked out from the title. */
+/** What kind of product a row is: perfume (sold by ml), gel (shower gel, by piece), solid (solid perfume, by piece). Only the owner's choice makes a product gel / solid. */
 function st_ptype(array $row): string
 {
-    $t = (string)($row['ptype'] ?? ''); if (in_array($t, ['perfume', 'gel', 'solid'], true)) return $t;
-    $title = (string)($row['title'] ?? '');
-    if (preg_match('/shower\s*gel|body\s*wash/i', $title)) return 'gel';
-    if (preg_match('/solid|attar|balm/i', $title)) return 'solid';
-    return 'perfume';
+    // ONLY what the owner chose (Inventory → Make → Type). A product with no choice is a PERFUME, exactly as before: guessing from the title wrongly took perfumes with "attar" / "solid" in the name out of the ml chart.
+    $t = (string)($row['ptype'] ?? ''); return in_array($t, ['gel', 'solid'], true) ? $t : 'perfume';
 }
 /** The sizes a barcode may have for a product type. */
 function st_sizes_for(string $ptype): array { return $ptype === 'perfume' ? ST_PERFUME_SIZES : [ST_PACK[$ptype] ?? 50]; }
