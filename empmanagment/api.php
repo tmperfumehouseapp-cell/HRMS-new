@@ -1326,7 +1326,7 @@ function ora_apply(PDO $pdo, string $key, array $r): bool
         $c = $pdo->prepare("SELECT 1 FROM order_ratings WHERE order_key = ? AND ticket_by = 'Claude (auto)'"); $c->execute([$key]); return (bool)$c->fetchColumn();
     } catch (Throwable $e) { error_log('ora_apply: ' . $e->getMessage()); return false; }
 }
-/** Engine step (every ~3 min): rates up to 8 new allocated orders of the last 3 days (newest first, so today is always read before the older ones); in 'apply' mode also applies waiting suggestions. Returns how many orders were rated. */
+/** Engine step (every ~3 min): rates up to 8 new allocated orders of the current business day (from its start) (newest first, so today is always read before the older ones); in 'apply' mode also applies waiting suggestions. Returns how many orders were rated. */
 function ora_tick(PDO $pdo): int
 {
     $mode = ora_mode($pdo); if ($mode === 'off' || !function_exists('convo_ai')) return 0;
@@ -1337,7 +1337,7 @@ function ora_tick(PDO $pdo): int
             WHERE o.created_at >= ? AND o.created_at <= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')
               AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 4)
             ORDER BY o.created_at DESC LIMIT 8");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
-        $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400), date('Y-m-d H:i:s', time() - 600)]);
+        $bd = biz_today($pdo); $st->execute([$bd . ' ' . day_start_for($pdo, $bd) . ':00', date('Y-m-d H:i:s', time() - 600)]);   // only the orders of the current business day (from its 10:00 start) are read
         $t0 = time(); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
             if (time() - $t0 > 28) break;   // the engine step must stay short
             $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;   // an AI hiccup: try again next time
