@@ -276,6 +276,10 @@ function wa_ru_reset_once(PDO $pdo): void
             setting_set($pdo, 'wa_ru_to510', '1'); setting_set($pdo, 'wa_ru_ramp_max', '510');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): above 350 the levels 410, 450, 510 an hour follow, each after 2 good hours (owner)');
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_base260', '') !== '1') {   /* owner 20 Nov 2026 (02:00): Module B must not run at 180; the floor is 260 an hour (it starts again from 260 after a bad stretch, never lower) */
+            setting_set($pdo, 'wa_ru_base260', '1'); setting_set($pdo, 'wa_ru_ramp_base', '260'); if ((int)setting_get($pdo, 'wa_ru_hourly', '260') < 260) setting_set($pdo, 'wa_ru_hourly', '260'); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the floor is now 260 an hour (it never goes lower), it runs at ' . setting_get($pdo, 'wa_ru_hourly', '260') . ' now (owner)');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_trim_517_518', '') !== '1') {   // owner 18 Nov 2026: Meta paused #517 / #518 as spam (131048). Fewer people: only those who were REACHED (a delivered message) in the last 30 days stay; the others are held back (they can be sent later with "Send to skipped"). The campaigns start again by themselves at 10:00, the start of the business day.
             setting_set($pdo, 'wa_trim_517_518', '1');
             $n = (int)$pdo->exec("UPDATE wa_camp_items i SET i.status = 'skipped', i.err = 'Held back: not reached in the last 30 days (Meta spam flag)', i.err_code = 0 WHERE i.camp_id IN (517, 518) AND i.status = 'queued' AND NOT EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone COLLATE utf8mb4_unicode_ci = i.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'out' AND m.status IN ('delivered', 'read') AND m.ts >= DATE_SUB(NOW(), INTERVAL 30 DAY))");
