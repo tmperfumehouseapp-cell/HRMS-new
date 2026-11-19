@@ -1312,7 +1312,7 @@
           const box = $('#wxMs'), lastOld = S.cur.msgs[S.cur.msgs.length - 1], add = fresh.slice(); let full = !box || (lastOld && dayLbl(lastOld.ts) !== dayLbl(fresh[0].ts)) || fresh.some((m) => m.number && lastOld && lastOld.number && m.number !== lastOld.number);
           const kept = [];
           for (const m of S.cur.msgs) {
-            const i = m.tmp ? add.findIndex((f) => f.dir === 'out' && f.body === m.body) : -1; if (i < 0) { kept.push(m); continue; }
+            const i = m.tmp ? add.findIndex((f) => f.dir === 'out' && (f.body === m.body || (m.body && String(f.body || '').indexOf(m.body + '\n\nYour complaint number is ') === 0))) : -1;   /* the first reply on a complaint gets the ticket number added by the server: it is still the same message */ if (i < 0) { kept.push(m); continue; }
             const f = add.splice(i, 1)[0], el = box && box.querySelector('[data-id="' + m.id + '"]');
             if (el && !full) { el.outerHTML = bubble(f); kept.push(f); } else add.push(f);   // the sent copy takes the "sending…" bubble's place
           }
@@ -1559,6 +1559,7 @@
       try {
         const gx = window.__wxGrowNext || {}; window.__wxGrowNext = null;
         await api.post('wa.send', auto ? { phone, text, auto: true, cid } : Object.assign(tmp.reply_id ? { phone, text, cid, reply_id: tmp.reply_id } : { phone, text, cid }, gx));   // auto: the countdown reply; lets the server claim the customer message (wq no-answer flow)
+        if (tmp.status === 'sending') { tmp.status = 'sent'; if (S.cur && S.cur.phone === phone) { const te = $('#wxMs') && $('#wxMs').querySelector('[data-id="' + tmp.id + '"]'); if (te) te.outerHTML = bubble(tmp); } }   // WhatsApp took it: one tick at once (two ticks / blue follow when the chat refreshes)
         if (prod && prod.length && window.WaProd) { try { await WaProd.send(phone, prod.map((p) => p.id), 'why'); } catch (e) { toast('The text went, but the photos did not: ' + e.message, true); } }   // the photos follow the text, one by one
         if (S.cur && S.cur.phone === phone) pollChat();
         if (S.cur && S.cur.phone === phone && S.cur.heldLink) { const t = $('#wxTx'); if (t && !t.value) { t.value = S.cur.heldLink; S.cur.heldLink = ''; try { t.dispatchEvent(new Event('input')); } catch (x) { } toast('Link phir se ready hai — ab bhejo'); } }   // the link that was held back comes back after the offer went
