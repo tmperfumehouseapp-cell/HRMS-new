@@ -89,16 +89,27 @@ function waa_tier(int $q, int $qo, float $team): int
  */
 function waa_pick_tiers(array $c, int $min = WAA_MIN_Q): int
 {
-    // one query at a time: a person who was given a query a moment ago ('rest') is skipped while somebody else can take it — green first, but never 2-4 at once (owner, 19 Nov)
+    // order of care: not full → not AHEAD of his fair share (a green may not hoard: owner, 19 Nov) → not resting (one query at a time) → green before band
     foreach ([false, true] as $ignoreFull) {
-        foreach ([false, true] as $ignoreRest) {
-            foreach ([1, 2] as $t) {
-                $g = array_filter($c, function ($x) use ($t, $ignoreFull, $ignoreRest) { return (int)($x['tier'] ?? 2) === $t && ($ignoreFull || empty($x['full'])) && ($ignoreRest || empty($x['rest'])); });
-                if ($g) return waa_pick($g, $t === 2 ? $min : 0);
+        foreach ([false, true] as $ignoreAhead) {
+            foreach ([false, true] as $ignoreRest) {
+                foreach ([1, 2] as $t) {
+                    $g = array_filter($c, function ($x) use ($t, $ignoreFull, $ignoreAhead, $ignoreRest) { return (int)($x['tier'] ?? 2) === $t && ($ignoreFull || empty($x['full'])) && ($ignoreAhead || empty($x['ahead'])) && ($ignoreRest || empty($x['rest'])); });
+                    if ($g) return waa_pick($g, $t === 2 ? $min : 0);
+                }
             }
         }
     }
     return 0;
+}
+
+/** Who is far ahead of his fair share of fresh queries: more than 25% over the share his weight earns (and at least 2 queries over). Marks cand[e]['ahead']. */
+function waa_mark_ahead(array $c): array
+{
+    $tc = 0; $tw = 0.0; foreach ($c as $x) { $tc += (int)$x['cnt']; $tw += max(0.0001, (float)$x['w']); }
+    if ($tw <= 0 || count($c) < 3) return $c; $per = $tc / $tw;
+    foreach ($c as $e => $x) $c[$e]['ahead'] = ((int)$x['cnt'] + 1) > $per * max(0.0001, (float)$x['w']) * 1.25 + 2;
+    return $c;
 }
 
 function waa_night(int $hour): bool { return $hour >= 0 && $hour < 10; }

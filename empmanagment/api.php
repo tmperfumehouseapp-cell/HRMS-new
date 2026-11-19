@@ -1275,9 +1275,9 @@ function ora_up_ovr(PDO $pdo, string $day): array
 {
     static $ok = false; $out = [];
     try {
-        if (!$ok) { $pdo->exec("CREATE TABLE IF NOT EXISTS order_up_override (order_key VARCHAR(80) NOT NULL PRIMARY KEY, day DATE NOT NULL, remark VARCHAR(300) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL, KEY k_day (day)) DEFAULT CHARSET=utf8mb4"); $ok = true; }
-        $q = $pdo->prepare("SELECT order_key, remark, by_name, at FROM order_up_override WHERE day = ?"); $q->execute([$day]);
-        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(string)$r['order_key']] = [(string)$r['remark'], (string)$r['by_name'], substr((string)$r['at'], 11, 5)];
+        if (!$ok) { $pdo->exec("CREATE TABLE IF NOT EXISTS order_up_override (order_key VARCHAR(80) NOT NULL PRIMARY KEY, day DATE NOT NULL, remark VARCHAR(300) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL, KEY k_day (day)) DEFAULT CHARSET=utf8mb4"); try { $pdo->query("SELECT bucket FROM order_up_override LIMIT 0"); } catch (Throwable $e1) { $pdo->exec("ALTER TABLE order_up_override ADD COLUMN bucket TINYINT NOT NULL DEFAULT 1"); } $ok = true; }
+        $q = $pdo->prepare("SELECT order_key, remark, by_name, at, bucket FROM order_up_override WHERE day = ?"); $q->execute([$day]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(string)$r['order_key']] = [(string)$r['remark'], (string)$r['by_name'], substr((string)$r['at'], 11, 5), (int)$r['bucket']];
     } catch (Throwable $e) { error_log('ora_up_ovr: ' . $e->getMessage()); }
     return $out;
 }
@@ -1315,21 +1315,23 @@ function ora_judge_text(string $text, string $final = '', int $finalMl = 0): arr
         . "NOT AN OFFER (counted only in weak / big_weak, never in tries): vague questions without a concrete item or benefit — 'ek aur kar du?', 'kuch aur chahiye?', 'anything else?', 'aur lena hai?' — a bare thank-you, repeating the customer's own order, quoting the price of the same order, a discount on the same items, BOT / campaign messages. "
         . "A customer who bargains the PRICE while confirming the quantity ('3500 kar dijiye, 8 x 50 le lunga') HAS taken the quantity (big_worked = true); a customer who only says 'ok' to a clear offer and then orders exactly that quantity / price has taken it too. A customer who asked for the bigger / extra thing by himself earns the salesperson no credit; a customer who came with his own list or quantity (for example 820 ml, 300 ml or 650 ml) and the salesperson simply sold exactly that, with nothing added, earns NO credit (tries = 0, no offer). A copy-pasted combo / price line followed by a question ('5 x 50ml - 250ml - Rs 2,940 Better Savings' + 'You interested in this offer sir?') IS a proper offer for more pieces; lines marked [replying to: ...] show which message the customer answered, so 'No no' as a reply to that offer is a refusal (the salesperson TRIED). A customer who flatly says NO to the salesperson's push for more (came for 10, the salesperson asked for 12 or 15, the customer refused at once) means the salesperson TRIED: set refused / big_refused = true and tries / big_tries to at least 1, even when the offer was one short line. Only when no push at all can be found is it 'none'. WORK OUT THE BASE ORDER: from the chat find what the customer had agreed BEFORE the salesperson's offer (for example 8 x 20ml = 160 ml for Rs 1999). If the final order has MORE ml / pieces / price than that base (for example 200 ml / Rs 2,4xx after a base of 160 ml / Rs 1999), the extra was added, so the offer was TAKEN (worked = true for an offer made after the order details, big_worked = true for one made before), even if the final price differs a little because of a discount. A customer who answers yes / ok / haan / done to the offer and the salesperson then confirms the new total ('total 2499 done, cart bhej deti hu') TOOK it. COMPARE WITH THE FINAL ORDER given at the end: if the final order's total price, number of pieces or ml equals what the salesperson offered (for example the offer was 10 x 20ml for Rs 2399 and the final order is Rs 2399 / 200 ml), the customer TOOK that offer, even if he only said 'ok' in between and then talked about something else.  worked / big_worked = true ONLY when the customer clearly took a PROPER offer of that kind (took the higher quantity / bigger size before the order was final for bigger; added the extra perfume after the order was final for add-on). refused / big_refused = true when the customer clearly said no to a proper offer of that kind. Read the order of the messages carefully: a customer who first stays with the old quantity and LATER agrees to the new one has taken the offer. "
         . "Stars (0.5 steps, about the whole effort): 1 = no proper offer at all · 2 = only vague lines · 3 = one clear proper offer, customer did not take · 4 = proper offers, one worked a little · 5 = proper offers and a clear win (a bigger order, an add-on, or both). "
-        . "asked = what the customer first asked for (short). offered = the best proper offer made (short, empty if none). reason = ONE short sentence in simple English about the ADD-ON judgement ONLY (what happened after the order was final) · big_reason = ONE short sentence in simple English about the BIGGER judgement ONLY (what happened before the order was final); never mix the two. base_ml = the total ml the customer had agreed BEFORE the salesperson's add-on offer (e.g. 8 x 20ml = 160; 0 if unknown); extra_ml = the total ml of the extra perfume offered as add-on (e.g. 2 x 20ml = 40; 0 if none or unknown).  tip / big_tip = ONLY when that kind worked: the salesperson's own winning words, shortened, in the chat's language (else empty). "
+        . "asked = what the customer first asked for (short). offered = the best proper offer made (short, empty if none). reason = ONE short sentence in simple English about the ADD-ON judgement ONLY (what happened after the order was final) · big_reason = ONE short sentence in simple English about the BIGGER judgement ONLY (what happened before the order was final); never mix the two. base_ml = the total ml the customer had agreed BEFORE the salesperson's add-on offer (e.g. 8 x 20ml = 160; 0 if unknown); extra_ml = the total ml of the extra perfume offered as add-on (e.g. 2 x 20ml = 40; 0 if none or unknown); asked_ml = the total ml the customer FIRST asked for or came with (e.g. 5 x 50ml = 250; 0 if unknown).  tip / big_tip = ONLY when that kind worked: the salesperson's own winning words, shortened, in the chat's language (else empty). "
         . $final;
     $sch = ['type' => 'OBJECT', 'properties' => ['asked' => ['type' => 'STRING'], 'offered' => ['type' => 'STRING'], 'worked' => ['type' => 'BOOLEAN'], 'stars' => ['type' => 'NUMBER'], 'reason' => ['type' => 'STRING'], 'big_reason' => ['type' => 'STRING'], 'tries' => ['type' => 'NUMBER'], 'weak' => ['type' => 'NUMBER'], 'refused' => ['type' => 'BOOLEAN'], 'tip' => ['type' => 'STRING'],
-        'big_worked' => ['type' => 'BOOLEAN'], 'big_tries' => ['type' => 'NUMBER'], 'big_weak' => ['type' => 'NUMBER'], 'big_refused' => ['type' => 'BOOLEAN'], 'big_tip' => ['type' => 'STRING'], 'base_ml' => ['type' => 'NUMBER'], 'extra_ml' => ['type' => 'NUMBER']],
-        'required' => ['asked', 'offered', 'worked', 'stars', 'reason', 'big_reason', 'tries', 'weak', 'refused', 'tip', 'big_worked', 'big_tries', 'big_weak', 'big_refused', 'big_tip', 'base_ml', 'extra_ml']];
+        'big_worked' => ['type' => 'BOOLEAN'], 'big_tries' => ['type' => 'NUMBER'], 'big_weak' => ['type' => 'NUMBER'], 'big_refused' => ['type' => 'BOOLEAN'], 'big_tip' => ['type' => 'STRING'], 'base_ml' => ['type' => 'NUMBER'], 'extra_ml' => ['type' => 'NUMBER'], 'asked_ml' => ['type' => 'NUMBER']],
+        'required' => ['asked', 'offered', 'worked', 'stars', 'reason', 'big_reason', 'tries', 'weak', 'refused', 'tip', 'big_worked', 'big_tries', 'big_weak', 'big_refused', 'big_tip', 'base_ml', 'extra_ml', 'asked_ml']];
     [$ok, $v, $why] = convo_ai($sys, [['text' => $text]], $sch, false, 700, 'claude'); if (!$ok || !is_array($v)) return ['rating' => null, 'why' => 'Claude could not rate it: ' . mb_substr((string)$why, 0, 120), 'retry' => true];
     $st = round(max(1.0, min(5.0, (float)($v['stars'] ?? 1))) * 2) / 2;
     $n = fn($k) => (int)max(0, min(9, round((float)($v[$k] ?? 0))));
+    $aml = (int)round((float)($v['asked_ml'] ?? 0));
     $tr = $n('tries'); $btr = $n('big_tries'); if (!empty($v['refused'])) $tr = max($tr, 1); if (!empty($v['big_refused'])) $btr = max($btr, 1);   // a customer who says no to a push means the salesperson tried
      $wk = !empty($v['worked']) ? 1 : 0; $bwk = !empty($v['big_worked']) ? 1 : 0;
-    $bml = (int)round((float)($v['base_ml'] ?? 0)); $eml = (int)round((float)($v['extra_ml'] ?? 0)); $note = '';
+    $bml = (int)round((float)($v['base_ml'] ?? 0)); $eml = (int)round((float)($v['extra_ml'] ?? 0)); $note = ''; $bnote = '';
+    if (!$bwk && !$wk && $finalMl > 0 && $aml > 0 && $finalMl >= (int)round($aml * 1.2) && ($n('big_weak') >= 1 || $btr >= 1)) { $bwk = 1; $btr = max($btr, 1); $bnote = 'Checked by numbers: the customer first asked for ' . $aml . ' ml and the final order has ' . $finalMl . ' ml after the salesperson pushed for more.'; }   // the order itself grew after the salesperson's push
     if (!$wk && $tr >= 1 && $finalMl > 0 && $bml > 0 && $eml > 0 && $finalMl >= $bml + (int)round($eml * 0.9)) { $wk = 1; $note = ' [Checked by numbers: the final order has ' . $finalMl . ' ml, more than the ' . $bml . ' ml agreed before the offer, so the extra was added.]'; }   // the judge's own sums are not trusted when the order itself proves the extra was added
     return ['rating' => $st * 2, 'tried' => ($tr >= 1 || $wk) ? 1 : 0, 'worked' => $wk, 'tries' => max($tr, $wk ? 1 : 0), 'weak' => $n('weak'), 'refused' => !empty($v['refused']) ? 1 : 0, 'tip' => $wk ? mb_substr((string)($v['tip'] ?? ''), 0, 240) : '',
         'big_tried' => ($btr >= 1 || $bwk) ? 1 : 0, 'big_worked' => $bwk, 'big_tries' => max($btr, $bwk ? 1 : 0), 'big_weak' => $n('big_weak'), 'big_refused' => !empty($v['big_refused']) ? 1 : 0, 'big_tip' => $bwk ? mb_substr((string)($v['big_tip'] ?? ''), 0, 240) : '',
-        'asked' => mb_substr((string)($v['asked'] ?? ''), 0, 200), 'offered' => mb_substr((string)($v['offered'] ?? ''), 0, 200), 'why' => mb_substr($note !== '' ? trim($note) : (string)($v['reason'] ?? ''), 0, 400), 'big_why' => mb_substr((string)($v['big_reason'] ?? ''), 0, 400)];
+        'asked' => mb_substr((string)($v['asked'] ?? ''), 0, 200), 'offered' => mb_substr((string)($v['offered'] ?? ''), 0, 200), 'why' => mb_substr($note !== '' ? trim($note) : (string)($v['reason'] ?? ''), 0, 400), 'big_why' => mb_substr($bnote !== '' ? $bnote : (string)($v['big_reason'] ?? ''), 0, 400)];
 }
 function ora_rate_one(PDO $pdo, array $o): array
 {
@@ -1459,6 +1461,7 @@ function ora_catchup(PDO $pdo): int
 {
     if (ora_mode($pdo) === 'off' || !function_exists('convo_ai')) return 0;
     try { if ((int)setting_get($pdo, 'ora_cu_at', '0') > time() - 45) return 0; setting_set($pdo, 'ora_cu_at', (string)time()); } catch (Throwable $e) { return 0; }
+    try { if ((string)setting_get($pdo, 'ora_fix12', '') !== '1') { setting_set($pdo, 'ora_fix12', '1'); $pdo->exec("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_name IN ('72344', '#72344')"); } } catch (Throwable $e) { }   // one-off: #72344 (5 -> 8 pieces) is read again with the numbers check
     try { if ((string)setting_get($pdo, 'ora_fix11', '') !== '1') { setting_set($pdo, 'ora_fix11', '1'); $pdo->exec("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_name IN ('72338', '#72338')"); } } catch (Throwable $e) { }   // one-off: #72338 is read again with the quoted-reply context (the owner's example)
     try { try { if ((string)setting_get($pdo, 'ora_fix10', '') !== '1') { setting_set($pdo, 'ora_fix10', '1'); $pdo->exec("UPDATE order_rate_auto SET tries = 1, tried = 1 WHERE sz_ok = 7 AND refused = 1 AND tries = 0"); $pdo->exec("UPDATE order_rate_auto SET sz_tries = 1, sz_tried = 1 WHERE sz_ok = 7 AND sz_refused = 1 AND sz_tries = 0"); } } catch (Throwable $e) { }   // one-off: a refusal already stored without a try becomes a try (no new AI reading)
     try { if ((string)setting_get($pdo, 'ora_fix9', '') !== '1') { setting_set($pdo, 'ora_fix9', '1'); $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE sz_ok = 7 AND tries >= 1 AND worked = 0 AND day >= ?")->execute([date('Y-m-d', strtotime(biz_today($pdo) . ' -1 day'))]); } } catch (Throwable $e) { }   // one-off: add-on offers judged 'not taken' are read again with the base-order comparison
@@ -2593,11 +2596,18 @@ function hrms_settings_load(PDO $pdo): array
     if (!empty($GLOBALS['__hrms_settings_lk'])) { @flock($GLOBALS['__hrms_settings_lk'], LOCK_UN); @fclose($GLOBALS['__hrms_settings_lk']); $GLOBALS['__hrms_settings_lk'] = null; }
     return $cache;
 }
+/** ⚡ Keys that change many times a minute and are ALWAYS read straight from the table (never from the shared copy): locks, "last ran at" stamps (*_at), the 10-second needs list, the 24-hour limit count
+ *  and the pace stamps. Writing one of them used to make the shared copy of the notebook out of date, so the next request re-read the whole table (about 9,000 rows, the "SELECT setting_key ... FROM
+ *  hrms_settings" query of the Server load list) many times a minute. Reads were already direct for the lock keys; now the same rule covers the others, so a write needs no new copy. */
+function hrms_setting_volatile(string $key): bool
+{
+    return strpos($key, 'lock') !== false || substr($key, -3) === '_lk' || substr($key, -3) === '_at' || $key === 'wq_needs' || strpos($key, 'wa_lim_') === 0 || $key === 'wa_tag_cache' || strpos($key, 'wq_pace_') === 0;
+}
 function setting_get(PDO $pdo, string $key, $default = null)
 {
     $cache = &$GLOBALS['__hrms_setting_cache'];   // shared with setting_set(): a value saved in this request is read back as saved (it used to stay the old one until the next request)
     if ($cache === null) $cache = hrms_settings_load($pdo);
-    if (strpos($key, 'lock') !== false || substr($key, -3) === '_lk') {   // a lock: always the table's own current value
+    if (hrms_setting_volatile($key)) {   // a lock, a "last ran at" stamp or a short-lived copy: always the table's own current value
         try { $q = $pdo->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$key]); $v = $q->fetchColumn(); if ($v === false) { unset($cache[$key]); return $default; } return $cache[$key] = $v; } catch (PDOException $e) { }
         return array_key_exists($key, $cache) ? $cache[$key] : $default;
     }
@@ -2641,7 +2651,7 @@ function setting_set(PDO $pdo, string $key, $value): void
 {
     ensure_reminder_tables($pdo);
     $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$key, $value === null ? null : (string)$value]);
-    hrms_settings_bump();   // the shared copy of the notebook is out of date from this moment
+    if (!hrms_setting_volatile($key)) hrms_settings_bump();   // the shared copy of the notebook is out of date from this moment (not for the volatile keys: they are never read from the shared copy)
     if (is_array($GLOBALS['__hrms_setting_cache'] ?? null)) $GLOBALS['__hrms_setting_cache'][$key] = $value === null ? null : (string)$value;   // read back as saved in the same request
 }
 
@@ -22877,7 +22887,7 @@ switch ($action) {
             $lv = ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']);
             $lb = ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']);
             if (!isset($E[$id])) $E[$id] = ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'up' => [0, 0, 0, 0], 'addon_rs' => 0, 'addon_orders' => 0, 'stars' => 0.0, 'rated' => 0, 'name' => $names[$id] ?? ('#' . $id)];
-            $ub = ora_up_bucket((int)$r['tried'], (int)$r['worked'], (int)$r['tries'], (int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']); if ($ub === 0 && isset($ovr[(string)$r['order_key']])) { $ub = 1; $E[$id]['call'] = ($E[$id]['call'] ?? 0) + 1; } $E[$id]['up'][$ub]++; $teamUp[$ub]++;   // the owner marked it 'tried on a call'
+            $ub = ora_up_bucket((int)$r['tried'], (int)$r['worked'], (int)$r['tries'], (int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']); if ($ub < 2 && isset($ovr[(string)$r['order_key']])) { $nb = max(1, min(2, (int)$ovr[(string)$r['order_key']][3])); if ($nb > $ub) { $ub = $nb; $E[$id]['call'] = ($E[$id]['call'] ?? 0) + 1; } } $E[$id]['up'][$ub]++; $teamUp[$ub]++;   // the owner marked it 'tried on a call'
             $E[$id]['n'][$lv]++; $team[$lv]++; $E[$id]['sz'][$lb]++; $teamSz[$lb]++;
             if ($lb === 3 && trim((string)$r['sz_tip']) !== '' && count($tipsSz) < 12) $tipsSz[] = ['text' => (string)$r['sz_tip'], 'emp' => $E[$id]['name'], 'order' => (string)$r['order_name']];
             if ($lb === 0 && count($missSz) < 40) $missSz[] = ['key' => (string)$r['order_key'], 'order' => (string)$r['order_name'], 'emp' => $id, 'emp_name' => $E[$id]['name'], 'asked' => (string)$r['asked'], 'why' => (string)($r['sz_reason'] !== '' ? $r['sz_reason'] : $r['reason'])]; $E[$id]['stars'] += (float)$r['rating'] / 2; $E[$id]['rated']++;
@@ -22982,7 +22992,7 @@ switch ($action) {
         $q->execute($emp > 0 ? [$day, $emp] : [$day]); $ovr = ora_up_ovr($pdo, $day);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $b = $r['rating'] === null ? 3 : ora_up_bucket((int)$r['tried'], (int)$r['worked'], (int)$r['tries'], (int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']);
-            $ov = null; if ($b === 0 && isset($ovr[(string)$r['order_key']])) { $b = 1; $ov = $ovr[(string)$r['order_key']]; }
+            $ov = null; if ($b < 2 && isset($ovr[(string)$r['order_key']])) { $nb = max(1, min(2, (int)$ovr[(string)$r['order_key']][3])); if ($nb > $b) { $b = $nb; $ov = $ovr[(string)$r['order_key']]; } }
             if ($b !== $lv) continue; $e = (int)$r['employee_id']; $out['total']++; $pc[$e] = ($pc[$e] ?? 0) + 1; if (count($out['rows']) >= 200) continue;
             $cust = ''; $tot = 0.0; try { [$sk, $sid] = array_pad(explode(':', (string)$r['order_key'], 2), 2, ''); $oq = $pdo->prepare("SELECT customer, total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $oq->execute([$sk, $sid]); $o = $oq->fetch(PDO::FETCH_ASSOC) ?: []; $cust = (string)($o['customer'] ?? ''); $tot = (float)($o['total'] ?? 0); } catch (Throwable $e1) { }
             $why = $b === 3 ? (string)$r['reason'] : trim((string)$r['reason'] . ' ' . (string)$r['sz_reason']);
@@ -22996,13 +23006,12 @@ switch ($action) {
         // 📞 Admin / HR: an order the judge saw as 'none' was tried on a call (salesperson confirmed) -> counts as Tried. {key, day, mark: 1|0, remark (4+ letters when marking)}
         $auth = require_auth();
         if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
-        $in = json_input(); $key = trim((string)($in['key'] ?? '')); $mark = !empty($in['mark']); $rm = trim((string)($in['remark'] ?? ''));
+        $in = json_input(); $key = trim((string)($in['key'] ?? '')); $mark = max(0, min(2, (int)($in['mark'] ?? 0))); $rm = trim((string)($in['remark'] ?? '')); if ($rm === '') $rm = $mark === 2 ? 'Owner e Done ma mukyu' : 'Owner e call par confirm karyu';
         $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['day'] ?? '')) ? (string)$in['day'] : biz_today($pdo);
         if ($key === '' || strlen($key) > 80) json_response(['error' => 'Order missing.'], 422);
-        if ($mark && mb_strlen($rm) < 4) json_response(['error' => 'Remark likho (kam se kam 4 akshar).'], 422);
         ora_up_ovr($pdo, $day);
         try {
-            if ($mark) { $by = trim((string)($auth['full_name'] ?? $auth['name'] ?? $auth['username'] ?? 'Admin')); $pdo->prepare("REPLACE INTO order_up_override (order_key, day, remark, by_name, at) VALUES (?, ?, ?, ?, ?)")->execute([$key, $day, mb_substr($rm, 0, 300), mb_substr($by, 0, 80), date('Y-m-d H:i:s')]); }
+            if ($mark) { $by = trim((string)($auth['full_name'] ?? $auth['name'] ?? $auth['username'] ?? 'Admin')); $pdo->prepare("REPLACE INTO order_up_override (order_key, day, remark, by_name, at, bucket) VALUES (?, ?, ?, ?, ?, ?)")->execute([$key, $day, mb_substr($rm, 0, 300), mb_substr($by, 0, 80), date('Y-m-d H:i:s'), $mark]); }
             else $pdo->prepare("DELETE FROM order_up_override WHERE order_key = ?")->execute([$key]);
         } catch (Throwable $e) { json_response(['error' => 'Could not save.'], 500); }
         json_response(['ok' => true]);

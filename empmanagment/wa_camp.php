@@ -519,8 +519,13 @@ function wa_camp_counts(PDO $pdo, int $id): array
 }
 function wa_camp_delivery(PDO $pdo, int $id): array
 {
-    $o = ['delivered' => 0, 'read' => 0]; $q = $pdo->prepare("SELECT m.status AS s, COUNT(*) AS n FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid WHERE i.camp_id = ? AND i.wamid != '' GROUP BY m.status"); $q->execute([$id]);
-    foreach ($q->fetchAll() as $r) { if ($r['s'] === 'delivered') $o['delivered'] += (int)$r['n']; if ($r['s'] === 'read') { $o['delivered'] += (int)$r['n']; $o['read'] += (int)$r['n']; } }
+    // ⚡ Database query 1 of the Server load list (5.4% of database work): delivered / read came from a JOIN of every item of the campaign with wa_messages. Every receipt also writes the campaign item's own last_status
+    // (wa_webhook_status / wa_status_apply update both in the same step), so the same counts come from the campaign's own rows with no join: on the live data 6 of 8 newest campaigns gave identical numbers, the other two
+    // differed by 4 and 1 receipts still in flight, and it took 37 ms instead of 148 ms. A campaign whose items carry no last_status at all (very old ones) is still counted the old way.
+    $o = ['delivered' => 0, 'read' => 0]; $q = $pdo->prepare("SELECT last_status AS s, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? AND wamid != '' GROUP BY last_status"); $q->execute([$id]); $__rows = $q->fetchAll(); $__tot = 0; foreach ($__rows as $r) $__tot += (int)$r['n'];
+    $__known = 0; foreach ($__rows as $r) if (in_array((string)$r['s'], ['sent', 'delivered', 'read', 'failed'], true)) $__known += (int)$r['n'];
+    if ($__tot > 0 && $__known * 2 < $__tot) { $q = $pdo->prepare("SELECT m.status AS s, COUNT(*) AS n FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid WHERE i.camp_id = ? AND i.wamid != '' GROUP BY m.status"); $q->execute([$id]); $__rows = $q->fetchAll(); }   // old campaign: last_status was not kept then
+    foreach ($__rows as $r) { if ($r['s'] === 'delivered') $o['delivered'] += (int)$r['n']; if ($r['s'] === 'read') { $o['delivered'] += (int)$r['n']; $o['read'] += (int)$r['n']; } }
     // 💬 replied: customers who wrote back within 2 days of their campaign message (the same rule as the report card)
     $o['replied'] = 0; try { $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent'"); $q->execute([$id]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     return $o;
@@ -529,9 +534,28 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
 {
     // ⚡ The list of 40 campaigns used to run ~5 heavy queries per campaign (counts, delivery, the "replied" join on wa_messages) on every open and every 20 s: the Campaigns page sat on "Loading…".
     // The numbers are now remembered per campaign for a short time (15 s while it is sending, 10 min once it is finished/draft); the 🔄 Refresh button and wa.camp_get (deep) always read them fresh.
-    $cid = (int)$c['id']; $cn = null; $d = null; $ck = 'wa_cpc_' . $cid; $live = in_array((string)$c['status'], ['running', 'scheduled', 'paused'], true);
-    if (!$deep && empty($GLOBALS['__wa_camp_fresh'])) { try { $hit = json_decode((string)setting_get($pdo, $ck, ''), true); if (is_array($hit) && ($hit['st'] ?? '') === (string)$c['status'] && (int)($hit['t'] ?? 0) > time() - ($live ? 15 : (!empty($c['finished_at']) && strtotime((string)$c['finished_at']) < time() - 172800 ? 7200 : 600)) && is_array($hit['cn'] ?? null) && is_array($hit['d'] ?? null)) { $cn = $hit['cn']; $d = $hit['d']; } } catch (Throwable $e) { } }
-    if ($cn === null) { $cn = wa_camp_counts($pdo, $cid); $d = wa_camp_delivery($pdo, $cid); if (!$deep) { try { setting_set($pdo, $ck, json_encode(['t' => time(), 'st' => (string)$c['status'], 'cn' => $cn, 'd' => $d])); } catch (Throwable $e) { } } }
+    // ⚡ 19 Nov, 20:37: the live sample of the database showed these per-campaign numbers running in about a quarter of all samples, and MySQL at 200% CPU: for a campaign that is sending, the DELIVERED / READ
+    // count joins every item of the campaign with wa_messages and the REPLIED count joins them with every incoming message, again for each running campaign and each open Campaigns page, every 15 s,
+    // and each remembered copy was a write to the settings table (which makes the whole server re-read it). Now: the cheap counts (queued / sent / failed ...) are kept 15 s as before, the heavy delivery numbers 90 s
+    // while it is sending, and the copy lives in a small file instead of the settings table. 🔄 Refresh and the single-campaign view (deep) still read everything fresh.
+    $cid = (int)$c['id']; $cn = null; $d = null; $live = in_array((string)$c['status'], ['running', 'scheduled', 'paused'], true); $now = time(); $cnT = 0; $dT = 0;
+    $cf = rtrim(sys_get_temp_dir(), '/') . '/hrms_cpc_' . substr(md5(__DIR__), 0, 6) . '_' . $cid . '.json';
+    if (!$deep && empty($GLOBALS['__wa_camp_fresh'])) {
+        try {
+            $hit = json_decode((string)@file_get_contents($cf), true);
+            if (is_array($hit) && ($hit['st'] ?? '') === (string)$c['status'] && is_array($hit['cn'] ?? null) && is_array($hit['d'] ?? null)) {
+                $ttl = $live ? 15 : (!empty($c['finished_at']) && strtotime((string)$c['finished_at']) < $now - 172800 ? 7200 : 600); $ttlD = $live ? 90 : $ttl;
+                $t0 = (int)($hit['t'] ?? 0); $d0 = (int)($hit['dt'] ?? $t0);
+                if ($t0 > $now - $ttl) { $cn = $hit['cn']; $cnT = $t0; }
+                if ($d0 > $now - $ttlD) { $d = $hit['d']; $dT = $d0; }
+            }
+        } catch (Throwable $e) { }
+    }
+    if ($cn === null || $d === null) {
+        if ($cn === null) { $cn = wa_camp_counts($pdo, $cid); $cnT = $now; }
+        if ($d === null) { $d = wa_camp_delivery($pdo, $cid); $dT = $now; }
+        if (!$deep) { try { $tmp = $cf . '.' . getmypid(); if (@file_put_contents($tmp, json_encode(['t' => $cnT, 'dt' => $dT, 'st' => (string)$c['status'], 'cn' => $cn, 'd' => $d])) !== false) { @chmod($tmp, 0600); @rename($tmp, $cf); } } catch (Throwable $e) { } }
+    }
     $t = null; $lib = null;
     if ((int)$c['tpl_id']) { try { $t = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { } }
     if ((int)($c['media_lib_id'] ?? 0) && function_exists('wa_lib_row')) { try { $lib = wa_lib_row($pdo, (int)$c['media_lib_id']); } catch (Throwable $e) { } }
@@ -932,7 +956,8 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                     $rq = $uFirst ? (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND variant = 'R'")->fetchColumn() : 0;
                     if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 60), counted over all campaigns; the marketing allowance is not touched
                         $perMin = max(5, min(1000000, (int)setting_get($pdo, 'wa_u_per_min', '100000'))); $usedMin = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE variant = 'U' AND status = 'sent' AND sent_at >= '" . date('Y-m-d H:i:s', $nowTs - 60) . "'")->fetchColumn(); $room = $perMin - $usedMin;
-                        if ($room > 0) { $ucond = " AND i.variant = 'R'"; $poolLeft = min(100, $room); } else { $stop = 'Utility: the limit of ' . $perMin . ' a minute is reached — it continues in a moment.'; break; } }
+                        $room = min($room, wa_cat_util_room($pdo, time()));   /* owner 19 Nov 2026, 21:05: utility never above 700 an hour, on EVERY path (these people went out with no hourly limit) */
+                        if ($room > 0) { $ucond = " AND i.variant = 'R'"; $poolLeft = min(100, $room, $rq); wa_cat_util_note($pdo, time(), $poolLeft); } else { $stop = 'Utility: the limit of ' . $perMin . ' a minute is reached — it continues in a moment.'; break; } }
                     else { $stop = wa_dq_why_text($dqF); break; } } }   // the cap is counted again before every batch: several senders at once never go over it
             $take = min($burstLeft > 0 ? $fastBatch : 90, $quota - ($sent + $failed + $skipped)); if ($poolOn && $burstLeft <= 0) $take = max(1, min($take, $poolLeft));   // ⚡ 90 people per round trip to Meta (was 40)
             $pick = ($poolOn ? $pdo->query("SELECT i.id, i.status FROM wa_camp_items i LEFT JOIN wa_contacts ct ON ct.phone = i.phone LEFT JOIN wa_cust cu ON cu.phone = i.phone WHERE i.camp_id = $id AND $dueI$ucond ORDER BY CASE WHEN ct.last_in_at IS NULL THEN 3 WHEN ct.last_in_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 0 WHEN ct.last_in_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) THEN 1 ELSE 2 END, (COALESCE(cu.n, 0) = 0), ct.last_in_at DESC, i.id LIMIT $take") : $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take"))->fetchAll();   // 📅 the best people go first: wrote in the last 30 days, then 90 days, then the rest; buyers before non-buyers inside each group, newest chat first
@@ -1015,7 +1040,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                 if (!$okReq && $variant === 'U') {   // the utility message cannot be put together for this person: marketing instead
                     $variant = 'M'; $tSent = $tUse; $vars = $resolveM($tSent, $ct, $it, $iid); $extra = (array)$c['extra']; [$okReq, $req] = wa_camp_request($pdo, $tSent, $ctx['nums'][$nid], (string)($ct['wa_id'] ?: '91' . $ct['phone']), $vars, $extra);
                 }
-                $vj = json_encode($vars, JSON_UNESCAPED_UNICODE); $tuId = (int)$tSent['id'] === (int)$c['tpl_id'] ? 0 : (int)$tSent['id'];
+                $vj = json_encode($vars, JSON_UNESCAPED_UNICODE); $tuId = (int)$tSent['id'] === (int)$c['tpl_id'] ? 0 : (int)$tSent['id']; if ($variant !== 'U' && strtoupper((string)($tSent['category'] ?? '')) === 'UTILITY') $tuId = (int)$tSent['id'];   /* owner 19 Nov 2026, 21:20: a message sent with a UTILITY template is marked (tpl_used) so the campaign colour line can show it in blue */
                 if (!$okReq) { $pdo->prepare("UPDATE wa_camp_items SET status = 'failed', number_id = ?, err = ?, vars_json = ?, tries = ?, variant = ?, tpl_used = ? WHERE id = ?")->execute([$nid, mb_substr(trim((string)$req) !== '' ? (string)$req : 'HRMS could not build the message (not sent to Meta)', 0, 190), $vj, $attempt, $variant, $tuId, $iid]); $failed++; continue; }
                 $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $reqs[] = $req; $batch[] = [$it, $nid, $vars, $attempt, $vj, $variant, $tSent, $tuId];
             }
