@@ -51,4 +51,9 @@ $eq('a resting green is skipped for another green', waa_pick_tiers($two, 6), 2);
 $one = [1 => ['w' => 1.0, 'cnt' => 2, 'tier' => 1, 'full' => false, 'rest' => true], 3 => ['w' => 1.0, 'cnt' => 9, 'tier' => 2, 'full' => false, 'rest' => false]];
 $eq('all greens resting: the next person takes it (no 2-4 at once)', waa_pick_tiers($one, 6), 3);
 $eq('only a resting green exists: he still gets it', waa_pick_tiers([1 => ['w' => 1.0, 'cnt' => 2, 'tier' => 1, 'full' => false, 'rest' => true]], 6), 1);
+// nobody hoards: a green far ahead of his share is skipped while others (band) are behind
+$hog = [1 => ['w' => 1.0, 'cnt' => 39, 'tier' => 1, 'full' => false], 2 => ['w' => 1.0, 'cnt' => 9, 'tier' => 2, 'full' => false], 3 => ['w' => 1.0, 'cnt' => 10, 'tier' => 2, 'full' => false], 4 => ['w' => 1.0, 'cnt' => 12, 'tier' => 1, 'full' => false]];
+$m = waa_mark_ahead($hog); $eq('the 39-query green is ahead', $m[1]['ahead'], true); $eq('the 12-query green is not', $m[4]['ahead'], false); $eq('the hoarder is skipped: the other green takes it', waa_pick_tiers($m, 6), 4);
+$hog[4]['cnt'] = 40; $m = waa_mark_ahead($hog); $eq('both greens far ahead: the band person who is behind takes it', waa_pick_tiers($m, 6), 2);
+$eq('with fewer than 3 people nobody is "ahead"', waa_mark_ahead([1 => ['w' => 1.0, 'cnt' => 30, 'tier' => 1], 2 => ['w' => 1.0, 'cnt' => 1, 'tier' => 2]])[1]['ahead'] ?? false, false);
 echo $bad ? "waa test: $bad problem(s)\n" : "waa test: ok\n"; exit($bad ? 1 : 0);
