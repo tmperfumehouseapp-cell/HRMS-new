@@ -380,6 +380,8 @@ window.CX = (function () {
     const m = modal('<h3>Hand to…</h3>' + (ppl.length ? '<label>Person</label><select class="cx-sel" id="hdP">' + ppl.map((e) => '<option value="' + e.id + '"' + (e.id === C.case.owner ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('') + '</select>' : '<div class="cx-warn">Nobody is on the Complaint team yet. Choose people in Settings.</div>') + '<div class="ac"><button class="cx-btn gh" type="button" id="hdNo">Cancel</button>' + (ppl.length ? '<button class="cx-btn" type="button" id="hdOk">Give</button>' : '') + '</div>');
     $('#hdNo', m.el).onclick = m.close; const ok = $('#hdOk', m.el); if (ok) ok.onclick = async () => { const r = await call(() => api.post('bd.cx_assign', { id: C.case.id, emp_id: Number($('#hdP', m.el).value) })); if (r) { m.close(); refresh(); loadThread(true); } };
   }
+  // the Resolve button inside the embedded chat asks for the TICKET to be resolved (how it was solved, cost, note) - one Resolve, one meaning
+  window.addEventListener('message', (e) => { try { if (e.origin !== location.origin || !e.data || !e.data.cxResolve) return; if (C && C.case && Number(C.case.id) === Number(e.data.cxResolve) && !document.querySelector('#rsOk')) resolveSheet(); } catch (x) { /* not for us */ } });
   function resolveSheet() {
     const v = C.case; const canHappy = v.phone && T && T.window_open && !T.optout;
     const m = modal('<h3>✔ Mark resolved</h3><label>How was it solved?</label><select class="cx-sel" id="rsHow">' + Object.keys(C.resolutions).map((k) => '<option value="' + k + '">' + esc(C.resolutions[k]) + '</option>').join('') + '</select>'
