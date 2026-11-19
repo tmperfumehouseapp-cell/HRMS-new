@@ -19,8 +19,9 @@ $S['wa_dq_hourly'] = '10000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] =
 $S['wa_dq_hourly'] = '60000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '60000', 'technical limit 60,000');
 // 5) in between: nothing changes
 $S['wa_dq_hourly'] = '6000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 100, 60, 30); wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000' && !wa_dq_hold_active($pdo), '25% delivered: nothing changes');
-// 6) bad delivery -> 1 hour hold
-$S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 40, 200, 30); wa_dq_auto_step($pdo); ok(wa_dq_hold_active($pdo) && (int)$S['wa_dq_hold_until'] < time() + 3600 + 60, 'bad: 1 hour hold');
+// 6) bad delivery -> back to 5,000 and it keeps sending (no hold)
+$S['wa_dq_hourly'] = '8000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 40, 200, 30); wa_dq_auto_step($pdo); ok(!wa_dq_hold_active($pdo) && $S['wa_dq_hourly'] === '5000', 'bad: back to 5,000, no hold (got ' . $S['wa_dq_hourly'] . ')');
+$S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '5000', 'already at 5,000: stays');
 // 7) too few messages -> nothing
 $S = ['wa_dq_hold_end' => (string)(time() - 7200), 'wa_dq_hourly' => '5000']; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 50, 10, 30, 30); wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '5000' && !wa_dq_hold_active($pdo), 'under 200 messages: nothing changes');
 echo "dq ok\n";
