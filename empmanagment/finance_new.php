@@ -43,6 +43,19 @@ function fn_ensure(PDO $pdo): bool
     } catch (Throwable $e) { error_log('fn_ensure: ' . $e->getMessage()); return $ok = false; }
     return $ok = true;
 }
+/** v2: receipt lines the owner asked for later. Adds only the ones that are missing (matched by name, any capitals), once. */
+function fn_ensure2(PDO $pdo): bool
+{
+    $flag = sys_get_temp_dir() . '/hrms_fn_tables_v2_' . substr(md5(__DIR__), 0, 8);
+    if (is_file($flag)) return true;
+    try {
+        $have = []; foreach ($pdo->query("SELECT name FROM fn_heads WHERE side = 'in'")->fetchAll(PDO::FETCH_COLUMN) as $n) $have[mb_strtolower(trim((string)$n))] = 1;
+        $mx = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fn_heads WHERE side = 'in'")->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fn_heads (side, name, sort_no, created_at) VALUES ('in', ?, ?, ?)");
+        foreach (['Flipkart HDFC', 'ICICI Merchant', 'Axis'] as $n) { if (isset($have[mb_strtolower($n)])) continue; $mx += 10; $ins->execute([$n, $mx, date('Y-m-d H:i:s')]); }
+        @file_put_contents($flag, '1'); return true;
+    } catch (Throwable $e) { error_log('fn_ensure2: ' . $e->getMessage()); return false; }
+}
 function fn_p($x): int { return (int)round(((float)$x) * 100); }      // rupees -> paise: all sums are integer paise
 function fn_m(int $p): float { return round($p / 100, 2); }
 function fn_day($s): string { $s = trim((string)$s); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return ''; $t = strtotime($s); return ($t && date('Y-m-d', $t) === $s) ? $s : ''; }
@@ -64,7 +77,7 @@ function fn_balances(PDO $pdo, string $day): array
     return $out;
 }
 
-if (!fn_ensure($pdo)) fn_err('Could not create the Finance New tables.', 500);
+if (!fn_ensure($pdo) || !fn_ensure2($pdo)) fn_err('Could not create the Finance New tables.', 500);
 $auth = require_auth();
 
 switch ($action) {
