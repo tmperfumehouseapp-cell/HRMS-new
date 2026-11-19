@@ -34,7 +34,7 @@ function wa_dq_auto_hold(PDO $pdo): void
         if ($n >= $lim) { setting_set($pdo, 'wa_dq_hold_until', (string)(time() + 3 * 3600)); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing put on hold for 3 hours by itself: Meta flagged ' . $n . ' campaign messages as spam (131048) in the last hour'); }
     } catch (Throwable $e) { }
 }
-/** 📈 owner 19 Nov 2026 (13:40): after a hold the campaigns restart at 5,000 an hour (owner 19 Nov 2026, 14:00) and the number follows the delivery: every 30 minutes (the first look 45 minutes after the restart) the messages sent since the restart (15 to 75 minutes old, at least 200 of them) are looked at. Good (35% or more delivered and under 25% failed) → +1,000 an hour (5,000, 6,000 … never above 10,000); bad (under 20% delivered or 40% or more failed) → 1 hour hold, then it restarts at 5,000 and climbs again; in between nothing changes. */
+/** 📈 owner 19 Nov 2026 (13:40): after a hold the campaigns restart at 5,000 an hour (owner 19 Nov 2026, 14:00) and the number follows the delivery: every 30 minutes (the first look 45 minutes after the restart) the messages sent since the restart (15 to 75 minutes old, at least 200 of them) are looked at. Good (35% or more delivered and under 25% failed) → +1,000 an hour (5,000, 6,000 … no ceiling of its own); bad (under 20% delivered or 40% or more failed) → 1 hour hold, then it restarts at 5,000 and climbs again; in between nothing changes. */
 function wa_dq_auto_step(PDO $pdo): void
 {
     try { if ((string)setting_get($pdo, 'wa_dq_step_on', '1') !== '1' || wa_dq_hold_active($pdo)) return; $now = time(); $end = (int)setting_get($pdo, 'wa_dq_hold_end', '0'); if ($end <= 0 || $now < $end + 2700) return;
@@ -44,7 +44,7 @@ function wa_dq_auto_step(PDO $pdo): void
         $q->execute([date('Y-m-d H:i:s', $from), date('Y-m-d H:i:s', $till)]); $r = $q->fetch(); $n = (int)$r['n']; if ($n < 200) return; $d = (int)$r['d'] / $n; $f = (int)$r['f'] / $n;
         $cur = max(500, (int)setting_get($pdo, 'wa_dq_hourly', '3000')); $to = $cur;
         if ($d < 0.20 || $f >= 0.40) { setting_set($pdo, 'wa_dq_step_last', (string)$till); setting_set($pdo, 'wa_dq_hold_until', (string)($now + 3600)); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing on hold for 1 hour (bad delivery: ' . $n . ' messages looked at, ' . round($d * 100) . '% delivered, ' . round($f * 100) . '% failed); it restarts at 5,000 an hour'); return; }
-        if ($d >= 0.35 && $f < 0.25) $to = min(10000, $cur + 1000);
+        if ($d >= 0.35 && $f < 0.25) $to = min(60000, $cur + 1000);   // owner 19 Nov 2026: no ceiling of its own (60,000 is only the technical limit of the hourly number)
         setting_set($pdo, 'wa_dq_step_last', (string)$till);
         if ($to !== $cur) { setting_set($pdo, 'wa_dq_hourly', (string)$to); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', $to > $cur, 'Marketing speed ' . $cur . ' → ' . $to . ' an hour (' . $n . ' messages looked at: ' . round($d * 100) . '% delivered, ' . round($f * 100) . '% failed)'); }
     } catch (Throwable $e) { }

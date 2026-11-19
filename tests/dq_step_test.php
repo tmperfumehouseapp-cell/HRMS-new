@@ -14,8 +14,9 @@ $S['wa_dq_hold_until'] = '0'; $S['wa_dq_hold_end'] = (string)(time() - 60); $S['
 // 3) speed: good delivery -> +1,000
 $S = ['wa_dq_hold_end' => (string)(time() - 7200), 'wa_dq_hourly' => '5000']; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 160, 40, 30);
 wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000', 'good: 5,000 -> 6,000 (got ' . $S['wa_dq_hourly'] . ')');
-// 4) ceiling 10,000
-$S['wa_dq_hourly'] = '10000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '10000', 'never above 10,000');
+// 4) no ceiling of its own: 10,000 -> 11,000, only the technical 60,000 stops it
+$S['wa_dq_hourly'] = '10000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '11000', 'no ceiling at 10,000 (got ' . $S['wa_dq_hourly'] . ')');
+$S['wa_dq_hourly'] = '60000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '60000', 'technical limit 60,000');
 // 5) in between: nothing changes
 $S['wa_dq_hourly'] = '6000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 100, 60, 30); wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000' && !wa_dq_hold_active($pdo), '25% delivered: nothing changes');
 // 6) bad delivery -> 1 hour hold
