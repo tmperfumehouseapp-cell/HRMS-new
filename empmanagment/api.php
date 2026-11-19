@@ -1435,7 +1435,7 @@ function ora_phone_map(PDO $pdo, array $phones): array
 function ora_catchup(PDO $pdo): int
 {
     if (ora_mode($pdo) === 'off' || !function_exists('convo_ai')) return 0;
-    try { if ((int)setting_get($pdo, 'ora_cu_at', '0') > time() - 45) return 0; setting_set($pdo, 'ora_cu_at', (string)time()); } catch (Throwable $e) { return 0; }
+    try { if ((int)setting_get($pdo, 'ora_cu_at', '0') > time() - 120) return 0;   /* ⚡ every 2 minutes (was 45 s): each round holds the engine for up to 55 s; every order is still read once, only a little later */ setting_set($pdo, 'ora_cu_at', (string)time()); } catch (Throwable $e) { return 0; }
     try { try { if ((string)setting_get($pdo, 'ora_fix9', '') !== '1') { setting_set($pdo, 'ora_fix9', '1'); $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE sz_ok = 7 AND tries >= 1 AND worked = 0 AND day >= ?")->execute([date('Y-m-d', strtotime(biz_today($pdo) . ' -1 day'))]); } } catch (Throwable $e) { }   // one-off: add-on offers judged 'not taken' are read again with the base-order comparison
     if ((string)setting_get($pdo, 'ora_fix7', '') !== '1') { setting_set($pdo, 'ora_fix7', '1'); $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE sz_ok = 7 AND sz_tries >= 1 AND sz_worked = 0 AND day >= ?")->execute([date('Y-m-d', strtotime(biz_today($pdo) . ' -1 day'))]); } } catch (Throwable $e) { }   // one-off: the bigger offers judged 'tried, not taken' are read again under the 'bargaining the price = taken' rule
     try { [$done] = ora_fill_day($pdo, biz_today($pdo), 55); return (int)$done; } catch (Throwable $e) { error_log('ora_catchup: ' . $e->getMessage()); return 0; }
