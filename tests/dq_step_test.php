@@ -19,6 +19,14 @@ $S['wa_dq_hourly'] = '10000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] =
 $S['wa_dq_hourly'] = '60000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '60000', 'technical limit 60,000');
 // 5) in between: nothing changes
 $S['wa_dq_hourly'] = '6000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 100, 60, 30); wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '6000' && !wa_dq_hold_active($pdo), '25% delivered: nothing changes');
+// 5b) failed rising (15% to 25%): the last step stays; the next check still the same: back to 5,000; failed 25%+: back at once
+$S = ['wa_dq_hold_end' => (string)(time() - 7200), 'wa_dq_hourly' => '7000']; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 220, 76, 30);   /* 55% delivered, 19% failed */
+wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '7000' && $S['wa_dq_freeze_n'] === '1', 'failed 19%: stays at 7,000 (got ' . $S['wa_dq_hourly'] . ')');
+$S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '5000' && !wa_dq_hold_active($pdo), 'second check still failing: back to 5,000, no hold (got ' . $S['wa_dq_hourly'] . ')');
+$S['wa_dq_hourly'] = '7000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $S['wa_dq_freeze_n'] = '0'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 200, 100, 30);   /* 25% failed */
+wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '5000', 'failed 25%: back to 5,000 at once');
+$S['wa_dq_hourly'] = '7000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $S['wa_dq_freeze_n'] = '1'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 200, 20, 30);   /* good again */
+wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '8000' && $S['wa_dq_freeze_n'] === '0', 'good after a freeze: +1,000 and the counter resets');
 // 6) bad delivery -> back to 5,000 and it keeps sending (no hold)
 $S['wa_dq_hourly'] = '8000'; $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 40, 200, 30); wa_dq_auto_step($pdo); ok(!wa_dq_hold_active($pdo) && $S['wa_dq_hourly'] === '5000', 'bad: back to 5,000, no hold (got ' . $S['wa_dq_hourly'] . ')');
 $S['wa_dq_step_at'] = '0'; $S['wa_dq_step_last'] = '0'; wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '5000', 'already at 5,000: stays');
