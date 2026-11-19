@@ -6,16 +6,143 @@
  *   - Own tables start with fn_ . Never read or write the fi_* tables from here unless a task says so; the original Finance keeps working as it is.
  *   - Permission: the "Finance" tick of the role (api.php action_permission: 'fn.' => 'finance').
  *   - Add each new action as a  case 'fn.something': { ... }  below. PHP 7.4 safe.
+ *
+ * SUMMARY = the DAILY REPORT (the same layout as the owner's Excel day sheet)
+ *   RECEIPT side:  OPENING (all banks / cash boxes at the start of the day) + every receipt head of the day = TOTAL
+ *   PAYMENTS side: every payment head of the day = Total Expenses; then the CLOSING BALANCE of each bank / cash box; TOTAL = expenses + closing balances (= the receipt side TOTAL)
+ *   Every entry is: a day, a side (in / out), a head (what it is: "PayU IDFC", "Salary"...), the bank / cash box it went through, an amount. Nothing is ever deleted: a wrong entry is VOIDED with a reason.
+ *   A bank's balance counts from its opening-balance day: opening balance + money in - money out. Entries dated before that day are ignored for the balance.
+ * Tables: fn_accounts (banks / cash boxes with the opening balance), fn_heads (the receipt and payment lines of the sheet), fn_entries.
  */
 if (!isset($pdo, $action) || !function_exists('json_response') || !function_exists('require_auth')) { http_response_code(403); exit; }
 if (strpos((string)$action, 'fn.') !== 0) { return; }
 
+function fn_ensure(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    $flag = sys_get_temp_dir() . '/hrms_fn_tables_v1_' . substr(md5(__DIR__), 0, 8);
+    if (is_file($flag)) return $ok = true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fn_accounts (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL, opening_balance DECIMAL(14,2) NOT NULL DEFAULT 0, opening_date DATE NULL, active TINYINT NOT NULL DEFAULT 1, sort_no INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fn_heads (id INT AUTO_INCREMENT PRIMARY KEY, side VARCHAR(3) NOT NULL, name VARCHAR(80) NOT NULL, active TINYINT NOT NULL DEFAULT 1, sort_no INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL, KEY idx_fn_h (side, active, sort_no)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fn_entries (id INT AUTO_INCREMENT PRIMARY KEY, day DATE NOT NULL, side VARCHAR(3) NOT NULL, head_id INT NOT NULL, account_id INT NOT NULL, amount DECIMAL(14,2) NOT NULL, note VARCHAR(255) NOT NULL DEFAULT '', status VARCHAR(6) NOT NULL DEFAULT 'ok', void_reason VARCHAR(200) NOT NULL DEFAULT '', created_by VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, KEY idx_fn_e_day (day, status), KEY idx_fn_e_acc (account_id, day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // first time only: the lines of the owner's day sheet, so the screen looks like it from the start (all can be renamed / hidden / added to)
+        if (!(int)$pdo->query("SELECT COUNT(*) FROM fn_heads")->fetchColumn()) {
+            $in = ['HDFC', 'ICICI', 'Razorpay', 'Rapidshyp COD', 'Snapmint', 'PayU IDFC', 'Other Income', 'Myntra', 'ShipRocket COD', 'Easebuzz', 'From Nova', 'Retail Shop', 'Salary Return', 'Nova Enterprise'];
+            $out = ['FB Shout', 'AiSensy', 'VartaLabh', 'KwickChat', 'Shiprocket', 'Shopify', 'Refund', 'RJD Expense', 'Bank Charges', 'Salary', 'CC Bill', 'EMI', 'JD Personal', 'TM4U Chain - Krishna Asti', 'Office Expense', 'Nitya', 'Acumen', 'Milanbhai Upaad', 'Durgeshbhai Om Trading'];
+            $ins = $pdo->prepare("INSERT INTO fn_heads (side, name, sort_no, created_at) VALUES (?,?,?,?)"); $now = date('Y-m-d H:i:s');
+            foreach ($in as $i => $n) $ins->execute(['in', $n, ($i + 1) * 10, $now]);
+            foreach ($out as $i => $n) $ins->execute(['out', $n, ($i + 1) * 10, $now]);
+        }
+        if (!(int)$pdo->query("SELECT COUNT(*) FROM fn_accounts")->fetchColumn()) {
+            $ins = $pdo->prepare("INSERT INTO fn_accounts (name, sort_no, created_at) VALUES (?,?,?)"); $now = date('Y-m-d H:i:s');
+            foreach (['ICICI', 'IDFC', 'BOB', 'HDFC', 'AXIS', 'Nova'] as $i => $n) $ins->execute([$n, ($i + 1) * 10, $now]);
+        }
+        @file_put_contents($flag, '1');
+    } catch (Throwable $e) { error_log('fn_ensure: ' . $e->getMessage()); return $ok = false; }
+    return $ok = true;
+}
+function fn_p($x): int { return (int)round(((float)$x) * 100); }      // rupees -> paise: all sums are integer paise
+function fn_m(int $p): float { return round($p / 100, 2); }
+function fn_day($s): string { $s = trim((string)$s); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return ''; $t = strtotime($s); return ($t && date('Y-m-d', $t) === $s) ? $s : ''; }
+function fn_today(PDO $pdo): string { return function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); }
+function fn_who($auth): string { return (string)($auth['username'] ?? $auth['name'] ?? ('user ' . ($auth['user_id'] ?? ''))); }
+function fn_err(string $m, int $c = 422) { json_response(['error' => $m], $c); }
+
+/** Per bank / cash box for one day: opening (start of the day), money in, money out, closing. Money before the account's opening-balance day is ignored. */
+function fn_balances(PDO $pdo, string $day): array
+{
+    $accs = $pdo->query("SELECT * FROM fn_accounts ORDER BY active DESC, sort_no, name")->fetchAll(); $out = [];
+    foreach ($accs as $a) { $od = (string)($a['opening_date'] ?? ''); $od = $od !== '' ? $od : '1970-01-01'; $on = $day >= $od; $out[(int)$a['id']] = ['id' => (int)$a['id'], 'name' => $a['name'], 'active' => (int)$a['active'], 'od' => $od, 'before' => $on ? fn_p($a['opening_balance']) : 0, 'in' => 0, 'out' => 0]; }
+    $q = $pdo->prepare("SELECT account_id, side, day, SUM(amount) a FROM fn_entries WHERE status = 'ok' AND day <= ? GROUP BY account_id, side, day"); $q->execute([$day]);
+    foreach ($q->fetchAll() as $r) {
+        $k = (int)$r['account_id']; if (!isset($out[$k]) || $r['day'] < $out[$k]['od']) continue; $p = fn_p($r['a']); $sign = $r['side'] === 'in' ? 1 : -1;
+        if ($r['day'] < $day) $out[$k]['before'] += $sign * $p; elseif ($r['side'] === 'in') $out[$k]['in'] += $p; else $out[$k]['out'] += $p;
+    }
+    foreach ($out as $k => $b) { $out[$k]['close'] = $b['before'] + $b['in'] - $b['out']; }
+    return $out;
+}
+
+if (!fn_ensure($pdo)) fn_err('Could not create the Finance New tables.', 500);
 $auth = require_auth();
 
 switch ($action) {
     // a check that the new section is wired up (page -> api -> this file)
     case 'fn.ping': {
         json_response(['ok' => true, 'section' => 'Finance New', 'who' => (string)($auth['username'] ?? $auth['name'] ?? ''), 'time' => date('Y-m-d H:i:s')]);
+        break;
+    }
+
+    // THE DAILY REPORT of one day
+    case 'fn.day': {
+        $today = fn_today($pdo); $day = fn_day($_GET['date'] ?? '') ?: $today; if ($day > $today) $day = $today;
+        $bal = fn_balances($pdo, $day); $openP = 0; $closeP = 0; foreach ($bal as $b) { $openP += $b['before']; $closeP += $b['close']; }
+        $heads = $pdo->query("SELECT * FROM fn_heads ORDER BY side, sort_no, name")->fetchAll();
+        $q = $pdo->prepare("SELECT head_id, SUM(amount) a, COUNT(*) n FROM fn_entries WHERE status = 'ok' AND day = ? GROUP BY head_id"); $q->execute([$day]); $sum = [];
+        foreach ($q->fetchAll() as $r) $sum[(int)$r['head_id']] = [fn_p($r['a']), (int)$r['n']];
+        $lines = ['in' => [], 'out' => []]; $tot = ['in' => 0, 'out' => 0];
+        foreach ($heads as $h) {
+            $s = $sum[(int)$h['id']] ?? [0, 0]; if (!(int)$h['active'] && $s[1] === 0) continue;
+            $lines[$h['side']][] = ['id' => (int)$h['id'], 'name' => $h['name'], 'amount' => fn_m($s[0]), 'n' => $s[1], 'active' => (int)$h['active']]; $tot[$h['side']] += $s[0];
+        }
+        $q = $pdo->prepare("SELECT e.*, h.name AS head_name, a.name AS account_name FROM fn_entries e LEFT JOIN fn_heads h ON h.id = e.head_id LEFT JOIN fn_accounts a ON a.id = e.account_id WHERE e.day = ? ORDER BY e.id DESC"); $q->execute([$day]);
+        $entries = array_map(fn($e) => ['id' => (int)$e['id'], 'side' => $e['side'], 'head' => (string)$e['head_name'], 'account' => (string)$e['account_name'], 'amount' => (float)$e['amount'], 'note' => $e['note'], 'status' => $e['status'], 'void_reason' => $e['void_reason'], 'by' => $e['created_by'], 'at' => $e['created_at']], $q->fetchAll());
+        $accounts = []; $closeAcc = 0; foreach ($bal as $b) { if (!$b['active'] && $b['close'] === 0 && $b['before'] === 0 && $b['in'] === 0 && $b['out'] === 0) continue; $accounts[] = ['id' => $b['id'], 'name' => $b['name'], 'opening' => fn_m($b['before']), 'in' => fn_m($b['in']), 'out' => fn_m($b['out']), 'closing' => fn_m($b['close']), 'active' => $b['active']]; $closeAcc += $b['close']; }
+        json_response(['date' => $day, 'today' => $today, 'opening' => fn_m($openP), 'receipts' => ['lines' => $lines['in'], 'total_in' => fn_m($tot['in']), 'total' => fn_m($openP + $tot['in'])],
+            'payments' => ['lines' => $lines['out'], 'total_expenses' => fn_m($tot['out'])], 'closing' => ['accounts' => $accounts, 'total' => fn_m($closeAcc), 'with_expenses' => fn_m($closeAcc + $tot['out'])], 'check' => fn_m($openP + $tot['in'] - $tot['out'] - $closeAcc), 'entries' => $entries]);
+        break;
+    }
+
+    case 'fn.accounts': {
+        $rows = $pdo->query("SELECT * FROM fn_accounts ORDER BY active DESC, sort_no, name")->fetchAll();
+        json_response(['accounts' => array_map(fn($a) => ['id' => (int)$a['id'], 'name' => $a['name'], 'opening_balance' => round((float)$a['opening_balance'], 2), 'opening_date' => (string)($a['opening_date'] ?? ''), 'active' => (int)$a['active']], $rows)]);
+        break;
+    }
+    case 'fn.account_save': {
+        $in = json_input(); $id = (int)($in['id'] ?? 0); $name = trim(mb_substr((string)($in['name'] ?? ''), 0, 80)); if (mb_strlen($name) < 2) fn_err('Give the bank / cash box a name.');
+        $dup = $pdo->prepare("SELECT COUNT(*) FROM fn_accounts WHERE LOWER(name) = LOWER(?) AND id <> ?"); $dup->execute([$name, $id]); if ((int)$dup->fetchColumn()) fn_err('There is already an account with this name.');
+        $ob = round((float)($in['opening_balance'] ?? 0), 2); if (abs($ob) > 100000000000) fn_err('That opening balance looks wrong.');
+        $od = fn_day($in['opening_date'] ?? ''); if ($od === '' && $ob != 0) $od = fn_today($pdo);      // a balance without a day counts from today
+        if ($od > fn_today($pdo)) fn_err('The opening balance day cannot be in the future.');
+        $act = !isset($in['active']) || !empty($in['active']) ? 1 : 0;
+        if ($id) { $pdo->prepare("UPDATE fn_accounts SET name = ?, opening_balance = ?, opening_date = ?, active = ? WHERE id = ?")->execute([$name, $ob, $od !== '' ? $od : null, $act, $id]); }
+        else { $mx = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fn_accounts")->fetchColumn(); $pdo->prepare("INSERT INTO fn_accounts (name, opening_balance, opening_date, active, sort_no, created_at) VALUES (?,?,?,1,?,?)")->execute([$name, $ob, $od !== '' ? $od : null, $mx + 10, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); }
+        json_response(['ok' => true, 'id' => $id]);
+        break;
+    }
+
+    case 'fn.heads': {
+        $rows = $pdo->query("SELECT * FROM fn_heads ORDER BY side, active DESC, sort_no, name")->fetchAll();
+        json_response(['heads' => array_map(fn($h) => ['id' => (int)$h['id'], 'side' => $h['side'], 'name' => $h['name'], 'active' => (int)$h['active']], $rows)]);
+        break;
+    }
+    case 'fn.head_save': {
+        $in = json_input(); $id = (int)($in['id'] ?? 0); $side = (string)($in['side'] ?? ''); $name = trim(mb_substr((string)($in['name'] ?? ''), 0, 80)); if (mb_strlen($name) < 2) fn_err('Give the line a name.');
+        if ($id) { $c = $pdo->prepare("SELECT side FROM fn_heads WHERE id = ?"); $c->execute([$id]); $side = (string)$c->fetchColumn(); }
+        if (!in_array($side, ['in', 'out'], true)) fn_err('Choose Receipt or Payment.');
+        $dup = $pdo->prepare("SELECT COUNT(*) FROM fn_heads WHERE side = ? AND LOWER(name) = LOWER(?) AND id <> ?"); $dup->execute([$side, $name, $id]); if ((int)$dup->fetchColumn()) fn_err('This line already exists.');
+        $act = !isset($in['active']) || !empty($in['active']) ? 1 : 0;
+        if ($id) { $pdo->prepare("UPDATE fn_heads SET name = ?, active = ? WHERE id = ?")->execute([$name, $act, $id]); }
+        else { $mx = $pdo->prepare("SELECT COALESCE(MAX(sort_no), 0) FROM fn_heads WHERE side = ?"); $mx->execute([$side]); $pdo->prepare("INSERT INTO fn_heads (side, name, active, sort_no, created_at) VALUES (?,?,1,?,?)")->execute([$side, $name, (int)$mx->fetchColumn() + 10, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); }
+        json_response(['ok' => true, 'id' => $id]);
+        break;
+    }
+
+    case 'fn.entry_save': {
+        $in = json_input(); $today = fn_today($pdo); $day = fn_day($in['date'] ?? '') ?: $today; if ($day > $today) fn_err('The date is in the future.');
+        $side = (string)($in['side'] ?? ''); if (!in_array($side, ['in', 'out'], true)) fn_err('Choose Receipt or Payment.');
+        $amt = round((float)($in['amount'] ?? 0), 2); if ($amt <= 0) fn_err('Enter the amount.'); if ($amt > 1000000000) fn_err('That amount looks wrong.');
+        $h = $pdo->prepare("SELECT id FROM fn_heads WHERE id = ? AND side = ? AND active = 1"); $h->execute([(int)($in['head_id'] ?? 0), $side]); if (!$h->fetchColumn()) fn_err('Choose the line (what this money is).');
+        $a = $pdo->prepare("SELECT id FROM fn_accounts WHERE id = ? AND active = 1"); $a->execute([(int)($in['account_id'] ?? 0)]); if (!$a->fetchColumn()) fn_err('Choose the bank / cash box the money went through.');
+        $note = trim(mb_substr((string)($in['note'] ?? ''), 0, 255));
+        $pdo->prepare("INSERT INTO fn_entries (day, side, head_id, account_id, amount, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)")->execute([$day, $side, (int)$in['head_id'], (int)$in['account_id'], $amt, $note, fn_who($auth), date('Y-m-d H:i:s')]);
+        json_response(['ok' => true, 'id' => (int)$pdo->lastInsertId()]);
+        break;
+    }
+    case 'fn.entry_void': {
+        $in = json_input(); $reason = trim(mb_substr((string)($in['reason'] ?? ''), 0, 200)); if (mb_strlen($reason) < 3) fn_err('Write why this entry is cancelled.');
+        $u = $pdo->prepare("UPDATE fn_entries SET status = 'void', void_reason = ? WHERE id = ? AND status = 'ok'"); $u->execute([$reason, (int)($in['id'] ?? 0)]); if (!$u->rowCount()) fn_err('Entry not found, or already cancelled.', 404);
+        json_response(['ok' => true]);
         break;
     }
     default: json_response(['error' => 'Unknown Finance New action.'], 404);
