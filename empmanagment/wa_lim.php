@@ -15,7 +15,7 @@ function wa_lim_used(PDO $pdo, string $since): array
     $useCache = !empty($GLOBALS['__wa_lim_cache_ok']);
     // ⚡ the 24-hour count is a heavy scan: remembered for 30 s on screens and for 15 s for the sender, and only ONE copy runs at a time (the others take the last stored count) — seven copies at once were freezing the database
     $hit = null; try { $hit = json_decode((string)setting_get($pdo, 'wa_lim_cache', ''), true); if (!is_array($hit) || !is_array($hit['by'] ?? null)) $hit = null; } catch (Throwable $e) { $hit = null; }
-    $ttl = $useCache ? 30 : 15; if ($hit && (int)($hit['t'] ?? 0) > time() - $ttl) return ['by' => array_map('intval', $hit['by']), 'all' => (int)$hit['all']];
+    $ttl = $useCache ? 60 : 30; if ($hit && (int)($hit['t'] ?? 0) > time() - $ttl) return ['by' => array_map('intval', $hit['by']), 'all' => (int)$hit['all']];
     try { $lk = (int)setting_get($pdo, 'wa_lim_lock', '0'); if ($hit && $lk > time() - 45) return ['by' => array_map('intval', $hit['by']), 'all' => (int)$hit['all']]; setting_set($pdo, 'wa_lim_lock', (string)time()); } catch (Throwable $e) { }
     $useCache = true;
     try {

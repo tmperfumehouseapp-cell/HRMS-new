@@ -2593,11 +2593,18 @@ function hrms_settings_load(PDO $pdo): array
     if (!empty($GLOBALS['__hrms_settings_lk'])) { @flock($GLOBALS['__hrms_settings_lk'], LOCK_UN); @fclose($GLOBALS['__hrms_settings_lk']); $GLOBALS['__hrms_settings_lk'] = null; }
     return $cache;
 }
+/** ⚡ Keys that change many times a minute and are ALWAYS read straight from the table (never from the shared copy): locks, "last ran at" stamps (*_at), the 10-second needs list, the 24-hour limit count
+ *  and the pace stamps. Writing one of them used to make the shared copy of the notebook out of date, so the next request re-read the whole table (about 9,000 rows, the "SELECT setting_key ... FROM
+ *  hrms_settings" query of the Server load list) many times a minute. Reads were already direct for the lock keys; now the same rule covers the others, so a write needs no new copy. */
+function hrms_setting_volatile(string $key): bool
+{
+    return strpos($key, 'lock') !== false || substr($key, -3) === '_lk' || substr($key, -3) === '_at' || $key === 'wq_needs' || strpos($key, 'wa_lim_') === 0 || $key === 'wa_tag_cache' || strpos($key, 'wq_pace_') === 0;
+}
 function setting_get(PDO $pdo, string $key, $default = null)
 {
     $cache = &$GLOBALS['__hrms_setting_cache'];   // shared with setting_set(): a value saved in this request is read back as saved (it used to stay the old one until the next request)
     if ($cache === null) $cache = hrms_settings_load($pdo);
-    if (strpos($key, 'lock') !== false || substr($key, -3) === '_lk') {   // a lock: always the table's own current value
+    if (hrms_setting_volatile($key)) {   // a lock, a "last ran at" stamp or a short-lived copy: always the table's own current value
         try { $q = $pdo->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$key]); $v = $q->fetchColumn(); if ($v === false) { unset($cache[$key]); return $default; } return $cache[$key] = $v; } catch (PDOException $e) { }
         return array_key_exists($key, $cache) ? $cache[$key] : $default;
     }
@@ -2641,7 +2648,7 @@ function setting_set(PDO $pdo, string $key, $value): void
 {
     ensure_reminder_tables($pdo);
     $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$key, $value === null ? null : (string)$value]);
-    hrms_settings_bump();   // the shared copy of the notebook is out of date from this moment
+    if (!hrms_setting_volatile($key)) hrms_settings_bump();   // the shared copy of the notebook is out of date from this moment (not for the volatile keys: they are never read from the shared copy)
     if (is_array($GLOBALS['__hrms_setting_cache'] ?? null)) $GLOBALS['__hrms_setting_cache'][$key] = $value === null ? null : (string)$value;   // read back as saved in the same request
 }
 
