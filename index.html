@@ -95,6 +95,7 @@
       api.setToken(data.token);
       api.setUser(data.user);
       try { localStorage.removeItem('hrms_home'); } catch (e) { /* ignore */ }      // a different person may have used this device: learn the home page again
+      if (data.user && data.user.role === 'Employee') { try { const f = await api.get('me.flags'); if (f && f.is_sales) localStorage.setItem('hrms_home', 'my_app.html'); } catch (e) { /* My Day then */ } }   // a salesperson opens straight on My Sales
       window.location.replace(homeFor(data.user));
     } catch (err) {
       alertBox.innerHTML = '<div class="alert error">' + err.message + '</div>';

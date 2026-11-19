@@ -1028,7 +1028,7 @@ function renderSidebarCore(active) {
       allowed.push('flyers', 'complaints', 'my_complaints', 'social_inbox', 'staff_progress', 'dispatch_manual', 'manual_sheet', 'sku_sheet');      // Manual orders and the SKU sheet: the server lets in the Dispatch department, Sales Heads and the ticked roles   // staff_progress: the server (bd.staff_report) lets in only the complaints boss / top boss / deputy
       if (d.is_sales) allowed.push('my_sales', 'orders', 'my_chats', 'wasales', 'my_orders', 'manual_order');
       // Home page after login: sales people open My Sales (their numbers, rating, offer); everyone else opens Attendance. Remembered for index.html.
-      try { localStorage.setItem('hrms_home', 'my_day.html'); } catch (e) { /* private mode */ }
+      try { localStorage.setItem('hrms_home', d.is_sales ? 'my_app.html' : 'my_day.html'); } catch (e) { /* private mode */ }   // a salesperson's app opens on My Sales (their numbers, chats, offers); everybody else on My Day
       // replace(): the refused page never enters the history, so the back
       // button goes to the previous employee page, not back to this one.
       if (!allowed.includes(active)) { try { localStorage.removeItem(empOkKey); } catch (e) { /* ignore */ } window.location.replace('my_day.html'); return; }
