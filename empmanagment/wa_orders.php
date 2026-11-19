@@ -1048,6 +1048,40 @@ function wo_catchup(PDO $pdo, int $days, bool $go, ?int $nowTs = null): array
     if ($go && function_exists('wa_log')) wa_log($pdo, 'orders', true, 'Catch-up: ' . $o['queued'] . ' order updates queued for the parcels of the last ' . $days . ' day(s)');
     return $o;
 }
+/** 🩺 A text report of the automatic order updates (read-only): is it on, is the engine running, which message is approved, what waits, what failed and why. For pasting to the builder. No customer names or numbers. */
+function wo_diag_text(PDO $pdo): string
+{
+    $now = wo_now(); $L = ['=== ORDER UPDATES DIAGNOSIS (read-only) ===', 'Made: ' . date('D j M Y, H:i', $now) . ' (server time) · India time ' . wo_ist($now)->format('H:i') . ' · quiet hours now: ' . (wo_quiet($now) ? 'YES (nothing is sent until 08:00)' : 'no')];
+    $ago = function ($t) use ($now) { $t = is_numeric($t) ? (int)$t : (int)strtotime((string)$t); if ($t <= 0) return 'never'; $d = $now - $t; return date('j M H:i', $t) . ' (' . ($d < 120 ? $d . ' s' : ($d < 7200 ? round($d / 60) . ' min' : round($d / 3600, 1) . ' h')) . ' ago)'; };
+    try {
+        $cfg = wo_cfg($pdo); $defs = wo_send_defs(); $tpl = wo_tpl_state($pdo); $ver = wo_ver_all($pdo);
+        $L[] = 'Automatic updates switch: ' . ($cfg['on'] ? 'ON' : 'OFF'); $L[] = 'Engine last ran: ' . $ago(wo_get($pdo, 'wa_ord_tick_at', '')) . ' · last parcel look: ' . $ago(wo_get($pdo, 'wa_ord_scan_at', '0')) . ' · sending since: ' . $ago(wo_get($pdo, 'wa_ord_send_since', '0'));
+        $L[] = ''; $L[] = '--- MESSAGES (switch · Meta status · can be sent now) ---';
+        foreach (['received', 'dispatch_late', 'tracking', 'shipped', 'out_for_delivery', 'delivered', 'failed', 'delayed'] as $k) {
+            $t = $tpl[$defs[$k][0]] ?? ['status' => 'missing', 'reason' => '']; $act = $ver[$k]['active']['name'] ?? ''; $pen = $ver[$k]['pending']['name'] ?? ''; $ok = false; try { $ok = wo_tpl_for($pdo, $k) !== null; } catch (Throwable $e) { }
+            $L[] = str_pad($defs[$k][1], 46) . ' ' . (!empty($cfg['statuses'][$k]) ? 'on ' : 'OFF') . ' · base template ' . $t['status'] . ($t['reason'] !== '' ? ' (' . mb_substr($t['reason'], 0, 60) . ')' : '') . ($act !== '' ? ' · edited version live' : '') . ($pen !== '' ? ' · an edit waits at Meta' : '') . ' · sendable: ' . ($ok ? 'YES' : 'NO');
+        }
+        foreach ([1 => 'last 24 hours', 3 => 'last 3 days'] as $d => $lab) {
+            $L[] = ''; $L[] = '--- QUEUE, ' . $lab . ' (message · sent / waiting / skipped / failed) ---';
+            $q = $pdo->prepare("SELECT status, state, COUNT(*) n FROM wa_ord_sent WHERE created_at >= ? GROUP BY status, state"); $q->execute([wo_dt($now - $d * 86400)]); $m = [];
+            foreach ($q->fetchAll() as $r) $m[$r['status']][$r['state']] = (int)$r['n'];
+            foreach ($m as $st => $x) $L[] = str_pad($defs[$st][1] ?? $st, 46) . ' ' . ($x['sent'] ?? 0) . ' / ' . ($x['queued'] ?? 0) . ' / ' . ($x['skipped'] ?? 0) . ' / ' . ($x['failed'] ?? 0);
+            if (!$m) $L[] = '(nothing was queued)';
+        }
+        $q = $pdo->query("SELECT COUNT(*) n, MIN(due_at) a, MAX(due_at) b, SUM(due_at <= '" . wo_dt($now) . "') due, SUM(tries > 0) tried FROM wa_ord_sent WHERE state = 'queued'"); $r = $q->fetch();
+        $L[] = ''; $L[] = 'WAITING NOW: ' . (int)$r['n'] . ' · due right now: ' . (int)$r['due'] . ' · already tried at least once: ' . (int)$r['tried'] . ((int)$r['n'] ? ' · earliest due ' . substr((string)$r['a'], 5, 11) . ' · latest due ' . substr((string)$r['b'], 5, 11) : '');
+        $q = $pdo->query("SELECT err, err_code, COUNT(*) n FROM wa_ord_sent WHERE state = 'queued' AND err <> '' GROUP BY err, err_code ORDER BY n DESC LIMIT 6"); $rs = $q->fetchAll(); if ($rs) { $L[] = 'Why the waiting ones did not go on their last try:'; foreach ($rs as $x) $L[] = '   ' . $x['n'] . ' × ' . ((int)$x['err_code'] ? '[' . (int)$x['err_code'] . '] ' : '') . $x['err']; }
+        $q = $pdo->prepare("SELECT state, err, err_code, COUNT(*) n FROM wa_ord_sent WHERE state IN ('failed','skipped') AND at >= ? GROUP BY state, err, err_code ORDER BY n DESC LIMIT 12"); $q->execute([wo_dt($now - 3 * 86400)]); $rs = $q->fetchAll();
+        $L[] = ''; $L[] = '--- NOT SENT IN THE LAST 3 DAYS, AND WHY ---'; foreach ($rs as $x) $L[] = '   ' . $x['n'] . ' × ' . $x['state'] . ': ' . ((int)$x['err_code'] ? '[' . (int)$x['err_code'] . '] ' : '') . ($x['err'] !== '' ? $x['err'] : '(no reason saved)'); if (!$rs) $L[] = '(none)';
+        $q = $pdo->prepare("SELECT number_id, COUNT(*) n FROM wa_ord_sent WHERE state = 'sent' AND sent_at >= ? GROUP BY number_id ORDER BY n DESC"); $q->execute([wo_dt($now - 86400)]); $rs = $q->fetchAll();
+        $L[] = ''; $L[] = '--- SENT IN THE LAST 24 HOURS, BY WHATSAPP NUMBER ---'; foreach ($rs as $x) $L[] = '   number #' . (int)$x['number_id'] . ': ' . $x['n']; if (!$rs) $L[] = '(nothing was sent)';
+        $q = $pdo->prepare("SELECT order_name, status, sent_at FROM wa_ord_sent WHERE state = 'sent' ORDER BY sent_at DESC LIMIT 5"); $q->execute(); $rs = $q->fetchAll(); $L[] = ''; $L[] = 'Last 5 sent: ' . ($rs ? implode(' · ', array_map(fn($x) => $x['order_name'] . ' ' . $x['status'] . ' ' . substr((string)$x['sent_at'], 5, 11), $rs)) : 'none');
+        try { $q = $pdo->prepare("SELECT at, ok, info FROM wa_log WHERE kind = 'orders' ORDER BY id DESC LIMIT 8"); $q->execute(); $L[] = ''; $L[] = '--- LAST ENGINE NOTES ---'; foreach ($q->fetchAll() as $x) $L[] = '   ' . substr((string)$x['at'], 5, 11) . ' ' . ((int)$x['ok'] ? 'ok ' : 'ERR') . ' ' . $x['info']; } catch (Throwable $e) { }
+        $cu = wo_catchup($pdo, 3, false); $f = fn($a) => $a ? implode(', ', array_map(fn($k, $v) => $k . ' ' . $v, array_keys($a), $a)) : 'none';
+        $L[] = ''; $L[] = '--- CATCH-UP PREVIEW, LAST 3 DAYS ---'; $L[] = 'parcels ' . $cu['parcels'] . ' · already told ' . $cu['already'] . ' · no message for their state ' . $cu['nothing']; $L[] = 'would be sent: ' . $f($cu['todo']); $L[] = 'waiting for Meta approval: ' . $f($cu['waiting']); $L[] = 'switched off: ' . $f($cu['off']);
+    } catch (Throwable $e) { $L[] = 'ERROR while reading: ' . mb_substr($e->getMessage(), 0, 200); }
+    $L[] = ''; $L[] = '=== END ==='; return implode("\n", $L);
+}
 /** 📬 Who got which update: the parcels ordered in the last $days days (newest first, 400 at most) with every update of each - sent, waiting, skipped or failed and why. */
 function wo_sent_log(PDO $pdo, int $days, string $find = '', string $only = ''): array
 {
@@ -1186,7 +1220,7 @@ function wa_ord_tick(PDO $pdo): array
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__woa = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__woa, ['wa.ord_log', 'wa.ord_catchup', 'wa.bday_get', 'wa.bday_set', 'wa.ord_for', 'wa.ord_share', 'wa.ord_sum', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
+if (in_array($__woa, ['wa.ord_log', 'wa.ord_diag', 'wa.ord_catchup', 'wa.bday_get', 'wa.bday_set', 'wa.ord_for', 'wa.ord_share', 'wa.ord_sum', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo) || !wo_tables($pdo)) json_response(['error' => 'Order storage is not available — check database permissions.'], 500);
     $in = $isPost ? json_input() : $_GET; $adm = wa_is_admin($pdo, $auth); $needPost = function () use ($isPost) { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
@@ -1340,6 +1374,7 @@ if (in_array($__woa, ['wa.ord_log', 'wa.ord_catchup', 'wa.bday_get', 'wa.bday_se
             if (function_exists('kb_touch')) kb_touch($pdo, 'Store info');
             json_response(['ok' => true, 'info' => wa_store_info($pdo), 'open_now' => wa_store_open_now($pdo)]);
         }
+        case 'wa.ord_diag': { wa_guard_admin($pdo, $auth); @set_time_limit(90); json_response(['ok' => true, 'text' => wo_diag_text($pdo)]); }   // 🩺 read-only report for the builder
         case 'wa.ord_log': {   // 📬 who got which update (Admin / HR)
             wa_guard_admin($pdo, $auth); @set_time_limit(60);
             json_response(['ok' => true] + wo_sent_log($pdo, (int)($_GET['days'] ?? 3), (string)($_GET['q'] ?? ''), (string)($_GET['only'] ?? '')));
