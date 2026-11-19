@@ -263,6 +263,15 @@ function wa_ru_reset_once(PDO $pdo): void
             setting_set($pdo, 'wa_ru_hold260', '1'); setting_set($pdo, 'wa_ru_ramp_max', '260'); setting_set($pdo, 'wa_ru_cap_on', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) held at 260 an hour while the Meta spam flag is on');
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_to320', '') !== '1') {   /* owner 19 Nov 2026 (23:05): Module B is counted separately from the 700 utility limit; the top goes 260 -> 300 -> 320 and the speed is looked at every 10 minutes (+20 each time while it runs well) */
+            setting_set($pdo, 'wa_ru_to320', '1'); setting_set($pdo, 'wa_ru_ramp_max', '320'); setting_set($pdo, 'wa_ru_ramp_every', '600'); setting_set($pdo, 'wa_ru_ramp_step', '20');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): looked at every 10 minutes, +20 each time while it runs well, up to 320 an hour (owner)');
+        } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_grid30', '') !== '1') {   /* owner 19 Nov 2026 (23:20): Module B in steps of 10 minutes: 30, 40, 50, 60 messages per 10 minutes = 180, 240, 300, 360 an hour; a look every 10 minutes; when failures start to rise it stays where it is, a second bad look in a row sends it back to 30 */
+            $c0 = (int)setting_get($pdo, 'wa_ru_hourly', '260'); $g0 = max(180, min(350, $c0));   /* it starts from where it is now (owner: 260), no cut */
+            setting_set($pdo, 'wa_ru_grid30', '1'); setting_set($pdo, 'wa_ru_ramp_base', '180'); setting_set($pdo, 'wa_ru_ramp_step', '60'); setting_set($pdo, 'wa_ru_ramp_max', '350'); setting_set($pdo, 'wa_ru_ramp_every', '600'); setting_set($pdo, 'wa_ru_hourly', (string)$g0); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): steps of steps 180 / 240 / 300 / 350 an hour (' . $g0 . ' an hour now, it goes on from there), a look every 10 minutes; rising failures hold it, a second bad look sends it back to 30 (owner)');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_trim_517_518', '') !== '1') {   // owner 18 Nov 2026: Meta paused #517 / #518 as spam (131048). Fewer people: only those who were REACHED (a delivered message) in the last 30 days stay; the others are held back (they can be sent later with "Send to skipped"). The campaigns start again by themselves at 10:00, the start of the business day.
             setting_set($pdo, 'wa_trim_517_518', '1');
             $n = (int)$pdo->exec("UPDATE wa_camp_items i SET i.status = 'skipped', i.err = 'Held back: not reached in the last 30 days (Meta spam flag)', i.err_code = 0 WHERE i.camp_id IN (517, 518) AND i.status = 'queued' AND NOT EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone COLLATE utf8mb4_unicode_ci = i.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'out' AND m.status IN ('delivered', 'read') AND m.ts >= DATE_SUB(NOW(), INTERVAL 30 DAY))");
@@ -341,11 +350,18 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
         if ($now - $rat < $every) return;
         $gn = $n; $gf = $f; $gd = $d; $need = (int)floor($cur * 0.6);
         if ($every < 3600) {   // short steps: judge only the messages sent since the last change (15 minutes to one step-length old), the limit used in proportion to the length of that look
-            $gs = max($now - $every - 900, $rat, (int)setting_get($pdo, 'wa_ru_brake_since', '0')); $q2 = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
+            $gs = max($now - $every - 900, ($every <= 600 ? 0 : $rat), (int)setting_get($pdo, 'wa_ru_brake_since', '0'));   /* 10-minute looks: the receipts are 15 minutes late, so every look judges the messages 15 to 25 minutes old (not only those after the last change) */ $q2 = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
             $q2->execute([date('Y-m-d H:i:s', $gs), date('Y-m-d H:i:s', $now - 900)]); $r2 = $q2->fetch(); $gn = (int)$r2['n']; $gf = (int)$r2['f']; $gd = (int)$r2['d']; $span = max(600, ($now - 900) - $gs); $need = max(10, (int)floor($cur * 0.6 * $span / 3600)); }
         $dmin = $every < 3600 ? 0.5 : 0.7;   // at night many phones are off: a third of the messages stay 'sent' for a long time without any failure; for the small steps the delivered share needs to be 50% (failures still must be 5% or less and the 10% failure brake is unchanged)
+        if ($every <= 600 && $gn >= max(10, (int)floor($need * 0.5)) && ($gf / max(1, $gn) > 0.05 || $gd / max(1, $gn) < $dmin)) {   /* owner 19 Nov 2026 (23:20): failures start to rise -> it stays where it is; a second bad look in a row sends it back to the floor (30 per 10 minutes) */
+            $fz = (int)setting_get($pdo, 'wa_ru_freeze_n', '0') + 1; setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
+            if ($fz >= 2 && $cur > $base) { setting_set($pdo, 'wa_ru_hourly', (string)$base); setting_set($pdo, 'wa_ru_freeze_n', '0'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility follow-up (Module B): second bad look in a row (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered): ' . $cur . ' -> back to ' . $base . ' an hour'); }
+            else { setting_set($pdo, 'wa_ru_freeze_n', (string)$fz); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility follow-up (Module B): failures rising (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered): it stays at ' . $cur . ' an hour'); }
+            return; }
         if ($cur < $max && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
-            $to = min($max, $cur + $step); setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
+            setting_set($pdo, 'wa_ru_freeze_n', '0');
+            $to = min($max, $cur + $step);   /* owner 19 Nov 2026 (23:30): +10 messages per 10 minutes every 10 minutes = +60 an hour (260 -> 320 -> 350 top); 180 an hour = 30 per 10 minutes is the floor */
+            setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered in the last look): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
 /** 🛤 owner, 18 Nov 2026 (night): two lanes. Lane A = the safest people (wrote to us within the asked-days, or ordered within the order-days): about one third of the sends. Lane B = people to whom NOTHING has ever been delivered (every message to them failed): about two thirds. Everybody else (lane C) comes after both. Inside a lane the order stays oldest first. Pattern B, B, A, B, B, A … (when one lane is empty the other goes on).
