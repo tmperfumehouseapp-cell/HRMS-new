@@ -80,7 +80,8 @@
       <div class="sheet"><div class="ban">${esc(dLong(day))}</div>
         <div class="cols">
           <div><div class="hd">RECEIPT</div>
-            <div class="ln h"><span>OPENING</span><b>${num(D.opening)}</b></div><div class="gap"></div>
+            <div class="ln h"><span>OPENING</span><b>${num(D.opening)}</b></div>
+            ${C.accounts.map((a) => `<div class="ln" style="cursor:default;padding-left:26px" title="Closing of the day before"><span>${esc(a.name)}</span><b>${num(a.opening)}</b></div>`).join('')}<div class="gap"></div>
             ${lines(R.lines, 'in')}
             <div class="ln tt"><span>TOTAL</span><b>${num(R.total)}</b></div></div>
           <div><div class="hd">PAYMENTS</div>
