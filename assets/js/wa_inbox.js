@@ -1436,12 +1436,13 @@
     };
     const bkN = () => S.bulk.set.size, bkFmt = (n) => Number(n).toLocaleString('en-IN');
     function bkParams() { const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.hrs && S.hrs.length) { p.hrs = S.hrs.join(','); if (S.hdate) p.hdate = S.hdate; } if (S.emp) p.emp = S.emp; if (S.emp && S.empTag) p.tag = 1; if (S.flt.length) p.flt = S.flt.join(','); if (S.bulk.on) { const f = S.bulk.f || {}; p.bt = f.bt || ''; if (f.bd) { p.bd = f.bd; if (f.bd === 'custom') { p.bdf = f.bdf || ''; p.bdt = f.bdt || f.bdf || ''; } } if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); } return p; }
-    function bkToggleMode(on) { bkStyle(); S.bulk.on = on == null ? !S.bulk.on : on; if (!S.bulk.on) { S.bulk.set.clear(); S.bulk.info = {}; S.bulk.f = { bt: '', bd: '', bdf: '', bdt: '', ob: 'no', bn: [] }; } root.classList.toggle('bkon', S.bulk.on); drawFeeds(); if (S.bulk.on) loadList(); else drawList(); }
-    function bkToggle(ph) { if (S.bulk.set.has(ph)) S.bulk.set.delete(ph); else { S.bulk.set.add(ph); const c = S.chats.find((x) => x.phone === ph); if (c) S.bulk.info[ph] = { name: c.name || '' }; } drawList(); }
+    function bkToggleMode(on) { bkStyle(); S.bulk.on = on == null ? !S.bulk.on : on; if (!S.bulk.on) { S.bulk.note = ''; S.bulk.set.clear(); S.bulk.info = {}; S.bulk.f = { bt: '', bd: '', bdf: '', bdt: '', ob: 'no', bn: [] }; } root.classList.toggle('bkon', S.bulk.on); drawFeeds(); if (S.bulk.on) loadList(); else drawList(); }
+    function bkToggle(ph) { { const oc = S.chats.find((x) => x.phone === ph); if (oc && oc.optout && !S.bulk.set.has(ph)) { S.bulk.note = '🚫 That customer opted out (wrote STOP) — no bulk message can go to them, so the chat cannot be selected.'; drawList(); return; } }   // an opted-out customer can never be picked
+    if (S.bulk.set.has(ph)) S.bulk.set.delete(ph); else { S.bulk.set.add(ph); const c = S.chats.find((x) => x.phone === ph); if (c) S.bulk.info[ph] = { name: c.name || '' }; } drawList(); }
     async function bkSelectAll() {
       const btn = $('bkAll'); if (btn) { btn.textContent = 'Selecting…'; btn.disabled = true; }
-      try { const d = await api.get('wa.chats', Object.assign(bkParams(), { ids: 1 })); (d.ids || []).forEach((x) => { S.bulk.set.add(x.phone); S.bulk.info[x.phone] = { name: x.name || '' }; }); }
-      catch (e) { S.chats.forEach((c) => { S.bulk.set.add(c.phone); S.bulk.info[c.phone] = { name: c.name || '' }; }); }
+      try { const d = await api.get('wa.chats', Object.assign(bkParams(), { ids: 1 })); (d.ids || []).forEach((x) => { S.bulk.set.add(x.phone); S.bulk.info[x.phone] = { name: x.name || '' }; }); S.bulk.note = d.optout_n ? '🚫 ' + bkFmt(d.optout_n) + ' customer' + (d.optout_n === 1 ? '' : 's') + ' who opted out (wrote STOP) were left out of the selection — they never get a bulk message.' : ''; }
+      catch (e) { S.chats.forEach((c) => { if (!c.optout) { S.bulk.set.add(c.phone); S.bulk.info[c.phone] = { name: c.name || '' }; } }); }
       drawList();
     }
     function bkBarHtml() {
@@ -1453,6 +1454,7 @@
           ${S.bulk.f.bd === 'custom' ? `<div class="bk-chs" style="align-items:center"><label style="font-size:12px;font-weight:700">From <input type="date" id="bkDf" value="${esc(S.bulk.f.bdf || '')}" style="padding:6px;border:1px solid #cbd5e1;border-radius:8px"></label><label style="font-size:12px;font-weight:700">To <input type="date" id="bkDt" value="${esc(S.bulk.f.bdt || '')}" style="padding:6px;border:1px solid #cbd5e1;border-radius:8px"></label><span style="font-size:11px;opacity:.7">only one date = that day</span></div>` : ''}` : ''}
           <div class="lb">Order status</div><div class="bk-chs">${[['no', '🆕 Not ordered yet'], ['yes', '✅ Order done'], ['', 'All']].map(([k, l]) => `<button type="button" data-bf="ob:${k}" class="${(S.bulk.f.ob || '') === k ? 'on' : ''}${k === 'yes' ? ' ex' : ''}">${l}</button>`).join('')}</div>
           <div class="lb">Number</div><div class="bk-chs">${(((S.counts || {}).src || {}).nums || []).map((x) => `<button type="button" data-bf="bn:${x.id}" class="${(S.bulk.f.bn || []).includes(x.id) ? 'on' : ''}">${esc(String(x.label || 'Number ' + x.id))}</button>`).join('')}</div></div>` : ''}
+        ${S.bulk.note ? `<div class="wi-note" style="margin:6px 0;font-size:12px;background:#fef2f2;color:#991b1b">${esc(S.bulk.note)}</div>` : ''}
         <div class="bk-row"><button type="button" class="bk-link" id="bkAll">${allSel ? '☑ All ' + bkFmt(loaded) + ' shown are selected' : '☐ Select all in this view'}${tot > loaded ? ' (all ' + bkFmt(tot) + ')' : ''}</button>${n ? '<button type="button" class="bk-link" id="bkNone" style="margin-left:auto">Clear</button>' : ''}</div>
         <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button>${admin && S.scope === 'history' ? '<button type="button" class="bk-b send" id="bkCamp" title="Send an approved message to ALL History chats as a background campaign (safe speed, report)" style="background:#2563eb">📣 Send as campaign</button>' : ''}${admin ? `<button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button><button type="button" class="bk-b move" id="bkNum" ${n ? '' : 'disabled'} title="Answer these customers from another of your numbers">📱 Move to number</button>` : ''}</div></div>`;
     }
@@ -1527,6 +1529,8 @@
     }
     let bkRetryRun = () => { };
     // ---------- 📨 send one pre-made message to many chats (each customer gets their own first name)
+    // 🚫 the bulk-send safety (who already ordered / opted out / has a complaint) runs on EVERY selected number, 2,500 at a time (the server looked at 3,000 only, so the rest of a 20,000 selection was never checked)
+    async function bkSafety(all) { const r = { ordered: [], blocked: {} }; for (let i = 0; i < all.length; i += 2500) { const x = await api.post('wa.bulk_ordered', { phones: all.slice(i, i + 2500) }); (x.ordered || []).forEach((p) => r.ordered.push(p)); Object.assign(r.blocked, x.blocked || {}); } return r; }
     async function bkSendOpen() {
       const n = bkN(); if (!n) return; let box = sheet('Send to ' + bkFmt(n) + ' chats'); box.innerHTML = '<div class="wi-empty">Loading messages…</div>'; let list = [];
       try { list = ((await api.get('wa.tpl_list')).templates || []).filter((t) => !t.auto && sendable(t)); } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
@@ -1558,7 +1562,7 @@
             for (let i = 0; i < nv; i++) if (map[i].how === 'text') { if (!map[i].text.trim()) { $('bkMsg').innerHTML = `<div class="wi-err">Fill {{${i + 1}}} first.</div>`; return; } const bad = tplVarBad(H[i] || {}, map[i].text.trim()); if (bad) { $('bkMsg').innerHTML = `<div class="wi-err">${esc(bad)}</div>`; return; } }
             if (hv && hmap.how === 'text' && !hmap.text.trim()) { $('bkMsg').innerHTML = '<div class="wi-err">Fill the heading first.</div>'; return; }
             S.bulk.safe = $('bkSafe') ? $('bkSafe').checked : true; const all = [...S.bulk.set]; $('bkGo').disabled = true; $('bkMsg').innerHTML = '<div class="wi-note">Checking who already ordered…</div>';
-            api.post('wa.bulk_ordered', { phones: all }).then((r) => {
+            bkSafety(all).then((r) => {
               $('bkGo').disabled = false; $('bkMsg').innerHTML = ''; const ord = new Set(r.ordered || []), blk = r.blocked || {}; let go = all.filter((ph) => blk[ph] !== 'optout' && blk[ph] !== 'complaint'); const nBlk = all.length - go.length, nOrd = go.filter((ph) => ord.has(ph)).length;
               if (S.bulk.safe) go = go.filter((ph) => !ord.has(ph));
               if (!go.length) { $('bkMsg').innerHTML = '<div class="wi-err">Nobody is left to send to — everyone selected already ordered, opted out or has a complaint.</div>'; return; }
@@ -1597,7 +1601,7 @@
         $('bkGo').onclick = () => {
           txt = $('bkTx').value.trim(); if (!txt) { $('bkMsg').innerHTML = '<div class="wi-err">Write a message first.</div>'; return; }
           S.bulk.safe = $('bkSafe').checked; const all = [...S.bulk.set]; $('bkGo').disabled = true; $('bkMsg').innerHTML = '<div class="wi-note">Checking who already ordered…</div>';
-          api.post('wa.bulk_ordered', { phones: all }).then((r) => {
+          bkSafety(all).then((r) => {
             $('bkGo').disabled = false; $('bkMsg').innerHTML = ''; const ord = new Set(r.ordered || []), blk = r.blocked || {}; let go = all.filter((ph) => blk[ph] !== 'optout' && blk[ph] !== 'complaint'); const nBlk = all.length - go.length, nOrd = go.filter((ph) => ord.has(ph)).length;
             if (S.bulk.safe) go = go.filter((ph) => !ord.has(ph));
             if (!go.length) { $('bkMsg').innerHTML = '<div class="wi-err">Nobody is left to send to — everyone selected already ordered, opted out or has a complaint.</div>'; return; }
