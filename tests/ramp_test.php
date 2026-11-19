@@ -52,8 +52,8 @@ $S['wa_ru_hourly'] = '220'; $S['wa_ru_ramp_at'] = (string)(time() - 1700); $S['w
 // 12) owner 19 Nov 2026 (23:05): looked at every 10 minutes, +20, top 320
 $S = ['wa_ru_hourly' => '260', 'wa_ru_ramp_base' => '200', 'wa_ru_ramp_step' => '20', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '320', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 700)];
 $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 50, 0, 20);
-wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '280', '10-minute look: 260 -> 280 (got ' . $S['wa_ru_hourly'] . ')');
-$S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 280]); ok($S['wa_ru_hourly'] === '280', '10-minute look: no second step before 10 minutes pass');
+wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '300', '10-minute look: 260 -> 300 on the ladder (got ' . $S['wa_ru_hourly'] . ')');
+$S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '300', '10-minute look: no second step before 10 minutes pass');
 $S['wa_ru_hourly'] = '320'; $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 320]); ok($S['wa_ru_hourly'] === '320', '10-minute look: ceiling 320');
 $S['wa_ru_hourly'] = '300'; $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 50, 8, 20); wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '200', '10-minute look: 16% failed stops it and restarts 100 lower (got ' . $S['wa_ru_hourly'] . ')');
 $S = ['wa_ru_hourly' => '260', 'wa_ru_ramp_base' => '180', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '350', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 700)]; $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 50, 0, 20); wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '300', 'grid: from 260 the next step is 300 (got ' . $S['wa_ru_hourly'] . ')');
