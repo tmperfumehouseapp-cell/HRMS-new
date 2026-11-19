@@ -2543,7 +2543,9 @@ function hrms_settings_load(PDO $pdo): array
     $base = hrms_settings_base(); $g = @file_get_contents($base . '.gen');
     if ($g === false || $g === '') { $g = hrtime(true) . '-' . mt_rand(); @file_put_contents($base . '.gen', $g, LOCK_EX); }
     $raw = @file_get_contents($base . '.snap');
-    if ($raw !== false && $raw !== '') { $sn = @unserialize($raw, ['allowed_classes' => false]); if (is_array($sn) && ($sn['g'] ?? null) === $g && time() - (int)($sn['t'] ?? 0) < 5 && is_array($sn['c'] ?? null)) return $sn['c']; }
+    if ($raw !== false && $raw !== '') { $sn = @unserialize($raw, ['allowed_classes' => false]); if (is_array($sn) && ($sn['g'] ?? null) === $g && is_array($sn['c'] ?? null)) { $age = time() - (int)($sn['t'] ?? 0); if ($age < 5) return $sn['c'];
+            if ($age < 60) { $lkf = @fopen($base . '.lock', 'c'); if ($lkf && !@flock($lkf, LOCK_EX | LOCK_NB)) { @fclose($lkf); return $sn['c']; }   /* another request is already rebuilding the copy: use the one we have (the generation matches, so nothing was saved since) instead of asking the database too */
+                $GLOBALS['__hrms_settings_lk'] = $lkf; } } }
     $cache = []; $ok = false;   // the generation $g was read BEFORE the table: a save made meanwhile makes this copy out of date from its first second
     if (ensure_reminder_tables($pdo)) {
         // ⚡ small values come in one query; BIG values (day caches, backups, JSON lists — often hundreds of KB) are left out and read only when asked for
@@ -2551,6 +2553,7 @@ function hrms_settings_load(PDO $pdo): array
         catch (PDOException $e) { try { foreach ($pdo->query("SELECT setting_key, setting_value FROM hrms_settings")->fetchAll() as $r) $cache[$r['setting_key']] = $r['setting_value']; } catch (PDOException $e2) {} }
     }
     if ($ok) { $tmp = $base . '.snap.' . getmypid(); if (@file_put_contents($tmp, serialize(['g' => $g, 't' => time(), 'c' => $cache])) !== false) { @chmod($tmp, 0600); @rename($tmp, $base . '.snap'); } }
+    if (!empty($GLOBALS['__hrms_settings_lk'])) { @flock($GLOBALS['__hrms_settings_lk'], LOCK_UN); @fclose($GLOBALS['__hrms_settings_lk']); $GLOBALS['__hrms_settings_lk'] = null; }
     return $cache;
 }
 function setting_get(PDO $pdo, string $key, $default = null)

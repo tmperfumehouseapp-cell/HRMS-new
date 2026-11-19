@@ -158,6 +158,7 @@ jobs:
             echo "\nLOAD DETAILS (read-only; who uses the CPU):\n";
             try {
               echo "  top processes by CPU (command shortened, no arguments):\n";
+              echo "  (the %CPU of ps below is the average since the process started, not now) CURRENT CPU by top, one 2-second sample:\n"; foreach (explode("\n", trim((string)@shell_exec("top -b -d 2 -n 2 -w 160 | awk '/^top -/{c++} c==2' | head -16"))) as $l) echo "    " . substr($l, 0, 110) . "\n";
               foreach (explode("\n", trim((string)@shell_exec("ps -eo pcpu,etimes,comm --sort=-pcpu | head -12"))) as $l) echo "    " . $l . "\n";
               echo "  process counts: " . trim((string)@shell_exec("ps -eo comm | sort | uniq -c | sort -rn | head -6 | tr '\\n' ';'")) . "\n";
               foreach (["/var/log/nginx/access.log", "/var/log/apache2/access.log", "/var/log/httpd/access_log"] as $lg) { if (!is_readable($lg)) continue;
@@ -165,6 +166,23 @@ jobs:
                 arsort($acts); echo "  busiest requests in the last $n log lines of $lg (action / path, count; no IPs):\n"; $i = 0; foreach ($acts as $k => $c) { echo "    $c x $k\n"; if (++$i >= 14) break; } break; }
               echo "  fpm max children (config): " . trim((string)@shell_exec("grep -rhE '^(pm\\.max_children|pm )' /etc/php/*/fpm/pool.d/*.conf 2>/dev/null | head -4 | tr '\\n' ';'")) . "\n";
             } catch (Throwable $e) { echo "  load details: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nDATABASE LOAD (mysqld is the heavy process; statement shapes only, values replaced by ?):\n";
+            try {
+              $n = 0; foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $p) { if (($p["Command"] ?? "") === "Sleep" || !$p["Info"] || stripos((string)$p["Info"], "PROCESSLIST") !== false) continue; $n++; if ($n <= 8) echo "  running now (" . $p["Time"] . " s): " . substr(preg_replace(["/\\s+/", "/'[^']*'/", "/\\b\\d{3,}\\b/"], [" ", "?", "#"], (string)$p["Info"]), 0, 220) . "\n"; }
+              echo "  non-sleeping statements right now: $n\n";
+              try { $q = $d->query("SELECT LEFT(DIGEST_TEXT, 230) t, COUNT_STAR c, ROUND(SUM_TIMER_WAIT/1000000000000, 1) tot, ROUND(AVG_TIMER_WAIT/1000000000000, 3) av, SUM_ROWS_EXAMINED rx FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12");
+                echo "  statements by total time since the server started (total s | calls | avg s | rows examined):\n"; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    " . $x["tot"] . " s | " . $x["c"] . "x | " . $x["av"] . " s | rx " . $x["rx"] . " | " . preg_replace("/\\s+/", " ", $x["t"]) . "\n"; }
+              catch (Throwable $e) { echo "  performance_schema not readable: " . substr($e->getMessage(), 0, 100) . "\n"; }
+              $g = $d->query("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_running','Slow_queries','Questions','Uptime','Innodb_buffer_pool_wait_free','Created_tmp_disk_tables')")->fetchAll(PDO::FETCH_KEY_PAIR); echo "  status: " . json_encode($g) . "\n";
+            } catch (Throwable $e) { echo "  database load: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nDATABASE SAMPLING (360 looks over ~90 s at the running statements; shape = values replaced; counts = how often it was seen running):\n";
+            try {
+              $seen = []; for ($i = 0; $i < 360; $i++) { foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $p) { if (($p["Command"] ?? "") === "Sleep" || !$p["Info"] || stripos((string)$p["Info"], "PROCESSLIST") !== false) continue; $k = substr(preg_replace(["/\\s+/", "/'[^']*'/", "/\\b\\d+\\b/", "/\\(\\?(,\\s*\\?)+\\)/", "/IN \\([^)]*\\)/"], [" ", "?", "?", "(?)", "IN (...)"], (string)$p["Info"]), 0, 200); $seen[$k] = ($seen[$k] ?? 0) + 1; } usleep(250000); }
+              arsort($seen); $j = 0; foreach ($seen as $k => $c) { echo "    seen $c x: $k\n"; if (++$j >= 16) break; } if (!$seen) echo "    nothing was running in 360 looks\n";
+              foreach ($d->query("SHOW GLOBAL VARIABLES WHERE Variable_name IN ('innodb_buffer_pool_size','max_connections','long_query_time','slow_query_log','query_cache_type','table_open_cache')")->fetchAll(PDO::FETCH_KEY_PAIR) as $k => $v) echo "    $k = $v\n";
+              foreach ($d->query("SHOW INDEX FROM wa_messages")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    wa_messages index " . $x["Key_name"] . " col " . $x["Seq_in_index"] . " " . $x["Column_name"] . " (card " . $x["Cardinality"] . ")\n";
+              $r = $d->query("SELECT TABLE_ROWS, ROUND(DATA_LENGTH/1048576) dm, ROUND(INDEX_LENGTH/1048576) im FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wa_messages'")->fetch(PDO::FETCH_ASSOC); echo "    wa_messages rows ~" . ($r["TABLE_ROWS"] ?? "?") . " data " . ($r["dm"] ?? "?") . " MB index " . ($r["im"] ?? "?") . " MB\n";
+            } catch (Throwable $e) { echo "  sampling: " . substr($e->getMessage(), 0, 120) . "\n"; }
             $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
             if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
               $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
