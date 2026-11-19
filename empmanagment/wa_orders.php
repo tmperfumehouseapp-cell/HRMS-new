@@ -921,9 +921,12 @@ function wa_ord_autosend(PDO $pdo, ?int $nowTs = null, string $onlyStore = ''): 
     try {
         if (!wo_tables($pdo)) return $res; $cfg = wo_cfg($pdo); if (!$cfg['on']) return $res;
         $go = (int)wo_get($pdo, 'wa_ord_send_since', '0'); if ($go <= 0) { $go = $nowTs; wo_put($pdo, 'wa_ord_send_since', (string)$go); }
-        $since = wo_dt(max($go, $nowTs - 6 * 3600)); $sk = $onlyStore !== '' ? ' AND store_key = ' . $pdo->quote($onlyStore) : '';
+        // The look-back starts at the last finished look (minus 15 minutes), at most 6 hours. It used to be a fixed 6 hours with the newest 500 parcels only: on a busy day more than
+        // 500 parcels change in 6 hours, so the OLDER orders - the ones reaching "out for delivery" / "delivered" - were never looked at and got no message.
+        $lastScan = $onlyStore === '' ? (int)wo_get($pdo, 'wa_ord_scan_at', '0') : 0;
+        $since = wo_dt(max($go, $nowTs - 6 * 3600, $lastScan > 0 ? $lastScan - 900 : 0)); $sk = $onlyStore !== '' ? ' AND store_key = ' . $pdo->quote($onlyStore) : '';
         // 1. what changed lately: queue ONE message per order + status
-        $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE status IN ('tracked','transit','delivered') AND phone IS NOT NULL AND phone <> '' AND (sr_at >= ? OR delivered_at >= ? OR transit_at >= ? OR tracked_at >= ?)$sk ORDER BY id DESC LIMIT 500");
+        $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE status IN ('tracked','transit','delivered') AND phone IS NOT NULL AND phone <> '' AND (sr_at >= ? OR delivered_at >= ? OR transit_at >= ? OR tracked_at >= ?)$sk ORDER BY id DESC LIMIT 3000");
         $q->execute([$since, $since, $since, $since]); $tplOk = [];
         foreach ($q->fetchAll() as $p) {
             $cls = wo_class($p, $nowTs); $st = wo_send_status($cls); if ($st === '' || empty($cfg['statuses'][$st])) continue;
@@ -938,6 +941,7 @@ function wa_ord_autosend(PDO $pdo, ?int $nowTs = null, string $onlyStore = ''): 
             $ins = $pdo->prepare("INSERT IGNORE INTO wa_ord_sent (parcel_id, phone, order_name, status, tpl_name, state, created_at, due_at) VALUES (?,?,?,?,?, 'queued', ?, ?)");
             $ins->execute([(int)$p['id'], $key, (string)$p['order_name'], $st, wo_send_defs()[$st][0], wo_dt($nowTs), wo_dt($due)]); if ($ins->rowCount() > 0) $res['queued']++;
         }
+        if ($onlyStore === '') wo_put($pdo, 'wa_ord_scan_at', (string)$nowTs);   // this look is finished: the next one starts here
         try { $res['after'] = wa_ord_after_queue($pdo, $nowTs, $cfg, $sk, $go); } catch (Throwable $e) { error_log('wa_ord_after_queue: ' . $e->getMessage()); }   // 💬 2 / 15 / 30 days after delivery
         try { $res['late'] = wa_ord_late_queue($pdo, $nowTs, $cfg, $sk, $go); } catch (Throwable $e) { error_log('wa_ord_late_queue: ' . $e->getMessage()); }   // 🙏 not shipped after N hours: say sorry
         if (function_exists('wa_review_tick')) { try { $res['review_read'] = wa_review_tick($pdo, $nowTs); } catch (Throwable $e) { error_log('wa_review_tick: ' . $e->getMessage()); } }   // ⭐ reads review screenshots (always, even if the request message is off)
@@ -1037,6 +1041,9 @@ function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
     }
     $msg = mb_substr(function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'Meta did not accept this.', 0, 190);
     if (in_array($ec, [130429, 131056, 131042, 132000, 132001, 132005, 132007, 132012, 132015, 132016, 190, 131031], true) || $code === 401) { $pdo->prepare("UPDATE wa_ord_sent SET err = ?, err_code = ?, due_at = ? WHERE id = ?")->execute([$msg, $ec, wo_dt($nowTs + 600), $id]); if (function_exists('wa_log')) wa_log($pdo, 'orders', false, 'order updates stopped: ' . $msg); return ['out' => 'waiting', 'stop' => $msg]; }
+    if ($ec === 131048 && $tries < 6) {   // Meta's spam limit on the sending number: it lifts by itself. A parcel update is not dropped for it - it waits an hour and goes again (the number is picked afresh)
+        $pdo->prepare("UPDATE wa_ord_sent SET tries = ?, err = ?, err_code = ?, due_at = ? WHERE id = ?")->execute([$tries, $msg, $ec, wo_dt(wo_next_open($nowTs + 3600)), $id]); return ['out' => 'waiting'];
+    }
     [$plan, $pw] = function_exists('wa_camp_fail_plan') ? wa_camp_fail_plan($ec, $tries, true) : ['final', 'Failed'];
     if ($plan === 'retry') { $nt = wo_next_open($nowTs + ($tries <= 1 ? 3 * 3600 : 86400)); $pdo->prepare("UPDATE wa_ord_sent SET tries = ?, err = ?, err_code = ?, due_at = ? WHERE id = ?")->execute([$tries, $msg, $ec, wo_dt($nt), $id]); return ['out' => 'waiting']; }
     $pdo->prepare("UPDATE wa_ord_sent SET state = ?, tries = ?, err = ?, err_code = ?, at = ? WHERE id = ?")->execute([$plan === 'skip' ? 'skipped' : 'failed', $tries, mb_substr($plan === 'pause' ? $pw : ($ec === 131026 ? 'Not on WhatsApp / cannot receive' : $msg), 0, 190), $ec, wo_dt($nowTs), $id]);
