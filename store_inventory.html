@@ -357,8 +357,7 @@
   // ---- make
   const cleanTitle = (t) => String(t || '').replace(/\s*[|｜]\s*TMPerfumehouse.*$/i, '').trim();
   const key = (pid, ml, kind) => pid + '|' + ml + '|' + kind;
-  const pcsType = (p) => p.ptype === 'gel' || p.ptype === 'solid';
-  const inputs = (p, kind) => (p.sizes_ok || SIZES).map((ml) => { const k = key(p.product_id, ml, kind), v = plan[k] || 0; return `<label class="z${ml}${v ? ' on' : ''}"><span class="zc" data-d="1" role="button" tabindex="0" title="Tap to add one ${kind === 'tester' ? 'tester ' : ''}${ml} ml" aria-label="Add ${ml} ml"><b>${kind === 'tester' ? 'T' + (pcsType(p) ? '' : ml) : (pcsType(p) ? 'pcs' : ml)}</b><i>${pcsType(p) ? (p.ptype === 'gel' ? 'gel' : 'solid') : 'ml'}</i></span><input type="number" min="0" max="200" inputmode="numeric" data-k="${k}" value="${v || ''}" placeholder="0"><button type="button" class="bdg" data-d="-1" title="Tap to take one away" aria-label="Remove one ${ml} ml">${v}</button></label>`; }).join('');
+  const inputs = (p, kind) => SIZES.map((ml) => { const k = key(p.product_id, ml, kind), v = plan[k] || 0; return `<label class="z${ml}${v ? ' on' : ''}"><span class="zc" data-d="1" role="button" tabindex="0" title="Tap to add one ${kind === 'tester' ? 'tester ' : ''}${ml} ml" aria-label="Add ${ml} ml"><b>${kind === 'tester' ? 'T' + ml : ml}</b><i>ml</i></span><input type="number" min="0" max="200" inputmode="numeric" data-k="${k}" value="${v || ''}" placeholder="0"><button type="button" class="bdg" data-d="-1" title="Tap to take one away" aria-label="Remove one ${ml} ml">${v}</button></label>`; }).join('');
   const BD = { top: ['bd-top', 'Top seller'], rising: ['bd-rising', '▲ Rising'], new: ['bd-new', 'New seller'], slow: ['bd-slow', 'Slow'] };
   const GRP = [['top', 'Best sellers'], ['rn', 'Rising & new sellers'], ['steady', 'Selling'], ['slow', 'Slow'], ['none', 'Not selling (last 90 days)']];
   const grpOf = (p) => p.badge === 'new' || p.badge === 'rising' ? 'rn' : p.badge;
@@ -372,7 +371,7 @@
     $('prodList').classList.toggle('showT', $('tstOn').checked);
     const card = (p) => { const b = BD[p.badge], sold = p.q30 ? `${p.q30} sold in 30 days` : (p.q90 ? 'slow lately' : 'no sales yet'),
       tip = `Sold ${p.q30} in 30 days, ${p.q90} in 90 (this store ${p.src.store} · old POS ${p.src.pos} · online ${p.src.online})`;
-      return `<div class="prod" title="${esc(tip)}"><div class="nm"><b title="${esc(cleanTitle(p.title))}">${esc(cleanTitle(p.title))}</b><span class="mt">${b ? `<span class="sx-pill ${b[0]}">${p.badge === 'top' ? 'Top #' + p.rank : b[1]}</span>` : ''}<span>${sold}</span>${p.stock_sale ? `<span class="sx-pill good">${p.stock_sale} in stock</span>` : ''}</span></div><div class="pts" style="font-size:12px;color:var(--sx-mut);margin:2px 0 4px">Type <select data-pt="${p.product_id}" style="max-width:100%;font:inherit;font-size:12px;padding:2px 6px;border:1px solid var(--sx-line);border-radius:8px" title="Perfume = by ml · Shower gel / Solid perfume = by the piece"><option value="perfume"${p.ptype === 'perfume' ? ' selected' : ''}>Perfume (ml)</option><option value="gel"${p.ptype === 'gel' ? ' selected' : ''}>Shower gel (pieces)</option><option value="solid"${p.ptype === 'solid' ? ' selected' : ''}>Solid perfume (pieces)</option></select></div><div class="sz">${inputs(p, 'sale')}</div><div class="sz t">${inputs(p, 'tester')}</div></div>`; };
+      return `<div class="prod" title="${esc(tip)}"><div class="nm"><b title="${esc(cleanTitle(p.title))}">${esc(cleanTitle(p.title))}</b><span class="mt">${b ? `<span class="sx-pill ${b[0]}">${p.badge === 'top' ? 'Top #' + p.rank : b[1]}</span>` : ''}<span>${sold}</span>${p.stock_sale ? `<span class="sx-pill good">${p.stock_sale} in stock</span>` : ''}</span></div><div class="sz">${inputs(p, 'sale')}</div><div class="sz t">${inputs(p, 'tester')}</div></div>`; };
     let html = '', last = '';
     list.forEach((p) => { const g = grpOf(p); if (!az && !q && g !== last) { last = g; html += `<div class="sx-grp"><b>${GRP.find((x) => x[0] === g)[1]}</b><span>${all.filter((x) => grpOf(x) === g).length}</span><i></i></div>`; } html += card(p); });
     $('prodList').innerHTML = (list.length ? html : '<div class="prod sx-mut">No perfumes yet — press Sync.</div>')
@@ -381,16 +380,10 @@
   }
   const planItems = () => Object.keys(plan).filter((k) => plan[k] > 0).map((k) => { const [pid, ml, kind] = k.split('|'); return { product_id: +pid, ml: +ml, kind, qty: plan[k] }; });
   function updatePlan() {
-    const it = planItems(), n = it.reduce((a, x) => a + x.qty, 0), ml = it.filter((x) => x.kind === 'sale' && !pcsType(products.find((q) => q.product_id === x.product_id) || {})).reduce((a, x) => a + x.qty * x.ml, 0), pcs = it.filter((x) => x.kind === 'sale' && pcsType(products.find((q) => q.product_id === x.product_id) || {})).reduce((a, x) => a + x.qty, 0);
-    $('planSum').textContent = n ? `${n} barcodes${ml ? ' · ' + ml + ' ml' : ''}${pcs ? ' · ' + pcs + ' pcs (gel / solid)' : ''}` : 'Nothing chosen'; $('btnMake').disabled = !n;
+    const it = planItems(), n = it.reduce((a, x) => a + x.qty, 0), ml = it.filter((x) => x.kind === 'sale').reduce((a, x) => a + x.qty * x.ml, 0);
+    $('planSum').textContent = n ? `${n} barcodes · ${ml} ml` : 'Nothing chosen'; $('btnMake').disabled = !n;
   }
   $('prodList').addEventListener('input', (e) => { const k = e.target.dataset.k; if (!k) return; const v = Math.max(0, Math.min(200, parseInt(e.target.value, 10) || 0)); if (v) plan[k] = v; else delete plan[k]; const lb = e.target.closest('label'); if (lb) { lb.classList.toggle('on', v > 0); const bg = lb.querySelector('.bdg'); if (bg) bg.textContent = v; } updatePlan(); });
-  $('prodList').addEventListener('change', async (e) => {
-    const pid = e.target.dataset && e.target.dataset.pt; if (!pid) return; const p = products.find((q) => q.product_id === +pid); if (!p) return;
-    e.target.disabled = true;
-    try { const d = await api.post('st_inv.set_ptype', { product_id: +pid, ptype: e.target.value }); p.ptype = d.ptype; p.sizes_ok = d.sizes_ok; Object.keys(plan).forEach((k) => { if (k.split('|')[0] === pid) delete plan[k]; }); note(esc(cleanTitle(p.title)) + ' is now: ' + (d.ptype === 'gel' ? 'Shower gel (by the piece)' : d.ptype === 'solid' ? 'Solid perfume (by the piece)' : 'Perfume (by ml)') + '.'); renderProducts(); }
-    catch (er) { note(er.message, 1); e.target.disabled = false; }
-  });
   $('prodList').addEventListener('click', (e) => {
     if (e.target.id === 'btnMore') { showAll = true; renderProducts(); return; }
     const b = e.target.closest('[data-d]'); if (!b) return;
@@ -574,12 +567,12 @@
     list = list.slice().sort((a, b) => so === 'low' ? a.bottles - b.bottles || a.title.localeCompare(b.title) : so === 'ml' ? b.ml - a.ml : so === 'sold' ? b.sold7 - a.sold7 : a.title.localeCompare(b.title));
     $('stockGrid').innerHTML = list.length ? list.map((p) => {
       const stt = stState(p), tot = Math.max(1, p.ml), pill = stt === 'out' ? `<span class="sx-pill bad">${sxi('xc')} Out of stock</span>` : stt === 'low' ? `<span class="sx-pill warn">${sxi('alert')} Low</span>` : `<span class="sx-pill good">${sxi('ok')} In stock</span>`;
-      const mix = [3, 10, 20, 50, 100, 200].filter((ml) => p.sizes[ml] > 0).map((ml) => `<i class="m${ml}" style="flex:${p.sizes[ml] * ml} 1 0" data-tip="${ml} ml × ${p.sizes[ml]} = ${p.sizes[ml] * ml} ml"></i>`).join('');
+      const mix = [10, 20, 50, 100].filter((ml) => p.sizes[ml] > 0).map((ml) => `<i class="m${ml}" style="flex:${p.sizes[ml] * ml} 1 0" data-tip="${ml} ml × ${p.sizes[ml]} = ${p.sizes[ml] * ml} ml"></i>`).join('');
       const per = p.sold7 / 7, left = p.bottles > 0 && p.sold7 > 0 ? Math.round(p.bottles / per) : null;
       return `<div class="stk ${stt}"><div class="top"><div class="nm" title="${stEsc(p.title)}">${stEsc(p.title)}</div>${pill}</div>
         <div class="big"><b>${p.bottles}</b><span>bottle${p.bottles === 1 ? '' : 's'} · ${p.ml} ml</span></div>
         <div class="mix" role="img" aria-label="Stock mix by size">${mix}</div>
-        <div class="leg">${[10, 20, 50, 100].concat(p.sizes[200] ? [200] : [], p.sizes[3] ? [3] : []).map((ml) => `<span class="l${ml} ${p.sizes[ml] ? '' : 'l0'}"><em>${ml === 200 ? 'gel' : ml === 3 ? 'solid' : ml}</em>× ${p.sizes[ml] || 0}</span>`).join('')}</div>
+        <div class="leg">${[10, 20, 50, 100].map((ml) => `<span class="l${ml} ${p.sizes[ml] ? '' : 'l0'}"><em>${ml}</em>× ${p.sizes[ml] || 0}</span>`).join('')}</div>
         <div class="meta"><span>${p.sold7 ? 'Sold ' + p.sold7 + ' this week' : 'No sales this week'}</span>${left !== null ? `<span>· ≈ ${left} day${left === 1 ? '' : 's'} left</span>` : ''}${p.testers ? `<span class="sx-pill warn">${p.testers} tester${p.testers > 1 ? 's' : ''}</span>` : ''}</div>
         <div class="act"><button data-make="${esc(cleanTitle(p.title))}">Make more barcodes</button></div></div>`; }).join('') : '<div class="sx-card sx-mut">Nothing matches. Try another filter or search.</div>';
   }
