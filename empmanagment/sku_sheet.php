@@ -131,13 +131,25 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     if (!$cands) foreach (sku_pieces($full) as $x) $cands[] = [$x, ''];
     $hit = 0; $miss = [];
     foreach ($cands as [$c, $nm]) {
-        $s2 = sku_match($c); if ($s2 === '') { if (sku_norm($c) !== '' && !preg_match('/^(x\s*)?\d+$/', sku_norm($c))) $miss[] = $c; continue; }
+        $s2 = sku_match($c); if ($s2 === '') {
+            if (sku_norm($c) !== '' && !preg_match('/^(x\s*)?\d+$/', sku_norm($c))) {      // a box item whose name is not in the SKU list: counted on its own row "Not in SKU list" (its size and quantity are read like any other box item) and still listed in the red box
+                $w3 = ''; $col3 = sku_col($c . ' ' . $nm, $w3); if ($col3 < 0) $col3 = sku_col($full, $w3); $n3 = 1; if (preg_match('/^\s*(\d{1,2})\s*[x×]\s+/iu', $c, $m3)) $n3 = max(1, (int)$m3[1]);
+                $miss[] = [$c, $col3, $n3];
+            }
+            continue;
+        }
         $w2 = ''; $col = sku_col($c . ' ' . $nm, $w2); if ($col < 0) $col = sku_col($full, $w2);
         if ($col < 0) { $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty, 'why' => $w2 ?: 'size not known', 'kind' => 'size']; $hit++; continue; }
         $n = 1; if (preg_match('/^\s*(\d{1,2})\s*[x×]\s+/iu', $c, $m)) $n = max(1, (int)$m[1]);
         $put($s2, $col, $qty * $n); $hit++;
     }
-    if ($hit > 0) { foreach ($miss as $c) $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty, 'why' => 'this part of a combo matches no SKU', 'kind' => 'name']; return; }
+    if ($hit > 0) {
+        foreach ($miss as [$c, $col3, $n3]) {
+            if ($col3 >= 0) { $put('NOTFOUND', $col3, $qty * $n3); $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty * $n3, 'why' => 'this part of a combo matches no SKU — counted on the row "Not in SKU list"', 'kind' => 'counted']; }
+            else $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty, 'why' => 'this part of a combo matches no SKU', 'kind' => 'name'];
+        }
+        return;
+    }
     if ($sku !== '') { $col = sku_col($full, $why); if ($col >= 0) { $put($sku, $col, $qty); return; } $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => $why ?: 'size not known', 'kind' => 'size']; return; }
     $det = []; foreach ($props as $p) $det[] = $p['name'] . ': ' . (is_scalar($p['value'] ?? '') ? $p['value'] : json_encode($p['value']));
     $bad[] = ['order' => $order, 'text' => $full . ($det ? ' — details: ' . mb_substr(implode(' · ', $det), 0, 300) : ''), 'qty' => $qty, 'why' => 'this product matches no SKU' . ($shopSku !== '' ? ' (shop SKU "' . $shopSku . '")' : ''), 'kind' => 'name'];
@@ -150,7 +162,7 @@ function sku_shopify_day(PDO $pdo, string $day): array
     foreach (shopify_stores() as $key => $store) {
         if (strpos((string)($store['client_id'] ?? ''), 'PASTE_') !== false) continue;
         $tok = shopify_get_token($key, $store); if (is_array($tok)) { $errs[] = ($store['label'] ?? $key) . ': ' . ($tok['error'] ?? 'no access'); continue; }
-        $url = "https://{$store['domain']}/admin/api/2024-10/orders.json?" . http_build_query(['status' => 'any', 'limit' => 250, 'created_at_min' => str_replace(' ', 'T', $win[0]) . '+05:30', 'created_at_max' => str_replace(' ', 'T', $win[1]) . '+05:30', 'fields' => 'id,name,created_at,cancelled_at,line_items']);
+        $url = "https://{$store['domain']}/admin/api/2024-10/orders.json?" . http_build_query(['status' => 'any', 'limit' => 250, 'created_at_min' => str_replace(' ', 'T', $win[0]) . '+05:30', 'created_at_max' => str_replace(' ', 'T', $win[1]) . '+05:30', 'fields' => 'id,name,created_at,cancelled_at,line_items,note_attributes']);
         for ($page = 0; $page < 40 && $url; $page++) {
             $hdr = []; $ch = curl_init($url);
             curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 40, CURLOPT_HTTPHEADER => ['X-Shopify-Access-Token: ' . $tok, 'Content-Type: application/json'], CURLOPT_HEADERFUNCTION => function ($c, $h) use (&$hdr) { $hdr[] = $h; return strlen($h); }]);
@@ -173,9 +185,10 @@ function sku_sheet(PDO $pdo, string $day): array
     foreach ($orders as $o) {
         if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) { $nCancel++; continue; }
         $nOrd++; $oid[(string)($o['name'] ?? '')] = [(string)$o['_store'], (string)($o['id'] ?? '')];
-        foreach ((array)($o['line_items'] ?? []) as $li) {
+        $__bp = order_box_attr_props($o);      // "Box contents" kept as order details (not on the line): used for the ONE build-your-own line
+        foreach (array_values((array)($o['line_items'] ?? [])) as $__i => $li) {
             $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;      // a line removed from the order after it was placed
-            $nLines++; sku_take($grid, $bad, (string)($o['name'] ?? ''), (string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (array)($li['properties'] ?? []));
+            $nLines++; sku_take($grid, $bad, (string)($o['name'] ?? ''), (string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, ($__bp[$__i] ?? (array)($li['properties'] ?? [])));
         }
     }
     // the manual orders (WM-xxxxx) confirmed on that business day
@@ -188,16 +201,16 @@ function sku_sheet(PDO $pdo, string $day): array
         }
     } catch (Throwable $e) { }
     $ix = sku_index(); $rows = [];
-    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : (string)($ix['name'][$sku] ?? 'Not Found'), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
-    usort($rows, function ($a, $b) { if (($a['sku'] === 'FREE') !== ($b['sku'] === 'FREE')) return $a['sku'] === 'FREE' ? 1 : -1; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
+    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : ($sku === 'NOTFOUND' ? 'Not in SKU list (names are in the box above)' : (string)($ix['name'][$sku] ?? 'Not Found')), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
+    usort($rows, function ($a, $b) { $la = ['FREE' => 1, 'NOTFOUND' => 2][$a['sku']] ?? 0; $lb = ['FREE' => 1, 'NOTFOUND' => 2][$b['sku']] ?? 0; if ($la !== $lb) return $la <=> $lb; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
     $tot = array_fill(0, 10, 0); foreach ($rows as $r) foreach ($r['q'] as $i => $v) $tot[$i] += $v;
     // the list on top of the page: the same product from many orders is ONE line with its pieces and its orders
     $grp = [];
     foreach ($bad as $b) { $k = $b['kind'] . '|' . mb_strtolower($b['text']) . '|' . $b['why']; if (!isset($grp[$k])) $grp[$k] = ['text' => $b['text'], 'why' => $b['why'], 'kind' => $b['kind'], 'qty' => 0, 'orders' => []]; $grp[$k]['qty'] += $b['qty']; if (count($grp[$k]['orders']) < 12 && !in_array($b['order'], $grp[$k]['orders'], true)) $grp[$k]['orders'][] = $b['order']; }
     $un = array_values($grp); usort($un, fn($a, $b) => ($a['kind'] === 'left') <=> ($b['kind'] === 'left') ?: $b['qty'] <=> $a['qty']);
     return ['day' => $day, 'cols' => sku_cols(), 'rows' => $rows, 'totals' => $tot, 'pieces' => array_sum($tot), 'orders' => $nOrd, 'manual' => $nMan, 'cancelled' => $nCancel, 'lines' => $nLines,
-        'oid' => (object)$oid, 'unmatched' => array_values(array_filter($un, fn($x) => $x['kind'] !== 'left')), 'left_out' => array_values(array_filter($un, fn($x) => $x['kind'] === 'left')),
-        'unmatched_pieces' => array_sum(array_map(fn($x) => $x['kind'] !== 'left' ? $x['qty'] : 0, $un)), 'errors' => $errs, 'sku_count' => count(sku_list())];
+        'oid' => (object)$oid, 'unmatched' => array_values(array_filter($un, fn($x) => !in_array($x['kind'], ['left', 'counted'], true))), 'left_out' => array_values(array_filter($un, fn($x) => $x['kind'] === 'left')), 'noted' => array_values(array_filter($un, fn($x) => $x['kind'] === 'counted')),
+        'unmatched_pieces' => array_sum(array_map(fn($x) => !in_array($x['kind'], ['left', 'counted'], true) ? $x['qty'] : 0, $un)), 'errors' => $errs, 'sku_count' => count(sku_list())];
 }
 
 /** Who may open the SKU sheet: Admin, HR, a role ticked 'Orders', and the SAME people as the Dispatch "Manual orders" page — everyone whose department is Dispatch (or Admin),

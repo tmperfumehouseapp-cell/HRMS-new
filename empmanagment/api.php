@@ -1714,6 +1714,22 @@ function orders_settle_old_days(PDO $pdo): void
 // One entry per store. Apps created in the new Shopify Dev Dashboard don't
 // expose a shpat_ token — instead we exchange the app's Client ID + Secret
 // for an access token automatically (client credentials grant) and cache it.
+/** A build-your-own order may carry its "Box size" / "Box contents" as ORDER details (Shopify "Additional details" = note_attributes) and not on the product line itself.
+ *  Returns [line index => props] for the ONE build-your-own line of the order that has no details of its own; [] when there is nothing to attach (or two boxes: then it cannot be told which is which). */
+function order_box_attr_props(array $o): array
+{
+    $attrs = []; foreach ((array)($o['note_attributes'] ?? []) as $a) if (is_array($a) && (string)($a['name'] ?? '') !== '') $attrs[strtolower(trim((string)$a['name']))] = trim((string)(is_scalar($a['value'] ?? '') ? $a['value'] : ''));
+    $contents = $attrs['box contents'] ?? ''; if ($contents === '') return [];
+    $idx = [];
+    foreach (array_values((array)($o['line_items'] ?? [])) as $i => $li) {
+        if (!preg_match('/build your own/i', (string)($li['title'] ?? '') . ' ' . (string)($li['variant_title'] ?? ''))) continue;
+        $has = false; foreach ((array)($li['properties'] ?? []) as $p) if (is_array($p) && (string)($p['name'] ?? '') !== '' && (string)$p['name'][0] !== '_' && trim((string)($p['value'] ?? '')) !== '') { $has = true; break; }
+        if (!$has) $idx[] = $i;
+    }
+    if (count($idx) !== 1) return [];
+    $pr = []; if (($attrs['box size'] ?? '') !== '') $pr[] = ['name' => 'Box size', 'value' => $attrs['box size']]; $pr[] = ['name' => 'Box contents', 'value' => $contents];
+    return [$idx[0] => $pr];
+}
 function shopify_stores(): array
 {
     // Credentials live in config.php (gitignored). Optional SHOPIFY_STORES override wins.
@@ -34306,6 +34322,7 @@ switch ($action) {
         }
         $o = json_decode($resp, true)['order'] ?? null;
         if (!$o) json_response(['error' => 'Order not found.'], 404);
+        $__bp = order_box_attr_props($o);      // box contents kept as order details: shown under the box line
 
         if (($auth['role'] ?? '') === 'Employee') {
             $st = $pdo->prepare("SELECT sales_tag FROM employees WHERE employee_id = ?");
@@ -34342,14 +34359,14 @@ switch ($action) {
                 trim(($addr['city'] ?? '') . ' ' . ($addr['zip'] ?? '')),
                 trim(($addr['province'] ?? '') . ', ' . ($addr['country'] ?? ''), ', '),
             ])) : [],
-            'line_items' => array_map(fn($li) => [
+            'line_items' => array_map(fn($li, $i) => [
                 'title' => $li['title'],
                 'variant' => $li['variant_title'] ?? '',
                 'quantity' => (int)$li['quantity'],
                 'price' => $li['price'],
                 'total' => number_format((float)$li['price'] * (int)$li['quantity'], 2, '.', ''),
-                'props' => array_values(array_filter(array_map(fn($p) => is_array($p) && (string)($p['name'] ?? '') !== '' && (string)$p['name'][0] !== '_' && is_scalar($p['value'] ?? '') && trim((string)($p['value'] ?? '')) !== '' ? ['name' => (string)$p['name'], 'value' => (string)$p['value']] : null, (array)($li['properties'] ?? [])))),   // what the customer picked inside a build-your-own / combo line (hidden details start with _)
-            ], $o['line_items'] ?? []),
+                'props' => array_values(array_filter(array_map(fn($p) => is_array($p) && (string)($p['name'] ?? '') !== '' && (string)$p['name'][0] !== '_' && is_scalar($p['value'] ?? '') && trim((string)($p['value'] ?? '')) !== '' ? ['name' => (string)$p['name'], 'value' => (string)$p['value']] : null, ($__bp[$i] ?? (array)($li['properties'] ?? []))))),   // what the customer picked inside a build-your-own / combo line (hidden details start with _)
+            ], $o['line_items'] ?? [], array_keys($o['line_items'] ?? [])),
             'subtotal' => $o['subtotal_price'] ?? '0',
             'discounts' => $o['total_discounts'] ?? '0',
             // Discount code(s) the customer used, with what each took off.
