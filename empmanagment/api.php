@@ -1336,7 +1336,8 @@ function ora_judge_text(string $text, string $final = '', int $finalMl = 0): arr
 function ora_rate_one(PDO $pdo, array $o): array
 {
     $t = strtotime((string)$o['created_at']); $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) return ['rating' => null, 'why' => 'No mobile number on the order'];
-    $q = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts, wamid, reply_to FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 800"); $q->execute([$k, date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]);   // the NEWEST 400 messages up to the order (the oldest 400 used to be taken, which cut off the recent ones of a busy chat)
+    $ks = [$k]; try { if (!empty($o['store_key']) && !empty($o['shopify_id'])) { $xq = $pdo->prepare("SELECT phone FROM order_extra_phones WHERE source = ? AND order_id = ? LIMIT 1"); $xq->execute([(string)$o['store_key'], (string)$o['shopify_id']]); $xk = substr(preg_replace('/\D+/', '', (string)$xq->fetchColumn()), -10); if (strlen($xk) === 10 && $xk !== $k) $ks[] = $xk; } } catch (Throwable $e) { }   // the 'Extra mobile no.' of Order Allocation: the customer's chat may be on that number
+    $q = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts, wamid, reply_to FROM wa_messages WHERE phone IN (" . implode(',', array_fill(0, count($ks), '?')) . ") AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 800"); $q->execute(array_merge($ks, [date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]));   // the NEWEST 400 messages up to the order (the oldest 400 used to be taken, which cut off the recent ones of a busy chat)
     $rows = array_reverse($q->fetchAll(PDO::FETCH_ASSOC)); $by = []; foreach ($rows as $m0) if (!empty($m0['wamid'])) $by[(string)$m0['wamid']] = trim(preg_replace('/\s+/u', ' ', (string)$m0['body']));
     foreach ($rows as &$m1) { if (!empty($m1['reply_to']) && isset($by[(string)$m1['reply_to']])) $m1['quote'] = $by[(string)$m1['reply_to']]; } unset($m1);
     [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 2 || $ns < 1) return ['rating' => null, 'why' => 'No chat with a salesperson before this order'];
@@ -31679,13 +31680,15 @@ switch ($action) {
         $phone = preg_replace('/[\s().-]+/', '', trim((string)($in['phone'] ?? '')));
         if ($phone === '') {
             $pdo->prepare("DELETE FROM order_extra_phones WHERE source = ? AND order_id = ?")->execute([$source, $orderId]);
-            json_response(['phone' => '', 'message' => 'Extra mobile number removed.']);
+            try { $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_key = CONCAT(?, ':', ?)")->execute([$source, $orderId]); } catch (Throwable $e) { }   // the growth judge reads this order's chat again
+        json_response(['phone' => '', 'message' => 'Extra mobile number removed.']);
         }
         if (!preg_match('/^\+?\d{10,15}$/', $phone)) json_response(['error' => 'Enter a valid mobile number (10 to 15 digits).'], 422);
         $pdo->prepare(
             "INSERT INTO order_extra_phones (source, order_id, order_name, phone, updated_by) VALUES (?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE order_name = VALUES(order_name), phone = VALUES(phone), updated_by = VALUES(updated_by)"
         )->execute([$source, $orderId, mb_substr(trim((string)($in['order_name'] ?? '')), 0, 40), $phone, (string)($auth['username'] ?? '')]);
+        try { $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_key = CONCAT(?, ':', ?)")->execute([$source, $orderId]); } catch (Throwable $e) { }   // the growth judge reads this order's chat again (also on the extra number)
         json_response(['phone' => $phone, 'message' => 'Extra mobile number saved.']);
         break;
     }
