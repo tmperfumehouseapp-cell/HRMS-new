@@ -1201,6 +1201,23 @@ function wa_ord_tick(PDO $pdo): array
         if (wo_get($pdo, 'wa_ord_seeded', '') !== '' && wo_get($pdo, 'wa_ord_seed_tracking', '') === '' && function_exists('wa_wabas') && wa_wabas($pdo)) {   // once: the new "Tracking ID given" template is made and sent to Meta (templates already there are left alone)
             wo_put($pdo, 'wa_ord_seed_tracking', wo_dt(wo_now())); $o['seed_tracking'] = wa_ord_seed_templates($pdo, ['auto' => true]);
         }
+        // 🔁 "Tracking ID given" did not reach Meta yet (Meta's weekly limit for new utility templates): it is offered again every 6 hours until Meta takes it. Nothing else is touched.
+        try {
+            if (function_exists('wa_wabas') && function_exists('wa_tpl_create_at') && function_exists('wa_tpl_row') && $now0 = wo_now()) {
+                $lastTry = (int)wo_get($pdo, 'wa_ord_trk_retry_at', '0');
+                if ($now0 - $lastTry >= 6 * 3600) {
+                    $tid = wo_ver_id($pdo, 'tmph_order_tracking');
+                    if ($tid > 0) {
+                        $have = []; $hq = $pdo->prepare("SELECT waba_id, meta_id FROM wa_tpl_waba WHERE tpl_id = ?"); $hq->execute([$tid]); foreach ($hq->fetchAll() as $h) $have[(string)$h['waba_id']] = (string)$h['meta_id'];
+                        $todo = array_values(array_filter(wa_wabas($pdo), function ($w) use ($have) { return ($have[(string)$w] ?? '') === ''; }));
+                        if ($todo) { wo_put($pdo, 'wa_ord_trk_retry_at', (string)$now0); $row = wa_tpl_row($pdo, $tid); $oks = 0; $why = '';
+                            if ($row) foreach ($todo as $w) { [$ok1, $w1] = wa_tpl_create_at($pdo, $row, $w); if ($ok1) $oks++; else $why = (string)$w1; }
+                            if (function_exists('wa_log')) wa_log($pdo, 'orders', $oks > 0, 'Tracking ID given template offered to Meta again: ' . $oks . ' of ' . count($todo) . ' account(s) took it' . ($why !== '' ? ' — ' . mb_substr($why, 0, 140) : ''));
+                        }
+                    }
+                }
+            }
+        } catch (Throwable $e) { }
         if (wo_get($pdo, 'wa_ord_seeded', '') === '' && function_exists('wa_wabas') && wa_wabas($pdo)) {   // once: make and submit the five templates (no waiting for the owner)
             wo_put($pdo, 'wa_ord_seeded', wo_dt(wo_now())); $o['seed'] = wa_ord_seed_templates($pdo, ['auto' => true]);
         }
