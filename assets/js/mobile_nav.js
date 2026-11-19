@@ -54,12 +54,13 @@
       ' #mnSheet .mn-act button{flex:1;min-height:48px;border-radius:14px;border:1px solid var(--line,#e6e8ec);background:var(--surface,#fff);color:inherit;font:inherit;font-size:14px;font-weight:800;cursor:pointer;}',
       ' #mnSheet .mn-act .out{background:#e02424;border-color:#e02424;color:#fff;}',
       ' body.mnav-on #menuToggle{display:none !important;}',
+      ' body.mnav-on #hrmsDkBtn{display:none !important;}',      /* the moon button floated over the header tools (Pace, bell): the theme switch is in the More sheet now */
+      ' body.mnav-on .topbar{padding-left:2px !important;}',      /* the 58 px reserved for the hidden menu button is not needed any more */
       ' body.mnav-on .tmph-fab{right:14px !important;bottom:calc(76px + env(safe-area-inset-bottom)) !important;width:48px !important;height:48px !important;padding:0 !important;gap:0 !important;justify-content:center !important;font-size:0 !important;transition:transform .2s,opacity .2s !important;}',
       ' body.mnav-on.mn-down .tmph-fab{transform:translateY(120px) !important;opacity:0 !important;pointer-events:none;}',
       ' body.mnav-on .toast,body.mnav-on #toast,body.mnav-on .bd-toast,body.mnav-on .ws-toast{bottom:calc(84px + env(safe-area-inset-bottom)) !important;}',
       '}',
-      'html.hrms-dk #mnav,html.hrms-dk #mnSheet{background:#1b1d22;color:#eef0f3;border-color:#2c3038;}',
-      'html.hrms-dk #mnSheet .mn-i,html.hrms-dk #mnSheet .mn-act button{background:#23262d;border-color:#2c3038;color:#eef0f3;}'
+      '/* dark mode needs nothing here: the page is inverted as a whole by the existing dark mode, so the light bar and sheet turn dark with it */'
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -140,7 +141,7 @@
     for (var i = 0; i < els.length; i++) {
       var e = els[i]; if (!e.__mnr) { e.__mnr = 1; e.addEventListener('scroll', (function (x) { return function () { x.classList.toggle('mn-end', x.scrollLeft + x.clientWidth >= x.scrollWidth - 4); }; })(e), { passive: true }); }
       var more = e.scrollWidth > e.clientWidth + 6; e.classList.toggle('mn-more', more); e.classList.toggle('mn-end', !more || e.scrollLeft + e.clientWidth >= e.scrollWidth - 4);
-      var on = e.querySelector('.on,.active,[aria-selected="true"]'); if (more && on && !e.__mnd) { e.__mnd = 1; try { e.scrollLeft = Math.max(0, on.offsetLeft - 16); } catch (x) { } }
+      var on = e.querySelector('.on,.active,[aria-selected="true"]'); if (more && on && !e.__mnd) { e.__mnd = 1; try { var cr = e.getBoundingClientRect(), orr = on.getBoundingClientRect(); if (orr.right > cr.right - 8) e.scrollLeft += orr.right - cr.right + 24; else if (orr.left < cr.left + 8) e.scrollLeft -= cr.left - orr.left + 24; } catch (x) { } }      /* only when the chosen tab is not fully in view, and only by the needed amount */
     }
   }
   setInterval(rows, 1200); window.addEventListener('load', rows);
