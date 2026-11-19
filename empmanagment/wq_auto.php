@@ -101,7 +101,7 @@ function waa_state_put(PDO $pdo, array $st): void { setting_set($pdo, 'waa_st', 
 /** Queries given by this engine since the business day started: [emp => ['fresh' => n, 'camp' => n]]. */
 function waa_tally(PDO $pdo): array
 {
-    $o = []; try { $q = $pdo->prepare("SELECT emp_id, kind, COUNT(*) c FROM waa_log WHERE at >= ? GROUP BY emp_id, kind"); $q->execute([waa_dt(waa_day_start($pdo))]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $o[(int)$r['emp_id']][(string)$r['kind']] = (int)$r['c']; } catch (Throwable $e) { }
+    $o = []; try { $q = $pdo->prepare("SELECT emp_id, kind, COUNT(*) c, MAX(at) m FROM waa_log WHERE at >= ? GROUP BY emp_id, kind"); $q->execute([waa_dt(waa_day_start($pdo))]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $o[(int)$r['emp_id']][(string)$r['kind']] = (int)$r['c']; $o[(int)$r['emp_id']]['last_' . (string)$r['kind']] = (int)strtotime((string)$r['m']); } } catch (Throwable $e) { }
     return $o;
 }
 
@@ -151,7 +151,8 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
     foreach ($V['people'] as $e => $p) {
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
         else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
-        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => (int)$p['tier'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold'])];
+        $gap = max(0, (int)setting_get($pdo, 'waa_gap', '90')); $rest = !$camp && $gap > 0 && (int)($T[$e]['last_fresh'] ?? 0) > $now - $gap;   // given a fresh query in the last 90 s: one at a time
+        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => (int)$p['tier'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest];
     }
     if ($vip) { $good = []; foreach ($cand as $e => $x) if (!$x['full'] && (float)($V['people'][$e]['ticket'] ?? 0) >= (float)$tkc['goal'] && (int)($V['people'][$e]['orders'] ?? 0) >= (int)$tkc['min']) $good[$e] = $x; if ($good) $cand = $good; else $vip = false; }
     $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q); if ($to <= 0) { $dbg['nobody']++; return false; }
@@ -160,7 +161,7 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
         $chk = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ?"); $chk->execute([$ph]); if ((int)$chk->fetchColumn() > 0) { $dbg['held']++; return false; }   // somebody just took it
         wa_assign_to($pdo, $ph, $to, 0, 'auto');
         $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt($now), $ph, $to, $camp ? 'camp' : 'fresh', mb_substr(($vip ? '⭐ big-order customer · ' : '') . ($camp ? 'campaign query' : 'fresh query') . ' · weight ' . round($cand[$to]['w']) . ' · so far ' . $cand[$to]['cnt'], 0, 160)]);
-        $T[$to][$camp ? 'camp' : 'fresh'] = (int)($T[$to][$camp ? 'camp' : 'fresh'] ?? 0) + 1; if (!$camp) $V['people'][$to]['q']++; else $V['people'][$to]['cq']++;
+        $T[$to][$camp ? 'camp' : 'fresh'] = (int)($T[$to][$camp ? 'camp' : 'fresh'] ?? 0) + 1; if (!$camp) $T[$to]['last_fresh'] = $now; if (!$camp) $V['people'][$to]['q']++; else $V['people'][$to]['cq']++;
         waa_cp_bump($pdo, $to, $camp); waa_typed($pdo, $to, $camp); return true;
     } catch (Throwable $e) { error_log('waa give: ' . $e->getMessage()); $dbg['give_error'] = mb_substr($e->getMessage(), 0, 160); return false; }
     finally { try { $pdo->query("SELECT RELEASE_LOCK(" . $pdo->quote('waa_p_' . $ph) . ")"); } catch (Throwable $e) { } }

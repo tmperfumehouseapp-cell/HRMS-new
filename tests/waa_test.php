@@ -45,4 +45,10 @@ $cand[1]['full'] = true; $eq('everybody full: still given, green first', waa_pic
 $eq('two greens share by target', (function () { $c = [1 => ['w' => 25000.0, 'cnt' => 0, 'tier' => 1], 2 => ['w' => 70000.0, 'cnt' => 0, 'tier' => 1]]; $n = [1 => 0, 2 => 0]; for ($i = 0; $i < 95; $i++) { $e = waa_pick_tiers($c, 6); $n[$e]++; $c[$e]['cnt']++; } return [$n[1] >= 24 && $n[1] <= 27, $n[2] >= 68 && $n[2] <= 71]; })(), [true, true]);
 $eq('no red in the list: band people get it when no green', waa_pick_tiers([5 => ['w' => 1.0, 'cnt' => 3, 'tier' => 2]], 6), 5);
 $eq('nobody', waa_pick_tiers([], 6), 0);
+// one query at a time: a green who was just given one rests while another green can take it; with only him left he still gets it
+$two = [1 => ['w' => 1.0, 'cnt' => 2, 'tier' => 1, 'full' => false, 'rest' => true], 2 => ['w' => 1.0, 'cnt' => 3, 'tier' => 1, 'full' => false, 'rest' => false]];
+$eq('a resting green is skipped for another green', waa_pick_tiers($two, 6), 2);
+$one = [1 => ['w' => 1.0, 'cnt' => 2, 'tier' => 1, 'full' => false, 'rest' => true], 3 => ['w' => 1.0, 'cnt' => 9, 'tier' => 2, 'full' => false, 'rest' => false]];
+$eq('all greens resting: the next person takes it (no 2-4 at once)', waa_pick_tiers($one, 6), 3);
+$eq('only a resting green exists: he still gets it', waa_pick_tiers([1 => ['w' => 1.0, 'cnt' => 2, 'tier' => 1, 'full' => false, 'rest' => true]], 6), 1);
 echo $bad ? "waa test: $bad problem(s)\n" : "waa test: ok\n"; exit($bad ? 1 : 0);
