@@ -832,12 +832,12 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
     if (!$only) try { wa_camp_retry_scan($pdo, $nowTs); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaign retries: ' . $e->getMessage()); }
     $inWin = wa_camp_in_window($pdo, $nowTs); $due = "((status = 'queued' AND (send_at IS NULL OR send_at <= '$now')) OR (status = 'retry' AND next_try <= '$now'))";
     $dueI = "((i.status = 'queued' AND (i.send_at IS NULL OR i.send_at <= '$now')) OR (i.status = 'retry' AND i.next_try <= '$now'))";
+    $dqWorker = $only && !empty($GLOBALS['__dq_worker']);   // ⚙ a daily-plan helper: one more campaign sending at the same time while delivery is good (the plan's cap still applies)
     $dq = ($only && !$dqWorker) ? ['on' => false] : wa_dq_left($pdo); $poolOn = !empty($dq['on']); $poolLeft = (int)($dq['left'] ?? 0);   // 📅 one queue: every campaign shares this hour's / today's cap (⚡ Send fast campaigns are not held by it)
     // a campaign is FINISHED as soon as everyone has had their first try (owner, 7 Nov: not "Sending" for 3 days while Meta-held people wait for their one extra try).
     // The waiting retries stay in the queue: the moment one is due, the campaign is reopened for it and finishes again.
     if (!$only) try { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL WHERE status = 'done' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'retry' AND next_try <= '$now')"); } catch (Throwable $e) { }
     $fastMap = wa_camp_fast_all($pdo);   // ⚡ campaigns on Send fast: no cooldown, no people limit, our own limits skipped — each has its OWN sender (wa.camp_fast_tick), beside the running pool
-    $dqWorker = $only && !empty($GLOBALS['__dq_worker']);   // ⚙ a daily-plan helper: one more campaign sending at the same time while delivery is good (the plan's cap still applies)
     if ($only && !isset($fastMap[$only]) && !$dqWorker) return ['skipped' => true, 'why' => 'not on Send fast'];
     if ($only && isset($fastMap[$only])) { $fastMap[$only]['beat'] = time(); wa_camp_fast_put($pdo, $only, $fastMap[$only]); }   // heartbeat: while a campaign's Send fast sender is alive the normal pool leaves it alone
     $aliveIds = []; if (!$only) foreach ($fastMap as $fid => $fe) if (time() - (int)($fe['beat'] ?? 0) < 120) $aliveIds[] = (int)$fid;
