@@ -1275,9 +1275,9 @@ function ora_up_ovr(PDO $pdo, string $day): array
 {
     static $ok = false; $out = [];
     try {
-        if (!$ok) { $pdo->exec("CREATE TABLE IF NOT EXISTS order_up_override (order_key VARCHAR(80) NOT NULL PRIMARY KEY, day DATE NOT NULL, remark VARCHAR(300) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL, KEY k_day (day)) DEFAULT CHARSET=utf8mb4"); $ok = true; }
-        $q = $pdo->prepare("SELECT order_key, remark, by_name, at FROM order_up_override WHERE day = ?"); $q->execute([$day]);
-        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(string)$r['order_key']] = [(string)$r['remark'], (string)$r['by_name'], substr((string)$r['at'], 11, 5)];
+        if (!$ok) { $pdo->exec("CREATE TABLE IF NOT EXISTS order_up_override (order_key VARCHAR(80) NOT NULL PRIMARY KEY, day DATE NOT NULL, remark VARCHAR(300) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL, KEY k_day (day)) DEFAULT CHARSET=utf8mb4"); try { $pdo->query("SELECT bucket FROM order_up_override LIMIT 0"); } catch (Throwable $e1) { $pdo->exec("ALTER TABLE order_up_override ADD COLUMN bucket TINYINT NOT NULL DEFAULT 1"); } $ok = true; }
+        $q = $pdo->prepare("SELECT order_key, remark, by_name, at, bucket FROM order_up_override WHERE day = ?"); $q->execute([$day]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(string)$r['order_key']] = [(string)$r['remark'], (string)$r['by_name'], substr((string)$r['at'], 11, 5), (int)$r['bucket']];
     } catch (Throwable $e) { error_log('ora_up_ovr: ' . $e->getMessage()); }
     return $out;
 }
@@ -22877,7 +22877,7 @@ switch ($action) {
             $lv = ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']);
             $lb = ora_effort((int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']);
             if (!isset($E[$id])) $E[$id] = ['n' => [0, 0, 0, 0], 'sz' => [0, 0, 0, 0], 'up' => [0, 0, 0, 0], 'addon_rs' => 0, 'addon_orders' => 0, 'stars' => 0.0, 'rated' => 0, 'name' => $names[$id] ?? ('#' . $id)];
-            $ub = ora_up_bucket((int)$r['tried'], (int)$r['worked'], (int)$r['tries'], (int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']); if ($ub === 0 && isset($ovr[(string)$r['order_key']])) { $ub = 1; $E[$id]['call'] = ($E[$id]['call'] ?? 0) + 1; } $E[$id]['up'][$ub]++; $teamUp[$ub]++;   // the owner marked it 'tried on a call'
+            $ub = ora_up_bucket((int)$r['tried'], (int)$r['worked'], (int)$r['tries'], (int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']); if ($ub < 2 && isset($ovr[(string)$r['order_key']])) { $nb = max(1, min(2, (int)$ovr[(string)$r['order_key']][3])); if ($nb > $ub) { $ub = $nb; $E[$id]['call'] = ($E[$id]['call'] ?? 0) + 1; } } $E[$id]['up'][$ub]++; $teamUp[$ub]++;   // the owner marked it 'tried on a call'
             $E[$id]['n'][$lv]++; $team[$lv]++; $E[$id]['sz'][$lb]++; $teamSz[$lb]++;
             if ($lb === 3 && trim((string)$r['sz_tip']) !== '' && count($tipsSz) < 12) $tipsSz[] = ['text' => (string)$r['sz_tip'], 'emp' => $E[$id]['name'], 'order' => (string)$r['order_name']];
             if ($lb === 0 && count($missSz) < 40) $missSz[] = ['key' => (string)$r['order_key'], 'order' => (string)$r['order_name'], 'emp' => $id, 'emp_name' => $E[$id]['name'], 'asked' => (string)$r['asked'], 'why' => (string)($r['sz_reason'] !== '' ? $r['sz_reason'] : $r['reason'])]; $E[$id]['stars'] += (float)$r['rating'] / 2; $E[$id]['rated']++;
@@ -22982,7 +22982,7 @@ switch ($action) {
         $q->execute($emp > 0 ? [$day, $emp] : [$day]); $ovr = ora_up_ovr($pdo, $day);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $b = $r['rating'] === null ? 3 : ora_up_bucket((int)$r['tried'], (int)$r['worked'], (int)$r['tries'], (int)$r['sz_tried'], (int)$r['sz_worked'], (int)$r['sz_tries']);
-            $ov = null; if ($b === 0 && isset($ovr[(string)$r['order_key']])) { $b = 1; $ov = $ovr[(string)$r['order_key']]; }
+            $ov = null; if ($b < 2 && isset($ovr[(string)$r['order_key']])) { $nb = max(1, min(2, (int)$ovr[(string)$r['order_key']][3])); if ($nb > $b) { $b = $nb; $ov = $ovr[(string)$r['order_key']]; } }
             if ($b !== $lv) continue; $e = (int)$r['employee_id']; $out['total']++; $pc[$e] = ($pc[$e] ?? 0) + 1; if (count($out['rows']) >= 200) continue;
             $cust = ''; $tot = 0.0; try { [$sk, $sid] = array_pad(explode(':', (string)$r['order_key'], 2), 2, ''); $oq = $pdo->prepare("SELECT customer, total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $oq->execute([$sk, $sid]); $o = $oq->fetch(PDO::FETCH_ASSOC) ?: []; $cust = (string)($o['customer'] ?? ''); $tot = (float)($o['total'] ?? 0); } catch (Throwable $e1) { }
             $why = $b === 3 ? (string)$r['reason'] : trim((string)$r['reason'] . ' ' . (string)$r['sz_reason']);
@@ -22996,13 +22996,12 @@ switch ($action) {
         // 📞 Admin / HR: an order the judge saw as 'none' was tried on a call (salesperson confirmed) -> counts as Tried. {key, day, mark: 1|0, remark (4+ letters when marking)}
         $auth = require_auth();
         if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
-        $in = json_input(); $key = trim((string)($in['key'] ?? '')); $mark = !empty($in['mark']); $rm = trim((string)($in['remark'] ?? ''));
+        $in = json_input(); $key = trim((string)($in['key'] ?? '')); $mark = max(0, min(2, (int)($in['mark'] ?? 0))); $rm = trim((string)($in['remark'] ?? '')); if ($rm === '') $rm = $mark === 2 ? 'Owner e Done ma mukyu' : 'Owner e call par confirm karyu';
         $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['day'] ?? '')) ? (string)$in['day'] : biz_today($pdo);
         if ($key === '' || strlen($key) > 80) json_response(['error' => 'Order missing.'], 422);
-        if ($mark && mb_strlen($rm) < 4) json_response(['error' => 'Remark likho (kam se kam 4 akshar).'], 422);
         ora_up_ovr($pdo, $day);
         try {
-            if ($mark) { $by = trim((string)($auth['full_name'] ?? $auth['name'] ?? $auth['username'] ?? 'Admin')); $pdo->prepare("REPLACE INTO order_up_override (order_key, day, remark, by_name, at) VALUES (?, ?, ?, ?, ?)")->execute([$key, $day, mb_substr($rm, 0, 300), mb_substr($by, 0, 80), date('Y-m-d H:i:s')]); }
+            if ($mark) { $by = trim((string)($auth['full_name'] ?? $auth['name'] ?? $auth['username'] ?? 'Admin')); $pdo->prepare("REPLACE INTO order_up_override (order_key, day, remark, by_name, at, bucket) VALUES (?, ?, ?, ?, ?, ?)")->execute([$key, $day, mb_substr($rm, 0, 300), mb_substr($by, 0, 80), date('Y-m-d H:i:s'), $mark]); }
             else $pdo->prepare("DELETE FROM order_up_override WHERE order_key = ?")->execute([$key]);
         } catch (Throwable $e) { json_response(['error' => 'Could not save.'], 500); }
         json_response(['ok' => true]);
