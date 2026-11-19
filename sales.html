@@ -504,6 +504,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=33"></script>
+<script src="assets/js/must3.js?v=1"></script>
 <script>
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -957,33 +958,13 @@
   // Every refresh (resolve, remark, auto-reload) keeps the sections you opened and the scroll position — the panel no longer jumps / folds up.
   function renderToday() {
     const open0 = Array.from(document.querySelectorAll('#p-today details.bk-d')).map(d => d.open), y0 = window.scrollY;
-    renderToday0();
+    renderToday0(); m3Load();
     if (open0.length) document.querySelectorAll('#p-today details.bk-d').forEach((d, i) => { if (open0[i]) d.open = true; });
     if (y0 > 0) window.scrollTo(0, y0);
   }
 
-  /* ✅ The 3 must-send messages in every order: address re-check · chain selection · prepaid 2% — per person, per order (no AI: plain text match on what was sent) */
-  let M3 = { day: '', d: null, at: 0 };
-  function m3Html() {
-    const d = M3.day === $('datePick').value ? M3.d : null;
-    if (!d) return `<details class="ef-d" id="m3Box"><summary>✅ 3 must-send check — loading…</summary></details>`;
-    const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain selection'], ['p', '💳', 'Prepaid 2%']], n = (d.team || {}).n || 0;
-    const col = (v, t) => !t ? '#9ca3af' : (v / t >= .8 ? '#16a34a' : v / t >= .5 ? '#d97706' : '#dc2626');
-    const bar = K.map(k => { const v = (d.team || {})[k[0]] || 0; return `<div style="flex:1;min-width:92px;border:1px solid #e5e7eb;border-radius:10px;padding:6px 8px;background:#fff"><div style="font-size:11px;color:#667781">${k[1]} ${k[2]}</div><div style="font-size:17px;font-weight:800;color:${col(v, n)}">${v}<small style="font-size:11px;color:#667781"> / ${n}</small></div><div style="height:5px;border-radius:3px;background:#eef0f4;margin-top:3px"><div style="height:5px;border-radius:3px;width:${n ? Math.round(v / n * 100) : 0}%;background:${col(v, n)}"></div></div></div>`; }).join('');
-    const chip = (k, o) => { const v = o[k[0]]; return v ? `<span style="font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#dcfce7;color:#166534" title="${v[1] === 'A' ? 'Sent automatically' : 'Sent by the salesperson'}">${k[1]} ✓ ${esc(v[0])}${v[1] === 'A' ? ' 🤖' : ''}</span>` : `<span style="font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#fee2e2;color:#991b1b">${k[1]} ✗ not sent</span>`; };
-    const people = (d.people || []).map((q, i) => {
-      const miss = K.map(k => [k, q.n - (q[k[0]] || 0)]).filter(x => x[1] > 0);
-      const tip = miss.length ? miss.map(x => `${x[0][2]} ${x[1]} order ma nathi gayo`).join(' · ') + ' — order pehla bhejo.' : 'Badha orders ma 3 j gaya ✓';
-      const pills = K.map(k => `<span style="font-weight:800;color:${col(q[k[0]] || 0, q.n)};white-space:nowrap">${k[1]} ${q[k[0]] || 0}/${q.n}</span>`).join(' ');
-      const rows = (q.orders || []).map(o => `<div style="border-top:1px solid #eef0f4;padding:6px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px"><b>${esc(o.order)} <span style="font-weight:400;color:#667781">· ${esc(o.customer || '')} · ${inr(o.total)} · ${esc(o.at)}</span></b>${o.phone ? `<a href="wa_one.html?phone=${o.phone}" target="_blank">Open chat ›</a>` : ''}</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">${K.map(k => chip(k, o)).join('')}</div></div>`).join('');
-      return `<details style="border:1px solid #e5e7eb;border-radius:10px;margin:6px 0;padding:6px 10px;background:#fff"><summary style="cursor:pointer;list-style:none"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:13px">${esc(q.name)} <span style="font-weight:400;color:#667781">· ${q.n} orders</span></b><span style="font-size:12px;display:flex;gap:8px;flex-wrap:wrap">${pills}</span></div></summary><div style="font-size:12px;color:#92400e;background:#fffbeb;border-radius:8px;padding:5px 8px;margin:6px 0">💡 ${esc(tip)}</div>${rows}</details>`;
-    }).join('');
-    return `<details class="ef-d" id="m3Box" open><summary>✅ 3 must-send check · ${esc(d.day)} — 📍 ${(d.team || {}).a || 0} · ⛓ ${(d.team || {}).c || 0} · 💳 ${(d.team || {}).p || 0} of ${n} orders</summary><div class="sub" style="padding:4px 2px">Har order ma 3 vastu jani joiye: 📍 address re-check instruction · ⛓ chain selection message · 💳 prepaid par 2% extra discount. Tap a name for the orders (🤖 = automatic message). Most missing first.</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${bar}</div>${people || '<div class="sub" style="padding:8px">No orders yet.</div>'}</details>`;
-  }
-  async function m3Load() {
-    const day = $('datePick').value; if (!day || (M3.day === day && M3.at > Date.now() - 60000)) return;
-    try { const d = await api.get('ct.must3', { date: day }); M3 = { day, d, at: Date.now() }; const el = document.getElementById('m3Box'); if (el) { const op = el.open; el.outerHTML = m3Html(); const e2 = document.getElementById('m3Box'); if (e2 && !op && M3.d) e2.open = false; } } catch (e) { /* the box keeps its loading line */ }
-  }
+  function m3Html() { return '<div id="m3Box"></div>'; }   // the 3 must-send check (assets/js/must3.js): address re-check · chain selection · prepaid 2%
+  function m3Load() { const el = document.getElementById('m3Box'); if (el && window.Must3) Must3.mount(el, $('datePick').value || (T && T.day) || ''); }
   /* ↩ RTO resend / 🔁 Exchange orders made on the chosen day: parcels sent again. A count only - they are not sales. */
   let RXD = { day: '', d: null, at: 0 };
   function rxTileHtml() {
