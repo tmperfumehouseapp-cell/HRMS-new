@@ -903,7 +903,7 @@
     const dn = doneAll.map(r => `<div style="${row}display:block;font-size:12px;word-break:break-word"><b>${esc(r.emp)}</b> <small style="color:#667781">${esc(r.done_at)}</small><br>${r.auto ? '🤖 ' : '✓ '}<b>${esc(r.remark)}</b></div>`).join('');
     return `<details class="ef-d" ${!isCall && open.length ? 'open' : ''} style="max-width:100%"><summary>${title} — ${open.length} open · ${doneAll.length} resolved today<br><small style="font-weight:400;color:#667781">${sum || (isCall ? 'Koi call pending nahi ✓' : 'Abhi koi peeche nahi ✓')}</small></summary>${rows}${dn ? `<details style="margin-top:4px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:#166534">✓ Resolved today (${doneAll.length}) — with your comments</summary>${dn}</details>` : ''}</details>`;
   }
-  function ntHtml() { return ntBox('📈 Ticket size · Bigger · Add-on — instructions', false) + ntBox('📞 Call instructions', true); }
+  function ntHtml() { return ntBox('📞 Call instructions', true); }   // the ticket-size / bigger / add-on notes are no longer listed here: tap the 8 numbers to see who (the notes are still written for the half-hourly reports)
   window.effNt = async (id) => { const rm = prompt('Kya baat hui / kya kiya? (remark zaroori hai)'); if (rm == null) return; if (rm.trim().length < 4) { showAlert('Remark likho (kam se kam 4 akshar).', 'error'); return; } try { await api.post('wq.grow_note_resolve', { id, remark: rm.trim() }); EFF.nt = await api.get('wq.grow_notes'); renderToday(); } catch (e) { showAlert(e.message, 'error'); } };
   // 🔎 tap a number: which orders / chats are behind it
   window.effOrd = async (lane, lv, emp) => {
