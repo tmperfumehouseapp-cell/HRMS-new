@@ -52,8 +52,20 @@ $S['wa_ru_hourly'] = '220'; $S['wa_ru_ramp_at'] = (string)(time() - 1700); $S['w
 // 12) owner 19 Nov 2026 (23:05): looked at every 10 minutes, +20, top 320
 $S = ['wa_ru_hourly' => '260', 'wa_ru_ramp_base' => '200', 'wa_ru_ramp_step' => '20', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '320', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 700)];
 $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 50, 0, 20);
-wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '280', '10-minute look: 260 -> 280 (got ' . $S['wa_ru_hourly'] . ')');
-$S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 280]); ok($S['wa_ru_hourly'] === '280', '10-minute look: no second step before 10 minutes pass');
+wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '300', '10-minute look: 260 -> 300 on the ladder (got ' . $S['wa_ru_hourly'] . ')');
+$S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '300', '10-minute look: no second step before 10 minutes pass');
 $S['wa_ru_hourly'] = '320'; $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 320]); ok($S['wa_ru_hourly'] === '320', '10-minute look: ceiling 320');
 $S['wa_ru_hourly'] = '300'; $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 50, 8, 20); wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '200', '10-minute look: 16% failed stops it and restarts 100 lower (got ' . $S['wa_ru_hourly'] . ')');
+$S = ['wa_ru_hourly' => '260', 'wa_ru_ramp_base' => '180', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '350', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 700)]; $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 50, 0, 20); wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '300', 'grid: from 260 the next step is 300 (got ' . $S['wa_ru_hourly'] . ')');
+// 13) owner 19 Nov 2026 (23:20): ladder 180 / 240 / 300 / 350 an hour (30 / 40 / 50 / 58 per 10 minutes), from 260 the next is 300, rising failures hold it, a second bad look in a row -> 30
+$G = ['wa_ru_hourly' => '240', 'wa_ru_ramp_base' => '180', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '350', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 700)]; $S = $G;
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 50, 0, 20);
+wa_ru_ramp($pdo, ['hourly' => 240]); ok($S['wa_ru_hourly'] === '300', 'grid: 240 -> 300 (got ' . $S['wa_ru_hourly'] . ')');
+$S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '350', 'grid: 300 -> 350');
+$S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 350]); ok($S['wa_ru_hourly'] === '350', 'grid: ceiling 350');
+$S = $G; $S['wa_ru_hourly'] = '300'; $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 50, 4, 20);   /* 8% failed: rising, not yet the 10% brake */
+wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '300' && ($S['wa_ru_freeze_n'] ?? '') === '1', 'grid: first bad look holds at 300 (got ' . $S['wa_ru_hourly'] . ')');
+$S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '180', 'grid: second bad look in a row -> back to 180 (got ' . $S['wa_ru_hourly'] . ')');
+$S = $G; $S['wa_ru_hourly'] = '300'; $S['wa_ru_freeze_n'] = '1'; $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 50, 0, 20);
+wa_ru_ramp($pdo, ['hourly' => 300]); ok($S['wa_ru_hourly'] === '350' && $S['wa_ru_freeze_n'] === '0', 'grid: a good look after a hold grows again and clears the count');
 echo "ramp ok\n";
