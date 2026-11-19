@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Finance New · Incoming — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Finance New · Incoming</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Money coming in: what was booked, what was received, what is still to come.</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('fn_in');
+  async function load() {
+    try {
+      const r = await api.get('fn.ping');
+      $('root').innerHTML = `<div class="sx-card"><div class="sx-msg ok">${sxi('ok')}<span>Incoming is ready. Connected as <b>${esc(r.who || 'you')}</b>. Nothing is built here yet: tell Claude what this page should show.</span></div></div>`;
+    } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
