@@ -22,9 +22,9 @@ $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 40, 10, 30); $S['wa_ru_ramp_chk'
 ok($S['wa_ru_hourly'] === '100', 'failures: back to 100'); ok((int)$S['wa_ru_pause_until'] > time() + 2 * 3600 - 60 && (int)$S['wa_ru_pause_until'] < time() + 2 * 3600 + 60, 'failures: paused for 2 hours');
 ok((int)$S['wa_ru_ramp_hold'] > time() + 1 * 3600, 'failures: no growth for 2 hours');
 // 6) a spam flag sends it back too
-$S['wa_ru_hourly'] = '300'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '100' && (int)$S['wa_ru_pause_until'] > time() + 7 * 3600 && (int)$S['wa_ru_pause_until'] < time() + 9 * 3600, 'spam: back to 100 and paused 8 hours (first step)');
-// 6b) the ladder: 8 hours, then 12 hours, then 24 hours
-$S['wa_ru_spam_n'] = '0'; unset($S['wa_ru_spam_last']); ok(wa_ru_spam_hours($pdo, time()) === 8, 'ladder 1 = 8'); ok(wa_ru_spam_hours($pdo, time()) === 12, 'ladder 2 = 12'); ok(wa_ru_spam_hours($pdo, time()) === 24, 'ladder 3 = 24'); ok(wa_ru_spam_hours($pdo, time()) === 24, 'ladder 4 = 24'); ok(wa_ru_spam_hours($pdo, time() + 4 * 86400) === 8, 'ladder starts again after 3 calm days');
+$S['wa_ru_hourly'] = '300'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '100' && (int)$S['wa_ru_pause_until'] > time() + 3 * 3600 && (int)$S['wa_ru_pause_until'] < time() + 5 * 3600, 'spam: back to 100 and paused 4 hours (first step)');
+// 6b) the ladder: 4 hours, then 8, then 12, then 24 hours
+$S['wa_ru_spam_n'] = '0'; unset($S['wa_ru_spam_last']); ok(wa_ru_spam_hours($pdo, time()) === 4, 'ladder 1 = 4'); ok(wa_ru_spam_hours($pdo, time()) === 8, 'ladder 2 = 8'); ok(wa_ru_spam_hours($pdo, time()) === 12, 'ladder 3 = 12'); ok(wa_ru_spam_hours($pdo, time()) === 24, 'ladder 4 = 24'); ok(wa_ru_spam_hours($pdo, time()) === 24, 'ladder 5 = 24'); ok(wa_ru_spam_hours($pdo, time() + 4 * 86400) === 4, 'ladder starts again after 3 calm days');
 $S['wa_ru_spam_n'] = '0'; unset($S['wa_ru_spam_last']);
 // 7) ceiling 600
 $S = ['wa_ru_hourly' => '600', 'wa_ru_ramp_base' => '100', 'wa_ru_ramp_step' => '50', 'wa_ru_ramp_at' => (string)(time() - 4000)]; $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 400, 0, 30); wa_ru_ramp($pdo, ['hourly' => 600]); ok($S['wa_ru_hourly'] === '600', 'ceiling 600');
