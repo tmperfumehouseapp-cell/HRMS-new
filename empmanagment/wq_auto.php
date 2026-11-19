@@ -145,7 +145,8 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
     if (!$c['last_in_at'] || strtotime((string)$c['last_in_at']) < $now - 86400 + 600) { $dbg['old']++; return false; }
     static $hq = null, $bq = null; if ($hq === null) { $humanSql = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0"; $hq = $pdo->prepare("SELECT 1 FROM wa_contacts c JOIN wa_messages h ON h.phone = c.phone WHERE c.phone = ? AND $humanSql LIMIT 1"); $bq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1"); }
     $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; return false; } $bq->execute([$ph]); if ($bq->fetchColumn()) { $dbg['biz']++; return false; }
-    $camp = in_array((string)$r['src'], ['campaign', 'community'], true); $cand = [];   // a Community query is given like a Campaign query (owner, 17 Nov) $avgT = (float)$V['avg_target'];
+    $camp = in_array((string)$r['src'], ['campaign', 'community'], true); $cand = [];   // a Community query is given like a Campaign query (owner, 17 Nov)
+    $avgT = (float)$V['avg_target'];
     $vip = false; try { $tkc = tk_cfg($pdo); if ($tkc['on'] && $tkc['goal'] > 0) $vip = waa_is_vip($pdo, $ph, (float)$tkc['goal']); } catch (Throwable $e) { }   // big-order customer → a seller who reaches the ticket goal
     foreach ($V['people'] as $e => $p) {
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
