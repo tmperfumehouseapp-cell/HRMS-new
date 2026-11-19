@@ -155,6 +155,7 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
         $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => (int)$p['tier'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest];
     }
     if ($vip) { $good = []; foreach ($cand as $e => $x) if (!$x['full'] && (float)($V['people'][$e]['ticket'] ?? 0) >= (float)$tkc['goal'] && (int)($V['people'][$e]['orders'] ?? 0) >= (int)$tkc['min']) $good[$e] = $x; if ($good) $cand = $good; else $vip = false; }
+    if (!$camp) $cand = waa_mark_ahead($cand);
     $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q); if ($to <= 0) { $dbg['nobody']++; return false; }
     $lk = 0; try { $lk = (int)$pdo->query("SELECT GET_LOCK(" . $pdo->quote('waa_p_' . $ph) . ", 0)")->fetchColumn(); } catch (Throwable $e) { } if ($lk !== 1) return false;
     try {
