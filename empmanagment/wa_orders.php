@@ -909,6 +909,24 @@ function wo_tpl_for(PDO $pdo, string $status): ?array
     }
     $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$defs[$status][0]]); $id = (int)$q->fetchColumn(); return $id ? wa_camp_tpl($pdo, $id) : null;   // null = not approved (anywhere)
 }
+/** 🔗 The page where the customer can follow this parcel: the link saved on the parcel, else the courier's link from the Dispatch courier list (DTDC, India Post ...),
+ *  else - a courier name that is not in the list is a Shiprocket service (Bluedart brands ..., Delhivery Surface ...) - the Shiprocket tracking page. '' = none. */
+function wo_track_link(PDO $pdo, array $p): string
+{
+    $tn = trim((string)($p['tracking_no'] ?? '')); $co = strtolower(trim((string)($p['courier'] ?? ''))); if ($tn === '' || strcasecmp($tn, 'Office Pickup') === 0) return '';
+    $lk = trim((string)($p['track_link'] ?? ''));
+    if ($lk === '') {
+        $pat = null;
+        try { $q = $pdo->prepare("SELECT link FROM dp_dsp_couriers WHERE LOWER(name) = ? LIMIT 1"); $q->execute([$co]); $r = $q->fetch(); if ($r) $pat = trim((string)$r['link']); } catch (Throwable $e) { }
+        if ($pat === null) {   // not in the courier list
+            if ($co === '' || in_array($co, ['office pickup', 'other', 'normal'], true)) return '';
+            $pat = 'https://shiprocket.co/tracking/{ID}';
+            try { $q = $pdo->query("SELECT link FROM dp_dsp_couriers WHERE LOWER(name) = 'shiprocket' LIMIT 1"); $v = trim((string)$q->fetchColumn()); if ($v !== '') $pat = $v; } catch (Throwable $e) { }
+        }
+        $lk = $pat === '' ? '' : str_replace('{ID}', rawurlencode($tn), $pat);
+    }
+    return preg_match('~^https?://[^\s<>"\']{4,220}$~i', $lk) ? $lk : '';
+}
 function wo_vars(array $p, string $status): array
 {
     $co = trim((string)$p['courier']); $co = $co !== '' ? $co : 'the courier'; $vars = [wo_first_name((string)$p['customer']), (string)$p['order_name'], $co, (string)$p['tracking_no']];
@@ -1026,6 +1044,8 @@ function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
     [$nid, $why] = wa_pick_number($pdo, $ct, $ctxCache[$ck]);
     if ($nid === 0) { $pdo->prepare("UPDATE wa_ord_sent SET due_at = ?, err = ? WHERE id = ?")->execute([wo_dt($nowTs + 900), mb_substr($why, 0, 190), $id]); return ['out' => 'waiting']; }
     $vars = wo_vars($p, $st);
+    // 🔗 the tracking link rides with the tracking number (the same approved message, no new approval): "… your tracking number is 7727… · Track it here: https://…"
+    if (in_array($st, ['shipped', 'tracking'], true) && isset($vars[3]) && trim((string)$vars[3]) !== '' && wo_get($pdo, 'wa_ord_link_off', '') !== '1') { $lk = wo_track_link($pdo, $p); if ($lk !== '') $vars[3] = trim((string)$vars[3]) . ' · Track it here: ' . $lk; }
     if ($st === 'bday_ask' && function_exists('cbd_has') && cbd_has($pdo, $key)) return $fin('skipped', 'The birthday is already saved', 'skipped');
     if ($st === 'birthday' && $bdV) $vars = [wo_first_name((string)$bdV['name']), (function ($v) { $t = function_exists('st_bday_next') ? st_bday_next((string)$v['bday'], strtotime((string)$v['valid_from'])) : null; return date('j M', $t ?: strtotime((string)$v['valid_from'])); })($bdV), (string)$bdV['code'], date('j M', strtotime((string)$bdV['valid_to']))];
     if ($st === 'review_nudge') {   // name, order, the Judge.me link; only while the customer still has the offer open
