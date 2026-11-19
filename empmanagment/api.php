@@ -1333,6 +1333,19 @@ function ora_judge_text(string $text, string $final = '', int $finalMl = 0): arr
         'big_tried' => ($btr >= 1 || $bwk) ? 1 : 0, 'big_worked' => $bwk, 'big_tries' => max($btr, $bwk ? 1 : 0), 'big_weak' => $n('big_weak'), 'big_refused' => !empty($v['big_refused']) ? 1 : 0, 'big_tip' => $bwk ? mb_substr((string)($v['big_tip'] ?? ''), 0, 240) : '',
         'asked' => mb_substr((string)($v['asked'] ?? ''), 0, 200), 'offered' => mb_substr((string)($v['offered'] ?? ''), 0, 200), 'why' => mb_substr($note !== '' ? trim($note) : (string)($v['reason'] ?? ''), 0, 400), 'big_why' => mb_substr($bnote !== '' ? $bnote : (string)($v['big_reason'] ?? ''), 0, 400)];
 }
+/** The chat number of an order whose own number has no chat: the customer's address reply ('8. Primary No:- ... 9. External No:- ...') names the order's number, so the inbound message that mentions it comes from the real chat. Returns the 10 digits of that chat's number or ''. */
+function ora_alt_chat_phone(PDO $pdo, string $k, int $t): string
+{
+    try {
+        $q = $pdo->prepare("SELECT phone, body FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts <= ? AND body LIKE ? AND phone <> ? ORDER BY id DESC LIMIT 6");
+        $q->execute([date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 15 * 60), '%' . $k . '%', $k]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if (!preg_match('/primary|external|alternate|mobile|whatsapp|contact/i', (string)$r['body'])) continue;   // the address reply names its numbers
+            $p = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if (strlen($p) === 10 && $p !== $k) return $p;
+        }
+    } catch (Throwable $e) { error_log('ora_alt_chat_phone: ' . $e->getMessage()); }
+    return '';
+}
 function ora_rate_one(PDO $pdo, array $o): array
 {
     $t = strtotime((string)$o['created_at']); $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) return ['rating' => null, 'why' => 'No mobile number on the order'];
@@ -1340,7 +1353,21 @@ function ora_rate_one(PDO $pdo, array $o): array
     $q = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts, wamid, reply_to FROM wa_messages WHERE phone IN (" . implode(',', array_fill(0, count($ks), '?')) . ") AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 800"); $q->execute(array_merge($ks, [date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]));   // the NEWEST 400 messages up to the order (the oldest 400 used to be taken, which cut off the recent ones of a busy chat)
     $rows = array_reverse($q->fetchAll(PDO::FETCH_ASSOC)); $by = []; foreach ($rows as $m0) if (!empty($m0['wamid'])) $by[(string)$m0['wamid']] = trim(preg_replace('/\s+/u', ' ', (string)$m0['body']));
     foreach ($rows as &$m1) { if (!empty($m1['reply_to']) && isset($by[(string)$m1['reply_to']])) $m1['quote'] = $by[(string)$m1['reply_to']]; } unset($m1);
-    [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 2 || $ns < 1) return ['rating' => null, 'why' => 'No chat with a salesperson before this order'];
+    [$text, $nc, $ns] = ora_transcript($rows);
+    if (($nc < 2 || $ns < 1) && count($ks) === 1) {   // no chat on the order's number: the customer's address reply may name the number the chat is really on
+        $alt = ora_alt_chat_phone($pdo, $k, $t);
+        if ($alt !== '') {
+            $q2 = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts, wamid, reply_to FROM wa_messages WHERE phone IN (?, ?) AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 800"); $q2->execute([$k, $alt, date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]);
+            $rows2 = array_reverse($q2->fetchAll(PDO::FETCH_ASSOC)); $by2 = []; foreach ($rows2 as $m0) if (!empty($m0['wamid'])) $by2[(string)$m0['wamid']] = trim(preg_replace('/\s+/u', ' ', (string)$m0['body']));
+            foreach ($rows2 as &$m2) { if (!empty($m2['reply_to']) && isset($by2[(string)$m2['reply_to']])) $m2['quote'] = $by2[(string)$m2['reply_to']]; } unset($m2);
+            [$t2, $nc2, $ns2] = ora_transcript($rows2);
+            if ($nc2 >= 2 && $ns2 >= 1) {
+                $text = $t2; $nc = $nc2; $ns = $ns2;
+                try { if (function_exists('ensure_order_phones_table')) ensure_order_phones_table($pdo); if (!empty($o['store_key']) && !empty($o['shopify_id'])) $pdo->prepare("INSERT IGNORE INTO order_extra_phones (source, order_id, order_name, phone, updated_by) VALUES (?, ?, ?, ?, 'auto: address reply')")->execute([(string)$o['store_key'], (string)$o['shopify_id'], mb_substr((string)($o['order_name'] ?? ''), 0, 40), $alt]); } catch (Throwable $e) { }   // shows in Order Allocation as the Extra mobile no.
+            }
+        }
+    }
+    if ($nc < 2 || $ns < 1) return ['rating' => null, 'why' => 'No chat with a salesperson before this order'];
     return ora_judge_text($text, "Final order for reference: Rs " . round((float)$o['total']) . ($o['ml_total'] ? ', ' . (int)$o['ml_total'] . ' ml in total' : '') . '.', (int)($o['ml_total'] ?? 0));
 }
 /** Saves the suggestion as the order's real stars (only when nobody has rated it). Returns true when saved. */
@@ -1462,6 +1489,7 @@ function ora_catchup(PDO $pdo): int
 {
     if (ora_mode($pdo) === 'off' || !function_exists('convo_ai')) return 0;
     try { if ((int)setting_get($pdo, 'ora_cu_at', '0') > time() - 45) return 0; setting_set($pdo, 'ora_cu_at', (string)time()); } catch (Throwable $e) { return 0; }
+    try { if ((string)setting_get($pdo, 'ora_fix13', '') !== '1') { setting_set($pdo, 'ora_fix13', '1'); $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE sz_ok = 7 AND rating IS NULL AND day >= ?")->execute([date('Y-m-d', strtotime(biz_today($pdo) . ' -1 day'))]); } } catch (Throwable $e) { }   // one-off: 'chat not found' orders of today / yesterday are read again (extra numbers from the address reply)
     try { if ((string)setting_get($pdo, 'ora_fix12', '') !== '1') { setting_set($pdo, 'ora_fix12', '1'); $pdo->exec("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_name IN ('72344', '#72344')"); } } catch (Throwable $e) { }   // one-off: #72344 (5 -> 8 pieces) is read again with the numbers check
     try { if ((string)setting_get($pdo, 'ora_fix11', '') !== '1') { setting_set($pdo, 'ora_fix11', '1'); $pdo->exec("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_name IN ('72338', '#72338')"); } } catch (Throwable $e) { }   // one-off: #72338 is read again with the quoted-reply context (the owner's example)
     try { try { if ((string)setting_get($pdo, 'ora_fix10', '') !== '1') { setting_set($pdo, 'ora_fix10', '1'); $pdo->exec("UPDATE order_rate_auto SET tries = 1, tried = 1 WHERE sz_ok = 7 AND refused = 1 AND tries = 0"); $pdo->exec("UPDATE order_rate_auto SET sz_tries = 1, sz_tried = 1 WHERE sz_ok = 7 AND sz_refused = 1 AND sz_tries = 0"); } } catch (Throwable $e) { }   // one-off: a refusal already stored without a try becomes a try (no new AI reading)
