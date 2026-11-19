@@ -31,6 +31,17 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   } catch (e) { /* the assistant is optional */ }
 })();
 
+// Phone navigation: bottom tab bar + "More" sheet below 768 px (assets/js/mobile_nav.js reads the menu this page draws; it does nothing on desktop, inside a frame or on WhatsApp).
+(function () {
+  try {
+    if (window.top !== window.self || window.__mnavLoad) return; window.__mnavLoad = 1;
+    var cs = document.currentScript;
+    var src = (cs && cs.src) ? cs.src.replace(/layout\.js.*$/, 'mobile_nav.js?v=1') : 'assets/js/mobile_nav.js?v=1';
+    var s = document.createElement('script'); s.src = src; s.defer = true;
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) { /* phone navigation is optional */ }
+})();
+
 // Voice: a start / stop microphone next to every Claude box (Boss chat, Claude questions, Brain teach boxes). Loaded in hub frames too.
 (function () {
   try {
