@@ -1,5 +1,5 @@
 <?php
-// Marketing auto hold (131048 surge -> 30 minutes) and the delivery-following speed (5,000 start, +1,000 while good up to 10,000, bad -> 1 hour hold and back to 5,000).
+// Marketing auto hold (131048 surge -> 1 hour) and the delivery-following speed (5,000 start, +1,000 while good up to 10,000, bad -> 1 hour hold and back to 5,000).
 $S = []; function setting_get($p, $k, $d = '') { global $S; return $S[$k] ?? $d; } function setting_set($p, $k, $v) { global $S; $S[$k] = (string)$v; } function wa_log() { global $LOG; $LOG[] = func_get_args(); }
 $src = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_dq.php'); $a = strpos($src, 'function wa_dq_hold_active'); $b = strpos($src, 'function wa_dq_cfg'); eval(substr($src, $a, $b - $a));
 $pdo = new PDO('sqlite::memory:'); $pdo->exec("CREATE TABLE wa_camp_items (err_code INT, sent_at TEXT)"); $pdo->exec("CREATE TABLE wa_messages (dir TEXT, who TEXT, mtype TEXT, status TEXT, ts TEXT)");
@@ -8,7 +8,7 @@ function items($pdo, $n, $ageMin) { for ($i = 0; $i < $n; $i++) $pdo->prepare("I
 function msgs($pdo, $n, $deliv, $failed, $ageMin) { for ($i = 0; $i < $n; $i++) { $st = $i < $deliv ? 'delivered' : ($i < $deliv + $failed ? 'failed' : 'sent'); $pdo->prepare("INSERT INTO wa_messages VALUES ('out', 'campaign', 'template', ?, ?)")->execute([$st, date('Y-m-d H:i:s', time() - $ageMin * 60)]); } }
 // 1) 99 flagged in the last hour -> nothing; 100 -> 3 hours hold
 items($pdo, 99, 20); wa_dq_auto_hold($pdo); ok(!wa_dq_hold_active($pdo), '99 flags: no hold');
-items($pdo, 1, 20); $S['wa_dq_auto_hold_at'] = '0'; wa_dq_auto_hold($pdo); ok(wa_dq_hold_active($pdo) && (int)$S['wa_dq_hold_until'] > time() + 1800 - 60 && (int)$S['wa_dq_hold_until'] < time() + 1800 + 60, '100 flags: 30 minutes hold');
+items($pdo, 1, 20); $S['wa_dq_auto_hold_at'] = '0'; wa_dq_auto_hold($pdo); ok(wa_dq_hold_active($pdo) && (int)$S['wa_dq_hold_until'] > time() + 3600 - 60 && (int)$S['wa_dq_hold_until'] < time() + 3600 + 60, '100 flags: 1 hour hold');
 // 2) flags before the end of the last hold do not count again
 $S['wa_dq_hold_until'] = '0'; $S['wa_dq_hold_end'] = (string)(time() - 60); $S['wa_dq_auto_hold_at'] = '0'; wa_dq_auto_hold($pdo); ok(!wa_dq_hold_active($pdo), 'old flags (before the hold ended) do not hold again');
 // 3) speed: good delivery -> +1,000
