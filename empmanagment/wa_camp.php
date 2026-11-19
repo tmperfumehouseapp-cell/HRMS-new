@@ -530,7 +530,7 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
     // ⚡ The list of 40 campaigns used to run ~5 heavy queries per campaign (counts, delivery, the "replied" join on wa_messages) on every open and every 20 s: the Campaigns page sat on "Loading…".
     // The numbers are now remembered per campaign for a short time (15 s while it is sending, 10 min once it is finished/draft); the 🔄 Refresh button and wa.camp_get (deep) always read them fresh.
     $cid = (int)$c['id']; $cn = null; $d = null; $ck = 'wa_cpc_' . $cid; $live = in_array((string)$c['status'], ['running', 'scheduled', 'paused'], true);
-    if (!$deep && empty($GLOBALS['__wa_camp_fresh'])) { try { $hit = json_decode((string)setting_get($pdo, $ck, ''), true); if (is_array($hit) && ($hit['st'] ?? '') === (string)$c['status'] && (int)($hit['t'] ?? 0) > time() - ($live ? 15 : 600) && is_array($hit['cn'] ?? null) && is_array($hit['d'] ?? null)) { $cn = $hit['cn']; $d = $hit['d']; } } catch (Throwable $e) { } }
+    if (!$deep && empty($GLOBALS['__wa_camp_fresh'])) { try { $hit = json_decode((string)setting_get($pdo, $ck, ''), true); if (is_array($hit) && ($hit['st'] ?? '') === (string)$c['status'] && (int)($hit['t'] ?? 0) > time() - ($live ? 15 : (!empty($c['finished_at']) && strtotime((string)$c['finished_at']) < time() - 172800 ? 7200 : 600)) && is_array($hit['cn'] ?? null) && is_array($hit['d'] ?? null)) { $cn = $hit['cn']; $d = $hit['d']; } } catch (Throwable $e) { } }
     if ($cn === null) { $cn = wa_camp_counts($pdo, $cid); $d = wa_camp_delivery($pdo, $cid); if (!$deep) { try { setting_set($pdo, $ck, json_encode(['t' => time(), 'st' => (string)$c['status'], 'cn' => $cn, 'd' => $d])); } catch (Throwable $e) { } } }
     $t = null; $lib = null;
     if ((int)$c['tpl_id']) { try { $t = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { } }
@@ -926,7 +926,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         while ($sent + $failed + $skipped < $quota && microtime(true) < $cDead && !$stop) {
             $ucond = '';
             if ($catUtil && $burstLeft <= 0) { if ($sent > $cuLast) { wa_cat_util_note($pdo, time(), $sent - $cuLast); $cuLast = $sent; } $poolLeft = wa_cat_util_room($pdo, time()); if ($poolLeft <= 0) { $stop = 'Utility limit: 700 an hour is reached — it continues by itself.'; break; } }
-            elseif ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left'];
+            elseif ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = min((int)$dqF['left'], wa_dq_items_room($pdo));
                 if ($poolLeft <= 0) {   // 💸 the marketing allowance is used: the people put back by "Start as utility" still go (utility only — utility is outside the daily plan); everybody else waits
                     $rq = $uFirst ? (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND variant = 'R'")->fetchColumn() : 0;
                     if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 60), counted over all campaigns; the marketing allowance is not touched
