@@ -483,6 +483,15 @@ function wa_status_intake(PDO $pdo, array $list): int
     } catch (Throwable $e) { return $old(); }   // could not be queued: apply them now, the old way
     return wa_status_flush($pdo, false);
 }
+/** The last blocks (when, how many receipts, how long they waited, how long the block took): a small file, shown by the 'Receipts speed' button of the Server load page. */
+function wa_stq_stats_file(): string { return rtrim(sys_get_temp_dir(), '/') . '/hrms_wa_stq_stats_' . substr(md5(__DIR__), 0, 6) . '.json'; }
+function wa_stq_stats_put(int $n, float $avg, float $max, float $secs): void
+{
+    $f = wa_stq_stats_file(); $j = json_decode((string)@file_get_contents($f), true); $b = is_array($j) ? $j : [];
+    $b[] = ['t' => time(), 'n' => $n, 'avg' => round($avg, 1), 'max' => round($max, 1), 'ms' => (int)round($secs * 1000)];
+    @file_put_contents($f, json_encode(array_slice($b, -80)), LOCK_EX);
+}
+function wa_stq_stats_get(): array { $j = json_decode((string)@file_get_contents(wa_stq_stats_file()), true); return is_array($j) ? $j : []; }
 /** Applies the waiting block when it is due (last block more than 7 s ago) or $force (the engine). One block at a time (database lock). Returns how many messages moved forward. */
 function wa_status_flush(PDO $pdo, bool $force): int
 {
@@ -494,9 +503,10 @@ function wa_status_flush(PDO $pdo, bool $force): int
     try {
         @touch($f);
         for ($pass = 0; $pass < 4; $pass++) {
-            $rs = $pdo->query("SELECT id, wamid, st, phone, pc, pb FROM wa_status_q ORDER BY id LIMIT 1500")->fetchAll(PDO::FETCH_ASSOC);
+            $rs = $pdo->query("SELECT id, wamid, st, phone, pc, pb, at FROM wa_status_q ORDER BY id LIMIT 1500")->fetchAll(PDO::FETCH_ASSOC);
             if (!$rs) break;
-            $moved += wa_status_apply($pdo, $rs);
+            $__t0 = microtime(true); $moved += wa_status_apply($pdo, $rs);
+            try { $__now = time(); $__d = array_map(function ($r) use ($__now) { return max(0, $__now - (int)strtotime((string)$r['at'])); }, $rs); wa_stq_stats_put(count($rs), array_sum($__d) / max(1, count($__d)), max($__d), microtime(true) - $__t0); } catch (Throwable $e) { }   // for the 'Receipts speed' check on the Server load page
             foreach (array_chunk(array_column($rs, 'id'), 400) as $ch) $pdo->prepare("DELETE FROM wa_status_q WHERE id IN (" . implode(',', array_fill(0, count($ch), '?')) . ")")->execute($ch);   // exactly the rows that were applied
             if (count($rs) < 1500) break;
         }

@@ -298,19 +298,19 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         try { const rr = await api.post('wa.camp_fast_tick', { id }), res = (rr && rr.result) || {}; bad = 0; skip = !!res.skipped; Object.keys(res).forEach((k) => { const v = res[k]; if (v && typeof v === 'object') sentN += Number(v.sent) || 0; }); }
         catch (e) { if (++bad >= 3) break; await new Promise((r) => setTimeout(r, 3000)); continue; }
         if (sentN > 0 && !skip) { idle = 0; await new Promise((r) => setTimeout(r, 300)); }
-        else { idle = Math.min(idle + 1, 5); await new Promise((r) => setTimeout(r, idle * 4000)); }
-        if (!window.__cpFastAt || Date.now() - window.__cpFastAt > 4000) { window.__cpFastAt = Date.now(); await load(true); }   // one list refresh at a time, whatever the number of fast campaigns
+        else { idle = Math.min(idle + 1, 4); await new Promise((r) => setTimeout(r, idle * 6000)); }   // ⚡ 4 s → 20 s became 6 s → 24 s: with several pages open every one of them asked for the same campaign
+        if (!window.__cpFastAt || Date.now() - window.__cpFastAt > 10000) { window.__cpFastAt = Date.now(); await load(true); }   // one list refresh at a time, whatever the number of fast campaigns
         const cc = ((D && D.campaigns) || []).find((x) => x.id === id); if (cc && cc.status !== 'running') break; if (D && D.fast && !(D.fast.ids || []).includes(id)) break;
       }
       delete R[id];
     }
-    // ⚙ while delivery is good, up to 3 busy campaigns send at the same time (each asks the server for a round, one after another); they stop by themselves when delivery is no longer good
+    // ⚙ while delivery is good, ONE busy campaign (the one with most people waiting) sends as an extra at the same time (it asks the server for a round, one after another); they stop by themselves when delivery is no longer good
     async function dqWorker(id) {
       const R = window.__dqW = window.__dqW || {}; if (R[id]) return; R[id] = 1;
       while (el.isConnected && R[id]) {
         let sk = false; try { const r = await api.post('wa.dq_worker', { id }); sk = !!(r.result && r.result.skipped); } catch (e) { sk = true; }
-        if (sk) await new Promise((r) => setTimeout(r, 6000));
-        if (!window.__cpFastAt || Date.now() - window.__cpFastAt > 4000) { window.__cpFastAt = Date.now(); await load(true); }
+        if (sk) await new Promise((r) => setTimeout(r, 20000));   // ⚡ 6 s → 20 s
+        if (!window.__cpFastAt || Date.now() - window.__cpFastAt > 10000) { window.__cpFastAt = Date.now(); await load(true); }
         const q = D && D.dq, cc = ((D && D.campaigns) || []).find((x) => x.id === id);
         if (!q || !q.on || q.state !== 'good' || !cc || cc.status !== 'running' || ((D.fast || {}).ids || []).includes(id)) break;
       }
@@ -318,7 +318,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
     }
     function dqWorkers() {
       const q = D && D.dq; if (!q || !q.on || q.state !== 'good') return;
-      (D.campaigns || []).filter((c) => c.status === 'running' && !((D.fast || {}).ids || []).includes(c.id) && ((c.counts && c.counts.queued) || 0) >= 200).sort((a, b) => b.counts.queued - a.counts.queued).slice(0, 3).forEach((c) => dqWorker(c.id));
+      (D.campaigns || []).filter((c) => c.status === 'running' && !((D.fast || {}).ids || []).includes(c.id) && ((c.counts && c.counts.queued) || 0) >= 200).sort((a, b) => b.counts.queued - a.counts.queued).slice(0, 1).forEach((c) => dqWorker(c.id));   // ⚡ ONE extra sender at a time (was up to 3): the busiest campaign
     }
     async function load(quiet, fresh) {
       if (smart) return;   // the Smart campaign is open in this area: do not draw the list over it

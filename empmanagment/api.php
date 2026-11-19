@@ -467,6 +467,7 @@ function action_permission(string $action): ?string
         'chg.' => 'users',                         // Request a change (changes.php): Admin only (the file checks the role again)
         'iv.' => 'inventory',                      // Smart Inventory (inventory.php): oils, perfumes, orders, dealers
         'fi.' => 'finance',                        // Finance step 1 (finance_in.php): incoming, receipts, outstanding
+        'fn.' => 'finance',                        // Finance New (finance_new.php): built from scratch, apart from the original Finance
         'st_inv.' => 'rs_manage', 'st_fix.' => 'rs_manage', 'st_chain.' => 'rs_manage', 'st_set.' => 'rs_manage', 'st_duty.' => 'rs_manage', 'st_dash.' => 'rs_manage', 'st_cs.' => 'rs_manage', 'st_team.' => 'rs_manage',   // Store: inventory, label size, who can bill
         'st_bill.' => 'rs_counter', 'st_cust.' => 'rs_counter', 'st_bday.' => 'rs_counter', 'st_msgs.' => 'rs_counter', 'st_price.' => 'rs_counter',               // Store: billing
         'dashboard.' => 'dashboard',
@@ -19224,6 +19225,7 @@ if (strpos((string)$action, 'll.') === 0) { require_once __DIR__ . '/learn_loop.
 if (strpos((string)$action, 'chg.') === 0) { require_once __DIR__ . '/changes.php'; }          // Request a change: GitHub issue -> Claude Code builds -> Admin approves -> deploy
 if (strpos((string)$action, 'iv.') === 0) { require_once __DIR__ . '/inventory.php'; }       // Smart Inventory: oils, perfumes, orders, dealers, alerts, reports
 if (strpos((string)$action, 'fi.') === 0) { require_once __DIR__ . '/finance_in.php'; }       // Finance step 1: money in per channel / day, receipts, outstanding, Excel read by Claude
+if (strpos((string)$action, 'fn.') === 0) { require_once __DIR__ . '/finance_new.php'; }       // Finance New: a separate, from-scratch Finance (actions "fn.*")
 if (strpos((string)$action, 'st_') === 0) { require __DIR__ . '/store_pos.php'; }      // Store inventory + billing (short per-bottle barcodes, total-ml price, commission like online)
 if (strpos((string)$action, 'cp.') === 0) { require __DIR__ . '/ct_people.php'; }
 if (strpos((string)$action, 'lr.') === 0) { require __DIR__ . '/leader_roas.php'; }
@@ -25159,7 +25161,7 @@ switch ($action) {
         // The ML price slab chart (Commission Rules page editor, Commission page, My Sales). Every logged-in user may read it.
         require_auth();
         $__co = []; try { if (!function_exists('cm_offers') && function_exists('cm_engine_load')) cm_engine_load($pdo); if (function_exists('cm_offers')) foreach (cm_offers($pdo) as $__o) $__co[] = ['ml' => (int)$__o['ml'], 'price' => (float)$__o['price'], 'pct' => (float)$__o['pct'], 'from' => (string)$__o['from_date'], 'to' => (string)($__o['to_date'] ?? ''), 'active' => !empty($__o['active']) ? 1 : 0, 'stopped' => substr((string)($__o['stopped_at'] ?? ''), 0, 10)]; } catch (Throwable $__e) { }
-        json_response(['chart' => ml_slab_get($pdo), 'offers' => $__co, 'offer_window' => 60]);   // offers = the Commission page's Offers (ML + price +- window), so the order card shows the same % as the Commission page
+        json_response(['chart' => ml_slab_get($pdo), 'offers' => $__co, 'offer_window' => 110]);   // offers = the Commission page's Offers (ML + price +- window), so the order card shows the same % as the Commission page
         break;
     }
     case 'ml_slab.save': {
