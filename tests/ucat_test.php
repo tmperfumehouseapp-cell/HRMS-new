@@ -11,4 +11,5 @@ $S = []; for ($i = 1; $i <= 6; $i++) wa_cat_util_note($pdo, $now + $i * 500, 110
 ok(wa_cat_util_room($pdo, $now + 3100) <= 40, 'about 700 in the hour: little room left (got ' . wa_cat_util_room($pdo, $now + 3100) . ')');
 ok(wa_cat_util_room($pdo, $now + 3500 + 3600) === 152, 'after the hour: free');
 ok(wa_cat_util_room($pdo, $now + 5000) === 152, 'an hour later everything is free');
+$S = []; $S['wa_dq_hold_until'] = (string)($now + 1800); ok(wa_cat_util_room($pdo, $now + 5) === 0, 'marketing hold running: utility campaigns stop too'); ok(wa_cat_util_room($pdo, $now + 1900) === 152, 'hold over: utility room is back');
 echo "ucat ok\n";
