@@ -812,7 +812,7 @@
       if (T.leaders) ['today'].forEach(k => { if (T.leaders[k] && T.leaders[k].rows) T.leaders[k].rows = onlyWorking(T.leaders[k].rows); });      // the 7-day view keeps everyone who worked in those days
       if (!$('datePick').value) $('datePick').value = T.day;
       $('tabSet').style.display = T.can_settings ? '' : 'none'; $('tabLib').style.display = T.can_settings ? '' : 'none'; $('tabConv').style.display = T.can_settings ? '' : 'none';
-      renderToday(); renderAlerts(); renderQb(); ofChips(); renderDayStrip(); loadPaceCards(); rxTileLoad();
+      renderToday(); renderAlerts(); renderQb(); ofChips(); renderDayStrip(); loadPaceCards(); rxTileLoad(); m3Load();
       loadEffort();
       try { if (typeof GQ !== 'undefined' && GQ) renderGive(); } catch (e2) { /* those tabs draw when opened */ }
       const open = (T.alerts || []).filter(a => a.status === 'open' && a.kind !== 'digest').length;
@@ -944,7 +944,7 @@
     const miss = (d.missed || []).map(m => `<tr><td><b>${esc(m.order)}</b><br><small>${esc(m.emp_name)}</small></td><td>${esc(m.customer || '')}${m.total ? '<br><small>' + inr(m.total) + '</small>' : ''}</td><td><small>${esc(m.why || m.asked || '')}</small></td><td>${m.phone ? `<a href="wa_one.html?phone=${m.phone}" target="_blank" rel="noopener">💬 Follow up</a>` : ''}</td></tr>`).join('');
     const tips = (d.tips || []).map(x => `<tr><td><b>${esc(x.emp)}</b> · ${esc(x.order)}</td><td>“${esc(x.text)}”${x.offered ? '<br><small>offered: ' + esc(x.offered) + '</small>' : ''}</td></tr>`).join('');
     return `<div class="ef"><div class="ef-h"><b>📈 Growth effort · ${esc(T.day)}</b><small>${done} of ${total} orders read from the chat${wait ? ' · ' + wait + ' still waiting' : ''}${d.skipped ? ' · ' + d.skipped + ' had no chat' : ''}${rs ? ' · add-on ₹ ' + inr(rs) : ''}${d.mode === 'off' ? ' · automatic reading is OFF (Order Allocation → 🤖)' : ''}</small>${wait || EFF.run ? `<button type="button" onclick="effFill()" ${EFF.run ? 'disabled' : ''} style="font:inherit;font-size:11.5px;font-weight:700;border:0;background:#111827;color:#fff;border-radius:99px;padding:4px 12px;cursor:pointer">${EFF.run ? '⏳ Reading chats… ' + wait + ' left' : '▶ Read chats now'}</button>` : ''}</div>
-      ${ntHtml()}${grHtml()}${cbHtml()}${lnHtml()}
+      ${ntHtml()}${grHtml()}${cbHtml()}${lnHtml()}${m3Html()}
       <div class="ef-r"><span class="ef-l" title="Ticket size: BEFORE the order is final, the salesperson convinced the customer to take more than he came for (5 → 7 pieces, 1 → 5 pieces, or a bigger size / value)">⬆ Bigger</span>${boxB('bw', 3, 'sold', '🔵 Tried and the customer took a bigger order')}${boxB('bh', 2, 'tried hard', '🟣 Tried hard, customer did not take')}${boxB('bl', 1, 'little', '🟤 Little effort: asked once, left it')}${boxB('bz', 0, 'none', '⚫ No effort: never tried to sell bigger')}</div>
       <div class="ef-r"><span class="ef-l" title="AFTER the order is final: extra perfume bottle(s) added on top (chain, gifts and other non-perfume do not count)">➕ Add-on</span>${box('w', 3, 'took', '🟢 Tried and the customer took the add-on')}${box('h', 2, 'tried hard', '🟡 Tried hard, customer did not take')}${box('l', 1, 'little', '🟠 Little effort: asked once, left it')}${box('z', 0, 'none', '🔴 No effort: never offered more')}</div>
       <details class="ef-d"><summary>👥 Who convinced — per person</summary>${ppTable()}</details>
@@ -960,6 +960,29 @@
     renderToday0();
     if (open0.length) document.querySelectorAll('#p-today details.bk-d').forEach((d, i) => { if (open0[i]) d.open = true; });
     if (y0 > 0) window.scrollTo(0, y0);
+  }
+
+  /* ✅ The 3 must-send messages in every order: address re-check · chain selection · prepaid 2% — per person, per order (no AI: plain text match on what was sent) */
+  let M3 = { day: '', d: null, at: 0 };
+  function m3Html() {
+    const d = M3.day === $('datePick').value ? M3.d : null;
+    if (!d) return `<details class="ef-d" id="m3Box"><summary>✅ 3 must-send check — loading…</summary></details>`;
+    const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain selection'], ['p', '💳', 'Prepaid 2%']], n = (d.team || {}).n || 0;
+    const col = (v, t) => !t ? '#9ca3af' : (v / t >= .8 ? '#16a34a' : v / t >= .5 ? '#d97706' : '#dc2626');
+    const bar = K.map(k => { const v = (d.team || {})[k[0]] || 0; return `<div style="flex:1;min-width:92px;border:1px solid #e5e7eb;border-radius:10px;padding:6px 8px;background:#fff"><div style="font-size:11px;color:#667781">${k[1]} ${k[2]}</div><div style="font-size:17px;font-weight:800;color:${col(v, n)}">${v}<small style="font-size:11px;color:#667781"> / ${n}</small></div><div style="height:5px;border-radius:3px;background:#eef0f4;margin-top:3px"><div style="height:5px;border-radius:3px;width:${n ? Math.round(v / n * 100) : 0}%;background:${col(v, n)}"></div></div></div>`; }).join('');
+    const chip = (k, o) => { const v = o[k[0]]; return v ? `<span style="font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#dcfce7;color:#166534" title="${v[1] === 'A' ? 'Sent automatically' : 'Sent by the salesperson'}">${k[1]} ✓ ${esc(v[0])}${v[1] === 'A' ? ' 🤖' : ''}</span>` : `<span style="font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#fee2e2;color:#991b1b">${k[1]} ✗ not sent</span>`; };
+    const people = (d.people || []).map((q, i) => {
+      const miss = K.map(k => [k, q.n - (q[k[0]] || 0)]).filter(x => x[1] > 0);
+      const tip = miss.length ? miss.map(x => `${x[0][2]} ${x[1]} order ma nathi gayo`).join(' · ') + ' — order pehla bhejo.' : 'Badha orders ma 3 j gaya ✓';
+      const pills = K.map(k => `<span style="font-weight:800;color:${col(q[k[0]] || 0, q.n)};white-space:nowrap">${k[1]} ${q[k[0]] || 0}/${q.n}</span>`).join(' ');
+      const rows = (q.orders || []).map(o => `<div style="border-top:1px solid #eef0f4;padding:6px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px"><b>${esc(o.order)} <span style="font-weight:400;color:#667781">· ${esc(o.customer || '')} · ${inr(o.total)} · ${esc(o.at)}</span></b>${o.phone ? `<a href="wa_one.html?phone=${o.phone}" target="_blank">Open chat ›</a>` : ''}</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">${K.map(k => chip(k, o)).join('')}</div></div>`).join('');
+      return `<details style="border:1px solid #e5e7eb;border-radius:10px;margin:6px 0;padding:6px 10px;background:#fff"><summary style="cursor:pointer;list-style:none"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:13px">${esc(q.name)} <span style="font-weight:400;color:#667781">· ${q.n} orders</span></b><span style="font-size:12px;display:flex;gap:8px;flex-wrap:wrap">${pills}</span></div></summary><div style="font-size:12px;color:#92400e;background:#fffbeb;border-radius:8px;padding:5px 8px;margin:6px 0">💡 ${esc(tip)}</div>${rows}</details>`;
+    }).join('');
+    return `<details class="ef-d" id="m3Box" open><summary>✅ 3 must-send check · ${esc(d.day)} — 📍 ${(d.team || {}).a || 0} · ⛓ ${(d.team || {}).c || 0} · 💳 ${(d.team || {}).p || 0} of ${n} orders</summary><div class="sub" style="padding:4px 2px">Har order ma 3 vastu jani joiye: 📍 address re-check instruction · ⛓ chain selection message · 💳 prepaid par 2% extra discount. Tap a name for the orders (🤖 = automatic message). Most missing first.</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${bar}</div>${people || '<div class="sub" style="padding:8px">No orders yet.</div>'}</details>`;
+  }
+  async function m3Load() {
+    const day = $('datePick').value; if (!day || (M3.day === day && M3.at > Date.now() - 60000)) return;
+    try { const d = await api.get('ct.must3', { date: day }); M3 = { day, d, at: Date.now() }; const el = document.getElementById('m3Box'); if (el) { const op = el.open; el.outerHTML = m3Html(); const e2 = document.getElementById('m3Box'); if (e2 && !op && M3.d) e2.open = false; } } catch (e) { /* the box keeps its loading line */ }
   }
   /* ↩ RTO resend / 🔁 Exchange orders made on the chosen day: parcels sent again. A count only - they are not sales. */
   let RXD = { day: '', d: null, at: 0 };
