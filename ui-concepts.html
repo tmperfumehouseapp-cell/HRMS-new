@@ -139,8 +139,8 @@ const P=[];let id=0;
 for(const b in RAW)for(const [n,p,s] of RAW[b])P.push({id:++id,b,n,p,s});
 const byId=Object.fromEntries(P.map(x=>[x.id,x]));
 const brands=Object.keys(RAW).map(b=>({b,items:P.filter(x=>x.b===b),tot:P.filter(x=>x.b===b).reduce((a,x)=>a+x.s,0)})).sort((a,b)=>b.tot-a.tot);
-const top=[...P].sort((a,b)=>b.s-a.s);
-const maxS=top[0].s;
+const ranked=[...P].sort((a,b)=>b.s-a.s);
+const maxS=ranked[0].s;
 const inr=n=>"₹"+n.toLocaleString("en-IN");
 let tab="board",q="",openBoard=brands[0].b,openWall=null,combo=[];
 
@@ -149,7 +149,7 @@ const add=i=>{if(combo.length<3&&!combo.includes(i))combo.push(i);renderTray()};
 const pf=x=>`data-id="${x.id}" draggable="true"`;
 
 function board(){
-  const list=top.filter(match).slice(0,10);
+  const list=ranked.filter(match).slice(0,10);
   const bs=brands.filter(b=>b.items.some(match));
   const sel=bs.find(b=>b.b===openBoard)||bs[0];
   return `<p class="why"><b>એક નજરે:</b> ડાબે ટોપ 10 વેચાણ લિસ્ટ, જમણે બ્રાન્ડનું નકશો (મોટું ખાનું = વધારે વેચાણ). બ્રાન્ડ દબાવો, નીચે તે જ જગ્યાએ તેના બધા પરફ્યુમ ખુલે.</p>
@@ -168,7 +168,7 @@ function bub(){
 function pack(){
   const el=document.getElementById("bubs");if(!el)return;
   const W=el.clientWidth,H=el.clientHeight,placed=[];let html="";
-  top.slice(0,36).forEach((x,k)=>{
+  ranked.slice(0,36).forEach((x,k)=>{
     const r=Math.min(64,17+Math.sqrt(x.s)*3.3);
     for(let s=0;s<5000;s++){
       const a=s*.37,d=s*.55,cx=W/2+Math.cos(a)*d*1.5,cy=H/2+Math.sin(a)*d;
