@@ -1429,6 +1429,13 @@ function ora_phone_map(PDO $pdo, array $phones): array
     $out = []; foreach ($phones as $p) { $k = substr(preg_replace('/\D+/', '', (string)$p), -10); if (isset($all[$k])) $out[(string)$p] = $all[$k]; }
     return $out;
 }
+/** Engine step (every minute, from the server cron): reads today's unread orders by itself, up to ~55 s of work per minute, so nobody has to press "Read chats now". One cheap SELECT when nothing is waiting. */
+function ora_catchup(PDO $pdo): int
+{
+    if (ora_mode($pdo) === 'off' || !function_exists('convo_ai')) return 0;
+    try { if ((int)setting_get($pdo, 'ora_cu_at', '0') > time() - 45) return 0; setting_set($pdo, 'ora_cu_at', (string)time()); } catch (Throwable $e) { return 0; }
+    try { [$done] = ora_fill_day($pdo, biz_today($pdo), 55); return (int)$done; } catch (Throwable $e) { error_log('ora_catchup: ' . $e->getMessage()); return 0; }
+}
 /** Reads the chats of ONE business day now (Live → "Read chats now"): up to $secs seconds of work, newest orders first. Returns [read this round, still unread]. Works even when the automatic mode is Off (it was asked for by hand); stars are only saved in Apply mode. */
 function ora_fill_day(PDO $pdo, string $day, int $secs = 22): array
 {
