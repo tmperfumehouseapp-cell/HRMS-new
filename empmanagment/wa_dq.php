@@ -45,9 +45,14 @@ function wa_dq_auto_step(PDO $pdo): void
         $q->execute([date('Y-m-d H:i:s', $from), date('Y-m-d H:i:s', $till)]); $r = $q->fetch(); $n = (int)$r['n']; if ($n < 200) return; $d = (int)$r['d'] / $n; $f = (int)$r['f'] / $n;
         $cur = max(500, (int)setting_get($pdo, 'wa_dq_hourly', '3000')); $to = $cur;
         if ($d < 0.20 || $f >= 0.25) { setting_set($pdo, 'wa_dq_step_last', (string)$till); setting_set($pdo, 'wa_dq_freeze_n', '0'); if ($cur > 5000) { setting_set($pdo, 'wa_dq_hourly', '5000'); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing speed ' . $cur . ' → 5,000 an hour (bad delivery: ' . $n . ' messages looked at, ' . round($d * 100) . '% delivered, ' . round($f * 100) . '% failed); it keeps sending at 5,000'); } return; }   // owner 19 Nov 2026 (14:10): bad delivery does not stop the sending: it goes back to 5,000 delivered an hour (2,500 per 30 minutes) and keeps going; only the automatic 131048 hold (3 hours) stops it
-        /* owner 19 Nov 2026 (16:40): good (failed under 15%, delivered 35%+) = +1,000; failed rising (15% to 25%) or delivered 20-35% = stay where it is (the last step is not repeated); the next check still the same = back to 5,000; failed 25%+ or delivered under 20% = back to 5,000 at once */
-        if ($d >= 0.35 && $f < 0.15) { $to = min(60000, $cur + 1000); setting_set($pdo, 'wa_dq_freeze_n', '0'); }   /* no ceiling of its own (60,000 is only the technical limit of the hourly number) */
-        else { $fz = (int)setting_get($pdo, 'wa_dq_freeze_n', '0') + 1; if ($fz >= 2 && $cur > 5000) { $to = 5000; $fz = 0; } setting_set($pdo, 'wa_dq_freeze_n', (string)$fz); }
+        /* owner 19 Nov 2026 (17:00): the usual top is 6,000 an hour. After 2 good hours in a row (4 good checks) at 6,000 it goes to 7,000 and STAYS there while it keeps going well; if it stalls it starts again from 5,000; never above 7,000. Failed rising (15% to 25%) or delivered 20-35% = stay (a second check in a row = back to 5,000); failed 25%+ or delivered under 20% = back to 5,000 at once */
+        $good = ($d >= 0.35 && $f < 0.15);
+        if ($good) { setting_set($pdo, 'wa_dq_freeze_n', '0');
+            if ($cur > 7000) $to = 6000;
+            elseif ($cur === 7000) { /* owner 19 Nov 2026 (17:15): if 7,000 keeps going well it stays at 7,000; if it stalls it starts again from 5,000 (never above 7,000) */ }
+            elseif ($cur >= 6000) { $gn = (int)setting_get($pdo, 'wa_dq_good_n', '0') + 1; if ($gn >= 4) { $to = 7000; $gn = 0; } setting_set($pdo, 'wa_dq_good_n', (string)$gn); }
+            else $to = min(6000, $cur + 1000); }
+        else { setting_set($pdo, 'wa_dq_good_n', '0'); $fz = (int)setting_get($pdo, 'wa_dq_freeze_n', '0') + 1; if ($fz >= 2 && $cur > 5000) { $to = 5000; $fz = 0; } elseif ($cur > 7000) $to = 6000; setting_set($pdo, 'wa_dq_freeze_n', (string)$fz); }
         setting_set($pdo, 'wa_dq_step_last', (string)$till);
         if ($to !== $cur) { setting_set($pdo, 'wa_dq_hourly', (string)$to); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', $to > $cur, 'Marketing speed ' . $cur . ' → ' . $to . ' an hour (' . $n . ' messages looked at: ' . round($d * 100) . '% delivered, ' . round($f * 100) . '% failed)'); }
     } catch (Throwable $e) { }
@@ -313,6 +318,15 @@ function wa_dq_win_counts(PDO $pdo, string $key, string $from, int $ttl): array
     $mem[$key] = $c;
     $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE $cond AND status <> 'failed' AND ts >= ?"); $q->execute([$c['till']]); $new = (int)$q->fetchColumn();      // pushed since the big count: a short stretch of time, a few rows
     return [$c['n'] + $new, $c['d'], $c['p'] + $new];
+}
+/** 🧱 Push guard that sees the other campaigns at once: how many more marketing messages may be taken in the rolling 10 minutes, counted from the campaign items themselves (a person is marked the moment a batch is taken, so a second campaign working at the same time sees it);
+ *  the limit is a sixth of the hourly number x the push multiplier (5,000 an hour = 1,250 per 10 minutes). Utility-variant people are not counted. (owner 19 Nov 2026, 17:45: 2,500-2,900 went out in one burst against 1,250 because several campaigns each looked at counts that lag) */
+function wa_dq_items_room(PDO $pdo): int
+{
+    try { $h = max(500, (int)setting_get($pdo, 'wa_dq_hourly', '5000')); $m = max(1.0, min(5.0, (float)(setting_get($pdo, 'wa_dq_push_mult', '1.5') ?: 1.5)));
+        $cap = (int)round($h / 6 * $m);
+        $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE sent_at >= ? AND (variant IS NULL OR variant <> 'U')"); $q->execute([date('Y-m-d H:i:s', time() - 600)]);
+        return max(0, $cap - (int)$q->fetchColumn()); } catch (Throwable $e) { return PHP_INT_MAX; }
 }
 function wa_dq_left(PDO $pdo, bool $fresh = false): array
 {

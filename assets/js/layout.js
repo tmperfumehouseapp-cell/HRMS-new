@@ -531,6 +531,23 @@ window.WS = (function () {
     const tabs = visibleTabs(w, ctx);
     if (!tabs.length) { $('wsLoad').hidden = true; $('wsHost').innerHTML = '<div class="ws-empty">Nothing is open for your login here yet — ask Admin.</div>'; return; }
     const frames = {}; let cur = null;
+    // ⚡ a section you switched away from used to keep running: it is only hidden, and a page inside a frame cannot see that (its "is this tab visible?" answer follows the whole browser tab),
+    // so every section opened in this workspace kept refreshing itself in the background. Now a hidden section tells its page "hidden" (the same answer a hidden browser tab gives, which the pages
+    // already respect) and "visible" again when you come back (the pages refresh at that moment). Chat screens are left running: they must keep alerting.
+    const HUB_KEEP = /(^|\/)(whatsapp|my_chats|wa_)[^\/?#]*\.html/;
+    function hubPatch(f) {
+      try {
+        const d = f.contentDocument, W = f.contentWindow; if (!d || !W || f.__hubDoc === d) return;
+        const hd = Object.getOwnPropertyDescriptor(W.Document.prototype, 'hidden'), vd = Object.getOwnPropertyDescriptor(W.Document.prototype, 'visibilityState'); if (!hd || !hd.get) return;
+        Object.defineProperty(d, 'hidden', { configurable: true, get() { return f.__hubHide === true || hd.get.call(d); } });
+        if (vd && vd.get) Object.defineProperty(d, 'visibilityState', { configurable: true, get() { return f.__hubHide === true ? 'hidden' : vd.get.call(d); } });
+        f.__hubDoc = d;
+      } catch (e) { /* not the same origin: leave the page alone */ }
+    }
+    function hubVis(f, show) {
+      hubPatch(f); const hide = !show && !HUB_KEEP.test(String(f.getAttribute('src') || '')); if ((f.__hubHide === true) === hide) return; f.__hubHide = hide;
+      try { f.contentDocument.dispatchEvent(new f.contentWindow.Event('visibilitychange')); } catch (e) { }
+    }
     const urlFor = (t, q) => { const s = t[2] + (q ? (t[2].indexOf('?') < 0 ? '?' : '&') + q.replace(/^\?/, '') : ''); return s + (s.indexOf('?') < 0 ? '?' : '&') + 'in=sales' + (t[4] ? '#' + t[4] : ''); };
     const bar = () => {
       $('wsTabs').innerHTML = tabs.length < 2 ? '' : tabs.map((t) => '<button type="button" class="ws-pill' + (cur === t ? ' on' : '') + '" data-t="' + t[0] + '">' + esc(t[1]) + (t[0] === 'boss_engine' && ctx.bd && ((Number(ctx.bd.inbox) || 0) + (Number(ctx.bd.be) || 0)) > 0 ? '<em>' + ((Number(ctx.bd.inbox) || 0) + (Number(ctx.bd.be) || 0)) + '</em>' : '') + '</button>').join('');
@@ -557,6 +574,7 @@ window.WS = (function () {
       if (!hubStarted || noPush || !changed) history.replaceState(history.state, '', url); else history.pushState({ hubTab: t[0] }, '', url); hubStarted = true;
       const fk = t[4] ? t[2] : t[0];                                   // the Boss Engine views share one page: one frame, the view is its #hash
       Object.keys(frames).forEach((k) => { frames[k].hidden = k !== fk; });
+      Object.keys(frames).forEach((k) => hubVis(frames[k], k === fk));
       let f = frames[fk];
       if (f && t[4]) {
         try { if (f.contentWindow.location.hash.slice(1) !== t[4]) f.contentWindow.location.hash = '#' + t[4]; } catch (e) { /* the frame reloads below */ }
@@ -566,7 +584,7 @@ window.WS = (function () {
       if (!f) {
         f = document.createElement('iframe'); f.setAttribute('allow', 'camera; microphone; geolocation; clipboard-read; clipboard-write; fullscreen'); f.className = 'ws-frame'; f.title = t[1];
         f.setAttribute('allow', 'camera; microphone; geolocation; clipboard-write');
-        f.addEventListener('load', () => { if (frames[fk] === f && cur && (t[4] ? cur[2] === t[2] : cur === t)) $('wsLoad').hidden = true; guard(f, t); });
+        f.addEventListener('load', () => { hubVis(f, !f.hidden); if (frames[fk] === f && cur && (t[4] ? cur[2] === t[2] : cur === t)) $('wsLoad').hidden = true; guard(f, t); });
         frames[fk] = f; $('wsHost').appendChild(f); $('wsLoad').hidden = false; f.src = urlFor(t, q);
       } else $('wsLoad').hidden = true;
       bar(); document.title = t[1] + ' · ' + w.label + ' — HRMS';

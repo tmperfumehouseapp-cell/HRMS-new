@@ -128,12 +128,14 @@ function wd_tick(PDO $pdo, array $opt = []): array
     $today = wd_today($pdo); $nowMin = !empty($opt['now']) ? 1439 : (int)date('G') * 60 + (int)date('i'); $sent = 0; if (!empty($opt['now'])) $cfg['cap'] = max(1, (int)($opt['cap'] ?? 150));
     $e = $pdo->prepare("SELECT phone, anchor FROM wa_drip_enr WHERE anchor <= ? AND anchor >= ? AND left_why = ''"); $e->execute([$today, date('Y-m-d', strtotime($today) - 31 * 86400)]);
     $ev = $pdo->prepare("INSERT IGNORE INTO wa_drip_ev (phone, anchor, day, tpl_id, number_id, status, why, at, wamid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    // ⚡ one query for "already done" instead of one per enrolled customer (up to thousands per round)
+    $__done = []; try { $dq = $pdo->prepare("SELECT phone, anchor, day FROM wa_drip_ev WHERE anchor <= ? AND anchor >= ?"); $dq->execute([$today, date('Y-m-d', strtotime($today) - 31 * 86400)]); foreach ($dq->fetchAll(PDO::FETCH_NUM) as $__r) $__done[$__r[0] . '|' . $__r[1] . '|' . $__r[2]] = 1; } catch (Throwable $e0) { $__done = null; }
     foreach ($e->fetchAll() as $r) {
         if ($sent >= $cfg['cap']) break;
         if ($__wdl && microtime(true) > $__wdl) { $o['more'] = 1; break; }
         $day = (int)round((strtotime($today) - strtotime((string)$r['anchor'])) / 86400); if (!isset($cfg['days'][$day])) continue; $step = $cfg['days'][$day];
         [$hh, $mm] = array_map('intval', explode(':', $step['time'])); if ($nowMin < $hh * 60 + $mm) continue;   // not time yet
-        $d = $pdo->prepare("SELECT status FROM wa_drip_ev WHERE phone = ? AND anchor = ? AND day = ?"); $d->execute([$r['phone'], $r['anchor'], $day]); if ($d->fetchColumn() !== false) continue;   // already done / skipped
+        if ($__done !== null) { if (isset($__done[$r['phone'] . '|' . $r['anchor'] . '|' . $day])) continue; } else { $d = $pdo->prepare("SELECT status FROM wa_drip_ev WHERE phone = ? AND anchor = ? AND day = ?"); $d->execute([$r['phone'], $r['anchor'], $day]); if ($d->fetchColumn() !== false) continue; }   // already done / skipped
         $c = function_exists('wa_contact') ? wa_contact($pdo, (string)$r['phone']) : null; if (!$c) continue;
         $why = wd_block($pdo, $c, $cfg, (string)$r['anchor']);
         if ($why !== '') {

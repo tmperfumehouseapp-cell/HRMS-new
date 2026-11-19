@@ -619,11 +619,11 @@ function wa_ru_fam_calc(PDO $pdo): int
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $tp) if (function_exists('wa_util_usable')) $n += count(wa_util_usable($pdo, (int)$tp)); } catch (Throwable $e) { }
     return $n;
 }
-/** What is waiting today (the business day), by reason — remembered for 2 minutes. */
+/** What is waiting today (the business day), by reason — remembered for 15 minutes. */
 function wa_ru_diag(PDO $pdo, int $ordDays): array
 {
     // ⚡ remembered 2 minutes, in a shared file: ONE request works it out (14 s on a busy day); the others use the last copy meanwhile (it was kept in the settings table: every save made every page read the whole table again)
-    return hrms_memo('wa_ru_diag_' . $ordDays . '_' . (function_exists('wa_bizday_start') ? md5(wa_bizday_start($pdo)) : date('Ymd')), 120, function () use ($pdo, $ordDays) { return wa_ru_diag_calc($pdo, $ordDays); });
+    return hrms_memo('wa_ru_diag_' . $ordDays . '_' . (function_exists('wa_bizday_start') ? md5(wa_bizday_start($pdo)) : date('Ymd')), 900, function () use ($pdo, $ordDays) { return wa_ru_diag_calc($pdo, $ordDays); });   // ⚡ 5 → 15 minutes: it is only the 'waiting today, by reason' panel; the count takes 14 s on a busy day
 }
 function wa_ru_diag_calc(PDO $pdo, int $ordDays): array
 {
