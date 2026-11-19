@@ -45,8 +45,10 @@
         <select id="fMins" aria-label="Period"><option value="15">Last 15 minutes</option><option value="60" selected>Last hour</option><option value="180">Last 3 hours</option></select>
         <button class="btn" type="button" id="bPrompt" style="background:#111827;border-color:#111827" disabled title="Copies one ready message for Claude with the numbers and the queries of this page. Paste it to Claude to bring the CPU down.">📋 Claude prompt</button>
         <button class="btn" type="button" id="bHint" style="background:#fff;color:#111;border:1px solid var(--line)" title="What you can do yourself right now, without Claude">💡 Hint</button>
+        <button class="btn" type="button" id="bRcpt" style="background:#fff;color:#111;border:1px solid var(--line)" title="Applies the waiting delivery receipts (the ✓ and ✓✓ marks of the chats) right now and shows how long they normally wait">🧾 Receipts speed</button>
         <span id="slAt" style="font-size:12.5px;color:var(--muted)"></span>
       </div>
+      <div id="slRcpt" class="card" style="display:none"></div>
       <div id="slHint" class="card" style="display:none"></div>
       <div id="root"><div class="card">Loading…</div></div>
     </div>
@@ -165,6 +167,19 @@
     return '<h2>💡 What you can do right now</h2><p class="sub">' + (cpu == null ? '' : 'CPU used is ' + cpu + '% on average. ') + 'The first items fit this moment best.' + (top ? ' The busiest function now: ' + esc(top.name) + ' (' + top.time_share + '% of the time).' : '') + '</p>'
       + tips.map((t, i) => '<div class="adv ' + (i === 0 ? 'warn' : 'info') + '"><b>' + (i + 1) + '. ' + esc(t[0]) + '</b>' + esc(t[1]) + '</div>').join('');
   }
+  // 🧾 Receipts speed: delivery marks (✓ sent, ✓✓ delivered, blue read) are applied in blocks every ~7 s. This applies what waits right now and shows the real waiting time of the last 5 minutes.
+  $('bRcpt').onclick = async () => {
+    const box = $('slRcpt'); box.style.display = ''; box.innerHTML = 'Checking…';
+    try {
+      const d = await api.get('sysload.receipts'), l = d.last5 || {};
+      if (!d.blocks_on) { box.innerHTML = '<b>Blocks are OFF</b>: every receipt is applied at once, the old way.'; return; }
+      const ok = (l.blocks === 0) || (l.avg_delay_s <= 10 && l.max_delay_s <= 30), age = d.last_block_s_ago;
+      box.innerHTML = '<div style="font-weight:700;margin-bottom:6px">' + (ok ? '✅ Working as designed' : '⚠️ Slower than 7–10 s') + '</div>'
+        + '<div>Waiting before this check: <b>' + d.waiting_before + '</b> receipts (oldest ' + d.oldest_before_s + ' s). Applied now in <b>' + d.applied_ms + ' ms</b>; waiting after: <b>' + d.waiting_after + '</b>.</div>'
+        + '<div>Last 5 minutes: <b>' + l.blocks + '</b> blocks, <b>' + l.receipts + '</b> receipts · each receipt waited on average <b>' + l.avg_delay_s + ' s</b>, the longest <b>' + l.max_delay_s + ' s</b> · slowest block ' + l.slowest_block_ms + ' ms.</div>'
+        + '<div style="color:var(--muted);margin-top:4px">Last block ' + (age == null ? 'not seen yet' : age + ' s ago') + '. A message you send shows ✓ / ✓✓ about this many seconds after Meta reports it. If the average is above 10 s, tell Claude.</div>';
+    } catch (e) { box.innerHTML = 'Could not check: ' + (e.message || e); }
+  };
   $('bHint').onclick = () => { const h = $('slHint'); if (h.style.display === 'none') { h.innerHTML = hintHtml(); h.style.display = ''; } else h.style.display = 'none'; };
   load();      // no automatic refresh: this page must not add load by itself
 </script>

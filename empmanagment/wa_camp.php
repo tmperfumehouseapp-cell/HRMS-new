@@ -738,6 +738,7 @@ function wa_camp_util_guard(PDO $pdo, array $c): string
 /** ⚡ The campaigns on Send fast: [campaignId => ['until', 'beat', 'burst_left']]. One setting per campaign (their workers run side by side and must not overwrite each other); 'wa_cfast_ids' lists them. */
 function wa_camp_fast_all(PDO $pdo): array
 {
+    if ((string)setting_get($pdo, 'wa_fast_ok', '0') !== '1') return [];   /* owner 19 Nov 2026, 19:30: no campaign sends outside the marketing limits; Send fast is OFF unless wa_fast_ok = 1 (old retry campaigns pushed 2,300 per 5 minutes through it) */
     $ids = json_decode((string)setting_get($pdo, 'wa_cfast_ids', ''), true); if (!is_array($ids)) return []; $o = [];
     foreach ($ids as $id) { $e = json_decode((string)setting_get($pdo, 'wa_cfast_' . (int)$id, ''), true); if (is_array($e) && (int)($e['until'] ?? 0) > time() && (int)($e['burst_left'] ?? 0) > 0) $o[(int)$id] = $e; }
     return $o;
