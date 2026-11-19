@@ -7,7 +7,8 @@ $pdo = new PDO("sqlite::memory:"); $now = 1000000;
 ok(wa_cat_util_room($pdo, $now) === 152, 'empty: the 10-minute slice (152) is the limit (got ' . wa_cat_util_room($pdo, $now) . ')');
 wa_cat_util_note($pdo, $now, 100); ok(wa_cat_util_room($pdo, $now + 5) === 52, '100 sent: 52 left in this 10 minutes');
 ok(wa_cat_util_room($pdo, $now + 700) === 152, 'ten minutes later the slice is free again');
-for ($i = 1; $i <= 6; $i++) wa_cat_util_note($pdo, $now + $i * 650, 110);   // 6 x 110 = 660 in the hour
-ok(wa_cat_util_room($pdo, $now + 7 * 650) <= 40, 'about 700 in the hour: little room left (got ' . wa_cat_util_room($pdo, $now + 7 * 650) . ')');
+$S = []; for ($i = 1; $i <= 6; $i++) wa_cat_util_note($pdo, $now + $i * 500, 110);   // 6 x 110 = 660 in the hour
+ok(wa_cat_util_room($pdo, $now + 3100) <= 40, 'about 700 in the hour: little room left (got ' . wa_cat_util_room($pdo, $now + 3100) . ')');
+ok(wa_cat_util_room($pdo, $now + 3500 + 3600) === 152, 'after the hour: free');
 ok(wa_cat_util_room($pdo, $now + 5000) === 152, 'an hour later everything is free');
 echo "ucat ok\n";
