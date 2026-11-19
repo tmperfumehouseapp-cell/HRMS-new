@@ -31,8 +31,8 @@ function wa_dq_auto_hold(PDO $pdo): void
         if ((int)setting_get($pdo, 'wa_dq_auto_hold_at', '0') > time() - 60) return; setting_set($pdo, 'wa_dq_auto_hold_at', (string)time());
         $from = max(time() - 3600, (int)setting_get($pdo, 'wa_dq_hold_end', '0'));
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE err_code = 131048 AND sent_at >= ?"); $q->execute([date('Y-m-d H:i:s', $from)]); $n = (int)$q->fetchColumn();
-        if ($n >= $lim) { setting_set($pdo, 'wa_dq_hold_until', (string)(time() + 3600));   // owner 19 Nov 2026 (14:35): 1 hour (first 30 minutes), then it restarts at 5,000
-             setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing put on hold for 1 hour by itself (then it restarts at 5,000 an hour): Meta flagged ' . $n . ' campaign messages as spam (131048) in the last hour'); }
+        if ($n >= $lim) { setting_set($pdo, 'wa_dq_hold_until', (string)(time() + 3 * 3600));   /* owner 20 Nov 2026 (02:45): the hold is a plain 3 hours (was 1 hour), no morning-hour rule, then it restarts at 5,000 */
+             setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing put on hold for 3 hours by itself (then it restarts at 5,000 an hour): Meta flagged ' . $n . ' campaign messages as spam (131048) in the last hour'); }
     } catch (Throwable $e) { }
 }
 /** 📈 owner 19 Nov 2026 (13:40): after a hold the campaigns restart at 5,000 an hour (owner 19 Nov 2026, 14:00) and the number follows the delivery: every 30 minutes (the first look 45 minutes after the restart) the messages sent since the restart (15 to 75 minutes old, at least 200 of them) are looked at. Good (35% or more delivered and under 25% failed) → +1,000 an hour (5,000, 6,000 … no ceiling of its own); bad (under 20% delivered or 40% or more failed) → back to 5,000 and it keeps sending, then it climbs again; in between nothing changes. */
