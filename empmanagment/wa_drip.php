@@ -211,7 +211,7 @@ if (strpos($__wd, 'wa.drip_') === 0) {
             ksort($per); $days = []; foreach ($per as $d => $x) { $tn = ''; if (isset($cfg['days'][$d]) && function_exists('wa_tpl_row')) { $tr = wa_tpl_row($pdo, (int)$cfg['days'][$d]['tpl_id']); $tn = $tr ? str_replace('_', ' ', (string)$tr['name']) : ''; } $days[] = ['day' => $d, 'tpl' => $tn] + $x; }
             return ['total' => $tot, 'today' => $td, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : ''];
             };
-            $__st = function_exists('hrms_memo') ? hrms_memo('wd_stats:' . md5(json_encode($cfg['days'])), 20, $__calc) : $__calc();
+            $__st = function_exists('hrms_memo') ? hrms_memo('wd_stats:' . md5(json_encode($cfg['days'])), 45, $__calc) : $__calc();
             json_response(['ok' => true, 'job' => wd_job($pdo), 'on' => $cfg['mode'] !== 'off' ? 1 : 0, 'mode' => $cfg['mode'], 'days_set' => count($cfg['days']), 'total' => $__st['total'], 'today' => $__st['today'] ?? null, 'days' => $__st['days'], 'first' => $__st['first'], 'last' => $__st['last']]);
         }
         case 'wa.drip_preview': {   // today's send: who gets which day's message right now, counted by business day (10 AM → 10 AM)

@@ -450,7 +450,7 @@ function wa_camp_msg_counts(PDO $pdo, array $phones, int $days): array
     }
     return $o;
 }
-function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
+function wa_camp_audience(PDO $pdo, array $aud, int $freq, bool $fast = false): array
 {
     $freq = isset($aud['gap_days']) && $aud['gap_days'] !== '' ? max(0, (int)$aud['gap_days']) : max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // the campaign's own "days between campaigns" (the Planner sends 0 = everybody in the file) wins over the setting   // no "already got a campaign lately" rule: the owner sends to whoever they pick (setting wa_camp_gap_days > 0 would bring it back)
     $src = in_array($aud['src'] ?? '', ['contacts', 'all', 'paste'], true) ? $aud['src'] : 'contacts';
@@ -472,7 +472,9 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
         if ($pp) { $prow = array_values(wa_aud_rows($pdo, 'paste', $pp)); $base = $matchedIt; $matchedIt = (function () use ($base, $prow, &$plusOver, &$plusNew) { $seen = []; foreach ($base as $r) { $seen[(string)$r['phone']] = 1; yield $r; } foreach ($prow as $r) { if (isset($seen[(string)$r['phone']])) { $plusOver++; continue; } $seen[(string)$r['phone']] = 1; $plusNew++; yield $r; } })(); }
     }
     $st = ['matched' => 0, 'optout' => 0, 'recent' => 0, 'invalid' => 0, 'send' => 0];
-    $recent = []; $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', wa_camp_now() - max(0, $freq) * 86400)]); foreach ($q->fetchAll() as $r) $recent[(string)$r['phone']] = true;
+    // ⚡ $fast = the screen's preview of "how many people": the list of people who already got a campaign message lately is remembered 45 s (the same for every preview while the owner changes the filters). Starting a campaign never uses it: it counts fresh.
+    $__rd = function () use ($pdo, $freq) { $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', wa_camp_now() - max(0, $freq) * 86400)]); return array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN)); };
+    $recent = []; foreach (($fast && $freq > 0 ? hrms_memo('camp_recent_' . $freq, 45, $__rd) : $__rd()) as $ph9) $recent[(string)$ph9] = true;
     // 🚫 "never send the same message twice": people who already got this SAME message in an earlier campaign (it left our side and Meta did not fail it) are left out. On unless the owner switches it off (audience.skip_got = 0).
     $talkDays = array_key_exists('skip_talking', $aud) ? (int)$aud['skip_talking'] : 3; $talkSince = $talkDays > 0 ? date('Y-m-d H:i:s', wa_camp_now() - min(30, $talkDays) * 86400) : '';   // 💬 on by default: 3 days; skip_talking = 0 switches it off
     $got = []; $gotTpl = (int)($aud['got_tpl'] ?? 0);
@@ -1637,7 +1639,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         case 'wa.camp_preview': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $aud = (array)($in['audience'] ?? []); $freq = max(0, min(60, (int)($in['freq_days'] ?? 3))); if (isset($in['push']) && in_array((string)$in['push'], ['careful', 'normal', 'aggressive', 'very'], true)) $freq = wa_camp_push((string)$in['push'])['freq'];
-            $aud['got_tpl'] = (int)($in['tpl_id'] ?? 0); [$send, $st] = wa_camp_audience($pdo, $aud, $freq); $t = (int)($in['tpl_id'] ?? 0) ? wa_camp_tpl($pdo, (int)$in['tpl_id'], true, (int)($in['media_lib_id'] ?? 0)) : null;
+            $aud['got_tpl'] = (int)($in['tpl_id'] ?? 0); [$send, $st] = wa_camp_audience($pdo, $aud, $freq, true); $t = (int)($in['tpl_id'] ?? 0) ? wa_camp_tpl($pdo, (int)$in['tpl_id'], true, (int)($in['media_lib_id'] ?? 0)) : null;
             $health = wa_camp_health($pdo); $caps = wa_number_caps($pdo, $health); $room = 0; foreach ($caps as $k => $c) if ($k !== '_port') $room += $c['left']; $port = $caps['_port']; $roomNow = min($room, $port['left']);
             $rate = $t && $t['category'] === 'UTILITY' ? $cfg['rate_utility'] : $cfg['rate_marketing']; $warn = [];
             if ($st['send'] > $roomNow) $warn[] = 'Room today is ' . number_format($roomNow) . ' messages (slow start + Meta’s daily limit' . ($port['assumed'] ? ' — Meta did not tell the limit, 250 assumed' : ' of ' . number_format($port['tier'])) . '). The rest continues automatically as room frees up — about ' . max(1, (int)ceil($st['send'] / max(1, $roomNow))) . ' day(s).';
