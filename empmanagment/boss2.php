@@ -2660,14 +2660,14 @@ function b2_first_install(PDO $pdo) {
 function cm_default_chart(PDO $pdo) {
     $rows = [];
     if (function_exists('ml_slab_get')) { try { $o = ml_slab_get($pdo); foreach ((array)($o['rows'] ?? []) as $r) { $p = array_pad(array_map('floatval', (array)$r['p']), 6, 0); $rows[] = ['ml' => (int)$r['ml'], 'p' => [$p[0], $p[1], $p[2], 0, $p[3], $p[5]]]; } } catch (Throwable $e) {} }
-    return ['v' => 1, 'cols' => [7, 6.5, 6, 5, 4, 3], 'rows' => $rows, 'floor' => 2.8, 'codepct' => 70, 'nocode' => 50, 'prepaid' => 2, 'window' => 60,
+    return ['v' => 1, 'cols' => [7, 6.5, 6, 5, 4, 3], 'rows' => $rows, 'floor' => 2.8, 'codepct' => 70, 'nocode' => 50, 'prepaid' => 2, 'window' => 110,
         'tiers' => [[30, 30], [40, 40], [60, 50]], 'bonus_max' => 50, 'reviewed' => 0, 'seeded' => count($rows) ? 1 : 0, 'updated_at' => '', 'updated_by' => ''];
 }
 function cm_chart(PDO $pdo) {
     $d = cm_default_chart($pdo);
     $s = function_exists('setting_get') ? json_decode((string)setting_get($pdo, 'cm_chart', ''), true) : null;
     $c = (!is_array($s) || empty($s['rows'])) ? $d : array_merge($d, $s);      // the commission RULES (code limit, no-code share, prepaid, over-target steps, floor) live here
-    $c['window'] = 60;      // an offer applies to orders within +-60 rupees of its price (a chart saved earlier still carried window = 20 and overrode the default)
+    $c['window'] = 110;      // an offer applies to orders within +-110 rupees of its price (a chart saved earlier still carried window = 20 and overrode the default)
     // the PRICES live only in the Price Chart (Learn & Setup → Pricing): once it is unified, the engine reads its columns and rows from there, there is no second price table
     if (function_exists('pc_perfume') && function_exists('setting_get') && (string)setting_get($pdo, 'price_unify_v1', '') === '1') { $pc = pc_perfume($pdo); if (!empty($pc['rows'])) { $c['cols'] = array_map('floatval', $pc['cols']); $c['rows'] = $pc['rows']; } }
     return $c;
@@ -2689,7 +2689,7 @@ function cm_chart_clean(array $in, array $cur) {
     foreach ((array)($in['tiers'] ?? $cur['tiers'] ?? []) as $t) { $o = (float)($t[0] ?? 0); $x = (float)($t[1] ?? 0); if ($o > 0 && $x > 0) $tiers[] = [$o, $x]; }
     usort($tiers, function ($a, $b) { return $a[0] <=> $b[0]; });
     $c = $cur; $c['rows'] = $rows; $c['floor'] = $n('floor', 0, 10, 2.8); $c['codepct'] = $n('codepct', 0, 100, 70); $c['nocode'] = $n('nocode', 0, 100, 50); $c['prepaid'] = $n('prepaid', 0, 20, 2);
-    $c['bonus_max'] = $n('bonus_max', 1, 100, 50); $c['tiers'] = $tiers ?: [[30, 30], [40, 40], [60, 50]]; $c['window'] = 60; $c['cols'] = [7, 6.5, 6, 5, 4, 3];
+    $c['bonus_max'] = $n('bonus_max', 1, 100, 50); $c['tiers'] = $tiers ?: [[30, 30], [40, 40], [60, 50]]; $c['window'] = 110; $c['cols'] = [7, 6.5, 6, 5, 4, 3];
     return [$c, ''];
 }
 /** the six prices of one ML (a size between two rows is worked out between them) or null when the size is outside the chart */
@@ -2956,7 +2956,7 @@ function cm_paid_day(PDO $pdo, $day) {
         foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }
-        $ver = substr(md5('v3w61|' . implode('|', $p)), 0, 12);
+        $ver = substr(md5('v3w62|' . implode('|', $p)), 0, 12);
     }
     $ttl = $day >= date('Y-m-d', strtotime($today . ' -1 day')) ? 120 : 1800;
     try {
