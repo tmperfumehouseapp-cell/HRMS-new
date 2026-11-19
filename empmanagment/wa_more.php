@@ -238,6 +238,7 @@ function wa_camp_requery(PDO $pdo, int $days = 7): int
 function wa_tick(PDO $pdo, bool $force = false): array
 {
     if (!$force && !wa_lock($pdo, 'tick', 8)) return ['skipped' => true];
+    try { if (function_exists('wa_status_flush')) wa_status_flush($pdo, true); } catch (Throwable $e) { }   // ⚡ whatever delivery receipts still wait (the block is normally applied by the webhook itself every 7 s)
     $__ts = []; $__lt = microtime(true); $__mk = function (string $k) use (&$__ts, &$__lt) { $n = microtime(true); $d = $n - $__lt; $__lt = $n; if ($d >= 0.5) $__ts[$k] = round(($__ts[$k] ?? 0) + $d, 1); };   // ⏱ which part of the tick takes the time (only parts of 0.5 s and more are kept)
     if ($force && !defined('WA_IN_WEBHOOK') && (int)date('G') >= 3 && (string)setting_get($pdo, 'pvb_day', '') !== date('Y-m-d') && function_exists('wcr_pvb_run')) { try { wcr_pvb_run($pdo); } catch (Throwable $e) { } } $__mk('wcr_pvb_run');   // person vs bot: once a day, early morning
     $o = ['assigned' => 0]; $__late = function (): bool { return !empty($GLOBALS['__wa_dl']) && microtime(true) > (float)$GLOBALS['__wa_dl']; };   // ⏱ the engine run has a time budget: after its deadline the non-essential jobs below wait for the next run
