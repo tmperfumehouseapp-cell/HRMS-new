@@ -927,6 +927,15 @@ function wo_track_link(PDO $pdo, array $p): string
     }
     return preg_match('~^https?://[^\s<>"\']{4,220}$~i', $lk) ? $lk : '';
 }
+/** Can the "Tracking ID given" message go right now (switched on and approved by Meta)? */
+function wo_trk_ok(PDO $pdo): bool { static $ok = null; if ($ok === null) { try { $ok = !empty(wo_cfg($pdo)['statuses']['tracking']) && wo_tpl_for($pdo, 'tracking') !== null; } catch (Throwable $e) { $ok = false; } } return $ok; }
+/** The ONE message a parcel gets for where it is now ('' = none). While "Tracking ID given" cannot be sent (Meta has not approved it yet), a parcel that has its tracking ID gets the approved
+ *  Shipped message at once instead - the number and the tracking link reach the customer the same day - and nothing more at pickup (one Shipped per parcel, ever). */
+function wo_pick_status(PDO $pdo, array $p, int $nowTs): string
+{
+    $st = wo_send_status(wo_class($p, $nowTs));
+    return $st === 'tracking' && !wo_trk_ok($pdo) ? 'shipped' : $st;
+}
 function wo_vars(array $p, string $status): array
 {
     $co = trim((string)$p['courier']); $co = $co !== '' ? $co : 'the courier'; $vars = [wo_first_name((string)$p['customer']), (string)$p['order_name'], $co, (string)$p['tracking_no']];
@@ -947,12 +956,13 @@ function wa_ord_autosend(PDO $pdo, ?int $nowTs = null, string $onlyStore = ''): 
         $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE status IN ('tracked','transit','delivered') AND phone IS NOT NULL AND phone <> '' AND (sr_at >= ? OR delivered_at >= ? OR transit_at >= ? OR tracked_at >= ?)$sk ORDER BY id DESC LIMIT 3000");
         $q->execute([$since, $since, $since, $since]); $tplOk = [];
         foreach ($q->fetchAll() as $p) {
-            $cls = wo_class($p, $nowTs); $st = wo_send_status($cls); if ($st === '' || empty($cfg['statuses'][$st])) continue;
+            $cls = wo_class($p, $nowTs); $st = wo_pick_status($pdo, $p, $nowTs); if ($st === '' || empty($cfg['statuses'][$st])) continue; $early = $cls === 'packed';   // packed = has a tracking ID, the courier has not picked it up yet
             if (in_array($st, ['shipped', 'tracking'], true) && trim((string)$p['tracking_no']) === '') continue;
             // 🔖 "Tracking ID given": only while the ID is fresh (2 days) and the parcel still waits for the courier - never for an office pickup, never as a late surprise on an old parcel
-            if ($st === 'tracking' && ((string)$p['status'] !== 'tracked' || strcasecmp(trim((string)$p['tracking_no']), 'Office Pickup') === 0 || empty($p['tracked_at']) || strtotime((string)$p['tracked_at']) < $nowTs - 2 * 86400 || strtotime((string)$p['tracked_at']) < $go)) continue;
+            if ($early && ((string)$p['status'] !== 'tracked' || strcasecmp(trim((string)$p['tracking_no']), 'Office Pickup') === 0 || empty($p['tracked_at']) || strtotime((string)$p['tracked_at']) < $nowTs - 2 * 86400 || strtotime((string)$p['tracked_at']) < $go)) continue;
             if (wo_is_cx_parcel($pdo, $p)) continue;   // 🎫 a complaint replacement: the ticket's own messages tell the customer
             $key = wo_key($p['phone']); if ($key === '' || (function_exists('wa_valid_phone') && !wa_valid_phone($key))) continue;
+            if ($st === 'tracking') { $hs = $pdo->prepare("SELECT 1 FROM wa_ord_sent WHERE parcel_id = ? AND status = 'shipped' LIMIT 1"); $hs->execute([(int)$p['id']]); if ($hs->fetchColumn()) continue; }   // it already got the number with the Shipped message
             if (!array_key_exists($st, $tplOk)) $tplOk[$st] = wo_tpl_for($pdo, $st) !== null;
             if (!$tplOk[$st]) { $res['waiting']++; continue; }   // the template is not approved yet: nothing is queued, so an old status can never be sent later
             $due = wo_next_open($nowTs);
@@ -1032,9 +1042,10 @@ function wo_catchup(PDO $pdo, int $days, bool $go, ?int $nowTs = null): array
     $have = []; foreach (array_chunk(array_map(fn($p) => (int)$p['id'], $rows), 800) as $ch) { if (!$ch) continue; foreach ($pdo->query("SELECT parcel_id, status FROM wa_ord_sent WHERE parcel_id IN (" . implode(',', $ch) . ")")->fetchAll() as $r) $have[(int)$r['parcel_id'] . '|' . $r['status']] = 1; }
     $tplOk = []; $due = wo_dt(wo_next_open($nowTs)); $ins = $pdo->prepare("INSERT IGNORE INTO wa_ord_sent (parcel_id, phone, order_name, status, tpl_name, state, created_at, due_at) VALUES (?,?,?,?,?, 'queued', ?, ?)");
     foreach ($rows as $p) {
-        $o['parcels']++; $st = wo_send_status(wo_class($p, $nowTs)); if ($st === '') { $o['nothing']++; continue; }
+        $o['parcels']++; $st = wo_pick_status($pdo, $p, $nowTs); if ($st === '') { $o['nothing']++; continue; } $early = wo_class($p, $nowTs) === 'packed';
         if (in_array($st, ['shipped', 'tracking'], true) && trim((string)$p['tracking_no']) === '') { $o['nothing']++; continue; }
-        if ($st === 'tracking' && strcasecmp(trim((string)$p['tracking_no']), 'Office Pickup') === 0) { $o['nothing']++; continue; }
+        if ($early && strcasecmp(trim((string)$p['tracking_no']), 'Office Pickup') === 0) { $o['nothing']++; continue; }
+        if ($st === 'tracking' && isset($have[(int)$p['id'] . '|shipped'])) { $o['already']++; continue; }   // it already got the number with the Shipped message
         $key = wo_key($p['phone']); if ($key === '' || (function_exists('wa_valid_phone') && !wa_valid_phone($key))) { $o['nothing']++; continue; }
         if (isset($have[(int)$p['id'] . '|' . $st])) { $o['already']++; continue; }
         if (wo_is_cx_parcel($pdo, $p)) { $o['nothing']++; continue; }
@@ -1117,7 +1128,7 @@ function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
         $p = ['id' => 0, 'customer' => (string)$bdV['name'], 'phone' => (string)$bdV['phone'], 'order_name' => (string)$bdV['code'], 'courier' => '', 'tracking_no' => ''];
     } else {
     $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE id = ?"); $q->execute([(int)$row['parcel_id']]); $p = $q->fetch(); if (!$p) return $fin('skipped', 'Parcel not found', 'skipped');
-    if (($st === 'dispatch_late' ? (!in_array((string)$p['status'], ['placed', 'tracked'], true) || !empty($p['transit_at'])) : ($st === 'bday_ask' ? in_array(wo_class($p, $nowTs), ['cancelled', 'rto', 'lost', 'damaged'], true) : (in_array($st, ['review', 'review_nudge', 'care_d2', 'return_d15', 'return_d30'], true) ? wo_class($p, $nowTs) !== 'delivered' : wo_send_status(wo_class($p, $nowTs)) !== $st)))) return $fin('skipped', 'The parcel has moved on - this update is no longer true', 'skipped');
+    if (($st === 'dispatch_late' ? (!in_array((string)$p['status'], ['placed', 'tracked'], true) || !empty($p['transit_at'])) : ($st === 'bday_ask' ? in_array(wo_class($p, $nowTs), ['cancelled', 'rto', 'lost', 'damaged'], true) : (in_array($st, ['review', 'review_nudge', 'care_d2', 'return_d15', 'return_d30'], true) ? wo_class($p, $nowTs) !== 'delivered' : (wo_send_status(wo_class($p, $nowTs)) !== $st && !($st === 'shipped' && wo_class($p, $nowTs) === 'packed' && trim((string)$p['tracking_no']) !== '' && !wo_trk_ok($pdo))))))) return $fin('skipped', 'The parcel has moved on - this update is no longer true', 'skipped');
     if (wo_is_cx_parcel($pdo, $p)) return $fin('skipped', 'A complaint replacement - the ticket tells the customer itself', 'skipped');
     }
     $t = wo_tpl_for($pdo, $st); if (!$t) return $fin('skipped', 'The template is not approved', 'skipped');

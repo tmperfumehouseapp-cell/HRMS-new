@@ -37,7 +37,7 @@ function fi_ensure(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok;
     $flag = sys_get_temp_dir() . '/hrms_fi_tables_v1_' . substr(md5(__DIR__), 0, 8);
-    if (is_file($flag)) return $ok = fi_ensure4($pdo);
+    if (is_file($flag)) return $ok = fi_ensure4($pdo) && fi_ensure5($pdo);
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS fi_accounts (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL, kind VARCHAR(8) NOT NULL DEFAULT 'bank', last4 VARCHAR(8) NOT NULL DEFAULT '', active TINYINT NOT NULL DEFAULT 1, created_at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fi_receipts (id INT AUTO_INCREMENT PRIMARY KEY, receipt_no VARCHAR(14) NOT NULL DEFAULT '', rdate DATE NOT NULL, account_id INT NOT NULL DEFAULT 0, account_name VARCHAR(80) NOT NULL DEFAULT '', channel VARCHAR(16) NOT NULL, amount DECIMAL(14,2) NOT NULL,
@@ -49,7 +49,7 @@ function fi_ensure(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS fi_settings (k VARCHAR(30) NOT NULL PRIMARY KEY, v VARCHAR(255) NOT NULL DEFAULT '') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         @file_put_contents($flag, '1');
     } catch (Throwable $e) { error_log('fi_ensure: ' . $e->getMessage()); return $ok = false; }
-    $ok = fi_ensure2($pdo); return $ok = fi_ensure4($pdo) && $ok;
+    $ok = fi_ensure2($pdo); return $ok = fi_ensure4($pdo) && fi_ensure5($pdo) && $ok;
 }
 /** v4: the prepaid discount on a proof row, receipts that are not set against booked (untracked), gateway charges and the Pine Labs flags.
  *  Kept apart from the first step because that one stops early on a server that already has its tables (that is what made "Unknown column untracked"). Safe to run again. */
@@ -67,6 +67,17 @@ function fi_ensure4(PDO $pdo): bool
     $do("CREATE TABLE IF NOT EXISTS fi_charges (id INT AUTO_INCREMENT PRIMARY KEY, receipt_id INT NOT NULL, rdate DATE NOT NULL, channel VARCHAR(16) NOT NULL, provider VARCHAR(60) NOT NULL DEFAULT '', amount DECIMAL(14,2) NOT NULL, note VARCHAR(255) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, KEY idx_fi_c_r (receipt_id), KEY idx_fi_c_d (rdate)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     if ($ok) @file_put_contents($flag, '1');
     return true;
+}
+/** v5: opening balance of a bank account / cash box and the day it counts from. Safe to run again. */
+function fi_ensure5(PDO $pdo): bool
+{
+    $flag = sys_get_temp_dir() . '/hrms_fi_tables_v5_' . substr(md5(__DIR__), 0, 8);
+    if (is_file($flag)) return true;
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM fi_accounts LIKE 'opening_balance'")->fetch()) $pdo->exec("ALTER TABLE fi_accounts ADD COLUMN opening_balance DECIMAL(14,2) NOT NULL DEFAULT 0");
+        if (!$pdo->query("SHOW COLUMNS FROM fi_accounts LIKE 'opening_date'")->fetch()) $pdo->exec("ALTER TABLE fi_accounts ADD COLUMN opening_date DATE NULL");
+        @file_put_contents($flag, '1'); return true;
+    } catch (Throwable $e) { error_log('fi_ensure5: ' . $e->getMessage()); return false; }
 }
 /** v2: closed parcels (RTO / not sent / lost, with the refund owed to the customer) and Claude's note on a receipt. */
 function fi_ensure2(PDO $pdo): bool
@@ -650,18 +661,32 @@ $auth = require_auth();
 
 switch ($action) {
     case 'fi.accounts': {
-        $rows = $pdo->query("SELECT * FROM fi_accounts ORDER BY active DESC, name")->fetchAll(); $tot = [];
+        $rows = $pdo->query("SELECT * FROM fi_accounts ORDER BY active DESC, name")->fetchAll(); $tot = []; $since = []; $ref = [];
         foreach ($pdo->query("SELECT account_id, SUM(amount) a FROM fi_receipts WHERE status = 'ok' GROUP BY account_id")->fetchAll() as $r) $tot[(int)$r['account_id']] = (float)$r['a'];
-        json_response(['accounts' => array_map(fn($a) => ['id' => (int)$a['id'], 'name' => $a['name'], 'kind' => $a['kind'], 'last4' => $a['last4'], 'active' => (int)$a['active'], 'received_total' => round($tot[(int)$a['id']] ?? 0, 2)], $rows)]);
+        foreach ($rows as $a) {      // money in and refunds out from the opening day on (the opening day itself counts): balance = opening + in - refunds paid from this account
+            $id = (int)$a['id']; $od = (string)($a['opening_date'] ?? ''); if ($od === '') continue;
+            $q = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM fi_receipts WHERE status = 'ok' AND account_id = ? AND rdate >= ?"); $q->execute([$id, $od]); $since[$id] = (float)$q->fetchColumn();
+            try { $q = $pdo->prepare("SELECT COALESCE(SUM(refund_amount),0) FROM fi_close WHERE status = 'ok' AND refund_status = 'paid' AND refund_account_id = ? AND refund_date >= ?"); $q->execute([$id, $od]); $ref[$id] = (float)$q->fetchColumn(); } catch (Throwable $e) { $ref[$id] = 0.0; }
+        }
+        json_response(['accounts' => array_map(function ($a) use ($tot, $since, $ref) { $id = (int)$a['id']; $has = (string)($a['opening_date'] ?? '') !== '';
+            return ['id' => $id, 'name' => $a['name'], 'kind' => $a['kind'], 'last4' => $a['last4'], 'active' => (int)$a['active'], 'received_total' => round($tot[$id] ?? 0, 2),
+                'opening_balance' => round((float)($a['opening_balance'] ?? 0), 2), 'opening_date' => $has ? $a['opening_date'] : '', 'balance' => $has ? round((float)$a['opening_balance'] + ($since[$id] ?? 0) - ($ref[$id] ?? 0), 2) : null]; }, $rows)]);
         break;
     }
     case 'fi.account_save': {
         $in = json_input(); $id = (int)($in['id'] ?? 0); $name = trim(mb_substr((string)($in['name'] ?? ''), 0, 80)); $kind = in_array(($in['kind'] ?? 'bank'), ['bank', 'cash', 'wallet'], true) ? $in['kind'] : 'bank';
         $last4 = preg_replace('/\D/', '', (string)($in['last4'] ?? '')); $last4 = substr($last4, -4);
+        $ob = round((float)($in['opening_balance'] ?? 0), 2); $od = fi_day($in['opening_date'] ?? ''); if (abs($ob) > 100000000000) fi_err('That opening balance looks wrong.');
+        if ($od === '' && isset($in['opening_balance']) && (string)$in['opening_balance'] !== '') $od = fi_today($pdo);      // a balance without a day counts from today
+        if ($id && !array_key_exists('opening_balance', $in)) { $ex = $pdo->prepare("SELECT opening_balance, opening_date FROM fi_accounts WHERE id = ?"); $ex->execute([$id]); if ($e0 = $ex->fetch()) { $ob = round((float)$e0['opening_balance'], 2); $od = (string)($e0['opening_date'] ?? ''); } }      // an old screen that does not send it: keep what is saved
+        if ($od !== '' && $od > date('Y-m-d', strtotime('+1 day'))) fi_err('The opening balance day cannot be in the future.');
         if (mb_strlen($name) < 2) fi_err('Give the account a name (for example "HDFC current ••1234" or "Store cash box").');
         $dup = $pdo->prepare("SELECT COUNT(*) FROM fi_accounts WHERE LOWER(name) = LOWER(?) AND id <> ?"); $dup->execute([$name, $id]); if ((int)$dup->fetchColumn()) fi_err('There is already an account with this name.');
-        if ($id) { $pdo->prepare("UPDATE fi_accounts SET name = ?, kind = ?, last4 = ?, active = ? WHERE id = ?")->execute([$name, $kind, $last4, isset($in['active']) ? (!empty($in['active']) ? 1 : 0) : 1, $id]); }
-        else { $pdo->prepare("INSERT INTO fi_accounts (name, kind, last4, active, created_at) VALUES (?,?,?,1,?)")->execute([$name, $kind, $last4, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); }
+        if ($id) {
+            $pdo->prepare("UPDATE fi_accounts SET name = ?, kind = ?, last4 = ?, active = ?, opening_balance = ?, opening_date = ? WHERE id = ?")->execute([$name, $kind, $last4, isset($in['active']) ? (!empty($in['active']) ? 1 : 0) : 1, $ob, $od !== '' ? $od : null, $id]);
+            $pdo->prepare("UPDATE fi_receipts SET account_name = ? WHERE account_id = ?")->execute([$name, $id]);      // every receipt keeps a copy of the account name: a rename updates the old receipts too (nothing else about them changes)
+        }
+        else { $pdo->prepare("INSERT INTO fi_accounts (name, kind, last4, active, created_at, opening_balance, opening_date) VALUES (?,?,?,1,?,?,?)")->execute([$name, $kind, $last4, date('Y-m-d H:i:s'), $ob, $od !== '' ? $od : null]); $id = (int)$pdo->lastInsertId(); }
         json_response(['ok' => true, 'id' => $id]);
         break;
     }
