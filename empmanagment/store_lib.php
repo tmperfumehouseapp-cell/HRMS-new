@@ -14,7 +14,9 @@
  */
 
 const ST_CODE_BASE = 100000;     // code = ST_CODE_BASE + bottle_id  -> always 6 digits (up to 999999): short code = few, fat bars = easy scan
-const ST_SIZES = [10, 20, 50, 100];
+const ST_SIZES = [3, 10, 20, 50, 100, 200];          // every size a barcode can have: the 4 perfume sizes + the pack of a solid perfume (3) and of a shower gel (200)
+const ST_PERFUME_SIZES = [10, 20, 50, 100];
+const ST_PACK = ['gel' => 200, 'solid' => 3];        // shower gel and solid perfume are sold by the PIECE (their chart is by pieces); the pack size is only the label on the barcode
 /** "Where did the customer come from?" — asked at billing. key => label */
 const ST_SOURCES = ['insta_ad' => 'Instagram ad', 'fb_ad' => 'Facebook ad', 'flyer' => 'Flyer', 'friend' => 'Friend suggestion', 'first_time' => 'First time visitor', 'google' => 'Google / Maps', 'whatsapp' => 'WhatsApp', 'other' => 'Other'];
 const ST_DAY_START_HOUR = 3;      // the store's new day starts at 3 AM: a bill made at 2:30 AM still belongs to the day before
@@ -128,15 +130,62 @@ function st_clean_code($c): string
 }
 
 /** What a set of scanned bottles adds up to. Testers count as bottles but add no ml and no price. */
+/** price_charts.php (Shower gel / Attar / Combos rows) loaded the safe way: it only works when $pdo and $action are in scope. */
+function st_pc_load(PDO $pdo): bool
+{
+    if (function_exists('pc_get') && function_exists('pc_mix_get')) return true;
+    $action = (string)($GLOBALS['action'] ?? '');
+    try { if (is_file(__DIR__ . '/price_charts.php')) require_once __DIR__ . '/price_charts.php'; } catch (Throwable $e) { error_log('st_pc_load: ' . $e->getMessage()); }
+    return function_exists('pc_get') && function_exists('pc_mix_get');
+}
+/** The row of a chart for n (ml or pieces): the exact row, or worked out between two rows; null outside the chart or next to a blank price. */
+function st_chart_row(array $rows, float $n): ?array
+{
+    usort($rows, fn($a, $b) => (float)$a['ml'] <=> (float)$b['ml']); $cnt = count($rows);
+    if (!$cnt || $n <= 0 || $n < (float)$rows[0]['ml'] || $n > (float)$rows[$cnt - 1]['ml']) return null;
+    foreach ($rows as $i => $a) {
+        if ((float)$a['ml'] === $n) return array_map('floatval', (array)$a['p']);
+        $b = $rows[$i + 1] ?? null;
+        if ($b && $n > (float)$a['ml'] && $n < (float)$b['ml']) { $f = ($n - $a['ml']) / ($b['ml'] - $a['ml']); $p = []; foreach ((array)$a['p'] as $j => $v) $p[] = ((float)$v > 0 && (float)($b['p'][$j] ?? 0) > 0) ? (float)$v + ((float)$b['p'][$j] - (float)$v) * $f : 0.0; return $p; }
+    }
+    return null;
+}
+/** The price row of a bill that has shower gel / solid perfume (pieces): a single kind uses its own chart (Shower gel / Attar); any MIX uses the exact Combos row (the owner makes those rows).
+ *  Returns ['cols' => [%...], 'names' => [...], 'row' => [prices], 'label' => text, 'need' => text when there is no row]. */
+function st_pieces_row(PDO $pdo, int $perfMl, int $gel, int $solid): array
+{
+    $lab = []; if ($perfMl > 0) $lab[] = $perfMl . ' ml perfume'; if ($gel > 0) $lab[] = $gel . ' pc shower gel'; if ($solid > 0) $lab[] = $solid . ' pc solid perfume'; $label = implode(' + ', $lab);
+    if (!st_pc_load($pdo)) return ['cols' => [], 'names' => [], 'row' => null, 'label' => $label, 'need' => 'The price charts are not available here — a manager must type the price.'];
+    $kinds = ($perfMl > 0 ? 1 : 0) + ($gel > 0 ? 1 : 0) + ($solid > 0 ? 1 : 0);
+    if ($kinds === 1) {
+        $seg = $gel > 0 ? 'gel' : 'attar'; $n = $gel > 0 ? $gel : $solid; $c = pc_get($pdo, $seg); $row = st_chart_row((array)$c['rows'], $n);
+        return ['cols' => (array)$c['cols'], 'names' => (array)$c['names'], 'row' => $row, 'label' => $label, 'need' => $row ? '' : 'No price row for ' . $label . ' in the ' . ($gel > 0 ? 'Shower gel' : 'Attar') . ' chart — add it in Learn & Setup → Pricing, or a manager types the price.'];
+    }
+    $m = pc_mix_get($pdo); $row = null;
+    foreach ((array)$m['rows'] as $r) if ((int)$r['perf'] === $perfMl && (int)$r['gel'] === $gel && (int)$r['attar'] === $solid && (int)($r['other'] ?? 0) === 0) { $row = array_map('floatval', (array)$r['p']); break; }
+    return ['cols' => (array)$m['cols'], 'names' => (array)$m['names'], 'row' => $row, 'label' => $label, 'need' => $row ? '' : 'No Combos row for ' . $label . ' — add it in Learn & Setup → Pricing → Combos, or a manager types the price.'];
+}
+/** What kind of product a row is: perfume (sold by ml), gel (shower gel, by piece), solid (solid perfume, by piece). The owner's choice if set, else worked out from the title. */
+function st_ptype(array $row): string
+{
+    $t = (string)($row['ptype'] ?? ''); if (in_array($t, ['perfume', 'gel', 'solid'], true)) return $t;
+    $title = (string)($row['title'] ?? '');
+    if (preg_match('/shower\s*gel|body\s*wash/i', $title)) return 'gel';
+    if (preg_match('/solid|attar|balm/i', $title)) return 'solid';
+    return 'perfume';
+}
+/** The sizes a barcode may have for a product type. */
+function st_sizes_for(string $ptype): array { return $ptype === 'perfume' ? ST_PERFUME_SIZES : [ST_PACK[$ptype] ?? 50]; }
 function st_totals(array $bottles): array
 {
-    $ml = 0; $sale = 0; $tester = 0; $gift = 0;
+    $ml = 0; $sale = 0; $tester = 0; $gift = 0; $gel = 0; $solid = 0;
     foreach ($bottles as $b) {
         if (($b['kind'] ?? 'sale') === 'gift') { $gift++; continue; }      // a birthday gift: free, never counted in the ml / price / commission
         if (($b['kind'] ?? 'sale') === 'tester') { $tester++; continue; }
-        $ml += (int)$b['ml']; $sale++;
+        $pt = (string)($b['ptype'] ?? 'perfume'); $sale++;
+        if ($pt === 'gel') $gel++; elseif ($pt === 'solid') $solid++; else $ml += (int)$b['ml'];      // total_ml = PERFUME ml only; gel and solid perfume are counted in pieces
     }
-    return ['total_ml' => $ml, 'sale_bottles' => $sale, 'testers' => $tester, 'gifts' => $gift];
+    return ['total_ml' => $ml, 'sale_bottles' => $sale, 'testers' => $tester, 'gifts' => $gift, 'gel_pcs' => $gel, 'solid_pcs' => $solid];
 }
 
 /**
@@ -299,9 +348,10 @@ function st_daily_sync(PDO $pdo): void
 function st_migrate(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_mig_v12';
+    $flag = sys_get_temp_dir() . '/hrms_st_mig_v13';
     if (is_file($flag)) return;
     try {
+        try { if (!$pdo->query("SHOW COLUMNS FROM st_products LIKE 'ptype'")->fetch()) $pdo->exec("ALTER TABLE st_products ADD COLUMN ptype VARCHAR(10) NOT NULL DEFAULT ''"); } catch (Throwable $e) { error_log('st_migrate ptype: ' . $e->getMessage()); }   // '' = work it out from the title
         foreach (['printed_at' => 'DATETIME NULL', 'print_count' => 'INT NOT NULL DEFAULT 0'] as $c => $def)
             if (!$pdo->query("SHOW COLUMNS FROM st_bottles LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bottles ADD COLUMN $c $def");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_orders (
@@ -1641,6 +1691,15 @@ if (!function_exists('budget_store_calc')) {
         $q->execute([$from, $to]);
         $all = $q->fetchAll(); $newDays = []; foreach ($all as $b) $newDays[(string)$b['biz_date']] = 1;
         foreach (budget_oldpos_rows($pdo, $from, $to, $newDays) as $b) $all[] = $b;     // days with no bill in the new POS come from the old POS
+        // shower gel / solid perfume are paid by PIECES (their own chart, or the exact Combos row for a mix): how many of each is on every new-POS bill
+        $pcs = [];
+        try {
+            $bids = array_values(array_filter(array_map(fn($x) => (int)$x['bill_id'], $all), fn($x) => $x > 0));
+            foreach (array_chunk($bids, 400) as $ch0) {
+                $q2 = $pdo->query("SELECT i.bill_id, p.title, p.ptype, COUNT(*) n FROM st_bill_items i JOIN st_bottles bo ON bo.bottle_id = i.bottle_id JOIN st_products p ON p.product_id = bo.product_id WHERE i.kind = 'sale' AND i.bill_id IN (" . implode(',', $ch0) . ") GROUP BY i.bill_id, p.product_id");
+                foreach ($q2->fetchAll() as $r2) { $pt = st_ptype($r2); if ($pt === 'perfume') continue; $pcs[(int)$r2['bill_id']][$pt] = ($pcs[(int)$r2['bill_id']][$pt] ?? 0) + (int)$r2['n']; }
+            }
+        } catch (Throwable $e) { error_log('budget_store_calc pieces: ' . $e->getMessage()); }
         foreach ($all as $i => $b) { $rows[$i] = $b; $eid = (int)$b['emp_id']; $gk = isset($pool[$eid]) ? 'pool' : ($eid > 0 ? (string)$eid : 'n:' . $b['emp_name']); $groups[$gk . '|' . $b['biz_date']][] = $i; }
         $out = [];
         foreach ($groups as $k => $idx) {
@@ -1650,6 +1709,16 @@ if (!function_exists('budget_store_calc')) {
             foreach ($idx as $i) {
                 $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
                 $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
+                $gp = (int)($pcs[(int)$b['bill_id']]['gel'] ?? 0); $sp = (int)($pcs[(int)$b['bill_id']]['solid'] ?? 0);
+                if ($gp > 0 || $sp > 0) {      // a bill with shower gel / solid perfume: the % of the nearest price column of ITS row (Shower gel / Attar chart, or the exact Combos row)
+                    $pr = st_pieces_row($pdo, $ml, $gp, $sp);
+                    if ($pr['row']) { $ch2 = ['cols' => array_map('floatval', $pr['cols']), 'rows' => [['ml' => 1, 'p' => $pr['row']]], 'floor' => (float)($ch['floor'] ?? 0)]; $pct = (float)cm_pct($ch2, 1, $gross); $rule = 'chart'; $com = $gross * $pct / 100; }
+                    else { $unpriced++; $rule = 'ML not priced'; }
+                    $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
+                        'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => $hasCode, 'total' => $gross, 'ml' => $ml, 'pcs' => $gp + $sp, 'items' => $pr['label'],
+                        'pct' => $pct, 'rule' => $rule, 'reduced' => false, 'com' => round($com, 2), 'pooled' => isset($pool[(int)$b['emp_id']]), 'src' => (string)($b['src'] ?? 'new_pos')];
+                    continue;
+                }
                 $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
                 $fl = (!$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
                 if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
