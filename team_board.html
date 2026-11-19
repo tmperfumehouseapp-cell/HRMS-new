@@ -238,7 +238,7 @@ guardPage();
     try { await api.post('wq.tk_cfg', { goal: Number(document.getElementById('tkGoal').value) || 0, hold: document.getElementById('tkHold').checked, offer: document.getElementById('tkOffer').value, cust: document.getElementById('tkCust').value }); } catch (er) { alert((er && er.message) || 'Could not save'); }
     AA.busy = false; AA.load();
   });
-  AA.load(); setInterval(() => { if (!document.hidden) AA.load(); }, 5000);   // every 5 s: a query given to somebody shows up (and flashes) within seconds
+  AA.load(); setInterval(() => { if (!document.hidden) AA.load(); }, 10000);   // every 10 s (was 5 s): a query given to somebody shows up (and flashes) within seconds
   async function drawer(id, fresh) {
     const light = (D.rows || []).find((x) => x.emp_id === id); if (!light) return; openId = id;
     dr.innerHTML = '<button class="x" id="drX" aria-label="Close">✕</button><h2>' + esc(light.name) + '</h2><div class="sk"></div><div class="sk" style="height:90px"></div><div class="sk" style="height:90px"></div><div class="sk" style="height:90px"></div>';
