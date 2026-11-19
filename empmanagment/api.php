@@ -22903,6 +22903,41 @@ switch ($action) {
         json_response($out);
         break;
     }
+    case 'ct.must3': {
+        // ✅ The 3 messages the owner wants in EVERY order: (1) address re-check instruction, (2) chain selection message, (3) 2% extra discount on PREPAID. Per salesperson, per order of the day: sent (time, by salesperson / automatic) or not. Plain SQL + text match, no AI. ?date= Admin / HR.
+        $auth = require_auth();
+        if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
+        $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? (string)$_GET['date'] : biz_today($pdo);
+        $out = hrms_memo('must3:' . $day, 60, function () use ($pdo, $day) {
+            $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0], 'people' => []];
+            try {
+                if (!ensure_order_allocations_table($pdo)) return $res;
+                $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
+                $cc = 'COLLATE utf8mb4_unicode_ci'; $from = $day . ' ' . day_start_for($pdo, $day) . ':00'; $to = date('Y-m-d H:i:s', strtotime($from) + 86400);
+                $st = $pdo->prepare("SELECT o.order_name, o.created_at, o.phone, o.customer, o.total, a.employee_id FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
+                    WHERE o.created_at >= ? AND o.created_at < ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') ORDER BY o.created_at DESC LIMIT 400");
+                $st->execute([$from, $to]); $P = [];
+                $rx = ['a' => '/recheck your delivery address|change address\s*\/\s*add new address/i', 'c' => '/chain_index|jewell?ery item from this catalogue|chain or any other jewell?ery/i', 'p' => '/2\s*%\s*(extra\s*)?(full\s*)?discount|extra discount on prepaid|prepaid[^.]{0,60}2\s*%|2\s*%[^.]{0,60}prepaid/i'];
+                foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
+                    $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $t = strtotime((string)$o['created_at']); $f = ['a' => null, 'c' => null, 'p' => null];
+                    if (strlen($k) === 10) {
+                        $q = $pdo->prepare("SELECT body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? AND ts <= ? AND (body LIKE '%Recheck Your Delivery%' OR body LIKE '%Change Address%' OR body LIKE '%chain_index%' OR body LIKE '%Jewellery%' OR body LIKE '%Jewelry%' OR body LIKE '%Chain or any%' OR body LIKE '%extra discount%' OR body LIKE '%prepaid%') ORDER BY id ASC LIMIT 60");
+                        $q->execute([$k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 30 * 60)]);
+                        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $m) foreach ($rx as $key => $re) if ($f[$key] === null && preg_match($re, (string)$m['body'])) $f[$key] = [substr((string)$m['ts'], 11, 5), (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'];
+                    }
+                    $e = (int)$o['employee_id'];
+                    if (!isset($P[$e])) $P[$e] = ['id' => $e, 'name' => $names[$e] ?? ('#' . $e), 'n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'orders' => []];
+                    $P[$e]['n']++; $res['team']['n']++; foreach (['a', 'c', 'p'] as $key) if ($f[$key]) { $P[$e][$key]++; $res['team'][$key]++; }
+                    $P[$e]['orders'][] = ['order' => (string)$o['order_name'], 'customer' => mb_substr((string)$o['customer'], 0, 40), 'total' => round((float)$o['total']), 'phone' => $k, 'at' => substr((string)$o['created_at'], 11, 5), 'a' => $f['a'], 'c' => $f['c'], 'p' => $f['p']];
+                }
+                $L = array_values($P); usort($L, fn($x, $y) => (($y['n'] * 3 - $y['a'] - $y['c'] - $y['p']) <=> ($x['n'] * 3 - $x['a'] - $x['c'] - $x['p'])));
+                $res['people'] = $L;
+            } catch (Throwable $e) { error_log('ct.must3: ' . $e->getMessage()); }
+            return $res;
+        });
+        json_response($out);
+        break;
+    }
     case 'ct.effort_hist': {
         // ➕ Add-on effort history of ONE salesperson (?emp=) over ?days= (7 / 30 / 0 = everything read so far): per day + total. Admin / HR / resolvers.
         $auth = require_auth();
