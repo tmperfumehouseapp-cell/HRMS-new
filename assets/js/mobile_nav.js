@@ -133,6 +133,18 @@
   function closeSheet() { if (!sheet) return; sheet.classList.remove('on'); if (back) back.classList.remove('on'); document.body.style.overflow = ''; }
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
 
+  /* rows of tabs / chips that scroll sideways: a fade shows there is more, and the chosen tab is brought into view */
+  function rows() {
+    if (!mq.matches) return;
+    var els = document.querySelectorAll('.tabs,.tabbar,.ws-tabs,#wsTabs,.chips,.ws-needs');
+    for (var i = 0; i < els.length; i++) {
+      var e = els[i]; if (!e.__mnr) { e.__mnr = 1; e.addEventListener('scroll', (function (x) { return function () { x.classList.toggle('mn-end', x.scrollLeft + x.clientWidth >= x.scrollWidth - 4); }; })(e), { passive: true }); }
+      var more = e.scrollWidth > e.clientWidth + 6; e.classList.toggle('mn-more', more); e.classList.toggle('mn-end', !more || e.scrollLeft + e.clientWidth >= e.scrollWidth - 4);
+      var on = e.querySelector('.on,.active,[aria-selected="true"]'); if (more && on && !e.__mnd) { e.__mnd = 1; try { e.scrollLeft = Math.max(0, on.offsetLeft - 16); } catch (x) { } }
+    }
+  }
+  setInterval(rows, 1200); window.addEventListener('load', rows);
+
   /* the assistant button hides while scrolling down, shows when scrolling up */
   var lastY = window.pageYOffset || 0;
   window.addEventListener('scroll', function () { var y = window.pageYOffset || 0; if (Math.abs(y - lastY) < 8) return; document.body.classList.toggle('mn-down', y > lastY && y > 120); lastY = y; }, { passive: true });
