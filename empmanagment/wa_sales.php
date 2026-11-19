@@ -103,7 +103,8 @@ if (in_array($__ws, ['wa.sales_board', 'wa.sales_give', 'wa.sales_focus', 'wa.sa
     switch ($__ws) {
         case 'wa.sales_board': {
             $d = (int)($_GET['days'] ?? 7); if (!in_array($d, [1, 7, 30], true)) $d = 7;
-            json_response(wa_sales_board($pdo, $d));
+            // ⚡ the same board for everybody, asked by every open WhatsApp page every 45 s: kept for 30 s
+            json_response(function_exists('hrms_memo') ? hrms_memo('wa_sales_board:' . $d, 30, function () use ($pdo, $d) { return wa_sales_board($pdo, $d); }) : wa_sales_board($pdo, $d));
         }
         case 'wa.sales_cfg': {
             if (!$isPost) json_response(wa_sales_cfg($pdo));
