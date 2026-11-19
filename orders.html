@@ -2759,9 +2759,9 @@
           `<div class="cg-tot"><span>Total</span><b>${tot}</b></div></div>`;
         return `<div class="stat-card rs-card"><div class="label"><span class="lbl-full">${r ? 'Ad spend &amp; ROAS' : 'DG / LG / WH / Other'}</span><span class="lbl-short">${r ? 'Ad spend &amp; ROAS' : 'DG/LG/WH/Other'}</span></div>${r}${colours}</div>`;
       })()}
-      ${ohCardHtml(base)}
       ${lcCardHtml(base)}
       <div id="m3Host" style="grid-column:1 / -1; min-width:0;"></div>
+      ${ohCardHtml(base)}
     `;
     grid.style.display = 'grid';
     const grid2 = document.getElementById('summaryGrid2');
