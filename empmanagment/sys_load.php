@@ -326,6 +326,17 @@ function sysload_route(PDO $pdo, string $action): void
     $auth = require_auth();
     if (($auth['role'] ?? '') !== 'Admin' && !user_can($auth, 'server_load')) json_response(['error' => 'The server load is for Admin and roles ticked "Server load".'], 403);
     if ($action === 'sysload.view') { @set_time_limit(40); json_response(sysload_view($pdo, max(15, min(180, (int)($_GET['mins'] ?? 60))))); }
+    if ($action === 'sysload.receipts') {   // 🧾 "Receipts speed": applies whatever delivery receipts wait RIGHT NOW and says how long they wait in general (the ✓ / ✓✓ marks of the chats)
+        @set_time_limit(40); $o = ['ok' => true, 'blocks_on' => (string)setting_get($pdo, 'wa_stq', '1') === '1' && function_exists('wa_stq_ready') && wa_stq_ready($pdo), 'now' => time()];
+        $q = function () use ($pdo) { try { $r = $pdo->query("SELECT COUNT(*) n, MIN(at) o FROM wa_status_q")->fetch(PDO::FETCH_ASSOC); return [(int)$r['n'], $r['o'] ? max(0, time() - (int)strtotime((string)$r['o'])) : 0]; } catch (Throwable $e) { return [0, 0]; } };
+        [$o['waiting_before'], $o['oldest_before_s']] = $q(); $t0 = microtime(true);
+        if ($o['blocks_on'] && function_exists('wa_status_flush')) { try { wa_status_flush($pdo, true); } catch (Throwable $e) { $o['error'] = mb_substr($e->getMessage(), 0, 120); } }
+        $o['applied_ms'] = (int)round((microtime(true) - $t0) * 1000); [$o['waiting_after'], $o['oldest_after_s']] = $q();
+        $st = function_exists('wa_stq_stats_get') ? wa_stq_stats_get() : []; $cut = time() - 300; $n = 0; $sum = 0.0; $max = 0.0; $blocks = 0; $slow = 0; $last = 0;
+        foreach ($st as $b) { $last = max($last, (int)$b['t']); if ((int)$b['t'] < $cut) continue; $blocks++; $n += (int)$b['n']; $sum += (float)$b['avg'] * (int)$b['n']; $max = max($max, (float)$b['max']); $slow = max($slow, (int)$b['ms']); }
+        $o['last5'] = ['blocks' => $blocks, 'receipts' => $n, 'avg_delay_s' => $n ? round($sum / $n, 1) : 0, 'max_delay_s' => $max, 'slowest_block_ms' => $slow]; $o['last_block_s_ago'] = $last ? time() - $last : null;
+        json_response($o);
+    }
     if ($action === 'sysload.block') {      // one 5-minute piece of the CPU table opened: what ran in it
         @set_time_limit(30); $st = (int)($_GET['start'] ?? 0); if ($st <= 0) json_response(['error' => 'Which time?'], 422);
         $snaps = []; foreach ((array)@file(sysload_dir() . '/cpu.log') as $l) { $j = json_decode((string)$l, true); if (is_array($j) && isset($j['t'], $j['all'])) $snaps[] = $j; }
