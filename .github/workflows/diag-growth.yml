@@ -174,6 +174,14 @@ jobs:
               catch (Throwable $e) { echo "  performance_schema not readable: " . substr($e->getMessage(), 0, 100) . "\n"; }
               $g = $d->query("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_running','Slow_queries','Questions','Uptime','Innodb_buffer_pool_wait_free','Created_tmp_disk_tables')")->fetchAll(PDO::FETCH_KEY_PAIR); echo "  status: " . json_encode($g) . "\n";
             } catch (Throwable $e) { echo "  database load: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nDATABASE SAMPLING (30 looks over ~15 s at the running statements; shape = values replaced; counts = how often it was seen running):\n";
+            try {
+              $seen = []; for ($i = 0; $i < 30; $i++) { foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $p) { if (($p["Command"] ?? "") === "Sleep" || !$p["Info"] || stripos((string)$p["Info"], "PROCESSLIST") !== false) continue; $k = substr(preg_replace(["/\\s+/", "/'[^']*'/", "/\\b\\d+\\b/", "/\\(\\?(,\\s*\\?)+\\)/", "/IN \\([^)]*\\)/"], [" ", "?", "?", "(?)", "IN (...)"], (string)$p["Info"]), 0, 200); $seen[$k] = ($seen[$k] ?? 0) + 1; } usleep(500000); }
+              arsort($seen); $j = 0; foreach ($seen as $k => $c) { echo "    seen $c x: $k\n"; if (++$j >= 12) break; } if (!$seen) echo "    nothing was running in 30 looks\n";
+              foreach ($d->query("SHOW GLOBAL VARIABLES WHERE Variable_name IN ('innodb_buffer_pool_size','max_connections','long_query_time','slow_query_log','query_cache_type','table_open_cache')")->fetchAll(PDO::FETCH_KEY_PAIR) as $k => $v) echo "    $k = $v\n";
+              foreach ($d->query("SHOW INDEX FROM wa_messages")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    wa_messages index " . $x["Key_name"] . " col " . $x["Seq_in_index"] . " " . $x["Column_name"] . " (card " . $x["Cardinality"] . ")\n";
+              $r = $d->query("SELECT TABLE_ROWS, ROUND(DATA_LENGTH/1048576) dm, ROUND(INDEX_LENGTH/1048576) im FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wa_messages'")->fetch(PDO::FETCH_ASSOC); echo "    wa_messages rows ~" . ($r["TABLE_ROWS"] ?? "?") . " data " . ($r["dm"] ?? "?") . " MB index " . ($r["im"] ?? "?") . " MB\n";
+            } catch (Throwable $e) { echo "  sampling: " . substr($e->getMessage(), 0, 120) . "\n"; }
             $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
             if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
               $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
