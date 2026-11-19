@@ -162,7 +162,7 @@ function sku_shopify_day(PDO $pdo, string $day): array
     foreach (shopify_stores() as $key => $store) {
         if (strpos((string)($store['client_id'] ?? ''), 'PASTE_') !== false) continue;
         $tok = shopify_get_token($key, $store); if (is_array($tok)) { $errs[] = ($store['label'] ?? $key) . ': ' . ($tok['error'] ?? 'no access'); continue; }
-        $url = "https://{$store['domain']}/admin/api/2024-10/orders.json?" . http_build_query(['status' => 'any', 'limit' => 250, 'created_at_min' => str_replace(' ', 'T', $win[0]) . '+05:30', 'created_at_max' => str_replace(' ', 'T', $win[1]) . '+05:30', 'fields' => 'id,name,created_at,cancelled_at,line_items']);
+        $url = "https://{$store['domain']}/admin/api/2024-10/orders.json?" . http_build_query(['status' => 'any', 'limit' => 250, 'created_at_min' => str_replace(' ', 'T', $win[0]) . '+05:30', 'created_at_max' => str_replace(' ', 'T', $win[1]) . '+05:30', 'fields' => 'id,name,created_at,cancelled_at,line_items,note_attributes']);
         for ($page = 0; $page < 40 && $url; $page++) {
             $hdr = []; $ch = curl_init($url);
             curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 40, CURLOPT_HTTPHEADER => ['X-Shopify-Access-Token: ' . $tok, 'Content-Type: application/json'], CURLOPT_HEADERFUNCTION => function ($c, $h) use (&$hdr) { $hdr[] = $h; return strlen($h); }]);
@@ -185,9 +185,10 @@ function sku_sheet(PDO $pdo, string $day): array
     foreach ($orders as $o) {
         if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) { $nCancel++; continue; }
         $nOrd++; $oid[(string)($o['name'] ?? '')] = [(string)$o['_store'], (string)($o['id'] ?? '')];
-        foreach ((array)($o['line_items'] ?? []) as $li) {
+        $__bp = order_box_attr_props($o);      // "Box contents" kept as order details (not on the line): used for the ONE build-your-own line
+        foreach (array_values((array)($o['line_items'] ?? [])) as $__i => $li) {
             $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;      // a line removed from the order after it was placed
-            $nLines++; sku_take($grid, $bad, (string)($o['name'] ?? ''), (string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (array)($li['properties'] ?? []));
+            $nLines++; sku_take($grid, $bad, (string)($o['name'] ?? ''), (string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, ($__bp[$__i] ?? (array)($li['properties'] ?? [])));
         }
     }
     // the manual orders (WM-xxxxx) confirmed on that business day
