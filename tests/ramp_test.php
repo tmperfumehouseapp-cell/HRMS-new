@@ -80,13 +80,17 @@ $S = $H; $S['wa_ru_hourly'] = '300'; $S['wa_ru_ramp_at'] = (string)(time() - 700
 $S = $H; $S['wa_ru_hourly'] = '410'; $S['wa_ru_ramp_at'] = (string)(time() - 7300); $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 5, 20); wa_ru_ramp($pdo, ['hourly' => 410]); ok($S['wa_ru_hourly'] === '410' && ($S['wa_ru_freeze_n'] ?? '') === '1', 'a bad look at 410 holds and restarts the 2 hours');
 // 15) owner 20 Nov 2026 (02:00): the floor is 260 an hour, never 180
 $S = ['wa_ru_hourly' => '350', 'wa_ru_ramp_base' => '260', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '510', 'wa_ru_ramp_drop' => '100', 'wa_ru_freeze_n' => '1', 'wa_ru_ramp_at' => (string)(time() - 700)];
-$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 0, 20); $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE rowid % 4 <> 0");   /* only 25% delivered, no failure */
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 5, 20);   /* only 25% delivered, no failure */
 wa_ru_ramp($pdo, ['hourly' => 350]); ok($S['wa_ru_hourly'] === '260', 'second bad look goes back to the floor 260, not 180 (got ' . $S['wa_ru_hourly'] . ')');
 $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 0, 20); wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '320', 'from the floor 260 the next step is 320 (got ' . $S['wa_ru_hourly'] . ')');
 // 16) owner 20 Nov 2026 (02:15): the third bad look in a row means a 4 hour rest, restart at the floor
 $S = ['wa_ru_hourly' => '320', 'wa_ru_ramp_base' => '260', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '510', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 700)];
-$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 0, 20); $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE rowid % 4 <> 0");
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 5, 20);
 wa_ru_ramp($pdo, ['hourly' => 320]); ok($S['wa_ru_hourly'] === '320' && $S['wa_ru_freeze_n'] === '1', 'bad look 1 holds');
 $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 320]); ok($S['wa_ru_hourly'] === '260' && $S['wa_ru_freeze_n'] === '2', 'bad look 2 goes back to 260 (got ' . $S['wa_ru_hourly'] . ' / ' . ($S['wa_ru_freeze_n'] ?? '') . ')');
 $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 260]); ok(((int)($S['wa_ru_pause_until'] ?? 0)) > time() + 3 * 3600 && ((int)$S['wa_ru_pause_until']) <= time() + 4 * 3600 + 5 && $S['wa_ru_hourly'] === '260' && $S['wa_ru_freeze_n'] === '0', 'bad look 3 rests 4 hours and restarts at 260');
+// 17) owner 20 Nov 2026 (02:30): low delivered share without failures is NOT a bad look: it only does not grow
+$S = ['wa_ru_hourly' => '260', 'wa_ru_ramp_base' => '260', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '510', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 700)];
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 0, 20); $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE rowid % 4 <> 0");
+wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '260' && (int)($S['wa_ru_freeze_n'] ?? 0) === 0 && (int)($S['wa_ru_pause_until'] ?? 0) === 0, 'low delivered without failures: no hold count, no rest, no growth (got ' . $S['wa_ru_hourly'] . ' / ' . ($S['wa_ru_freeze_n'] ?? '') . ')');
 echo "ramp ok\n";
