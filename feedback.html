@@ -50,6 +50,7 @@
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=37"></script>
+<script src="assets/js/order_hub.js?v=7"></script>
 <script>
   guardPage();
   renderSidebar('feedback');
@@ -74,7 +75,7 @@
     $('warn').innerHTML = !CFG.on ? '<div class="warn">⚠ <b>Automatic messages are OFF.</b> Nothing is sent by itself yet. Open ⚙ Settings, pick the approved messages and switch it on.</div>' : (!CFG.tpl ? '<div class="warn">⚠ Pick the approved <b>feedback message</b> in ⚙ Settings, or nothing can be sent.</div>' : '');
     $('setSum').textContent = '· ' + (CFG.on ? 'automatic ON' : 'automatic OFF') + ' · message after ' + CFG.wait + ' days · follow-up after ' + CFG.fu + ' days';
     $('none').style.display = L.rows.length ? 'none' : 'block';
-    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><b>${esc(x.order)}</b>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '✗ Failed' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td></tr>`).join('');
+    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="font-weight:800;color:#c2410c">${esc(x.order)}</a>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '✗ Failed' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td></tr>`).join('');
     renderSet();
   }
   function renderSet() {
@@ -102,7 +103,7 @@
     const d = DET, x = d.row, name = (x.customer || '').split(' ')[0] || 'the customer';
     const txt = x.status === 'sent' && !x.seen && d.text_fu ? d.text_fu : d.text;
     if (!$('sA')) $('side').innerHTML = '<div id="sA"></div><div id="chatBox"></div><div id="sB"></div>';
-    $('sA').innerHTML = `<div class="h">${esc(x.order)} · ${esc(x.customer || '')}</div><div class="sm">${esc(x.phone)} · delivered ${esc(dt(x.delivered))} · <span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></div>
+    $('sA').innerHTML = `<div class="h"><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="color:#c2410c">${esc(x.order)}</a> · ${esc(x.customer || '')}</div><div class="sm">${esc(x.phone)} · delivered ${esc(dt(x.delivered))} · <span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></div>
       ${d.proofs.length ? '<div class="ph" id="phs">Loading…</div>' : '<div class="sm" style="margin:6px 0">No feedback screenshot yet</div>'}
       ${x.place ? `<div class="sm">Given on: <b>${esc(x.place)}</b></div>` : ''}${x.reward_note ? `<div class="sm">Reward: <b>${esc(x.reward_note)}</b>${x.reward_order ? ' · order ' + esc(x.reward_order) : ''}</div>` : ''}${x.cx_code ? `<div class="sm">Complaint: <b>${esc(x.cx_code)}</b></div>` : ''}`;
     // 💬 the customer's WhatsApp, live, inside the page (the same chat box as the Complaints page: type, 🎤 voice, 📎 photo, ✨ replies). It is kept while the order stays the same, so a refresh never closes what you are typing.
@@ -183,6 +184,13 @@
     $('kno').onclick = closeM; $('kgo').onclick = async () => { try { await api.post('fb.skip', { order: x.order, why: $('kw').value }); closeM(); load(); } catch (e) { say(e.message, true); } };
   }
   document.addEventListener('click', (e) => {
+    const oa = e.target.closest('a.oid'); if (oa) {      // the order number opens the order details (the Dispatch order card: order, customer, parcel, chat)
+      e.preventDefault(); e.stopPropagation();
+      if (!window.OrderHub) { say('The order details are not loaded. Reload the page.', true); return; }
+      const o = oa.dataset.o, st = oa.dataset.s, ph = oa.dataset.p;
+      if (/^TEST-/.test(o) || !o) OrderHub.open({ phone: ph }); else OrderHub.open(st ? { order: o, store: st } : { order: o, phone: ph });
+      return;
+    }
     const t = e.target.closest('[data-t]'); if (t) { tab = t.dataset.t; query = ''; $('q').value = ''; load(); return; }
     const r = e.target.closest('tr.row'); if (r) { openOrder(r.dataset.o); }
   });
