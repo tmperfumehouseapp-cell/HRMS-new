@@ -123,3 +123,9 @@ The Lineup goes slowly, one message at a time (60 a round at most), and Module A
 ## When a customer's ladder starts (owner, 21 Nov)
 
 The 24 hours count from the **end of the conversation**: Step 1 goes when the customer's last message is more than 24 hours old, he has not ordered, nobody has opted out, and no person / campaign / follow-up has just spoken to him. While the talk goes on the engine only waits (up to 14 days from his first message). Every next step is 24 hours after the message that really went (not after his first message). If he answers a step, the ladder stops; 24 quiet hours after his last answer he is read again and a new ladder starts.
+
+## Its own clock (owner, 21 Nov)
+
+The Lineup has **no clock window** (the 10:00-20:00 one is gone; Module A / Module B's times and the marketing night pause do not apply to it): a step goes when its customer is ready (his conversation ended 24 h ago, no order, nobody else spoke to him today). `wl_cfg.win = 1` with `from` / `to` brings a window back. Steps that had been pushed into 10-20 go back to their natural time once (`wln_unwindow`). The message goes back **from the number he wrote to** (`wa_contacts.last_number_id`, where his reply came in); another number only if that one cannot send the message.
+
+Independent of Module A / B (owner, 21 Nov): a campaign or any template sent by another module no longer holds the Lineup (no "campaign in the last 2 days", no "template in the last 20 h"). What still holds a customer: his conversation is not over (24 h), a **person** wrote to him in the last 36 h, an Autopilot / Journey follow-up went today, an order / ticket / thank-you mute, an order, an opt-out, a complaint.
