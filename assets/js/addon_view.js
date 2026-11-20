@@ -23,10 +23,10 @@
     tag: function (o) {
       return has(o) ? '<span class="addon-tag" title="' + esc(o.addon_text) + '" style="display:inline-block;background:#f0e8ff;color:#5b2bbd;border:1px solid #c9b0ff;border-radius:99px;padding:0 7px;font-size:11px;font-weight:700;margin-left:4px;white-space:nowrap;">+ Add-on ' + inr(o.addon_total) + '</span>' : '';
     },
-    total: function (o) { return Number(o.total || 0) + Number((o && o.addon_total) || 0); },
+    total: function (o) { return o && o._adIn ? Number(o.total || 0) : Number(o.total || 0) + Number((o && o.addon_total) || 0); },   // _adIn: the page already added the add-on into o.total
     cols: function (o) {
       if (!has(o)) return ['', '', ''];
-      return [o.addons.map(function (a) { return a.items.map(itemTxt).join(', '); }).join(' | '), Math.round(Number(o.addon_total) * 100) / 100, Math.round((Number(o.total || 0) + Number(o.addon_total)) * 100) / 100];
+      return [o.addons.map(function (a) { return a.items.map(itemTxt).join(', '); }).join(' | '), Math.round(Number(o.addon_total) * 100) / 100, Math.round(((o._adIn ? Number(o.total || 0) : Number(o.total || 0) + Number(o.addon_total))) * 100) / 100];
     }
   };
 })();

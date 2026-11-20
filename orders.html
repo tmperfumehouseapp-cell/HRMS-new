@@ -949,7 +949,7 @@
 <script src="assets/js/must3.js?v=2"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261119a"></script>
-<script src="assets/js/addon_view.js?v=1"></script>
+<script src="assets/js/addon_view.js?v=2"></script>
 <script src="assets/js/wmo_edit.js?v=1"></script>
 <script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
 <style>.wm-upd{display:inline-block;margin-left:6px;border:1px solid #16a34a;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 9px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}.wm-upd:hover{background:#dcfce7}</style>
@@ -1316,7 +1316,17 @@
   }
 
   function render(orders) {
-    orders.forEach((o, i) => { o._i = i; });
+    orders.forEach((o, i) => {
+      o._i = i;
+      // ➕ an order's add-on counts in its total (order 1000 + add-on 500 = 1500) everywhere on this page: sales, collection, lists. Done once per order.
+      if (!o._adIn && Number(o.addon_total) > 0) {
+        const ad = Number(o.addon_total) || 0, adCod = (o.addons || []).reduce((x, g) => x + (Number(g.cod) || 0), 0);
+        o._adIn = true; o._baseTotal = Number(o.total) || 0;
+        const base = (o.outstanding === null || o.outstanding === undefined) ? (/cod|pending/i.test(o.financial_status || '') ? o._baseTotal : 0) : (Number(o.outstanding) || 0);
+        o.outstanding = base + adCod;      // the COD part of the add-on is still to be collected
+        o.total = o._baseTotal + ad;
+      }
+    });
     allOrders = orders;
     currentPage = 1;
     document.getElementById('orderSearch').value = '';
@@ -2974,7 +2984,7 @@
           <td>${o.customer}</td>
           <td style="white-space:nowrap;">${o.phone || '—'}</td>
           <td>${o.items}${AddonView.block(o)}</td>
-          <td style="font-weight:600;">${fmtMoney(o.total, o.currency)}${AddonView.has(o) ? `<div style="font-size:11px;color:#5b2bbd;font-weight:700;" title="Order amount + add-on">+ ${fmtMoney(o.addon_total, o.currency)} add-on = ${fmtMoney(AddonView.total(o), o.currency)}</div>` : ''}</td>
+          <td style="font-weight:600;">${fmtMoney(o.total, o.currency)}${AddonView.has(o) ? `<div style="font-size:11px;color:#5b2bbd;font-weight:700;" title="Order amount + add-on">${fmtMoney(o._adIn ? o._baseTotal : o.total, o.currency)} + ${fmtMoney(o.addon_total, o.currency)} add-on</div>` : ''}</td>
           ${mlCells(o)}
           <td><span class="badge ${o.financial_status === 'paid' ? '' : 'inactive'}">${o.financial_status || '—'}</span></td>
           <td><span class="badge ${o.fulfillment_status === 'fulfilled' ? '' : 'inactive'}">${o.fulfillment_status || 'unfulfilled'}</span></td>
@@ -3191,8 +3201,8 @@
         detailRow('Customer', o.customer) +
         detailRow('Mobile', esc(o.phone || '') + chatBtn(o.phone)) +
         detailRow('Items', o.items) +
-        (AddonView.has(o) ? detailRow('Add-on', AddonView.block(o)) + detailRow('Total with add-on', '<b>' + fmtMoney(AddonView.total(o), o.currency) + '</b>') : '') +
-        detailRow('Total', fmtMoney(o.total, o.currency)) +
+        (AddonView.has(o) ? detailRow('Add-on', AddonView.block(o)) : '') +
+        detailRow('Total', '<b>' + fmtMoney(o.total, o.currency) + '</b>' + (AddonView.has(o) ? ' <span style="color:#5b2bbd;font-weight:700;font-size:12px;">= ' + fmtMoney(o._adIn ? o._baseTotal : o.total, o.currency) + ' + ' + fmtMoney(o.addon_total, o.currency) + ' add-on</span>' : '')) +
         detailRow('Payment', o.financial_status) +
         detailRow('Fulfillment', o.fulfillment_status) +
         detailRow('Remarks', o.remarks) +
@@ -3237,7 +3247,8 @@
           ${Number(d.discounts) > 0 ? `<div style="display:flex; justify-content:space-between; padding:3px 0; color:var(--ok-fg);"><span>Discount</span><span>−${fmtMoney(d.discounts, d.currency)}</span></div>` : ''}
           <div style="display:flex; justify-content:space-between; padding:3px 0;"><span>Shipping</span><span>${fmtMoney(d.shipping, d.currency)}</span></div>
           ${Number(d.tax) > 0 ? `<div style="display:flex; justify-content:space-between; padding:3px 0;"><span>Tax</span><span>${fmtMoney(d.tax, d.currency)}</span></div>` : ''}
-          <div style="display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); font-weight:700;"><span>Total</span><span>${fmtMoney(d.total, d.currency)}</span></div>
+          ${AddonView.has(o) ? `<div style="display:flex; justify-content:space-between; padding:3px 0; color:#5b2bbd; font-weight:700;"><span>➕ Add-on</span><span>+${fmtMoney(o.addon_total, d.currency)}</span></div>` : ''}
+          <div style="display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); font-weight:700;"><span>Total${AddonView.has(o) ? ' with add-on' : ''}</span><span>${fmtMoney(Number(d.total || 0) + (AddonView.has(o) ? Number(o.addon_total) || 0 : 0), d.currency)}</span></div>
         </div>`;
 
       const trackingHtml = (d.tracking || []).length
@@ -3259,7 +3270,7 @@
         detailRow('Tags', d.tags) +
         detailRow('Counted under', isCounted(o) ? houseReason(o, d.tags) : 'Not counted — not allocated yet (Order Allocation page)') +
         itemsHtml +
-        (AddonView.has(o) ? `<div style="margin:6px 0 10px;"><div style="font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase;">Add-on sold on this order</div>${AddonView.block(o)}<div style="text-align:right; font-weight:700; margin-top:6px;">Total with add-on: ${fmtMoney(AddonView.total(o), o.currency)}</div></div>` : '') +
+        (AddonView.has(o) ? `<div style="margin:6px 0 10px;"><div style="font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase;">Add-on sold on this order</div>${AddonView.block(o)}</div>` : '') +
         totalsHtml;
       odRemarkInit(o);
     } catch (err) {
