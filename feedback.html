@@ -25,6 +25,7 @@
   .fb .msg{background:#dcf8c6;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.45;margin:6px 0;white-space:pre-wrap;color:#111}
   .fb .set{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 10px;font-size:12.5px}.fb .set .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.fb .set label{display:block;font-size:11px;font-weight:700;color:#666;margin:0 0 3px}.fb .set input,.fb .set select,.fb .set textarea{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;background:#fff;color:#111;max-width:100%}
   .fb .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12px}
+  .fb .chips{display:flex;flex-wrap:wrap;gap:6px}.fb .chip{border:1.5px solid #cfd6d9;border-radius:99px;padding:6px 12px;font-weight:600;background:#fff;cursor:pointer;user-select:none;color:#111}.fb .chip.on{background:#0f766e;color:#fff;border-color:#0f766e}.fb .padd{display:flex;gap:6px;margin-top:8px}.fb .padd input{flex:1}
   .fb .ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:300;padding:14px}.fb .ov.on{display:flex}.fb .md{background:#fff;color:#111;border-radius:16px;padding:16px;width:min(460px,94vw);max-height:90vh;overflow:auto}.fb .md h3{margin:0 0 8px}.fb .md label{display:block;font-size:12px;color:#555;margin:8px 0 3px}.fb .md input,.fb .md select,.fb .md textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px;font:inherit;background:#fff;color:#111}
   .fb .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;color:#fff;border-radius:12px;padding:10px 16px;transition:.3s;opacity:0;z-index:400;pointer-events:none}.fb .toast.on{transform:translateX(-50%);opacity:1}
   @media(max-width:900px){.fb .g{grid-template-columns:1fr}.fb .k{grid-template-columns:repeat(3,1fr)}}
@@ -39,7 +40,7 @@
       <div id="warn"></div>
       <details class="set" id="setBox"><summary style="cursor:pointer;font-weight:800">⚙ Settings <span class="sm" id="setSum"></span></summary><div id="setIn" style="margin-top:10px"></div></details>
       <div class="pills" id="tabs"></div><div class="k" id="kp"></div>
-      <div class="g"><div class="c"><div class="bar"><input id="q" placeholder="🔍 Search order ID, name or phone  e.g. 72474" autocomplete="off"><a class="btn" id="newOrd" href="hub.html?w=dispatch&t=dispatch_manual" target="_top">＋ Create order</a></div>
+      <div class="g"><div class="c"><div class="bar"><input id="q" placeholder="🔍 Search order ID, name or phone  e.g. 72474" autocomplete="off"><button class="btn gh" id="testBtn" type="button">🧪 Test with a customer</button><a class="btn" id="newOrd" href="hub.html?w=dispatch&t=dispatch_manual" target="_top">＋ Create order</a></div>
         <div class="wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Delivered</th><th>Message</th><th>Seen</th><th>Status</th><th>Proof</th></tr></thead><tbody id="rows"><tr><td colspan="7" class="sm" style="padding:16px">Loading…</td></tr></tbody></table></div><div id="none" class="sm" style="display:none;padding:14px">No order found.</div></div>
       <div class="c" id="side"><div class="sm">Pick an order.</div></div></div>
       <div class="ov" id="ov"><div class="md" id="md"></div></div><div class="toast" id="ts"></div><input type="file" id="fi" accept="image/jpeg,image/png,image/webp" style="display:none">
@@ -73,7 +74,7 @@
     $('warn').innerHTML = !CFG.on ? '<div class="warn">⚠ <b>Automatic messages are OFF.</b> Nothing is sent by itself yet. Open ⚙ Settings, pick the approved messages and switch it on.</div>' : (!CFG.tpl ? '<div class="warn">⚠ Pick the approved <b>feedback message</b> in ⚙ Settings, or nothing can be sent.</div>' : '');
     $('setSum').textContent = '· ' + (CFG.on ? 'automatic ON' : 'automatic OFF') + ' · message after ' + CFG.wait + ' days · follow-up after ' + CFG.fu + ' days';
     $('none').style.display = L.rows.length ? 'none' : 'block';
-    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><b>${esc(x.order)}</b></td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '✗ Failed' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td></tr>`).join('');
+    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><b>${esc(x.order)}</b>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '✗ Failed' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td></tr>`).join('');
     renderSet();
   }
   function renderSet() {
@@ -103,32 +104,44 @@
     $('side').innerHTML = `<div class="h">${esc(x.order)} · ${esc(x.customer || '')}</div><div class="sm">${esc(x.phone)} · delivered ${esc(dt(x.delivered))} · <span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></div>
       <div class="ph" id="phs">${d.proofs.length ? 'Loading…' : 'No feedback screenshot yet'}</div>
       ${x.place ? `<div class="sm">Given on: <b>${esc(x.place)}</b></div>` : ''}${x.reward_note ? `<div class="sm">Reward: <b>${esc(x.reward_note)}</b>${x.reward_order ? ' · order ' + esc(x.reward_order) : ''}</div>` : ''}${x.cx_code ? `<div class="sm">Complaint: <b>${esc(x.cx_code)}</b></div>` : ''}
-      <div class="acts">${x.status === 'wait' ? '<button class="btn g2" id="bNow">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" id="bFu">📨 Send follow-up</button>' : ''}<button class="btn gh" id="bPf">⬆ Add proof manually</button><button class="btn g2" id="bRw">🎁 Reward</button><button class="btn rd" id="bCx">⚠ Customer has an issue</button><button class="btn gh" id="bSk">Leave out</button></div>
+      <div class="acts">${x.status === 'wait' ? '<button class="btn g2" id="bNow">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" id="bFu">📨 Send follow-up</button>' : ''}<button class="btn gh" id="bPf">⬆ Add proof manually</button><button class="btn g2" id="bRw">🎁 Reward</button><button class="btn rd" id="bCx">⚠ Customer has an issue</button><button class="btn gh" id="bSk">Leave out</button>${x.test ? '<button class="btn rd" id="bDel">🗑 Delete this test</button>' : ''}</div>${x.test ? '<div class="sm" style="margin-top:6px">🧪 This is a test: nothing is sent automatically for it. Use the buttons, reply from the customer\'s WhatsApp, and send a screenshot to see the whole flow.</div>' : ''}
       ${txt ? `<div class="h" style="margin-top:12px;font-size:12.5px">Message that ${x.msg_at ? 'was' : 'will be'} sent</div><div class="msg">${esc(txt)}</div>` : '<div class="sm" style="margin-top:10px">No message is picked yet (⚙ Settings).</div>'}
       <div class="h" style="margin-top:10px;font-size:12.5px">History</div><div class="tl">${d.events.length ? d.events.map((e) => `<div><b>${esc(dt(e.at))}</b> ${esc(e.txt)}${e.by_name && e.by_name !== 'automatic' ? ' <span class="sm">· ' + esc(e.by_name) + '</span>' : ''}</div>`).join('') : '<div class="sm">Nothing yet.</div>'}</div>`;
     const go = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
-    go('bNow', () => send('fb.send_now')); go('bFu', () => send('fb.followup')); go('bPf', pickProof); go('bRw', reward); go('bCx', complaint); go('bSk', leaveOut);
+    go('bNow', () => send('fb.send_now')); go('bFu', () => send('fb.followup')); go('bPf', pickProof); go('bRw', reward); go('bCx', complaint); go('bSk', leaveOut); go('bDel', delTest);
     if (d.proofs.length) { const box = $('phs'); box.innerHTML = ''; d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => window.open(u, '_blank'); box.appendChild(i); }).catch(() => { box.insertAdjacentHTML('beforeend', '<span class="sm">picture not available</span>'); }); }); }
   }
   async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); load(); } catch (e) { say(e.message, true); } }
+  /* several places + a new one typed by hand (it is kept in the list for next time) */
+  function placeBox(sel) {
+    const draw = () => { const all = CFG.places.concat(sel.filter((p) => CFG.places.indexOf(p) < 0)); $('pch').innerHTML = all.map((p) => `<span class="chip ${sel.indexOf(p) > -1 ? 'on' : ''}" data-p="${esc(p)}">${sel.indexOf(p) > -1 ? '✓ ' : ''}${esc(p)}</span>`).join(''); };
+    const box = `<div class="chips" id="pch"></div><div class="padd"><input id="pnew" placeholder="Type a new place, e.g. Trustpilot"><button class="btn g2" id="padd" type="button">＋ Add</button></div>`;
+    const wire = () => {
+      draw();
+      $('pch').onclick = (e) => { const c = e.target.closest('.chip'); if (!c) return; const p = c.dataset.p, k = sel.indexOf(p); if (k > -1) sel.splice(k, 1); else sel.push(p); draw(); };
+      $('padd').onclick = async () => { const v = $('pnew').value.trim(); if (!v) return; try { const r = await api.post('fb.place_add', { place: v }); CFG.places = r.places; v.split(',').map((x) => x.trim()).filter(Boolean).forEach((x) => { if (sel.indexOf(x) < 0) sel.push(x); }); $('pnew').value = ''; draw(); } catch (er) { say(er.message, true); } };
+      $('pnew').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('padd').click(); } };
+    };
+    return { html: box, wire };
+  }
   function pickProof() {
-    const o = sel; $('fi').onchange = async (e) => {
+    const o = sel; $('fi').onchange = (e) => {
       const f = e.target.files[0]; if (!f) return; e.target.value = '';
-      const place = prompt('Where was the feedback given? (' + CFG.places.join(' / ') + ')', CFG.places[0] || '') || '';
-      const fd = new FormData(); fd.append('order', o); fd.append('proof', f); fd.append('place', place);
-      try { await api.upload('fb.proof_add', fd); say('Screenshot attached to ' + o); load(); } catch (er) { say(er.message, true); }
+      const pl = placeBox([]); modal(`<h3>⬆ Add proof to ${esc(o)}</h3><div class="sm">${esc(f.name)}</div><label>Feedback was given on <span class="sm">(tap to select — more than one is fine)</span></label>${pl.html}<div class="acts"><button class="btn g2" id="pgo">Attach screenshot</button><button class="btn gh" id="pno">Cancel</button></div>`); pl.wire();
+      $('pno').onclick = closeM;
+      $('pgo').onclick = async () => { const fd = new FormData(); fd.append('order', o); fd.append('proof', f); fd.append('place', [...document.querySelectorAll('#pch .chip.on')].map((c) => c.dataset.p).join(', ')); const b = $('pgo'); b.disabled = true; try { await api.upload('fb.proof_add', fd); closeM(); say('Screenshot attached to ' + o); load(); } catch (er) { say(er.message, true); b.disabled = false; } };
     }; $('fi').click();
   }
   function modal(h) { $('md').innerHTML = h; $('ov').classList.add('on'); } function closeM() { $('ov').classList.remove('on'); }
   $('ov').onclick = (e) => { if (e.target.id === 'ov') closeM(); };
   function reward() {
-    const x = DET.row;
-    modal(`<h3>🎁 Reward for ${esc(x.order)}</h3><div class="sm">${esc(x.customer)} · ${esc(x.phone)}</div><label>Gift</label><input id="rg" value="${esc(CFG.reward)}"><label>Feedback was given on</label><select id="rp">${CFG.places.map((p) => `<option ${p === x.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}<option value="">— not sure —</option></select>
+    const x = DET.row, pl = placeBox((x.place || '').split(',').map((p) => p.trim()).filter(Boolean));
+    modal(`<h3>🎁 Reward for ${esc(x.order)}</h3><div class="sm">${esc(x.customer)} · ${esc(x.phone)}</div><label>Gift</label><input id="rg" value="${esc(CFG.reward)}"><label>Feedback was given on <span class="sm">(tap to select — more than one is fine)</span></label>${pl.html}
       <label>Reward order number (WM-…), if you made one</label><input id="ro" value="${esc(x.reward_order)}" placeholder="WM-00044">
       <div class="sm" style="margin-top:8px">First make the free order on the <a href="hub.html?w=dispatch&t=dispatch_manual" target="_top">Manual order page</a> (price ₹0), then type its number here. When that order is booked, its tracking ID goes to the customer by the automatic order messages.</div>
-      <div class="acts"><button class="btn g2" id="rgo">Mark reward given</button><button class="btn gh" id="rno">Cancel</button></div>`);
+      <div class="acts"><button class="btn g2" id="rgo">Mark reward given</button><button class="btn gh" id="rno">Cancel</button></div>`); pl.wire();
     $('rno').onclick = closeM;
-    $('rgo').onclick = async () => { try { await api.post('fb.reward', { order: x.order, gift: $('rg').value, place: $('rp').value, reward_order: $('ro').value }); closeM(); say('Reward saved'); load(); } catch (e) { say(e.message, true); } };
+    $('rgo').onclick = async () => { try { await api.post('fb.reward', { order: x.order, gift: $('rg').value, place: [...document.querySelectorAll('#pch .chip.on')].map((c) => c.dataset.p).join(', '), reward_order: $('ro').value }); closeM(); say('Reward saved'); load(); } catch (e) { say(e.message, true); } };
   }
   const PROBS = [['leak', 'Leak / damaged'], ['wrong', 'Wrong item'], ['quality', 'Smell / quality'], ['notliked', 'Not liked / return'], ['missing', 'Missing item'], ['notdelivered', 'Not delivered'], ['refund', 'Refund'], ['other', 'Other']];
   function complaint() {
@@ -147,6 +160,19 @@
       } catch (e) { say(e.message, true); b.disabled = false; }
     };
   }
+  function delTest() { const o = sel; if (!confirm('Delete the test ' + o + ' with its screenshots and history?')) return; api.post('fb.test_delete', { order: o }).then(() => { sel = ''; $('side').innerHTML = '<div class="sm">Pick an order.</div>'; say('Test deleted'); load(); }).catch((e) => say(e.message, true)); }
+  $('testBtn').onclick = () => {
+    modal(`<h3>🧪 Test with a customer</h3><div class="sm">Pick one customer (your own number is best). A TEST order is made and the feedback message is sent to that number now. Nothing automatic is ever sent for a test.</div>
+      <label>Customer mobile number</label><input id="tp" inputmode="numeric" placeholder="10-digit number"><label>Name (used in the message)</label><input id="tn" placeholder="e.g. Mehul">
+      <div class="sm" style="margin-top:6px">The message that goes: the approved feedback message you picked in ⚙ Settings. Then reply to it from that phone, send a screenshot, and watch this page: it shows Seen, Replied and the screenshot on the TEST order.</div>
+      <div class="acts"><button class="btn g2" id="tgo">Create test &amp; send the message</button><button class="btn gh" id="tno">Cancel</button></div>`);
+    $('tno').onclick = closeM;
+    $('tgo').onclick = async () => {
+      const b = $('tgo'); b.disabled = true; let o = '';
+      try { const r = await api.post('fb.test_add', { phone: $('tp').value, name: $('tn').value }); o = r.order; await api.post('fb.send_now', { order: o }); closeM(); sel = o; say('Test message sent to ' + $('tp').value); load(); }
+      catch (e) { if (o) { closeM(); sel = o; load(); } say(e.message + (o ? ' (the TEST order was made: fix it, then press "Send message now")' : ''), true); b.disabled = false; }
+    };
+  };
   function leaveOut() {
     const x = DET.row; modal(`<h3>Leave ${esc(x.order)} out?</h3><div class="sm">No feedback message is sent for it.</div><label>Why</label><input id="kw" value="no feedback needed"><div class="acts"><button class="btn" id="kgo">Leave out</button><button class="btn gh" id="kno">Cancel</button></div>`);
     $('kno').onclick = closeM; $('kgo').onclick = async () => { try { await api.post('fb.skip', { order: x.order, why: $('kw').value }); closeM(); load(); } catch (e) { say(e.message, true); } };
