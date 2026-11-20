@@ -38,7 +38,7 @@ jobs:
       - name: Ticket goal rules
         run: php tests/tk_test.php
       - name: Numbers table columns (a column added by a later deploy is never named in a SELECT)
-        run: php tests/schema_cols_test.php && php tests/newnum_test.php && php tests/retired_test.php && php tests/warm_test.php
+        run: php tests/schema_cols_test.php && php tests/newnum_test.php && php tests/retired_test.php && php tests/warm_test.php && php tests/night_pause_test.php
       - name: Comment guard (no code swallowed by a comment)
         run: php tests/comment_guard_test.php
       - name: Offer add-ons

@@ -28,7 +28,18 @@ function wa_dq_hold_active(PDO $pdo): bool
 /** ⏸ owner 20 Nov 2026 (17:10): marketing paused for a set time (setting wa_mkt_pause_until, a unix time) — ONLY marketing pushes wait; utility follow-ups (Module B) and utility campaigns keep going; it restarts by itself when the time is over. */
 function wa_mkt_paused(PDO $pdo): bool
 {
-    try { return (int)setting_get($pdo, 'wa_mkt_pause_until', '0') > time(); } catch (Throwable $e) { return false; }
+    try { if ((int)setting_get($pdo, 'wa_mkt_pause_until', '0') > time()) return true; } catch (Throwable $e) { }
+    return wa_mkt_night_end($pdo, time()) > 0;
+}
+/** 🌙 owner 21 Nov 2026 (03:45 IST): marketing pauses EVERY night from 02:00 to 09:00 IST (settings wa_mkt_night_from 2 · wa_mkt_night_to 9 · wa_mkt_night_on 0 = off). Only marketing waits; utility (Module A, Module B) keeps running. Returns the unix time the pause ends when $ts is inside the window, else 0. */
+function wa_mkt_night_end(PDO $pdo, int $ts): int
+{
+    try { if ((string)setting_get($pdo, 'wa_mkt_night_on', '1') === '0') return 0;
+        $f = max(0, min(23, (int)setting_get($pdo, 'wa_mkt_night_from', '2'))); $t = max(0, min(24, (int)setting_get($pdo, 'wa_mkt_night_to', '9'))); if ($f === $t) return 0;
+        $l = $ts + 19800; $h = (int)gmdate('G', $l); $day0 = $l - ($l % 86400);   /* IST clock, whatever the server timezone is */
+        if ($f < $t) { if ($h < $f || $h >= $t) return 0; return $day0 + $t * 3600 - 19800; }
+        if ($h >= $f) return $day0 + 86400 + $t * 3600 - 19800; if ($h < $t) return $day0 + $t * 3600 - 19800; return 0;
+    } catch (Throwable $e) { return 0; }
 }
 function wa_dq_auto_hold(PDO $pdo): void
 {
@@ -385,7 +396,7 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
     if (wa_dq_hold_active($pdo) || wa_mkt_paused($pdo)) $hourLeft = 0;   // owner 19 Nov 2026: marketing on hold · owner 20 Nov 2026: marketing paused for one hour
     $hourLeft = max(0, min($hourLeft, $pushCap - $used)); if ($pace['on'] && $pace['slice'] > 0) $hourLeft = max(0, min($hourLeft, $pace['slice'] - $pace['used10'])); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
     $moneyLeft = $cfg['budget'] > 0 ? max(0.0, $cfg['budget'] - $spend) : null; $moneyPush = $moneyLeft === null ? PHP_INT_MAX : (int)floor($moneyLeft / max(0.01, $mr * max(0.2, $rate)));
-    $memo = ['pace' => $pace, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft, $moneyPush), 'spend' => (int)round($spend), 'budget' => $cfg['budget'], 'push_cap' => $pushCap, 'pause_until' => wa_mkt_paused($pdo) ? (int)setting_get($pdo, 'wa_mkt_pause_until', '0') : 0, 'why' => wa_mkt_paused($pdo) ? 'pause' : (($moneyLeft !== null && $moneyLeft <= 0) ? 'money' : ($dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : '')))]; $at = microtime(true); return $memo;
+    $memo = ['pace' => $pace, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft, $moneyPush), 'spend' => (int)round($spend), 'budget' => $cfg['budget'], 'push_cap' => $pushCap, 'pause_until' => wa_mkt_paused($pdo) ? max((int)setting_get($pdo, 'wa_mkt_pause_until', '0'), wa_mkt_night_end($pdo, time())) : 0, 'why' => wa_mkt_paused($pdo) ? 'pause' : (($moneyLeft !== null && $moneyLeft <= 0) ? 'money' : ($dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : '')))]; $at = microtime(true); return $memo;
 }
 /** 🏦 Meta's OWN spend (pricing analytics of every WhatsApp account, by calendar day, all message kinds) from what the engine already fetched (read from the cache only, never waits for Meta; the engine refreshes it hourly),
  *  and the real price per delivered message yesterday (Meta's ₹ ÷ delivered template messages that day). Returns ['today', 'yday', 'eff', 'at', 'error'] (null = not available). Meta's figures arrive with a delay of a few hours. */
