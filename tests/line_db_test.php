@@ -25,7 +25,7 @@ foreach ($cust as $ph => $txt) { $t = $t0 + $i * 600; $i++; $pdo->prepare("INSER
 $pdo->exec("INSERT INTO wa_cust (phone, n) VALUES ('9810000005', 2)");   // 5 bought before -> 'reorder'
 $pdo->prepare("INSERT INTO shop_orders (phone, created_at, total) VALUES ('+919810000007', ?, 899)")->execute([$f($t0 + 5000)]);   // 7 ordered after writing -> not enrolled
 $pdo->prepare("INSERT INTO wa_contacts (phone, name, last_in_at, optout) VALUES ('9810000008', 'Opt', ?, 1)")->execute([$f($t0)]);
-ok(wl_tables($pdo), 'tables');
+ok(wln_tables($pdo), 'tables');
 $n = wl_enroll($pdo, $since); ok($n === 5 || $n === 6, "enrolled: $n"); 
 $tp = []; foreach ($pdo->query("SELECT phone, topic FROM wa_line_cust")->fetchAll() as $r) $tp[$r['phone']] = $r['topic'];
 ok(($tp['9810000001'] ?? '') === 'trust' && ($tp['9810000002'] ?? '') === 'price' && ($tp['9810000003'] ?? '') === 'size' && ($tp['9810000004'] ?? '') === 'pending' && ($tp['9810000005'] ?? '') === 'reorder' && ($tp['9810000006'] ?? '') === 'trust', 'topics ' . json_encode($tp));

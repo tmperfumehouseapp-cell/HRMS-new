@@ -141,7 +141,7 @@ function wl_cfg(PDO $pdo): array
 }
 function wl_cfg_put(PDO $pdo, array $c): void { setting_set($pdo, 'wl_cfg', json_encode($c, JSON_UNESCAPED_UNICODE)); }
 function wl_offer_text(PDO $pdo): string { $o = trim(wl_cfg($pdo)['offer']); return $o !== '' ? $o : "Aapke liye final details ye hain 🙏 Aapko kaunsa perfume chahiye, bata dein to hum is hafte ki sabse achhi kimat bata dete hain."; }
-function wl_tables(PDO $pdo): bool
+function wln_tables(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok;
     try {
@@ -157,7 +157,7 @@ function wl_tpl_ids(PDO $pdo): array { $j = json_decode((string)setting_get($pdo
 function wl_log(PDO $pdo, string $phone, string $what): void { try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$phone, date('Y-m-d H:i:s'), mb_substr($what, 0, 200)]); } catch (Throwable $e) { } }
 
 /** Write the lineup of a customer: one row per step still to go. $skipKeys = messages he already got (never sent again). Returns the number of rows. */
-function wl_plan(PDO $pdo, string $phone, string $topic, int $anchor, array $skipKeys = [], int $now = 0): int
+function wln_plan(PDO $pdo, string $phone, string $topic, int $anchor, array $skipKeys = [], int $now = 0): int
 {
     $cfg = wl_cfg($pdo); $now = $now ?: time(); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at) VALUES (?, ?, ?, ?, ?)"); $n = 0; $day = 0;
     for ($s = 1; $s <= 7; $s++) {
@@ -196,7 +196,7 @@ function wl_enroll(PDO $pdo, int $since): int
             $topic = wl_classify($txt[$phone] ?? [], !empty($buy[$phone]));
             try { $pdo->prepare("DELETE FROM wa_line_cust WHERE phone = ?")->execute([$phone]);
                   $pdo->prepare("INSERT INTO wa_line_cust (phone, topic, anchor_at, status, created_at) VALUES (?, ?, ?, 'active', ?)")->execute([$phone, $topic, date('Y-m-d H:i:s', $anchor), date('Y-m-d H:i:s')]); } catch (Throwable $e) { continue; }
-            wl_plan($pdo, $phone, $topic, $anchor); $n++;
+            wln_plan($pdo, $phone, $topic, $anchor); $n++;
         }
     }
     return $n;
@@ -236,7 +236,7 @@ function wl_recheck(PDO $pdo, int $now): int
         if ($topic !== (string)$r['topic']) { if ($sw >= 2) { $done('topic changed too often'); continue; } $sw++; wl_log($pdo, $phone, 'topic ' . $r['topic'] . ' -> ' . $topic); }
         $sent = []; $s = $pdo->prepare("SELECT tpl_key FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $s->execute([$phone]); foreach ($s->fetchAll(PDO::FETCH_COLUMN) as $k) $sent[(string)$k] = 1;
         $pdo->prepare("DELETE FROM wa_line_plan WHERE phone = ? AND status = 'planned'")->execute([$phone]);
-        $rows = wl_plan($pdo, $phone, $topic, $now, $sent, $now);
+        $rows = wln_plan($pdo, $phone, $topic, $now, $sent, $now);
         if ($rows < 1) { $done('all messages sent'); continue; }
         $pdo->prepare("UPDATE wa_line_cust SET topic = ?, status = 'active', switches = ?, recheck_at = NULL WHERE phone = ?")->execute([$topic, $sw, $phone]); $n++;
     }
@@ -256,7 +256,7 @@ function wl_ready(PDO $pdo): bool { $P = wl_pack(); foreach (wl_tpl_status($pdo)
 /** The engine step. Sends what is due (cap per round), enrols new customers, re-reads the quiet ones. $force = the Send button (ignores the clock window and the "all approved" gate, never the blocks). */
 function wl_tick(PDO $pdo, array $opt = []): array
 {
-    $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wl_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']);
+    $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wln_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']);
     if ($cfg['mode'] === 'off') return $o;
     if (!$force) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
     if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
@@ -487,7 +487,7 @@ $__wl = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wl, 'wa.line_') === 0) {
     $auth = require_auth(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only the owner / admin can set up the Lineup.'], 403);
-    if (!wl_tables($pdo)) json_response(['error' => 'Lineup storage is not available.'], 500);
+    if (!wln_tables($pdo)) json_response(['error' => 'Lineup storage is not available.'], 500);
     switch ($__wl) {
         case 'wa.line_get': json_response(['ok' => true] + wl_overview($pdo));
         case 'wa.line_card': { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); json_response(['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60), 'tomorrow' => wl_overview($pdo)['tomorrow']]); }
