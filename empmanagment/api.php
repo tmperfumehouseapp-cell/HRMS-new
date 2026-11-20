@@ -19308,7 +19308,7 @@ if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_ba
 if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }
 if (strpos((string)$action, 'fb.') === 0) {
     require_once __DIR__ . '/feedback.php';
-    if (in_array((string)$action, ['fb.get', 'fb.send_now', 'fb.followup'], true) && !function_exists('wd_send')) { foreach (['wa.php', 'wa_tpl.php', 'wa_console.php', 'wa_more.php'] as $__fbf) require_once __DIR__ . '/' . $__fbf; }      // the WhatsApp sender (message text, sending): the same files the wa.* actions load
+    if (in_array((string)$action, ['fb.get', 'fb.send_now', 'fb.followup', 'fb.send_link'], true) && !function_exists('wd_send')) { foreach (['wa.php', 'wa_tpl.php', 'wa_console.php', 'wa_more.php'] as $__fbf) require_once __DIR__ . '/' . $__fbf; }      // the WhatsApp sender (message text, sending): the same files the wa.* actions load
     fb_route($pdo, (string)$action);
 }      // Feedback page (Dispatch → Feedback): delivered parcels → feedback message, screenshots, reward, complaint
 if (strpos((string)$action, 'psum.') === 0) { require_once __DIR__ . '/prod_summary.php'; psum_route($pdo, (string)$action); }   // 🧴 shower gel + ⭐ TM Originals summary of the Orders page (read-only)
