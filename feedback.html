@@ -25,6 +25,7 @@
   .fb .msg{background:#dcf8c6;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.45;margin:6px 0;white-space:pre-wrap;color:#111}
   .fb .set{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 10px;font-size:12.5px}.fb .set .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.fb .set label{display:block;font-size:11px;font-weight:700;color:#666;margin:0 0 3px}.fb .set input,.fb .set select,.fb .set textarea{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;background:#fff;color:#111;max-width:100%}
   .fb .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12px}
+  .fb .chips{display:flex;flex-wrap:wrap;gap:6px}.fb .chip{border:1.5px solid #cfd6d9;border-radius:99px;padding:6px 12px;font-weight:600;background:#fff;cursor:pointer;user-select:none;color:#111}.fb .chip.on{background:#0f766e;color:#fff;border-color:#0f766e}.fb .padd{display:flex;gap:6px;margin-top:8px}.fb .padd input{flex:1}
   .fb .ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:300;padding:14px}.fb .ov.on{display:flex}.fb .md{background:#fff;color:#111;border-radius:16px;padding:16px;width:min(460px,94vw);max-height:90vh;overflow:auto}.fb .md h3{margin:0 0 8px}.fb .md label{display:block;font-size:12px;color:#555;margin:8px 0 3px}.fb .md input,.fb .md select,.fb .md textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px;font:inherit;background:#fff;color:#111}
   .fb .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;color:#fff;border-radius:12px;padding:10px 16px;transition:.3s;opacity:0;z-index:400;pointer-events:none}.fb .toast.on{transform:translateX(-50%);opacity:1}
   @media(max-width:900px){.fb .g{grid-template-columns:1fr}.fb .k{grid-template-columns:repeat(3,1fr)}}
@@ -111,24 +112,36 @@
     if (d.proofs.length) { const box = $('phs'); box.innerHTML = ''; d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => window.open(u, '_blank'); box.appendChild(i); }).catch(() => { box.insertAdjacentHTML('beforeend', '<span class="sm">picture not available</span>'); }); }); }
   }
   async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); load(); } catch (e) { say(e.message, true); } }
+  /* several places + a new one typed by hand (it is kept in the list for next time) */
+  function placeBox(sel) {
+    const draw = () => { const all = CFG.places.concat(sel.filter((p) => CFG.places.indexOf(p) < 0)); $('pch').innerHTML = all.map((p) => `<span class="chip ${sel.indexOf(p) > -1 ? 'on' : ''}" data-p="${esc(p)}">${sel.indexOf(p) > -1 ? '✓ ' : ''}${esc(p)}</span>`).join(''); };
+    const box = `<div class="chips" id="pch"></div><div class="padd"><input id="pnew" placeholder="Type a new place, e.g. Trustpilot"><button class="btn g2" id="padd" type="button">＋ Add</button></div>`;
+    const wire = () => {
+      draw();
+      $('pch').onclick = (e) => { const c = e.target.closest('.chip'); if (!c) return; const p = c.dataset.p, k = sel.indexOf(p); if (k > -1) sel.splice(k, 1); else sel.push(p); draw(); };
+      $('padd').onclick = async () => { const v = $('pnew').value.trim(); if (!v) return; try { const r = await api.post('fb.place_add', { place: v }); CFG.places = r.places; v.split(',').map((x) => x.trim()).filter(Boolean).forEach((x) => { if (sel.indexOf(x) < 0) sel.push(x); }); $('pnew').value = ''; draw(); } catch (er) { say(er.message, true); } };
+      $('pnew').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('padd').click(); } };
+    };
+    return { html: box, wire };
+  }
   function pickProof() {
-    const o = sel; $('fi').onchange = async (e) => {
+    const o = sel; $('fi').onchange = (e) => {
       const f = e.target.files[0]; if (!f) return; e.target.value = '';
-      const place = prompt('Where was the feedback given? (' + CFG.places.join(' / ') + ')', CFG.places[0] || '') || '';
-      const fd = new FormData(); fd.append('order', o); fd.append('proof', f); fd.append('place', place);
-      try { await api.upload('fb.proof_add', fd); say('Screenshot attached to ' + o); load(); } catch (er) { say(er.message, true); }
+      const pl = placeBox([]); modal(`<h3>⬆ Add proof to ${esc(o)}</h3><div class="sm">${esc(f.name)}</div><label>Feedback was given on <span class="sm">(tap to select — more than one is fine)</span></label>${pl.html}<div class="acts"><button class="btn g2" id="pgo">Attach screenshot</button><button class="btn gh" id="pno">Cancel</button></div>`); pl.wire();
+      $('pno').onclick = closeM;
+      $('pgo').onclick = async () => { const fd = new FormData(); fd.append('order', o); fd.append('proof', f); fd.append('place', [...document.querySelectorAll('#pch .chip.on')].map((c) => c.dataset.p).join(', ')); const b = $('pgo'); b.disabled = true; try { await api.upload('fb.proof_add', fd); closeM(); say('Screenshot attached to ' + o); load(); } catch (er) { say(er.message, true); b.disabled = false; } };
     }; $('fi').click();
   }
   function modal(h) { $('md').innerHTML = h; $('ov').classList.add('on'); } function closeM() { $('ov').classList.remove('on'); }
   $('ov').onclick = (e) => { if (e.target.id === 'ov') closeM(); };
   function reward() {
-    const x = DET.row;
-    modal(`<h3>🎁 Reward for ${esc(x.order)}</h3><div class="sm">${esc(x.customer)} · ${esc(x.phone)}</div><label>Gift</label><input id="rg" value="${esc(CFG.reward)}"><label>Feedback was given on</label><select id="rp">${CFG.places.map((p) => `<option ${p === x.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}<option value="">— not sure —</option></select>
+    const x = DET.row, pl = placeBox((x.place || '').split(',').map((p) => p.trim()).filter(Boolean));
+    modal(`<h3>🎁 Reward for ${esc(x.order)}</h3><div class="sm">${esc(x.customer)} · ${esc(x.phone)}</div><label>Gift</label><input id="rg" value="${esc(CFG.reward)}"><label>Feedback was given on <span class="sm">(tap to select — more than one is fine)</span></label>${pl.html}
       <label>Reward order number (WM-…), if you made one</label><input id="ro" value="${esc(x.reward_order)}" placeholder="WM-00044">
       <div class="sm" style="margin-top:8px">First make the free order on the <a href="hub.html?w=dispatch&t=dispatch_manual" target="_top">Manual order page</a> (price ₹0), then type its number here. When that order is booked, its tracking ID goes to the customer by the automatic order messages.</div>
-      <div class="acts"><button class="btn g2" id="rgo">Mark reward given</button><button class="btn gh" id="rno">Cancel</button></div>`);
+      <div class="acts"><button class="btn g2" id="rgo">Mark reward given</button><button class="btn gh" id="rno">Cancel</button></div>`); pl.wire();
     $('rno').onclick = closeM;
-    $('rgo').onclick = async () => { try { await api.post('fb.reward', { order: x.order, gift: $('rg').value, place: $('rp').value, reward_order: $('ro').value }); closeM(); say('Reward saved'); load(); } catch (e) { say(e.message, true); } };
+    $('rgo').onclick = async () => { try { await api.post('fb.reward', { order: x.order, gift: $('rg').value, place: [...document.querySelectorAll('#pch .chip.on')].map((c) => c.dataset.p).join(', '), reward_order: $('ro').value }); closeM(); say('Reward saved'); load(); } catch (e) { say(e.message, true); } };
   }
   const PROBS = [['leak', 'Leak / damaged'], ['wrong', 'Wrong item'], ['quality', 'Smell / quality'], ['notliked', 'Not liked / return'], ['missing', 'Missing item'], ['notdelivered', 'Not delivered'], ['refund', 'Refund'], ['other', 'Other']];
   function complaint() {
