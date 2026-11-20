@@ -24,11 +24,12 @@ if (!function_exists('wa_more_tables')) {
 function wa_more_tables(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok; if (function_exists('schema_done') && schema_done($pdo, __FUNCTION__, __FILE__)) return $ok = true;   // tables already set up for this upload
+    $colsOk = true;   /* the numbers' columns must ALL exist before this set-up is marked done — otherwise it is tried again on the next request */
     try {
         foreach (['camp_ok' => 'TINYINT NOT NULL DEFAULT 1', 'handlers' => "VARCHAR(300) NOT NULL DEFAULT ''", 'camp_tag' => 'TINYINT NOT NULL DEFAULT 0', 'retired' => 'TINYINT NOT NULL DEFAULT 0', 'tier_manual' => 'INT NOT NULL DEFAULT 0', 'hold' => 'TINYINT NOT NULL DEFAULT 0', 'waba_name' => "VARCHAR(80) NOT NULL DEFAULT ''", 'biz_name' => "VARCHAR(80) NOT NULL DEFAULT ''", 'portfolio' => "VARCHAR(30) NOT NULL DEFAULT ''"] as $col => $def) {   // tier_manual (owner 20 Nov 2026): the daily limit the owner types for a number when Meta does not tell it yet (0 = not set) · portfolio: a short tag of the Meta business portfolio the number belongs to · retired (owner 20 Nov 2026): a number that is being closed: no campaign / follow-up / complaint message goes from it, the chats stay visible and can be answered · camp_tag: 📢 every chat on this number is a Campaign chat
-            try { $pdo->query("SELECT $col FROM wa_numbers LIMIT 0"); } catch (PDOException $e) { $pdo->exec("ALTER TABLE wa_numbers ADD COLUMN $col $def"); }
+            try { $pdo->query("SELECT `$col` FROM wa_numbers LIMIT 0"); } catch (PDOException $e) { try { $pdo->exec("ALTER TABLE wa_numbers ADD COLUMN `$col` $def"); } catch (PDOException $e2) { $colsOk = false; try { setting_set($pdo, 'wa_more_schema_err', mb_substr($col . ': ' . $e2->getMessage(), 0, 300)); } catch (Throwable $e3) { } } }   /* owner 20 Nov 2026: every column on its own try (a failing one never stops the next ones), names in backticks (hold is a keyword in some MySQL versions), the error is kept in wa_more_schema_err */
         }
-        try { if ((string)setting_get($pdo, 'wa_hold_seed_1120', '') === '') { $pdo->exec("UPDATE wa_numbers SET hold = 1, camp_ok = 0 WHERE phone_id IN ('1503802359479664', '1489908264204455')"); setting_set($pdo, 'wa_hold_seed_1120', '1'); } } catch (Throwable $e) { }   // owner 20 Nov 2026: the 2nd and 3rd numbers (other portfolios) are locked once, now; the owner unlocks them
+        try { if ((string)setting_get($pdo, 'wa_hold_seed_1120', '') === '') { $pdo->exec("UPDATE wa_numbers SET `hold` = 1, camp_ok = 0 WHERE phone_id IN ('1503802359479664', '1489908264204455')"); setting_set($pdo, 'wa_hold_seed_1120', '1'); } } catch (Throwable $e) { }   // owner 20 Nov 2026: the 2nd and 3rd numbers (other portfolios) are locked once, now; the owner unlocks them
         foreach (['callnow' => 'TINYINT NOT NULL DEFAULT 0', 'callnow_at' => 'DATETIME NULL', 'hot' => 'TINYINT NOT NULL DEFAULT 0', 'hot_at' => 'DATETIME NULL', 'hot_why' => "VARCHAR(40) NOT NULL DEFAULT ''", 'remind_at' => 'DATETIME NULL', 'pay_at' => 'DATETIME NULL', 'accepted_at' => 'DATETIME NULL', 'reassigns' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {
             try { $pdo->query("SELECT $col FROM wa_contacts LIMIT 0"); } catch (PDOException $e) { $pdo->exec("ALTER TABLE wa_contacts ADD COLUMN $col $def"); }
         }
@@ -58,7 +59,7 @@ function wa_more_tables(PDO $pdo): bool
         }
         try { $q = $pdo->query("SHOW INDEX FROM wa_camp_items WHERE Key_name = 'k_wamid'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_camp_items ADD INDEX k_wamid (wamid)"); } catch (PDOException $e) { }
         try { $q = $pdo->query("SHOW INDEX FROM wa_camp_items WHERE Key_name = 'k_var'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_camp_items ADD INDEX k_var (variant, number_id, sent_at)"); } catch (PDOException $e) { }   // the utility sends of a number (share judging, "what Claude learned")
-        $ok = true; if (function_exists('schema_mark')) schema_mark($pdo, __FUNCTION__, __FILE__);
+        $ok = true; if ($colsOk && function_exists('schema_mark')) schema_mark($pdo, __FUNCTION__, __FILE__);
     } catch (PDOException $e) { $ok = false; }
     return $ok;
 }
@@ -903,7 +904,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             $tm = array_key_exists('tier_manual', $in) ? (int)preg_replace('/\D+/', '', (string)$in['tier_manual']) : (int)($n['tier_manual'] ?? 0); if ($tm > 10000000) json_response(['error' => 'The daily limit looks too big. Type a number such as 2000 (0 = not set).'], 422);
             $hold = array_key_exists('hold', $in) ? (empty($in['hold']) ? 0 : 1) : (int)($n['hold'] ?? 0); if ($hold) $camp = 0;   // locked = no campaigns either
             $pf = array_key_exists('portfolio', $in) ? trim(mb_substr((string)$in['portfolio'], 0, 30)) : (string)($n['portfolio'] ?? '');
-            $pdo->prepare("UPDATE wa_numbers SET label = ?, camp_ok = ?, handlers = ?, camp_tag = ?, tier_manual = ?, portfolio = ?, hold = ? WHERE id = ?")->execute([$label, $camp, implode(',', $h), $ctag, $tm, $pf, $hold, $id]);
+            $pdo->prepare("UPDATE wa_numbers SET label = ?, camp_ok = ?, handlers = ?, camp_tag = ?, tier_manual = ?, portfolio = ?, `hold` = ? WHERE id = ?")->execute([$label, $camp, implode(',', $h), $ctag, $tm, $pf, $hold, $id]);
             $marked = 0;
             if ($ctag && !(int)($n['camp_tag'] ?? 0)) {   // just switched on: the chats already on this number (the customer's last message came to it) become Campaign too
                 $now = date('Y-m-d H:i:s'); $st = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_number_id = ? AND last_in_at IS NOT NULL"); $st->execute([$id]);
