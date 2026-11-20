@@ -605,14 +605,15 @@ function wa_number_caps(PDO $pdo, array $health): array
     $out = [];
     foreach ($health as $h) {
         $id = (int)$h['id']; $age = isset($first[$id]) ? (int)floor((time() - strtotime($first[$id])) / 86400) : 0;
-        // slow start protects a NEW account only: once Meta itself trusts the account (limit 10,000 or more, shared by every number) Meta's own limit is the cap
-        $ramp = $cfg['ramp'] && $tier < 10000;
-        $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $tier ? 'slow start (day ' . ($age + 1) . ')' : '';
         $ownT = $tier; if ($perNum) { $ownT = $h['tier'] === null ? (!isset($first[$id]) ? 250 : $tier) : ($h['tier'] === -1 ? 1000000 : (int)$h['tier']); }   // owner 20 Nov 2026 (new numbers from other portfolios): a number that never sent a template and whose Meta limit cannot be read starts at 250 a day, NOT at the biggest limit of the other numbers
+        // slow start protects a NEW account only: once Meta itself trusts the account (limit 10,000 or more) Meta's own limit is the cap; owner 20 Nov 2026: in per-number mode it is the NUMBER's own limit that counts, so a new number of another portfolio (limit 2,000) gets the slow start (250 / 500 / 1,000 … a day by its age) although the old numbers are trusted
+        $ramp = $cfg['ramp'] && (($perNum ? $ownT : $tier) < 10000);
+        $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $tier ? 'slow start (day ' . ($age + 1) . ')' : '';
         $cap = min($cap, $perNum ? max(1, (int)floor($ownT * 0.9)) : $tier);
         // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
+        if (($h['subscribed'] ?? null) === false && !isset($first[$id])) { $cap = 0; $why = 'webhook not connected — replies to its messages would not arrive; connect the app to this WhatsApp account first'; }   // owner 20 Nov 2026: a new number that has not sent anything yet is not used while its webhook is not connected
         if ((string)($h['status'] ?? '') === '' && empty($h['stale'])) { $cap = 0; $why = 'not checked at Meta yet (no status could be read) — not used for campaigns until it shows CONNECTED'; }   // owner 20 Nov 2026: a brand-new number (e.g. from another portfolio / token) is never used before Meta confirms it is connected
         if (empty($camp[$id])) { $cap = 0; $why = 'switched off for campaigns'; }
         try { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($allBlocked === false && $pb !== '' && strtotime($pb) > time() - 3 * 3600) { $cap = 0; $why = 'payment problem at Meta (131042) — campaigns go through the other number(s) now; tried again after 3 hours'; } } catch (Throwable $e) { }   // owner (9 Nov): when one number has the payment problem, everything moves to the other number by itself
