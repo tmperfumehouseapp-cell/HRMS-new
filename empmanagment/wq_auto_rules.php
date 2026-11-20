@@ -10,7 +10,7 @@
  *   waa_pick          who gets the next query (everybody reaches the minimum first, then the fairest share)
  *   waa_night / waa_night_block   overnight (12 am – 10 am): a person below the band takes at most 5 from Requests
  */
-if (!defined('WAA_BAND')) { define('WAA_BAND', 0.05); define('WAA_MIN_Q', 6); define('WAA_NIGHT_MAX', 5); define('WAA_MAX_WAIT', 10); }   // allowed: average down to 5 points below · 6 fresh queries before the ratio is judged · 5 overnight picks from Requests
+if (!defined('WAA_BAND')) { define('WAA_BAND', 0.05); define('WAA_MIN_Q', 5); define('WAA_NIGHT_MAX', 5); define('WAA_MAX_WAIT', 10); }   // allowed: average down to 5 points below · 6 fresh queries before the ratio is judged · 5 overnight picks from Requests
 if (!function_exists('waa_below')) {
 
 
@@ -73,42 +73,52 @@ function waa_pick(array $c, int $min = 0): int
 }
 
 /**
- * Who gets the next FRESH query, in order: tier 1 = GREEN (judged after 6 queries, ratio at or above the team average) · tier 2 = inside the allowed band, and people not judged yet (fewer than 6 queries).
- * Below the band (red) is switched off for fresh queries and never reaches this list. Returns 1, 2 or 3 (3 = red).
+ * Who gets the next FRESH query (owner, 20 Nov 2026) — one query at a time, in line, never 2-5 at once:
+ *   tier 0 = GREY (fewer than 5 queries today): they come FIRST, one query each in turn, until everybody has 5;
+ *   then GREEN (tier 1, ratio at or above the team) and YELLOW (tier 2, inside the band) in the pattern green, green, yellow (6 queries to the greens = 3 to the yellows), each group in line;
+ *   RED (tier 3) gets nothing until the ratio is back. Returns 0 (grey), 1, 2 or 3.
  */
 function waa_tier(int $q, int $qo, float $team): int
 {
-    if ($q < WAA_MIN_Q || $team <= 0) return 2;
+    if ($q < WAA_MIN_Q) return 0;   // grey: not judged yet, first to be filled up to 5
+    if ($team <= 0) return 2;
     $r = $qo / $q; if ($r >= $team - 1e-9) return 1;
     return $r < waa_floor($team) - 1e-9 ? 3 : 2;
 }
 
-/**
- * $c = [emp => ['w', 'cnt', 'tier', 'full']]. The first tier that has somebody who is not full (WAA_MAX_WAIT customers already waiting for an answer) wins; inside a tier the fairest share goes first
- * (tier 2 first brings everybody to the minimum of 6). When everybody is full the query is still given (a query nobody takes dies), by the same order.
- */
-function waa_pick_tiers(array $c, int $min = WAA_MIN_Q): int
+/** The person with the FEWEST queries so far (equal shares: the grey people are filled up one by one); a tie goes to the lower id = a fixed line. */
+function waa_pick_fewest(array $c): int
 {
-    // order of care: not full → not AHEAD of his fair share (a green may not hoard: owner, 19 Nov) → not resting (one query at a time) → green before band
+    $best = 0; $bc = null; foreach ($c as $e => $x) { $n = (int)($x['cnt'] ?? 0); if ($bc === null || $n < $bc || ($n === $bc && (int)$e < $best)) { $bc = $n; $best = (int)$e; } }
+    return $best;
+}
+/**
+ * $c = [emp => ['w', 'cnt', 'tier', 'full', 'ahead', 'rest']]. $pos = how many green/yellow queries were given before (the pattern is green, green, yellow: $pos % 3 === 2 is a yellow's turn).
+ * Order of care: not full (WAA_MAX_WAIT customers waiting) → not AHEAD of his group's fair share → not resting (one query at a time) → GREY first, then the pattern. Inside the grey group the fewest goes first,
+ * inside green / yellow the fairest share. When everybody is full the query is still given (a query nobody takes dies), by the same order.
+ */
+function waa_pick_tiers(array $c, int $min = WAA_MIN_Q, int $pos = 0): int
+{
     foreach ([false, true] as $ignoreFull) {
         foreach ([false, true] as $ignoreAhead) {
             foreach ([false, true] as $ignoreRest) {
-                foreach ([1, 2] as $t) {
-                    $g = array_filter($c, function ($x) use ($t, $ignoreFull, $ignoreAhead, $ignoreRest) { return (int)($x['tier'] ?? 2) === $t && ($ignoreFull || empty($x['full'])) && ($ignoreAhead || empty($x['ahead'])) && ($ignoreRest || empty($x['rest'])); });
-                    if ($g) return waa_pick($g, $t === 2 ? $min : 0);
-                }
+                $in = function (int $t) use ($c, $ignoreFull, $ignoreAhead, $ignoreRest) { return array_filter($c, function ($x) use ($t, $ignoreFull, $ignoreAhead, $ignoreRest) { return (int)($x['tier'] ?? 2) === $t && ($ignoreFull || empty($x['full'])) && ($ignoreAhead || empty($x['ahead'])) && ($ignoreRest || empty($x['rest'])); }); };
+                $g0 = $in(0); if ($g0) return waa_pick_fewest($g0);
+                foreach (($pos % 3 === 2) ? [2, 1] : [1, 2] as $t) { $g = $in($t); if ($g) return waa_pick($g, 0); }
             }
         }
     }
     return 0;
 }
 
-/** Who is far ahead of his fair share of fresh queries: more than 25% over the share his weight earns (and at least 2 queries over). Marks cand[e]['ahead']. */
+/** Who is far ahead of his fair share of fresh queries INSIDE HIS OWN GROUP (green among greens, yellow among yellows; the greens are meant to get twice what the yellows get): more than 25% over the share his weight earns (and at least 2 queries over). Marks cand[e]['ahead']. */
 function waa_mark_ahead(array $c): array
 {
-    $tc = 0; $tw = 0.0; foreach ($c as $x) { $tc += (int)$x['cnt']; $tw += max(0.0001, (float)$x['w']); }
-    if ($tw <= 0 || count($c) < 3) return $c; $per = $tc / $tw;
-    foreach ($c as $e => $x) $c[$e]['ahead'] = ((int)$x['cnt'] + 1) > $per * max(0.0001, (float)$x['w']) * 1.25 + 2;
+    foreach ([1, 2] as $t) {
+        $g = array_filter($c, function ($x) use ($t) { return (int)($x['tier'] ?? 2) === $t; }); if (count($g) < 3) continue;
+        $tc = 0; $tw = 0.0; foreach ($g as $x) { $tc += (int)$x['cnt']; $tw += max(0.0001, (float)$x['w']); } if ($tw <= 0) continue; $per = $tc / $tw;
+        foreach ($g as $e => $x) $c[$e]['ahead'] = ((int)$x['cnt'] + 1) > $per * max(0.0001, (float)$x['w']) * 1.25 + 2;
+    }
     return $c;
 }
 

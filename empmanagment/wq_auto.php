@@ -4,7 +4,7 @@
  *
  * New queries are given to salespeople by themselves, by these rules (the pure maths is in wq_auto_rules.php, tested by tests/waa_test.php):
  *   • only salespeople (Sales department) who punched in; a button per person: ON at punch-in, Admin / Sales Head can turn it OFF (no queries) or ON (no other rule applies)
- *   • RATIO: company average ratio of the business day (10 am – 10 am); a person more than 5 points below it (after 6 fresh queries) is switched OFF for FRESH queries by itself,
+ *   • RATIO: company average ratio of the business day (10 am – 10 am); a person more than 5 points below it (after 5 fresh queries) is switched OFF for FRESH queries by itself,
  *     and stays OFF until Admin / Sales Head turn the button ON
  *   • SPEED: twice as slow as the team to answer = half the queries
  *   • TARGET: fresh queries in proportion to the day's target
@@ -142,6 +142,11 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
  * Gives ONE waiting query to a person, if it can be given. $r = its wa_queries row, $c = its contact row, $V = waa_view() (people are updated), $T = what the engine gave today.
  * Skips: already held · not open · opted out / complaint · older than 24 h · a person already answered · another business's auto-reply · nobody eligible. A per-customer lock stops the webhook and the engine pass giving the same chat twice.
  */
+/** A person's tier right now (the view's tier was worked out before this pass: a grey person who just reached 5 queries must stop being grey at once). Admin ON + No rules is never 'red'. */
+function waa_tier_now(array $p, float $team): int
+{
+    $t = waa_tier((int)$p['q'], (int)$p['qo'], $team); if (($p['m'] ?? '') === 'on' && $t > 2) $t = 2; return $t;
+}
 function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $now, array &$dbg): bool
 {
     $ph = (string)$r['phone'];
@@ -157,17 +162,19 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
         else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
         $gap = max(0, (int)setting_get($pdo, 'waa_gap', '90')); $rest = !$camp && $gap > 0 && (int)($T[$e]['last_fresh'] ?? 0) > $now - $gap;   // given a fresh query in the last 90 s: one at a time
-        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => (int)$p['tier'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest];
+        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => $camp ? (int)$p['tier'] : waa_tier_now($p, (float)$V['team_ratio'] / 100), 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest];
     }
     if ($vip) { $good = []; foreach ($cand as $e => $x) if (!$x['full'] && (float)($V['people'][$e]['ticket'] ?? 0) >= (float)$tkc['goal'] && (int)($V['people'][$e]['orders'] ?? 0) >= (int)$tkc['min']) $good[$e] = $x; if ($good) $cand = $good; else $vip = false; }
     if (!$camp) $cand = waa_mark_ahead($cand);
-    $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q); if ($to <= 0) { $dbg['nobody']++; return false; }
+    $pos = $camp ? 0 : (int)setting_get($pdo, 'waa_cyc', '0');   // green, green, yellow: how many green / yellow queries were given before
+    $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q, $pos); if ($to <= 0) { $dbg['nobody']++; return false; }
     $lk = 0; try { $lk = (int)$pdo->query("SELECT GET_LOCK(" . $pdo->quote('waa_p_' . $ph) . ", 0)")->fetchColumn(); } catch (Throwable $e) { } if ($lk !== 1) return false;
     try {
         $chk = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ?"); $chk->execute([$ph]); if ((int)$chk->fetchColumn() > 0) { $dbg['held']++; return false; }   // somebody just took it
         wa_assign_to($pdo, $ph, $to, 0, 'auto');
         $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt($now), $ph, $to, $camp ? 'camp' : 'fresh', mb_substr(($vip ? '⭐ big-order customer · ' : '') . ($camp ? 'campaign query' : 'fresh query') . ' · weight ' . round($cand[$to]['w']) . ' · so far ' . $cand[$to]['cnt'], 0, 160)]);
         $T[$to][$camp ? 'camp' : 'fresh'] = (int)($T[$to][$camp ? 'camp' : 'fresh'] ?? 0) + 1; if (!$camp) $T[$to]['last_fresh'] = $now; if (!$camp) $V['people'][$to]['q']++; else $V['people'][$to]['cq']++;
+        if (!$camp && in_array((int)($cand[$to]['tier'] ?? 2), [1, 2], true)) setting_set($pdo, 'waa_cyc', (string)($pos + 1));
         waa_cp_bump($pdo, $to, $camp); waa_typed($pdo, $to, $camp); return true;
     } catch (Throwable $e) { error_log('waa give: ' . $e->getMessage()); $dbg['give_error'] = mb_substr($e->getMessage(), 0, 160); return false; }
     finally { try { $pdo->query("SELECT RELEASE_LOCK(" . $pdo->quote('waa_p_' . $ph) . ")"); } catch (Throwable $e) { } }
