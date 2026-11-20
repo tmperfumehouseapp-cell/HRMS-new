@@ -31,11 +31,26 @@ function fb_tables(PDO $pdo): bool
     } catch (Throwable $e) { error_log('fb_tables: ' . $e->getMessage()); return $ok = false; }
 }
 
+/** The review links (Google, Instagram …) made once and reused: [{name, url, msg}]. msg is the message with {name} {order} {link} filled in for each customer. */
+function fb_links(PDO $pdo): array
+{
+    $out = []; $j = json_decode((string)setting_get($pdo, 'fb_links2', ''), true);
+    if (is_array($j)) { foreach ($j as $l) if (is_array($l) && preg_match('~^https?://\S+$~i', (string)($l['url'] ?? ''))) $out[] = ['name' => mb_substr(trim((string)($l['name'] ?? '')), 0, 40) ?: 'Link', 'url' => mb_substr((string)$l['url'], 0, 400), 'msg' => mb_substr((string)($l['msg'] ?? ''), 0, 600)]; return array_slice($out, 0, 12); }
+    foreach (preg_split('/\r?\n/', (string)setting_get($pdo, 'fb_links', '')) as $ln) { $p = array_map('trim', explode('|', $ln, 2)); if (count($p) === 2 && preg_match('~^https?://~i', $p[1])) $out[] = ['name' => mb_substr($p[0], 0, 40) ?: 'Link', 'url' => mb_substr($p[1], 0, 400), 'msg' => '']; }   // the first version kept them as lines
+    return array_slice($out, 0, 12);
+}
+function fb_links_put(PDO $pdo, array $links): array
+{
+    $ls = []; foreach ($links as $l) { if (!is_array($l)) continue; $u = trim((string)($l['url'] ?? '')); if (!preg_match('~^https?://\S+$~i', $u)) continue; $n = mb_substr(trim(str_replace(["\n", '|'], ' ', (string)($l['name'] ?? ''))), 0, 40);
+        $ls[] = ['name' => $n !== '' ? $n : 'Link', 'url' => mb_substr($u, 0, 400), 'msg' => mb_substr(trim((string)($l['msg'] ?? '')), 0, 600)]; }
+    $ls = array_slice($ls, 0, 12); setting_set($pdo, 'fb_links2', json_encode($ls, JSON_UNESCAPED_UNICODE)); return $ls;
+}
+
 function fb_cfg(PDO $pdo): array
 {
     $places = array_values(array_filter(array_map('trim', explode('|', (string)setting_get($pdo, 'fb_places', 'Google review|Instagram|Facebook|Shopify review')))));
     return ['on' => (string)setting_get($pdo, 'fb_on', '0') === '1', 'wait' => max(1, min(30, (int)setting_get($pdo, 'fb_wait', '5'))), 'fu' => max(1, min(30, (int)setting_get($pdo, 'fb_fu', '3'))),
-        'tpl' => (int)setting_get($pdo, 'fb_tpl', '0'), 'tpl_fu' => (int)setting_get($pdo, 'fb_tpl_fu', '0'), 'places' => $places ?: ['Google review'], 'reward' => (string)setting_get($pdo, 'fb_reward', '10 ML perfume')];
+        'tpl' => (int)setting_get($pdo, 'fb_tpl', '0'), 'tpl_fu' => (int)setting_get($pdo, 'fb_tpl_fu', '0'), 'places' => $places ?: ['Google review'], 'links' => fb_links($pdo), 'reward' => (string)setting_get($pdo, 'fb_reward', '10 ML perfume')];
 }
 
 /** One or several places ("Google review", ["Google review", "Instagram"]) → "Google review, Instagram" (clean, no repeats, at most 200 characters). */
@@ -155,11 +170,23 @@ function fb_can(PDO $pdo, array $auth): bool
     return function_exists('sku_can') ? sku_can($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
 }
 
+/** Why WhatsApp (Meta) could not deliver a message, in plain words (the code is Meta's own). */
+function fb_why(int $code, string $text): string
+{
+    $m = [131026 => 'The message could not be delivered: this number is not on WhatsApp, has not accepted the new WhatsApp terms, or is using an old WhatsApp version.', 131049 => 'Meta held this message: this customer already got many promotional messages from businesses. Meta decides this; it is not charged and is not your mistake. Try another day.',
+        131042 => 'Meta could not charge your WhatsApp business account (a payment problem in Meta Business). Fix the payment method in Meta Business Manager.', 131047 => 'More than 24 hours since the customer wrote: only an approved pre-made message can be sent, not a typed one.',
+        131056 => 'Too many messages to this same customer from this number in a short time. Wait and try again.', 131048 => 'Meta limited this number for sending too many unwanted messages (spam rate).', 131051 => 'The message type is not supported.', 132000 => 'The pre-made message has a different number of blanks than the page sends.',
+        132001 => 'This pre-made message does not exist or is not approved in this language.', 132005 => 'The text after filling the blanks is too long.', 132007 => 'The pre-made message breaks a WhatsApp content rule.', 132012 => 'A blank has the wrong format.', 132015 => 'This pre-made message was paused by Meta (low quality).', 132016 => 'This pre-made message was disabled by Meta (low quality for a long time).',
+        130472 => 'Meta did not deliver this message (a Meta test group).', 133010 => 'This WhatsApp number is not registered.', 368 => 'Meta blocked this account for a policy reason.', 190 => 'The WhatsApp connection (token) expired. Reconnect it in WhatsApp → Setup.'];
+    if (isset($m[$code])) return $m[$code] . ' (code ' . $code . ')';
+    return ($text !== '' ? $text : 'Meta did not say why.') . ($code ? ' (code ' . $code . ')' : '');
+}
+
 function fb_row_out(array $r): array
 {
     $seen = (string)($r['msg_status'] ?? '') === 'read';
-    return ['id' => (int)$r['id'], 'order' => (string)$r['order_name'], 'customer' => (string)$r['customer'], 'phone' => (string)$r['phone'], 'delivered' => substr((string)$r['delivered_at'], 0, 16), 'status' => (string)$r['status'], 'test' => strpos((string)$r['order_name'], 'TEST-') === 0,
-        'msg_at' => (string)($r['msg_at'] ?? ''), 'fu_at' => (string)($r['fu_at'] ?? ''), 'seen' => $seen, 'msg_state' => (string)($r['msg_status'] ?? ''), 'msg_err' => (string)$r['msg_err'], 'place' => (string)$r['place'],
+    return ['id' => (int)$r['id'], 'order' => (string)$r['order_name'], 'customer' => (string)$r['customer'], 'phone' => (string)$r['phone'], 'delivered' => substr((string)$r['delivered_at'], 0, 16), 'store' => (string)($r['store_key'] ?? ''), 'last_call' => (string)($r['last_call'] ?? ''), 'status' => (string)$r['status'], 'test' => strpos((string)$r['order_name'], 'TEST-') === 0,
+        'msg_at' => (string)($r['msg_at'] ?? ''), 'fu_at' => (string)($r['fu_at'] ?? ''), 'seen' => $seen, 'msg_state' => (string)($r['msg_status'] ?? ''), 'msg_why' => (string)($r['msg_status'] ?? '') === 'failed' ? fb_why((int)($r['msg_code'] ?? 0), (string)($r['msg_errtext'] ?? '')) : '', 'msg_err' => (string)$r['msg_err'], 'place' => (string)$r['place'],
         'reward_order' => (string)$r['reward_order'], 'reward_note' => (string)$r['reward_note'], 'cx_code' => (string)$r['cx_code'], 'skip_why' => (string)$r['skip_why'], 'proofs' => (int)($r['proofs'] ?? 0)];
 }
 
@@ -169,7 +196,7 @@ function fb_route(PDO $pdo, string $action): void
     if (!fb_can($pdo, $auth)) json_response(['error' => 'The Feedback page is for Admin, HR, Dispatch, the Admin department, Sales Heads and roles with the Orders page.'], 403);
     if (!fb_tables($pdo)) json_response(['error' => 'The Feedback storage could not be set up.'], 500);
     $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $cfg = fb_cfg($pdo);
-    $get = function (string $order) use ($pdo) { $q = $pdo->prepare("SELECT f.*, m.status AS msg_status, (SELECT COUNT(*) FROM fb_proofs p WHERE p.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE f.order_name = ?"); $q->execute([$order]); return $q->fetch(); };
+    $get = function (string $order) use ($pdo) { $q = $pdo->prepare("SELECT f.*, m.status AS msg_status, m.err AS msg_errtext, m.err_code AS msg_code, (SELECT e.txt FROM fb_events e WHERE e.order_name = f.order_name AND e.txt LIKE 'Call:%' ORDER BY e.id DESC LIMIT 1) AS last_call, (SELECT COUNT(*) FROM fb_proofs p WHERE p.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE f.order_name = ?"); $q->execute([$order]); return $q->fetch(); };
 
     if ($action === 'fb.list') {
         fb_enroll($pdo, false);
@@ -178,7 +205,7 @@ function fb_route(PDO $pdo, string $action): void
         if ($qs !== '') { $like = '%' . $qs . '%'; $w[] = "(f.order_name LIKE ? OR f.customer LIKE ? OR f.phone LIKE ?)"; array_push($p, $like, $like, $like); }
         elseif ($tab === 'unseen') $w[] = "f.msg_at IS NOT NULL AND COALESCE(m.status, '') <> 'read'";
         elseif (in_array($tab, ['wait', 'sent', 'replied', 'proof', 'rew', 'cmp', 'skip'], true)) { $w[] = "f.status = ?"; $p[] = $tab; }
-        $sql = "SELECT f.*, m.status AS msg_status, (SELECT COUNT(*) FROM fb_proofs pp WHERE pp.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> ''" . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . " ORDER BY f.delivered_at DESC LIMIT 300";
+        $sql = "SELECT f.*, m.status AS msg_status, m.err AS msg_errtext, m.err_code AS msg_code, (SELECT e.txt FROM fb_events e WHERE e.order_name = f.order_name AND e.txt LIKE 'Call:%' ORDER BY e.id DESC LIMIT 1) AS last_call, (SELECT COUNT(*) FROM fb_proofs pp WHERE pp.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> ''" . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . " ORDER BY f.delivered_at DESC LIMIT 300";
         $st = $pdo->prepare($sql); $st->execute($p); $rows = array_map('fb_row_out', $st->fetchAll());
         $c = ['all' => 0, 'wait' => 0, 'sent' => 0, 'replied' => 0, 'proof' => 0, 'rew' => 0, 'cmp' => 0, 'skip' => 0];
         foreach ($pdo->query("SELECT status, COUNT(*) n FROM fb_orders WHERE order_name NOT LIKE 'TEST-%' GROUP BY status")->fetchAll() as $r) { $c[(string)$r['status']] = (int)$r['n']; $c['all'] += (int)$r['n']; }
@@ -203,6 +230,12 @@ function fb_route(PDO $pdo, string $action): void
         $rw = mb_substr(trim((string)($in['reward'] ?? '')), 0, 60); if ($rw !== '') setting_set($pdo, 'fb_reward', $rw);
         json_response(['ok' => true, 'cfg' => fb_cfg($pdo)]);
     }
+    if ($action === 'fb.proof_data') {      // the picture as data inside a normal answer (works everywhere the other answers work; the page shows it directly)
+        $q = $pdo->prepare("SELECT path, mime FROM fb_proofs WHERE id = ?"); $q->execute([(int)($_GET['id'] ?? 0)]); $r = $q->fetch(); $abs = $r ? __DIR__ . '/' . $r['path'] : '';
+        if (!$r || strpos((string)$r['path'], 'uploads/feedback/') !== 0 || strpos((string)$r['path'], '..') !== false || !is_file($abs)) json_response(['error' => 'The picture file is not on the server (' . ($r ? $r['path'] : 'no such proof') . ').'], 404);
+        $mime = (string)$r['mime'] !== '' ? (string)$r['mime'] : 'image/jpeg'; $raw = @file_get_contents($abs); if ($raw === false || $raw === '') json_response(['error' => 'The picture file is empty or cannot be read.'], 500);
+        json_response(['src' => 'data:' . $mime . ';base64,' . base64_encode($raw)]);
+    }
     if (!$post && $action !== 'fb.proof_file') json_response(['error' => 'Unknown action.'], 404);
     if ($action === 'fb.proof_file') {   // the picture, streamed with the login token (never a public link)
         $q = $pdo->prepare("SELECT path, mime FROM fb_proofs WHERE id = ?"); $q->execute([(int)($_GET['id'] ?? 0)]); $r = $q->fetch(); $abs = $r ? __DIR__ . '/' . $r['path'] : '';
@@ -222,6 +255,19 @@ function fb_route(PDO $pdo, string $action): void
         $id = (int)$pdo->lastInsertId(); $no = 'TEST-' . $id; $pdo->prepare("UPDATE fb_orders SET order_name = ? WHERE id = ?")->execute([$no, $id]);
         fb_log($pdo, $no, 'Test order made for ' . ($name !== '' ? $name . ' ' : '') . $key . ' (nothing automatic is sent for a test)', $by);
         json_response(['ok' => true, 'order' => $no]);
+    }
+    if ($action === 'fb.proof_delete') {      // 🗑 remove one proof picture (file and row); the order goes back to the state it had without it
+        $in = json_input(); $q = $pdo->prepare("SELECT p.id, p.path, p.order_name, f.id AS fid, f.msg_at, f.replied_at, f.status FROM fb_proofs p JOIN fb_orders f ON f.order_name = p.order_name WHERE p.id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch();
+        if (!$r) json_response(['error' => 'This proof is already removed.'], 404);
+        $abs = __DIR__ . '/' . $r['path']; if (strpos((string)$r['path'], 'uploads/feedback/') === 0 && strpos((string)$r['path'], '..') === false && is_file($abs)) @unlink($abs);
+        $pdo->prepare("DELETE FROM fb_proofs WHERE id = ?")->execute([(int)$r['id']]);
+        $left = $pdo->prepare("SELECT COUNT(*) FROM fb_proofs WHERE order_name = ?"); $left->execute([$r['order_name']]);
+        if ((int)$left->fetchColumn() === 0 && (string)$r['status'] === 'proof') { $back = $r['replied_at'] ? 'replied' : ($r['msg_at'] ? 'sent' : 'wait'); $pdo->prepare("UPDATE fb_orders SET status = ? WHERE id = ?")->execute([$back, (int)$r['fid']]); }
+        fb_log($pdo, (string)$r['order_name'], 'A proof picture was removed', $by);
+        json_response(['ok' => true]);
+    }
+    if ($action === 'fb.links_save') {      // the review links (add / edit / delete): made once, one tap to send
+        $in = json_input(); $ls = fb_links_put($pdo, (array)($in['links'] ?? [])); json_response(['ok' => true, 'links' => $ls]);
     }
     // the actions on one order
     $in = $_SERVER['CONTENT_TYPE'] ?? ''; $in = stripos((string)$in, 'application/json') !== false ? json_input() : $_POST;
@@ -263,6 +309,20 @@ function fb_route(PDO $pdo, string $action): void
         foreach ($pr->fetchAll() as $x) { $abs = __DIR__ . '/' . $x['path']; if (strpos((string)$x['path'], 'uploads/feedback/') === 0 && strpos((string)$x['path'], '..') === false && is_file($abs)) @unlink($abs); }
         $pdo->prepare("DELETE FROM fb_proofs WHERE order_name = ?")->execute([$order]); $pdo->prepare("DELETE FROM fb_events WHERE order_name = ?")->execute([$order]); $pdo->prepare("DELETE FROM fb_orders WHERE id = ?")->execute([(int)$r['id']]);
         json_response(['ok' => true]);
+    }
+    if ($action === 'fb.call') {      // 📞 the result of a phone call to the customer, kept in the history (and shown under the status)
+        $L = ['answered_will' => 'Answered — will give feedback', 'answered_given' => 'Answered — feedback already given', 'answered_issue' => 'Answered — has a problem', 'no_answer' => 'No answer', 'busy' => 'Busy / switched off', 'call_later' => 'Asked to call later', 'wrong_number' => 'Wrong number', 'refused' => 'Does not want to give feedback'];
+        $k = (string)($in['result'] ?? ''); if (!isset($L[$k])) json_response(['error' => 'Pick what happened on the call.'], 422); $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 200);
+        fb_log($pdo, $order, 'Call: ' . $L[$k] . ($note !== '' ? ' — ' . $note : ''), $by); json_response(['ok' => true]);
+    }
+    if ($action === 'fb.send_link') {      // 🔗 a review link to the customer on WhatsApp (a typed message: it goes within WhatsApp's 24-hour window; later use an approved pre-made message)
+        $url = trim((string)($in['url'] ?? '')); if (!preg_match('~^https?://\S+$~i', $url)) json_response(['error' => 'Pick or paste a link that starts with https://'], 422);
+        $text = trim((string)($in['text'] ?? '')); if ($text === '') $text = 'Thank you for your order ' . $order . '. Please share your feedback here: ' . $url; elseif (stripos($text, $url) === false) $text .= "\n" . $url;
+        if (!function_exists('wa_send_text') || !function_exists('wa_ensure_contact')) json_response(['error' => 'The WhatsApp sender is not available.'], 500);
+        $c = wa_ensure_contact($pdo, (string)$r['phone'], (string)$r['customer']); if (!$c) json_response(['error' => 'Could not open the chat of this customer.'], 422);
+        $res = wa_send_text($pdo, $c, mb_substr($text, 0, 900), 'emp', (int)($auth['employee_id'] ?? 0)); if (empty($res[0])) json_response(['error' => (string)$res[1]], 422);
+        $nm = ''; foreach (fb_links($pdo) as $l) if ($l['url'] === $url) $nm = $l['name'];
+        fb_log($pdo, $order, 'Review link sent on WhatsApp' . ($nm !== '' ? ' (' . $nm . ')' : ''), $by); json_response(['ok' => true]);
     }
     if ($action === 'fb.skip') {
         $why = mb_substr(trim((string)($in['why'] ?? 'no feedback needed')), 0, 80);

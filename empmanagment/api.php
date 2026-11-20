@@ -7945,6 +7945,8 @@ function ml_bonus_for(array $chart, float $sales, float $target): float
  * need = round(N × codepct / 100), at least 1 when there is an order (at 65%: 6 orders → 4 codes, 10 → 7, 5 → 3). codepct 0 = rule off.
  * Same maths as MLSLAB.codeNeed() in ml_slab.js.
  */
+/** Flat commission % of a Myntra / Amazon / Flipkart order added by a sales person (owner, 20 Nov 2026: 6%, no code needed). Setting mp_flat_pct. */
+function mp_flat_pct(PDO $pdo): float { static $m = null; if ($m === null) { $v = (string)setting_get($pdo, 'mp_flat_pct', ''); $m = ($v !== '' && is_numeric($v)) ? max(0.0, min(30.0, (float)$v)) : 6.0; } return $m; }
 function ml_code_need(int $n, float $pct): int
 {
     if ($n <= 0 || $pct <= 0) return 0;
@@ -8305,8 +8307,8 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
     // so the Commission page / tower / target % showed fewer orders and less sales than the Orders page for the same day (18 orders ₹39,964 there, 14 orders ₹36,068 here).
     // Their products are not known (no ML), so they add to the SALES and the target, and the commission chart pays nothing for them.
     try {
-        $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0");
-        $mq->execute(biz_window($pdo, $from, $day));
+        try { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch, channel FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }
+        catch (Throwable $e0) { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }   // 'channel' exists once a Myntra / Amazon / Flipkart order was added
         foreach ($mq->fetchAll() as $m) {
             $mk2 = 'manual|' . (string)$m['manual_order_id']; if (isset($cancel[$mk2])) continue;
             $a = $allocMap[$mk2] ?? null; if ($a && !empty($a['direct'])) continue;
@@ -8314,7 +8316,8 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             $ts = strtotime((string)$m['order_date']); $fs = strtolower((string)$m['payment_status']);
             $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => null, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false,
                 'xnote' => ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
-                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? ''))];
+                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
+                'mp' => in_array((string)($m['channel'] ?? ''), ['Myntra', 'Amazon', 'Flipkart'], true) ? (string)$m['channel'] : ''];   // 🛍 marketplace order: a flat % without a code (mp_flat_pct)
         }
     } catch (Throwable $e) { error_log('coach_sales_load manual orders: ' . $e->getMessage()); }
     // ➕ add-ons: an order is paid on its own amount PLUS its add-ons (1000 + 500 = 1500), so the add-on money, ML and advance count on the same order
@@ -8542,10 +8545,16 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
         // 70% code rule: enough of the day's orders carry a code → every order of the day pays full (the no-code cut is skipped).
         $codePct = (float)($chart['codepct'] ?? 0);
         $codeHave = 0; foreach ($list as $o) if ($o['code'] !== '') $codeHave++;
-        $codeNeed = ml_code_need(count($list), $codePct);
+        // manual orders / quick entries / Myntra / Amazon / Flipkart orders cannot carry a code: they count in the sales, but NOT in "how many orders need a code" — the same as the commission engine (boss2.php cm_day) that pays (owner, 20 Nov)
+        $nManC = 0; foreach ($list as $o) if (strpos((string)($o['key'] ?? ''), 'manual|') === 0) $nManC++;
+        $codeNeed = ml_code_need(count($list) - $nManC, $codePct);
         $codeOk = $codeNeed > 0 && $codeHave >= $codeNeed;
         foreach ($list as $o) {
             $sales += $o['amt']; $last = max($last, $o['ts']);
+            if (!empty($o['mp'])) {   // 🛍 Myntra / Amazon / Flipkart: a flat % on the whole amount, no code needed, no code goal, no daily bonus (like a flash offer)
+                $v = $o['amt'] * mp_flat_pct($pdo) / 100; $comAmt += $v; $comBase += $o['amt']; $com += $v; $comFlash += $v; $ordCom[$o['key']] = $v; $flashKeys[$o['key']] = true;
+                if (!$o['pre']) $nCod++; $h = date('G', $o['ts']); $byHour[$h] = ($byHour[$h] ?? 0) + 1; continue;
+            }
             if ($o['code'] !== '') $nCode++; else { $nNo++; $noCodeNames[] = $o['name']; }
             if (!$o['pre']) $nCod++;
             $h = date('G', $o['ts']); $byHour[$h] = ($byHour[$h] ?? 0) + 1;
@@ -19308,7 +19317,7 @@ if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_ba
 if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }
 if (strpos((string)$action, 'fb.') === 0) {
     require_once __DIR__ . '/feedback.php';
-    if (in_array((string)$action, ['fb.get', 'fb.send_now', 'fb.followup'], true) && !function_exists('wd_send')) { foreach (['wa.php', 'wa_tpl.php', 'wa_console.php', 'wa_more.php'] as $__fbf) require_once __DIR__ . '/' . $__fbf; }      // the WhatsApp sender (message text, sending): the same files the wa.* actions load
+    if (in_array((string)$action, ['fb.get', 'fb.send_now', 'fb.followup', 'fb.send_link'], true) && !function_exists('wd_send')) { foreach (['wa.php', 'wa_tpl.php', 'wa_console.php', 'wa_more.php'] as $__fbf) require_once __DIR__ . '/' . $__fbf; }      // the WhatsApp sender (message text, sending): the same files the wa.* actions load
     fb_route($pdo, (string)$action);
 }      // Feedback page (Dispatch → Feedback): delivered parcels → feedback message, screenshots, reward, complaint
 if (strpos((string)$action, 'psum.') === 0) { require_once __DIR__ . '/prod_summary.php'; psum_route($pdo, (string)$action); }   // 🧴 shower gel + ⭐ TM Originals summary of the Orders page (read-only)

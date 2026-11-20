@@ -1,0 +1,49 @@
+# READ-ONLY: what the customers counted as 'waiting for his answer' for one salesperson look like (no phone numbers, no customer names). Prints counts and flags only (no phone numbers, no names).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Waiting chats check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Waiting chats
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/wt_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; require $f;
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $ids = $d->query("SELECT employee_id, full_name FROM employees WHERE full_name LIKE 'Dhruvil%' AND status != 'ex'")->fetchAll(PDO::FETCH_ASSOC); echo "server " . date("Y-m-d H:i:s") . "\n";
+          foreach ($ids as $e) {
+            echo "=== " . $e["full_name"] . " ===\n"; $emp = (int)$e["employee_id"]; $since = date("Y-m-d H:i:s", time() - 86400);
+            $c24 = $d->prepare("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = ? AND status = 'open' AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at)"); $c24->execute([$emp, $since]); echo "Auto assign count (24 h): " . $c24->fetchColumn() . "\n";
+            $cp = $d->prepare("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = ? AND last_in_at IS NOT NULL AND (last_out_at IS NULL OR last_out_at < last_in_at) AND optout = 0 AND status = 'open'"); $cp->execute([$emp]); echo "the chat panel's Waiting count (no 24 h limit): " . $cp->fetchColumn() . "\n";
+            $q = $d->prepare("SELECT c.phone, c.status, c.optout, c.tag, c.cx_id, c.source, c.last_in_at, c.last_out_at, c.camp_optout FROM wa_contacts c WHERE c.assigned_emp = ? AND c.status = 'open' AND c.last_in_at >= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) ORDER BY c.last_in_at DESC"); $q->execute([$emp, $since]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+              $m = $d->prepare("SELECT mtype, LEFT(REPLACE(body, CHAR(10), ' '), 28) b FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $m->execute([$r["phone"]]); $lm = $m->fetch(PDO::FETCH_ASSOC);
+              $t = $d->prepare("SELECT GROUP_CONCAT(tag SEPARATOR ',') FROM wa_ctags WHERE phone = ?"); $t->execute([$r["phone"]]);
+              echo "  last_in " . round((time() - strtotime($r["last_in_at"])) / 3600, 1) . "h ago · out " . ($r["last_out_at"] ? round((time() - strtotime($r["last_out_at"])) / 3600, 1) . "h ago" : "never") . " · src [" . $r["source"] . "] · type " . ($lm["mtype"] ?? "-") . " · text [" . ($lm["b"] ?? "") . "] · optout " . $r["optout"] . " · tag [" . $r["tag"] . "] cx " . (int)$r["cx_id"] . " · tags " . $t->fetchColumn() . "\n";
+            }
+          }
+          
+          PHP
+          php /tmp/wt_check.php "$P"; rm -f /tmp/wt_check.php
+          REMOTE

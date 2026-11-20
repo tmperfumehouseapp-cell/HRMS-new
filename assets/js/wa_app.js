@@ -52,6 +52,8 @@
 
   const CSS = `
   .wx:not(.cxm) #wxCxR{display:none !important}.wx.cxm #wxPf,.wx.cxm #wxOr,.wx.cxm #wxOd,.wx.cxm #wxCt,.wx.cxm #wxLs,.wx.cxm #wxPrc,.wx.cxm #wxFin{display:none !important}.wx.cxm #wxCxR{background:#f5f0ff;color:#5b21b6}
+  .wx.fbm .wx-b{font-size:13px !important;line-height:1.28 !important;padding:4px 8px 3px 9px !important;margin:1px 8px !important;max-width:70% !important}.wx.fbm .wx-ch{padding:4px 8px !important;gap:6px !important}.wx.fbm .wx-ev{margin:3px 10px !important;font-size:11px !important}
+  .wx.fbm #wxSug,.wx.fbm #wxPc,.wx.fbm #wxPp,.wx.fbm #wxRd,.wx.fbm #wxGrow,.wx.fbm #wxLife,.wx.fbm #wxCxB,.wx.fbm #wxOdB,.wx.fbm #wxAs,.wx.fbm #wxRs,.wx.fbm #wxMore,.wx.fbm #wxCxR,.wx.fbm .pc-row{display:none !important}
   .wx.emb>*:not(.wx-chat):not(.wx-md):not(.wx-toast){visibility:hidden}.wx.emb .wx-chat{left:0 !important;border-left:0 !important;animation:none}.wx.emb .wx-chat .bk{display:none !important}.wx.emb::after{display:none !important}html.wx-emb body{overflow:hidden}
   .wx{--g:#16a34a;--gd:#0f7a3a;--ink:#0f172a;--mut:#64748b;--line:#e8ecf2;--bg:#f4f6fa;--or:#f97316;--rd:#e5484d;--bl:#3b82f6;--pu:#7c5cfc;position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font-size:14px;overflow:hidden}
   .wx *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}.wx button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}.wx input,.wx textarea,.wx select{font:inherit;color:inherit}
@@ -264,7 +266,8 @@
     try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=5'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     root.innerHTML = ''; const R = document.createElement('div'); R.className = 'wx'; root.appendChild(R);
     const EMB = new URLSearchParams(location.search).get('embed') === '1'; if (EMB) { R.classList.add('emb'); document.documentElement.classList.add('wx-emb'); }
-    const CXID = EMB ? (Number(new URLSearchParams(location.search).get('cx')) || 0) : 0; if (CXID) R.classList.add('cxm');   // 🎫 inside a complaint ticket: voice + attach + ✨ Replies (Claude's suggestion + the complaint pre-made messages); no sales tools   // 🎫 ONE chat inside another page (the complaint ticket): the same chat box — voice notes, photos, videos, "/" quick replies, pre-made messages — no list
+    const CXID = EMB ? (Number(new URLSearchParams(location.search).get('cx')) || 0) : 0; if (CXID) R.classList.add('cxm');
+    const FBM = EMB && new URLSearchParams(location.search).get('fb') === '1'; if (FBM) R.classList.add('cxm', 'fbm');   // 💬 the chat inside the Feedback page: the Complaints-style chat (no sales tools) and NO suggestions / rescue / price-chart bars   // 🎫 inside a complaint ticket: voice + attach + ✨ Replies (Claude's suggestion + the complaint pre-made messages); no sales tools   // 🎫 ONE chat inside another page (the complaint ticket): the same chat box — voice notes, photos, videos, "/" quick replies, pre-made messages — no list
     const S = { tab: 'chats', filter: '', chats: [], counts: {}, stats: {}, cfg: { unans_min: 3, target: 5, sound: true }, me: {}, results: [], mentions: [], reminders: [], fetched: 0, loaded: false,
       hist: { rows: [], page: 0, more: false, q: '', f: '', total: 0, loading: false, sel: new Set(), selOn: false }, board: null, cur: null, sound: (localStorage.getItem('wa_sound') || '1') === '1', seen: null, quick: null, tpls: null, gallery: null, push: null };
     const $ = (q, r) => (r || R).querySelector(q);
@@ -453,7 +456,7 @@
       return loadList(true);
     }
     // 💤 a screen nobody has touched for 2 minutes asks the server every 10 s instead of every 5 s (half the requests of every idle screen); the first touch / key / mouse move brings it up to date at once
-    let lastAct = Date.now(); const idleNow = () => Date.now() - lastAct > 120000;
+    let lastAct = Date.now(); const idleNow = () => !EMB && Date.now() - lastAct > 120000;      // a chat shown INSIDE another page (Feedback / Complaints) is always live: the person works on the page around it, so this frame never sees a touch and must not slow down
     ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { const was = idleNow(); lastAct = Date.now(); if (was && !document.hidden) { if (S.cur) once('poll', pollChat); once('list', smartList); } }, { passive: true, capture: true }));
     function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; const __idle = idleNow(); if (__idle && beat % 4) return; const __ev = beat % 2 === 0; if (S.cur) once('poll', pollChat); if (__ev) once('list', smartList); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && __ev) once('team', loadTeam); }, 5000); }   // ⚡ the OPEN chat asks every 5 s (new messages and ticks show at once); the lists and Requests every 10 s (was 5 s); a screen nobody touched for 2 minutes asks every 20 s
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (S.cur) pollChat(); loadList(true); } });
@@ -1409,7 +1412,7 @@
       S.auDone[phone + ':' + g.li] = 1; const pr = g.prod; S.cur.sg = null; $('#wxSug').innerHTML = ''; sendText(g.text, pr, true);
     }
     async function loadSugg(force) {
-      const box = $('#wxSug'); if (!box || !S.cur) return; const phone = S.cur.phone; const c = S.cur.contact; const last = S.cur.msgs.filter((m) => m.dir !== 'sys').slice(-1)[0];
+      const box = $('#wxSug'); if (!box || !S.cur) return; if (FBM) { box.innerHTML = ''; return; }      // Feedback: no suggestion is written (and no AI call is made) const phone = S.cur.phone; const c = S.cur.contact; const last = S.cur.msgs.filter((m) => m.dir !== 'sys').slice(-1)[0];
       suggStop(); S.cur.sg = null; S.cur.armed = null; drawPp(); drawQk(); pcDraw();
       const afterBot = !!last && last.dir === 'out' && last.who === 'bot';   // 🤖 the bot answered first: the person still gets a suggestion for the NEXT step
       if (!c.window_open || c.optout || !last || (last.dir !== 'in' && !afterBot)) { box.innerHTML = ''; return; }
@@ -1466,7 +1469,7 @@
     let moLd = null;
     function moReady(cb) {
       if (window.WaManual) return cb(); if (moLd) { moLd.push(cb); return; } moLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=13';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=14';
       sc.onload = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     function openManual() {

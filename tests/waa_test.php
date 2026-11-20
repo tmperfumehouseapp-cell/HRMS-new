@@ -57,8 +57,16 @@ $eq('nobody', waa_pick_tiers([], 5, 0), 0);
 $F = [3 => $g(0, 0, ['full' => true]), 5 => $g(2, 0)]; $eq('a full grey is skipped', waa_pick_tiers($F, 5, 0), 5);
 $R = [3 => $g(0, 0, ['rest' => true]), 1 => $g(9, 1)]; $eq('the only grey rests (just given one): the next group takes it, never 2 at once', waa_pick_tiers($R, 5, 0), 1);
 $eq('only a resting grey exists: he still gets it', waa_pick_tiers([3 => $g(0, 0, ['rest' => true])], 5, 0), 3);
-// nobody hoards INSIDE his group
-$H = [1 => $g(39, 1), 2 => $g(12, 1), 3 => $g(10, 1), 8 => $g(2, 2)]; $m = waa_mark_ahead($H); $eq('the 39-query green is ahead of the greens', $m[1]['ahead'], true); $eq('the 12-query green is not', $m[2]['ahead'], false); $eq('the hoarder is skipped: the other green takes it', waa_pick_tiers($m, 5, 0), 3);
-$eq('yellows are not compared with greens', !empty(waa_mark_ahead([1 => $g(10, 1), 2 => $g(10, 1), 3 => $g(10, 1), 8 => $g(1, 2)])[8]['ahead']), false);
-$eq('two greens share by target (weights)', (function () { $c = [1 => ['w' => 25000.0, 'cnt' => 0, 'tier' => 1], 2 => ['w' => 70000.0, 'cnt' => 0, 'tier' => 1]]; $n = [1 => 0, 2 => 0]; for ($i = 0; $i < 95; $i++) { $e = waa_pick_tiers($c, 5, 0); $n[$e]++; $c[$e]['cnt']++; } return $n[2] > $n[1] * 2.5 && $n[2] < $n[1] * 3.1; })(), true);
+// THE LINE: inside a group the person whose last query is the OLDEST goes next (nobody given one yet = first); the target weight does not change the turn
+$L = [1 => $g(14, 1, ['last' => 1000]), 2 => $g(9, 1, ['last' => 2000]), 3 => $g(12, 1, ['last' => 0]), 4 => $g(13, 1, ['last' => 0])];
+$eq('green line: nobody given yet today first, fewer queries first', waa_pick_tiers($L, 5, 0), 3);
+$L[3]['last'] = 3000; $eq('then the other who was never given', waa_pick_tiers($L, 5, 0), 4); $L[4]['last'] = 4000; $eq('then the oldest last give', waa_pick_tiers($L, 5, 0), 1);
+$seq = []; $T = [1 => ['last' => 0, 'cnt' => 12], 2 => ['last' => 0, 'cnt' => 12], 3 => ['last' => 0, 'cnt' => 9]]; $clock = 100;
+for ($i = 0; $i < 9; $i++) { $cand = []; foreach ($T as $e => $x) $cand[$e] = $g($x['cnt'], 1, ['last' => $x['last'], 'w' => $e === 1 ? 70000.0 : 25000.0]); $e = waa_pick_tiers($cand, 5, 0); $seq[] = $e; $T[$e]['last'] = ++$clock; $T[$e]['cnt']++; }
+$eq('three greens (one with a 70,000 target) take turns: 3 each, in order', $seq, [3, 1, 2, 3, 1, 2, 3, 1, 2]);
+$eq('yellows take turns too', (function () use ($g) { $c = [8 => $g(5, 2, ['last' => 10]), 9 => $g(5, 2, ['last' => 5])]; return waa_pick_tiers($c, 5, 2); })(), 9);
+// a customer's last message that needs no answer (it must not count as "waiting for his answer")
+foreach (['ok', 'Ok thank you', 'K', 'thanks!', '👍', 'Already Ordered', 'order ho gaya', 'Thank you.'] as $b) $eq('no answer needed: ' . $b, waa_no_answer_needed('text', $b), true);
+foreach (['Sir ??', 'Kb tk aaega', 'Bro where is my tracking id?', 'Please call me', 'Change address', 'Aa rakho'] as $b) $eq('needs an answer: ' . $b, waa_no_answer_needed('text', $b), false);
+$eq('a reaction needs no answer', waa_no_answer_needed('reaction', ''), true); $eq('a voice note needs one', waa_no_answer_needed('audio', '🎤 Voice note'), false);
 echo $bad ? "waa test: $bad problem(s)\n" : "waa test: ok\n"; exit($bad ? 1 : 0);

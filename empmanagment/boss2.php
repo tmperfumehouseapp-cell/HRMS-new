@@ -2946,6 +2946,8 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
             // otherwise that part is paid on top of the perfume commission. The code rule applies to it like to every order.
             $xc = (float)($o['xcom'] ?? 0) * $f; $xcomTotal += $xc;
             if (!empty($o['xall'])) { $lines[] = ['order' => $o['name'], 'ml' => (int)($ml ?: 0), 'price' => round($gross), 'rule' => 'combo', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2), 'key' => $ok, 'note' => (string)($o['xnote'] ?? '')]; continue; }
+            if (!empty($o['mp'])) {   // 🛍 Myntra / Amazon / Flipkart order of a sales person: a flat % (mp_flat_pct, 6) on the whole amount, no code needed — the code rule does not apply to it
+                $v = (float)$o['amt'] * mp_flat_pct($pdo) / 100; $offerCom += $v; $lines[] = ['order' => $o['name'], 'ml' => 0, 'price' => round((float)$o['amt']), 'rule' => 'offer marketplace ' . (string)$o['mp'], 'pct' => mp_flat_pct($pdo), 'code' => true, 'com' => round($v, 2), 'key' => $ok, 'x' => round($xc, 2)]; continue; }
             $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
             // an order with the free 10 ml add-on bottle(s) counts ml_total = perfume + 10 x ml10 (120 ml offer + 10 ml = 130): if the whole size has no offer, try the size without the 10 ml bottles
             if (!$of && $ml && (int)($o['ml10'] ?? 0) > 0 && $ml - 10 * (int)$o['ml10'] > 0) $of = cm_offer_match($offers, $ml - 10 * (int)$o['ml10'], $gross, $day, (float)$ch['window']);
@@ -2999,7 +3001,7 @@ function cm_paid_day(PDO $pdo, $day) {
     static $mem = [], $ver = null; if (isset($mem[$day])) return $mem[$day];      // 'v2' below: the day's extra is one amount on the total (not inside each order)
     $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     if ($ver === null) {
-        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', ''), 'ad:' . md5((string)setting_get($pdo, 'cm_addons', '')) . 'tk:' . (string)setting_get($pdo, 'tk_pay', '') . (string)setting_get($pdo, 'tk_goal', '') . (string)setting_get($pdo, 'tk_bonus_pct', '') . (string)setting_get($pdo, 'tk_min_orders', '')];   // a change of the ticket-bonus settings is seen at once
+        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', ''), 'ad:' . md5((string)setting_get($pdo, 'cm_addons', '')) . 'mp:' . (string)setting_get($pdo, 'mp_flat_pct', '6') . 'tk:' . (string)setting_get($pdo, 'tk_pay', '') . (string)setting_get($pdo, 'tk_goal', '') . (string)setting_get($pdo, 'tk_bonus_pct', '') . (string)setting_get($pdo, 'tk_min_orders', '')];   // a change of the ticket-bonus settings is seen at once
         foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0), COALESCE(SUM(CRC32(COALESCE(addons, ''))), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }

@@ -284,6 +284,10 @@ function wa_ru_reset_once(PDO $pdo): void
             setting_set($pdo, 'wa_ru_l700', '1'); setting_set($pdo, 'wa_ru_ramp_base', '550'); setting_set($pdo, 'wa_ru_ramp_max', '700'); setting_set($pdo, 'wa_ru_hourly', '600'); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): slots 550 / 600 / 700 an hour (floor 550, top 700), now 600 an hour (owner)');
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_l1000', '') !== '1') {   /* owner 20 Nov 2026 (18:55): Module B 700 -> 800 -> 900 -> 1,000, two hours at each level (failed under 2%, delivered 85%+); the first two hours at 700 start now */
+            setting_set($pdo, 'wa_ru_l1000', '1'); setting_set($pdo, 'wa_ru_ramp_max', '1000'); setting_set($pdo, 'wa_ru_lvl_at', (string)time());
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): ladder up to 1,000 an hour (owner): 700 now, then 800 / 900 / 1,000, two hours at each level while failed stays under 2% and delivered 85% or more');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_ru_base260', '') !== '1') {   /* owner 20 Nov 2026 (02:00): Module B must not run at 180; the floor is 260 an hour (it starts again from 260 after a bad stretch, never lower) */
             setting_set($pdo, 'wa_ru_base260', '1'); setting_set($pdo, 'wa_ru_ramp_base', '260'); if ((int)setting_get($pdo, 'wa_ru_hourly', '260') < 260) setting_set($pdo, 'wa_ru_hourly', '260'); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the floor is now 260 an hour (it never goes lower), it runs at ' . setting_get($pdo, 'wa_ru_hourly', '260') . ' now (owner)');
@@ -376,10 +380,12 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
             else { setting_set($pdo, 'wa_ru_freeze_n', (string)$fz); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility follow-up (Module B): failures rising (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered): it stays at ' . $cur . ' an hour'); }
             return; }
         /* owner 20 Nov 2026 (06:30): no 2-hour wait any more; the ladder moves at every 10-minute look (40, 50, 60, 70, 80, 90, 100 per 10 minutes) */
-        if ($cur < $max && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
+        /* owner 20 Nov 2026 (18:55): above 700 the ladder is 800 / 900 / 1,000 and each level needs TWO HOURS at that level with failed under 2%, delivered 85% or more (no failed look in between: a bad look already holds / goes back / rests above); the first two hours at 700 start from the deploy */
+        $hi = $cur >= 700; $hiOk = true; if ($hi) { $la = (int)setting_get($pdo, 'wa_ru_lvl_at', '0'); if ($la <= 0) { setting_set($pdo, 'wa_ru_lvl_at', (string)$now); $la = $now; } $hiOk = ($now - $la >= 7200) && $gf / max(1, $gn) < 0.02 && $gd / max(1, $gn) >= 0.85; }
+        if ($cur < $max && $hiOk && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
             setting_set($pdo, 'wa_ru_freeze_n', '0');
-            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([240, 300, 360, 420, 480, 540, 550, 600, 700] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 20 Nov 2026: 40 / 50 / 60 / 70 / 80 / 90 / 100 messages per 10 minutes = 240 ... 600 an hour; owner 20 Nov 2026 (15:20): from now the slots are 550 / 600 / 700 an hour (floor 550, top 700, never 800) */
-            setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
+            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([240, 300, 360, 420, 480, 540, 550, 600, 700, 800, 900, 1000] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 20 Nov 2026: 40 / 50 / 60 / 70 / 80 / 90 / 100 messages per 10 minutes = 240 ... 600 an hour; owner 20 Nov 2026 (15:20): from now the slots are 550 / 600 / 700 an hour (floor 550, top 700, never 800) */
+            setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now); if ($to >= 700) setting_set($pdo, 'wa_ru_lvl_at', (string)$now);   // the 2-hour clock of a level from 700 up starts when it is reached
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered in the last look): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
 /** 🛤 owner, 18 Nov 2026 (night): two lanes. Lane A = the safest people (wrote to us within the asked-days, or ordered within the order-days): about one third of the sends. Lane B = people to whom NOTHING has ever been delivered (every message to them failed): about two thirds. Everybody else (lane C) comes after both. Inside a lane the order stays oldest first. Pattern B, B, A, B, B, A … (when one lane is empty the other goes on).
@@ -425,6 +431,7 @@ function wa_ru_tick(PDO $pdo): array
     $t0 = microtime(true) - 8;   // the making / sending of templates above can take 20+ seconds: it must not eat the time of the sending loop below (it did: every round broke off at the first person and Module B never sent anything)
     try {
         if (!wa_camp_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
+        try { $wm = wa_ru_warm_tick($pdo, $cfg, $nowTs); $res['sent'] += $wm['sent']; $res['failed'] += $wm['failed']; } catch (Throwable $ew) { }   /* owner 20 Nov 2026: the first 10 messages of each new number (counted allowance, see wa_ru_warm_tick) */
         $tpp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $tpp = is_array($tpp) ? array_filter($tpp, fn($u) => (int)$u > $nowTs) : [];   // templates Meta paused for low quality (132015): not used again for 6 hours
         $notPaused = fn(array $L) => array_values(array_filter($L, fn($t0) => !isset($tpp[(int)($t0['id'] ?? 0)])));
         $pool = $notPaused(wa_ru_pool($pdo)); $famU = [];   // 1) the utility version(s) of the campaign's OWN message (the owner's words, approved at Meta), 2) the 6 standard follow-ups
@@ -535,6 +542,74 @@ function wa_ru_tick(PDO $pdo): array
     } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'Utility follow-up error: ' . $e->getMessage()); $res['note'] = 'error: ' . mb_substr($e->getMessage(), 0, 140); }
     try { setting_set($pdo, 'wa_ru_last', json_encode(['at' => time(), 'note' => $res['note'], 'sent' => $res['sent'], 'failed' => $res['failed'], 'skipped' => $res['skipped'], 'looked' => $res['looked'], 'why' => $res['why']])); } catch (Throwable $e) { }
     return $res;
+}
+
+/**
+ * 🔥 First messages from a NEW number (owner 20 Nov 2026): "send 10 messages from number 9 and from number 10 to the normal Module B customers".
+ * The numbers stay locked for everything else (campaigns, Module B's own rounds); this is the ONE exception, a small counted allowance in the setting
+ * wa_ru_warm = {"9": 10, "10": 10} (number id => messages still to send). It uses the same people, the same safety checks and the same approved utility
+ * messages as Module B, is logged in wa_ru_log like any Module B message, sends at most 3 per number per round, and stops when the count is 0.
+ * The setting is created once (marker wa_ru_warm_seed_2011) and counts down by itself. Returns ['sent', 'failed', 'note'].
+ */
+function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
+{
+    $o = ['sent' => 0, 'failed' => 0, 'note' => ''];
+    try { if ((string)setting_get($pdo, 'wa_ru_warm_seed_2011', '') === '') { setting_set($pdo, 'wa_ru_warm', '{"9":10,"10":10}'); setting_set($pdo, 'wa_ru_warm_seed_2011', '1'); } } catch (Throwable $e) { return $o; }
+    $w = json_decode((string)setting_get($pdo, 'wa_ru_warm', ''), true); if (!is_array($w)) return $o;
+    $w = array_filter(array_map('intval', $w), fn($n) => $n > 0); if (!$w) return $o;
+    $pool = wa_ru_pool($pdo); if (!$pool) { $o['note'] = 'no approved utility message yet'; return $o; }
+    if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';
+    $st = []; if (function_exists('wa_health_all')) { foreach (wa_health_all($pdo, false) as $h) $st[(int)$h['id']] = (string)($h['status'] ?? ''); }
+    $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $mo = implode(',', WA_RU_MARKETING_ONLY);
+    $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - 4 * 86400)]);
+    $doneIds = array_map('intval', $dn->fetchAll(PDO::FETCH_COLUMN)); if (!$doneIds) return $o; $doneIn = implode(',', $doneIds);
+    $q = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.err_code, i.status, i.sent_at FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
+        WHERE ((i.status = 'failed' AND i.err_code <> 131049) OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo) AND i.err_code <> 131049)) AND i.camp_id IN ($doneIn) AND COALESCE(i.variant, 'M') <> 'U' AND COALESCE(c.extra, '') NOT LIKE '%\"kind\":\"util\"%'
+          AND (c.started_at >= ? OR i.sent_at >= ?) AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.item_id = i.id) ORDER BY i.id DESC LIMIT 2000");
+    $q->execute([$from, $from]); $items = $q->fetchAll(); if (!$items) return $o;
+    $phones = array_values(array_unique(array_map(fn($x) => (string)$x['phone'], $items))); $pin = implode(',', array_map(fn($p) => $pdo->quote($p), $phones));
+    $ct = []; foreach ($pdo->query("SELECT phone, wa_id, name, optout, camp_optout, last_in_at, last_number_id FROM wa_contacts WHERE phone IN ($pin)")->fetchAll() as $r) $ct[(string)$r['phone']] = $r;
+    $got = []; $q3 = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE phone IN ($pin) AND dir = 'out' AND mtype = 'template' AND status IN ('delivered', 'read') AND ts >= ?"); $q3->execute([date('Y-m-d H:i:s', strtotime($from) - 86400)]); foreach ($q3->fetchAll(PDO::FETCH_COLUMN) as $p) $got[(string)$p] = 1;
+    $recent = []; $q4 = $pdo->prepare("SELECT DISTINCT phone FROM wa_ru_log WHERE at >= ?"); $q4->execute([date('Y-m-d H:i:s', $nowTs - 86400)]); foreach ($q4->fetchAll(PDO::FETCH_COLUMN) as $p) $recent[(string)$p] = 1;
+    $in = implode(',', array_map(fn($x) => (int)$x['id'], $items)); $rec = [];
+    if (function_exists('wa_rec_tables') && wa_rec_tables($pdo)) { foreach ($pdo->query("SELECT item_id, COUNT(*) AS n, MAX(at) AS last FROM wa_rec_log WHERE item_id IN ($in) GROUP BY item_id")->fetchAll() as $r) $rec[(int)$r['item_id']] = $r; }
+    $recOn = function_exists('wa_rec_cfg') ? !empty(wa_rec_cfg($pdo)['on']) : false; $recTries = function_exists('wa_rec_cfg') ? max(1, (int)wa_rec_cfg($pdo)['max_attempts'] - 1) : 2;
+    try { $ever = []; $qe = $pdo->query("SELECT DISTINCT phone FROM wa_messages WHERE phone IN ($pin) AND dir = 'out' AND status IN ('delivered', 'read')"); foreach ($qe->fetchAll(PDO::FETCH_COLUMN) as $p) $ever[(string)$p] = 1;
+        $ordMap = function_exists('wa_util_orders') ? wa_util_orders($pdo, max(1, (int)$cfg['ord_days'])) : [];
+        $items = wa_ru_lane_order($items, $ct, $ever, is_array($ordMap) ? $ordMap : [], $nowTs - max(1, (int)$cfg['ask_days']) * 86400);
+    } catch (Throwable $e) { }
+    $now = date('Y-m-d H:i:s', $nowTs); $seen = []; $rot = 0; $stop = false;
+    foreach ($w as $nid => $left) {
+        if ($stop) break;
+        $q5 = $pdo->prepare("SELECT * FROM wa_numbers WHERE id = ?"); $q5->execute([$nid]); $n = $q5->fetch(); if (!$n || !empty($n['retired'])) continue;
+        if (($st[$nid] ?? '') !== 'CONNECTED') { $o['note'] = 'number #' . $nid . ' is not connected at Meta'; continue; }
+        $waba = wa_waba_of($n); $poolN = array_values(array_filter($pool, fn($z) => in_array($waba, array_map('strval', (array)($z['ok_wabas'] ?? [])), true)));
+        if (!$poolN) { $o['note'] = 'number #' . $nid . ': no utility message approved on its WhatsApp account yet'; continue; }
+        $num = ['id' => (int)$n['id'], 'phone_id' => (string)$n['phone_id']]; $round = 0;
+        foreach ($items as $it) {
+            if ($left <= 0 || $round >= 3) break;
+            $ph = (string)$it['phone']; $iid = (int)$it['id']; $ec = (int)$it['err_code']; if ((string)$it['status'] === 'skipped' && $ec === 131026) $ec = 131050;
+            if (isset($seen[$ph]) || isset($recent[$ph]) || isset($got[$ph])) continue;
+            $cls = wa_ru_class($ec); if ($cls === 'never') continue;
+            $c = $ct[$ph] ?? null; if (!$c || (int)$c['optout'] === 1) continue;
+            if (!empty($c['last_in_at']) && !empty($it['sent_at']) && strtotime((string)$c['last_in_at']) > strtotime((string)$it['sent_at'])) continue;
+            $failedAt = !empty($it['sent_at']) ? strtotime((string)$it['sent_at']) : 0;
+            if ($cls === 'now') { if ($failedAt > $nowTs - $cfg['wait_min'] * 60) continue; }
+            else { $r = $rec[$iid] ?? null; $rn = $r ? (int)$r['n'] : 0; if ($recOn && $rn < $recTries) continue; if ($r && strtotime((string)$r['last']) > $nowTs - 3600) continue; }
+            $rot++; $ctm = ['phone' => $ph, 'name' => (string)($c['name'] ?? $it['name'] ?? ''), 'optout' => 0, 'last_in_at' => $c['last_in_at'] ?? null];
+            $pk = wa_util_pick($pdo, in_array($ec, WA_RU_MARKETING_ONLY, true) ? array_values(array_filter($poolN, fn($z) => empty($z['as_marketing']))) : $poolN, $ctm, $cfg['ord_days'], $nowTs, $rot, $cfg['ask_days'], true);
+            if (!$pk) continue;
+            $seen[$ph] = 1; $round++; $left--;
+            [$ok, $rr, $ecs] = wa_send_tpl_one($pdo, ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => (int)($c['camp_optout'] ?? 0)], $pk['t'], $num, $pk['vars'], 'recover');
+            try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at, attempt, vars_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
+                ->execute([(int)$it['camp_id'], $iid, $ph, (string)$pk['kind'], (int)$nid, (int)$pk['t']['id'], $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, $ec, $ok ? '' : mb_substr((string)$rr, 0, 190), $now, json_encode($pk['vars'], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
+            if ($ok) $o['sent']++; else { $o['failed']++; if (in_array((int)$ecs, [131048, 130429, 131056], true)) { if ((int)$ecs === 131048) { wa_ru_ramp_back($pdo, 'spam'); setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 4 * 3600)); } $stop = true; break; } }
+        }
+        $w[$nid] = $left;
+    }
+    try { setting_set($pdo, 'wa_ru_warm', json_encode((object)$w)); } catch (Throwable $e) { }
+    if ($o['sent'] || $o['failed']) { try { wa_log($pdo, 'campaign', $o['sent'] > 0, 'First messages from the new numbers: ' . $o['sent'] . ' sent, ' . $o['failed'] . ' failed (left: ' . json_encode((object)$w) . ')'); } catch (Throwable $e) { } }
+    return $o;
 }
 
 /** ROUTE: people the campaign already KNEW Meta would hold or block for marketing (held in the last days / stopped marketing) are skipped before sending: they get the utility follow-up instead of nothing. */

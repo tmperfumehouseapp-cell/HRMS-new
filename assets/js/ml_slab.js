@@ -236,6 +236,7 @@
     const map = {};
     (orders || []).forEach((o) => {
       const emp = o.emp != null ? o.emp : defEmp, k = emp + '|' + o.day, x = map[k] = map[k] || { n: 0, have: 0, emp, day: o.day };
+      if (String(o.key || '').indexOf('manual:') === 0) return;   // a manual / quick-entry / marketplace order cannot carry a code: it is not counted in "orders that need a code" (same as the server)
       x.n++; if (o.code) x.have++;
     });
     Object.keys(map).forEach((k) => {

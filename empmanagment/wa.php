@@ -212,7 +212,8 @@ function wa_number_id(PDO $pdo, string $phoneId, string $display = ''): int
     $q = $pdo->prepare("SELECT id, display FROM wa_numbers WHERE phone_id = ?"); $q->execute([$phoneId]); $r = $q->fetch();
     if ($r) { if ($display !== '' && $r['display'] !== $display) $pdo->prepare("UPDATE wa_numbers SET display = ? WHERE id = ?")->execute([$display, $r['id']]); return (int)$r['id']; }
     $pdo->prepare("INSERT INTO wa_numbers (phone_id, display, created_at) VALUES (?, ?, ?)")->execute([$phoneId, $display, date('Y-m-d H:i:s')]);
-    return (int)$pdo->lastInsertId();
+    $newId = (int)$pdo->lastInsertId(); if ($phoneId !== wa_cfg_val('WA_PHONE_ID')) try { $pdo->prepare("UPDATE wa_numbers SET camp_ok = 0, `hold` = 1 WHERE id = ?")->execute([$newId]); } catch (Throwable $eL) { }   // owner 20 Nov 2026: a NEW number starts LOCKED (replies only) until the owner unlocks it
+    return $newId;
 }
 /** Makes sure the number from config.php (WA_PHONE_ID) is in the numbers list, named "Main number" until you rename it. */
 function wa_numbers_sync(PDO $pdo): void
@@ -278,7 +279,7 @@ function wa_redirect_target(PDO $pdo, int $numberId): int
         $cnt = []; foreach ($pdo->query("SELECT last_number_id AS n, COUNT(*) c FROM wa_contacts WHERE last_in_at >= '" . date('Y-m-d 00:00:00') . "' GROUP BY last_number_id")->fetchAll() as $r) $cnt[(int)$r['n']] = (int)$r['c'];
         $best = 0; $bc = PHP_INT_MAX;
         foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
-            $id = (int)$n['id']; if ($id === $numberId || !empty($n['retired'])) continue; $b2 = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($b2 !== '' && strtotime($b2) > time() - 3 * 3600) continue;
+            $id = (int)$n['id']; if ($id === $numberId || !empty($n['retired']) || !empty($n['hold'])) continue; $b2 = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($b2 !== '' && strtotime($b2) > time() - 3 * 3600) continue;
             $c = $cnt[$id] ?? 0; if ($c < $bc) { $bc = $c; $best = $id; }
         }
         return $best;
@@ -354,7 +355,13 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
         return $key;
     }
     // STOP / unsubscribe words → opt out for every number
-    if ($t === 'text' && preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) $pdo->prepare("UPDATE wa_contacts SET optout = 1, camp_optout = 1 WHERE phone = ?")->execute([$key]);
+    $__stopWord = $t === 'text' && preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body);
+    $__notNow = !$__stopWord && preg_match('/^\s*(not now|no thanks?|no thank you|abhi nahi|abhi nahin|nahi chahiye|nahin chahiye)\s*[.!]*\s*$/iu', $body);
+    // 🕘 a customer who says Stop / Not now is finished: the chat goes straight to History (closed) — it no longer jumps to the top of the lists (owner, 20 Nov). Complaint chats are left alone.
+    if ($__stopWord || $__notNow) { try { $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag <> 'complaint')")->execute([date('Y-m-d H:i:s'), $key]);
+        if ($__notNow) $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, 'declined', 'auto', ?)")->execute([$key, date('Y-m-d H:i:s')]); } catch (Throwable $e) { } }
+    elseif ($t !== 'reaction' && $t !== 'system') { try { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'declined'")->execute([$key]); } catch (Throwable $e) { } }   // he wrote something else: no longer "declined"
+    if ($__stopWord) $pdo->prepare("UPDATE wa_contacts SET optout = 1, camp_optout = 1 WHERE phone = ?")->execute([$key]);
     elseif ($ex && (int)($ex['optout'] ?? 0) === 1 && !in_array($t, ['reaction', 'system', 'unsupported'], true) && !preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) {   // owner (13 Nov): a customer who said Stop and then WRITES to us again wants to talk: the conversation starts again
         $pdo->prepare("UPDATE wa_contacts SET optout = 0, camp_optout = 1 WHERE phone = ?")->execute([$key]); if (function_exists('wa_event')) wa_event($pdo, $key, '↩ The customer wrote again after Stop — you can chat with them again. Campaigns / promotional messages stay OFF for this customer.');
     }
@@ -799,7 +806,7 @@ function wa_counts(PDO $pdo, bool $adm, int $emp): array
     $one = function (string $where, array $p = []) use ($pdo) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE $where"); $q->execute($p); return (int)$q->fetchColumn(); };
     $wait = "last_in_at IS NOT NULL AND (last_out_at IS NULL OR last_out_at < last_in_at) AND optout = 0 AND status = 'open'";
     if ($emp <= 0) $emp = -1;   // an admin login that is not an employee has no chats of their own
-    $hist = "status = 'closed' AND last_in_at IS NOT NULL AND last_in_at < '" . date('Y-m-d H:i:s', time() - 86400) . "'";   // 🕘 History: closed chats whose last customer message is more than 24 hours old
+    $hist = "status = 'closed' AND last_in_at IS NOT NULL AND (last_in_at < '" . date('Y-m-d H:i:s', time() - 86400) . "' OR optout = 1 OR EXISTS (SELECT 1 FROM wa_ctags gd WHERE gd.phone = wa_contacts.phone AND gd.tag = 'declined'))";   // 🕘 History: closed chats whose last customer message is more than 24 hours old
     if (!$adm) return ['mine' => $one("assigned_emp = ? AND status = 'open'", [$emp]), 'closed' => $one("assigned_emp = ? AND status = 'closed'", [$emp]), 'history' => $one("assigned_emp = ? AND $hist", [$emp]), 'waiting' => $one("assigned_emp = ? AND $wait", [$emp])];
     return ['mine' => $one("assigned_emp = ? AND status = 'open'", [$emp]), 'unassigned' => $one("assigned_emp = 0 AND status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag <> 'complaint') AND NOT EXISTS (SELECT 1 FROM wa_ctags ctx WHERE ctx.phone = wa_contacts.phone AND ctx.tag = 'complaint')"), 'all' => $one("status = 'open' AND last_in_at IS NOT NULL"), 'closed' => $one("status = 'closed' AND last_in_at IS NOT NULL"), 'history' => $one($hist), 'waiting' => $one($wait)];
 }
@@ -1127,7 +1134,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 if ($wb === '') $wb = wa_find_waba($pdo, $pid);   // not typed: find the account among the ones already known
                 $q = $pdo->prepare("SELECT id FROM wa_numbers WHERE phone_id = ?"); $q->execute([$pid]); if ($q->fetch()) json_response(['error' => 'This number is already in the list.'], 422);
                 if ($label === '') json_response(['error' => 'Give the number a name, e.g. “TM Perfume House One”.'], 422);
-                $pdo->prepare("INSERT INTO wa_numbers (phone_id, label, panel, waba_id, created_at) VALUES (?, ?, ?, ?, ?)")->execute([$pid, $label, $panel, $wb, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId();
+                $pdo->prepare("INSERT INTO wa_numbers (phone_id, label, panel, waba_id, created_at) VALUES (?, ?, ?, ?, ?)")->execute([$pid, $label, $panel, $wb, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); try { $pdo->prepare("UPDATE wa_numbers SET camp_ok = 0, `hold` = 1 WHERE id = ?")->execute([$id]); } catch (Throwable $eL) { }   // owner 20 Nov 2026: a NEW number starts LOCKED (replies only) until the owner unlocks it
             }
             json_response(['ok' => true, 'id' => $id]);
         }
@@ -1211,11 +1218,11 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 $uk = (string)($_GET['uk'] ?? ''); if ($uk === 'cx') $w[] = wa_unans_cx_sql(); elseif ($uk === 'sales') $w[] = 'NOT ' . wa_unans_cx_sql(); elseif ($uk === 'cxfree') $w[] = wa_unans_cxfree_sql();   // 🟣 complaints only / everything else
                 if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; } else { $ue = (int)($_GET['ue'] ?? 0); if ($ue > 0) { $w[] = 'c.assigned_emp = ?'; $p[] = $ue; } elseif ($ue === -1) $w[] = 'c.assigned_emp = 0'; }
             }
-            elseif (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp; $w[] = in_array($scope, ['closed', 'history'], true) ? "c.status = 'closed'" : "c.status = 'open'"; if ($scope === 'history') { $w[] = 'c.last_in_at < ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); } }
+            elseif (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp; $w[] = in_array($scope, ['closed', 'history'], true) ? "c.status = 'closed'" : "c.status = 'open'"; if ($scope === 'history') { $w[] = '(c.last_in_at < ? OR c.optout = 1 OR EXISTS (SELECT 1 FROM wa_ctags gd WHERE gd.phone = c.phone AND gd.tag = \'declined\'))'; $p[] = date('Y-m-d H:i:s', time() - 86400); } }
             elseif ($scope === 'mine') { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; $w[] = "c.status = 'open'"; }
             elseif ($scope === 'unassigned') { $w[] = 'c.assigned_emp = 0'; $w[] = "c.status = 'open'"; $w[] = 'c.optout = 0'; $w[] = "(c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint') AND NOT EXISTS (SELECT 1 FROM wa_ctags ctx WHERE ctx.phone = c.phone AND ctx.tag = 'complaint')"; }   // 🙋 Requests: a complaint chat (ticket, complaint tag or complaint customer-tag) is never a request — it belongs to the Complaints desk
             elseif ($scope === 'closed') $w[] = "c.status = 'closed'";
-            elseif ($scope === 'history') { $w[] = "c.status = 'closed'"; $w[] = 'c.last_in_at < ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); }   // 🕘 History: closed + the customer's last message is over 24 hours old (only a template can go now)
+            elseif ($scope === 'history') { $w[] = "c.status = 'closed'"; $w[] = "(c.last_in_at < ? OR c.optout = 1 OR EXISTS (SELECT 1 FROM wa_ctags gd WHERE gd.phone = c.phone AND gd.tag = 'declined'))"; $p[] = date('Y-m-d H:i:s', time() - 86400); }   // 🕘 History: closed + the customer's last message is over 24 hours old (only a template can go now)
             elseif ($scope === 'emp') { $ee = (int)($_GET['emp'] ?? 0); if (!empty($_GET['tag'])) { $w[] = '(c.assigned_emp = ? OR c.phone IN (SELECT l.phone FROM wa_assign_log l WHERE l.to_emp = ?))'; $p[] = $ee; $p[] = $ee; } else { $w[] = 'c.assigned_emp = ?'; $p[] = $ee; $w[] = "c.status = 'open'"; } }   // 🏷 tag=1: every chat this person ever had, wherever it is now
             else $w[] = "c.status = 'open'";
             if ($adm && $scope !== 'mine') $w[] = 'c.last_in_at IS NOT NULL';   // people a campaign reached but who never wrote are in Contacts, not in Chats
@@ -1339,7 +1346,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 $sq = $pdo->prepare("SELECT COALESCE(MAX(id), 0) FROM wa_messages WHERE phone = ? AND dir = 'in'"); $sq->execute([$key]); $mx = (int)$sq->fetchColumn(); if ($mx !== (int)$c['seen_msg_id']) $pdo->prepare("UPDATE wa_contacts SET seen_msg_id = ? WHERE phone = ? AND seen_msg_id <> ?")->execute([$mx, $key, $mx]);   // write only when something new was read: the same result, no write lock on every open / poll $c['unread'] = 0;
             } else { $q3 = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'in' AND id > ?"); $q3->execute([$key, (int)$c['seen_msg_id']]); $c['unread'] = (int)$q3->fetchColumn(); }
             $ct = wa_contact_row($c, $names); $ct['numbers_used'] = count(array_unique(array_filter(array_column(array_filter($msgs, fn($m) => $m['dir'] !== 'sys'), 'number_id')))); $ct['last_number'] = $nums[(int)$c['last_number_id']] ?? '';
-            try { $ct['last_number_retired'] = false; $ct['shift_to'] = ''; $act = []; foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n9) { if ((int)$n9['id'] === (int)$c['last_number_id'] && !empty($n9['retired'])) $ct['last_number_retired'] = true; if (empty($n9['retired'])) $act[] = trim(($n9['label'] !== '' ? $n9['label'] : 'Number ' . $n9['id']) . ' ' . (string)$n9['display']); } if ($ct['last_number_retired']) $ct['shift_to'] = implode(' · ', $act); } catch (Throwable $e9) { }   // owner 20 Nov 2026: a chat on a number that is being closed shows where to shift the customer (the numbers with their digits, so they can be said on a call)
+            try { $ct['last_number_retired'] = false; $ct['shift_to'] = ''; $act = []; foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n9) { if ((int)$n9['id'] === (int)$c['last_number_id'] && !empty($n9['retired'])) $ct['last_number_retired'] = true; if (empty($n9['retired']) && empty($n9['hold'])) $act[] = trim(($n9['label'] !== '' ? $n9['label'] : 'Number ' . $n9['id']) . ' ' . (string)$n9['display']); } if ($ct['last_number_retired']) $ct['shift_to'] = implode(' · ', $act); } catch (Throwable $e9) { }   // owner 20 Nov 2026: a chat on a number that is being closed shows where to shift the customer (the numbers with their digits, so they can be said on a call)
             $one = function (string $sql) use ($pdo, $key) { $q4 = $pdo->prepare($sql); $q4->execute([$key]); return $q4->fetchColumn(); };
             $ct['session_msgs'] = (int)$one("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir != 'sys' AND mtype != 'template'"); $ct['template_msgs'] = (int)$one("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND mtype = 'template'");
             $ct['first_message'] = mb_substr((string)$one("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id LIMIT 1"), 0, 120); $ct['first_seen'] = $c['first_seen'];
