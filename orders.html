@@ -1373,12 +1373,39 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     const gel = card('🧴 Shower gel', R(g.amt) + ' <small style="font-size:14px; font-weight:700; color:var(--muted)">from shower gel</small>', N(g.pcs) + ' piece' + (g.pcs === 1 ? '' : 's') + ' in ' + N(g.orders) + ' order' + (g.orders === 1 ? '' : 's') + ' · ' + pct(g.amt, all.amt) + ' of the collection',
       row('Only shower gel', N(g.only) + ' order' + (g.only === 1 ? '' : 's')) + row('Shower gel + perfume', N(g.with_perfume) + ' order' + (g.with_perfume === 1 ? '' : 's')) + row('Query · Campaign', N(g.query) + ' · ' + N(g.campaign) + (g.other ? ' · ' + N(g.other) + ' not allocated' : '')) + row('Value of these orders', R(g.order_value))
       + (q.ok === false ? row('Shower gel queries', 'not available') : row('Shower gel queries', N(q.asked) + ' customer' + (q.asked === 1 ? '' : 's')) + row('New numbers among them', N(q.new)) + row('Of them ordered shower gel', N(q.ordered) + ' (' + pct(q.ordered, q.asked) + ')')),
-      'A query = a customer whose WhatsApp message in these days speaks of shower gel (the ad’s ready-made message).');
+      'A query = a customer whose WhatsApp message in these days speaks of shower gel (the ad’s ready-made message). <button type="button" id="sgDiagBtn" style="width:auto; min-height:0; margin-top:6px; padding:5px 12px; font-size:12px; font-weight:800; border:1px solid #111827; border-radius:999px; background:#fff; color:#111; cursor:pointer;">🩺 Where did the shower gel leads go?</button>');
     const org = card('⭐ TM Originals <span style="font-weight:500; color:var(--muted)">(Dress to Impress)</span>', N(o.bottles) + ' <small style="font-size:14px; font-weight:700; color:var(--muted)">bottle' + (o.bottles === 1 ? '' : 's') + ' in ' + N(o.orders) + ' order' + (o.orders === 1 ? '' : 's') + '</small>', 'Value of these orders ' + R(o.order_value) + ' · ' + pct(o.order_value, all.amt) + ' of the collection',
       row('Set of 3', N(o.s3)) + row('Set of 2', N(o.s2)) + row('Single', N(o.s1)) + row('Dark Side · Compliment Getter · Caffeine Club', N(o.ds) + ' · ' + N(o.cg) + ' · ' + N(o.cc)) + row('Query · Campaign', N(o.query) + ' · ' + N(o.campaign) + (o.other ? ' · ' + N(o.other) + ' not allocated' : '')),
       'The value is the whole order (other perfumes in the same order are inside it).');
     return `<div style="font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;">Inside the collection · ${R(all.amt)} in ${N(all.orders)} orders</div><div style="display:flex; gap:14px; flex-wrap:wrap;">${gel}${org}</div>`;
   }
+  // 🩺 Shower gel leads: paste the ads' ready-made messages → how many customers sent each, on which WhatsApp number, who has the chat, who answered (psum.leads, read-only)
+  function sgDiag() {
+    if (document.getElementById('sgDg')) return;
+    const def = 'Hey TMPerfumehouse, I need the 2 Showr gels combo offer for ₹2099\nHey TMPerfumehouse, I want to buy any 3 shower gels for just ₹999.';
+    let saved = ''; try { saved = localStorage.getItem('sg_ad_msgs') || ''; } catch (e) { }
+    const o = document.createElement('div'); o.id = 'sgDg'; o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
+    o.innerHTML = '<div style="background:#fff;color:#111;border-radius:16px;max-width:900px;width:100%;max-height:94vh;overflow:auto;padding:16px 18px;font-size:13.5px">'
+      + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><b style="font-size:16px">🩺 Where did the shower gel leads go?</b><button type="button" data-x style="margin-left:auto;width:32px;min-height:32px;border:1px solid #d1d5db;border-radius:999px;background:#fff;color:#111;cursor:pointer;padding:0">✕</button></div>'
+      + '<div style="color:#6b7280;margin-bottom:6px">Paste the ready-made messages of your shower gel ads, <b>one per line</b>. Nothing is changed. The report counts every customer who sent one of them (or mentioned shower gel), with the WhatsApp number they wrote to, who has the chat and whether anybody answered.</div>'
+      + '<textarea data-in rows="5" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:10px;padding:8px;font:13px/1.4 inherit"></textarea>'
+      + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0"><span>Look back</span><select data-days style="width:auto;padding:7px 10px;border:1px solid #d1d5db;border-radius:9px">' + [[1, 'today'], [3, '3 days'], [7, '7 days'], [14, '14 days'], [30, '30 days'], [60, '60 days']].map((x) => '<option value="' + x[0] + '"' + (x[0] === 7 ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
+      + '<button type="button" data-run style="width:auto;min-height:0;padding:8px 16px;border:0;border-radius:10px;background:#111827;color:#fff;font-weight:800;cursor:pointer">Run</button><button type="button" data-copy disabled style="width:auto;min-height:0;padding:8px 14px;border:1px solid #d1d5db;border-radius:10px;background:#fff;color:#111;font-weight:700;cursor:pointer">📋 Copy the report</button><span data-msg style="color:#6b7280"></span></div>'
+      + '<textarea data-out readonly rows="18" style="width:100%;box-sizing:border-box;border:1px solid #d5d9e2;border-radius:10px;padding:8px;background:#f8fafc;font:11.5px/1.45 ui-monospace,Consolas,monospace;white-space:pre;overflow:auto"></textarea></div>';
+    document.body.appendChild(o);
+    const q = (s) => o.querySelector(s); q('[data-in]').value = saved || def;
+    const close = () => { o.remove(); document.removeEventListener('keydown', esc); }; const esc = (e) => { if (e.key === 'Escape') close(); }; document.addEventListener('keydown', esc);
+    q('[data-x]').onclick = close; o.addEventListener('mousedown', (e) => { if (e.target === o) close(); });
+    q('[data-run]').onclick = async () => {
+      const b = q('[data-run]'), msgs = q('[data-in]').value.split(/\n+/).map((x) => x.trim()).filter(Boolean); try { localStorage.setItem('sg_ad_msgs', q('[data-in]').value); } catch (e) { }
+      b.disabled = true; q('[data-msg]').textContent = 'Reading the chats… (a long look-back can take up to a minute)';
+      try { const r = await api.post('psum.leads', { msgs, days: +q('[data-days]').value }); q('[data-out]').value = r.text || ''; q('[data-copy]').disabled = false; q('[data-msg]').textContent = 'Done.'; }
+      catch (e) { q('[data-out]').value = 'Could not read: ' + (e.message || e); q('[data-msg]').textContent = ''; }
+      b.disabled = false;
+    };
+    q('[data-copy]').onclick = () => { const t = q('[data-out]'); t.select(); try { navigator.clipboard.writeText(t.value).then(() => { q('[data-msg]').textContent = 'Copied — paste it to Claude.'; }, () => document.execCommand('copy')); } catch (e) { document.execCommand('copy'); } };
+  }
+  document.addEventListener('click', (e) => { if (e.target && e.target.id === 'sgDiagBtn') sgDiag(); });
   async function loadProdSum() {
     const el = document.getElementById('prodSum'); if (!el) return;
     if (EMP_VIEW) { el.style.display = 'none'; return; }

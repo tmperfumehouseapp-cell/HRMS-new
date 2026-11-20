@@ -66,6 +66,58 @@ function psum_day(PDO $pdo, string $from, string $to): array
     return ['from' => $from, 'to' => $to, 'gel' => $gel, 'gel_queries' => $qr, 'originals' => $org, 'all' => $all];
 }
 
+/** the same text however it was typed: lower case, one space between words, no stray punctuation at the ends */
+function psum_norm(string $t): string { $t = mb_strtolower(trim($t)); $t = preg_replace('/[\x{200B}-\x{200F}\x{FEFF}]/u', '', $t) ?? $t; return trim((string)preg_replace('/\s+/u', ' ', $t), " \t\n\r.!?,"); }
+/** 🩺 Where did the leads go? Customers whose WhatsApp message in the last $days days is one of the ad's ready-made messages ($msgs), or speaks of shower gel:
+ *  how many, on which day, on which WhatsApp number, which message, who has the chat, whether a person answered, and whether they ordered. Read-only; phone numbers are masked. */
+function psum_leads(PDO $pdo, array $msgs, int $days): string
+{
+    $days = max(1, min(60, $days)); $now = time(); $from = date('Y-m-d 00:00:00', $now - ($days - 1) * 86400); $to = date('Y-m-d H:i:s', $now);
+    $pats = []; foreach ($msgs as $m) { $n = psum_norm((string)$m); if (mb_strlen($n) >= 8) $pats[$n] = trim((string)$m); } $pats = array_slice($pats, 0, 40, true);
+    $L = ['=== SHOWER GEL LEADS DIAGNOSIS (read-only) ===', 'Made: ' . date('D j M Y, H:i', $now) . ' · customers who wrote from ' . date('j M', strtotime($from)) . ' to today (' . $days . ' day' . ($days === 1 ? '' : 's') . ')',
+        'Counted: a customer whose message is one of the ' . count($pats) . ' ad message(s) given' . ' or mentions "shower gel". One customer is counted once (their first such message).', ''];
+    try {
+        $like = []; $par = [$from, $from, $to];
+        foreach (array_keys($pats) as $n) { $like[] = "LOWER(m.body) LIKE ?"; $par[] = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($n, 0, 60)) . '%'; }
+        $cond = "(LOWER(m.body) REGEXP 'sho?we?r ?gel' OR LOWER(m.body) LIKE '%body wash%'" . ($like ? ' OR ' . implode(' OR ', $like) : '') . ")";
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(30000) */ m.id, m.phone, m.body, m.ts, m.number_id, c.first_seen, c.assigned_emp, c.state, c.status, c.name FROM wa_contacts c JOIN wa_messages m ON m.phone = c.phone WHERE c.last_in_at >= ? AND m.dir = 'in' AND m.ts >= ? AND m.ts <= ? AND $cond ORDER BY m.id LIMIT 20000");
+        $q->execute($par); $first = [];
+        foreach ($q->fetchAll() as $r) if (!isset($first[$r['phone']])) $first[$r['phone']] = $r;
+        $n = count($first); $L[] = 'CUSTOMERS FOUND: ' . $n; if (!$n) { $L[] = ''; $L[] = 'No customer wrote any of these messages, and nobody mentioned shower gel, in these days.'; $L[] = 'That means the ads are not bringing chats to these WhatsApp numbers: check the ad\'s WhatsApp number and the ready-made message in Meta Ads.'; $L[] = ''; $L[] = '=== END ==='; return implode("\n", $L); }
+        $nums = []; try { foreach ($pdo->query("SELECT id, label, display FROM wa_numbers")->fetchAll() as $x) $nums[(int)$x['id']] = ($x['label'] !== '' ? $x['label'] : 'Number ' . $x['id']) . ($x['display'] !== '' ? ' (' . $x['display'] . ')' : ''); } catch (Throwable $e) { }
+        $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        $byDay = []; $byNum = []; $byMsg = []; $byWho = []; $new = 0; $ans = 0; $bot = 0; $ord = 0; $gelOrd = 0; $noAns = []; $rows = [];
+        $ao = $pdo->prepare("SELECT who, COUNT(*) n FROM wa_messages WHERE phone = ? AND dir = 'out' AND id > ? GROUP BY who");
+        $oq = $pdo->prepare("SELECT xparts FROM shop_orders WHERE created_at >= ? AND RIGHT(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), 10) = ? AND COALESCE(tags, '') NOT LIKE '%wa-rx%'");
+        $cap = 0;
+        foreach ($first as $ph => $r) {
+            $d = substr((string)$r['ts'], 0, 10); $byDay[$d] = ($byDay[$d] ?? 0) + 1;
+            $nl = $nums[(int)$r['number_id']] ?? ('Number #' . (int)$r['number_id']); $byNum[$nl] = ($byNum[$nl] ?? 0) + 1;
+            $nb = psum_norm((string)$r['body']); $mk = 'other wording that mentions shower gel'; foreach ($pats as $pn => $orig) if (mb_strpos($nb, mb_substr($pn, 0, 60)) !== false) { $mk = $orig; break; } $byMsg[$mk] = ($byMsg[$mk] ?? 0) + 1;
+            $isNew = (string)$r['first_seen'] >= $from; if ($isNew) $new++;
+            $ao->execute([$ph, (int)$r['id']]); $per = 0; $b2 = 0; foreach ($ao->fetchAll() as $o) { if (in_array($o['who'], ['emp', 'phone'], true)) $per += (int)$o['n']; elseif (in_array($o['who'], ['bot', 'flow'], true)) $b2 += (int)$o['n']; }
+            if ($per > 0) $ans++; elseif ($b2 > 0) $bot++;
+            $e = (int)$r['assigned_emp']; $who = $e > 0 ? (string)($names[$e] ?? ('#' . $e)) : ((string)$r['state'] === 'bot' ? 'Nobody (with the bot)' : 'Nobody (not assigned)');
+            if (!isset($byWho[$who])) $byWho[$who] = [0, 0, 0]; $byWho[$who][0]++; if ($per > 0) $byWho[$who][1]++;
+            $has = false; $hg = false; try { $oq->execute([$from, substr(preg_replace('/\D+/', '', (string)$ph), -10)]); foreach ($oq->fetchAll() as $o) { $has = true; $xp = json_decode((string)$o['xparts'], true); if (is_array($xp) && !empty($xp['gel']['pcs'])) $hg = true; } } catch (Throwable $e2) { }
+            if ($has) { $ord++; $byWho[$who][2]++; } if ($hg) $gelOrd++;
+            $line = substr((string)$r['ts'], 5, 11) . ' · …' . substr((string)$ph, -4) . ' · ' . $nl . ' · chat with ' . $who . ' · ' . ($per > 0 ? 'a person answered' : ($b2 > 0 ? 'ONLY the bot answered' : 'NOBODY answered')) . ($has ? ' · ORDERED' : '') . ' · "' . mb_substr(preg_replace('/\s+/u', ' ', (string)$r['body']), 0, 60) . '"';
+            if ($per === 0) $noAns[] = $line; $rows[] = $line;
+        }
+        $pc = fn($a) => $n ? ' (' . round($a / $n * 100) . '%)' : '';
+        $L[] = 'New numbers (first time on WhatsApp in these days): ' . $new . $pc($new);
+        $L[] = 'A person answered after that message: ' . $ans . $pc($ans); $L[] = 'Only the bot / automatic messages answered: ' . $bot . $pc($bot); $L[] = 'Nobody answered at all: ' . ($n - $ans - $bot) . $pc($n - $ans - $bot);
+        $L[] = 'Placed any order since: ' . $ord . $pc($ord) . ' · of them with shower gel in the order: ' . $gelOrd;
+        $L[] = ''; $L[] = '--- BY DAY ---'; krsort($byDay); foreach ($byDay as $d => $c) $L[] = '   ' . date('D j M', strtotime($d)) . ': ' . $c;
+        $L[] = ''; $L[] = '--- BY WHATSAPP NUMBER THE CUSTOMER WROTE TO ---'; arsort($byNum); foreach ($byNum as $k => $c) $L[] = '   ' . $k . ': ' . $c;
+        $L[] = ''; $L[] = '--- BY MESSAGE ---'; arsort($byMsg); foreach ($byMsg as $k => $c) $L[] = '   ' . $c . ' × "' . mb_substr(preg_replace('/\s+/u', ' ', (string)$k), 0, 90) . '"'; foreach ($pats as $orig) if (!isset($byMsg[$orig])) $L[] = '   0 × "' . mb_substr(preg_replace('/\s+/u', ' ', $orig), 0, 90) . '"   <- nobody sent this one';
+        $L[] = ''; $L[] = '--- WHO HAS THESE CHATS (customers · a person answered · ordered) ---'; uasort($byWho, fn($a, $b) => $b[0] <=> $a[0]); foreach ($byWho as $k => $v) $L[] = '   ' . str_pad($k, 30) . ' ' . $v[0] . ' · ' . $v[1] . ' · ' . $v[2];
+        $L[] = ''; $L[] = '--- NOT ANSWERED BY A PERSON (newest 25 of ' . count($noAns) . ') ---'; foreach (array_slice(array_reverse($noAns), 0, 25) as $x) $L[] = '   ' . $x; if (!$noAns) $L[] = '   (none)';
+        $L[] = ''; $L[] = '--- NEWEST 15 ---'; foreach (array_slice(array_reverse($rows), 0, 15) as $x) $L[] = '   ' . $x;
+    } catch (Throwable $e) { $L[] = 'ERROR while reading: ' . mb_substr($e->getMessage(), 0, 200); }
+    $L[] = ''; $L[] = '=== END ==='; return implode("\n", $L);
+}
+
 function psum_route(PDO $pdo, string $action): void
 {
     $auth = require_auth();
@@ -76,6 +128,11 @@ function psum_route(PDO $pdo, string $action): void
         if ((strtotime($to) - strtotime($from)) > 62 * 86400) $from = date('Y-m-d', strtotime($to) - 62 * 86400);
         $run = function () use ($pdo, $from, $to) { return psum_day($pdo, $from, $to); };
         json_response(['ok' => true] + (function_exists('hrms_memo') ? hrms_memo('psum:' . $from . ':' . $to, 90, $run) : $run()));
+    }
+    if ($action === 'psum.leads') {   // 🩺 shower gel leads: POST {msgs: [...], days}
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $in = json_input(); @set_time_limit(120);
+        json_response(['ok' => true, 'text' => psum_leads($pdo, is_array($in['msgs'] ?? null) ? $in['msgs'] : [], (int)($in['days'] ?? 7))]);
     }
     json_response(['error' => 'Unknown action.'], 404);
 }
