@@ -127,3 +127,5 @@ The 24 hours count from the **end of the conversation**: Step 1 goes when the cu
 ## Its own clock (owner, 21 Nov)
 
 The Lineup has **no clock window** (the 10:00-20:00 one is gone; Module A / Module B's times and the marketing night pause do not apply to it): a step goes when its customer is ready (his conversation ended 24 h ago, no order, nobody else spoke to him today). `wl_cfg.win = 1` with `from` / `to` brings a window back. Steps that had been pushed into 10-20 go back to their natural time once (`wln_unwindow`). The message goes back **from the number he wrote to** (`wa_contacts.last_number_id`, where his reply came in); another number only if that one cannot send the message.
+
+Independent of Module A / B (owner, 21 Nov): a campaign or any template sent by another module no longer holds the Lineup (no "campaign in the last 2 days", no "template in the last 20 h"). What still holds a customer: his conversation is not over (24 h), a **person** wrote to him in the last 36 h, an Autopilot / Journey follow-up went today, an order / ticket / thank-you mute, an order, an opt-out, a complaint.

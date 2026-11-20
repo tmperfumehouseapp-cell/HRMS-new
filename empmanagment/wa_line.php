@@ -262,11 +262,11 @@ function wl_block(PDO $pdo, array $c, string $anchor, array $orders = [], bool $
     try { $q = $pdo->prepare("SELECT MAX(sent_at) FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $q->execute([$phone]); $last = (string)$q->fetchColumn();
         if ($last !== '' && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > strtotime($last)) return 'replied'; } catch (Throwable $e) { }
     if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) return 'wait: muted (order / ticket / thank-you)';
-    if (function_exists('wq_plan_paused')) { $z = wq_plan_paused($pdo, $phone, $now); if ($z !== '') return 'wait: ' . $z; }
+    // a PERSON (salesperson) who wrote in the last 36 hours is still working him: wait. Campaigns (Module A / B) and templates do NOT hold the Lineup any more (owner 21 Nov: it runs as its own module)
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND status <> 'failed' AND ts >= ? LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $now - 36 * 3600)]); if ($q->fetchColumn()) return 'wait: a person wrote in the last 36 h'; } catch (Throwable $e) { }
     if ($first && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > $now - 24 * 3600) return 'wait: conversation not over';   // owner 21 Nov: the 24 hours count from the END of the conversation (his last message); only then, with no order, the lineup starts
     if (!$first && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > $now - 6 * 3600) return 'wait: chatting now';   // he wrote in the last 6 hours: the chat answers him, not a template
     foreach (['wa_fu_ev', 'wa_wj_ev'] as $t) { try { $q = $pdo->prepare("SELECT 1 FROM $t WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $now - 86400)]); if ($q->fetchColumn()) return 'wait: got a follow-up today'; } catch (Throwable $e) { } }
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND status <> 'failed' AND ts >= ? LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $now - 20 * 3600)]); if ($q->fetchColumn()) return 'wait: got a template in the last 20 h'; } catch (Throwable $e) { }   // a campaign, the old drip or our own previous step: one in 24 hours
     return '';
 }
 /** A customer who answered and then went quiet for 24 h is read again: a new topic = a new ladder (what he already got is never repeated; max 2 changes; never beyond 14 days). */
@@ -341,7 +341,6 @@ function wl_tick(PDO $pdo, array $opt = []): array
     $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 25;
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.phone, p.step LIMIT 3000");
     $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
-    if (function_exists('wq_plan_paused_prefetch')) { try { wq_plan_paused_prefetch($pdo, array_keys($byPhone), $now); } catch (Throwable $e) { } }
     $orders = wl_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = array_keys(array_filter(wl_tpl_status($pdo), fn($x) => $x === 'approved'));
     $upd = $pdo->prepare("UPDATE wa_line_plan SET status = ?, why = ?, sent_at = ?, wamid = ?, tpl_key = ? WHERE id = ?");
     foreach ($byPhone as $phone => $list) {
