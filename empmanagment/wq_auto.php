@@ -122,7 +122,8 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
         $tkv = (int)(($x['ctk'] ?? 0) > 0 ? $x['ctk'] : ($x['tk'] ?? 0)); $no = (int)($x['n'] ?? 0); $p['ticket'] = $tkv; $p['orders'] = $no;
         $rel = ($tc['on'] && $tc['goal'] > 0 && $tkv >= $tc['goal'] && $no >= $tc['min']) ? $tc['relief'] / 100 : 0.0;   // a ticket at the goal gets a little room on the ratio (bigger bundles can mean fewer orders)
         $p['below'] = waa_below($q, $qo, $team - $rel) ? 1 : 0; $p['tier'] = waa_tier($q, $qo, $team);
-        if ($p['m'] === 'on') { $p['present'] = true; if ($p['tier'] > 2) $p['tier'] = 2; }   // Admin / Sales Head ON = this person is working (also after the punch-out: at home, on WFH …) and takes queries by the ratio like anybody else (never "red") $p['waiting'] = (int)($wt[$e] ?? 0);
+        if ($p['m'] === 'on') { $p['present'] = true; if ($p['tier'] > 2) $p['tier'] = 2; }   // Admin / Sales Head ON = this person is working (also after the punch-out: at home, on WFH …) and takes queries by the ratio like anybody else (never "red")
+        $p['waiting'] = (int)($wt[$e] ?? 0);
         $p['tkcand'] = ($tc['on'] && $tc['hold'] && tk_hold((float)$tkv, $no, $p['waiting'], $tc['hold_below'], $tc['hold_orders'], $tc['hold_wait'])) ? 1 : 0; $p['tkhold'] = 0; if ($p['m'] === 'on') $p['tkcand'] = 0;   // the hold is decided below, once we know how many people reach the goal; Admin / Sales Head ON is never held
         $p['sw'] = (int)($s['sw'] ?? 0); $p['sh'] = (int)($s['sh'] ?? 0); $p['slow'] = ($p['m'] !== 'on' && $p['waiting'] >= (int)$tc['hold_wait'] && tk_slow($p['speed'], $p['team_speed'], 2.0)) ? 1 : 0; $p['shold'] = ($p['m'] !== 'on' && $p['sh'] > time()) ? 1 : 0;   // 🐢 slow replies: warned first, then new queries pause for 45 minutes
         [$on, $why] = waa_button($p); $p['on'] = $on; $p['why'] = $why;
