@@ -91,7 +91,10 @@ function wd_send(PDO $pdo, array $c, array $step): array
     $ctx = wa_camp_ctx($pdo, $t, 2); $nid = 0;
     if (empty($ctx['nums'])) return [false, 'No number has room now (' . wd_why_none($pdo, $t) . ')'];
     if ((int)$step['number_id'] > 0) { if (!isset($ctx['nums'][(int)$step['number_id']])) return [false, 'The chosen number has no room or cannot send this message now.']; $nid = (int)$step['number_id']; }
-    else { [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if (!$nid) { if ($why === 'ignored every number') return [false, 'SKIP: this customer ignored every number', 0]; return [false, 'No number has room now (' . $why . ').']; } }   // 'ignored every number' is about THIS customer (not about the numbers): skip him and go on, do not stop the whole drip
+    else { [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if (!$nid && $why === 'ignored every number') {   // about THIS customer, not about the numbers: the drip is never skipped (owner, 20 Nov) — he gets it from the freest number that can send
+            $el = array_filter($ctx['nums'], function ($n) { return $n['left'] > 0; }); if ($el) { uasort($el, function ($a, $b) { return ($a['used'] / max(1, $a['cap'])) <=> ($b['used'] / max(1, $b['cap'])); }); $nid = (int)reset($el)['id']; }
+        }
+        if (!$nid) return [false, 'No number has room now (' . $why . ').']; }
     [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $nv ? [wd_name($c)] : [], 'followup');
     return $ok ? [true, '', $nid, (string)$res] : [false, (string)$res, $nid];
 }
@@ -145,7 +148,6 @@ function wd_tick(PDO $pdo, array $opt = []): array
         }
         $res = wd_send($pdo, $c, $step);
         if ($res[0]) { $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], (int)($res[2] ?? 0), 'sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? '')]); $o['sent']++; $sent++; }
-        elseif (strpos((string)$res[1], 'SKIP:') === 0) { $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], 0, 'skipped', 'ignored every number', date('Y-m-d H:i:s'), '']); $o['skipped']++; }
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; break; }   // OUR 'no room' answer: try again on the next tick, nothing is written
         elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1] . ' (Day ' . $day . ')'; $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], 0, 'failed', mb_substr((string)$res[1], 0, 190), date('Y-m-d H:i:s'), '']); $o['failed']++; }
         else { $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], (int)($res[2] ?? 0), 'failed', mb_substr((string)$res[1], 0, 190), date('Y-m-d H:i:s'), '']); $o['failed']++; }
