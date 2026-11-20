@@ -32,6 +32,7 @@ ok(($tp['9810000001'] ?? '') === 'trust' && ($tp['9810000002'] ?? '') === 'price
 ok(!isset($tp['9810000007']), 'a customer who already ordered is not enrolled'); ok(!isset($tp['9810000008']), 'opted out is not enrolled');
 ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan")->fetchColumn() === 6 * 7, 'seven rows each');
 ok(wl_enroll($pdo, $since) === 0, 'a second enrol adds nobody');
+$pdo->exec("UPDATE wa_contacts SET last_in_at = '2000-01-01 00:00:00'");   // every conversation is over (the clock of the test must not matter)
 // the sending: templates made (ids) and approved
 $ids = []; $k = 0; foreach (wl_pack() as $key => $m) { $k++; $ids[$key] = $k; $pdo->exec("INSERT INTO wa_templates (id) VALUES ($k)"); $pdo->exec("INSERT INTO wa_tpl_waba VALUES ($k, 'w1', 'APPROVED')"); } setting_set($pdo, 'wl_tpls', json_encode($ids));
 wl_cfg_put($pdo, ['mode' => 'auto', 'cap' => 60, 'from' => 0, 'to' => 24, 'since' => $since, 'started' => '2026-11-21 00:00:00', 'offer' => '']);
@@ -71,6 +72,14 @@ unset($S['wl_map']); $mp = wln_map($pdo); ok(count($mp) === 31, 'map has 27 base
 foreach (array_keys(wl_topics()) as $tp) { $seen = []; for ($st = 1; $st <= 7; $st++) { $id = $mp[wl_key($tp, $st)] ?? 0; ok($id > 0, "map: $tp step $st"); ok(!isset($seen[$id]), "map: $tp repeats message #$id inside one ladder"); $seen[$id] = 1; } }
 $eff = wln_eff_ids($pdo); ok($eff['ln_trust_1'] === 386 && $eff['ln_all_7'] === 109 && $eff['ln_trust_1b'] === $ids['ln_trust_1b'], 'effective ids: mapped steps use the shop messages, the extra wording keeps its own');
 $S['wl_map'] = '{}'; ok(wln_eff_ids($pdo)['ln_trust_1'] === $ids['ln_trust_1'], '{} switches the map off');
+// the 24 hours count from the END of the conversation: a customer who wrote one hour ago waits; once he is quiet for a day his step 1 goes, and the next steps are 24 h after it
+$pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at, source) VALUES ('9840000001', 'Talk', '" . $f($now - 3600) . "', 'query')"); $pdo->exec("INSERT INTO wa_messages (phone, dir, body, ts) VALUES ('9840000001', 'in', 'asli hai', '" . $f($now - 3600) . "')");
+ok(wl_enroll($pdo, $since) >= 1, 'talking customer enrolled'); $pdo->exec("UPDATE wa_line_plan SET due_at = '2000-01-01 00:00:00' WHERE phone = '9840000001' AND step = 1");
+$SENT = []; wl_tick($pdo, ['now' => 1, 'cap' => 60]); ok(!in_array('9840000001', array_column($SENT, 0), true), 'while the conversation goes on nothing is sent');
+$pdo->exec("UPDATE wa_contacts SET last_in_at = '2000-01-01 00:00:00' WHERE phone = '9840000001'"); $pdo->exec("UPDATE wa_line_plan SET due_at = '2000-01-01 00:00:00' WHERE phone = '9840000001' AND step IN (1, 2, 3)");   // steps 2 and 3 are also "due" by the old clock
+$SENT = []; wl_tick($pdo, ['now' => 1, 'cap' => 60]); $got = array_values(array_filter($SENT, fn($x) => $x[0] === '9840000001')); ok(count($got) === 1, 'once the conversation is over exactly ONE message goes (step 1, not step 3)');
+ok((string)$pdo->query("SELECT status FROM wa_line_plan WHERE phone = '9840000001' AND step = 1")->fetchColumn() === 'sent' && (string)$pdo->query("SELECT status FROM wa_line_plan WHERE phone = '9840000001' AND step = 2")->fetchColumn() === 'planned', 'step 1 sent, step 2 still planned');
+ok((int)strtotime((string)$pdo->query("SELECT due_at FROM wa_line_plan WHERE phone = '9840000001' AND step = 2")->fetchColumn()) >= time() + 18 * 3600, 'step 2 is moved to about 24 h after step 1');
 // campaign recipients: opened the campaign message, did not write / order / opt out; capped per day; oldest first
 $cs = $t0 + 7200; $ci = fn($ph, $ls, $off) => $pdo->prepare("INSERT INTO wa_camp_items (phone, status, last_status, sent_at) VALUES (?, 'sent', ?, ?)")->execute([$ph, $ls, $f($cs + $off)]);
 foreach (['9820000001' => 0, '9820000002' => 10, '9820000003' => 20, '9820000004' => 30, '9820000005' => 40, '9820000006' => 50, '9820000007' => 60] as $ph => $off) { $ph = (string)$ph; $ci($ph, $ph === '9820000005' ? 'delivered' : 'read', $off); $pdo->prepare("INSERT INTO wa_contacts (phone, name, last_in_at, optout, source) VALUES (?, ?, ?, ?, 'campaign')")->execute([$ph, 'C' . $ph, null, $ph === '9820000002' ? 1 : 0]); }
