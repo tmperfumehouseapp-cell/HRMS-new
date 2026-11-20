@@ -40,6 +40,11 @@ jobs:
           echo "=== the newest 45 FRESH gives, oldest first (time · person · why) ===\n";
           $rows = $d->query("SELECT at, emp_id, why FROM waa_log WHERE kind = 'fresh' ORDER BY id DESC LIMIT 45")->fetchAll(PDO::FETCH_ASSOC); foreach (array_reverse($rows) as $r) echo "  " . substr($r["at"], 11, 8) . " · " . ($nm[(int)$r["emp_id"]] ?? $r["emp_id"]) . " · " . $r["why"] . "\n";
           echo "=== fresh given by Auto assign today, per person ===\n"; $c = []; foreach ($d->query("SELECT emp_id, COUNT(*) n FROM waa_log WHERE kind = 'fresh' AND at >= '$day' GROUP BY emp_id ORDER BY n DESC") as $r) echo "  " . ($nm[(int)$r["emp_id"]] ?? $r["emp_id"]) . ": " . $r["n"] . "\n";
+          echo "=== every salesperson now: queries/orders (cached day rows) · target · Admin button · ratio-off flag · slow warn/hold ===\n";
+          $cp = json_decode($S("waa_cp"), true); $st = json_decode($S("waa_st"), true); $rows = (array)($cp["rows"] ?? []); $E = (array)($st["e"] ?? []);
+          $tq = 0; $to = 0; foreach ($rows as $e => $x) { $tq += (int)($x["q"] ?? 0); $to += (int)($x["qo"] ?? 0); } echo "  team " . $to . "/" . $tq . " = " . ($tq ? round(100 * $to / $tq, 1) : 0) . "%\n";
+          $L = []; foreach ($rows as $e => $x) { $s2 = $E[$e] ?? []; $L[] = [($nm[(int)$e] ?? $e), (int)($x["q"] ?? 0), (int)($x["qo"] ?? 0), (int)($x["t"] ?? 0), (string)($s2["m"] ?? ""), !empty($s2["f"]) ? "NORULES" : "", !empty($s2["ao"]) ? "ratio-off" : "", !empty($s2["sh"]) && (int)$s2["sh"] > time() ? "slow-hold" : (!empty($s2["sw"]) ? "slow-warn" : "")]; }
+          usort($L, function ($a, $b) { return $a[1] <=> $b[1]; }); foreach ($L as $l) echo "  " . str_pad($l[0], 16) . " q " . str_pad($l[1], 3) . " o " . str_pad($l[2], 3) . " target " . str_pad($l[3], 6) . " btn[" . $l[4] . "] " . $l[5] . " " . $l[6] . " " . $l[7] . "\n";
           echo "waa_last: " . $S("waa_last") . "\n";
           
           PHP
