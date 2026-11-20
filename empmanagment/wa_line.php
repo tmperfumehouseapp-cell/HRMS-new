@@ -314,9 +314,12 @@ function wl_ready(PDO $pdo): bool { $P = wl_pack(); foreach (wl_tpl_status($pdo)
  *  the number is chosen with the "burst" switch of wa_camp_ctx, so only what Meta itself decides (its tier, a Low-quality / disconnected / locked number, a new number's slow start) can stop a message. */
 function wln_send(PDO $pdo, array $c, array $step): array
 {
-    $t = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, (int)$step['tpl_id'], true, 0) : null; if (!$t) return [false, 'The message is not approved by Meta (or its photo is missing).'];
+    // the message and the numbers' health are looked up ONCE per message and 45 seconds, not for every customer (that took 5-10 s each: 6 messages a minute); burst mode ignores the used / left counters anyway
+    static $cache = []; $tid = (int)$step['tpl_id']; $ck = $tid . '|' . intdiv(time(), 45); if (count($cache) > 60) $cache = [];
+    if (!isset($cache[$ck])) { $t0 = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $tid, true, 0) : null; $cache[$ck] = $t0 ? [$t0, wa_camp_ctx($pdo, $t0, 2, [], 1000000)] : [null, null]; }
+    [$t, $ctx] = $cache[$ck]; if (!$t) return [false, 'The message is not approved by Meta (or its photo is missing).'];
     $nv = (int)($t['nvars'] ?? 0); if ($nv > 1) return [false, 'This message has ' . $nv . ' blanks.'];
-    $ctx = wa_camp_ctx($pdo, $t, 2, [], 1000000); $nid = 0;
+    $nid = 0;
     if (empty($ctx['nums'])) return [false, 'No number can send this message now (' . (function_exists('wd_why_none') ? wd_why_none($pdo, $t) : 'none available') . ')'];
     $pref = (int)($c['last_number_id'] ?? 0);   // owner 21 Nov: the message goes back from the number he wrote to (where his reply came in); another number only if that one cannot send this message
     if ($pref > 0 && isset($ctx['nums'][$pref])) { $nid = $pref; $why = ''; } else [$nid, $why] = wa_pick_number($pdo, $c, $ctx);
@@ -353,7 +356,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
-    $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 25;
+    $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 40;   // a round may work 40 s
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at, c.topic FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.phone, p.step LIMIT 3000");
     $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
     $orders = wl_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = array_keys(array_filter(wl_tpl_status($pdo), fn($x) => $x === 'approved'));
