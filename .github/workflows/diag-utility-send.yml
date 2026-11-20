@@ -37,6 +37,9 @@ jobs:
           $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "" : (string)$v; } catch (Throwable $e) { return ""; } };
           $row = function ($r) { $o = []; foreach ($r as $k => $v) $o[] = $k . "=" . $v; return "  " . implode(" · ", $o) . "\n"; };
           echo "server time now: " . date("Y-m-d H:i:s") . "\n";
+          echo "\n=== SALES DAY START (day_timing) ===\n"; echo "  php timezone: " . date_default_timezone_get() . "\n";
+          foreach ($all("SELECT weekday, start_time FROM day_timing ORDER BY weekday") as $r) echo $row($r);
+          echo "  day_timing_overrides setting: " . substr($s("day_timing_overrides"), 0, 300) . "\n";
           echo "\n=== settings (Module B and utility first) ===\n";
           foreach (["wa_ru_on", "wa_ru_pause_until", "wa_ru_hourly", "wa_ru_cursor", "wa_ru_submit_pause", "wa_ru_rest", "wa_u_first", "wa_u_reuse", "wa_ru_make_n", "wa_ru_last", "wa_ru_make_last", "wa_send_at", "wa_lock_ru", "wa_lock_rumake", "wa_lock_rec"] as $k) echo "  " . $k . " = " . substr($s($k), 0, 500) . "\n";
           echo "  (pause_until / lock values are unix times; now = " . time() . ")\n";
