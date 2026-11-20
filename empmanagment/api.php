@@ -18192,7 +18192,7 @@ function tmph_sales_summary(array $orders): array
     $houses = []; $count = 0; $amount = 0.0; $unCount = 0; $unAmount = 0.0; $cancelled = 0;
     foreach ($orders as $o) {
         if (!empty($o['cancelled'])) { $cancelled++; continue; }
-        $total = (float)($o['total'] ?? 0);
+        $total = (float)($o['total'] ?? 0) + (float)($o['addon_total'] ?? 0);   // add-on sold on the order counts in its total, as on the Orders page
         $counted = ($o['store_key'] ?? '') === 'manual' || (int)($o['allocated'] ?? 0) === 1;
         if (!$counted) { $unCount++; $unAmount += $total; continue; }
         $label = trim((string)(($o['house'] ?? '') !== '' ? ($o['store'] ?? '') : '')) ?: (($o['store_key'] ?? '') === 'manual' ? 'Manual orders' : 'Other (no house)');
@@ -18996,7 +18996,8 @@ function report_detail_build(PDO $pdo, string $from, string $to, string $house, 
     $isDay = array_flip($days);
     foreach ((array)($j['orders'] ?? []) as $o) {
         if (!empty($o['cancelled'])) continue;
-        $total = (float)($o['total'] ?? 0);
+        $adC = 0.0; foreach ((array)($o['addons'] ?? []) as $__g) $adC += (float)($__g['cod'] ?? 0);
+        $total = (float)($o['total'] ?? 0) + (float)($o['addon_total'] ?? 0);   // ➕ an add-on sold on an order counts in its total — the same as the Orders page (order 1000 + add-on 500 = 1500)
         $day = (string)($o['biz_date'] ?? substr((string)($o['created_at'] ?? ''), 0, 10));
         if (!isset($isDay[$day])) continue;
         $counted = ($o['store_key'] ?? '') === 'manual' || (int)($o['allocated'] ?? 0) === 1;
@@ -19004,10 +19005,11 @@ function report_detail_build(PDO $pdo, string $from, string $to, string $house, 
         $b = in_array((string)($o['house'] ?? ''), report_houses(), true) ? (string)$o['house'] : 'none';
         if ($house !== '' && $b !== $house) continue;
         $tags = array_map(function ($t) { return strtolower(trim($t)); }, explode(',', (string)($o['tags'] ?? '')));
-        $out = isset($o['outstanding']) && $o['outstanding'] !== null ? min($total, max(0.0, (float)$o['outstanding'])) : (preg_match('/cod|pending/i', (string)($o['financial_status'] ?? '')) ? $total : 0.0);
+        $out = isset($o['outstanding']) && $o['outstanding'] !== null ? min($total, max(0.0, (float)$o['outstanding'])) : (preg_match('/cod|pending/i', (string)($o['financial_status'] ?? '')) ? (float)($o['total'] ?? 0) : 0.0);
+        $out = min($total, $out + $adC);   // the COD part of the add-on is still to be collected
         $bump($day, $b, 'order', 1); $bump($day, $b, 'qty', (float)($o['items'] ?? 0)); $bump($day, $b, 'coll', $total);
         $bump($day, $b, 'cod', $out); $bump($day, $b, 'pre', $total - $out);   // COD = only what is still to be paid on delivery; Prepaid = what is already paid
-        if (($o['chain'] ?? '') === 'yes') $bump($day, $b, 'chain', $total);
+        if (($o['chain'] ?? '') === 'yes') $bump($day, $b, 'chain', (float)($o['total'] ?? 0));
         if (array_intersect($tags, ['query', 's'])) $bump($day, $b, 'qo', 1); elseif (array_intersect($tags, ['campaign', 'c'])) $bump($day, $b, 'camp', 1);
     }
     // counter / WhatsApp orders typed in the HRMS have no house: they count in "All houses" only (as on the Orders page)
