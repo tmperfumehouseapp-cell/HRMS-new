@@ -1244,6 +1244,28 @@ function order_gel_fix(PDO $pdo): int
     } catch (Throwable $e) { error_log('order_gel_fix: ' . $e->getMessage()); }
     return $n;
 }
+/** An order given to a salesperson BY HAND with no Query / Campaign chosen is counted as neither (the Orders page said 401 of 402). 30 minutes after it was allocated, a still-empty type is filled in the same way the robot types an order
+ *  (order_chat_type: Campaign = a real campaign reply / repeat customer, else Query) from the customer's WhatsApp chat. No chat with that number = left alone (a person must pick). Only empty types of orders given to a person
+ *  (not the shower-gel panel-only rows) in the last 3 days. Every 10 minutes from the WhatsApp engine. Returns how many were filled. */
+function order_type_fill(PDO $pdo): int
+{
+    try { if ((int)setting_get($pdo, 'otf_at', '0') > time() - 600) return 0; setting_set($pdo, 'otf_at', (string)time()); if (!ensure_order_allocations_table($pdo)) return 0; } catch (Throwable $e) { return 0; }
+    $n = 0;
+    try {
+        $st = $pdo->prepare("SELECT a.alloc_id, o.created_at, o.phone FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci = a.order_id COLLATE utf8mb4_unicode_ci
+            WHERE (a.order_type = '' OR a.order_type IS NULL) AND a.employee_id > 0 AND o.created_at >= ? AND a.allocated_at < ? AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') LIMIT 100");
+        $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400), date('Y-m-d H:i:s', time() - 1800)]);
+        $up = $pdo->prepare("UPDATE order_allocations SET order_type = ? WHERE alloc_id = ? AND (order_type = '' OR order_type IS NULL)");
+        $cq = $pdo->prepare("SELECT phone, source FROM wa_contacts WHERE phone = ?");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $d = preg_replace('/\D+/', '', (string)$r['phone']) ?? ''; $ph = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($ph) !== 10) continue;
+            $cq->execute([$ph]); $c = $cq->fetch(PDO::FETCH_ASSOC); if (!$c) continue;
+            $type = order_chat_type($pdo, $c, (int)strtotime((string)$r['created_at']));
+            if (in_array($type, ['query', 'campaign'], true)) { $up->execute([$type, (int)$r['alloc_id']]); $n += $up->rowCount(); }
+        }
+    } catch (Throwable $e) { error_log('order_type_fill: ' . $e->getMessage()); }
+    return $n;
+}
 // ---------------------------------------------------------------------------------------------------------------------------- ⭐ AUTO "TICKET SIZE CONVINCING" STARS (owner, 18 Nov)
 /** The stars of the Order Allocation page ("did the salesperson try to make the customer take more?") are now worked out by Claude from the CHAT: did the salesperson offer more (200 ml instead of 100 ml, two instead of one,
  *  a second bottle / tester) and did the customer take it. Mode (setting order_auto_rate): 'off' · 'suggest' (default: shown as a light "🤖 suggestion", nothing is saved as a rating) · 'apply' (saved as the order's stars, "Claude (auto)").
