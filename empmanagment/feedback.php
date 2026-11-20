@@ -229,6 +229,16 @@ function fb_route(PDO $pdo, string $action): void
         fb_log($pdo, $no, 'Test order made for ' . ($name !== '' ? $name . ' ' : '') . $key . ' (nothing automatic is sent for a test)', $by);
         json_response(['ok' => true, 'order' => $no]);
     }
+    if ($action === 'fb.proof_delete') {      // 🗑 remove one proof picture (file and row); the order goes back to the state it had without it
+        $in = json_input(); $q = $pdo->prepare("SELECT p.id, p.path, p.order_name, f.id AS fid, f.msg_at, f.replied_at, f.status FROM fb_proofs p JOIN fb_orders f ON f.order_name = p.order_name WHERE p.id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch();
+        if (!$r) json_response(['error' => 'This proof is already removed.'], 404);
+        $abs = __DIR__ . '/' . $r['path']; if (strpos((string)$r['path'], 'uploads/feedback/') === 0 && strpos((string)$r['path'], '..') === false && is_file($abs)) @unlink($abs);
+        $pdo->prepare("DELETE FROM fb_proofs WHERE id = ?")->execute([(int)$r['id']]);
+        $left = $pdo->prepare("SELECT COUNT(*) FROM fb_proofs WHERE order_name = ?"); $left->execute([$r['order_name']]);
+        if ((int)$left->fetchColumn() === 0 && (string)$r['status'] === 'proof') { $back = $r['replied_at'] ? 'replied' : ($r['msg_at'] ? 'sent' : 'wait'); $pdo->prepare("UPDATE fb_orders SET status = ? WHERE id = ?")->execute([$back, (int)$r['fid']]); }
+        fb_log($pdo, (string)$r['order_name'], 'A proof picture was removed', $by);
+        json_response(['ok' => true]);
+    }
     // the actions on one order
     $in = $_SERVER['CONTENT_TYPE'] ?? ''; $in = stripos((string)$in, 'application/json') !== false ? json_input() : $_POST;
     $order = trim((string)($in['order'] ?? '')); $r = $get($order); if (!$r) json_response(['error' => 'Order not found.'], 404);
