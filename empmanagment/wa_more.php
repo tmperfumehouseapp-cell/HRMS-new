@@ -587,7 +587,7 @@ function wa_number_caps(PDO $pdo, array $health): array
     // owner 20 Nov 2026: a number whose limit Meta does not tell yet (new number, name in review) must NOT borrow the biggest limit of the other numbers (1 lakh) — it uses the limit the owner typed, else a low 250
     $anyKnown = false; foreach ($health as $h) if ($h['tier'] !== null) { $anyKnown = true; break; }
     $man = []; try { foreach ($pdo->query("SELECT id, tier_manual FROM wa_numbers")->fetchAll() as $r) $man[(int)$r['id']] = (int)$r['tier_manual']; } catch (Throwable $e) { }
-    $tsrc = []; foreach ($health as $k => $h) { $id0 = (int)$h['id']; if ($h['tier'] === null) { $m0 = $man[$id0] ?? 0; $health[$k]['tier'] = $m0 > 0 ? $m0 : 250; $tsrc[$id0] = $m0 > 0 ? 'manual' : 'assumed'; } else $tsrc[$id0] = 'meta'; }
+    $tsrc = []; foreach ($health as $k => $h) { $id0 = (int)$h['id']; $m0 = $man[$id0] ?? 0; if ($m0 > 0) { $health[$k]['tier'] = $m0; $tsrc[$id0] = 'manual'; } elseif ($h['tier'] === null) { $health[$k]['tier'] = 250; $tsrc[$id0] = 'assumed'; } else $tsrc[$id0] = 'meta'; }   // a limit the owner typed for a number ALWAYS wins over what Meta's API says
     $tier = null; foreach ($health as $h) if ($h['tier'] !== null) { if ($h['tier'] === -1) { $tier = 1000000; break; } $tier = max((int)$tier, (int)$h['tier']); }
     $tierAssumed = !$anyKnown; if ($tier === null) $tier = 250;
     $perNum = (string)setting_get($pdo, 'wa_limit_mode', 'per_number') === 'per_number';   // (14 Nov: unset now means per number — one shared pool of 90% of the tier blocked every normal campaign while Meta kept accepting messages; the guard in wa_limit_guard() goes back to 'shared' by itself if Meta really refuses)
