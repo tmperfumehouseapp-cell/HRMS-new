@@ -453,7 +453,7 @@
       return loadList(true);
     }
     // 💤 a screen nobody has touched for 2 minutes asks the server every 10 s instead of every 5 s (half the requests of every idle screen); the first touch / key / mouse move brings it up to date at once
-    let lastAct = Date.now(); const idleNow = () => Date.now() - lastAct > 120000;
+    let lastAct = Date.now(); const idleNow = () => !EMB && Date.now() - lastAct > 120000;      // a chat shown INSIDE another page (Feedback / Complaints) is always live: the person works on the page around it, so this frame never sees a touch and must not slow down
     ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { const was = idleNow(); lastAct = Date.now(); if (was && !document.hidden) { if (S.cur) once('poll', pollChat); once('list', smartList); } }, { passive: true, capture: true }));
     function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; const __idle = idleNow(); if (__idle && beat % 4) return; const __ev = beat % 2 === 0; if (S.cur) once('poll', pollChat); if (__ev) once('list', smartList); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && __ev) once('team', loadTeam); }, 5000); }   // ⚡ the OPEN chat asks every 5 s (new messages and ticks show at once); the lists and Requests every 10 s (was 5 s); a screen nobody touched for 2 minutes asks every 20 s
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (S.cur) pollChat(); loadList(true); } });
