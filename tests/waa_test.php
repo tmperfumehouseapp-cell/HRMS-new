@@ -65,4 +65,8 @@ $seq = []; $T = [1 => ['last' => 0, 'cnt' => 12], 2 => ['last' => 0, 'cnt' => 12
 for ($i = 0; $i < 9; $i++) { $cand = []; foreach ($T as $e => $x) $cand[$e] = $g($x['cnt'], 1, ['last' => $x['last'], 'w' => $e === 1 ? 70000.0 : 25000.0]); $e = waa_pick_tiers($cand, 5, 0); $seq[] = $e; $T[$e]['last'] = ++$clock; $T[$e]['cnt']++; }
 $eq('three greens (one with a 70,000 target) take turns: 3 each, in order', $seq, [3, 1, 2, 3, 1, 2, 3, 1, 2]);
 $eq('yellows take turns too', (function () use ($g) { $c = [8 => $g(5, 2, ['last' => 10]), 9 => $g(5, 2, ['last' => 5])]; return waa_pick_tiers($c, 5, 2); })(), 9);
+// a customer's last message that needs no answer (it must not count as "waiting for his answer")
+foreach (['ok', 'Ok thank you', 'K', 'thanks!', '👍', 'Already Ordered', 'order ho gaya', 'Thank you.'] as $b) $eq('no answer needed: ' . $b, waa_no_answer_needed('text', $b), true);
+foreach (['Sir ??', 'Kb tk aaega', 'Bro where is my tracking id?', 'Please call me', 'Change address', 'Aa rakho'] as $b) $eq('needs an answer: ' . $b, waa_no_answer_needed('text', $b), false);
+$eq('a reaction needs no answer', waa_no_answer_needed('reaction', ''), true); $eq('a voice note needs one', waa_no_answer_needed('audio', '🎤 Voice note'), false);
 echo $bad ? "waa test: $bad problem(s)\n" : "waa test: ok\n"; exit($bad ? 1 : 0);

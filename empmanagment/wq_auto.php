@@ -109,6 +109,19 @@ function waa_tally(PDO $pdo): array
     return $o;
 }
 
+/** The customers REALLY waiting for this person's answer: the open chats where the customer wrote last and nobody answered, WITHOUT the complaint chats (the complaint team answers those) and the ones whose last message needs no answer
+ *  (ok / thanks / 👍 / "Already ordered" / a reaction or sticker). Owner, 20 Nov: "16 customers waiting" showed for a person whose panel had nobody to answer. Looked at only when the plain count reaches the limit. */
+function waa_wait_real(PDO $pdo, int $emp, int $plain): int
+{
+    static $memo = []; if (isset($memo[$emp]) && $memo[$emp][0] > time() - 60) return $memo[$emp][1];
+    $n = $plain; try {
+        $q = $pdo->prepare("SELECT c.phone, (SELECT CONCAT(m.mtype, '|', LEFT(REPLACE(COALESCE(m.body, ''), CHAR(10), ' '), 60)) FROM wa_messages m WHERE m.phone = c.phone AND m.dir = 'in' ORDER BY m.id DESC LIMIT 1) AS lm
+            FROM wa_contacts c WHERE c.assigned_emp = ? AND c.status = 'open' AND c.last_in_at >= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint') LIMIT 400");
+        $q->execute([$emp, waa_dt(time() - 86400)]); $n = 0;
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { [$mt, $b] = array_pad(explode('|', (string)$r['lm'], 2), 2, ''); if (waa_no_answer_needed((string)$mt, (string)$b)) continue; $n++; }
+    } catch (Throwable $e) { $n = $plain; }
+    $memo[$emp] = [time(), $n]; return $n;
+}
 /** Everything the table and the engine need, in one place. */
 function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
 {
@@ -131,7 +144,7 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
         if ($p['wk'] && !$p['force']) $p['m'] = '';   // ... and ALL the normal rules apply to him (ratio, hold, speed); only Admin's "No rules" switch (state f) lifts them (owner, 20 Nov)
         if ($p['wk']) $p['present'] = true;
         if ($p['m'] === 'on' && $p['tier'] > 2) $p['tier'] = 2;   // forced: never treated as "red"
-        $p['waiting'] = (int)($wt[$e] ?? 0);
+        $p['waiting'] = (int)($wt[$e] ?? 0); if ($p['waiting'] >= WAA_MAX_WAIT) $p['waiting'] = waa_wait_real($pdo, (int)$e, $p['waiting']);   // only chats that really wait for an answer count
         $p['tkcand'] = ($tc['on'] && $tc['hold'] && tk_hold((float)$tkv, $no, $p['waiting'], $tc['hold_below'], $tc['hold_orders'], $tc['hold_wait'])) ? 1 : 0; $p['tkhold'] = 0; if ($p['m'] === 'on') $p['tkcand'] = 0;   // the hold is decided below, once we know how many people reach the goal; Admin / Sales Head ON is never held
         $p['sw'] = 0; $p['sh'] = 0; $p['slow'] = 0; $p['shold'] = 0;   // no late-reply pause or warning any more
         [$on, $why] = waa_button($p); $p['on'] = $on; $p['why'] = $why;
@@ -175,7 +188,7 @@ function waa_give_pick(PDO $pdo, array $r, array $c, array &$V, array &$T, int $
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
         else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
         $gap = max(0, (int)setting_get($pdo, 'waa_gap', '90')); $rest = !$camp && $gap > 0 && (int)($T[$e]['last_fresh'] ?? 0) > $now - $gap;   // given a fresh query in the last 90 s: one at a time
-        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => $camp ? (int)$p['tier'] : waa_tier_now($p, (float)$V['team_ratio'] / 100), 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest, 'last' => (int)($T[$e]['last_fresh'] ?? 0)];
+        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => $camp ? (int)$p['tier'] : waa_tier_now($p, (float)$V['team_ratio'] / 100), 'full' => ((int)$p['waiting'] >= WAA_MAX_WAIT && empty($p['force'])) || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest, 'last' => (int)($T[$e]['last_fresh'] ?? 0)];
     }
     if ($vip) { $good = []; foreach ($cand as $e => $x) if (!$x['full'] && (float)($V['people'][$e]['ticket'] ?? 0) >= (float)$tkc['goal'] && (int)($V['people'][$e]['orders'] ?? 0) >= (int)$tkc['min']) $good[$e] = $x; if ($good) $cand = $good; else $vip = false; }
     $pos = $camp ? 0 : (int)setting_get($pdo, 'waa_cyc', '0');   // green, green, yellow: how many green / yellow queries were given before
@@ -313,7 +326,7 @@ if ($__waa === 'wq.aa_get' || $__waa === 'wq.aa_set' || $__waa === 'wq.aa_engine
     $V = waa_view($pdo, $__waa === 'wq.aa_set'); $T = waa_tally($pdo); $rows = []; $tcfg = tk_cfg($pdo);
     $H = []; try { $hs = date('Y-m-d H:00:00'); $hq = $pdo->prepare("SELECT emp_id, kind, COUNT(*) c FROM waa_log WHERE at >= ? AND at < ? GROUP BY emp_id, kind"); $hq->execute([$hs, date('Y-m-d H:00:00', strtotime($hs) + 3600)]); foreach ($hq->fetchAll(PDO::FETCH_ASSOC) as $r) $H[(int)$r['emp_id']][(string)$r['kind']] = (int)$r['c']; } catch (Throwable $e) { }   // given by Auto assign in this clock hour
     foreach ($V['people'] as $e => $p) { $why = ['not_in' => 'Not punched in', 'admin_off' => 'Turned off by Admin / Sales Head', 'admin_on' => 'ON by Admin / Sales Head — no rule applies', 'ratio' => 'Auto OFF: ratio ' . ($p['ratio'] === null ? '–' : $p['ratio'] . '%') . ' is below ' . $V['floor'] . '% · campaign queries only', 'on' => ''][$p['why']] ?? '';
-        $rows[] = ['emp_id' => $e, 'name' => $p['name'], 'on' => $p['on'], 'present' => $p['present'], 'why' => $why, 'note' => $p['present'] && $p['why'] === 'on' ? ($p['wk'] && $p['punch'] === '' ? 'Working · ON by Admin / Sales Head (rules apply)' : 'Punched in' . ($p['punch'] !== '' ? ' ' . $p['punch'] : '')) : '', 'force' => !empty($p['force']), 'wk' => !empty($p['wk']), 'target' => $p['t'], 'q' => $p['q'], 'o' => $p['qo'], 'ratio' => $p['ratio'], 'cq' => $p['cq'], 'co' => $p['co'], 'h_fresh' => (int)($H[$e]['fresh'] ?? 0), 'h_camp' => (int)($H[$e]['camp'] ?? 0), 'ticket' => (int)$p['ticket'], 'tk' => tk_status((float)$p['ticket'], (float)$tcfg['goal']), 'tkhold' => !empty($p['tkhold']), 'waiting' => (int)$p['waiting'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT, 'shold' => !empty($p['shold']), 'slow_warn' => !empty($p['slow']) && (int)$p['sw'] > 0 && empty($p['shold']), 'given_fresh' => (int)($T[$e]['fresh'] ?? 0), 'given_camp' => (int)($T[$e]['camp'] ?? 0), 'slow' => ($p['speed'] && $p['team_speed'] && $p['speed'] > $p['team_speed'] && $p['m'] !== 'on') ? round($p['team_speed'] / $p['speed'], 2) : 1, 'below' => $p['below'] || $p['ao']]; }
+        $rows[] = ['emp_id' => $e, 'name' => $p['name'], 'on' => $p['on'], 'present' => $p['present'], 'why' => $why, 'note' => $p['present'] && $p['why'] === 'on' ? ($p['wk'] && $p['punch'] === '' ? 'Working · ON by Admin / Sales Head (rules apply)' : 'Punched in' . ($p['punch'] !== '' ? ' ' . $p['punch'] : '')) : '', 'force' => !empty($p['force']), 'wk' => !empty($p['wk']), 'target' => $p['t'], 'q' => $p['q'], 'o' => $p['qo'], 'ratio' => $p['ratio'], 'cq' => $p['cq'], 'co' => $p['co'], 'h_fresh' => (int)($H[$e]['fresh'] ?? 0), 'h_camp' => (int)($H[$e]['camp'] ?? 0), 'ticket' => (int)$p['ticket'], 'tk' => tk_status((float)$p['ticket'], (float)$tcfg['goal']), 'tkhold' => !empty($p['tkhold']), 'waiting' => (int)$p['waiting'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT && empty($p['force']), 'shold' => !empty($p['shold']), 'slow_warn' => !empty($p['slow']) && (int)$p['sw'] > 0 && empty($p['shold']), 'given_fresh' => (int)($T[$e]['fresh'] ?? 0), 'given_camp' => (int)($T[$e]['camp'] ?? 0), 'slow' => ($p['speed'] && $p['team_speed'] && $p['speed'] > $p['team_speed'] && $p['m'] !== 'on') ? round($p['team_speed'] / $p['speed'], 2) : 1, 'below' => $p['below'] || $p['ao']]; }
     usort($rows, function ($a, $b) { return [$b['present'] ? 1 : 0, $a['name']] <=> [$a['present'] ? 1 : 0, $b['name']]; });
     json_response(['ok' => true, 'max_wait' => WAA_MAX_WAIT, 'is_admin' => (function_exists('wa_is_admin') ? (bool)wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin'], true)), 'tk_goal' => (int)$tcfg['goal'], 'tk_offer' => $tcfg['offer'], 'tk_cust' => $tcfg['cust'], 'tk_hold' => (bool)$tcfg['hold'], 'engine' => waa_engine_on($pdo), 'hour' => (int)date('G'), 'day' => $V['day'], 'team_ratio' => $V['team_ratio'], 'floor' => $V['floor'], 'team_speed' => $V['team_speed'], 'rows' => $rows]);
 }

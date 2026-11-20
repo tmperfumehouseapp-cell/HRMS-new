@@ -128,6 +128,14 @@ function waa_mark_ahead(array $c): array
     return $c;
 }
 
+/** A customer's last message that needs no answer. */
+function waa_no_answer_needed(string $mtype, string $body): bool
+{
+    if (in_array($mtype, ['reaction', 'sticker', 'system', 'unsupported', 'ephemeral'], true)) return true;
+    return (bool)preg_match('/^\s*((ok+|okay|okk|k+|kk|thanks?|thank you|thank u|thx|ty|done|noted|fine|sure|cool|hmm+|yes|haan|ha|already ordered|order ho gaya|[\x{1F44D}\x{1F64F}\x{1F60A}\x{2764}\x{FE0F}])\s*[,.!]*\s*)+$/iu', $body);
+}
+
+
 function waa_night(int $hour): bool { return $hour >= 0 && $hour < 10; }
 
 /** A person below the band may take at most WAA_NIGHT_MAX queries from Requests overnight (not when Admin / Sales Head turned the button ON). */
