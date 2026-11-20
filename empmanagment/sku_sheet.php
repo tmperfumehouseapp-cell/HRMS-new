@@ -156,9 +156,9 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
 }
 
 /** Every order of one business day with its product lines, straight from Shopify (all pages). Returns [orders, errors]. */
-function sku_shopify_day(PDO $pdo, string $day): array
+function sku_shopify_day(PDO $pdo, string $day, string $to = ''): array
 {
-    $out = []; $errs = []; $win = biz_window($pdo, $day, $day);
+    $out = []; $errs = []; $win = biz_window($pdo, $day, $to !== '' ? $to : $day);
     foreach (shopify_stores() as $key => $store) {
         if (strpos((string)($store['client_id'] ?? ''), 'PASTE_') !== false) continue;
         $tok = shopify_get_token($key, $store); if (is_array($tok)) { $errs[] = ($store['label'] ?? $key) . ': ' . ($tok['error'] ?? 'no access'); continue; }
@@ -174,6 +174,37 @@ function sku_shopify_day(PDO $pdo, string $day): array
         }
     }
     return [$out, $errs];
+}
+
+/** ⛓ Every product line whose name has "chain" in it (any shop, any spelling), over a range of business days: which chain, how many pieces, in how many orders, how much money. Cancelled orders left out. */
+function sku_chain(PDO $pdo, string $from, string $to): array
+{
+    $by = []; $nOrd = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
+    $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
+        $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
+        if ($name === '' || stripos($name, 'chain') === false) return;
+        $k = mb_strtolower($name); if (!isset($by[$k])) $by[$k] = ['name' => $name, 'sku' => $sku, 'qty' => 0, 'amount' => 0.0, 'orders' => []];
+        $by[$k]['qty'] += $q; $by[$k]['amount'] += $amt; if ($sku !== '' && $by[$k]['sku'] === '') $by[$k]['sku'] = $sku; $by[$k]['orders'][$order] = 1;
+    };
+    [$orders, $errs] = sku_shopify_day($pdo, $from, $to);
+    foreach ($orders as $o) {
+        if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) continue; $nOrd++;
+        foreach ((array)($o['line_items'] ?? []) as $li) {
+            $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;
+            $add((string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (float)($li['price'] ?? 0) * $q, (string)($o['name'] ?? ''));
+        }
+    }
+    try {   // the manual orders (WM-xxxxx) confirmed in the range
+        $win = biz_window($pdo, $from, $to);
+        $q = $pdo->prepare("SELECT order_no, lines_json FROM wmo_order WHERE status = 'confirmed' AND COALESCE(confirmed_at, created_at) BETWEEN ? AND ?"); $q->execute([$win[0], $win[1]]);
+        foreach ($q->fetchAll() as $r) foreach ((array)(json_decode((string)$r['lines_json'], true) ?: []) as $l) {
+            $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$r['order_no']);
+        }
+    } catch (Throwable $e) { $errs[] = 'Manual orders: ' . $e->getMessage(); }
+    $rows = []; $pieces = 0; $money = 0.0;
+    foreach ($by as $r) { $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_keys($r['orders']), 0, 60)]; $pieces += $r['qty']; $money += $r['amount']; }
+    usort($rows, fn($a, $b) => $b['qty'] <=> $a['qty'] ?: strcmp($a['name'], $b['name']));
+    return ['from' => $from, 'to' => $to, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd, 'errors' => $errs];
 }
 
 /** The whole sheet of one business day. */
@@ -238,6 +269,11 @@ function sku_route(PDO $pdo, string $action): void
         $day = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = biz_today($pdo);
         if (!sku_list()) json_response(['error' => 'The SKU list is empty. Upload the SKU file (SKU · original name · shop name) on this page.'], 422);
         @set_time_limit(180); json_response(sku_sheet($pdo, $day) + ['today' => biz_today($pdo)]);
+    }
+    if ($action === 'sku.chain') {
+        $f = (string)($_GET['from'] ?? ''); $t = (string)($_GET['to'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f)) $f = biz_today($pdo); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $t) || $t < $f) $t = $f;
+        if ((strtotime($t) - strtotime($f)) / 86400 > 62) json_response(['error' => 'Pick at most 62 days.'], 422);
+        @set_time_limit(240); json_response(sku_chain($pdo, $f, $t));
     }
     if ($action === 'sku.list') json_response(['rows' => sku_list(), 'custom' => sku_list_file() !== '']);
     if ($action === 'sku.list_save') {

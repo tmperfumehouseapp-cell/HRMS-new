@@ -65,6 +65,17 @@
         <input type="file" id="fUp" accept=".xlsx,.xls,.csv" style="display:none">
         <button class="btn" type="button" id="bXlsx" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
       </div>
+      <details id="chBox" style="margin:0 0 12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+        <summary style="cursor:pointer;font-weight:800">⛓ Chain report — every product with "chain" in its name: which chain, how many</summary>
+        <div class="bar" style="margin-top:10px">
+          <div><label>From</label><input type="date" id="chFrom"></div>
+          <div><label>To</label><input type="date" id="chTo"></div>
+          <button class="btn" type="button" id="chGo">Count chains</button>
+          <span style="flex:1"></span>
+          <button class="btn" type="button" id="chXl" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
+        </div>
+        <div id="chOut" style="margin-top:8px;font-size:13px"></div>
+      </details>
       <div class="sk-sr"><input type="search" id="skQ" placeholder="Search an order number or a perfume name…" autocomplete="off" aria-label="Search the SKU sheet"></div>
       <div id="skFound"></div>
       <div id="skTop"></div>
@@ -167,6 +178,33 @@
       a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'sku_sheet_' + D.day + '.xlsx'; document.body.appendChild(a); a.click(); a.remove();
     } catch (e) { alert('The Excel file could not be made: ' + e.message); }
     b.disabled = false; b.textContent = old;
+  };
+
+  // ---- ⛓ chain report: every product line with "chain" in its name
+  let CH = null; const chE = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  (function () { const t = new Date(Date.now() + 19800000).toISOString().slice(0, 10); $('chFrom').value = t; $('chTo').value = t; })();
+  $('chGo').onclick = async function () {
+    const b = this; b.disabled = true; $('chXl').disabled = true; $('chOut').textContent = 'Counting the chains… (a long range takes a minute)';
+    try {
+      const r = await api.get('sku.chain', { from: $('chFrom').value, to: $('chTo').value }); CH = r;
+      $('chOut').innerHTML = '<div style="margin-bottom:6px"><b>' + r.pieces + '</b> chain pieces in <b>' + r.rows.reduce((a, x) => a + x.orders, 0) + '</b> order lines · ₹' + Number(r.amount).toLocaleString('en-IN') + ' · ' + r.orders_read + ' orders read' + (r.errors.length ? ' · <span style="color:#b91c1c">' + chE(r.errors.join(' | ')) + '</span>' : '') + '</div>' +
+        (r.rows.length ? '<table class="sk"><thead><tr><th style="text-align:left">Chain</th><th>SKU</th><th>Pieces</th><th>Orders</th><th>Amount</th></tr></thead><tbody>' + r.rows.map((x) => '<tr><td style="text-align:left">' + chE(x.name) + '</td><td>' + chE(x.sku) + '</td><td><b>' + x.qty + '</b></td><td>' + x.orders + '</td><td>₹' + Number(x.amount).toLocaleString('en-IN') + '</td></tr>').join('') + '</tbody></table>' : '<div>No chain product in these orders.</div>');
+      $('chXl').disabled = !r.rows.length;
+    } catch (e) { $('chOut').textContent = 'Error: ' + e.message; }
+    b.disabled = false;
+  };
+  $('chXl').onclick = async function () {
+    if (!CH || !CH.rows.length) return;
+    try {
+      await lib('assets/js/exceljs.min.js?v=440', () => !!window.ExcelJS);
+      const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Chain'), h = ws.addRow(['Chain (item name)', 'SKU', 'Pieces', 'Orders', 'Amount (Rs)', 'Order numbers']);
+      h.eachCell((c) => { c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; });
+      CH.rows.forEach((x) => ws.addRow([x.name, x.sku, x.qty, x.orders, x.amount, x.order_list.join(', ')]));
+      const n = CH.rows.length + 1, t = ws.addRow(['TOTAL', '', { formula: 'SUM(C2:C' + n + ')', result: CH.pieces }, '', { formula: 'SUM(E2:E' + n + ')', result: CH.amount }, '']); t.font = { bold: true };
+      [60, 16, 9, 9, 14, 60].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+      const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'chain_report_' + CH.from + (CH.to !== CH.from ? '_to_' + CH.to : '') + '.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { alert('The Excel file could not be made: ' + e.message); }
   };
 
   // ---- replace the SKU list from an Excel / CSV: first three columns = SKU · original name · shop name
