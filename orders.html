@@ -689,6 +689,10 @@
 }
 @media (max-width:820px){ .tm-chips button{min-height:40px;} }
 /* === END MOBILE PASS v1 === */
+/* ?embed=cards : only the platform cards (All orders & revenue / TM Perfume House / TM Shower Gel), shown inside the Finance summary */
+html.emb #sidebar, html.emb .topbar, html.emb .content > :not(#platformCard), html.emb #platToggle, html.emb .mnav, html.emb #hrmsDkBtn, html.emb #menuToggle { display: none !important; }
+html.emb, html.emb body, html.emb .app, html.emb .main, html.emb .content { min-height: 0 !important; height: auto !important; padding: 0 !important; margin: 0 !important; background: transparent !important; }
+html.emb #platformCard { margin: 0 !important; }
 </style>
 </head>
 <body>
@@ -1267,8 +1271,10 @@
   // The orders this page is about: one salesperson's when opened from
   // Targets (?salesman=Name), otherwise everything loaded. The stat cards,
   // the list and its title all use this, so they can never disagree.
+  let TWIN = null;      // [start, end] in ms when the page is asked for a 12 PM – 12 PM window (?win=noon)
   function scopedAll() {
-    const b = urlSalesman ? allOrders.filter(o => o.salesman === urlSalesman) : allOrders;
+    let b = urlSalesman ? allOrders.filter(o => o.salesman === urlSalesman) : allOrders;
+    if (TWIN) b = b.filter(o => { const t = Date.parse(o.created_at); return t >= TWIN[0] && t < TWIN[1]; });      // 12 PM – 12 PM window (Finance summary)
     return panelPick ? b.filter(o => panelOf(o) === panelPick) : b;
   }
   // An order counts (in every box, card, the sheet and the lists) only once it is allocated on the Order Allocation page.
@@ -4603,6 +4609,17 @@
   const urlTo = urlParams.get('to');
   const urlQ = urlParams.get('q');
   const urlSalesman = urlParams.get('salesman');
+  // ?embed=cards&win=noon : the cards only (Finance summary); win=noon counts the orders from 12 PM on the 'from' day to 12 PM the next day
+  const EMBED_CARDS = urlParams.get('embed') === 'cards';
+  TWIN = (urlParams.get('win') === 'noon' && /^\d{4}-\d{2}-\d{2}$/.test(urlFrom || '')) ? [Date.parse(urlFrom + 'T12:00:00+05:30'), Date.parse(urlFrom + 'T12:00:00+05:30') + 86400000] : null;
+  if (EMBED_CARDS) {
+    document.documentElement.classList.add('emb');
+    setInterval(() => {
+      const pc = document.getElementById('platCards'); if (pc && pc.hidden) pc.hidden = false;
+      const c = document.getElementById('platformCard'); const h = c && c.style.display !== 'none' ? Math.ceil(c.getBoundingClientRect().height) + 8 : 60;
+      try { parent.postMessage({ tmphCards: h }, location.origin); } catch (e) { }
+    }, 500);
+  }
 
   document.getElementById('dateFrom').value = urlFrom || todayStr();
   document.getElementById('dateTo').value = urlTo || todayStr();
