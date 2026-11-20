@@ -25,7 +25,7 @@ function wa_more_tables(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok; if (function_exists('schema_done') && schema_done($pdo, __FUNCTION__, __FILE__)) return $ok = true;   // tables already set up for this upload
     try {
-        foreach (['camp_ok' => 'TINYINT NOT NULL DEFAULT 1', 'handlers' => "VARCHAR(300) NOT NULL DEFAULT ''", 'camp_tag' => 'TINYINT NOT NULL DEFAULT 0', 'retired' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {   // retired (owner 20 Nov 2026): a number that is being closed: no campaign / follow-up / complaint message goes from it, the chats stay visible and can be answered · camp_tag: 📢 every chat on this number is a Campaign chat
+        foreach (['camp_ok' => 'TINYINT NOT NULL DEFAULT 1', 'handlers' => "VARCHAR(300) NOT NULL DEFAULT ''", 'camp_tag' => 'TINYINT NOT NULL DEFAULT 0', 'retired' => 'TINYINT NOT NULL DEFAULT 0', 'tier_manual' => 'INT NOT NULL DEFAULT 0', 'portfolio' => "VARCHAR(30) NOT NULL DEFAULT ''"] as $col => $def) {   // tier_manual (owner 20 Nov 2026): the daily limit the owner types for a number when Meta does not tell it yet (0 = not set) · portfolio: a short tag of the Meta business portfolio the number belongs to · retired (owner 20 Nov 2026): a number that is being closed: no campaign / follow-up / complaint message goes from it, the chats stay visible and can be answered · camp_tag: 📢 every chat on this number is a Campaign chat
             try { $pdo->query("SELECT $col FROM wa_numbers LIMIT 0"); } catch (PDOException $e) { $pdo->exec("ALTER TABLE wa_numbers ADD COLUMN $col $def"); }
         }
         foreach (['callnow' => 'TINYINT NOT NULL DEFAULT 0', 'callnow_at' => 'DATETIME NULL', 'hot' => 'TINYINT NOT NULL DEFAULT 0', 'hot_at' => 'DATETIME NULL', 'hot_why' => "VARCHAR(40) NOT NULL DEFAULT ''", 'remind_at' => 'DATETIME NULL', 'pay_at' => 'DATETIME NULL', 'accepted_at' => 'DATETIME NULL', 'reassigns' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {
@@ -584,8 +584,12 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
 /** For each number: today's cap (slow ramp-up, quality, Meta's daily limit), what is used in the last 24 h and what is left. Also the shared portfolio limit. */
 function wa_number_caps(PDO $pdo, array $health): array
 {
+    // owner 20 Nov 2026: a number whose limit Meta does not tell yet (new number, name in review) must NOT borrow the biggest limit of the other numbers (1 lakh) — it uses the limit the owner typed, else a low 250
+    $anyKnown = false; foreach ($health as $h) if ($h['tier'] !== null) { $anyKnown = true; break; }
+    $man = []; try { foreach ($pdo->query("SELECT id, tier_manual FROM wa_numbers")->fetchAll() as $r) $man[(int)$r['id']] = (int)$r['tier_manual']; } catch (Throwable $e) { }
+    $tsrc = []; foreach ($health as $k => $h) { $id0 = (int)$h['id']; if ($h['tier'] === null) { $m0 = $man[$id0] ?? 0; $health[$k]['tier'] = $m0 > 0 ? $m0 : 250; $tsrc[$id0] = $m0 > 0 ? 'manual' : 'assumed'; } else $tsrc[$id0] = 'meta'; }
     $tier = null; foreach ($health as $h) if ($h['tier'] !== null) { if ($h['tier'] === -1) { $tier = 1000000; break; } $tier = max((int)$tier, (int)$h['tier']); }
-    $tierAssumed = $tier === null; if ($tier === null) $tier = 250;
+    $tierAssumed = !$anyKnown; if ($tier === null) $tier = 250;
     $perNum = (string)setting_get($pdo, 'wa_limit_mode', 'per_number') === 'per_number';   // (14 Nov: unset now means per number — one shared pool of 90% of the tier blocked every normal campaign while Meta kept accepting messages; the guard in wa_limit_guard() goes back to 'shared' by itself if Meta really refuses)
     $sumT = 0;   // 'shared': Meta's limit is ONE pool for the whole business account (the highest number's limit) · 'per_number': every number has its own limit (guarded: see wa_limit_guard)
     $cfg = wa_team_cfg($pdo); $since = date('Y-m-d H:i:s', time() - 86400);
@@ -618,7 +622,7 @@ function wa_number_caps(PDO $pdo, array $health): array
         // 🛑 Meta spam limit (131048) hit on THIS number: it rests (default 3 hours, setting wa_spam_hours) while the other numbers send; the campaign is not paused. Every number resting = nothing sends until the first one is back.
         try { $sbk = (string)setting_get($pdo, 'wa_spamblock_' . $id, ''); $sph = max(1, min(24, (int)(setting_get($pdo, 'wa_spam_hours', '3') ?: 3))); if ($sbk !== '' && strtotime($sbk) > time() - $sph * 3600) { $cap = 0; $why = 'Meta spam limit on this number (131048) — it rests for ' . $sph . ' hours, the other numbers send'; } } catch (Throwable $e) { }
         if ($cap > 0) $sumT += $ownT;
-        $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age];
+        $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age, 'tier' => $ownT, 'tier_src' => $tsrc[$id] ?? 'meta'];
     }
     $pT = ($perNum && $sumT > 0) ? $sumT : $tier;
     $out['_port'] = ['tier' => $pT, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($pT * WA_TIER_MARGIN) - $port), 'mode' => $perNum ? 'per_number' : 'shared'];
@@ -846,7 +850,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 $hid = array_values(array_filter(array_map('intval', explode(',', (string)$r['handlers'])))); $c = $caps[$id] ?? ['cap' => 0, 'used' => 0, 'left' => 0, 'why' => '', 'age' => 0];
                 $out[] = ['id' => $id, 'label' => $h['label'], 'raw_label' => (string)$r['label'], 'display' => $h['display'] ?: (string)$r['display'], 'phone_id' => (string)$r['phone_id'], 'waba_id' => wa_waba_of($r), 'verified_name' => $h['verified_name'], 'name_status' => $h['name_status'],
                     'quality' => $h['quality'], 'status' => $h['status'], 'subscribed' => $h['subscribed'], 'error' => $h['error'], 'tier' => $h['tier'], 'level' => $h['level'] ?? 'ok', 'checked_at' => $h['at'] ?? '', 'stale' => !empty($h['stale']),
-                    'camp_ok' => (int)$r['camp_ok'] === 1, 'camp_tag' => (int)($r['camp_tag'] ?? 0) === 1, 'handlers' => $hid, 'handler_names' => array_values(array_filter(array_map(fn($x) => $names[$x] ?? '', $hid))), 'in_7d' => (int)$m['i'], 'out_7d' => (int)$m['o'], 'cap' => $c, 'is_main' => (string)$r['phone_id'] === wa_cfg_val('WA_PHONE_ID')];
+                    'camp_ok' => (int)$r['camp_ok'] === 1, 'camp_tag' => (int)($r['camp_tag'] ?? 0) === 1, 'tier_manual' => (int)($r['tier_manual'] ?? 0), 'portfolio' => (string)($r['portfolio'] ?? ''), 'handlers' => $hid, 'handler_names' => array_values(array_filter(array_map(fn($x) => $names[$x] ?? '', $hid))), 'in_7d' => (int)$m['i'], 'out_7d' => (int)$m['o'], 'cap' => $c, 'is_main' => (string)$r['phone_id'] === wa_cfg_val('WA_PHONE_ID')];
             }
             json_response(['numbers' => $out, 'portfolio' => $caps['_port'] ?? null, 'people' => array_map(fn($p) => ['emp_id' => $p['emp_id'], 'name' => $p['name']], wa_people($pdo))]);
         }
@@ -882,7 +886,9 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             $camp = array_key_exists('camp_ok', $in) ? (empty($in['camp_ok']) ? 0 : 1) : (int)$n['camp_ok'];
             $ctag = array_key_exists('camp_tag', $in) ? (empty($in['camp_tag']) ? 0 : 1) : (int)($n['camp_tag'] ?? 0);
             $valid = array_column(wa_people($pdo), 'emp_id'); $h = array_key_exists('handlers', $in) ? array_values(array_unique(array_filter(array_map('intval', (array)$in['handlers']), fn($x) => in_array($x, $valid, true)))) : array_values(array_filter(array_map('intval', explode(',', (string)$n['handlers']))));
-            $pdo->prepare("UPDATE wa_numbers SET label = ?, camp_ok = ?, handlers = ?, camp_tag = ? WHERE id = ?")->execute([$label, $camp, implode(',', $h), $ctag, $id]);
+            $tm = array_key_exists('tier_manual', $in) ? (int)preg_replace('/\D+/', '', (string)$in['tier_manual']) : (int)($n['tier_manual'] ?? 0); if ($tm > 10000000) json_response(['error' => 'The daily limit looks too big. Type a number such as 2000 (0 = not set).'], 422);
+            $pf = array_key_exists('portfolio', $in) ? trim(mb_substr((string)$in['portfolio'], 0, 30)) : (string)($n['portfolio'] ?? '');
+            $pdo->prepare("UPDATE wa_numbers SET label = ?, camp_ok = ?, handlers = ?, camp_tag = ?, tier_manual = ?, portfolio = ? WHERE id = ?")->execute([$label, $camp, implode(',', $h), $ctag, $tm, $pf, $id]);
             $marked = 0;
             if ($ctag && !(int)($n['camp_tag'] ?? 0)) {   // just switched on: the chats already on this number (the customer's last message came to it) become Campaign too
                 $now = date('Y-m-d H:i:s'); $st = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_number_id = ? AND last_in_at IS NOT NULL"); $st->execute([$id]);
