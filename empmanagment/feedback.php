@@ -31,11 +31,19 @@ function fb_tables(PDO $pdo): bool
     } catch (Throwable $e) { error_log('fb_tables: ' . $e->getMessage()); return $ok = false; }
 }
 
-/** The review links (Google, Instagram …) kept in the settings: lines "Name | https://link". */
+/** The review links (Google, Instagram …) made once and reused: [{name, url, msg}]. msg is the message with {name} {order} {link} filled in for each customer. */
 function fb_links(PDO $pdo): array
 {
-    $out = []; foreach (preg_split('/\r?\n/', (string)setting_get($pdo, 'fb_links', '')) as $ln) { $p = array_map('trim', explode('|', $ln, 2)); if (count($p) === 2 && preg_match('~^https?://~i', $p[1])) $out[] = ['name' => mb_substr($p[0], 0, 40) ?: 'Link', 'url' => mb_substr($p[1], 0, 400)]; }
+    $out = []; $j = json_decode((string)setting_get($pdo, 'fb_links2', ''), true);
+    if (is_array($j)) { foreach ($j as $l) if (is_array($l) && preg_match('~^https?://\S+$~i', (string)($l['url'] ?? ''))) $out[] = ['name' => mb_substr(trim((string)($l['name'] ?? '')), 0, 40) ?: 'Link', 'url' => mb_substr((string)$l['url'], 0, 400), 'msg' => mb_substr((string)($l['msg'] ?? ''), 0, 600)]; return array_slice($out, 0, 12); }
+    foreach (preg_split('/\r?\n/', (string)setting_get($pdo, 'fb_links', '')) as $ln) { $p = array_map('trim', explode('|', $ln, 2)); if (count($p) === 2 && preg_match('~^https?://~i', $p[1])) $out[] = ['name' => mb_substr($p[0], 0, 40) ?: 'Link', 'url' => mb_substr($p[1], 0, 400), 'msg' => '']; }   // the first version kept them as lines
     return array_slice($out, 0, 12);
+}
+function fb_links_put(PDO $pdo, array $links): array
+{
+    $ls = []; foreach ($links as $l) { if (!is_array($l)) continue; $u = trim((string)($l['url'] ?? '')); if (!preg_match('~^https?://\S+$~i', $u)) continue; $n = mb_substr(trim(str_replace(["\n", '|'], ' ', (string)($l['name'] ?? ''))), 0, 40);
+        $ls[] = ['name' => $n !== '' ? $n : 'Link', 'url' => mb_substr($u, 0, 400), 'msg' => mb_substr(trim((string)($l['msg'] ?? '')), 0, 600)]; }
+    $ls = array_slice($ls, 0, 12); setting_set($pdo, 'fb_links2', json_encode($ls, JSON_UNESCAPED_UNICODE)); return $ls;
 }
 
 function fb_cfg(PDO $pdo): array
@@ -219,7 +227,6 @@ function fb_route(PDO $pdo, string $action): void
         setting_set($pdo, 'fb_on', !empty($in['on']) ? '1' : '0'); setting_set($pdo, 'fb_wait', (string)max(1, min(30, (int)($in['wait'] ?? 5)))); setting_set($pdo, 'fb_fu', (string)max(1, min(30, (int)($in['fu'] ?? 3))));
         setting_set($pdo, 'fb_tpl', (string)max(0, (int)($in['tpl'] ?? 0))); setting_set($pdo, 'fb_tpl_fu', (string)max(0, (int)($in['tpl_fu'] ?? 0)));
         $pl = array_values(array_filter(array_map(fn($x) => mb_substr(trim(str_replace('|', ' ', (string)$x)), 0, 40), (array)($in['places'] ?? [])))); if ($pl) setting_set($pdo, 'fb_places', implode('|', array_slice($pl, 0, 12)));
-        if (isset($in['links'])) { $ls = []; foreach ((array)$in['links'] as $l) { $n = mb_substr(trim(str_replace(['|', "\n"], ' ', (string)($l['name'] ?? ''))), 0, 40); $u = trim((string)($l['url'] ?? '')); if (preg_match('~^https?://\S+$~i', $u)) $ls[] = ($n !== '' ? $n : 'Link') . '|' . mb_substr($u, 0, 400); } setting_set($pdo, 'fb_links', implode("\n", array_slice($ls, 0, 12))); }
         $rw = mb_substr(trim((string)($in['reward'] ?? '')), 0, 60); if ($rw !== '') setting_set($pdo, 'fb_reward', $rw);
         json_response(['ok' => true, 'cfg' => fb_cfg($pdo)]);
     }
@@ -258,6 +265,9 @@ function fb_route(PDO $pdo, string $action): void
         if ((int)$left->fetchColumn() === 0 && (string)$r['status'] === 'proof') { $back = $r['replied_at'] ? 'replied' : ($r['msg_at'] ? 'sent' : 'wait'); $pdo->prepare("UPDATE fb_orders SET status = ? WHERE id = ?")->execute([$back, (int)$r['fid']]); }
         fb_log($pdo, (string)$r['order_name'], 'A proof picture was removed', $by);
         json_response(['ok' => true]);
+    }
+    if ($action === 'fb.links_save') {      // the review links (add / edit / delete): made once, one tap to send
+        $in = json_input(); $ls = fb_links_put($pdo, (array)($in['links'] ?? [])); json_response(['ok' => true, 'links' => $ls]);
     }
     // the actions on one order
     $in = $_SERVER['CONTENT_TYPE'] ?? ''; $in = stripos((string)$in, 'application/json') !== false ? json_input() : $_POST;
