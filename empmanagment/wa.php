@@ -780,7 +780,9 @@ function wa_people(PDO $pdo, int $numId = 0): array
 function wa_people_others(PDO $pdo, array $skip): array
 {
     $maxOpen = function_exists('wa_team_cfg') ? (int)wa_team_cfg($pdo)['max_open'] : WA_MAX_OPEN; $since = date('Y-m-d H:i:s', time() - 20 * 3600); $out = [];
-    try { $rows = $pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll(); } catch (PDOException $e) { return []; }
+    try { $rows = $pdo->query("SELECT e.employee_id, e.full_name, d.department_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' ORDER BY e.full_name")->fetchAll(); } catch (PDOException $e) { return []; }
+    // people who work on the floor, not on chats (owner, 20 Nov: "dispatch and cleaning sit and pack, they do not take chats"): they are not offered in the Assign list
+    $rows = array_values(array_filter($rows, function ($r) { return !preg_match('/dispatch|clean|housekeep|packing|packer|warehouse|security|driver|maintenance|courier|delivery/i', (string)($r['department_name'] ?? '')); }));
     $pq = $pdo->prepare("SELECT COUNT(*) FROM attendance WHERE employee_id = ? AND punch_in IS NOT NULL AND punch_out IS NULL AND punch_in >= ?");
     $oq = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = ? AND status = 'open'");
     foreach ($rows as $r) {
