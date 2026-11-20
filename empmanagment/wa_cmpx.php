@@ -257,7 +257,7 @@ if (strpos($__cxa, 'wa.cx_') === 0) {
         }
         case 'wa.cx_plan': {
             $b = max(1000, min(5000000, (float)($_GET['budget'] ?? 100000))); $t = max(1, min(5000, (int)($_GET['target'] ?? 200))); $r = max(0.1, min(10, (float)($_GET['rate'] ?? 1.09)));
-            $p = function_exists('hrms_memo') ? hrms_memo('wa_cx_plan:' . md5($b . '|' . $t . '|' . $r), 90, function () use ($pdo, $b, $t, $r) { return cx_plan($pdo, $b, $t, $r); }) : cx_plan($pdo, $b, $t, $r);   // ⚡ built from the last 30 days: the same plan for the same inputs is kept 90 s
+            $p = function_exists('hrms_memo') ? hrms_memo('wa_cx_plan:' . md5($b . '|' . $t . '|' . $r), 900, function () use ($pdo, $b, $t, $r) { return cx_plan($pdo, $b, $t, $r); }) : cx_plan($pdo, $b, $t, $r);   // ⚡ built from the last 30 days: the same plan for the same inputs is kept 15 minutes (it is made from the last 30 days; the 🔄 button re-runs the study first)
             $jj = json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true); $p['study_pending'] = !(is_array($jj) && (int)($jj['v'] ?? 0) >= 2); json_response($p);   // the very first study is done by the engine in the background (about a minute)
         }
         case 'wa.cx_roi_run': { ignore_user_abort(true); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); json_response(['ok' => true] + cx_roi_refresh($pdo, 90)); }
