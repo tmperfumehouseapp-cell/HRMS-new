@@ -205,6 +205,9 @@ jobs:
           echo "\n=== PAUSE + NEW NUMBER ===\n"; foreach (["wa_mkt_pause_until","wa_mkt_pause_1710","wa_dq_hourly","wa_dq_hold_until","wa_dq_on","wa_camp_auto_on"] as $k) echo "  $k=" . $s($k) . "\n"; echo "  now(unix)=" . time() . "\n";
           $hj = json_decode($s("wa_health"), true); if (is_array($hj)) foreach ($hj as $hid => $hh) echo "  health[" . $hid . "]: status=" . ($hh["status"] ?? "") . " tier=" . json_encode($hh["tier"] ?? null) . " quality=" . ($hh["quality"] ?? "") . " sub=" . json_encode($hh["subscribed"] ?? null) . " err=" . substr((string)($hh["error"] ?? ""), 0, 120) . " at=" . ($hh["at"] ?? "") . "\n";
           foreach ($all("SELECT id, phone_id, label, display, waba_id, camp_ok, retired, created_at FROM wa_numbers ORDER BY id") as $r) echo $row($r);
+          echo "\n=== LADDER LOG ===\n"; foreach ($all("SELECT at, LEFT(info, 260) info FROM wa_log WHERE info LIKE 'Marketing speed%' OR info LIKE 'Marketing paused%' ORDER BY id DESC LIMIT 6") as $r) echo "  " . $r["at"] . " " . $r["info"] . "\n";
+          foreach (["wa_dq_step_last","wa_dq_step_at","wa_dq_hold_end","wa_dq_freeze_n","wa_dq_good_n"] as $k) echo "  $k=" . $s($k) . "\n";
+          foreach ($all("SELECT who, COUNT(*) n, SUM(status IN ('delivered','read')) d, SUM(status='failed') f, SUM(EXISTS (SELECT 1 FROM wa_ru_log r WHERE r.wamid = m.wamid)) is_modb FROM wa_messages m WHERE dir='out' AND mtype='template' AND who IN ('campaign','recover') AND ts >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) AND ts < DATE_SUB(NOW(), INTERVAL 255 MINUTE) GROUP BY who") as $r) echo "  window(17:08-18:08 IST) " . json_encode($r) . "\n";
           PHP
           php /tmp/us_check.php "$P"; rm -f /tmp/us_check.php
           REMOTE
