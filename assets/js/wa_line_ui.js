@@ -3,7 +3,7 @@
   'use strict';
   if (window.WaLine) return;
   const { esc, $, fmt, toast, modal, errBox, loading } = WaPanels.util;
-  const TOP = { pending: '📍 Address / payment', price: '💰 Price', trust: '🛡 Trust', size: '📏 Size / ml', reorder: '🔁 Bought before', general: '💬 No clear topic' };
+  const TOP = { pending: '📍 Address / payment', price: '💰 Price', trust: '🛡 Trust', size: '📏 Size / ml', reorder: '🔁 Bought before', general: '💬 No clear topic', campaign: '📣 Got a campaign' };
   const pill = (t, c) => `<span class="wp-pill ${c || ''}">${t}</span>`;
   function open() {
     const m = modal('🧵 Lineup — 7-day follow-up by topic'); m.el.classList.add('cu-wide'); m.body.innerHTML = loading; load(m);

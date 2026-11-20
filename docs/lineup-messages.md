@@ -107,3 +107,11 @@ Every 10 minutes the engine (`wl_snap`) writes one status line (messages made / 
 The approved guidebook (`wk_guide_text`) is shown on the Lineup screen next to the messages; the 27 + 6 texts were written to its rules (short, polite, no price or number invented). The learning loop is the report: per wording, taps and orders; the picker sends the better wording more. New wordings are added the same way: write a second text for a step (`$V` in `wl_pack`), Meta approves it, it enters the 50/50 test and the better one takes 80%.
 
 The same status goes to Admin / HR phones as a push notification (tag `hrms-lineup`, replaces the previous one) every 10 minutes for the first 6 hours after the start, every half hour until 48 hours, then only when the self-check finds a warning.
+
+## Which messages really go (21 Nov update)
+
+Meta stopped new utility messages (weekly limit on 4 of 6 accounts) and re-labelled `ln_trust_1` as marketing, so the Lineup sends the shop's own approved messages: `wln_existing_map()` in `empmanagment/wa_line.php` maps every step to a message that is approved on 5–6 of 6 accounts (text only, at most one blank). `#386` (utility enquiry follow-up) opens most ladders; the rest are marketing at the shop's rate. The setting `wl_map` (JSON key => template id; `{}` = the lineup's own messages) overrides it.
+
+## Campaign recipients
+
+Customers a campaign message was sent to since the Lineup's start, who opened it (`read`; setting `wl_cfg.camp` = `off` / `read` / `delivered`) and did not write, order or opt out, join the `campaign` ladder 24 h after the campaign message. At most `wl_cfg.camp_cap` (default 2,000) new ones a day, oldest first. On 21 Nov about 66,000 customers got a campaign in one day and only 1,446 wrote back; enrolling everybody would mean about 400,000 follow-ups a week.
