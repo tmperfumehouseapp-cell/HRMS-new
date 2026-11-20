@@ -175,10 +175,9 @@ function waa_give_pick(PDO $pdo, array $r, array $c, array &$V, array &$T, int $
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
         else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
         $gap = max(0, (int)setting_get($pdo, 'waa_gap', '90')); $rest = !$camp && $gap > 0 && (int)($T[$e]['last_fresh'] ?? 0) > $now - $gap;   // given a fresh query in the last 90 s: one at a time
-        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => $camp ? (int)$p['tier'] : waa_tier_now($p, (float)$V['team_ratio'] / 100), 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest];
+        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => $camp ? (int)$p['tier'] : waa_tier_now($p, (float)$V['team_ratio'] / 100), 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest, 'last' => (int)($T[$e]['last_fresh'] ?? 0)];
     }
     if ($vip) { $good = []; foreach ($cand as $e => $x) if (!$x['full'] && (float)($V['people'][$e]['ticket'] ?? 0) >= (float)$tkc['goal'] && (int)($V['people'][$e]['orders'] ?? 0) >= (int)$tkc['min']) $good[$e] = $x; if ($good) $cand = $good; else $vip = false; }
-    if (!$camp) $cand = waa_mark_ahead($cand);
     $pos = $camp ? 0 : (int)setting_get($pdo, 'waa_cyc', '0');   // green, green, yellow: how many green / yellow queries were given before
     $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q, $pos); if ($to <= 0) { $dbg['nobody']++; return false; }
     $lk = 0; try { $lk = (int)$pdo->query("SELECT GET_LOCK(" . $pdo->quote('waa_p_' . $ph) . ", 0)")->fetchColumn(); } catch (Throwable $e) { } if ($lk !== 1) return false;
