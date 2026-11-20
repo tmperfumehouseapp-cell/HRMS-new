@@ -97,6 +97,9 @@ function wa_health_all(PDO $pdo, bool $force): array
             $h = wa_health_one($n);
             if ($h['error'] !== '' && $old && $h['status'] === '') { $old['stale'] = true; $h = $old; }   // Meta did not answer: show the last answer, marked old
             else { $cache[$id] = $h; $dirty = true; }
+            if (array_key_exists('waba_name', $n) && (string)$n['waba_name'] === '' && function_exists('wa_waba_of')) {   // owner 20 Nov 2026: the portfolio tag comes from Meta by itself (the WhatsApp account's name and its owner portfolio)
+                try { $wbx = wa_waba_of($n); if ($wbx !== '') { [$c9, $d9] = wa_api('GET', '/' . $wbx . '?fields=name,owner_business_info'); if ($c9 >= 200 && $c9 < 300 && is_array($d9)) $pdo->prepare("UPDATE wa_numbers SET waba_name = ?, biz_name = ? WHERE id = ?")->execute([mb_substr((string)($d9['name'] ?? ''), 0, 80), mb_substr((string)(is_array($d9['owner_business_info'] ?? null) ? ($d9['owner_business_info']['name'] ?? '') : ''), 0, 80), $id]); } } catch (Throwable $e9) { }
+            }
         } else $h = $old;
         $h['label'] = (string)$n['label'] !== '' ? (string)$n['label'] : ($h['verified_name'] ?: ($h['display'] ?: 'Number ' . $id)); $h['id'] = $id;
         $out[] = $h;

@@ -107,19 +107,23 @@
       if (!nums.length) h += '<div class="wp-empty">No number yet. Press “Add a number”.</div>';
       h += '<div class="wp-grid">' + nums.map((n, i) => {
         const q = QL[n.quality] || QL.UNKNOWN, ok = n.status === 'CONNECTED', bar = n.cap.cap > 0 ? Math.min(100, Math.round(n.cap.used * 100 / n.cap.cap)) : 100;
-        return `<div class="wp-cd"><div class="wp-row" style="flex-wrap:nowrap;align-items:flex-start"><div class="wp-av" style="background-color:${['#25d366', '#7cc4f2', '#f6b26b', '#c9a7f0'][i % 4]}">${esc((n.label || '?').charAt(0).toUpperCase())}</div><div class="wp-grow"><b style="font-size:15px">${esc(n.label)}</b>${n.is_main ? ' <span class="wp-pill">main</span>' : ''}${n.portfolio ? ` <span class="wp-pill warn">${esc(n.portfolio)}</span>` : ''}<div class="wp-hint" style="margin:0">${esc(n.display)}${n.verified_name ? ' · ' + esc(n.verified_name) : ''}</div>
+        return `<div class="wp-cd"><div class="wp-row" style="flex-wrap:nowrap;align-items:flex-start"><div class="wp-av" style="background-color:${['#25d366', '#7cc4f2', '#f6b26b', '#c9a7f0'][i % 4]}">${esc((n.label || '?').charAt(0).toUpperCase())}</div><div class="wp-grow"><b style="font-size:15px">${esc(n.label)}</b>${n.is_main ? ' <span class="wp-pill">main</span>' : ''}${(n.portfolio || n.portfolio_auto) ? ` <span class="wp-pill warn">${esc(n.portfolio || n.portfolio_auto)}</span>` : ''}${n.hold ? ' <span class="wp-pill bad">🔒 Locked — replies only</span>' : ''}<div class="wp-hint" style="margin:0">${esc(n.display)}${n.verified_name ? ' · ' + esc(n.verified_name) : ''}</div>
           <div><span class="wp-pill ${n.error && !n.status ? 'bad' : (ok ? 'ok' : 'bad')}">${n.error && !n.status ? 'No answer from Meta' : (ok ? 'Connected' : esc(String(n.status || '—').toLowerCase().replace(/_/g, ' ')))}</span>${n.pay_blocked ? '<span class="wp-pill bad">Payment problem — fix in Meta</span>' : ''}<span class="wp-pill ${q[1]}">${q[0]}</span>${n.name_status && !['APPROVED', 'AVAILABLE_WITHOUT_REVIEW'].includes(n.name_status) ? `<span class="wp-pill warn">Name: ${esc(n.name_status.toLowerCase().replace(/_/g, ' '))}</span>` : ''}${n.subscribed === true ? '<span class="wp-pill ok">Receiving messages</span>' : (n.subscribed === false ? '<span class="wp-pill bad">Webhook not connected</span>' : '')}${n.retired ? '<span class="wp-pill bad">Retired — being closed</span>' : ''}${n.camp_ok ? '' : '<span class="wp-pill warn">Off for campaigns</span>'}</div></div></div>
           <div class="wp-kv"><span>Messages this week</span><b>${fmt(n.in_7d)} in · ${fmt(n.out_7d)} out</b></div>
           <div class="wp-kv"><span>Daily limit (customers)</span><b>${fmt(n.cap.tier || 0)} <small class="wp-hint">${n.cap.tier_src === 'manual' ? '· typed by you' + (n.tier ? ' (Meta’s own answer: ' + fmt(n.tier) + ')' : ' (Meta has not told it)') : (n.cap.tier_src === 'assumed' ? '· Meta has not told it — low 250 assumed' : '· from Meta' + (n.tier_api != null && n.tier_mgr != null && n.tier_api !== n.tier_mgr ? ' (API says ' + fmt(n.tier_api) + ', WhatsApp Manager says ' + fmt(n.tier_mgr) + ' — the lower is used)' : ''))}</small></b></div>
           <div class="wp-kv"><span>Room today <small class="wp-hint">${esc(n.cap.why || '')}</small></span><b>${fmt(n.cap.left)} of ${fmt(n.cap.cap)}</b></div><div class="wp-bar"><i class="${bar >= 90 ? 'b' : (bar >= 70 ? 'w' : '')}" style="width:${Math.max(bar, 1)}%"></i></div>
           <div class="wp-kv"><span>Who handles it</span><b>${n.handler_names.length ? esc(n.handler_names.join(', ')) : 'Automatic (everyone)'}</b></div>
-          <div class="wp-row" style="margin-top:10px"><button type="button" class="wp-btn p s" data-o="profile" data-i="${i}">Profile &amp; photo</button><button type="button" class="wp-btn s" data-o="people" data-i="${i}">Who handles</button><button type="button" class="wp-btn s" data-o="conn" data-i="${i}">Connection</button>${n.is_main || n.main ? '' : `<button type="button" class="wp-btn r s" data-o="del" data-i="${i}">Remove</button>`}</div></div>`;
+          <div class="wp-row" style="margin-top:10px">${n.hold ? `<button type="button" class="wp-btn p s" data-o="unlock" data-i="${i}">🔓 Unlock</button>` : ''}<button type="button" class="wp-btn p s" data-o="profile" data-i="${i}">Profile &amp; photo</button><button type="button" class="wp-btn s" data-o="people" data-i="${i}">Who handles</button><button type="button" class="wp-btn s" data-o="conn" data-i="${i}">Connection</button>${n.is_main || n.main ? '' : `<button type="button" class="wp-btn r s" data-o="del" data-i="${i}">Remove</button>`}</div></div>`;
       }).join('') + '</div></div>';
       el.innerHTML = h;
       $(el, '#nLive').onclick = function () { this.disabled = true; this.textContent = 'Asking Meta…'; load(true); };
       $(el, '#nAdd').onclick = addNumber;
       el.querySelectorAll('[data-o]').forEach((b) => { b.onclick = async () => {
         const n = D.numbers[+b.dataset.i];
+        if (b.dataset.o === 'unlock') {
+          if (!confirm('Unlock “' + n.label + '”?\n\nDo this only when its pre-made messages are approved and you have checked its Meta limit (' + (n.cap && n.cap.tier ? fmt(n.cap.tier) : '?') + ' a day). After this, campaigns, follow-ups and complaint messages can send from it — slowly at first (slow start).')) return;
+          try { await api.post('wa.num_set', { id: n.id, hold: false, camp_ok: true }); toast('Unlocked'); load(false); } catch (e) { toast(e.message, true); } return;
+        }
         if (b.dataset.o !== 'del') { openNumber(n, b.dataset.o); return; }
         if (!confirm('Remove “' + n.label + '” from the list? (A number that already has chats cannot be removed.)')) return;
         try { await api.post('wa.number_del', { id: n.id }); toast('Removed'); load(false); } catch (e) { toast(e.message, true); }
@@ -132,7 +136,7 @@
         <label class="wp-fl">WhatsApp Business Account ID <small>(only if it is a different account from the first number)</small></label><input class="wp-in" id="aW" inputmode="numeric"><div id="aE"></div><div class="wp-row" style="margin-top:14px"><button type="button" class="wp-btn p" id="aS">Add number</button></div>`;
       $(m.body, '#aS').onclick = async function () {
         this.disabled = true;
-        try { await api.post('wa.number_save', { label: $(m.body, '#aL').value, phone_id: $(m.body, '#aP').value, waba_id: $(m.body, '#aW').value }); m.close(); toast('Number added. Open it → Connection → connect the webhook.'); load(false); }
+        try { await api.post('wa.number_save', { label: $(m.body, '#aL').value, phone_id: $(m.body, '#aP').value, waba_id: $(m.body, '#aW').value }); m.close(); toast('Number added — LOCKED (replies only). Open it → Connection → connect the webhook, check its Meta limit, then unlock it when its messages are approved.'); load(false); }
         catch (e) { $(m.body, '#aE').innerHTML = errBox(e.message); this.disabled = false; }
       };
     }
@@ -172,11 +176,12 @@
           <div class="wp-hint" style="margin:2px 0 0">The limit you type is the one HRMS uses for this number. Leave it empty (or 0) to use Meta’s own answer. When Meta raises the limit (e.g. to 10,000), change it here.</div>
           <label class="wp-fl">Who handles this number</label><div class="wp-hint" style="margin:0 0 6px">New chats on this number go first to the people ticked here (if they are at work and have room). Tick nobody to let the system choose from everyone.</div>
           <div class="wp-pk">${D.people.map((p) => `<label><input type="checkbox" value="${p.emp_id}" ${ids.has(p.emp_id) ? 'checked' : ''}>${esc(p.name)}</label>`).join('') || '<div class="wp-empty">No salespeople found.</div>'}</div>
+          <div class="wp-kv" style="margin-top:10px"><span>🔒 Locked: replies only</span>${sw('hHold', n.hold)}</div><div class="wp-hint" style="margin:4px 0 0">A locked number only answers customers who write to it. No campaigns, follow-ups, order updates, drips or complaint messages go from it. New numbers start locked.</div>
           <div class="wp-kv" style="margin-top:10px"><span>Use this number for campaigns</span>${sw('hC', n.camp_ok)}</div>
           <div class="wp-kv" style="margin-top:10px"><span>📢 Every chat on this number is Campaign</span>${sw('hT', n.camp_tag)}</div><div class="wp-hint" style="margin:4px 0 0">Everyone who writes to this number gets the Campaign tag, their query is a Campaign query and their order is allocated as Campaign.</div><div id="hE"></div><div class="wp-row" style="margin-top:14px"><button type="button" class="wp-btn p" id="hS">Save</button></div>`;
         $(box, '#hS').onclick = async function () {
           this.disabled = true; const h = [...box.querySelectorAll('.wp-pk input:checked')].map((x) => +x.value);
-          try { const r = await api.post('wa.num_set', { id: n.id, label: $(box, '#hL').value, portfolio: $(box, '#hPf').value, tier_manual: $(box, '#hTm').value, camp_ok: $(box, '#hC').checked, camp_tag: $(box, '#hT').checked, handlers: h }); toast(r && r.marked ? 'Saved ✓ — ' + r.marked + ' chats on this number are now Campaign' : 'Saved ✓'); m.close(); load(false); }
+          try { const r = await api.post('wa.num_set', { id: n.id, label: $(box, '#hL').value, portfolio: $(box, '#hPf').value, tier_manual: $(box, '#hTm').value, hold: $(box, '#hHold').checked, camp_ok: $(box, '#hC').checked, camp_tag: $(box, '#hT').checked, handlers: h }); toast(r && r.marked ? 'Saved ✓ — ' + r.marked + ' chats on this number are now Campaign' : 'Saved ✓'); m.close(); load(false); }
           catch (e) { $(box, '#hE').innerHTML = errBox(e.message); this.disabled = false; }
         };
       }
