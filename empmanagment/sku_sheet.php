@@ -179,8 +179,8 @@ function sku_shopify_day(PDO $pdo, string $day, string $to = '', ?array $winOver
 /** ⛓ Every product line whose name has "chain" in it (any shop, any spelling), over a range of business days: which chain, how many pieces, in how many orders, how much money. Cancelled orders left out. */
 function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): array
 {
-    // 🕛 noon = one window of 24 hours: 12:00 PM on $from to 12:00 PM the next day (not the 10 AM business day)
-    $nw = $noon ? [$from . ' 12:00:00', date('Y-m-d', strtotime($from . ' +1 day')) . ' 12:00:00'] : null;
+    // 🕛 $noon (kept as the name of the switch) = one calendar day of 24 hours: 12:00 AM on $from to 12:00 AM the next day (not the 10 AM business day)
+    $nw = $noon ? [$from . ' 00:00:00', date('Y-m-d', strtotime($from . ' +1 day')) . ' 00:00:00'] : null;
     $by = []; $nOrd = 0; $nManC = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
     $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
         $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
