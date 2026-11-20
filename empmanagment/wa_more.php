@@ -846,7 +846,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 $hid = array_values(array_filter(array_map('intval', explode(',', (string)$r['handlers'])))); $c = $caps[$id] ?? ['cap' => 0, 'used' => 0, 'left' => 0, 'why' => '', 'age' => 0];
                 $out[] = ['id' => $id, 'label' => $h['label'], 'raw_label' => (string)$r['label'], 'display' => $h['display'] ?: (string)$r['display'], 'phone_id' => (string)$r['phone_id'], 'waba_id' => wa_waba_of($r), 'verified_name' => $h['verified_name'], 'name_status' => $h['name_status'],
                     'quality' => $h['quality'], 'status' => $h['status'], 'subscribed' => $h['subscribed'], 'error' => $h['error'], 'tier' => $h['tier'], 'level' => $h['level'] ?? 'ok', 'checked_at' => $h['at'] ?? '', 'stale' => !empty($h['stale']),
-                    'camp_ok' => (int)$r['camp_ok'] === 1, 'camp_tag' => (int)($r['camp_tag'] ?? 0) === 1, 'handlers' => $hid, 'handler_names' => array_values(array_filter(array_map(fn($x) => $names[$x] ?? '', $hid))), 'in_7d' => (int)$m['i'], 'out_7d' => (int)$m['o'], 'cap' => $c, 'is_main' => (string)$r['phone_id'] === wa_cfg_val('WA_PHONE_ID')];
+                    'camp_ok' => (int)$r['camp_ok'] === 1, 'retired' => !empty($r['retired']), 'camp_tag' => (int)($r['camp_tag'] ?? 0) === 1, 'handlers' => $hid, 'handler_names' => array_values(array_filter(array_map(fn($x) => $names[$x] ?? '', $hid))), 'in_7d' => (int)$m['i'], 'out_7d' => (int)$m['o'], 'cap' => $c, 'is_main' => (string)$r['phone_id'] === wa_cfg_val('WA_PHONE_ID')];
             }
             json_response(['numbers' => $out, 'portfolio' => $caps['_port'] ?? null, 'people' => array_map(fn($p) => ['emp_id' => $p['emp_id'], 'name' => $p['name']], wa_people($pdo))]);
         }
