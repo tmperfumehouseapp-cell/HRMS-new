@@ -49,6 +49,9 @@ jobs:
           echo "\n=== lineup messages (ln_*) per account ===\n";
           foreach ($all("SELECT w.status, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'ln\\_%' GROUP BY w.status") as $r) echo "  " . $r["status"] . ": " . $r["n"] . "\n";
           foreach ($all("SELECT COUNT(*) n FROM wa_templates WHERE name LIKE 'ln\\_%'") as $r) echo "  templates saved: " . $r["n"] . "\n";
+          echo "\n=== how Meta answered the lineup messages (first 6) ===\n";
+          foreach ($all("SELECT t.name, w.* FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'ln\\_%' ORDER BY w.tpl_id, w.waba_id LIMIT 6") as $r) { $o = []; foreach ($r as $k => $v) { if ($v === null || $v === "") continue; $o[] = $k . "=" . substr(preg_replace('/\s+/', ' ', (string)$v), 0, 160); } echo "  " . implode(" | ", $o) . "\n"; }
+          echo "\n=== template body of ln_trust_1 ===\n"; foreach ($all("SELECT name, category, language, body, footer, buttons, header_format FROM wa_templates WHERE name = 'ln_trust_1' LIMIT 1") as $r) { foreach ($r as $k => $v) echo "  $k: " . substr(preg_replace('/\s+/', ' ', (string)$v), 0, 400) . "\n"; }
           echo "\n=== engine / template log lines about the lineup or errors (newest 20) ===\n";
           foreach ($all("SELECT at, kind, ok, info FROM wa_log WHERE (kind IN ('engine','template')) AND (info LIKE '%ineup%' OR ok = 0) ORDER BY id DESC LIMIT 20") as $r) echo "  " . $r["at"] . " [" . $r["kind"] . ($r["ok"] ? "" : " FAIL") . "] " . substr($r["info"], 0, 200) . "\n";
           echo "\n=== newest engine log lines (any) ===\n";
