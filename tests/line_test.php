@@ -26,7 +26,7 @@ ok(wl_due_ts(ist('2026-11-20 21:40:00'), 1) === ist('2026-11-22 10:00:00'), 'aft
 ok(wl_due_ts(ist('2026-11-20 19:59:00'), 1) === ist('2026-11-21 19:59:00'), '19:59 stays');
 ok(wl_yesterday_start(ist('2026-11-21 15:00:00')) === ist('2026-11-20 10:00:00'), 'yesterday 10:00 IST');
 // ---- the messages
-$P = wl_pack(); ok(count($P) === 27, '6 topics x 4 + 3 shared = 27 messages, got ' . count($P));
+$P = wl_pack(); ok(count($P) === 33, '6 topics x 4 + 3 shared + 6 extra wordings of step 1 = 33 messages, got ' . count($P));
 $seen = [];
 foreach ($P as $k => $m) {
     ok(preg_match_all('/\{\{\d+\}\}/', $m['body']) === 1 && strpos($m['body'], '{{1}}') !== false, "$k: exactly one blank, the name");
@@ -37,5 +37,11 @@ foreach ($P as $k => $m) {
     ok(trim($m['free']) !== '', "$k: has a free answer");
 }
 foreach ($seen as $n => $k) foreach ($seen as $n2 => $k2) if ($k !== $k2) ok(strpos(' ' . $n2 . ' ', ' ' . $n . ' ') === false, "button '$n' ($k) sits inside '$n2' ($k2): the card match would pick the wrong answer");
+// ---- picking a wording
+$sc = ['ln_trust_1' => [100, 0.05], 'ln_trust_1b' => [100, 0.20]]; $ok2 = ['ln_trust_1', 'ln_trust_1b']; $b = 0; for ($i = 0; $i < 1000; $i++) if (wl_pick('ln_trust_1', '98' . $i, $sc, $ok2) === 'ln_trust_1b') $b++;
+ok($b > 700 && $b < 900, "the better wording gets about 80% (got $b / 1000)");
+ok(wl_pick('ln_trust_1', '9811', $sc, ['ln_trust_1']) === 'ln_trust_1', 'an unapproved wording is never picked');
+$a = 0; for ($i = 0; $i < 1000; $i++) if (wl_pick('ln_trust_1', '97' . $i, [], $ok2) === 'ln_trust_1b') $a++; ok($a > 400 && $a < 600, "too few results: an even split (got $a)");
+ok(wl_pick('ln_trust_2', '1', [], ['ln_trust_2']) === 'ln_trust_2', 'a message without extra wording is itself');
 foreach (array_keys(wl_topics()) as $t) for ($s = 1; $s <= 7; $s++) ok(isset($P[wl_key($t, $s)]), "topic $t step $s has a message");
 echo "lineup ok\n";
