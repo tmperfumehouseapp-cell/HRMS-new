@@ -619,8 +619,13 @@ body.emb .tabs{display:none;}
   }
   async function askClaude() {
     if (S.claudeFor === S.M.month + '|' + S.M.today) return; S.claudeFor = S.M.month + '|' + S.M.today; S.claude = '';
-    try { const r = await api.post('budget.summary', { facts: claudeFacts(figures()) }); S.claude = r.summary || ''; } catch (x) { S.claude = ''; }
-    const b = document.getElementById('clSum'); if (b) b.textContent = S.claude;
+    // ⚡ Claude's lines are asked for when the box is really on screen (or after 25 s), not on every open of the page; a same-day answer is kept 30 minutes in this browser
+    const ck = 'tb_claude_' + S.M.month + '|' + S.M.today; let hit = null; try { hit = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (x) { }
+    const paint = () => { const b = document.getElementById('clSum'); if (b) b.textContent = S.claude; };
+    if (hit && hit.t > Date.now() - 1800000 && hit.s) { S.claude = hit.s; paint(); return; }
+    const go = async () => { if (go.done) return; go.done = true; try { const r = await api.post('budget.summary', { facts: claudeFacts(figures()) }); S.claude = r.summary || ''; if (S.claude) { try { localStorage.setItem(ck, JSON.stringify({ t: Date.now(), s: S.claude })); } catch (x) { } } } catch (x) { S.claude = ''; } paint(); };
+    const el = document.getElementById('clSum');
+    if (el && 'IntersectionObserver' in window) { const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); go(); } }); io.observe(el); setTimeout(go, 25000); } else go();
   }
   function claudeBox(F) {
     const n = needs(F);
@@ -1185,5 +1190,6 @@ body.emb .tabs{display:none;}
   $('mon').onchange();
 })();
 </script>
+<script src="assets/js/min_text.js?v=3"></script>
 </body>
 </html>

@@ -805,5 +805,6 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 <script>(function () { const b = document.getElementById('dkBtn'); if (!b) return; const draw = () => { const on = document.documentElement.classList.contains('wapcdk'); b.textContent = on ? '☀️' : '🌙'; b.title = on ? 'Light mode' : 'Dark mode'; }; draw();
   b.onclick = () => { const on = document.documentElement.classList.toggle('wapcdk'); try { localStorage.setItem('wa_pc_dark', on ? '1' : '0'); } catch (e) { } draw(); }; })();</script>
+<script src="assets/js/min_text.js?v=3"></script>
 </body>
 </html>
