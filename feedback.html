@@ -85,12 +85,12 @@
       <div><label>Feedback message after (days from delivery)</label><input id="sW" type="number" min="1" max="30" value="${CFG.wait}" style="width:80px"></div><div><label>Follow-up after (days, if no reply)</label><input id="sF" type="number" min="1" max="30" value="${CFG.fu}" style="width:80px"></div></div>
       <div class="row" style="margin-top:8px"><div><label>Feedback message (approved by Meta, with only the name as a blank)</label><select id="sT"><option value="0">— pick —</option></select></div><div><label>Follow-up message</label><select id="sT2"><option value="0">— none —</option></select></div></div>
       <div class="row" style="margin-top:8px"><div style="flex:1;min-width:240px"><label>Places where feedback counts (one per line)</label><textarea id="sP" rows="3" style="width:100%">${esc(CFG.places.join('\n'))}</textarea></div><div><label>Reward</label><input id="sR" value="${esc(CFG.reward)}"></div></div>
-      <div class="row" style="margin-top:8px"><div style="flex:1;min-width:280px"><label>Review links to send to customers (one per line:  Name | https://link)</label><textarea id="sL" rows="3" style="width:100%" placeholder="Google review | https://g.page/r/...&#10;Instagram | https://instagram.com/...">${esc((CFG.links || []).map((l) => l.name + ' | ' + l.url).join('\n'))}</textarea></div><button class="btn g2" id="sSave" type="button">Save settings</button></div>
+      <div class="row" style="margin-top:8px"><div class="sm" style="flex:1">Review links (Google, Instagram …) are made in the order panel: <b>＋ Add / manage links</b>.</div><button class="btn g2" id="sSave" type="button">Save settings</button></div>
       <div class="sm" style="margin-top:6px">Messages go only between 10 AM and 8 PM, at most a few per minute, and never to a customer who said Stop. A message must first be approved by Meta (Campaigns → Messages).</div>`;
     const fill = (tpls) => { const mk = (sel, cur) => { const e = $(sel); (tpls || []).forEach((t) => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name + (t.category ? ' · ' + t.category : ''); if (+t.id === +cur) o.selected = true; e.appendChild(o); }); }; mk('sT', CFG.tpl); mk('sT2', CFG.tpl_fu); };
     if (tplList) fill(tplList); else api.get('wa.camp_templates').then((t) => { tplList = ((t || {}).templates || []).filter((x) => (Array.isArray(x.vars) ? x.vars.length : (+x.vars || 0)) <= 1); fill(tplList); }).catch(() => { $('setIn').insertAdjacentHTML('beforeend', '<div class="sm" style="color:#b91c1c">Could not read your messages.</div>'); });
     $('sSave').onclick = async () => {
-      try { const r = await api.post('fb.settings_save', { on: $('sOn').value === '1', wait: +$('sW').value, fu: +$('sF').value, tpl: +$('sT').value, tpl_fu: +$('sT2').value, places: $('sP').value.split('\n'), reward: $('sR').value, links: $('sL').value.split('\n').map((l) => { const i = l.indexOf('|'); return i < 0 ? { name: 'Link', url: l.trim() } : { name: l.slice(0, i).trim(), url: l.slice(i + 1).trim() }; }).filter((l) => l.url) }); CFG = r.cfg; $('setIn').dataset.k = ''; say('Settings saved'); load(); }
+      try { const r = await api.post('fb.settings_save', { on: $('sOn').value === '1', wait: +$('sW').value, fu: +$('sF').value, tpl: +$('sT').value, tpl_fu: +$('sT2').value, places: $('sP').value.split('\n'), reward: $('sR').value }); CFG = r.cfg; $('setIn').dataset.k = ''; say('Settings saved'); load(); }
       catch (e) { say(e.message, true); }
     };
   }
@@ -111,11 +111,12 @@
     const ph10 = String(x.phone || '').replace(/\D/g, '').slice(-10), cb = $('chatBox');
     if (ph10.length === 10) { if (cb.dataset.p !== ph10 || !cb.firstChild) { cb.dataset.p = ph10; cb.innerHTML = `<div class="sm" style="margin:10px 0 4px"><b>💬 WhatsApp with ${esc(name)}</b> · live — type below and send</div><iframe id="chatFr" title="WhatsApp chat" src="my_chats.html?embed=1&phone=${ph10}" style="width:100%;height:500px;border:1px solid var(--line);border-radius:12px;background:#efeae2;display:block" allow="microphone; clipboard-write"></iframe>`; } }
     else { cb.dataset.p = ''; cb.innerHTML = '<div class="sm" style="margin:10px 0">This order has no phone number, so there is no WhatsApp chat.</div>'; }
-    $('sB').innerHTML = `<div class="acts">${x.status === 'wait' ? '<button class="btn g2" id="bNow">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" id="bFu">📨 Send follow-up</button>' : ''}<button class="btn gh" id="bCall">📞 Call done</button><button class="btn gh" id="bLink">🔗 Send review link</button><button class="btn gh" id="bPf">⬆ Add proof manually</button><button class="btn g2" id="bRw">🎁 Reward</button><button class="btn rd" id="bCx">⚠ Customer has an issue</button><button class="btn gh" id="bSk">Leave out</button>${x.test ? '<button class="btn rd" id="bDel">🗑 Delete this test</button>' : ''}</div>${x.test ? '<div class="sm" style="margin-top:6px">🧪 This is a test: nothing is sent automatically for it. Use the chat and the buttons, reply from the customer\'s WhatsApp, and send a screenshot to see the whole flow.</div>' : ''}
+    $('sB').innerHTML = `<div class="acts">${x.status === 'wait' ? '<button class="btn g2" id="bNow">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" id="bFu">📨 Send follow-up</button>' : ''}<button class="btn gh" id="bCall">📞 Call done</button><button class="btn gh" id="bPf">⬆ Add proof manually</button><button class="btn g2" id="bRw">🎁 Reward</button><button class="btn rd" id="bCx">⚠ Customer has an issue</button><button class="btn gh" id="bSk">Leave out</button>${x.test ? '<button class="btn rd" id="bDel">🗑 Delete this test</button>' : ''}</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">🔗 SEND A REVIEW LINK — ONE TAP</div><div class="acts" id="lkRow">${(CFG.links || []).map((l, i) => `<button class="btn g2" data-lk="${i}" type="button">🔗 ${esc(l.name)}</button>`).join('')}<button class="btn gh" id="bLinks" type="button">＋ Add / manage links</button></div>
+      ${x.test ? '<div class="sm" style="margin-top:6px">🧪 This is a test: nothing is sent automatically for it. Use the chat and the buttons, reply from the customer\'s WhatsApp, and send a screenshot to see the whole flow.</div>' : ''}
       ${txt ? `<div class="h" style="margin-top:12px;font-size:12.5px">Message that ${x.msg_at ? 'was' : 'will be'} sent</div><div class="msg">${esc(txt)}</div>` : '<div class="sm" style="margin-top:10px">No message is picked yet (⚙ Settings).</div>'}
       <div class="h" style="margin-top:10px;font-size:12.5px">History</div><div class="tl">${d.events.length ? d.events.map((e) => `<div><b>${esc(dt(e.at))}</b> ${esc(e.txt)}${e.by_name && e.by_name !== 'automatic' ? ' <span class="sm">· ' + esc(e.by_name) + '</span>' : ''}</div>`).join('') : '<div class="sm">Nothing yet.</div>'}</div>`;
     const go = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
-    go('bNow', () => send('fb.send_now')); go('bFu', () => send('fb.followup')); go('bCall', callDone); go('bLink', sendLink); go('bPf', pickProof); go('bRw', reward); go('bCx', complaint); go('bSk', leaveOut); go('bDel', delTest);
+    go('bNow', () => send('fb.send_now')); go('bFu', () => send('fb.followup')); go('bCall', callDone); go('bLinks', manageLinks); document.querySelectorAll('#lkRow [data-lk]').forEach((b) => { b.onclick = () => askLink(+b.dataset.lk); }); go('bPf', pickProof); go('bRw', reward); go('bCx', complaint); go('bSk', leaveOut); go('bDel', delTest);
     if (d.proofs.length) { const box = $('phs'); box.innerHTML = ''; d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => { const w = window.open('', '_blank'); if (w) w.document.write('<img src="' + u + '" style="max-width:100%">'); };
         const w = document.createElement('div'); w.style.cssText = 'position:relative;display:inline-block;max-width:100%'; w.appendChild(i);
         const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn rd'; rm.textContent = '🗑 Remove proof'; rm.style.cssText = 'position:absolute;top:6px;right:6px;padding:4px 9px;font-size:11px';
@@ -180,19 +181,32 @@
     $('cno2').onclick = closeM;
     $('cgo2').onclick = async () => { if (!pick) { say('Pick what happened on the call.', true); return; } try { await api.post('fb.call', { order: x.order, result: pick, note: $('cn2').value }); closeM(); say('Call saved'); load(); } catch (e) { say(e.message, true); } };
   }
-  function sendLink() {
-    const x = DET.row, links = CFG.links || [], nm = (x.customer || '').split(' ')[0] || 'ji';
-    const msg = (u) => 'Hello ' + nm + ', thank you for your order ' + x.order + '. If you liked it, please share your feedback here: ' + u;
-    modal(`<h3>🔗 Send a review link to ${esc(x.customer || x.order)}</h3><div class="sm">${esc(x.phone)} — goes on WhatsApp from HRMS now.</div>
-      <label>Link</label>${links.length ? `<select id="lk">${links.map((l, i) => `<option value="${i}">${esc(l.name)}</option>`).join('')}<option value="-1">Another link (paste below)…</option></select>` : '<div class="sm">No saved link yet (⚙ Settings → Review links). Paste one here:</div>'}
-      <input id="lu" placeholder="https://…" style="margin-top:6px;${links.length ? 'display:none' : ''}" value="${links.length ? '' : ''}"><label>Message</label><textarea id="lm" rows="4"></textarea>
+  const LKMSG = 'Hello {name}, thank you for your order {order}. If you liked it, please share your feedback here: {link}';
+  const fillMsg = (l, x) => (l.msg || LKMSG).replace(/\{name\}/g, (x.customer || '').split(' ')[0] || 'ji').replace(/\{order\}/g, x.order).replace(/\{link\}/g, l.url);
+  function askLink(i) {
+    const x = DET.row, l = (CFG.links || [])[i]; if (!l) return;
+    modal(`<h3>Send “${esc(l.name)}” to ${esc(x.customer || x.order)}?</h3><div class="sm">${esc(x.phone)} · goes on WhatsApp from HRMS now. You can change the words below.</div><textarea id="lm" rows="5" style="margin-top:8px">${esc(fillMsg(l, x))}</textarea>
       <div class="sm" style="margin-top:6px">A typed message goes only within 24 hours of the customer's last message. After that, send an approved pre-made message with the link from the chat (✨).</div>
-      <div class="acts"><button class="btn g2" id="lgo">Send on WhatsApp</button><button class="btn gh" id="lno">Cancel</button></div>`);
-    const cur = () => { const sel2 = $('lk'); const i = sel2 ? +sel2.value : -1; return i >= 0 ? links[i].url : $('lu').value.trim(); };
-    const fill = () => { const u = cur(); $('lm').value = u ? msg(u) : ''; };
-    if ($('lk')) $('lk').onchange = () => { $('lu').style.display = +$('lk').value < 0 ? '' : 'none'; fill(); }; $('lu').oninput = fill; fill();
+      <div class="acts"><button class="btn g2" id="lgo">Send now</button><button class="btn gh" id="lno">Cancel</button></div>`);
     $('lno').onclick = closeM;
-    $('lgo').onclick = async () => { const u = cur(); if (!/^https?:\/\//i.test(u)) { say('Pick or paste a link that starts with https://', true); return; } const b = $('lgo'); b.disabled = true; try { await api.post('fb.send_link', { order: x.order, url: u, text: $('lm').value }); closeM(); say('Link sent on WhatsApp'); load(); } catch (e) { say(e.message, true); b.disabled = false; } };
+    $('lgo').onclick = async () => { const b = $('lgo'); b.disabled = true; try { await api.post('fb.send_link', { order: x.order, url: l.url, text: $('lm').value }); closeM(); say(l.name + ' link sent on WhatsApp'); load(); } catch (e) { say(e.message, true); b.disabled = false; } };
+  }
+  async function saveLinks(list) { const r = await api.post('fb.links_save', { links: list }); CFG.links = r.links; if (DET) drawSide(); return r.links; }
+  function manageLinks() {
+    const ls = CFG.links || [];
+    modal(`<h3>Review links</h3><div class="sm">Make a link once. It appears as a one-tap button for every customer.</div>${ls.length ? ls.map((l, i) => `<div style="display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0"><div style="flex:1;min-width:0"><b>${esc(l.name)}</b><div class="sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.url)}</div></div><button class="btn gh" data-e="${i}" type="button">Edit</button><button class="btn rd" data-d="${i}" type="button">Delete</button></div>`).join('') : '<div class="sm" style="margin:8px 0">No link yet.</div>'}
+      <div class="acts"><button class="btn g2" id="lAdd" type="button">＋ Add a link</button><button class="btn gh" id="lClose" type="button">Close</button></div>`);
+    $('lClose').onclick = closeM; $('lAdd').onclick = () => editLink(-1);
+    document.querySelectorAll('#md [data-e]').forEach((b) => { b.onclick = () => editLink(+b.dataset.e); });
+    document.querySelectorAll('#md [data-d]').forEach((b) => { b.onclick = async () => { const i = +b.dataset.d; if (!confirm('Delete the link “' + ls[i].name + '”?')) return; try { await saveLinks(ls.filter((_, k) => k !== i)); manageLinks(); } catch (e) { say(e.message, true); } }; });
+  }
+  function editLink(i) {
+    const ls = CFG.links || [], l = i < 0 ? { name: '', url: '', msg: LKMSG } : ls[i];
+    modal(`<h3>${i < 0 ? 'Add a link' : 'Edit link'}</h3><label>Name (the button)</label><input id="en" value="${esc(l.name)}" placeholder="e.g. Google review"><label>Link</label><input id="eu" value="${esc(l.url)}" placeholder="https://…"><label>Message <span class="sm">({name} {order} {link} are filled in for each customer)</span></label><textarea id="em" rows="4">${esc(l.msg || LKMSG)}</textarea>
+      <div class="acts"><button class="btn g2" id="esv" type="button">Save link</button><button class="btn gh" id="eback" type="button">Back</button></div>`);
+    $('eback').onclick = manageLinks;
+    $('esv').onclick = async () => { const o = { name: $('en').value.trim(), url: $('eu').value.trim(), msg: $('em').value }; if (!o.name || !/^https?:\/\//i.test(o.url)) { say('Give a name and a link that starts with https://', true); return; }
+      try { const list = ls.slice(); if (i < 0) list.push(o); else list[i] = o; await saveLinks(list); say('Link saved'); manageLinks(); } catch (e) { say(e.message, true); } };
   }
   function delTest() { const o = sel; if (!confirm('Delete the test ' + o + ' with its screenshots and history?')) return; api.post('fb.test_delete', { order: o }).then(() => { sel = ''; $('side').innerHTML = '<div class="sm">Pick an order.</div>'; say('Test deleted'); load(); }).catch((e) => say(e.message, true)); }
   $('testBtn').onclick = () => {
