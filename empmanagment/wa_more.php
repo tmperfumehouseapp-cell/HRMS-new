@@ -593,6 +593,10 @@ function wa_number_caps(PDO $pdo, array $health): array
     $tsrc = []; foreach ($health as $k => $h) { $id0 = (int)$h['id']; $m0 = $man[$id0] ?? 0; if ($m0 > 0) { $health[$k]['tier'] = $m0; $tsrc[$id0] = 'manual'; } elseif ($h['tier'] === null) { $health[$k]['tier'] = 250; $tsrc[$id0] = 'assumed'; } else $tsrc[$id0] = 'meta'; }   // a limit the owner typed for a number ALWAYS wins over what Meta's API says
     $tier = null; foreach ($health as $h) if ($h['tier'] !== null) { if ($h['tier'] === -1) { $tier = 1000000; break; } $tier = max((int)$tier, (int)$h['tier']); }
     $tierAssumed = !$anyKnown; if ($tier === null) $tier = 250;
+    // owner 20 Nov 2026: numbers of ONE WhatsApp account share Meta's limit (the highest of them); a number of ANOTHER account / portfolio has its OWN limit — it must never take the biggest limit of the other accounts (1 lakh), also not when the mode went back to 'shared'
+    $wb = []; try { foreach ($pdo->query("SELECT id, waba_id FROM wa_numbers")->fetchAll() as $r) { $w = trim((string)$r['waba_id']); $wb[(int)$r['id']] = $w !== '' ? $w : wa_cfg_val('WA_WABA_ID'); } } catch (Throwable $e) { }
+    $gT = []; foreach ($health as $h) { $w = $wb[(int)$h['id']] ?? ''; $t = $h['tier'] === -1 ? 1000000 : (int)$h['tier']; $gT[$w] = max($gT[$w] ?? 0, $t); }
+    $gUsed = [];
     $perNum = (string)setting_get($pdo, 'wa_limit_mode', 'per_number') === 'per_number';   // (14 Nov: unset now means per number — one shared pool of 90% of the tier blocked every normal campaign while Meta kept accepting messages; the guard in wa_limit_guard() goes back to 'shared' by itself if Meta really refuses)
     $sumT = 0;   // 'shared': Meta's limit is ONE pool for the whole business account (the highest number's limit) · 'per_number': every number has its own limit (guarded: see wa_limit_guard)
     $cfg = wa_team_cfg($pdo); $since = date('Y-m-d H:i:s', time() - 86400);
@@ -612,11 +616,11 @@ function wa_number_caps(PDO $pdo, array $health): array
     $out = [];
     foreach ($health as $h) {
         $id = (int)$h['id']; $age = isset($first[$id]) ? (int)floor((time() - strtotime($first[$id])) / 86400) : 0;
-        $ownT = $tier; if ($perNum) { $ownT = $h['tier'] === null ? (!isset($first[$id]) ? 250 : $tier) : ($h['tier'] === -1 ? 1000000 : (int)$h['tier']); }   // owner 20 Nov 2026 (new numbers from other portfolios): a number that never sent a template and whose Meta limit cannot be read starts at 250 a day, NOT at the biggest limit of the other numbers
+        $ownT = $perNum ? ($h['tier'] === -1 ? 1000000 : (int)$h['tier']) : ($gT[$wb[$id] ?? ''] ?? $tier);   // per number: its own limit · shared: the limit of ITS OWN WhatsApp account (never another portfolio's)
         // slow start protects a NEW account only: once Meta itself trusts the account (limit 10,000 or more) Meta's own limit is the cap; owner 20 Nov 2026: in per-number mode it is the NUMBER's own limit that counts, so a new number of another portfolio (limit 2,000) gets the slow start (250 / 500 / 1,000 … a day by its age) although the old numbers are trusted
-        $ramp = $cfg['ramp'] && (($perNum ? $ownT : $tier) < 10000);
-        $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $tier ? 'slow start (day ' . ($age + 1) . ')' : '';
-        $cap = min($cap, $perNum ? max(1, (int)$ownT) : $tier);   // owner 20 Nov 2026: the full limit of the number (2,000 = 2,000), no 90% gate of our own
+        $ramp = $cfg['ramp'] && $ownT < 10000;
+        $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $ownT ? 'slow start (day ' . ($age + 1) . ')' : '';
+        $cap = min($cap, max(1, (int)$ownT));   // owner 20 Nov 2026: the full limit of the number (2,000 = 2,000), no 90% gate of our own
         // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
@@ -626,10 +630,10 @@ function wa_number_caps(PDO $pdo, array $health): array
         try { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($allBlocked === false && $pb !== '' && strtotime($pb) > time() - 3 * 3600) { $cap = 0; $why = 'payment problem at Meta (131042) — campaigns go through the other number(s) now; tried again after 3 hours'; } } catch (Throwable $e) { }   // owner (9 Nov): when one number has the payment problem, everything moves to the other number by itself
         // 🛑 Meta spam limit (131048) hit on THIS number: it rests (default 3 hours, setting wa_spam_hours) while the other numbers send; the campaign is not paused. Every number resting = nothing sends until the first one is back.
         try { $sbk = (string)setting_get($pdo, 'wa_spamblock_' . $id, ''); $sph = max(1, min(24, (int)(setting_get($pdo, 'wa_spam_hours', '3') ?: 3))); if ($sbk !== '' && strtotime($sbk) > time() - $sph * 3600) { $cap = 0; $why = 'Meta spam limit on this number (131048) — it rests for ' . $sph . ' hours, the other numbers send'; } } catch (Throwable $e) { }
-        if ($cap > 0) $sumT += $ownT;
+        if ($cap > 0) { $sumT += $ownT; if (!$perNum) $gUsed[$wb[$id] ?? ''] = $ownT; }
         $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age, 'tier' => $ownT, 'tier_src' => $tsrc[$id] ?? 'meta'];
     }
-    $pT = ($perNum && $sumT > 0) ? $sumT : $tier;
+    $pT = $perNum ? ($sumT > 0 ? $sumT : $tier) : ($gUsed ? array_sum($gUsed) : $tier);   // shared: one pool PER WhatsApp account, added up
     $out['_port'] = ['tier' => $pT, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($pT * WA_TIER_MARGIN) - $port), 'mode' => $perNum ? 'per_number' : 'shared'];
     if ($tier >= 10000 && (string)setting_get($pdo, 'wa_camp_auto_on', '1') === '1') {   // trusted account: the owner's growing hourly cap (1,000 an hour → doubles each good hour)
         $au = wa_camp_auto_cap($pdo, $tier, $health); $out['_port']['auto'] = $au;   // this hour's speed is PER NUMBER (applied by the campaign sender only); order updates, tickets and follow-ups never wait for it
