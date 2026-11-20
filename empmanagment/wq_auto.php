@@ -122,6 +122,7 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
         $tkv = (int)(($x['ctk'] ?? 0) > 0 ? $x['ctk'] : ($x['tk'] ?? 0)); $no = (int)($x['n'] ?? 0); $p['ticket'] = $tkv; $p['orders'] = $no;
         $rel = ($tc['on'] && $tc['goal'] > 0 && $tkv >= $tc['goal'] && $no >= $tc['min']) ? $tc['relief'] / 100 : 0.0;   // a ticket at the goal gets a little room on the ratio (bigger bundles can mean fewer orders)
         $p['below'] = waa_below($q, $qo, $team - $rel) ? 1 : 0; $p['tier'] = waa_tier($q, $qo, $team);
+        if ($p['ao'] && !$p['below'] && $p['m'] === '') { $p['ao'] = 0; $p['ao_clear'] = 1; }   // the ratio is back inside the band: the automatic OFF ends by itself (owner, 20 Nov: red gets nothing "until the ratio sits right again")
         $p['m0'] = $p['m']; $p['wk'] = $p['m'] === 'on'; $p['force'] = $p['wk'] && !empty($s['f']);   // Admin / Sales Head ON = this person is working, also after the punch-out (at home, on WFH …)
         if ($p['wk'] && !$p['force']) $p['m'] = '';   // ... and ALL the normal rules apply to him (ratio, hold, speed); only Admin's "No rules" switch (state f) lifts them (owner, 20 Nov)
         if ($p['wk']) $p['present'] = true;
@@ -218,6 +219,8 @@ function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
         setting_set($pdo, 'waa_run_at', (string)$now);
         $V = waa_view($pdo, false, $maxAge); $st = $V['state'];
         // (1) the ratio rule: below the band → OFF by itself, until Admin / Sales Head turn it ON
+        $clr = false; foreach ($V['people'] as $e => $p0) { if (!empty($p0['ao_clear']) && !empty($st['e'][$e]['ao'])) { $st['e'][$e]['ao'] = 0; unset($st['e'][$e]['ao_at']); $clr = true; $res['switched_on'] = ($res['switched_on'] ?? 0) + 1; } }   // ratio OK again → back ON by itself
+        if ($clr) waa_state_put($pdo, $st);
         foreach ($V['people'] as $e => &$p) { if ($p['present'] && $p['m'] === '' && $p['below'] && !$p['ao']) { $st['e'][$e] = array_merge((array)($st['e'][$e] ?? []), ['m' => '', 'ao' => 1, 'ao_at' => $now]); $p['ao'] = 1; [$p['on'], $p['why']] = waa_button($p); $res['switched_off']++; } } unset($p);
         // (1b) slow repliers with a waiting list: first a warning, ten minutes later (still slow) new queries pause for 45 minutes; slow again after that → paused again
         $chg = false; foreach ($V['people'] as $e => &$p) { if (!$p['present'] || $p['m'] === 'on' || !empty($p['shold']) || empty($p['slow'])) continue; $x = (array)($st['e'][$e] ?? []);
