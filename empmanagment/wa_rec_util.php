@@ -591,7 +591,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
         $ordMap = function_exists('wa_util_orders') ? wa_util_orders($pdo, max(1, (int)$cfg['ord_days'])) : [];
         $items = wa_ru_lane_order($items, $ct, $ever, is_array($ordMap) ? $ordMap : [], $nowTs - max(1, (int)$cfg['ask_days']) * 86400);
     } catch (Throwable $e) { }
-    $now = date('Y-m-d H:i:s', $nowTs); $seen = []; $rot = 0; $stop = false;
+    $now = date('Y-m-d H:i:s', $nowTs); $seen = []; $rot = 0; $stop = false; $sw = [];
     foreach ($targets as $nid => $left) {
         if ($stop) break;
         $q5 = $pdo->prepare("SELECT * FROM wa_numbers WHERE id = ?"); $q5->execute([$nid]); $n = $q5->fetch(); if (!$n || !empty($n['retired'])) continue;
@@ -602,16 +602,16 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
         foreach ($items as $it) {
             if ($left <= 0 || $round >= 3) break;
             $ph = (string)$it['phone']; $iid = (int)$it['id']; $ec = (int)$it['err_code']; if ((string)$it['status'] === 'skipped' && $ec === 131026) $ec = 131050;
-            if (isset($seen[$ph]) || isset($recent[$ph]) || isset($got[$ph])) continue;
-            $cls = wa_ru_class($ec); if ($cls === 'never') continue;
-            $c = $ct[$ph] ?? null; if (!$c || (int)$c['optout'] === 1) continue;
-            if (!empty($c['last_in_at']) && !empty($it['sent_at']) && strtotime((string)$c['last_in_at']) > strtotime((string)$it['sent_at'])) continue;
+            if (isset($seen[$ph]) || isset($recent[$ph]) || isset($got[$ph])) { $sw[isset($got[$ph]) ? 'delivered another way' : 'already a message in 24 h'] = ($sw[isset($got[$ph]) ? 'delivered another way' : 'already a message in 24 h'] ?? 0) + 1; continue; }
+            $cls = wa_ru_class($ec); if ($cls === 'never') { $sw['Meta will not deliver'] = ($sw['Meta will not deliver'] ?? 0) + 1; continue; }
+            $c = $ct[$ph] ?? null; if (!$c || (int)$c['optout'] === 1) { $sw['no contact / opted out'] = ($sw['no contact / opted out'] ?? 0) + 1; continue; }
+            if (!empty($c['last_in_at']) && !empty($it['sent_at']) && strtotime((string)$c['last_in_at']) > strtotime((string)$it['sent_at'])) { $sw['wrote back'] = ($sw['wrote back'] ?? 0) + 1; continue; }
             $failedAt = !empty($it['sent_at']) ? strtotime((string)$it['sent_at']) : 0;
-            if ($cls === 'now') { if ($failedAt > $nowTs - $cfg['wait_min'] * 60) continue; }
-            else { $r = $rec[$iid] ?? null; $rn = $r ? (int)$r['n'] : 0; if ($recOn && $rn < $recTries) continue; if ($r && strtotime((string)$r['last']) > $nowTs - 3600) continue; }
+            if ($cls === 'now') { if ($failedAt > $nowTs - $cfg['wait_min'] * 60) { $sw['waiting a little first'] = ($sw['waiting a little first'] ?? 0) + 1; continue; } }
+            else { $r = $rec[$iid] ?? null; $rn = $r ? (int)$r['n'] : 0; if (($recOn && $rn < $recTries) || ($r && strtotime((string)$r['last']) > $nowTs - 3600)) { $sw['recovery from another number goes first'] = ($sw['recovery from another number goes first'] ?? 0) + 1; continue; } }
             $rot++; $ctm = ['phone' => $ph, 'name' => (string)($c['name'] ?? $it['name'] ?? ''), 'optout' => 0, 'last_in_at' => $c['last_in_at'] ?? null];
             $pk = wa_util_pick($pdo, in_array($ec, WA_RU_MARKETING_ONLY, true) ? array_values(array_filter($poolN, fn($z) => empty($z['as_marketing']))) : $poolN, $ctm, $cfg['ord_days'], $nowTs, $rot, $cfg['ask_days'], true);
-            if (!$pk) continue;
+            if (!$pk) { $sw['no approved utility message fits'] = ($sw['no approved utility message fits'] ?? 0) + 1; continue; }
             $seen[$ph] = 1; $round++; $left--;
             [$ok, $rr, $ecs] = wa_send_tpl_one($pdo, ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => (int)($c['camp_optout'] ?? 0)], $pk['t'], $num, $pk['vars'], 'recover');
             try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at, attempt, vars_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
@@ -621,6 +621,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
         if (isset($w[$nid])) $w[$nid] = max(0, (int)$w[$nid] - $round);
     }
     try { setting_set($pdo, 'wa_ru_warm', json_encode((object)$w)); } catch (Throwable $e) { }
+    try { setting_set($pdo, 'wa_ru_warm_last', json_encode(['at' => $nowTs, 'targets' => $targets, 'looked' => count($items), 'sent' => $o['sent'], 'failed' => $o['failed'], 'why' => $sw])); } catch (Throwable $e) { }   /* what the last round saw, for the 20-minute report */
     if ($o['sent'] || $o['failed']) { try { wa_log($pdo, 'campaign', $o['sent'] > 0, 'First messages from the new numbers: ' . $o['sent'] . ' sent, ' . $o['failed'] . ' failed (left: ' . json_encode((object)$w) . ')'); } catch (Throwable $e) { } }
     return $o;
 }
