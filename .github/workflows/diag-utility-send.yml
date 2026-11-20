@@ -226,6 +226,10 @@ jobs:
           foreach (["wa_tpl_auto", "wa_tpl_tick_max", "wa_tpl_hour_cap", "wa_tpl_day_cap", "wa_tpl_total_cap", "wa_tpl_auto_at"] as $k) echo "  cfg $k=" . $s($k) . "\n";
           echo "  newest submission errors (any account):\n";
           foreach ($all("SELECT at, waba_id, LEFT(note, 160) note FROM wa_tpl_subs WHERE ok = 0 ORDER BY id DESC LIMIT 5") as $r) echo "  " . json_encode($r) . "\n";
+          echo "\n=== FIRST MESSAGES OF NEW NUMBERS (wa_ru_warm) ===\n"; echo "  wa_ru_warm=" . $s("wa_ru_warm") . " · seed=" . $s("wa_ru_warm_seed_2011") . "\n";
+          foreach ($all("SELECT r.number_id, COUNT(*) sent, SUM(r.ok = 1) accepted, SUM(m.status IN ('delivered','read')) delivered, SUM(r.ok = 0 OR m.status = 'failed') failed, MAX(r.at) last_at FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.number_id IN (9, 10) GROUP BY r.number_id") as $r) echo "  " . json_encode($r) . "\n";
+          foreach ($all("SELECT r.number_id, r.err_code, LEFT(r.err, 120) e, COUNT(*) n FROM wa_ru_log r WHERE r.number_id IN (9, 10) AND r.ok = 0 GROUP BY r.number_id, r.err_code, e") as $r) echo "  fail " . json_encode($r) . "\n";
+          foreach ($all("SELECT at, LEFT(info, 200) info FROM wa_log WHERE info LIKE 'First messages from the new numbers%' ORDER BY id DESC LIMIT 4") as $r) echo "  " . $r["at"] . " " . $r["info"] . "\n";
           PHP
           php /tmp/us_check.php "$P"; rm -f /tmp/us_check.php
           REMOTE
