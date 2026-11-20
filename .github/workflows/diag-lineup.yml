@@ -4,6 +4,11 @@ name: Lineup check (read-only)
 
 on:
   workflow_dispatch:
+    inputs:
+      brief:
+        description: "Short report: skip the lists of existing messages"
+        type: boolean
+        default: false
 
 jobs:
   check:
@@ -25,8 +30,8 @@ jobs:
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
-          P="$1"
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "${{ inputs.brief }}" <<'REMOTE' || true
+          P="$1"; export LN_BRIEF="$2"
           echo "=== files on the server ==="
           for f in empmanagment/wa_line.php assets/js/wa_line_ui.js assets/js/wa_camp_ui.js; do if [ -f "$P$f" ]; then echo "$f  $(stat -c '%y' "$P$f" | cut -c1-19)  $(wc -c < "$P$f") bytes"; else echo "$f  MISSING"; fi; done
           echo "wl_summary in wa_line.php: $(grep -c 'function wl_summary' "$P"empmanagment/wa_line.php 2>/dev/null)  ·  wa_line.php required by wa_more.php: $(grep -c "wa_line.php" "$P"empmanagment/wa_more.php 2>/dev/null)  ·  c28x in whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html 2>/dev/null)"
