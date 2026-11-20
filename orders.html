@@ -690,10 +690,11 @@
 @media (max-width:820px){ .tm-chips button{min-height:40px;} }
 /* === END MOBILE PASS v1 === */
 /* ?embed=cards : only the platform cards (All orders & revenue / TM Perfume House / TM Shower Gel), shown inside the Finance summary */
-html.emb #sidebar, html.emb .topbar, html.emb .content > :not(#platformCard), html.emb #platToggle, html.emb .mnav, html.emb #hrmsDkBtn, html.emb #menuToggle { display: none !important; }
+html.emb #sidebar, html.emb .topbar, html.emb .content > :not(#summaryGrid), html.emb .mnav, html.emb #hrmsDkBtn, html.emb #menuToggle { display: none !important; }
 html.emb, html.emb body, html.emb .app, html.emb .main, html.emb .content { min-height: 0 !important; height: auto !important; padding: 0 !important; margin: 0 !important; background: transparent !important; }
-html.emb #platformCard { margin: 0 !important; }
-html.emb .rs-card { display: none !important; }      /* Ad spend & ROAS is not one of the three cards */
+html.emb #summaryGrid { margin: 0 !important; }
+/* the three cards = All Orders & Revenue + one card per panel (TM Perfume House, TM Shower Gel); the Ad spend & ROAS card and every box after it are left out */
+html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display: none !important; }
 </style>
 </head>
 <body>
@@ -4616,8 +4617,7 @@ html.emb .rs-card { display: none !important; }      /* Ad spend & ROAS is not o
   if (EMBED_CARDS) {
     document.documentElement.classList.add('emb');
     setInterval(() => {
-      const pc = document.getElementById('platCards'); if (pc && pc.hidden) pc.hidden = false;
-      const c = document.getElementById('platformCard'); const h = c && c.style.display !== 'none' ? Math.ceil(c.getBoundingClientRect().height) + 8 : 60;
+      const c = document.getElementById('summaryGrid'); const h = c && c.style.display !== 'none' ? Math.ceil(c.getBoundingClientRect().height) + 8 : 60;
       try { parent.postMessage({ tmphCards: h }, location.origin); } catch (e) { }
     }, 500);
   }
