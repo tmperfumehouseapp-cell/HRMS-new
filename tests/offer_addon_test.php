@@ -28,4 +28,7 @@ $r = cm_addon_chart($ch, 480, 3968, 110); $eq('chart path: underpriced 480 ml be
 $eq('chart path: a normal chart price is left alone', cm_addon_chart($ch, 480, 6300, 110), null);
 $eq('chart path: base too cheap too', cm_addon_chart($ch, 480, 2000, 110), null);
 $GLOBALS['__S']['cm_addons'] = ''; cm_global_addons($pdo, true); $eq('no global add-ons: nothing changes', cm_addon_chart($ch, 480, 3968, 110), null);
+// marketplace orders: flat % without a code (setting mp_flat_pct, default 6)
+$api = file_get_contents(__DIR__ . '/../empmanagment/api.php'); $i = strpos($api, 'function mp_flat_pct('); $j = strpos($api, "\n", $i); eval(substr($api, $i, $j - $i));
+$eq('marketplace flat % defaults to 6', mp_flat_pct($pdo), 6.0);
 echo $bad ? "offer addon test: $bad problem(s)\n" : "offer addon test: ok\n"; exit($bad ? 1 : 0);
