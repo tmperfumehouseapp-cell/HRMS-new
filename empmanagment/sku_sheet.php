@@ -156,9 +156,9 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
 }
 
 /** Every order of one business day with its product lines, straight from Shopify (all pages). Returns [orders, errors]. */
-function sku_shopify_day(PDO $pdo, string $day, string $to = ''): array
+function sku_shopify_day(PDO $pdo, string $day, string $to = '', ?array $winOverride = null): array
 {
-    $out = []; $errs = []; $win = biz_window($pdo, $day, $to !== '' ? $to : $day);
+    $out = []; $errs = []; $win = $winOverride ?: biz_window($pdo, $day, $to !== '' ? $to : $day);
     foreach (shopify_stores() as $key => $store) {
         if (strpos((string)($store['client_id'] ?? ''), 'PASTE_') !== false) continue;
         $tok = shopify_get_token($key, $store); if (is_array($tok)) { $errs[] = ($store['label'] ?? $key) . ': ' . ($tok['error'] ?? 'no access'); continue; }
@@ -177,8 +177,10 @@ function sku_shopify_day(PDO $pdo, string $day, string $to = ''): array
 }
 
 /** ⛓ Every product line whose name has "chain" in it (any shop, any spelling), over a range of business days: which chain, how many pieces, in how many orders, how much money. Cancelled orders left out. */
-function sku_chain(PDO $pdo, string $from, string $to): array
+function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): array
 {
+    // 🕛 noon = one window of 24 hours: 12:00 PM on $from to 12:00 PM the next day (not the 10 AM business day)
+    $nw = $noon ? [$from . ' 12:00:00', date('Y-m-d', strtotime($from . ' +1 day')) . ' 12:00:00'] : null;
     $by = []; $nOrd = 0; $nManC = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
     $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
         $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
@@ -186,7 +188,7 @@ function sku_chain(PDO $pdo, string $from, string $to): array
         $k = mb_strtolower($name); if (!isset($by[$k])) $by[$k] = ['name' => $name, 'sku' => $sku, 'qty' => 0, 'amount' => 0.0, 'orders' => []];
         $by[$k]['qty'] += $q; $by[$k]['amount'] += $amt; if ($sku !== '' && $by[$k]['sku'] === '') $by[$k]['sku'] = $sku; $by[$k]['orders'][$order] = 1;
     };
-    [$orders, $errs] = sku_shopify_day($pdo, $from, $to);
+    [$orders, $errs] = sku_shopify_day($pdo, $from, $to, $nw);
     foreach ($orders as $o) {
         if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) continue; $nOrd++;
         foreach ((array)($o['line_items'] ?? []) as $li) {
@@ -195,7 +197,7 @@ function sku_chain(PDO $pdo, string $from, string $to): array
         }
     }
     try {   // the manual orders (WM-xxxxx) confirmed in the range
-        $win = biz_window($pdo, $from, $to);
+        $win = $nw ?: biz_window($pdo, $from, $to);
         $q = $pdo->prepare("SELECT order_no, lines_json FROM wmo_order WHERE status = 'confirmed' AND COALESCE(confirmed_at, created_at) BETWEEN ? AND ?"); $q->execute([$win[0], $win[1]]);
         foreach ($q->fetchAll() as $r) { $nManC++; foreach ((array)(json_decode((string)$r['lines_json'], true) ?: []) as $l) {
             $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$r['order_no']);
@@ -204,7 +206,7 @@ function sku_chain(PDO $pdo, string $from, string $to): array
     $rows = []; $pieces = 0; $money = 0.0; $withChain = [];
     foreach ($by as $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_keys($r['orders']), 0, 60)]; $pieces += $r['qty']; $money += $r['amount']; }
     usort($rows, fn($a, $b) => $b['qty'] <=> $a['qty'] ?: strcmp($a['name'], $b['name']));
-    return ['from' => $from, 'to' => $to, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd + $nManC, 'orders_with' => count($withChain), 'errors' => $errs];
+    return ['from' => $from, 'to' => $to, 'noon' => $noon, 'window' => $nw, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd + $nManC, 'orders_with' => count($withChain), 'errors' => $errs];
 }
 
 /** The whole sheet of one business day. */
@@ -273,7 +275,8 @@ function sku_route(PDO $pdo, string $action): void
     if ($action === 'sku.chain') {
         $f = (string)($_GET['from'] ?? ''); $t = (string)($_GET['to'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f)) $f = biz_today($pdo); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $t) || $t < $f) $t = $f;
         if ((strtotime($t) - strtotime($f)) / 86400 > 62) json_response(['error' => 'Pick at most 62 days.'], 422);
-        @set_time_limit(240); json_response(sku_chain($pdo, $f, $t));
+        $noon = !empty($_GET['noon']); if ($noon) $t = $f;
+        @set_time_limit(240); json_response(sku_chain($pdo, $f, $t, $noon));
     }
     if ($action === 'sku.list') json_response(['rows' => sku_list(), 'custom' => sku_list_file() !== '']);
     if ($action === 'sku.list_save') {
