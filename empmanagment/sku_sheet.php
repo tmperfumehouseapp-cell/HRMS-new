@@ -180,7 +180,7 @@ function sku_shopify_day(PDO $pdo, string $day, string $to = '', ?array $winOver
 function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): array
 {
     // 🕛 $noon (kept as the name of the switch) = one calendar day of 24 hours: 12:00 AM on $from to 12:00 AM the next day (not the 10 AM business day)
-    $nw = $noon ? [$from . ' 00:00:00', date('Y-m-d', strtotime($from . ' +1 day')) . ' 00:00:00'] : null;
+    $nw = $noon ? [$from . ' 00:00:00', $from . ' 23:59:59'] : null;
     $by = []; $nOrd = 0; $nManC = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
     $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
         $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
@@ -213,7 +213,9 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
 function sku_sheet(PDO $pdo, string $day): array
 {
     $grid = []; $bad = []; $nOrd = 0; $nCancel = 0; $nLines = 0; $nMan = 0; $GLOBALS['__sku_ord'] = []; $oid = [];
-    [$orders, $errs] = sku_shopify_day($pdo, $day);
+    // 🕛 the sheet is one calendar day of 24 hours: 12:00 AM to 12:00 AM (not the 10 AM business day)
+    $cal = [$day . ' 00:00:00', $day . ' 23:59:59'];
+    [$orders, $errs] = sku_shopify_day($pdo, $day, '', $cal);
     $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
     foreach ($orders as $o) {
         if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) { $nCancel++; continue; }
@@ -224,9 +226,9 @@ function sku_sheet(PDO $pdo, string $day): array
             $nLines++; sku_take($grid, $bad, (string)($o['name'] ?? ''), (string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, ($__bp[$__i] ?? (array)($li['properties'] ?? [])));
         }
     }
-    // the manual orders (WM-xxxxx) confirmed on that business day
+    // the manual orders (WM-xxxxx) confirmed on that day (12 AM to 12 AM)
     try {
-        $win = biz_window($pdo, $day, $day);
+        $win = $cal;
         $q = $pdo->prepare("SELECT id, order_no, lines_json FROM wmo_order WHERE status = 'confirmed' AND COALESCE(confirmed_at, created_at) BETWEEN ? AND ?"); $q->execute([$win[0], $win[1]]);
         foreach ($q->fetchAll() as $r) {
             $nMan++; $oid[(string)$r['order_no']] = [(string)(array_key_first(shopify_stores()) ?? ''), (string)(7000000000000000 + (int)$r['id'])];      // the order popup opens a manual order with its id + 7,000,000,000,000,000
@@ -268,12 +270,12 @@ function sku_route(PDO $pdo, string $action): void
     if ($action === 'sku.access') json_response(['ok' => sku_can($pdo, $auth)]);
     if (!sku_can($pdo, $auth)) json_response(['error' => 'The SKU sheet is for Admin, HR, Dispatch, the Admin department, Sales Heads and roles with the Orders page.'], 403);
     if ($action === 'sku.sheet') {
-        $day = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = biz_today($pdo);
+        $day = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = gmdate('Y-m-d', time() + 19800);      // today, India time (12 AM to 12 AM)
         if (!sku_list()) json_response(['error' => 'The SKU list is empty. Upload the SKU file (SKU · original name · shop name) on this page.'], 422);
-        @set_time_limit(180); json_response(sku_sheet($pdo, $day) + ['today' => biz_today($pdo)]);
+        @set_time_limit(180); json_response(sku_sheet($pdo, $day) + ['today' => gmdate('Y-m-d', time() + 19800)]);
     }
     if ($action === 'sku.chain') {
-        $f = (string)($_GET['from'] ?? ''); $t = (string)($_GET['to'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f)) $f = biz_today($pdo); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $t) || $t < $f) $t = $f;
+        $f = (string)($_GET['from'] ?? ''); $t = (string)($_GET['to'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f)) $f = gmdate('Y-m-d', time() + 19800); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $t) || $t < $f) $t = $f;
         if ((strtotime($t) - strtotime($f)) / 86400 > 62) json_response(['error' => 'Pick at most 62 days.'], 422);
         $noon = !empty($_GET['noon']); if ($noon) $t = $f;
         @set_time_limit(240); json_response(sku_chain($pdo, $f, $t, $noon));
