@@ -285,13 +285,15 @@ function wl_recheck(PDO $pdo, int $now): int
         if ($now > $anchor + 14 * 86400) { $done('14 days over'); continue; }
         $c = function_exists('wa_contact') ? wa_contact($pdo, $phone) : null; if (!$c) { $done('no contact'); continue; }
         if (wl_block($pdo, $c, date('Y-m-d H:i:s', $anchor)) === 'ordered') { $done('ordered'); continue; }
+        $li = !empty($c['last_in_at']) ? (int)strtotime((string)$c['last_in_at']) : 0;
+        if ($li > $now - 86400) { $pdo->prepare("UPDATE wa_line_cust SET recheck_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s', $li + 86400), $phone]); continue; }   // he wrote again: the conversation is not over; the 24 hours count from his NEW last message
         $o = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $o->execute([$phone]); $bought = (int)$o->fetchColumn() > 0;
         $m = $pdo->prepare("SELECT body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone = ? AND ts >= ? ORDER BY id DESC LIMIT 12"); $m->execute([$phone, date('Y-m-d H:i:s', $anchor)]);
         $topic = wl_classify(array_reverse($m->fetchAll(PDO::FETCH_COLUMN)), $bought); $sw = (int)$r['switches'];
         if ($topic !== (string)$r['topic']) { if ($sw >= 2) { $done('topic changed too often'); continue; } $sw++; wl_log($pdo, $phone, 'topic ' . $r['topic'] . ' -> ' . $topic); }
         $sent = []; $s = $pdo->prepare("SELECT tpl_key FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $s->execute([$phone]); foreach ($s->fetchAll(PDO::FETCH_COLUMN) as $k) $sent[(string)$k] = 1;
         $pdo->prepare("DELETE FROM wa_line_plan WHERE phone = ? AND status = 'planned'")->execute([$phone]);
-        $rows = wln_plan($pdo, $phone, $topic, $now, $sent, $now);
+        $rows = wln_plan($pdo, $phone, $topic, $now - 86400, $sent, $now);   // his 24 quiet hours are already over: the new ladder's first step is due NOW, the next ones 24 h after each message that goes
         if ($rows < 1) { $done('all messages sent'); continue; }
         $pdo->prepare("UPDATE wa_line_cust SET topic = ?, status = 'active', switches = ?, recheck_at = NULL WHERE phone = ?")->execute([$topic, $sw, $phone]); $n++;
     }
@@ -331,6 +333,12 @@ function wln_unwindow(PDO $pdo): int
     $u = $pdo->prepare("UPDATE wa_line_plan SET due_at = ? WHERE id = ?"); foreach ($q->fetchAll() as $r) { $u->execute([date('Y-m-d H:i:s', (int)strtotime((string)$r['anchor_at']) + (int)$r['step'] * 86400), $r['id']]); $n++; }
     setting_set($pdo, 'wl_unwin', '1'); return $n;
 }
+/** One time (owner, 21 Nov): the Lineup also catches everybody who wrote since the day BEFORE yesterday 10:00 IST (it started with yesterday 10:00). The new people join through the normal enrolment; their timing is the same rule as everybody's: step 1 only when his last message is more than 24 h old. */
+function wln_since_back(PDO $pdo): bool
+{
+    if ((string)setting_get($pdo, 'wl_since_v2', '') === '1') return false; $c = wl_cfg($pdo); if ($c['started'] === '' || $c['since'] <= 0) return false;
+    $c['since'] = wl_yesterday_start(time()) - 86400; wl_cfg_put($pdo, $c); setting_set($pdo, 'wl_since_v2', '1'); wa_log($pdo, 'engine', true, 'Lineup: catching everybody who wrote since ' . date('Y-m-d H:i', $c['since'])); return true;
+}
 /** The engine step. Sends what is due (cap per round), enrols new customers, re-reads the quiet ones. $force = the Send button (ignores the clock window and the "all approved" gate, never the blocks). */
 function wl_tick(PDO $pdo, array $opt = []): array
 {
@@ -341,7 +349,8 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     if (!$force && (!function_exists('wa_lock') || !wa_lock($pdo, 'wlrun', 50))) return $o;
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window (none unless wl_cfg.win = 1)
-    if (!$force) { try { wln_unwindow($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
+    if (!$force) { try { wln_unwindow($pdo); wln_since_back($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
+    $cfg = wl_cfg($pdo);   // (since may just have moved)
     if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
     $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 25;

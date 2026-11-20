@@ -133,3 +133,9 @@ Independent of Module A / B (owner, 21 Nov): a campaign or any template sent by 
 ## How the topic is decided (owner, 21 Nov)
 
 The topic is read from the customer's **whole conversation**, not from his first message: when his conversation is over (24 h after his last message) and his first Lineup message is about to go, his messages since he came in (the latest 12, text and button taps) are read again and the **newest message with a clear topic decides** (pending > price > trust > size inside one message; a later "ok thanks" does not wipe an earlier topic). If it differs from the topic he was enrolled with, his ladder is replaced by the ladder of the new topic (written in the log). The same reading is used when he answers a step: he is read again after 24 quiet hours; a new topic = a new ladder (messages already sent are never repeated; at most 2 changes, never beyond 14 days). People who only got a campaign (not enrolled by default) keep the `campaign` ladder.
+
+## Each customer has his own timeline (owner, 21 Nov)
+
+- Catches everybody who wrote since the day before yesterday 10:00 IST (one-time move of `wl_cfg.since`, `wln_since_back`).
+- Step 1 goes when his conversation is over (his last message > 24 h old), no order; step 2 is 24 h after step 1 went, step 3 24 h after step 2…
+- If he answers a step, the ladder stops. When that new conversation is over (24 h after his NEW last message) he is read again (whole chat, newest topic) and the unsent messages continue; the first one goes right then, the next ones 24 h after each message. If he writes again before that, the 24 hours simply move to his latest message.
