@@ -1,0 +1,19 @@
+<?php
+// Offer + add-on: 8x50ml 3299 (400 ml) with an add-on 80 ml / 750 = 480 ml at about 4049 earns the offer's %, like the offer itself. Pulls the two pure functions out of boss2.php.
+$src = file_get_contents(__DIR__ . '/../empmanagment/boss2.php'); $bad = 0;
+foreach (['cm_offer_match', 'cm_offer_addon_list'] as $fn) { $i = strpos($src, 'function ' . $fn . '('); $j = strpos($src, "\n}\n", $i); if ($i === false || $j === false) { echo "missing $fn\n"; exit(1); } eval(substr($src, $i, $j - $i + 3)); }
+$eq = function ($n, $a, $b) use (&$bad) { if ($a !== $b) { $bad++; echo "FAIL $n: got " . json_encode($a) . " expected " . json_encode($b) . "\n"; } };
+$of = [['id' => 7, 'ml' => 400, 'price' => 3299.0, 'pct' => 6.0, 'from_date' => '2026-11-01', 'to_date' => null, 'active' => 1, 'addons' => [['ml' => 80, 'amount' => 750.0], ['ml' => 60, 'amount' => 450.0]]]];
+$eq('offer itself', cm_offer_match($of, 400, 3299, '2026-11-20', 110)['id'] ?? 0, 7);
+$m = cm_offer_match($of, 480, 3968, '2026-11-20', 110); $eq('offer + 80 ml add-on (3968 vs 4049, inside the window)', $m['id'] ?? 0, 7); $eq('add-on amount is reported', $m['addon'] ?? 0, 750.0);
+$eq('offer + 60 ml add-on at 3749', cm_offer_match($of, 460, 3760, '2026-11-20', 110)['addon'] ?? 0, 450.0);
+$eq('price too far from offer + add-on', cm_offer_match($of, 480, 3500, '2026-11-20', 110), null);
+$eq('an ml that is not offer + add-on', cm_offer_match($of, 470, 3900, '2026-11-20', 110), null);
+$eq('before the offer starts', cm_offer_match($of, 480, 4049, '2026-10-30', 110), null);
+$off = $of; $off[0]['active'] = 0; $off[0]['stopped_at'] = '2026-11-10 12:00:00'; $eq('stopped offer: after its last day', cm_offer_match($off, 480, 4049, '2026-11-20', 110), null);
+$no = $of; $no[0]['addons'] = []; $eq('no add-ons: 480 ml does not match', cm_offer_match($no, 480, 4049, '2026-11-20', 110), null);
+$eq('typed text', cm_offer_addon_list('80:750, 60:450'), [['ml' => 80, 'amount' => 750.0], ['ml' => 60, 'amount' => 450.0]]);
+$eq('typed with words', cm_offer_addon_list("80 ml = Rs 750\n60ml-450"), [['ml' => 80, 'amount' => 750.0], ['ml' => 60, 'amount' => 450.0]]);
+$eq('json string', cm_offer_addon_list('[{"ml":80,"amount":750}]'), [['ml' => 80, 'amount' => 750.0]]);
+$eq('repeated ml and bad rows are dropped', cm_offer_addon_list('80:750, 80:900, x:5, 0:10, 40:0'), [['ml' => 80, 'amount' => 750.0]]);
+echo $bad ? "offer addon test: $bad problem(s)\n" : "offer addon test: ok\n"; exit($bad ? 1 : 0);

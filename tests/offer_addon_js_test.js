@@ -1,0 +1,10 @@
+global.window = {}; require(__dirname + '/../assets/js/ml_slab.js'); const M = window.MLSLAB; let bad = 0;
+const eq = (n, a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) { bad++; console.log('FAIL', n, JSON.stringify(a), JSON.stringify(b)); } };
+const offers = [{ ml: 400, price: 3299, pct: 6, from: '2026-11-01', to: '', active: 1, stopped: '', addons: [{ ml: 80, amount: 750 }] }];
+const chart = { nocode: 50, prepaid: 0 };
+const r = M.offerCom(offers, 110, chart, { ml: 480, extra: 0, day: '2026-11-20', amt: 3968, pre: false, code: 'X' });
+eq('add-on order matches', r && r.pct, 6); eq('commission is 6% of the whole amount', r && Math.round(r.v), Math.round(3968 * 0.06));
+eq('offer alone', M.offerCom(offers, 110, chart, { ml: 400, extra: 0, day: '2026-11-20', amt: 3299, pre: false, code: 'X' }).pct, 6);
+eq('far price: no match', M.offerCom(offers, 110, chart, { ml: 480, extra: 0, day: '2026-11-20', amt: 3400, pre: false, code: 'X' }), null);
+eq('no code: half', M.offerCom(offers, 110, chart, { ml: 480, extra: 0, day: '2026-11-20', amt: 3968, pre: false, code: '' }).pct, 3);
+console.log(bad ? 'offer addon js: ' + bad + ' problem(s)' : 'offer addon js: ok'); process.exit(bad ? 1 : 0);
