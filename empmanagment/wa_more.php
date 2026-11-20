@@ -588,9 +588,10 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
 /** For each number: today's cap (slow ramp-up, quality, Meta's daily limit), what is used in the last 24 h and what is left. Also the shared portfolio limit. */
 function wa_number_caps(PDO $pdo, array $health): array
 {
+    try { if (function_exists('wa_more_tables')) wa_more_tables($pdo); } catch (Throwable $e) { }   // owner 20 Nov 2026: the numbers' columns (hold, retired, tier_manual …) are made BEFORE anything reads them, in whatever request comes first after a deploy
     // owner 20 Nov 2026: a number whose limit Meta does not tell yet (new number, name in review) must NOT borrow the biggest limit of the other numbers (1 lakh) — it uses the limit the owner typed, else a low 250
     $anyKnown = false; foreach ($health as $h) if ($h['tier'] !== null) { $anyKnown = true; break; }
-    $man = []; try { foreach ($pdo->query("SELECT id, tier_manual FROM wa_numbers")->fetchAll() as $r) $man[(int)$r['id']] = (int)$r['tier_manual']; } catch (Throwable $e) { }
+    $man = []; try { foreach ($pdo->query("SELECT * FROM wa_numbers")->fetchAll() as $r) $man[(int)$r['id']] = (int)($r['tier_manual'] ?? 0); } catch (Throwable $e) { }
     $tsrc = []; foreach ($health as $k => $h) { $id0 = (int)$h['id']; $m0 = $man[$id0] ?? 0; if ($m0 > 0) { $health[$k]['tier'] = $m0; $tsrc[$id0] = 'manual'; } elseif ($h['tier'] === null) { $health[$k]['tier'] = 250; $tsrc[$id0] = 'assumed'; } else $tsrc[$id0] = 'meta'; }   // a limit the owner typed for a number ALWAYS wins over what Meta's API says
     $tier = null; foreach ($health as $h) if ($h['tier'] !== null) { if ($h['tier'] === -1) { $tier = 1000000; break; } $tier = max((int)$tier, (int)$h['tier']); }
     $tierAssumed = !$anyKnown; if ($tier === null) $tier = 250;
@@ -612,7 +613,7 @@ function wa_number_caps(PDO $pdo, array $health): array
     }
     foreach ($fc as $k => $v) if ($k !== '_t' && $v) $first[(int)$k] = (string)$v;
     $port = $lu['all'];
-    $rows = $pdo->query("SELECT id, camp_ok, hold FROM wa_numbers")->fetchAll(); $camp = []; $holdM = []; foreach ($rows as $r) { $camp[(int)$r['id']] = (int)$r['camp_ok'] === 1; $holdM[(int)$r['id']] = (int)$r['hold'] === 1; }
+    $rows = $pdo->query("SELECT * FROM wa_numbers")->fetchAll(); $camp = []; $holdM = []; foreach ($rows as $r) { $camp[(int)$r['id']] = (int)($r['camp_ok'] ?? 1) === 1; $holdM[(int)$r['id']] = (int)($r['hold'] ?? 0) === 1; }   /* owner 20 Nov 2026: SELECT * and ?? — a column that is added in a later deploy (hold, retired …) must never break this page when the table is not updated yet (it did: 'Unknown column hold' on the Campaigns page) */
     $allBlocked = true; foreach ($health as $h0) { $pb0 = (string)setting_get($pdo, 'wa_payblock_' . (int)$h0['id'], ''); if ($pb0 === '' || strtotime($pb0) <= time() - 3 * 3600) { $allBlocked = false; break; } }   // EVERY number marked → none is skipped (each is still tried; Meta decides) so a campaign never sits idle behind my own rule
     $out = [];
     foreach ($health as $h) {
