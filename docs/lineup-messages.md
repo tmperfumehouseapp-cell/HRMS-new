@@ -106,4 +106,4 @@ Every 10 minutes the engine (`wl_snap`) writes one status line (messages made / 
 
 The approved guidebook (`wk_guide_text`) is shown on the Lineup screen next to the messages; the 27 + 6 texts were written to its rules (short, polite, no price or number invented). The learning loop is the report: per wording, taps and orders; the picker sends the better wording more. New wordings are added the same way: write a second text for a step (`$V` in `wl_pack`), Meta approves it, it enters the 50/50 test and the better one takes 80%.
 
-The same status goes to Admin / HR phones as a push notification (tag `hrms-lineup`, replaces the previous one) for the first 24 hours after the start, then only when the self-check finds a warning.
+The same status goes to Admin / HR phones as a push notification (tag `hrms-lineup`, replaces the previous one) every 10 minutes for the first 6 hours after the start, every half hour until 48 hours, then only when the self-check finds a warning.

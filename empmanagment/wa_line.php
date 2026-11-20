@@ -376,8 +376,10 @@ function wl_heal(PDO $pdo): array
 /** The status as one short phone notification (Admin / HR; the same tag replaces the last one, so they do not pile up). */
 function wl_push(PDO $pdo, array $st): int
 {
-    if (!function_exists('ct_push') || !function_exists('wq_admin_ids')) return 0; $c = wl_cfg($pdo); $to = (int)strtotime($c['started']) + 24 * 3600; $bad = 0; foreach (($st['health']['issues'] ?? []) as $x) if (($x['level'] ?? '') === 'warn') $bad++;
-    if (time() > $to && !$bad) return 0;   // after the first 24 hours: only when something needs a look
+    if (!function_exists('ct_push') || !function_exists('wq_admin_ids')) return 0; $c = wl_cfg($pdo); $age = time() - (int)strtotime($c['started']); $bad = 0; foreach (($st['health']['issues'] ?? []) as $x) if (($x['level'] ?? '') === 'warn') $bad++;
+    // owner 21 Nov: every 10 minutes at first (the first 6 hours), then every half hour (until 48 hours), then only when the self-check warns
+    $gap = $age <= 6 * 3600 ? 9 * 60 : ($age <= 48 * 3600 ? 29 * 60 : ($bad ? 29 * 60 : 0)); if ($gap === 0) return 0;
+    if ((int)strtotime((string)setting_get($pdo, 'wl_push_at', '')) > time() - $gap) return 0; setting_set($pdo, 'wl_push_at', date('Y-m-d H:i:s'));
     $M = $st['messages']; $K = $st['customers']; $G = $st['sending']; $O = $st['orders'];
     $body = 'Msgs made ' . $M['made'] . '/' . $M['total'] . ' · in Meta ' . $M['in_meta'] . ' · approved ' . $M['approved'] . ' · utility ' . $M['utility'] . ' · left ' . $M['left'] . "\n" . 'Customers ' . $K['identified'] . ' · got msg ' . $K['got_message'] . ' · sent ' . $G['sent'] . ' · orders ' . $O['orders'] . ($bad ? "\n" . '⚠ ' . $bad . ' issue(s): open Lineup' : '');
     try { return (int)ct_push($pdo, wq_admin_ids($pdo), '🧵 Lineup status', $body, 'campaigns.html', 'hrms-lineup'); } catch (Throwable $e) { return 0; }

@@ -20,7 +20,7 @@
     const best = (R.best_steps || []).map((x) => `${esc(TOP[x.topic] || x.topic)} step ${x.step}: <b>${x.per100}</b> orders / 100 delivered (${fmt(x.orders)} orders)`).join('<br>') || '<span style="color:#94a3b8">not enough delivered messages yet</span>';
     const weak = (R.weak_steps || []).map((x) => `${esc(TOP[x.topic] || x.topic)} step ${x.step} (${fmt(x.delivered)} delivered, 0 orders)`).join('<br>');
     const S = D.status || {}, M = S.messages || {}, K = S.customers || {}, G = S.sending || {}, O = S.orders || {};
-    const stat = `<div class="wp-note" style="margin:0 0 10px"><b>📊 Status</b> <small style="color:#64748b">${esc(S.at || '')} · written down every 10 minutes (and sent to your phone for the first 24 hours)</small><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:6px">
+    const stat = `<div class="wp-note" style="margin:0 0 10px"><b>📊 Status</b> <small style="color:#64748b">${esc(S.at || '')} · written down every 10 minutes (sent to your phone: every 10 min for 6 hours, then every half hour)</small><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:6px">
       <div><div class="wp-hint">Messages made</div><b style="font-size:20px">${fmt(M.made)}</b> / ${fmt(M.total)}</div>
       <div><div class="wp-hint">Sent to Meta</div><b style="font-size:20px">${fmt(M.in_meta)}</b> / ${fmt(M.total)}</div>
       <div><div class="wp-hint">Approved</div><b style="font-size:20px;color:#15803d">${fmt(M.approved)}</b> · waiting ${fmt(M.pending)}${M.rejected ? ' · <span style="color:#c2262b">rejected ' + fmt(M.rejected) + '</span>' : ''}</div>
