@@ -140,7 +140,7 @@
   function drawPop(d) {
     const x = d.row, P = parts(d), ph10 = String(x.phone || '').replace(/\D/g, '').slice(-10), cb = $('popChat');
     $('popTop').innerHTML = `<b style="font-size:14px;color:#111">💬 WhatsApp with ${esc(x.customer || x.order)}</b> · ${esc(x.phone)} · live — type below and send`;
-    if (ph10.length === 10) { if (cb.dataset.p !== ph10 || !cb.firstChild) { cb.dataset.p = ph10; cb.innerHTML = `<iframe id="chatFr" title="WhatsApp chat" src="my_chats.html?embed=1&phone=${ph10}" allow="microphone; clipboard-write"></iframe>`; } }
+    if (ph10.length === 10) { if (cb.dataset.p !== ph10 || !cb.firstChild) { cb.dataset.p = ph10; cb.innerHTML = `<iframe id="chatFr" title="WhatsApp chat" src="my_chats.html?embed=1&fb=1&phone=${ph10}" allow="microphone; clipboard-write"></iframe>`; } }
     else { cb.dataset.p = ''; cb.innerHTML = '<div class="sm" style="margin:10px 0">This order has no phone number, so there is no WhatsApp chat.</div>'; }
     $('popR').innerHTML = P.hdr + P.acts + P.rest; wire($('popR'), d);      // the buttons sit on the right so the chat keeps the whole height
   }
