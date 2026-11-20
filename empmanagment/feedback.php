@@ -158,7 +158,7 @@ function fb_route(PDO $pdo, string $action): void
     if (!fb_can($pdo, $auth)) json_response(['error' => 'The Feedback page is for Admin, HR, Dispatch, the Admin department, Sales Heads and roles with the Orders page.'], 403);
     if (!fb_tables($pdo)) json_response(['error' => 'The Feedback storage could not be set up.'], 500);
     $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $cfg = fb_cfg($pdo);
-    $get = function (string $order) use ($pdo) { $q = $pdo->prepare("SELECT f.*, m.status AS msg_status, (SELECT COUNT(*) FROM fb_proofs p WHERE p.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid AND f.msg_wamid <> '' WHERE f.order_name = ?"); $q->execute([$order]); return $q->fetch(); };
+    $get = function (string $order) use ($pdo) { $q = $pdo->prepare("SELECT f.*, m.status AS msg_status, (SELECT COUNT(*) FROM fb_proofs p WHERE p.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE f.order_name = ?"); $q->execute([$order]); return $q->fetch(); };
 
     if ($action === 'fb.list') {
         fb_enroll($pdo, false);
@@ -167,12 +167,12 @@ function fb_route(PDO $pdo, string $action): void
         if ($qs !== '') { $like = '%' . $qs . '%'; $w[] = "(f.order_name LIKE ? OR f.customer LIKE ? OR f.phone LIKE ?)"; array_push($p, $like, $like, $like); }
         elseif ($tab === 'unseen') $w[] = "f.msg_at IS NOT NULL AND COALESCE(m.status, '') <> 'read'";
         elseif (in_array($tab, ['wait', 'sent', 'replied', 'proof', 'rew', 'cmp', 'skip'], true)) { $w[] = "f.status = ?"; $p[] = $tab; }
-        $sql = "SELECT f.*, m.status AS msg_status, (SELECT COUNT(*) FROM fb_proofs pp WHERE pp.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid AND f.msg_wamid <> ''" . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . " ORDER BY f.delivered_at DESC LIMIT 300";
+        $sql = "SELECT f.*, m.status AS msg_status, (SELECT COUNT(*) FROM fb_proofs pp WHERE pp.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> ''" . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . " ORDER BY f.delivered_at DESC LIMIT 300";
         $st = $pdo->prepare($sql); $st->execute($p); $rows = array_map('fb_row_out', $st->fetchAll());
         $c = ['all' => 0, 'wait' => 0, 'sent' => 0, 'replied' => 0, 'proof' => 0, 'rew' => 0, 'cmp' => 0, 'skip' => 0];
         foreach ($pdo->query("SELECT status, COUNT(*) n FROM fb_orders GROUP BY status")->fetchAll() as $r) { $c[(string)$r['status']] = (int)$r['n']; $c['all'] += (int)$r['n']; }
         $sent = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders WHERE msg_at IS NOT NULL")->fetchColumn();
-        $seen = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders f JOIN wa_messages m ON m.wamid = f.msg_wamid AND f.msg_wamid <> '' WHERE m.status = 'read'")->fetchColumn();
+        $seen = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders f JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE m.status = 'read'")->fetchColumn();
         $proofs = (int)$pdo->query("SELECT COUNT(DISTINCT order_name) FROM fb_proofs")->fetchColumn();
         json_response(['rows' => $rows, 'counts' => $c + ['sent_total' => $sent, 'seen' => $seen, 'unseen' => max(0, $sent - $seen), 'proof_orders' => $proofs], 'cfg' => $cfg, 'can_edit' => in_array($role, ['Admin', 'HR'], true)]);
     }
