@@ -93,7 +93,7 @@
       catch (e) { say(e.message, true); }
     };
   }
-  async function imgUrl(id) { const r = await fetch(api.buildUrl('fb.proof_file', { id }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) throw new Error('no picture'); return URL.createObjectURL(await r.blob()); }
+  async function imgUrl(id) { const r = await api.get('fb.proof_data', { id }); return r.src; }
   async function openOrder(o, quiet) {
     sel = o; if (!quiet) draw();
     try { const d = await api.get('fb.get', { order: o }); if (sel !== o) return; DET = d; drawSide(); }
@@ -115,7 +115,7 @@
       <div class="h" style="margin-top:10px;font-size:12.5px">History</div><div class="tl">${d.events.length ? d.events.map((e) => `<div><b>${esc(dt(e.at))}</b> ${esc(e.txt)}${e.by_name && e.by_name !== 'automatic' ? ' <span class="sm">· ' + esc(e.by_name) + '</span>' : ''}</div>`).join('') : '<div class="sm">Nothing yet.</div>'}</div>`;
     const go = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
     go('bNow', () => send('fb.send_now')); go('bFu', () => send('fb.followup')); go('bPf', pickProof); go('bRw', reward); go('bCx', complaint); go('bSk', leaveOut); go('bDel', delTest);
-    if (d.proofs.length) { const box = $('phs'); box.innerHTML = ''; d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => window.open(u, '_blank'); box.appendChild(i); }).catch(() => { box.insertAdjacentHTML('beforeend', '<span class="sm">picture not available</span>'); }); }); }
+    if (d.proofs.length) { const box = $('phs'); box.innerHTML = ''; d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => { const w = window.open('', '_blank'); if (w) w.document.write('<img src="' + u + '" style="max-width:100%">'); }; box.appendChild(i); }).catch((er) => { box.insertAdjacentHTML('beforeend', '<span class="sm" style="color:#b91c1c">The picture could not be shown: ' + esc(er.message) + '</span>'); }); }); }
   }
   async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); load(); } catch (e) { say(e.message, true); } }
   /* several places + a new one typed by hand (it is kept in the list for next time) */

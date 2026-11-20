@@ -203,6 +203,12 @@ function fb_route(PDO $pdo, string $action): void
         $rw = mb_substr(trim((string)($in['reward'] ?? '')), 0, 60); if ($rw !== '') setting_set($pdo, 'fb_reward', $rw);
         json_response(['ok' => true, 'cfg' => fb_cfg($pdo)]);
     }
+    if ($action === 'fb.proof_data') {      // the picture as data inside a normal answer (works everywhere the other answers work; the page shows it directly)
+        $q = $pdo->prepare("SELECT path, mime FROM fb_proofs WHERE id = ?"); $q->execute([(int)($_GET['id'] ?? 0)]); $r = $q->fetch(); $abs = $r ? __DIR__ . '/' . $r['path'] : '';
+        if (!$r || strpos((string)$r['path'], 'uploads/feedback/') !== 0 || strpos((string)$r['path'], '..') !== false || !is_file($abs)) json_response(['error' => 'The picture file is not on the server (' . ($r ? $r['path'] : 'no such proof') . ').'], 404);
+        $mime = (string)$r['mime'] !== '' ? (string)$r['mime'] : 'image/jpeg'; $raw = @file_get_contents($abs); if ($raw === false || $raw === '') json_response(['error' => 'The picture file is empty or cannot be read.'], 500);
+        json_response(['src' => 'data:' . $mime . ';base64,' . base64_encode($raw)]);
+    }
     if (!$post && $action !== 'fb.proof_file') json_response(['error' => 'Unknown action.'], 404);
     if ($action === 'fb.proof_file') {   // the picture, streamed with the login token (never a public link)
         $q = $pdo->prepare("SELECT path, mime FROM fb_proofs WHERE id = ?"); $q->execute([(int)($_GET['id'] ?? 0)]); $r = $q->fetch(); $abs = $r ? __DIR__ . '/' . $r['path'] : '';
