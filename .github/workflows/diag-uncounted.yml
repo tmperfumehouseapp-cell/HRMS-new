@@ -36,9 +36,9 @@ jobs:
           $bd = date("G") >= 10 ? date("Y-m-d") : date("Y-m-d", time() - 86400); $from = $bd . " 10:00:00"; $to = date("Y-m-d 10:00:00", strtotime($bd . " +1 day"));
           echo "now " . date("Y-m-d H:i") . " · business day $bd ($from -> $to)\n";
           $sql = "SELECT o.store_key sk, o.order_name nm, o.created_at ca, ROUND(o.total) total, o.financial_status fs, o.tags tg, a.alloc_id aid, a.order_type ot, a.employee_id emp, a.allocated_by ab, a.house hs,
-                    (SELECT w.why FROM wa_auto_alloc_why w WHERE w.source = o.store_key AND w.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci LIMIT 1) why,
-                    (SELECT 1 FROM wa_auto_alloc_done w2 WHERE w2.source = o.store_key AND w2.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci LIMIT 1) done
-                  FROM shop_orders o LEFT JOIN order_allocations a ON a.source = o.store_key AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
+                    (SELECT w.why FROM wa_auto_alloc_why w WHERE w.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND w.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci LIMIT 1) why,
+                    (SELECT 1 FROM wa_auto_alloc_done w2 WHERE w2.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND w2.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci LIMIT 1) done
+                  FROM shop_orders o LEFT JOIN order_allocations a ON a.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
                   WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 ORDER BY o.created_at";
           try { $q = $d->prepare($sql); $q->execute([$from, $to]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 250) . "\n"; exit; }
           $n = 0; $given = 0; $typed = 0;
