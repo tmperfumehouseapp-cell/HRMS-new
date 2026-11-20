@@ -319,8 +319,8 @@
         </div>
         <div class="tscroll">
         <table>
-          <thead><tr><th>Order</th><th style="width:112px;" title="Order code — type it here, or upload the Excel on the Order Codes page and it fills in">Code</th><th>Employee</th><th>Customer</th><th>Items</th><th>Total</th><th style="width:150px;" title="Total ML of the order (free 10 ml pieces shown as extra) and what it earns on the ML price slab">ML</th><th>Payment</th><th>Type</th><th>Panel</th><th style="width:92px;" title="Chain order — Yes or No">Chain</th><th style="width:92px;" title="Address — Yes or No">Address</th><th style="width:100px;" title="Old or New price — which price list this order was sold on">Old / New price</th><th style="width:124px;" title="Ticket size convincing — same per-order rating as the Performance page">Rating<div id="autoModeBox" style="font-weight:600;font-size:11px;margin-top:3px" hidden>🤖 <select id="autoMode" title="Automatic stars from the chat: Off · Suggest = shown light, not saved · Apply = saved as the stars (a rating a person gave is never changed)" style="font-size:11px;padding:1px 2px;border:1px solid #d1d5db;border-radius:6px"><option value="off">Off</option><option value="suggest">Suggest</option><option value="apply">Apply</option></select></div></th><th id="thAddon" style="width:120px;" title="Extra products sold onto this order — same as the Add-on on the Performance page">Add-on</th><th style="width:84px;"></th></tr></thead>
-          <tbody id="tbody"><tr><td colspan="16" class="loading">Loading...</td></tr></tbody>
+          <thead><tr><th>Order</th><th style="width:112px;" title="Order code — type it here, or upload the Excel on the Order Codes page and it fills in">Code</th><th>Employee</th><th>Customer</th><th>Items</th><th>Total</th><th style="width:150px;" title="Total ML of the order (free 10 ml pieces shown as extra) and what it earns on the ML price slab">ML</th><th>Payment</th><th>Type</th><th>Panel</th><th id="thAddon" style="width:120px;" title="Extra products sold onto this order — same as the Add-on on the Performance page">Add-on</th><th style="width:84px;"></th></tr></thead>
+          <tbody id="tbody"><tr><td colspan="12" class="loading">Loading...</td></tr></tbody>
         </table>
         </div>
         <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;">
@@ -496,7 +496,7 @@
   // Chain, Address and Old / New price dropdowns: Admin, HR, Sales head and any other role with Order Allocation — the Employee role sees them as plain text.
   const CAN_ADDR = !IS_EMP;
   // The Employee role has no Add-on column at all (it can't add or see add-ons here).
-  const NCOL = IS_EMP ? 15 : 16;
+  const NCOL = IS_EMP ? 11 : 12;
   if (IS_EMP) document.getElementById('thAddon').remove();
   // 🤖 automatic stars from the chat: Admin / HR (not the Employee role) can switch Off / Suggest / Apply
   (function autoMode() {
@@ -779,10 +779,6 @@
       <td><span class="badge ${o.financial_status === 'paid' ? '' : 'inactive'}">${esc(o.financial_status || '—')}</span>${o.financial_status === 'partially_paid' && o.paid != null ? `<div class="paid-amt" title="Already paid by the customer${o.outstanding != null ? ' — ' + inr(o.outstanding) + ' still to pay' : ''}">Paid ${inr(o.paid)}</div>` : ''}</td>
       <td>${typeCell}</td>
       <td>${panelCell}</td>
-      <td>${chainCell(o, CAN_ADDR && !o.cancelled)}</td>
-      <td>${addressCell(o, CAN_ADDR && !o.cancelled)}</td>
-      <td>${priceCell(o, CAN_ADDR && !o.cancelled)}</td>
-      <td>${ratingCell(o, empSel, noEmpMsg(o, p))}</td>
       ${IS_EMP ? '' : `<td>${addonCell(o)}</td>`}
       <td>${action}${cx}</td>
     </tr>`;

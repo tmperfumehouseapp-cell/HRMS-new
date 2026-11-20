@@ -414,6 +414,10 @@
   @media (max-width:820px){ .pt-top{flex-direction:column; align-items:flex-start; gap:2px; font-size:11px;} .pt-top b{font-size:13px;} .pt-edit input{font-size:16px; width:70px;} .pt-ring{flex-direction:column; align-items:flex-start; gap:7px;} .pt-ring .tx{width:100%; gap:4px;} .pt-ring .rg, .pt-ring svg{width:46px; height:46px;} .pt-ring .rg span{font-size:11.5px;} .pt-ring .rg span.o{font-size:11px;} .pt-ring .it small{font-size:11px;} .pt-ring .it b{font-size:12px;} }
   /* Remark (a note typed by hand) under the employee, with the writer's name after it */
   .rm{margin-top:7px; max-width:100%; font-size:12px; line-height:1.35; white-space:normal;}
+  .dsb{margin-top:8px;border-top:1px dashed var(--line,#e2e6ee);padding-top:7px;font-size:12px}.dsh{display:flex;justify-content:space-between;font-size:10.5px;font-weight:800;color:#6b7686;text-transform:uppercase;letter-spacing:.03em}
+  .dsbig{font-size:17px;font-weight:900;line-height:1.25}.dsbig small{font-size:11px;font-weight:700;color:#6b7686}.dsbig.z{color:#94a3b8}.dsbar{display:flex;height:6px;border-radius:4px;overflow:hidden;margin:5px 0;background:#e5e9f0}.dsbar i{display:block}
+  .dsl{display:flex;justify-content:space-between;gap:6px;padding:1px 0}.dsl i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+  .dsc{background:rgba(100,116,139,.08);border:1px solid var(--line,#e2e6ee);border-radius:9px;padding:6px 8px}.dsc summary{cursor:pointer;display:flex;justify-content:space-between;gap:6px;font-weight:800;font-size:11.5px;list-style:none}.dsc summary::-webkit-details-marker{display:none}.dsc summary::after{content:'▾';opacity:.6}.dsc[open] summary::after{content:'▴'}
   .rm-add{display:inline-flex; align-items:center; gap:4px; border:1px dashed #c3cad6; border-radius:8px; padding:3px 9px; color:#6b7686; background:#fff; cursor:pointer; font-weight:600; font-size:11.5px; min-height:0; width:auto;}
   .rm-add:hover{border-color:var(--accent); color:var(--accent);}
   .rm-note{display:block; background:#fff8e6; border:1px solid #f6e2a8; border-radius:9px; padding:6px 9px; color:#4a3b0b; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere;}
@@ -3628,6 +3632,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
       try { renderTeamSheet(); } catch (re) { teamData = null; throw new Error('could not draw the sheet (' + re.message + ')'); }
       summaryRefresh();
       commRequest(from, to, COMM.fresh); COMM.fresh = false;      // the live commission starts after the sheet is on screen
+      try { esPrevLoad(); } catch (pe) { }   // today's view: the previous business day, closed, under each person
       // Target with the automatic daily rule needs Shopify history, so it comes in a second, slower call.
       if (d.auto_rule) {
         api.get('team.sheet', { date_from: from, date_to: to, rule: 1 }).then(r => {
@@ -3988,7 +3993,47 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
       : `<i class="es-dot n"></i><b>${esEsc(e.n)}</b>`;
     const hs = e.real && e.parts ? e.parts.filter(p => p.b !== 'none' || p.coll > 0 || e.parts.length === 1) : [];
     const hc = hs.length > 1 ? `<div class="el3">${hs.map(p => `<span class="hch" style="--c:${PANEL_COLOR[p.b]}" title="${esEsc(PANEL_NAME[p.b])}: ${esInr(p.coll)}">${PANEL_SHORT[p.b]}</span>`).join('')}</div>` : '';
-    return `<div class="eb"><div class="el1">${nm}${e.real && e.c ? `<span class="es-ec">${esEsc(e.c)}</span>` : ''}</div>${hc}${e.real ? `<div class="el2">${esStatus(e)}</div>${esRemark(e)}` : ''}</div>`;
+    return `<div class="eb"><div class="el1">${nm}${e.real && e.c ? `<span class="es-ec">${esEsc(e.c)}</span>` : ''}</div>${hc}${e.real ? `<div class="el2">${esStatus(e)}</div>${esRemark(e)}${esDay(e)}` : ''}</div>`;
+  }
+  // ---- 📊 "Day so far" under the remark buttons (one-day view): collection and orders since this business day started, split Query / Campaign (an add-on counts in its order's type and amount).
+  //      Today's view also shows the PREVIOUS business day, closed: e.g. the day was 10:00 AM -> 2:00 PM (new day started at 2) and this person collected ₹25,000 in that stretch.
+  let esPrev = { day: '', at: 0, by: null, busy: false };
+  const esDayBack = (d) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() - 1); return ymdOf(x); };
+  function esPrevLoad() {
+    if (!teamData || !teamData.single || teamData.from !== todayStr()) return;
+    const pd = esDayBack(teamData.from);
+    if (esPrev.busy || (esPrev.day === pd && esPrev.by && Date.now() - esPrev.at < 120000)) return;
+    esPrev.busy = true;
+    api.get('shopify.orders', { date_from: pd, date_to: pd, lite: 1, report: 1 }).then((r) => {
+      const by = {};
+      (r.orders || []).forEach((o) => {
+        if (o.cancelled || (Number(o.allocated) !== 1 && o.store_key !== 'manual')) return;
+        const id = Number(o.allocated_emp) || Number(o.employee_id) || 0; if (!id) return;
+        const amt = (Number(o.total) || 0) + (Number(o.addon_total) || 0), t = orderTagType(o.tags), a = by[id] = by[id] || { coll: 0, ord: 0, qo: 0, qc: 0, ko: 0, kc: 0 };
+        a.coll += amt; a.ord++; if (t === 'query') { a.qo++; a.qc += amt; } if (t === 'campaign') { a.ko++; a.kc += amt; }
+      });
+      esPrev = { day: pd, at: Date.now(), by, busy: false }; try { renderTeamSheet(); } catch (err) { /* the sheet is redrawn on the next refresh */ }
+    }).catch(() => { esPrev = { day: pd, at: Date.now(), by: esPrev.by || {}, busy: false }; });
+  }
+  function esDayLines(a) {
+    const oc = Math.max(0, a.ord - a.qo - a.ko), oa = Math.max(0, a.coll - a.qc - a.kc), tot = a.coll || 1;
+    const bar = a.coll > 0 ? `<div class="dsbar"><i style="width:${(a.qc / tot * 100).toFixed(1)}%;background:#2563eb"></i><i style="width:${(a.kc / tot * 100).toFixed(1)}%;background:#ea580c"></i><i style="width:${(oa / tot * 100).toFixed(1)}%;background:#7c3aed"></i></div>` : '';
+    const ln = (c, k, amt, n) => `<div class="dsl"><span><i style="background:${c}"></i>${k}</span><span><b>${esInr(amt)}</b> · ${n} order${n === 1 ? '' : 's'}</span></div>`;
+    return bar + ln('#2563eb', 'Query', a.qc, a.qo) + ln('#ea580c', 'Campaign', a.kc, a.ko) + (oc > 0 || oa > 0.5 ? ln('#7c3aed', 'Other', oa, oc) : '');
+  }
+  function esDay(e) {
+    if (!teamData || !teamData.single || !e.real) return '';
+    const day = teamData.from, isToday = day === todayStr(), st = fmtHM(dsOn(new Date(day + 'T12:00:00')));
+    const tk = e.ord > 0 ? ` · ticket ${esInr(e.coll / e.ord)}` : '';
+    let h = `<div class="dsb"><div class="dsh"><span>${isToday ? '🆕 Day so far · since ' + st : '📅 Whole day · from ' + st}</span></div><div class="dsbig${e.ord ? '' : ' z'}">${esInr(e.coll)} <small>· ${e.ord} order${e.ord === 1 ? '' : 's'}${tk}</small></div>${e.ord ? esDayLines(e) : ''}</div>`;
+    if (isToday && e.b === 'all' && esPrev.by && esPrev.day === esDayBack(day)) {
+      const a = esPrev.by[e.id];
+      if (a && a.ord > 0) {
+        const d0 = new Date(esPrev.day + 'T12:00:00'), s0 = fmtHM(dsOn(d0)), wd = d0.toLocaleDateString('en-IN', { weekday: 'short' });
+        h += `<details class="dsb dsc"><summary><span>✅ Closed day · ${wd} ${s0} → ${st}</span><b>${esInr(a.coll)} · ${a.ord}</b></summary>${esDayLines(a)}<div class="dsh" style="margin-top:3px"><span>ticket ${esInr(a.coll / a.ord)}</span></div></details>`;
+      }
+    }
+    return h;
   }
   // ---- Remark: a note typed by hand under the employee (one per day, employee and panel); the writer's name follows it. One-day view only.
   let esRemEdit = '';        // "employee id|panel" being typed in
