@@ -158,7 +158,7 @@ function fb_can(PDO $pdo, array $auth): bool
 function fb_row_out(array $r): array
 {
     $seen = (string)($r['msg_status'] ?? '') === 'read';
-    return ['id' => (int)$r['id'], 'order' => (string)$r['order_name'], 'customer' => (string)$r['customer'], 'phone' => (string)$r['phone'], 'delivered' => substr((string)$r['delivered_at'], 0, 16), 'status' => (string)$r['status'], 'test' => strpos((string)$r['order_name'], 'TEST-') === 0,
+    return ['id' => (int)$r['id'], 'order' => (string)$r['order_name'], 'customer' => (string)$r['customer'], 'phone' => (string)$r['phone'], 'delivered' => substr((string)$r['delivered_at'], 0, 16), 'store' => (string)($r['store_key'] ?? ''), 'status' => (string)$r['status'], 'test' => strpos((string)$r['order_name'], 'TEST-') === 0,
         'msg_at' => (string)($r['msg_at'] ?? ''), 'fu_at' => (string)($r['fu_at'] ?? ''), 'seen' => $seen, 'msg_state' => (string)($r['msg_status'] ?? ''), 'msg_err' => (string)$r['msg_err'], 'place' => (string)$r['place'],
         'reward_order' => (string)$r['reward_order'], 'reward_note' => (string)$r['reward_note'], 'cx_code' => (string)$r['cx_code'], 'skip_why' => (string)$r['skip_why'], 'proofs' => (int)($r['proofs'] ?? 0)];
 }
