@@ -422,6 +422,7 @@ function wa_dq_hours_build(PDO $pdo): array
     // ⚡ Server load (15 Nov): the 7-day picture read a whole week of campaign messages every 2 minutes (runs of up to 7 s, 6.5% of the database work) although only today's part changes.
     // The week = the days BEFORE today's business day (read once, kept 15 minutes) + today's hours (read every time, as before), added hour by hour.
     $o['today'] = $run($from, $to);
+    $o['ru_today'] = []; try { if (function_exists('wa_ru_tables') && wa_ru_tables($pdo)) { $q = $pdo->prepare("SELECT HOUR(r.at) AS h, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at < ? GROUP BY HOUR(r.at)"); $q->execute([$from, $to]); foreach ($q->fetchAll() as $x) $o['ru_today'][(int)$x['h']] = [(int)$x['n'], (int)$x['d']]; } } catch (Throwable $e) { }   // 🔧 utility follow-ups (Module B) per hour, shown as their own small line in the hour grid
     $__old = function () use ($run, $from) { return $run(date('Y-m-d H:i:s', time() - 7 * 86400), $from); };
     $__wk = function_exists('hrms_memo') ? (array)hrms_memo('wa_dq_week_old:' . $from, 900, $__old) : $__old();
     $o['week'] = []; foreach ([$__wk, (strtotime($from) <= time() ? $o['today'] : [])] as $__part) foreach ($__part as $h => $x) { $h = (int)$h; $o['week'][$h] = [($o['week'][$h][0] ?? 0) + (int)$x[0], ($o['week'][$h][1] ?? 0) + (int)$x[1], ($o['week'][$h][2] ?? 0) + (int)$x[2]]; }

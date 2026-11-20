@@ -1487,6 +1487,10 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     } catch (Throwable $e) { $o['error'] = 'The billing columns are not ready yet.'; }
     try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status = 'failed' AND ts >= ? AND ts < ?"); $q->execute([$from, $to]); $o['failed'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT camp_id) FROM wa_camp_items WHERE status = 'sent' AND sent_at >= ? AND sent_at < ?"); $q->execute([$from, $to]); $o['campaigns'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    // 🔧 owner 20 Nov 2026: the utility follow-ups (Module B) are shown SEPARATELY (own boxes); the Sent / Delivered / Failed / Spent boxes above stay campaign-only
+    $o['ru'] = ['sent' => 0, 'delivered' => 0, 'failed' => 0, 'amount' => 0.0];
+    try { if (function_exists('wa_ru_tables') && wa_ru_tables($pdo)) { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at < ?"); $q->execute([$from, $to]); $r = $q->fetch();
+        $o['ru'] = ['sent' => (int)$r['n'], 'delivered' => (int)$r['d'], 'failed' => (int)$r['f'], 'amount' => round((int)$r['d'] * (float)$R['utility'], 2)]; } } catch (Throwable $e) { }
     // 🔁 the 7-Day Drip messages of the same day are added to Sent / Delivered / Read / Failed / Replied / Spent (the drip goes out as follow-ups, so it is not in the campaign rows above); o['drip'] keeps its own share
     try {
         $dq = $pdo->prepare("SELECT wamid FROM wa_drip_ev WHERE status = 'sent' AND wamid <> '' AND at >= ? AND at < ?"); $dq->execute([date('Y-m-d H:i:s', strtotime($from) - 7200), date('Y-m-d H:i:s', strtotime($to) + 7200)]); $dids = $dq->fetchAll(PDO::FETCH_COLUMN);
