@@ -39,7 +39,7 @@
   <main class="main">
     <div class="topbar"><div><h1>Finance summary</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px" id="subLine">Orders, money in, money out and what still needs a look: everything read from where it already lives</div></div></div>
     <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div>
-      <div class="sx-page"><div class="sx-card" id="cardsHost" style="padding:6px 8px;display:none"><iframe id="cardsFr" title="Order cards" style="width:100%;border:0;height:480px;background:transparent"></iframe></div></div>
+      <div class="sx-page"><div id="cardsHost" style="display:none;margin:4px 0 12px"><iframe id="cardsFr" title="Order cards" style="width:100%;border:0;height:480px;background:transparent"></iframe></div></div>
       <div class="sx-page" id="root2"></div></div>
   </main>
 </div>
@@ -135,7 +135,7 @@
     if (!z && NZ_REQ !== NOON) { const d = NOON; NZ_REQ = d; api.get('fi.noon', { day: d }).then((r) => { r.__for = d; NZ = r; if (P === 'noon' && NOON === d) drawNoon(); }).catch((e) => { NZ_REQ = ''; if (P === 'noon' && NOON === d) $('root').insertAdjacentHTML('beforeend', `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`); }); }
   }
   function showCards(from, to, noon) {
-    const fr = $('cardsFr'), host = $('cardsHost'), src = 'orders.html?embed=cards&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + (noon ? '&win=noon' : '') + '&v=4';
+    const fr = $('cardsFr'), host = $('cardsHost'), src = 'orders.html?embed=cards&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + (noon ? '&win=noon' : '') + '&v=5';
     host.style.display = ''; if (fr.getAttribute('data-src') !== src) { fr.setAttribute('data-src', src); fr.src = src; }      // reloaded only when the dates change
   }
   window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && typeof e.data.tmphCards === 'number') $('cardsFr').style.height = Math.max(60, Math.min(2400, e.data.tmphCards)) + 'px'; });

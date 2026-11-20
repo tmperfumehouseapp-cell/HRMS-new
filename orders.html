@@ -692,7 +692,8 @@
 /* ?embed=cards : only the platform cards (All orders & revenue / TM Perfume House / TM Shower Gel), shown inside the Finance summary */
 html.emb #sidebar, html.emb .topbar, html.emb .content > :not(#summaryGrid), html.emb .mnav, html.emb #hrmsDkBtn, html.emb #menuToggle { display: none !important; }
 html.emb, html.emb body, html.emb .app, html.emb .main, html.emb .content { min-height: 0 !important; height: auto !important; padding: 0 !important; margin: 0 !important; background: transparent !important; }
-html.emb #summaryGrid { margin: 0 !important; }
+html.emb #summaryGrid { margin: 0 !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 12px !important; align-items: start; }      /* the three cards fill the whole width, side by side */
+@media (max-width: 760px) { html.emb #summaryGrid { grid-template-columns: minmax(0, 1fr) !important; } }
 /* the three cards = All Orders & Revenue + one card per panel (TM Perfume House, TM Shower Gel); the Ad spend & ROAS card and every box after it are left out */
 html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display: none !important; }
 </style>
