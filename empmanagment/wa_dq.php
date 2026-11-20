@@ -31,11 +31,11 @@ function wa_mkt_paused(PDO $pdo): bool
     try { if ((int)setting_get($pdo, 'wa_mkt_pause_until', '0') > time()) return true; } catch (Throwable $e) { }
     return wa_mkt_night_end($pdo, time()) > 0;
 }
-/** 🌙 owner 21 Nov 2026 (03:45 IST): marketing pauses EVERY night from 02:00 to 09:00 IST (settings wa_mkt_night_from 2 · wa_mkt_night_to 9 · wa_mkt_night_on 0 = off). Only marketing waits; utility (Module A, Module B) keeps running. Returns the unix time the pause ends when $ts is inside the window, else 0. */
+/** 🌙 owner 21 Nov 2026 (03:45 IST): marketing pauses EVERY night from 02:00 to 08:00 IST (owner 21 Nov 2026, 04:30: restart at 08:00, not 09:00; settings wa_mkt_night_from 2 · wa_mkt_night_to 8 · wa_mkt_night_on 0 = off). Only marketing waits; utility (Module A, Module B) keeps running. Returns the unix time the pause ends when $ts is inside the window, else 0. */
 function wa_mkt_night_end(PDO $pdo, int $ts): int
 {
     try { if ((string)setting_get($pdo, 'wa_mkt_night_on', '1') === '0') return 0;
-        $f = max(0, min(23, (int)setting_get($pdo, 'wa_mkt_night_from', '2'))); $t = max(0, min(24, (int)setting_get($pdo, 'wa_mkt_night_to', '9'))); if ($f === $t) return 0;
+        $f = max(0, min(23, (int)setting_get($pdo, 'wa_mkt_night_from', '2'))); $t = max(0, min(24, (int)setting_get($pdo, 'wa_mkt_night_to', '8'))); if ($f === $t) return 0;
         $l = $ts + 19800; $h = (int)gmdate('G', $l); $day0 = $l - ($l % 86400);   /* IST clock, whatever the server timezone is */
         if ($f < $t) { if ($h < $f || $h >= $t) return 0; return $day0 + $t * 3600 - 19800; }
         if ($h >= $f) return $day0 + 86400 + $t * 3600 - 19800; if ($h < $t) return $day0 + $t * 3600 - 19800; return 0;
