@@ -39,6 +39,8 @@ jobs:
         run: php tests/tk_test.php
       - name: Comment guard (no code swallowed by a comment)
         run: php tests/comment_guard_test.php
+      - name: Offer add-ons
+        run: php tests/offer_addon_test.php && node tests/offer_addon_js_test.js
   staging:
     needs: check
     runs-on: ubuntu-latest

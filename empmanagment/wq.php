@@ -1637,6 +1637,7 @@ function wq_req_take(PDO $pdo, string $phone, int $me): array
     if ($u->rowCount() === 0) return ['error' => 'Somebody else just took this chat.'];
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0 WHERE phone = ?")->execute([$phone]);   // back for one line: wa_assign_to writes the log, the event and the query owner
     wa_assign_to($pdo, $phone, $me, $me, 'request'); wq_clear_attention($pdo, $phone, $me, 'Taken from Requests');
+    if (function_exists('waa_count_taken')) waa_count_taken($pdo, $me, $phone);   // 🌙 overnight: counted in the person's Overnight / Query numbers by itself
     return ['ok' => true];
 }
 /** "Who takes the most": per person, for the last 1 / 7 / 30 days — chats taken after a late reply, chats taken FROM them (they were late), how many taken chats got a reply

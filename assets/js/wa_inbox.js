@@ -828,6 +828,7 @@
         <div class="wi-kv"><span>First message</span><b>${esc(c.first_message || '—')}</b></div>
         <div class="wi-kv"><span>Numbers used</span><b>${c.numbers_used || 1}</b></div>
         <div class="wi-kv"><span>Replies go from</span><b>${esc(c.last_number || '—')}</b></div>
+        ${c.last_number_retired ? `<div style="margin:6px 0;padding:8px 10px;border-radius:8px;background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;font-size:12px;line-height:1.35"><b>⚠ ${esc(c.last_number || 'This number')} is being closed.</b> Ask the customer to message one of these numbers from now on: <b>${esc(c.shift_to || 'Main number')}</b></div>` : ''}
         <div class="wi-kv"><span>WhatsApp window</span><b>${c.optout ? 'Opted out' : c.window_open ? 'Active · ' + Math.floor(c.window_left_min / 60) + ' h ' + (c.window_left_min % 60) + ' min left' : 'Inactive'}</b></div>
         <div class="wi-kv"><span>Opted in</span><label class="wi-sw"><input type="checkbox" id="wiOpt" ${c.optout ? '' : 'checked'}><span></span></label></div></div>`;
       if (admin && S.cur.assign_log && S.cur.assign_log.length) h += '<h4>History — who had this chat</h4><div class="wi-sb" style="font-size:12.5px">' + S.cur.assign_log.map((l) => { const d = parse(l.at); return `<div class="wi-kv"><span>${d ? esc(d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' + hhmm(d)) : ''}</span><b>${esc(l.to || 'Unassigned')}${({ auto: ' · auto', transfer: ' · handed over' + (l.from ? ' by ' + l.from : ''), grab: ' · took a late reply', takeover: ' · took over' + (l.from ? ' from ' + l.from : ''), take: ' · took it', manual: l.by ? ' · by ' + l.by : '' })[l.how] || ''}</b></div>`; }).join('') + '</div>';
@@ -1264,7 +1265,8 @@
     let TP = null;
     async function openTpl() {
       if (!S.cur) return; const c = S.cur.contact, box = sheet('Pre-made messages'); box.innerHTML = '<div class="wi-empty">Loading…</div>';
-      try { const d = await api.get('wa.tpl_list'); TP = { list: d.templates || [], can: !!d.can_edit, tab: 'sug', q: '', all: false, sug: null, err: '' }; } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
+      try { const d = await Promise.race([api.get('wa.tpl_list', { lite: 1 }), new Promise((_, rj) => setTimeout(() => rj(new Error('The message list is taking too long — close this and try again in a minute.')), 45000))]); TP = { list: d.templates || [], can: !!d.can_edit,   // ⚡ the LITE list (approved messages only): the full list with every number's status took over a minute and the sheet stayed on "Loading…"
+ tab: 'sug', q: '', all: false, sug: null, err: '' }; } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
       drawTpl(); loadTplSug(false);
     }
     function drawTpl() {

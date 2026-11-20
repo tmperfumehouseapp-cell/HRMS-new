@@ -1,0 +1,52 @@
+# READ-ONLY: how Auto assign gave fresh queries today: the order they were given in, per person counts, the green/yellow pattern counter. Prints counts and flags only (no phone numbers, no names).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Query order check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Query order
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/qo_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; require $f;
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $S = function ($k) use ($d) { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "(not set)" : $v; };
+          $ref = $d->query("SELECT MAX(at) FROM waa_log")->fetchColumn(); echo "newest given: $ref · server " . date("Y-m-d H:i:s") . "\n";
+          $nm = []; foreach ($d->query("SELECT employee_id, full_name FROM employees") as $r) $nm[(int)$r["employee_id"]] = preg_replace('/\s+(\S)\S*$/', ' $1.', (string)$r["full_name"]);
+          $day = date("Y-m-d 10:00:00", strtotime($ref) - 36000 >= strtotime(date("Y-m-d 00:00:00", strtotime($ref))) ? strtotime($ref) : strtotime($ref) - 86400);
+          echo "pattern counter waa_cyc = " . $S("waa_cyc") . " (position in green, green, yellow = counter mod 3) · gap waa_gap = " . $S("waa_gap") . " s\n";
+          echo "=== given since $day, by kind ===\n"; foreach ($d->query("SELECT kind, COUNT(*) n FROM waa_log WHERE at >= '$day' GROUP BY kind") as $r) echo "  " . $r["kind"] . ": " . $r["n"] . "\n";
+          echo "=== the newest 45 FRESH gives, oldest first (time · person · why) ===\n";
+          $rows = $d->query("SELECT at, emp_id, why FROM waa_log WHERE kind = 'fresh' ORDER BY id DESC LIMIT 45")->fetchAll(PDO::FETCH_ASSOC); foreach (array_reverse($rows) as $r) echo "  " . substr($r["at"], 11, 8) . " · " . ($nm[(int)$r["emp_id"]] ?? $r["emp_id"]) . " · " . $r["why"] . "\n";
+          echo "=== fresh given by Auto assign today, per person ===\n"; $c = []; foreach ($d->query("SELECT emp_id, COUNT(*) n FROM waa_log WHERE kind = 'fresh' AND at >= '$day' GROUP BY emp_id ORDER BY n DESC") as $r) echo "  " . ($nm[(int)$r["emp_id"]] ?? $r["emp_id"]) . ": " . $r["n"] . "\n";
+          echo "=== every salesperson now: queries/orders (cached day rows) · target · Admin button · ratio-off flag · slow warn/hold ===\n";
+          $cp = json_decode($S("waa_cp"), true); $st = json_decode($S("waa_st"), true); $rows = (array)($cp["rows"] ?? []); $E = (array)($st["e"] ?? []);
+          $tq = 0; $to = 0; foreach ($rows as $e => $x) { $tq += (int)($x["q"] ?? 0); $to += (int)($x["qo"] ?? 0); } echo "  team " . $to . "/" . $tq . " = " . ($tq ? round(100 * $to / $tq, 1) : 0) . "%\n";
+          $L = []; foreach ($rows as $e => $x) { $s2 = $E[$e] ?? []; $L[] = [($nm[(int)$e] ?? $e), (int)($x["q"] ?? 0), (int)($x["qo"] ?? 0), (int)($x["t"] ?? 0), (string)($s2["m"] ?? ""), !empty($s2["f"]) ? "NORULES" : "", !empty($s2["ao"]) ? "ratio-off" : "", !empty($s2["sh"]) && (int)$s2["sh"] > time() ? "slow-hold" : (!empty($s2["sw"]) ? "slow-warn" : "")]; }
+          usort($L, function ($a, $b) { return $a[1] <=> $b[1]; }); foreach ($L as $l) echo "  " . str_pad($l[0], 16) . " q " . str_pad($l[1], 3) . " o " . str_pad($l[2], 3) . " target " . str_pad($l[3], 6) . " btn[" . $l[4] . "] " . $l[5] . " " . $l[6] . " " . $l[7] . "\n";
+          echo "waa_last: " . $S("waa_last") . "\n";
+          
+          PHP
+          php /tmp/qo_check.php "$P"; rm -f /tmp/qo_check.php
+          REMOTE

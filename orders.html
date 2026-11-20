@@ -689,6 +689,13 @@
 }
 @media (max-width:820px){ .tm-chips button{min-height:40px;} }
 /* === END MOBILE PASS v1 === */
+/* ?embed=cards : only the platform cards (All orders & revenue / TM Perfume House / TM Shower Gel), shown inside the Finance summary */
+html.emb #sidebar, html.emb .topbar, html.emb .content > :not(#summaryGrid), html.emb .mnav, html.emb #hrmsDkBtn, html.emb #menuToggle { display: none !important; }
+html.emb, html.emb body, html.emb .app, html.emb .main, html.emb .content { min-height: 0 !important; height: auto !important; padding: 0 !important; margin: 0 !important; background: transparent !important; }
+html.emb #summaryGrid { margin: 0 !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 12px !important; align-items: start; }      /* the three cards fill the whole width, side by side */
+@media (max-width: 760px) { html.emb #summaryGrid { grid-template-columns: minmax(0, 1fr) !important; } }
+/* the three cards = All Orders & Revenue + one card per panel (TM Perfume House, TM Shower Gel); the Ad spend & ROAS card and every box after it are left out */
+html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display: none !important; }
 </style>
 </head>
 <body>
@@ -945,10 +952,10 @@
 
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
-<script src="assets/js/layout.js?v=33"></script>
+<script src="assets/js/layout.js?v=36"></script>
 <script src="assets/js/must3.js?v=2"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
-<script src="assets/js/ml_slab.js?v=261119a"></script>
+<script src="assets/js/ml_slab.js?v=261120b"></script>
 <script src="assets/js/addon_view.js?v=2"></script>
 <script src="assets/js/wmo_edit.js?v=1"></script>
 <script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
@@ -1267,8 +1274,10 @@
   // The orders this page is about: one salesperson's when opened from
   // Targets (?salesman=Name), otherwise everything loaded. The stat cards,
   // the list and its title all use this, so they can never disagree.
+  let TWIN = null;      // [start, end] in ms when the page is asked for a 12 PM – 12 PM window (?win=noon)
   function scopedAll() {
-    const b = urlSalesman ? allOrders.filter(o => o.salesman === urlSalesman) : allOrders;
+    let b = urlSalesman ? allOrders.filter(o => o.salesman === urlSalesman) : allOrders;
+    if (TWIN) b = b.filter(o => { const t = Date.parse(o.created_at); return t >= TWIN[0] && t < TWIN[1]; });      // 12 PM – 12 PM window (Finance summary)
     return panelPick ? b.filter(o => panelOf(o) === panelPick) : b;
   }
   // An order counts (in every box, card, the sheet and the lists) only once it is allocated on the Order Allocation page.
@@ -4603,6 +4612,16 @@
   const urlTo = urlParams.get('to');
   const urlQ = urlParams.get('q');
   const urlSalesman = urlParams.get('salesman');
+  // ?embed=cards&win=day&wday=D : the cards only (Finance summary), counting the orders from 12 AM on day D to 12 AM the next day
+  const EMBED_CARDS = urlParams.get('embed') === 'cards';
+  { const wd = urlParams.get('wday') || ''; TWIN = (urlParams.get('win') === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(wd)) ? [Date.parse(wd + 'T00:00:00+05:30'), Date.parse(wd + 'T00:00:00+05:30') + 86400000] : null; }      // win=day&wday=YYYY-MM-DD : the orders from 12 AM that day to 12 AM the next day (24 hours; from / to must cover the business days around it)
+  if (EMBED_CARDS) {
+    document.documentElement.classList.add('emb');
+    setInterval(() => {
+      const c = document.getElementById('summaryGrid'); const h = c && c.style.display !== 'none' ? Math.ceil(c.getBoundingClientRect().height) + 8 : 60;
+      try { parent.postMessage({ tmphCards: h }, location.origin); } catch (e) { }
+    }, 500);
+  }
 
   document.getElementById('dateFrom').value = urlFrom || todayStr();
   document.getElementById('dateTo').value = urlTo || todayStr();

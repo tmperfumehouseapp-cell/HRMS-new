@@ -448,7 +448,9 @@ if ($__bg === 'budget.summary') {
         . "Write summary = at most 3 short sentences: how the month is going against the target, the one or two things that matter most to fix, and what to do first. Use the numbers given, never invent any. If problems is empty, say it looks fine.";
     $schema = ['type' => 'OBJECT', 'properties' => ['summary' => ['type' => 'STRING']], 'required' => ['summary']];
     $sum = '';
-    try { $r = convo_ai($sys, [['text' => "DATA:\n" . $facts]], $schema, false, 400, 'claude'); if (is_array($r) && !empty($r[0]) && is_array($r[1])) $sum = mb_substr(trim((string)($r[1]['summary'] ?? '')), 0, 500); } catch (Throwable $e) {}
+    // ⚡ the same numbers give the same few lines: kept 30 minutes in the shared memo (the AI call takes about 5 s and every open of the page asked it again)
+    try { $sum = (string)hrms_memo('budget_summary:' . md5($facts), 1800, function () use ($sys, $facts, $schema) { $t = ''; try { $r = convo_ai($sys, [['text' => "DATA:\n" . $facts]], $schema, false, 400, 'claude'); if (is_array($r) && !empty($r[0]) && is_array($r[1])) $t = mb_substr(trim((string)($r[1]['summary'] ?? '')), 0, 500); } catch (Throwable $e) { } return $t; }); } catch (Throwable $e) { $sum = ''; }
+    if ($sum === '' && function_exists('hrms_memo_drop')) hrms_memo_drop('budget_summary:' . md5($facts));   // an AI hiccup is never kept
     json_response(['summary' => $sum]);
 }
 json_response(['error' => 'Unknown action.'], 404);
