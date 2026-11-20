@@ -19282,6 +19282,11 @@ if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') 
 if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_backups/.last'; if (!is_file($__lbl) || filemtime($__lbl) < time() - 86400) { require_once __DIR__ . '/learn_backup.php'; lb_schedule($pdo); } } catch (Throwable $e) {} }
 
 if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }
+if (strpos((string)$action, 'fb.') === 0) {
+    require_once __DIR__ . '/feedback.php';
+    if (in_array((string)$action, ['fb.get', 'fb.send_now', 'fb.followup'], true) && !function_exists('wd_send')) { foreach (['wa.php', 'wa_tpl.php', 'wa_console.php', 'wa_more.php'] as $__fbf) require_once __DIR__ . '/' . $__fbf; }      // the WhatsApp sender (message text, sending): the same files the wa.* actions load
+    fb_route($pdo, (string)$action);
+}      // Feedback page (Dispatch → Feedback): delivered parcels → feedback message, screenshots, reward, complaint
 if (strpos((string)$action, 'psum.') === 0) { require_once __DIR__ . '/prod_summary.php'; psum_route($pdo, (string)$action); }   // 🧴 shower gel + ⭐ TM Originals summary of the Orders page (read-only)
 if (strpos((string)$action, 'dpx.') === 0) { require_once __DIR__ . '/dispatch_push.php'; if ($action === 'dpx.feed') dpx_feed($pdo); if ($action === 'dpx.feed_shop') dpx_feed_shop($pdo); dpx_route($pdo, (string)$action); }          // automatic send of the HRMS (manual) orders to the dispatch panel through n8n, at a set time (Admin / HR)          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
 if (strpos((string)$action, 'sysload.') === 0 && function_exists('sysload_route')) { sysload_route($pdo, (string)$action); }          // Admin → Server load: what the server is busy with

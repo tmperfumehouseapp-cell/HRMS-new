@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Feedback — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .fb{padding:6px 14px 40px;max-width:1400px;margin:0 auto;font-size:13px}
+  .fb .pills{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}.fb .pills button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:7px 13px;font:700 12.5px inherit;cursor:pointer;color:#111}.fb .pills button.on{background:#111;color:#fff;border-color:#111}
+  .fb .k{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:0 0 10px}.fb .k div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;color:#555;font-size:11.5px}.fb .k b{display:block;font-size:20px;color:#111}
+  .fb .g{display:grid;grid-template-columns:1.7fr 1fr;gap:12px;align-items:start}
+  .fb .c{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
+  .fb .bar{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center}.fb .bar input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font:inherit;background:#fff;color:#111}
+  .fb .btn{background:#111;color:#fff;border:0;border-radius:10px;padding:9px 13px;font:700 12.5px inherit;cursor:pointer;text-decoration:none;display:inline-block}.fb .btn.g2{background:#0f766e}.fb .btn.gh{background:#fff;color:#111;border:1px solid var(--line)}.fb .btn.rd{background:#fff1f2;color:#b91c1c;border:1px solid #fecdd3}.fb .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .fb .wrap{overflow-x:auto}.fb table{width:100%;border-collapse:collapse}.fb th{font-size:10.5px;text-align:left;color:#777;text-transform:uppercase;padding:5px 6px;white-space:nowrap}.fb td{padding:8px 6px;border-top:1px solid #eef0f2;vertical-align:top}
+  .fb tr.row{cursor:pointer}.fb tr.row:hover td{background:#f8fafb}.fb tr.sel td{background:#f0fdf4!important}
+  .fb .t{display:inline-block;border-radius:99px;padding:2px 9px;font-size:11px;font-weight:700;white-space:nowrap}.s-wait{background:#f3f4f6;color:#555}.s-sent{background:#fef3c7;color:#92400e}.s-replied{background:#e0e7ff;color:#3730a3}.s-proof{background:#dcfce7;color:#166534}.s-cmp{background:#fee2e2;color:#991b1b}.s-rew{background:#ede9fe;color:#5b21b6}.s-skip{background:#eceff1;color:#607d8b}
+  .fb .h{font-weight:800;font-size:14px}.fb .sm{color:#666;font-size:11.5px}
+  .fb .ph{width:100%;min-height:90px;border-radius:10px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:#777;margin:8px 0;overflow:hidden;text-align:center;flex-wrap:wrap;gap:6px;padding:4px}.fb .ph img{max-width:100%;max-height:340px;border-radius:8px;cursor:zoom-in}
+  .fb .tl div{padding:3px 0 3px 10px;border-left:2px solid #bde5d2;font-size:12px;color:#444}.fb .tl b{color:#111}.fb .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .fb .msg{background:#dcf8c6;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.45;margin:6px 0;white-space:pre-wrap;color:#111}
+  .fb .set{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 10px;font-size:12.5px}.fb .set .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.fb .set label{display:block;font-size:11px;font-weight:700;color:#666;margin:0 0 3px}.fb .set input,.fb .set select,.fb .set textarea{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;background:#fff;color:#111;max-width:100%}
+  .fb .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12px}
+  .fb .ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:300;padding:14px}.fb .ov.on{display:flex}.fb .md{background:#fff;color:#111;border-radius:16px;padding:16px;width:min(460px,94vw);max-height:90vh;overflow:auto}.fb .md h3{margin:0 0 8px}.fb .md label{display:block;font-size:12px;color:#555;margin:8px 0 3px}.fb .md input,.fb .md select,.fb .md textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px;font:inherit;background:#fff;color:#111}
+  .fb .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;color:#fff;border-radius:12px;padding:10px 16px;transition:.3s;opacity:0;z-index:400;pointer-events:none}.fb .toast.on{transform:translateX(-50%);opacity:1}
+  @media(max-width:900px){.fb .g{grid-template-columns:1fr}.fb .k{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Feedback</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Ask delivered customers for feedback, keep the proof, reward them, handle complaints</div></div></div>
+    <div class="content"><div class="fb" id="fb">
+      <div id="warn"></div>
+      <details class="set" id="setBox"><summary style="cursor:pointer;font-weight:800">⚙ Settings <span class="sm" id="setSum"></span></summary><div id="setIn" style="margin-top:10px"></div></details>
+      <div class="pills" id="tabs"></div><div class="k" id="kp"></div>
+      <div class="g"><div class="c"><div class="bar"><input id="q" placeholder="🔍 Search order ID, name or phone  e.g. 72474" autocomplete="off"><a class="btn" id="newOrd" href="hub.html?w=dispatch&t=dispatch_manual" target="_top">＋ Create order</a></div>
+        <div class="wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Delivered</th><th>Message</th><th>Seen</th><th>Status</th><th>Proof</th></tr></thead><tbody id="rows"><tr><td colspan="7" class="sm" style="padding:16px">Loading…</td></tr></tbody></table></div><div id="none" class="sm" style="display:none;padding:14px">No order found.</div></div>
+      <div class="c" id="side"><div class="sm">Pick an order.</div></div></div>
+      <div class="ov" id="ov"><div class="md" id="md"></div></div><div class="toast" id="ts"></div><input type="file" id="fi" accept="image/jpeg,image/png,image/webp" style="display:none">
+    </div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=37"></script>
+<script>
+  guardPage();
+  renderSidebar('feedback');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ST = { wait: ['Waiting', 's-wait'], sent: ['Message sent', 's-sent'], replied: ['Replied', 's-replied'], proof: ['Proof received', 's-proof'], rew: ['Reward given', 's-rew'], cmp: ['Complaint', 's-cmp'], skip: ['Left out', 's-skip'] };
+  const TABS = [['all', 'All'], ['wait', 'Waiting'], ['sent', 'Message sent'], ['unseen', 'Not seen'], ['replied', 'Replied'], ['proof', 'Proof received'], ['rew', 'Reward given'], ['cmp', 'Complaint'], ['skip', 'Left out']];
+  let tab = 'all', sel = '', query = '', L = null, CFG = null, CAN = false, DET = null, tplList = null, seq = 0;
+  function say(t, bad) { const e = $('ts'); e.textContent = t; e.style.background = bad ? '#b91c1c' : '#111'; e.classList.add('on'); setTimeout(() => e.classList.remove('on'), 3200); }
+  const dt = (s) => { if (!s) return ''; const m = /^\d{4}-(\d\d)-(\d\d)[ T](\d\d:\d\d)/.exec(s); if (!m) return s; return new Date(2000, +m[1] - 1, +m[2]).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' + m[3]; };
+  const dd = (s) => { const m = /^\d{4}-(\d\d)-(\d\d)/.exec(s || ''); return m ? new Date(2000, +m[1] - 1, +m[2]).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''; };
+
+  async function load() {
+    const my = ++seq;
+    try { const r = await api.get('fb.list', { tab, q: query }); if (my !== seq) return; L = r; CFG = r.cfg; CAN = r.can_edit; draw(); if (sel) openOrder(sel, true); }
+    catch (e) { $('rows').innerHTML = `<tr><td colspan="7" style="padding:16px;color:#b91c1c">${esc(e.message)}</td></tr>`; }
+  }
+  function draw() {
+    const c = L.counts;
+    $('tabs').innerHTML = TABS.map(([k, l]) => `<button class="${tab === k && !query ? 'on' : ''}" data-t="${k}">${l}${k === 'all' ? ' ' + c.all : k === 'unseen' ? ' ' + c.unseen : (c[k] != null ? ' ' + c[k] : '')}</button>`).join('');
+    $('kp').innerHTML = `<div>Delivered<b>${c.all}</b>last 60 days</div><div>Message sent<b>${c.sent_total}</b></div><div>Seen<b>${c.seen}</b>${c.sent_total ? Math.round(c.seen * 100 / c.sent_total) + '%' : ''}</div><div>Replied<b>${c.replied + c.proof + c.rew}</b></div><div>Proof received<b>${c.proof_orders}</b>orders with a screenshot</div><div>Complaints<b>${c.cmp}</b></div>`;
+    $('warn').innerHTML = !CFG.on ? '<div class="warn">⚠ <b>Automatic messages are OFF.</b> Nothing is sent by itself yet. Open ⚙ Settings, pick the approved messages and switch it on.</div>' : (!CFG.tpl ? '<div class="warn">⚠ Pick the approved <b>feedback message</b> in ⚙ Settings, or nothing can be sent.</div>' : '');
+    $('setSum').textContent = '· ' + (CFG.on ? 'automatic ON' : 'automatic OFF') + ' · message after ' + CFG.wait + ' days · follow-up after ' + CFG.fu + ' days';
+    $('none').style.display = L.rows.length ? 'none' : 'block';
+    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><b>${esc(x.order)}</b></td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '✗ Failed' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td></tr>`).join('');
+    renderSet();
+  }
+  function renderSet() {
+    if (!CAN) { $('setIn').innerHTML = '<div class="sm">Only Admin / HR can change the settings. Now: message ' + CFG.wait + ' days after delivery, follow-up after ' + CFG.fu + ' days, ' + (CFG.on ? 'automatic ON' : 'automatic OFF') + '.</div>'; return; }
+    if ($('setIn').dataset.k === JSON.stringify(CFG) && $('setIn').children.length) return; $('setIn').dataset.k = JSON.stringify(CFG);
+    $('setIn').innerHTML = `<div class="row"><div><label>Send messages automatically</label><select id="sOn"><option value="0" ${CFG.on ? '' : 'selected'}>OFF</option><option value="1" ${CFG.on ? 'selected' : ''}>ON</option></select></div>
+      <div><label>Feedback message after (days from delivery)</label><input id="sW" type="number" min="1" max="30" value="${CFG.wait}" style="width:80px"></div><div><label>Follow-up after (days, if no reply)</label><input id="sF" type="number" min="1" max="30" value="${CFG.fu}" style="width:80px"></div></div>
+      <div class="row" style="margin-top:8px"><div><label>Feedback message (approved by Meta, with only the name as a blank)</label><select id="sT"><option value="0">— pick —</option></select></div><div><label>Follow-up message</label><select id="sT2"><option value="0">— none —</option></select></div></div>
+      <div class="row" style="margin-top:8px"><div style="flex:1;min-width:240px"><label>Places where feedback counts (one per line)</label><textarea id="sP" rows="3" style="width:100%">${esc(CFG.places.join('\n'))}</textarea></div><div><label>Reward</label><input id="sR" value="${esc(CFG.reward)}"></div><button class="btn g2" id="sSave" type="button">Save settings</button></div>
+      <div class="sm" style="margin-top:6px">Messages go only between 10 AM and 8 PM, at most a few per minute, and never to a customer who said Stop. A message must first be approved by Meta (Campaigns → Messages).</div>`;
+    const fill = (tpls) => { const mk = (sel, cur) => { const e = $(sel); (tpls || []).forEach((t) => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name + (t.category ? ' · ' + t.category : ''); if (+t.id === +cur) o.selected = true; e.appendChild(o); }); }; mk('sT', CFG.tpl); mk('sT2', CFG.tpl_fu); };
+    if (tplList) fill(tplList); else api.get('wa.camp_templates').then((t) => { tplList = ((t || {}).templates || []).filter((x) => (Array.isArray(x.vars) ? x.vars.length : (+x.vars || 0)) <= 1); fill(tplList); }).catch(() => { $('setIn').insertAdjacentHTML('beforeend', '<div class="sm" style="color:#b91c1c">Could not read your messages.</div>'); });
+    $('sSave').onclick = async () => {
+      try { const r = await api.post('fb.settings_save', { on: $('sOn').value === '1', wait: +$('sW').value, fu: +$('sF').value, tpl: +$('sT').value, tpl_fu: +$('sT2').value, places: $('sP').value.split('\n'), reward: $('sR').value }); CFG = r.cfg; $('setIn').dataset.k = ''; say('Settings saved'); load(); }
+      catch (e) { say(e.message, true); }
+    };
+  }
+  async function imgUrl(id) { const r = await fetch(api.buildUrl('fb.proof_file', { id }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) throw new Error('no picture'); return URL.createObjectURL(await r.blob()); }
+  async function openOrder(o, quiet) {
+    sel = o; if (!quiet) draw();
+    try { const d = await api.get('fb.get', { order: o }); if (sel !== o) return; DET = d; drawSide(); }
+    catch (e) { $('side').innerHTML = `<div style="color:#b91c1c">${esc(e.message)}</div>`; }
+  }
+  function drawSide() {
+    const d = DET, x = d.row, name = (x.customer || '').split(' ')[0] || 'ji';
+    const txt = x.status === 'sent' && !x.seen && d.text_fu ? d.text_fu : d.text;
+    $('side').innerHTML = `<div class="h">${esc(x.order)} · ${esc(x.customer || '')}</div><div class="sm">${esc(x.phone)} · delivered ${esc(dt(x.delivered))} · <span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></div>
+      <div class="ph" id="phs">${d.proofs.length ? 'Loading…' : 'No feedback screenshot yet'}</div>
+      ${x.place ? `<div class="sm">Given on: <b>${esc(x.place)}</b></div>` : ''}${x.reward_note ? `<div class="sm">Reward: <b>${esc(x.reward_note)}</b>${x.reward_order ? ' · order ' + esc(x.reward_order) : ''}</div>` : ''}${x.cx_code ? `<div class="sm">Complaint: <b>${esc(x.cx_code)}</b></div>` : ''}
+      <div class="acts">${x.status === 'wait' ? '<button class="btn g2" id="bNow">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" id="bFu">📨 Send follow-up</button>' : ''}<button class="btn gh" id="bPf">⬆ Add proof manually</button><button class="btn g2" id="bRw">🎁 Reward</button><button class="btn rd" id="bCx">⚠ Customer has an issue</button><button class="btn gh" id="bSk">Leave out</button></div>
+      ${txt ? `<div class="h" style="margin-top:12px;font-size:12.5px">Message that ${x.msg_at ? 'was' : 'will be'} sent</div><div class="msg">${esc(txt)}</div>` : '<div class="sm" style="margin-top:10px">No message is picked yet (⚙ Settings).</div>'}
+      <div class="h" style="margin-top:10px;font-size:12.5px">History</div><div class="tl">${d.events.length ? d.events.map((e) => `<div><b>${esc(dt(e.at))}</b> ${esc(e.txt)}${e.by_name && e.by_name !== 'automatic' ? ' <span class="sm">· ' + esc(e.by_name) + '</span>' : ''}</div>`).join('') : '<div class="sm">Nothing yet.</div>'}</div>`;
+    const go = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
+    go('bNow', () => send('fb.send_now')); go('bFu', () => send('fb.followup')); go('bPf', pickProof); go('bRw', reward); go('bCx', complaint); go('bSk', leaveOut);
+    if (d.proofs.length) { const box = $('phs'); box.innerHTML = ''; d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => window.open(u, '_blank'); box.appendChild(i); }).catch(() => { box.insertAdjacentHTML('beforeend', '<span class="sm">picture not available</span>'); }); }); }
+  }
+  async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); load(); } catch (e) { say(e.message, true); } }
+  function pickProof() {
+    const o = sel; $('fi').onchange = async (e) => {
+      const f = e.target.files[0]; if (!f) return; e.target.value = '';
+      const place = prompt('Where was the feedback given? (' + CFG.places.join(' / ') + ')', CFG.places[0] || '') || '';
+      const fd = new FormData(); fd.append('order', o); fd.append('proof', f); fd.append('place', place);
+      try { await api.upload('fb.proof_add', fd); say('Screenshot attached to ' + o); load(); } catch (er) { say(er.message, true); }
+    }; $('fi').click();
+  }
+  function modal(h) { $('md').innerHTML = h; $('ov').classList.add('on'); } function closeM() { $('ov').classList.remove('on'); }
+  $('ov').onclick = (e) => { if (e.target.id === 'ov') closeM(); };
+  function reward() {
+    const x = DET.row;
+    modal(`<h3>🎁 Reward for ${esc(x.order)}</h3><div class="sm">${esc(x.customer)} · ${esc(x.phone)}</div><label>Gift</label><input id="rg" value="${esc(CFG.reward)}"><label>Feedback was given on</label><select id="rp">${CFG.places.map((p) => `<option ${p === x.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}<option value="">— not sure —</option></select>
+      <label>Reward order number (WM-…), if you made one</label><input id="ro" value="${esc(x.reward_order)}" placeholder="WM-00044">
+      <div class="sm" style="margin-top:8px">First make the free order on the <a href="hub.html?w=dispatch&t=dispatch_manual" target="_top">Manual order page</a> (price ₹0), then type its number here. When that order is booked, its tracking ID goes to the customer by the automatic order messages.</div>
+      <div class="acts"><button class="btn g2" id="rgo">Mark reward given</button><button class="btn gh" id="rno">Cancel</button></div>`);
+    $('rno').onclick = closeM;
+    $('rgo').onclick = async () => { try { await api.post('fb.reward', { order: x.order, gift: $('rg').value, place: $('rp').value, reward_order: $('ro').value }); closeM(); say('Reward saved'); load(); } catch (e) { say(e.message, true); } };
+  }
+  const PROBS = [['leak', 'Leak / damaged'], ['wrong', 'Wrong item'], ['quality', 'Smell / quality'], ['notliked', 'Not liked / return'], ['missing', 'Missing item'], ['notdelivered', 'Not delivered'], ['refund', 'Refund'], ['other', 'Other']];
+  function complaint() {
+    const x = DET.row;
+    modal(`<h3>⚠ Complaint for ${esc(x.order)}</h3><div class="sm">It opens a ticket in the Complaints page, linked to this order.</div><label>What is the issue?</label><select id="cp">${PROBS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select><label>Note</label><textarea id="cn" rows="3" placeholder="What the customer said"></textarea>
+      <div class="acts"><button class="btn rd" id="cgo">Create complaint</button><button class="btn gh" id="cno">Cancel</button></div>`);
+    $('cno').onclick = closeM;
+    $('cgo').onclick = async () => {
+      const b = $('cgo'); b.disabled = true;
+      try {
+        const sum = $('cn').value.trim(), prob = $('cp').value; if (prob === 'other' && !sum) { say('Write a few words about the problem.', true); b.disabled = false; return; }
+        const r = await api.post('bd.cx_raise', { phone: x.phone, name: x.customer, source: 'whatsapp', problem: prob, urgency: 'normal', summary: sum, order_name: x.order });
+        const m = /\b[A-Z]{1,3}-?\d{2,}\b/.exec(r.message || '') || [''];
+        await api.post('fb.cx_done', { order: x.order, code: m[0], why: PROBS.find((p) => p[0] === prob)[1] + (sum ? ' — ' + sum : '') });
+        closeM(); say(r.message || 'Complaint created'); load();
+      } catch (e) { say(e.message, true); b.disabled = false; }
+    };
+  }
+  function leaveOut() {
+    const x = DET.row; modal(`<h3>Leave ${esc(x.order)} out?</h3><div class="sm">No feedback message is sent for it.</div><label>Why</label><input id="kw" value="no feedback needed"><div class="acts"><button class="btn" id="kgo">Leave out</button><button class="btn gh" id="kno">Cancel</button></div>`);
+    $('kno').onclick = closeM; $('kgo').onclick = async () => { try { await api.post('fb.skip', { order: x.order, why: $('kw').value }); closeM(); load(); } catch (e) { say(e.message, true); } };
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-t]'); if (t) { tab = t.dataset.t; query = ''; $('q').value = ''; load(); return; }
+    const r = e.target.closest('tr.row'); if (r) { openOrder(r.dataset.o); }
+  });
+  let qt = 0; $('q').oninput = (e) => { clearTimeout(qt); qt = setTimeout(() => { query = e.target.value.trim(); load(); }, 350); };
+  load(); setInterval(() => { if (!document.hidden && !$('ov').classList.contains('on')) load(); }, 60000);
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
