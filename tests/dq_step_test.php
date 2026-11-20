@@ -33,6 +33,6 @@ stp(); ok($S['wa_dq_hourly'] === '9000' && $S['wa_dq_freeze_n'] === '0', 'good a
 // 7) too few messages -> nothing
 $S = ['wa_dq_hold_end' => (string)(time() - 7200), 'wa_dq_hourly' => '8000']; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 50, 10, 30, 30); wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '8000' && !wa_dq_hold_active($pdo), 'under 200 messages: nothing changes');
 // 8) marketing pause (owner 20 Nov 2026): only while the time has not passed
-$S = []; ok(!wa_mkt_paused($pdo), 'no pause set: not paused'); $S['wa_mkt_pause_until'] = (string)(time() + 3000); ok(wa_mkt_paused($pdo), 'pause until later: paused'); $S['wa_mkt_pause_until'] = (string)(time() - 5); ok(!wa_mkt_paused($pdo), 'pause time over: restarts by itself');
+$S = ['wa_mkt_night_on' => '0']; ok(!wa_mkt_paused($pdo), 'no pause set: not paused'); $S['wa_mkt_pause_until'] = (string)(time() + 3000); ok(wa_mkt_paused($pdo), 'pause until later: paused'); $S['wa_mkt_pause_until'] = (string)(time() - 5); ok(!wa_mkt_paused($pdo), 'pause time over: restarts by itself');
 $src2 = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_dq.php'); ok(strpos($src2, 'wa_dq_hold_active($pdo) || wa_mkt_paused($pdo)') !== false, 'the pause zeroes the marketing hour room'); ok(strpos(file_get_contents(dirname(__DIR__) . '/empmanagment/wa_rec_util.php'), 'wa_mkt_paused') === false, 'the pause does not touch Module B');
 echo "dq ok\n";
