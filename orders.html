@@ -4612,9 +4612,9 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
   const urlTo = urlParams.get('to');
   const urlQ = urlParams.get('q');
   const urlSalesman = urlParams.get('salesman');
-  // ?embed=cards&win=noon : the cards only (Finance summary); win=noon counts the orders from 12 PM on the 'from' day to 12 PM the next day
+  // ?embed=cards&win=day&wday=D : the cards only (Finance summary), counting the orders from 12 AM on day D to 12 AM the next day
   const EMBED_CARDS = urlParams.get('embed') === 'cards';
-  TWIN = (urlParams.get('win') === 'noon' && /^\d{4}-\d{2}-\d{2}$/.test(urlFrom || '')) ? [Date.parse(urlFrom + 'T12:00:00+05:30'), Date.parse(urlFrom + 'T12:00:00+05:30') + 86400000] : null;
+  { const wd = urlParams.get('wday') || ''; TWIN = (urlParams.get('win') === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(wd)) ? [Date.parse(wd + 'T00:00:00+05:30'), Date.parse(wd + 'T00:00:00+05:30') + 86400000] : null; }      // win=day&wday=YYYY-MM-DD : the orders from 12 AM that day to 12 AM the next day (24 hours; from / to must cover the business days around it)
   if (EMBED_CARDS) {
     document.documentElement.classList.add('emb');
     setInterval(() => {
