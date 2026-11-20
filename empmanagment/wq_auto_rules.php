@@ -86,10 +86,16 @@ function waa_tier(int $q, int $qo, float $team): int
     return $r < waa_floor($team) - 1e-9 ? 3 : 2;
 }
 
-/** The person with the FEWEST queries so far (equal shares: the grey people are filled up one by one); a tie goes to the lower id = a fixed line. */
+/** THE LINE (owner, 20 Nov: "one query each in turn, then the next person"): the person whose last query from the engine is the OLDEST goes next (nobody given one yet today = first); a tie goes to the one with fewer queries, then to the lower id. */
+function waa_pick_line(array $c): int
+{
+    $best = 0; $bk = null; foreach ($c as $e => $x) { $k = [(int)($x['last'] ?? 0), (int)($x['cnt'] ?? 0), (int)$e]; if ($bk === null || $k < $bk) { $bk = $k; $best = (int)$e; } }
+    return $best;
+}
+/** The person with the FEWEST queries so far (the grey people are filled up one by one); a tie goes to the one waiting longest in line, then to the lower id. */
 function waa_pick_fewest(array $c): int
 {
-    $best = 0; $bc = null; foreach ($c as $e => $x) { $n = (int)($x['cnt'] ?? 0); if ($bc === null || $n < $bc || ($n === $bc && (int)$e < $best)) { $bc = $n; $best = (int)$e; } }
+    $best = 0; $bk = null; foreach ($c as $e => $x) { $k = [(int)($x['cnt'] ?? 0), (int)($x['last'] ?? 0), (int)$e]; if ($bk === null || $k < $bk) { $bk = $k; $best = (int)$e; } }
     return $best;
 }
 /**
@@ -104,7 +110,7 @@ function waa_pick_tiers(array $c, int $min = WAA_MIN_Q, int $pos = 0): int
             foreach ([false, true] as $ignoreRest) {
                 $in = function (int $t) use ($c, $ignoreFull, $ignoreAhead, $ignoreRest) { return array_filter($c, function ($x) use ($t, $ignoreFull, $ignoreAhead, $ignoreRest) { return (int)($x['tier'] ?? 2) === $t && ($ignoreFull || empty($x['full'])) && ($ignoreAhead || empty($x['ahead'])) && ($ignoreRest || empty($x['rest'])); }); };
                 $g0 = $in(0); if ($g0) return waa_pick_fewest($g0);
-                foreach (($pos % 3 === 2) ? [2, 1] : [1, 2] as $t) { $g = $in($t); if ($g) return waa_pick($g, 0); }
+                foreach (($pos % 3 === 2) ? [2, 1] : [1, 2] as $t) { $g = $in($t); if ($g) return waa_pick_line($g); }
             }
         }
     }
