@@ -59,23 +59,19 @@
         <div><label>Day</label><input type="date" id="dDay"></div>
         <button class="btn" type="button" id="bToday" style="background:#fff;color:#111;border:1px solid var(--line)">Today</button>
         <button class="btn" type="button" id="bYest" style="background:#fff;color:#111;border:1px solid var(--line)">Yesterday</button>
+        <button class="btn" type="button" id="bTom" style="background:#fff;color:#111;border:1px solid var(--line)">Tomorrow</button>
         <button class="btn" type="button" id="bRef" style="background:#fff;color:#111;border:1px solid var(--line)">🔄 Refresh</button>
         <span style="flex:1"></span>
         <button class="btn" type="button" id="bUp" style="background:#fff;color:#111;border:1px solid var(--line);display:none" title="Replace the SKU list: an Excel whose first three columns are SKU · original name · shop name">⬆ Upload SKU file</button>
         <input type="file" id="fUp" accept=".xlsx,.xls,.csv" style="display:none">
         <button class="btn" type="button" id="bXlsx" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
       </div>
-      <details id="chBox" style="margin:0 0 12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
-        <summary style="cursor:pointer;font-weight:800">⛓ Chain report — every product with "chain" in its name: which chain, how many</summary>
-        <div class="bar" style="margin-top:10px">
-          <div><label>From</label><input type="date" id="chFrom"></div>
-          <div><label>To</label><input type="date" id="chTo"></div>
-          <button class="btn" type="button" id="chGo">Count chains</button>
-          <span style="flex:1"></span>
-          <button class="btn" type="button" id="chXl" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
-        </div>
+      <div id="chBox" style="margin:0 0 12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b id="chTitle">⛓ Chain report</b><span style="flex:1"></span>
+          <button class="btn" type="button" id="chGo" style="background:#fff;color:#111;border:1px solid var(--line)">🔄 Recount chains</button>
+          <button class="btn" type="button" id="chXl" style="background:#15803d;border-color:#15803d" disabled>⬇ Chain Excel</button></div>
         <div id="chOut" style="margin-top:8px;font-size:13px"></div>
-      </details>
+      </div>
       <div class="sk-sr"><input type="search" id="skQ" placeholder="Search an order number or a perfume name…" autocomplete="off" aria-label="Search the SKU sheet"></div>
       <div id="skFound"></div>
       <div id="skTop"></div>
@@ -137,7 +133,7 @@
   }
   async function load() {
     const my = ++seq; $('bRef').disabled = true; $('skRows').innerHTML = '<tr><td colspan="13" style="padding:20px">Reading the orders of the day from Shopify…</td></tr>'; $('skTop').innerHTML = ''; $('bXlsx').disabled = true;
-    try { const d = await api.get('sku.sheet', { day: $('dDay').value }); if (my !== seq) return; if (!$('dDay').value) $('dDay').value = d.day; TODAY = d.today; draw(d); }
+    try { const d = await api.get('sku.sheet', { day: $('dDay').value }); if (my !== seq) return; if (!$('dDay').value) $('dDay').value = d.day; TODAY = d.today; draw(d); chainRun(); }
     catch (e) { if (my !== seq) return; $('skRows').innerHTML = ''; $('skTop').innerHTML = '<div class="box bad"><b>The SKU sheet could not be made.</b> ' + esc(e.message) + '</div>'; }
     $('bRef').disabled = false;
   }
@@ -145,6 +141,7 @@
   const shift = (iso, n) => { const t = new Date(iso + 'T12:00:00'); t.setDate(t.getDate() + n); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); };
   $('bToday').onclick = () => { $('dDay').value = TODAY || ''; load(); };
   $('bYest').onclick = () => { if (TODAY) { $('dDay').value = shift(TODAY, -1); load(); } };
+  $('bTom').onclick = () => { if (TODAY) { $('dDay').value = shift(TODAY, 1); load(); } };
   $('bRef').onclick = load; $('dDay').onchange = load;
 
   // ---- Excel in the owner's format: the table twice side by side (A–M and P–AB), dark blue head, TOTAL row, grand total, footer
@@ -182,17 +179,18 @@
 
   // ---- ⛓ chain report: every product line with "chain" in its name
   let CH = null; const chE = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  (function () { const t = new Date(Date.now() + 19800000).toISOString().slice(0, 10); $('chFrom').value = t; $('chTo').value = t; })();
-  $('chGo').onclick = async function () {
-    const b = this; b.disabled = true; $('chXl').disabled = true; $('chOut').textContent = 'Counting the chains… (a long range takes a minute)';
+  let chSeq = 0;
+  async function chainRun() {
+    const day = $('dDay').value; if (!day) return; const my = ++chSeq; $('chXl').disabled = true; $('chGo').disabled = true; $('chTitle').textContent = '⛓ Chain report — ' + dmy(day); $('chOut').textContent = 'Counting the chains of this day…';
     try {
-      const r = await api.get('sku.chain', { from: $('chFrom').value, to: $('chTo').value }); CH = r;
-      $('chOut').innerHTML = '<div style="margin-bottom:6px"><b>' + r.pieces + '</b> chain pieces in <b>' + r.rows.reduce((a, x) => a + x.orders, 0) + '</b> order lines · ₹' + Number(r.amount).toLocaleString('en-IN') + ' · ' + r.orders_read + ' orders read' + (r.errors.length ? ' · <span style="color:#b91c1c">' + chE(r.errors.join(' | ')) + '</span>' : '') + '</div>' +
-        (r.rows.length ? '<table class="sk"><thead><tr><th style="text-align:left">Chain</th><th>SKU</th><th>Pieces</th><th>Orders</th><th>Amount</th></tr></thead><tbody>' + r.rows.map((x) => '<tr><td style="text-align:left">' + chE(x.name) + '</td><td>' + chE(x.sku) + '</td><td><b>' + x.qty + '</b></td><td>' + x.orders + '</td><td>₹' + Number(x.amount).toLocaleString('en-IN') + '</td></tr>').join('') + '</tbody></table>' : '<div>No chain product in these orders.</div>');
+      const r = await api.get('sku.chain', { from: day, to: day }); if (my !== chSeq) return; CH = r;
+      $('chOut').innerHTML = '<div style="margin-bottom:8px;font-size:14px"><b>' + r.pieces + ' chain pieces</b> in <b>' + r.orders_with + '</b> orders (of ' + r.orders_read + ' orders of the day) · ₹' + Number(r.amount).toLocaleString('en-IN') + (r.errors.length ? ' · <span style="color:#b91c1c">' + chE(r.errors.join(' | ')) + '</span>' : '') + '</div>' +
+        (r.rows.length ? '<table class="sk" style="width:auto;min-width:420px"><thead><tr><th style="text-align:left">Chain</th><th>SKU</th><th>Pieces</th><th>Orders</th><th>Amount</th></tr></thead><tbody>' + r.rows.map((x) => '<tr><td style="text-align:left">' + chE(x.name) + '</td><td>' + chE(x.sku) + '</td><td><b>' + x.qty + '</b></td><td>' + x.orders + '</td><td>₹' + Number(x.amount).toLocaleString('en-IN') + '</td></tr>').join('') + '<tr style="font-weight:800;background:#f4f4f4"><td style="text-align:left">TOTAL</td><td></td><td>' + r.pieces + '</td><td>' + r.orders_with + '</td><td>₹' + Number(r.amount).toLocaleString('en-IN') + '</td></tr></tbody></table>' : '<div>No chain product in the orders of this day.</div>');
       $('chXl').disabled = !r.rows.length;
-    } catch (e) { $('chOut').textContent = 'Error: ' + e.message; }
-    b.disabled = false;
-  };
+    } catch (e) { if (my === chSeq) $('chOut').textContent = 'Error: ' + e.message; }
+    if (my === chSeq) $('chGo').disabled = false;
+  }
+  $('chGo').onclick = chainRun;
   $('chXl').onclick = async function () {
     if (!CH || !CH.rows.length) return;
     try {

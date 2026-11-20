@@ -179,7 +179,7 @@ function sku_shopify_day(PDO $pdo, string $day, string $to = ''): array
 /** ⛓ Every product line whose name has "chain" in it (any shop, any spelling), over a range of business days: which chain, how many pieces, in how many orders, how much money. Cancelled orders left out. */
 function sku_chain(PDO $pdo, string $from, string $to): array
 {
-    $by = []; $nOrd = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
+    $by = []; $nOrd = 0; $nManC = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
     $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
         $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
         if ($name === '' || stripos($name, 'chain') === false) return;
@@ -197,14 +197,14 @@ function sku_chain(PDO $pdo, string $from, string $to): array
     try {   // the manual orders (WM-xxxxx) confirmed in the range
         $win = biz_window($pdo, $from, $to);
         $q = $pdo->prepare("SELECT order_no, lines_json FROM wmo_order WHERE status = 'confirmed' AND COALESCE(confirmed_at, created_at) BETWEEN ? AND ?"); $q->execute([$win[0], $win[1]]);
-        foreach ($q->fetchAll() as $r) foreach ((array)(json_decode((string)$r['lines_json'], true) ?: []) as $l) {
+        foreach ($q->fetchAll() as $r) { $nManC++; foreach ((array)(json_decode((string)$r['lines_json'], true) ?: []) as $l) {
             $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$r['order_no']);
-        }
+        } }
     } catch (Throwable $e) { $errs[] = 'Manual orders: ' . $e->getMessage(); }
-    $rows = []; $pieces = 0; $money = 0.0;
-    foreach ($by as $r) { $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_keys($r['orders']), 0, 60)]; $pieces += $r['qty']; $money += $r['amount']; }
+    $rows = []; $pieces = 0; $money = 0.0; $withChain = [];
+    foreach ($by as $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_keys($r['orders']), 0, 60)]; $pieces += $r['qty']; $money += $r['amount']; }
     usort($rows, fn($a, $b) => $b['qty'] <=> $a['qty'] ?: strcmp($a['name'], $b['name']));
-    return ['from' => $from, 'to' => $to, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd, 'errors' => $errs];
+    return ['from' => $from, 'to' => $to, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd + $nManC, 'orders_with' => count($withChain), 'errors' => $errs];
 }
 
 /** The whole sheet of one business day. */
