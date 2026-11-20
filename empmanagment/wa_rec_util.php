@@ -288,6 +288,10 @@ function wa_ru_reset_once(PDO $pdo): void
             setting_set($pdo, 'wa_ru_l1000', '1'); setting_set($pdo, 'wa_ru_ramp_max', '1000'); setting_set($pdo, 'wa_ru_lvl_at', (string)time());
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): ladder up to 1,000 an hour (owner): 700 now, then 800 / 900 / 1,000, two hours at each level while failed stays under 2% and delivered 85% or more');
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_to1000_2111', '') !== '1') {   /* owner 21 Nov 2026 (03:50 IST): Module B runs at 1,000 an hour now; the ladder is 500 -> 600 -> 700 -> 800 -> 900 -> 1,000, ONE hour at each level (a bad stretch restarts from the 500 floor) */
+            setting_set($pdo, 'wa_ru_to1000_2111', '1'); setting_set($pdo, 'wa_ru_ramp_base', '500'); setting_set($pdo, 'wa_ru_ramp_max', '1000'); setting_set($pdo, 'wa_ru_hourly', '1000'); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_lvl_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): 1,000 an hour now (owner); ladder after a bad stretch 500 / 600 / 700 / 800 / 900 / 1,000, one hour at each level');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_ru_base260', '') !== '1') {   /* owner 20 Nov 2026 (02:00): Module B must not run at 180; the floor is 260 an hour (it starts again from 260 after a bad stretch, never lower) */
             setting_set($pdo, 'wa_ru_base260', '1'); setting_set($pdo, 'wa_ru_ramp_base', '260'); if ((int)setting_get($pdo, 'wa_ru_hourly', '260') < 260) setting_set($pdo, 'wa_ru_hourly', '260'); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the floor is now 260 an hour (it never goes lower), it runs at ' . setting_get($pdo, 'wa_ru_hourly', '260') . ' now (owner)');
@@ -381,10 +385,10 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
             return; }
         /* owner 20 Nov 2026 (06:30): no 2-hour wait any more; the ladder moves at every 10-minute look (40, 50, 60, 70, 80, 90, 100 per 10 minutes) */
         /* owner 20 Nov 2026 (18:55): above 700 the ladder is 800 / 900 / 1,000 and each level needs TWO HOURS at that level with failed under 2%, delivered 85% or more (no failed look in between: a bad look already holds / goes back / rests above); the first two hours at 700 start from the deploy */
-        $hi = $cur >= 700; $hiOk = true; if ($hi) { $la = (int)setting_get($pdo, 'wa_ru_lvl_at', '0'); if ($la <= 0) { setting_set($pdo, 'wa_ru_lvl_at', (string)$now); $la = $now; } $hiOk = ($now - $la >= 7200) && $gf / max(1, $gn) < 0.02 && $gd / max(1, $gn) >= 0.85; }
+        $hi = $cur >= 700; $hiOk = true; if ($hi) { $la = (int)setting_get($pdo, 'wa_ru_lvl_at', '0'); if ($la <= 0) { setting_set($pdo, 'wa_ru_lvl_at', (string)$now); $la = $now; } $hiOk = ($now - $la >= 3600) && $gf / max(1, $gn) < 0.02 && $gd / max(1, $gn) >= 0.85; }
         if ($cur < $max && $hiOk && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
             setting_set($pdo, 'wa_ru_freeze_n', '0');
-            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([240, 300, 360, 420, 480, 540, 550, 600, 700, 800, 900, 1000] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 20 Nov 2026: 40 / 50 / 60 / 70 / 80 / 90 / 100 messages per 10 minutes = 240 ... 600 an hour; owner 20 Nov 2026 (15:20): from now the slots are 550 / 600 / 700 an hour (floor 550, top 700, never 800) */
+            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([240, 300, 360, 420, 480, 500, 540, 550, 600, 700, 800, 900, 1000] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 20 Nov 2026: 40 / 50 / 60 / 70 / 80 / 90 / 100 messages per 10 minutes = 240 ... 600 an hour; owner 20 Nov 2026 (15:20): from now the slots are 550 / 600 / 700 an hour (floor 550, top 700, never 800) */
             setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now); if ($to >= 700) setting_set($pdo, 'wa_ru_lvl_at', (string)$now);   // the 2-hour clock of a level from 700 up starts when it is reached
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered in the last look): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
