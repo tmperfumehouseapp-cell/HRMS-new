@@ -208,6 +208,11 @@ jobs:
           echo "\n=== LADDER LOG ===\n"; foreach ($all("SELECT at, LEFT(info, 260) info FROM wa_log WHERE info LIKE 'Marketing speed%' OR info LIKE 'Marketing paused%' ORDER BY id DESC LIMIT 6") as $r) echo "  " . $r["at"] . " " . $r["info"] . "\n";
           foreach (["wa_dq_step_last","wa_dq_step_at","wa_dq_hold_end","wa_dq_freeze_n","wa_dq_good_n"] as $k) echo "  $k=" . $s($k) . "\n";
           foreach ($all("SELECT who, COUNT(*) n, SUM(status IN ('delivered','read')) d, SUM(status='failed') f, SUM(EXISTS (SELECT 1 FROM wa_ru_log r WHERE r.wamid = m.wamid)) is_modb FROM wa_messages m WHERE dir='out' AND mtype='template' AND who IN ('campaign','recover') AND ts >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) AND ts < DATE_SUB(NOW(), INTERVAL 255 MINUTE) GROUP BY who") as $r) echo "  window(17:08-18:08 IST) " . json_encode($r) . "\n";
+          echo "\n=== NUMBER 9 SENDS (last 3 h) ===\n";
+          foreach ($all("SELECT who, status, COUNT(*) n, MIN(ts) first_ts, MAX(ts) last_ts FROM wa_messages WHERE number_id = 9 AND dir = 'out' AND mtype = 'template' AND ts >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) GROUP BY who, status ORDER BY who, status") as $r) echo "  " . json_encode($r) . "\n";
+          foreach ($all("SELECT i.camp_id, COUNT(*) n, MAX(i.sent_at) last_at FROM wa_camp_items i WHERE i.number_id = 9 AND i.sent_at >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) GROUP BY i.camp_id ORDER BY n DESC LIMIT 6") as $r) echo "  camp " . json_encode($r) . "\n";
+          foreach ($all("SELECT HOUR(DATE_ADD(ts, INTERVAL 0 HOUR)) h, COUNT(*) n FROM wa_messages WHERE number_id = 9 AND dir = 'out' AND mtype = 'template' AND ts >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) GROUP BY h ORDER BY h") as $r) echo "  hour " . json_encode($r) . "\n";
+          foreach ($all("SELECT number_id, COUNT(*) n FROM wa_messages WHERE number_id IN (9,10) AND dir = 'out' AND ts >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) GROUP BY number_id") as $r) echo "  any-out " . json_encode($r) . "\n";
           PHP
           php /tmp/us_check.php "$P"; rm -f /tmp/us_check.php
           REMOTE
