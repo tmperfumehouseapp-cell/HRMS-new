@@ -81,4 +81,9 @@ ok(wln_enroll_camp($pdo, $since) === 2, 'campaign enrolment: cap of 2 a day, old
 ok($ct === ['9820000001', '9820000006'], 'campaign enrolment picks the read, quiet, not-ordered, not-opted-out ones: ' . json_encode($ct)); ok(wln_enroll_camp($pdo, $since) === 0, 'the day cap holds');
 ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9820000001' AND status = 'planned'")->fetchColumn() === 7, 'a campaign recipient gets seven steps');
 wl_cfg_put($pdo, ['mode' => 'auto', 'cap' => 60, 'from' => 0, 'to' => 24, 'since' => $since, 'started' => '2026-11-21 00:00:00', 'offer' => '', 'camp' => 'off']); $S['wl_camp_day'] = ''; ok(wln_enroll_camp($pdo, $since) === 0, 'camp = off enrols nobody');
+ok(wln_camp_cleanup($pdo) === 2, 'switching it off takes the two campaign people off again'); ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9820000001' AND status = 'planned'")->fetchColumn() === 0, 'and cancels their planned steps'); ok(wln_camp_cleanup($pdo) === 0, 'nothing left to clean');
+ok(!isset(wl_cfg($pdo)['camp']) || wl_cfg($pdo)['camp'] === 'off', 'default is off');
+// a reply counts whatever the contact's source says
+$pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at, source) VALUES ('9830000001', 'Src', '" . $f($now) . "', 'community')"); $pdo->exec("INSERT INTO wa_messages (phone, dir, body, ts) VALUES ('9830000001', 'in', 'combo price', '" . $f($now) . "')");
+ok(wl_enroll($pdo, $since) >= 1 && (string)$pdo->query("SELECT topic FROM wa_line_cust WHERE phone = '9830000001'")->fetchColumn() === 'price', 'a reply from a community contact enrols him with the topic of his words');
 echo "lineup db ok\n";
