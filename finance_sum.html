@@ -45,7 +45,7 @@
 </div>
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=13"></script>
-<script src="assets/js/layout.js?v=33"></script>
+<script src="assets/js/layout.js?v=36"></script>
 <script src="assets/js/store_common.js?v=3"></script>
 <script>
   guardPage();
@@ -127,7 +127,7 @@
     showCards(NOON, addDays(NOON, 1), true);
   }
   function showCards(from, to, noon) {
-    const fr = $('cardsFr'), host = $('cardsHost'), src = 'orders.html?embed=cards&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + (noon ? '&win=noon' : '');
+    const fr = $('cardsFr'), host = $('cardsHost'), src = 'orders.html?embed=cards&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + (noon ? '&win=noon' : '') + '&v=2';
     host.style.display = ''; if (fr.getAttribute('data-src') !== src) { fr.setAttribute('data-src', src); fr.src = src; }      // reloaded only when the dates change
   }
   window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && typeof e.data.tmphCards === 'number') $('cardsFr').style.height = Math.max(60, Math.min(2400, e.data.tmphCards)) + 'px'; });

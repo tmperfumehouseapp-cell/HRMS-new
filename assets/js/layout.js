@@ -1438,7 +1438,7 @@ function loadCommissionRuleScripts() {
 
 function renderSidebar(active) {
   // a page shown INSIDE another page (…?embed=store, like Store Commission holding the Total Budgeting Store view) never draws its own menu: it would show a second copy of the whole app
-  if (/[?&]embed=(store|retail)(&|$)/.test(location.search) && window.parent !== window) {
+  if (/[?&]embed=(store|retail|cards)(&|$)/.test(location.search) && window.parent !== window) {
     const sb0 = document.getElementById('sidebar'); if (sb0) sb0.remove();
     return;
   }
