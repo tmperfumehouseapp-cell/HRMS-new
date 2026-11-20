@@ -212,7 +212,8 @@ function wa_number_id(PDO $pdo, string $phoneId, string $display = ''): int
     $q = $pdo->prepare("SELECT id, display FROM wa_numbers WHERE phone_id = ?"); $q->execute([$phoneId]); $r = $q->fetch();
     if ($r) { if ($display !== '' && $r['display'] !== $display) $pdo->prepare("UPDATE wa_numbers SET display = ? WHERE id = ?")->execute([$display, $r['id']]); return (int)$r['id']; }
     $pdo->prepare("INSERT INTO wa_numbers (phone_id, display, created_at) VALUES (?, ?, ?)")->execute([$phoneId, $display, date('Y-m-d H:i:s')]);
-    return (int)$pdo->lastInsertId();
+    $newId = (int)$pdo->lastInsertId(); if ($phoneId !== wa_cfg_val('WA_PHONE_ID')) try { $pdo->prepare("UPDATE wa_numbers SET camp_ok = 0, hold = 1 WHERE id = ?")->execute([$newId]); } catch (Throwable $eL) { }   // owner 20 Nov 2026: a NEW number starts LOCKED (replies only) until the owner unlocks it
+    return $newId;
 }
 /** Makes sure the number from config.php (WA_PHONE_ID) is in the numbers list, named "Main number" until you rename it. */
 function wa_numbers_sync(PDO $pdo): void
@@ -278,7 +279,7 @@ function wa_redirect_target(PDO $pdo, int $numberId): int
         $cnt = []; foreach ($pdo->query("SELECT last_number_id AS n, COUNT(*) c FROM wa_contacts WHERE last_in_at >= '" . date('Y-m-d 00:00:00') . "' GROUP BY last_number_id")->fetchAll() as $r) $cnt[(int)$r['n']] = (int)$r['c'];
         $best = 0; $bc = PHP_INT_MAX;
         foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
-            $id = (int)$n['id']; if ($id === $numberId || !empty($n['retired'])) continue; $b2 = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($b2 !== '' && strtotime($b2) > time() - 3 * 3600) continue;
+            $id = (int)$n['id']; if ($id === $numberId || !empty($n['retired']) || !empty($n['hold'])) continue; $b2 = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($b2 !== '' && strtotime($b2) > time() - 3 * 3600) continue;
             $c = $cnt[$id] ?? 0; if ($c < $bc) { $bc = $c; $best = $id; }
         }
         return $best;
@@ -1133,7 +1134,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 if ($wb === '') $wb = wa_find_waba($pdo, $pid);   // not typed: find the account among the ones already known
                 $q = $pdo->prepare("SELECT id FROM wa_numbers WHERE phone_id = ?"); $q->execute([$pid]); if ($q->fetch()) json_response(['error' => 'This number is already in the list.'], 422);
                 if ($label === '') json_response(['error' => 'Give the number a name, e.g. “TM Perfume House One”.'], 422);
-                $pdo->prepare("INSERT INTO wa_numbers (phone_id, label, panel, waba_id, created_at) VALUES (?, ?, ?, ?, ?)")->execute([$pid, $label, $panel, $wb, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId();
+                $pdo->prepare("INSERT INTO wa_numbers (phone_id, label, panel, waba_id, created_at) VALUES (?, ?, ?, ?, ?)")->execute([$pid, $label, $panel, $wb, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); try { $pdo->prepare("UPDATE wa_numbers SET camp_ok = 0, hold = 1 WHERE id = ?")->execute([$id]); } catch (Throwable $eL) { }   // owner 20 Nov 2026: a NEW number starts LOCKED (replies only) until the owner unlocks it
             }
             json_response(['ok' => true, 'id' => $id]);
         }
@@ -1345,7 +1346,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 $sq = $pdo->prepare("SELECT COALESCE(MAX(id), 0) FROM wa_messages WHERE phone = ? AND dir = 'in'"); $sq->execute([$key]); $mx = (int)$sq->fetchColumn(); if ($mx !== (int)$c['seen_msg_id']) $pdo->prepare("UPDATE wa_contacts SET seen_msg_id = ? WHERE phone = ? AND seen_msg_id <> ?")->execute([$mx, $key, $mx]);   // write only when something new was read: the same result, no write lock on every open / poll $c['unread'] = 0;
             } else { $q3 = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'in' AND id > ?"); $q3->execute([$key, (int)$c['seen_msg_id']]); $c['unread'] = (int)$q3->fetchColumn(); }
             $ct = wa_contact_row($c, $names); $ct['numbers_used'] = count(array_unique(array_filter(array_column(array_filter($msgs, fn($m) => $m['dir'] !== 'sys'), 'number_id')))); $ct['last_number'] = $nums[(int)$c['last_number_id']] ?? '';
-            try { $ct['last_number_retired'] = false; $ct['shift_to'] = ''; $act = []; foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n9) { if ((int)$n9['id'] === (int)$c['last_number_id'] && !empty($n9['retired'])) $ct['last_number_retired'] = true; if (empty($n9['retired'])) $act[] = trim(($n9['label'] !== '' ? $n9['label'] : 'Number ' . $n9['id']) . ' ' . (string)$n9['display']); } if ($ct['last_number_retired']) $ct['shift_to'] = implode(' · ', $act); } catch (Throwable $e9) { }   // owner 20 Nov 2026: a chat on a number that is being closed shows where to shift the customer (the numbers with their digits, so they can be said on a call)
+            try { $ct['last_number_retired'] = false; $ct['shift_to'] = ''; $act = []; foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n9) { if ((int)$n9['id'] === (int)$c['last_number_id'] && !empty($n9['retired'])) $ct['last_number_retired'] = true; if (empty($n9['retired']) && empty($n9['hold'])) $act[] = trim(($n9['label'] !== '' ? $n9['label'] : 'Number ' . $n9['id']) . ' ' . (string)$n9['display']); } if ($ct['last_number_retired']) $ct['shift_to'] = implode(' · ', $act); } catch (Throwable $e9) { }   // owner 20 Nov 2026: a chat on a number that is being closed shows where to shift the customer (the numbers with their digits, so they can be said on a call)
             $one = function (string $sql) use ($pdo, $key) { $q4 = $pdo->prepare($sql); $q4->execute([$key]); return $q4->fetchColumn(); };
             $ct['session_msgs'] = (int)$one("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir != 'sys' AND mtype != 'template'"); $ct['template_msgs'] = (int)$one("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND mtype = 'template'");
             $ct['first_message'] = mb_substr((string)$one("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id LIMIT 1"), 0, 120); $ct['first_seen'] = $c['first_seen'];
