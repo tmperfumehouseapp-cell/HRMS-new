@@ -138,7 +138,7 @@ function wl_cfg(PDO $pdo): array
     $mode = (string)($j['mode'] ?? 'auto'); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'auto';   // owner 21 Nov: always on (no switch on the screen); 'off' stays only as an emergency value the API accepts
     return ['mode' => $mode, 'cap' => max(5, min(300, (int)($j['cap'] ?? 60))), 'from' => max(0, min(23, (int)($j['from'] ?? 10))), 'to' => max(1, min(24, (int)($j['to'] ?? 20))), 'since' => (int)($j['since'] ?? 0),
         'offer' => (string)($j['offer'] ?? ''), 'started' => (string)($j['started'] ?? ''),
-        'camp' => in_array((string)($j['camp'] ?? 'read'), ['off', 'read', 'delivered'], true) ? (string)($j['camp'] ?? 'read') : 'read', 'camp_cap' => max(0, min(20000, (int)($j['camp_cap'] ?? 2000)))];   // campaign recipients: who joins (read = opened the campaign message) and at most how many new ones a day
+        'camp' => in_array((string)($j['camp'] ?? 'off'), ['off', 'read', 'delivered'], true) ? (string)($j['camp'] ?? 'off') : 'off', 'camp_cap' => max(0, min(20000, (int)($j['camp_cap'] ?? 2000)))];   // campaign recipients: who joins (read = opened the campaign message) and at most how many new ones a day
 }
 function wl_cfg_put(PDO $pdo, array $c): void { setting_set($pdo, 'wl_cfg', json_encode($c, JSON_UNESCAPED_UNICODE)); }
 function wl_offer_text(PDO $pdo): string { $o = trim(wl_cfg($pdo)['offer']); return $o !== '' ? $o : "Aapke liye final details ye hain 🙏 Aapko kaunsa perfume chahiye, bata dein to hum is hafte ki sabse achhi kimat bata dete hain."; }
@@ -192,13 +192,13 @@ function wl_orders_since(PDO $pdo, int $from): array
     return $o;
 }
 function wl_ordered_after(array $orders, string $phone, int $t): bool { foreach ($orders[substr(preg_replace('/\D+/', '', $phone), -10)] ?? [] as $x) if ($x >= $t) return true; return false; }
-/** Who comes in: every customer who wrote to us (new query / campaign reply) at or after $since, however old the contact is — his FIRST message in that window starts his Day 0.
+/** Who comes in: every customer who wrote to us (a new query or a REPLY to a campaign, a button tap too) at or after $since, however old the contact is — his FIRST message in that window starts his Day 0.
  *  One lineup per customer per 30 days (an old finished one is replaced). Already ordered since he wrote = not enrolled. Each is read once (topic) and gets his 7 rows. */
 function wl_enroll(PDO $pdo, int $since): int
 {
     if ($since <= 0) return 0; $n = 0; $orders = wl_orders_since($pdo, $since);
     $have = []; $h = $pdo->prepare("SELECT phone FROM wa_line_cust WHERE created_at >= ?"); $h->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p) $have[(string)$p] = 1;
-    $q = $pdo->prepare("SELECT c.phone FROM wa_contacts c WHERE c.source IN ('query','campaign') AND c.last_in_at >= ? AND c.optout = 0 AND c.camp_optout = 0 LIMIT 60000"); $q->execute([date('Y-m-d H:i:s', $since)]);
+    $q = $pdo->prepare("SELECT c.phone FROM wa_contacts c WHERE c.last_in_at >= ? AND c.optout = 0 AND c.camp_optout = 0 LIMIT 60000"); $q->execute([date('Y-m-d H:i:s', $since)]);
     $cand = []; foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) if (!isset($have[(string)$p])) $cand[] = (string)$p;
     foreach (array_chunk($cand, 400) as $ch) {
         $in = implode(',', array_fill(0, count($ch), '?'));
@@ -217,6 +217,13 @@ function wl_enroll(PDO $pdo, int $since): int
         }
     }
     return $n;
+}
+/** The campaign ladder is switched off (default): whoever was put on it is taken off again, so nobody who only opened a campaign gets a follow-up. Cheap: does nothing when there is nobody. */
+function wln_camp_cleanup(PDO $pdo): int
+{
+    if (wl_cfg($pdo)['camp'] !== 'off') return 0; $n = (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE topic = 'campaign' AND status = 'active'")->fetchColumn(); if ($n <= 0) return 0;
+    $pdo->exec("UPDATE wa_line_plan SET status = 'cancelled', why = 'campaign list is off' WHERE status = 'planned' AND phone IN (SELECT phone FROM wa_line_cust WHERE topic = 'campaign' AND status = 'active')");
+    $pdo->exec("UPDATE wa_line_cust SET status = 'done', left_why = 'campaign list is off' WHERE topic = 'campaign' AND status = 'active'"); return $n;
 }
 /** Campaign recipients (owner, 21 Nov): customers a campaign message was SENT to since the Lineup's start who opened it (read; or delivered, setting wl_cfg.camp) and have not written, ordered or opted out.
  *  They get the 'campaign' ladder (the shop's own approved messages, no pretext of an enquiry), starting 24 h after the campaign message. At most camp_cap new ones a day (default 2,000), oldest first, so a 60,000-person campaign day never becomes 400,000 follow-ups. */
@@ -293,6 +300,20 @@ function wl_start_all(PDO $pdo, int $by = 0): array
 }
 /** All templates approved? Until then nothing is sent by itself (a step whose message is still waiting for Meta would be jumped over). */
 function wl_ready(PDO $pdo): bool { $P = wl_pack(); foreach (wl_tpl_status($pdo) as $k => $s) if (empty($P[$k]['of']) && $s !== 'approved') return false; return true; }   // the extra wordings are optional: one that is not approved is simply not used
+/** Send one Lineup message. [ok, reason, number id, wamid]. Owner, 21 Nov: the Lineup goes slowly, one message at a time, and Module A / Module B's allowances (hourly speed, the 90% margin, the daily room) do NOT apply to it:
+ *  the number is chosen with the "burst" switch of wa_camp_ctx, so only what Meta itself decides (its tier, a Low-quality / disconnected / locked number, a new number's slow start) can stop a message. */
+function wln_send(PDO $pdo, array $c, array $step): array
+{
+    $t = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, (int)$step['tpl_id'], true, 0) : null; if (!$t) return [false, 'The message is not approved by Meta (or its photo is missing).'];
+    $nv = (int)($t['nvars'] ?? 0); if ($nv > 1) return [false, 'This message has ' . $nv . ' blanks.'];
+    $ctx = wa_camp_ctx($pdo, $t, 2, [], 1000000); $nid = 0;
+    if (empty($ctx['nums'])) return [false, 'No number can send this message now (' . (function_exists('wd_why_none') ? wd_why_none($pdo, $t) : 'none available') . ')'];
+    [$nid, $why] = wa_pick_number($pdo, $c, $ctx);
+    if (!$nid && $why === 'ignored every number') { $el = $ctx['nums']; uasort($el, function ($a, $b) { return ($a['used'] / max(1, $a['cap'])) <=> ($b['used'] / max(1, $b['cap'])); }); $nid = (int)(reset($el)['id'] ?? 0); }   // about THIS customer, not about the numbers: the freest number takes him
+    if (!$nid || !isset($ctx['nums'][$nid])) return [false, 'No number can send this message now (' . $why . ').'];
+    [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $nv ? [function_exists('wd_name') ? wd_name($c) : 'ji'] : [], 'followup');
+    return $ok ? [true, '', $nid, (string)$res] : [false, (string)$res, $nid];
+}
 /** The engine step. Sends what is due (cap per round), enrols new customers, re-reads the quiet ones. $force = the Send button (ignores the clock window and the "all approved" gate, never the blocks). */
 function wl_tick(PDO $pdo, array $opt = []): array
 {
@@ -303,7 +324,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     if (!$force && (!function_exists('wa_lock') || !wa_lock($pdo, 'wlrun', 50))) return $o;
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window
-    if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
+    if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
     $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 25;
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.phone, p.step LIMIT 3000");
@@ -325,8 +346,8 @@ function wl_tick(PDO $pdo, array $opt = []): array
             $pdo->prepare("UPDATE wa_line_plan SET status = 'cancelled', why = ? WHERE phone = ? AND status = 'planned'")->execute([$why, $phone]);
             $pdo->prepare("UPDATE wa_line_cust SET status = 'done', left_why = ? WHERE phone = ?")->execute([$why, $phone]); $o['skipped']++; continue;
         }
-        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || !function_exists('wd_send')) { $o['waiting']++; continue; }
-        $res = wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
+        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send'))) { $o['waiting']++; continue; }
+        $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
         if ($res[0]) { foreach (array_slice($list, 0, -1) as $old) $upd->execute(['skipped', 'late (a later step went first)', null, '', $old['tpl_key'], $old['id']]);   // only the latest due step goes, and only once it really went
             $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$tid, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; break; }   // no number can send now: try again next round, nothing is written

@@ -114,4 +114,8 @@ Meta stopped new utility messages (weekly limit on 4 of 6 accounts) and re-label
 
 ## Campaign recipients
 
-Customers a campaign message was sent to since the Lineup's start, who opened it (`read`; setting `wl_cfg.camp` = `off` / `read` / `delivered`) and did not write, order or opt out, join the `campaign` ladder 24 h after the campaign message. At most `wl_cfg.camp_cap` (default 2,000) new ones a day, oldest first. On 21 Nov about 66,000 customers got a campaign in one day and only 1,446 wrote back; enrolling everybody would mean about 400,000 follow-ups a week.
+The base is the **reply** (owner, 21 Nov): everybody who wrote to us since the Lineup's start (a new query, a reply to a campaign, a button tap, an old customer; whatever the contact's `source` says) is read once and gets the ladder of his topic. People who only received or opened a campaign are NOT enrolled by default: `wl_cfg.camp` = `off`. (`read` / `delivered` with `camp_cap` a day exist for a later decision; switching to `off` takes everybody on that ladder off again.) On 21 Nov about 66,000 customers got a campaign in one day and only 1,446 wrote back.
+
+## Sending (21 Nov)
+
+The Lineup goes slowly, one message at a time (60 a round at most), and Module A / Module B's allowances do not apply to it: `wln_send` picks the number with the burst switch of `wa_camp_ctx`, so only Meta's own limits, a Low-quality / disconnected / locked number and a new number's slow start can stop a message. There is no marketing limit of its own.
