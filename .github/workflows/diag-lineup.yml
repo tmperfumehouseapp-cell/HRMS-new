@@ -4,11 +4,6 @@ name: Lineup check (read-only)
 
 on:
   workflow_dispatch:
-    inputs:
-      create_tables:
-        description: "Also run the Lineup's own CREATE TABLE statements and print any MySQL error (the app does the same by itself)"
-        type: boolean
-        default: false
 
 jobs:
   check:
@@ -30,11 +25,11 @@ jobs:
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "${{ inputs.create_tables }}" <<'REMOTE' || true
-          P="$1"; export LN_CREATE="$2"
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
           echo "=== files on the server ==="
           for f in empmanagment/wa_line.php assets/js/wa_line_ui.js assets/js/wa_camp_ui.js; do if [ -f "$P$f" ]; then echo "$f  $(stat -c '%y' "$P$f" | cut -c1-19)  $(wc -c < "$P$f") bytes"; else echo "$f  MISSING"; fi; done
-          echo "wl_summary in wa_line.php: $(grep -c 'function wln_summary' "$P"empmanagment/wa_line.php 2>/dev/null)  ·  wa_line.php required by wa_more.php: $(grep -c "wa_line.php" "$P"empmanagment/wa_more.php 2>/dev/null)  ·  c28x in whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html 2>/dev/null)"
+          echo "wl_summary in wa_line.php: $(grep -c 'function wl_summary' "$P"empmanagment/wa_line.php 2>/dev/null)  ·  wa_line.php required by wa_more.php: $(grep -c "wa_line.php" "$P"empmanagment/wa_more.php 2>/dev/null)  ·  c28x in whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html 2>/dev/null)"
           php -v | head -1
           cat > /tmp/ln_check.php <<'PHP'
           <?php
@@ -47,9 +42,6 @@ jobs:
           echo "\n=== settings ===\n";
           foreach (["wl_cfg", "wl_tpls", "wl_snap_at", "wl_tick_at", "wl_push_at", "wl_issues"] as $k) echo "  $k = " . substr($s($k), 0, 400) . "\n";
           $wd = json_decode($s("wd_cfg"), true); echo "  old drip mode = " . (is_array($wd) ? ($wd["mode"] ?? "?") : $s("wd_cfg")) . "\n";
-          echo "\n=== the engine's last step ===\n"; foreach (["wa_cron_step", "wa_cron_start"] as $k) echo "  $k = " . substr($s($k), 0, 120) . "\n";
-          echo "\n=== is the Lineup hooked into the engine? ===\n"; $wm = @file_get_contents($argv[1] . "empmanagment/wa_more.php"); echo "  wln_tick calls in wa_more.php: " . substr_count((string)$wm, "wln_tick(") . "\n";
-          if (getenv("LN_CREATE") === "true") { echo "\n=== running the Lineup CREATE TABLE statements ===\n"; $src = (string)@file_get_contents($argv[1] . "empmanagment/wa_line.php"); preg_match_all('/CREATE TABLE IF NOT EXISTS wa_line_\w+ \(.*?\) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4/s', $src, $mm); echo "  statements found: " . count($mm[0]) . "\n"; foreach ($mm[0] as $ddl) { try { $d->exec($ddl); echo "  OK   " . substr($ddl, 0, 60) . "\n"; } catch (Throwable $e) { echo "  FAIL " . substr($ddl, 0, 60) . "\n       " . substr($e->getMessage(), 0, 300) . "\n"; } } }
           echo "\n=== tables ===\n";
           foreach (["wa_line_cust", "wa_line_plan", "wa_line_log", "wa_line_snap"] as $t) { $x = $all("SHOW TABLES LIKE '$t'"); echo "  $t: " . ($x ? "exists" : "MISSING"); if ($x) { $c = $all("SELECT COUNT(*) n FROM $t"); echo " · rows " . ($c[0]["n"] ?? "?"); } echo "\n"; }
           foreach ($all("SELECT status, COUNT(*) n FROM wa_line_plan GROUP BY status") as $r) echo "  plan rows " . $r["status"] . ": " . $r["n"] . "\n";

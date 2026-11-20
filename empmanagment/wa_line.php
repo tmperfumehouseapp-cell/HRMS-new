@@ -9,19 +9,19 @@
  *     a NEW topic = a new ladder (messages already sent are never repeated; at most 2 changes, never beyond 14 days).
  *   · Starting it (wa.line_start) switches the old 7-Day Drip off, makes the templates and sends them to Meta (the existing auto-submit keeps retrying), installs the button cards, and enrols everybody since yesterday 10:00 IST.
  *   It is ALWAYS ON (owner, 21 Nov): the first engine round after the upload starts it by itself, the engine sends inside 10:00-20:00 IST once Meta approved ALL the messages; the screen's Send button is the manual second way (works at any hour, batches of 60). PHP 7.4 safe.
- *   Settings: wln_cfg (mode, cap, from, to, since, offer) · wl_tpls (key => template id). Tables: wa_line_cust, wa_line_plan, wa_line_log.
+ *   Settings: wl_cfg (mode, cap, from, to, since, offer) · wl_tpls (key => template id). Tables: wa_line_cust, wa_line_plan, wa_line_log.
  */
 if (!isset($pdo) || !function_exists('json_response')) { return; }
 
-if (!function_exists('wln_cfg')) {
+if (!function_exists('wl_cfg')) {
 
 // ---- pure:begin  (no database here: tests/line_test.php runs this block alone)
-function wln_topics(): array
+function wl_topics(): array
 {
     return ['pending' => 'Address / payment pending', 'price' => 'Price / discount', 'trust' => 'Trust (original, COD, reviews)', 'size' => 'Size / ml', 'reorder' => 'Bought before', 'general' => 'No clear topic'];
 }
 /** Words that say what the customer is worried about, strongest first. Latin (English / Hinglish) and Gujarati / Hindi script. */
-function wln_words(): array
+function wl_words(): array
 {
     return [
         'pending' => ['address', 'pincode', 'pin code', 'payment', 'paid', 'upi', 'qr', 'order karna', 'order karo', 'order kar', 'એડ્રેસ', 'પેમેન્ટ', 'ઓર્ડર', 'पता', 'पेमेंट', 'ऑर्डर'],
@@ -31,11 +31,11 @@ function wln_words(): array
     ];
 }
 /** Topic from what the customer wrote. $texts = his messages since he came in; $bought = he has ordered before. */
-function wln_classify(array $texts, bool $bought): string
+function wl_classify(array $texts, bool $bought): string
 {
     $all = mb_strtolower(trim(implode(' ', array_map('strval', $texts)))); if ($all !== '') {
         $norm = preg_replace('/(?<=\d)(?=\p{L})|(?<=\p{L})(?=\d)/u', ' ', $all); $norm = ' ' . trim((string)preg_replace('/[^\p{L}\p{N}\p{M}]+/u', ' ', (string)$norm)) . ' ';   // "50ml" -> "50 ml"; marks stay (Gujarati / Hindi)
-        foreach (wln_words() as $topic => $ws) foreach ($ws as $w) {
+        foreach (wl_words() as $topic => $ws) foreach ($ws as $w) {
             $w = mb_strtolower($w); if (preg_match('/^[a-z ]+$/', $w)) { if (strpos($norm, ' ' . $w . ' ') !== false) return $topic; }   // Latin: whole words only (no "real" inside "really", no "book" inside "facebook")
             elseif (strpos($norm, $w) !== false) return $topic;   // Gujarati / Hindi script: the word may carry endings
         }
@@ -43,21 +43,21 @@ function wln_classify(array $texts, bool $bought): string
     return $bought ? 'reorder' : 'general';
 }
 /** The IST wall clock of a time stamp: [Y-m-d, hour]. */
-function wln_ist(int $ts): array { $d = new DateTime('@' . $ts); $d->setTimezone(new DateTimeZone('Asia/Kolkata')); return [$d->format('Y-m-d'), (int)$d->format('G')]; }
-function wln_ist_at(string $ymd, int $hour): int { $d = new DateTime($ymd . ' ' . sprintf('%02d', $hour) . ':00:00', new DateTimeZone('Asia/Kolkata')); return $d->getTimestamp(); }
+function wl_ist(int $ts): array { $d = new DateTime('@' . $ts); $d->setTimezone(new DateTimeZone('Asia/Kolkata')); return [$d->format('Y-m-d'), (int)$d->format('G')]; }
+function wl_ist_at(string $ymd, int $hour): int { $d = new DateTime($ymd . ' ' . sprintf('%02d', $hour) . ':00:00', new DateTimeZone('Asia/Kolkata')); return $d->getTimestamp(); }
 /** When Day N is due: his first message + N × 24 h (his own minute), moved into the sending window (default 10:00-20:00 IST): before it = that morning, after it = next morning. */
-function wln_due_ts(int $anchor, int $day, int $from = 10, int $to = 20): int
+function wl_due_ts(int $anchor, int $day, int $from = 10, int $to = 20): int
 {
-    $t = $anchor + $day * 86400; [$ymd, $h] = wln_ist($t);
-    if ($h < $from) return wln_ist_at($ymd, $from);
-    if ($h >= $to) return wln_ist_at(date('Y-m-d', strtotime($ymd . ' +1 day')), $from);
+    $t = $anchor + $day * 86400; [$ymd, $h] = wl_ist($t);
+    if ($h < $from) return wl_ist_at($ymd, $from);
+    if ($h >= $to) return wl_ist_at(date('Y-m-d', strtotime($ymd . ' +1 day')), $from);
     return $t;
 }
 /** 10:00 IST of the day before today (IST) — the start of "yesterday". */
-function wln_yesterday_start(int $now): int { [$ymd] = wln_ist($now); return wln_ist_at(date('Y-m-d', strtotime($ymd . ' -1 day')), 10); }
+function wl_yesterday_start(int $now): int { [$ymd] = wl_ist($now); return wl_ist_at(date('Y-m-d', strtotime($ymd . ' -1 day')), 10); }
 
 /** THE MESSAGES. key => [topic, day-in-ladder, body, button, free answer]. Utility only: no offer / discount / sale / free / special in a template (Meta re-labels those to marketing). The offer goes in the FREE answer to the button. */
-function wln_pack(): array
+function wl_pack(): array
 {
     $P = [];
     $add = function ($key, $topic, $step, $body, $btn, $free) use (&$P) { if (strpos($body, '{{1}}') === 0) $body = 'Hi ' . $body;   // Meta refuses a message that starts with a blank
@@ -116,31 +116,31 @@ function wln_pack(): array
     return $P;
 }
 /** The wordings of one message: the message itself and its alternatives (key => the keys that can be sent instead). */
-function wln_variants(string $key): array { $o = [$key]; foreach (wln_pack() as $k => $m) if (($m['of'] ?? '') === $key) $o[] = $k; return $o; }
+function wl_variants(string $key): array { $o = [$key]; foreach (wl_pack() as $k => $m) if (($m['of'] ?? '') === $key) $o[] = $k; return $o; }
 /** Which wording goes to this customer. $score = [key => [delivered, score]] (what the last 30 days showed), $ok = keys that Meta approved. Below 40 delivered per wording: an even split (he is placed by his number, so the same customer always gets the same). Then 80% the wording with the best score, 20% the others (keeps learning). */
-function wln_pick(string $key, string $phone, array $score, array $ok): string
+function wl_pick(string $key, string $phone, array $score, array $ok): string
 {
-    $v = array_values(array_filter(wln_variants($key), fn($k) => in_array($k, $ok, true))); if (count($v) < 2) return $v ? $v[0] : $key;
+    $v = array_values(array_filter(wl_variants($key), fn($k) => in_array($k, $ok, true))); if (count($v) < 2) return $v ? $v[0] : $key;
     $h = (int)(abs(crc32($phone . '|' . $key)) % 100); $young = false; foreach ($v as $k) if (($score[$k][0] ?? 0) < 40) $young = true;
     if ($young) return $v[$h % count($v)];
     usort($v, fn($a, $b) => ($score[$b][1] ?? 0) <=> ($score[$a][1] ?? 0)); if ($h < 80) return $v[0];
     return $v[1 + ($h % (count($v) - 1))];
 }
 /** The template key of step N (1..7) for a topic. */
-function wln_key(string $topic, int $step): string { return $step >= 5 ? 'ln_all_' . $step : 'ln_' . $topic . '_' . $step; }
+function wl_key(string $topic, int $step): string { return $step >= 5 ? 'ln_all_' . $step : 'ln_' . $topic . '_' . $step; }
 /** Words the templates must never contain (Meta would re-label them as marketing). */
-function wln_banned(): array { return ['offer', 'discount', 'sale', 'free', 'special', 'khaas', 'chhoot', 'cashback', '%', '₹', 'off ']; }
+function wl_banned(): array { return ['offer', 'discount', 'sale', 'free', 'special', 'khaas', 'chhoot', 'cashback', '%', '₹', 'off ']; }
 // ---- pure:end
 
-function wln_cfg(PDO $pdo): array
+function wl_cfg(PDO $pdo): array
 {
     $j = json_decode((string)setting_get($pdo, 'wl_cfg', ''), true); if (!is_array($j)) $j = [];
     $mode = (string)($j['mode'] ?? 'auto'); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'auto';   // owner 21 Nov: always on (no switch on the screen); 'off' stays only as an emergency value the API accepts
     return ['mode' => $mode, 'cap' => max(5, min(300, (int)($j['cap'] ?? 60))), 'from' => max(0, min(23, (int)($j['from'] ?? 10))), 'to' => max(1, min(24, (int)($j['to'] ?? 20))), 'since' => (int)($j['since'] ?? 0),
         'offer' => (string)($j['offer'] ?? ''), 'started' => (string)($j['started'] ?? '')];
 }
-function wln_cfg_put(PDO $pdo, array $c): void { setting_set($pdo, 'wl_cfg', json_encode($c, JSON_UNESCAPED_UNICODE)); }
-function wln_offer_text(PDO $pdo): string { $o = trim(wln_cfg($pdo)['offer']); return $o !== '' ? $o : "Aapke liye final details ye hain 🙏 Aapko kaunsa perfume chahiye, bata dein to hum is hafte ki sabse achhi kimat bata dete hain."; }
+function wl_cfg_put(PDO $pdo, array $c): void { setting_set($pdo, 'wl_cfg', json_encode($c, JSON_UNESCAPED_UNICODE)); }
+function wl_offer_text(PDO $pdo): string { $o = trim(wl_cfg($pdo)['offer']); return $o !== '' ? $o : "Aapke liye final details ye hain 🙏 Aapko kaunsa perfume chahiye, bata dein to hum is hafte ki sabse achhi kimat bata dete hain."; }
 function wln_tables(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok;
@@ -153,33 +153,33 @@ function wln_tables(PDO $pdo): bool
     } catch (PDOException $e) { $ok = false; }
     return $ok;
 }
-function wln_tpl_ids(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); return is_array($j) ? array_map('intval', $j) : []; }
-function wln_log(PDO $pdo, string $phone, string $what): void { try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$phone, date('Y-m-d H:i:s'), mb_substr($what, 0, 200)]); } catch (Throwable $e) { } }
+function wl_tpl_ids(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); return is_array($j) ? array_map('intval', $j) : []; }
+function wl_log(PDO $pdo, string $phone, string $what): void { try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$phone, date('Y-m-d H:i:s'), mb_substr($what, 0, 200)]); } catch (Throwable $e) { } }
 
 /** Write the lineup of a customer: one row per step still to go. $skipKeys = messages he already got (never sent again). Returns the number of rows. */
 function wln_plan(PDO $pdo, string $phone, string $topic, int $anchor, array $skipKeys = [], int $now = 0): int
 {
-    $cfg = wln_cfg($pdo); $now = $now ?: time(); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at) VALUES (?, ?, ?, ?, ?)"); $n = 0; $day = 0;
+    $cfg = wl_cfg($pdo); $now = $now ?: time(); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at) VALUES (?, ?, ?, ?, ?)"); $n = 0; $day = 0;
     for ($s = 1; $s <= 7; $s++) {
-        $k = wln_key($topic, $s); if (isset($skipKeys[$k])) continue; $day++;
-        $due = wln_due_ts($anchor, $day, $cfg['from'], $cfg['to']); if ($due < $now - 86400 * 2) $due = wln_due_ts($now, 0, $cfg['from'], $cfg['to']);
+        $k = wl_key($topic, $s); if (isset($skipKeys[$k])) continue; $day++;
+        $due = wl_due_ts($anchor, $day, $cfg['from'], $cfg['to']); if ($due < $now - 86400 * 2) $due = wl_due_ts($now, 0, $cfg['from'], $cfg['to']);
         $ins->execute([$phone, $topic, $s, $k, date('Y-m-d H:i:s', $due)]); $n++;
     }
     return $n;
 }
 /** Orders placed since $from, as [last-10-digits => [timestamps]] — ONE query for a whole round (the wa_cust table is only refreshed now and then, so it can miss an order from the last hours). */
-function wln_orders_since(PDO $pdo, int $from): array
+function wl_orders_since(PDO $pdo, int $from): array
 {
     $o = []; try { $q = $pdo->prepare("SELECT phone, created_at FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $q->execute([date('Y-m-d H:i:s', $from)]);
         foreach ($q->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '') $o[$k][] = (int)strtotime((string)$r['created_at']); } } catch (Throwable $e) { }
     return $o;
 }
-function wln_ordered_after(array $orders, string $phone, int $t): bool { foreach ($orders[substr(preg_replace('/\D+/', '', $phone), -10)] ?? [] as $x) if ($x >= $t) return true; return false; }
+function wl_ordered_after(array $orders, string $phone, int $t): bool { foreach ($orders[substr(preg_replace('/\D+/', '', $phone), -10)] ?? [] as $x) if ($x >= $t) return true; return false; }
 /** Who comes in: every customer who wrote to us (new query / campaign reply) at or after $since, however old the contact is — his FIRST message in that window starts his Day 0.
  *  One lineup per customer per 30 days (an old finished one is replaced). Already ordered since he wrote = not enrolled. Each is read once (topic) and gets his 7 rows. */
-function wln_enroll(PDO $pdo, int $since): int
+function wl_enroll(PDO $pdo, int $since): int
 {
-    if ($since <= 0) return 0; $n = 0; $orders = wln_orders_since($pdo, $since);
+    if ($since <= 0) return 0; $n = 0; $orders = wl_orders_since($pdo, $since);
     $have = []; $h = $pdo->prepare("SELECT phone FROM wa_line_cust WHERE created_at >= ?"); $h->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p) $have[(string)$p] = 1;
     $q = $pdo->prepare("SELECT c.phone FROM wa_contacts c WHERE c.source IN ('query','campaign') AND c.last_in_at >= ? AND c.optout = 0 AND c.camp_optout = 0 LIMIT 60000"); $q->execute([date('Y-m-d H:i:s', $since)]);
     $cand = []; foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) if (!isset($have[(string)$p])) $cand[] = (string)$p;
@@ -192,8 +192,8 @@ function wln_enroll(PDO $pdo, int $since): int
         $m = $pdo->prepare("SELECT phone, body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone IN ($in2) AND ts >= ? ORDER BY id"); $m->execute(array_merge($ph, [date('Y-m-d H:i:s', $since)])); $txt = [];
         foreach ($m->fetchAll() as $r) { $k = (string)$r['phone']; if (!isset($txt[$k]) || count($txt[$k]) < 8) $txt[$k][] = (string)$r['body']; }
         foreach ($first as $phone => $anchor) {
-            if (wln_ordered_after($orders, $phone, $anchor)) continue;   // ordered since he wrote
-            $topic = wln_classify($txt[$phone] ?? [], !empty($buy[$phone]));
+            if (wl_ordered_after($orders, $phone, $anchor)) continue;   // ordered since he wrote
+            $topic = wl_classify($txt[$phone] ?? [], !empty($buy[$phone]));
             try { $pdo->prepare("DELETE FROM wa_line_cust WHERE phone = ?")->execute([$phone]);
                   $pdo->prepare("INSERT INTO wa_line_cust (phone, topic, anchor_at, status, created_at) VALUES (?, ?, ?, 'active', ?)")->execute([$phone, $topic, date('Y-m-d H:i:s', $anchor), date('Y-m-d H:i:s')]); } catch (Throwable $e) { continue; }
             wln_plan($pdo, $phone, $topic, $anchor); $n++;
@@ -204,12 +204,12 @@ function wln_enroll(PDO $pdo, int $since): int
 /** Why this customer gets nothing now ('' = fine). 'wait…' = try again later; anything else takes him out of the lineup.
  *  Shop rules that already exist are used as they are: an order that just completed, a ticket, a birthday / review thank-you or a person in Rescue mute him (wa_auto_muted);
  *  a person who wrote in the last 36 h or a campaign in the last 2 days steps the plan aside (wq_plan_paused); a follow-up (Autopilot / Journey) in the last day too. */
-function wln_block(PDO $pdo, array $c, string $anchor, array $orders = []): string
+function wl_block(PDO $pdo, array $c, string $anchor, array $orders = []): string
 {
     $phone = (string)$c['phone']; $now = time();
     if ((int)($c['optout'] ?? 0) === 1 || (int)($c['camp_optout'] ?? 0) === 1) return 'opted out';
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return 'complaint';
-    if (wln_ordered_after($orders, $phone, (int)strtotime($anchor))) return 'ordered';
+    if (wl_ordered_after($orders, $phone, (int)strtotime($anchor))) return 'ordered';
     try { $q = $pdo->prepare("SELECT 1 FROM wa_cust WHERE phone = ? AND n > 0 AND last_order >= ? LIMIT 1"); $q->execute([$phone, $anchor]); if ($q->fetchColumn()) return 'ordered'; } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT MAX(sent_at) FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $q->execute([$phone]); $last = (string)$q->fetchColumn();
         if ($last !== '' && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > strtotime($last)) return 'replied'; } catch (Throwable $e) { }
@@ -221,7 +221,7 @@ function wln_block(PDO $pdo, array $c, string $anchor, array $orders = []): stri
     return '';
 }
 /** A customer who answered and then went quiet for 24 h is read again: a new topic = a new ladder (what he already got is never repeated; max 2 changes; never beyond 14 days). */
-function wln_recheck(PDO $pdo, int $now): int
+function wl_recheck(PDO $pdo, int $now): int
 {
     $q = $pdo->prepare("SELECT * FROM wa_line_cust WHERE status = 'replied' AND recheck_at IS NOT NULL AND recheck_at <= ? LIMIT 200"); $q->execute([date('Y-m-d H:i:s', $now)]); $n = 0;
     foreach ($q->fetchAll() as $r) {
@@ -229,11 +229,11 @@ function wln_recheck(PDO $pdo, int $now): int
         $done = function (string $why) use ($pdo, $phone) { $pdo->prepare("UPDATE wa_line_cust SET status = 'done', left_why = ?, recheck_at = NULL WHERE phone = ?")->execute([$why, $phone]); };
         if ($now > $anchor + 14 * 86400) { $done('14 days over'); continue; }
         $c = function_exists('wa_contact') ? wa_contact($pdo, $phone) : null; if (!$c) { $done('no contact'); continue; }
-        if (wln_block($pdo, $c, date('Y-m-d H:i:s', $anchor)) === 'ordered') { $done('ordered'); continue; }
+        if (wl_block($pdo, $c, date('Y-m-d H:i:s', $anchor)) === 'ordered') { $done('ordered'); continue; }
         $o = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $o->execute([$phone]); $bought = (int)$o->fetchColumn() > 0;
         $m = $pdo->prepare("SELECT body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone = ? AND ts >= ? ORDER BY id DESC LIMIT 8"); $m->execute([$phone, date('Y-m-d H:i:s', $anchor)]);
-        $topic = wln_classify($m->fetchAll(PDO::FETCH_COLUMN), $bought); $sw = (int)$r['switches'];
-        if ($topic !== (string)$r['topic']) { if ($sw >= 2) { $done('topic changed too often'); continue; } $sw++; wln_log($pdo, $phone, 'topic ' . $r['topic'] . ' -> ' . $topic); }
+        $topic = wl_classify($m->fetchAll(PDO::FETCH_COLUMN), $bought); $sw = (int)$r['switches'];
+        if ($topic !== (string)$r['topic']) { if ($sw >= 2) { $done('topic changed too often'); continue; } $sw++; wl_log($pdo, $phone, 'topic ' . $r['topic'] . ' -> ' . $topic); }
         $sent = []; $s = $pdo->prepare("SELECT tpl_key FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $s->execute([$phone]); foreach ($s->fetchAll(PDO::FETCH_COLUMN) as $k) $sent[(string)$k] = 1;
         $pdo->prepare("DELETE FROM wa_line_plan WHERE phone = ? AND status = 'planned'")->execute([$phone]);
         $rows = wln_plan($pdo, $phone, $topic, $now, $sent, $now);
@@ -243,39 +243,39 @@ function wln_recheck(PDO $pdo, int $now): int
     return $n;
 }
 /** THE START (runs by itself on the first engine round after the upload, and from the button): old 7-Day Drip off, every lineup message made and sent to Meta, button cards, everybody since yesterday 10:00 IST read and planned. Safe to repeat.
- *  Nothing goes to a customer here: sending waits until Meta approved all the messages (wln_ready). */
-function wln_start_all(PDO $pdo, int $by = 0): array
+ *  Nothing goes to a customer here: sending waits until Meta approved all the messages (wl_ready). */
+function wl_start_all(PDO $pdo, int $by = 0): array
 {
-    $c = wln_cfg($pdo); $dripWas = wln_drip_off($pdo); $tp = wln_make_templates($pdo, $by); $kw = wln_install_kw($pdo);
-    if ($c['since'] <= 0) $c['since'] = wln_yesterday_start(time()); if ($c['started'] === '') $c['started'] = date('Y-m-d H:i:s'); if ($c['mode'] === 'off') $c['mode'] = 'auto'; wln_cfg_put($pdo, $c);
-    $n = wln_enroll($pdo, $c['since']); wa_log($pdo, 'engine', true, 'Lineup started: ' . $n . ' customers planned, ' . $tp['made'] . ' messages made, ' . $tp['sent'] . ' sent to Meta, old drip ' . ($dripWas ? 'switched off' : 'was already off'));
+    $c = wl_cfg($pdo); $dripWas = wl_drip_off($pdo); $tp = wl_make_templates($pdo, $by); $kw = wl_install_kw($pdo);
+    if ($c['since'] <= 0) $c['since'] = wl_yesterday_start(time()); if ($c['started'] === '') $c['started'] = date('Y-m-d H:i:s'); if ($c['mode'] === 'off') $c['mode'] = 'auto'; wl_cfg_put($pdo, $c);
+    $n = wl_enroll($pdo, $c['since']); wa_log($pdo, 'engine', true, 'Lineup started: ' . $n . ' customers planned, ' . $tp['made'] . ' messages made, ' . $tp['sent'] . ' sent to Meta, old drip ' . ($dripWas ? 'switched off' : 'was already off'));
     return ['drip_was_on' => $dripWas, 'templates' => $tp, 'cards' => $kw, 'enrolled' => $n];
 }
 /** All templates approved? Until then nothing is sent by itself (a step whose message is still waiting for Meta would be jumped over). */
-function wln_ready(PDO $pdo): bool { $P = wln_pack(); foreach (wln_tpl_status($pdo) as $k => $s) if (empty($P[$k]['of']) && $s !== 'approved') return false; return true; }   // the extra wordings are optional: one that is not approved is simply not used
+function wl_ready(PDO $pdo): bool { $P = wl_pack(); foreach (wl_tpl_status($pdo) as $k => $s) if (empty($P[$k]['of']) && $s !== 'approved') return false; return true; }   // the extra wordings are optional: one that is not approved is simply not used
 /** The engine step. Sends what is due (cap per round), enrols new customers, re-reads the quiet ones. $force = the Send button (ignores the clock window and the "all approved" gate, never the blocks). */
-function wln_tick(PDO $pdo, array $opt = []): array
+function wl_tick(PDO $pdo, array $opt = []): array
 {
-    $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wln_tables($pdo)) return $o; $cfg = wln_cfg($pdo); $force = !empty($opt['now']);
+    $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wln_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']);
     if ($cfg['mode'] === 'off') return $o;
-    if (!$force) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wln_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
-    if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wln_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
-    if (!$force && function_exists('wa_lock') && count(wln_tpl_ids($pdo)) < count(wln_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wln_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
+    if (!$force) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
+    if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
+    if (!$force && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     if (!$force && (!function_exists('wa_lock') || !wa_lock($pdo, 'wlrun', 50))) return $o;
-    $now = time(); [, $h] = wln_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window
-    if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wln_enroll($pdo, $cfg['since']); wln_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
-    $ids = wln_tpl_ids($pdo); if (!$ids) return $o; if (!$force && !wln_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
+    $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window
+    if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
+    $ids = wl_tpl_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
     $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 25;
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.phone, p.step LIMIT 3000");
     $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
     if (function_exists('wq_plan_paused_prefetch')) { try { wq_plan_paused_prefetch($pdo, array_keys($byPhone), $now); } catch (Throwable $e) { } }
-    $orders = wln_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = array_keys(array_filter(wln_tpl_status($pdo), fn($x) => $x === 'approved'));
+    $orders = wl_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = array_keys(array_filter(wl_tpl_status($pdo), fn($x) => $x === 'approved'));
     $upd = $pdo->prepare("UPDATE wa_line_plan SET status = ?, why = ?, sent_at = ?, wamid = ?, tpl_key = ? WHERE id = ?");
     foreach ($byPhone as $phone => $list) {
         if ($sent >= $cap || microtime(true) > $dl) { $o['waiting'] += count($list); continue; }
         $row = end($list);
         $c = function_exists('wa_contact') ? wa_contact($pdo, (string)$phone) : null; if (!$c) { $upd->execute(['skipped', 'no contact', null, '', $row['tpl_key'], $row['id']]); $o['skipped']++; continue; }
-        $why = wln_block($pdo, $c, (string)$row['anchor_at'], $orders);
+        $why = wl_block($pdo, $c, (string)$row['anchor_at'], $orders);
         if ($why !== '') {
             if (strpos($why, 'wait') === 0) {
                 if ((int)strtotime((string)$row['due_at']) < $now - 30 * 3600) { $upd->execute(['skipped', 'too late (' . mb_substr($why, 6, 80) . ')', null, '', $row['tpl_key'], $row['id']]); $o['skipped']++; } else $o['waiting']++;   // waited more than 30 h past its time: dropped, not sent stale
@@ -285,7 +285,7 @@ function wln_tick(PDO $pdo, array $opt = []): array
             $pdo->prepare("UPDATE wa_line_plan SET status = 'cancelled', why = ? WHERE phone = ? AND status = 'planned'")->execute([$why, $phone]);
             $pdo->prepare("UPDATE wa_line_cust SET status = 'done', left_why = ? WHERE phone = ?")->execute([$why, $phone]); $o['skipped']++; continue;
         }
-        $key = wln_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || !function_exists('wd_send')) { $o['waiting']++; continue; }
+        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || !function_exists('wd_send')) { $o['waiting']++; continue; }
         $res = wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
         if ($res[0]) { foreach (array_slice($list, 0, -1) as $old) $upd->execute(['skipped', 'late (a later step went first)', null, '', $old['tpl_key'], $old['id']]);   // only the latest due step goes, and only once it really went
             $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); $o['sent']++; $sent++; }
@@ -296,21 +296,21 @@ function wln_tick(PDO $pdo, array $opt = []): array
     return $o;
 }
 /** The button cards: a tap on a button answers at once with the FREE message (Button replies, wa_kw.php). Our cards are ln_*; the owner's own cards are never touched. */
-function wln_install_kw(PDO $pdo): int
+function wl_install_kw(PDO $pdo): int
 {
     if (!function_exists('wkw_cfg') || !function_exists('wkw_clean')) return 0;
     $cfg = wkw_cfg($pdo); $keep = []; foreach ($cfg['rules'] as $r) if (strpos((string)($r['id'] ?? ''), 'ln_') !== 0) $keep[] = $r;
-    foreach (wln_pack() as $k => $m) { $free = $m['free'] === '__OFFER__' ? wln_offer_text($pdo) : $m['free']; $keep[] = ['id' => $k, 'name' => 'Lineup · ' . $k, 'on' => true, 'words' => [$m['button']], 'text' => $free, 'lib_id' => 0, 'tpl_id' => 0, 'fu' => []]; }
-    $clean = wkw_clean(['auto' => $cfg['auto'], 'rules' => $keep]); setting_set($pdo, 'wkw_cfg', json_encode($clean, JSON_UNESCAPED_UNICODE)); return count(wln_pack());
+    foreach (wl_pack() as $k => $m) { $free = $m['free'] === '__OFFER__' ? wl_offer_text($pdo) : $m['free']; $keep[] = ['id' => $k, 'name' => 'Lineup · ' . $k, 'on' => true, 'words' => [$m['button']], 'text' => $free, 'lib_id' => 0, 'tpl_id' => 0, 'fu' => []]; }
+    $clean = wkw_clean(['auto' => $cfg['auto'], 'rules' => $keep]); setting_set($pdo, 'wkw_cfg', json_encode($clean, JSON_UNESCAPED_UNICODE)); return count(wl_pack());
 }
 /** Make every lineup template and send it to Meta (Utility, one name blank, one quick-reply button). Safe to repeat: a template that exists is not made again.
  *  Uses the same Meta budget as everything else (wa_tpl_try_create); what does not fit now waits in the queue and the existing auto-submit sends it in the next minutes. Returns [made, already, failed[]]. */
-function wln_make_templates(PDO $pdo, int $by = 0): array
+function wl_make_templates(PDO $pdo, int $by = 0): array
 {
     $res = ['made' => 0, 'already' => 0, 'sent' => 0, 'failed' => []];
     foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row'] as $f) if (!function_exists($f)) { $res['failed'][] = 'The WhatsApp template module is not available.'; return $res; }
-    $ids = wln_tpl_ids($pdo); $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
-    foreach (wln_pack() as $k => $m) {
+    $ids = wl_tpl_ids($pdo); $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
+    foreach (wl_pack() as $k => $m) {
         if (!empty($ids[$k])) { $res['already']++; continue; }
         [$t, $err] = wa_tpl_clean(['name' => $k, 'language' => 'en', 'category' => 'UTILITY', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => [['type' => 'QUICK_REPLY', 'text' => $m['button']]],
             'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => 'Lineup']);
@@ -326,57 +326,57 @@ function wln_make_templates(PDO $pdo, int $by = 0): array
     return $res;
 }
 /** Switch the old 7-Day Drip off (its customers and history stay). */
-function wln_drip_off(PDO $pdo): bool
+function wl_drip_off(PDO $pdo): bool
 {
     $j = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); if (!is_array($j)) $j = []; $was = (string)($j['mode'] ?? 'manual'); $j['mode'] = 'off'; $j['on'] = 0; setting_set($pdo, 'wd_cfg', json_encode($j)); return $was !== 'off';
 }
 /** Template status: [key => 'approved'|'pending'|'rejected'|'missing']. */
-function wln_tpl_status(PDO $pdo): array
+function wl_tpl_status(PDO $pdo): array
 {
-    $ids = wln_tpl_ids($pdo); $out = []; $st = [];
+    $ids = wl_tpl_ids($pdo); $out = []; $st = [];
     try { foreach ($pdo->query("SELECT tpl_id, status FROM wa_tpl_waba")->fetchAll() as $r) $st[(int)$r['tpl_id']][] = strtoupper((string)$r['status']); } catch (Throwable $e) { }
-    foreach (wln_pack() as $k => $m) { $id = (int)($ids[$k] ?? 0); if ($id <= 0) { $out[$k] = 'missing'; continue; } $s = $st[$id] ?? []; $out[$k] = in_array('APPROVED', $s, true) ? 'approved' : (($s && count(array_diff($s, ['REJECTED'])) === 0) ? 'rejected' : 'pending'); }
+    foreach (wl_pack() as $k => $m) { $id = (int)($ids[$k] ?? 0); if ($id <= 0) { $out[$k] = 'missing'; continue; } $s = $st[$id] ?? []; $out[$k] = in_array('APPROVED', $s, true) ? 'approved' : (($s && count(array_diff($s, ['REJECTED'])) === 0) ? 'rejected' : 'pending'); }
     return $out;
 }
 /** The status the owner asked for, in one block: messages made / sent to Meta / approved / utility / still to go · customers identified · customers who got a message · messages sent / delivered · orders. */
-function wln_status(PDO $pdo, bool $withOrders = true): array
+function wl_status(PDO $pdo, bool $withOrders = true): array
 {
-    $pack = wln_pack(); $ids = wln_tpl_ids($pdo); $st = wln_tpl_status($pdo); $c = array_count_values($st); $made = count($ids); $inMeta = 0; $util = 0; $rel = 0;
+    $pack = wl_pack(); $ids = wl_tpl_ids($pdo); $st = wl_tpl_status($pdo); $c = array_count_values($st); $made = count($ids); $inMeta = 0; $util = 0; $rel = 0;
     if ($ids) { $in = implode(',', array_map('intval', $ids));
         try { $inMeta = (int)$pdo->query("SELECT COUNT(DISTINCT tpl_id) FROM wa_tpl_waba WHERE tpl_id IN ($in)")->fetchColumn(); } catch (Throwable $e) { }
         try { $r = $pdo->query("SELECT category, relabelled_at FROM wa_templates WHERE id IN ($in)")->fetchAll(); foreach ($r as $x) { if (strtoupper((string)$x['category']) === 'UTILITY') $util++; if (!empty($x['relabelled_at'])) $rel++; } } catch (Throwable $e) { } }
-    $o = ['at' => date('Y-m-d H:i:s'), 'started' => wln_cfg($pdo)['started'], 'messages' => ['total' => count($pack), 'made' => $made, 'in_meta' => $inMeta, 'approved' => (int)($c['approved'] ?? 0), 'pending' => (int)($c['pending'] ?? 0), 'rejected' => (int)($c['rejected'] ?? 0), 'not_made' => count($pack) - $made, 'utility' => $util, 'relabelled' => $rel, 'left' => count($pack) - (int)($c['approved'] ?? 0)]];
+    $o = ['at' => date('Y-m-d H:i:s'), 'started' => wl_cfg($pdo)['started'], 'messages' => ['total' => count($pack), 'made' => $made, 'in_meta' => $inMeta, 'approved' => (int)($c['approved'] ?? 0), 'pending' => (int)($c['pending'] ?? 0), 'rejected' => (int)($c['rejected'] ?? 0), 'not_made' => count($pack) - $made, 'utility' => $util, 'relabelled' => $rel, 'left' => count($pack) - (int)($c['approved'] ?? 0)]];
     $o['customers'] = ['identified' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust")->fetchColumn(), 'active' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'active'")->fetchColumn(), 'replied' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'replied'")->fetchColumn(), 'left' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'done'")->fetchColumn(),
         'got_message' => (int)$pdo->query("SELECT COUNT(DISTINCT phone) FROM wa_line_plan WHERE status = 'sent'")->fetchColumn(), 'planned_rows' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'planned'")->fetchColumn()];
     $o['sending'] = ['sent' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'sent'")->fetchColumn(), 'failed' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'failed'")->fetchColumn(), 'delivered' => 0, 'read' => 0, 'buttons' => 0];
     $o['health'] = json_decode((string)setting_get($pdo, 'wl_issues', ''), true) ?: ['at' => '', 'fixed' => [], 'issues' => []];
     $o['orders'] = ['orders' => 0, 'buyers' => 0, 'revenue' => 0];
-    if ($withOrders && $o['sending']['sent'] > 0) { try { $r = wln_report($pdo, 30); foreach ($r['steps'] as $x) { $o['sending']['delivered'] += $x['delivered']; $o['sending']['buttons'] += $x['taps']; $o['orders']['orders'] += $x['orders']; $o['orders']['revenue'] += $x['revenue']; } foreach ($r['topics'] as $t) $o['orders']['buyers'] += $t['buyers']; } catch (Throwable $e) { } }
+    if ($withOrders && $o['sending']['sent'] > 0) { try { $r = wl_report($pdo, 30); foreach ($r['steps'] as $x) { $o['sending']['delivered'] += $x['delivered']; $o['sending']['buttons'] += $x['taps']; $o['orders']['orders'] += $x['orders']; $o['orders']['revenue'] += $x['revenue']; } foreach ($r['topics'] as $t) $o['orders']['buyers'] += $t['buyers']; } catch (Throwable $e) { } }
     return $o;
 }
-/** The self-check, every 10 minutes. Fixes what can be fixed by itself and writes down what cannot: the list is shown on the screen (wln_status → issues).
+/** The self-check, every 10 minutes. Fixes what can be fixed by itself and writes down what cannot: the list is shown on the screen (wl_status → issues).
  *  fixed: old Drip switched on again by someone · button cards missing / changed · messages not made · customers waiting because a message never reached Meta.
  *  reported: rejected messages (text must be changed), Meta turned a message into marketing, many failed sends, nothing sent for hours although due, the engine not running. */
-function wln_heal(PDO $pdo): array
+function wl_heal(PDO $pdo): array
 {
-    $fix = []; $bad = []; $cfg = wln_cfg($pdo); if ($cfg['started'] === '') return ['fixed' => $fix, 'issues' => [['level' => 'info', 'text' => 'The Lineup has not started yet (it starts by itself on the next engine round).']]];
-    $dj = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); if (is_array($dj) && (string)($dj['mode'] ?? '') !== 'off') { wln_drip_off($pdo); $fix[] = 'The old 7-Day Drip was switched on again: switched off.'; }
-    if (count(wln_tpl_ids($pdo)) < count(wln_pack())) { $r = wln_make_templates($pdo); if ($r['made']) $fix[] = $r['made'] . ' missing messages made and sent to Meta.'; }
-    if (function_exists('wkw_cfg')) { $have = []; foreach (wkw_cfg($pdo)['rules'] as $x) $have[(string)($x['id'] ?? '')] = !empty($x['on']); $miss = 0; foreach (wln_pack() as $k => $m) if (empty($have[$k])) $miss++; if ($miss) { wln_install_kw($pdo); $fix[] = $miss . ' button answers were missing or off: put back.'; } }
-    $PK = wln_pack(); foreach (wln_tpl_status($pdo) as $k => $st) if ($st === 'rejected') { $extra = !empty($PK[$k]['of']);
+    $fix = []; $bad = []; $cfg = wl_cfg($pdo); if ($cfg['started'] === '') return ['fixed' => $fix, 'issues' => [['level' => 'info', 'text' => 'The Lineup has not started yet (it starts by itself on the next engine round).']]];
+    $dj = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); if (is_array($dj) && (string)($dj['mode'] ?? '') !== 'off') { wl_drip_off($pdo); $fix[] = 'The old 7-Day Drip was switched on again: switched off.'; }
+    if (count(wl_tpl_ids($pdo)) < count(wl_pack())) { $r = wl_make_templates($pdo); if ($r['made']) $fix[] = $r['made'] . ' missing messages made and sent to Meta.'; }
+    if (function_exists('wkw_cfg')) { $have = []; foreach (wkw_cfg($pdo)['rules'] as $x) $have[(string)($x['id'] ?? '')] = !empty($x['on']); $miss = 0; foreach (wl_pack() as $k => $m) if (empty($have[$k])) $miss++; if ($miss) { wl_install_kw($pdo); $fix[] = $miss . ' button answers were missing or off: put back.'; } }
+    $PK = wl_pack(); foreach (wl_tpl_status($pdo) as $k => $st) if ($st === 'rejected') { $extra = !empty($PK[$k]['of']);
         $bad[] = ['level' => 'warn', 'text' => $k . ' was REJECTED by Meta — change its words in Pre-made messages' . ($extra ? ' (only an extra wording: nothing is blocked)' : ' — until then no message is sent')]; }
-    $rel = (int)wln_status($pdo, false)['messages']['relabelled']; if ($rel) $bad[] = ['level' => 'warn', 'text' => $rel . ' lineup message(s) were turned into MARKETING by Meta — they cost more; soften the words'];
+    $rel = (int)wl_status($pdo, false)['messages']['relabelled']; if ($rel) $bad[] = ['level' => 'warn', 'text' => $rel . ' lineup message(s) were turned into MARKETING by Meta — they cost more; soften the words'];
     $f = $pdo->prepare("SELECT why, COUNT(*) n FROM wa_line_plan WHERE status = 'failed' AND sent_at IS NULL GROUP BY why ORDER BY n DESC LIMIT 3"); $f->execute(); foreach ($f->fetchAll() as $r) if ((int)$r['n'] >= 5) $bad[] = ['level' => 'warn', 'text' => $r['n'] . ' sends failed: ' . $r['why']];
     $d = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND c.status = 'active' AND p.due_at <= ?"); $d->execute([date('Y-m-d H:i:s', time() - 3 * 3600)]); $due = (int)$d->fetchColumn();
-    if ($due > 0) { $why = wln_ready($pdo) ? 'nobody can send (no number has room, or every customer is waiting for a rule: person chatting / campaign today)' : 'waiting for Meta to approve all the messages'; $bad[] = ['level' => $due > 50 ? 'warn' : 'info', 'text' => $due . ' messages are 3+ hours late: ' . $why]; }
-    $last = (int)strtotime((string)setting_get($pdo, 'wl_snap_at', '')); [, $h] = wln_ist(time()); $tk = (int)strtotime((string)setting_get($pdo, 'wl_tick_at', '')); if ($tk > 0 && $tk < time() - 1800 && $h >= $cfg['from'] && $h < $cfg['to']) $bad[] = ['level' => 'warn', 'text' => 'The engine has not run the Lineup for ' . round((time() - $tk) / 60) . ' minutes'];
+    if ($due > 0) { $why = wl_ready($pdo) ? 'nobody can send (no number has room, or every customer is waiting for a rule: person chatting / campaign today)' : 'waiting for Meta to approve all the messages'; $bad[] = ['level' => $due > 50 ? 'warn' : 'info', 'text' => $due . ' messages are 3+ hours late: ' . $why]; }
+    $last = (int)strtotime((string)setting_get($pdo, 'wl_snap_at', '')); [, $h] = wl_ist(time()); $tk = (int)strtotime((string)setting_get($pdo, 'wl_tick_at', '')); if ($tk > 0 && $tk < time() - 1800 && $h >= $cfg['from'] && $h < $cfg['to']) $bad[] = ['level' => 'warn', 'text' => 'The engine has not run the Lineup for ' . round((time() - $tk) / 60) . ' minutes'];
     setting_set($pdo, 'wl_issues', json_encode(['at' => date('Y-m-d H:i:s'), 'fixed' => $fix, 'issues' => $bad], JSON_UNESCAPED_UNICODE)); if ($fix) wa_log($pdo, 'engine', true, 'Lineup self-check fixed: ' . implode(' | ', $fix));
     return ['fixed' => $fix, 'issues' => $bad];
 }
 /** The status as one short phone notification (Admin / HR; the same tag replaces the last one, so they do not pile up). */
-function wln_push(PDO $pdo, array $st): int
+function wl_push(PDO $pdo, array $st): int
 {
-    if (!function_exists('ct_push') || !function_exists('wq_admin_ids')) return 0; $c = wln_cfg($pdo); $age = time() - (int)strtotime($c['started']); $bad = 0; foreach (($st['health']['issues'] ?? []) as $x) if (($x['level'] ?? '') === 'warn') $bad++;
+    if (!function_exists('ct_push') || !function_exists('wq_admin_ids')) return 0; $c = wl_cfg($pdo); $age = time() - (int)strtotime($c['started']); $bad = 0; foreach (($st['health']['issues'] ?? []) as $x) if (($x['level'] ?? '') === 'warn') $bad++;
     // owner 21 Nov: every 10 minutes at first (the first 6 hours), then every half hour (until 48 hours), then only when the self-check warns
     $gap = $age <= 6 * 3600 ? 9 * 60 : ($age <= 48 * 3600 ? 29 * 60 : ($bad ? 29 * 60 : 0)); if ($gap === 0) return 0;
     if ((int)strtotime((string)setting_get($pdo, 'wl_push_at', '')) > time() - $gap) return 0; setting_set($pdo, 'wl_push_at', date('Y-m-d H:i:s'));
@@ -385,25 +385,25 @@ function wln_push(PDO $pdo, array $st): int
     try { return (int)ct_push($pdo, wq_admin_ids($pdo), '🧵 Lineup status', $body, 'campaigns.html', 'hrms-lineup'); } catch (Throwable $e) { return 0; }
 }
 /** Every 10 minutes the engine writes the status down, so the owner sees the whole day as a table (kept 14 days). */
-function wln_snap(PDO $pdo, bool $force = false): bool
+function wl_snap(PDO $pdo, bool $force = false): bool
 {
     $last = (int)strtotime((string)setting_get($pdo, 'wl_snap_at', '')); if (!$force && $last > time() - 10 * 60) return false;
     if (!$force && function_exists('wa_lock') && !wa_lock($pdo, 'wlsnap', 60)) return false; setting_set($pdo, 'wl_snap_at', date('Y-m-d H:i:s'));
-    try { $r = wln_report($pdo, 30); $sc = []; foreach ($r['keys'] as $k => $c) $sc[$k] = [(int)$c['delivered'], (float)$c['score']]; setting_set($pdo, 'wl_scores', json_encode($sc)); } catch (Throwable $e) { }   // what the picker (wln_pick) reads: delivered + score of every wording
-    try { wln_heal($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup heal: ' . $e->getMessage()); }
-    $st = wln_status($pdo); try { [$td0] = wln_ist(time()); $st['cost_today'] = wln_summary($pdo, wln_ist_at($td0, 0))['cost']; } catch (Throwable $e) { }
+    try { $r = wl_report($pdo, 30); $sc = []; foreach ($r['keys'] as $k => $c) $sc[$k] = [(int)$c['delivered'], (float)$c['score']]; setting_set($pdo, 'wl_scores', json_encode($sc)); } catch (Throwable $e) { }   // what the picker (wl_pick) reads: delivered + score of every wording
+    try { wl_heal($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup heal: ' . $e->getMessage()); }
+    $st = wl_status($pdo); try { [$td0] = wl_ist(time()); $st['cost_today'] = wl_summary($pdo, wl_ist_at($td0, 0))['cost']; } catch (Throwable $e) { }
     $pdo->prepare("INSERT INTO wa_line_snap (at, j) VALUES (?, ?)")->execute([date('Y-m-d H:i:s'), json_encode($st, JSON_UNESCAPED_UNICODE)]);
-    try { wln_push($pdo, $st); } catch (Throwable $e) { }
+    try { wl_push($pdo, $st); } catch (Throwable $e) { }
     if (mt_rand(1, 30) === 1) $pdo->prepare("DELETE FROM wa_line_snap WHERE at < ?")->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]); return true;
 }
-function wln_snaps(PDO $pdo, int $n = 36): array { $o = []; foreach ($pdo->query("SELECT at, j FROM wa_line_snap ORDER BY id DESC LIMIT " . (int)$n)->fetchAll() as $r) { $j = json_decode((string)$r['j'], true); if (is_array($j)) { $j['at'] = (string)$r['at']; $o[] = $j; } } return $o; }
+function wl_snaps(PDO $pdo, int $n = 36): array { $o = []; foreach ($pdo->query("SELECT at, j FROM wa_line_snap ORDER BY id DESC LIMIT " . (int)$n)->fetchAll() as $r) { $j = json_decode((string)$r['j'], true); if (is_array($j)) { $j['at'] = (string)$r['at']; $o[] = $j; } } return $o; }
 /** The outside look (the card on the Campaigns page): what happened since $from — messages sent / delivered / read / failed, how many people answered (a button tap or any message), orders and revenue credited to the Lineup,
  *  how many went as Utility and how many as plain (marketing) messages, and what they cost (the shop's own rates, wa_team_cfg). */
-function wln_summary(PDO $pdo, int $from): array
+function wl_summary(PDO $pdo, int $from): array
 {
     $o = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'taps' => 0, 'orders' => 0, 'buyers' => 0, 'revenue' => 0, 'utility' => 0, 'plain' => 0, 'cost_utility' => 0.0, 'cost_plain' => 0.0, 'cost' => 0.0, 'rate_u' => 0.0, 'rate_m' => 0.0];
     $tc = function_exists('wa_team_cfg') ? wa_team_cfg($pdo) : ['rate_marketing' => 1.09, 'rate_utility' => 0.15]; $o['rate_u'] = (float)$tc['rate_utility']; $o['rate_m'] = (float)$tc['rate_marketing'];
-    $f = date('Y-m-d H:i:s', $from); $ids = wln_tpl_ids($pdo); $util = []; $cat = [];
+    $f = date('Y-m-d H:i:s', $from); $ids = wl_tpl_ids($pdo); $util = []; $cat = [];
     if ($ids) { try { foreach ($pdo->query("SELECT id, category, relabelled_at FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', $ids)) . ")")->fetchAll() as $r) $cat[(int)$r['id']] = (strtoupper((string)$r['category']) === 'UTILITY' && empty($r['relabelled_at'])); } catch (Throwable $e) { } }
     foreach ($ids as $k => $id) $util[$k] = !empty($cat[(int)$id]);
     $q = $pdo->prepare("SELECT phone, tpl_key, sent_at, wamid, status FROM wa_line_plan WHERE status IN ('sent','failed') AND COALESCE(sent_at, ?) >= ?"); $q->execute([$f, $f]); $rows = $q->fetchAll(); $sent = [];
@@ -413,7 +413,7 @@ function wln_summary(PDO $pdo, int $from): array
     foreach (array_chunk($wm, 400) as $ch) { $x = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $r) $st[(string)$r['wamid']] = (string)$r['status']; }
     foreach ($sent as $r) { $x = $st[(string)$r['wamid']] ?? ''; if (in_array($x, ['delivered', 'read'], true)) $o['delivered']++; if ($x === 'read') $o['read']++; }
     $byP = []; foreach ($sent as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
-    if ($byP) { $btn = []; foreach (wln_pack() as $k => $m) $btn[mb_strtolower(trim($m['button']))] = 1; $rep = []; $tap = [];
+    if ($byP) { $btn = []; foreach (wl_pack() as $k => $m) $btn[mb_strtolower(trim($m['button']))] = 1; $rep = []; $tap = [];
         foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
             foreach ($x->fetchAll() as $r) { $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; if (isset($btn[mb_strtolower(trim((string)$r['body']))])) $tap[(string)$r['phone'] . '|' . $st0] = 1; break; } } }
         $o['replied'] = count($rep); $o['taps'] = count($tap); }
@@ -423,31 +423,31 @@ function wln_summary(PDO $pdo, int $from): array
     $o['buyers'] = count($buy); return $o;
 }
 /** The picture the owner looks at: customers by topic and status, how many go today / tomorrow (by hour), the templates, the old drip. */
-function wln_overview(PDO $pdo): array
+function wl_overview(PDO $pdo): array
 {
-    $cfg = wln_cfg($pdo); $o = ['cfg' => $cfg, 'topics' => wln_topics(), 'by_topic' => [], 'board' => [], 'tomorrow' => ['total' => 0, 'by_topic' => [], 'by_hour' => []], 'today' => ['total' => 0, 'sent' => 0, 'by_topic' => []], 'left' => [], 'tpl' => [], 'now' => date('Y-m-d H:i')];
+    $cfg = wl_cfg($pdo); $o = ['cfg' => $cfg, 'topics' => wl_topics(), 'by_topic' => [], 'board' => [], 'tomorrow' => ['total' => 0, 'by_topic' => [], 'by_hour' => []], 'today' => ['total' => 0, 'sent' => 0, 'by_topic' => []], 'left' => [], 'tpl' => [], 'now' => date('Y-m-d H:i')];
     foreach ($pdo->query("SELECT topic, status, COUNT(*) n FROM wa_line_cust GROUP BY topic, status")->fetchAll() as $r) $o['by_topic'][$r['topic']][$r['status']] = (int)$r['n'];
     foreach ($pdo->query("SELECT left_why, COUNT(*) n FROM wa_line_cust WHERE left_why <> '' GROUP BY left_why")->fetchAll() as $r) $o['left'][$r['left_why']] = (int)$r['n'];
     foreach ($pdo->query("SELECT p.topic, p.step, COUNT(*) n FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND c.status = 'active' GROUP BY p.topic, p.step")->fetchAll() as $r) $o['board'][$r['topic']][(int)$r['step']] = (int)$r['n'];
-    [$td] = wln_ist(time()); $tm = date('Y-m-d', strtotime($td . ' +1 day'));
+    [$td] = wl_ist(time()); $tm = date('Y-m-d', strtotime($td . ' +1 day'));
     $q = $pdo->prepare("SELECT p.topic, p.due_at, p.status FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.due_at >= ? AND p.due_at < ? AND p.status IN ('planned','sent') AND (c.status = 'active' OR p.status = 'sent')");
     $q->execute([date('Y-m-d H:i:s', time() - 86400), date('Y-m-d H:i:s', time() + 3 * 86400)]);
-    foreach ($q->fetchAll() as $r) { [$d, $hh] = wln_ist((int)strtotime((string)$r['due_at']));
+    foreach ($q->fetchAll() as $r) { [$d, $hh] = wl_ist((int)strtotime((string)$r['due_at']));
         if ($d === $td) { $o['today']['total']++; if ($r['status'] === 'sent') $o['today']['sent']++; $o['today']['by_topic'][$r['topic']] = ($o['today']['by_topic'][$r['topic']] ?? 0) + 1; }
         elseif ($d === $tm) { $o['tomorrow']['total']++; $o['tomorrow']['by_topic'][$r['topic']] = ($o['tomorrow']['by_topic'][$r['topic']] ?? 0) + 1; $o['tomorrow']['by_hour'][$hh] = ($o['tomorrow']['by_hour'][$hh] ?? 0) + 1; } }
-    ksort($o['tomorrow']['by_hour']); $o['status'] = wln_status($pdo); [$td0] = wln_ist(time()); $o['summary'] = ['today' => wln_summary($pdo, wln_ist_at($td0, 0)), 'total' => wln_summary($pdo, (int)strtotime($cfg['started'] ?: 'now') - 60)]; $o['snaps'] = wln_snaps($pdo, 36); $o['tpl'] = wln_tpl_status($pdo); $o['tpl_counts'] = array_count_values($o['tpl']);
+    ksort($o['tomorrow']['by_hour']); $o['status'] = wl_status($pdo); [$td0] = wl_ist(time()); $o['summary'] = ['today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($cfg['started'] ?: 'now') - 60)]; $o['snaps'] = wl_snaps($pdo, 36); $o['tpl'] = wl_tpl_status($pdo); $o['tpl_counts'] = array_count_values($o['tpl']);
     $o['guide'] = ['live' => false, 'excerpt' => '']; try { if (function_exists('wk_guide_text')) { $g = wk_guide_text($pdo, 1500); $o['guide'] = ['live' => $g !== '', 'excerpt' => $g]; } } catch (Throwable $e) { }   // the approved guidebook: the owner reads the lineup messages against it
     $dj = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); $o['old_drip'] = is_array($dj) ? (string)($dj['mode'] ?? 'manual') : 'manual';
     return $o;
 }
 /** THE LEARNING: which topic and which step bring ORDERS. An order is credited to the last lineup message the customer got in the 7 days before it (same rule as the campaigns' report).
  *  Per topic × step: sent, delivered, button taps, orders, revenue, orders per 100 delivered. Per topic: customers, buyers (ordered after he came in), conversion %. Rates are shown only from $min delivered / customers (small numbers lie). */
-function wln_report(PDO $pdo, int $days = 30, int $min = 30): array
+function wl_report(PDO $pdo, int $days = 30, int $min = 30): array
 {
     $from = date('Y-m-d H:i:s', time() - $days * 86400); $rows = []; $topics = []; $steps = [];
     $q = $pdo->prepare("SELECT phone, topic, step, tpl_key, sent_at, wamid FROM wa_line_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([$from]); $sent = $q->fetchAll();
     $st = []; foreach (array_chunk(array_filter(array_column($sent, 'wamid')), 400) as $ch) { $x = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $r) $st[(string)$r['wamid']] = (string)$r['status']; }
-    $pack = wln_pack(); $btn = []; foreach ($pack as $k => $m) $btn[$k] = mb_strtolower(trim($m['button']));
+    $pack = wl_pack(); $btn = []; foreach ($pack as $k => $m) $btn[$k] = mb_strtolower(trim($m['button']));
     $tap = []; try { $t = $pdo->prepare("SELECT phone, body, ts FROM wa_messages WHERE dir = 'in' AND mtype IN ('button','interactive') AND ts >= ?"); $t->execute([$from]); foreach ($t->fetchAll() as $r) $tap[(string)$r['phone']][] = [mb_strtolower(trim((string)$r['body'])), (int)strtotime((string)$r['ts'])]; } catch (Throwable $e) { }
     $kc = []; $kcell = function (string $k) use (&$kc) { if (!isset($kc[$k])) $kc[$k] = ['sent' => 0, 'delivered' => 0, 'taps' => 0, 'orders' => 0, 'revenue' => 0]; };
     $ord = []; try { $o = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $o->execute([$from]);
@@ -472,7 +472,7 @@ function wln_report(PDO $pdo, int $days = 30, int $min = 30): array
         'note' => 'Orders are credited to the last lineup message in the 7 days before the order. A rate shows only after ' . $min . ' delivered / customers — before that it is only a guess.'];
 }
 /** One customer's whole lineup (for the chat / customer card). */
-function wln_customer(PDO $pdo, string $phone): array
+function wl_customer(PDO $pdo, string $phone): array
 {
     $c = $pdo->prepare("SELECT * FROM wa_line_cust WHERE phone = ?"); $c->execute([$phone]); $cu = $c->fetch(); if (!$cu) return ['in' => false];
     $p = $pdo->prepare("SELECT step, tpl_key, due_at, status, why, sent_at FROM wa_line_plan WHERE phone = ? ORDER BY id"); $p->execute([$phone]);
@@ -489,23 +489,23 @@ if (strpos($__wl, 'wa.line_') === 0) {
     if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only the owner / admin can set up the Lineup.'], 403);
     if (!wln_tables($pdo)) json_response(['error' => 'Lineup storage is not available.'], 500);
     switch ($__wl) {
-        case 'wa.line_get': json_response(['ok' => true] + wln_overview($pdo));
-        case 'wa.line_card': { $c = wln_cfg($pdo); [$td0] = wln_ist(time()); $st = wln_status($pdo, false); json_response(['ok' => true, 'started' => $c['started'], 'ready' => wln_ready($pdo), 'status' => $st, 'today' => wln_summary($pdo, wln_ist_at($td0, 0)), 'total' => wln_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60), 'tomorrow' => wln_overview($pdo)['tomorrow']]); }
-        case 'wa.line_report': json_response(['ok' => true] + wln_report($pdo, max(7, min(90, (int)($_GET['days'] ?? 30)))));
-        case 'wa.line_customer': json_response(['ok' => true] + wln_customer($pdo, preg_replace('/\D/', '', (string)($_GET['phone'] ?? ''))));
+        case 'wa.line_get': json_response(['ok' => true] + wl_overview($pdo));
+        case 'wa.line_card': { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); json_response(['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60), 'tomorrow' => wl_overview($pdo)['tomorrow']]); }
+        case 'wa.line_report': json_response(['ok' => true] + wl_report($pdo, max(7, min(90, (int)($_GET['days'] ?? 30)))));
+        case 'wa.line_customer': json_response(['ok' => true] + wl_customer($pdo, preg_replace('/\D/', '', (string)($_GET['phone'] ?? ''))));
         case 'wa.line_save': {   // POST {mode, cap, offer}
-            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $c = wln_cfg($pdo);
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $c = wl_cfg($pdo);
             if (isset($in['mode']) && in_array((string)$in['mode'], ['off', 'manual', 'auto'], true)) $c['mode'] = (string)$in['mode'];
             if (isset($in['cap'])) $c['cap'] = max(5, min(300, (int)$in['cap'])); if (isset($in['offer'])) $c['offer'] = mb_substr(trim((string)$in['offer']), 0, 900);
-            wln_cfg_put($pdo, $c); if (isset($in['offer'])) wln_install_kw($pdo); json_response(['ok' => true, 'cfg' => wln_cfg($pdo)]);
+            wl_cfg_put($pdo, $c); if (isset($in['offer'])) wl_install_kw($pdo); json_response(['ok' => true, 'cfg' => wl_cfg($pdo)]);
         }
         case 'wa.line_start': {   // POST — the same start the engine does by itself (kept as a button in case the engine has not run yet). Nothing is SENT to a customer here.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); @set_time_limit(120);
-            json_response(['ok' => true] + wln_start_all($pdo, (int)($auth['employee_id'] ?? 0)) + wln_overview($pdo));
+            json_response(['ok' => true] + wl_start_all($pdo, (int)($auth['employee_id'] ?? 0)) + wl_overview($pdo));
         }
         case 'wa.line_run': {   // POST — send what is due now (manual mode), in batches; call again while "waiting" > 0
-            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (wln_cfg($pdo)['started'] === '') json_response(['error' => 'The Lineup has not started yet — press Start first.'], 422);
-            @set_time_limit(120); json_response(['ok' => true] + wln_tick($pdo, ['now' => 1, 'cap' => 60]));
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (wl_cfg($pdo)['started'] === '') json_response(['error' => 'The Lineup has not started yet — press Start first.'], 422);
+            @set_time_limit(120); json_response(['ok' => true] + wl_tick($pdo, ['now' => 1, 'cap' => 60]));
         }
         default: json_response(['error' => 'Unknown Lineup action.'], 404);
     }
