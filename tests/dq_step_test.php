@@ -6,9 +6,9 @@ $pdo = new PDO('sqlite::memory:'); $pdo->exec("CREATE TABLE wa_camp_items (err_c
 function ok($c, $m) { if (!$c) { echo "FAIL: $m\n"; exit(1); } }
 function items($pdo, $n, $ageMin) { for ($i = 0; $i < $n; $i++) $pdo->prepare("INSERT INTO wa_camp_items VALUES (131048, ?)")->execute([date('Y-m-d H:i:s', time() - $ageMin * 60)]); }
 function msgs($pdo, $n, $deliv, $failed, $ageMin) { for ($i = 0; $i < $n; $i++) { $st = $i < $deliv ? 'delivered' : ($i < $deliv + $failed ? 'failed' : 'sent'); $pdo->prepare("INSERT INTO wa_messages VALUES ('out', 'campaign', 'template', ?, ?)")->execute([$st, date('Y-m-d H:i:s', time() - $ageMin * 60)]); } }
-// 1) 99 flagged in the last hour -> nothing; 100 -> 3 hours hold
+// 1) 99 flagged in the last hour -> nothing; 100 -> 6 hours hold
 items($pdo, 99, 20); wa_dq_auto_hold($pdo); ok(!wa_dq_hold_active($pdo), '99 flags: no hold');
-items($pdo, 1, 20); $S['wa_dq_auto_hold_at'] = '0'; wa_dq_auto_hold($pdo); ok(wa_dq_hold_active($pdo) && (int)$S['wa_dq_hold_until'] > time() + 3600 - 60 && (int)$S['wa_dq_hold_until'] < time() + 3600 + 60, '100 flags: 1 hour hold');
+items($pdo, 1, 20); $S['wa_dq_auto_hold_at'] = '0'; wa_dq_auto_hold($pdo); ok(wa_dq_hold_active($pdo) && (int)$S['wa_dq_hold_until'] > time() + 6 * 3600 - 60 && (int)$S['wa_dq_hold_until'] < time() + 6 * 3600 + 60, '100 flags: 6 hour hold');
 // 2) flags before the end of the last hold do not count again
 $S['wa_dq_hold_until'] = '0'; $S['wa_dq_hold_end'] = (string)(time() - 60); $S['wa_dq_auto_hold_at'] = '0'; wa_dq_auto_hold($pdo); ok(!wa_dq_hold_active($pdo), 'old flags (before the hold ended) do not hold again');
 // 3) speed: good delivery -> +1,000
