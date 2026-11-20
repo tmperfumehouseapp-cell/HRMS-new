@@ -39,6 +39,7 @@
     m.body.innerHTML = `
       ${stat}
       ${health}
+      <div class="wp-note" style="margin:0 0 10px"><b>👥 Customers by the day they wrote</b> <span class="wp-hint" style="margin:0">(who wrote to us: new query, campaign reply, button tap)</span><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${(D.by_day || []).map((x) => `<span class="wp-pill"><b>${esc(String(x.day).slice(5))}</b> · ${fmt(x.n)} <span style="opacity:.7">(waiting ${fmt(x.active)} · answered ${fmt(x.replied)} · finished ${fmt(x.done)})</span></span>`).join('') || '<span class="wp-hint">—</span>'}</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
         ${pill(started ? '⏰ Always on' + (ready ? '' : ' — waiting for Meta') : '⏳ Starting…', started ? 'ok' : '')}
         ${pill('old 7-Day Drip: ' + esc(D.old_drip), D.old_drip === 'off' ? 'ok' : '')}

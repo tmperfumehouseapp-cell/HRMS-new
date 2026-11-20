@@ -5,6 +5,10 @@ name: Lineup check (read-only)
 on:
   workflow_dispatch:
     inputs:
+      probe:
+        description: "Run the Lineup screen's own queries (overview, status, summary, report) on the real data and print errors and timings"
+        type: boolean
+        default: false
       brief:
         description: "Short report: skip the lists of existing messages"
         type: boolean
@@ -30,8 +34,23 @@ jobs:
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "${{ inputs.brief }}" <<'REMOTE' || true
-          P="$1"; export LN_BRIEF="$2"
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "${{ inputs.brief }}" "${{ inputs.probe }}" <<'REMOTE' || true
+          P="$1"; export LN_BRIEF="$2"; export LN_PROBE="$3"
+          if [ "$LN_PROBE" = "true" ]; then
+          cat > /tmp/ln_probe.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; require $f;
+          $pdo = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+          function json_response($a, $c = 200) { throw new Exception("json_response"); } function wa_log($p, $k, $ok, $i) { }
+          function setting_get($p, $k, $d = "") { $q = $p->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? $d : (string)$v; } function setting_set($p, $k, $v) { }
+          function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen($d) > 10 ? substr($d, -10) : $d; }
+          $action = ""; require $argv[1] . "empmanagment/wa_line.php";
+          echo "\n=== PROBE: the Lineup screen's queries on the real data ===\n";
+          foreach (["wl_status" => fn() => wl_status($pdo, false), "wl_summary today" => fn() => wl_summary($pdo, strtotime(date("Y-m-d 00:00:00"))), "wl_summary total" => fn() => wl_summary($pdo, (int)strtotime(wl_cfg($pdo)["started"]) - 60), "wl_report" => fn() => wl_report($pdo, 30), "wl_overview" => fn() => wl_overview($pdo)] as $n => $fn) { $t = microtime(true); try { $r = $fn(); echo "  $n: ok in " . round(microtime(true) - $t, 2) . " s" . (isset($r["sent"]) ? " · sent " . $r["sent"] . " replied " . $r["replied"] . " orders " . $r["orders"] . " cost " . $r["cost"] : "") . "\n"; } catch (Throwable $e) { echo "  $n: FAIL after " . round(microtime(true) - $t, 2) . " s: " . substr($e->getMessage(), 0, 300) . " @ " . basename($e->getFile()) . ":" . $e->getLine() . "\n"; } }
+          PHP
+          php /tmp/ln_probe.php "$P"; rm -f /tmp/ln_probe.php
+          exit 0
+          fi
           echo "=== files on the server ==="
           for f in empmanagment/wa_line.php assets/js/wa_line_ui.js assets/js/wa_camp_ui.js; do if [ -f "$P$f" ]; then echo "$f  $(stat -c '%y' "$P$f" | cut -c1-19)  $(wc -c < "$P$f") bytes"; else echo "$f  MISSING"; fi; done
           echo "wl_summary in wa_line.php: $(grep -c 'function wl_summary' "$P"empmanagment/wa_line.php 2>/dev/null)  ·  wa_line.php required by wa_more.php: $(grep -c "wa_line.php" "$P"empmanagment/wa_more.php 2>/dev/null)  ·  c28x in whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html 2>/dev/null)"
