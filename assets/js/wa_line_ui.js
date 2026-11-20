@@ -68,5 +68,7 @@
       const go = () => api.post('wa.line_run', {}).then((r) => { n += r.sent || 0; msg(`<div class="wp-note">Sent ${fmt(n)} · left out ${fmt(r.skipped || 0)} · waiting ${fmt(r.waiting || 0)}${r.why ? ' · ' + esc(r.why) : ''}</div>`); if ((r.sent || 0) > 0 && (r.waiting || 0) > 0) setTimeout(go, 1500); else { rn.disabled = false; load(m); } }).catch((e) => { rn.disabled = false; msg(errBox(e.message)); }); go(); };
     $(m.body, '#lnFind').onclick = () => { const ph = $(m.body, '#lnPh').value.replace(/\D/g, ''); if (!ph) return; api.get('wa.line_customer', { phone: ph }).then((r) => { $(m.body, '#lnCu').innerHTML = !r.in ? '<div class="wp-hint">This customer is not in the Lineup.</div>' : `<div class="wp-note"><b>${esc(TOP[r.customer.topic] || r.customer.topic)}</b> · ${esc(r.customer.status)}${r.customer.left_why ? ' (' + esc(r.customer.left_why) + ')' : ''} · came in ${esc(r.customer.anchor_at)}${r.plan.map((p) => `<div style="font-size:12.5px">Step ${p.step} · ${esc(p.due_at)} · ${p.status === 'sent' ? '✅ sent ' + esc(p.sent_at || '') : p.status === 'planned' ? '⏳ planned' : esc(p.status) + (p.why ? ' (' + esc(p.why) + ')' : '')}</div>`).join('')}${r.log.map((l) => `<div style="font-size:12px;color:#64748b">${esc(l.at)} · ${esc(l.what)}</div>`).join('')}</div>`; }).catch((e) => { $(m.body, '#lnCu').innerHTML = errBox(e.message); }); };
   }
-  window.WaLine = { open };
+  // mount(host): the same screen inside any element (the Campaigns card); returns a function that reloads it
+  function mount(host) { const m = { body: host }; host.innerHTML = loading; load(m); return () => load(m); }
+  window.WaLine = { open, mount };
 })();

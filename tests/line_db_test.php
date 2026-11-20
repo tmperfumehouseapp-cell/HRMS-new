@@ -63,4 +63,7 @@ $pdo->exec("UPDATE wa_line_cust SET recheck_at = '2000-01-01 00:00:00' WHERE pho
 $pdo->exec("INSERT INTO wa_messages (phone, dir, body, ts) VALUES ('9810000003', 'in', 'kitna rate hai', '" . $f($now + 30) . "')");
 ok(wl_recheck($pdo, $now + 100000) === 1, 'recheck re-plans'); ok((string)$pdo->query("SELECT topic FROM wa_line_cust WHERE phone = '9810000003'")->fetchColumn() === 'price', 'new topic price');
 ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9810000003' AND status = 'planned'")->fetchColumn() === 7, 'new ladder of seven (step 1 of the old topic was sent, a different message)');
+$sm = wl_summary($pdo, 0); ok($sm['sent'] >= 10 && $sm['utility'] === $sm['sent'] && $sm['plain'] === 0, 'summary: every message went as utility ' . json_encode([$sm['sent'], $sm['utility'], $sm['plain']]));
+ok(abs($sm['cost'] - round($sm['sent'] * $sm['rate_u'], 2)) < 0.001 && $sm['orders'] === 1 && $sm['buyers'] === 1, 'summary: cost = utility messages x rate; the order is credited');
+$pdo->exec("UPDATE wa_templates SET category = 'MARKETING' WHERE id = " . $ids['ln_trust_2']); $sm2 = wl_summary($pdo, 0); ok($sm2['plain'] >= 1 && $sm2['cost'] > $sm['cost'], 'a message Meta made marketing is counted and costs more');
 echo "lineup db ok\n";

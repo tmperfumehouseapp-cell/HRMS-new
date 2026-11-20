@@ -1,0 +1,58 @@
+# READ-ONLY look at the Lineup on the VPS: is the new code there, did it start, which tables / settings / messages exist, what the engine log says. Counts and names only (no phone numbers, no customer data).
+# Changes nothing. Run it by hand: Actions → "Lineup check (read-only)" → Run workflow.
+name: Lineup check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Lineup state
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          echo "=== files on the server ==="
+          for f in empmanagment/wa_line.php assets/js/wa_line_ui.js assets/js/wa_camp_ui.js; do if [ -f "$P$f" ]; then echo "$f  $(stat -c '%y' "$P$f" | cut -c1-19)  $(wc -c < "$P$f") bytes"; else echo "$f  MISSING"; fi; done
+          echo "wl_summary in wa_line.php: $(grep -c 'function wl_summary' "$P"empmanagment/wa_line.php 2>/dev/null)  ·  wa_line.php required by wa_more.php: $(grep -c "wa_line.php" "$P"empmanagment/wa_more.php 2>/dev/null)  ·  c28x in whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html 2>/dev/null)"
+          php -v | head -1
+          cat > /tmp/ln_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "db: " . $e->getMessage() . "\n"; exit; }
+          $all = function ($sql, $p = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "  (n/a: " . substr($e->getMessage(), 0, 120) . ")\n"; return []; } };
+          $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "(not set)" : (string)$v; } catch (Throwable $e) { return "(n/a)"; } };
+          echo "\n=== mysql ===\n"; foreach ($all("SELECT VERSION() v") as $r) echo "  " . $r["v"] . "\n";
+          echo "\n=== settings ===\n";
+          foreach (["wl_cfg", "wl_tpls", "wl_snap_at", "wl_tick_at", "wl_push_at", "wl_issues"] as $k) echo "  $k = " . substr($s($k), 0, 400) . "\n";
+          $wd = json_decode($s("wd_cfg"), true); echo "  old drip mode = " . (is_array($wd) ? ($wd["mode"] ?? "?") : $s("wd_cfg")) . "\n";
+          echo "\n=== tables ===\n";
+          foreach (["wa_line_cust", "wa_line_plan", "wa_line_log", "wa_line_snap"] as $t) { $x = $all("SHOW TABLES LIKE '$t'"); echo "  $t: " . ($x ? "exists" : "MISSING"); if ($x) { $c = $all("SELECT COUNT(*) n FROM $t"); echo " · rows " . ($c[0]["n"] ?? "?"); } echo "\n"; }
+          foreach ($all("SELECT status, COUNT(*) n FROM wa_line_plan GROUP BY status") as $r) echo "  plan rows " . $r["status"] . ": " . $r["n"] . "\n";
+          foreach ($all("SELECT topic, status, COUNT(*) n FROM wa_line_cust GROUP BY topic, status") as $r) echo "  customers " . $r["topic"] . " / " . $r["status"] . ": " . $r["n"] . "\n";
+          echo "\n=== lineup messages (ln_*) per account ===\n";
+          foreach ($all("SELECT w.status, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'ln\\_%' GROUP BY w.status") as $r) echo "  " . $r["status"] . ": " . $r["n"] . "\n";
+          foreach ($all("SELECT COUNT(*) n FROM wa_templates WHERE name LIKE 'ln\\_%'") as $r) echo "  templates saved: " . $r["n"] . "\n";
+          echo "\n=== engine / template log lines about the lineup or errors (newest 20) ===\n";
+          foreach ($all("SELECT at, kind, ok, info FROM wa_log WHERE (kind IN ('engine','template')) AND (info LIKE '%ineup%' OR ok = 0) ORDER BY id DESC LIMIT 20") as $r) echo "  " . $r["at"] . " [" . $r["kind"] . ($r["ok"] ? "" : " FAIL") . "] " . substr($r["info"], 0, 200) . "\n";
+          echo "\n=== newest engine log lines (any) ===\n";
+          foreach ($all("SELECT at, ok, info FROM wa_log WHERE kind = 'engine' ORDER BY id DESC LIMIT 6") as $r) echo "  " . $r["at"] . ($r["ok"] ? "" : " FAIL") . " " . substr($r["info"], 0, 160) . "\n";
+          PHP
+          php /tmp/ln_check.php "$P"; rm -f /tmp/ln_check.php
+          REMOTE
