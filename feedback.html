@@ -28,6 +28,10 @@
   .fb .chips{display:flex;flex-wrap:wrap;gap:6px}.fb .chip{border:1.5px solid #cfd6d9;border-radius:99px;padding:6px 12px;font-weight:600;background:#fff;cursor:pointer;user-select:none;color:#111}.fb .chip.on{background:#0f766e;color:#fff;border-color:#0f766e}.fb .padd{display:flex;gap:6px;margin-top:8px}.fb .padd input{flex:1}
   .fb .ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:300;padding:14px}.fb .ov.on{display:flex}.fb .md{background:#fff;color:#111;border-radius:16px;padding:16px;width:min(460px,94vw);max-height:90vh;overflow:auto}.fb .md h3{margin:0 0 8px}.fb .md label{display:block;font-size:12px;color:#555;margin:8px 0 3px}.fb .md input,.fb .md select,.fb .md textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px;font:inherit;background:#fff;color:#111}
   .fb .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;color:#fff;border-radius:12px;padding:10px 16px;transition:.3s;opacity:0;z-index:400;pointer-events:none}.fb .toast.on{transform:translateX(-50%);opacity:1}
+  .fb .pop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:250;display:none;padding:2.5vh 2.5vw}.fb .pop.on{display:flex}.fb .pp{background:#fff;border-radius:18px;display:flex;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);color:#111}
+  .fb .pL{flex:1;min-width:0;display:flex;flex-direction:column;padding:10px 12px}.fb .pL iframe{flex:1;min-height:300px;width:100%;border:1px solid var(--line);border-radius:12px;background:#efeae2;display:block}.fb .pR{width:330px;border-left:1px solid var(--line);padding:12px;overflow:auto;position:relative}
+  .fb .pX{position:absolute;top:8px;right:10px;border:0;background:transparent;font-size:20px;cursor:pointer;color:#555}
+  @media(max-width:900px){.fb .pp{flex-direction:column}.fb .pR{width:auto;max-height:36vh;border-left:0;border-top:1px solid var(--line)}}
   @media(max-width:900px){.fb .g{grid-template-columns:1fr}.fb .k{grid-template-columns:repeat(3,1fr)}}
 </style>
 </head>
@@ -41,8 +45,9 @@
       <details class="set" id="setBox"><summary style="cursor:pointer;font-weight:800">⚙ Settings <span class="sm" id="setSum"></span></summary><div id="setIn" style="margin-top:10px"></div></details>
       <div class="pills" id="tabs"></div><div class="k" id="kp"></div>
       <div class="g"><div class="c"><div class="bar"><input id="q" placeholder="🔍 Search order ID, name or phone  e.g. 72474" autocomplete="off"><button class="btn gh" id="testBtn" type="button">🧪 Test with a customer</button><a class="btn" id="newOrd" href="hub.html?w=dispatch&t=dispatch_manual" target="_top">＋ Create order</a></div>
-        <div class="wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Delivered</th><th>Message</th><th>Seen</th><th>Status</th><th>Proof</th></tr></thead><tbody id="rows"><tr><td colspan="7" class="sm" style="padding:16px">Loading…</td></tr></tbody></table></div><div id="none" class="sm" style="display:none;padding:14px">No order found.</div></div>
+        <div class="wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Delivered</th><th>Message</th><th>Seen</th><th>Status</th><th>Proof</th><th>Chat</th></tr></thead><tbody id="rows"><tr><td colspan="8" class="sm" style="padding:16px">Loading…</td></tr></tbody></table></div><div id="none" class="sm" style="display:none;padding:14px">No order found.</div></div>
       <div class="c" id="side"><div class="sm">Pick an order.</div></div></div>
+      <div class="pop" id="pop"><div class="pp"><div class="pL"><div id="popTop" class="sm" style="margin:0 0 6px"></div><div id="popChat" style="flex:1;display:flex;flex-direction:column;min-height:0"></div><div id="popActs" style="margin-top:8px"></div></div><div class="pR"><button class="pX" id="popX" type="button" aria-label="Close">✕</button><div id="popR"></div></div></div></div>
       <div class="ov" id="ov"><div class="md" id="md"></div></div><div class="toast" id="ts"></div><input type="file" id="fi" accept="image/jpeg,image/png,image/webp" style="display:none">
     </div></div>
   </main>
@@ -75,7 +80,7 @@
     $('warn').innerHTML = !CFG.on ? '<div class="warn">⚠ <b>Automatic messages are OFF.</b> Nothing is sent by itself yet. Open ⚙ Settings, pick the approved messages and switch it on.</div>' : (!CFG.tpl ? '<div class="warn">⚠ Pick the approved <b>feedback message</b> in ⚙ Settings, or nothing can be sent.</div>' : '');
     $('setSum').textContent = '· ' + (CFG.on ? 'automatic ON' : 'automatic OFF') + ' · message after ' + CFG.wait + ' days · follow-up after ' + CFG.fu + ' days';
     $('none').style.display = L.rows.length ? 'none' : 'block';
-    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="font-weight:800;color:#c2410c">${esc(x.order)}</a>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '<span style="color:#b91c1c" title="' + esc(x.msg_why) + '">✗ Failed</span><br><span class="sm" style="color:#b91c1c">open it to see why</span>' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span>${x.last_call ? '<br><span class="sm">📞 ' + esc(x.last_call.replace(/^Call:\s*/, '')) + '</span>' : ''}</td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td></tr>`).join('');
+    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="font-weight:800;color:#c2410c">${esc(x.order)}</a>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '<span style="color:#b91c1c" title="' + esc(x.msg_why) + '">✗ Failed</span><br><span class="sm" style="color:#b91c1c">open it to see why</span>' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span>${x.last_call ? '<br><span class="sm">📞 ' + esc(x.last_call.replace(/^Call:\s*/, '')) + '</span>' : ''}</td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td><td><button class="btn g2" data-chat="${esc(x.order)}" type="button" style="padding:5px 9px">💬 Open chat</button></td></tr>`).join('');
     renderSet();
   }
   function renderSet() {
@@ -100,29 +105,49 @@
     try { const d = await api.get('fb.get', { order: o }); if (sel !== o) return; DET = d; drawSide(); }
     catch (e) { $('side').innerHTML = `<div style="color:#b91c1c">${esc(e.message)}</div>`; }
   }
-  function drawSide() {
-    const d = DET, x = d.row, name = (x.customer || '').split(' ')[0] || 'the customer';
-    const txt = x.status === 'sent' && !x.seen && d.text_fu ? d.text_fu : d.text;
-    if (!$('sA')) $('side').innerHTML = '<div id="sA"></div><div id="chatBox"></div><div id="sB"></div>';
-    $('sA').innerHTML = `<div class="h"><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="color:#c2410c">${esc(x.order)}</a> · ${esc(x.customer || '')}</div><div class="sm">${esc(x.phone)} · delivered ${esc(dt(x.delivered))} · <span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></div>
-      ${d.proofs.length ? '<div class="ph" id="phs">Loading…</div>' : '<div class="sm" style="margin:6px 0">No feedback screenshot yet</div>'}
+  let popOpen = false;
+  // the pieces of an order's panel: header + proof, the buttons, the rest (message, history) — used by the side panel AND the big chat pop-up
+  function parts(d) {
+    const x = d.row, txt = x.status === 'sent' && !x.seen && d.text_fu ? d.text_fu : d.text;
+    const hdr = `<div class="h"><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="color:#c2410c">${esc(x.order)}</a> · ${esc(x.customer || '')}</div><div class="sm">${esc(x.phone)} · delivered ${esc(dt(x.delivered))} · <span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></div>
+      ${d.proofs.length ? '<div class="ph phs">Loading…</div>' : '<div class="sm" style="margin:6px 0">No feedback screenshot yet</div>'}
       ${x.msg_state === 'failed' ? `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:12px;line-height:1.45"><b>✗ WhatsApp could not deliver the message.</b><br>${esc(x.msg_why)}</div>` : ''}${x.place ? `<div class="sm">Given on: <b>${esc(x.place)}</b></div>` : ''}${x.reward_note ? `<div class="sm">Reward: <b>${esc(x.reward_note)}</b>${x.reward_order ? ' · order ' + esc(x.reward_order) : ''}</div>` : ''}${x.cx_code ? `<div class="sm">Complaint: <b>${esc(x.cx_code)}</b></div>` : ''}`;
-    // 💬 the customer's WhatsApp, live, inside the page (the same chat box as the Complaints page: type, 🎤 voice, 📎 photo, ✨ replies). It is kept while the order stays the same, so a refresh never closes what you are typing.
-    const ph10 = String(x.phone || '').replace(/\D/g, '').slice(-10), cb = $('chatBox');
-    if (ph10.length === 10) { if (cb.dataset.p !== ph10 || !cb.firstChild) { cb.dataset.p = ph10; cb.innerHTML = `<div class="sm" style="margin:10px 0 4px"><b>💬 WhatsApp with ${esc(name)}</b> · live — type below and send</div><iframe id="chatFr" title="WhatsApp chat" src="my_chats.html?embed=1&phone=${ph10}" style="width:100%;height:500px;border:1px solid var(--line);border-radius:12px;background:#efeae2;display:block" allow="microphone; clipboard-write"></iframe>`; } }
-    else { cb.dataset.p = ''; cb.innerHTML = '<div class="sm" style="margin:10px 0">This order has no phone number, so there is no WhatsApp chat.</div>'; }
-    $('sB').innerHTML = `<div class="acts">${x.status === 'wait' ? '<button class="btn g2" id="bNow">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" id="bFu">📨 Send follow-up</button>' : ''}<button class="btn gh" id="bCall">📞 Call done</button><button class="btn gh" id="bPf">⬆ Add proof manually</button><button class="btn g2" id="bRw">🎁 Reward</button><button class="btn rd" id="bCx">⚠ Customer has an issue</button><button class="btn gh" id="bSk">Leave out</button>${x.test ? '<button class="btn rd" id="bDel">🗑 Delete this test</button>' : ''}</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">🔗 SEND A REVIEW LINK — ONE TAP</div><div class="acts" id="lkRow">${(CFG.links || []).map((l, i) => `<button class="btn g2" data-lk="${i}" type="button">🔗 ${esc(l.name)}</button>`).join('')}<button class="btn gh" id="bLinks" type="button">＋ Add / manage links</button></div>
-      ${x.test ? '<div class="sm" style="margin-top:6px">🧪 This is a test: nothing is sent automatically for it. Use the chat and the buttons, reply from the customer\'s WhatsApp, and send a screenshot to see the whole flow.</div>' : ''}
+    const acts = `<div class="acts">${x.status === 'wait' ? '<button class="btn g2" data-act="now">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" data-act="fu">📨 Send follow-up</button>' : ''}<button class="btn gh" data-act="call">📞 Call done</button><button class="btn gh" data-act="pf">⬆ Add proof manually</button><button class="btn g2" data-act="rw">🎁 Reward</button><button class="btn rd" data-act="cx">⚠ Customer has an issue</button><button class="btn gh" data-act="sk">Leave out</button>${x.test ? '<button class="btn rd" data-act="del">🗑 Delete this test</button>' : ''}</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">🔗 SEND A REVIEW LINK — ONE TAP</div><div class="acts">${(CFG.links || []).map((l, i) => `<button class="btn g2" data-lk="${i}" type="button">🔗 ${esc(l.name)}</button>`).join('')}<button class="btn gh" data-act="links" type="button">＋ Add / manage links</button></div>`;
+    const rest = `${x.test ? '<div class="sm" style="margin-top:6px">🧪 This is a test: nothing is sent automatically for it. Use the chat and the buttons, reply from the customer\'s WhatsApp, and send a screenshot to see the whole flow.</div>' : ''}
       ${txt ? `<div class="h" style="margin-top:12px;font-size:12.5px">Message that ${x.msg_at ? 'was' : 'will be'} sent</div><div class="msg">${esc(txt)}</div>` : '<div class="sm" style="margin-top:10px">No message is picked yet (⚙ Settings).</div>'}
       <div class="h" style="margin-top:10px;font-size:12.5px">History</div><div class="tl">${d.events.length ? d.events.map((e) => `<div><b>${esc(dt(e.at))}</b> ${esc(e.txt)}${e.by_name && e.by_name !== 'automatic' ? ' <span class="sm">· ' + esc(e.by_name) + '</span>' : ''}</div>`).join('') : '<div class="sm">Nothing yet.</div>'}</div>`;
-    const go = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
-    go('bNow', () => send('fb.send_now')); go('bFu', () => send('fb.followup')); go('bCall', callDone); go('bLinks', manageLinks); document.querySelectorAll('#lkRow [data-lk]').forEach((b) => { b.onclick = () => askLink(+b.dataset.lk); }); go('bPf', pickProof); go('bRw', reward); go('bCx', complaint); go('bSk', leaveOut); go('bDel', delTest);
-    if (d.proofs.length) { const box = $('phs'); box.innerHTML = ''; d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => { const w = window.open('', '_blank'); if (w) w.document.write('<img src="' + u + '" style="max-width:100%">'); };
+    return { hdr, acts, rest };
+  }
+  const ACTS = { now: () => send('fb.send_now'), fu: () => send('fb.followup'), call: () => callDone(), links: () => manageLinks(), pf: () => pickProof(), rw: () => reward(), cx: () => complaint(), sk: () => leaveOut(), del: () => delTest(), chat: () => openPop() };
+  function wire(root, d) {
+    root.querySelectorAll('[data-act]').forEach((b) => { const f = ACTS[b.dataset.act]; if (f) b.onclick = f; });
+    root.querySelectorAll('[data-lk]').forEach((b) => { b.onclick = () => askLink(+b.dataset.lk); });
+    const box = root.querySelector('.phs'); if (!d.proofs.length || !box) return; box.innerHTML = '';
+    d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => { const w = window.open('', '_blank'); if (w) w.document.write('<img src="' + u + '" style="max-width:100%">'); };
         const w = document.createElement('div'); w.style.cssText = 'position:relative;display:inline-block;max-width:100%'; w.appendChild(i);
         const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn rd'; rm.textContent = '🗑 Remove proof'; rm.style.cssText = 'position:absolute;top:6px;right:6px;padding:4px 9px;font-size:11px';
         rm.onclick = async (ev) => { ev.stopPropagation(); if (!confirm('Remove this proof picture from ' + sel + '?')) return; rm.disabled = true; try { await api.post('fb.proof_delete', { id: p.id }); say('Proof removed'); load(); } catch (er) { say(er.message, true); rm.disabled = false; } };
-        w.appendChild(rm); box.appendChild(w); }).catch((er) => { box.insertAdjacentHTML('beforeend', '<span class="sm" style="color:#b91c1c">The picture could not be shown: ' + esc(er.message) + '</span>'); }); }); }
+        w.appendChild(rm); box.appendChild(w); }).catch((er) => { box.insertAdjacentHTML('beforeend', '<span class="sm" style="color:#b91c1c">The picture could not be shown: ' + esc(er.message) + '</span>'); }); });
   }
+  function drawSide() {
+    const d = DET, x = d.row, P = parts(d);
+    if (!$('sA')) $('side').innerHTML = '<div id="sA"></div><div id="sB"></div>';
+    $('sA').innerHTML = P.hdr + `<div class="acts"><button class="btn g2" data-act="chat" type="button" style="font-size:13px;padding:10px 16px">💬 Open WhatsApp chat (big window)</button></div>`;
+    $('sB').innerHTML = P.acts + P.rest; wire($('side'), d);
+    if (popOpen) drawPop(d);
+  }
+  // 💬 the big chat window: the customer's WhatsApp live on the left (the whole height), the order on the right. The chat frame is kept while the same customer stays open, so a refresh never closes what you are typing.
+  function drawPop(d) {
+    const x = d.row, P = parts(d), ph10 = String(x.phone || '').replace(/\D/g, '').slice(-10), cb = $('popChat');
+    $('popTop').innerHTML = `<b style="font-size:14px;color:#111">💬 WhatsApp with ${esc(x.customer || x.order)}</b> · ${esc(x.phone)} · live — type below and send`;
+    if (ph10.length === 10) { if (cb.dataset.p !== ph10 || !cb.firstChild) { cb.dataset.p = ph10; cb.innerHTML = `<iframe id="chatFr" title="WhatsApp chat" src="my_chats.html?embed=1&phone=${ph10}" allow="microphone; clipboard-write"></iframe>`; } }
+    else { cb.dataset.p = ''; cb.innerHTML = '<div class="sm" style="margin:10px 0">This order has no phone number, so there is no WhatsApp chat.</div>'; }
+    $('popActs').innerHTML = P.acts; $('popR').innerHTML = P.hdr + P.rest; wire($('popActs'), d); wire($('popR'), d);
+  }
+  async function openPop() { if (!DET) return; popOpen = true; $('pop').classList.add('on'); drawPop(DET); }
+  function closePop() { popOpen = false; $('pop').classList.remove('on'); $('popChat').innerHTML = ''; $('popChat').dataset.p = ''; }
+  $('popX').onclick = closePop; $('pop').onclick = (e) => { if (e.target.id === 'pop') closePop(); };
+  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if ($('ov').classList.contains('on')) closeM(); else if (popOpen) closePop(); });
   async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); load(); } catch (e) { say(e.message, true); } }
   /* several places + a new one typed by hand (it is kept in the list for next time) */
   function placeBox(sel) {
@@ -234,6 +259,7 @@
       return;
     }
     const t = e.target.closest('[data-t]'); if (t) { tab = t.dataset.t; query = ''; $('q').value = ''; load(); return; }
+    const cb = e.target.closest('[data-chat]'); if (cb) { e.stopPropagation(); openOrder(cb.dataset.chat).then(() => openPop()); return; }
     const r = e.target.closest('tr.row'); if (r) { openOrder(r.dataset.o); }
   });
   let qt = 0; $('q').oninput = (e) => { clearTimeout(qt); qt = setTimeout(() => { query = e.target.value.trim(); load(); }, 350); };
