@@ -613,7 +613,7 @@ function wa_number_caps(PDO $pdo, array $health): array
         $ramp = $cfg['ramp'] && $tier < 10000;
         $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $tier ? 'slow start (day ' . ($age + 1) . ')' : '';
         $ownT = $tier; if ($perNum) { $ownT = $h['tier'] === null ? $tier : ($h['tier'] === -1 ? 1000000 : (int)$h['tier']); }
-        $cap = min($cap, $perNum ? max(1, (int)floor($ownT * 0.9)) : $tier);
+        $cap = min($cap, $perNum ? max(1, (int)$ownT) : $tier);   // owner 20 Nov 2026: the full limit of the number (2,000 = 2,000), no 90% gate of our own
         // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
