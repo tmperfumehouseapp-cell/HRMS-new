@@ -329,6 +329,24 @@ function fi_summary(PDO $pdo, string $from, string $to): array
     return $out;
 }
 
+/** 🕛 12 AM – 12 AM window (one calendar day of 24 hours): the orders, sales and money recorded from 12:00 AM on $day to 12:00 AM the next day. Orders / sales are exact (their own time); receipts count by the time they were recorded.
+ *  Money spent is saved per day (not per hour), so it is not part of this window (null). */
+function fi_noon(PDO $pdo, string $day): array
+{
+    $w0 = $day . ' 00:00:00'; $w1 = date('Y-m-d', strtotime($day . ' +1 day')) . ' 00:00:00';
+    $out = ['day' => $day, 'from' => $w0, 'to' => $w1, 'online' => ['orders' => 0, 'sales' => 0.0], 'store' => ['bills' => 0, 'sales' => 0.0], 'received' => 0.0, 'receipts' => 0, 'spent' => null];
+    try {
+        $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
+        $q = $pdo->prepare("SELECT shopify_id, store_key, total, financial_status FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]);
+        foreach ($q->fetchAll() as $o) { $fs = strtolower((string)$o['financial_status']); if (in_array($fs, ['voided', 'refunded'], true) || isset($cancel[$o['store_key'] . '|' . $o['shopify_id']])) continue; $out['online']['orders']++; $out['online']['sales'] += fi_p($o['total']); }
+    } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT COUNT(*) n, COALESCE(SUM(total), 0) t FROM st_bills WHERE status = 'ok' AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]); $x = $q->fetch(); $out['store']['bills'] = (int)$x['n']; $out['store']['sales'] = fi_p($x['t']); } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT COUNT(*) n, COALESCE(SUM(amount), 0) a FROM fi_receipts WHERE status = 'ok' AND untracked = 0 AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]); $x = $q->fetch(); $out['receipts'] = (int)$x['n']; $out['received'] = fi_m(fi_p($x['a'])); } catch (Throwable $e) { }
+    $out['online']['sales'] = fi_m($out['online']['sales']); $out['store']['sales'] = fi_m($out['store']['sales']);
+    $out['orders'] = $out['online']['orders'] + $out['store']['bills']; $out['sales'] = round($out['online']['sales'] + $out['store']['sales'], 2); $out['avg_ticket'] = $out['orders'] ? round($out['sales'] / $out['orders'], 2) : 0;
+    return $out;
+}
+
 /** Claude's one-line understanding of a receipt, from what it is and what came before from the same payer. Empty when Claude is off: never blocks saving. */
 function fi_claude_note(PDO $pdo, array $r): string
 {
@@ -825,6 +843,11 @@ switch ($action) {
         $to = fi_day($_GET['to'] ?? '') ?: fi_today($pdo); $from = fi_day($_GET['from'] ?? '') ?: $to; if ($from > $to) { $t = $from; $from = $to; $to = $t; }
         if ((strtotime($to) - strtotime($from)) > 366 * 86400) fi_err('Choose a period of at most one year.');
         json_response(fi_summary($pdo, $from, $to));
+        break;
+    }
+    case 'fi.noon': {
+        $d = fi_day($_GET['day'] ?? '') ?: fi_today($pdo);
+        json_response(fi_noon($pdo, $d));
         break;
     }
     // the Dispatch rows ask here: "what is the money story of these orders?"

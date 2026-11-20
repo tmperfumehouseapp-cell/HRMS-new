@@ -4,7 +4,7 @@
  *
  * New queries are given to salespeople by themselves, by these rules (the pure maths is in wq_auto_rules.php, tested by tests/waa_test.php):
  *   • only salespeople (Sales department) who punched in; a button per person: ON at punch-in, Admin / Sales Head can turn it OFF (no queries) or ON (no other rule applies)
- *   • RATIO: company average ratio of the business day (10 am – 10 am); a person more than 5 points below it (after 6 fresh queries) is switched OFF for FRESH queries by itself,
+ *   • RATIO: company average ratio of the business day (10 am – 10 am); a person more than 5 points below it (after 5 fresh queries) is switched OFF for FRESH queries by itself,
  *     and stays OFF until Admin / Sales Head turn the button ON
  *   • SPEED: twice as slow as the team to answer = half the queries
  *   • TARGET: fresh queries in proportion to the day's target
@@ -121,7 +121,12 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
               'ratio' => $q > 0 ? round(100 * $qo / $q, 1) : null, 'punch' => isset($x['ar']) && $x['ar'] !== null ? (string)$x['ar'] : '', 'speed' => $sp[$e] ?? null, 'team_speed' => $teamSpeed];
         $tkv = (int)(($x['ctk'] ?? 0) > 0 ? $x['ctk'] : ($x['tk'] ?? 0)); $no = (int)($x['n'] ?? 0); $p['ticket'] = $tkv; $p['orders'] = $no;
         $rel = ($tc['on'] && $tc['goal'] > 0 && $tkv >= $tc['goal'] && $no >= $tc['min']) ? $tc['relief'] / 100 : 0.0;   // a ticket at the goal gets a little room on the ratio (bigger bundles can mean fewer orders)
-        $p['below'] = waa_below($q, $qo, $team - $rel) ? 1 : 0; $p['tier'] = waa_tier($q, $qo, $team); $p['waiting'] = (int)($wt[$e] ?? 0);
+        $p['below'] = waa_below($q, $qo, $team - $rel) ? 1 : 0; $p['tier'] = waa_tier($q, $qo, $team);
+        $p['m0'] = $p['m']; $p['wk'] = $p['m'] === 'on'; $p['force'] = $p['wk'] && !empty($s['f']);   // Admin / Sales Head ON = this person is working, also after the punch-out (at home, on WFH …)
+        if ($p['wk'] && !$p['force']) $p['m'] = '';   // ... and ALL the normal rules apply to him (ratio, hold, speed); only Admin's "No rules" switch (state f) lifts them (owner, 20 Nov)
+        if ($p['wk']) $p['present'] = true;
+        if ($p['m'] === 'on' && $p['tier'] > 2) $p['tier'] = 2;   // forced: never treated as "red"
+        $p['waiting'] = (int)($wt[$e] ?? 0);
         $p['tkcand'] = ($tc['on'] && $tc['hold'] && tk_hold((float)$tkv, $no, $p['waiting'], $tc['hold_below'], $tc['hold_orders'], $tc['hold_wait'])) ? 1 : 0; $p['tkhold'] = 0; if ($p['m'] === 'on') $p['tkcand'] = 0;   // the hold is decided below, once we know how many people reach the goal; Admin / Sales Head ON is never held
         $p['sw'] = (int)($s['sw'] ?? 0); $p['sh'] = (int)($s['sh'] ?? 0); $p['slow'] = ($p['m'] !== 'on' && $p['waiting'] >= (int)$tc['hold_wait'] && tk_slow($p['speed'], $p['team_speed'], 2.0)) ? 1 : 0; $p['shold'] = ($p['m'] !== 'on' && $p['sh'] > time()) ? 1 : 0;   // 🐢 slow replies: warned first, then new queries pause for 45 minutes
         [$on, $why] = waa_button($p); $p['on'] = $on; $p['why'] = $why;
@@ -137,6 +142,11 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
  * Gives ONE waiting query to a person, if it can be given. $r = its wa_queries row, $c = its contact row, $V = waa_view() (people are updated), $T = what the engine gave today.
  * Skips: already held · not open · opted out / complaint · older than 24 h · a person already answered · another business's auto-reply · nobody eligible. A per-customer lock stops the webhook and the engine pass giving the same chat twice.
  */
+/** A person's tier right now (the view's tier was worked out before this pass: a grey person who just reached 5 queries must stop being grey at once). Admin ON + No rules is never 'red'. */
+function waa_tier_now(array $p, float $team): int
+{
+    $t = waa_tier((int)$p['q'], (int)$p['qo'], $team); if (($p['m'] ?? '') === 'on' && $t > 2) $t = 2; return $t;
+}
 function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $now, array &$dbg): bool
 {
     $ph = (string)$r['phone'];
@@ -152,17 +162,19 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
         else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
         $gap = max(0, (int)setting_get($pdo, 'waa_gap', '90')); $rest = !$camp && $gap > 0 && (int)($T[$e]['last_fresh'] ?? 0) > $now - $gap;   // given a fresh query in the last 90 s: one at a time
-        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => (int)$p['tier'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest];
+        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => $camp ? (int)$p['tier'] : waa_tier_now($p, (float)$V['team_ratio'] / 100), 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest];
     }
     if ($vip) { $good = []; foreach ($cand as $e => $x) if (!$x['full'] && (float)($V['people'][$e]['ticket'] ?? 0) >= (float)$tkc['goal'] && (int)($V['people'][$e]['orders'] ?? 0) >= (int)$tkc['min']) $good[$e] = $x; if ($good) $cand = $good; else $vip = false; }
     if (!$camp) $cand = waa_mark_ahead($cand);
-    $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q); if ($to <= 0) { $dbg['nobody']++; return false; }
+    $pos = $camp ? 0 : (int)setting_get($pdo, 'waa_cyc', '0');   // green, green, yellow: how many green / yellow queries were given before
+    $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q, $pos); if ($to <= 0) { $dbg['nobody']++; return false; }
     $lk = 0; try { $lk = (int)$pdo->query("SELECT GET_LOCK(" . $pdo->quote('waa_p_' . $ph) . ", 0)")->fetchColumn(); } catch (Throwable $e) { } if ($lk !== 1) return false;
     try {
         $chk = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ?"); $chk->execute([$ph]); if ((int)$chk->fetchColumn() > 0) { $dbg['held']++; return false; }   // somebody just took it
         wa_assign_to($pdo, $ph, $to, 0, 'auto');
         $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt($now), $ph, $to, $camp ? 'camp' : 'fresh', mb_substr(($vip ? '⭐ big-order customer · ' : '') . ($camp ? 'campaign query' : 'fresh query') . ' · weight ' . round($cand[$to]['w']) . ' · so far ' . $cand[$to]['cnt'], 0, 160)]);
         $T[$to][$camp ? 'camp' : 'fresh'] = (int)($T[$to][$camp ? 'camp' : 'fresh'] ?? 0) + 1; if (!$camp) $T[$to]['last_fresh'] = $now; if (!$camp) $V['people'][$to]['q']++; else $V['people'][$to]['cq']++;
+        if (!$camp && in_array((int)($cand[$to]['tier'] ?? 2), [1, 2], true)) setting_set($pdo, 'waa_cyc', (string)($pos + 1));
         waa_cp_bump($pdo, $to, $camp); waa_typed($pdo, $to, $camp); return true;
     } catch (Throwable $e) { error_log('waa give: ' . $e->getMessage()); $dbg['give_error'] = mb_substr($e->getMessage(), 0, 160); return false; }
     finally { try { $pdo->query("SELECT RELEASE_LOCK(" . $pdo->quote('waa_p_' . $ph) . ")"); } catch (Throwable $e) { } }
@@ -235,6 +247,20 @@ function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
     return $res;
 }
 
+/** Overnight (12 am – 10 am) a person who takes a query from Requests is counted for it at once: in the hourly Give-queries log (Query / Overnight / Campaign tabs) and in the Team performance row,
+ *  exactly like a query the engine gives (owner, 20 Nov). Once per chat and day; a chat the engine itself gave is not counted twice. Never throws. */
+function waa_count_taken(PDO $pdo, int $emp, string $phone): void
+{
+    try {
+        if ($emp <= 0 || $phone === '' || !function_exists('waa_night') || !waa_night((int)date('G')) || !waa_tables($pdo) || !in_array($emp, waa_sales($pdo), true)) return;
+        $q = $pdo->prepare("SELECT src, opened_at FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $r = $q->fetch(PDO::FETCH_ASSOC);
+        if (!$r || !in_array((string)$r['src'], ['query', 'campaign', 'community', ''], true) || strtotime((string)$r['opened_at']) < time() - 86400 + 600) return;
+        $d = $pdo->prepare("SELECT 1 FROM waa_log WHERE phone = ? AND at >= ? LIMIT 1"); $d->execute([$phone, waa_dt(waa_day_start($pdo))]); if ($d->fetchColumn()) return;   // the engine gave it (or it was counted already)
+        $camp = in_array((string)$r['src'], ['campaign', 'community'], true);
+        $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt(time()), $phone, $emp, 'take', 'taken from Requests overnight']);
+        waa_cp_bump($pdo, $emp, $camp); waa_typed($pdo, $emp, $camp);
+    } catch (Throwable $e) { error_log('waa_count_taken: ' . $e->getMessage()); }
+}
 /** Overnight (12 am – 10 am): a person below the band may take at most 5 chats from Requests. '' = may take, else the reason. Admin / Sales Head ON = no limit. */
 function waa_pick_block(PDO $pdo, int $emp): string
 {
@@ -264,14 +290,19 @@ if ($__waa === 'wq.aa_get' || $__waa === 'wq.aa_set' || $__waa === 'wq.aa_engine
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
         $in = json_input(); $emp = (int)($in['emp_id'] ?? 0); $on = !empty($in['on']);
         if (!in_array($emp, waa_sales($pdo), true)) json_response(['error' => 'This person is not in the Sales department.'], 422);
-        $st = waa_state($pdo); $st['e'][$emp] = ['m' => $on ? 'on' : 'off', 'by' => $me, 'at' => time(), 'ao' => 0];
+        $st = waa_state($pdo); $prevF = !empty($st['e'][$emp]['f']) && (($st['e'][$emp]['m'] ?? '') === 'on');
+        if (array_key_exists('force', $in)) {   // the "No rules" switch: Admin only
+            $isAdm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin'], true); if (!$isAdm) json_response(['error' => 'Only an Admin can switch the rules off for a person.'], 403);
+            $force = !empty($in['force']); $on = true;
+        } else { $force = $on ? $prevF : false; }   // the normal switch keeps an Admin's "No rules" while it stays ON; OFF clears it
+        $st['e'][$emp] = ['m' => $on ? 'on' : 'off', 'f' => $force ? 1 : 0, 'by' => $me, 'at' => time(), 'ao' => 0];
         waa_state_put($pdo, $st); setting_set($pdo, 'waa_run_at', '0');
         if (function_exists('wa_log')) { $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; wa_log($pdo, 'engine', true, 'auto assign: ' . ($nm[$emp] ?? $emp) . ' turned ' . ($on ? 'ON' : 'OFF') . ' by ' . ($nm[$me] ?? $me)); }
     }
     $V = waa_view($pdo, $__waa === 'wq.aa_set'); $T = waa_tally($pdo); $rows = []; $tcfg = tk_cfg($pdo);
     $H = []; try { $hs = date('Y-m-d H:00:00'); $hq = $pdo->prepare("SELECT emp_id, kind, COUNT(*) c FROM waa_log WHERE at >= ? AND at < ? GROUP BY emp_id, kind"); $hq->execute([$hs, date('Y-m-d H:00:00', strtotime($hs) + 3600)]); foreach ($hq->fetchAll(PDO::FETCH_ASSOC) as $r) $H[(int)$r['emp_id']][(string)$r['kind']] = (int)$r['c']; } catch (Throwable $e) { }   // given by Auto assign in this clock hour
     foreach ($V['people'] as $e => $p) { $why = ['not_in' => 'Not punched in', 'admin_off' => 'Turned off by Admin / Sales Head', 'admin_on' => 'ON by Admin / Sales Head — no rule applies', 'ratio' => 'Auto OFF: ratio ' . ($p['ratio'] === null ? '–' : $p['ratio'] . '%') . ' is below ' . $V['floor'] . '% · campaign queries only', 'on' => ''][$p['why']] ?? '';
-        $rows[] = ['emp_id' => $e, 'name' => $p['name'], 'on' => $p['on'], 'present' => $p['present'], 'why' => $why, 'note' => $p['present'] && $p['why'] === 'on' ? 'Punched in' . ($p['punch'] !== '' ? ' ' . $p['punch'] : '') : '', 'target' => $p['t'], 'q' => $p['q'], 'o' => $p['qo'], 'ratio' => $p['ratio'], 'cq' => $p['cq'], 'co' => $p['co'], 'h_fresh' => (int)($H[$e]['fresh'] ?? 0), 'h_camp' => (int)($H[$e]['camp'] ?? 0), 'ticket' => (int)$p['ticket'], 'tk' => tk_status((float)$p['ticket'], (float)$tcfg['goal']), 'tkhold' => !empty($p['tkhold']), 'shold' => !empty($p['shold']), 'slow_warn' => !empty($p['slow']) && (int)$p['sw'] > 0 && empty($p['shold']), 'given_fresh' => (int)($T[$e]['fresh'] ?? 0), 'given_camp' => (int)($T[$e]['camp'] ?? 0), 'slow' => ($p['speed'] && $p['team_speed'] && $p['speed'] > $p['team_speed'] && $p['m'] !== 'on') ? round($p['team_speed'] / $p['speed'], 2) : 1, 'below' => $p['below'] || $p['ao']]; }
+        $rows[] = ['emp_id' => $e, 'name' => $p['name'], 'on' => $p['on'], 'present' => $p['present'], 'why' => $why, 'note' => $p['present'] && $p['why'] === 'on' ? ($p['wk'] && $p['punch'] === '' ? 'Working · ON by Admin / Sales Head (rules apply)' : 'Punched in' . ($p['punch'] !== '' ? ' ' . $p['punch'] : '')) : '', 'force' => !empty($p['force']), 'wk' => !empty($p['wk']), 'target' => $p['t'], 'q' => $p['q'], 'o' => $p['qo'], 'ratio' => $p['ratio'], 'cq' => $p['cq'], 'co' => $p['co'], 'h_fresh' => (int)($H[$e]['fresh'] ?? 0), 'h_camp' => (int)($H[$e]['camp'] ?? 0), 'ticket' => (int)$p['ticket'], 'tk' => tk_status((float)$p['ticket'], (float)$tcfg['goal']), 'tkhold' => !empty($p['tkhold']), 'shold' => !empty($p['shold']), 'slow_warn' => !empty($p['slow']) && (int)$p['sw'] > 0 && empty($p['shold']), 'given_fresh' => (int)($T[$e]['fresh'] ?? 0), 'given_camp' => (int)($T[$e]['camp'] ?? 0), 'slow' => ($p['speed'] && $p['team_speed'] && $p['speed'] > $p['team_speed'] && $p['m'] !== 'on') ? round($p['team_speed'] / $p['speed'], 2) : 1, 'below' => $p['below'] || $p['ao']]; }
     usort($rows, function ($a, $b) { return [$b['present'] ? 1 : 0, $a['name']] <=> [$a['present'] ? 1 : 0, $b['name']]; });
-    json_response(['ok' => true, 'tk_goal' => (int)$tcfg['goal'], 'tk_offer' => $tcfg['offer'], 'tk_cust' => $tcfg['cust'], 'tk_hold' => (bool)$tcfg['hold'], 'engine' => waa_engine_on($pdo), 'hour' => (int)date('G'), 'day' => $V['day'], 'team_ratio' => $V['team_ratio'], 'floor' => $V['floor'], 'team_speed' => $V['team_speed'], 'rows' => $rows]);
+    json_response(['ok' => true, 'is_admin' => (function_exists('wa_is_admin') ? (bool)wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin'], true)), 'tk_goal' => (int)$tcfg['goal'], 'tk_offer' => $tcfg['offer'], 'tk_cust' => $tcfg['cust'], 'tk_hold' => (bool)$tcfg['hold'], 'engine' => waa_engine_on($pdo), 'hour' => (int)date('G'), 'day' => $V['day'], 'team_ratio' => $V['team_ratio'], 'floor' => $V['floor'], 'team_speed' => $V['team_speed'], 'rows' => $rows]);
 }

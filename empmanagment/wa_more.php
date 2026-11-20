@@ -738,6 +738,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         };
         $GLOBALS['__wa_dl'] = $__t0 + $__BUD;   // the soft deadline for the non-essential jobs inside the tick
         $r = [];
+        try { $r['drip'] = $__T('drip', fn() => function_exists('wd_tick') ? wd_tick($pdo) : null); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); }   // 🔁 the 7-Day Drip goes FIRST of all (owner, 20 Nov: it must never be skipped): it used to sit at the end of the tick and was left out whenever the run's time budget was used up
         try { $r['campaigns'] = $__T('campaigns', fn() => wa_camp_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }   // sending goes FIRST: the tick below took the whole budget and campaigns were skipped
         try { $r['recover'] = $__T('recovery', fn() => wa_rec_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'recovery: ' . $e->getMessage()); }   // 🔁 failed messages from another number / an alternative wording, slowly
         try { $r['tick'] = $__T('tick', fn() => wa_tick($pdo, true)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tick: ' . $e->getMessage()); $r['tick'] = 'error'; }

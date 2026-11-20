@@ -25264,8 +25264,9 @@ switch ($action) {
     case 'ml_slab.get': {
         // The ML price slab chart (Commission Rules page editor, Commission page, My Sales). Every logged-in user may read it.
         require_auth();
-        $__co = []; try { if (!function_exists('cm_offers') && function_exists('cm_engine_load')) cm_engine_load($pdo); if (function_exists('cm_offers')) foreach (cm_offers($pdo) as $__o) $__co[] = ['ml' => (int)$__o['ml'], 'price' => (float)$__o['price'], 'pct' => (float)$__o['pct'], 'from' => (string)$__o['from_date'], 'to' => (string)($__o['to_date'] ?? ''), 'active' => !empty($__o['active']) ? 1 : 0, 'stopped' => substr((string)($__o['stopped_at'] ?? ''), 0, 10)]; } catch (Throwable $__e) { }
-        json_response(['chart' => ml_slab_get($pdo), 'offers' => $__co, 'offer_window' => 110]);   // offers = the Commission page's Offers (ML + price +- window), so the order card shows the same % as the Commission page
+        $__co = []; try { if (!function_exists('cm_offers') && function_exists('cm_engine_load')) cm_engine_load($pdo); if (function_exists('cm_offers')) foreach (cm_offers($pdo) as $__o) $__co[] = ['ml' => (int)$__o['ml'], 'price' => (float)$__o['price'], 'pct' => (float)$__o['pct'], 'from' => (string)$__o['from_date'], 'to' => (string)($__o['to_date'] ?? ''), 'active' => !empty($__o['active']) ? 1 : 0, 'stopped' => substr((string)($__o['stopped_at'] ?? ''), 0, 10), 'addons' => (array)($__o['addons'] ?? [])]; } catch (Throwable $__e) { }
+        $__ch = ml_slab_get($pdo); try { if (function_exists('cm_global_addons')) $__ch['addons'] = cm_global_addons($pdo, true); } catch (Throwable $__e) { }
+        json_response(['chart' => $__ch, 'offers' => $__co, 'offer_window' => 110]);   // offers = the Commission page's Offers (ML + price +- window), so the order card shows the same % as the Commission page
         break;
     }
     case 'ml_slab.save': {
@@ -30269,11 +30270,14 @@ switch ($action) {
         if (count($start) !== 7) json_response(['error' => 'Send a start time for all seven days.'], 422);
         ensure_day_timing_table($pdo);
         $ins = $pdo->prepare("INSERT INTO day_timing (weekday, start_time) VALUES (?, ?) ON DUPLICATE KEY UPDATE start_time = VALUES(start_time)");
-        for ($wd = 0; $wd <= 6; $wd++) {
+        $__dn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; $__old = day_timing_get($pdo); $__chg = [];
+        for ($wd = 0; $wd <= 6; $wd++) {   // check everything first, then write: a refused save changes nothing
             $t = (string)($start[$wd] ?? '');
             if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t)) json_response(['error' => 'Times must be HH:MM (24-hour).'], 422);
-            $ins->execute([$wd, $t]);
+            if ($t < '06:00') json_response(['error' => $__dn[$wd] . ' would start at ' . date('g:i A', strtotime($t)) . ' (the middle of the night). A business day that starts at night is almost always a slip: 12:00 AM is MIDNIGHT, 12:00 PM is NOON. Pick a time from 6:00 AM on.'], 422);
         }
+        for ($wd = 0; $wd <= 6; $wd++) { $t = (string)$start[$wd]; if (($__old[$wd] ?? '') !== $t) $__chg[] = $__dn[$wd] . ' ' . ($__old[$wd] ?? '?') . '→' . $t; $ins->execute([$wd, $t]); }
+        if ($__chg) { try { $lg = json_decode((string)setting_get($pdo, 'day_timing_log', ''), true); $lg = is_array($lg) ? $lg : []; $lg[] = ['at' => date('Y-m-d H:i:s'), 'by' => (string)($auth['full_name'] ?? $auth['username'] ?? ''), 'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''), 'ch' => $__chg]; setting_set($pdo, 'day_timing_log', json_encode(array_slice($lg, -30), JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { } }
         json_response(['message' => 'Day timing saved. It applies to orders counted from now on; run Sync now on Targets to recount the month.']);
         break;
     }

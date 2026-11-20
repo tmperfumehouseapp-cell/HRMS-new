@@ -581,9 +581,26 @@ function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UP
 function wa_cat_util_room(PDO $pdo, int $now): int
 {
     try { if ((int)setting_get($pdo, 'wa_dq_hold_until', '0') > $now) return 0;   /* marketing hold (131048) running: utility-template campaigns stop too (owner, 19 Nov 2026, 16:15) */
+        if ((int)setting_get($pdo, 'wa_ucat_pause_until', '0') > $now) return 0;   /* owner 20 Nov 2026: too many failures at 700 -> utility campaigns rest for 3 hours */
+        wa_ucat_auto_step($pdo, $now);
         $cap = max(10, min(100000, (int)setting_get($pdo, 'wa_ucat_hour', '700'))); $L = json_decode((string)setting_get($pdo, 'wa_ucat_log', ''), true); $L = is_array($L) ? $L : []; $u60 = 0; $u10 = 0;
         foreach ($L as $r) { $t = (int)($r[0] ?? 0); $n = (int)($r[1] ?? 0); if ($t >= $now - 3600) $u60 += $n; if ($t >= $now - 600) $u10 += $n; }
         return max(0, min($cap - $u60, (int)ceil($cap / 6 * 1.3) - $u10)); } catch (Throwable $e) { return 0; }
+}
+/** 📶 owner 20 Nov 2026 (06:30): the campaign utility limit moves by itself, one look an hour: 700 -> 800 -> 900 an hour while the failures stay at 5% or less; more than 5% failed at 800 / 900 -> back to 700; more than 5% failed at 700 -> utility campaigns rest 3 hours
+ *  (wa_ucat_pause_until), then start again at 700. The look judges utility-template campaign messages sent 15 to 75 minutes ago (their receipts are in), at least 100 of them. */
+function wa_ucat_auto_step(PDO $pdo, int $now): void
+{
+    try { if ((string)setting_get($pdo, 'wa_ucat_auto', '1') !== '1') return;
+        $at = (int)setting_get($pdo, 'wa_ucat_step_at', '0'); if ($at === 0) { setting_set($pdo, 'wa_ucat_step_at', (string)$now); return; }
+        if ($now - $at < 3600 || (int)setting_get($pdo, 'wa_ucat_chk', '0') > $now - 300) return; setting_set($pdo, 'wa_ucat_chk', (string)$now);
+        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(i.status = 'failed' OR m.status = 'failed') AS f FROM wa_camp_items i JOIN wa_templates t ON t.id = i.tpl_used AND t.category = 'UTILITY' LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.tpl_used > 0 AND i.sent_at >= ? AND i.sent_at <= ?");
+        $q->execute([date('Y-m-d H:i:s', $now - 4500), date('Y-m-d H:i:s', $now - 900)]); $r = $q->fetch(); $n = (int)($r['n'] ?? 0); $f = (int)($r['f'] ?? 0); if ($n < 100) return;
+        $cur = (int)setting_get($pdo, 'wa_ucat_hour', '700'); $bad = $f / $n > 0.05;
+        if ($bad && $cur > 700) { setting_set($pdo, 'wa_ucat_hour', '700'); setting_set($pdo, 'wa_ucat_step_at', (string)$now); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility campaigns: ' . $f . ' of ' . $n . ' failed -> the limit goes back from ' . $cur . ' to 700 an hour'); }
+        elseif ($bad) { $u = $now + 3 * 3600; setting_set($pdo, 'wa_ucat_pause_until', (string)$u); setting_set($pdo, 'wa_ucat_step_at', (string)$u); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility campaigns: ' . $f . ' of ' . $n . ' failed at 700 an hour -> they rest for 3 hours, then start again at 700'); }
+        else { if ($cur < 900) { setting_set($pdo, 'wa_ucat_hour', (string)min(900, $cur + 100)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility campaigns run well (' . $f . ' of ' . $n . ' failed): the limit ' . $cur . ' -> ' . min(900, $cur + 100) . ' an hour'); } setting_set($pdo, 'wa_ucat_step_at', (string)$now); }
+    } catch (Throwable $e) { }
 }
 function wa_cat_util_note(PDO $pdo, int $now, int $n): void
 {
@@ -1470,6 +1487,10 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     } catch (Throwable $e) { $o['error'] = 'The billing columns are not ready yet.'; }
     try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status = 'failed' AND ts >= ? AND ts < ?"); $q->execute([$from, $to]); $o['failed'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT camp_id) FROM wa_camp_items WHERE status = 'sent' AND sent_at >= ? AND sent_at < ?"); $q->execute([$from, $to]); $o['campaigns'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    // 🔧 owner 20 Nov 2026: the utility follow-ups (Module B) are shown SEPARATELY (own boxes); the Sent / Delivered / Failed / Spent boxes above stay campaign-only
+    $o['ru'] = ['sent' => 0, 'delivered' => 0, 'failed' => 0, 'amount' => 0.0];
+    try { if (function_exists('wa_ru_tables') && wa_ru_tables($pdo)) { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at < ?"); $q->execute([$from, $to]); $r = $q->fetch();
+        $o['ru'] = ['sent' => (int)$r['n'], 'delivered' => (int)$r['d'], 'failed' => (int)$r['f'], 'amount' => round((int)$r['d'] * (float)$R['utility'], 2)]; } } catch (Throwable $e) { }
     // 🔁 the 7-Day Drip messages of the same day are added to Sent / Delivered / Read / Failed / Replied / Spent (the drip goes out as follow-ups, so it is not in the campaign rows above); o['drip'] keeps its own share
     try {
         $dq = $pdo->prepare("SELECT wamid FROM wa_drip_ev WHERE status = 'sent' AND wamid <> '' AND at >= ? AND at < ?"); $dq->execute([date('Y-m-d H:i:s', strtotime($from) - 7200), date('Y-m-d H:i:s', strtotime($to) + 7200)]); $dids = $dq->fetchAll(PDO::FETCH_COLUMN);
