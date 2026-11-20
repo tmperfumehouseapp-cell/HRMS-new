@@ -329,11 +329,11 @@ function fi_summary(PDO $pdo, string $from, string $to): array
     return $out;
 }
 
-/** 🕛 12 PM – 12 PM window: the orders, sales and money recorded from 12:00 on $day to 12:00 the next day. Orders / sales are exact (their own time); receipts count by the time they were recorded.
+/** 🕛 12 AM – 12 AM window (one calendar day of 24 hours): the orders, sales and money recorded from 12:00 AM on $day to 12:00 AM the next day. Orders / sales are exact (their own time); receipts count by the time they were recorded.
  *  Money spent is saved per day (not per hour), so it is not part of this window (null). */
 function fi_noon(PDO $pdo, string $day): array
 {
-    $w0 = $day . ' 12:00:00'; $w1 = date('Y-m-d', strtotime($day . ' +1 day')) . ' 12:00:00';
+    $w0 = $day . ' 00:00:00'; $w1 = date('Y-m-d', strtotime($day . ' +1 day')) . ' 00:00:00';
     $out = ['day' => $day, 'from' => $w0, 'to' => $w1, 'online' => ['orders' => 0, 'sales' => 0.0], 'store' => ['bills' => 0, 'sales' => 0.0], 'received' => 0.0, 'receipts' => 0, 'spent' => null];
     try {
         $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
