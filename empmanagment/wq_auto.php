@@ -240,6 +240,20 @@ function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
     return $res;
 }
 
+/** Overnight (12 am – 10 am) a person who takes a query from Requests is counted for it at once: in the hourly Give-queries log (Query / Overnight / Campaign tabs) and in the Team performance row,
+ *  exactly like a query the engine gives (owner, 20 Nov). Once per chat and day; a chat the engine itself gave is not counted twice. Never throws. */
+function waa_count_taken(PDO $pdo, int $emp, string $phone): void
+{
+    try {
+        if ($emp <= 0 || $phone === '' || !function_exists('waa_night') || !waa_night((int)date('G')) || !waa_tables($pdo) || !in_array($emp, waa_sales($pdo), true)) return;
+        $q = $pdo->prepare("SELECT src, opened_at FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $r = $q->fetch(PDO::FETCH_ASSOC);
+        if (!$r || !in_array((string)$r['src'], ['query', 'campaign', 'community', ''], true) || strtotime((string)$r['opened_at']) < time() - 86400 + 600) return;
+        $d = $pdo->prepare("SELECT 1 FROM waa_log WHERE phone = ? AND at >= ? LIMIT 1"); $d->execute([$phone, waa_dt(waa_day_start($pdo))]); if ($d->fetchColumn()) return;   // the engine gave it (or it was counted already)
+        $camp = in_array((string)$r['src'], ['campaign', 'community'], true);
+        $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt(time()), $phone, $emp, 'take', 'taken from Requests overnight']);
+        waa_cp_bump($pdo, $emp, $camp); waa_typed($pdo, $emp, $camp);
+    } catch (Throwable $e) { error_log('waa_count_taken: ' . $e->getMessage()); }
+}
 /** Overnight (12 am – 10 am): a person below the band may take at most 5 chats from Requests. '' = may take, else the reason. Admin / Sales Head ON = no limit. */
 function waa_pick_block(PDO $pdo, int $emp): string
 {
