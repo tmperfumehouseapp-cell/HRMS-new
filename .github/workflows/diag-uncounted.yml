@@ -33,26 +33,23 @@ jobs:
           require $f;
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
           date_default_timezone_set("Asia/Kolkata");
-          $from = "2026-11-01 10:00:00"; $to = "2026-11-20 10:00:00";
-          echo "ADD-ONS sold on orders of business days 1 Nov .. 19 Nov (order day = created_at minus 10 h), split by the ORDER's type\n";
-          $norm = function ($n) { return strtolower(trim(ltrim(trim((string)$n), "#"))); };
-          try {
-            $sql = "SELECT o.order_name nm, DATE(DATE_SUB(o.created_at, INTERVAL 10 HOUR)) bd, COALESCE(NULLIF(a.order_type, ''), 'untyped') ot FROM shop_orders o LEFT JOIN order_allocations a ON a.source = o.store_key AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci WHERE o.created_at >= ? AND o.created_at < ? AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')";
-            $q = $d->prepare($sql); $q->execute([$from, $to]); $ord = []; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $ord[$norm($r["nm"])] = [$r["bd"], $r["ot"]];
-            $ad = $d->query("SELECT order_name, addon_group, group_key, price, addon_date FROM employee_addons WHERE addon_date >= '2026-10-25' AND addon_date <= '2026-11-21'")->fetchAll(PDO::FETCH_ASSOC);
-          } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 200) . "\n"; exit; }
-          $by = []; $un = []; $tot = ["query" => 0.0, "campaign" => 0.0, "untyped" => 0.0]; $cnt = [];
-          foreach ($ad as $r) {
-            $k = $norm($r["order_name"]); $p = (float)$r["price"];
-            if (!isset($ord[$k])) { $un[] = [$r["addon_date"], $p, $k === "" ? "(no order number)" : "order not found in the window"]; continue; }
-            [$bd, $ot] = $ord[$k]; $ot = isset($tot[$ot]) ? $ot : "untyped";
-            $by[$bd][$ot] = ($by[$bd][$ot] ?? 0) + $p; $tot[$ot] += $p; $cnt[$k] = 1;
+          $bd = date("G") >= 10 ? date("Y-m-d") : date("Y-m-d", time() - 86400); $from = $bd . " 10:00:00"; $to = date("Y-m-d 10:00:00", strtotime($bd . " +1 day"));
+          echo "now " . date("Y-m-d H:i") . " · business day $bd ($from -> $to)\n";
+          $sql = "SELECT o.store_key sk, o.order_name nm, o.created_at ca, ROUND(o.total) total, o.financial_status fs, o.tags tg, a.alloc_id aid, a.order_type ot, a.employee_id emp, a.allocated_by ab, a.house hs,
+                    (SELECT w.why FROM wa_auto_alloc_why w WHERE w.source = o.store_key AND w.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci LIMIT 1) why,
+                    (SELECT 1 FROM wa_auto_alloc_done w2 WHERE w2.source = o.store_key AND w2.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci LIMIT 1) done
+                  FROM shop_orders o LEFT JOIN order_allocations a ON a.source = o.store_key AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
+                  WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 ORDER BY o.created_at";
+          try { $q = $d->prepare($sql); $q->execute([$from, $to]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 250) . "\n"; exit; }
+          $n = 0; $given = 0; $typed = 0;
+          foreach ($rows as $r) {
+            if (stripos((string)$r["tg"], "cancel") !== false) continue; $n++;
+            if ($r["aid"] !== null) $given++;
+            if ($r["aid"] !== null && in_array($r["ot"], ["query", "campaign"], true)) $typed++;
+            if ($r["aid"] === null) echo "NOT GIVEN " . $r["nm"] . " · " . $r["sk"] . " · " . $r["ca"] . " · Rs " . $r["total"] . " · " . $r["fs"] . " · tags=[" . $r["tg"] . "] · robot reason: " . ($r["why"] ?? "(none recorded yet)") . ($r["done"] ? " · robot already tried" : " · robot not tried yet") . "\n";
+            elseif (!in_array($r["ot"], ["query", "campaign"], true)) echo "NO TYPE   " . $r["nm"] . " · " . $r["sk"] . " · " . $r["ca"] . " · Rs " . $r["total"] . " · given to emp " . $r["emp"] . " by " . $r["ab"] . " · house " . $r["hs"] . " · type=[" . $r["ot"] . "]\n";
           }
-          ksort($by); echo "day        | query     | campaign  | untyped   | day total\n";
-          foreach ($by as $bd => $x) { $q1 = $x["query"] ?? 0; $c1 = $x["campaign"] ?? 0; $u1 = $x["untyped"] ?? 0; echo $bd . " | " . str_pad(round($q1), 9) . " | " . str_pad(round($c1), 9) . " | " . str_pad(round($u1), 9) . " | " . round($q1 + $c1 + $u1) . "\n"; }
-          echo "TOTAL 1-19 Nov: query Rs " . round($tot["query"]) . " · campaign Rs " . round($tot["campaign"]) . " · untyped Rs " . round($tot["untyped"]) . " · ALL Rs " . round(array_sum($tot)) . " · orders with an add-on: " . count($cnt) . "\n";
-          $ua = 0; foreach ($un as $u) $ua += $u[1];
-          echo "\nADD-ON ROWS NOT MATCHED to any order of 1-19 Nov: " . count($un) . " · Rs " . round($ua) . "\n"; foreach (array_slice($un, 0, 40) as $u) echo "  " . $u[0] . " · Rs " . round($u[1]) . " · " . $u[2] . "\n";
+          echo "orders (not cancelled): $n · given to a person: $given · with Query/Campaign type: $typed\n";
           PHP
           php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
           REMOTE
