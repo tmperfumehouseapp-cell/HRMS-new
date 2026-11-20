@@ -555,11 +555,24 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
 {
     $o = ['sent' => 0, 'failed' => 0, 'note' => ''];
     try { if ((string)setting_get($pdo, 'wa_ru_warm_seed_2011', '') === '') { setting_set($pdo, 'wa_ru_warm', '{"9":10,"10":10}'); setting_set($pdo, 'wa_ru_warm_seed_2011', '1'); } } catch (Throwable $e) { return $o; }
-    $w = json_decode((string)setting_get($pdo, 'wa_ru_warm', ''), true); if (!is_array($w)) return $o;
-    $w = array_filter(array_map('intval', $w), fn($n) => $n > 0); if (!$w) return $o;
+    /* owner 20 Nov 2026, 23:40: "number 10: add it to Module B every hour" — a NEW number takes part in Module B with a small hourly allowance (setting wa_ru_new_hourly = {"10": 10}: messages an hour), never more than a tenth of an hour in any 10 minutes and never above 90% of its 250-a-day slow start; it stays locked for campaigns and for Module B's normal rounds (the lock is for those) */
+    try { if ((string)setting_get($pdo, 'wa_ru_new_hourly_seed_2011', '') === '') { setting_set($pdo, 'wa_ru_new_hourly', '{"10":10}'); setting_set($pdo, 'wa_ru_new_hourly_seed_2011', '1'); } } catch (Throwable $e) { return $o; }
+    $w = json_decode((string)setting_get($pdo, 'wa_ru_warm', ''), true); if (!is_array($w)) $w = [];
+    $w = array_filter(array_map('intval', $w), fn($n) => $n > 0);
+    $hrly = json_decode((string)setting_get($pdo, 'wa_ru_new_hourly', ''), true); $hrly = is_array($hrly) ? array_filter(array_map('intval', $hrly), fn($n) => $n > 0) : [];
+    if (!$w && !$hrly) return $o;
     $pool = wa_ru_pool($pdo); if (!$pool) { $o['note'] = 'no approved utility message yet'; return $o; }
     if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';
-    $st = []; if (function_exists('wa_health_all')) { foreach (wa_health_all($pdo, false) as $h) $st[(int)$h['id']] = (string)($h['status'] ?? ''); }
+    $st = []; $ql = []; if (function_exists('wa_health_all')) { foreach (wa_health_all($pdo, false) as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $ql[(int)$h['id']] = (string)($h['quality'] ?? ''); } }
+    $targets = $w; $hr = [];
+    foreach ($hrly as $hn => $hv) {
+        if (!in_array($ql[$hn] ?? '', ['GREEN', 'YELLOW'], true)) continue;   /* only a number with good rating takes part every hour */
+        $q6 = $pdo->prepare("SELECT SUM(at >= ?) h1, SUM(at >= ?) m10 FROM wa_ru_log WHERE number_id = ? AND at >= ?"); $q6->execute([date('Y-m-d H:i:s', $nowTs - 3600), date('Y-m-d H:i:s', $nowTs - 600), $hn, date('Y-m-d H:i:s', $nowTs - 3600)]); $r6 = $q6->fetch();
+        $q7 = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE number_id = ? AND dir = 'out' AND mtype = 'template' AND ts >= ?"); $q7->execute([$hn, date('Y-m-d H:i:s', $nowTs - 86400)]); $d24 = (int)$q7->fetchColumn();
+        $room = min($hv - (int)($r6['h1'] ?? 0), max(1, (int)ceil($hv / 6)) - (int)($r6['m10'] ?? 0), 225 - $d24);
+        if ($room > 0) { $targets[$hn] = max((int)($targets[$hn] ?? 0), $room); $hr[$hn] = 1; }
+    }
+    if (!$targets) return $o;
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $mo = implode(',', WA_RU_MARKETING_ONLY);
     $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - 4 * 86400)]);
     $doneIds = array_map('intval', $dn->fetchAll(PDO::FETCH_COLUMN)); if (!$doneIds) return $o; $doneIn = implode(',', $doneIds);
@@ -579,7 +592,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
         $items = wa_ru_lane_order($items, $ct, $ever, is_array($ordMap) ? $ordMap : [], $nowTs - max(1, (int)$cfg['ask_days']) * 86400);
     } catch (Throwable $e) { }
     $now = date('Y-m-d H:i:s', $nowTs); $seen = []; $rot = 0; $stop = false;
-    foreach ($w as $nid => $left) {
+    foreach ($targets as $nid => $left) {
         if ($stop) break;
         $q5 = $pdo->prepare("SELECT * FROM wa_numbers WHERE id = ?"); $q5->execute([$nid]); $n = $q5->fetch(); if (!$n || !empty($n['retired'])) continue;
         if (($st[$nid] ?? '') !== 'CONNECTED') { $o['note'] = 'number #' . $nid . ' is not connected at Meta'; continue; }
@@ -605,7 +618,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
                 ->execute([(int)$it['camp_id'], $iid, $ph, (string)$pk['kind'], (int)$nid, (int)$pk['t']['id'], $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, $ec, $ok ? '' : mb_substr((string)$rr, 0, 190), $now, json_encode($pk['vars'], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
             if ($ok) $o['sent']++; else { $o['failed']++; if (in_array((int)$ecs, [131048, 130429, 131056], true)) { if ((int)$ecs === 131048) { wa_ru_ramp_back($pdo, 'spam'); setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 4 * 3600)); } $stop = true; break; } }
         }
-        $w[$nid] = $left;
+        if (isset($w[$nid])) $w[$nid] = max(0, (int)$w[$nid] - $round);
     }
     try { setting_set($pdo, 'wa_ru_warm', json_encode((object)$w)); } catch (Throwable $e) { }
     if ($o['sent'] || $o['failed']) { try { wa_log($pdo, 'campaign', $o['sent'] > 0, 'First messages from the new numbers: ' . $o['sent'] . ' sent, ' . $o['failed'] . ' failed (left: ' . json_encode((object)$w) . ')'); } catch (Throwable $e) { } }
