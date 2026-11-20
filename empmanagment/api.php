@@ -1244,6 +1244,28 @@ function order_gel_fix(PDO $pdo): int
     } catch (Throwable $e) { error_log('order_gel_fix: ' . $e->getMessage()); }
     return $n;
 }
+/** An order given to a salesperson BY HAND with no Query / Campaign chosen is counted as neither (the Orders page said 401 of 402). 30 minutes after it was allocated, a still-empty type is filled in the same way the robot types an order
+ *  (order_chat_type: Campaign = a real campaign reply / repeat customer, else Query) from the customer's WhatsApp chat. No chat with that number = left alone (a person must pick). Only empty types of orders given to a person
+ *  (not the shower-gel panel-only rows) in the last 3 days. Every 10 minutes from the WhatsApp engine. Returns how many were filled. */
+function order_type_fill(PDO $pdo): int
+{
+    try { if ((int)setting_get($pdo, 'otf_at', '0') > time() - 600) return 0; setting_set($pdo, 'otf_at', (string)time()); if (!ensure_order_allocations_table($pdo)) return 0; } catch (Throwable $e) { return 0; }
+    $n = 0;
+    try {
+        $st = $pdo->prepare("SELECT a.alloc_id, o.created_at, o.phone FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci = a.order_id COLLATE utf8mb4_unicode_ci
+            WHERE (a.order_type = '' OR a.order_type IS NULL) AND a.employee_id > 0 AND o.created_at >= ? AND a.allocated_at < ? AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') LIMIT 100");
+        $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400), date('Y-m-d H:i:s', time() - 1800)]);
+        $up = $pdo->prepare("UPDATE order_allocations SET order_type = ? WHERE alloc_id = ? AND (order_type = '' OR order_type IS NULL)");
+        $cq = $pdo->prepare("SELECT phone, source FROM wa_contacts WHERE phone = ?");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $d = preg_replace('/\D+/', '', (string)$r['phone']) ?? ''; $ph = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($ph) !== 10) continue;
+            $cq->execute([$ph]); $c = $cq->fetch(PDO::FETCH_ASSOC); if (!$c) continue;
+            $type = order_chat_type($pdo, $c, (int)strtotime((string)$r['created_at']));
+            if (in_array($type, ['query', 'campaign'], true)) { $up->execute([$type, (int)$r['alloc_id']]); $n += $up->rowCount(); }
+        }
+    } catch (Throwable $e) { error_log('order_type_fill: ' . $e->getMessage()); }
+    return $n;
+}
 // ---------------------------------------------------------------------------------------------------------------------------- ⭐ AUTO "TICKET SIZE CONVINCING" STARS (owner, 18 Nov)
 /** The stars of the Order Allocation page ("did the salesperson try to make the customer take more?") are now worked out by Claude from the CHAT: did the salesperson offer more (200 ml instead of 100 ml, two instead of one,
  *  a second bottle / tester) and did the customer take it. Mode (setting order_auto_rate): 'off' · 'suggest' (default: shown as a light "🤖 suggestion", nothing is saved as a rating) · 'apply' (saved as the order's stars, "Claude (auto)").
@@ -18170,7 +18192,7 @@ function tmph_sales_summary(array $orders): array
     $houses = []; $count = 0; $amount = 0.0; $unCount = 0; $unAmount = 0.0; $cancelled = 0;
     foreach ($orders as $o) {
         if (!empty($o['cancelled'])) { $cancelled++; continue; }
-        $total = (float)($o['total'] ?? 0);
+        $total = (float)($o['total'] ?? 0) + (float)($o['addon_total'] ?? 0);   // add-on sold on the order counts in its total, as on the Orders page
         $counted = ($o['store_key'] ?? '') === 'manual' || (int)($o['allocated'] ?? 0) === 1;
         if (!$counted) { $unCount++; $unAmount += $total; continue; }
         $label = trim((string)(($o['house'] ?? '') !== '' ? ($o['store'] ?? '') : '')) ?: (($o['store_key'] ?? '') === 'manual' ? 'Manual orders' : 'Other (no house)');
@@ -18974,7 +18996,8 @@ function report_detail_build(PDO $pdo, string $from, string $to, string $house, 
     $isDay = array_flip($days);
     foreach ((array)($j['orders'] ?? []) as $o) {
         if (!empty($o['cancelled'])) continue;
-        $total = (float)($o['total'] ?? 0);
+        $adC = 0.0; foreach ((array)($o['addons'] ?? []) as $__g) $adC += (float)($__g['cod'] ?? 0);
+        $total = (float)($o['total'] ?? 0) + (float)($o['addon_total'] ?? 0);   // ➕ an add-on sold on an order counts in its total — the same as the Orders page (order 1000 + add-on 500 = 1500)
         $day = (string)($o['biz_date'] ?? substr((string)($o['created_at'] ?? ''), 0, 10));
         if (!isset($isDay[$day])) continue;
         $counted = ($o['store_key'] ?? '') === 'manual' || (int)($o['allocated'] ?? 0) === 1;
@@ -18982,10 +19005,11 @@ function report_detail_build(PDO $pdo, string $from, string $to, string $house, 
         $b = in_array((string)($o['house'] ?? ''), report_houses(), true) ? (string)$o['house'] : 'none';
         if ($house !== '' && $b !== $house) continue;
         $tags = array_map(function ($t) { return strtolower(trim($t)); }, explode(',', (string)($o['tags'] ?? '')));
-        $out = isset($o['outstanding']) && $o['outstanding'] !== null ? min($total, max(0.0, (float)$o['outstanding'])) : (preg_match('/cod|pending/i', (string)($o['financial_status'] ?? '')) ? $total : 0.0);
+        $out = isset($o['outstanding']) && $o['outstanding'] !== null ? min($total, max(0.0, (float)$o['outstanding'])) : (preg_match('/cod|pending/i', (string)($o['financial_status'] ?? '')) ? (float)($o['total'] ?? 0) : 0.0);
+        $out = min($total, $out + $adC);   // the COD part of the add-on is still to be collected
         $bump($day, $b, 'order', 1); $bump($day, $b, 'qty', (float)($o['items'] ?? 0)); $bump($day, $b, 'coll', $total);
         $bump($day, $b, 'cod', $out); $bump($day, $b, 'pre', $total - $out);   // COD = only what is still to be paid on delivery; Prepaid = what is already paid
-        if (($o['chain'] ?? '') === 'yes') $bump($day, $b, 'chain', $total);
+        if (($o['chain'] ?? '') === 'yes') $bump($day, $b, 'chain', (float)($o['total'] ?? 0));
         if (array_intersect($tags, ['query', 's'])) $bump($day, $b, 'qo', 1); elseif (array_intersect($tags, ['campaign', 'c'])) $bump($day, $b, 'camp', 1);
     }
     // counter / WhatsApp orders typed in the HRMS have no house: they count in "All houses" only (as on the Orders page)
