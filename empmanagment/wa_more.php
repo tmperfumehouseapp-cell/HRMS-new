@@ -25,7 +25,7 @@ function wa_more_tables(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok; if (function_exists('schema_done') && schema_done($pdo, __FUNCTION__, __FILE__)) return $ok = true;   // tables already set up for this upload
     try {
-        foreach (['camp_ok' => 'TINYINT NOT NULL DEFAULT 1', 'handlers' => "VARCHAR(300) NOT NULL DEFAULT ''", 'camp_tag' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {   // camp_tag: 📢 every chat on this number is a Campaign chat
+        foreach (['camp_ok' => 'TINYINT NOT NULL DEFAULT 1', 'handlers' => "VARCHAR(300) NOT NULL DEFAULT ''", 'camp_tag' => 'TINYINT NOT NULL DEFAULT 0', 'retired' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {   // retired (owner 20 Nov 2026): a number that is being closed: no campaign / follow-up / complaint message goes from it, the chats stay visible and can be answered · camp_tag: 📢 every chat on this number is a Campaign chat
             try { $pdo->query("SELECT $col FROM wa_numbers LIMIT 0"); } catch (PDOException $e) { $pdo->exec("ALTER TABLE wa_numbers ADD COLUMN $col $def"); }
         }
         foreach (['callnow' => 'TINYINT NOT NULL DEFAULT 0', 'callnow_at' => 'DATETIME NULL', 'hot' => 'TINYINT NOT NULL DEFAULT 0', 'hot_at' => 'DATETIME NULL', 'hot_why' => "VARCHAR(40) NOT NULL DEFAULT ''", 'remind_at' => 'DATETIME NULL', 'pay_at' => 'DATETIME NULL', 'accepted_at' => 'DATETIME NULL', 'reassigns' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {

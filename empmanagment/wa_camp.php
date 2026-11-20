@@ -109,6 +109,7 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
     $skip = []; $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
     foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
         $id = (int)$n['id']; $c = $caps[$id] ?? null; $lb = trim((string)($n['label'] ?? '')) !== '' ? trim((string)$n['label']) : (trim((string)($n['display'] ?? '')) !== '' ? trim((string)$n['display']) : '#' . $id);
+        if (!empty($n['retired'])) { $skip[] = $lb . ': retired (being closed)'; continue; }   // owner 20 Nov 2026: nothing is sent from a retired number (campaigns, utility follow-ups, recovery)
         if (!$c) { $skip[] = $lb . ': no limit information'; continue; }
         if ($burst > 0 ? (int)$c['cap'] <= 0 : $c['left'] <= 0) { $skip[] = $lb . ': ' . (trim((string)($c['why'] ?? '')) !== '' ? $c['why'] : 'no room (' . number_format((int)$c['used']) . ' of ' . number_format((int)$c['cap']) . ' used in 24h)'); continue; }
         if (!in_array(wa_waba_of($n), $t['ok_wabas'], true)) { $skip[] = $lb . ': message not approved on its WhatsApp account (paused by Meta?)'; continue; }

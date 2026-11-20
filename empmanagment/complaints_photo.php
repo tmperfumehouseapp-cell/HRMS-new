@@ -80,7 +80,7 @@ function cx8_pick(PDO $pdo, string $key, string $photoKey = '', bool $noPhoto = 
  *  until someone saves it: every number by its place in the list, WITHOUT the second one (1st, 3rd, 4th …). */
 function cx_num_order(PDO $pdo): array
 {
-    $all = []; try { foreach ($pdo->query("SELECT id FROM wa_numbers ORDER BY id")->fetchAll() as $n) $all[] = (int)$n['id']; } catch (Throwable $e) { return []; }
+    $all = []; try { foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) { if (!empty($n['retired'])) continue; $all[] = (int)$n['id']; } } catch (Throwable $e) { return []; }   // a retired number (owner 20 Nov 2026) sends no complaint message
     $sv = trim((string)cx_state_get($pdo, 'num_order', ''));
     if ($sv !== '') { $o = []; foreach (explode(',', $sv) as $x) { $x = (int)$x; if ($x > 0 && in_array($x, $all, true) && !in_array($x, $o, true)) $o[] = $x; } if ($o) return $o; }
     if (count($all) >= 2) array_splice($all, 1, 1);
