@@ -7,7 +7,7 @@ foreach (["CREATE TABLE wa_contacts (phone TEXT PRIMARY KEY, name TEXT DEFAULT '
  "CREATE TABLE wa_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, wamid TEXT DEFAULT '', phone TEXT, dir TEXT, mtype TEXT DEFAULT 'text', body TEXT, status TEXT DEFAULT 'received', who TEXT DEFAULT 'customer', ts TEXT)",
  "CREATE TABLE wa_cust (phone TEXT PRIMARY KEY, n INT DEFAULT 0, last_order TEXT)", "CREATE TABLE shop_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, created_at TEXT, total REAL, tags TEXT DEFAULT '')",
  "CREATE TABLE wa_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT DEFAULT 'UTILITY', relabelled_at TEXT)", "CREATE TABLE wa_tpl_waba (tpl_id INT, waba_id TEXT, status TEXT)",
- "CREATE TABLE wa_fu_ev (phone TEXT, status TEXT, sent_at TEXT)", "CREATE TABLE wa_wj_ev (phone TEXT, status TEXT, sent_at TEXT)"] as $q) $pdo->exec($q);
+ "CREATE TABLE wa_camp_items (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, status TEXT, last_status TEXT, sent_at TEXT)", "CREATE TABLE wa_fu_ev (phone TEXT, status TEXT, sent_at TEXT)", "CREATE TABLE wa_wj_ev (phone TEXT, status TEXT, sent_at TEXT)"] as $q) $pdo->exec($q);
 $S = []; function setting_get($p, $k, $d = '') { global $S; return $S[$k] ?? $d; } function setting_set($p, $k, $v) { global $S; $S[$k] = (string)$v; }
 function json_response($a, $c = 200) { throw new Exception('json_response'); } function wa_log($p, $k, $ok, $i) { }
 function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen($d) > 10 ? substr($d, -10) : $d; }
@@ -67,8 +67,18 @@ $sm = wl_summary($pdo, 0); ok($sm['sent'] >= 10 && $sm['utility'] === $sm['sent'
 ok(abs($sm['cost'] - round($sm['sent'] * $sm['rate_u'], 2)) < 0.001 && $sm['orders'] === 1 && $sm['buyers'] === 1, 'summary: cost = utility messages x rate; the order is credited');
 $pdo->exec("UPDATE wa_templates SET category = 'MARKETING' WHERE id = " . $ids['ln_trust_2']); $sm2 = wl_summary($pdo, 0); ok($sm2['plain'] >= 1 && $sm2['cost'] > $sm['cost'], 'a message Meta made marketing is counted and costs more');
 // the shop's own approved messages (default map): seven different messages in every ladder, and they replace the lineup's own templates
-unset($S['wl_map']); $mp = wln_map($pdo); ok(count($mp) === 27, 'map has all 27 base steps, got ' . count($mp));
+unset($S['wl_map']); $mp = wln_map($pdo); ok(count($mp) === 31, 'map has 27 base steps + 4 for the campaign ladder, got ' . count($mp));
 foreach (array_keys(wl_topics()) as $tp) { $seen = []; for ($st = 1; $st <= 7; $st++) { $id = $mp[wl_key($tp, $st)] ?? 0; ok($id > 0, "map: $tp step $st"); ok(!isset($seen[$id]), "map: $tp repeats message #$id inside one ladder"); $seen[$id] = 1; } }
 $eff = wln_eff_ids($pdo); ok($eff['ln_trust_1'] === 386 && $eff['ln_all_7'] === 109 && $eff['ln_trust_1b'] === $ids['ln_trust_1b'], 'effective ids: mapped steps use the shop messages, the extra wording keeps its own');
 $S['wl_map'] = '{}'; ok(wln_eff_ids($pdo)['ln_trust_1'] === $ids['ln_trust_1'], '{} switches the map off');
+// campaign recipients: opened the campaign message, did not write / order / opt out; capped per day; oldest first
+$cs = $t0 + 7200; $ci = fn($ph, $ls, $off) => $pdo->prepare("INSERT INTO wa_camp_items (phone, status, last_status, sent_at) VALUES (?, 'sent', ?, ?)")->execute([$ph, $ls, $f($cs + $off)]);
+foreach (['9820000001' => 0, '9820000002' => 10, '9820000003' => 20, '9820000004' => 30, '9820000005' => 40, '9820000006' => 50, '9820000007' => 60] as $ph => $off) { $ph = (string)$ph; $ci($ph, $ph === '9820000005' ? 'delivered' : 'read', $off); $pdo->prepare("INSERT INTO wa_contacts (phone, name, last_in_at, optout, source) VALUES (?, ?, ?, ?, 'campaign')")->execute([$ph, 'C' . $ph, null, $ph === '9820000002' ? 1 : 0]); }
+$pdo->prepare("UPDATE wa_contacts SET last_in_at = ? WHERE phone = '9820000003'")->execute([$f($cs + 100)]);   // wrote back: the normal path handles him
+$pdo->prepare("INSERT INTO shop_orders (phone, created_at, total) VALUES ('9820000004', ?, 500)")->execute([$f($cs + 500)]);
+wl_cfg_put($pdo, ['mode' => 'auto', 'cap' => 60, 'from' => 0, 'to' => 24, 'since' => $since, 'started' => '2026-11-21 00:00:00', 'offer' => '', 'camp' => 'read', 'camp_cap' => 2]);
+ok(wln_enroll_camp($pdo, $since) === 2, 'campaign enrolment: cap of 2 a day, oldest first'); $ct = $pdo->query("SELECT phone FROM wa_line_cust WHERE topic = 'campaign' ORDER BY phone")->fetchAll(PDO::FETCH_COLUMN);
+ok($ct === ['9820000001', '9820000006'], 'campaign enrolment picks the read, quiet, not-ordered, not-opted-out ones: ' . json_encode($ct)); ok(wln_enroll_camp($pdo, $since) === 0, 'the day cap holds');
+ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9820000001' AND status = 'planned'")->fetchColumn() === 7, 'a campaign recipient gets seven steps');
+wl_cfg_put($pdo, ['mode' => 'auto', 'cap' => 60, 'from' => 0, 'to' => 24, 'since' => $since, 'started' => '2026-11-21 00:00:00', 'offer' => '', 'camp' => 'off']); $S['wl_camp_day'] = ''; ok(wln_enroll_camp($pdo, $since) === 0, 'camp = off enrols nobody');
 echo "lineup db ok\n";

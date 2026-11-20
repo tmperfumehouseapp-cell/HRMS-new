@@ -18,7 +18,7 @@ if (!function_exists('wl_cfg')) {
 // ---- pure:begin  (no database here: tests/line_test.php runs this block alone)
 function wl_topics(): array
 {
-    return ['pending' => 'Address / payment pending', 'price' => 'Price / discount', 'trust' => 'Trust (original, COD, reviews)', 'size' => 'Size / ml', 'reorder' => 'Bought before', 'general' => 'No clear topic'];
+    return ['pending' => 'Address / payment pending', 'price' => 'Price / discount', 'trust' => 'Trust (original, COD, reviews)', 'size' => 'Size / ml', 'reorder' => 'Bought before', 'general' => 'No clear topic', 'campaign' => 'Got a campaign, did not write'];
 }
 /** Words that say what the customer is worried about, strongest first. Latin (English / Hinglish) and Gujarati / Hindi script. */
 function wl_words(): array
@@ -137,7 +137,8 @@ function wl_cfg(PDO $pdo): array
     $j = json_decode((string)setting_get($pdo, 'wl_cfg', ''), true); if (!is_array($j)) $j = [];
     $mode = (string)($j['mode'] ?? 'auto'); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'auto';   // owner 21 Nov: always on (no switch on the screen); 'off' stays only as an emergency value the API accepts
     return ['mode' => $mode, 'cap' => max(5, min(300, (int)($j['cap'] ?? 60))), 'from' => max(0, min(23, (int)($j['from'] ?? 10))), 'to' => max(1, min(24, (int)($j['to'] ?? 20))), 'since' => (int)($j['since'] ?? 0),
-        'offer' => (string)($j['offer'] ?? ''), 'started' => (string)($j['started'] ?? '')];
+        'offer' => (string)($j['offer'] ?? ''), 'started' => (string)($j['started'] ?? ''),
+        'camp' => in_array((string)($j['camp'] ?? 'read'), ['off', 'read', 'delivered'], true) ? (string)($j['camp'] ?? 'read') : 'read', 'camp_cap' => max(0, min(20000, (int)($j['camp_cap'] ?? 2000)))];   // campaign recipients: who joins (read = opened the campaign message) and at most how many new ones a day
 }
 function wl_cfg_put(PDO $pdo, array $c): void { setting_set($pdo, 'wl_cfg', json_encode($c, JSON_UNESCAPED_UNICODE)); }
 function wl_offer_text(PDO $pdo): string { $o = trim(wl_cfg($pdo)['offer']); return $o !== '' ? $o : "Aapke liye final details ye hain 🙏 Aapko kaunsa perfume chahiye, bata dein to hum is hafte ki sabse achhi kimat bata dete hain."; }
@@ -163,6 +164,7 @@ function wln_existing_map(): array
     $m = [];
     $by = ['trust' => [386, 336, 31, 3196], 'price' => [386, 2612, 32, 277], 'pending' => [60, 155, 153, 3196], 'size' => [386, 278, 2612, 32], 'reorder' => [288, 395, 277, 386], 'general' => [386, 336, 2612, 32]];
     foreach ($by as $t => $ids) foreach ($ids as $i => $id) $m['ln_' . $t . '_' . ($i + 1)] = $id;
+    foreach ([388, 336, 277, 32] as $i => $id) $m['ln_campaign_' . ($i + 1)] = $id;   // for people who got a campaign and did not write: no pretext of an enquiry
     $m['ln_all_5'] = 42; $m['ln_all_6'] = 23; $m['ln_all_7'] = 109;
     return $m;
 }
@@ -215,6 +217,29 @@ function wl_enroll(PDO $pdo, int $since): int
         }
     }
     return $n;
+}
+/** Campaign recipients (owner, 21 Nov): customers a campaign message was SENT to since the Lineup's start who opened it (read; or delivered, setting wl_cfg.camp) and have not written, ordered or opted out.
+ *  They get the 'campaign' ladder (the shop's own approved messages, no pretext of an enquiry), starting 24 h after the campaign message. At most camp_cap new ones a day (default 2,000), oldest first, so a 60,000-person campaign day never becomes 400,000 follow-ups. */
+function wln_enroll_camp(PDO $pdo, int $since): int
+{
+    $c = wl_cfg($pdo); if ($c['camp'] === 'off' || $c['camp_cap'] <= 0 || $since <= 0) return 0;
+    [$td] = wl_ist(time()); $key = (string)setting_get($pdo, 'wl_camp_day', ''); $done = 0; if (strpos($key, $td . '|') === 0) $done = (int)substr($key, strlen($td) + 1);
+    $room = $c['camp_cap'] - $done; if ($room <= 0) return 0;
+    $st = $c['camp'] === 'delivered' ? "'read','delivered'" : "'read'"; $orders = wl_orders_since($pdo, $since); $n = 0;
+    $have = []; $h = $pdo->prepare("SELECT phone FROM wa_line_cust WHERE created_at >= ?"); $h->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p) $have[(string)$p] = 1;
+    $q = $pdo->prepare("SELECT phone, MIN(sent_at) t FROM wa_camp_items WHERE status = 'sent' AND sent_at >= ? AND last_status IN ($st) GROUP BY phone ORDER BY t LIMIT " . (int)min(20000, $room * 3));
+    $q->execute([date('Y-m-d H:i:s', $since)]); $cand = []; foreach ($q->fetchAll() as $r) if (!isset($have[(string)$r['phone']])) $cand[(string)$r['phone']] = (int)strtotime((string)$r['t']);
+    foreach (array_chunk(array_keys($cand), 400) as $ch) {
+        $in = implode(',', array_fill(0, count($ch), '?')); $bad = [];
+        $x = $pdo->prepare("SELECT phone FROM wa_contacts WHERE phone IN ($in) AND (optout = 1 OR camp_optout = 1 OR (last_in_at IS NOT NULL AND last_in_at >= ?))"); $x->execute(array_merge($ch, [date('Y-m-d H:i:s', $since)])); foreach ($x->fetchAll(PDO::FETCH_COLUMN) as $p) $bad[(string)$p] = 1;   // opted out, or he wrote (the normal path enrols him with his own topic)
+        foreach ($ch as $phone) {
+            if ($n >= $room) break 2; if (isset($bad[$phone]) || wl_ordered_after($orders, $phone, $cand[$phone])) continue;
+            try { $pdo->prepare("DELETE FROM wa_line_cust WHERE phone = ?")->execute([$phone]);
+                  $pdo->prepare("INSERT INTO wa_line_cust (phone, topic, anchor_at, status, created_at) VALUES (?, 'campaign', ?, 'active', ?)")->execute([$phone, date('Y-m-d H:i:s', $cand[$phone]), date('Y-m-d H:i:s')]); } catch (Throwable $e) { continue; }
+            wln_plan($pdo, $phone, 'campaign', $cand[$phone]); $n++;
+        }
+    }
+    if ($n > 0) setting_set($pdo, 'wl_camp_day', $td . '|' . ($done + $n)); return $n;
 }
 /** Why this customer gets nothing now ('' = fine). 'wait…' = try again later; anything else takes him out of the lineup.
  *  Shop rules that already exist are used as they are: an order that just completed, a ticket, a birthday / review thank-you or a person in Rescue mute him (wa_auto_muted);
@@ -278,7 +303,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     if (!$force && (!function_exists('wa_lock') || !wa_lock($pdo, 'wlrun', 50))) return $o;
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window
-    if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
+    if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
     $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 25;
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.phone, p.step LIMIT 3000");
@@ -511,7 +536,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
         case 'wa.line_save': {   // POST {mode, cap, offer}
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $c = wl_cfg($pdo);
             if (isset($in['mode']) && in_array((string)$in['mode'], ['off', 'manual', 'auto'], true)) $c['mode'] = (string)$in['mode'];
-            if (isset($in['cap'])) $c['cap'] = max(5, min(300, (int)$in['cap'])); if (isset($in['offer'])) $c['offer'] = mb_substr(trim((string)$in['offer']), 0, 900);
+            if (isset($in['cap'])) $c['cap'] = max(5, min(300, (int)$in['cap'])); if (isset($in['camp']) && in_array((string)$in['camp'], ['off', 'read', 'delivered'], true)) $c['camp'] = (string)$in['camp']; if (isset($in['camp_cap'])) $c['camp_cap'] = max(0, min(20000, (int)$in['camp_cap'])); if (isset($in['offer'])) $c['offer'] = mb_substr(trim((string)$in['offer']), 0, 900);
             wl_cfg_put($pdo, $c); if (isset($in['offer'])) wl_install_kw($pdo); json_response(['ok' => true, 'cfg' => wl_cfg($pdo)]);
         }
         case 'wa.line_start': {   // POST — the same start the engine does by itself (kept as a button in case the engine has not run yet). Nothing is SENT to a customer here.
