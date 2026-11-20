@@ -1,4 +1,4 @@
-# READ-ONLY: which orders of the current (and the previous) business day are NOT counted as Query or Campaign on the Orders page, and why (tags, allocation row, who it was given to, status). No customer names or phone numbers. Changes nothing.
+# READ-ONLY: business day 2026-11-19 — all orders vs the orders that have an allocation row (what the Leaders collection counts), the orders WITHOUT one, and the HRMS-typed manual orders. No customer names or phone numbers. Changes nothing.
 # Run it by hand: Actions -> "Uncounted orders (read-only)" -> Run workflow.
 name: Uncounted orders (read-only)
 
@@ -33,21 +33,23 @@ jobs:
           require $f;
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
           date_default_timezone_set("Asia/Kolkata");
-          $now = time(); $bdNow = date("G") >= 10 ? date("Y-m-d") : date("Y-m-d", $now - 86400);
-          echo "now (IST) " . date("Y-m-d H:i") . " · business day " . $bdNow . " (and the one before it)\n";
-          $from = date("Y-m-d 10:00:00", strtotime($bdNow . " -1 day"));
-          $sql = "SELECT o.store_key, o.order_name, o.created_at, ROUND(o.total) total, o.financial_status fs, o.tags, a.order_type ot, a.employee_id emp, a.allocated_by ab, a.allocated_at aa
+          $day = "2026-11-19"; $from = $day . " 10:00:00"; $to = date("Y-m-d 10:00:00", strtotime($day . " +1 day"));
+          echo "business day $day ($from -> $to)\n";
+          $sql = "SELECT o.store_key sk, o.order_name nm, o.created_at ca, ROUND(o.total) total, o.financial_status fs, o.tags tg, a.alloc_id aid, a.order_type ot, a.employee_id emp, a.house hs
                   FROM shop_orders o LEFT JOIN order_allocations a ON a.source = o.store_key AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
-                  WHERE o.created_at >= ? AND o.total > 0 ORDER BY o.created_at";
-          try { $q = $d->prepare($sql); $q->execute([$from]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 200) . "\n"; exit; }
-          $QT = ["query", "s"]; $CT = ["campaign", "c"]; $n = 0; $unc = 0;
+                  WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 ORDER BY o.created_at";
+          try { $q = $d->prepare($sql); $q->execute([$from, $to]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 200) . "\n"; exit; }
+          $all = [0, 0.0]; $given = [0, 0.0]; $noRow = [];
           foreach ($rows as $r) {
-            $n++; $tg = array_map(function ($x) { return strtolower(trim($x)); }, explode(",", (string)$r["tags"]));
-            $isTag = count(array_intersect($tg, array_merge($QT, $CT))) > 0; $isCancel = stripos((string)$r["tags"], "cancel") !== false;
-            if ($isTag) continue; $unc++;
-            echo "UNCOUNTED " . $r["order_name"] . " · " . $r["store_key"] . " · " . $r["created_at"] . " · Rs " . $r["total"] . " · " . $r["fs"] . ($isCancel ? " · CANCELLED" : "") . " · tags=[" . $r["tags"] . "] · allocation: type=" . ($r["ot"] === null ? "NO ROW" : ($r["ot"] === "" ? "(empty)" : $r["ot"])) . " emp=" . ($r["emp"] === null ? "-" : $r["emp"]) . " by=" . ($r["ab"] === null ? "-" : $r["ab"]) . " at=" . ($r["aa"] === null ? "-" : $r["aa"]) . "\n";
+            $canc = stripos((string)$r["tg"], "cancel") !== false; if ($canc) continue;
+            $all[0]++; $all[1] += (float)$r["total"];
+            if ($r["aid"] !== null) { $given[0]++; $given[1] += (float)$r["total"]; } else $noRow[] = $r;
           }
-          echo "\norders checked: $n · not counted as Query/Campaign by tags: $unc\n";
+          echo "ALL non-cancelled orders: " . $all[0] . " · Rs " . round($all[1]) . "\n";
+          echo "with an allocation row (counted by the Leaders collection): " . $given[0] . " · Rs " . round($given[1]) . "\n";
+          echo "WITHOUT an allocation row: " . count($noRow) . " · Rs " . round($all[1] - $given[1]) . "\n";
+          foreach ($noRow as $r) echo "  NO ROW " . $r["nm"] . " · " . $r["sk"] . " · " . $r["ca"] . " · Rs " . $r["total"] . " · " . $r["fs"] . " · tags=[" . $r["tg"] . "]\n";
+          try { $m = $d->prepare("SELECT COUNT(*) n, ROUND(COALESCE(SUM(total),0)) s FROM manual_orders WHERE order_date >= ? AND order_date < ?"); $m->execute([$from, $to]); $x = $m->fetch(PDO::FETCH_ASSOC); echo "manual orders (HRMS typed) in the window: " . $x["n"] . " · Rs " . $x["s"] . "\n"; } catch (Throwable $e) { echo "manual orders: n/a\n"; }
           PHP
           php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
           REMOTE
