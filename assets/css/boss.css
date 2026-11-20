@@ -48,7 +48,7 @@ textarea.bd-in{min-height:84px;resize:vertical;line-height:1.45;}
 .bd-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;} @media (max-width:560px){.bd-2{grid-template-columns:1fr;}}
 .bd-days{display:flex;gap:5px;flex-wrap:wrap;} .bd-days label{display:inline-flex;align-items:center;justify-content:center;width:42px;height:38px;border:1px solid var(--line);border-radius:12px;font-size:12px;font-weight:700;cursor:pointer;margin:0;color:#4a505c;}
 .bd-days input{display:none;} .bd-days input:checked + span{background:var(--ink);color:#fff;} .bd-days label span{display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:11px;}
-.bd-ov{position:fixed;inset:0;background:rgba(20,22,26,.5);display:flex;align-items:flex-end;justify-content:center;z-index:200;padding:0;}
+.bd-ov{position:fixed;inset:0;background:rgba(20,22,26,.5);display:flex;align-items:flex-end;justify-content:center;z-index:980;padding:0;}
 @media (min-width:700px){.bd-ov{align-items:center;padding:20px;}}
 .bd-modal{background:#fff;border-radius:26px 26px 0 0;width:100%;max-width:640px;max-height:92vh;overflow-y:auto;padding:20px 20px 24px;}
 @media (min-width:700px){.bd-modal{border-radius:26px;}}
