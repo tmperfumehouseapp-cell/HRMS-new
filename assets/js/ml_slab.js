@@ -239,10 +239,14 @@
     if (o && Number(o.extra) > 0 && !o._b) { const r0 = offerCom(offers, win, chart, Object.assign({}, o, { _b: 1 })); if (r0) return r0; return offerCom(offers, win, chart, Object.assign({}, o, { ml: Number(o.ml) - Number(o.extra), _b: 1 })); }
     const ml = Math.round(Number(o.ml)), day = String(o.day || '').slice(0, 10), amt = Number(o.amt) || 0; if (!(ml > 0) || !day || !(amt > 0) || !offers || !offers.length) return null;
     const pre = o.pre && chart && Number(chart.prepaid) > 0 ? Number(chart.prepaid) : 0, gross = pre ? amt / (1 - pre / 100) : amt, W = Number(win) || 110;
-    const x = offers.find((f) => Math.round(Number(f.ml)) === ml && (!f.from || day >= f.from) && (!f.to || day <= f.to) && (Number(f.active) || (f.stopped && day <= f.stopped)) && Math.abs(gross - Number(f.price)) <= W + 1e-9);
+    const live = (f) => (!f.from || day >= f.from) && (!f.to || day <= f.to) && (Number(f.active) || (f.stopped && day <= f.stopped));
+    let x = offers.find((f) => Math.round(Number(f.ml)) === ml && live(f) && Math.abs(gross - Number(f.price)) <= W + 1e-9), ad = null;
+    if (!x) {   // 🧴 add-on: the offer's ml + an add-on's ml, at the offer price + the add-on amount (3299 + 750 = 4049 for 480 ml) earns the same flat %
+      for (const f of offers) { if (!live(f)) continue; const a = (f.addons || []).find((d) => Math.round(Number(f.ml)) + Math.round(Number(d.ml)) === ml && Math.abs(gross - (Number(f.price) + Number(d.amount))) <= W + 1e-9); if (a) { x = f; ad = a; break; } }
+    }
     if (!x) return null;
     const full = !!(o.code || o.codeOk), nc = chart && chart.nocode != null && chart.nocode !== '' ? Number(chart.nocode) : 50, pct = Number(x.pct) * (full ? 1 : nc / 100);
-    return { v: gross * pct / 100, pct: r2(pct), base: r2(Number(x.pct)), steps: ['🏷 offer · ' + ml + ' ml at ' + Math.round(Number(x.price)) + ' (±' + W + ') → ' + r2(Number(x.pct)) + '%' + (full ? '' : ' → no code: ' + r2(pct) + '%')], ml, look: gross, disc: 0, overMax: false, bonus: false, special: null, offer: true };
+    return { v: gross * pct / 100, pct: r2(pct), base: r2(Number(x.pct)), steps: ['🏷 offer · ' + (ad ? Math.round(Number(x.ml)) + ' ml + add-on ' + Math.round(Number(ad.ml)) + ' ml at ' + Math.round(Number(x.price)) + ' + ' + Math.round(Number(ad.amount)) : ml + ' ml at ' + Math.round(Number(x.price))) + ' (±' + W + ') → ' + r2(Number(x.pct)) + '%' + (full ? '' : ' → no code: ' + r2(pct) + '%')], ml, look: gross, disc: 0, overMax: false, bonus: false, special: null, offer: true };
   }
 
   window.MLSLAB = { bonusFor, tiersOf, codeNeed, tagCodes, rowFor, pctOf, orderCom, forDay, specialsOn, parts, preview, isPre, extraByPrice, activeOn, datesTxt, flashFor, flashCom, offerCom, on: (c) => !!(c && Number(c.on)) };
