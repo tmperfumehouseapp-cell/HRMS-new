@@ -49,6 +49,7 @@ jobs:
           foreach (["wl_status" => fn() => wl_status($pdo, false), "wl_summary today" => fn() => wl_summary($pdo, strtotime(date("Y-m-d 00:00:00"))), "wl_summary total" => fn() => wl_summary($pdo, (int)strtotime(wl_cfg($pdo)["started"]) - 60), "wl_report" => fn() => wl_report($pdo, 30), "wl_overview" => fn() => wl_overview($pdo)] as $n => $fn) { $t = microtime(true); try { $r = $fn(); echo "  $n: ok in " . round(microtime(true) - $t, 2) . " s" . (isset($r["sent"]) ? " · sent " . $r["sent"] . " replied " . $r["replied"] . " orders " . $r["orders"] . " cost " . $r["cost"] : "") . "\n"; } catch (Throwable $e) { echo "  $n: FAIL after " . round(microtime(true) - $t, 2) . " s: " . substr($e->getMessage(), 0, 300) . " @ " . basename($e->getFile()) . ":" . $e->getLine() . "\n"; } }
           PHP
           php /tmp/ln_probe.php "$P"; rm -f /tmp/ln_probe.php
+          exit 0
           fi
           echo "=== files on the server ==="
           for f in empmanagment/wa_line.php assets/js/wa_line_ui.js assets/js/wa_camp_ui.js; do if [ -f "$P$f" ]; then echo "$f  $(stat -c '%y' "$P$f" | cut -c1-19)  $(wc -c < "$P$f") bytes"; else echo "$f  MISSING"; fi; done
