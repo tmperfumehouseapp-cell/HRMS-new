@@ -618,7 +618,8 @@ function wa_number_caps(PDO $pdo, array $health): array
         $id = (int)$h['id']; $age = isset($first[$id]) ? (int)floor((time() - strtotime($first[$id])) / 86400) : 0;
         $ownT = $perNum ? ($h['tier'] === -1 ? 1000000 : (int)$h['tier']) : ($gT[$wb[$id] ?? ''] ?? $tier);   // per number: its own limit · shared: the limit of ITS OWN WhatsApp account (never another portfolio's)
         // slow start protects a NEW account only: once Meta itself trusts the account (limit 10,000 or more) Meta's own limit is the cap; owner 20 Nov 2026: in per-number mode it is the NUMBER's own limit that counts, so a new number of another portfolio (limit 2,000) gets the slow start (250 / 500 / 1,000 … a day by its age) although the old numbers are trusted
-        $ramp = $cfg['ramp'] && $ownT < 10000;
+        $young = $ownT < 10000 && $age < 42;   // owner 20 Nov 2026: a YOUNG number with a small own limit (a new number of another portfolio) ALWAYS gets the slow start, whatever the team setting says — the 2nd port number got 835 campaign + 2,086 follow-up messages in its first hours and its rating fell to Yellow
+        $ramp = ($cfg['ramp'] && $ownT < 10000) || $young;
         $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $ownT ? 'slow start (day ' . ($age + 1) . ')' : '';
         $cap = min($cap, max(1, (int)$ownT));   // owner 20 Nov 2026: the full limit of the number (2,000 = 2,000), no 90% gate of our own
         // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
