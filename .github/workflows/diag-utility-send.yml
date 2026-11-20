@@ -199,6 +199,8 @@ jobs:
           foreach ($all("SELECT weekday, start_time FROM day_timing ORDER BY weekday") as $r) echo $row($r);
           echo "  day_timing_overrides setting: " . substr($s("day_timing_overrides"), 0, 300) . "\n";
           echo "  wa_camp_spend4 (Today card cache): " . substr($s("wa_camp_spend4"), 0, 400) . "\n";
+          echo "\n=== MODULE B LIMITS ===\n"; foreach (["wa_ru_hourly","wa_ru_cap_on","wa_ru_parallel","wa_ru_ask_days","wa_ru_ord_days","wa_mix_days","wa_ru_wait_min","wa_ru_ramp_max","wa_ru_cursor"] as $k) echo "  $k=" . $s($k) . "\n";
+          echo "  wa_ru_last: " . substr($s("wa_ru_last"), 0, 700) . "\n";
           PHP
           php /tmp/us_check.php "$P"; rm -f /tmp/us_check.php
           REMOTE
