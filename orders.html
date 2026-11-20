@@ -1360,7 +1360,8 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     el.hidden = false;
   }
   function renderAll() {
-    renderSummary(); renderPlatformSummary(); applyFilters(); renderTeamSheet(); renderPanelChips(); loadProdSum();
+    try { loadProdSum(); } catch (e) { /* drawn by its own timer below */ }
+    renderSummary(); renderPlatformSummary(); applyFilters(); renderTeamSheet(); renderPanelChips();
   }
 
   // ---- 🧴 Shower gel + ⭐ TM Originals for the chosen dates. A view INSIDE the total collection (not a second collection); read-only (psum.day). ----
@@ -1405,6 +1406,8 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     };
     q('[data-copy]').onclick = () => { const t = q('[data-out]'); t.select(); try { navigator.clipboard.writeText(t.value).then(() => { q('[data-msg]').textContent = 'Copied — paste it to Claude.'; }, () => document.execCommand('copy')); } catch (e) { document.execCommand('copy'); } };
   }
+  // the strip does not depend on the rest of the page drawing without a hitch: it also looks by itself, now and whenever the dates change
+  setInterval(() => { try { const f = document.getElementById('dateFrom'), t = document.getElementById('dateTo'); if (f && t && f.value && t.value && PSUM.key !== f.value + '|' + t.value && PSUM.busy !== f.value + '|' + t.value) loadProdSum(); } catch (e) { /* next tick */ } }, 1500);
   document.addEventListener('click', (e) => { if (e.target && e.target.id === 'sgDiagBtn') sgDiag(); if (e.target && e.target.id === 'psumRetry') { PSUM = { key: '', d: null, at: 0, busy: '' }; loadProdSum(); } });
   async function loadProdSum() {
     const el = document.getElementById('prodSum'); if (!el) return;
