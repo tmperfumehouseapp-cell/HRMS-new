@@ -1264,7 +1264,8 @@
     let TP = null;
     async function openTpl() {
       if (!S.cur) return; const c = S.cur.contact, box = sheet('Pre-made messages'); box.innerHTML = '<div class="wi-empty">Loading…</div>';
-      try { const d = await api.get('wa.tpl_list'); TP = { list: d.templates || [], can: !!d.can_edit, tab: 'sug', q: '', all: false, sug: null, err: '' }; } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
+      try { const d = await Promise.race([api.get('wa.tpl_list', { lite: 1 }), new Promise((_, rj) => setTimeout(() => rj(new Error('The message list is taking too long — close this and try again in a minute.')), 45000))]); TP = { list: d.templates || [], can: !!d.can_edit,   // ⚡ the LITE list (approved messages only): the full list with every number's status took over a minute and the sheet stayed on "Loading…"
+ tab: 'sug', q: '', all: false, sug: null, err: '' }; } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
       drawTpl(); loadTplSug(false);
     }
     function drawTpl() {
