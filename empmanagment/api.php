@@ -8542,7 +8542,9 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
         // 70% code rule: enough of the day's orders carry a code → every order of the day pays full (the no-code cut is skipped).
         $codePct = (float)($chart['codepct'] ?? 0);
         $codeHave = 0; foreach ($list as $o) if ($o['code'] !== '') $codeHave++;
-        $codeNeed = ml_code_need(count($list), $codePct);
+        // manual orders / quick entries / Myntra / Amazon / Flipkart orders cannot carry a code: they count in the sales, but NOT in "how many orders need a code" — the same as the commission engine (boss2.php cm_day) that pays (owner, 20 Nov)
+        $nManC = 0; foreach ($list as $o) if (strpos((string)($o['key'] ?? ''), 'manual|') === 0) $nManC++;
+        $codeNeed = ml_code_need(count($list) - $nManC, $codePct);
         $codeOk = $codeNeed > 0 && $codeHave >= $codeNeed;
         foreach ($list as $o) {
             $sales += $o['amt']; $last = max($last, $o['ts']);
