@@ -202,6 +202,9 @@ jobs:
           echo "\n=== MODULE B LIMITS ===\n"; foreach (["wa_ru_hourly","wa_ru_cap_on","wa_ru_parallel","wa_ru_ask_days","wa_ru_ord_days","wa_mix_days","wa_ru_wait_min","wa_ru_ramp_max","wa_ru_cursor"] as $k) echo "  $k=" . $s($k) . "\n";
           echo "  wa_ru_last: " . substr($s("wa_ru_last"), 0, 700) . "\n";
           echo "\n=== NUMBERS ===\n"; foreach ($all("SELECT n.id, n.label, n.display, n.camp_ok, n.waba_id, (SELECT COUNT(*) FROM wa_contacts c WHERE c.last_number_id = n.id) contacts, (SELECT COUNT(*) FROM wa_ru_log r WHERE r.number_id = n.id AND r.at >= DATE_SUB(NOW(), INTERVAL 27 HOUR)) ru_24h, (SELECT COUNT(*) FROM wa_messages m WHERE m.number_id = n.id AND m.dir = 'out' AND m.who = 'campaign' AND m.ts >= DATE_SUB(NOW(), INTERVAL 27 HOUR)) camp_24h, (SELECT COUNT(*) FROM wa_messages m WHERE m.number_id = n.id AND m.dir = 'in' AND m.ts >= DATE_SUB(NOW(), INTERVAL 27 HOUR)) in_24h FROM wa_numbers n ORDER BY n.id") as $r) echo $row($r);
+          echo "\n=== PAUSE + NEW NUMBER ===\n"; foreach (["wa_mkt_pause_until","wa_mkt_pause_1710","wa_dq_hourly","wa_dq_hold_until","wa_dq_on","wa_camp_auto_on"] as $k) echo "  $k=" . $s($k) . "\n"; echo "  now(unix)=" . time() . "\n";
+          $hj = json_decode($s("wa_health"), true); if (is_array($hj)) foreach ($hj as $hid => $hh) echo "  health[" . $hid . "]: status=" . ($hh["status"] ?? "") . " tier=" . json_encode($hh["tier"] ?? null) . " quality=" . ($hh["quality"] ?? "") . " sub=" . json_encode($hh["subscribed"] ?? null) . " err=" . substr((string)($hh["error"] ?? ""), 0, 120) . " at=" . ($hh["at"] ?? "") . "\n";
+          foreach ($all("SELECT id, phone_id, label, display, waba_id, camp_ok, retired, created_at FROM wa_numbers ORDER BY id") as $r) echo $row($r);
           PHP
           php /tmp/us_check.php "$P"; rm -f /tmp/us_check.php
           REMOTE
