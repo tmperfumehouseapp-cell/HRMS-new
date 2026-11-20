@@ -230,6 +230,13 @@ jobs:
           foreach ($all("SELECT r.number_id, COUNT(*) sent, SUM(r.ok = 1) accepted, SUM(m.status IN ('delivered','read')) delivered, SUM(r.ok = 0 OR m.status = 'failed') failed, MAX(r.at) last_at FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.number_id IN (9, 10) GROUP BY r.number_id") as $r) echo "  " . json_encode($r) . "\n";
           foreach ($all("SELECT r.number_id, r.err_code, LEFT(r.err, 120) e, COUNT(*) n FROM wa_ru_log r WHERE r.number_id IN (9, 10) AND r.ok = 0 GROUP BY r.number_id, r.err_code, e") as $r) echo "  fail " . json_encode($r) . "\n";
           foreach ($all("SELECT at, LEFT(info, 200) info FROM wa_log WHERE info LIKE 'First messages from the new numbers%' ORDER BY id DESC LIMIT 4") as $r) echo "  " . $r["at"] . " " . $r["info"] . "\n";
+          echo "\n=== TEMPLATES NOT YET AT NEW ACCOUNTS (why) ===\n";
+          foreach (["1163092816071689", "29716648784615015"] as $wb) {
+            echo "  account $wb: missing templates by header / category / flags:\n";
+            foreach ($all("SELECT UPPER(t.header_format) hf, UPPER(t.category) cat, (t.relabelled_at IS NOT NULL) relab, (COALESCE(t.extra,'') LIKE '%unsupported%') unsup, (COALESCE(t.extra,'') LIKE '%queued%') queued, COUNT(*) n FROM wa_templates t WHERE t.id IN (SELECT tpl_id FROM wa_tpl_waba) AND t.id NOT IN (SELECT tpl_id FROM wa_tpl_waba WHERE waba_id = ?) GROUP BY hf, cat, relab, unsup, queued ORDER BY n DESC LIMIT 12", [$wb]) as $r) echo "    " . json_encode($r) . "\n";
+          }
+          echo "  last 12 submissions to the new accounts (time, account, ok):\n";
+          foreach ($all("SELECT DATE_FORMAT(at, '%H:%i') m, waba_id, SUM(ok = 1) ok_n, SUM(ok = 0) bad_n FROM wa_tpl_subs WHERE waba_id IN ('1163092816071689', '29716648784615015') AND at >= DATE_SUB(NOW(), INTERVAL 40 MINUTE) GROUP BY m, waba_id ORDER BY m DESC, waba_id LIMIT 24") as $r) echo "    " . json_encode($r) . "\n";
           PHP
           php /tmp/us_check.php "$P"; rm -f /tmp/us_check.php
           REMOTE
