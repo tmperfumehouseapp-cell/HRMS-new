@@ -25,6 +25,11 @@ function wa_dq_hold_active(PDO $pdo): bool
 {
     try { return (int)setting_get($pdo, 'wa_dq_hold_until', '0') > time(); } catch (Throwable $e) { return false; }
 }
+/** ⏸ owner 20 Nov 2026 (17:10): marketing paused for a set time (setting wa_mkt_pause_until, a unix time) — ONLY marketing pushes wait; utility follow-ups (Module B) and utility campaigns keep going; it restarts by itself when the time is over. */
+function wa_mkt_paused(PDO $pdo): bool
+{
+    try { return (int)setting_get($pdo, 'wa_mkt_pause_until', '0') > time(); } catch (Throwable $e) { return false; }
+}
 function wa_dq_auto_hold(PDO $pdo): void
 {
     try { $lim = (int)setting_get($pdo, 'wa_dq_auto_hold_n', '100'); if ($lim <= 0 || wa_dq_hold_active($pdo)) return;
@@ -68,6 +73,7 @@ function wa_dq_cfg(PDO $pdo): array
     try { if (setting_get($pdo, 'wa_n4_retire', '') !== '1') { setting_set($pdo, 'wa_n4_retire', '1');   /* owner 20 Nov 2026 (16:10): the 4th number is being closed (low rating): it stops sending campaign / Module B / complaint messages; its chats stay visible and can be answered; the number is removed after 2-3 days */
             try { $pdo->query("SELECT retired FROM wa_numbers LIMIT 0"); } catch (PDOException $e1) { $pdo->exec("ALTER TABLE wa_numbers ADD COLUMN retired TINYINT NOT NULL DEFAULT 0"); }
             $n4r = (int)$pdo->exec("UPDATE wa_numbers SET retired = 1, camp_ok = 0 WHERE label LIKE '%4th%'"); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'The 4th number is retired (owner, 20 Nov 2026): no campaign, utility follow-up or complaint message goes from it any more, its chats stay and can be answered: ' . $n4r . ' number(s)'); } } catch (Throwable $e0) { }
+    try { if (setting_get($pdo, 'wa_mkt_pause_1710', '') !== '1') { setting_set($pdo, 'wa_mkt_pause_1710', '1'); setting_set($pdo, 'wa_mkt_pause_until', (string)(time() + 3600)); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing paused for 1 hour (owner, 20 Nov 2026, 17:10): until ' . date('H:i', time() + 3600) . '; it restarts by itself at the same speed; utility follow-ups (Module B) and utility campaigns keep going'); } } catch (Throwable $e0) { }
     try { if (setting_get($pdo, 'wa_dq_789', '') !== '1') { setting_set($pdo, 'wa_dq_789', '1'); setting_set($pdo, 'wa_dq_hourly', '8000'); setting_set($pdo, 'wa_dq_base', '7000'); setting_set($pdo, 'wa_dq_freeze_n', '0'); setting_set($pdo, 'wa_dq_good_n', '0'); setting_set($pdo, 'wa_dq_step_last', (string)time()); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing speed ladder (owner, 20 Nov 2026): 7,000 / 8,000 / 9,000 an hour, floor 7,000, starting at 8,000'); } } catch (Throwable $e0) { }
     try { if (setting_get($pdo, 'wa_dq_5k_1520', '') !== '1') { setting_set($pdo, 'wa_dq_5k_1520', '1'); setting_set($pdo, 'wa_dq_hourly', '5000'); setting_set($pdo, 'wa_dq_base', '5000'); setting_set($pdo, 'wa_dq_freeze_n', '0'); setting_set($pdo, 'wa_dq_good_n', '0'); setting_set($pdo, 'wa_dq_step_last', (string)time()); setting_set($pdo, 'wa_dq_stat', ''); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Marketing speed back to 5,000 an hour (owner, 20 Nov 2026, 15:20: delivery 16% and failed 41%); it climbs +1,000 at a time when delivery is stable again, up to 9,000'); } } catch (Throwable $e0) { }
     try { if (setting_get($pdo, 'wa_ucat_900', '') !== '1') { setting_set($pdo, 'wa_ucat_900', '1'); setting_set($pdo, 'wa_ucat_hour', '900'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility campaigns: the limit is now 900 messages in any rolling hour (was 700), owner order 20 Nov 2026'); } } catch (Throwable $e) { }   /* owner 20 Nov 2026 (06:00): campaign utility 700 -> 900 an hour (Module B stays separate) */
@@ -374,10 +380,10 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
         try { $qa = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ? AND NOT EXISTS (SELECT 1 FROM wa_camp_items ui WHERE ui.wamid = wa_messages.wamid AND ui.variant = 'U') AND NOT EXISTS (SELECT 1 FROM wa_ru_log ul WHERE ul.wamid = wa_messages.wamid)"); $qa->execute([date('Y-m-d H:i:s', time() - 600)]);
             $left15 = max(0, min($left15, (int)round($cap15 * $cfg['push_mult']) - (int)$qa->fetchColumn())); } catch (Throwable $e6) { }
         $hourLeft = min($hourLeft, $left15); } } catch (Throwable $e) { }
-    if (wa_dq_hold_active($pdo)) $hourLeft = 0;   // owner 19 Nov 2026: marketing on hold
+    if (wa_dq_hold_active($pdo) || wa_mkt_paused($pdo)) $hourLeft = 0;   // owner 19 Nov 2026: marketing on hold · owner 20 Nov 2026: marketing paused for one hour
     $hourLeft = max(0, min($hourLeft, $pushCap - $used)); if ($pace['on'] && $pace['slice'] > 0) $hourLeft = max(0, min($hourLeft, $pace['slice'] - $pace['used10'])); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
     $moneyLeft = $cfg['budget'] > 0 ? max(0.0, $cfg['budget'] - $spend) : null; $moneyPush = $moneyLeft === null ? PHP_INT_MAX : (int)floor($moneyLeft / max(0.01, $mr * max(0.2, $rate)));
-    $memo = ['pace' => $pace, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft, $moneyPush), 'spend' => (int)round($spend), 'budget' => $cfg['budget'], 'push_cap' => $pushCap, 'why' => ($moneyLeft !== null && $moneyLeft <= 0) ? 'money' : ($dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : ''))]; $at = microtime(true); return $memo;
+    $memo = ['pace' => $pace, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft, $moneyPush), 'spend' => (int)round($spend), 'budget' => $cfg['budget'], 'push_cap' => $pushCap, 'pause_until' => wa_mkt_paused($pdo) ? (int)setting_get($pdo, 'wa_mkt_pause_until', '0') : 0, 'why' => wa_mkt_paused($pdo) ? 'pause' : (($moneyLeft !== null && $moneyLeft <= 0) ? 'money' : ($dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : '')))]; $at = microtime(true); return $memo;
 }
 /** 🏦 Meta's OWN spend (pricing analytics of every WhatsApp account, by calendar day, all message kinds) from what the engine already fetched (read from the cache only, never waits for Meta; the engine refreshes it hourly),
  *  and the real price per delivered message yesterday (Meta's ₹ ÷ delivered template messages that day). Returns ['today', 'yday', 'eff', 'at', 'error'] (null = not available). Meta's figures arrive with a delay of a few hours. */
@@ -400,6 +406,7 @@ function wa_meta_spend_cached(PDO $pdo, bool $fetch = false): array
 function wa_dq_why_text(array $d): string
 {
     $w = (string)($d['why'] ?? '');
+    if ($w === 'pause') return 'Marketing is paused (owner’s order) until ' . date('H:i', (int)($d['pause_until'] ?? 0)) . ' — it restarts by itself. Utility follow-ups keep going.';
     if ($w === 'money') return 'Daily plan: today’s money limit of ₹' . number_format((int)($d['budget'] ?? 0)) . ' is reached — it continues tomorrow.';
     if ($w === 'day') return 'Daily plan: today’s ' . number_format((int)($d['daily'] ?? 0)) . ' campaign messages are used — it continues tomorrow.';
     return 'Daily plan: this hour’s allowance (about ' . number_format((int)($d['push_cap'] ?? $d['cap'] ?? 0)) . ' pushes) is used by all campaigns together — it continues in the next hour.';

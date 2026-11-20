@@ -36,7 +36,11 @@ function waa_day_start(PDO $pdo): int
 /** Everybody in the Sales department who still works here. */
 function waa_sales(PDO $pdo): array
 {
-    try { return array_map('intval', $pdo->query("SELECT e.employee_id FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND d.department_name LIKE '%sales%'")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { return []; }
+    try {   // Sales EXECUTIVES only: a Sales Head, Sales Helper or Sales Retailer is never given queries (owner, 20 Nov)
+        $out = []; foreach ($pdo->query("SELECT e.employee_id, d.department_name, e.designation FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND d.department_name LIKE '%sales%'")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if (function_exists('sales_role_kind') && sales_role_kind((string)$r['department_name'], (string)($r['designation'] ?? '')) !== 'executive') continue; $out[] = (int)$r['employee_id']; }
+        return $out;
+    } catch (Throwable $e) { return []; }
 }
 /** Who is at work: punched in and not out (leave / holiday / week-off marks take a person out unless they punched in anyway; a work-from-home mark counts). [emp => 1] */
 function waa_present(PDO $pdo): array
@@ -108,7 +112,7 @@ function waa_tally(PDO $pdo): array
 /** Everything the table and the engine need, in one place. */
 function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
 {
-    $cp = waa_cp($pdo, $fresh, $maxAge); $sales = waa_sales($pdo); $pres = waa_present($pdo); $st = waa_state($pdo); $sp = waa_speed($pdo);
+    $cp = waa_cp($pdo, $fresh, $maxAge); $sales = waa_sales($pdo); $pres = waa_present($pdo); $st = waa_state($pdo); $sp = [];   // reply speed is not used any more (owner, 20 Nov: "late reply" removed)
     $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
     $tq = 0; $tqo = 0; foreach ($sales as $e) { $x = $cp[$e] ?? null; if ($x && empty($x['off'])) { $tq += (int)$x['q']; $tqo += (int)$x['qo']; } }
     $team = $tq > 0 ? $tqo / $tq : 0.0; $teamSpeed = waa_median(array_values(array_filter(array_map(function ($e) use ($sp, $pres) { return isset($pres[$e]) ? ($sp[$e] ?? null) : null; }, $sales))));
@@ -122,13 +126,14 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
         $tkv = (int)(($x['ctk'] ?? 0) > 0 ? $x['ctk'] : ($x['tk'] ?? 0)); $no = (int)($x['n'] ?? 0); $p['ticket'] = $tkv; $p['orders'] = $no;
         $rel = ($tc['on'] && $tc['goal'] > 0 && $tkv >= $tc['goal'] && $no >= $tc['min']) ? $tc['relief'] / 100 : 0.0;   // a ticket at the goal gets a little room on the ratio (bigger bundles can mean fewer orders)
         $p['below'] = waa_below($q, $qo, $team - $rel) ? 1 : 0; $p['tier'] = waa_tier($q, $qo, $team);
+        if ($p['ao'] && !$p['below'] && $p['m'] === '') { $p['ao'] = 0; $p['ao_clear'] = 1; }   // the ratio is back inside the band: the automatic OFF ends by itself (owner, 20 Nov: red gets nothing "until the ratio sits right again")
         $p['m0'] = $p['m']; $p['wk'] = $p['m'] === 'on'; $p['force'] = $p['wk'] && !empty($s['f']);   // Admin / Sales Head ON = this person is working, also after the punch-out (at home, on WFH …)
         if ($p['wk'] && !$p['force']) $p['m'] = '';   // ... and ALL the normal rules apply to him (ratio, hold, speed); only Admin's "No rules" switch (state f) lifts them (owner, 20 Nov)
         if ($p['wk']) $p['present'] = true;
         if ($p['m'] === 'on' && $p['tier'] > 2) $p['tier'] = 2;   // forced: never treated as "red"
         $p['waiting'] = (int)($wt[$e] ?? 0);
         $p['tkcand'] = ($tc['on'] && $tc['hold'] && tk_hold((float)$tkv, $no, $p['waiting'], $tc['hold_below'], $tc['hold_orders'], $tc['hold_wait'])) ? 1 : 0; $p['tkhold'] = 0; if ($p['m'] === 'on') $p['tkcand'] = 0;   // the hold is decided below, once we know how many people reach the goal; Admin / Sales Head ON is never held
-        $p['sw'] = (int)($s['sw'] ?? 0); $p['sh'] = (int)($s['sh'] ?? 0); $p['slow'] = ($p['m'] !== 'on' && $p['waiting'] >= (int)$tc['hold_wait'] && tk_slow($p['speed'], $p['team_speed'], 2.0)) ? 1 : 0; $p['shold'] = ($p['m'] !== 'on' && $p['sh'] > time()) ? 1 : 0;   // 🐢 slow replies: warned first, then new queries pause for 45 minutes
+        $p['sw'] = 0; $p['sh'] = 0; $p['slow'] = 0; $p['shold'] = 0;   // no late-reply pause or warning any more
         [$on, $why] = waa_button($p); $p['on'] = $on; $p['why'] = $why;
         $people[$e] = $p;
     }
@@ -155,6 +160,14 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
     if (!$c['last_in_at'] || strtotime((string)$c['last_in_at']) < $now - 86400 + 600) { $dbg['old']++; return false; }
     static $hq = null, $bq = null; if ($hq === null) { $humanSql = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0"; $hq = $pdo->prepare("SELECT 1 FROM wa_contacts c JOIN wa_messages h ON h.phone = c.phone WHERE c.phone = ? AND $humanSql LIMIT 1"); $bq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1"); }
     $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; return false; } $bq->execute([$ph]); if ($bq->fetchColumn()) { $dbg['biz']++; return false; }
+    // ONE decision at a time over the whole server: the webhook and the engine pass both give queries; without this lock they both saw "nobody was given a query a moment ago" and gave the same person two at once (Shivam V. twice in one second)
+    $gl = 0; try { $gl = (int)$pdo->query("SELECT GET_LOCK('waa_pick', 5)")->fetchColumn(); } catch (Throwable $e) { }
+    if ($gl !== 1) return false;   // the next pass tries again
+    try { $T = waa_tally($pdo); return waa_give_pick($pdo, $r, $c, $V, $T, $now, $dbg, $ph); }   // counts and the last give of everybody, read AFTER the lock
+    finally { try { $pdo->query("SELECT RELEASE_LOCK('waa_pick')"); } catch (Throwable $e) { } }
+}
+function waa_give_pick(PDO $pdo, array $r, array $c, array &$V, array &$T, int $now, array &$dbg, string $ph): bool
+{
     $camp = in_array((string)$r['src'], ['campaign', 'community'], true); $cand = [];   // a Community query is given like a Campaign query (owner, 17 Nov)
     $avgT = (float)$V['avg_target'];
     $vip = false; try { $tkc = tk_cfg($pdo); if ($tkc['on'] && $tkc['goal'] > 0) $vip = waa_is_vip($pdo, $ph, (float)$tkc['goal']); } catch (Throwable $e) { }   // big-order customer → a seller who reaches the ticket goal
@@ -218,11 +231,10 @@ function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
         setting_set($pdo, 'waa_run_at', (string)$now);
         $V = waa_view($pdo, false, $maxAge); $st = $V['state'];
         // (1) the ratio rule: below the band → OFF by itself, until Admin / Sales Head turn it ON
+        $clr = false; foreach ($V['people'] as $e => $p0) { if (!empty($p0['ao_clear']) && !empty($st['e'][$e]['ao'])) { $st['e'][$e]['ao'] = 0; unset($st['e'][$e]['ao_at']); $clr = true; $res['switched_on'] = ($res['switched_on'] ?? 0) + 1; } }   // ratio OK again → back ON by itself
+        if ($clr) waa_state_put($pdo, $st);
         foreach ($V['people'] as $e => &$p) { if ($p['present'] && $p['m'] === '' && $p['below'] && !$p['ao']) { $st['e'][$e] = array_merge((array)($st['e'][$e] ?? []), ['m' => '', 'ao' => 1, 'ao_at' => $now]); $p['ao'] = 1; [$p['on'], $p['why']] = waa_button($p); $res['switched_off']++; } } unset($p);
-        // (1b) slow repliers with a waiting list: first a warning, ten minutes later (still slow) new queries pause for 45 minutes; slow again after that → paused again
-        $chg = false; foreach ($V['people'] as $e => &$p) { if (!$p['present'] || $p['m'] === 'on' || !empty($p['shold']) || empty($p['slow'])) continue; $x = (array)($st['e'][$e] ?? []);
-            if (empty($x['sw'])) { $x['sw'] = $now; $p['sw'] = $now; } elseif ($now - (int)$x['sw'] >= 600) { $x['sh'] = $now + 2700; $x['sn'] = (int)($x['sn'] ?? 0) + 1; $p['sh'] = $x['sh']; $p['shold'] = 1; $res['slow_held'] = ($res['slow_held'] ?? 0) + 1; } else continue;
-            $st['e'][$e] = array_merge((array)($st['e'][$e] ?? []), $x); $chg = true; } unset($p);
+        $chg = false;
         if ($res['switched_off'] || $chg) waa_state_put($pdo, $st);
         foreach ($V['people'] as $p0) { if ($p0['present']) $dbg['present']++; if ($p0['on']) $dbg['fresh_ok']++; if ($p0['present'] && $p0['m'] !== 'off') $dbg['camp_ok']++; }
         // (2) waiting queries: nobody holds them, the customer wrote in the last 24 h, no person answered yet. NEWEST first (the oldest are mostly closed / answered / past the 24 h window).
