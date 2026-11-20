@@ -8,7 +8,7 @@
  *     so the owner can SEE it (wa.line_get) and the engine only sends what is due. Order / opt-out / complaint = out. A reply stops the ladder; after 24 quiet hours he is read again:
  *     a NEW topic = a new ladder (messages already sent are never repeated; at most 2 changes, never beyond 14 days).
  *   · Starting it (wa.line_start) switches the old 7-Day Drip off, makes the templates and sends them to Meta (the existing auto-submit keeps retrying), installs the button cards, and enrols everybody since yesterday 10:00 IST.
- *   Sending stays OFF until Mode = manual/auto AND the templates are approved. Mode "manual" = the Send button; "auto" = the engine tick (every minute, 10:00-20:00 IST). PHP 7.4 safe.
+ *   It is ALWAYS ON (owner, 21 Nov): the first engine round after the upload starts it by itself, the engine sends inside 10:00-20:00 IST once Meta approved ALL the messages; the screen's Send button is the manual second way (works at any hour, batches of 60). PHP 7.4 safe.
  *   Settings: wl_cfg (mode, cap, from, to, since, offer) · wl_tpls (key => template id). Tables: wa_line_cust, wa_line_plan, wa_line_log.
  */
 if (!isset($pdo) || !function_exists('json_response')) { return; }
@@ -116,7 +116,7 @@ function wl_banned(): array { return ['offer', 'discount', 'sale', 'free', 'spec
 function wl_cfg(PDO $pdo): array
 {
     $j = json_decode((string)setting_get($pdo, 'wl_cfg', ''), true); if (!is_array($j)) $j = [];
-    $mode = (string)($j['mode'] ?? 'off'); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'off';
+    $mode = (string)($j['mode'] ?? 'auto'); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'auto';   // owner 21 Nov: always on (no switch on the screen); 'off' stays only as an emergency value the API accepts
     return ['mode' => $mode, 'cap' => max(5, min(300, (int)($j['cap'] ?? 60))), 'from' => max(0, min(23, (int)($j['from'] ?? 10))), 'to' => max(1, min(24, (int)($j['to'] ?? 20))), 'since' => (int)($j['since'] ?? 0),
         'offer' => (string)($j['offer'] ?? ''), 'started' => (string)($j['started'] ?? '')];
 }
@@ -222,13 +222,24 @@ function wl_recheck(PDO $pdo, int $now): int
     }
     return $n;
 }
+/** THE START (runs by itself on the first engine round after the upload, and from the button): old 7-Day Drip off, every lineup message made and sent to Meta, button cards, everybody since yesterday 10:00 IST read and planned. Safe to repeat.
+ *  Nothing goes to a customer here: sending waits until Meta approved all the messages (wl_ready). */
+function wl_start_all(PDO $pdo, int $by = 0): array
+{
+    $c = wl_cfg($pdo); $dripWas = wl_drip_off($pdo); $tp = wl_make_templates($pdo, $by); $kw = wl_install_kw($pdo);
+    if ($c['since'] <= 0) $c['since'] = wl_yesterday_start(time()); if ($c['started'] === '') $c['started'] = date('Y-m-d H:i:s'); if ($c['mode'] === 'off') $c['mode'] = 'auto'; wl_cfg_put($pdo, $c);
+    $n = wl_enroll($pdo, $c['since']); wa_log($pdo, 'engine', true, 'Lineup started: ' . $n . ' customers planned, ' . $tp['made'] . ' messages made, ' . $tp['sent'] . ' sent to Meta, old drip ' . ($dripWas ? 'switched off' : 'was already off'));
+    return ['drip_was_on' => $dripWas, 'templates' => $tp, 'cards' => $kw, 'enrolled' => $n];
+}
 /** All templates approved? Until then nothing is sent by itself (a step whose message is still waiting for Meta would be jumped over). */
 function wl_ready(PDO $pdo): bool { foreach (wl_tpl_status($pdo) as $s) if ($s !== 'approved') return false; return true; }
 /** The engine step. Sends what is due (cap per round), enrols new customers, re-reads the quiet ones. $force = the Send button (ignores the clock window and the "all approved" gate, never the blocks). */
 function wl_tick(PDO $pdo, array $opt = []): array
 {
     $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wl_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']);
-    if ($cfg['mode'] === 'off' || $cfg['since'] <= 0) return $o; if (!$force && $cfg['mode'] !== 'auto') return $o;
+    if ($cfg['mode'] === 'off') return $o;
+    if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
+    if (!$force && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     if (!$force && (!function_exists('wa_lock') || !wa_lock($pdo, 'wlrun', 50))) return $o;
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window
     if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
@@ -380,15 +391,12 @@ if (strpos($__wl, 'wa.line_') === 0) {
             if (isset($in['cap'])) $c['cap'] = max(5, min(300, (int)$in['cap'])); if (isset($in['offer'])) $c['offer'] = mb_substr(trim((string)$in['offer']), 0, 900);
             wl_cfg_put($pdo, $c); if (isset($in['offer'])) wl_install_kw($pdo); json_response(['ok' => true, 'cfg' => wl_cfg($pdo)]);
         }
-        case 'wa.line_start': {   // POST — the one button: old Drip off, templates to Meta, button cards, everybody since yesterday 10:00 IST is read and planned. Nothing is SENT here.
-            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); @set_time_limit(120); $c = wl_cfg($pdo);
-            $dripWas = wl_drip_off($pdo); $tp = wl_make_templates($pdo, (int)($auth['employee_id'] ?? 0)); $kw = wl_install_kw($pdo);
-            if ($c['since'] <= 0) $c['since'] = wl_yesterday_start(time()); if ($c['started'] === '') $c['started'] = date('Y-m-d H:i:s'); if ($c['mode'] === 'off') $c['mode'] = 'manual'; wl_cfg_put($pdo, $c);
-            $n = wl_enroll($pdo, $c['since']); wa_log($pdo, 'engine', true, 'Lineup started: ' . $n . ' customers planned, ' . $tp['made'] . ' templates sent to Meta, old drip ' . ($dripWas ? 'switched off' : 'was already off'));
-            json_response(['ok' => true, 'drip_was_on' => $dripWas, 'templates' => $tp, 'cards' => $kw, 'enrolled' => $n] + wl_overview($pdo));
+        case 'wa.line_start': {   // POST — the same start the engine does by itself (kept as a button in case the engine has not run yet). Nothing is SENT to a customer here.
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); @set_time_limit(120);
+            json_response(['ok' => true] + wl_start_all($pdo, (int)($auth['employee_id'] ?? 0)) + wl_overview($pdo));
         }
         case 'wa.line_run': {   // POST — send what is due now (manual mode), in batches; call again while "waiting" > 0
-            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (wl_cfg($pdo)['mode'] === 'off') json_response(['error' => 'The Lineup is off. Press Start first.'], 422);
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (wl_cfg($pdo)['started'] === '') json_response(['error' => 'The Lineup has not started yet — press Start first.'], 422);
             @set_time_limit(120); json_response(['ok' => true] + wl_tick($pdo, ['now' => 1, 'cap' => 60]));
         }
         default: json_response(['error' => 'Unknown Lineup action.'], 404);

@@ -81,7 +81,7 @@ Every message is a **Utility** template: one blank (the first name), one quick-r
 | The engine was off for a day | old steps arrive late | only the latest due step goes; a step waiting more than 30 h is dropped, never sent stale |
 | Night messages | customer woken | window 10:00–20:00 IST; a step due outside moves to 10:00 |
 | Same customer enrolled twice | double ladders | one lineup per customer per 30 days |
-| Everything starts at once | 1,000+ messages in the first hour | start leaves the mode on **Manual**; Automatic is a separate choice; first send is in batches of 60 |
+| Everything starts at once | 1,000+ messages in the first hour | always on (no switch); nothing is sent until Meta approved all 27; the engine sends 60 per round inside 10:00–20:00 IST, the screen's Send button is the manual second way |
 | Old Drip keeps running next to the new one | double messages | `wa.line_start` sets the old Drip to **off** (its history stays) |
 
 ## What the data will tell (the pattern → orders loop)
@@ -90,4 +90,4 @@ Every message is a **Utility** template: one blank (the first name), one quick-r
 
 ## Not checked from this environment
 
-The code was written and linted without access to the live database, Meta or the guidebook: the SQL, the Meta submission and the real sending have not been run. First run = **Manual** mode, look at the board and "Tomorrow", send one batch of 60, read the chats.
+The code was written and linted without access to the live database, Meta or the guidebook: the SQL, the Meta submission and the real sending have not been run. The Lineup starts by itself on the first engine round after the upload and sends the 27 messages to Meta. Sending to customers begins only after Meta approved all 27 — until then, open Campaigns → 🧵 Lineup and check the board and "Tomorrow".
