@@ -213,6 +213,11 @@ jobs:
           foreach ($all("SELECT i.camp_id, COUNT(*) n, MAX(i.sent_at) last_at FROM wa_camp_items i WHERE i.number_id = 9 AND i.sent_at >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) GROUP BY i.camp_id ORDER BY n DESC LIMIT 6") as $r) echo "  camp " . json_encode($r) . "\n";
           foreach ($all("SELECT HOUR(DATE_ADD(ts, INTERVAL 0 HOUR)) h, COUNT(*) n FROM wa_messages WHERE number_id = 9 AND dir = 'out' AND mtype = 'template' AND ts >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) GROUP BY h ORDER BY h") as $r) echo "  hour " . json_encode($r) . "\n";
           foreach ($all("SELECT number_id, COUNT(*) n FROM wa_messages WHERE number_id IN (9,10) AND dir = 'out' AND ts >= DATE_SUB(NOW(), INTERVAL 450 MINUTE) GROUP BY number_id") as $r) echo "  any-out " . json_encode($r) . "\n";
+          echo "\n=== HOLD COLUMN CHECK ===\n";
+          foreach ($all("SHOW COLUMNS FROM wa_numbers") as $r) echo "  col " . ($r["Field"] ?? "") . " " . ($r["Type"] ?? "") . "\n";
+          echo "  wa_hold_seed_1120=" . $s("wa_hold_seed_1120") . "\n"; echo "  schema:wa_more_tables=" . substr($s("schema:wa_more_tables"), 0, 80) . "\n";
+          foreach ($all("SELECT COUNT(*) n, MAX(ts) last_ts FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)") as $r) echo "  sends last 10 min: " . json_encode($r) . "\n";
+          foreach ($all("SELECT id, label, camp_ok, hold FROM wa_numbers ORDER BY id") as $r) echo "  num " . json_encode($r) . "\n";
           PHP
           php /tmp/us_check.php "$P"; rm -f /tmp/us_check.php
           REMOTE
