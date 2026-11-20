@@ -68,7 +68,7 @@
       </div>
       <div id="chBox" style="margin:0 0 12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b id="chTitle">⛓ Chain report</b>
-          <span style="display:inline-flex;align-items:center;gap:6px;background:#f4f4f4;border-radius:10px;padding:4px 8px;font-size:13px">🕛 Day starting <button type="button" class="btn" id="chPrev" style="background:#fff;color:#111;border:1px solid var(--line);padding:3px 9px">◀</button><input type="date" id="chDay"><button type="button" class="btn" id="chNext" style="background:#fff;color:#111;border:1px solid var(--line);padding:3px 9px">▶</button> <b id="chWin"></b></span><span style="flex:1"></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;background:#f4f4f4;border-radius:10px;padding:4px 8px;font-size:13px">🕛 Day <button type="button" class="btn" id="chPrev" style="background:#fff;color:#111;border:1px solid var(--line);padding:3px 9px">◀</button><input type="date" id="chDay"><button type="button" class="btn" id="chNext" style="background:#fff;color:#111;border:1px solid var(--line);padding:3px 9px">▶</button> <b id="chWin"></b></span><span style="flex:1"></span>
           <button class="btn" type="button" id="chGo" style="background:#fff;color:#111;border:1px solid var(--line)">🔄 Recount chains</button>
           <button class="btn" type="button" id="chXl" style="background:#15803d;border-color:#15803d" disabled>⬇ Chain Excel</button></div>
         <div id="chOut" style="margin-top:8px;font-size:13px"></div>
@@ -182,8 +182,8 @@
   let CH = null; const chE = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   let chSeq = 0;
   async function chainRun() {
-    if (!$('chDay').value) { const n = new Date(Date.now() + 19800000), y = (d) => d.toISOString().slice(0, 10); $('chDay').value = n.getUTCHours() >= 12 ? y(n) : y(new Date(n.getTime() - 86400000)); }      // the 12 PM that started the latest 24 hours (India time)
-    const day = $('chDay').value, nxt = new Date(new Date(day + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10), my = ++chSeq; $('chXl').disabled = true; $('chGo').disabled = true; $('chTitle').textContent = '⛓ Chain report'; $('chWin').textContent = dmy(day) + ' 12:00 PM → ' + dmy(nxt) + ' 12:00 PM (24 hours)'; $('chOut').textContent = 'Counting the chains of this 12 PM – 12 PM day…';
+    if (!$('chDay').value) $('chDay').value = new Date(Date.now() + 19800000).toISOString().slice(0, 10);      // today (India time)
+    const day = $('chDay').value, nxt = new Date(new Date(day + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10), my = ++chSeq; $('chXl').disabled = true; $('chGo').disabled = true; $('chTitle').textContent = '⛓ Chain report'; $('chWin').textContent = dmy(day) + ' 12:00 AM → ' + dmy(nxt) + ' 12:00 AM (24 hours)'; $('chOut').textContent = 'Counting the chains of this 12 AM – 12 AM day…';
     try {
       const r = await api.get('sku.chain', { from: day, to: day, noon: 1 }); if (my !== chSeq) return; CH = r;
       $('chOut').innerHTML = '<div style="margin-bottom:8px;font-size:14px"><b>' + r.pieces + ' chain pieces</b> in <b>' + r.orders_with + '</b> orders (of ' + r.orders_read + ' orders in these 24 hours) · ₹' + Number(r.amount).toLocaleString('en-IN') + (r.errors.length ? ' · <span style="color:#b91c1c">' + chE(r.errors.join(' | ')) + '</span>' : '') + '</div>' +
@@ -205,7 +205,7 @@
       const n = CH.rows.length + 1, t = ws.addRow(['TOTAL', '', { formula: 'SUM(C2:C' + n + ')', result: CH.pieces }, '', { formula: 'SUM(E2:E' + n + ')', result: CH.amount }, '']); t.font = { bold: true };
       [60, 16, 9, 9, 14, 60].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
       const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'chain_report_' + CH.from + '_12pm_to_12pm.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'chain_report_' + CH.from + '_12am_to_12am.xlsx'; document.body.appendChild(a); a.click(); a.remove();
     } catch (e) { alert('The Excel file could not be made: ' + e.message); }
   };
 
