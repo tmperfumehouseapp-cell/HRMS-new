@@ -15,6 +15,9 @@ ok(wl_classify(['આ અસલી છે?'], false) === 'trust', 'Gujarati trust
 ok(wl_classify(['કિંમત કેટલી છે'], false) === 'price', 'Gujarati price');
 ok(wl_classify(['really nice'], false) === 'general', '"really" is not "real"');
 ok(wl_classify(['facebook se aaya'], false) === 'general', '"facebook" is not "book"');
+ok(wl_classify(['bhai ye original hai kya?', 'kitna price hai'], false) === 'price', 'the newest message with a topic decides (price)');
+ok(wl_classify(['kitna price hai', 'bhai ye original hai kya?'], false) === 'trust', 'his reply changed: trust now');
+ok(wl_classify(['original hai?', 'ok thanks'], false) === 'trust', 'a later message without a topic does not wipe the topic');
 ok(wl_classify(['hi'], true) === 'reorder', 'nothing clear + bought before -> reorder');
 ok(wl_classify([], false) === 'general', 'no words -> general');
 ok(wl_classify(['Proof dekhna hai'], false) === 'trust', 'a button tap is read too');

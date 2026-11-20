@@ -31,15 +31,21 @@ function wl_words(): array
     ];
 }
 /** Topic from what the customer wrote. $texts = his messages since he came in; $bought = he has ordered before. */
+/** The topic of ONE message ('' = no clear topic). Latin words match as whole words, Gujarati / Hindi script as parts. */
+function wl_topic_of(string $text): string
+{
+    $all = mb_strtolower(trim($text)); if ($all === '') return '';
+    $norm = preg_replace('/(?<=\d)(?=\p{L})|(?<=\p{L})(?=\d)/u', ' ', $all); $norm = ' ' . trim((string)preg_replace('/[^\p{L}\p{N}\p{M}]+/u', ' ', (string)$norm)) . ' ';   // "50ml" -> "50 ml"; marks stay (Gujarati / Hindi)
+    foreach (wl_words() as $topic => $ws) foreach ($ws as $w) {
+        $w = mb_strtolower($w); if (preg_match('/^[a-z ]+$/', $w)) { if (strpos($norm, ' ' . $w . ' ') !== false) return $topic; }   // no "real" inside "really", no "book" inside "facebook"
+        elseif (strpos($norm, $w) !== false) return $topic;
+    }
+    return '';
+}
+/** The topic of a whole conversation: his messages oldest first. The NEWEST message with a clear topic decides (owner 21 Nov: if his reply changes, the category changes with it); none = bought before -> reorder, else general. */
 function wl_classify(array $texts, bool $bought): string
 {
-    $all = mb_strtolower(trim(implode(' ', array_map('strval', $texts)))); if ($all !== '') {
-        $norm = preg_replace('/(?<=\d)(?=\p{L})|(?<=\p{L})(?=\d)/u', ' ', $all); $norm = ' ' . trim((string)preg_replace('/[^\p{L}\p{N}\p{M}]+/u', ' ', (string)$norm)) . ' ';   // "50ml" -> "50 ml"; marks stay (Gujarati / Hindi)
-        foreach (wl_words() as $topic => $ws) foreach ($ws as $w) {
-            $w = mb_strtolower($w); if (preg_match('/^[a-z ]+$/', $w)) { if (strpos($norm, ' ' . $w . ' ') !== false) return $topic; }   // Latin: whole words only (no "real" inside "really", no "book" inside "facebook")
-            elseif (strpos($norm, $w) !== false) return $topic;   // Gujarati / Hindi script: the word may carry endings
-        }
-    }
+    for ($i = count($texts) - 1; $i >= 0; $i--) { $t = wl_topic_of((string)$texts[$i]); if ($t !== '') return $t; }
     return $bought ? 'reorder' : 'general';
 }
 /** The IST wall clock of a time stamp: [Y-m-d, hour]. */
@@ -208,7 +214,7 @@ function wl_enroll(PDO $pdo, int $since): int
         if (!$first) continue; $ph = array_keys($first); $in2 = implode(',', array_fill(0, count($ph), '?'));
         $b = $pdo->prepare("SELECT phone, n FROM wa_cust WHERE phone IN ($in2)"); $b->execute($ph); $buy = []; foreach ($b->fetchAll() as $r) $buy[(string)$r['phone']] = (int)$r['n'] > 0;
         $m = $pdo->prepare("SELECT phone, body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone IN ($in2) AND ts >= ? ORDER BY id"); $m->execute(array_merge($ph, [date('Y-m-d H:i:s', $since)])); $txt = [];
-        foreach ($m->fetchAll() as $r) { $k = (string)$r['phone']; if (!isset($txt[$k]) || count($txt[$k]) < 8) $txt[$k][] = (string)$r['body']; }
+        foreach ($m->fetchAll() as $r) { $k = (string)$r['phone']; $txt[$k][] = (string)$r['body']; if (count($txt[$k]) > 12) array_shift($txt[$k]); }   // the latest 12, oldest first
         foreach ($first as $phone => $anchor) {
             if (wl_ordered_after($orders, $phone, $anchor)) continue;   // ordered since he wrote
             $topic = wl_classify($txt[$phone] ?? [], !empty($buy[$phone]));
@@ -280,8 +286,8 @@ function wl_recheck(PDO $pdo, int $now): int
         $c = function_exists('wa_contact') ? wa_contact($pdo, $phone) : null; if (!$c) { $done('no contact'); continue; }
         if (wl_block($pdo, $c, date('Y-m-d H:i:s', $anchor)) === 'ordered') { $done('ordered'); continue; }
         $o = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $o->execute([$phone]); $bought = (int)$o->fetchColumn() > 0;
-        $m = $pdo->prepare("SELECT body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone = ? AND ts >= ? ORDER BY id DESC LIMIT 8"); $m->execute([$phone, date('Y-m-d H:i:s', $anchor)]);
-        $topic = wl_classify($m->fetchAll(PDO::FETCH_COLUMN), $bought); $sw = (int)$r['switches'];
+        $m = $pdo->prepare("SELECT body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone = ? AND ts >= ? ORDER BY id DESC LIMIT 12"); $m->execute([$phone, date('Y-m-d H:i:s', $anchor)]);
+        $topic = wl_classify(array_reverse($m->fetchAll(PDO::FETCH_COLUMN)), $bought); $sw = (int)$r['switches'];
         if ($topic !== (string)$r['topic']) { if ($sw >= 2) { $done('topic changed too often'); continue; } $sw++; wl_log($pdo, $phone, 'topic ' . $r['topic'] . ' -> ' . $topic); }
         $sent = []; $s = $pdo->prepare("SELECT tpl_key FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $s->execute([$phone]); foreach ($s->fetchAll(PDO::FETCH_COLUMN) as $k) $sent[(string)$k] = 1;
         $pdo->prepare("DELETE FROM wa_line_plan WHERE phone = ? AND status = 'planned'")->execute([$phone]);
@@ -339,7 +345,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
     $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 25;
-    $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.phone, p.step LIMIT 3000");
+    $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at, c.topic FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.phone, p.step LIMIT 3000");
     $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
     $orders = wl_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = array_keys(array_filter(wl_tpl_status($pdo), fn($x) => $x === 'approved'));
     $upd = $pdo->prepare("UPDATE wa_line_plan SET status = ?, why = ?, sent_at = ?, wamid = ?, tpl_key = ? WHERE id = ?");
@@ -360,6 +366,14 @@ function wl_tick(PDO $pdo, array $opt = []): array
                 $pdo->prepare("UPDATE wa_line_cust SET status = 'replied', recheck_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s', strtotime((string)($c['last_in_at'] ?? 'now')) + 86400), $phone]); $o['skipped']++; continue; }
             $pdo->prepare("UPDATE wa_line_plan SET status = 'cancelled', why = ? WHERE phone = ? AND status = 'planned'")->execute([$why, $phone]);
             $pdo->prepare("UPDATE wa_line_cust SET status = 'done', left_why = ? WHERE phone = ?")->execute([$why, $phone]); $o['skipped']++; continue;
+        }
+        if ($isFirst && (string)$row['topic'] !== 'campaign') {   // owner 21 Nov: the conversation is over: his WHOLE chat is read now (newest message decides) and the ladder is the one of THAT topic
+            try { $mq = $pdo->prepare("SELECT body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone = ? AND ts >= ? ORDER BY id DESC LIMIT 12"); $mq->execute([$phone, (string)$row['anchor_at']]); $texts = array_reverse($mq->fetchAll(PDO::FETCH_COLUMN));
+                $bq = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $bq->execute([$phone]); $nt = wl_classify($texts, (int)$bq->fetchColumn() > 0);
+                if ($nt !== (string)$row['topic']) { wl_log($pdo, (string)$phone, 'topic ' . $row['topic'] . ' -> ' . $nt . ' (his whole chat, before the first message)'); $pdo->prepare("UPDATE wa_line_cust SET topic = ? WHERE phone = ?")->execute([$nt, $phone]);
+                    $pdo->prepare("DELETE FROM wa_line_plan WHERE phone = ? AND status = 'planned'")->execute([$phone]); wln_plan($pdo, (string)$phone, $nt, $now - 86400, [], $now);   // the new ladder starts now (its step 1 is due now)
+                    $rq0 = $pdo->prepare("SELECT id, phone, step, tpl_key, due_at FROM wa_line_plan WHERE phone = ? AND status = 'planned' ORDER BY step LIMIT 1"); $rq0->execute([$phone]); $nr = $rq0->fetch(); if (!$nr) continue; $row = $nr + ['anchor_at' => $row['anchor_at'], 'topic' => $nt]; }
+            } catch (Throwable $e) { }
         }
         $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send'))) { $o['waiting']++; continue; }
         $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
