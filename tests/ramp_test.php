@@ -99,4 +99,16 @@ $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_ramp_chk'] = '0'; wa_ru_
 $S = ['wa_ru_hourly' => '260', 'wa_ru_ramp_base' => '260', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '510', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 700)];
 $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 60, 0, 20); $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE rowid % 4 <> 0");
 wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '260' && (int)($S['wa_ru_freeze_n'] ?? 0) === 0 && (int)($S['wa_ru_pause_until'] ?? 0) === 0, 'low delivered without failures: no hold count, no rest, no growth (got ' . $S['wa_ru_hourly'] . ' / ' . ($S['wa_ru_freeze_n'] ?? '') . ')');
+// owner 20 Nov 2026 (18:55): 700 -> 800 -> 900 -> 1,000, two hours at each level, failed under 2% and delivered 85% or more
+$H2 = ['wa_ru_hourly' => '700', 'wa_ru_ramp_base' => '550', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '1000', 'wa_ru_ramp_drop' => '100'];
+$look = function ($hourly, $lvlAgeMin, $failed, $sentOnly) use ($pdo, $H2, &$S) { $S = $H2; $S['wa_ru_hourly'] = (string)$hourly; $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_lvl_at'] = (string)(time() - $lvlAgeMin * 60); $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 130, $failed, 20); if ($sentOnly > 0) $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE status = 'delivered' AND rowid <= " . (130 + $sentOnly)); wa_ru_ramp($pdo, ['hourly' => $hourly]); return $S['wa_ru_hourly']; };
+ok($look(700, 60, 0, 0) === '700', 'only 1 hour at 700: stays 700 (got ' . $S['wa_ru_hourly'] . ')');
+ok($look(700, 130, 0, 0) === '800' && (time() - (int)$S['wa_ru_lvl_at']) < 60, '2 hours at 700, good: 800 and the clock restarts');
+ok($look(800, 100, 0, 0) === '800', '800 for 100 minutes: stays 800');
+ok($look(800, 125, 0, 0) === '900', '2 hours at 800, good: 900');
+ok($look(900, 125, 0, 0) === '1000', '2 hours at 900, good: 1,000');
+ok($look(1000, 300, 0, 0) === '1000', 'ceiling 1,000');
+ok($look(700, 130, 4, 0) === '700', 'failed 3%: no step up (and no bad look either)');
+ok($look(700, 130, 0, 40) === '700', 'delivered under 85%: no step up');
+ok($look(800, 130, 9, 0) === '800' && ($S['wa_ru_freeze_n'] ?? '') === '1', 'failed 7%: a bad look holds the level');
 echo "ramp ok\n";
