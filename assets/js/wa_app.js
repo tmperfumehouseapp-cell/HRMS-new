@@ -52,6 +52,7 @@
 
   const CSS = `
   .wx:not(.cxm) #wxCxR{display:none !important}.wx.cxm #wxPf,.wx.cxm #wxOr,.wx.cxm #wxOd,.wx.cxm #wxCt,.wx.cxm #wxLs,.wx.cxm #wxPrc,.wx.cxm #wxFin{display:none !important}.wx.cxm #wxCxR{background:#f5f0ff;color:#5b21b6}
+  .wx.fbm .wx-b{font-size:13px !important;line-height:1.28 !important;padding:4px 8px 3px 9px !important;margin:1px 8px !important;max-width:70% !important}.wx.fbm .wx-ch{padding:4px 8px !important;gap:6px !important}.wx.fbm .wx-ev{margin:3px 10px !important;font-size:11px !important}
   .wx.fbm #wxSug,.wx.fbm #wxPc,.wx.fbm #wxPp,.wx.fbm #wxRd,.wx.fbm #wxGrow,.wx.fbm #wxLife,.wx.fbm #wxCxB,.wx.fbm #wxOdB,.wx.fbm #wxAs,.wx.fbm #wxRs,.wx.fbm #wxMore,.wx.fbm #wxCxR,.wx.fbm .pc-row{display:none !important}
   .wx.emb>*:not(.wx-chat):not(.wx-md):not(.wx-toast){visibility:hidden}.wx.emb .wx-chat{left:0 !important;border-left:0 !important;animation:none}.wx.emb .wx-chat .bk{display:none !important}.wx.emb::after{display:none !important}html.wx-emb body{overflow:hidden}
   .wx{--g:#16a34a;--gd:#0f7a3a;--ink:#0f172a;--mut:#64748b;--line:#e8ecf2;--bg:#f4f6fa;--or:#f97316;--rd:#e5484d;--bl:#3b82f6;--pu:#7c5cfc;position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font-size:14px;overflow:hidden}

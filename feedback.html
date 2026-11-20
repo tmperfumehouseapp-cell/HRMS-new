@@ -31,6 +31,7 @@
   .fb .pop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:250;display:none;padding:1.5vh 1.5vw}.fb .pop.on{display:flex}.fb .pp{background:#fff;border-radius:16px;display:flex;width:100%;height:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);color:#111}
   .fb .pL{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;padding:8px 10px;overflow:hidden}.fb .pL iframe{flex:1;min-height:0;height:100%;width:100%;border:1px solid var(--line);border-radius:12px;background:#efeae2;display:block}.fb .pR{width:380px;flex:none;border-left:1px solid var(--line);padding:12px 12px 20px;overflow:auto;position:relative}.fb .pR .acts .btn{font-size:12px;padding:7px 10px}
   .fb .pX{position:absolute;top:8px;right:10px;border:0;background:transparent;font-size:20px;cursor:pointer;color:#555}
+  .fb .pop.fold .pR{display:none}.fb .pop.full{padding:0}.fb .pop.full .pp{border-radius:0}.fb .pT{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 6px}.fb .pT .sp{flex:1}.fb .pT button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:5px 10px;font:700 12px inherit;cursor:pointer;color:#111}.fb .pT button.x{background:#111;color:#fff;border-color:#111}
   @media(max-width:900px){.fb .pp{flex-direction:column}.fb .pL{flex:1 1 60%}.fb .pR{width:auto;flex:1 1 40%;border-left:0;border-top:1px solid var(--line)}}
   @media(max-width:900px){.fb .g{grid-template-columns:1fr}.fb .k{grid-template-columns:repeat(3,1fr)}}
 </style>
@@ -47,7 +48,7 @@
       <div class="g"><div class="c"><div class="bar"><input id="q" placeholder="🔍 Search order ID, name or phone  e.g. 72474" autocomplete="off"><button class="btn gh" id="testBtn" type="button">🧪 Test with a customer</button><a class="btn" id="newOrd" href="hub.html?w=dispatch&t=dispatch_manual" target="_top">＋ Create order</a></div>
         <div class="wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Delivered</th><th>Message</th><th>Seen</th><th>Status</th><th>Proof</th><th>Chat</th></tr></thead><tbody id="rows"><tr><td colspan="8" class="sm" style="padding:16px">Loading…</td></tr></tbody></table></div><div id="none" class="sm" style="display:none;padding:14px">No order found.</div></div>
       <div class="c" id="side"><div class="sm">Pick an order.</div></div></div>
-      <div class="pop" id="pop"><div class="pp"><div class="pL"><div id="popTop" class="sm" style="margin:0 0 6px"></div><div id="popChat" style="flex:1;display:flex;flex-direction:column;min-height:0"></div></div><div class="pR"><button class="pX" id="popX" type="button" aria-label="Close">✕</button><div id="popR"></div></div></div></div>
+      <div class="pop" id="pop"><div class="pp"><div class="pL"><div id="popTop" class="pT"></div><div id="popChat" style="flex:1;display:flex;flex-direction:column;min-height:0"></div></div><div class="pR"><button class="pX" id="popX" type="button" aria-label="Close">✕</button><div id="popR"></div></div></div></div>
       <div class="ov" id="ov"><div class="md" id="md"></div></div><div class="toast" id="ts"></div><input type="file" id="fi" accept="image/jpeg,image/png,image/webp" style="display:none">
     </div></div>
   </main>
@@ -139,13 +140,18 @@
   // 💬 the big chat window: the customer's WhatsApp live on the left (the whole height), the order on the right. The chat frame is kept while the same customer stays open, so a refresh never closes what you are typing.
   function drawPop(d) {
     const x = d.row, P = parts(d), ph10 = String(x.phone || '').replace(/\D/g, '').slice(-10), cb = $('popChat');
-    $('popTop').innerHTML = `<b style="font-size:14px;color:#111">💬 WhatsApp with ${esc(x.customer || x.order)}</b> · ${esc(x.phone)} · live — type below and send`;
+    $('popTop').innerHTML = `<b style="font-size:14px;color:#111">💬 ${esc(x.customer || x.order)}</b><span class="sm">${esc(x.phone)} · ${esc(x.order)} · live</span><span class="sp"></span><button type="button" data-pf="fold">${popFold ? '◂ Show details' : '▸ Hide details'}</button><button type="button" data-pf="full">${popFull ? '⛶ Back to the page' : '⛶ Full screen'}</button><button type="button" class="x" data-pf="x">✕ Close (Esc)</button>`;
+    $('pop').classList.toggle('fold', popFold); $('pop').classList.toggle('full', popFull);
     if (ph10.length === 10) { if (cb.dataset.p !== ph10 || !cb.firstChild) { cb.dataset.p = ph10; cb.innerHTML = `<iframe id="chatFr" title="WhatsApp chat" src="my_chats.html?embed=1&fb=1&phone=${ph10}" allow="microphone; clipboard-write"></iframe>`; } }
     else { cb.dataset.p = ''; cb.innerHTML = '<div class="sm" style="margin:10px 0">This order has no phone number, so there is no WhatsApp chat.</div>'; }
     $('popR').innerHTML = P.hdr + P.acts + P.rest; wire($('popR'), d);      // the buttons sit on the right so the chat keeps the whole height
   }
-  async function openPop() { if (!DET) return; popOpen = true; $('pop').classList.add('on'); drawPop(DET); }
-  function closePop() { popOpen = false; $('pop').classList.remove('on'); $('popChat').innerHTML = ''; $('popChat').dataset.p = ''; }
+  let popFull = true, popFold = false;
+  // ⛶ full screen: the page's own frame (inside the hub) is stretched over the whole browser, so the HRMS menu and header are hidden while the chat is open; closing puts it back
+  function goFull(on) { try { const fe = window.frameElement; if (!fe) return; if (on) { if (fe.dataset.fbOld === undefined) fe.dataset.fbOld = fe.getAttribute('style') || ''; fe.style.cssText = fe.dataset.fbOld + ';position:fixed;left:0;top:0;width:100vw;height:100vh;max-width:none;max-height:none;z-index:99999;border:0;background:#e3ebec;'; } else if (fe.dataset.fbOld !== undefined) { fe.style.cssText = fe.dataset.fbOld; delete fe.dataset.fbOld; } } catch (e) { } }
+  async function openPop() { if (!DET) return; popOpen = true; $('pop').classList.add('on'); goFull(popFull); drawPop(DET); }
+  function closePop() { popOpen = false; $('pop').classList.remove('on'); $('popChat').innerHTML = ''; $('popChat').dataset.p = ''; goFull(false); }
+  $('popTop').onclick = (e) => { const b = e.target.closest('[data-pf]'); if (!b) return; const k = b.dataset.pf; if (k === 'x') return closePop(); if (k === 'fold') popFold = !popFold; if (k === 'full') { popFull = !popFull; goFull(popFull); } if (DET) drawPop(DET); };
   $('popX').onclick = closePop; $('pop').onclick = (e) => { if (e.target.id === 'pop') closePop(); };
   document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if ($('ov').classList.contains('on')) closeM(); else if (popOpen) closePop(); });
   async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); load(); } catch (e) { say(e.message, true); } }
