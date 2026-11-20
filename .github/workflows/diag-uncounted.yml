@@ -49,6 +49,7 @@ jobs:
           echo "with an allocation row (counted by the Leaders collection): " . $given[0] . " · Rs " . round($given[1]) . "\n";
           echo "WITHOUT an allocation row: " . count($noRow) . " · Rs " . round($all[1] - $given[1]) . "\n";
           foreach ($noRow as $r) echo "  NO ROW " . $r["nm"] . " · " . $r["sk"] . " · " . $r["ca"] . " · Rs " . $r["total"] . " · " . $r["fs"] . " · tags=[" . $r["tg"] . "]\n";
+          try { $ad = $d->prepare("SELECT COUNT(DISTINCT e.order_name) n, ROUND(SUM(e.price)) s FROM employee_addons e JOIN shop_orders o ON LOWER(TRIM(LEADING '#' FROM TRIM(e.order_name))) = LOWER(TRIM(LEADING '#' FROM TRIM(o.order_name))) WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')"); $ad->execute([$from, $to]); $x = $ad->fetch(PDO::FETCH_ASSOC); echo "ADD-ONS sold on these orders (employee_addons): " . $x["n"] . " orders · Rs " . $x["s"] . "\n"; } catch (Throwable $e) { echo "add-ons: n/a " . substr($e->getMessage(), 0, 120) . "\n"; }
           try { $m = $d->prepare("SELECT COUNT(*) n, ROUND(COALESCE(SUM(total),0)) s FROM manual_orders WHERE order_date >= ? AND order_date < ?"); $m->execute([$from, $to]); $x = $m->fetch(PDO::FETCH_ASSOC); echo "manual orders (HRMS typed) in the window: " . $x["n"] . " · Rs " . $x["s"] . "\n"; } catch (Throwable $e) { echo "manual orders: n/a\n"; }
           PHP
           php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
