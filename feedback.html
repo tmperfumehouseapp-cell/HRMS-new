@@ -28,10 +28,10 @@
   .fb .chips{display:flex;flex-wrap:wrap;gap:6px}.fb .chip{border:1.5px solid #cfd6d9;border-radius:99px;padding:6px 12px;font-weight:600;background:#fff;cursor:pointer;user-select:none;color:#111}.fb .chip.on{background:#0f766e;color:#fff;border-color:#0f766e}.fb .padd{display:flex;gap:6px;margin-top:8px}.fb .padd input{flex:1}
   .fb .ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:300;padding:14px}.fb .ov.on{display:flex}.fb .md{background:#fff;color:#111;border-radius:16px;padding:16px;width:min(460px,94vw);max-height:90vh;overflow:auto}.fb .md h3{margin:0 0 8px}.fb .md label{display:block;font-size:12px;color:#555;margin:8px 0 3px}.fb .md input,.fb .md select,.fb .md textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px;font:inherit;background:#fff;color:#111}
   .fb .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;color:#fff;border-radius:12px;padding:10px 16px;transition:.3s;opacity:0;z-index:400;pointer-events:none}.fb .toast.on{transform:translateX(-50%);opacity:1}
-  .fb .pop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:250;display:none;padding:2.5vh 2.5vw}.fb .pop.on{display:flex}.fb .pp{background:#fff;border-radius:18px;display:flex;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);color:#111}
-  .fb .pL{flex:1;min-width:0;display:flex;flex-direction:column;padding:10px 12px}.fb .pL iframe{flex:1;min-height:300px;width:100%;border:1px solid var(--line);border-radius:12px;background:#efeae2;display:block}.fb .pR{width:330px;border-left:1px solid var(--line);padding:12px;overflow:auto;position:relative}
+  .fb .pop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:250;display:none;padding:1.5vh 1.5vw}.fb .pop.on{display:flex}.fb .pp{background:#fff;border-radius:16px;display:flex;width:100%;height:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);color:#111}
+  .fb .pL{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;padding:8px 10px;overflow:hidden}.fb .pL iframe{flex:1;min-height:0;height:100%;width:100%;border:1px solid var(--line);border-radius:12px;background:#efeae2;display:block}.fb .pR{width:380px;flex:none;border-left:1px solid var(--line);padding:12px 12px 20px;overflow:auto;position:relative}.fb .pR .acts .btn{font-size:12px;padding:7px 10px}
   .fb .pX{position:absolute;top:8px;right:10px;border:0;background:transparent;font-size:20px;cursor:pointer;color:#555}
-  @media(max-width:900px){.fb .pp{flex-direction:column}.fb .pR{width:auto;max-height:36vh;border-left:0;border-top:1px solid var(--line)}}
+  @media(max-width:900px){.fb .pp{flex-direction:column}.fb .pL{flex:1 1 60%}.fb .pR{width:auto;flex:1 1 40%;border-left:0;border-top:1px solid var(--line)}}
   @media(max-width:900px){.fb .g{grid-template-columns:1fr}.fb .k{grid-template-columns:repeat(3,1fr)}}
 </style>
 </head>
@@ -47,7 +47,7 @@
       <div class="g"><div class="c"><div class="bar"><input id="q" placeholder="🔍 Search order ID, name or phone  e.g. 72474" autocomplete="off"><button class="btn gh" id="testBtn" type="button">🧪 Test with a customer</button><a class="btn" id="newOrd" href="hub.html?w=dispatch&t=dispatch_manual" target="_top">＋ Create order</a></div>
         <div class="wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Delivered</th><th>Message</th><th>Seen</th><th>Status</th><th>Proof</th><th>Chat</th></tr></thead><tbody id="rows"><tr><td colspan="8" class="sm" style="padding:16px">Loading…</td></tr></tbody></table></div><div id="none" class="sm" style="display:none;padding:14px">No order found.</div></div>
       <div class="c" id="side"><div class="sm">Pick an order.</div></div></div>
-      <div class="pop" id="pop"><div class="pp"><div class="pL"><div id="popTop" class="sm" style="margin:0 0 6px"></div><div id="popChat" style="flex:1;display:flex;flex-direction:column;min-height:0"></div><div id="popActs" style="margin-top:8px"></div></div><div class="pR"><button class="pX" id="popX" type="button" aria-label="Close">✕</button><div id="popR"></div></div></div></div>
+      <div class="pop" id="pop"><div class="pp"><div class="pL"><div id="popTop" class="sm" style="margin:0 0 6px"></div><div id="popChat" style="flex:1;display:flex;flex-direction:column;min-height:0"></div></div><div class="pR"><button class="pX" id="popX" type="button" aria-label="Close">✕</button><div id="popR"></div></div></div></div>
       <div class="ov" id="ov"><div class="md" id="md"></div></div><div class="toast" id="ts"></div><input type="file" id="fi" accept="image/jpeg,image/png,image/webp" style="display:none">
     </div></div>
   </main>
@@ -142,7 +142,7 @@
     $('popTop').innerHTML = `<b style="font-size:14px;color:#111">💬 WhatsApp with ${esc(x.customer || x.order)}</b> · ${esc(x.phone)} · live — type below and send`;
     if (ph10.length === 10) { if (cb.dataset.p !== ph10 || !cb.firstChild) { cb.dataset.p = ph10; cb.innerHTML = `<iframe id="chatFr" title="WhatsApp chat" src="my_chats.html?embed=1&phone=${ph10}" allow="microphone; clipboard-write"></iframe>`; } }
     else { cb.dataset.p = ''; cb.innerHTML = '<div class="sm" style="margin:10px 0">This order has no phone number, so there is no WhatsApp chat.</div>'; }
-    $('popActs').innerHTML = P.acts; $('popR').innerHTML = P.hdr + P.rest; wire($('popActs'), d); wire($('popR'), d);
+    $('popR').innerHTML = P.hdr + P.acts + P.rest; wire($('popR'), d);      // the buttons sit on the right so the chat keeps the whole height
   }
   async function openPop() { if (!DET) return; popOpen = true; $('pop').classList.add('on'); drawPop(DET); }
   function closePop() { popOpen = false; $('pop').classList.remove('on'); $('popChat').innerHTML = ''; $('popChat').dataset.p = ''; }
