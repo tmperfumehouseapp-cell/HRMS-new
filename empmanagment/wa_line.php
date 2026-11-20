@@ -300,6 +300,20 @@ function wl_start_all(PDO $pdo, int $by = 0): array
 }
 /** All templates approved? Until then nothing is sent by itself (a step whose message is still waiting for Meta would be jumped over). */
 function wl_ready(PDO $pdo): bool { $P = wl_pack(); foreach (wl_tpl_status($pdo) as $k => $s) if (empty($P[$k]['of']) && $s !== 'approved') return false; return true; }   // the extra wordings are optional: one that is not approved is simply not used
+/** Send one Lineup message. [ok, reason, number id, wamid]. Owner, 21 Nov: the Lineup goes slowly, one message at a time, and Module A / Module B's allowances (hourly speed, the 90% margin, the daily room) do NOT apply to it:
+ *  the number is chosen with the "burst" switch of wa_camp_ctx, so only what Meta itself decides (its tier, a Low-quality / disconnected / locked number, a new number's slow start) can stop a message. */
+function wln_send(PDO $pdo, array $c, array $step): array
+{
+    $t = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, (int)$step['tpl_id'], true, 0) : null; if (!$t) return [false, 'The message is not approved by Meta (or its photo is missing).'];
+    $nv = (int)($t['nvars'] ?? 0); if ($nv > 1) return [false, 'This message has ' . $nv . ' blanks.'];
+    $ctx = wa_camp_ctx($pdo, $t, 2, [], 1000000); $nid = 0;
+    if (empty($ctx['nums'])) return [false, 'No number can send this message now (' . (function_exists('wd_why_none') ? wd_why_none($pdo, $t) : 'none available') . ')'];
+    [$nid, $why] = wa_pick_number($pdo, $c, $ctx);
+    if (!$nid && $why === 'ignored every number') { $el = $ctx['nums']; uasort($el, function ($a, $b) { return ($a['used'] / max(1, $a['cap'])) <=> ($b['used'] / max(1, $b['cap'])); }); $nid = (int)(reset($el)['id'] ?? 0); }   // about THIS customer, not about the numbers: the freest number takes him
+    if (!$nid || !isset($ctx['nums'][$nid])) return [false, 'No number can send this message now (' . $why . ').'];
+    [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $nv ? [function_exists('wd_name') ? wd_name($c) : 'ji'] : [], 'followup');
+    return $ok ? [true, '', $nid, (string)$res] : [false, (string)$res, $nid];
+}
 /** The engine step. Sends what is due (cap per round), enrols new customers, re-reads the quiet ones. $force = the Send button (ignores the clock window and the "all approved" gate, never the blocks). */
 function wl_tick(PDO $pdo, array $opt = []): array
 {
@@ -332,8 +346,8 @@ function wl_tick(PDO $pdo, array $opt = []): array
             $pdo->prepare("UPDATE wa_line_plan SET status = 'cancelled', why = ? WHERE phone = ? AND status = 'planned'")->execute([$why, $phone]);
             $pdo->prepare("UPDATE wa_line_cust SET status = 'done', left_why = ? WHERE phone = ?")->execute([$why, $phone]); $o['skipped']++; continue;
         }
-        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || !function_exists('wd_send')) { $o['waiting']++; continue; }
-        $res = wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
+        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send'))) { $o['waiting']++; continue; }
+        $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
         if ($res[0]) { foreach (array_slice($list, 0, -1) as $old) $upd->execute(['skipped', 'late (a later step went first)', null, '', $old['tpl_key'], $old['id']]);   // only the latest due step goes, and only once it really went
             $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$tid, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; break; }   // no number can send now: try again next round, nothing is written
