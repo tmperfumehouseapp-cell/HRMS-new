@@ -1372,7 +1372,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     const card = (title, big, sub, rows, note) => `<div class="stat-card" style="flex:1 1 300px; min-width:0;"><div class="label">${title}</div><div style="font-size:24px; font-weight:800; margin:2px 0 2px;">${big}</div><div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">${sub}</div>${rows}<div style="font-size:11.5px; color:var(--muted); margin-top:8px; line-height:1.4;">${note}</div></div>`;
     const gel = card('🧴 Shower gel', R(g.amt) + ' <small style="font-size:14px; font-weight:700; color:var(--muted)">from shower gel</small>', N(g.pcs) + ' piece' + (g.pcs === 1 ? '' : 's') + ' in ' + N(g.orders) + ' order' + (g.orders === 1 ? '' : 's') + ' · ' + pct(g.amt, all.amt) + ' of the collection',
       row('Only shower gel', N(g.only) + ' order' + (g.only === 1 ? '' : 's')) + row('Shower gel + perfume', N(g.with_perfume) + ' order' + (g.with_perfume === 1 ? '' : 's')) + row('Query · Campaign', N(g.query) + ' · ' + N(g.campaign) + (g.other ? ' · ' + N(g.other) + ' not allocated' : '')) + row('Value of these orders', R(g.order_value))
-      + (q.ok === false ? row('Shower gel queries', 'not available') : row('Shower gel queries', N(q.asked) + ' customer' + (q.asked === 1 ? '' : 's')) + row('New numbers among them', N(q.new)) + row('Of them ordered shower gel', N(q.ordered) + ' (' + pct(q.ordered, q.asked) + ')')),
+      + (q.pending ? row('Shower gel queries', 'counting…') : q.ok === false ? row('Shower gel queries', 'not available') : row('Shower gel queries', N(q.asked) + ' customer' + (q.asked === 1 ? '' : 's')) + row('New numbers among them', N(q.new)) + row('Of them ordered shower gel', N(q.ordered) + ' (' + pct(q.ordered, q.asked) + ')')),
       'A query = a customer whose WhatsApp message in these days speaks of shower gel (the ad’s ready-made message). <button type="button" id="sgDiagBtn" style="width:auto; min-height:0; margin-top:6px; padding:5px 12px; font-size:12px; font-weight:800; border:1px solid #111827; border-radius:999px; background:#fff; color:#111; cursor:pointer;">🩺 Where did the shower gel leads go?</button>');
     const org = card('⭐ TM Originals <span style="font-weight:500; color:var(--muted)">(Dress to Impress)</span>', N(o.bottles) + ' <small style="font-size:14px; font-weight:700; color:var(--muted)">bottle' + (o.bottles === 1 ? '' : 's') + ' in ' + N(o.orders) + ' order' + (o.orders === 1 ? '' : 's') + '</small>', 'Value of these orders ' + R(o.order_value) + ' · ' + pct(o.order_value, all.amt) + ' of the collection',
       row('Set of 3', N(o.s3)) + row('Set of 2', N(o.s2)) + row('Single', N(o.s1)) + row('Dark Side · Compliment Getter · Caffeine Club', N(o.ds) + ' · ' + N(o.cg) + ' · ' + N(o.cc)) + row('Query · Campaign', N(o.query) + ' · ' + N(o.campaign) + (o.other ? ' · ' + N(o.other) + ' not allocated' : '')),
@@ -1405,7 +1405,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     };
     q('[data-copy]').onclick = () => { const t = q('[data-out]'); t.select(); try { navigator.clipboard.writeText(t.value).then(() => { q('[data-msg]').textContent = 'Copied — paste it to Claude.'; }, () => document.execCommand('copy')); } catch (e) { document.execCommand('copy'); } };
   }
-  document.addEventListener('click', (e) => { if (e.target && e.target.id === 'sgDiagBtn') sgDiag(); });
+  document.addEventListener('click', (e) => { if (e.target && e.target.id === 'sgDiagBtn') sgDiag(); if (e.target && e.target.id === 'psumRetry') { PSUM = { key: '', d: null, at: 0, busy: '' }; loadProdSum(); } });
   async function loadProdSum() {
     const el = document.getElementById('prodSum'); if (!el) return;
     if (EMP_VIEW) { el.style.display = 'none'; return; }
@@ -1413,10 +1413,16 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     const key = from + '|' + to;
     if (PSUM.key === key && PSUM.d) { el.innerHTML = psumHtml(PSUM.d); el.style.display = ''; if (PSUM.at > Date.now() - 90000) return; }
     if (PSUM.busy === key) return; PSUM.busy = key;
+    const same = () => document.getElementById('dateFrom').value === from && document.getElementById('dateTo').value === to;
+    const box = (t, bad) => '<div class="stat-card" style="font-size:13px; color:' + (bad ? '#b42318' : 'var(--muted)') + ';">' + t + '</div>';
+    if (PSUM.key !== key) { el.innerHTML = box('🧴 Shower gel and ⭐ TM Originals for these dates — loading…'); el.style.display = ''; }
     try {
+      // the orders first (fast), then the same again with the WhatsApp query count (it reads the chats, that can take some seconds)
+      const d0 = await api.get('psum.day', { from, to, q: 0 });
+      if (same()) { PSUM = { key, d: d0, at: 0, busy: key }; el.innerHTML = psumHtml(d0); el.style.display = ''; }
       const d = await api.get('psum.day', { from, to });
-      if (document.getElementById('dateFrom').value === from && document.getElementById('dateTo').value === to) { PSUM = { key, d, at: Date.now(), busy: '' }; el.innerHTML = psumHtml(d); el.style.display = ''; }
-    } catch (e) { if (PSUM.key !== key) el.style.display = 'none'; }
+      if (same()) { PSUM = { key, d, at: Date.now(), busy: '' }; el.innerHTML = psumHtml(d); el.style.display = ''; }
+    } catch (e) { if (same() && !(PSUM.key === key && PSUM.d)) { el.innerHTML = box('🧴 Shower gel and ⭐ TM Originals could not be read: ' + esEsc(e.message || String(e)) + ' <button type="button" id="psumRetry" style="width:auto; min-height:0; padding:3px 10px; margin-left:8px; font-size:12px;">Try again</button>', true); el.style.display = ''; } }
     if (PSUM.busy === key) PSUM.busy = '';
   }
 

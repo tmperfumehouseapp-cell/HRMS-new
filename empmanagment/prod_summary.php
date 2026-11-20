@@ -24,7 +24,7 @@ function psum_p10($p): string { $d = preg_replace('/\D+/', '', (string)$p); retu
 /** does this text speak of shower gel? ("shower gel", "showr gels", "showergel", "body wash") */
 function psum_is_gel(string $t): bool { return (bool)preg_match('/sho?we?r\s*gel|body\s*wash/iu', $t); }
 
-function psum_day(PDO $pdo, string $from, string $to): array
+function psum_day(PDO $pdo, string $from, string $to, bool $withQueries = true): array
 {
     [$ws, $we] = biz_window($pdo, $from, $to);
     $gel = ['orders' => 0, 'pcs' => 0, 'amt' => 0.0, 'only' => 0, 'with_perfume' => 0, 'query' => 0, 'campaign' => 0, 'other' => 0, 'order_value' => 0.0];
@@ -57,7 +57,8 @@ function psum_day(PDO $pdo, string $from, string $to): array
     }
     // 💬 shower gel queries: customers who wrote about shower gel in these days (the chats that were active are looked at, each through its own message index)
     $qr = ['asked' => 0, 'new' => 0, 'ordered' => 0, 'ok' => true];
-    try {
+    if (!$withQueries) $qr = ['asked' => 0, 'new' => 0, 'ordered' => 0, 'ok' => true, 'pending' => true];   // the fast answer: the orders now, the WhatsApp count follows
+    else try {
         $st = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(15000) */ c.phone, c.first_seen FROM wa_contacts c WHERE c.last_in_at >= ? AND EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = c.phone AND m.dir = 'in' AND m.ts >= ? AND m.ts <= ? AND (LOWER(m.body) REGEXP 'sho?we?r ?gel' OR LOWER(m.body) LIKE '%body wash%'))");
         $st->execute([$ws, $ws, $we]);
         foreach ($st->fetchAll() as $c) { $qr['asked']++; if ((string)$c['first_seen'] >= $ws && (string)$c['first_seen'] <= $we) $qr['new']++; if (isset($gelPhones[psum_p10($c['phone'])])) $qr['ordered']++; }
@@ -126,8 +127,9 @@ function psum_route(PDO $pdo, string $action): void
         $ok = function ($d) { return is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d); };
         $from = $ok($_GET['from'] ?? null) ? (string)$_GET['from'] : biz_today($pdo); $to = $ok($_GET['to'] ?? null) ? (string)$_GET['to'] : $from; if ($to < $from) $to = $from;
         if ((strtotime($to) - strtotime($from)) > 62 * 86400) $from = date('Y-m-d', strtotime($to) - 62 * 86400);
-        $run = function () use ($pdo, $from, $to) { return psum_day($pdo, $from, $to); };
-        json_response(['ok' => true] + (function_exists('hrms_memo') ? hrms_memo('psum:' . $from . ':' . $to, 90, $run) : $run()));
+        $wq = (string)($_GET['q'] ?? '1') !== '0'; @set_time_limit(60);
+        $run = function () use ($pdo, $from, $to, $wq) { return psum_day($pdo, $from, $to, $wq); };
+        json_response(['ok' => true] + (function_exists('hrms_memo') ? hrms_memo('psum:' . ($wq ? 'f' : 'o') . ':' . $from . ':' . $to, 90, $run) : $run()));
     }
     if ($action === 'psum.leads') {   // 🩺 shower gel leads: POST {msgs: [...], days}
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
