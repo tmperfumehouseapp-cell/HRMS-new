@@ -19,11 +19,14 @@ function fb_tables(PDO $pdo): bool
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS fb_orders (id INT AUTO_INCREMENT PRIMARY KEY, order_name VARCHAR(40) NOT NULL, store_key VARCHAR(20) NOT NULL DEFAULT '', customer VARCHAR(120) NOT NULL DEFAULT '', phone VARCHAR(12) NOT NULL DEFAULT '',
             delivered_at DATETIME NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'wait', msg_at DATETIME NULL, msg_wamid VARCHAR(120) NOT NULL DEFAULT '', msg_err VARCHAR(190) NOT NULL DEFAULT '', fu_at DATETIME NULL, fu_wamid VARCHAR(120) NOT NULL DEFAULT '',
-            replied_at DATETIME NULL, last_in_id BIGINT NOT NULL DEFAULT 0, place VARCHAR(60) NOT NULL DEFAULT '', reward_order VARCHAR(40) NOT NULL DEFAULT '', reward_note VARCHAR(190) NOT NULL DEFAULT '', cx_code VARCHAR(30) NOT NULL DEFAULT '',
+            replied_at DATETIME NULL, last_in_id BIGINT NOT NULL DEFAULT 0, place VARCHAR(200) NOT NULL DEFAULT '', reward_order VARCHAR(40) NOT NULL DEFAULT '', reward_note VARCHAR(190) NOT NULL DEFAULT '', cx_code VARCHAR(30) NOT NULL DEFAULT '',
             skip_why VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, UNIQUE KEY uq_fb_order (order_name), KEY idx_fb_status (status), KEY idx_fb_phone (phone), KEY idx_fb_del (delivered_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fb_proofs (id INT AUTO_INCREMENT PRIMARY KEY, order_name VARCHAR(40) NOT NULL, path VARCHAR(160) NOT NULL, mime VARCHAR(40) NOT NULL DEFAULT '', src VARCHAR(10) NOT NULL DEFAULT 'manual', media_id VARCHAR(60) NULL,
-            place VARCHAR(60) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, KEY idx_fbp_order (order_name), UNIQUE KEY uq_fbp_media (order_name, media_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            place VARCHAR(200) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, KEY idx_fbp_order (order_name), UNIQUE KEY uq_fbp_media (order_name, media_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fb_events (id INT AUTO_INCREMENT PRIMARY KEY, order_name VARCHAR(40) NOT NULL, at DATETIME NOT NULL, txt VARCHAR(300) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', KEY idx_fbe_order (order_name, id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if ((string)setting_get($pdo, 'fb_place_w', '') !== '1') {      // the places of an older copy of the table were 60 characters: several places need more room (once)
+            try { $pdo->exec("ALTER TABLE fb_orders MODIFY place VARCHAR(200) NOT NULL DEFAULT ''"); $pdo->exec("ALTER TABLE fb_proofs MODIFY place VARCHAR(200) NOT NULL DEFAULT ''"); setting_set($pdo, 'fb_place_w', '1'); } catch (Throwable $e) { error_log('fb place width: ' . $e->getMessage()); }
+        }
         return $ok = true;
     } catch (Throwable $e) { error_log('fb_tables: ' . $e->getMessage()); return $ok = false; }
 }
@@ -33,6 +36,14 @@ function fb_cfg(PDO $pdo): array
     $places = array_values(array_filter(array_map('trim', explode('|', (string)setting_get($pdo, 'fb_places', 'Google review|Instagram|Facebook|Shopify review')))));
     return ['on' => (string)setting_get($pdo, 'fb_on', '0') === '1', 'wait' => max(1, min(30, (int)setting_get($pdo, 'fb_wait', '5'))), 'fu' => max(1, min(30, (int)setting_get($pdo, 'fb_fu', '3'))),
         'tpl' => (int)setting_get($pdo, 'fb_tpl', '0'), 'tpl_fu' => (int)setting_get($pdo, 'fb_tpl_fu', '0'), 'places' => $places ?: ['Google review'], 'reward' => (string)setting_get($pdo, 'fb_reward', '10 ML perfume')];
+}
+
+/** One or several places ("Google review", ["Google review", "Instagram"]) → "Google review, Instagram" (clean, no repeats, at most 200 characters). */
+function fb_place_str($v): string
+{
+    $list = is_array($v) ? $v : preg_split('/\s*[,|]\s*/u', (string)$v); $out = [];
+    foreach ($list as $x) { $x = mb_substr(trim(str_replace(['|', ','], ' ', (string)$x)), 0, 40); if ($x !== '' && !in_array($x, $out, true)) $out[] = $x; }
+    return mb_substr(implode(', ', $out), 0, 200);
 }
 
 function fb_log(PDO $pdo, string $order, string $txt, string $by = ''): void
@@ -198,6 +209,11 @@ function fb_route(PDO $pdo, string $action): void
         if (!$r || strpos((string)$r['path'], 'uploads/feedback/') !== 0 || strpos((string)$r['path'], '..') !== false || !is_file($abs)) json_response(['error' => 'No picture.'], 404);
         header('Content-Type: ' . ((string)$r['mime'] !== '' ? $r['mime'] : 'image/jpeg')); header('Cache-Control: private, max-age=3600'); header('Content-Length: ' . filesize($abs)); readfile($abs); exit;
     }
+    if ($action === 'fb.place_add') {      // a new place for the list ("Trustpilot"): kept, so it is there next time too
+        $in = json_input(); $new = fb_place_str($in['place'] ?? ''); if ($new === '') json_response(['error' => 'Type the name of the place.'], 422);
+        $list = $cfg['places']; foreach (array_filter(array_map('trim', explode(',', $new))) as $n) if (!in_array($n, $list, true)) $list[] = $n;
+        setting_set($pdo, 'fb_places', implode('|', array_slice($list, 0, 20))); json_response(['ok' => true, 'places' => array_slice($list, 0, 20)]);
+    }
     // the actions on one order
     $in = $_SERVER['CONTENT_TYPE'] ?? ''; $in = stripos((string)$in, 'application/json') !== false ? json_input() : $_POST;
     $order = trim((string)($in['order'] ?? '')); $r = $get($order); if (!$r) json_response(['error' => 'Order not found.'], 404);
@@ -214,14 +230,14 @@ function fb_route(PDO $pdo, string $action): void
         $dir = __DIR__ . '/uploads/feedback/'; if (!is_dir($dir)) @mkdir($dir, 0755, true);
         $name = 'fb_' . preg_replace('/[^0-9A-Za-z]/', '', $order) . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
         if (!@move_uploaded_file($f['tmp_name'], $dir . $name)) json_response(['error' => 'The server could not save the picture (the uploads folder is not writable).'], 500);
-        $place = mb_substr(trim((string)($in['place'] ?? '')), 0, 60);
+        $place = fb_place_str($in['place'] ?? '');
         $pdo->prepare("INSERT INTO fb_proofs (order_name, path, mime, src, place, by_name, created_at) VALUES (?, ?, ?, 'manual', ?, ?, ?)")->execute([$order, 'uploads/feedback/' . $name, $mime, $place, $by, date('Y-m-d H:i:s')]);
         $pdo->prepare("UPDATE fb_orders SET status = CASE WHEN status IN ('rew', 'cmp') THEN status ELSE 'proof' END, place = CASE WHEN ? <> '' THEN ? ELSE place END WHERE id = ?")->execute([$place, $place, (int)$r['id']]);
         fb_log($pdo, $order, 'Screenshot added by hand' . ($place !== '' ? ' (' . $place . ')' : '') . ' → attached to ' . $order, $by);
         json_response(['ok' => true]);
     }
     if ($action === 'fb.reward') {
-        $gift = mb_substr(trim((string)($in['gift'] ?? $cfg['reward'])), 0, 80); $ro = mb_substr(trim((string)($in['reward_order'] ?? '')), 0, 40); $place = mb_substr(trim((string)($in['place'] ?? '')), 0, 60);
+        $gift = mb_substr(trim((string)($in['gift'] ?? $cfg['reward'])), 0, 80); $ro = mb_substr(trim((string)($in['reward_order'] ?? '')), 0, 40); $place = fb_place_str($in['place'] ?? '');
         $pdo->prepare("UPDATE fb_orders SET status = 'rew', reward_note = ?, reward_order = ?, place = CASE WHEN ? <> '' THEN ? ELSE place END WHERE id = ?")->execute([$gift, $ro, $place, $place, (int)$r['id']]);
         fb_log($pdo, $order, 'Reward given: ' . $gift . ($ro !== '' ? ' · order ' . $ro : '') . ($place !== '' ? ' · feedback on ' . $place : ''), $by);
         json_response(['ok' => true]);
