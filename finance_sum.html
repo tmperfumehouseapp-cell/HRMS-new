@@ -38,7 +38,9 @@
   <div id="sidebar"></div>
   <main class="main">
     <div class="topbar"><div><h1>Finance summary</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px" id="subLine">Orders, money in, money out and what still needs a look: everything read from where it already lives</div></div></div>
-    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div>
+      <div class="sx-page"><div class="sx-card" id="cardsHost" style="padding:6px 8px;display:none"><iframe id="cardsFr" title="Order cards" style="width:100%;border:0;height:480px;background:transparent"></iframe></div></div>
+      <div class="sx-page" id="root2"></div></div>
   </main>
 </div>
 <script src="assets/js/config.js?v=4"></script>
@@ -51,7 +53,11 @@
   const m2 = (n) => { n = Number(n || 0); return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: Math.abs(n % 1) > 0.004 ? 2 : 0, maximumFractionDigits: 2 }); };
   const dShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
-  let P = 'today', FROM = '', TO = '', D = null, TODAY = '';
+  let P = 'today', FROM = '', TO = '', D = null, TODAY = '', NOON = '';
+  const istNow = () => new Date(Date.now() + 19800000);      // India time, read with the getUTC… methods
+  const ymd = (d) => d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+  const noonDefault = () => { const n = istNow(); return n.getUTCHours() >= 12 ? ymd(n) : addDays(ymd(n), -1); };      // the 12 PM that started the latest 24 hours
+  const dLong = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   function range(k) {
     if (k === 'today') return [TODAY, TODAY]; if (k === 'yesterday') return [addDays(TODAY, -1), addDays(TODAY, -1)];
     if (k === '7') return [addDays(TODAY, -6), TODAY]; if (k === '30') return [addDays(TODAY, -29), TODAY];
@@ -60,11 +66,12 @@
   }
   const bar = (label, v, mx, extra, top) => `<div class="hb ${top ? 'top' : ''}"><span>${label}</span><div class="tr"><i style="width:${Math.max(v > 0 ? 3 : 0, Math.round(v / Math.max(1, mx) * 100))}%"></i></div><b>${m2(v)}</b><span class="s">${extra}</span></div>`;
   function draw() {
+    if (P === 'noon') return drawNoon();
     const O = D.orders, M = D.money_in, Z = D.money_out, W = D.watch, days = D.days;
-    const per = [['today', 'Today'], ['yesterday', 'Yesterday'], ['7', '7 days'], ['30', '30 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['custom', 'Custom']];
+    const per = [['today', 'Today'], ['yesterday', 'Yesterday'], ['7', '7 days'], ['30', '30 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['custom', 'Custom'], ['noon', '🕛 12 PM – 12 PM']];
     const mxd = Math.max(1, ...days.map((x) => Math.max(x.sales + x.store_sales, x.received)));
     const mxo = Math.max(1, ...Z.list.map((x) => x.amount));
-    $('root').innerHTML = `
+    const html = `
       <div class="per">${per.map(([k, l]) => `<button data-p="${k}" class="${P === k ? 'on' : ''}">${l}</button>`).join('')}
         ${P === 'custom' ? `<input class="sx-in" type="date" id="cF" value="${esc(D.from)}" max="${esc(TODAY)}"> <span class="sx-mut">to</span> <input class="sx-in" type="date" id="cT" value="${esc(D.to)}" max="${esc(TODAY)}"><button id="cGo">Show</button>` : ''}
         <span class="sp"></span><b style="font-size:14px">${D.from === D.to ? esc(dShort(D.from)) : esc(dShort(D.from)) + ' – ' + esc(dShort(D.to))}</b></div>
@@ -103,19 +110,45 @@
           <div class="sx-mut" style="font-size:11.5px;margin-top:6px">Bank deposits are not counted: they only move cash. Spending is read from Daily Money, the Finance ledger's expenses and refunds paid to customers.</div></div>
         <div class="sx-card c12"><h3>${sxi('info')} Where these numbers come from</h3><div class="src">${D.sources.map((s) => `<span class="${s.ok ? '' : 'no'}">${s.ok ? '✓' : '○'} ${esc(s.name)}${s.note ? ' · ' + esc(s.note) : ''}</span>`).join('')}</div></div>
       </div>`;
+    const cut = html.indexOf('<div class="gr">'); $('root').innerHTML = cut > 0 ? html.slice(0, cut) : html; $('root2').innerHTML = cut > 0 ? html.slice(cut) : '';
+    showCards(D.from, D.to, false);
   }
+  /* 🕛 12 PM – 12 PM: pick a start day; the order cards count the orders from 12 PM that day to 12 PM the next day.
+     Money in / money out are saved per day (not per hour), so for this filter they are left out and the page says so. */
+  function drawNoon() {
+    if (!NOON) NOON = noonDefault();
+    const per = [['today', 'Today'], ['yesterday', 'Yesterday'], ['7', '7 days'], ['30', '30 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['custom', 'Custom'], ['noon', '🕛 12 PM – 12 PM']];
+    $('root').innerHTML = `<div class="per">${per.map(([k, l]) => `<button data-p="${k}" class="${P === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="per" style="background:#fff;border-radius:12px;padding:8px 12px;box-shadow:inset 0 0 0 2px var(--sx-ink)"><span class="sx-mut">Day starting</span>
+        <button id="nPrev" aria-label="Previous day">◀</button><input class="sx-in" type="date" id="nDay" value="${esc(NOON)}" max="${esc(TODAY || ymd(istNow()))}"><button id="nNext" aria-label="Next day">▶</button>
+        <span class="sp"></span><b style="font-size:14px">${esc(dLong(NOON))} 12:00 PM → ${esc(dLong(addDays(NOON, 1)))} 12:00 PM</b> <span class="sx-mut">(24 hours)</span></div>
+      <div class="sx-msg warn" style="margin:0 0 10px"><span>The order cards below count exactly this 12 PM – 12 PM window. Money received and spent are saved per day, so pick Today / Yesterday for them.</span></div>`;
+    $('root2').innerHTML = '';
+    showCards(NOON, addDays(NOON, 1), true);
+  }
+  function showCards(from, to, noon) {
+    const fr = $('cardsFr'), host = $('cardsHost'), src = 'orders.html?embed=cards&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + (noon ? '&win=noon' : '');
+    host.style.display = ''; if (fr.getAttribute('data-src') !== src) { fr.setAttribute('data-src', src); fr.src = src; }      // reloaded only when the dates change
+  }
+  window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && typeof e.data.tmphCards === 'number') $('cardsFr').style.height = Math.max(60, Math.min(2400, e.data.tmphCards)) + 'px'; });
   document.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-p]'); if (b) { P = b.dataset.p; if (P === 'custom') { FROM = D.from; TO = D.to; draw(); } else load(); return; }
+    const b = e.target.closest('[data-p]'); if (b) { P = b.dataset.p; if (P === 'custom') { FROM = D.from; TO = D.to; draw(); } else if (P === 'noon') { drawNoon(); loadCtx(); } else load(); return; }
+    if (e.target.id === 'nPrev') { NOON = addDays(NOON, -1); drawNoon(); loadCtx(); return; }
+    if (e.target.id === 'nNext') { if (addDays(NOON, 1) <= (TODAY || ymd(istNow()))) { NOON = addDays(NOON, 1); drawNoon(); loadCtx(); } return; }
+    if (e.target.id === 'nDay') return;
     if (e.target.id === 'cGo') { FROM = $('cF').value; TO = $('cT').value; load(); }
   });
+  document.addEventListener('change', (e) => { if (e.target.id === 'nDay' && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { NOON = e.target.value; drawNoon(); loadCtx(); } });
+  function loadCtx() { try { parent.postMessage({ tmphCtx: { page: 'Finance Summary', date_from: NOON + ' 12:00', date_to: addDays(NOON, 1) + ' 12:00', period: 'noon' } }, location.origin); } catch (e) { } }
   async function load() {
     try {
       if (!TODAY) { const o = await api.get('fi.settings_get'); TODAY = o.today; }
+      if (P === 'noon') { drawNoon(); loadCtx(); return; }
       const [f, t] = range(P); D = await api.get('fi.summary', { from: f, to: t }); draw();
       try { parent.postMessage({ tmphCtx: { page: 'Finance Summary', date_from: D.from, date_to: D.to, period: P } }, location.origin); } catch (e) {}      // the assistant knows which range you are looking at
     } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
-  load(); setInterval(() => { if (!document.hidden && P !== 'custom' && !document.activeElement.matches('input')) load(); }, 120000);
+  load(); setInterval(() => { if (!document.hidden && P !== 'custom' && P !== 'noon' && !document.activeElement.matches('input')) load(); }, 120000);
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 </body>
