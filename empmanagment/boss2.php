@@ -2717,12 +2717,38 @@ function cm_pct(array $ch, $ml, $gross) {
 function cm_offer_match(array $offers, $ml, $gross, $day, $window = 20) {
     $ml = (int)round((float)$ml); if ($ml <= 0) return null;
     foreach ($offers as $o) {
-        $ads = cm_offer_addon_list($o['addons'] ?? null);   // ADD-ONS (owner, 20 Nov 2026): offer ml + add-on ml at offer price + add-on amount (3299 + 750 = 4049 for 480 ml) earns the same flat %
+        $ads = cm_offer_addons_all($o);   // ADD-ONS (owner, 20 Nov 2026): offer ml + add-on ml at offer price + add-on amount (3299 + 750 = 4049 for 480 ml) earns the same flat %; the offer's own list, then the global list for every order
         if ((int)$o['ml'] !== $ml) { $hit = false; foreach ($ads as $a) if ((int)$o['ml'] + (int)$a['ml'] === $ml) { $hit = true; break; } if (!$hit) continue; }
         if (empty($o['active'])) { $sa = substr((string)($o['stopped_at'] ?? ''), 0, 10); if ($sa === '' || $day > $sa) continue; }      // a STOPPED offer still counts for the days it was running (up to the day it was stopped)
         if ($o['from_date'] && $day < $o['from_date']) continue; if ($o['to_date'] && $day > $o['to_date']) continue;
         if ((int)$o['ml'] === $ml && abs((float)$gross - (float)$o['price']) <= $window + 1e-9) return $o;
         foreach ($ads as $a) if ((int)$o['ml'] + (int)$a['ml'] === $ml && abs((float)$gross - ((float)$o['price'] + (float)$a['amount'])) <= $window + 1e-9) { $o['addon'] = (float)$a['amount']; $o['addon_ml'] = (int)$a['ml']; return $o; }
+    }
+    return null;
+}
+/** The add-ons that apply to every order (Commission → Offers: "Add-ons for every order"), setting cm_addons. Loaded once per request; cm_global_addons($pdo, true) after a save. */
+function cm_global_addons($pdo = null, bool $reload = false): array {
+    static $m = null; if ($reload) $m = null; if ($m !== null) return $m;
+    if (!$pdo instanceof PDO) { $pdo = $GLOBALS['pdo'] ?? null; } if (!$pdo instanceof PDO) return [];
+    try { $m = cm_offer_addon_list((string)setting_get($pdo, 'cm_addons', '')); } catch (Throwable $e) { $m = []; } return $m;
+}
+/** One offer's add-ons: its own list first, then the global list (a global ml the offer already has is skipped). */
+function cm_offer_addons_all(array $o): array {
+    $own = cm_offer_addon_list($o['addons'] ?? null); $have = []; foreach ($own as $a) $have[(int)$a['ml']] = 1;
+    foreach (cm_global_addons() as $a) if (!isset($have[(int)$a['ml']])) $own[] = $a;
+    return $own;
+}
+/** CHART path of an add-on order: an order that looks UNDERPRICED as it is (below the lowest price of its ML row by more than the window, or an ML not in the chart) but is a normal chart price once a global add-on's ml and amount are taken out
+ *  is paid the chart % of the base size, on the WHOLE amount. Returns [pct, base_ml, add-on] or null. */
+function cm_addon_chart(array $ch, $ml, $gross, $window) {
+    $gAdd = cm_global_addons(); if (!$gAdd) return null; $ml = (int)round((float)$ml); $gross = (float)$gross; if ($ml <= 0) return null;
+    $low = function ($m) use ($ch) { $p = cm_row_prices($ch, $m); if ($p === null) return null; $p = array_filter($p, function ($v) { return $v > 0; }); return $p ? min($p) : null; };
+    $lo = $low($ml); if ($lo !== null && $gross >= $lo - $window - 1e-9) return null;   // priced like a chart size already: no add-on story
+    foreach ($gAdd as $a) {
+        $bm = $ml - (int)$a['ml']; $bg = $gross - (float)$a['amount']; if ($bm <= 0 || $bg <= 0) continue;
+        $lb = $low($bm); if ($lb === null || $bg < $lb - $window - 1e-9) continue;
+        $pc = cm_pct($ch, $bm, $bg); if ($pc === null) continue;
+        return [$pc, $bm, $a];
     }
     return null;
 }
@@ -2824,6 +2850,7 @@ function cm_offers(PDO $pdo, $all = true) {
         try { $pdo->query("SELECT addons FROM cm_offers LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE cm_offers ADD COLUMN addons TEXT NULL"); } catch (Throwable $e2) { } } }
     $rows = $pdo->query("SELECT * FROM cm_offers ORDER BY id DESC LIMIT 300")->fetchAll();
     foreach ($rows as &$__r) $__r['addons'] = cm_offer_addon_list($__r['addons'] ?? null); unset($__r);
+    cm_global_addons($pdo);   // primes the global add-ons for cm_offer_match / cm_addon_chart
     return $rows;
 }
 function cm_offer_save(PDO $pdo, array $in, $by) {
@@ -2924,6 +2951,8 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
             if (!$of && $ml && (int)($o['ml10'] ?? 0) > 0 && $ml - 10 * (int)$o['ml10'] > 0) $of = cm_offer_match($offers, $ml - 10 * (int)$o['ml10'], $gross, $day, (float)$ch['window']);
             if ($of) { $v = $gross * (float)$of['pct'] / 100 * $f; $offerCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'offer #' . $of['id'], 'pct' => (float)$of['pct'], 'code' => $o['code'] !== '', 'com' => round($v, 2), 'key' => $ok, 'x' => round($xc, 2)]; continue; }
             if (!$ml) { if ($xc <= 0) $noMl++; $lines[] = ['order' => $o['name'], 'ml' => 0, 'price' => round($gross), 'rule' => $xc > 0 ? 'gel / attar / others' : 'no ML', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2), 'key' => $ok, 'note' => (string)($o['xnote'] ?? '') !== '' ? (string)$o['xnote'] : ($xc > 0 ? '' : 'No perfume ML and no shower gel / attar / other product was read from this order (its products could not be read from Shopify, or it has none).')]; continue; }
+            $adc = cm_addon_chart($ch, $ml, $gross, (float)$ch['window']);   // 🧴 underpriced as it is, a normal chart price without the add-on: the base size's % on the whole amount
+            if ($adc) { $v = $gross * $adc[0] / 100 * $f; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'chart + add-on ' . (int)$adc[2]['ml'] . ' ml', 'pct' => $adc[0], 'code' => $o['code'] !== '', 'com' => round($v, 2), 'key' => $ok, 'x' => round($xc, 2), 'note' => 'priced as ' . $adc[1] . ' ml + add-on ₹' . round($adc[2]['amount'])]; continue; }
             $pc = cm_pct($ch, $ml, $gross);
             if ($pc === null) { $noPrice++; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'ML not priced', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0, 'key' => $ok, 'x' => round($xc, 2)]; continue; }
             $v = $gross * $pc / 100 * $f; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'chart', 'pct' => $pc, 'code' => $o['code'] !== '', 'com' => round($v, 2), 'key' => $ok, 'x' => round($xc, 2), 'note' => (string)($o['xnote'] ?? '')];
@@ -2970,7 +2999,7 @@ function cm_paid_day(PDO $pdo, $day) {
     static $mem = [], $ver = null; if (isset($mem[$day])) return $mem[$day];      // 'v2' below: the day's extra is one amount on the total (not inside each order)
     $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     if ($ver === null) {
-        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', ''), 'tk:' . (string)setting_get($pdo, 'tk_pay', '') . (string)setting_get($pdo, 'tk_goal', '') . (string)setting_get($pdo, 'tk_bonus_pct', '') . (string)setting_get($pdo, 'tk_min_orders', '')];   // a change of the ticket-bonus settings is seen at once
+        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', ''), 'ad:' . md5((string)setting_get($pdo, 'cm_addons', '')) . 'tk:' . (string)setting_get($pdo, 'tk_pay', '') . (string)setting_get($pdo, 'tk_goal', '') . (string)setting_get($pdo, 'tk_bonus_pct', '') . (string)setting_get($pdo, 'tk_min_orders', '')];   // a change of the ticket-bonus settings is seen at once
         foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0), COALESCE(SUM(CRC32(COALESCE(addons, ''))), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }
@@ -3802,7 +3831,7 @@ function b2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
     }
     case 'bd.b2_cm_view': { $adm(); if (function_exists('price_unify_once')) price_unify_once($pdo); $ch = cm_chart($pdo); $off = cm_offers($pdo); $bo = cm_boosts($pdo); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : b2_day();
         $dr = cm_day($pdo, $day, $ch, $off, $bo); $ppl = []; foreach (cm_emps($pdo) as $id => $e) $ppl[] = ['id' => $id, 'name' => trim((string)$e['full_name'])];
-        json_response(['unified' => (string)setting_get($pdo, 'price_unify_v1', '') === '1', 'day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
+        json_response(['addons' => cm_global_addons($pdo, true), 'unified' => (string)setting_get($pdo, 'price_unify_v1', '') === '1', 'day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
     case 'bd.b2_cm_recount': { $adm(); json_response(cm_recount($pdo, max(1, min(31, (int)($_GET['days'] ?? $in['days'] ?? 10))), (string)($_GET['end'] ?? $in['end'] ?? ''))); }
     case 'bd.b2_cm_chart_save': {   // ONE price chart: prices are edited only in Learn & Setup → Pricing; this saves the commission RULES (and the "I checked" tick)
         $adm(); $post(); $cur = cm_chart($pdo);
@@ -3820,6 +3849,7 @@ function b2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
         json_response(['ok' => true, 'message' => 'Pricing saved.', 'chart' => $c]); }
     case 'bd.b2_cm_offer_add': { $adm(); $post(); $out(cm_offer_save($pdo, $in, $by)); }
     case 'bd.b2_cm_offer_stop': { $adm(); $post(); $out(cm_offer_stop($pdo, $gid(), $by)); }
+    case 'bd.b2_cm_addons_set': { $adm(); $post(); $ads = cm_offer_addon_list($in['addons'] ?? ''); setting_set($pdo, 'cm_addons', json_encode($ads)); cm_global_addons($pdo, true); $out([true, $ads ? 'Add-ons for every order saved (' . count($ads) . ').' : 'Add-ons for every order cleared.', 200]); }
     case 'bd.b2_cm_offer_addons': { $adm(); $post(); $out(cm_offer_addons_set($pdo, $gid(), $in['addons'] ?? '')); }
     case 'bd.b2_cm_boost_add': { $adm(); $post(); $out(cm_boost_save($pdo, $in, $by)); }
     case 'bd.b2_cm_boost_stop': { $adm(); $post(); $out(cm_boost_stop($pdo, $gid())); }
