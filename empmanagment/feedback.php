@@ -155,11 +155,23 @@ function fb_can(PDO $pdo, array $auth): bool
     return function_exists('sku_can') ? sku_can($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
 }
 
+/** Why WhatsApp (Meta) could not deliver a message, in plain words (the code is Meta's own). */
+function fb_why(int $code, string $text): string
+{
+    $m = [131026 => 'The message could not be delivered: this number is not on WhatsApp, has not accepted the new WhatsApp terms, or is using an old WhatsApp version.', 131049 => 'Meta held this message: this customer already got many promotional messages from businesses. Meta decides this; it is not charged and is not your mistake. Try another day.',
+        131042 => 'Meta could not charge your WhatsApp business account (a payment problem in Meta Business). Fix the payment method in Meta Business Manager.', 131047 => 'More than 24 hours since the customer wrote: only an approved pre-made message can be sent, not a typed one.',
+        131056 => 'Too many messages to this same customer from this number in a short time. Wait and try again.', 131048 => 'Meta limited this number for sending too many unwanted messages (spam rate).', 131051 => 'The message type is not supported.', 132000 => 'The pre-made message has a different number of blanks than the page sends.',
+        132001 => 'This pre-made message does not exist or is not approved in this language.', 132005 => 'The text after filling the blanks is too long.', 132007 => 'The pre-made message breaks a WhatsApp content rule.', 132012 => 'A blank has the wrong format.', 132015 => 'This pre-made message was paused by Meta (low quality).', 132016 => 'This pre-made message was disabled by Meta (low quality for a long time).',
+        130472 => 'Meta did not deliver this message (a Meta test group).', 133010 => 'This WhatsApp number is not registered.', 368 => 'Meta blocked this account for a policy reason.', 190 => 'The WhatsApp connection (token) expired. Reconnect it in WhatsApp → Setup.'];
+    if (isset($m[$code])) return $m[$code] . ' (code ' . $code . ')';
+    return ($text !== '' ? $text : 'Meta did not say why.') . ($code ? ' (code ' . $code . ')' : '');
+}
+
 function fb_row_out(array $r): array
 {
     $seen = (string)($r['msg_status'] ?? '') === 'read';
     return ['id' => (int)$r['id'], 'order' => (string)$r['order_name'], 'customer' => (string)$r['customer'], 'phone' => (string)$r['phone'], 'delivered' => substr((string)$r['delivered_at'], 0, 16), 'store' => (string)($r['store_key'] ?? ''), 'status' => (string)$r['status'], 'test' => strpos((string)$r['order_name'], 'TEST-') === 0,
-        'msg_at' => (string)($r['msg_at'] ?? ''), 'fu_at' => (string)($r['fu_at'] ?? ''), 'seen' => $seen, 'msg_state' => (string)($r['msg_status'] ?? ''), 'msg_err' => (string)$r['msg_err'], 'place' => (string)$r['place'],
+        'msg_at' => (string)($r['msg_at'] ?? ''), 'fu_at' => (string)($r['fu_at'] ?? ''), 'seen' => $seen, 'msg_state' => (string)($r['msg_status'] ?? ''), 'msg_why' => (string)($r['msg_status'] ?? '') === 'failed' ? fb_why((int)($r['msg_code'] ?? 0), (string)($r['msg_errtext'] ?? '')) : '', 'msg_err' => (string)$r['msg_err'], 'place' => (string)$r['place'],
         'reward_order' => (string)$r['reward_order'], 'reward_note' => (string)$r['reward_note'], 'cx_code' => (string)$r['cx_code'], 'skip_why' => (string)$r['skip_why'], 'proofs' => (int)($r['proofs'] ?? 0)];
 }
 
@@ -169,7 +181,7 @@ function fb_route(PDO $pdo, string $action): void
     if (!fb_can($pdo, $auth)) json_response(['error' => 'The Feedback page is for Admin, HR, Dispatch, the Admin department, Sales Heads and roles with the Orders page.'], 403);
     if (!fb_tables($pdo)) json_response(['error' => 'The Feedback storage could not be set up.'], 500);
     $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $cfg = fb_cfg($pdo);
-    $get = function (string $order) use ($pdo) { $q = $pdo->prepare("SELECT f.*, m.status AS msg_status, (SELECT COUNT(*) FROM fb_proofs p WHERE p.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE f.order_name = ?"); $q->execute([$order]); return $q->fetch(); };
+    $get = function (string $order) use ($pdo) { $q = $pdo->prepare("SELECT f.*, m.status AS msg_status, m.err AS msg_errtext, m.err_code AS msg_code, (SELECT COUNT(*) FROM fb_proofs p WHERE p.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE f.order_name = ?"); $q->execute([$order]); return $q->fetch(); };
 
     if ($action === 'fb.list') {
         fb_enroll($pdo, false);
@@ -178,7 +190,7 @@ function fb_route(PDO $pdo, string $action): void
         if ($qs !== '') { $like = '%' . $qs . '%'; $w[] = "(f.order_name LIKE ? OR f.customer LIKE ? OR f.phone LIKE ?)"; array_push($p, $like, $like, $like); }
         elseif ($tab === 'unseen') $w[] = "f.msg_at IS NOT NULL AND COALESCE(m.status, '') <> 'read'";
         elseif (in_array($tab, ['wait', 'sent', 'replied', 'proof', 'rew', 'cmp', 'skip'], true)) { $w[] = "f.status = ?"; $p[] = $tab; }
-        $sql = "SELECT f.*, m.status AS msg_status, (SELECT COUNT(*) FROM fb_proofs pp WHERE pp.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> ''" . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . " ORDER BY f.delivered_at DESC LIMIT 300";
+        $sql = "SELECT f.*, m.status AS msg_status, m.err AS msg_errtext, m.err_code AS msg_code, (SELECT COUNT(*) FROM fb_proofs pp WHERE pp.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> ''" . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . " ORDER BY f.delivered_at DESC LIMIT 300";
         $st = $pdo->prepare($sql); $st->execute($p); $rows = array_map('fb_row_out', $st->fetchAll());
         $c = ['all' => 0, 'wait' => 0, 'sent' => 0, 'replied' => 0, 'proof' => 0, 'rew' => 0, 'cmp' => 0, 'skip' => 0];
         foreach ($pdo->query("SELECT status, COUNT(*) n FROM fb_orders WHERE order_name NOT LIKE 'TEST-%' GROUP BY status")->fetchAll() as $r) { $c[(string)$r['status']] = (int)$r['n']; $c['all'] += (int)$r['n']; }
