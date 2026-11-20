@@ -354,7 +354,7 @@ function wl_status(PDO $pdo, bool $withOrders = true): array
     if ($withOrders && $o['sending']['sent'] > 0) { try { $r = wl_report($pdo, 30); foreach ($r['steps'] as $x) { $o['sending']['delivered'] += $x['delivered']; $o['sending']['buttons'] += $x['taps']; $o['orders']['orders'] += $x['orders']; $o['orders']['revenue'] += $x['revenue']; } foreach ($r['topics'] as $t) $o['orders']['buyers'] += $t['buyers']; } catch (Throwable $e) { } }
     return $o;
 }
-/** The self-check, every 20 minutes. Fixes what can be fixed by itself and writes down what cannot: the list is shown on the screen (wl_status → issues).
+/** The self-check, every 10 minutes. Fixes what can be fixed by itself and writes down what cannot: the list is shown on the screen (wl_status → issues).
  *  fixed: old Drip switched on again by someone · button cards missing / changed · messages not made · customers waiting because a message never reached Meta.
  *  reported: rejected messages (text must be changed), Meta turned a message into marketing, many failed sends, nothing sent for hours although due, the engine not running. */
 function wl_heal(PDO $pdo): array
@@ -373,14 +373,26 @@ function wl_heal(PDO $pdo): array
     setting_set($pdo, 'wl_issues', json_encode(['at' => date('Y-m-d H:i:s'), 'fixed' => $fix, 'issues' => $bad], JSON_UNESCAPED_UNICODE)); if ($fix) wa_log($pdo, 'engine', true, 'Lineup self-check fixed: ' . implode(' | ', $fix));
     return ['fixed' => $fix, 'issues' => $bad];
 }
-/** Every 20 minutes the engine writes the status down, so the owner sees the whole day as a table (kept 14 days). */
+/** The status as one short phone notification (Admin / HR; the same tag replaces the last one, so they do not pile up). */
+function wl_push(PDO $pdo, array $st): int
+{
+    if (!function_exists('ct_push') || !function_exists('wq_admin_ids')) return 0; $c = wl_cfg($pdo); $age = time() - (int)strtotime($c['started']); $bad = 0; foreach (($st['health']['issues'] ?? []) as $x) if (($x['level'] ?? '') === 'warn') $bad++;
+    // owner 21 Nov: every 10 minutes at first (the first 6 hours), then every half hour (until 48 hours), then only when the self-check warns
+    $gap = $age <= 6 * 3600 ? 9 * 60 : ($age <= 48 * 3600 ? 29 * 60 : ($bad ? 29 * 60 : 0)); if ($gap === 0) return 0;
+    if ((int)strtotime((string)setting_get($pdo, 'wl_push_at', '')) > time() - $gap) return 0; setting_set($pdo, 'wl_push_at', date('Y-m-d H:i:s'));
+    $M = $st['messages']; $K = $st['customers']; $G = $st['sending']; $O = $st['orders'];
+    $body = 'Msgs made ' . $M['made'] . '/' . $M['total'] . ' · in Meta ' . $M['in_meta'] . ' · approved ' . $M['approved'] . ' · utility ' . $M['utility'] . ' · left ' . $M['left'] . "\n" . 'Customers ' . $K['identified'] . ' · got msg ' . $K['got_message'] . ' · sent ' . $G['sent'] . ' · orders ' . $O['orders'] . ($bad ? "\n" . '⚠ ' . $bad . ' issue(s): open Lineup' : '');
+    try { return (int)ct_push($pdo, wq_admin_ids($pdo), '🧵 Lineup status', $body, 'campaigns.html', 'hrms-lineup'); } catch (Throwable $e) { return 0; }
+}
+/** Every 10 minutes the engine writes the status down, so the owner sees the whole day as a table (kept 14 days). */
 function wl_snap(PDO $pdo, bool $force = false): bool
 {
-    $last = (int)strtotime((string)setting_get($pdo, 'wl_snap_at', '')); if (!$force && $last > time() - 20 * 60) return false;
+    $last = (int)strtotime((string)setting_get($pdo, 'wl_snap_at', '')); if (!$force && $last > time() - 10 * 60) return false;
     if (!$force && function_exists('wa_lock') && !wa_lock($pdo, 'wlsnap', 60)) return false; setting_set($pdo, 'wl_snap_at', date('Y-m-d H:i:s'));
     try { $r = wl_report($pdo, 30); $sc = []; foreach ($r['keys'] as $k => $c) $sc[$k] = [(int)$c['delivered'], (float)$c['score']]; setting_set($pdo, 'wl_scores', json_encode($sc)); } catch (Throwable $e) { }   // what the picker (wl_pick) reads: delivered + score of every wording
     try { wl_heal($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup heal: ' . $e->getMessage()); }
-    $pdo->prepare("INSERT INTO wa_line_snap (at, j) VALUES (?, ?)")->execute([date('Y-m-d H:i:s'), json_encode(wl_status($pdo), JSON_UNESCAPED_UNICODE)]);
+    $st = wl_status($pdo); $pdo->prepare("INSERT INTO wa_line_snap (at, j) VALUES (?, ?)")->execute([date('Y-m-d H:i:s'), json_encode($st, JSON_UNESCAPED_UNICODE)]);
+    try { wl_push($pdo, $st); } catch (Throwable $e) { }
     if (mt_rand(1, 30) === 1) $pdo->prepare("DELETE FROM wa_line_snap WHERE at < ?")->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]); return true;
 }
 function wl_snaps(PDO $pdo, int $n = 36): array { $o = []; foreach ($pdo->query("SELECT at, j FROM wa_line_snap ORDER BY id DESC LIMIT " . (int)$n)->fetchAll() as $r) { $j = json_decode((string)$r['j'], true); if (is_array($j)) { $j['at'] = (string)$r['at']; $o[] = $j; } } return $o; }
