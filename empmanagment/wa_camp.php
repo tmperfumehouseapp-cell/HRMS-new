@@ -581,7 +581,7 @@ function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UP
 function wa_cat_util_room(PDO $pdo, int $now): int
 {
     try { if ((int)setting_get($pdo, 'wa_dq_hold_until', '0') > $now) return 0;   /* marketing hold (131048) running: utility-template campaigns stop too (owner, 19 Nov 2026, 16:15) */
-        $cap = max(10, min(100000, (int)setting_get($pdo, 'wa_ucat_hour', '700'))); $L = json_decode((string)setting_get($pdo, 'wa_ucat_log', ''), true); $L = is_array($L) ? $L : []; $u60 = 0; $u10 = 0;
+        $cap = max(10, min(100000, (int)setting_get($pdo, 'wa_ucat_hour', '900'))); $L = json_decode((string)setting_get($pdo, 'wa_ucat_log', ''), true); $L = is_array($L) ? $L : []; $u60 = 0; $u10 = 0;
         foreach ($L as $r) { $t = (int)($r[0] ?? 0); $n = (int)($r[1] ?? 0); if ($t >= $now - 3600) $u60 += $n; if ($t >= $now - 600) $u10 += $n; }
         return max(0, min($cap - $u60, (int)ceil($cap / 6 * 1.3) - $u10)); } catch (Throwable $e) { return 0; }
 }
