@@ -14,4 +14,7 @@ const plainOffers = [{ ml: 400, price: 3299, pct: 6, from: '2026-11-01', to: '',
 eq('global add-on on an offer', M.offerCom(plainOffers, 110, ch2, Object.assign({ day: '2026-11-20', extra: 0 }, o1)).pct, 6);
 const rc = M.orderCom(ch2, o1, true, 0); eq('chart add-on: priced as 400 ml', rc && rc.addon, true); eq('chart add-on: % on the whole amount', rc && Math.round(rc.v), Math.round(3968 * rc.pct / 100));
 const ch3 = Object.assign({}, ch2, { addons: [] }); const rn = M.orderCom(ch3, o1, true, 0); eq('no add-ons: not an add-on order', !!(rn && rn.addon), false);
+// the code rule: manual / marketplace orders are not counted in "orders that need a code"
+const cc = { codepct: 65, nocode: 50 }; const ords = [{ key: 'a:1', day: 'd', emp: 1, code: 'X' }, { key: 'a:2', day: 'd', emp: 1, code: 'Y' }, { key: 'a:3', day: 'd', emp: 1, code: '' }, { key: 'manual:9', day: 'd', emp: 1, code: '' }];
+const mp = M.tagCodes(cc, ords, 1); eq('code rule: 3 real orders need 2 codes (the manual one is left out)', [mp['1|d'].n, mp['1|d'].need, mp['1|d'].ok], [3, 2, true]);
 console.log(bad ? 'offer addon js: ' + bad + ' problem(s)' : 'offer addon js: ok'); process.exit(bad ? 1 : 0);
