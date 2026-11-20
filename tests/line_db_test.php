@@ -14,7 +14,7 @@ function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen(
 function wa_contact($p, $k) { $q = $p->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$k]); return $q->fetch() ?: null; }
 function wa_lock($p, $n, $s) { return true; }
 $SENT = []; function wd_send($pdo, $c, $step) { global $SENT; $SENT[] = [$c['phone'], $step['tpl_id']]; return [true, '', 1, 'wamid' . count($SENT)]; }
-$pdo_ = $pdo; $GLOBALS['pdo'] = $pdo; require dirname(__DIR__) . '/empmanagment/wa_line.php';
+$S['wl_map'] = '{}'; $pdo_ = $pdo; $GLOBALS['pdo'] = $pdo; require dirname(__DIR__) . '/empmanagment/wa_line.php';
 function ok($c, $m) { if (!$c) { echo "FAIL: $m\n"; exit(1); } }
 $now = time(); $since = wl_yesterday_start($now); $f = fn($t) => date('Y-m-d H:i:s', $t);
 // customers who wrote after "yesterday 10:00 IST"
@@ -66,4 +66,9 @@ ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9810000003
 $sm = wl_summary($pdo, 0); ok($sm['sent'] >= 10 && $sm['utility'] === $sm['sent'] && $sm['plain'] === 0, 'summary: every message went as utility ' . json_encode([$sm['sent'], $sm['utility'], $sm['plain']]));
 ok(abs($sm['cost'] - round($sm['sent'] * $sm['rate_u'], 2)) < 0.001 && $sm['orders'] === 1 && $sm['buyers'] === 1, 'summary: cost = utility messages x rate; the order is credited');
 $pdo->exec("UPDATE wa_templates SET category = 'MARKETING' WHERE id = " . $ids['ln_trust_2']); $sm2 = wl_summary($pdo, 0); ok($sm2['plain'] >= 1 && $sm2['cost'] > $sm['cost'], 'a message Meta made marketing is counted and costs more');
+// the shop's own approved messages (default map): seven different messages in every ladder, and they replace the lineup's own templates
+unset($S['wl_map']); $mp = wln_map($pdo); ok(count($mp) === 27, 'map has all 27 base steps, got ' . count($mp));
+foreach (array_keys(wl_topics()) as $tp) { $seen = []; for ($st = 1; $st <= 7; $st++) { $id = $mp[wl_key($tp, $st)] ?? 0; ok($id > 0, "map: $tp step $st"); ok(!isset($seen[$id]), "map: $tp repeats message #$id inside one ladder"); $seen[$id] = 1; } }
+$eff = wln_eff_ids($pdo); ok($eff['ln_trust_1'] === 386 && $eff['ln_all_7'] === 109 && $eff['ln_trust_1b'] === $ids['ln_trust_1b'], 'effective ids: mapped steps use the shop messages, the extra wording keeps its own');
+$S['wl_map'] = '{}'; ok(wln_eff_ids($pdo)['ln_trust_1'] === $ids['ln_trust_1'], '{} switches the map off');
 echo "lineup db ok\n";

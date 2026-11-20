@@ -146,14 +146,29 @@ function wln_tables(PDO $pdo): bool
     static $ok = null; if ($ok !== null) return $ok;
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_line_cust (phone VARCHAR(12) NOT NULL PRIMARY KEY, topic VARCHAR(12) NOT NULL DEFAULT 'general', anchor_at DATETIME NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'active', left_why VARCHAR(40) NOT NULL DEFAULT '', switches TINYINT NOT NULL DEFAULT 0, recheck_at DATETIME NULL, created_at DATETIME NOT NULL, KEY k_status (status, recheck_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS wa_line_plan (id BIGINT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, topic VARCHAR(12) NOT NULL, step TINYINT NOT NULL, tpl_key VARCHAR(20) NOT NULL, due_at DATETIME NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'planned', why VARCHAR(200) NOT NULL DEFAULT '', sent_at DATETIME NULL, wamid VARCHAR(80) NOT NULL DEFAULT '', KEY k_due (status, due_at), KEY k_phone (phone, step)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wa_line_plan (id BIGINT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, topic VARCHAR(12) NOT NULL, step TINYINT NOT NULL, tpl_key VARCHAR(20) NOT NULL, tpl_id INT NOT NULL DEFAULT 0, due_at DATETIME NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'planned', why VARCHAR(200) NOT NULL DEFAULT '', sent_at DATETIME NULL, wamid VARCHAR(80) NOT NULL DEFAULT '', KEY k_due (status, due_at), KEY k_phone (phone, step)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_line_snap (id BIGINT AUTO_INCREMENT PRIMARY KEY, at DATETIME NOT NULL, j TEXT NOT NULL, KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_line_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, at DATETIME NOT NULL, what VARCHAR(200) NOT NULL DEFAULT '', KEY k_phone (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        try { $pdo->query("SELECT tpl_id FROM wa_line_plan LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_line_plan ADD COLUMN tpl_id INT NOT NULL DEFAULT 0"); } catch (Throwable $e2) { } }   // the table made before this column existed
         $ok = true;
     } catch (PDOException $e) { $ok = false; }
     return $ok;
 }
 function wl_tpl_ids(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); return is_array($j) ? array_map('intval', $j) : []; }
+/** THE SHOP'S OWN APPROVED MESSAGES (owner, 21 Nov: "new utility messages cannot be made — use the many messages we already have"). Meta's weekly limit stopped new utility messages on 4 of 6 accounts and re-labelled the first lineup message as marketing,
+ *  so every step is now served by a message that is already approved on (almost) every account. Picked from the server's own list (approved, text only, at most one blank = the name, no date words like Sunday / Diwali / Today). No step repeats a message within one ladder.
+ *  #386 is utility (cheap); the others are marketing (the shop's rate). The setting wl_map (JSON key => template id, {} = use only the lineup's own messages) overrides this. */
+function wln_existing_map(): array
+{
+    $m = [];
+    $by = ['trust' => [386, 336, 31, 3196], 'price' => [386, 2612, 32, 277], 'pending' => [60, 155, 153, 3196], 'size' => [386, 278, 2612, 32], 'reorder' => [288, 395, 277, 386], 'general' => [386, 336, 2612, 32]];
+    foreach ($by as $t => $ids) foreach ($ids as $i => $id) $m['ln_' . $t . '_' . ($i + 1)] = $id;
+    $m['ln_all_5'] = 42; $m['ln_all_6'] = 23; $m['ln_all_7'] = 109;
+    return $m;
+}
+function wln_map(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wl_map', ''), true); return is_array($j) ? array_map('intval', $j) : wln_existing_map(); }
+/** key => the template id that really goes out: the shop's approved message where one is mapped, else the lineup's own. */
+function wln_eff_ids(PDO $pdo): array { $ids = wl_tpl_ids($pdo); foreach (wln_map($pdo) as $k => $id) if ($id > 0) $ids[$k] = $id; return $ids; }
 function wl_log(PDO $pdo, string $phone, string $what): void { try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$phone, date('Y-m-d H:i:s'), mb_substr($what, 0, 200)]); } catch (Throwable $e) { } }
 
 /** Write the lineup of a customer: one row per step still to go. $skipKeys = messages he already got (never sent again). Returns the number of rows. */
@@ -264,7 +279,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && (!function_exists('wa_lock') || !wa_lock($pdo, 'wlrun', 50))) return $o;
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window
     if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
-    $ids = wl_tpl_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
+    $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
     $cap = $force ? (int)($opt['cap'] ?? 60) : $cfg['cap']; $dl = microtime(true) + 25;
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.phone, p.step LIMIT 3000");
     $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
@@ -288,7 +303,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
         $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || !function_exists('wd_send')) { $o['waiting']++; continue; }
         $res = wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
         if ($res[0]) { foreach (array_slice($list, 0, -1) as $old) $upd->execute(['skipped', 'late (a later step went first)', null, '', $old['tpl_key'], $old['id']]);   // only the latest due step goes, and only once it really went
-            $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); $o['sent']++; $sent++; }
+            $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$tid, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; break; }   // no number can send now: try again next round, nothing is written
         elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1]; $o['waiting']++; }
         else { $upd->execute(['failed', mb_substr((string)$res[1], 0, 190), null, '', $row['tpl_key'], $row['id']]); $o['failed']++; }
@@ -333,7 +348,7 @@ function wl_drip_off(PDO $pdo): bool
 /** Template status: [key => 'approved'|'pending'|'rejected'|'missing']. */
 function wl_tpl_status(PDO $pdo): array
 {
-    $ids = wl_tpl_ids($pdo); $out = []; $st = [];
+    $ids = wln_eff_ids($pdo); $out = []; $st = [];
     try { foreach ($pdo->query("SELECT tpl_id, status FROM wa_tpl_waba")->fetchAll() as $r) $st[(int)$r['tpl_id']][] = strtoupper((string)$r['status']); } catch (Throwable $e) { }
     foreach (wl_pack() as $k => $m) { $id = (int)($ids[$k] ?? 0); if ($id <= 0) { $out[$k] = 'missing'; continue; } $s = $st[$id] ?? []; $out[$k] = in_array('APPROVED', $s, true) ? 'approved' : (($s && count(array_diff($s, ['REJECTED'])) === 0) ? 'rejected' : 'pending'); }
     return $out;
@@ -345,7 +360,7 @@ function wl_status(PDO $pdo, bool $withOrders = true): array
     if ($ids) { $in = implode(',', array_map('intval', $ids));
         try { $inMeta = (int)$pdo->query("SELECT COUNT(DISTINCT tpl_id) FROM wa_tpl_waba WHERE tpl_id IN ($in)")->fetchColumn(); } catch (Throwable $e) { }
         try { $r = $pdo->query("SELECT category, relabelled_at FROM wa_templates WHERE id IN ($in)")->fetchAll(); foreach ($r as $x) { if (strtoupper((string)$x['category']) === 'UTILITY') $util++; if (!empty($x['relabelled_at'])) $rel++; } } catch (Throwable $e) { } }
-    $o = ['at' => date('Y-m-d H:i:s'), 'started' => wl_cfg($pdo)['started'], 'messages' => ['total' => count($pack), 'made' => $made, 'in_meta' => $inMeta, 'approved' => (int)($c['approved'] ?? 0), 'pending' => (int)($c['pending'] ?? 0), 'rejected' => (int)($c['rejected'] ?? 0), 'not_made' => count($pack) - $made, 'utility' => $util, 'relabelled' => $rel, 'left' => count($pack) - (int)($c['approved'] ?? 0)]];
+    $o = ['at' => date('Y-m-d H:i:s'), 'started' => wl_cfg($pdo)['started'], 'messages' => ['total' => count($pack), 'made' => $made, 'in_meta' => $inMeta, 'approved' => (int)($c['approved'] ?? 0), 'pending' => (int)($c['pending'] ?? 0), 'existing' => count(array_filter(wln_map($pdo), fn($x) => $x > 0)), 'rejected' => (int)($c['rejected'] ?? 0), 'not_made' => count($pack) - $made, 'utility' => $util, 'relabelled' => $rel, 'left' => count($pack) - (int)($c['approved'] ?? 0)]];
     $o['customers'] = ['identified' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust")->fetchColumn(), 'active' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'active'")->fetchColumn(), 'replied' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'replied'")->fetchColumn(), 'left' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'done'")->fetchColumn(),
         'got_message' => (int)$pdo->query("SELECT COUNT(DISTINCT phone) FROM wa_line_plan WHERE status = 'sent'")->fetchColumn(), 'planned_rows' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'planned'")->fetchColumn()];
     $o['sending'] = ['sent' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'sent'")->fetchColumn(), 'failed' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'failed'")->fetchColumn(), 'delivered' => 0, 'read' => 0, 'buttons' => 0];
@@ -403,11 +418,11 @@ function wl_summary(PDO $pdo, int $from): array
 {
     $o = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'taps' => 0, 'orders' => 0, 'buyers' => 0, 'revenue' => 0, 'utility' => 0, 'plain' => 0, 'cost_utility' => 0.0, 'cost_plain' => 0.0, 'cost' => 0.0, 'rate_u' => 0.0, 'rate_m' => 0.0];
     $tc = function_exists('wa_team_cfg') ? wa_team_cfg($pdo) : ['rate_marketing' => 1.09, 'rate_utility' => 0.15]; $o['rate_u'] = (float)$tc['rate_utility']; $o['rate_m'] = (float)$tc['rate_marketing'];
-    $f = date('Y-m-d H:i:s', $from); $ids = wl_tpl_ids($pdo); $util = []; $cat = [];
-    if ($ids) { try { foreach ($pdo->query("SELECT id, category, relabelled_at FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', $ids)) . ")")->fetchAll() as $r) $cat[(int)$r['id']] = (strtoupper((string)$r['category']) === 'UTILITY' && empty($r['relabelled_at'])); } catch (Throwable $e) { } }
-    foreach ($ids as $k => $id) $util[$k] = !empty($cat[(int)$id]);
-    $q = $pdo->prepare("SELECT phone, tpl_key, sent_at, wamid, status FROM wa_line_plan WHERE status IN ('sent','failed') AND COALESCE(sent_at, ?) >= ?"); $q->execute([$f, $f]); $rows = $q->fetchAll(); $sent = [];
-    foreach ($rows as $r) { if ($r['status'] === 'failed') { $o['failed']++; continue; } $o['sent']++; if (!empty($util[(string)$r['tpl_key']])) $o['utility']++; else $o['plain']++; $sent[] = $r; }
+    $f = date('Y-m-d H:i:s', $from); $ids = wln_eff_ids($pdo); $cat = [];
+    $q = $pdo->prepare("SELECT phone, tpl_key, tpl_id, sent_at, wamid, status FROM wa_line_plan WHERE status IN ('sent','failed') AND COALESCE(sent_at, ?) >= ?"); $q->execute([$f, $f]); $rows = $q->fetchAll(); $sent = [];
+    $want = array_map('intval', array_values($ids)); foreach ($rows as $r) if ((int)$r['tpl_id'] > 0) $want[] = (int)$r['tpl_id']; $want = array_values(array_unique(array_filter($want)));
+    if ($want) { try { foreach ($pdo->query("SELECT id, category, relabelled_at FROM wa_templates WHERE id IN (" . implode(',', $want) . ")")->fetchAll() as $r) $cat[(int)$r['id']] = (strtoupper((string)$r['category']) === 'UTILITY' && empty($r['relabelled_at'])); } catch (Throwable $e) { } }
+    foreach ($rows as $r) { if ($r['status'] === 'failed') { $o['failed']++; continue; } $o['sent']++; $tid = (int)$r['tpl_id'] > 0 ? (int)$r['tpl_id'] : (int)($ids[(string)$r['tpl_key']] ?? 0); if (!empty($cat[$tid])) $o['utility']++; else $o['plain']++; $sent[] = $r; }
     $o['cost_utility'] = round($o['utility'] * $o['rate_u'], 2); $o['cost_plain'] = round($o['plain'] * $o['rate_m'], 2); $o['cost'] = round($o['cost_utility'] + $o['cost_plain'], 2);
     $wm = array_filter(array_column($sent, 'wamid')); $st = [];
     foreach (array_chunk($wm, 400) as $ch) { $x = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $r) $st[(string)$r['wamid']] = (string)$r['status']; }
