@@ -98,10 +98,12 @@ Every message is a **Utility** template: one blank (the first name), one quick-r
 
 The code was written and linted without access to the live database, Meta or the guidebook: the SQL, the Meta submission and the real sending have not been run. The Lineup starts by itself on the first engine round after the upload and sends the 27 messages to Meta. Sending to customers begins only after Meta approved all 27 — until then, open Campaigns → 🧵 Lineup and check the board and "Tomorrow".
 
-## Self-check and the 20-minute status
+## Self-check and the 10-minute status
 
-Every 20 minutes the engine (`wl_snap`) writes one status line (messages made / sent to Meta / approved / utility / still to approve · customers identified · customers who got a message · sent / delivered / button taps · orders and revenue) and runs `wl_heal`. `wl_heal` **fixes by itself**: old Drip switched on again, button cards missing or off, messages not made. It **reports** (screen → 🩺 Self-check): rejected messages, messages Meta turned into marketing, 5+ sends failing for the same reason, messages 3+ hours late (and why), the engine not running. Tests: `tests/line_test.php` (rules, wording picker) and `tests/line_db_test.php` (enrolment, topics, sending, order / reply stops, report, status, recheck on a small SQLite copy).
+Every 10 minutes the engine (`wl_snap`) writes one status line (messages made / sent to Meta / approved / utility / still to approve · customers identified · customers who got a message · sent / delivered / button taps · orders and revenue) and runs `wl_heal`. `wl_heal` **fixes by itself**: old Drip switched on again, button cards missing or off, messages not made. It **reports** (screen → 🩺 Self-check): rejected messages, messages Meta turned into marketing, 5+ sends failing for the same reason, messages 3+ hours late (and why), the engine not running. Tests: `tests/line_test.php` (rules, wording picker) and `tests/line_db_test.php` (enrolment, topics, sending, order / reply stops, report, status, recheck on a small SQLite copy).
 
 ## Guidebook and learning
 
 The approved guidebook (`wk_guide_text`) is shown on the Lineup screen next to the messages; the 27 + 6 texts were written to its rules (short, polite, no price or number invented). The learning loop is the report: per wording, taps and orders; the picker sends the better wording more. New wordings are added the same way: write a second text for a step (`$V` in `wl_pack`), Meta approves it, it enters the 50/50 test and the better one takes 80%.
+
+The same status goes to Admin / HR phones as a push notification (tag `hrms-lineup`, replaces the previous one) for the first 24 hours after the start, then only when the self-check finds a warning.
