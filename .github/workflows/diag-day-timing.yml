@@ -1,0 +1,42 @@
+# READ-ONLY: what the Day timing table and its date overrides hold. Prints counts and flags only (no phone numbers, no names).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Day timing check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Day timing
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/dt_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; require $f;
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          echo "server time " . date("Y-m-d H:i:s") . " · db NOW " . $d->query("SELECT NOW()")->fetchColumn() . "\n";
+          echo "=== day_timing (weekday 0=Sun .. 6=Sat) ===\n"; foreach ($d->query("SELECT weekday, start_time, HEX(start_time) hx FROM day_timing ORDER BY weekday") as $r) echo "  " . $r["weekday"] . " => [" . $r["start_time"] . "] hex " . $r["hx"] . "\n";
+          echo "=== SHOW CREATE TABLE ===\n"; echo $d->query("SHOW CREATE TABLE day_timing")->fetch(PDO::FETCH_NUM)[1] . "\n";
+          echo "=== day_timing_overrides setting ===\n"; $q = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'day_timing_overrides'")->fetchColumn(); echo "  " . ($q === false ? "(not set)" : $q) . "\n";
+          echo "=== any trigger / event touching day_timing ===\n"; foreach ($d->query("SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE EVENT_OBJECT_TABLE = 'day_timing'") as $r) echo "  trigger " . $r[0] . "\n"; try { foreach ($d->query("SELECT EVENT_NAME FROM information_schema.EVENTS") as $r) echo "  event " . $r[0] . "\n"; } catch (Throwable $e) { }
+          
+          PHP
+          php /tmp/dt_check.php "$P"; rm -f /tmp/dt_check.php
+          REMOTE
