@@ -212,7 +212,7 @@ function wa_number_id(PDO $pdo, string $phoneId, string $display = ''): int
     $q = $pdo->prepare("SELECT id, display FROM wa_numbers WHERE phone_id = ?"); $q->execute([$phoneId]); $r = $q->fetch();
     if ($r) { if ($display !== '' && $r['display'] !== $display) $pdo->prepare("UPDATE wa_numbers SET display = ? WHERE id = ?")->execute([$display, $r['id']]); return (int)$r['id']; }
     $pdo->prepare("INSERT INTO wa_numbers (phone_id, display, created_at) VALUES (?, ?, ?)")->execute([$phoneId, $display, date('Y-m-d H:i:s')]);
-    $newId = (int)$pdo->lastInsertId(); if ($phoneId !== wa_cfg_val('WA_PHONE_ID')) try { $pdo->prepare("UPDATE wa_numbers SET camp_ok = 0, hold = 1 WHERE id = ?")->execute([$newId]); } catch (Throwable $eL) { }   // owner 20 Nov 2026: a NEW number starts LOCKED (replies only) until the owner unlocks it
+    $newId = (int)$pdo->lastInsertId(); if ($phoneId !== wa_cfg_val('WA_PHONE_ID')) try { $pdo->prepare("UPDATE wa_numbers SET camp_ok = 0, `hold` = 1 WHERE id = ?")->execute([$newId]); } catch (Throwable $eL) { }   // owner 20 Nov 2026: a NEW number starts LOCKED (replies only) until the owner unlocks it
     return $newId;
 }
 /** Makes sure the number from config.php (WA_PHONE_ID) is in the numbers list, named "Main number" until you rename it. */
@@ -1134,7 +1134,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 if ($wb === '') $wb = wa_find_waba($pdo, $pid);   // not typed: find the account among the ones already known
                 $q = $pdo->prepare("SELECT id FROM wa_numbers WHERE phone_id = ?"); $q->execute([$pid]); if ($q->fetch()) json_response(['error' => 'This number is already in the list.'], 422);
                 if ($label === '') json_response(['error' => 'Give the number a name, e.g. “TM Perfume House One”.'], 422);
-                $pdo->prepare("INSERT INTO wa_numbers (phone_id, label, panel, waba_id, created_at) VALUES (?, ?, ?, ?, ?)")->execute([$pid, $label, $panel, $wb, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); try { $pdo->prepare("UPDATE wa_numbers SET camp_ok = 0, hold = 1 WHERE id = ?")->execute([$id]); } catch (Throwable $eL) { }   // owner 20 Nov 2026: a NEW number starts LOCKED (replies only) until the owner unlocks it
+                $pdo->prepare("INSERT INTO wa_numbers (phone_id, label, panel, waba_id, created_at) VALUES (?, ?, ?, ?, ?)")->execute([$pid, $label, $panel, $wb, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); try { $pdo->prepare("UPDATE wa_numbers SET camp_ok = 0, `hold` = 1 WHERE id = ?")->execute([$id]); } catch (Throwable $eL) { }   // owner 20 Nov 2026: a NEW number starts LOCKED (replies only) until the owner unlocks it
             }
             json_response(['ok' => true, 'id' => $id]);
         }
