@@ -119,3 +119,7 @@ The base is the **reply** (owner, 21 Nov): everybody who wrote to us since the L
 ## Sending (21 Nov)
 
 The Lineup goes slowly, one message at a time (60 a round at most), and Module A / Module B's allowances do not apply to it: `wln_send` picks the number with the burst switch of `wa_camp_ctx`, so only Meta's own limits, a Low-quality / disconnected / locked number and a new number's slow start can stop a message. There is no marketing limit of its own.
+
+## When a customer's ladder starts (owner, 21 Nov)
+
+The 24 hours count from the **end of the conversation**: Step 1 goes when the customer's last message is more than 24 hours old, he has not ordered, nobody has opted out, and no person / campaign / follow-up has just spoken to him. While the talk goes on the engine only waits (up to 14 days from his first message). Every next step is 24 hours after the message that really went (not after his first message). If he answers a step, the ladder stops; 24 quiet hours after his last answer he is read again and a new ladder starts.
