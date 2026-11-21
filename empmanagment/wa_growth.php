@@ -1139,9 +1139,13 @@ function wag_bot_spawn(PDO $pdo, int $n = 5): int
 function wag_bot_tick(PDO $pdo, int $slots = 8, string $role = ''): array   // owner, 21 Nov: 12 answer slots (was 5: ~87 answers a minute had filled five) + 3 slots only for follow-ups (role=fu, one tick a second from cron_bot.php)
 {
     $o = ['slot' => -1, 'sent' => 0, 'handoff' => 0]; if (wag_cfg($pdo)['bot'] !== 'on') return $o;
-    $isMy = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $pfx = $role === 'fu' ? 'hrms_wag_fu_' : 'hrms_wag_tick_'; $n = $role === 'fu' ? 2 : $slots;
+    $isMy = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $pfx = $role === 'fuw' ? 'hrms_wag_fuw_' : ($role === 'fu' ? 'hrms_wag_fu_' : 'hrms_wag_tick_'); $n = $role === 'fuw' ? 2 : ($role === 'fu' ? 2 : $slots);
     if ($isMy) { for ($k = 0; $k < $n; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('" . $pfx . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
     try {
+        if ($role === 'fuw') {   // 🔁 a FOLLOW-UP WORKER (owner, 21 Nov: follow-ups were only ~3 a minute): ONE long request that loops for ~50 s (cron_bot.php starts two a minute) instead of a request every few seconds — it sends one round after the other without the 5 s limiter
+            $GLOBALS['wag_bfu_nolimit'] = 1; $t0 = time(); $o['followup'] = 0;
+            while (time() - $t0 < 50) { try { $k = wag_bot_followup($pdo, 20); } catch (Throwable $e) { $k = 0; } $o['followup'] += $k; if ($k === 0) sleep(2); }
+            return $o; }
         if ($role === 'fu') { try { $o['followup'] = wag_bot_followup($pdo, 20); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } } return $o; }
         if (time() - (int)setting_get($pdo, 'wag_tick_at', '0') >= 3) setting_set($pdo, 'wag_tick_at', (string)time());   // the heartbeat no longer depends on slot 0 being free
         if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_unrelated_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } }   // the sweeps run in whichever slot is free (a busy slot 0 used to delay them)
@@ -1245,7 +1249,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
 {
     if (defined('WA_IN_WEBHOOK') || (string)setting_get($pdo, 'wag_bfu_on', '1') === '0' || wag_cfg($pdo)['bot'] !== 'on') return 0;
     $now = time(); $hr = (int)date('G') * 60 + (int)date('i'); if ($hr < 9 * 60 || $hr > 21 * 60 + 30) return 0;
-    if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 5) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
+    if (empty($GLOBALS['wag_bfu_nolimit']) && time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 5) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
     $day = date('Y-m-d'); if (setting_get($pdo, 'wag_bfu_day', '') !== $day) { setting_set($pdo, 'wag_bfu_day', $day); setting_set($pdo, 'wag_bfu_n', '0'); } $cap = max(0, (int)setting_get($pdo, 'wag_bfu_max_day', '20000')); if ((int)setting_get($pdo, 'wag_bfu_n', '0') >= $cap) return 0;
     $steps = [300, 600, 1200, 1800, 3600, 7200, 10800, 14400, 28800, 64800]; $n = 0;   // 5 m, 10 m, 20 m, 30 m, 1 h, 2 h, 3 h, 4 h (hold the customer), then slower: 8 h, 18 h — afterwards the 30-day Lineup takes over (owner, 21 Nov)
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c JOIN (SELECT phone, MAX(ts) z FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= ? GROUP BY phone) b ON b.phone = c.phone WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= DATE_ADD(b.z, INTERVAL 5 SECOND) ORDER BY c.last_in_at DESC LIMIT 120");   // only chats where the BOT spoke last (a person / campaign / flow message after it = not ours)
