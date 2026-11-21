@@ -48,6 +48,11 @@
 <script>
   guardPage();
   renderSidebar('fn_recon');
+  const FN_ERRS = []; const errT = () => new Date().toTimeString().slice(0, 8);      // every error of this page is kept for the Diagnose report
+  window.addEventListener('error', (e) => FN_ERRS.push(errT() + ' js: ' + (e.message || e.error)));
+  window.addEventListener('unhandledrejection', (e) => FN_ERRS.push(errT() + ' promise: ' + ((e.reason && e.reason.message) || e.reason)));
+  ['get', 'post', 'upload'].forEach((k) => { const f = api[k] && api[k].bind(api); if (!f) return; api[k] = async (...a) => { try { return await f(...a); } catch (e) { FN_ERRS.push(errT() + ' ' + a[0] + ': ' + e.message); throw e; } }; });
+
   const PAGE_VER = 'Reconciliation 21 Nov · v1';
   const m2 = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const dFmt = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
@@ -89,7 +94,9 @@
       const r = await api.get('fn.in_orders_day', { date: $('rOd').value, gokwik_only: $('rGk').checked ? 1 : '' });
       el.innerHTML = `<div class="sx-card"><div class="cap" style="margin-top:0">Orders to reconcile <small class="sx-mut">${esc(dFmt(r.orders_day))}</small></div>
         <div class="k3"><div class="k"><small>Sales of the day</small><b style="font-size:19px">${r.sales.orders}</b><span>${m2(r.sales.total)}</span></div><div class="k"><small>${r.gokwik ? 'Prepaid via GoKwik / PayU' : 'Prepaid orders'}</small><b style="font-size:19px">${r.count}</b><span>${m2(r.amount)}</span></div><div class="k"><small>Other prepaid (no GoKwik id)</small><b style="font-size:19px">${r.other_prepaid.orders}</b><span>${m2(r.other_prepaid.amount)}</span></div></div>
-        <div class="sx-msg ok">${sxi('ok')}<span>Choose the PayU settlement file above. The statement will show, order by order, what PayU paid, the charges cut and the net.</span></div></div>`;
+        <div class="cap">Prepaid by payment mode <small class="sx-mut">${r.sales.manual_orders ? r.sales.manual_orders + ' manual orders (WhatsApp / QR / link) are inside the sales' : ''}</small></div>
+        <table class="tb"><tr><th>Payment mode</th><th>Orders</th><th>Prepaid amount</th><th>In this reconciliation?</th></tr>${(r.sales.modes || []).map((m) => `<tr><td><b>${esc(m.mode)}</b></td><td>${m.orders}</td><td>${m2(m.amount)}</td><td style="text-align:left">${m.mode === 'GoKwik / PayU' ? '<span class="age" style="background:#e3f6ee;color:#0d7a55">yes: settles through PayU</span>' : '<span class="sx-mut">no: settles another way</span>'}</td></tr>`).join('')}<tr><td><b>COD</b> (cash on delivery)</td><td>${r.sales.cod_orders}</td><td>${m2(r.sales.cod)}</td><td style="text-align:left"><span class="sx-mut">no: the courier remits it</span></td></tr></table>
+        <div class="sx-msg ok" style="margin-top:8px">${sxi('ok')}<span>Choose the PayU settlement file above. The statement will show, order by order, what PayU paid, the charges cut and the net.</span></div></div>`;
     } catch (e) { el.innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
 
@@ -160,7 +167,7 @@
           <tr class="h"><td>3. The whole file</td><td></td><td>Amount</td></tr>
           <tr><td>Add: other settled rows in the file<small>not these orders: older orders, other gateway orders, or no order number</small></td><td>${oth.rows}</td><td>${m2(oth.net)}</td></tr>
           <tr class="t"><td>Net settlement in the file<small>what should reach the bank</small></td><td></td><td>${m2(fileNet)}</td></tr>
-          ${op && op.orders && rc.gokwik ? `<tr><td class="sx-mut">Not part of this statement: other prepaid orders without a GoKwik id (Razorpay, Snapmint…)</td><td class="sx-mut">${op.orders}</td><td class="sx-mut">${m2(op.amount)}</td></tr>` : ''}
+          ${rc.gokwik && rc.sales && rc.sales.modes ? rc.sales.modes.filter((m) => m.mode !== 'GoKwik / PayU').map((m) => `<tr><td class="sx-mut">Not part of this statement: ${esc(m.mode)} (prepaid, settles another way)</td><td class="sx-mut">${m.orders}</td><td class="sx-mut">${m2(m.amount)}</td></tr>`).join('') : (op && op.orders && rc.gokwik ? `<tr><td class="sx-mut">Not part of this statement: other prepaid orders without a GoKwik id</td><td class="sx-mut">${op.orders}</td><td class="sx-mut">${m2(op.amount)}</td></tr>` : '')}
         </table>
         <div class="cap" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">Order by order <span class="noprint" style="display:flex;gap:6px;flex-wrap:wrap"><button class="sx-btn" data-rf="all" style="padding:2px 10px;${filt === 'all' ? '' : 'opacity:.55'}">All ${rc.orders.length}</button><button class="sx-btn" data-rf="came" style="padding:2px 10px;${filt === 'came' ? '' : 'opacity:.55'}">Reconciled ${f.orders}</button><button class="sx-btn" data-rf="pend" style="padding:2px 10px;${filt === 'pend' ? '' : 'opacity:.55'}">Pending ${pe.orders}</button><button class="sx-btn" data-rf="miss" style="padding:2px 10px;${filt === 'miss' ? '' : 'opacity:.55'}">Not in file ${mi.orders}</button><button class="sx-btn" data-rf="diff" style="padding:2px 10px;${filt === 'diff' ? '' : 'opacity:.55'}">Amount differs ${f.differs || 0}</button></span></div>
         ${shown.length ? `<table class="tb"><tr><th>Order</th><th>Customer</th><th>Order amt</th><th>Status</th><th>Gross</th><th>Charges</th><th>Net</th><th>Diff</th><th>UTR</th></tr>${shown.map((o) => `<tr><td><b>${esc(o.name)}</b></td><td style="text-align:left">${esc(o.customer)}</td><td>${m2(o.amount)}</td><td>${o.found ? '<span class="age" style="background:#e3f6ee;color:#0d7a55">reconciled</span>' : o.pending ? '<span class="age w">pending</span>' : '<span class="age b">not in file</span>'}</td><td>${o.found || o.pending ? m2(o.gross) : ''}</td><td>${o.found || o.pending ? m2(o.fee) : ''}</td><td>${o.found ? '<b>' + m2(o.net) + '</b>' : o.pending ? '<span class="sx-mut">' + m2(o.net) + '</span>' : ''}</td><td>${o.found && o.diff ? '<span class="' + (o.differs ? 'bad' : '') + '">' + m2(o.diff) + '</span>' : ''}</td><td style="font-size:11.5px">${esc(o.utr)}</td></tr>`).join('')}</table>${rows.length > 60 && !all ? `<div class="noprint" style="padding:8px 0"><button class="sx-btn" data-rall="1">Show all ${rows.length}</button></div>` : ''}${rc.truncated ? '<div class="sx-mut" style="font-size:12px">Only the first 600 orders are listed.</div>' : ''}` : '<div class="sx-mut">None.</div>'}
@@ -201,7 +208,7 @@
   async function runDiag() {
     const out = $('rDiag'); out.innerHTML = '<div class="sx-card"><div class="sx-mut">Checking everything…</div></div>';
     try {
-      const b = Object.assign({ channel_id: +$('rCh').value, orders_day: $('rOd').value, gokwik_only: $('rGk').checked ? 1 : 0, client: { ver: PAGE_VER, day: $('rDay').value, mode: $('rDm') ? $('rDm').value : '' } }, cur ? body() : {});
+      const b = Object.assign({ channel_id: +$('rCh').value, orders_day: $('rOd').value, gokwik_only: $('rGk').checked ? 1 : 0, client: { ver: PAGE_VER, day: $('rDay').value, mode: $('rDm') ? $('rDm').value : '', errors: FN_ERRS.slice(-15) } }, cur ? body() : {});
       const r = await api.post('fn.in_diag', b);
       out.innerHTML = `<div class="sx-card noprint"><div style="display:flex;align-items:center;gap:8px"><div class="cap" style="margin:0;flex:1">🩺 Diagnosis <small class="sx-mut">${cur ? 'with the file chosen now' : 'no file chosen yet: choose the file and press Diagnose again for the full check'}</small></div><button class="sx-btn" id="dgCopy" style="padding:2px 12px">Copy all</button></div>
         <textarea id="dgBox" readonly style="width:100%;height:280px;margin-top:8px;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--sx-line);border-radius:12px;padding:8px;background:#fafbfc">${esc(r.text)}</textarea>
