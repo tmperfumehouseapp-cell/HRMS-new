@@ -407,7 +407,10 @@
         + `<div style="color:var(--ink,#111827);font-size:14.5px;line-height:1.4;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word">${x.last_in ? esc(x.last_in) : '…'}</div></div>`
         + `<button type="button" data-tk="${esc(x.phone)}" data-pk="${x.rescue ? 'rescue' : late ? 'grab' : 'req'}" style="flex:none;border:0;border-radius:99px;background:#00a884;color:#fff;font-weight:800;font-size:13.5px;padding:9px 14px;min-height:40px;cursor:pointer">✋ Take over</button></div>`; };
       const byNew = (a, b) => (+a.mins || 0) - (+b.mins || 0), byNewL = (a, b) => (+a.waiting_min || 0) - (+b.waiting_min || 0);
-      let h = '';   // 🆕 the newest query is always on top; the ones nobody answered for 4+ min come after
+      // 🏪 OPEN MARKET (owner, 21 Nov): nobody is given a chat — the best people right now are shown so everybody sees who will take it; the chat does not open until it is taken
+      if (!S.mktAt || Date.now() - S.mktAt > 60000) { S.mktAt = Date.now(); api.get('wa.g_mkt_top').then((r) => { S.mkt = r; if (S.tab === 'chats' && S.filter === 'req') drawReq(); }).catch(() => { }); }
+      let h = S.mkt && (S.mkt.top || []).length ? '<div style="margin:8px 12px;padding:9px 12px;border-radius:12px;background:#f2f6fd;color:#2a4a7a;font-size:13px">🏪 <b>Open market.</b> Nobody is given a chat — take what you can close. 🏅 Taking the hot chats now: <b>' + S.mkt.top.map(esc).join(' · ') + '</b>' + (S.mkt.my ? '<br>You: #' + S.mkt.my.rank + ' of ' + S.mkt.my.of + ' · score ' + S.mkt.my.score + ' · taken ' + S.mkt.my.taken + (S.mkt.my.dropped ? ' · <span style="color:#b00">🔴 left ' + S.mkt.my.dropped + '</span>' : '') : '') + '</div>' : '';
+      h += '';   // 🆕 the newest query is always on top; the ones nobody answered for 4+ min come after
       h += '<div class="wx-h">🆕 New — not given to anyone · ' + L.length + '</div>' + (L.length ? '<div class="wx-card wx-lst">' + L.slice().sort(byNew).map((x) => line(x, false)).join('') + '</div>' : '<div class="wx-empty"><b>🙋</b>No new requests — every chat has someone.</div>');
       if (LT.length) h += `<div class="wx-h r">⏱ Waiting ${S.reqMin}+ min — nobody replied · ${LT.length}</div><div class="wx-card wx-lst">${LT.slice().sort(byNewL).map((x) => line(x, true)).join('')}</div>`;
       M.innerHTML = h;
@@ -416,7 +419,7 @@
         if (t) { e.stopPropagation(); const ph = t.dataset.tk, pk = t.dataset.pk; t.disabled = true; t.textContent = 'Taking…';
           try { await api.post(pk === 'grab' ? 'wq.grab' : pk === 'rescue' ? 'wq.rescue_take' : 'wq.req_take', { phone: ph }); const x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; S.req = (S.req || []).filter((y) => y.phone !== ph); S.reqLate = (S.reqLate || []).filter((y) => y.phone !== ph); S.grab = (S.grab || []).filter((y) => y.phone !== ph); toast('The chat is yours now ✓'); loadList(true); openChat(ph, { name: x.name || '' }); }
           catch (er) { toast(er.message, true); t.disabled = false; t.textContent = '✋ Take over'; loadReq(); } return; }
-        const b = e.target.closest('[data-peek]'); if (!b) return; const ph = b.dataset.peek, x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; openChat(ph, { peek: b.dataset.pk, name: x.name || '' }); };
+        const b = e.target.closest('[data-peek]'); if (!b) return; toast('Take the chat first ✋ — it opens after you take it. Nobody is given chats: take what you can close.'); };   // 🏪 the chat does not open before it is taken
     }
     async function loadList(quiet) {
       try {
