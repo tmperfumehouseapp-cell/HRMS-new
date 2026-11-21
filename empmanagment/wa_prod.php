@@ -1413,6 +1413,8 @@ function wa_prod_bot_after(PDO $pdo, array $c, string $botText = ''): int
 {
     try {
         if (function_exists('wa_photo_gate') && !wa_photo_gate($pdo)) return 0;   // 🧠 the learning says photos do not help right now
+        // 🚫 the combo-ad customer (owner, 21 Nov: "why a photo here?"): he writes "I'd like to build my own 5 x 50ml combo for Rs 2750" — he has not named a perfume and our answer names none either: a single catalogue picture (Happy Orange) helps nobody, the bot asks which 5 perfumes he wants. No picture then.
+        try { $li0 = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li0->execute([(string)$c['phone']]); $cm0 = mb_strtolower((string)$li0->fetchColumn()); if (preg_match('/build (my|your) own/u', $cm0) && !wa_prod_find_named($pdo, $botText . ' ' . $cm0, 1)) return 0; } catch (Throwable $e) { }
         $c = wa_contact($pdo, (string)$c['phone']) ?: $c; $a = wa_prod_attached($pdo, $c, ['room' => 6, 'fresh' => true]); $ids = []; $libs = []; $why = [];
         foreach ($a['items'] as $it) { if (is_string($it['id']) && strpos($it['id'], 'lib:') === 0) $libs[] = $it['id']; else $ids[] = (int)$it['id']; } foreach ($a['products'] as $p) $why[$p['id']] = (string)$p['why'];
         // 📸 FIXED RULE (owner, 10 Nov): whenever the bot's own words name a perfume of ours, its picture goes with it — even when the customer's message alone did not match the catalogue (e.g. "Azz The Most Desired")
