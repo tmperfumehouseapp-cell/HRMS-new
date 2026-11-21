@@ -58,9 +58,15 @@ function sku_index(): array
         $names = preg_split('/\s*[;\r\n]+\s*/u', (string)($r[2] ?? '')) ?: []; $names[] = (string)($r[1] ?? '');      // the third column may hold several shop names: "GUCH ESHA & FLORA ; Guchhi Esha & Flora"
         foreach ($names as $n) { $k = sku_norm((string)$n); if ($k !== '' && !isset($by[$k])) $by[$k] = $sku; }      // the shop / HRMS names win over the original name
     }
-    if (is_file(__DIR__ . '/sku_alias.php')) {      // extra shop names (sku_alias.php): the SKU is found by its original name, so they work with any uploaded list
+    if (is_file(__DIR__ . '/sku_alias.php')) {      // extra shop names (sku_alias.php): the SKU is found by its original name (or one of its shop names, or its code when its name still has the "must contain" word), so they work with any uploaded list
         $al = require __DIR__ . '/sku_alias.php';
-        foreach ((is_array($al) ? $al : []) as $pair) { $ok = sku_norm((string)($pair[0] ?? '')); $to = ''; foreach ($name as $sk => $nm) if (sku_norm((string)$nm) === $ok) { $to = (string)$sk; break; } $k = sku_norm((string)($pair[1] ?? '')); if ($to !== '' && $k !== '' && !isset($by[$k])) $by[$k] = $to; }
+        foreach ((is_array($al) ? $al : []) as $pair) {
+            $anch = (array)($pair[0] ?? []); $to = '';
+            foreach ($anch as $a0) { $ok = sku_norm((string)$a0); if ($ok === '') continue; foreach ($name as $sk => $nm) if (sku_norm((string)$nm) === $ok) { $to = (string)$sk; break 2; } if (isset($by[$ok])) { $to = (string)$by[$ok]; break; } }
+            if ($to === '') foreach ($anch as $a0) { $ok = sku_norm((string)$a0); if ($ok === '') continue; $hits = []; foreach ($name as $sk => $nm) if (strpos(' ' . sku_norm((string)$nm) . ' ', ' ' . $ok . ' ') !== false) $hits[] = (string)$sk; if (count($hits) === 1) { $to = $hits[0]; break; } }
+            if ($to === '' && !empty($pair[2]) && isset($name[(string)$pair[2]]) && ($pair[3] ?? '') !== '' && stripos((string)$name[(string)$pair[2]], (string)$pair[3]) !== false) $to = (string)$pair[2];      // last: the code, only when that SKU's name has the word that proves it is the same perfume
+            $k = sku_norm((string)($pair[1] ?? '')); if ($to !== '' && $k !== '' && !isset($by[$k])) $by[$k] = $to;
+        }
     }
     uksort($by, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));       // the longest name first: "afn 9 night elixir" before "afn 9 night"
     return $ix = ['by' => $by, 'name' => $name, 'ids' => $ids];
@@ -163,6 +169,10 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     }
     if ($sku !== '') { $col = sku_col($full, $why); if ($col >= 0) { $put($sku, $col, $qty); return; } if (preg_match('/^OG\d/', $sku) || preg_match('/compliment getter|dark side|caffeine club|dress to impress/i', $full)) { $put($sku, 2, $qty); return; } $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => $why ?: 'size not known', 'kind' => 'size']; return; }
     $det = []; foreach ($props as $p) $det[] = $p['name'] . ': ' . (is_scalar($p['value'] ?? '') ? $p['value'] : json_encode($p['value']));
+    if ($sku === '' && !$props) {      // a single product whose name is not in the list but whose size is known: it is still COUNTED (row "Not in SKU list", in its size column) and listed in the red box, so no piece is ever lost
+        $w4 = ''; $c4 = sku_col($full, $w4);
+        if ($c4 >= 0) { $put('NOTFOUND', $c4, $qty); $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'this product matches no SKU — counted on the row "Not in SKU list"', 'kind' => 'counted']; return; }
+    }
     $bad[] = ['order' => $order, 'text' => $full . ($det ? ' — details: ' . mb_substr(implode(' · ', $det), 0, 300) : ''), 'qty' => $qty, 'why' => 'this product matches no SKU' . ($shopSku !== '' ? ' (shop SKU "' . $shopSku . '")' : ''), 'kind' => 'name'];
 }
 
