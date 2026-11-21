@@ -1349,7 +1349,10 @@ function wa_prod_decide(PDO $pdo, string $phone, string $text, array $opt = []):
             if ($nm !== '') $picks = wa_prod_pick($pdo, $nm, 1, ['exclude' => $ex, 'strict' => true, 'parse' => wa_prod_parse($pdo, $nm)]);
         } else {
             $similar = !$in['named'] || preg_match('/\b(type|jaisa|jaisi|like|similar|alternative|options?|suggest\w*)\b/', wa_prod_fold($text, false));
-            $picks = wa_prod_pick($pdo, (string)$in['q'], $room, ['exclude' => $ex, 'fill_similar' => (bool)$similar, 'parse' => $in['parse']]);
+            $ft = mb_strtolower($text); $wantsOther = (bool)preg_match('/shower|\bgel\b|body\s*wash|wax|candle|solid|roll[- ]?on|10 ?ml|\bmini\b|sample|tester|travel|pocket/iu', $ft);   // OWNER RULE (21 Nov): while perfumes are talked about, no shower gel / wax / candle / solid perfume / 10 ml / roll-on / mini unless the customer asks for it
+            $popt = ['exclude' => $ex, 'fill_similar' => (bool)$similar, 'parse' => $in['parse']]; if (!$wantsOther) $popt['kind'] = 'perfume';
+            $picks = wa_prod_pick($pdo, (string)$in['q'], $room + ($wantsOther ? 0 : 6), $popt);
+            if (!$wantsOther) $picks = array_values(array_filter($picks, fn($it) => !preg_match('/solid|10 ?ml|roll[- ]?on|\bmini\b|shower|\bgel\b|wax|candle/iu', (string)($it['title'] ?? '') . ' ' . (string)($it['name'] ?? ''))));
         }
         foreach (array_slice($picks, 0, $room) as $it) {
             $o['ids'][] = (int)$it['id']; $w = (string)$it['why'];
