@@ -501,10 +501,11 @@ function wln_rescue(PDO $pdo, int $now = 0, int $cap = 40): int
 {
     $now = $now ?: time(); $in = implode(',', wln_mkt_codes()); $n = 0;
     // (no JOIN on the wamids: the two tables have different collations — that threw an error and nothing was rescued; the receipts are read with a bound list instead)
-    $rows = []; try { $q = $pdo->prepare("SELECT p.id, p.phone, p.topic, p.step, p.tpl_id, p.sent_at, p.wamid FROM wa_line_plan p WHERE p.status = 'sent' AND p.wamid <> '' AND p.why = '' AND p.sent_at >= ? ORDER BY p.sent_at LIMIT 4000"); $q->execute([date('Y-m-d H:i:s', $now - 3 * 3600)]); $cand = $q->fetchAll();
-        $by = []; foreach ($cand as $r) $by[(string)$r['wamid']] = $r; $bad = [];
-        foreach (array_chunk(array_keys($by), 400) as $ch) { $x = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE status = 'failed' AND err_code IN ($in) AND wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $m) $bad[(string)$m['wamid']] = (int)$m['err_code']; }
-        foreach ($cand as $r) if (isset($bad[(string)$r['wamid']])) { $r['err_code'] = $bad[(string)$r['wamid']]; $rows[] = $r; if (count($rows) >= $cap) break; } } catch (Throwable $e) { return 0; }
+    // (the FAILED receipts are read first, newest first, then their plan rows by a bound wamid list — before, the 4,000 oldest sent rows of the last 3 hours were read and the newer failures were never seen once more than 4,000 had gone)
+    $rows = []; try { $f = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND status = 'failed' AND err_code IN ($in) ORDER BY id DESC LIMIT 1500"); $f->execute([date('Y-m-d H:i:s', $now - 3 * 3600)]); $bad = [];
+        foreach ($f->fetchAll() as $m) $bad[(string)$m['wamid']] = (int)$m['err_code'];
+        foreach (array_chunk(array_keys($bad), 400) as $ch) { $x = $pdo->prepare("SELECT id, phone, topic, step, tpl_id, sent_at, wamid FROM wa_line_plan WHERE status = 'sent' AND why = '' AND wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch);
+            foreach ($x->fetchAll() as $r) { $r['err_code'] = $bad[(string)$r['wamid']]; $rows[] = $r; if (count($rows) >= $cap) break 2; } } } catch (Throwable $e) { return 0; }
     $mark = $pdo->prepare("UPDATE wa_line_plan SET why = ? WHERE id = ?"); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, why, sent_at, wamid) VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)");
     foreach ($rows as $r) {
         $ph = (string)$r['phone']; $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $mark->execute(['rescue: no contact', $r['id']]); continue; }
@@ -617,7 +618,7 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; break; }   // no number can send now: try again next round, nothing is written
         elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1]; $o['waiting']++; }
         elseif (stripos((string)$res[1], 'No number can send') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; $wcn('no number can send message #' . $tid . ' (not approved on the numbers\' accounts)'); wln_push($pdo, (string)$phone, $now + 600); }   // a passing state, not a failure: the customer keeps his place and is tried again (before, he was marked failed for good and his next step went first)
-        else { $twin = null; foreach (wln_twins($pdo, (string)$phone, (string)$row['topic'], (int)$row['step'], $tid) as [$ttid, $tkey]) { if (!preg_match('/\b(131049|131050|130472)\b|marketing/i', (string)$res[1])) break; $r2 = wln_send_any($pdo, $c, $ttid); if ($r2[0]) { $twin = [$ttid, $tkey, $r2]; break; } }   // the send itself was refused as marketing: the utility twin goes at once
+        else { $twin = null; foreach (wln_twins($pdo, (string)$phone, (string)$row['topic'], (int)$row['step'], $tid) as [$ttid, $tkey]) { if (!preg_match('/\b(131049|131050|130472|132015|132001|132007|132012|132016)\b|marketing|paused|low quality/i', (string)$res[1])) break; $r2 = wln_send_any($pdo, $c, $ttid); if ($r2[0]) { $twin = [$ttid, $tkey, $r2]; break; } }   // the send itself was refused as marketing: the utility twin goes at once
             if ($twin) { $upd->execute(['sent', 'utility rescue (' . mb_substr((string)$res[1], 0, 60) . ')', date('Y-m-d H:i:s'), (string)($twin[2][3] ?? ''), $twin[1], $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$twin[0], $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; continue; }
             $upd->execute(['failed', mb_substr((string)$res[1], 0, 190), null, '', $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$tid, $row['id']]); } catch (Throwable $e) { } $o['failed']++; $wcn('failed: ' . mb_substr((string)$res[1], 0, 50)); }
     }
@@ -909,8 +910,9 @@ function wl_new_topic(PDO $pdo): string
 }
 function wl_learn_night(PDO $pdo): void
 {
-    [$td, $h] = wl_ist(time()); if ($h < 2 || $h >= 5 || (string)setting_get($pdo, 'wl_learn_day', '') === $td) return;
-    if (function_exists('wa_lock') && !wa_lock($pdo, 'wllearn', 280)) return; setting_set($pdo, 'wl_learn_day', $td);
+    // TWICE A DAY (owner, 21 Nov): the night run (02-05 IST) and an afternoon run (14-17 IST); the marker is "date|am" / "date|pm" (the old plain date counts as the night run)
+    [$td, $h] = wl_ist(time()); $slot = ($h >= 14 && $h < 17) ? 'pm' : (($h >= 2 && $h < 5) ? 'am' : ''); $__ld = (string)setting_get($pdo, 'wl_learn_day', ''); if ($slot === '' || $__ld === $td . '|' . $slot || ($slot === 'am' && $__ld === $td)) return;
+    if (function_exists('wa_lock') && !wa_lock($pdo, 'wllearn', 280)) return; setting_set($pdo, 'wl_learn_day', $td . '|' . $slot);
     try { $rep = wl_report($pdo, 30, 30); } catch (Throwable $e) { return; }
     foreach ([fn() => wl_days_auto($pdo, $rep), fn() => wl_new_word($pdo, $rep), fn() => wl_theme_scan($pdo), fn() => wl_new_topic($pdo), function () use ($pdo) { $x = wl_suggest($pdo, true); return 'sentences: ' . count($x['items']) . ' winning sentences listed'; }] as $step) { try { $m = $step(); if ($m !== '') wl_learn_log($pdo, $m); } catch (Throwable $e) { wl_learn_log($pdo, 'learning step failed: ' . $e->getMessage()); } }
 }

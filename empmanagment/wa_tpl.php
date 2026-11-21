@@ -993,6 +993,7 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
             $cxOwn = function_exists('wa_cx_owner') && wa_cx_owner($pdo, $auth, $c);   // the complaint owner sends the after-24-hours message from the case
             if (!$cxOwn && !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             if (!$cxOwn && function_exists('wa_cx_lock') && ($__cx = wa_cx_lock($pdo, $auth, $c)) !== '') json_response(['error' => $__cx, 'complaint' => (int)$c['cx_id']], 423);
+            if (!$cxOwn && function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);   // 🤖 the bot is answering: 👎 first (it takes the chat), then the template
             if ((int)$c['optout'] === 1) json_response(['error' => 'This customer opted out — do not message them.'], 422);
             $t = wa_tpl_row($pdo, (int)($in['id'] ?? 0)); if (!$t) json_response(['error' => 'Pre-made message not found.'], 404);
             if ((int)($c['camp_optout'] ?? 0) === 1 && !in_array(strtolower((string)($t['category'] ?? 'marketing')), ['utility', 'authentication'], true)) json_response(['error' => 'This customer asked to stop promotional messages. Chat with them normally, or send a Utility message.'], 422);

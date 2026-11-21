@@ -2884,9 +2884,16 @@ function cm_offline_ids(PDO $pdo) {
     try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['people'] ?? []) as $id => $v) if (is_array($v) && in_array((string)($v['grp'] ?? ''), ['retail', 'store'], true)) $o[(int)$id] = 1; } catch (Throwable $e) {}
     return $o;
 }
+/** 🎂 Birthday rule (owner, 21 Nov): on a Sales person's birthday every order of that business day pays ONE flat commission % (instead of the chart / offers). setting cm_bday = {on, pct}. */
+function cm_bday_cfg(PDO $pdo): array
+{
+    $j = json_decode((string)setting_get($pdo, 'cm_bday', ''), true); $j = is_array($j) ? $j : [];
+    return ['on' => !empty($j['on']) ? 1 : 0, 'pct' => max(0.0, min(20.0, round((float)($j['pct'] ?? 0), 2)))];
+}
+function cm_is_bday($dob, $day): bool { $dob = substr((string)$dob, 0, 10); return preg_match('/^\d{4}-(\d{2}-\d{2})$/', $dob, $m) && substr((string)$day, 5, 5) === $m[1]; }
 function cm_emps(PDO $pdo, $day = null) {
     $emps = []; $off = cm_offline_ids($pdo); $dayOff = ($day && function_exists('pay_day_assign')) ? (pay_day_assign($pdo)[$day] ?? []) : [];   // on a day moved to the store, no online commission
-    foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, d.department_name
+    foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, e.date_of_birth, d.department_name
         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
         if (stripos((string)$e['department_name'], 'sales') === false || ($day && function_exists('pay_off_at') ? pay_off_at($pdo, (int)$e['employee_id'], (string)$day) : isset($off[(int)$e['employee_id']])) || isset($dayOff[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
     }
@@ -2929,8 +2936,9 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
     // the profile target; Absent / Leave / not working = 0). It used to come from a simpler rule that does not know the automatic target, so a person with an automatic
     // ₹25,000 on the Orders page had ₹0 here and got no target bonus. A person the Orders page has no row for keeps the simpler rule.
     $ordT = []; if (function_exists('ct_day_targets')) { try { $ordT = ct_day_targets($pdo, (string)$day); } catch (Throwable $e) { $ordT = []; } }
-    $pre = (float)$ch['prepaid']; $rows = [];
+    $pre = (float)$ch['prepaid']; $rows = []; $bdc = cm_bday_cfg($pdo);
     foreach ($emps as $id => $e) {
+        $isB = $bdc['on'] && $bdc['pct'] > 0 && cm_is_bday($e['date_of_birth'] ?? '', $day);      // 🎂 this person's birthday: one flat % on every order of the day
         $list = $sale[$day . '|' . $id] ?? []; $target = isset($ordT[(int)$id]) ? (float)$ordT[(int)$id] : (float)$targetOf($id, $day);
         $n = count($list); $sales = 0.0; $nCode = 0; $noMl = 0; $noPrice = 0; $chartCom = 0.0; $offerCom = 0.0; $xcomTotal = 0.0; $lines = [];
         foreach ($list as $o) { if ($o['code'] !== '') $nCode++; }
@@ -2944,6 +2952,7 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
             $f = ($o['code'] !== '' || $codeOk) ? 1.0 : $nocodeF; $ml = $o['ml'] ?? null;
             // shower gel / attar / others / combos are priced on their own price charts (Learn & Setup → Pricing, shared): a combo prices the WHOLE order (its price already includes the perfume),
             // otherwise that part is paid on top of the perfume commission. The code rule applies to it like to every order.
+            if ($isB) { $v = $gross * (float)$bdc['pct'] / 100; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)($ml ?: 0), 'price' => round($gross), 'rule' => 'birthday', 'pct' => (float)$bdc['pct'], 'code' => $o['code'] !== '', 'com' => round($v, 2), 'key' => $ok, 'x' => 0]; continue; }      // 🎂 flat birthday % (no code rule, no chart, no offers, the whole order amount)
             $xc = (float)($o['xcom'] ?? 0) * $f; $xcomTotal += $xc;
             if (!empty($o['xall'])) { $lines[] = ['order' => $o['name'], 'ml' => (int)($ml ?: 0), 'price' => round($gross), 'rule' => 'combo', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2), 'key' => $ok, 'note' => (string)($o['xnote'] ?? '')]; continue; }
             if (!empty($o['mp'])) {   // 🛍 Myntra / Amazon / Flipkart order of a sales person: a flat % (mp_flat_pct, 6) on the whole amount, no code needed — the code rule does not apply to it
@@ -2967,7 +2976,7 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         $fixTotal = 0.0; $nFix = 0; $__fx = cm_fixes($pdo);
         if ($__fx) { foreach ($lines as &$ln) { $fk = (string)($ln['key'] ?? ''); if ($fk === '' || !isset($__fx[$fk])) continue;
             $calc = (float)$ln['com']; $xx = (float)($ln['x'] ?? 0); $rl = (string)$ln['rule'];
-            if ($rl === 'chart') $chartCom -= $calc; elseif (strpos($rl, 'offer') === 0) $offerCom -= $calc; else $xcomTotal -= $calc;
+            if ($rl === 'chart' || $rl === 'birthday') $chartCom -= $calc; elseif (strpos($rl, 'offer') === 0) $offerCom -= $calc; else $xcomTotal -= $calc;
             $xcomTotal -= $xx; $ln['calc'] = round($calc + $xx, 2); $ln['com'] = round($__fx[$fk]['amt'], 2); $ln['x'] = 0; $ln['fixed'] = 1; $ln['fix_note'] = $__fx[$fk]['note']; $ln['fix_by'] = $__fx[$fk]['by']; $fixTotal += $__fx[$fk]['amt']; $nFix++; } unset($ln);
             $chartCom = max(0.0, $chartCom); $offerCom = max(0.0, $offerCom); $xcomTotal = max(0.0, $xcomTotal); }
         $extra = ($bonusOn === 'all' ? $chartCom + $offerCom + $xcomTotal : $chartCom) * $bonus / 100;
@@ -3833,7 +3842,7 @@ function b2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
     }
     case 'bd.b2_cm_view': { $adm(); if (function_exists('price_unify_once')) price_unify_once($pdo); $ch = cm_chart($pdo); $off = cm_offers($pdo); $bo = cm_boosts($pdo); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : b2_day();
         $dr = cm_day($pdo, $day, $ch, $off, $bo); $ppl = []; foreach (cm_emps($pdo) as $id => $e) $ppl[] = ['id' => $id, 'name' => trim((string)$e['full_name'])];
-        json_response(['addons' => cm_global_addons($pdo, true), 'unified' => (string)setting_get($pdo, 'price_unify_v1', '') === '1', 'day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
+        json_response(['bday' => cm_bday_cfg($pdo), 'addons' => cm_global_addons($pdo, true), 'unified' => (string)setting_get($pdo, 'price_unify_v1', '') === '1', 'day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
     case 'bd.b2_cm_recount': { $adm(); json_response(cm_recount($pdo, max(1, min(31, (int)($_GET['days'] ?? $in['days'] ?? 10))), (string)($_GET['end'] ?? $in['end'] ?? ''))); }
     case 'bd.b2_cm_chart_save': {   // ONE price chart: prices are edited only in Learn & Setup → Pricing; this saves the commission RULES (and the "I checked" tick)
         $adm(); $post(); $cur = cm_chart($pdo);
@@ -3853,6 +3862,8 @@ function b2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
     case 'bd.b2_cm_offer_stop': { $adm(); $post(); $out(cm_offer_stop($pdo, $gid(), $by)); }
     case 'bd.b2_cm_addons_set': { $adm(); $post(); $ads = cm_offer_addon_list($in['addons'] ?? ''); setting_set($pdo, 'cm_addons', json_encode($ads)); cm_global_addons($pdo, true); $out([true, $ads ? 'Add-ons for every order saved (' . count($ads) . ').' : 'Add-ons for every order cleared.', 200]); }
     case 'bd.b2_cm_offer_addons': { $adm(); $post(); $out(cm_offer_addons_set($pdo, $gid(), $in['addons'] ?? '')); }
+    case 'bd.b2_cm_bday_save': { $adm(); $post(); $on = !empty($in['on']); $pc = max(0, min(20, round((float)($in['pct'] ?? 0), 2))); if ($on && $pc <= 0) json_response(['error' => 'Type the birthday commission % (for example 7).'], 422);
+        setting_set($pdo, 'cm_bday', json_encode(['on' => $on ? 1 : 0, 'pct' => $pc])); b2_log('commission', 'birthday', 'birthday commission ' . ($on ? $pc . '%' : 'off'), $by); json_response(['ok' => true, 'message' => $on ? 'Birthday rule saved: ' . $pc . '% on every order of a Sales person\'s birthday.' : 'Birthday rule is off.', 'bday' => cm_bday_cfg($pdo)]); }
     case 'bd.b2_cm_boost_add': { $adm(); $post(); $out(cm_boost_save($pdo, $in, $by)); }
     case 'bd.b2_cm_boost_stop': { $adm(); $post(); $out(cm_boost_stop($pdo, $gid())); }
     case 'bd.b2_rules_view': { $adm(); json_response(['ok' => true] + b2_links_view($pdo)); }

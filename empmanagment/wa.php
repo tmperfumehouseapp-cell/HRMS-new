@@ -889,9 +889,20 @@ function wa_notice_add(PDO $pdo, int $to, int $by, string $phone, string $cname,
     if (!wa_notice_table($pdo)) return;
     try { $pdo->prepare("INSERT INTO wa_notices (to_emp, by_emp, phone, cname, kind, at, seen) VALUES (?, ?, ?, ?, ?, ?, 0)")->execute([$to, $by, $phone, mb_substr($cname, 0, 120), $kind, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
 }
+/** 🏪 OPEN MARKET track record (owner, 21 Nov): who was offered a chat, who took it and after how long, who dropped it. kind: offered | taken | dropped | released. */
+function wa_mkt_note(PDO $pdo, string $phone, int $emp, string $kind, int $waitS = -1, string $note = ''): void
+{
+    static $ok = null; if ($ok === null) { $ok = true; try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_mkt (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, kind VARCHAR(10) NOT NULL, at DATETIME NOT NULL, wait_s INT NOT NULL DEFAULT -1, note VARCHAR(80) NOT NULL DEFAULT '', KEY k_emp (emp_id, at), KEY k_ph (phone, id), KEY k_kind (kind, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { $ok = false; } }
+    if (!$ok) return; try { $pdo->prepare("INSERT INTO wa_mkt (phone, emp_id, kind, at, wait_s, note) VALUES (?, ?, ?, ?, ?, ?)")->execute([$phone, $emp, $kind, date('Y-m-d H:i:s'), $waitS, mb_substr($note, 0, 80)]); } catch (Throwable $e) { }
+}
 function wa_assign_to(PDO $pdo, string $key, int $emp, int $by, string $how): void
 {
     $c = wa_contact($pdo, $key); if (!$c) return; $now = date('Y-m-d H:i:s');
+    if ($emp > 0 && $by === $emp && in_array($how, ['takeover', 'grab', 'request', 'take', 'rescue'], true)) { try { $pdo->exec("CREATE TABLE IF NOT EXISTS wq_meta (k VARCHAR(40) NOT NULL PRIMARY KEY, v TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $pdo->prepare("INSERT INTO wq_meta (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")->execute(['botoff:' . $key, $now]); } catch (Throwable $e) { } }   // 🤖 the salesperson took the chat (Take over / grab / pick): the bot stops answering it
+    try {   // 🏪 open market: a person took the chat (how long it had waited in OPEN) / a person gave it back to OPEN
+        if ($emp > 0 && $by === $emp && in_array($how, ['takeover', 'grab', 'request', 'take', 'rescue'], true)) { $w = -1; try { $q0 = $pdo->prepare("SELECT at FROM wa_mkt WHERE phone = ? AND kind = 'offered' ORDER BY id DESC LIMIT 1"); $q0->execute([$key]); $t0 = $q0->fetchColumn(); if ($t0) $w = max(0, time() - (int)strtotime((string)$t0)); } catch (Throwable $e) { } wa_mkt_note($pdo, $key, $emp, 'taken', $w, $how); }
+        elseif ($emp <= 0 && (int)$c['assigned_emp'] > 0 && $by > 0) wa_mkt_note($pdo, $key, (int)$c['assigned_emp'], 'released', -1, 'by ' . $by);
+    } catch (Throwable $e) { }
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ?, assigned_at = ?, state = ?, status = 'open', closed_at = NULL WHERE phone = ?")->execute([$emp, $emp > 0 ? $now : null, $emp > 0 ? 'human' : 'unassigned', $key]);
     $pdo->prepare("INSERT INTO wa_assign_log (phone, from_emp, to_emp, by_emp, how, at) VALUES (?, ?, ?, ?, ?, ?)")->execute([$key, (int)$c['assigned_emp'], $emp, $by, $how, $now]);
     $nm = employee_names_by_id($pdo); $to = $emp > 0 ? ($nm[$emp] ?? 'someone') : ''; $from = (int)$c['assigned_emp'] > 0 ? ($nm[(int)$c['assigned_emp']] ?? 'someone') : ''; $who = $by > 0 ? ($nm[$by] ?? 'Admin') : ($how === 'auto' ? 'the system (automatic)' : 'Admin');
@@ -1329,6 +1340,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $key = wa_key($_GET['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null;
             if (!$c) json_response(['error' => 'Chat not found.'], 404);
             $peek = ''; if (!wa_can_watch($pdo, $auth, $c)) { $peek = wa_req_peek($pdo, $c); if ($peek === '' && function_exists('wq_rescue_may_read') && wq_rescue_may_read($pdo, $auth, $key)) $peek = 'rescue'; if ($peek === '' && wa_was_mine($pdo, $key, (int)($auth['employee_id'] ?? 0))) $peek = 'tag'; if ($peek === '') json_response(['error' => 'This chat is assigned to someone else.'], 403); }   // 🙋 a Requests chat may be READ before taking it; replying needs Take over
+            if (in_array($peek, ['req', 'rescue', 'grab'], true) && !wa_is_admin($pdo, $auth)) json_response(['error' => 'Take this chat first (✋ Take over) — it opens after you take it.', 'take_first' => 1], 403);   // 🏪 open market: the chat does not open until a salesperson takes it
             // "anything new?" — one small query: the newest message, the delivery ticks and the chat's own fields. Same as the page has → {same:1} (the 10-second
             // refresh of an open chat used to re-load 100 messages and ~11 queries every time)
             $sq = $pdo->prepare("SELECT MAX(id) mx, COUNT(*) n, SUM(status = 'read') r, SUM(status = 'delivered') dl, SUM(status = 'failed') f FROM wa_messages WHERE phone = ?"); $sq->execute([$key]); $sg = $sq->fetch() ?: [];
@@ -1374,6 +1386,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             if (($__cx = wa_cx_lock($pdo, $auth, $c)) !== '') json_response(['error' => $__cx, 'complaint' => (int)$c['cx_id']], 423);
+            if (empty($in['auto']) && function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_bad' => 1, 'bot_lock' => 1], 423);   // 🤖 the bot is answering: a person's message would talk over it
             if ($text === '') json_response(['error' => 'Write a message first.'], 422); if (mb_strlen($text) > 4000) json_response(['error' => 'The message is too long (max 4000 characters).'], 422);
             if (empty($in['auto']) && function_exists('wq_grow_is_pay_link') && wq_grow_is_pay_link($pdo, $text)) { $__gg = wq_grow_check($pdo, $auth, $key, $in); if ($__gg['gate'] !== '') json_response(['error' => $__gg['error'], 'grow_gate' => $__gg['gate'], 'grow_missing' => $__gg['missing'], 'grow_ideas' => $__gg['ideas'] ?? null], 409); }   // 🔗 payment link: both efforts first (warning, later strict) — wq_grow_check in tk_goal.php
             // never twice: the same tap arriving again (slow network, double tap, a retry) or the same text to the same customer within 20 seconds → answered with the first send, nothing goes out
@@ -1492,6 +1505,8 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $key = wa_key(json_input()['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_is_admin($pdo, $auth) && ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint')) json_response(['error' => 'This is a complaint chat — it stays with its person. Ask the admin.'], 409);
             $from = (int)$c['assigned_emp']; if ($from === $me) json_response(['ok' => true, 'already' => true]);
+            if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);   // 🤖 the bot is answering
+            if (!wa_is_admin($pdo, $auth) && function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);   // 🏪 performance gate
             wa_assign_to($pdo, $key, $me, $me, 'takeover');
             $nm = employee_names_by_id($pdo); $who = $nm[$me] ?? 'Manager'; $was = $from > 0 ? ($nm[$from] ?? 'someone') : '';
             wa_event($pdo, $key, '🔄 ' . $who . ' took over this chat' . ($was !== '' ? ' from ' . $was : ''));
@@ -1532,6 +1547,8 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 $me = (int)($auth['employee_id'] ?? 0);
                 if ($me <= 0 || $emp !== $me) json_response(['error' => 'Only an admin can assign a chat to someone else. Use Transfer for your own chats.'], 403);
                 if ((int)$c0['assigned_emp'] > 0) json_response(['error' => 'This chat is already with ' . (employee_names_by_id($pdo)[(int)$c0['assigned_emp']] ?? 'someone') . '.'], 409);
+                if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c0)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);
+                if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);
                 wa_assign_to($pdo, $key, $me, $me, 'take'); json_response(['ok' => true]);
             }
             if ($emp > 0 && !isset(employee_names_by_id($pdo)[$emp])) json_response(['error' => 'That person was not found.'], 422);
