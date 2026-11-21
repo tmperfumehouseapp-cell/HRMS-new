@@ -26,6 +26,9 @@
   .ov{position:fixed;inset:0;background:rgba(20,22,26,.42);opacity:0;pointer-events:none;transition:opacity .18s;z-index:40}.ov.on{opacity:1;pointer-events:auto}
   .dr{position:fixed;top:0;right:0;bottom:0;width:min(500px,96vw);background:var(--sx-bg);z-index:41;display:flex;flex-direction:column;transform:translateX(104%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:-18px 0 50px rgba(20,22,26,.22);border-radius:26px 0 0 26px}.dr.on{transform:none}
   @media (max-width:640px){.dr{width:100%;border-radius:0}}
+  .dr.wide{width:min(780px,96vw)}@media (max-width:640px){.dr.wide{width:100%}}
+  .drop{display:block;border:2px dashed var(--sx-line);border-radius:16px;padding:18px 12px;text-align:center;background:#fff;cursor:pointer;color:var(--sx-mut);font-weight:700;margin-top:10px}.drop:hover{border-color:var(--sx-accent);color:var(--sx-ink)}.drop small{display:block;font-weight:600;margin-top:3px}
+  .lnkb{border:0;background:none;font:800 13.5px inherit;color:var(--sx-ink);padding:0;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}.lnkb:hover{color:var(--sx-accent)}
   .dr-h{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:26px 0 0 0;box-shadow:0 1px 0 var(--sx-line)}@media (max-width:640px){.dr-h{border-radius:0}}
   .dr-h b{font-size:16px;flex:1}.dr-x{border:0;background:var(--sx-bg);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;font-weight:700}
   .dr-b{flex:1;overflow-y:auto;padding:12px 14px;display:grid;gap:10px;align-content:start}.dr-f{padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;box-shadow:0 -1px 0 var(--sx-line)}
@@ -58,9 +61,9 @@
     { key: 'online_prepaid', title: 'Prepaid', hint: 'Online orders paid in advance (the gateway pays you later: Razorpay, PayU, Snapmint…)' },
     { key: 'online_cod', title: 'COD', hint: 'Online orders paid on delivery (the courier sends you the money later: ShipRocket, Rapidshyp…)' },
   ];
-  let day = '', O = null, W = {}, CH = null;
+  let day = '', O = null, W = {}, CH = null, DAYE = [], ACC = [];
   const SECKEY = { online_prepaid: 'prepaid', online_cod: 'cod' };
-  const open = (title, body, foot) => { $('drT').textContent = title; $('drB').innerHTML = body; $('drF').innerHTML = foot || ''; $('drF').style.display = foot ? '' : 'none'; $('dr').classList.add('on'); $('ov').classList.add('on'); $('dr').setAttribute('aria-hidden', 'false'); };
+  const open = (title, body, foot, wide) => { $('drT').textContent = title; $('drB').innerHTML = body; $('drF').innerHTML = foot || ''; $('drF').style.display = foot ? '' : 'none'; $('dr').classList.toggle('wide', !!wide); $('dr').classList.add('on'); $('ov').classList.add('on'); $('dr').setAttribute('aria-hidden', 'false'); };
   const close = () => { $('dr').classList.remove('on'); $('ov').classList.remove('on'); $('dr').setAttribute('aria-hidden', 'true'); };
   $('drX').onclick = close; $('ov').onclick = close; document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   const note = (id, m, bad) => { const e = $(id); if (e) e.innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
@@ -69,17 +72,100 @@
     if (!CH) return '';
     const sk = SECKEY[s.key], list = CH.channels[sk] || [];
     const live = list.filter((c) => c.active), tD = live.reduce((a, c) => a + c.day, 0), tM = live.reduce((a, c) => a + c.month, 0);
-    return `<div class="sx-card wrap" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div class="cap" style="margin:0;flex:1">${esc(s.title)} channels <small class="sx-mut">money received through each</small></div><button class="sx-btn" data-addch="${sk}" style="padding:2px 12px">+ Add channel</button></div>
-      ${list.length ? `<table class="tb"><tr><th>Channel</th><th>On ${esc(dFmt(day))}</th><th>This month</th><th></th></tr>${list.map((c) => `<tr class="${c.active ? '' : 'off'}"><td><b>${esc(c.name)}</b>${c.head ? '' : ' <small>no receipt line linked</small>'}${c.active ? '' : ' <small>hidden</small>'}</td><td>${c.day ? '<b>' + m2(c.day) + '</b>' : '<span class="sx-mut">—</span>'}${c.n > 1 ? '<small>' + c.n + ' entries</small>' : ''}</td><td>${c.month ? m2(c.month) : '<span class="sx-mut">—</span>'}</td><td><button class="sx-btn" data-edch="${c.id}" style="padding:2px 10px">Edit</button></td></tr>`).join('')}
-        <tr class="tot"><td>TOTAL</td><td>${m2(tD)}</td><td>${m2(tM)}</td><td></td></tr></table>` : `<div class="sx-mut">No channel yet. Click “+ Add channel”.</div>`}</div>`;
+    return `<div class="sx-card wrap" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div class="cap" style="margin:0;flex:1">${esc(s.title)} channels <small class="sx-mut">net money received · click a channel to open it and upload its UTR file</small></div><button class="sx-btn" data-addch="${sk}" style="padding:2px 12px">+ Add channel</button></div>
+      ${list.length ? `<table class="tb"><tr><th>Channel</th><th>Net on ${esc(dFmt(day))}</th><th>Net this month</th><th></th></tr>${list.map((c) => `<tr class="${c.active ? '' : 'off'}"><td><button class="lnkb" data-open="${c.id}" title="Open ${esc(c.name)}">${esc(c.name)}</button>${c.active ? '' : ' <small>hidden</small>'}</td><td>${c.day ? '<b>' + m2(c.day) + '</b>' : '<span class="sx-mut">—</span>'}${c.fee_day ? '<small>gross ' + m2(c.gross_day) + ' · charges ' + m2(c.fee_day) + '</small>' : ''}</td><td>${c.month ? m2(c.month) : '<span class="sx-mut">—</span>'}${c.fee_month ? '<small>gross ' + m2(c.gross_month) + ' · charges ' + m2(c.fee_month) + '</small>' : ''}</td><td style="white-space:nowrap"><button class="sx-btn" data-addrec="${c.id}" style="padding:2px 10px">+ Receipt</button> <button class="sx-btn" data-edch="${c.id}" style="padding:2px 10px">Edit</button></td></tr>`).join('')}
+        <tr class="tot"><td>TOTAL</td><td>${m2(tD)}</td><td>${m2(tM)}</td><td></td></tr></table>` : `<div class="sx-mut">No channel yet. Click “+ Add channel”.</div>`}
+      ${enteredTable(list)}</div>`;
+  }
+  function enteredTable(list) {
+    const byHead = {}; list.forEach((c) => { if (c.head_id) byHead[c.head_id] = c; });
+    const rows = DAYE.filter((e) => e.side === 'in' && byHead[e.head_id]);
+    if (!rows.length) return '';
+    return `<div class="cap">Receipts entered on ${esc(dFmt(day))} <small class="sx-mut">they also show on the Receipt and Payment tab</small></div><table class="tb"><tr><th>Channel</th><th>Bank</th><th>Note</th><th>Amount</th><th></th></tr>${rows.map((e) => `<tr class="${e.status === 'void' ? 'void' : ''}"><td><b>${esc(byHead[e.head_id].name)}</b></td><td>${esc(e.account)}</td><td style="text-align:left">${esc(e.note)}${e.status === 'void' ? ' <small>(cancelled: ' + esc(e.void_reason) + ')</small>' : ''}${e.edited ? ' <small class="sx-mut">(edited)</small>' : ''}</td><td><b>${m2(e.amount)}</b></td><td style="white-space:nowrap">${e.status === 'ok' ? `<button class="sx-btn" data-edrec="${e.id}" style="padding:2px 10px">Edit</button> <button class="sx-btn" data-voidrec="${e.id}" style="padding:2px 10px">Cancel</button>` : ''}</td></tr>`).join('')}</table>`;
+  }
+  // ---------- one channel opened: its UTR files
+  const colName = (h, i) => (i + 1) + '. ' + (h[i] || '(empty)');
+  async function chSection(id) {
+    const c = Object.values(CH.channels).flat().find((x) => x.id === id); if (!c) return;
+    let ups = []; try { ups = (await api.get('fn.in_uploads', { channel_id: id })).uploads; } catch (e) { ups = []; }
+    const mo = new Date(CH.month_from + 'T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    open(c.name + ' · ' + (CH.channels.cod.some((x) => x.id === id) ? 'COD' : 'Prepaid'), `
+      <div class="k3" style="margin-bottom:0"><div class="k"><small>Net income · ${esc(mo)}</small><b>${m2(c.month)}</b><span>${c.files_month || 0} file${c.files_month === 1 ? '' : 's'} + receipts</span></div>
+        <div class="k"><small>Gross from files</small><b>${m2(c.gross_month)}</b><span>before charges</span></div>
+        <div class="k"><small>Charges taken</small><b>${m2(c.fee_month)}</b><span>fees + GST</span></div></div>
+      <div class="sx-card"><div class="cap" style="margin-top:0">Upload the UTR file</div>
+        <div class="sx-r2"><label class="sx-f">Day the money came<input class="sx-in" id="uDay" type="date" value="${esc(day)}" max="${esc(O.today)}"></label>
+        <label class="sx-f">Came into (bank)<select class="sx-in" id="uAcc">${ACC.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label></div>
+        <label class="drop" for="uFile">Choose the settlement / UTR file (.xlsx or .csv)<small>The columns are found by themselves; you can correct them before saving.</small></label><input type="file" id="uFile" accept=".xlsx,.csv,.txt,.tsv" style="display:none">
+        <div id="uMsg" style="margin-top:8px"></div><div id="uPrev"></div></div>
+      <div class="sx-card wrap"><div class="cap" style="margin-top:0">Files saved for ${esc(c.name)}</div>
+        ${ups.length ? `<table class="tb"><tr><th>Day</th><th>File</th><th>Rows</th><th>Gross</th><th>Charges</th><th>Net</th><th></th></tr>${ups.map((u) => `<tr class="${u.status === 'void' ? 'void' : ''}"><td>${esc(dFmt(u.day))}<small>${esc(u.account)}</small></td><td style="text-align:left">${esc(u.file)}${u.status === 'void' ? '<small>cancelled: ' + esc(u.void_reason) + '</small>' : ''}</td><td>${u.rows}</td><td>${m2(u.gross)}</td><td>${m2(u.fee)}</td><td><b>${m2(u.net)}</b></td><td>${u.status === 'ok' ? `<button class="sx-btn" data-upvoid="${u.id}" data-ch="${id}" style="padding:2px 10px">Cancel</button>` : ''}</td></tr>`).join('')}</table>` : '<div class="sx-mut">No file yet.</div>'}</div>
+      <button class="sx-btn" data-addrec="${id}">+ Add a receipt without a file</button>`, '', true);
+    if (!ACC.length) $('uMsg').innerHTML = '<div class="sx-msg warn">' + sxi('alert') + '<span>Add a bank first: Finance New → Bank Accounts.</span></div>';
+    $('uFile').onchange = async () => {
+      const f = $('uFile').files[0]; if (!f) return; $('uPrev').innerHTML = ''; $('uMsg').innerHTML = `<div class="sx-mut">Reading ${esc(f.name)} …</div>`;
+      try { const fd = new FormData(); fd.append('file', f); fd.append('channel_id', id); const p = await api.upload('fn.in_upload_preview', fd); $('uMsg').innerHTML = ''; uPreview(id, p); }
+      catch (e) { note('uMsg', e.message, 1); }
+    };
+  }
+  function uPreview(id, p) {
+    const H = p.header, M = { utr: p.cols.utr, gross: p.cols.gross, net: p.cols.net, fees: p.cols.fees.slice() };
+    const sel = (k, label) => `<label class="sx-f">${label}<select class="sx-in" data-m="${k}"><option value="-1">— none —</option>${H.map((_, i) => H[i] === '' ? '' : `<option value="${i}" ${M[k] === i ? 'selected' : ''}>${esc(colName(H, i))}</option>`).join('')}</select></label>`;
+    $('uPrev').innerHTML = `<div class="cap">${esc(p.file)} <small class="sx-mut">${p.rows} rows</small></div>
+      ${p.same_file ? `<div class="sx-msg warn">${sxi('alert')}<span>This same file was already saved: ${esc(p.same_file)}.</span></div>` : ''}
+      <div class="sx-r2">${sel('utr', 'UTR column')}${sel('net', 'Net amount column (money that reached the bank)')}</div>
+      <div class="sx-r2" style="margin-top:8px">${sel('gross', 'Gross amount column (optional)')}<div class="sx-f">Charges columns (fees, GST…)<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px">${H.map((h, i) => h === '' ? '' : `<label style="display:flex;gap:4px;align-items:center;font-size:12.5px;font-weight:600"><input type="checkbox" class="mf" value="${i}" ${M.fees.includes(i) ? 'checked' : ''}>${esc(h)}</label>`).join('')}</div></div></div>
+      <div id="uCalc" style="margin-top:10px"></div>
+      <details style="margin-top:8px"><summary class="sx-mut" style="cursor:pointer;font-size:12.5px">First rows as read</summary><div class="wrap"><table class="tb"><tr>${H.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${p.sample.map((r) => `<tr>${H.map((_, i) => `<td>${esc(r[i] || '')}</td>`).join('')}</tr>`).join('')}</table></div></details>
+      <button class="sx-btn big" id="uSave" style="margin-top:10px" disabled>Save</button>`;
+    let last = null;
+    const show = (r) => {
+      last = r; const bad = r.dups > 0 || r.net <= 0;
+      $('uCalc').innerHTML = `<div class="k3" style="grid-template-columns:repeat(4,1fr);margin-bottom:0"><div class="k"><small>Rows</small><b style="font-size:18px">${r.rows}</b><span>${r.utrs} UTR${r.utrs === 1 ? '' : 's'}</span></div><div class="k"><small>Gross</small><b style="font-size:18px">${m2(r.gross)}</b></div><div class="k"><small>Charges</small><b style="font-size:18px">${m2(r.fee)}</b></div><div class="k"><small>Net income</small><b style="font-size:18px">${m2(r.net)}</b></div></div>
+        ${r.dups > 0 ? `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>${r.dups} UTR${r.dups === 1 ? ' is' : 's are'} already saved from ${esc(r.dup_first)}. Cancel that file first, or this money would be counted twice.</span></div>` : r.net <= 0 ? `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>No money found. Choose the UTR and the net amount column.</span></div>` : ''}`;
+      $('uSave').disabled = bad; $('uSave').textContent = bad ? 'Save' : 'Save ' + m2(r.net) + ' as received';
+    };
+    const recalc = async () => {
+      M.utr = +document.querySelector('[data-m="utr"]').value; M.net = +document.querySelector('[data-m="net"]').value; M.gross = +document.querySelector('[data-m="gross"]').value; M.fees = [...document.querySelectorAll('.mf:checked')].map((x) => +x.value);
+      try { show(await api.post('fn.in_upload_calc', { upload_id: p.upload_id, cols: M })); } catch (e) { note('uCalc', e.message, 1); }
+    };
+    $('uPrev').querySelectorAll('select').forEach((x) => { x.onchange = recalc; }); $('uPrev').querySelectorAll('.mf').forEach((x) => { x.onchange = recalc; });
+    show(Object.assign({ dup_first: p.calc.dup_first }, p.calc));
+    $('uSave').onclick = async () => {
+      $('uSave').disabled = true;
+      try { await api.post('fn.in_upload_commit', { upload_id: p.upload_id, cols: M, date: $('uDay').value, account_id: +$('uAcc').value }); await load($('uDay').value); await chSection(id); $('uMsg').innerHTML = `<div class="sx-msg ok">${sxi('ok')}<span>Saved: ${m2(last.net)} net income. It is now on the Receipt and Payment tab too.</span></div>`; }
+      catch (e) { note('uMsg', e.message, 1); $('uSave').disabled = false; }
+    };
+  }
+  function recDrawer(chId, ent) {
+    const all = Object.values(CH.channels).flat().filter((c) => c.active || (ent && c.head_id === ent.head_id));
+    const cur = ent ? all.find((c) => c.head_id === ent.head_id) : all.find((c) => c.id === chId);
+    if (!ACC.length) { alert('Add a bank first: Finance New → Bank Accounts.'); return; }
+    open(ent ? 'Edit this receipt' : 'Add a receipt', `<div class="sx-card">
+      <label class="sx-f">Channel<select class="sx-in" id="rC">${all.map((c) => `<option value="${c.id}" ${cur && cur.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+      <div class="sx-r2" style="margin-top:10px"><label class="sx-f">Date<input class="sx-in" id="rD" type="date" value="${esc(ent ? ent.day : day)}" max="${esc(O.today)}"></label>
+      <label class="sx-f">Received in (bank)<select class="sx-in" id="rA">${ACC.map((a) => `<option value="${a.id}" ${ent && ent.account_id === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label></div>
+      <label class="sx-f" style="margin-top:10px">Amount (₹)<input class="sx-in" id="rM" type="number" step="0.01" inputmode="decimal" placeholder="0" value="${ent ? ent.amount : ''}"></label>
+      <label class="sx-f" style="margin-top:10px">Note (optional)<input class="sx-in" id="rN" maxlength="255" autocomplete="off" value="${ent ? esc(ent.note) : ''}"></label>
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">This also appears on the Receipt and Payment tab, on this channel's line, and in the bank's balance.</div><div id="rMsg" style="margin-top:8px"></div></div>`,
+      `<button class="sx-btn big" id="rOk">${ent ? 'Save changes' : 'Save receipt'}</button>`);
+    $('rM').focus();
+    $('rOk').onclick = async () => {
+      try {
+        const h = await api.post('fn.in_channel_head', { id: +$('rC').value });
+        const body = { date: $('rD').value, side: 'in', head_id: h.head_id, account_id: +$('rA').value, amount: $('rM').value, note: $('rN').value };
+        if (ent) await api.post('fn.entry_update', Object.assign({ id: ent.id }, body)); else await api.post('fn.entry_save', body);
+        close(); await load($('rD').value);
+      } catch (e) { note('rMsg', e.message, 1); }
+    };
   }
   function chDrawer(sec, id) {
     const c = id ? Object.values(CH.channels).flat().find((x) => x.id === id) : null;
     const heads = CH.heads.filter((h) => h.active || (c && h.id === c.head_id));
     open(c ? 'Edit: ' + c.name : 'Add a ' + (sec === 'cod' ? 'COD' : 'Prepaid') + ' channel', `<div class="sx-card">
       <label class="sx-f">Channel name<input class="sx-in" id="cN" autocomplete="off" placeholder="e.g. Flipkart, Razorpay" value="${c ? esc(c.name) : ''}"></label>
-      <label class="sx-f" style="margin-top:10px">Receipt line it uses<select class="sx-in" id="cH"><option value="0">— none yet —</option>${heads.map((h) => `<option value="${h.id}" ${c && c.head_id === h.id ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}</select></label>
-      <div class="sx-mut" style="font-size:12px;margin-top:6px">The money you enter on this line (Receipt and Payment tab) is what this channel shows.</div>
+      <label class="sx-f" style="margin-top:10px">Receipt line it uses<select class="sx-in" id="cH"><option value="0">— automatic —</option>${heads.map((h) => `<option value="${h.id}" ${c && c.head_id === h.id ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}</select></label>
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">Leave it empty: a receipt line with the channel's name is created by itself the first time you add a receipt. Money added here shows on that line in the Receipt and Payment tab.</div>
       ${c ? `<label class="sx-f" style="margin-top:8px;display:flex;flex-direction:row;gap:6px;align-items:center"><input type="checkbox" id="cX" ${c.active ? '' : 'checked'}> Hide this channel</label>` : ''}<div id="cM" style="margin-top:8px"></div></div>`,
       `<button class="sx-btn big" id="cS">${c ? 'Save changes' : 'Add channel'}</button>`);
     $('cN').focus();
@@ -112,11 +198,13 @@
       // the numbers come from the same books as the original Finance (read only: nothing here changes them)
       O = await api.get('fi.overview', d ? { date: d } : {}); day = O.date;
       const r = await Promise.all(SEC.map((s) => api.get('fi.outstanding', { channel: s.key }))); W = {}; SEC.forEach((s, i) => { W[s.key] = r[i]; });
-      try { CH = await api.get('fn.in_channels', { date: day }); } catch (e) { CH = null; }
+      try { CH = await api.get('fn.in_channels', { date: day }); DAYE = (await api.get('fn.day', { date: day })).entries || []; ACC = (await api.get('fn.accounts')).accounts.filter((a) => a.active); } catch (e) { CH = null; }
       draw();
     } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
-  document.addEventListener('click', (e) => { const t = e.target.closest('button'); if (!t) return; if (t.id === 'pv') load(addDays(day, -1)); else if (t.id === 'nx' && !t.disabled) load(addDays(day, 1)); else if (t.id === 'tdy') load(''); else if (t.dataset.addch) chDrawer(t.dataset.addch, 0); else if (t.dataset.edch) chDrawer('', +t.dataset.edch); });
+  async function voidUpload(id, ch) { const why = prompt('Why is this file cancelled? Its money is taken off again.'); if (!why) return; try { await api.post('fn.in_upload_void', { id, reason: why }); await load(day); await chSection(ch); } catch (er) { alert(er.message); } }
+  async function voidRec(id) { const why = prompt('Why is this receipt cancelled?'); if (!why) return; try { await api.post('fn.entry_void', { id, reason: why }); await load(day); } catch (er) { alert(er.message); } }
+  document.addEventListener('click', (e) => { const t = e.target.closest('button'); if (!t) return; if (t.id === 'pv') load(addDays(day, -1)); else if (t.id === 'nx' && !t.disabled) load(addDays(day, 1)); else if (t.id === 'tdy') load(''); else if (t.dataset.addch) chDrawer(t.dataset.addch, 0); else if (t.dataset.open) chSection(+t.dataset.open); else if (t.dataset.upvoid) voidUpload(+t.dataset.upvoid, +t.dataset.ch); else if (t.dataset.addrec) recDrawer(+t.dataset.addrec, null); else if (t.dataset.edrec) recDrawer(0, DAYE.find((x) => x.id === +t.dataset.edrec)); else if (t.dataset.voidrec) voidRec(+t.dataset.voidrec); else if (t.dataset.edch) chDrawer('', +t.dataset.edch); });
   document.addEventListener('change', (e) => { if (e.target.id === 'dp' && e.target.value) load(e.target.value); });
   load('');
 </script>
