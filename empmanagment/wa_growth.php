@@ -697,6 +697,16 @@ function wag_real_queries(PDO $pdo, int $days): array
     } catch (Throwable $e) { }
     return $out;
 }
+/** The customer already ORDERED (a Shopify order of the same phone in the last 36 hours) or his last words are only a thanks / ok / emoji: such a chat is not a "hot customer waiting for an answer" (owner, 21 Nov: the order had come, the chat stayed hot, and 70% of the salespeople were blocked from taking queries because of it). */
+function wag_hot_is_done(PDO $pdo, string $phone, string $lastIn = ''): bool
+{
+    try { if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) return true;
+        $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) === 10) { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 36 * 3600)]); if ($q->fetchColumn()) return true; }
+        if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
+        $t = trim(mb_strtolower($lastIn)); if ($t !== '' && mb_strlen($t) <= 24 && preg_match('/^[\s\p{P}\p{S}]*(ok|okay|okk|thanks|thank you|thankyou|thik hai|theek hai|ठीक है|done|haan|han|ji|yes|👍|🙏|😊|🙂|👌|✅)?[\s\p{P}\p{S}]*$/u', $t)) return true;
+    } catch (Throwable $e) { }
+    return false;
+}
 function wag_open_tune(PDO $pdo): array
 {
     $last = (int)setting_get($pdo, 'wag_tune_at', '0'); $b0 = (int)setting_get($pdo, 'wag_hot_open_min_eff', '7'); $y0 = (int)setting_get($pdo, 'wag_hot_open_busy_eff', '10');
@@ -733,6 +743,7 @@ function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
             $__ml = wag_meta_get($pdo, 'mklink:' . $key, ''); if ($__ml !== '' && strtotime($__ml) > $now - 480) continue;   // the holder is making the payment link: up to 8 minutes, the chat stays with him
             $mk = wag_meta_get($pdo, 'hotmiss:' . $key, ''); if ($mk !== '' && substr($mk, strrpos($mk, '|') + 1) === $li) continue;   // once per customer message
             if (function_exists('wq_ts') && wq_ts(wag_meta_get($pdo, 'typing:' . $key, '')) > $now - 90) continue;   // a person is typing the answer right now
+            if (wag_hot_is_done($pdo, $key)) continue;   // he already ordered / only said thanks: not a lost hot chat
             $emp = (int)$c['assigned_emp']; wag_meta_put($pdo, 'hotmiss:' . $key, $emp . '|' . date('Y-m-d H:i:s') . '|' . $li);
             wa_assign_to($pdo, $key, 0, 0, 'auto'); if (function_exists('wq_tag_put')) { try { wq_tag_put($pdo, $key, 'red'); } catch (Throwable $e) { } }
             if (function_exists('wa_mkt_note')) { wa_mkt_note($pdo, $key, 0, 'offered', -1, 'hot'); if ($emp > 0) wa_mkt_note($pdo, $key, $emp, 'dropped', max(0, $now - (int)strtotime($li)), 'no answer ' . $mins . ' min'); }   // track record: the holder left it (red), the chat is offered to everybody
@@ -895,7 +906,7 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp): string
         $tk = $one("SELECT COUNT(DISTINCT phone) FROM wa_mkt WHERE emp_id = ? AND kind = 'taken' AND at >= ?", [$emp, $t0]); $dr = $one("SELECT COUNT(DISTINCT d.phone) FROM wa_mkt d WHERE d.emp_id = ? AND d.kind IN ('dropped','released') AND d.at >= ? AND EXISTS (SELECT 1 FROM wa_mkt t WHERE t.phone = d.phone AND t.emp_id = d.emp_id AND t.kind = 'taken' AND t.at >= ?)", [$emp, $t0, $t0]);   // only chats he took and left
         $od = 0; foreach (wag_mkt_board($pdo, 1) as $__b) if ((int)$__b['emp'] === $emp) $od = (int)$__b['orders'];   // orders credited from Shopify (or recorded)
         $un = 0; $__uq = $pdo->prepare("SELECT phone FROM wa_contacts WHERE assigned_emp = ? AND status = 'open' AND hot = 1 AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) LIMIT 40"); $__uq->execute([$emp, date('Y-m-d H:i:s', time() - 23 * 3600)]);
-        foreach ($__uq->fetchAll(PDO::FETCH_COLUMN) as $__up) { $__ml = wag_meta_get($pdo, 'mklink:' . $__up, ''); if ($__ml !== '' && strtotime($__ml) > time() - 480) continue; $un++; }   // a chat whose holder is making the payment link (8 min) is not "waiting"
+        foreach ($__uq->fetchAll(PDO::FETCH_COLUMN) as $__up) { $__ml = wag_meta_get($pdo, 'mklink:' . $__up, ''); if ($__ml !== '' && strtotime($__ml) > time() - 480) continue; if (wag_hot_is_done($pdo, (string)$__up)) continue; $un++; }   // a chat whose holder is making the payment link (8 min) is not "waiting"
         $ttk = 0; $tod = 0; foreach (wag_mkt_board($pdo, 7) as $__b) { $ttk += (int)$__b['taken']; $tod += (int)$__b['orders']; } $avg = $ttk >= 40 && $tod > 0 ? min(0.5, $tod / $ttk) : 0;   // orders are not all tied to takes: cap the team ratio so it can never exceed 50% (person must reach 60% of it)
         if ($un >= 3) $msg = '🔒 ' . $un . ' hot customers of yours are waiting for an answer. Answer them first — then you can take new queries.';
         elseif ($dr >= 2 && $dr * 2 > $tk) $msg = '🔒 You left ' . $dr . ' hot chats today without answering. New queries go to people who answer: answer your open chats first.';
@@ -936,7 +947,7 @@ function wag_bot_lock(PDO $pdo, array $c): array
         if ($b && strtotime((string)$b['ts']) > $now - 7 * 86400) $r['engaged'] = true;   // the bot has been talking to this customer: only IT decides when a person takes over
         if (!empty($c['hot']) && $li > 0 && $li < $now - 120 && (empty($c['last_out_at']) || strtotime((string)$c['last_out_at']) < $li)) { $r['why'] = 'hot'; $r['engaged'] = (bool)$b; return $r; }   // a hot customer waits for 2+ min: a person may take it
         if ($li > 0 && $li < $now - 180 && (empty($c['last_out_at']) || strtotime((string)$c['last_out_at']) < $li)) { $r['why'] = 'stalled'; return $r; }   // the customer waits 3+ min and nobody (bot too) answered: the lock opens, a person may take it
-        $botRecent = $b && strtotime((string)$b['ts']) > $now - 1800;
+        $botRecent = $b && strtotime((string)$b['ts']) > $now - 150;   // owner, 21 Nov: 30 minutes of "the bot is answering — wait" blocked most salespeople from taking queries; now only while the bot is really in the middle of the conversation (2.5 min)
         if ($botRecent) { $__fa = (int)wag_meta_get($pdo, 'bgfat:' . $key, '0'); if ($__fa > 0 && strtotime((string)$b['ts']) <= $__fa + 20) $botRecent = false; }   // the bot's own follow-up to a silent customer does not lock the chat   // the bot decides when a person may take over (its hand-over); only if the customer is silent 30 min — or the bot fails to answer for 3 min — the lock opens by itself
         $lm = $pdo->prepare("SELECT mtype FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $lm->execute([$key]); $lastType = (string)$lm->fetchColumn();
         $botCan = in_array($lastType, ['text', 'button', 'interactive'], true);   // a photo / voice note / file / location is for a person: the bot never answers it, so nobody waits for the bot
