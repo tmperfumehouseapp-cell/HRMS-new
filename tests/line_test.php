@@ -29,13 +29,13 @@ ok(wl_due_ts(ist('2026-11-20 21:40:00'), 1) === ist('2026-11-22 10:00:00'), 'aft
 ok(wl_due_ts(ist('2026-11-20 19:59:00'), 1) === ist('2026-11-21 19:59:00'), '19:59 stays');
 ok(wl_yesterday_start(ist('2026-11-21 15:00:00')) === ist('2026-11-20 10:00:00'), 'yesterday 10:00 IST');
 // ---- the messages
-$P = wl_pack(); ok(count($P) === 33, '6 topics x 4 + 3 shared + 6 extra wordings of step 1 = 33 messages, got ' . count($P));
+$P = wl_pack(); ok(count($P) === 43, '6 topics x 4 + 8 shared + 6 extra wordings of step 1 + 5 price/prepaid = 43 messages, got ' . count($P));
 $seen = [];
 foreach ($P as $k => $m) {
-    ok(preg_match_all('/\{\{\d+\}\}/', $m['body']) === 1 && strpos($m['body'], '{{1}}') !== false, "$k: exactly one blank, the name");
+    ok(preg_match_all('/\{\{\d+\}\}/', $m['body']) === (int)($m['vars'] ?? 1) && strpos($m['body'], '{{1}}') !== false, "$k: the blanks are the name (and the price for the price messages)");
     ok(strpos(trim($m['body']), '{{1}}') !== 0, "$k: must not start with the blank (Meta)"); ok(!preg_match('/\{\{1\}\}\s*$/', $m['body']), "$k: must not end with the blank");
     ok(mb_strlen($m['body']) <= 600, "$k: body length"); ok(mb_strlen($m['button']) <= 25, "$k: button max 25 characters (" . $m['button'] . ')');
-    foreach (wl_banned() as $w) ok(stripos($m['body'] . ' ' . $m['button'], $w) === false, "$k: the template must not contain '$w' (Meta would call it marketing)");
+    if (empty($m['cat'])) foreach (wl_banned() as $w) ok(stripos($m['body'] . ' ' . $m['button'], $w) === false, "$k: the template must not contain '$w' (Meta would call it marketing)");
     $n = trim(preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($m['button']))); ok(!isset($seen[$n]), "$k: button text '$n' is used twice"); $seen[$n] = $k;
     ok(trim($m['free']) !== '', "$k: has a free answer");
 }
@@ -46,5 +46,10 @@ ok($b > 700 && $b < 900, "the better wording gets about 80% (got $b / 1000)");
 ok(wl_pick('ln_trust_1', '9811', $sc, ['ln_trust_1']) === 'ln_trust_1', 'an unapproved wording is never picked');
 $a = 0; for ($i = 0; $i < 1000; $i++) if (wl_pick('ln_trust_1', '97' . $i, [], $ok2) === 'ln_trust_1b') $a++; ok($a > 400 && $a < 600, "too few results: an even split (got $a)");
 ok(wl_pick('ln_trust_2', '1', [], ['ln_trust_2']) === 'ln_trust_2', 'a message without extra wording is itself');
-foreach (array_keys(wl_topics()) as $t) { if ($t === 'campaign') continue; for ($s = 1; $s <= 7; $s++) ok(isset($P[wl_key($t, $s)]), "topic $t step $s has a message"); }
+foreach (array_keys(wl_topics()) as $t) { if ($t === 'campaign') continue; for ($s = 1; $s <= 12; $s++) ok(isset($P[wl_key($t, $s)]), "topic $t step $s has a message"); }
+// 30-day ladder: day 1,2,3,4,6,8,10,15,18,22,26,30
+ok(wl_steps() === 12 && array_values(wl_days()) === [1, 2, 3, 4, 6, 8, 10, 15, 18, 22, 26, 30], 'the ladder is 12 steps on day 1,2,3,4,6,8,10,15,18,22,26,30');
+ok(wl_gap(1) === 1 && wl_gap(5) === 2 && wl_gap(8) === 5 && wl_gap(12) === 4, 'gaps between steps'); ok(wl_gap_sum(0, 12) === 30 && wl_gap_sum(4, 8) === 11 && wl_gap_sum(8, 8) === 0, 'gap sums');
+ok(wln_pref_key(5) === 'ln_px_5' && wln_pref_key(6) === 'ln_pp_6' && wln_pref_key(8) === '', 'price / prepaid steps');
+foreach (['ln_px_5', 'ln_px_7', 'ln_px_9', 'ln_px_11', 'ln_pp_6'] as $k) ok(($P[$k]['cat'] ?? '') === 'MARKETING' && !empty($P[$k]['pref']), "$k is a preferred marketing message");
 echo "lineup ok\n";

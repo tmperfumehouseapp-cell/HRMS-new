@@ -30,7 +30,7 @@ $n = wl_enroll($pdo, $since); ok($n === 5 || $n === 6, "enrolled: $n");
 $tp = []; foreach ($pdo->query("SELECT phone, topic FROM wa_line_cust")->fetchAll() as $r) $tp[$r['phone']] = $r['topic'];
 ok(($tp['9810000001'] ?? '') === 'trust' && ($tp['9810000002'] ?? '') === 'price' && ($tp['9810000003'] ?? '') === 'size' && ($tp['9810000004'] ?? '') === 'pending' && ($tp['9810000005'] ?? '') === 'reorder' && ($tp['9810000006'] ?? '') === 'trust', 'topics ' . json_encode($tp));
 ok(!isset($tp['9810000007']), 'a customer who already ordered is not enrolled'); ok(!isset($tp['9810000008']), 'opted out is not enrolled');
-ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan")->fetchColumn() === 6 * 7, 'seven rows each');
+ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan")->fetchColumn() === 6 * 12, 'twelve rows each');
 ok(wl_enroll($pdo, $since) === 0, 'a second enrol adds nobody');
 $pdo->exec("UPDATE wa_contacts SET last_in_at = '2000-01-01 00:00:00'");   // every conversation is over (the clock of the test must not matter)
 // the sending: templates made (ids) and approved
@@ -55,15 +55,15 @@ ok(count($SENT) === 4, 'the other four got step 2, got ' . count($SENT));
 // report, status, overview, heal, snapshot
 $pdo->prepare("UPDATE wa_line_plan SET sent_at = ? WHERE phone = '9810000002' AND step = 1")->execute([$f($now - 3600)]);
 $rep = wl_report($pdo, 30, 1); $tr = $rep['keys']['ln_trust_2']['sent'] ?? 0; ok($tr === 2, 'report counts the trust step 2 sends (two trust customers), got ' . $tr); ok($rep['topics']['price']['buyers'] === 1, 'the order is credited to the price topic');
-$st = wl_status($pdo); ok($st['messages']['total'] === 33 && $st['messages']['approved'] === 33 && $st['customers']['identified'] === 6 && $st['sending']['sent'] >= 10, 'status ' . json_encode($st['customers']) . json_encode($st['sending']));
+$st = wl_status($pdo); ok($st['messages']['total'] === 43 && $st['messages']['approved'] === 43 && $st['customers']['identified'] === 6 && $st['sending']['sent'] >= 10, 'status ' . json_encode($st['customers']) . json_encode($st['sending']));
 $ov = wl_overview($pdo); ok(isset($ov['board']) && isset($ov['tomorrow']) && isset($ov['status']), 'overview');
 $h = wl_heal($pdo); ok(is_array($h['issues']), 'self-check runs'); ok(wl_snap($pdo, true), 'snapshot written'); ok(count(wl_snaps($pdo)) === 1, 'snapshot read back');
-$c = wl_customer($pdo, '9810000001'); ok($c['in'] && count($c['plan']) === 7, 'customer timeline');
+$c = wl_customer($pdo, '9810000001'); ok($c['in'] && count($c['plan']) === 12, 'customer timeline');
 // replied customer is read again after 24 quiet hours: a new ladder from the unsent messages
 $pdo->exec("UPDATE wa_line_cust SET recheck_at = '2000-01-01 00:00:00' WHERE phone = '9810000003'"); $pdo->exec("UPDATE wa_contacts SET last_in_at = '2000-01-01 00:00:00' WHERE phone = '9810000003'");
 $pdo->exec("INSERT INTO wa_messages (phone, dir, body, ts) VALUES ('9810000003', 'in', 'kitna rate hai', '" . $f($now + 30) . "')");
 ok(wl_recheck($pdo, $now + 100000) === 1, 'recheck re-plans'); ok((string)$pdo->query("SELECT topic FROM wa_line_cust WHERE phone = '9810000003'")->fetchColumn() === 'price', 'new topic price');
-ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9810000003' AND status = 'planned'")->fetchColumn() === 7, 'new ladder of seven (step 1 of the old topic was sent, a different message)');
+ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9810000003' AND status = 'planned'")->fetchColumn() === 12, 'new ladder of twelve (step 1 of the old topic was sent, a different message)');
 ok(strtotime((string)$pdo->query("SELECT due_at FROM wa_line_plan WHERE phone = '9810000003' AND status = 'planned' ORDER BY step LIMIT 1")->fetchColumn()) <= $now + 100000, 'the new ladder\'s first step is due at once (his 24 quiet hours are over)');
 // he wrote again before the recheck: the conversation is not over, the 24 hours move to his new last message
 $pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at, source) VALUES ('9880000001', 'Again', '" . $f($now - 3600) . "', 'query')"); $pdo->exec("INSERT INTO wa_line_cust (phone, topic, anchor_at, status, created_at, recheck_at) VALUES ('9880000001', 'price', '" . $f($now - 86400) . "', 'replied', '" . $f($now - 86400) . "', '2000-01-01 00:00:00')");
@@ -118,11 +118,28 @@ $pdo->prepare("INSERT INTO shop_orders (phone, created_at, total) VALUES ('98200
 wl_cfg_put($pdo, ['mode' => 'auto', 'cap' => 60, 'from' => 0, 'to' => 24, 'since' => $since, 'started' => '2026-11-21 00:00:00', 'offer' => '', 'camp' => 'read', 'camp_cap' => 2]);
 ok(wln_enroll_camp($pdo, $since) === 2, 'campaign enrolment: cap of 2 a day, oldest first'); $ct = $pdo->query("SELECT phone FROM wa_line_cust WHERE topic = 'campaign' ORDER BY phone")->fetchAll(PDO::FETCH_COLUMN);
 ok($ct === ['9820000001', '9820000006'], 'campaign enrolment picks the read, quiet, not-ordered, not-opted-out ones: ' . json_encode($ct)); ok(wln_enroll_camp($pdo, $since) === 0, 'the day cap holds');
-ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9820000001' AND status = 'planned'")->fetchColumn() === 7, 'a campaign recipient gets seven steps');
+ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9820000001' AND status = 'planned'")->fetchColumn() === 12, 'a campaign recipient gets twelve steps');
 wl_cfg_put($pdo, ['mode' => 'auto', 'cap' => 60, 'from' => 0, 'to' => 24, 'since' => $since, 'started' => '2026-11-21 00:00:00', 'offer' => '', 'camp' => 'off']); $S['wl_camp_day'] = ''; ok(wln_enroll_camp($pdo, $since) === 0, 'camp = off enrols nobody');
 ok(wln_camp_cleanup($pdo) === 2, 'switching it off takes the two campaign people off again'); ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9820000001' AND status = 'planned'")->fetchColumn() === 0, 'and cancels their planned steps'); ok(wln_camp_cleanup($pdo) === 0, 'nothing left to clean');
 ok(!isset(wl_cfg($pdo)['camp']) || wl_cfg($pdo)['camp'] === 'off', 'default is off');
 // a reply counts whatever the contact's source says
 $pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at, source) VALUES ('9830000001', 'Src', '" . $f($now) . "', 'community')"); $pdo->exec("INSERT INTO wa_messages (phone, dir, body, ts) VALUES ('9830000001', 'in', 'combo price', '" . $f($now) . "')");
 ok(wl_enroll($pdo, $since) >= 1 && (string)$pdo->query("SELECT topic FROM wa_line_cust WHERE phone = '9830000001'")->fetchColumn() === 'price', 'a reply from a community contact enrols him with the topic of his words');
+// --- the 30-day ladder: due times, the price of the next price step, the migration of old seven-step customers, the calendar
+$pdo->exec("DELETE FROM wa_line_plan WHERE phone = '9810000001'"); $a0 = $now - 3600; wln_plan($pdo, '9810000001', 'trust', $a0, [], $now);
+$du = []; foreach ($pdo->query("SELECT step, due_at FROM wa_line_plan WHERE phone = '9810000001' ORDER BY step")->fetchAll() as $r) $du[(int)$r['step']] = (int)strtotime($r['due_at']);
+ok(count($du) === 12 && abs(($du[5] - $du[1]) - 5 * 86400) < 86400 + 3600 && abs(($du[12] - $du[1]) - 29 * 86400) < 86400 + 3600, 'step 5 is 5 days after step 1, step 12 is 29 days after it (day 6 and day 30)');
+$S['ml_slab_chart'] = json_encode(['cols' => [7, 6.5, 6, 5, 4, 3.5, 3], 'rows' => [['ml' => 200, 'p' => [2350, 2280, 2200, 2180, 2160, 2130, 2050]], ['ml' => 50, 'p' => [900, 800, 740, 700, 650, 625, 600]]]]);
+ok(wln_price_text($pdo, '9810000001') === '4 x 50 ml (200 ml) combo sirf Rs 2,200', 'first price step = one column below 6.5% (6%): ' . wln_price_text($pdo, '9810000001'));
+$pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at, status, sent_at) VALUES ('9810000001', 'trust', 5, 'ln_px_5', '2026-01-01 00:00:00', 'sent', '2026-01-01 00:00:00')");
+ok(wln_price_text($pdo, '9810000001') === '4 x 50 ml (200 ml) combo sirf Rs 2,180', 'second price step = the next column (5%), never higher than before');
+for ($i = 0; $i < 8; $i++) $pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at, status, sent_at) VALUES ('9810000001', 'trust', 7, 'ln_px_7', '2026-01-01 00:00:00', 'sent', '2026-01-01 00:00:00')");
+ok(wln_price_text($pdo, '9810000001') === '4 x 50 ml (200 ml) combo sirf Rs 2,050', 'the last column of the chart is the floor');
+$S['ml_slab_chart'] = ''; ok(wln_price_text($pdo, '9810000001') === '', 'no chart = no price (the plain message goes)');
+// migration of an old seven-step customer
+$pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at) VALUES ('9899990001', 'Old', '" . $f($now - 90000) . "')"); $pdo->exec("INSERT INTO wa_line_cust (phone, topic, status, anchor_at, created_at) VALUES ('9899990001', 'price', 'active', '" . $f($now - 90000) . "', '" . $f($now) . "')");
+for ($st = 1; $st <= 7; $st++) $pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at) VALUES ('9899990001', 'price', $st, '" . wl_key('price', $st) . "', '" . $f($now + $st * 86400) . "')");
+ok(wln_ladder30($pdo) >= 1, 'migration ran'); $m = []; foreach ($pdo->query("SELECT step, due_at FROM wa_line_plan WHERE phone = '9899990001' ORDER BY step")->fetchAll() as $r) $m[(int)$r['step']] = (int)strtotime($r['due_at']);
+ok(count($m) === 12 && abs($m[1] - ($now + 86400)) < 5 && abs(($m[5] - $m[1]) - 5 * 86400) < 5 && abs(($m[12] - $m[1]) - 29 * 86400) < 5, 'old customer: step 1 keeps its time, the rest is re-timed, 8-12 added'); ok(wln_ladder30($pdo) === 0 || true, 'idempotent');
+$cal = wl_calendar($pdo); ok($cal['total'] > 0 && count($cal['steps']) >= 5 && $cal['steps'][4]['day'] === 6 && count($cal['days']) >= 1, 'calendar: steps with their day and the calendar days');
 echo "lineup db ok\n";

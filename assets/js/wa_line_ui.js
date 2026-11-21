@@ -6,7 +6,7 @@
   const TOP = { pending: '📍 Address / payment', price: '💰 Price', trust: '🛡 Trust', size: '📏 Size / ml', reorder: '🔁 Bought before', general: '💬 No clear topic', campaign: '📣 Got a campaign' };
   const pill = (t, c) => `<span class="wp-pill ${c || ''}">${t}</span>`;
   function open() {
-    const m = modal('🧵 Lineup — 7-day follow-up by topic'); m.el.classList.add('cu-wide'); m.body.innerHTML = loading; load(m);
+    const m = modal('🧵 Lineup — 30-day follow-up by topic'); m.el.classList.add('cu-wide'); m.body.innerHTML = loading; load(m);
   }
   function load(m) {
     Promise.all([api.get('wa.line_get'), api.get('wa.line_report', { days: 30 })]).then(([d, r]) => draw(m, d, r)).catch((e) => { m.body.innerHTML = errBox(e.message); });
@@ -14,7 +14,10 @@
   function draw(m, D, R) {
     const C = D.cfg, started = !!C.started, tc = D.tpl_counts || {}, tot = Object.keys(D.tpl || {}).length, appr = tc.approved || 0, ready = tot > 0 && appr === tot;
     const topics = Object.keys(D.topics);
-    const board = `<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="color:#64748b"><th align="left">Topic</th><th>Customers</th>${[1, 2, 3, 4, 5, 6, 7].map((s) => `<th>Step ${s}</th>`).join('')}<th>Orders</th><th>Conv.</th></tr>${topics.map((t) => { const bt = D.by_topic[t] || {}, cust = Object.values(bt).reduce((a, b) => a + b, 0), rp = (R.topics || {})[t] || {}; return `<tr style="border-top:1px solid #eef0f3"><td>${esc(TOP[t] || t)}</td><td align="center"><b>${fmt(cust)}</b></td>${[1, 2, 3, 4, 5, 6, 7].map((s) => `<td align="center">${fmt(((D.board || {})[t] || {})[s] || 0)}</td>`).join('')}<td align="center">${fmt(rp.buyers || 0)}</td><td align="center">${rp.conv == null ? '<span style="color:#94a3b8">—</span>' : '<b>' + rp.conv + '%</b>'}</td></tr>`; }).join('')}</table><div class="wp-hint">Step columns = customers still waiting to get that step. Conv. = customers who ordered after a lineup message ÷ customers (shown from ${R.min} customers).</div>`;
+    const DAYS = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 6, 6: 8, 7: 10, 8: 15, 9: 18, 10: 22, 11: 26, 12: 30 };
+    const CAL = D.calendar || { steps: [], days: [], total: 0 };
+    const calendar = `<div class="wp-note"><b>🗓 Plan: ${fmt(CAL.total)} messages waiting</b><div style="margin-top:4px;font-size:12px">By step (day of the 30-day ladder): ${CAL.steps.map((x) => 'step ' + x.step + ' (day ' + x.day + ') <b>' + fmt(x.n) + '</b>').join(' · ') || '—'}</div><div style="margin-top:4px;font-size:12px">Goes on: ${CAL.days.slice(0, 31).map((x) => esc(String(x.date).slice(5)) + ' <b>' + fmt(x.n) + '</b>').join(' · ') || '—'}</div></div>`;
+    const board = `<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="color:#64748b"><th align="left">Topic</th><th>Customers</th>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((s) => `<th title="day ${DAYS[s]}">S${s}<br><small style="font-weight:400">d${DAYS[s]}</small></th>`).join('')}<th>Orders</th><th>Conv.</th></tr>${topics.map((t) => { const bt = D.by_topic[t] || {}, cust = Object.values(bt).reduce((a, b) => a + b, 0), rp = (R.topics || {})[t] || {}; return `<tr style="border-top:1px solid #eef0f3"><td>${esc(TOP[t] || t)}</td><td align="center"><b>${fmt(cust)}</b></td>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((s) => `<td align="center">${fmt(((D.board || {})[t] || {})[s] || 0)}</td>`).join('')}<td align="center">${fmt(rp.buyers || 0)}</td><td align="center">${rp.conv == null ? '<span style="color:#94a3b8">—</span>' : '<b>' + rp.conv + '%</b>'}</td></tr>`; }).join('')}</table><div class="wp-hint">Step columns = customers still waiting to get that step. Conv. = customers who ordered after a lineup message ÷ customers (shown from ${R.min} customers).</div>`;
     const hours = Object.entries((D.tomorrow || {}).by_hour || {}).map(([h, n]) => `<span class="wp-pill" title="${h}:00 IST">${h}:00 · ${n}</span>`).join(' ');
     const bad = Object.entries(D.tpl || {}).filter(([, s]) => s !== 'approved');
     const best = (R.best_steps || []).map((x) => `${esc(TOP[x.topic] || x.topic)} step ${x.step}: <b>${x.per100}</b> orders / 100 delivered (${fmt(x.orders)} orders)`).join('<br>') || '<span style="color:#94a3b8">not enough delivered messages yet</span>';
@@ -59,7 +62,7 @@
         <div class="wp-note"><b>📤 Today</b><br><span style="font-size:22px;font-weight:800">${fmt((D.today || {}).sent || 0)}</span> sent of ${fmt((D.today || {}).total || 0)} planned<div style="margin-top:4px;font-size:12px">Left the lineup: ${Object.entries(D.left || {}).map(([k, n]) => esc(k) + ' ' + n).join(' · ') || '—'}</div></div>
       </div>
       ${bad.length ? `<div class="wp-note" style="border-color:#f59e0b"><b>⏳ Messages not approved yet (${bad.length})</b><div style="font-size:12px">${bad.map(([k, s]) => esc(k) + ' — ' + esc(s)).join(' · ')}</div><div class="wp-hint">Sending waits until all ${tot} are approved. Meta usually answers in minutes to a few hours; a rejected one must be edited in Pre-made messages.</div></div>` : ''}
-      <h3 style="margin:12px 0 4px">Lineup board</h3>${board}
+      <h3 style="margin:12px 0 4px">Lineup board</h3>${calendar}${board}
       <h3 style="margin:12px 0 4px">🏆 What brings orders <small style="font-weight:400;color:#64748b">(last ${R.days} days)</small></h3>
       <div class="wp-note"><b>Best steps</b><br>${best}${weak ? '<br><br><b style="color:#b45309">Not working (change the words)</b><br>' + weak : ''}<div class="wp-hint">${esc(R.note)}</div></div>
       ${words}
