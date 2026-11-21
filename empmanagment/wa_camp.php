@@ -1214,12 +1214,12 @@ function wa_camp_days(PDO $pdo, int $days): array
 /** ⏱ One business day, hour by hour: campaign messages sent / delivered, the estimated spend, and the queries generated = customers who wrote back (within 24 h) to a campaign message sent in that hour. Remembered 5 minutes. */
 function wa_camp_hourly(PDO $pdo, string $day): array
 {
-    $ck = 'camp_hourly_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 300) return $hit['v'];
+    $ck = 'camp_hourly2_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 300) return $hit['v'];
     $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     if (!$t0 || $t1 <= $t0) { $t0 = strtotime($day . ' 10:00:00'); $t1 = $t0 + 86400; }
     $a = date('Y-m-d H:i:s', $t0); $b = date('Y-m-d H:i:s', $t1); $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
-    $H = []; for ($t = $t0; $t < $t1; $t += 3600) { $h = (int)date('G', $t); $H[$h] = ['h' => $h, 'camps' => [], 'sent' => 0, 'delivered' => 0, 'read' => 0, 'spend' => 0.0, 'queries' => 0]; }
+    $H = []; for ($t = $t0; $t < $t1; $t += 3600) { $h = (int)date('G', $t); $H[$h] = ['h' => $h, 'camps' => [], 'sent' => 0, 'delivered' => 0, 'read' => 0, 'spend' => 0.0, 'queries' => 0, 'newq' => 0, 'newq_camp' => 0, 'wrote' => 0]; }
     try {
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(ts) h, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status = 'read') rd, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv
             FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ? GROUP BY h"); $q->execute([$a, $b]);
@@ -1231,9 +1231,15 @@ function wa_camp_hourly(PDO $pdo, string $day): array
             FROM wa_camp_items i WHERE i.status = 'sent' AND i.sent_at >= ? AND i.sent_at < ? GROUP BY h, c"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $H[$h]['camps'][] = ['id' => (int)$r['c'], 'name' => $cn[(int)$r['c']] ?? ('#' . (int)$r['c']), 'sent' => (int)$r['sent'], 'queries' => (int)$r['rp']]; $H[$h]['queries'] += (int)$r['rp']; }
     } catch (Throwable $e) { error_log('camp_hourly queries: ' . $e->getMessage()); }
-    $rows = []; $T = ['sent' => 0, 'delivered' => 0, 'spend' => 0.0, 'queries' => 0]; $best = null;
+    try {   // 🔎 the NEW queries that opened in each hour (any type; complaints and order-status chats are not in the ledger) and the customers who wrote in that hour
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(opened_at) h, COUNT(*) n, SUM(src = 'campaign') c FROM wa_queries WHERE opened_at >= ? AND opened_at < ? GROUP BY h"); $q->execute([$a, $b]);
+        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) { $H[$h]['newq'] = (int)$r['n']; $H[$h]['newq_camp'] = (int)$r['c']; } }
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(ts) h, COUNT(DISTINCT phone) n FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts < ? GROUP BY h"); $q->execute([$a, $b]);
+        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['wrote'] = (int)$r['n']; }
+    } catch (Throwable $e) { error_log('camp_hourly newq: ' . $e->getMessage()); }
+    $rows = []; $T = ['sent' => 0, 'delivered' => 0, 'spend' => 0.0, 'queries' => 0, 'newq' => 0, 'newq_camp' => 0, 'wrote' => 0]; $best = null;
     foreach ($H as $r) { usort($r['camps'], fn($x, $y) => $y['sent'] <=> $x['sent']); $r['cpq'] = $r['queries'] > 0 && $r['spend'] > 0 ? round($r['spend'] / $r['queries'], 1) : null; foreach ($T as $k => $_) $T[$k] += $r[$k]; if ($r['queries'] >= 3 && $r['cpq'] !== null && ($best === null || $r['cpq'] < $best)) $best = $r['cpq']; $rows[] = $r; }
-    $o = ['day' => $day, 'rows' => $rows, 'total' => ['sent' => $T['sent'], 'delivered' => $T['delivered'], 'spend' => round($T['spend']), 'queries' => $T['queries'], 'cpq' => $T['queries'] > 0 && $T['spend'] > 0 ? round($T['spend'] / $T['queries'], 1) : null], 'best_cpq' => $best, 'rate' => round((float)$R['marketing'], 2), 'from' => $a, 'to' => $b, 'at' => date('Y-m-d H:i:s')];
+    $o = ['day' => $day, 'rows' => $rows, 'total' => ['sent' => $T['sent'], 'delivered' => $T['delivered'], 'spend' => round($T['spend']), 'queries' => $T['queries'], 'newq' => $T['newq'], 'newq_camp' => $T['newq_camp'], 'wrote' => $T['wrote'], 'cpq' => $T['queries'] > 0 && $T['spend'] > 0 ? round($T['spend'] / $T['queries'], 1) : null], 'best_cpq' => $best, 'rate' => round((float)$R['marketing'], 2), 'from' => $a, 'to' => $b, 'at' => date('Y-m-d H:i:s')];
     wa_cpc_put($pdo, $ck, $o); return $o;
 }
 /** 🧭 IDEAL DAY — QUERY: Shout queries (the +1 / − the team enters on Assign Queries, stored as "scout") and Query orders, hour by hour against an ideal built from the last 30 days.
