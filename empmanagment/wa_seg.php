@@ -434,10 +434,11 @@ function wa_seg_filters_clean($raw): array
     foreach (['spent_min', 'spent_max'] as $k) if (isset($raw[$k]) && $raw[$k] !== '' && $raw[$k] !== null && is_numeric($raw[$k])) $o[$k] = max(0, min(100000000, (float)$raw[$k]));
     foreach (['first_on_from', 'first_on_to', 'last_in_on_from', 'last_in_on_to'] as $k) if (isset($raw[$k]) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$raw[$k])) $o[$k] = (string)$raw[$k];
     if (!empty($raw['exclude_complaint'])) $o['exclude_complaint'] = 1;
+    if (!empty($raw['exclude_lineup'])) $o['exclude_lineup'] = 1;
     return $o;
 }
 /** The filters without the exclusions (what the audience is BEFORE we skip anybody). */
-function wsg_positive(array $f): array { foreach (['exclude_bought_days', 'exclude_messaged_days', 'exclude_complaint'] as $k) unset($f[$k]); return $f; }
+function wsg_positive(array $f): array { foreach (['exclude_bought_days', 'exclude_messaged_days', 'exclude_complaint', 'exclude_lineup'] as $k) unset($f[$k]); return $f; }
 function wsg_days_label(int $d): string { return $d === 7 ? 'this week' : ($d === 1 ? 'today' : 'in the last ' . $d . ' days'); }
 /** The opt-out flag is copied into the story table (so counts need no join). This puts the copy right again: only the few opted-out numbers are looked at. */
 function wsg_optout_sync(PDO $pdo): int
@@ -457,12 +458,13 @@ function wa_seg_count(PDO $pdo, array $filters): array
 {
     $t0 = microtime(true); wsg_tables($pdo); $f = wa_seg_filters_clean($filters); $pos = wsg_positive($f); $pos['_story'] = 1; [$fq, $p] = wa_aud_where('contacts', $pos, '');
     $now = wsg_now(); $d = fn(int $n) => wsg_dt($now - $n * 86400); $par = []; $where = (strpos($fq, ' WHERE ') === false) ? '' : substr($fq, strpos($fq, ' WHERE '));
-    $fast = !preg_match('/\b[cs]\./', $where) && !isset($f['exclude_bought_days']) && !isset($f['exclude_messaged_days']);
+    $fast = !preg_match('/\b[cs]\./', $where) && !isset($f['exclude_bought_days']) && !isset($f['exclude_messaged_days']) && empty($f['exclude_lineup']);
     $oc = $fast ? 'st.optout' : 'COALESCE(c.optout, 0)';
     $ex = "CASE WHEN $oc = 1 THEN 'optout'";
     if (!empty($f['exclude_complaint'])) $ex .= " WHEN FIND_IN_SET('complaint', st.flags) > 0 THEN 'complaint'";
     if (isset($f['exclude_bought_days'])) { $ex .= " WHEN s.last_order >= ? THEN 'bought'"; $par[] = $d((int)$f['exclude_bought_days']); }
     if (isset($f['exclude_messaged_days'])) { $ex .= " WHEN c.last_out_at >= ? THEN 'messaged'"; $par[] = $d((int)$f['exclude_messaged_days']); }
+    if (!empty($f['exclude_lineup'])) $ex .= " WHEN EXISTS (SELECT 1 FROM wa_line_cust lc WHERE (lc.phone COLLATE utf8mb4_unicode_ci) = (c.phone COLLATE utf8mb4_unicode_ci) AND lc.status IN ('active', 'replied')) THEN 'lineup'";
     $ex .= " ELSE 'ok' END";
     $src = $fast ? "wa_cust_story st" . $where : $fq;
     $q = $pdo->prepare("SELECT $ex AS why, COALESCE(st.stage, 'unbuilt') AS stg, COALESCE(st.value_tier, 'unbuilt') AS vt, COUNT(*) AS n FROM $src GROUP BY 1, 2, 3"); $q->execute(array_merge($par, $p));
@@ -470,13 +472,13 @@ function wa_seg_count(PDO $pdo, array $filters): array
     if ($fast && $where === '') {   // nothing filtered: customers without a story row yet are still customers
         $miss = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts")->fetchColumn() - (int)$pdo->query("SELECT COUNT(*) FROM wa_cust_story")->fetchColumn(); if ($miss > 0) $rows[] = ['why' => 'ok', 'stg' => 'unbuilt', 'vt' => 'unbuilt', 'n' => $miss];
     }
-    $total = 0; $send = 0; $why = ['optout' => 0, 'complaint' => 0, 'bought' => 0, 'messaged' => 0]; $stg = []; $val = [];
+    $total = 0; $send = 0; $why = ['optout' => 0, 'complaint' => 0, 'bought' => 0, 'messaged' => 0, 'lineup' => 0]; $stg = []; $val = [];
     $add = function (array &$arr, string $k, int $n, bool $ok) { if (!isset($arr[$k])) $arr[$k] = ['total' => 0, 'sendable' => 0]; $arr[$k]['total'] += $n; if ($ok) $arr[$k]['sendable'] += $n; };
     foreach ($rows as $r) {
         $n = (int)$r['n']; $total += $n; $ok = $r['why'] === 'ok'; if ($ok) $send += $n; else $why[$r['why']] += $n;
         $add($stg, (string)$r['stg'], $n, $ok); $add($val, (string)$r['vt'], $n, $ok);
     }
-    $lab = ['optout' => 'opted out', 'complaint' => 'open complaint', 'bought' => 'bought ' . (isset($f['exclude_bought_days']) ? wsg_days_label((int)$f['exclude_bought_days']) : ''), 'messaged' => 'messaged ' . (isset($f['exclude_messaged_days']) ? wsg_days_label((int)$f['exclude_messaged_days']) : '')];
+    $lab = ['optout' => 'opted out', 'complaint' => 'open complaint', 'bought' => 'bought ' . (isset($f['exclude_bought_days']) ? wsg_days_label((int)$f['exclude_bought_days']) : ''), 'messaged' => 'messaged ' . (isset($f['exclude_messaged_days']) ? wsg_days_label((int)$f['exclude_messaged_days']) : ''), 'lineup' => 'already in the 30-Day Lineup'];
     $parts = []; foreach ($why as $k => $n) if ($n > 0) $parts[] = trim($lab[$k]) . ' ' . wsg_n($n); $skipped = $total - $send;
     $text = 'Total ' . wsg_n($total) . ' = sending ' . wsg_n($send) . ' + skipped ' . wsg_n($skipped) . ($parts ? ' (' . implode(', ', $parts) . ')' : '');
     $unb = $stg['unbuilt']['total'] ?? 0;

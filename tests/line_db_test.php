@@ -151,4 +151,18 @@ ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9870000099
 ok(wln_rescue($pdo, $now) === 0 && count($SENT) === 1, 'a message is rescued only once');
 ok((string)$pdo->query("SELECT why FROM wa_line_plan WHERE phone = '9870000098' AND wamid = 'wmR2'")->fetchColumn() === 'rescue not needed: he wrote', 'a customer who wrote since is not sent again');
 $ov = wl_overview($pdo); ok(isset($ov['today']['left_by_hour']), 'today left by hour');
+// day hints
+$rep = ['steps' => [['step' => 1, 'delivered' => 1000, 'orders' => 20, 'taps' => 0], ['step' => 2, 'delivered' => 900, 'orders' => 2, 'taps' => 0], ['step' => 3, 'delivered' => 800, 'orders' => 14, 'taps' => 0]]]; $dh = wl_day_hints($rep);
+ok(count($dh['hints']) === 1 && strpos($dh['hints'][0], 'Step 2') === 0, 'day hint for the weak daily step: ' . json_encode($dh)); ok(isset(wl_day_hints(['steps' => []])['note']), 'no numbers = the days stay');
+// price column report: orders and revenue per price column
+$pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at) VALUES ('9870000071', 'P1', '2000-01-01 00:00:00')");
+$pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, sent_at, wamid, px) VALUES ('9870000071', 'price', 5, 'ln_px_5', 5, '" . $f($now - 7200) . "', 'sent', '" . $f($now - 7200) . "', 'wmP1', '6')");
+$pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, sent_at, wamid, px) VALUES ('9870000072', 'price', 5, 'ln_px_5', 5, '" . $f($now - 7200) . "', 'sent', '" . $f($now - 7200) . "', 'wmP2', '5')");
+$pdo->exec("INSERT INTO wa_messages (wamid, phone, dir, status, ts) VALUES ('wmP1', '9870000071', 'out', 'delivered', '" . $f($now - 7100) . "'), ('wmP2', '9870000072', 'out', 'delivered', '" . $f($now - 7100) . "')");
+$pdo->exec("INSERT INTO shop_orders (phone, created_at, total) VALUES ('+919870000071', '" . $f($now - 3600) . "', 2200)");
+$rp = wl_report($pdo, 30, 1); $cl = []; foreach ($rp['columns'] as $c) $cl[(string)$c['pct']] = $c;
+ok(isset($cl['6'], $cl['5']) && $cl['6']['orders'] === 1 && $cl['6']['revenue'] === 2200 && $cl['5']['orders'] === 0 && $cl['6']['sent'] === 1, 'price columns report: ' . json_encode($rp['columns']));
+$pdo->exec("CREATE TABLE lib_guide (id INTEGER PRIMARY KEY AUTOINCREMENT, version INT, status TEXT, body TEXT)"); $pdo->exec("CREATE TABLE order_rate_auto (tip TEXT, worked INT, at TEXT)");
+$pdo->prepare("INSERT INTO lib_guide (version, status, body) VALUES (25, 'live', ?)")->execute([json_encode(['openers' => ['Sir aapko konsa perfume buy karna hai?'], 'offers' => [['offer' => 'Combo of 50 ml bottles for the total ml row price', 'when' => 'after the customer names perfume and count']], 'do' => ['Prepaid ke liye poochho: 76% of those chats ended in an order']])]);
+$sg = wl_suggest($pdo, true); ok(count($sg['items']) === 3 && $sg['items'][0]['from'] === 'guidebook v25', 'winning sentences from the guidebook: ' . json_encode($sg['items']));
 echo "lineup db ok\n";
