@@ -12,7 +12,7 @@
     Promise.all([api.get('wa.line_get'), api.get('wa.line_report', { days: 30 })]).then(([d, r]) => draw(m, d, r)).catch((e) => { m.body.innerHTML = errBox(e.message); });
   }
   function draw(m, D, R) {
-    const C = D.cfg, started = !!C.started, tc = D.tpl_counts || {}, tot = Object.keys(D.tpl || {}).length, appr = tc.approved || 0, ready = tot > 0 && appr === tot;
+    const C = D.cfg, started = !!C.started, tc = D.tpl_counts || {}, tot = Object.keys(D.tpl || {}).length, appr = tc.approved || 0, ready = D.ready !== undefined ? !!D.ready : (tot > 0 && appr === tot);
     const topics = Object.keys(D.topics);
     const DAYS = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 6, 6: 8, 7: 10, 8: 15, 9: 18, 10: 22, 11: 26, 12: 30 };
     const CAL = D.calendar || { steps: [], days: [], total: 0 };
