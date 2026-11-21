@@ -1419,14 +1419,16 @@ function ora_tick(PDO $pdo): int
               AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 7)
             ORDER BY o.created_at DESC LIMIT 8");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
         $bd = biz_today($pdo); $st->execute([$bd . ' ' . day_start_for($pdo, $bd) . ':00', date('Y-m-d H:i:s', time() - 600)]);   // only the orders of the current business day (from its 10:00 start) are read
-        $t0 = time(); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
+        $t0 = time(); $cands = $st->fetchAll(PDO::FETCH_ASSOC); $fails = 0; $lastWhy = '';
+        foreach ($cands as $o) {
             if (time() - $t0 > 28) break;   // the engine step must stay short
-            $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;   // an AI hiccup: try again next time
+            $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) { $fails++; $lastWhy = $key . ' · ' . mb_substr((string)($r['why'] ?? ''), 0, 200); continue; }   // an AI hiccup: try again next time
             $day = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
             ora_store($pdo, $key, $o, $r, $day);
             if ($r['rating'] !== null && $mode === 'apply' && ora_apply($pdo, $key, ['order_name' => (string)$o['order_name'], 'employee_id' => (int)$o['employee_id'], 'day' => $day, 'house' => (string)$o['house'], 'rating' => $r['rating']])) $pdo->prepare("UPDATE order_rate_auto SET applied = 1 WHERE order_key = ?")->execute([$key]);
             $n++;
         }
+        try { setting_set($pdo, 'ora_tick_info', date('Y-m-d H:i:s') . ' · candidates ' . count($cands) . ' · rated ' . $n . ' · AI failures ' . $fails . ($lastWhy !== '' ? ' · last failure: ' . $lastWhy : '')); } catch (Throwable $e) { }   // read-only diagnostic: why reading may stand still
         if ($mode === 'apply') {   // suggestions made earlier become real stars (nobody's own rating is touched)
             $w = $pdo->query("SELECT r.order_key, r.order_name, r.employee_id, r.rating, r.day, r.house, r.at FROM order_rate_auto r WHERE r.applied = 0 AND r.rating IS NOT NULL ORDER BY r.at DESC LIMIT 40")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($w as $r) { $ok = ora_apply($pdo, (string)$r['order_key'], ['order_name' => $r['order_name'], 'employee_id' => (int)$r['employee_id'], 'day' => (string)($r['day'] ?: date('Y-m-d', strtotime((string)$r['at']) - 10 * 3600)), 'house' => (string)$r['house'], 'rating' => (float)$r['rating']]); $pdo->prepare("UPDATE order_rate_auto SET applied = ? WHERE order_key = ?")->execute([$ok ? 1 : 2, (string)$r['order_key']]); }
