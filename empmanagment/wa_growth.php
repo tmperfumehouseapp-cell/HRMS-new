@@ -638,6 +638,23 @@ function wag_mkt_board(PDO $pdo, int $days = 7): array
     usort($out, fn($a, $b) => $b['score'] <=> $a['score'] ?: $b['taken'] <=> $a['taken']);
     return $cache[$ck] = $out;
 }
+/** 🏪 PERFORMANCE GATE (owner, 21 Nov): a person who picks many queries but converts BELOW the team average gets no more — "no point giving him queries". '' = may take, else the sentence shown.
+ *  Blocks when (a) he took 4+ queries today and his orders / taken is under 60% of the team's last-7-days ratio (only when the team has orders recorded), (b) he left 2+ hot chats today, or (c) 3+ hot chats of his wait unanswered. Switch: wag_mkt_gate = 0. */
+function wag_mkt_gate_msg(PDO $pdo, int $emp): string
+{
+    static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
+    $msg = '';
+    try {
+        $t0 = date('Y-m-d 00:00:00'); $w0 = date('Y-m-d 00:00:00', time() - 6 * 86400); $one = function (string $sql, array $a = []) use ($pdo) { $q = $pdo->prepare($sql); $q->execute($a); return (int)$q->fetchColumn(); };
+        $tk = $one("SELECT COUNT(*) FROM wa_mkt WHERE emp_id = ? AND kind = 'taken' AND at >= ?", [$emp, $t0]); $dr = $one("SELECT COUNT(*) FROM wa_mkt WHERE emp_id = ? AND kind IN ('dropped','released') AND at >= ?", [$emp, $t0]);
+        $od = $one("SELECT COUNT(*) FROM wa_outcomes WHERE emp_id = ? AND code = 'order' AND at >= ?", [$emp, $t0]); $un = $one("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = ? AND status = 'open' AND hot = 1 AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at)", [$emp, date('Y-m-d H:i:s', time() - 23 * 3600)]);
+        $ttk = $one("SELECT COUNT(*) FROM wa_mkt WHERE kind = 'taken' AND at >= ?", [$w0]); $tod = $one("SELECT COUNT(*) FROM wa_outcomes WHERE code = 'order' AND at >= ?", [$w0]); $avg = $ttk >= 20 && $tod > 0 ? $tod / $ttk : 0;
+        if ($un >= 3) $msg = '🔒 ' . $un . ' hot customers of yours are waiting for an answer. Answer them first — then you can take new queries.';
+        elseif ($dr >= 2) $msg = '🔒 You left ' . $dr . ' hot chats today without answering. New queries go to people who answer: answer your open chats first.';
+        elseif ($tk >= 4 && $avg > 0 && ($od / $tk) < 0.6 * $avg) $msg = '🔒 You took ' . $tk . ' queries today with ' . $od . ' order' . ($od === 1 ? '' : 's') . ' — below the team average (' . round(100 * $avg) . '%). Close the chats you already have; new queries go to people who convert better.';
+    } catch (Throwable $e) { }
+    return $c[$ck] = $msg;
+}
 /** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
 function wag_bot_off(PDO $pdo, string $key, bool $ignoreHand = false): bool
 {
@@ -1305,7 +1322,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         }
         case 'wa.g_mkt_top': {   // 🏪 for every salesperson: who are the best right now (shown above the OPEN list) and my own rank
             $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released']];
-            json_response(['top' => $top, 'my' => $my]);
+            json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me)]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
             $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'engaged' => $l['engaged'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on']);
