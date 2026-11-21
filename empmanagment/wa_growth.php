@@ -530,13 +530,16 @@ function wag_bot_lock(PDO $pdo, array $c): array
         if ($key === '' || wag_cfg($pdo)['bot'] !== 'on') return $r;
         if ((int)($c['cx_id'] ?? 0) > 0 || (int)($c['optout'] ?? 0) === 1 || (string)($c['status'] ?? '') !== 'open') return $r;
         if (wag_bot_off($pdo, $key)) { $r['why'] = 'taken'; return $r; }
+        if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) { $r['why'] = 'muted'; return $r; }   // order completed: the bot is silent by rule — nothing to wait for, a person answers
         $li = !empty($c['last_in_at']) ? strtotime((string)$c['last_in_at']) : 0; $now = time();
         $h = function_exists('wq_meta_get') ? wq_meta_get($pdo, 'bothand:' . $key, '') : ''; if ($h !== '' && strtotime($h) >= $li) { $r['why'] = 'handed'; $r['engaged'] = true; return $r; }
         $q = $pdo->prepare("SELECT body, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND mtype = 'text' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $b = $q->fetch();
         if ($b) { $r['bot_text'] = mb_substr((string)$b['body'], 0, 600); $r['bot_at'] = (string)$b['ts']; }
         if ($b && strtotime((string)$b['ts']) > $now - 7 * 86400) $r['engaged'] = true;   // the bot has been talking to this customer: only IT decides when a person takes over
         $botRecent = $b && strtotime((string)$b['ts']) > $now - 1800;   // the bot decides when a person may take over (its hand-over); only if the customer is silent 30 min — or the bot fails to answer for 3 min — the lock opens by itself
-        $waiting = $li > $now - 60 && (empty($c['last_out_at']) || strtotime((string)$c['last_out_at']) < $li);
+        $lm = $pdo->prepare("SELECT mtype FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $lm->execute([$key]); $lastType = (string)$lm->fetchColumn();
+        $botCan = in_array($lastType, ['text', 'button', 'interactive'], true);   // a photo / voice note / file / location is for a person: the bot never answers it, so nobody waits for the bot
+        $waiting = $botCan && $li > $now - 60 && (empty($c['last_out_at']) || strtotime((string)$c['last_out_at']) < $li);
         if ($botRecent || $waiting) { $r['on'] = true; $r['why'] = $waiting && !$botRecent ? 'writing' : 'answered'; }
     } catch (Throwable $e) { }
     return $r;
