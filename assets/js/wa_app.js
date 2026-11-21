@@ -1283,6 +1283,13 @@
         if (b) b.innerHTML = !st || !st.bot_enabled ? '' : on
           ? `<div class="wx-banner y" style="margin:6px 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px">🤖 <b>The bot is answering this customer — wait.</b> Only the bot decides when you take over. If its answer is not good, press 👎.</span>${st.bot_text ? '<button type="button" id="wxBotBad" style="border:0;border-radius:10px;background:#c0392b;color:#fff;padding:8px 12px;font:inherit;font-weight:600">👎 Bot answer not good</button>' : '<span style="color:#a60">⏳ the bot is writing…</span>'}</div>`
           : (offer ? `<div class="wx-banner" style="margin:6px 8px;background:#e8f7ee;color:#1b6b3a;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px">✅ <b>The bot hands this chat to you.</b> Take over now.</span><button type="button" id="wxBotTake" style="border:0;border-radius:10px;background:#128c4a;color:#fff;padding:9px 14px;font:inherit;font-weight:700">✋ Take over now</button></div>` : (st.why === 'taken' ? '<div class="wx-banner" style="margin:6px 8px;background:#e8f7ee;color:#1b6b3a">✅ A salesperson has this chat — the bot is silent.</div>' : ''));
+        if (b && st) {   // 🔗 Making link: the holder keeps the chat up to 8 minutes while he makes the payment / order link
+          const left = +st.mk_left || 0;
+          if (left > 0) b.innerHTML += `<div class="wx-banner" style="margin:6px 8px;background:#fff6dd;color:#7a5a00;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px">🔗 <b>Making the link</b> — this chat stays with you for ${Math.max(1, Math.ceil(left / 60))} more min.</span><button type="button" id="wxMkDone" style="border:0;border-radius:10px;background:#128c4a;color:#fff;padding:8px 12px;font:inherit;font-weight:700">✅ Link sent</button></div>`;
+          else if (st.can_mk) b.innerHTML += `<div style="margin:6px 8px"><button type="button" id="wxMkOn" style="border:1px solid #c9a227;border-radius:10px;background:#fff9e6;color:#7a5a00;padding:8px 12px;font:inherit;font-weight:700">🔗 Making link — hold this chat 8 min</button></div>`;
+          const mo = $('#wxMkOn'); if (mo) mo.onclick = function () { this.disabled = true; api.post('wa.g_makelink', { phone: ph, on: 1 }).then(() => { toast('Held for 8 minutes ✓'); botBanner(); }).catch((e) => toast(e.message, true)); };
+          const md = $('#wxMkDone'); if (md) md.onclick = function () { this.disabled = true; api.post('wa.g_makelink', { phone: ph, on: 0 }).then(() => botBanner()).catch((e) => toast(e.message, true)); };
+        }
         // the normal Take over buttons are hidden while the bot is in charge: the bot's "Take over now" is the only way in (a chat the bot never touched keeps the normal button)
         for (const id of ['wxTk', 'wxToB']) { const t = $('#' + id); if (t) t.style.display = (on || offer) && st.bot_enabled ? 'none' : ''; }
         const tk = $('#wxBotTake'); if (tk) tk.onclick = function () { this.disabled = true; this.textContent = 'Taking over…'; takeOver().then(() => { if (S.cur && S.cur.phone === ph) botBanner(); }); };
@@ -1518,6 +1525,7 @@
     }
     function openManual() {
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
+      try { api.post('wa.g_makelink', { phone: p, on: 1 }).then(() => { try { botBanner(); } catch (e) { } }).catch(() => { }); } catch (e) { }   // opening the order / payment link screen also holds the chat (8 min)
       moReady(() => { if (!window.WaManual) { toast('Could not open the manual order. Refresh the page.', true); return; } WaManual.open({ phone: p, name: nm, api, onDone: () => { try { pollChat(); } catch (e) { } } }); });
     }
     function openCart() {

@@ -54,6 +54,12 @@
     .fb .acts .btn,.fb .pR .acts .btn{padding:10px 12px;font-size:13px}
     .fb .pop{padding:0}.fb .pp{border-radius:0}.fb .pL{padding:6px}.fb .pT button{padding:8px 11px}
     #side{display:none}
+    .fb .pop.mob .pp{flex-direction:column}.fb .pop.mob .pR{width:auto;flex:none;max-height:58vh;border:0;padding:0;overflow:auto;background:#fff}.fb .pop.mob .pX{display:none}
+    .fb .pop.mob .pT{flex-wrap:nowrap;margin:0;padding:6px 4px;gap:8px}.fb .pop.mob .pL{flex:1 1 0;padding:0 6px 4px}.fb .pop.mob .pL iframe{border-radius:10px}
+    .fb .step{display:flex;gap:4px;padding:6px 10px;font-size:10.5px;color:#666;align-items:center}.fb .step i{flex:1;height:4px;border-radius:9px;background:#d1d5db}.fb .step i.on{background:#0f766e}
+    .fb .note{background:#fff7ed;color:#9a3412;border-radius:8px;padding:6px 9px;font-size:11.5px;margin:2px 10px 4px;cursor:pointer}
+    .fb .pop.mob .chips{flex-wrap:nowrap;overflow-x:auto;padding:6px 10px;gap:6px;border-top:1px solid var(--line);scrollbar-width:none}.fb .pop.mob .chips span{flex:none;border:1.5px solid #0f766e;color:#0f766e;border-radius:99px;padding:9px 13px;font-weight:700;font-size:13px;background:#fff;cursor:pointer}.fb .pop.mob .chips span.g{background:#0f766e;color:#fff}.fb .pop.mob .chips span.r{border-color:#fecdd3;color:#b91c1c;background:#fff1f2}
+    .fb .sheet{background:#fff;border-top:1px solid var(--line);padding:8px 12px 14px;font-size:12px;cursor:pointer}.fb .grab{width:38px;height:4px;background:#ccc;border-radius:9px;margin:0 auto 6px}
   }
 </style>
 </head>
@@ -142,9 +148,13 @@
     const rest = `${x.test ? '<div class="sm" style="margin-top:6px">🧪 This is a test: nothing is sent automatically for it. Use the chat and the buttons, reply from the customer\'s WhatsApp, and send a screenshot to see the whole flow.</div>' : ''}
       ${txt ? `<div class="h" style="margin-top:12px;font-size:12.5px">Message that ${x.msg_at ? 'was' : 'will be'} sent</div><div class="msg">${esc(txt)}</div>` : '<div class="sm" style="margin-top:10px">No message is picked yet (⚙ Settings).</div>'}
       <div class="h" style="margin-top:10px;font-size:12.5px">History</div><div class="tl">${d.events.length ? d.events.map((e) => `<div><b>${esc(dt(e.at))}</b> ${esc(e.txt)}${e.by_name && e.by_name !== 'automatic' ? ' <span class="sm">· ' + esc(e.by_name) + '</span>' : ''}</div>`).join('') : '<div class="sm">Nothing yet.</div>'}</div>`;
-    return { hdr, acts, rest };
+    return { hdr, acts, rest, issBox };
   }
   const ACTS = { now: () => confirmSend('fb.send_now'), fu: () => confirmSend('fb.followup'), call: () => callDone(), links: () => manageLinks(), pf: () => pickProof(), iss: () => issueOpen(), ifx: (e) => issueFix(e.currentTarget.dataset.k), isv: () => issueSolved(), rw: () => reward(), rws: () => rewardSent(), cx: () => complaint(), sk: () => leaveOut(), del: () => delTest(), chat: () => openPop() };
+  async function thanksTap(i, b) {      // the message goes into the chat box (not sent): read it, change it, press Send
+    const t = CFG.thanks[i]; if (!t) return; if (b) b.disabled = true;
+    try { const r = await api.post('fb.thanks_text', { order: sel, text: t.msg }); closeM(); toChat(r.text); } catch (e) { say(e.message, true); } if (b) b.disabled = false;
+  }
   // a message is put into the chat box (NOT sent): read it, change it, press Send
   function toChat(text) {
     if (!popOpen) openPop();
@@ -154,12 +164,7 @@
   }
   function wire(root, d) {
     root.querySelectorAll('[data-act]').forEach((b) => { const f = ACTS[b.dataset.act]; if (f) b.onclick = f; });
-    root.querySelectorAll('[data-th]').forEach((b) => { b.onclick = async () => {      // the message goes into the chat box (not sent): read it, change it, press Send
-      const t = CFG.thanks[+b.dataset.th]; if (!t) return; b.disabled = true;
-      try {
-        const r = await api.post('fb.thanks_text', { order: sel, text: t.msg });
-        toChat(r.text);
-      } catch (e) { say(e.message, true); } b.disabled = false; }; });
+    root.querySelectorAll('[data-th]').forEach((b) => { b.onclick = () => thanksTap(+b.dataset.th, b); });
     root.querySelectorAll('[data-lk]').forEach((b) => { b.onclick = () => askLink(+b.dataset.lk); });
     const box = root.querySelector('.phs'); if (!d.proofs.length || !box) return; box.innerHTML = '';
     d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => { const w = window.open('', '_blank'); if (w) w.document.write('<img src="' + u + '" style="max-width:100%">'); };
@@ -176,7 +181,30 @@
     if (popOpen) drawPop(d);
   }
   // 💬 the big chat window: the customer's WhatsApp live on the left (the whole height), the order on the right. The chat frame is kept while the same customer stays open, so a refresh never closes what you are typing.
+  const isMob = () => window.innerWidth <= 700; let popSheet = false;
+  function pickMsg() {      // phone: the thank-you messages and the review links in one window
+    modal(`<h3>💬 Put a message in the chat</h3><div class="sm">It goes into the chat box — change it, then Send.</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">💛 THANK-YOU</div><div class="acts">${(CFG.thanks || []).map((t, i) => `<button class="btn g2" data-th="${i}" type="button">💛 ${esc(t.name)}</button>`).join('') || '<span class="sm">None yet — add in ⚙ Settings.</span>'}</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">🔗 REVIEW LINK</div><div class="acts">${(CFG.links || []).map((l, i) => `<button class="btn g2" data-lk="${i}" type="button">🔗 ${esc(l.name)}</button>`).join('') || '<span class="sm">None yet.</span>'}</div><div class="acts"><button class="btn gh" id="pmx" type="button">Close</button></div>`);
+    $('pmx').onclick = closeM; document.querySelectorAll('#md [data-th]').forEach((b) => { b.onclick = () => thanksTap(+b.dataset.th, b); }); document.querySelectorAll('#md [data-lk]').forEach((b) => { b.onclick = () => { closeM(); askLink(+b.dataset.lk); }; });
+  }
+  function moreMenu() {
+    const x = DET.row; modal(`<h3>More</h3><div class="acts">${x.status === 'wait' ? '<button class="btn g2" data-m="now">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" data-m="fu">📨 Send follow-up</button>' : ''}<button class="btn gh" data-m="pf">⬆ Add proof manually</button>${x.reward_state === 'owed' ? '<button class="btn g2" data-m="rws">✅ Reward sent</button>' : ''}<button class="btn gh" data-m="links">🔗 Manage links</button><button class="btn gh" data-m="sk">Leave out</button>${x.test ? '<button class="btn rd" data-m="del">🗑 Delete this test</button>' : ''}<button class="btn gh" id="mmx" type="button">Close</button></div>`);
+    $('mmx').onclick = closeM; document.querySelectorAll('#md [data-m]').forEach((b) => { b.onclick = () => { closeM(); const f = ACTS[b.dataset.m]; if (f) f(); }; });
+  }
+  function drawMobPop(d) {      // 📱 phone: big chat, one row of main buttons, details in a pull-up sheet
+    const x = d.row, P = parts(d), ph10 = String(x.phone || '').replace(/\D/g, '').slice(-10), cb = $('popChat');
+    $('pop').classList.add('mob'); $('pop').classList.remove('fold', 'full');
+    $('popTop').innerHTML = `<button type="button" data-pf="x" aria-label="Back" style="font-size:16px">←</button><div style="min-width:0"><div class="h" style="font-size:14px;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.customer || x.order)} · ${esc(x.order)}</div><div class="sm">${esc(x.phone)} · delivered ${esc(dd(x.delivered))}</div></div><span class="sp"></span><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span>`;
+    const st = [!!x.msg_at, ['replied', 'proof', 'rew'].includes(x.status), d.proofs.length > 0, x.status === 'rew' || x.reward_state === 'sent'], nm = ['Sent', 'Replied', 'Screenshot', 'Reward'];
+    const steps = `<div class="step">${nm.map((n, i) => `<span style="${st[i] ? 'color:#0f766e;font-weight:700' : ''}">${n}</span>${i < 3 ? `<i class="${st[i] ? 'on' : ''}"></i>` : ''}`).join('')}</div>`;
+    if (ph10.length === 10) { if (cb.dataset.p !== ph10 || !cb.firstChild) { cb.dataset.p = ph10; cb.innerHTML = `<iframe id="chatFr" title="WhatsApp chat" src="my_chats.html?embed=1&fb=1&phone=${ph10}" allow="microphone; clipboard-write"></iframe>`; } }
+    else { cb.dataset.p = ''; cb.innerHTML = '<div class="sm" style="margin:10px 0">This order has no phone number, so there is no WhatsApp chat.</div>'; }
+    const fail = x.msg_state === 'failed' ? `<div class="note" data-act="sheet">⚠ Message not delivered — tap for the reason</div>` : '';
+    $('popR').innerHTML = steps + fail + P.issBox + `<div class="chips"><span class="g" data-act="pick">💛 Thank-you</span><span data-act="pick">🔗 Review link</span><span data-act="call">📞 Call</span><span data-act="rw">🎁 Reward</span><span data-act="iss">🛠 Issue</span><span class="r" data-act="cx">⚠ Complaint</span><span data-act="more">⋯ More</span></div><div class="sheet"><div class="grab"></div><div data-act="sheet" style="font-weight:800">${popSheet ? '▼' : '▲'} Order details &amp; history</div>${popSheet ? '<div style="margin-top:6px">' + P.hdr + P.rest + '</div>' : ''}</div>`;
+    wire($('popR'), d);
+    $('popR').querySelectorAll('.chips span,.note,.sheet [data-act]').forEach((e) => { const k = e.dataset.act; e.onclick = () => { if (k === 'pick') pickMsg(); else if (k === 'more') moreMenu(); else if (k === 'sheet') { popSheet = !popSheet; drawPop(DET); } else { const f = ACTS[k]; if (f) f(); } }; });
+  }
   function drawPop(d) {
+    if (isMob()) return drawMobPop(d); $('pop').classList.remove('mob');
     const x = d.row, P = parts(d), ph10 = String(x.phone || '').replace(/\D/g, '').slice(-10), cb = $('popChat');
     $('popTop').innerHTML = `<b style="font-size:14px;color:#111">💬 ${esc(x.customer || x.order)}</b><span class="sm">${esc(x.phone)} · ${esc(x.order)} · live</span><span class="sp"></span><button type="button" data-pf="fold">${popFold ? '◂ Show details' : '▸ Hide details'}</button><button type="button" data-pf="full">${popFull ? '⛶ Back to the page' : '⛶ Full screen'}</button><button type="button" class="x" data-pf="x">✕ Close (Esc)</button>`;
     $('pop').classList.toggle('fold', popFold); $('pop').classList.toggle('full', popFull);
