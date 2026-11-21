@@ -164,8 +164,8 @@ window.WaSeg = (function () {
   const VALUES_ORDER = ['vip', 'high', 'mid', 'low', 'not_bought'];
   const LANGS = [['en', 'English'], ['hi', 'Hindi'], ['gu', 'Gujarati'], ['hinglish', 'Hinglish'], ['unknown', 'Unknown']];
   const DATE_KEYS = ['first_on_from', 'first_on_to', 'last_in_on_from', 'last_in_on_to'];
-  const KEYS = ['stage', 'value', 'source', 'language', 'first_number', 'first_on_from', 'first_on_to', 'last_in_on_from', 'last_in_on_to', 'silent_min_days', 'returned_within_days', 'asked_days', 'order_count_min', 'order_count_max', 'spent_min', 'exclude_bought_days', 'exclude_messaged_days', 'exclude_complaint'];
-  const REASON = { optout: 'opted out', complaint: 'open complaint', bought: 'bought lately', messaged: 'messaged lately' };
+  const KEYS = ['stage', 'value', 'source', 'language', 'first_number', 'first_on_from', 'first_on_to', 'last_in_on_from', 'last_in_on_to', 'silent_min_days', 'returned_within_days', 'asked_days', 'order_count_min', 'order_count_max', 'spent_min', 'exclude_bought_days', 'exclude_messaged_days', 'exclude_complaint', 'exclude_lineup'];
+  const REASON = { optout: 'opted out', complaint: 'open complaint', bought: 'bought lately', messaged: 'messaged lately', lineup: 'already in the 30-Day Lineup' };
   let metaCache = null, metaAt = 0;
   async function meta() { if (metaCache && Date.now() - metaAt < 60000) return metaCache; metaCache = await api.get('wa.seg_stages'); metaAt = Date.now(); return metaCache; }
 
@@ -261,6 +261,7 @@ window.WaSeg = (function () {
       h += '</div><div class="wsg-card"><div class="wsg-h">Skip these people</div><div class="wsg-sub">Opted-out numbers are always skipped.</div>';
       h += '<label class="wsg-sw"><span>Bought in the last 14 days<small>do not push a sale right after an order</small></span><input type="checkbox" data-ex="exclude_bought_days|14"' + (F.exclude_bought_days === 14 ? ' checked' : '') + '></label>';
       h += '<label class="wsg-sw"><span>Messaged this week<small>they already heard from us in the last 7 days</small></span><input type="checkbox" data-ex="exclude_messaged_days|7"' + (F.exclude_messaged_days === 7 ? ' checked' : '') + '></label>';
+      h += '<label class="wsg-sw"><span>Already in the 30-Day Lineup<small>they are getting follow-ups there: leave them out of this campaign</small></span><input type="checkbox" data-ex="exclude_lineup|1"' + (F.exclude_lineup ? ' checked' : '') + '></label>';
       h += '<label class="wsg-sw"><span>Has an open complaint<small>sort the problem first</small></span><input type="checkbox" data-ex="exclude_complaint|1"' + (F.exclude_complaint ? ' checked' : '') + '></label>';
       h += '</div><div data-count>' + countHtml() + '</div>';
       if (Object.keys(filters()).length) h += '<button type="button" class="wsg-reset" data-reset>Clear everything</button>';

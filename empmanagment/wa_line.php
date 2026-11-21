@@ -140,13 +140,18 @@ function wl_variants(string $key): array { $o = [$key]; foreach (wl_pack() as $k
 function wl_pick(string $key, string $phone, array $score, array $ok): string
 {
     $v = array_values(array_filter(wl_variants($key), fn($k) => in_array($k, $ok, true))); if (count($v) < 2) return $v ? $v[0] : $key;
+    // STOP-LOSS (owner, 21 Nov): a wording that got NO order in 150+ delivered while the best wording of the same step got 3+ is not used any more; one that is clearly weaker (less than a third of the best's orders per delivered, 150+ delivered) gets only the small test share. Fewer than 2 wordings are never reduced.
+    $best = null; foreach ($v as $k) if ($best === null || ($score[$k][1] ?? 0) > ($score[$best][1] ?? 0)) $best = $k;
+    if ($best !== null && count($v) > 1 && ($score[$best][2] ?? 0) >= 3) { $keep = []; foreach ($v as $k) { $d0 = (int)($score[$k][0] ?? 0); $o0 = (int)($score[$k][2] ?? 0); if ($k !== $best && $d0 >= 150 && $o0 === 0) continue; $keep[] = $k; } if ($keep) $v = $keep; if (count($v) < 2) return $v[0]; }
     $h = (int)(abs(crc32($phone . '|' . $key)) % 100); $young = false; foreach ($v as $k) if (($score[$k][0] ?? 0) < 40) $young = true;
     if ($young) return $v[$h % count($v)];
     usort($v, fn($a, $b) => ($score[$b][1] ?? 0) <=> ($score[$a][1] ?? 0)); if ($h < 80) return $v[0];
     return $v[1 + ($h % (count($v) - 1))];
 }
 /** THE 30-DAY LADDER (owner, 21 Nov): twelve steps, on day 1, 2, 3, 4, 6, 8, 10, 15, 18, 22, 26, 30 after the end of his conversation. Step 1 = 24 h after it; every later step = the gap below after the message before it really went. */
-function wl_days(): array { return [1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 6, 6 => 8, 7 => 10, 8 => 15, 9 => 18, 10 => 22, 11 => 26, 12 => 30]; }
+function wl_days(?array $set = null): array { static $o = null; if ($set !== null) $o = $set; return $o ?? [1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 6, 6 => 8, 7 => 10, 8 => 15, 9 => 18, 10 => 22, 11 => 26, 12 => 30]; }
+/** The day of every step can be changed in the setting wl_days (JSON list of 12 growing numbers, day 1 first, last day at most 60) — the learning report suggests changes; nothing is moved by itself without enough numbers. */
+function wl_days_load(PDO $pdo): void { $j = json_decode((string)setting_get($pdo, 'wl_days', ''), true); if (is_array($j) && count($j) === 12) { $d = []; $prev = 0; foreach (array_values($j) as $i => $v) { $v = (int)$v; if ($v <= $prev || $v > 60) { $d = []; break; } $d[$i + 1] = $v; $prev = $v; } if (count($d) === 12) wl_days($d); } }
 function wl_steps(): int { return 12; }
 /** Days between step N-1 and step N (step 1 = 1: 24 h after the conversation). */
 function wl_gap(int $step): int { $d = wl_days(); return max(1, ($d[$step] ?? 30) - ($d[$step - 1] ?? 0)); }
@@ -162,7 +167,7 @@ function wl_banned(): array { return ['offer', 'discount', 'sale', 'free', 'spec
 
 function wl_cfg(PDO $pdo): array
 {
-    $j = json_decode((string)setting_get($pdo, 'wl_cfg', ''), true); if (!is_array($j)) $j = [];
+    wl_days_load($pdo); $j = json_decode((string)setting_get($pdo, 'wl_cfg', ''), true); if (!is_array($j)) $j = [];
     $mode = (string)($j['mode'] ?? 'auto'); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'auto';   // owner 21 Nov: always on (no switch on the screen); 'off' stays only as an emergency value the API accepts
     // owner 21 Nov: no clock window of its own (the 10-20 one is gone; Module A / B's times do not apply): a step goes when its customer is ready; 'win' = 1 brings a from / to window back
     return ['mode' => $mode, 'cap' => max(5, min(300, (int)($j['cap'] ?? 60))), 'from' => !empty($j['win']) ? max(0, min(23, (int)($j['from'] ?? 0))) : 0, 'to' => !empty($j['win']) ? max(1, min(24, (int)($j['to'] ?? 24))) : 24, 'win' => !empty($j['win']) ? 1 : 0, 'since' => (int)($j['since'] ?? 0),
@@ -180,6 +185,7 @@ function wln_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_line_snap (id BIGINT AUTO_INCREMENT PRIMARY KEY, at DATETIME NOT NULL, j TEXT NOT NULL, KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_line_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, at DATETIME NOT NULL, what VARCHAR(200) NOT NULL DEFAULT '', KEY k_phone (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         try { $pdo->query("SELECT tpl_id FROM wa_line_plan LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_line_plan ADD COLUMN tpl_id INT NOT NULL DEFAULT 0"); } catch (Throwable $e2) { } }   // the table made before this column existed
+        try { $pdo->query("SELECT px FROM wa_line_plan LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_line_plan ADD COLUMN px VARCHAR(8) NOT NULL DEFAULT ''"); } catch (Throwable $e2) { } }   // the price column (%) a price message was worked out at
         $ok = true;
     } catch (PDOException $e) { $ok = false; }
     return $ok;
@@ -380,15 +386,17 @@ function wln_wide_ok(PDO $pdo): array
 /** THE PRICE OF THIS CUSTOMER'S NEXT PRICE STEP, worked out from the shop's own price chart (setting ml_slab_chart: rows = total ml, columns = 7 / 6.5 / 6 / 5 / 4 / 3.5 / 3 %; a higher % is a HIGHER price).
  *  The quote is the 4 x 50 ml = 200 ml combo row. Start = the deepest column already quoted in his chat (never above 6.5%); every price step goes ONE column deeper than the one before (never higher than what he was told), the last column of the chart is the floor.
  *  Returns '' when there is no chart or no row (the plain message of the step goes then). */
-function wln_price_text(PDO $pdo, string $phone, int $ml = 200): string
+function wln_price_text(PDO $pdo, string $phone, int $ml = 200): string { $i = wln_price_info($pdo, $phone, $ml); return $i ? $i['text'] : ''; }
+/** [text, pct] of the next price step, or null (see wln_price_text). */
+function wln_price_info(PDO $pdo, string $phone, int $ml = 200): ?array
 {
-    $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return '';
-    $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $ml) { $row = $r; break; } if (!$row || empty($row['p'])) return '';
+    $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return null;
+    $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $ml) { $row = $r; break; } if (!$row || empty($row['p'])) return null;
     $base = 1; foreach ($cols as $i => $cv) if (abs($cv - 6.5) < 0.01) $base = $i;   // the photo / first offer starts at 6.5%
     if (function_exists('pc_chat_level')) { try { $lv = pc_chat_level($pdo, $phone); if (empty($lv['default'])) foreach ($cols as $i => $cv) if (abs($cv - (float)$lv['pct']) < 0.01) $base = max($base, $i); } catch (Throwable $e) { } }
     $k = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone = ? AND status = 'sent' AND SUBSTR(tpl_key, 1, 6) = 'ln_px_'"); $q->execute([$phone]); $k = (int)$q->fetchColumn(); } catch (Throwable $e) { }
-    $idx = min(count($cols) - 1, $base + 1 + $k); $v = (int)($row['p'][$idx] ?? 0); if ($v <= 0) return '';
-    return '4 x 50 ml (' . $ml . ' ml) combo sirf Rs ' . number_format($v);
+    $idx = min(count($cols) - 1, $base + 1 + $k); $v = (int)($row['p'][$idx] ?? 0); if ($v <= 0) return null;
+    return ['text' => '4 x 50 ml (' . $ml . ' ml) combo sirf Rs ' . number_format($v), 'pct' => (float)$cols[$idx]];
 }
 /** One time per customer (idempotent): the old seven-step ladder becomes the 30-day one. The planned steps keep their next time, every later step is re-timed by the new gaps and the missing steps 8-12 are added. 300 customers a round. */
 function wln_ladder30(PDO $pdo): int
@@ -507,12 +515,12 @@ function wl_tick(PDO $pdo, array $opt = []): array
                     $rq0 = $pdo->prepare("SELECT id, phone, step, tpl_key, due_at FROM wa_line_plan WHERE phone = ? AND status = 'planned' ORDER BY step LIMIT 1"); $rq0->execute([$phone]); $nr = $rq0->fetch(); if (!$nr) continue; $row = $nr + ['anchor_at' => $row['anchor_at'], 'topic' => $nt]; }
             } catch (Throwable $e) { }
         }
-        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $v2 = ''; $pk = wln_pref_key((int)$row['step']);
-        if ($pk !== '' && isset($ids[$pk]) && in_array($pk, $okKeys, true)) { if ($pk === 'ln_pp_6') $key = $pk; else { $v2 = wln_price_text($pdo, (string)$phone); if ($v2 !== '') $key = $pk; } }   // the price / prepaid message of this step when Meta approved it everywhere; no chart or no price = the plain message of the step
+        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $v2 = ''; $pxPct = ''; $pk = wln_pref_key((int)$row['step']);
+        if ($pk !== '' && isset($ids[$pk]) && in_array($pk, $okKeys, true)) { if ($pk === 'ln_pp_6') $key = $pk; else { $pi = wln_price_info($pdo, (string)$phone); $v2 = $pi ? $pi['text'] : ''; if ($v2 !== '') { $key = $pk; $pxPct = (string)$pi['pct']; } } }   // the price / prepaid message of this step when Meta approved it everywhere; no chart or no price = the plain message of the step
         $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send'))) { $o['waiting']++; continue; }
         $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
         if ($res[0]) { $tn = time(); $rq = $pdo->prepare("SELECT id FROM wa_line_plan WHERE phone = ? AND status = 'planned' AND step > ? ORDER BY step"); $rq->execute([$phone, (int)$row['step']]); $rq = $pdo->prepare("SELECT id, step FROM wa_line_plan WHERE phone = ? AND status = 'planned' AND step > ? ORDER BY step"); $rq->execute([$phone, (int)$row['step']]); foreach ($rq->fetchAll() as $rr) $pdo->prepare("UPDATE wa_line_plan SET due_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s', wl_due_ts($tn, wl_gap_sum((int)$row['step'], (int)$rr['step']), $cfg['from'], $cfg['to'])), $rr['id']]);   // the next steps: 24 h after THIS message, 24 h after that…
-            $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$tid, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
+            $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ?, px = ? WHERE id = ?")->execute([$tid, $pxPct, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; break; }   // no number can send now: try again next round, nothing is written
         elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1]; $o['waiting']++; }
         elseif (stripos((string)$res[1], 'No number can send') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; $wcn('no number can send message #' . $tid . ' (not approved on the numbers\' accounts)'); wln_push($pdo, (string)$phone, $now + 600); }   // a passing state, not a failure: the customer keeps his place and is tried again (before, he was marked failed for good and his next step went first)
@@ -598,6 +606,7 @@ function wl_heal(PDO $pdo): array
     $PK = wl_pack(); foreach (wl_tpl_status($pdo) as $k => $st) if ($st === 'rejected') { $extra = !empty($PK[$k]['of']);
         $bad[] = ['level' => 'warn', 'text' => $k . ' was REJECTED by Meta — change its words in Pre-made messages' . ($extra ? ' (only an extra wording: nothing is blocked)' : ' — until then no message is sent')]; }
     $rel = (int)wl_status($pdo, false)['messages']['relabelled']; if ($rel) $bad[] = ['level' => 'info', 'text' => $rel . ' of the shop\'s approved messages the Lineup uses are counted as MARKETING by Meta (₹1.09 instead of ₹0.15 each). An approved message\'s words cannot be changed; a utility one can replace it as soon as Meta lets new utility messages be made.'];
+    try { $sc = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (is_array($sc)) foreach (wl_pack() as $k => $m) { if (empty($m['of'])) continue; $base = (string)$m['of']; if ((int)($sc[$k][0] ?? 0) >= 150 && (int)($sc[$k][2] ?? 0) === 0 && max((int)($sc[$base][2] ?? 0), 0) >= 3) $bad[] = ['level' => 'info', 'text' => 'Wording ' . $k . ' is not used any more: no order in ' . (int)$sc[$k][0] . ' delivered while ' . $base . ' got ' . (int)$sc[$base][2] . ' (stop-loss).']; } } catch (Throwable $e) { }
     $f = $pdo->prepare("SELECT why, COUNT(*) n FROM wa_line_plan WHERE status = 'failed' AND sent_at IS NULL GROUP BY why ORDER BY n DESC LIMIT 3"); $f->execute(); foreach ($f->fetchAll() as $r) if ((int)$r['n'] >= 5) $bad[] = ['level' => 'warn', 'text' => $r['n'] . ' sends failed: ' . $r['why']];
     $d = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND c.status = 'active' AND p.due_at <= ?"); $d->execute([date('Y-m-d H:i:s', time() - 3 * 3600)]); $due = (int)$d->fetchColumn();
     if ($due > 0) { $why = wl_ready($pdo) ? 'nobody can send (no number has room, or every customer is waiting for a rule: person chatting / campaign today)' : 'waiting for Meta to approve all the messages'; $bad[] = ['level' => $due > 50 ? 'warn' : 'info', 'text' => $due . ' messages are 3+ hours late: ' . $why]; }
@@ -621,7 +630,8 @@ function wl_snap(PDO $pdo, bool $force = false): bool
 {
     $last = (int)strtotime((string)setting_get($pdo, 'wl_snap_at', '')); if (!$force && $last > time() - 10 * 60) return false;
     if (!$force && function_exists('wa_lock') && !wa_lock($pdo, 'wlsnap', 60)) return false; setting_set($pdo, 'wl_snap_at', date('Y-m-d H:i:s'));
-    try { $r = wl_report($pdo, 30); $sc = []; foreach ($r['keys'] as $k => $c) $sc[$k] = [(int)$c['delivered'], (float)$c['score']]; setting_set($pdo, 'wl_scores', json_encode($sc)); } catch (Throwable $e) { }   // what the picker (wl_pick) reads: delivered + score of every wording
+    try { $r = wl_report($pdo, 30); $sc = []; foreach ($r['keys'] as $k => $c) $sc[$k] = [(int)$c['delivered'], (float)$c['score'], (int)$c['orders']]; setting_set($pdo, 'wl_scores', json_encode($sc)); } catch (Throwable $e) { }   // what the picker (wl_pick) reads: delivered + score of every wording
+    try { wl_suggest($pdo); } catch (Throwable $e) { }   // once a day: the winning sentences of the guidebook
     try { wl_heal($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup heal: ' . $e->getMessage()); }
     $st = wl_status($pdo); try { [$td0] = wl_ist(time()); $st['cost_today'] = wl_summary($pdo, wl_ist_at($td0, 0))['cost']; } catch (Throwable $e) { }
     $pdo->prepare("INSERT INTO wa_line_snap (at, j) VALUES (?, ?)")->execute([date('Y-m-d H:i:s'), json_encode($st, JSON_UNESCAPED_UNICODE)]);
@@ -668,9 +678,35 @@ function wl_overview(PDO $pdo): array
         if ($d === $td) { if ($r['status'] === 'planned') $o['today']['left_by_hour'][$hh] = ($o['today']['left_by_hour'][$hh] ?? 0) + 1; $o['today']['total']++; if ($r['status'] === 'sent') $o['today']['sent']++; $o['today']['by_topic'][$r['topic']] = ($o['today']['by_topic'][$r['topic']] ?? 0) + 1; }
         elseif ($d === $tm) { $o['tomorrow']['total']++; $o['tomorrow']['by_topic'][$r['topic']] = ($o['tomorrow']['by_topic'][$r['topic']] ?? 0) + 1; $o['tomorrow']['by_hour'][$hh] = ($o['tomorrow']['by_hour'][$hh] ?? 0) + 1; } }
     $o['by_day'] = []; try { foreach ($pdo->query("SELECT DATE(anchor_at) d, COUNT(*) n, SUM(status = 'active') a, SUM(status = 'replied') r, SUM(status = 'done') x FROM wa_line_cust GROUP BY DATE(anchor_at) ORDER BY d")->fetchAll() as $r) $o['by_day'][] = ['day' => (string)$r['d'], 'n' => (int)$r['n'], 'active' => (int)$r['a'], 'replied' => (int)$r['r'], 'done' => (int)$r['x']]; } catch (Throwable $e) { }   // customers by the day they came in
-    ksort($o['tomorrow']['by_hour']); ksort($o['today']['left_by_hour']); $o['calendar'] = wl_calendar($pdo); $o['ready'] = wl_ready($pdo); $o['status'] = wl_status($pdo); [$td0] = wl_ist(time()); $o['summary'] = ['today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($cfg['started'] ?: 'now') - 60)]; $o['snaps'] = wl_snaps($pdo, 36); $o['tpl'] = wl_tpl_status($pdo); $o['tpl_counts'] = array_count_values($o['tpl']);
+    ksort($o['tomorrow']['by_hour']); ksort($o['today']['left_by_hour']); $o['calendar'] = wl_calendar($pdo); $o['suggest'] = json_decode((string)setting_get($pdo, 'wl_suggest', ''), true) ?: ['at' => '', 'items' => []]; $o['ready'] = wl_ready($pdo); $o['status'] = wl_status($pdo); [$td0] = wl_ist(time()); $o['summary'] = ['today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($cfg['started'] ?: 'now') - 60)]; $o['snaps'] = wl_snaps($pdo, 36); $o['tpl'] = wl_tpl_status($pdo); $o['tpl_counts'] = array_count_values($o['tpl']);
     $o['guide'] = ['live' => false, 'excerpt' => '']; try { if (function_exists('wk_guide_text')) { $g = wk_guide_text($pdo, 1500); $o['guide'] = ['live' => $g !== '', 'excerpt' => $g]; } } catch (Throwable $e) { }   // the approved guidebook: the owner reads the lineup messages against it
     $dj = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); $o['old_drip'] = is_array($dj) ? (string)($dj['mode'] ?? 'manual') : 'manual';
+    return $o;
+}
+/** NEW WINNING SENTENCES (owner, 21 Nov): once a day the live guidebook (and the words of the team's own offers that worked) is read and the sentences that win in real chats are listed as ideas for NEW wordings of the Lineup messages.
+ *  They are only listed (screen: "New winning sentences"): a new message goes to Meta for approval and into the Lineup only after it is approved. Returns the stored list. */
+function wl_suggest(PDO $pdo, bool $force = false): array
+{
+    $j = json_decode((string)setting_get($pdo, 'wl_suggest', ''), true); if (!is_array($j)) $j = ['at' => '', 'items' => []];
+    if (!$force && substr((string)$j['at'], 0, 10) === date('Y-m-d')) return $j;
+    $items = []; $ver = 0; $add = function (string $text, string $kind, string $from) use (&$items) { $text = trim(preg_replace('/\s+/', ' ', $text)); $l = mb_strlen($text); if ($l < 18 || $l > 240) return; foreach ($items as $x) if (mb_strtolower($x['text']) === mb_strtolower($text)) return; $items[] = ['text' => $text, 'kind' => $kind, 'from' => $from]; };
+    try { $g = $pdo->query("SELECT version, body FROM lib_guide WHERE status = 'live' ORDER BY version DESC LIMIT 1")->fetch(); if ($g) { $ver = (int)$g['version']; $b = json_decode((string)$g['body'], true); $from = 'guidebook v' . $ver;
+        if (is_array($b)) { foreach ((array)($b['openers'] ?? []) as $x) if (is_string($x)) $add($x, 'opener', $from);
+            foreach ((array)($b['offers'] ?? []) as $x) if (is_array($x) && !empty($x['offer'])) $add((string)$x['offer'] . (!empty($x['when']) ? ' — ' . $x['when'] : ''), 'offer', $from);
+            foreach ((array)($b['objection_replies'] ?? []) as $x) if (is_array($x) && !empty($x['reply'])) $add((string)$x['reply'], 'answer to "' . mb_substr((string)($x['objection'] ?? ''), 0, 40) . '"', $from);
+            foreach ((array)($b['do'] ?? []) as $x) if (is_string($x)) $add($x, 'what wins', $from); } } } catch (Throwable $e) { }
+    try { foreach ($pdo->query("SELECT tip, COUNT(*) n FROM order_rate_auto WHERE worked = 1 AND tip <> '' AND at >= DATE_SUB(NOW(), INTERVAL 30 DAY) GROUP BY tip ORDER BY n DESC LIMIT 8")->fetchAll() as $r) $add((string)$r['tip'], 'team offer that worked', 'the team (30 days)'); } catch (Throwable $e) { }
+    $j = ['at' => date('Y-m-d H:i:s'), 'ver' => $ver, 'items' => array_slice($items, 0, 24)]; setting_set($pdo, 'wl_suggest', json_encode($j, JSON_UNESCAPED_UNICODE)); return $j;
+}
+/** DAYS FROM THE RESPONSES: the daily steps (1-4) compared by orders per 100 delivered — a step that brings clearly fewer orders than step 1 is suggested to move one day later; nothing is moved by itself (the days are in the setting wl_days) and nothing is suggested before 300 delivered per step. */
+function wl_day_hints(array $report): array
+{
+    $by = []; foreach ((array)($report['steps'] ?? []) as $x) { $s = (int)$x['step']; $by[$s] = $by[$s] ?? ['delivered' => 0, 'orders' => 0, 'taps' => 0]; foreach (['delivered', 'orders', 'taps'] as $f) $by[$s][$f] += (int)$x[$f]; }
+    $o = ['steps' => [], 'hints' => [], 'need' => 300]; ksort($by); $d = wl_days();
+    foreach ($by as $s => $c) { $c['per100'] = $c['delivered'] >= 300 ? round($c['orders'] * 100 / $c['delivered'], 2) : null; $c['step'] = $s; $c['day'] = $d[$s] ?? 0; $o['steps'][] = $c; }
+    $b1 = $by[1] ?? null; if ($b1 && $b1['delivered'] >= 300 && $b1['orders'] > 0) { $r1 = $b1['orders'] / $b1['delivered'];
+        foreach ($by as $s => $c) if ($s >= 2 && $s <= 4 && $c['delivered'] >= 300 && ($c['orders'] / $c['delivered']) < $r1 * 0.35) $o['hints'][] = 'Step ' . $s . ' (day ' . ($d[$s] ?? '?') . ') brings ' . round(100 * $c['orders'] / $c['delivered'], 2) . ' orders per 100 delivered against ' . round(100 * $r1, 2) . ' for step 1: consider moving it one day later (setting wl_days).'; }
+    if (!$o['hints']) $o['note'] = $b1 && $b1['delivered'] >= 300 ? 'The daily steps look alike: no day is moved.' : 'Not enough numbers yet (300 delivered per step are needed): the days stay as they are.';
     return $o;
 }
 /** THE LEARNING: which topic and which step bring ORDERS. An order is credited to the last lineup message the customer got in the 7 days before it (same rule as the campaigns' report).
@@ -678,21 +714,21 @@ function wl_overview(PDO $pdo): array
 function wl_report(PDO $pdo, int $days = 30, int $min = 30): array
 {
     $from = date('Y-m-d H:i:s', time() - $days * 86400); $rows = []; $topics = []; $steps = [];
-    $q = $pdo->prepare("SELECT phone, topic, step, tpl_key, sent_at, wamid FROM wa_line_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([$from]); $sent = $q->fetchAll();
+    $q = $pdo->prepare("SELECT phone, topic, step, tpl_key, sent_at, wamid, px FROM wa_line_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([$from]); $sent = $q->fetchAll();
     $st = []; foreach (array_chunk(array_filter(array_column($sent, 'wamid')), 400) as $ch) { $x = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $r) $st[(string)$r['wamid']] = (string)$r['status']; }
     $pack = wl_pack(); $btn = []; foreach ($pack as $k => $m) $btn[$k] = mb_strtolower(trim($m['button']));
     $tap = []; try { $t = $pdo->prepare("SELECT phone, body, ts FROM wa_messages WHERE dir = 'in' AND mtype IN ('button','interactive') AND ts >= ?"); $t->execute([$from]); foreach ($t->fetchAll() as $r) $tap[(string)$r['phone']][] = [mb_strtolower(trim((string)$r['body'])), (int)strtotime((string)$r['ts'])]; } catch (Throwable $e) { }
-    $kc = []; $kcell = function (string $k) use (&$kc) { if (!isset($kc[$k])) $kc[$k] = ['sent' => 0, 'delivered' => 0, 'taps' => 0, 'orders' => 0, 'revenue' => 0]; };
+    $colc = []; $kc = []; $kcell = function (string $k) use (&$kc) { if (!isset($kc[$k])) $kc[$k] = ['sent' => 0, 'delivered' => 0, 'taps' => 0, 'orders' => 0, 'revenue' => 0]; };
     $ord = []; try { $o = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $o->execute([$from]);
         foreach ($o->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '') $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; } } catch (Throwable $e) { }
     $byPhone = []; foreach ($sent as $r) { $r['ts'] = (int)strtotime((string)$r['sent_at']); $byPhone[substr(preg_replace('/\D+/', '', (string)$r['phone']), -10)][] = $r; }
     $cell = function (string $t, int $s) use (&$rows) { if (!isset($rows[$t][$s])) $rows[$t][$s] = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'taps' => 0, 'orders' => 0, 'revenue' => 0]; };
-    foreach ($sent as $r) { $t = (string)$r['topic']; $s = (int)$r['step']; $cell($t, $s); $rows[$t][$s]['sent']++; $kcell((string)$r['tpl_key']); $kc[(string)$r['tpl_key']]['sent']++; $x = $st[(string)$r['wamid']] ?? '';
+    foreach ($sent as $r) { $t = (string)$r['topic']; $s = (int)$r['step']; $cell($t, $s); $rows[$t][$s]['sent']++; $kcell((string)$r['tpl_key']); $kc[(string)$r['tpl_key']]['sent']++; $x = $st[(string)$r['wamid']] ?? ''; $pxk = (string)($r['px'] ?? ''); if ($pxk !== '') { $colc[$pxk] = $colc[$pxk] ?? ['sent' => 0, 'delivered' => 0, 'replied' => 0, 'orders' => 0, 'revenue' => 0]; $colc[$pxk]['sent']++; if (in_array($x, ['delivered', 'read'], true)) $colc[$pxk]['delivered']++; }
         if (in_array($x, ['delivered', 'read'], true)) { $rows[$t][$s]['delivered']++; $kc[(string)$r['tpl_key']]['delivered']++; } if ($x === 'read') $rows[$t][$s]['read']++;
         foreach ($tap[(string)$r['phone']] ?? [] as [$b, $ts]) if ($ts >= (int)strtotime((string)$r['sent_at']) && $ts <= (int)strtotime((string)$r['sent_at']) + 2 * 86400 && $b === ($btn[(string)$r['tpl_key']] ?? '#')) { $rows[$t][$s]['taps']++; $kc[(string)$r['tpl_key']]['taps']++; break; } }
     $credited = [];
     foreach ($byPhone as $k => $list) foreach ($ord[$k] ?? [] as [$ots, $tot]) { $best = null; foreach ($list as $r) if ($r['ts'] < $ots && $ots <= $r['ts'] + 7 * 86400 && ($best === null || $r['ts'] > $best['ts'])) $best = $r;
-        if ($best) { $t = (string)$best['topic']; $s = (int)$best['step']; $cell($t, $s); $rows[$t][$s]['orders']++; $rows[$t][$s]['revenue'] += (int)round($tot); $credited[$t][$k] = 1; $kcell((string)$best['tpl_key']); $kc[(string)$best['tpl_key']]['orders']++; $kc[(string)$best['tpl_key']]['revenue'] += (int)round($tot); } }
+        if ($best) { $t = (string)$best['topic']; $s = (int)$best['step']; $cell($t, $s); $rows[$t][$s]['orders']++; $rows[$t][$s]['revenue'] += (int)round($tot); $credited[$t][$k] = 1; $kcell((string)$best['tpl_key']); $kc[(string)$best['tpl_key']]['orders']++; $kc[(string)$best['tpl_key']]['revenue'] += (int)round($tot); $bpx = (string)($best['px'] ?? ''); if ($bpx !== '' && isset($colc[$bpx])) { $colc[$bpx]['orders']++; $colc[$bpx]['revenue'] += (int)round($tot); } } }
     foreach ($pdo->query("SELECT topic, COUNT(*) n FROM wa_line_cust GROUP BY topic")->fetchAll() as $r) $topics[$r['topic']] = ['customers' => (int)$r['n'], 'buyers' => count($credited[$r['topic']] ?? []), 'orders' => 0, 'revenue' => 0, 'sent' => 0, 'delivered' => 0];
     foreach ($rows as $t => $ss) foreach ($ss as $s => $c) { $topics[$t] = ($topics[$t] ?? ['customers' => 0, 'buyers' => count($credited[$t] ?? []), 'orders' => 0, 'revenue' => 0, 'sent' => 0, 'delivered' => 0]);
         foreach (['orders', 'revenue', 'sent', 'delivered'] as $f) $topics[$t][$f] += $c[$f]; $c['per100'] = $c['delivered'] >= $min ? round($c['orders'] * 100 / $c['delivered'], 1) : null; $c['tap_pct'] = $c['delivered'] >= $min ? round($c['taps'] * 100 / $c['delivered'], 1) : null; $steps[] = ['topic' => $t, 'step' => $s] + $c; }
@@ -701,8 +737,12 @@ function wl_report(PDO $pdo, int $days = 30, int $min = 30): array
     $tr = array_filter($topics, fn($x) => $x['conv'] !== null); uasort($tr, fn($a, $b) => $b['conv'] <=> $a['conv']);
     $weak = array_values(array_filter($ranked, fn($x) => $x['orders'] === 0 && $x['delivered'] >= $min * 3));
     foreach ($kc as $k => &$c) { $c['score'] = round(($c['taps'] + 5 * $c['orders'] + 1) / ($c['delivered'] + 20), 4); $c['per100'] = $c['delivered'] >= $min ? round($c['orders'] * 100 / $c['delivered'], 1) : null; $c['tap_pct'] = $c['delivered'] >= $min ? round($c['taps'] * 100 / $c['delivered'], 1) : null; } unset($c);
-    return ['days' => $days, 'min' => $min, 'keys' => $kc, 'steps' => $steps, 'topics' => $topics, 'best_topic' => $tr ? array_key_first($tr) : null, 'best_steps' => array_slice(array_values($ranked), 0, 3), 'weak_steps' => array_slice($weak, 0, 5),
+    // price column (%): which step down the price chart brings the orders — orders and revenue per 100 delivered, and per message sent (a marketing message costs the shop's marketing rate)
+    $rm = 1.09; try { $tc = function_exists('wa_team_cfg') ? wa_team_cfg($pdo) : null; if ($tc) $rm = (float)$tc['rate_marketing']; } catch (Throwable $e) { }
+    $columns = []; krsort($colc, SORT_NUMERIC); foreach ($colc as $pct => $c) { $c['pct'] = (float)$pct; $c['cost'] = round($c['sent'] * $rm, 2); $c['per100'] = $c['delivered'] >= $min ? round($c['orders'] * 100 / $c['delivered'], 1) : null; $c['rev_per_100'] = $c['delivered'] >= $min ? (int)round($c['revenue'] * 100 / $c['delivered']) : null; $c['net'] = (int)round($c['revenue'] - $c['cost']); $columns[] = $c; }
+    $res = ['columns' => $columns, 'days' => $days, 'min' => $min, 'keys' => $kc, 'steps' => $steps, 'topics' => $topics, 'best_topic' => $tr ? array_key_first($tr) : null, 'best_steps' => array_slice(array_values($ranked), 0, 3), 'weak_steps' => array_slice($weak, 0, 5),
         'note' => 'Orders are credited to the last lineup message in the 7 days before the order. A rate shows only after ' . $min . ' delivered / customers — before that it is only a guess.'];
+    $res['day_hints'] = wl_day_hints($res); return $res;
 }
 /** One customer's whole lineup (for the chat / customer card). */
 function wl_customer(PDO $pdo, string $phone): array

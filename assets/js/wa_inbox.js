@@ -1194,7 +1194,7 @@
     let segLd = null;
     function segReady(cb) {
       if (window.WaSeg) return cb(); if (segLd) { segLd.push(cb); return; } segLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wa_seg_ui.js?v=1';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wa_seg_ui.js?v=2';
       sc.onload = () => { const q = segLd || []; segLd = null; q.forEach((f) => f()); }; sc.onerror = () => { segLd = null; }; document.head.appendChild(sc);
     }
 
