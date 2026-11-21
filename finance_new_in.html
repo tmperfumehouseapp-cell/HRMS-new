@@ -154,7 +154,7 @@
     let why;
     if (!d.file_rows) {
       if (!d.read) why = 'The file has no data rows (or the header row was not found).';
-      else if (d.other_day >= d.read - d.failed - d.no_amount && d.other_day > 0) why = `All ${d.other_day} rows were left out because their date is NOT ${rc.orders_day} (the "one day" filter). Change “Take only one day's rows” to “All days in the file”, or check the Transaction date column and the “Orders of day”. If your file holds the settlement of ${rc.orders_day}, its AddedOn dates may be another day.`;
+      else if (d.other_day >= d.read - d.failed - d.no_amount && d.other_day > 0) why = `All ${d.other_day} rows were left out because their "${d.filter_col || 'date'}" is NOT ${d.filter_day || rc.orders_day} (the "one day" filter). Change “Take only one day's rows” to “All days in the file”, or set “Day the money came” to the settlement date of the file.`;
       else if (d.failed >= d.read) why = 'Every row has a failed / cancelled / pending status, so no money is counted. Check the Status column.';
       else if (d.no_amount) why = `${d.no_amount} rows have no amount: check the Amount and Net amount columns.`;
       else why = 'The file has no money rows that count (check the UTR, net amount and status columns).';
@@ -231,6 +231,7 @@
     };
     $('uDay').onchange = () => { if (!$('uOd').dataset.own) $('uOd').value = addDays($('uDay').value, -1); recalc(); };
     $('uOd').onchange = () => { $('uOd').dataset.own = '1'; recalc(); };
+    if ($('uDm') && M.sdate >= 0) $('uDm').value = 'settle';      // PayU: the rows of the day the money came (the bank credit ties to this)
     $('uPrev').querySelectorAll('select').forEach((x) => { x.onchange = recalc; }); $('uPrev').querySelectorAll('.mf').forEach((x) => { x.onchange = recalc; });
     show(Object.assign({ dup_first: p.calc.dup_first }, p.calc)); recalc();
     $('uSave').onclick = async () => {

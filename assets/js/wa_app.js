@@ -804,6 +804,8 @@
     }
     // ⏷ Filter (same as the admin Chats): the order of my list + show only … — works on top of All / Waiting / From ad / 🔥
     const FL_SORT = [['', 'Waiting first (default)'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A → Z'], ['za', 'Name Z → A']];
+    // 🔥 Hot = every chat that SHOWS 🔥 / the hot colour: the hot flag, the 'ready to buy' tag, or hot marked by the bot (c.heat) — the Filter used to look at the flag only
+    const isHot = (c) => !!(c.hot || c.heat === 'hot' || (c.badge && c.badge.k === 'hot'));
     const FL_ONLY = [['noresp', 'Not responded — I have not answered yet'], ['late', 'Waiting too long'], ['hot', '🔥 Hot — ready to buy'], ['cx', 'Complaint'], ['ad', '📣 From ad']];
     // 📅 owner (18 Nov): Filter = WHICH customers (All / 🆕 Query / 📣 Campaign + Community) and WHEN they wrote (any day / today / yesterday / last 7 days / a custom day or range). "Today" = the business day (10 AM → 10 AM).
     // 🏷 MY OWN TAGS (owner, 18 Nov): my private labels on customers — make them in a customer's Details, filter by them in Filter. Colour 0..4.
@@ -826,14 +828,14 @@
       const typeOk = (c) => !F.type || (F.type === 'query' ? c.src === 'query' : (c.src === 'campaign' || c.src === 'community'));
       const TG = (F.tags || []).map(Number), tagOk = (c) => { if (!TG.length) return true; const ids = c.ut || [], none = TG.includes(0), real = TG.filter((x) => x !== 0); if (F.tmode === 'all') return (!none || !ids.length) && real.every((x) => ids.includes(x)) && (!none || !real.length); return (none && !ids.length) || real.some((x) => ids.includes(x)); };   // 🏷 Any = one of the picked tags (or "no tag"); All = every picked tag
       const dayOk = (c) => { if (!W) return true; const d = String(c.last_at || '').slice(0, 16); return d >= W[0] && d < W[1]; };   // the customer wrote in that window
-      let L = list.filter((c) => (!has('noresp') || c.noresp) && (!has('late') || c.overdue) && (!has('hot') || c.hot) && (!has('cx') || c.cx) && (!has('ad') || c.src === 'query') && typeOk(c) && dayOk(c) && tagOk(c));
+      let L = list.filter((c) => (!has('noresp') || c.noresp) && (!has('late') || c.overdue) && (!has('hot') || isHot(c)) && (!has('cx') || c.cx) && (!has('ad') || c.src === 'query') && typeOk(c) && dayOk(c) && tagOk(c));
       const nm = (c) => String(c.name || '').trim().toLowerCase(), t = (c) => String(c.last_at || '');
       if (F.sort === 'new') L = L.slice().sort((a, b) => t(b).localeCompare(t(a))); else if (F.sort === 'old') L = L.slice().sort((a, b) => t(a).localeCompare(t(b)));
       else if (F.sort === 'az' || F.sort === 'za') { const d = F.sort === 'az' ? 1 : -1; L = L.slice().sort((a, b) => (!nm(a)) - (!nm(b)) || d * nm(a).localeCompare(nm(b)) || d * String(a.phone).localeCompare(String(b.phone))); }
       return L;
     }
     function openFilter() {
-      const F = S.fl || (S.fl = { sort: '', only: [] }), sh = sheet('Filter'), nr = (S.chats || []).filter((c) => c.noresp).length;
+      const F = S.fl || (S.fl = { sort: '', only: [] }), sh = sheet('Filter'), nr = (S.chats || []).filter((c) => c.noresp).length, nh = (S.chats || []).filter(isHot).length;
       const D = { sort: F.sort || '', only: (F.only || []).slice(), tag: !!F.tag && !F.tagAuto, type: F.type || '', day: F.day || '', df: F.df || '', dt: F.dt || '', tags: (F.tags || []).map(Number), tmode: F.tmode || 'any' };
       const lab = (t, top) => `<div style="font-size:12px;font-weight:800;letter-spacing:.05em;color:var(--mut);margin:${top == null ? 14 : top}px 0 6px">${t}</div>`;
       const seg = (k, arr) => `<div style="display:flex;gap:6px">${arr.map(([v, l]) => `<button type="button" data-d="${k}:${v}" style="flex:1;border:1.5px solid ${D[k] === v ? '#00a884' : '#d1d5db'};background:${D[k] === v ? '#e6f6ea' : '#fff'};color:${D[k] === v ? '#047857' : '#111827'};border-radius:12px;padding:11px 4px;font-weight:800;font-size:13.5px">${l}</button>`).join('')}</div>`;
@@ -851,7 +853,7 @@
           + (D.day === 'today' || D.day === 'yesterday' ? '<div style="font-size:12px;color:var(--mut);margin-top:5px">A day runs from 10 AM to 10 AM.</div>' : '')
           + lab('CHATS') + chips('tag', [['0', 'My chats now'], ['1', '🏷 My tag — ever mine (30 days)']]).replace(/data-d="tag:(\d)"/g, 'data-d="tag:$1"')
           + lab('SORT BY') + FL_SORT.map(([k, l]) => opt('radio', 'fls', k, l, D.sort === k)).join('')
-          + lab('SHOW ONLY') + FL_ONLY.map(([k, l]) => opt('checkbox', 'flo', k, l, D.only.includes(k), k === 'noresp' ? `<b style="color:#dc2626">${nr}</b>` : '')).join('')
+          + lab('SHOW ONLY') + FL_ONLY.map(([k, l]) => opt('checkbox', 'flo', k, l, D.only.includes(k), k === 'noresp' ? `<b style="color:#dc2626">${nr}</b>` : (k === 'hot' ? `<b style="color:#c2410c">${nh}</b>` : ''))).join('')
           + `<div style="display:flex;gap:10px;margin-top:16px;position:sticky;bottom:0;background:var(--card,#fff);padding:8px 0 4px"><button type="button" class="wx-btn" data-x="reset" style="flex:1;min-height:48px;border-radius:99px;background:#fff;color:#111827;border:1px solid #d1d5db;font-weight:700">Reset</button><button type="button" class="wx-btn" data-x="go" style="flex:2;min-height:48px;border-radius:99px;background:#00a884;color:#fff;border:0;font-weight:800">${countTxt()}</button></div>`;
         // the 'tag' chips are 0 / 1: mark the active one
         sh.body.querySelectorAll('[data-d^="tag:"]').forEach((b) => { const on = (b.dataset.d === 'tag:1') === !!D.tag; b.style.background = on ? '#00a884' : '#fff'; b.style.color = on ? '#fff' : '#111827'; b.style.borderColor = on ? '#00a884' : '#d1d5db'; b.style.fontWeight = on ? 800 : 600; });
@@ -889,7 +891,7 @@
     setInterval(() => { R.querySelectorAll('.wx-stt[data-s]').forEach((el) => { const sec = (+el.dataset.s) + (Date.now() - S.fetched) / 1000; el.textContent = sec < 3600 ? mmss(sec) : Math.floor(sec / 3600) + 'h' + (sec % 3600 >= 60 ? String(Math.floor((sec % 3600) / 60)).padStart(2, '0') : ''); }); }, 1000);
     function drawList() {
       $('#wxSeg').hidden = false; const M = $('#wxM'); if (!S.loaded) { M.innerHTML = '<div class="wx-sk"></div><div class="wx-sk"></div><div class="wx-sk"></div>'; $('#wxSeg').innerHTML = ''; return; }
-      const f = S.filter; const all = S.chats; let list = all.filter((c) => !f || (f === 'wait' ? c.waiting : f === 'new' ? c.src === 'query' : f === 'hot' ? c.hot : true));
+      const f = S.filter; const all = S.chats; let list = all.filter((c) => !f || (f === 'wait' ? c.waiting : f === 'new' ? c.src === 'query' : f === 'hot' ? isHot(c) : true));
       const FL = S.fl || (S.fl = { sort: '', only: [] }); list = flApply(list, FL);
       const segs = [['', 'All ' + all.length], ['wait', '⏱ Waiting ' + (S.counts.waiting || 0)], ['req', '🙋 Requests ' + (S.req ? reqN() : '')], ['cx', '⚠ Complaints' + (S.cxB && S.cxB.items.length ? ' ' + S.cxB.items.length : '')], ['new', '📣 From ad'], ['hot', '🔥 ' + (S.counts.hot || 0)]]; if (S.rescueOn) segs.splice(3, 0, ['rescue', '🛟 Rescue ' + (S.rescue ? S.rescue.length : '') + ((S.rescueMine || []).some((x) => x.decide) ? ' ⏰' : '')]); if (S.me && S.me.team) segs.push(['team', '👥 Team']);
       const fln = FL.only.length + (FL.sort ? 1 : 0) + (FL.tag ? 1 : 0) + (FL.type ? 1 : 0) + (FL.day ? 1 : 0) + ((FL.tags || []).length ? 1 : 0);
