@@ -825,6 +825,7 @@ function wa_camp_tick(PDO $pdo, int $only = 0): array   // $only > 0: the ⚡ Se
 function wa_unreach_cond(PDO $pdo): array
 {
     if ((string)setting_get($pdo, 'wa_unreach_on', '1') === '0' || !function_exists('wa_unreach_tables') || !wa_unreach_tables($pdo)) return ['', []];
+    try { if ((string)setting_get($pdo, 'wa_unreach_10d_2111', '') !== '1') { setting_set($pdo, 'wa_unreach_10d_2111', '1'); setting_set($pdo, 'wa_unreach_days', '10'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing: people Meta held (131049) are left out for 10 days instead of 5 (owner, 21 Nov 2026: 98% of the failures were this code)'); } } catch (Throwable $e0) { }
     $hd = max(1, min(30, (int)setting_get($pdo, 'wa_unreach_days', '5')));
     return ["((code IN (131049, 131048) AND at >= ?) OR (code IN (131026, 131050) AND at >= ?) OR (code = 130472 AND at >= ?))", [date('Y-m-d H:i:s', time() - $hd * 86400), date('Y-m-d H:i:s', time() - 90 * 86400), date('Y-m-d H:i:s', time() - 7 * 86400)]];
 }
