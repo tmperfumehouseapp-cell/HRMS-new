@@ -139,6 +139,13 @@ function wag_cfg(PDO $pdo): array
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $gb['dont'] = array_values(array_merge(['Never say a perfume is "available" / "in stock" unless its exact name is in our catalogue list. For a name you cannot find, say "Sir, ye naam ek baar confirm karke batata hoon", ask size and quantity, or offer two similar perfumes that are in the list; a person confirms the rest.'], array_slice((array)($gb['dont'] ?? []), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov, evening): FIRST price = the chart's 7% column; a discount only up to the 6.5% then the 6% column; nothing below — the earlier "step down below the chart" rules are taken out
+    try { if (setting_get($pdo, 'wag_rules16', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules16', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            foreach (['do', 'dont'] as $kk) if (isset($gb[$kk]) && is_array($gb[$kk])) $gb[$kk] = array_values(array_filter($gb[$kk], function ($x) { return !(is_string($x) && (strpos($x, 'DEEP PRICE STEP-DOWN') !== false || strpos($x, 'step down ONE level') !== false || strpos($x, 'we may go well below the lowest chart price') !== false)); }));
+            $rule = 'PRICE RULE (owner): whenever a customer asks the price of ANY combo or a single perfume, quote ONLY the price chart\'s 7% column for that quantity. If he then asks for a discount, give at most the 6.5% and then the 6% column of the chart - NEVER more discount than that and never a number that is not on the chart. When he still refuses, show the value of the bigger size or the add-on instead of a lower price.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov: "as fast as possible"): the bot starts 2 s after the message (the answer itself takes the AI 3-5 s)
     try { if (setting_get($pdo, 'wag_bot2', '') !== '1') { setting_set($pdo, 'wag_bot2', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 2; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
@@ -587,7 +594,7 @@ function wag_addon_calc(PDO $pdo, string $key): ?array
             try { $__cq = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 40"); $__cq->execute([$key]); foreach ($__cq->fetchAll(PDO::FETCH_COLUMN) as $__cb) { if (preg_match('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/iu', (string)$__cb, $__cm)) { if ((int)$__cm[1] !== $qty || (int)$__cm[2] !== $ml) return null; break; } } } catch (Throwable $e) { }   // the customer's own latest "N x S ml" differs from the quote this reader found (he chose 10 x 20, the quote was 5 x 20): never an offer on a stale quote
             $per = $tot / $qty; $hi = $tot >= 2800; $d1 = $hi ? 0.15 : 0.25; $d2 = $hi ? 0.20 : 0.32; $am = $ml;
             if ($tot < 1500 && $ml < 50) {   // a small order: the add-on is a 50 ml bottle (a bigger lift of the ticket), priced from OUR chart at the 6.5% start level
-                try { $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (is_array($j) && !empty($j['cols']) && !empty($j['rows'])) { $ix = 1; foreach (array_values(array_map('floatval', (array)$j['cols'])) as $i2 => $cv) if (abs($cv - 6.5) < 0.01) $ix = $i2; foreach ((array)$j['rows'] as $r2) if ((int)($r2['ml'] ?? 0) === 50 && (int)($r2['p'][$ix] ?? 0) > 0) { $per = (float)$r2['p'][$ix]; $am = 50; break; } } } catch (Throwable $e) { }
+                try { $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (is_array($j) && !empty($j['cols']) && !empty($j['rows'])) { $ix = wag_chart_cols(array_values(array_map('floatval', (array)$j['cols'])))[0]; foreach ((array)$j['rows'] as $r2) if ((int)($r2['ml'] ?? 0) === 50 && (int)($r2['p'][$ix] ?? 0) > 0) { $per = (float)$r2['p'][$ix]; $am = 50; break; } } } catch (Throwable $e) { }
             }
             $p1 = (int)(round($per * (1 - $d1) / 10) * 10); $p2 = (int)(round(2 * $per * (1 - $d2) / 10) * 10); if ($p1 < 50 || $p2 <= $p1) continue;
             return [$qty, $ml, $tot, $p1, $p2, $am]; }
@@ -596,7 +603,7 @@ function wag_addon_calc(PDO $pdo, string $key): ?array
     try { $__cq = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 40"); $__cq->execute([$key]); $qty = 0; $ml = 0;
         foreach ($__cq->fetchAll(PDO::FETCH_COLUMN) as $__cb) { if (preg_match('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/iu', (string)$__cb, $__cm)) { $qty = (int)$__cm[1]; $ml = (int)$__cm[2]; break; } }
         if ($qty >= 2 && $qty <= 20 && in_array($ml, [20, 30, 50, 100], true)) { $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true);
-            if (is_array($j) && !empty($j['cols']) && !empty($j['rows'])) { $ix = 1; foreach (array_values(array_map('floatval', (array)$j['cols'])) as $i2 => $cv) if (abs($cv - 6.5) < 0.01) $ix = $i2; $tot = 0; foreach ((array)$j['rows'] as $r2) if ((int)($r2['ml'] ?? 0) === $qty * $ml) { $tot = (int)($r2['p'][$ix] ?? 0); break; }
+            if (is_array($j) && !empty($j['cols']) && !empty($j['rows'])) { $ix = wag_chart_cols(array_values(array_map('floatval', (array)$j['cols'])))[0]; $tot = 0; foreach ((array)$j['rows'] as $r2) if ((int)($r2['ml'] ?? 0) === $qty * $ml) { $tot = (int)($r2['p'][$ix] ?? 0); break; }
                 if ($tot >= 500 && $tot <= 20000) { $per = $tot / $qty; $hi = $tot >= 2800; $d1 = $hi ? 0.15 : 0.25; $d2 = $hi ? 0.20 : 0.32; $am = $ml;
                     if ($tot < 1500 && $ml < 50) foreach ((array)$j['rows'] as $r3) if ((int)($r3['ml'] ?? 0) === 50 && (int)($r3['p'][$ix] ?? 0) > 0) { $per = (float)$r3['p'][$ix]; $am = 50; break; }
                     $p1 = (int)(round($per * (1 - $d1) / 10) * 10); $p2 = (int)(round(2 * $per * (1 - $d2) / 10) * 10); if ($p1 >= 50 && $p2 > $p1) return [$qty, $ml, $tot, $p1, $p2, $am]; } } }
@@ -892,6 +899,13 @@ function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
             if ($fl && function_exists('ct_push') && function_exists('wa_team_cfg')) { $al = (array)(wa_team_cfg($pdo)['alert_emps'] ?? []); if ($al) ct_push($pdo, $al, '⚠ Cherry-picking queries', implode(', ', $fl) . ' took queries and sent them back or never answered them.', '/whatsapp.html#signals', 'wa-cherry'); } } } catch (Throwable $e) { }
     return $n;
 }
+/** Price chart columns (owner, 21 Nov): the FIRST price to every customer is the chart's 7% column; when he asks for a discount, at most the 6.5% and then the 6% column - never lower. [start index, floor index] of the columns. */
+function wag_chart_cols(array $cols): array
+{
+    $st = 0; $b = 1e9; foreach ($cols as $i => $cv) { $d = abs((float)$cv - 7.0); if ($d < $b) { $b = $d; $st = (int)$i; } }
+    $fl = $st; $b = 1e9; foreach ($cols as $i => $cv) { if ((int)$i < $st) continue; $d = abs((float)$cv - 6.0); if ($d < $b) { $b = $d; $fl = (int)$i; } }
+    return [$st, max($st, $fl)];
+}
 /** The EXACT price from our chart for the quantity the customer chose (owner, 21 Nov: with nothing negotiated yet the bot starts at the 6.5% level, never at a deep combo price; the AI had used the 3 x 50 ml price for 5 x 50 ml). '' when the chat names no quantity x size. */
 function wag_price_context(PDO $pdo, string $phone, array $msgs): string
 {
@@ -906,12 +920,13 @@ function wag_price_context(PDO $pdo, string $phone, array $msgs): string
     elseif (preg_match_all('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/u', $txt, $mm, PREG_SET_ORDER)) { $l = end($mm); $qty = (int)$l[1]; $size = (int)$l[2]; }
     else { if (preg_match_all('/\b(10|20|30|50|100)\s*ml\b/u', $txt, $sm)) $size = (int)end($sm[1]); if ($size && preg_match_all('/(?<![\d.])(\d{1,2})(?![\d.])(?!\s*ml)/u', $cust, $qm)) { $qty = (int)end($qm[1]); } }
     if (!$qty && $size && preg_match('/\bsingle\b|\bek (hi )?perfume\b|\b1 perfume\b|\bone perfume\b|combo nahi|no combo|don.?t want (a )?combo|alag se|\bsirf ek\b/u', $cust)) $qty = 1;   // "I do not want a combo, 100 ml price" = one bottle at the chart's single-bottle row
+    if (!$qty && $size && preg_match('/(price|kitne|kitna|rate|kimat|cost|how much)/u', $custAll)) $qty = 1;   // "Azzaro 50 ml ki price": one bottle at the chart price (the bot had quoted Rs 1199 / 1960 from nowhere)
     if ($qty < 1 || $qty > 30 || $size < 10) return ''; $total = $qty * $size; $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $total) { $row = $r; break; } if (!$row || empty($row['p'])) return '';
-    $idx = 1; foreach ($cols as $i => $cv) if (abs($cv - 6.5) < 0.01) $idx = $i; $seen = false;
+    [$idx, $__floor] = wag_chart_cols($cols); $seen = false;   // the 7% column first; the floor is the 6% column
     if (function_exists('pc_chat_level') && $phone !== '') { try { $lv = pc_chat_level($pdo, $phone); if (empty($lv['default'])) { $seen = true; foreach ($cols as $i => $cv) if (abs($cv - (float)$lv['pct']) < 0.01) $idx = max($idx, $i); } } catch (Throwable $e) { } }
     // a customer who ARRIVES with a price (the ad / an earlier offer: "5 x 50ml combo for Rs 2,750"): that level is honoured, not our start level
     if (preg_match_all('/(?<![\d,.])(\d{1,2},\d{3}|\d{4,5})(?![\d,])/u', $cust, $am)) foreach ($am[1] as $a) { $amt = (int)str_replace(',', '', $a); if ($amt < 500) continue; $bj = -1; $bd = 1e9; foreach ((array)$row['p'] as $jj => $pv) { if ($pv <= 0) continue; $d = abs($pv - $amt); if ($d / $amt <= 0.015 && $d < $bd) { $bd = $d; $bj = (int)$jj; } } if ($bj >= 0) { $idx = $bj; $seen = true; } }   // his own price is honoured: the chart column NEAREST to it (an exact match wins; the old loop took the deepest column within 1.5%, so Rs 2,200 from the website became Rs 2,180)
-    $v0 = (int)($row['p'][$idx] ?? 0); if ($v0 <= 0) return ''; $nx = min(count($cols) - 1, $idx + 1); $v1 = (int)($row['p'][$nx] ?? 0);
+    $v0 = (int)($row['p'][$idx] ?? 0); if ($v0 <= 0) return ''; $nx = min($__floor, $idx + 1); if ($idx >= $__floor) $nx = $idx; $v1 = (int)($row['p'][$nx] ?? 0);   // a discount goes to 6.5%, then 6% - nothing lower
     // ORDER-VALUE GOAL (owner, 21 Nov): the average order should reach Rs 2,700-2,800 — push ONE add-on that lifts this order there, at the same price level
     $add = ''; if ($v0 < 2700) { $rs = (array)$j['rows']; usort($rs, fn($a, $b) => (int)($a['ml'] ?? 0) <=> (int)($b['ml'] ?? 0)); $pick = null;
         foreach ([$size, 50] as $stepMl) { if ($pick || $stepMl < 10) continue; foreach ($rs as $r2) { $ml2 = (int)($r2['ml'] ?? 0); $ex = $ml2 - $total; if ($ex <= 0 || $ex % $stepMl !== 0 || intdiv($ex, $stepMl) > 6) continue; $vv = (int)($r2['p'][$idx] ?? 0); if ($vv >= 2700) { $pick = [$ml2, $vv, intdiv($ex, $stepMl), $stepMl]; break; } } }   // a NATURAL add-on only: N more bottles of the SAME size (else of 50 ml), never an odd amount such as "170 ml extra"
@@ -926,7 +941,7 @@ function wag_price_context(PDO $pdo, string $phone, array $msgs): string
         foreach ((array)$j['rows'] as $r4) if ((int)($r4['ml'] ?? 0) === 250) { $u6 = (int)($r4['p'][$idx] ?? 0); if ($u6 > $v0 && $u6 <= 3400) $__up = $__al . ' LOWEST PRICE REACHED: Rs ' . $v0 . ' is already our lowest chart price and he objects. Do NOT invent a lower price and do NOT only repeat it. In ONE short line show the better value instead: "5 x 50 ml sirf Rs ' . $u6 . ' mein (250 ml, 2.5 guna perfume, per ml sabse sasta)" - use exactly Rs ' . $u6 . ' - and ask which one he prefers. If he still says no, thank him politely and stop.'; break; }
     }
     // 🏁 HOLD THE CUSTOMER (owner, 21 Nov: "maximum orders; at the end even Rs 1,400 for a Rs 1,590 chart price is fine - never let him go"): at the LOWEST chart price, after we told him that price and he still refuses, the bot steps down ONE level at a time - 2.5%, then 6%, then 12% below the lowest chart price (all made by CODE, never by the AI) - only after each refusal, never two levels in one message, and stops politely after the last
-    try { if ($v0 >= 1000 && ($v1 <= 0 || $v1 >= $v0)) { $lv = [$v0, (int)(round($v0 * 0.975 / 10) * 10), (int)(round($v0 * 0.94 / 10) * 10), (int)(round($v0 * 0.88 / 10) * 10)]; $cur = -1; $refused = false;
+    try { if ((string)setting_get($pdo, 'wag_stepdown_on', '0') === '1' && $v0 >= 1000 && ($v1 <= 0 || $v1 >= $v0)) { $lv = [$v0, (int)(round($v0 * 0.975 / 10) * 10), (int)(round($v0 * 0.94 / 10) * 10), (int)(round($v0 * 0.88 / 10) * 10)]; $cur = -1; $refused = false;
             foreach (array_slice($msgs, -14) as $__fm) { $tx = str_replace(',', '', (string)($__fm['text'] ?? '')); if ((string)($__fm['who'] ?? '') !== 'customer') { foreach ($lv as $li2 => $pv) if (preg_match('/(?<!\d)' . $pv . '(?!\d)/', $tx) && $li2 >= $cur) { $cur = $li2; $refused = false; } }
                 elseif ($cur >= 0 && preg_match('/(\bnhi\b|\bnahi\b|\bvarna\b|\bno\b|mehang|mahang|costly|expensive|kam kar|kam do|paise kam|discount|last price|final price|thoda kam|nhi chahiye|nahi chahiye)/iu', mb_strtolower($tx))) $refused = true; }
             if ($cur >= 0 && $refused && $cur < 3) { $nx2 = $lv[$cur + 1]; $__up .= ($cur === 0 ? $__al : '') . ' PRICE STEP-DOWN (owner: maximum orders, never let the customer go): he has seen Rs ' . $lv[$cur] . ' and still refuses. Say ONCE, politely and short: "Sir, aapke liye Rs ' . $nx2 . ' kar deta hoon' . ($cur + 1 === 3 ? ' - ye meri taraf se final hai, isse niche possible nahi' : '') . ', order confirm karein?" - use exactly Rs ' . $nx2 . ' and no other number; never go lower than this in this message.'; }
