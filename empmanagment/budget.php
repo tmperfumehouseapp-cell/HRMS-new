@@ -224,6 +224,16 @@ if ($__bg === 'budget.bill_assign') {
     $in = json_input(); $bid = (int)($in['bill_id'] ?? 0); $eid = (int)($in['employee_id'] ?? 0);
     $e = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $e->execute([$eid]); $nm = $e->fetchColumn();
     if (!$eid || $nm === false) json_response(['error' => 'Choose an employee.'], 422);
+    if ($bid < 0) {   // a bill of the old POS (shown with a minus id): the owner picks who it pays; kept as a list of POS order -> employee
+        if (!function_exists('st_oldpos_assign_get')) require_once __DIR__ . '/store_lib.php';
+        $pid = -$bid; $o = null; try { $q = $pdo->prepare("SELECT id, created_at FROM pos_orders WHERE id = ?"); $q->execute([$pid]); $o = $q->fetch(); } catch (Throwable $e2) {}
+        if (!$o) json_response(['error' => 'Bill not found.'], 404);
+        $day = date('Y-m-d', strtotime((string)$o['created_at'] . ' -3 hour'));
+        if (budget_closed_through(budget_cfg($pdo)) >= $day) json_response(['error' => 'That bill is in a closed month. Open the month first.'], 409);
+        $m = st_oldpos_assign_get($pdo); $m[(string)$pid] = $eid; setting_set($pdo, 'st_oldpos_assign', json_encode($m));
+        budget_audit($pdo, $auth, 'Old POS bill POS-' . $pid . ' now belongs to ' . $nm, $eid);
+        json_response(['ok' => true, 'employee_id' => $eid, 'name' => (string)$nm]);
+    }
     $b = $pdo->prepare("SELECT bill_id, biz_date, bill_no FROM st_bills WHERE bill_id = ? AND status = 'ok'"); $b->execute([$bid]); $brow = $b->fetch();
     if (!$brow) json_response(['error' => 'Bill not found.'], 404);
     if (budget_closed_through(budget_cfg($pdo)) >= (string)$brow['biz_date']) json_response(['error' => 'That bill is in a closed month. Open the month first.'], 409);
