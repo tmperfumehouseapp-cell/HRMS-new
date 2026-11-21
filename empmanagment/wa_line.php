@@ -398,6 +398,13 @@ function wln_since_15(PDO $pdo): bool
     $to = wl_ist_at('2026-11-15', 10); setting_set($pdo, 'wl_since_v3', '1'); if ($c['since'] <= $to) return false;
     $c['since'] = $to; wl_cfg_put($pdo, $c); wa_log($pdo, 'engine', true, 'Lineup: catching everybody who wrote since ' . date('Y-m-d H:i', $to) . ' (15 Nov 10:00 IST)'); return true;
 }
+/** Owner, 21 Nov: "today take the 1st to the 14th as well" - one time: the Lineup also catches everybody who wrote since 1 Nov 10:00 IST (the enrolment takes 3,000 a round; the older ones start at step 1 now, like the 15th ones did). */
+function wln_since_1(PDO $pdo): bool
+{
+    if ((string)setting_get($pdo, 'wl_since_v4', '') === '1') return false; $c = wl_cfg($pdo); if ($c['started'] === '' || $c['since'] <= 0) return false;
+    $to = wl_ist_at('2026-11-01', 10); setting_set($pdo, 'wl_since_v4', '1'); if ($c['since'] <= $to) return false;
+    $c['since'] = $to; wl_cfg_put($pdo, $c); wa_log($pdo, 'engine', true, 'Lineup: catching everybody who wrote since ' . date('Y-m-d H:i', $to) . ' (1 Nov 10:00 IST)'); return true;
+}
 function wln_since_back(PDO $pdo): bool
 {
     if ((string)setting_get($pdo, 'wl_since_v2', '') === '1') return false; $c = wl_cfg($pdo); if ($c['started'] === '' || $c['since'] <= 0) return false;
@@ -564,7 +571,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && !$sendonly && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     $book = !$force && !$sendonly && function_exists('wa_lock') && wa_lock($pdo, 'wlbook', 50);   // the bookkeeping (enrolment, re-reads, rescue) is done by ONE caller a minute; the sending is shared by shards below
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window (none unless wl_cfg.win = 1)
-    if ($book) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); wln_ladder30($pdo); wln_since_15($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
+    if ($book) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); wln_ladder30($pdo); wln_since_15($pdo); wln_since_1($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if ($book && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }   // failed as marketing -> sent again as utility on the spot
@@ -830,15 +837,18 @@ function wl_new_word(PDO $pdo, array $report): string
     if ((string)setting_get($pdo, 'wl_auto_words', '1') === '0') return '';
     if (!function_exists('wcr_ai')) return 'words: Claude is not available on this server';
     $extra = json_decode((string)setting_get($pdo, 'wl_extra', ''), true); if (!is_array($extra)) $extra = []; if (count($extra) >= 30) return 'words: 30 written wordings already, no more';
-    $made = 0; foreach ($extra as $e) if (substr((string)($e['at'] ?? ''), 0, 10) === date('Y-m-d')) $made++; if ($made >= 2) return '';
+    $made = 0; foreach ($extra as $e) if (substr((string)($e['at'] ?? ''), 0, 10) === date('Y-m-d')) $made++; if ($made >= 3) return '';
     $P = wl_pack(); $cnt = []; foreach ($P as $k => $m) { $b = $m['of'] ?? $k; $cnt[$b] = ($cnt[$b] ?? 0) + 1; }
-    $best = null; foreach ((array)($report['keys'] ?? []) as $k => $c) { $b = $P[$k]['of'] ?? $k; if (!isset($P[$b]) || !empty($P[$b]['pref']) || ($cnt[$b] ?? 1) >= 4 || (int)$c['delivered'] < 100) continue; if ($best === null || $c['delivered'] / ($cnt[$b] ?? 1) > $best[1]) $best = [$b, $c['delivered'] / ($cnt[$b] ?? 1)]; }
+    // OWNER 21 Nov: the WEAKEST message gets the new wording (the group whose best wording scores lowest, 150+ delivered, at most 4 wordings), written in the style of the WINNING messages
+    $grp = []; foreach ((array)($report['keys'] ?? []) as $k => $c) { $b = $P[$k]['of'] ?? $k; if (!isset($P[$b]) || !empty($P[$b]['pref'])) continue; $grp[$b]['d'] = ($grp[$b]['d'] ?? 0) + (int)$c['delivered']; $grp[$b]['s'] = max($grp[$b]['s'] ?? 0, (float)$c['score']); }
+    $best = null; foreach ($grp as $b => $g) { if ($g['d'] < 150 || ($cnt[$b] ?? 1) >= 4) continue; if ($best === null || $g['s'] < $best[1]) $best = [$b, $g['s']]; }
+    $win = []; $ks = (array)($report['keys'] ?? []); uasort($ks, fn($x, $y) => $y['score'] <=> $x['score']); foreach ($ks as $k => $c) { if (count($win) >= 3) break; if ((int)$c['delivered'] >= 150 && isset($P[$k]) && empty($P[$k]['pref'])) $win[] = '- ' . $P[$k]['body'] . ' [button: ' . $P[$k]['button'] . ']'; }
     if (!$best) return 'words: no step has 100 delivered yet, nothing new is written';
     $base = $best[0]; $bm = $P[$base]; $ex = []; foreach ($P as $k => $m) if (($m['of'] ?? $k) === $base) $ex[$k] = $m;
     $gb = ''; try { $g = $pdo->query("SELECT body FROM lib_guide WHERE status = 'live' ORDER BY version DESC LIMIT 1")->fetchColumn(); if ($g) { $j = json_decode((string)$g, true); if (is_array($j)) $gb = json_encode(['do' => array_slice((array)($j['do'] ?? []), 0, 8), 'openers' => array_slice((array)($j['openers'] ?? []), 0, 5), 'followups' => array_slice((array)($j['followups'] ?? []), 0, 4)], JSON_UNESCAPED_UNICODE); } } catch (Throwable $e) { }
     $role = [1 => 'the first message, 24 hours after the customer stopped chatting', 2 => 'day 2: a gentle second message', 3 => 'day 3: a question to move the chat on', 4 => 'day 4: a light nudge', 5 => 'day 6', 6 => 'day 8', 7 => 'day 10', 8 => 'day 15: a small first size suggestion', 9 => 'day 18', 10 => 'day 22: help with address / payment', 11 => 'day 26', 12 => 'day 30: the polite last message'][(int)$bm['step']] ?? '';
     $sys = 'You write ONE new WhatsApp UTILITY message wording for a perfume shop (TM Perfume House), in the same Hinglish (Hindi in Roman letters) as the examples. Rules: exactly one blank {{1}} (the customer first name) in the middle of the text, never first or last; 40-300 characters; NO prices, no percentages, no discount / offer / free / sale / special words; it answers or follows up a customer who asked; one quick-reply button text of 2-4 words (max 25 characters) that is different from every existing button; plus the free answer that goes out when the button is tapped (max 350 characters, warm, asks for the perfume name / size, no price). It must NOT repeat any existing wording. Use what wins in real chats (given). Return only JSON {"body": "...", "button": "...", "free": "..."}.';
-    $usr = "Step: " . $bm['topic'] . ' step ' . $bm['step'] . ' (' . $role . ")\nExisting wordings of this step (do not repeat):\n" . implode("\n", array_map(fn($k, $m) => '- ' . $m['body'] . ' [button: ' . $m['button'] . ']', array_keys($ex), $ex)) . "\nAll buttons in use: " . implode(' | ', array_unique(array_map(fn($m) => (string)$m['button'], $P))) . "\nWhat wins in real chats (live guidebook): " . $gb;
+    $usr = "Step: " . $bm['topic'] . ' step ' . $bm['step'] . ' (' . $role . ")\nExisting wordings of this step (do not repeat):\n" . implode("\n", array_map(fn($k, $m) => '- ' . $m['body'] . ' [button: ' . $m['button'] . ']', array_keys($ex), $ex)) . "\nAll buttons in use: " . implode(' | ', array_unique(array_map(fn($m) => (string)$m['button'], $P))) . "\nWhat wins in real chats (live guidebook): " . $gb . "\nOur best performing messages (write in this warm, short style, but different words): \n" . implode("\n", $win);
     $r = wcr_ai($sys, $usr, 900); if (!is_array($r)) return 'words: Claude did not answer (' . (string)($GLOBALS['wcr_ai_why'] ?? '') . ')';
     $w = ['body' => (string)($r['body'] ?? ''), 'button' => (string)($r['button'] ?? ''), 'free' => (string)($r['free'] ?? '')]; [$ok, $why] = wl_check_wording($w, $P); if (!$ok) return 'words: the written wording was refused (' . $why . ')';
     $n = 1; foreach ($extra as $e) if (($e['of'] ?? '') === $base) $n++; $key = substr($base, 0, 14) . '_a' . $n; if (isset($P[$key])) $key = substr($base, 0, 13) . '_a' . $n . mt_rand(1, 9);
@@ -1010,6 +1020,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
     if (!wln_tables($pdo)) json_response(['error' => 'Lineup storage is not available.'], 500);
     switch ($__wl) {
         case 'wa.line_get': json_response(['ok' => true] + wl_overview($pdo));
+        case 'wa.line_aft': { if (!function_exists('wa_aft_overview')) require_once __DIR__ . '/wa_after.php'; json_response(['ok' => true] + wa_aft_overview($pdo)); }   // the After-Order plan card under the 30-day plan
         case 'wa.line_card': { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); json_response(['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60), 'tomorrow' => wl_overview($pdo)['tomorrow']]); }
         case 'wa.line_report': json_response(['ok' => true] + wl_report($pdo, max(7, min(90, (int)($_GET['days'] ?? 30)))));
         case 'wa.line_customer': json_response(['ok' => true] + wl_customer($pdo, preg_replace('/\D/', '', (string)($_GET['phone'] ?? ''))));

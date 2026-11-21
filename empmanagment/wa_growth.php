@@ -160,6 +160,12 @@ function wag_cfg(PDO $pdo): array
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '150 ml ka kitna hoga?', 'better' => 'Sir, 150 ml ka Rs [chart price] hai. Aur sirf Rs [difference] aur dene par aapko 200 ml mil jayega (Rs [chart price]) - per ml bahut better value hai. Kaunsa le lun?']], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): ONLY what is in our catalogue; no shower gel / wax / candle / solid / roll-on / 10 ml; OG / TM Originals are never promoted
+    try { if (setting_get($pdo, 'wag_rules19', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules19', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rule = 'ONLY OUR CATALOGUE: suggest, name or confirm only perfumes that are in our catalogue (the system gives you the names); if a customer asks for something that is not there, say so politely and offer the closest perfume from the catalogue. Never suggest shower gel, body wash, wax, candle, solid perfume, roll-on, mini or 10 ml bottles unless the customer himself asks. Do not promote OG / TM Originals.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov: "as fast as possible"): the bot starts 2 s after the message (the answer itself takes the AI 3-5 s)
     try { if (setting_get($pdo, 'wag_bot2', '') !== '1') { setting_set($pdo, 'wag_bot2', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 2; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
@@ -718,6 +724,36 @@ function wag_unrelated_sweep(PDO $pdo, int $max = 8): int
     } catch (Throwable $e) { }
     return $n;
 }
+/** 🧠 AUTO-REVIEW of what the bot learned (owner, 21 Nov: "approve by yourself what helps orders / ticket size / follow-up, and remove what does not belong"). The decision of ONE learned answer: [true, ''] = goes into the live guidebook, [false, why] = removed.
+ *  Removed: shower gel / wax / candle / solid / roll-on / mini / 10 ml, OG / TM Originals, a discount of 7% or more / free / cashback, a price in rupees (prices come only from the chart), internal words (target / minimum), phone numbers / links / UPI, a perfume name that is not in our catalogue, anything that has nothing to do with selling. */
+function wag_bl_judge(string $better, array $catalog): array
+{
+    $t = trim($better); if (mb_strlen($t) < 8) return [false, 'too short']; if (strpos($t, '[TEMPLATE —') === 0) return [false, 'waiting for a template'];
+    if (preg_match('/(shower|body ?wash|\bwax\b|candle|\bsolid\b|roll-?on|\bmini\b|\b10 ?ml\b|deodorant|\bog\b|originals?\b|tm original)/iu', $t)) return [false, 'other product / OG (not promoted)'];
+    if (preg_match('/(\b(?:[7-9]|[1-9]\d)(?:\.\d+)?\s*%)|(\bfree\b)|cashback|extra discount/iu', $t)) return [false, 'discount / free gift outside the policy'];
+    if (preg_match('/(?:rs\.?|₹|inr)\s*[\d,]{3,}|[\d,]{3,}\s*(?:\/-|rs\b|rupees)/iu', $t)) return [false, 'a price (prices come only from the chart)'];
+    if (preg_match('/(\btarget\b|\bminimum\b|\bfloor price\b|\b\d{10}\b|https?:\/\/|\bupi\b|@[a-z]+)/iu', $t)) return [false, 'internal word / number / link'];
+    if (!preg_match('/(order|confirm|address|pincode|combo|\bml\b|bottle|size|review|rating|trial|sample|delivery|offer|best|suggest|recommend|fragrance|khushbu|pasand|reorder|payment|link|follow|perfume|price|rate)/iu', $t)) return [false, 'not about selling'];
+    if ($catalog) { $stop = ['sir', 'hello', 'hi', 'aap', 'aapko', 'main', 'hum', 'tm', 'perfume', 'house', 'whatsapp', 'ok', 'thank', 'reply', 'dear', 'madam', 'ji', 'bhai', 'order', 'cod', 'upi', 'gst', 'ml', 'oil', 'eau'];
+        if (preg_match_all('/(?<![.!?\n]\s)(?<!^)\b([A-Z][a-z]{3,}(?:\s+[A-Z][a-z]{3,})*)/u', $t, $m)) foreach ($m[1] as $cand) { $c = mb_strtolower(trim($cand)); if (in_array($c, $stop, true)) continue; $hit = false; foreach ($catalog as $n) if (strpos($n, $c) !== false || strpos($c, $n) !== false) { $hit = true; break; } if (!$hit) return [false, 'a name that is not in our catalogue: ' . $cand]; } }
+    return [true, ''];
+}
+function wag_botlearn_auto(PDO $pdo, int $max = 40): array
+{
+    $o = ['ok' => 0, 'removed' => 0]; if (setting_get($pdo, 'wag_bl_auto', '1') === '0' || !function_exists('lib_guide_row') || !function_exists('wa_learn_tables')) return $o; wa_learn_tables($pdo);
+    try { $rows = $pdo->query("SELECT id, customer, sent FROM wa_learn WHERE kind = 'botbad' AND status = 'new' ORDER BY id DESC LIMIT " . (int)$max)->fetchAll(PDO::FETCH_ASSOC); if (!$rows) return $o;
+        $cat = []; try { foreach ($pdo->query("SELECT name FROM wa_prod WHERE active = 1 AND kind = 'perfume' AND name <> ''")->fetchAll(PDO::FETCH_COLUMN) as $n) $cat[] = mb_strtolower(trim((string)$n)); } catch (Throwable $e) { }
+        $g = lib_guide_row($pdo, 'live'); $body = $g ? json_decode((string)$g['body'], true) : null; $corr = $body ? array_values((array)($body['owner_corrections'] ?? [])) : []; $seen = []; foreach ($corr as $c0) $seen[md5(mb_strtolower((string)($c0['better'] ?? '')))] = 1; $add = [];
+        foreach (array_reverse($rows) as $r) { $better = trim(preg_replace('/\n\[reason: [^\]]*\]\s*$/u', '', (string)$r['sent'])); [$ok, $why] = wag_bl_judge($better, $cat);
+            if (!$ok || !$body) { $pdo->prepare("UPDATE wa_learn SET status = 'skip' WHERE id = ?")->execute([(int)$r['id']]); $o['removed']++; continue; }
+            if (preg_match('/^\[TEMPLATE #(\d+) ([^\]]*)\]\s*(.*)$/su', $better, $tm)) $better = $tm[3] . ' (send as the pre-made message "' . trim($tm[2]) . '" when the 24-hour window is closed)';
+            $k = md5(mb_strtolower($better)); if (!isset($seen[$k])) { $seen[$k] = 1; $add[] = ['customer' => mb_substr((string)$r['customer'], 0, 240), 'better' => mb_substr($better, 0, 400)]; }
+            $pdo->prepare("UPDATE wa_learn SET status = 'done' WHERE id = ?")->execute([(int)$r['id']]); $o['ok']++; }
+        if ($add && $g) { $body['owner_corrections'] = array_slice(array_merge($add, $corr), 0, 60); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($body, JSON_UNESCAPED_UNICODE), (int)$g['id']]); }
+        setting_set($pdo, 'wag_bl_auto_log', date('Y-m-d H:i:s') . ' approved ' . $o['ok'] . ' removed ' . $o['removed']);
+    } catch (Throwable $e) { }
+    return $o;
+}
 /** Customers who wrote a complaint (leak, wrong item, not delivered, quality, refund) and nobody answered: a complaint ticket is raised for them at once (the Complaint team owns it), they are told the number. */
 function wag_complaint_sweep(PDO $pdo, int $max = 6): int
 {
@@ -1199,7 +1235,7 @@ function wag_bot_tick(PDO $pdo, int $slots = 6, string $role = ''): array   // o
             return $o; }
         if ($role === 'fu') { try { $o['followup'] = wag_bot_followup($pdo, 20); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } } return $o; }
         if (time() - (int)setting_get($pdo, 'wag_tick_at', '0') >= 3) setting_set($pdo, 'wag_tick_at', (string)time());   // the heartbeat no longer depends on slot 0 being free
-        if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_unrelated_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } }   // the sweeps run in whichever slot is free (a busy slot 0 used to delay them)
+        if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_unrelated_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } if (time() - (int)setting_get($pdo, 'wag_bl_auto_at', '0') >= 600) { setting_set($pdo, 'wag_bl_auto_at', (string)time()); try { wag_botlearn_auto($pdo); } catch (Throwable $e) { } } }   // the sweeps run in whichever slot is free (a busy slot 0 used to delay them)
         $r = wag_bot_scan($pdo, 3); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];   // customer answers only; follow-ups have their own slots
         if (time() - (int)setting_get($pdo, 'wag_exp_at', '0') >= 1800) { setting_set($pdo, 'wag_exp_at', (string)time()); try { wag_exp_eval($pdo); } catch (Throwable $e) { } }   // the self-learning check, every 30 minutes
     } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('" . $pfx . $o['slot'] . "')"); } catch (Throwable $e) { } } }
@@ -1920,7 +1956,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $names = employee_names_by_id($pdo); $items = []; $lm = $pdo->prepare("SELECT body, mtype FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1");
             $missed = []; foreach (array_chunk(array_map(fn($r) => 'hotmiss:' . $r['phone'], $rows), 300) as $ch) { $q = $pdo->prepare("SELECT k, v FROM wq_meta WHERE k IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $m) { $pp = explode('|', (string)$m['v']); $missed[substr((string)$m['k'], 8)] = $names[(int)$pp[0]] ?? ''; } }
             foreach ($rows as $r) { $k = (string)$r['phone']; $handed = isset($hand[$k]) && strtotime($hand[$k]) >= strtotime((string)$r['last_in_at']); if (!$handed && !(int)$r['hot']) continue;
-                $lm->execute([$k]); $m = $lm->fetch(); $items[] = ['phone' => $k, 'name' => (string)$r['name'], 'holder' => (int)$r['assigned_emp'] > 0 ? ($names[(int)$r['assigned_emp']] ?? '#' . $r['assigned_emp']) : '', 'missed_by' => $missed[$k] ?? '', 'wait_min' => max(0, (int)round(($now - strtotime((string)$r['last_in_at'])) / 60)), 'handed_min' => max(0, (int)round(($now - strtotime($hand[$k])) / 60)), 'hot' => $r['hot_why'] ? (string)$r['hot_why'] : ((int)$r['hot'] ? 'hot' : ''), 'last' => $m ? mb_substr((string)($m['body'] !== '' ? $m['body'] : '[' . $m['mtype'] . ']'), 0, 140) : ''];
+                $lm->execute([$k]); $m = $lm->fetch(); $items[] = ['phone' => $k, 'name' => (string)$r['name'], 'holder' => (int)$r['assigned_emp'] > 0 ? ($names[(int)$r['assigned_emp']] ?? '#' . $r['assigned_emp']) : '', 'missed_by' => $missed[$k] ?? '', 'wait_min' => max(0, (int)round(($now - strtotime((string)$r['last_in_at'])) / 60)), 'handed_min' => isset($hand[$k]) && strtotime($hand[$k]) > 0 ? max(0, (int)round(($now - strtotime($hand[$k])) / 60)) : 0, 'hot' => $r['hot_why'] ? (string)$r['hot_why'] : ((int)$r['hot'] ? 'hot' : ''), 'last' => $m ? mb_substr((string)($m['body'] !== '' ? $m['body'] : '[' . $m['mtype'] . ']'), 0, 140) : ''];
             }
             usort($items, fn($a, $b) => $b['wait_min'] <=> $a['wait_min']); json_response(['items' => array_slice($items, 0, 60), 'total' => count($items), 'can' => true]);
         }

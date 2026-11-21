@@ -9,7 +9,28 @@
     const m = modal('🧵 Lineup — 30-day follow-up by topic'); m.el.classList.add('cu-wide'); m.body.innerHTML = loading; load(m);
   }
   function load(m) {
-    Promise.all([api.get('wa.line_get'), api.get('wa.line_report', { days: 30 })]).then(([d, r]) => draw(m, d, r)).catch((e) => { m.body.innerHTML = errBox(e.message); });
+    Promise.all([api.get('wa.line_get'), api.get('wa.line_report', { days: 30 })]).then(([d, r]) => { draw(m, d, r); afterCard(m); }).catch((e) => { m.body.innerHTML = errBox(e.message); });
+  }
+  /* 🛍 After-Order plan (wa_after.php): the card under the 30-day plan - starts at DELIVERY, one message every week for a year */
+  function afterCard(m) {
+    api.get('wa.line_aft').then((a) => {
+      const P = a.plan || {}, C = a.cust || {}, G = { enjoy: 'care', doubt: 'care', checkin: 'care' };
+      const days = Object.entries(a.days || {}).map(([d, n]) => `<span class="wp-pill" title="${esc(d)}">${esc(d.slice(5))} · ${fmt(n)}</span>`).join(' ') || '<span style="color:#94a3b8">nothing planned in the next 15 days yet</span>';
+      const rows = (a.steps || []).map((x) => `<tr><td>${x.step}</td><td>day ${x.day}</td><td>${esc(x.kind || x.group)}</td><td style="font-size:12px;color:#334155">${esc(x.line)}</td></tr>`).join('');
+      const fails = Object.entries(a.failed || {}).map(([w, n]) => esc(w) + ' × ' + fmt(n)).join('<br>');
+      const box = `<div class="wp-note" style="margin-top:14px"><b>🛍 After-Order plan</b> <small style="color:#64748b">starts after the parcel is DELIVERED · about 200 messages a year (4 care messages, then one about every 2 days: half OFFERS from the chart, half trust / ratings / new arrivals / small sizes / season) and the same every following year · ${a.on ? 'ON' : '<b style="color:#c2262b">OFF</b>'}${a.quiet ? ' · quiet hours 03:00-09:00 now' : ''}</small>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0">
+          <div><div class="wp-hint">Customers on the plan</div><b style="font-size:20px">${fmt(C.active || 0)}</b>${C.done ? ' · restarted by a new order ' + fmt(C.done) : ''}</div>
+          <div><div class="wp-hint">Messages waiting</div><b style="font-size:20px">${fmt(P.planned || 0)}</b></div>
+          <div><div class="wp-hint">Sent today (cap ${fmt(a.cap)})</div><b style="font-size:20px">${fmt(a.sent_today || 0)}</b></div>
+          <div><div class="wp-hint">Due now</div><b style="font-size:20px">${fmt(a.due_now || 0)}</b></div>
+          <div><div class="wp-hint">Sent in all</div><b style="font-size:20px">${fmt(P.sent || 0)}</b>${P.failed ? ' · failed ' + fmt(P.failed) : ''}</div></div>
+        <div class="wp-hint" style="margin:6px 0 3px">Next 15 days (messages planned per day)</div>${days}
+        ${fails ? '<div class="wp-hint" style="margin:8px 0 3px">Why some failed</div><div style="font-size:12.5px">' + fails + '</div>' : ''}
+        <details style="margin-top:8px"><summary style="cursor:pointer"><b>The first 40 steps of the ladder (200 a year)</b></summary><table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px"><tr style="color:#64748b"><th align="left">Step</th><th align="left">When</th><th align="left">Kind</th><th align="left">Example of the line (the price is always the shop's chart price; size and bottles change every week)</th></tr>${rows}</table></details>
+        <div class="wp-hint" style="margin-top:6px">Order, tracking and delivery confirmations are the Orders module's own and are not part of this plan. The plan restarts from the new order when a customer orders again.</div></div>`;
+      m.body.insertAdjacentHTML('beforeend', box);
+    }).catch(() => { });
   }
   function draw(m, D, R) {
     const C = D.cfg, started = !!C.started, tc = D.tpl_counts || {}, tot = Object.keys(D.tpl || {}).length, appr = tc.approved || 0, ready = D.ready !== undefined ? !!D.ready : (tot > 0 && appr === tot);
