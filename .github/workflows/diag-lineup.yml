@@ -117,7 +117,8 @@ jobs:
           <?php
           require $argv[1] . "empmanagment/config.php";
           $pdo = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-          foreach ($pdo->query("SELECT t.id, t.category, t.relabelled_at, t.header_format, REPLACE(LEFT(t.body, 150), CHAR(10), ' ') b, (SELECT SUM(UPPER(w.status) = 'APPROVED') FROM wa_tpl_waba w WHERE w.tpl_id = t.id) ap FROM wa_templates t WHERE t.header_format IN ('', 'TEXT') HAVING ap >= 3 ORDER BY ap DESC, t.id LIMIT 140")->fetchAll(PDO::FETCH_NUM) as $r) echo "TPL " . $r[0] . " " . substr($r[1], 0, 4) . ($r[2] ? "*" : "") . " ap" . $r[5] . " | " . $r[4] . "\n";
+          foreach ($pdo->query("SELECT t.id, t.category, t.relabelled_at, t.header_format, REPLACE(LEFT(t.body, 150), CHAR(10), ' ') b, (SELECT SUM(UPPER(w.status) = 'APPROVED') FROM wa_tpl_waba w WHERE w.tpl_id = t.id) ap FROM wa_templates t WHERE t.header_format IN ('', 'TEXT') HAVING ap >= 3 ORDER BY ap DESC, t.id LIMIT 3")->fetchAll(PDO::FETCH_NUM) as $r) echo "TPL " . $r[0] . " " . substr($r[1], 0, 4) . ($r[2] ? "*" : "") . " ap" . $r[5] . " | " . $r[4] . "\n";
+          foreach ($pdo->query("SELECT id, kind, title, mime, size FROM wa_media_lib ORDER BY id DESC LIMIT 60")->fetchAll(PDO::FETCH_NUM) as $r) echo "LIB " . implode(" | ", $r) . "\n";
           PHP
           php /tmp/tp.php "$1"; rm -f /tmp/tp.php
           REMOTE
