@@ -14,7 +14,7 @@ $chk('the count goes down and is saved', strpos($body, '$left--') !== false && s
 $chk('same customers rules: opt-out, wrote back, delivered today, 24 h', strpos($body, "optout") !== false && strpos($body, 'last_in_at') !== false && strpos($body, '$got[$ph]') !== false && strpos($body, '$recent[$ph]') !== false);
 $chk('spam flag stops it and Module B', strpos($body, '131048') !== false && strpos($body, 'wa_ru_pause_until') !== false);
 $chk('hourly allowance of a new number (wa_ru_new_hourly), seeded once with number 10', strpos($body, "'wa_ru_new_hourly'") !== false && strpos($body, '{"10":10}') !== false && strpos($body, 'wa_ru_new_hourly_seed_2011') !== false);
-$chk('hourly: only a GREEN / YELLOW number, a tenth of the hour in 10 minutes, 90% of the number's own tier a day', strpos($body, "['GREEN', 'YELLOW']") !== false && strpos($body, 'ceil($hv / 6)') !== false && strpos($body, '$dcap - $d24') !== false && strpos($body, '0.9') !== false);
+$chk('hourly: only a GREEN / YELLOW number, a tenth of the hour in 10 minutes, 90 percent of the own tier a day', strpos($body, "['GREEN', 'YELLOW']") !== false && strpos($body, 'ceil($hv / 6)') !== false && strpos($body, '$dcap - $d24') !== false && strpos($body, '0.9') !== false);
 $chk('nothing heavy is read when there is no room (targets are known before the people are read)', strpos($body, 'if (!$targets) return $o;') !== false && strpos($body, 'if (!$targets) return $o;') < strpos($body, 'ORDER BY i.id DESC LIMIT 2000'));
 $t = strpos($src, 'function wa_ru_tick'); $call = strpos($src, 'wa_ru_warm_tick($pdo, $cfg, $nowTs)', $t);
 $q = strpos($src, "'quiet hours'", $t); $h = strpos($src, 'wa_dq_hold_until', $t); $p = strpos($src, "'paused after a Meta warning'", $t);
