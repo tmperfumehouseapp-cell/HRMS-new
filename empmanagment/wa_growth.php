@@ -35,8 +35,10 @@ function wag_cfg(PDO $pdo): array
         if (function_exists('wq_put')) { wq_put($pdo, 'wq_auto_on', '1'); wq_put($pdo, 'wq_hold_sec', '10'); } } } catch (Throwable $e) { }
     // once: a present salesperson who has the chat gets 2 minutes before the holding message too
     try { if (setting_get($pdo, 'wag_bot120', '') !== '1') { setting_set($pdo, 'wag_bot120', '1'); if (function_exists('wq_put')) wq_put($pdo, 'wq_hold_sec', '120'); } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): the bot answers EVERYONE who wrote, 4 s after the message, until a salesperson presses Take over; up to 500 answers a day for one customer
+    try { if (setting_get($pdo, 'wag_bot4', '') !== '1') { setting_set($pdo, 'wag_bot4', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 4; $j['bot_max_day'] = 500; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
-    $d['unans_min'] = max(1, min(60, (int)$d['unans_min'])); $d['bot_after'] = max(5, min(600, (int)$d['bot_after'])); $d['bot_max_day'] = max(1, min(500, (int)$d['bot_max_day']));
+    $d['unans_min'] = max(1, min(60, (int)$d['unans_min'])); $d['bot_after'] = max(3, min(600, (int)$d['bot_after'])); $d['bot_max_day'] = max(1, min(500, (int)$d['bot_max_day']));
     $d['target'] = max(1, min(200, (int)$d['target'])); $d['vip_orders'] = max(2, min(50, (int)$d['vip_orders'])); $d['vip_ltv'] = max(1000, (int)$d['vip_ltv']);
     $d['bot'] = 'on'; foreach (['unans_push', 'ai_tags', 'sound'] as $b) $d[$b] = !empty($d[$b]);
     return $d;
@@ -450,25 +452,57 @@ function wag_read(array $r, bool $waiting, bool $win, bool $hot, bool $cx, int $
     if (preg_match('/\?|(price|rate|kitna|kya|kaun|which|how|available|stock|best|longest|lasts?)/u', $txt)) return ['k' => 'ask', 'i' => preg_match('/(price|rate|kitna|kimat|ml\b|\bml|offer|available|stock|bottle|\d+\s?(x|pcs|piece)|lena|lunga|chahiye|chaiye|which|best|last|long|perfume|attar|scent|smell|fragrance|gift|recommend|suggest)/u', $txt) ? 'orange' : '', 'u' => '❓ Asking about a product' . $w, 'd' => ($orders > 0 ? 'Answer and suggest a repeat pick' : 'Answer and show 2 picks')];
     return ['k' => 'ask', 'u' => '💬 New message' . $w, 'd' => 'Reply now'];
 }
+/** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
+function wag_bot_off(PDO $pdo, string $key): bool
+{
+    try {
+        $t = function_exists('wq_meta_get') ? wq_meta_get($pdo, 'botoff:' . $key, '') : ''; if ($t !== '' && strtotime($t) > time() - 36 * 3600) return true;
+        if (function_exists('wq_meta_get') && function_exists('wq_ts') && wq_ts(wq_meta_get($pdo, 'typing:' . $key, '')) > time() - 90) return true;
+        $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp', 'person', 'phone') AND ts >= ? LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', time() - 20 * 60)]); return (bool)$q->fetchColumn();
+    } catch (Throwable $e) { return false; }
+}
+/** A bot reply that would invent an offer or claim a payment: never sent — a person answers (the replay test found exactly these). */
+function wag_bot_unsafe(string $t): bool
+{
+    $t = mb_strtolower($t);
+    return (bool)preg_match('/(free|muft|mufat|complimentary)\W+(\d+\s?ml|gift|tester|sample|bottle|perfume)|\d+\s?ml\W+(free|muft)|free gift|payment (received|mil gaya|mil gayi|confirm)|order (is )?confirm(ed)?\b|refund (done|kar diya)/u', $t);
+}
+/** Several fast bot workers at once (3-8 s answers): the sending job calls this every minute; each worker runs ~55 s and answers whoever waits. wq_guard keeps it to one answer per customer message. */
+function wag_bot_spawn(PDO $pdo, int $n = 3): int
+{
+    if (!function_exists('wag_cfg') || wag_cfg($pdo)['bot'] !== 'on' || !function_exists('stream_socket_client')) return 0;
+    $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '') return 0; $host = (string)($_SERVER['HTTP_HOST'] ?? 'staging.fourpirates.space'); $sent = 0;
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $host]]);
+    for ($i = 0; $i < $n; $i++) { $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 2, STREAM_CLIENT_CONNECT, $ctx); if (!$fp) continue;
+        @fwrite($fp, "GET /empmanagment/api.php?action=wa.bot_run&key=" . urlencode($key) . " HTTP/1.1\r\nHost: $host\r\nUser-Agent: wa-bot-worker\r\nConnection: close\r\n\r\n"); @fclose($fp); $sent++; }
+    return $sent;
+}
+/** One worker: claims a free slot (MySQL lock), then answers waiting customers every ~2 s for up to 55 s. */
+function wag_bot_run(PDO $pdo, int $slots = 3, int $secs = 55): array
+{
+    $o = ['slot' => -1, 'sent' => 0, 'handoff' => 0, 'rounds' => 0]; if (wag_cfg($pdo)['bot'] !== 'on') return $o;
+    if ((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') { for ($k = 0; $k < $slots; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('hrms_wag_bot_" . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
+    $end = microtime(true) + $secs;
+    try { while (microtime(true) < $end) { $r = wag_bot_scan($pdo, 2); $o['sent'] += $r['sent']; $o['handoff'] += $r['handoff']; $o['rounds']++; if ($r['sent'] + $r['handoff'] === 0) usleep(1500000); } }
+    finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_bot_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
+    return $o;
+}
 /** The 24/7 bot: answers a waiting customer by itself — only from the taught guidebook, only text chats inside the 24-hour window, never a HOT chat. */
 function wag_bot_scan(PDO $pdo, int $max = 4): array
 {
     $cfg = wag_cfg($pdo); $o = ['sent' => 0, 'handoff' => 0]; if ($cfg['bot'] !== 'on') return $o;
     if (defined('WA_IN_WEBHOOK')) return $o;   // never inside Meta's webhook call (an AI answer takes seconds)
     $now = time(); $unans = $cfg['unans_min'] * 60;
-    $st = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.hot = 0 AND c.last_in_at >= ? AND c.last_in_at <= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) ORDER BY c.last_in_at LIMIT 30");
+    $st = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.hot = 0 AND c.last_in_at >= ? AND c.last_in_at <= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) ORDER BY c.last_in_at DESC LIMIT 60");
     $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $cfg['bot_after'])]);
-    $people = null;
     foreach ($st->fetchAll() as $c) {
         if ($o['sent'] + $o['handoff'] >= $max) break; $key = (string)$c['phone']; $age = $now - strtotime((string)$c['last_in_at']);
+        $__mk = $key . '|' . $c['last_in_at']; if (!empty($GLOBALS['wag_memo'][$__mk]) && $GLOBALS['wag_memo'][$__mk] > time()) continue; $GLOBALS['wag_memo'][$__mk] = time() + 45; if (count($GLOBALS['wag_memo']) > 3000) $GLOBALS['wag_memo'] = [];   // a chat looked at is not looked at again for 45 s (a worker loops every 2 s: no repeated work)
         if (!empty($c['cx_id'])) continue;   // the chat is with the Complaint team: the bot never answers it
         if (function_exists('wq_meta_get') && function_exists('wq_ts') && wq_ts(wq_meta_get($pdo, 'typing:' . $key, '')) > time() - 90) continue;   // a person is typing an answer right now: the bot never talks over them
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
-        // nobody attends the chat: the bot answers after bot_after (10 s). A salesperson who is present and has the chat (took it over / was given it) gets 2 minutes — silent after that, the bot is on again.
-        if ((int)$c['assigned_emp'] > 0) {
-            if ($people === null) { $people = []; foreach (wa_people($pdo) as $p) $people[(int)$p['emp_id']] = !empty($p['present']); }
-            if (!empty($people[(int)$c['assigned_emp']]) && $age < 120) continue;
-        }
+        // the bot answers after bot_after (4 s) — also when the chat is given to a salesperson — until that person presses "Take over" (or is writing to the customer right now): then the bot is silent
+        if (wag_bot_off($pdo, $key)) continue;
         $li = $pdo->prepare("SELECT id, mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
         if (function_exists('wa_hot_intent') && wa_hot_intent((string)$m['body']) !== '') continue;      // wants to pay: a person, not the bot (wa_hot_scan flags it)
@@ -491,8 +525,9 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND ts >= ?"); $q->execute([$key, date('Y-m-d 00:00:00')]); if ((int)$q->fetchColumn() >= $cfg['bot_max_day']) continue;
         if (wag_neg_skip($pdo, 'bgn:' . $key, (int)$m['id'])) continue;   // already tried for this message
         $__wqc = function_exists('wq_guard') ? wq_guard($pdo, $key, (int)$m['id'], 'reply', 'bot') : true; if (!$__wqc) continue;   // one answer per customer message: bot, holding message or countdown — whoever claims first
-        $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); ai_feat($f0);
+        $f0 = ai_feat('wa_bot'); $GLOBALS['lib_fast'] = 1; $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fast']); ai_feat($f0);
         if (!$r['ok']) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], false); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (stripos((string)$r['why'], 'not been taught') !== false) { wag_log($pdo, 'bot', false, 'The bot has not been taught yet — nothing was sent.'); break; } continue; }
+        if (empty($r['handoff']) && wag_bot_unsafe((string)$r['text'])) { $r['handoff'] = true; wag_log($pdo, 'bot', false, $key . ' · blocked an unsafe reply (invented offer / payment claim) — a person takes over'); }
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo

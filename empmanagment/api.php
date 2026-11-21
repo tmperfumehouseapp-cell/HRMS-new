@@ -10442,7 +10442,7 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     $judgeOn = setting_get($pdo, 'lib_judge', '1') !== '0';
     // ⚡ a reply made while a salesperson waits with the chat open (wa_sugg): ONE draft in ONE call (about 2–3 s) instead of three drafts + a second "pick the best" call (5–6 s).
     // The facts check below still runs on it. Switch on Admin → AI usage (setting ai_sugg_fast, '0' = three drafts again).
-    if ((string)($GLOBALS['ai_feature'] ?? '') === 'wa_sugg' && (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0') $judgeOn = false;
+    if (((string)($GLOBALS['ai_feature'] ?? '') === 'wa_sugg' && (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0') || !empty($GLOBALS['lib_fast'])) $judgeOn = false;   // (the 24/7 bot answers within seconds: one draft)
     $sys = "You are the WhatsApp sales assistant of TM Perfume House, an Indian online perfume brand (Surat). Write the NEXT reply to the customer as our best salesperson would: short WhatsApp style (1–4 lines), warm, in the customer's own language and script "
         . "(Gujarati / Hindi / Hinglish / English). LEARN ONLY from: (1) the approved GUIDEBOOK, (2) OWNER CORRECTIONS and TEACHER LESSONS — follow them before anything else, (3) STORE FACTS — the only source of prices, offers and policies, (4) EXAMPLE CHATS — real winning chats (C = customer, S = our salesperson): copy their way of selling, never their personal details or their old prices. "
         . "NEVER invent prices, discounts, stock, delivery dates or product facts that are in none of these; if the customer needs something you do not know, say you will confirm it and hand over. "
