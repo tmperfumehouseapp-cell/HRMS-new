@@ -409,7 +409,7 @@
       const byNew = (a, b) => (+a.mins || 0) - (+b.mins || 0), byNewL = (a, b) => (+a.waiting_min || 0) - (+b.waiting_min || 0);
       // 🏪 OPEN MARKET (owner, 21 Nov): nobody is given a chat — the best people right now are shown so everybody sees who will take it; the chat does not open until it is taken
       if (!S.mktAt || Date.now() - S.mktAt > 60000) { S.mktAt = Date.now(); api.get('wa.g_mkt_top').then((r) => { S.mkt = r; if (S.tab === 'chats' && S.filter === 'req') drawReq(); }).catch(() => { }); }
-      let h = S.mkt && (S.mkt.top || []).length ? '<div style="margin:8px 12px;padding:9px 12px;border-radius:12px;background:#f2f6fd;color:#2a4a7a;font-size:13px">🏪 <b>Open market.</b> Nobody is given a chat — take what you can close. 🏅 Taking the hot chats now: <b>' + S.mkt.top.map(esc).join(' · ') + '</b>' + (S.mkt.my ? '<br>You: #' + S.mkt.my.rank + ' of ' + S.mkt.my.of + ' · score ' + S.mkt.my.score + ' · taken ' + S.mkt.my.taken + (S.mkt.my.dropped ? ' · <span style="color:#b00">🔴 left ' + S.mkt.my.dropped + '</span>' : '') : '') + '</div>' : '';
+      let h = S.mkt && (S.mkt.top || []).length ? '<div style="margin:8px 12px;padding:9px 12px;border-radius:12px;background:#f2f6fd;color:#2a4a7a;font-size:13px">🏪 <b>Open market.</b> Nobody is given a chat — take what you can close. 🏅 Taking the hot chats now: <b>' + S.mkt.top.map(esc).join(' · ') + '</b>' + (S.mkt.my ? '<br>You: #' + S.mkt.my.rank + ' of ' + S.mkt.my.of + ' · score ' + S.mkt.my.score + ' · queries ' + (S.mkt.my.q || 0) + ' · orders ' + (S.mkt.my.o || 0) + ' · picked ' + S.mkt.my.taken + (S.mkt.my.dropped ? ' · <span style="color:#b00">🔴 left ' + S.mkt.my.dropped + '</span>' : '') : '') + '</div>' : '';
       if (S.mkt && S.mkt.gate) h += '<div style="margin:8px 12px;padding:10px 12px;border-radius:12px;background:#fdecec;color:#a11;font-size:13px;font-weight:600">' + esc(S.mkt.gate) + '</div>';
       h += '';   // 🆕 the newest query is always on top; the ones nobody answered for 4+ min come after
       h += '<div class="wx-h">🆕 New — not given to anyone · ' + L.length + '</div>' + (L.length ? '<div class="wx-card wx-lst">' + L.slice().sort(byNew).map((x) => line(x, false)).join('') + '</div>' : '<div class="wx-empty"><b>🙋</b>No new requests — every chat has someone.</div>');
@@ -1527,7 +1527,16 @@
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
       moReady(() => { if (!window.WaManual) { toast('Could not open the manual order. Refresh the page.', true); return; } WaManual.open({ phone: p, name: nm, api, onDone: () => { try { pollChat(); } catch (e) { } } }); });
     }
-    function openCart() {
+    function openCart() {   // 🧩 the add-on offer goes first (owner, 21 Nov): before the payment link the customer is offered 1 or 2 more bottles
+      if (!S.cur) return; const c0 = S.cur.contact || {}, p0 = c0.phone || S.cur.phone;
+      api.post('wa.g_addon_check', { phone: p0 }).then((a) => {
+        if (a && a.can_offer) { if (confirm('Send the ADD-ON offer first?\n\nThe customer is offered 1 or 2 more bottles at a special price before the payment link. Wait for his answer, then make the link with the new total.\n\nOK = send the offer now · Cancel = make the link without it')) { api.post('wa.g_addon_offer', { phone: p0 }).then((r) => { toast(r.message || 'Done', !r.ok); if (!r.ok) openCart2(); }).catch((e) => { toast(e.message, true); openCart2(); }); return; } }
+        else if (a && a.state === 'offered') { if (!confirm('The add-on offer is waiting for the customer\'s answer (' + Math.ceil((a.left || 0) / 60) + ' min left).\n\nOK = wait · Cancel = make the link anyway')) { openCart2(); } else { toast('Wait for his answer: the add-on is added to the total'); } return; }
+        else if (a && a.state === 'accepted') toast('➕ Add-on accepted: ' + a.n + ' bottle(s), Rs ' + a.amount + ' — put it in the cart');
+        openCart2();
+      }).catch(() => openCart2());
+    }
+    function openCart2() {
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
       chReady(() => { if (!window.WaCart) { toast('Could not open the cart. Refresh the page.', true); return; } WaCart.open({ phone: p, name: nm, api, onChange: () => { try { pollChat(); } catch (e) { } } }); });
     }

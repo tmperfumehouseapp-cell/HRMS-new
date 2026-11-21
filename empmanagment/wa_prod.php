@@ -827,7 +827,7 @@ function wa_prod_small(array $pr): bool
 {
     $k = (string)($pr['kind'] ?? ''); if ($k !== '' && $k !== 'perfume') return true;
     $t = mb_strtolower(implode(' ', [(string)($pr['title'] ?? ''), (string)($pr['name'] ?? ''), (string)($pr['handle'] ?? ''), (string)($pr['url'] ?? ''), is_array($pr['cats'] ?? null) ? implode(' ', array_map('strval', array_map(fn($x) => is_array($x) ? ($x['title'] ?? $x['name'] ?? '') : $x, $pr['cats']))) : '']));
-    return (bool)preg_match('/solid|10 ?ml|roll[- ]?on|rollon|\bmini\b|attar|\batar\b|ittar|\bitar\b|perfume[- ]oil|shower|\bgel\b|\bwax\b|candle|sample|tester|travel|pocket/iu', $t);
+    return (bool)preg_match('/solid|10 ?ml|roll[- ]?on|rollon|\bmini\b|attar|\batar\b|ittar|\bitar\b|perfume[- ]oil|shower|\bgel\b|\bwax\b|candle|sample|tester|travel|pocket|original|\bog\d*\b|build your own|dress to impress|compliment getter|dark side|caffeine club/iu', $t);
 }
 function wa_prod_get(PDO $pdo, array $ids): array
 {
@@ -1418,7 +1418,7 @@ function wa_prod_bot_after(PDO $pdo, array $c, string $botText = ''): int
         // 📸 FIXED RULE (owner, 10 Nov): whenever the bot's own words name a perfume of ours, its picture goes with it — even when the customer's message alone did not match the catalogue (e.g. "Azz The Most Desired")
         if ($botText !== '' && count($ids) < 6) { foreach (wa_prod_find_named($pdo, $botText, 6) as $p) { if (count($ids) >= 6) break; if (!in_array((int)$p['id'], $ids, true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } } }
         // 💸 the bot's pictures are the 50 ml perfumes that make real orders: solid perfumes / 10 ml / roll-ons / minis (cheap, best-selling by count — the collage showed them first) only when the customer asked for them or the bot's own words name one
-        try { $li = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([(string)$c['phone']]); $cm = mb_strtolower((string)$li->fetchColumn()); $small = '/solid|10 ?ml|roll[- ]?on|rollon|\bmini\b|attar|\batar\b|ittar|\bitar\b|sample|tester|travel|pocket/iu';
+        try { $li = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([(string)$c['phone']]); $cm = mb_strtolower((string)$li->fetchColumn()); $small = '/solid|10 ?ml|roll[- ]?on|rollon|\bmini\b|attar|\batar\b|ittar|\bitar\b|sample|tester|travel|pocket|original|\bog\d*\b|build your own|dress to impress|compliment getter|dark side|caffeine club/iu';
             if ($ids && !preg_match($small, $cm . ' ' . $botText)) { $keep = []; foreach (wa_prod_get($pdo, $ids) as $pr) if (!wa_prod_small($pr)) $keep[] = (int)$pr['id']; $ids = array_values(array_filter($ids, fn($i) => in_array((int)$i, $keep, true))); } } catch (Throwable $e) { }
         $n = 0;
         if ($ids) $n += function_exists('wa_collage_send') ? wa_collage_send($pdo, $c, $ids, 'bot', 0, $why) : (int)count((wa_prod_send_items($pdo, $c, $ids, 'why', 'bot', 0, ['why' => $why]))['sent'] ?? []);
