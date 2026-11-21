@@ -531,7 +531,7 @@
   .ohn.q{color:#2563eb;} .ohn.c{color:#c2410c;} .ohn.t{color:var(--ink);}
   .ohk{display:flex; gap:6px; margin-bottom:8px;} .ohk div{flex:1; border-radius:9px; padding:5px 8px; font-size:11px; color:var(--muted); line-height:1.3;} .ohk b{display:block; font-size:14px; color:var(--ink);}
   .ohk .q{background:#eff6ff;} .ohk .c{background:#fff7ed;}
-  .ohr.now{background:#fff7ed;} .ohr.pk{background:#ffedd5;} .ohr.fu{opacity:.45;} .ohr.nt{background:#eef2ff; margin-top:4px;} .ohr.nx{background:#eef2ff;}
+  .ohr.now{background:#fff7ed;} .ohr.pk{background:#ffedd5;} .ohr.fu{opacity:.45;} .ohr.nt{background:#eef2ff; margin-top:4px;} .ohr.nx{background:#eef2ff;} .ohsec{font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:8px 6px 2px;}
   .ohl{white-space:nowrap;} .ohl small{display:block; font-size:11px; color:var(--muted); font-weight:600;}
   .ohb{height:7px; background:#f1f5f9; border-radius:9px; overflow:hidden;} .ohb i{display:block; height:100%; background:linear-gradient(90deg,#fb923c,#f97316); border-radius:9px;}
   .ohr.nt .ohb i{background:#6366f1;}
@@ -1934,6 +1934,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     if (ydayFor && ydayFor === df && df === dt) { yOn = true; OH_ROWS.forEach(k => { yAmt[k] = 0; });
       ydayOrders.filter(o => (!urlSalesman || o.salesman === urlSalesman) && (!panelPick || panelOf(o) === panelPick) && (!ohPanel || panelOf(o) === ohPanel)).forEach(o => { const sl = ohSlot(o); if (sl in yAmt) yAmt[sl] += Number(o.total) || 0; }); }
     let yRun = 0;
+    let ohExtSeen = false;
     let ohRun = 0;             // running total: the hours are already in chronological order (10 AM ... 11 PM, then Overnight last)
     const rows = OH_ROWS.map(k => {
       const ext = ohIsExt(k), hh = ohHrOf(k), b = by[k], night = k === 'night';
@@ -1951,7 +1952,8 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
           : `<span class="ohsp ohz">—</span>`;
         total = `<span class="ohtot">${fmtMoney(ohRun, 'INR')}${yl}</span>`;      // running total: this hour + every hour before it (even hours with 0 orders still carry it forward)
       }
-      return `<div class="ohr${future ? ' fu' : ''}${now ? ' now' : ''}${k === peak && b.n ? ' pk' : ''}${night ? ' nt' : ''}${ext ? ' nx' : ''}"><span class="ohl">${lab}</span><div class="ohb"><i style="width:${b.n / max * 100}%"></i></div>${cell(b.q, 'query', 'q')}${cell(b.c, 'campaign', 'c')}${cell(b.n, '', 't')}<span class="oha">${b.n ? fmtMoney(b.amt, 'INR') : (future ? '—' : '')}</span>${split}${total}</div>`;
+      const extHead = ext && !ohExtSeen ? '<div class="ohsec">Day runs on · next morning (next day starts ' + fmtHM(String(dsOn(new Date(new Date(dt + 'T12:00:00').getTime() + 86400000)))) + ')</div>' : ''; if (ext) ohExtSeen = true;
+      return extHead + `<div class="ohr${future ? ' fu' : ''}${now ? ' now' : ''}${k === peak && b.n ? ' pk' : ''}${night ? ' nt' : ''}${ext ? ' nx' : ''}"><span class="ohl">${lab}</span><div class="ohb"><i style="width:${b.n / max * 100}%"></i></div>${cell(b.q, 'query', 'q')}${cell(b.c, 'campaign', 'c')}${cell(b.n, '', 't')}<span class="oha">${b.n ? fmtMoney(b.amt, 'INR') : (future ? '—' : '')}</span>${split}${total}</div>`;
     }).join('');
     return `<div class="stat-card oh-card"><div class="label"><span class="lbl-full">Orders by hour</span><span class="lbl-short">Orders by hour</span></div>
       <div class="oht"><b>${list.length} orders</b> · ${fmtMoney(tot, 'INR')}</div>
