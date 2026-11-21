@@ -599,6 +599,24 @@ switch ($action) {
         $sec('5. FILES SAVED FOR THIS CHANNEL (last 5)');
         try { $uq = $pdo->prepare("SELECT id, status, file_name, day, orders_day, rows_n, gross, fee, net, entry_id, (recon_json IS NOT NULL) hr FROM fn_in_uploads WHERE channel_id = ? AND status IN ('ok','void') ORDER BY id DESC LIMIT 5"); $uq->execute([$cid]); $any = false;
             foreach ($uq->fetchAll() as $u) { $any = true; $add('#' . $u['id'] . ' ' . $u['status'] . ' | ' . $u['file_name'] . ' | money day ' . $u['day'] . ' | orders day ' . ($u['orders_day'] ?: '-') . ' | rows ' . $u['rows_n'] . ' | gross ' . $u['gross'] . ' fee ' . $u['fee'] . ' net ' . $u['net'] . ' | receipt ' . ((int)$u['entry_id'] ?: 'none') . ' | comparison saved ' . ((int)$u['hr'] ? 'yes' : 'no')); } if (!$any) $add('none yet'); } catch (Throwable $e) { $add('ERROR ' . $e->getMessage()); }
+        $sec('5b. THE LATEST SAVED COMPARISON OF THIS CHANNEL (no file needed)');
+        try {
+            $lq = $pdo->prepare("SELECT id, file_name, day, orders_day, recon_json FROM fn_in_uploads WHERE channel_id = ? AND status = 'ok' AND recon_json IS NOT NULL ORDER BY id DESC LIMIT 1"); $lq->execute([$cid]); $lu = $lq->fetch(); $lr = $lu ? json_decode((string)$lu['recon_json'], true) : null;
+            if (!is_array($lr)) { $add('none saved yet'); }
+            else {
+                $dd = $lr['diag'] ?? []; $add('#' . $lu['id'] . ' ' . $lu['file_name'] . ' | orders of ' . ($lr['orders_day'] ?? '?') . ' | only GoKwik orders: ' . (!empty($lr['gokwik']) ? 'yes' : 'no'));
+                $add('prepaid orders ' . ($lr['expected']['orders'] ?? '?') . ' (' . ($lr['expected']['amount'] ?? '?') . ') | MATCHED ' . ($lr['found']['orders'] ?? '?') . ' gross ' . ($lr['found']['gross'] ?? '?') . ' charges ' . ($lr['found']['fee'] ?? '?') . ' net ' . ($lr['found']['net'] ?? '?') . ' | paid-not-settled ' . ($lr['pending']['orders'] ?? 0) . ' | NOT IN FILE ' . ($lr['missing']['orders'] ?? '?') . ' (' . ($lr['missing']['amount'] ?? '?') . ') | amount differs on ' . ($lr['found']['differs'] ?? 0));
+                if (!empty($dd['by'])) $add('matched by: transaction id ' . $dd['by']['ref'] . ' | order number ' . $dd['by']['name'] . ' | phone + amount ' . $dd['by']['phone'] . ' | order-id column "' . ($dd['id_column'] ?? '') . '" filled in ' . ($dd['id_filled'] ?? '?') . ' rows, examples ' . implode(', ', (array)($dd['id_sample'] ?? [])));
+                $add('charges lines: ' . implode(' | ', array_map(fn($c) => $c['name'] . ' ' . $c['amount'], (array)($lr['charges'] ?? []))));
+                $oth = $lr['other_rows'] ?? ['rows' => 0, 'net' => 0, 'list' => []]; $add('file rows that match no order: ' . $oth['rows'] . ' rows, net ' . $oth['net']);
+                $miss = array_values(array_filter((array)($lr['orders'] ?? []), fn($o) => empty($o['found']) && empty($o['pending']))); $pf = [];
+                foreach ($miss as $o) { $k = strtoupper(substr((string)(($o['refs'][0] ?? '-')), 0, 4)); $pf[$k] = ($pf[$k] ?? 0) + 1; }
+                $add('orders NOT in the file: ' . count($miss) . ' | by payment-id prefix: ' . ($pf ? json_encode($pf) : '-'));
+                $ms = []; foreach (array_slice($miss, 0, 8) as $o) $ms[] = ($o['name'] ?? '?') . ' amt ' . ($o['amount'] ?? '?') . ' ref ' . strtoupper(substr((string)(($o['refs'][0] ?? '-')), 0, 12)) . ' phone …' . ($o['phone4'] ?? '?'); $add('first of them: ' . ($ms ? implode(' ; ', $ms) : 'none'));
+                $uf = []; foreach (array_slice((array)($oth['list'] ?? []), 0, 8) as $r) $uf[] = 'id ' . (($r['id'] ?? '') !== '' ? $r['id'] : '-') . ' gross ' . ($r['gross'] ?? '?') . ' net ' . ($r['net'] ?? '?'); $add('first file rows that match no order: ' . ($uf ? implode(' ; ', $uf) : 'none'));
+                $dif = array_values(array_filter((array)($lr['orders'] ?? []), fn($o) => !empty($o['differs']))); $dl = []; foreach (array_slice($dif, 0, 6) as $o) $dl[] = ($o['name'] ?? '?') . ' order ' . ($o['amount'] ?? '?') . ' file ' . ($o['gross'] ?? '?'); $add('orders whose file amount differs: ' . count($dif) . ($dl ? ' (' . implode(' ; ', $dl) . ')' : ''));
+            }
+        } catch (Throwable $e) { $add('ERROR ' . $e->getMessage()); }
         $sec('6. THE FILE CHOSEN NOW');
         $upid = (int)($in['upload_id'] ?? 0); $u = null; if ($upid) { $uq = $pdo->prepare("SELECT * FROM fn_in_uploads WHERE id = ? AND status = 'preview'"); $uq->execute([$upid]); $u = $uq->fetch(); }
         if (!$u) { $add('No file is chosen at the moment: choose the file first, then press Diagnose again.'); }
