@@ -471,7 +471,7 @@
     try {
       const d = await api.get('st_price.card'), f = (n) => Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
       const dd = (x) => x ? new Date(x + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
-      const offers = (d.offers || []).map((o) => `<span class="sx-pill" style="background:#fff8e6;color:#9a5b00;border:1px solid #f5d79a;margin:2px 4px 2px 0">🎁 ${o.ml} ml at ${inr(o.price)} → <b>${f(o.pct)}%</b>${o.to ? ' · till ' + dd(o.to) : ''}${o.note ? ' · ' + esc(o.note) : ''}</span>`).join('');
+      const offers = (d.offers || []).filter((o) => !o.off).map((o) => `<span class="sx-pill" style="background:#fff8e6;color:#9a5b00;border:1px solid #f5d79a;margin:2px 4px 2px 0">🎁 ${o.ml} ml at ${inr(o.price)} → <b>${f(o.pct)}%</b>${o.to ? ' · till ' + dd(o.to) : ''}${o.note ? ' · ' + esc(o.note) : ''}</span>`).join('');
       const flash = (d.flash || []).map((x) => `<span class="sx-pill" style="background:#fff1e6;color:#b45309;border:1px solid #f9c79a;margin:2px 4px 2px 0">⚡ Flash offer ${(x.sizes || []).join(' / ')} ml → <b>${f(x.pct)}%</b> till ${esc(String(x.ends_at).slice(11, 16))}</span>`).join('');
       $('prOffers').innerHTML = (offers || flash) ? `<div style="font-size:12.5px;margin-bottom:2px"><b>Offers running now</b> <span class="sx-mut">(a bill of exactly that size at about that price pays the offer’s %; pick the 🎁 price when billing)</span></div>${offers}${flash}` : '<div class="sx-mut" style="font-size:12.5px">No offer is running now — the normal price chart applies.</div>';
       const cols = d.cols || [], rows = d.rows || [];
