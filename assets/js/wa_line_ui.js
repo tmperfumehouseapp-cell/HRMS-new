@@ -18,7 +18,7 @@
       const days = Object.entries(a.days || {}).map(([d, n]) => `<span class="wp-pill" title="${esc(d)}">${esc(d.slice(5))} · ${fmt(n)}</span>`).join(' ') || '<span style="color:#94a3b8">nothing planned in the next 15 days yet</span>';
       const rows = (a.steps || []).map((x) => `<tr><td>${x.step}</td><td>day ${x.day}</td><td>${esc(G[x.group] || x.group)}</td><td style="font-size:12px;color:#334155">${esc(x.line)}</td></tr>`).join('');
       const fails = Object.entries(a.failed || {}).map(([w, n]) => esc(w) + ' × ' + fmt(n)).join('<br>');
-      const box = `<div class="wp-note" style="margin-top:14px"><b>🛍 After-Order plan</b> <small style="color:#64748b">starts after the parcel is DELIVERED · 51 messages in a year (4 care messages in weeks 1-4, then one every week up to day 357) · ${a.on ? 'ON' : '<b style="color:#c2262b">OFF</b>'}${a.quiet ? ' · quiet hours 03:00-09:00 now' : ''}</small>
+      const box = `<div class="wp-note" style="margin-top:14px"><b>🛍 After-Order plan</b> <small style="color:#64748b">starts after the parcel is DELIVERED · about 200 messages a year (4 care messages in weeks 1-4, then one about every 2 days) and the same in every following year · ${a.on ? 'ON' : '<b style="color:#c2262b">OFF</b>'}${a.quiet ? ' · quiet hours 03:00-09:00 now' : ''}</small>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0">
           <div><div class="wp-hint">Customers on the plan</div><b style="font-size:20px">${fmt(C.active || 0)}</b>${C.done ? ' · restarted by a new order ' + fmt(C.done) : ''}</div>
           <div><div class="wp-hint">Messages waiting</div><b style="font-size:20px">${fmt(P.planned || 0)}</b></div>
@@ -27,7 +27,7 @@
           <div><div class="wp-hint">Sent in all</div><b style="font-size:20px">${fmt(P.sent || 0)}</b>${P.failed ? ' · failed ' + fmt(P.failed) : ''}</div></div>
         <div class="wp-hint" style="margin:6px 0 3px">Next 15 days (messages planned per day)</div>${days}
         ${fails ? '<div class="wp-hint" style="margin:8px 0 3px">Why some failed</div><div style="font-size:12.5px">' + fails + '</div>' : ''}
-        <details style="margin-top:8px"><summary style="cursor:pointer"><b>The whole ladder (51 steps)</b></summary><table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px"><tr style="color:#64748b"><th align="left">Step</th><th align="left">When</th><th align="left">Kind</th><th align="left">Example of the line (the price is always the shop's chart price; size and bottles change every week)</th></tr>${rows}</table></details>
+        <details style="margin-top:8px"><summary style="cursor:pointer"><b>The first 40 steps of the ladder (200 a year)</b></summary><table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px"><tr style="color:#64748b"><th align="left">Step</th><th align="left">When</th><th align="left">Kind</th><th align="left">Example of the line (the price is always the shop's chart price; size and bottles change every week)</th></tr>${rows}</table></details>
         <div class="wp-hint" style="margin-top:6px">Order, tracking and delivery confirmations are the Orders module's own and are not part of this plan. The plan restarts from the new order when a customer orders again.</div></div>`;
       m.body.insertAdjacentHTML('beforeend', box);
     }).catch(() => { });
