@@ -184,4 +184,10 @@ wl_days([1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 6, 6 => 8, 7 => 10, 8 => 15, 9 => 
 $cu = wl_customer($pdo, '9810000002'); ok(isset($cu['replies'], $cu['orders'], $cu['days']) && isset($cu['plan'][0]['receipt']), 'the customer timeline carries receipts, replies, orders');
 // 15 Nov: one time the catch-up date moves back to 15 Nov 10:00 IST
 $S['wl_since_v3'] = ''; $c0 = wl_cfg($pdo); ok(wln_since_15($pdo) === true && wl_cfg($pdo)['since'] === wl_ist_at('2026-11-15', 10), 'the Lineup catches everybody since 15 Nov 10:00 IST: ' . date('c', wl_cfg($pdo)['since'])); ok(wln_since_15($pdo) === false, 'only once');
+// shards: a sending-only call works one group of customers (by phone), never the others
+$cfgS = wl_cfg($pdo); $cfgS['shards'] = 2; wl_cfg_put($pdo, $cfgS); $S['wl_since_v3'] = '1';
+$ph4 = ['9871000001', '9871000002', '9871000003', '9871000004', '9871000005', '9871000006']; foreach ($ph4 as $ph) { $pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at) VALUES ('$ph', 'Sh', '" . $f($now - 5 * 86400) . "')"); $pdo->exec("INSERT INTO wa_line_cust (phone, topic, status, anchor_at, created_at) VALUES ('$ph', 'general', 'active', '" . $f($now - 5 * 86400) . "', '" . $f($now) . "')"); $pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at) VALUES ('$ph', 'general', 1, 'ln_general_1', '" . $f($now - 3600) . "')"); }
+$SENT = []; $rs = wl_tick($pdo, ['sendonly' => 1]); $got = array_unique(array_map(fn($x) => $x[0], array_filter($SENT, fn($x) => in_array((string)$x[0], $ph4, true))));
+$exp0 = array_values(array_filter($ph4, fn($p) => crc32($p) % 2 === 0)); sort($got); sort($exp0); ok($got === $exp0, 'a sending-only call works only its own shard: got ' . json_encode($got) . ' expected ' . json_encode($exp0));
+ok((int)(json_decode($S['wl_last_round'], true)['of'] ?? 0) === 2 && (int)(json_decode($S['wl_last_round'], true)['shard'] ?? -1) === 0, 'the round says which shard it worked');
 echo "lineup db ok\n";
