@@ -168,4 +168,18 @@ $sg = wl_suggest($pdo, true); ok(count($sg['items']) === 3 && $sg['items'][0]['f
 // campaign cards: how many people of a campaign are in the Lineup
 $pdo->exec("INSERT INTO wa_camp_items (camp_id, phone, status, sent_at) VALUES (77, '9810000001', 'sent', '" . $f($now - 3600) . "'), (77, '9810000002', 'sent', '" . $f($now - 3600) . "'), (77, '9899999999', 'sent', '" . $f($now - 3600) . "')");
 $lc = wl_camp_lineup_counts($pdo, [77]); $exp = (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE phone IN ('9810000001', '9810000002') AND status IN ('active', 'replied')")->fetchColumn(); ok(($lc[77] ?? -1) === $exp && $exp >= 1, 'campaign 77: its people who are in the Lineup are counted (not the stranger): ' . json_encode($lc)); ok(wl_camp_lineup_counts($pdo, [77]) === $lc, 'second call comes from the cache');
+// the nightly learning: the rules a wording must meet, a new wording written by "Claude" (stub), the days moved from the numbers
+$P0 = wl_pack(); ok(wl_check_wording(['body' => 'Namaste {{1}} ji, aapne jo perfume dekha tha uske baare mein aur batana ho to bataiye, hum madad karenge.', 'button' => 'Aur batao', 'free' => 'Zaroor, perfume ka naam aur size likh dein.'], $P0)[0] === true, 'a good wording passes');
+ok(wl_check_wording(['body' => 'Hi {{1}} ji, aaj 20% discount hai sirf aapke liye, order karein jaldi.', 'button' => 'Order', 'free' => 'ok'], $P0)[0] === false, 'a discount wording is refused');
+ok(wl_check_wording(['body' => '{{1}} ji, aapko kuch batana tha perfume ke baare mein.', 'button' => 'Batao', 'free' => 'ok'], $P0)[0] === false, 'a wording that starts with the blank is refused');
+function wcr_ai($sys, $usr, $max = 900) { return ['body' => 'Namaste {{1}} ji, aapne jo perfume dekha tha uske baare mein aur batana ho to bataiye, hum madad karenge.', 'button' => 'Aur batao', 'free' => 'Zaroor, perfume ka naam aur size likh dein, hum turant bhej dete hain.']; }
+$repw = ['keys' => ['ln_price_1' => ['delivered' => 500, 'orders' => 3, 'taps' => 0]], 'steps' => []]; $msg = wl_new_word($pdo, $repw);
+ok(strpos($msg, 'new wording') !== false, 'new wording written: ' . $msg); $ex = json_decode($S['wl_extra'], true); ok(count($ex) === 1 && $ex[0]['of'] === 'ln_price_1' && isset(wl_pack()[$ex[0]['key']]) && wl_pack()[$ex[0]['key']]['of'] === 'ln_price_1', 'it joins the pack as a wording of ln_price_1: ' . json_encode($ex));
+ok(in_array($ex[0]['key'], wl_variants('ln_price_1'), true), 'and the picker sees it as a variant'); ok(strlen($ex[0]['key']) <= 20, 'key fits the column');
+$S['wl_days_at'] = '2000-01-01'; $steps = []; foreach ([1 => 20, 2 => 18, 3 => 16, 4 => 1, 5 => 15, 6 => 14] as $st => $o) $steps[] = ['step' => $st, 'delivered' => 400, 'orders' => $o, 'taps' => 0];
+$pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at, status) VALUES ('9870000055', 'price', 4, 'ln_price_4', '2026-12-01 10:00:00', 'planned')");
+$dm = wl_days_auto($pdo, ['steps' => $steps]); ok(strpos($dm, 'days: step 4 moved to day 5') === 0 && wl_days()[4] === 5, 'the weak daily step moved one day later: ' . $dm);
+ok(strpos((string)$pdo->query("SELECT due_at FROM wa_line_plan WHERE phone = '9870000055'")->fetchColumn(), '2026-12-02') === 0, 'its planned rows moved with it'); ok(wl_days_auto($pdo, ['steps' => $steps]) === '', 'only one move a week');
+wl_days([1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 6, 6 => 8, 7 => 10, 8 => 15, 9 => 18, 10 => 22, 11 => 26, 12 => 30]); $S['wl_days'] = '';
+$cu = wl_customer($pdo, '9810000002'); ok(isset($cu['replies'], $cu['orders'], $cu['days']) && isset($cu['plan'][0]['receipt']), 'the customer timeline carries receipts, replies, orders');
 echo "lineup db ok\n";

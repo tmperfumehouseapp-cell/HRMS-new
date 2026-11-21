@@ -132,6 +132,7 @@ function wl_pack(): array
     $mk('ln_px_9', 9, "{{1}} ji, aapke liye khaas rate: {{2}}. Aapko kaunse perfume chahiye, bata dijiye.", 'Rate ok hai', $px_free);
     $mk('ln_px_11', 11, "{{1}} ji, aakhri mauka: {{2}}. Order karna ho to abhi bata dein, hum confirm kar dete hain.", 'Aaj hi order karein', $px_free);
     $mk('ln_pp_6', 6, "{{1}} ji, prepaid karne par cart par 2% extra chhoot milti hai. Perfume aur bottle count bata dein to total bata dete hain.", 'Total bataiye', "Zaroor 🙏 Aapko kaunse perfume aur kitni bottle chahiye, bata dein, hum prepaid ke saath total bhej dete hain.");
+    foreach (wl_extra_get() as $e) { if (empty($e['key']) || isset($P[$e['key']]) || empty($e['of']) || !isset($P[$e['of']])) continue; $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'of' => (string)$e['of'], 'auto' => 1]; }
     return $P;
 }
 /** The wordings of one message: the message itself and its alternatives (key => the keys that can be sent instead). */
@@ -151,8 +152,11 @@ function wl_pick(string $key, string $phone, array $score, array $ok): string
 /** THE 30-DAY LADDER (owner, 21 Nov): twelve steps, on day 1, 2, 3, 4, 6, 8, 10, 15, 18, 22, 26, 30 after the end of his conversation. Step 1 = 24 h after it; every later step = the gap below after the message before it really went. */
 function wl_days(?array $set = null): array { static $o = null; if ($set !== null) $o = $set; return $o ?? [1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 6, 6 => 8, 7 => 10, 8 => 15, 9 => 18, 10 => 22, 11 => 26, 12 => 30]; }
 /** The day of every step can be changed in the setting wl_days (JSON list of 12 growing numbers, day 1 first, last day at most 60) — the learning report suggests changes; nothing is moved by itself without enough numbers. */
+function wl_extra_load(PDO $pdo): void { $j = json_decode((string)setting_get($pdo, 'wl_extra', ''), true); wl_extra_get(is_array($j) ? $j : []); }
 function wl_days_load(PDO $pdo): void { $j = json_decode((string)setting_get($pdo, 'wl_days', ''), true); if (is_array($j) && count($j) === 12) { $d = []; $prev = 0; foreach (array_values($j) as $i => $v) { $v = (int)$v; if ($v <= $prev || $v > 60) { $d = []; break; } $d[$i + 1] = $v; $prev = $v; } if (count($d) === 12) wl_days($d); } }
 function wl_steps(): int { return 12; }
+/** The wordings the learning wrote by itself (setting wl_extra; loaded by wl_cfg): [{key, of, topic, step, body, button, free}] — they join wl_pack() as wordings of an existing message and are used by the picker once Meta approved them everywhere. */
+function wl_extra_get(?array $set = null): array { static $o = []; if ($set !== null) $o = $set; return $o; }
 /** Days between step N-1 and step N (step 1 = 1: 24 h after the conversation). */
 function wl_gap(int $step): int { $d = wl_days(); return max(1, ($d[$step] ?? 30) - ($d[$step - 1] ?? 0)); }
 /** Days from step $from (already sent / the first one planned) up to step $to. */
@@ -167,7 +171,7 @@ function wl_banned(): array { return ['offer', 'discount', 'sale', 'free', 'spec
 
 function wl_cfg(PDO $pdo): array
 {
-    wl_days_load($pdo); $j = json_decode((string)setting_get($pdo, 'wl_cfg', ''), true); if (!is_array($j)) $j = [];
+    wl_days_load($pdo); wl_extra_load($pdo); $j = json_decode((string)setting_get($pdo, 'wl_cfg', ''), true); if (!is_array($j)) $j = [];
     $mode = (string)($j['mode'] ?? 'auto'); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'auto';   // owner 21 Nov: always on (no switch on the screen); 'off' stays only as an emergency value the API accepts
     // owner 21 Nov: no clock window of its own (the 10-20 one is gone; Module A / B's times do not apply): a step goes when its customer is ready; 'win' = 1 brings a from / to window back
     return ['mode' => $mode, 'cap' => max(5, min(300, (int)($j['cap'] ?? 60))), 'from' => !empty($j['win']) ? max(0, min(23, (int)($j['from'] ?? 0))) : 0, 'to' => !empty($j['win']) ? max(1, min(24, (int)($j['to'] ?? 24))) : 24, 'win' => !empty($j['win']) ? 1 : 0, 'since' => (int)($j['since'] ?? 0),
@@ -648,6 +652,7 @@ function wl_snap(PDO $pdo, bool $force = false): bool
     if (!$force && function_exists('wa_lock') && !wa_lock($pdo, 'wlsnap', 60)) return false; setting_set($pdo, 'wl_snap_at', date('Y-m-d H:i:s'));
     try { $r = wl_report($pdo, 30); $sc = []; foreach ($r['keys'] as $k => $c) $sc[$k] = [(int)$c['delivered'], (float)$c['score'], (int)$c['orders']]; setting_set($pdo, 'wl_scores', json_encode($sc)); } catch (Throwable $e) { }   // what the picker (wl_pick) reads: delivered + score of every wording
     try { wl_suggest($pdo); } catch (Throwable $e) { }   // once a day: the winning sentences of the guidebook
+    try { wl_learn_night($pdo); } catch (Throwable $e) { }   // once a night: days, new wordings (to Meta), sentences
     try { wl_heal($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup heal: ' . $e->getMessage()); }
     $st = wl_status($pdo); try { [$td0] = wl_ist(time()); $st['cost_today'] = wl_summary($pdo, wl_ist_at($td0, 0))['cost']; } catch (Throwable $e) { }
     $pdo->prepare("INSERT INTO wa_line_snap (at, j) VALUES (?, ?)")->execute([date('Y-m-d H:i:s'), json_encode($st, JSON_UNESCAPED_UNICODE)]);
@@ -694,10 +699,75 @@ function wl_overview(PDO $pdo): array
         if ($d === $td) { if ($r['status'] === 'planned') $o['today']['left_by_hour'][$hh] = ($o['today']['left_by_hour'][$hh] ?? 0) + 1; $o['today']['total']++; if ($r['status'] === 'sent') $o['today']['sent']++; $o['today']['by_topic'][$r['topic']] = ($o['today']['by_topic'][$r['topic']] ?? 0) + 1; }
         elseif ($d === $tm) { $o['tomorrow']['total']++; $o['tomorrow']['by_topic'][$r['topic']] = ($o['tomorrow']['by_topic'][$r['topic']] ?? 0) + 1; $o['tomorrow']['by_hour'][$hh] = ($o['tomorrow']['by_hour'][$hh] ?? 0) + 1; } }
     $o['by_day'] = []; try { foreach ($pdo->query("SELECT DATE(anchor_at) d, COUNT(*) n, SUM(status = 'active') a, SUM(status = 'replied') r, SUM(status = 'done') x FROM wa_line_cust GROUP BY DATE(anchor_at) ORDER BY d")->fetchAll() as $r) $o['by_day'][] = ['day' => (string)$r['d'], 'n' => (int)$r['n'], 'active' => (int)$r['a'], 'replied' => (int)$r['r'], 'done' => (int)$r['x']]; } catch (Throwable $e) { }   // customers by the day they came in
-    ksort($o['tomorrow']['by_hour']); ksort($o['today']['left_by_hour']); $o['calendar'] = wl_calendar($pdo); $o['suggest'] = json_decode((string)setting_get($pdo, 'wl_suggest', ''), true) ?: ['at' => '', 'items' => []]; $o['ready'] = wl_ready($pdo); $o['status'] = wl_status($pdo); [$td0] = wl_ist(time()); $o['summary'] = ['today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($cfg['started'] ?: 'now') - 60)]; $o['snaps'] = wl_snaps($pdo, 36); $o['tpl'] = wl_tpl_status($pdo); $o['tpl_counts'] = array_count_values($o['tpl']);
+    ksort($o['tomorrow']['by_hour']); ksort($o['today']['left_by_hour']); $o['calendar'] = wl_calendar($pdo); $o['suggest'] = json_decode((string)setting_get($pdo, 'wl_suggest', ''), true) ?: ['at' => '', 'items' => []]; $o['learn_log'] = json_decode((string)setting_get($pdo, 'wl_learn_log', ''), true) ?: []; $o['extras'] = array_map(fn($e) => ['key' => $e['key'], 'of' => $e['of'], 'body' => $e['body'], 'at' => $e['at'] ?? ''], (array)(json_decode((string)setting_get($pdo, 'wl_extra', ''), true) ?: [])); $o['days_now'] = wl_days(); $o['ready'] = wl_ready($pdo); $o['status'] = wl_status($pdo); [$td0] = wl_ist(time()); $o['summary'] = ['today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($cfg['started'] ?: 'now') - 60)]; $o['snaps'] = wl_snaps($pdo, 36); $o['tpl'] = wl_tpl_status($pdo); $o['tpl_counts'] = array_count_values($o['tpl']);
     $o['guide'] = ['live' => false, 'excerpt' => '']; try { if (function_exists('wk_guide_text')) { $g = wk_guide_text($pdo, 1500); $o['guide'] = ['live' => $g !== '', 'excerpt' => $g]; } } catch (Throwable $e) { }   // the approved guidebook: the owner reads the lineup messages against it
     $dj = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); $o['old_drip'] = is_array($dj) ? (string)($dj['mode'] ?? 'manual') : 'manual';
     return $o;
+}
+/** THE DAILY LEARNING (owner, 21 Nov: "the learning changes the days, the messages and the templates by itself and they go to Meta for approval on their own").
+ *  Once a night (02:00-05:00 IST, one round) — nothing here touches a customer directly:
+ *   1. DAYS: with 300+ delivered on the steps, a step whose orders per delivered are less than 35% of step 1's moves one day later, one that is more than 1.6x the average of its two neighbours moves one day earlier
+ *      (the gap to the next step must stay at least 1 day; one move per step per week; its planned rows move with it). Written to wl_days, logged.
+ *   2. WORDS: for the step with the most delivered messages and the fewest wordings (3 at most) Claude writes ONE new wording from the live guidebook's winning lines — a utility message with one name blank, one button, no offer / price words, nothing that repeats an existing wording.
+ *      It must pass the same checks as the hand-made ones (wl_check_wording); it is added to wl_extra, made as a template and sent to Meta by the normal template maker. Used only when approved on 3+ accounts; the stop-loss removes it if it brings no orders.
+ *   3. The suggestions list is refreshed. Every action is written to wl_learn_log (last 40) and shown on the screen. Setting wl_auto_words = 0 switches the writing of new words off (days and stop-loss stay). */
+function wl_learn_log(PDO $pdo, string $what): void { $j = json_decode((string)setting_get($pdo, 'wl_learn_log', ''), true); if (!is_array($j)) $j = []; array_unshift($j, ['at' => date('Y-m-d H:i'), 'what' => mb_substr($what, 0, 300)]); setting_set($pdo, 'wl_learn_log', json_encode(array_slice($j, 0, 40), JSON_UNESCAPED_UNICODE)); }
+/** The rules a wording must meet (the same as the tests): [ok, why]. $key = the key it would get, $existing = [key => message] to compare the button with. */
+function wl_check_wording(array $w, array $existing): array
+{
+    $body = trim((string)($w['body'] ?? '')); $btn = trim((string)($w['button'] ?? '')); $free = trim((string)($w['free'] ?? ''));
+    if (preg_match_all('/\{\{\d+\}\}/', $body) !== 1 || strpos($body, '{{1}}') === false) return [false, 'it must have exactly one blank {{1}}'];
+    if (strpos($body, '{{1}}') === 0 || preg_match('/\{\{1\}\}\s*$/', $body)) return [false, 'the blank must not be first or last'];
+    if (mb_strlen($body) < 40 || mb_strlen($body) > 320) return [false, 'body length']; if ($btn === '' || mb_strlen($btn) > 25) return [false, 'button length']; if ($free === '' || mb_strlen($free) > 400) return [false, 'free answer length'];
+    foreach (wl_banned() as $b) if (stripos($body . ' ' . $btn, $b) !== false) return [false, "contains '$b'"];
+    if (preg_match('/(?:rs\.?|₹|inr)\s*\d|\d\s*%|\d{3,}/iu', $body . ' ' . $btn)) return [false, 'no prices, percentages or big numbers in a utility wording'];
+    $n = trim(preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($btn))); foreach ($existing as $m) { $o = trim(preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower((string)$m['button']))); if ($o === '' ) continue; if ($o === $n || strpos($o, $n) !== false || strpos($n, $o) !== false) return [false, 'the button text is too like another one']; }
+    foreach ($existing as $m) { similar_text(mb_strtolower((string)$m['body']), mb_strtolower($body), $pc); if ($pc > 82) return [false, 'too like an existing wording']; }
+    return [true, ''];
+}
+function wl_days_auto(PDO $pdo, array $report): string
+{
+    $at = (int)strtotime((string)setting_get($pdo, 'wl_days_at', '2000-01-01')); if ($at > time() - 7 * 86400) return '';
+    $by = []; foreach ((array)($report['steps'] ?? []) as $x) { $k = (int)$x['step']; $by[$k] = $by[$k] ?? ['d' => 0, 'o' => 0]; $by[$k]['d'] += (int)$x['delivered']; $by[$k]['o'] += (int)$x['orders']; }
+    foreach ([1, 2, 3, 4] as $k) if (($by[$k]['d'] ?? 0) < 300) return ''; if (($by[1]['o'] ?? 0) < 1) return '';
+    $r = []; foreach ($by as $k => $c) $r[$k] = $c['d'] >= 300 ? $c['o'] / $c['d'] : null; $d = wl_days(); $move = null;
+    foreach ([2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as $k) { if ($r[$k] === null || !isset($d[$k + 1]) || !isset($d[$k - 1])) continue;
+        $nb = array_filter([$r[$k - 1] ?? null, $r[$k + 1] ?? null], fn($x) => $x !== null); $avg = $nb ? array_sum($nb) / count($nb) : null;
+        if ($k <= 4 && $r[$k] < $r[1] * 0.35 && $d[$k] + 1 < $d[$k + 1]) { $move = [$k, 1, 'brings ' . round(100 * $r[$k], 2) . ' orders per 100 delivered against ' . round(100 * $r[1], 2) . ' for step 1']; break; }
+        if ($avg !== null && $avg > 0 && $r[$k] > $avg * 1.6 && $d[$k] - 1 > $d[$k - 1]) { $move = [$k, -1, 'brings ' . round(100 * $r[$k], 2) . ' orders per 100 delivered, 1.6x its neighbours']; break; } }
+    setting_set($pdo, 'wl_days_at', date('Y-m-d')); if (!$move) return 'days: the steps look alike, no day moved';
+    [$k, $dl, $why] = $move; $d[$k] += $dl; setting_set($pdo, 'wl_days', json_encode(array_values($d))); wl_days($d);
+    try { $pdo->prepare("UPDATE wa_line_plan SET due_at = " . (strpos((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME), 'sqlite') !== false ? "datetime(due_at, ?)" : "DATE_ADD(due_at, INTERVAL ? DAY)") . " WHERE step = ? AND status = 'planned'")->execute([strpos((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME), 'sqlite') !== false ? ($dl . ' day') : $dl, $k]); } catch (Throwable $e) { }
+    return 'days: step ' . $k . ' moved to day ' . $d[$k] . ' (' . $why . ')';
+}
+function wl_new_word(PDO $pdo, array $report): string
+{
+    if ((string)setting_get($pdo, 'wl_auto_words', '1') === '0') return '';
+    if (!function_exists('wcr_ai')) return 'words: Claude is not available on this server';
+    $extra = json_decode((string)setting_get($pdo, 'wl_extra', ''), true); if (!is_array($extra)) $extra = []; if (count($extra) >= 30) return 'words: 30 written wordings already, no more';
+    $made = 0; foreach ($extra as $e) if (substr((string)($e['at'] ?? ''), 0, 10) === date('Y-m-d')) $made++; if ($made >= 2) return '';
+    $P = wl_pack(); $cnt = []; foreach ($P as $k => $m) { $b = $m['of'] ?? $k; $cnt[$b] = ($cnt[$b] ?? 0) + 1; }
+    $best = null; foreach ((array)($report['keys'] ?? []) as $k => $c) { $b = $P[$k]['of'] ?? $k; if (!isset($P[$b]) || !empty($P[$b]['pref']) || ($cnt[$b] ?? 1) >= 4 || (int)$c['delivered'] < 100) continue; if ($best === null || $c['delivered'] / ($cnt[$b] ?? 1) > $best[1]) $best = [$b, $c['delivered'] / ($cnt[$b] ?? 1)]; }
+    if (!$best) return 'words: no step has 100 delivered yet, nothing new is written';
+    $base = $best[0]; $bm = $P[$base]; $ex = []; foreach ($P as $k => $m) if (($m['of'] ?? $k) === $base) $ex[$k] = $m;
+    $gb = ''; try { $g = $pdo->query("SELECT body FROM lib_guide WHERE status = 'live' ORDER BY version DESC LIMIT 1")->fetchColumn(); if ($g) { $j = json_decode((string)$g, true); if (is_array($j)) $gb = json_encode(['do' => array_slice((array)($j['do'] ?? []), 0, 8), 'openers' => array_slice((array)($j['openers'] ?? []), 0, 5), 'followups' => array_slice((array)($j['followups'] ?? []), 0, 4)], JSON_UNESCAPED_UNICODE); } } catch (Throwable $e) { }
+    $role = [1 => 'the first message, 24 hours after the customer stopped chatting', 2 => 'day 2: a gentle second message', 3 => 'day 3: a question to move the chat on', 4 => 'day 4: a light nudge', 5 => 'day 6', 6 => 'day 8', 7 => 'day 10', 8 => 'day 15: a small first size suggestion', 9 => 'day 18', 10 => 'day 22: help with address / payment', 11 => 'day 26', 12 => 'day 30: the polite last message'][(int)$bm['step']] ?? '';
+    $sys = 'You write ONE new WhatsApp UTILITY message wording for a perfume shop (TM Perfume House), in the same Hinglish (Hindi in Roman letters) as the examples. Rules: exactly one blank {{1}} (the customer first name) in the middle of the text, never first or last; 40-300 characters; NO prices, no percentages, no discount / offer / free / sale / special words; it answers or follows up a customer who asked; one quick-reply button text of 2-4 words (max 25 characters) that is different from every existing button; plus the free answer that goes out when the button is tapped (max 350 characters, warm, asks for the perfume name / size, no price). It must NOT repeat any existing wording. Use what wins in real chats (given). Return only JSON {"body": "...", "button": "...", "free": "..."}.';
+    $usr = "Step: " . $bm['topic'] . ' step ' . $bm['step'] . ' (' . $role . ")\nExisting wordings of this step (do not repeat):\n" . implode("\n", array_map(fn($k, $m) => '- ' . $m['body'] . ' [button: ' . $m['button'] . ']', array_keys($ex), $ex)) . "\nAll buttons in use: " . implode(' | ', array_unique(array_map(fn($m) => (string)$m['button'], $P))) . "\nWhat wins in real chats (live guidebook): " . $gb;
+    $r = wcr_ai($sys, $usr, 900); if (!is_array($r)) return 'words: Claude did not answer (' . (string)($GLOBALS['wcr_ai_why'] ?? '') . ')';
+    $w = ['body' => (string)($r['body'] ?? ''), 'button' => (string)($r['button'] ?? ''), 'free' => (string)($r['free'] ?? '')]; [$ok, $why] = wl_check_wording($w, $P); if (!$ok) return 'words: the written wording was refused (' . $why . ')';
+    $n = 1; foreach ($extra as $e) if (($e['of'] ?? '') === $base) $n++; $key = substr($base, 0, 14) . '_a' . $n; if (isset($P[$key])) $key = substr($base, 0, 13) . '_a' . $n . mt_rand(1, 9);
+    $extra[] = ['key' => $key, 'of' => $base, 'topic' => (string)$bm['topic'], 'step' => (int)$bm['step'], 'body' => $w['body'], 'button' => $w['button'], 'free' => $w['free'], 'at' => date('Y-m-d H:i:s')];
+    setting_set($pdo, 'wl_extra', json_encode($extra, JSON_UNESCAPED_UNICODE)); wl_extra_get($extra);
+    $mk = ['made' => 0]; try { $mk = wl_make_templates($pdo); } catch (Throwable $e) { }   // made and sent to Meta by the normal template maker (what does not fit Meta's limit now waits in the queue)
+    return 'words: new wording ' . $key . ' written for ' . $base . ' and sent to Meta for approval (' . (int)$mk['made'] . ' made): "' . mb_substr($w['body'], 0, 90) . '…"';
+}
+function wl_learn_night(PDO $pdo): void
+{
+    [$td, $h] = wl_ist(time()); if ($h < 2 || $h >= 5 || (string)setting_get($pdo, 'wl_learn_day', '') === $td) return;
+    if (function_exists('wa_lock') && !wa_lock($pdo, 'wllearn', 280)) return; setting_set($pdo, 'wl_learn_day', $td);
+    try { $rep = wl_report($pdo, 30, 30); } catch (Throwable $e) { return; }
+    foreach ([fn() => wl_days_auto($pdo, $rep), fn() => wl_new_word($pdo, $rep), function () use ($pdo) { $x = wl_suggest($pdo, true); return 'sentences: ' . count($x['items']) . ' winning sentences listed'; }] as $step) { try { $m = $step(); if ($m !== '') wl_learn_log($pdo, $m); } catch (Throwable $e) { wl_learn_log($pdo, 'learning step failed: ' . $e->getMessage()); } }
 }
 /** NEW WINNING SENTENCES (owner, 21 Nov): once a day the live guidebook (and the words of the team's own offers that worked) is read and the sentences that win in real chats are listed as ideas for NEW wordings of the Lineup messages.
  *  They are only listed (screen: "New winning sentences"): a new message goes to Meta for approval and into the Lineup only after it is approved. Returns the stored list. */
@@ -764,9 +834,13 @@ function wl_report(PDO $pdo, int $days = 30, int $min = 30): array
 function wl_customer(PDO $pdo, string $phone): array
 {
     $c = $pdo->prepare("SELECT * FROM wa_line_cust WHERE phone = ?"); $c->execute([$phone]); $cu = $c->fetch(); if (!$cu) return ['in' => false];
-    $p = $pdo->prepare("SELECT step, tpl_key, due_at, status, why, sent_at FROM wa_line_plan WHERE phone = ? ORDER BY id"); $p->execute([$phone]);
+    $p = $pdo->prepare("SELECT id, step, tpl_key, tpl_id, due_at, status, why, sent_at, wamid, px FROM wa_line_plan WHERE phone = ? ORDER BY id"); $p->execute([$phone]); $plan = $p->fetchAll();
+    $st = []; foreach ($plan as $r) if (!empty($r['wamid'])) { try { $q = $pdo->prepare("SELECT status, err_code FROM wa_messages WHERE wamid = ?"); $q->execute([$r['wamid']]); $m = $q->fetch(); if ($m) $st[(string)$r['wamid']] = $m; } catch (Throwable $e) { } }
+    foreach ($plan as &$r) { $m = $st[(string)$r['wamid']] ?? null; $r['receipt'] = $m ? (string)$m['status'] : ''; $r['err_code'] = $m ? (int)($m['err_code'] ?? 0) : 0; unset($r['wamid']); } unset($r);
     $l = $pdo->prepare("SELECT at, what FROM wa_line_log WHERE phone = ? ORDER BY id"); $l->execute([$phone]);
-    return ['in' => true, 'customer' => $cu, 'plan' => $p->fetchAll(), 'log' => $l->fetchAll()];
+    $in = []; try { $q = $pdo->prepare("SELECT ts, SUBSTR(body, 1, 90) b FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id LIMIT 40"); $q->execute([$phone, (string)$cu['anchor_at']]); $in = $q->fetchAll(); } catch (Throwable $e) { }
+    $ord = []; try { $q = $pdo->prepare("SELECT created_at, total FROM shop_orders WHERE phone LIKE ? AND created_at >= ? ORDER BY created_at LIMIT 10"); $q->execute(['%' . substr(preg_replace('/\D+/', '', $phone), -10), (string)$cu['anchor_at']]); $ord = $q->fetchAll(); } catch (Throwable $e) { }
+    return ['in' => true, 'customer' => $cu, 'plan' => $plan, 'log' => $l->fetchAll(), 'replies' => $in, 'orders' => $ord, 'days' => wl_days()];
 }
 
 }
