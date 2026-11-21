@@ -52,6 +52,6 @@ The existing server bot (wa_growth.php `wag_bot_scan`) now answers every custome
 Added the same day (owner's authority): ORDER MODE — in a chat where the customer wants to order / pay (hot), the bot collects perfume, size, quantity, name, full address + pincode, never payment; when a pincode is in the chat it stops (`botoff`), writes a chat note and pushes the salesperson to send the payment. COMPLAINT SWEEP — an unanswered chat that reads like a complaint (leak, wrong item, not delivered, quality, refund) gets a complaint ticket (`cx_raise`, Complaint team owns it) and the customer is told the ticket number.
 
 ## 9. Bot follow-up (aggressive, 21 Nov)
-The bot no longer only answers: when a customer it spoke to goes silent, it follows up by itself inside the 24-hour window (free text) at 15 min, 30 min, 1 h, 2 h, 4 h, 8 h and 18 h after the customer's last message (9:00–21:30 only).
+The bot no longer only answers: when a customer it spoke to goes silent, it follows up by itself inside the 24-hour window (free text) at 5 min, 15 min, 30 min, 1 h, 2 h, 4 h and 18 h after the customer's last message (9:00–21:30 only).
 Each step has its own angle (missing detail → exact price → add-on towards Rs 2,700–2,800 → two options → true urgency → one-word YES → last nudge); after the 7th the chat goes to OPEN (orange). It never follows up when a person took the chat, the bot handed it over, the order is done,
 the customer said stop / no, or a flow runs. Switch: `wag_bfu_on`; daily cap `wag_bfu_max_day` (2,500). Every follow-up is written in the chat's event line.

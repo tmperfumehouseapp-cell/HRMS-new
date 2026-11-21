@@ -58,9 +58,9 @@ function wag_cfg(PDO $pdo): array
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '(price talk / order of less than Rs 2,700)', 'better' => $rule]], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): aggressive follow-up topic for the bot
-    try { if (setting_get($pdo, 'wag_rules6', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules6', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (setting_get($pdo, 'wag_rules7', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules7', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
-            $rule = 'FOLLOW-UP (aggressive but polite): when a customer goes silent after our answer, the bot follows up by itself 7 times — 15 min (ask the one missing detail), 30 min (the exact chart price for what he chose), 1 h (the add-on that lifts the order to Rs 2,700-2,800), 2 h (two easy options), 4 h (true urgency: the next dispatch), 8 h (one-word answer YES / names + address, we keep it ready), 18 h (last friendly nudge); then the chat goes to OPEN in orange for anybody to try. Each message has a NEW angle, 1-2 short lines, never a copy, never an invented offer; stop at once on "no / stop / nahi chahiye".';
+            $rule = 'FOLLOW-UP (aggressive but polite): when a customer goes silent after our answer, the bot follows up by itself 7 times — 5 min ("Sir aapko kya chahiye?" - the one missing detail), 15 min (the exact chart price for what he chose), 30 min (the add-on that lifts the order to Rs 2,700-2,800), 1 h (two easy options 1 or 2), 2 h (true urgency: the next dispatch), 4 h (one-word answer YES / names + address, we keep it ready), 18 h (last friendly nudge); EVERY follow-up ends with ONE easy question the customer can answer in one word; then the chat goes to OPEN in orange for anybody to try. Each message has a NEW angle, 1-2 short lines, never a copy, never an invented offer; stop at once on "no / stop / nahi chahiye".';
             $gb['do'] = array_values(array_merge([$rule], array_slice(array_values(array_filter((array)($gb['do'] ?? []), function ($x) { return strpos((string)$x, 'FOLLOW-UP (aggressive') !== 0; })), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): 10 ml is only an add-on, never part of the opening
@@ -849,9 +849,9 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
     $now = time(); $hr = (int)date('G') * 60 + (int)date('i'); if ($hr < 9 * 60 || $hr > 21 * 60 + 30) return 0;
     if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 20) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
     $day = date('Y-m-d'); if (setting_get($pdo, 'wag_bfu_day', '') !== $day) { setting_set($pdo, 'wag_bfu_day', $day); setting_set($pdo, 'wag_bfu_n', '0'); } $cap = max(0, (int)setting_get($pdo, 'wag_bfu_max_day', '2500')); if ((int)setting_get($pdo, 'wag_bfu_n', '0') >= $cap) return 0;
-    $steps = [900, 1800, 3600, 7200, 14400, 28800, 64800]; $n = 0;   // 15 min, 30 min, 1 h, 2 h, 4 h, 8 h, 18 h after the customer's last message
+    $steps = [300, 900, 1800, 3600, 7200, 14400, 64800]; $n = 0;   // 5 min, 15 min, 30 min, 1 h, 2 h, 4 h, 18 h after the customer's last message (owner, 21 Nov: do not wait long)
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at >= ? ORDER BY c.last_out_at ASC LIMIT 80");
-    $st->execute([date('Y-m-d H:i:s', $now - 22 * 3600 - 1800), date('Y-m-d H:i:s', $now - 900), date('Y-m-d H:i:s', $now - 22 * 3600 - 1800)]);
+    $st->execute([date('Y-m-d H:i:s', $now - 22 * 3600 - 1800), date('Y-m-d H:i:s', $now - 300), date('Y-m-d H:i:s', $now - 22 * 3600 - 1800)]);
     foreach ($st->fetchAll() as $c) {
         if ($n >= $max) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at']; $liT = strtotime($li);
         $f = wag_meta_get($pdo, 'bgf:' . $key, ''); $fp = $f === '' ? [] : explode('|', $f); $cnt = ($fp && ($fp[0] ?? '') === $li) ? (int)($fp[1] ?? 0) : 0; $lastF = ($fp && ($fp[0] ?? '') === $li) ? (int)($fp[2] ?? 0) : 0;
@@ -864,7 +864,7 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
             if (function_exists('wa_mkt_note')) { try { wa_mkt_note($pdo, $key, 0, 'offered', -1, 'followup'); } catch (Throwable $e) { } }
             wa_event($pdo, $key, '🟠 The customer did not answer the bot\'s 7 follow-ups: the chat is in OPEN (orange) — anybody who wants to try can take it.'); $n++; continue;
         }
-        if ($cnt >= count($steps)) continue; if ($now - $liT < $steps[$cnt]) continue; if ($lastF && $now - $lastF < 600) continue;
+        if ($cnt >= count($steps)) continue; if ($now - $liT < $steps[$cnt]) continue; if ($lastF && $now - $lastF < 240) continue;
         if (wag_bot_off($pdo, $key) || (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key))) continue;
         $bh = wag_meta_get($pdo, 'bothand:' . $key, ''); if ($bh !== '' && strtotime($bh) >= $liT) continue;   // the bot handed this customer to a person
         if (!empty($c['hot']) && !empty($c['assigned_emp'])) continue;   // a person holds a hot chat: his job
