@@ -9736,7 +9736,7 @@ function lib_guide_write(PDO $pdo): array
     if ($live) $text .= "\n\nPREVIOUS GUIDEBOOK (v" . $live['version'] . "):\n" . json_encode(array_diff_key($live['body'], ['owner_corrections' => 1]), JSON_UNESCAPED_UNICODE);
     try { if (function_exists('grow_learn_guide_text')) { $__gl = grow_learn_guide_text($pdo); if ($__gl !== '') $text .= $__gl; } } catch (Throwable $e) { }   // 📚 the team's bigger-size / add-on learning (hourly digests)
     // what the owner taught on the Teach board (selling rules + limits) WINS over the chats: a guidebook point that contradicts it is rewritten or dropped
-    $ownT = ''; try { $tf0 = function_exists('teach_facts_get') ? teach_facts_get($pdo) : []; $ownT = trim((string)($tf0['style'] ?? '')) . "\n" . (function_exists('teach_limits_text') ? teach_limits_text($pdo) : ''); } catch (Throwable $e) {}
+    $ownT = ''; try { $tf0 = function_exists('teach_facts_get') ? teach_facts_get($pdo) : []; $ownT = trim((string)($tf0['style'] ?? '')) . "\n" . (function_exists('teach_limits_text') ? teach_limits_text($pdo) : '') . (function_exists('wag_standing_rules') ? "\n" . wag_standing_rules() : ''); } catch (Throwable $e) {}
     if (trim($ownT) !== '') $text .= "\n\nTHE OWNER'S OWN SELLING RULES AND LIMITS (taught on the Teach board — they WIN over the chats and over the previous guidebook: when a point of the guidebook contradicts one of them, rewrite or drop that point, and say so in change_note):\n" . mb_substr(trim($ownT), 0, 6000);
     // 📌 STRICT, never dropped: the price chart picture is drawn by the system (6.5% column); an uploaded price-list photo is never used
     if (function_exists('pc_photo_rule_text')) $text .= "\n\nSTANDING RULE OF THE OWNER (strict — put it as the FIRST point of 'do', in short plain words, and keep it in every new version of the guidebook):\n" . pc_photo_rule_text();
@@ -9751,7 +9751,7 @@ function lib_guide_write(PDO $pdo): array
     [$ok, $v, $why] = convo_ai($sys, [['text' => $text]], $schema, false, 16000, 'claude');
     if ($ok) {
         $body = ['summary' => mb_substr((string)($v['summary'] ?? ''), 0, 600), 'confidence' => in_array($v['confidence'] ?? '', ['low', 'medium', 'high'], true) ? $v['confidence'] : 'low',
-            'do' => $strs($v['do'] ?? [], 8, 260), 'dont' => [], 'openers' => $strs($v['openers'] ?? [], 5, 240), 'followups' => $strs($v['followups'] ?? [], 4, 240), 'objection_replies' => [], 'offers' => []];
+            'do' => $strs($v['do'] ?? [], 12, 420), 'dont' => [], 'openers' => $strs($v['openers'] ?? [], 5, 240), 'followups' => $strs($v['followups'] ?? [], 4, 240), 'objection_replies' => [], 'offers' => []];
         foreach ((array)($v['objection_replies'] ?? []) as $o) if (is_array($o) && trim((string)($o['reply'] ?? '')) !== '' && count($body['objection_replies']) < 6) $body['objection_replies'][] = ['objection' => lib_clip((string)($o['objection'] ?? ''), 200), 'reply' => lib_clip((string)$o['reply'], 320)];
         foreach ((array)($v['offers'] ?? []) as $o) if (is_array($o) && trim((string)($o['offer'] ?? '')) !== '' && count($body['offers']) < 5) $body['offers'][] = ['offer' => lib_clip((string)$o['offer'], 160), 'when' => lib_clip((string)($o['when'] ?? ''), 240)];
         // a "do not" must be proven: 3+ different LOST chats shown above, and almost none of the WON ones — otherwise it is dropped
