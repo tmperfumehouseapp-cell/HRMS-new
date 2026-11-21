@@ -35,6 +35,7 @@ if (!function_exists('wa_aft_days')) {
         try {
             $pdo->exec("CREATE TABLE IF NOT EXISTS wa_aft_cust (phone VARCHAR(12) NOT NULL PRIMARY KEY, order_name VARCHAR(40) NOT NULL DEFAULT '', order_at DATETIME NOT NULL, anchor_at DATETIME NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'active', why VARCHAR(80) NOT NULL DEFAULT '', total INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL, KEY k_st (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             $pdo->exec("CREATE TABLE IF NOT EXISTS wa_aft_plan (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, step TINYINT NOT NULL, due_at DATETIME NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'planned', tpl_id INT NOT NULL DEFAULT 0, sent_at DATETIME NULL, wamid VARCHAR(80) NOT NULL DEFAULT '', why VARCHAR(160) NOT NULL DEFAULT '', KEY k_due (status, due_at), KEY k_ph (phone, step)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            foreach (['kind' => "VARCHAR(12) NOT NULL DEFAULT ''", 'sz' => 'INT NOT NULL DEFAULT 0'] as $col => $def) { try { $pdo->query("SELECT $col FROM wa_aft_plan LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_aft_plan ADD COLUMN $col $def"); } catch (Throwable $e2) { } } }   // what kind of message / which size went (the learning counts replies per kind and size)
             return $ok = true;
         } catch (Throwable $e) { return $ok = false; }
     }
@@ -49,6 +50,25 @@ if (!function_exists('wa_aft_days')) {
         if ($key === 'offer') return $p250 > 0 ? '5 x 50 ml sirf Rs ' . $p250 . ' mein. Order ke liye yahin reply kijiye.' : 'Best price ke liye yahin reply kijiye.';
         return $L[$key] ?? $L['love'];
     }
+    /** 🧠 The learning (owner, 21 Nov: "act on the pattern that got the most replies, and the season"): every 6 hours the replies (the customer wrote within 24 h after our message) are counted per message KIND and per offer SIZE for the last 30 days. Stored in the setting wa_aft_learn. */
+    function wa_aft_learn(PDO $pdo, int $now): array
+    {
+        $o = ['at' => date('Y-m-d H:i:s', $now), 'kind' => [], 'sz' => []];
+        try { foreach (['kind', 'sz'] as $col) { $q = $pdo->prepare("SELECT p.$col k, COUNT(*) n, SUM(EXISTS (SELECT 1 FROM wa_messages m WHERE (m.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) AND m.dir = 'in' AND m.ts > p.sent_at AND m.ts <= DATE_ADD(p.sent_at, INTERVAL 24 HOUR))) r FROM wa_aft_plan p WHERE p.status = 'sent' AND p.sent_at >= ? AND p.$col <> '' AND p.$col <> '0' GROUP BY p.$col");
+                $q->execute([date('Y-m-d H:i:s', $now - 30 * 86400)]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $o[$col][(string)$r['k']] = ['n' => (int)$r['n'], 'r' => (int)$r['r']]; } setting_set($pdo, 'wa_aft_learn', json_encode($o)); } catch (Throwable $e) { }
+        return $o;
+    }
+    /** weight of a kind / size: 1 + 4 x reply rate once 200+ messages are measured (a measured winner gets up to ~5x the share of a loser; nothing is ever dropped completely). */
+    function wa_aft_weight(PDO $pdo, string $col, string $k): float
+    {
+        static $L = null; if ($L === null) { $L = json_decode((string)setting_get($pdo, 'wa_aft_learn', ''), true); if (!is_array($L)) $L = []; }
+        $x = $L[$col][$k] ?? null; if (!$x || (int)$x['n'] < 200) return 1.0; return 1.0 + 4.0 * ((int)$x['r'] / max(1, (int)$x['n']));
+    }
+    function wa_aft_pick(PDO $pdo, string $col, array $options, int $seed): string
+    {
+        $w = []; $t = 0.0; foreach ($options as $k) { $x = wa_aft_weight($pdo, $col, (string)$k); $w[(string)$k] = $x; $t += $x; } $r = ($seed % 1000) / 1000.0 * $t; foreach ($w as $k => $x) { if ($r < $x) return (string)$k; $r -= $x; }
+        return (string)end($options);
+    }
     /** The line ({{3}}) of a step after the care weeks. kind: offer = the shop's chart price of a size / quantity that rotates per customer and step (100 of every 200 messages); trust = facts about us; testimonial = a perfume customers rated best (the catalogue's own rating);
      *  new = the newest perfumes of the catalogue; size = a small size to try (chart price); season = the season's greeting. Nothing is invented: prices from the chart, ratings and names from the catalogue. */
     function wa_aft_line_dyn(PDO $pdo, int $step, string $phone, int $now, string $kind = 'offer'): string
@@ -58,6 +78,7 @@ if (!function_exists('wa_aft_days')) {
         $season = [1 => 'Naye saal ki shuruaat', 2 => 'Valentine ka mahina', 3 => 'Holi ke rang', 4 => 'Garmi ke fresh fragrances', 5 => 'Garmi mein fresh rehne ke liye', 6 => 'Garmi ka mausam', 7 => 'Barsaat ka mausam', 8 => 'Raksha Bandhan / gifting ka mausam', 9 => 'Tyohaaron ka mausam', 10 => 'Navratri / Dussehra ke din', 11 => 'Diwali aur shaadi ka mausam', 12 => 'Winter aur shaadi season'][$m];
         if ($combos === null) { $combos = []; try { $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (is_array($j) && !empty($j['rows'])) { $ix = function_exists('wag_chart_cols') ? wag_chart_cols(array_values(array_map('floatval', (array)$j['cols'])))[0] : 0; foreach ((array)$j['rows'] as $r) { $p = (int)($r['p'][$ix] ?? 0); if ($p > 0) $pr[(int)($r['ml'] ?? 0)] = $p; }
                 foreach ([20, 30, 50, 100] as $sz) foreach ([2, 3, 4, 5, 6, 8, 10] as $q) if (isset($pr[$q * $sz])) $combos[] = [$q, $sz, $pr[$q * $sz]]; } } catch (Throwable $e) { } }
+        $GLOBALS['wa_aft_last'] = ['kind' => $kind, 'sz' => 0];
         if ($kind === 'trust') { $t = ['7,000+ Google reviews, 380+ fragrances aur 92+ brands - ye sab aapke bharose se mumkin hua. Thank you! 🙏', 'Hamare perfume 30% oil ke hain aur der tak tikte hain. Kaunsi khushbu chahiye, bataiye.', 'Koi bhi sawal ya issue ho to bas yahin reply kijiye, hum turant madad karenge.', 'Sahi khushbu chunna mushkil lage to bas bataiye kiske liye chahiye - hum best options suggest karenge.']; return $t[($step + $h) % count($t)]; }
         if ($kind === 'testimonial') { if ($top === null) { $top = []; try { $q = $pdo->query("SELECT name, rating, rating_n FROM wa_prod WHERE active = 1 AND kind = 'perfume' AND rating >= 4.5 AND rating_n >= 20 ORDER BY rating_n DESC LIMIT 40"); $top = $q ? $q->fetchAll(PDO::FETCH_ASSOC) : []; } catch (Throwable $e) { } }
             if ($top) { $x = $top[($step + $h) % count($top)]; return 'Customers ka favourite: ' . trim((string)$x['name']) . ' - ' . rtrim(rtrim(number_format((float)$x['rating'], 1), '0'), '.') . '/5 (' . (int)$x['rating_n'] . ' reviews). Try karna ho to reply kijiye.'; } return 'Hamare customers ke reviews bahut achhe hain. Aapki pasand ki khushbu bataiye, hum suggest karenge.'; }
@@ -65,7 +86,7 @@ if (!function_exists('wa_aft_days')) {
             if (count($new) >= 3) { $o = ($step + $h) % max(1, count($new) - 4); $names = array_slice($new, $o, 5); return 'Naye aaye hain: ' . implode(', ', array_map('trim', $names)) . '. Details ke liye reply kijiye.'; } return 'Hamare paas naye fragrances aaye hain. Details ke liye reply kijiye.'; }
         if ($kind === 'size') { $p20 = $pr[20] ?? 0; $p50 = $pr[50] ?? 0; return $p20 > 0 ? 'Naya fragrance try karna hai? 20 ml sirf Rs ' . $p20 . ' mein shuru kijiye. Reply kijiye.' : ($p50 > 0 ? 'Naya fragrance try karna hai? 50 ml Rs ' . $p50 . '. Reply kijiye.' : 'Chhoti size mein naya fragrance try kijiye. Reply kijiye.'); }
         if ($kind === 'season' || !$combos) return $season . ': kaisi khushbu chahiye, bataiye - hum best option suggest karenge.';
-        $phrase = ['sirf', 'bas', 'special value:', 'is hafte ka option:']; $c = $combos[($step * 5 + $h) % count($combos)];
+        $phrase = ['sirf', 'bas', 'special value:', 'is hafte ka option:']; $szs = []; foreach ($combos as $cc) $szs[$cc[1]] = 1; $psz = (int)wa_aft_pick($pdo, 'sz', array_keys($szs), $step * 37 + $h); $sub = array_values(array_filter($combos, function ($cc) use ($psz) { return $cc[1] === $psz; })); if (!$sub) $sub = $combos; $c = $sub[($step * 5 + $h) % count($sub)]; $GLOBALS['wa_aft_last'] = ['kind' => 'offer', 'sz' => (int)$c[1]];
         return $season . ': ' . $c[0] . ' x ' . $c[1] . ' ml ' . $phrase[($step + $h) % count($phrase)] . ' Rs ' . $c[2] . '. Reply kijiye, hum order bana denge.';
     }
     /** The screen's numbers (Campaigns -> Lineup, "After-Order plan" under the 30-day plan). */
@@ -76,10 +97,27 @@ if (!function_exists('wa_aft_days')) {
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $o['sent_today'] = (int)$q->fetchColumn();
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan p JOIN wa_aft_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active'"); $q->execute([date('Y-m-d H:i:s', $now)]); $o['due_now'] = (int)$q->fetchColumn();
             $q = $pdo->prepare("SELECT DATE(due_at) d, COUNT(*) n FROM wa_aft_plan WHERE status = 'planned' AND due_at >= ? AND due_at < ? GROUP BY d ORDER BY d"); $q->execute([date('Y-m-d 00:00:00'), date('Y-m-d 00:00:00', $now + 15 * 86400)]); $o['days'] = $q->fetchAll(PDO::FETCH_KEY_PAIR);
-            $o['failed'] = $pdo->query("SELECT SUBSTR(why, 1, 70) w, COUNT(*) n FROM wa_aft_plan WHERE status = 'failed' GROUP BY w ORDER BY n DESC LIMIT 5")->fetchAll(PDO::FETCH_KEY_PAIR);
+            $o['learn'] = json_decode((string)setting_get($pdo, 'wa_aft_learn', ''), true) ?: []; $o['failed'] = $pdo->query("SELECT SUBSTR(why, 1, 70) w, COUNT(*) n FROM wa_aft_plan WHERE status = 'failed' GROUP BY w ORDER BY n DESC LIMIT 5")->fetchAll(PDO::FETCH_KEY_PAIR);
         } catch (Throwable $e) { $o['error'] = $e->getMessage(); }
         $st = []; foreach (wa_aft_steps(40) as $k => $v) $st[] = ['step' => $k, 'day' => $v[0], 'group' => $v[1], 'kind' => strpos($v[2], 'dyn') === 0 ? substr($v[2], 4) : 'care', 'line' => strpos($v[2], 'dyn') === 0 ? wa_aft_line_dyn($pdo, $k, '0000', $now, substr($v[2], 4)) : wa_aft_line($pdo, $v[2])]; $o['steps'] = $st;
         return $o;
+    }
+    /** 📷 PHOTO templates (owner, 21 Nov: "sometimes add photos - get the photo templates approved"): made ONCE from photos of the media library (39 = perfume bottles, 37 = gift hamper), category MARKETING, two blanks (name, the line), sent to every WhatsApp account of the shop.
+     *  When Meta approves them, about every 6th message goes out with the photo; until then (or if one fails) the normal message goes. */
+    function wa_aft_photo_make(PDO $pdo): array
+    {
+        $res = ['made' => 0, 'failed' => []]; foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row'] as $f) if (!function_exists($f)) return ['made' => 0, 'failed' => ['template module not loaded']];
+        $ids = json_decode((string)setting_get($pdo, 'wa_aft_photo_tpls', ''), true); if (!is_array($ids)) $ids = []; $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
+        foreach (['bottles' => 39, 'gift' => 37] as $k => $lib) {
+            if (!empty($ids[$k])) continue; if (function_exists('wa_lib_row') && !wa_lib_row($pdo, $lib)) { $res['failed'][] = $k . ': photo ' . $lib . ' not in the library'; continue; }
+            [$t, $err] = wa_tpl_clean(['name' => 'tmph_after_photo_' . $k, 'language' => 'en', 'category' => 'MARKETING', 'header_format' => 'IMAGE', 'header_lib_id' => $lib, 'body' => 'Hi {{1}} ✨ From TM Perfume House: {{2}} Reply here and we will take care of the rest 🙏', 'footer' => 'TM Perfume House',
+                'examples' => ['body' => ['Rahul', '5 x 50 ml sirf Rs 2940 mein. Order ke liye reply kijiye.'], 'labels' => ['Name', 'Message']], 'folder' => 'Lineup']);
+            if ($err !== '') { $res['failed'][] = $k . ': ' . $err; continue; }
+            $id = wa_tpl_insert($pdo, $t, 0, 'After-Order plan: a message with a photo (about every 6th message).', 'Marketing message with a photo to a customer who ordered.'); $r = wa_tpl_row($pdo, $id); if (!$r) { $res['failed'][] = $k . ': could not save'; continue; }
+            $ids[$k] = (int)$id; setting_set($pdo, 'wa_aft_photo_tpls', json_encode($ids)); $res['made']++;
+            foreach ($wabas as $w) { if (function_exists('wa_tpl_try_create')) { [$ok, $why] = wa_tpl_try_create($pdo, $r, $w, $budget); } elseif (function_exists('wa_tpl_create_at')) { [$ok, $why] = wa_tpl_create_at($pdo, $r, $w); } else { $ok = false; $why = 'no submit function'; } if (!$ok) $res['failed'][] = $k . ' -> ' . $why; }
+        }
+        return $res;
     }
     function wa_aft_k10($phone): string { return substr(preg_replace('/\D+/', '', (string)$phone), -10); }
     /** Write the ladder of one customer for the next 120 days (the minute job tops it up later, so a customer never has a year of rows): steps already sent are never written again; past steps are dropped except the newest one, which goes out spread over the next days (never a burst). */
@@ -130,7 +168,7 @@ if (!function_exists('wa_aft_days')) {
         if (empty($ctx['nums'])) return [false, 'wait: no number can send now'];
         $pref = (int)($c['last_number_id'] ?? 0); if ($pref > 0 && isset($ctx['nums'][$pref])) { $nid = $pref; $why = ''; } else [$nid, $why] = wa_pick_number($pdo, $c, $ctx);
         if (!$nid || !isset($ctx['nums'][$nid])) return [false, 'wait: no number (' . $why . ')'];
-        $vars = array_slice([function_exists('wd_name') ? wd_name($c) : 'ji', 'your TM perfume', $line], 0, max(1, $nv));
+        $nm = function_exists('wd_name') ? wd_name($c) : 'ji'; $vars = $nv === 2 ? [$nm, $line] : array_slice([$nm, 'your TM perfume', $line], 0, max(1, $nv));   // the photo templates have two blanks: name and the line
         [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $nv ? $vars : [], 'followup');
         return $ok ? [true, (string)$res] : [false, (string)$res];
     }
@@ -145,6 +183,8 @@ if (!function_exists('wa_aft_days')) {
                 foreach ($mq as $mr) { wa_aft_plan($pdo, (string)$mr['phone'], (int)strtotime((string)$mr['anchor_at']), $now, $sp); $pdo->prepare("UPDATE wa_aft_cust SET why = 'v3' WHERE phone = ?")->execute([(string)$mr['phone']]); }
                 if (!$mq) setting_set($pdo, 'wa_aft_ver', '3'); } catch (Throwable $e) { }
             return $o; }
+        if (wa_aft_set($pdo, 'wa_aft_photo_made', '0') !== '1') { setting_set($pdo, 'wa_aft_photo_made', '1'); try { $pm = wa_aft_photo_make($pdo); setting_set($pdo, 'wa_aft_photo_log', json_encode($pm)); if (!empty($pm['failed']) && $pm['made'] === 0) setting_set($pdo, 'wa_aft_photo_made', '0'); } catch (Throwable $e) { setting_set($pdo, 'wa_aft_photo_made', '0'); } }
+        if ($now - (int)wa_aft_set($pdo, 'wa_aft_learn_at', '0') >= 21600) { setting_set($pdo, 'wa_aft_learn_at', (string)$now); wa_aft_learn($pdo, $now); }
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_top_at', '0') >= 600) { setting_set($pdo, 'wa_aft_top_at', (string)$now); wa_aft_topup($pdo, $now); }
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_enrol_at', '0') >= 1800) { setting_set($pdo, 'wa_aft_enrol_at', (string)$now); $o['entered'] = wa_aft_enrol($pdo, $now); }
         $cap = max(0, (int)wa_aft_set($pdo, 'wa_aft_cap', '1500')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
@@ -158,8 +198,12 @@ if (!function_exists('wa_aft_days')) {
             if ($busy || (int)($c['cx_id'] ?? 0) > 0) { $push->execute([date('Y-m-d H:i:s', $now + 86400 + (int)substr($ph, -4)), $id]); $o['waiting']++; continue; }
             $st = wa_aft_step((int)$r['step']); if (!$st) { $upd->execute(['cancelled', 'unknown step', null, 0, '', $id]); continue; }
             $ids = $grp[$st[1]] ?? []; if (!$ids) { $upd->execute(['cancelled', 'no template', null, 0, '', $id]); continue; }
-            $tid = (int)$ids[(int)substr($ph, -3) % count($ids)]; [$ok, $why] = wa_aft_send($pdo, $c, $tid, strpos($st[2], 'dyn') === 0 ? wa_aft_line_dyn($pdo, (int)$r['step'], $ph, $now, substr($st[2], 4)) : wa_aft_line($pdo, $st[2]));
-            if ($ok) { $upd->execute(['sent', '', date('Y-m-d H:i:s'), $tid, $why, $id]); $o['sent']++; try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$ph, date('Y-m-d H:i:s'), 'after-order step ' . (int)$r['step']]); } catch (Throwable $e) { } }
+            $kind = strpos($st[2], 'dyn') === 0 ? substr($st[2], 4) : 'care';
+            if ($kind !== 'offer' && $kind !== 'care') { $kind = wa_aft_pick($pdo, 'kind', ['trust', 'testimonial', 'new', 'size', 'season'], (int)$r['step'] * 53 + (int)substr($ph, -4)); $ids = $grp[['trust' => 'long', 'testimonial' => 'loved', 'new' => 'newsim', 'size' => 'small', 'season' => 'valued'][$kind]] ?? $ids; }   // 🧠 the content kinds with more replies get more of the share
+            $tid = (int)$ids[(int)substr($ph, -3) % count($ids)]; $GLOBALS['wa_aft_last'] = ['kind' => $kind, 'sz' => 0]; $ln = $kind === 'care' ? wa_aft_line($pdo, $st[2]) : wa_aft_line_dyn($pdo, (int)$r['step'], $ph, $now, $kind); $lk = $GLOBALS['wa_aft_last'] ?? ['kind' => $kind, 'sz' => 0]; $ok = false; $why = '';
+            if ($kind !== 'care' && (int)$r['step'] % 6 === 3) { $pt = json_decode((string)setting_get($pdo, 'wa_aft_photo_tpls', ''), true); $ptid = is_array($pt) ? (int)($pt[$kind === 'season' ? 'gift' : 'bottles'] ?? 0) : 0; if ($ptid > 0) { [$ok, $why] = wa_aft_send($pdo, $c, $ptid, $ln); if ($ok) $tid = $ptid; } }   // 📷 about every 6th message goes with a photo once Meta approved the photo template
+            if (!$ok) [$ok, $why] = wa_aft_send($pdo, $c, $tid, $ln);
+            if ($ok) { $upd->execute(['sent', '', date('Y-m-d H:i:s'), $tid, $why, $id]); try { $pdo->prepare("UPDATE wa_aft_plan SET kind = ?, sz = ? WHERE id = ?")->execute([(string)$lk['kind'], (int)$lk['sz'], $id]); } catch (Throwable $e) { } $o['sent']++; try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$ph, date('Y-m-d H:i:s'), 'after-order step ' . (int)$r['step']]); } catch (Throwable $e) { } }
             elseif (strpos($why, 'wait') === 0) { $push->execute([date('Y-m-d H:i:s', $now + 1800), $id]); $o['waiting']++; if (strpos($why, 'no number') !== false) break; }
             else { $upd->execute(['failed', mb_substr($why, 0, 150), null, $tid, '', $id]); }
         }
