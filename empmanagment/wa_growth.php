@@ -614,6 +614,16 @@ function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
 /** OWNER (21 Nov): a HOT chat (ready to order / pay, or handed over by the bot) that the person who holds it has not answered for 4 minutes (setting wag_hot_open_min) is taken off that person and put into OPEN (Requests): everybody sees it and anybody picks it. Once per customer message; the person who missed it is remembered for the admin card. */
 /** 🌡 The open-market timing tunes itself (owner, 21 Nov): the minutes a hot chat waits before it goes back to OPEN (base) and while its holder is busy (busy) follow the load. MANY people working = chats are picked up fast, so the rule is SHORTER; a quiet time (few people writing) = LONGER again. Active people = who wrote to a customer in the last 10 minutes; queue = customers of the last 3 hours waiting 2+ minutes for an answer. Re-computed once a minute; base 4-10, busy 6-14. [base, busy] */
 function is_list_arr(array $a): bool { return $a === [] || array_keys($a) === range(0, count($a) - 1); }
+/** The owner's definition of a query (21 Nov): NOT campaign, NOT community — the same numbers as the sales strip ("orders / queries"). Returns [emp => [queries, orders]] for the days list of wq_period. */
+function wag_real_queries(PDO $pdo, int $days): array
+{
+    $out = [];
+    try { if (!function_exists('wq_period') || !function_exists('wq_dt')) return $out; [$f, $t] = wq_period($pdo, $days);
+        $q = $pdo->prepare("SELECT q.emp_id, COUNT(*) n, SUM(CASE WHEN COALESCE(s.orders, 0) > 0 THEN 1 ELSE 0 END) o FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community') GROUP BY q.emp_id");
+        $q->execute([wq_dt($f), wq_dt($t)]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(int)$r['emp_id']] = [(int)$r['n'], (int)$r['o']];
+    } catch (Throwable $e) { }
+    return $out;
+}
 function wag_open_tune(PDO $pdo): array
 {
     $last = (int)setting_get($pdo, 'wag_tune_at', '0'); $b0 = (int)setting_get($pdo, 'wag_hot_open_min_eff', '7'); $y0 = (int)setting_get($pdo, 'wag_hot_open_busy_eff', '10');
@@ -817,10 +827,7 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp): string
         elseif ($dr >= 2 && $dr * 2 > $tk) $msg = '🔒 You left ' . $dr . ' hot chats today without answering. New queries go to people who answer: answer your open chats first.';
         else {   // ONE source for the numbers (owner, 21 Nov: the market banner said 7 / 1, the Queries page 70, the sales strip 0/1): the query ledger — the same queries and orders the Queries page and the sales strip show (community not counted)
             $lq = 0; $lo = 0; $lavg = 0.0;
-            try { if (function_exists('wq_people_stats') && function_exists('wq_period')) {
-                [$f1, $t1] = wq_period($pdo, 1); $S1 = wq_people_stats($pdo, $f1, $t1)['rows'][$emp] ?? null; if ($S1) { $lq = (int)$S1['queries'] - (int)($S1['by_type']['community'] ?? 0); $lo = (int)$S1['orders']; }
-                [$f7, $t7] = wq_period($pdo, 7); $tq = 0; $to = 0; foreach (wq_people_stats($pdo, $f7, $t7)['rows'] as $__r) { $tq += (int)$__r['queries'] - (int)($__r['by_type']['community'] ?? 0); $to += (int)$__r['orders']; } $lavg = $tq >= 40 && $to > 0 ? min(0.5, $to / $tq) : 0.0;
-            } } catch (Throwable $e) { }
+            try { $d1 = wag_real_queries($pdo, 1); $lq = (int)($d1[$emp][0] ?? 0); $lo = (int)($d1[$emp][1] ?? 0); $tq = 0; $to = 0; foreach (wag_real_queries($pdo, 7) as $__r) { $tq += $__r[0]; $to += $__r[1]; } $lavg = $tq >= 40 && $to > 0 ? min(0.5, $to / $tq) : 0.0; } catch (Throwable $e) { }
             if ($lq >= 4 && $lavg > 0 && ($lo / $lq) < 0.6 * $lavg) $msg = '🔒 You have ' . $lq . ' queries today with ' . $lo . ' order' . ($lo === 1 ? '' : 's') . ' — below the team level (' . round(100 * $lo / $lq) . '% vs ' . round(100 * $lavg) . '%). Close the chats you already have; new queries go to people who convert better.'; }
     } catch (Throwable $e) { }
     return $c[$ck] = $msg;
@@ -1610,7 +1617,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         }
         case 'wa.g_mkt_top': {   // 🏪 for every salesperson: who are the best right now (shown above the OPEN list) and my own rank
             $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released'], 'q' => 0, 'o' => 0];
-            try { if ($my && function_exists('wq_people_stats') && function_exists('wq_period')) { [$__f1, $__t1] = wq_period($pdo, 1); $__S = wq_people_stats($pdo, $__f1, $__t1)['rows'][$me] ?? null; if ($__S) { $my['q'] = (int)$__S['queries'] - (int)($__S['by_type']['community'] ?? 0); $my['o'] = (int)$__S['orders']; } } } catch (Throwable $e) { }   // the same ledger numbers as the Queries page and the sales strip
+            try { if ($my) { $__d = wag_real_queries($pdo, 1); $my['q'] = (int)($__d[$me][0] ?? 0); $my['o'] = (int)($__d[$me][1] ?? 0); } } catch (Throwable $e) { }   // the owner's definition: no campaign, no community — same as the sales strip
             json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me)]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
