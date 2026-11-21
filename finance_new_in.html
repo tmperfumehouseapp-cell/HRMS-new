@@ -73,7 +73,7 @@
     const sk = SECKEY[s.key], list = CH.channels[sk] || [];
     const live = list.filter((c) => c.active), tD = live.reduce((a, c) => a + c.day, 0), tM = live.reduce((a, c) => a + c.month, 0);
     return `<div class="sx-card wrap" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div class="cap" style="margin:0;flex:1">${esc(s.title)} channels <small class="sx-mut">net money received · click a channel to open it and upload its UTR file</small></div><button class="sx-btn" data-addch="${sk}" style="padding:2px 12px">+ Add channel</button></div>
-      ${list.length ? `<table class="tb"><tr><th>Channel</th><th>Net on ${esc(dFmt(day))}</th><th>Net this month</th><th></th></tr>${list.map((c) => `<tr class="${c.active ? '' : 'off'}"><td><button class="lnkb" data-open="${c.id}" title="Open ${esc(c.name)}">${esc(c.name)}</button>${c.active ? '' : ' <small>hidden</small>'}</td><td>${c.day ? '<b>' + m2(c.day) + '</b>' : '<span class="sx-mut">—</span>'}${c.fee_day ? '<small>gross ' + m2(c.gross_day) + ' · charges ' + m2(c.fee_day) + '</small>' : ''}</td><td>${c.month ? m2(c.month) : '<span class="sx-mut">—</span>'}${c.fee_month ? '<small>gross ' + m2(c.gross_month) + ' · charges ' + m2(c.fee_month) + '</small>' : ''}</td><td style="white-space:nowrap"><button class="sx-btn" data-addrec="${c.id}" style="padding:2px 10px">+ Receipt</button> <button class="sx-btn" data-edch="${c.id}" style="padding:2px 10px">Edit</button></td></tr>`).join('')}
+      ${list.length ? `<table class="tb"><tr><th>Channel</th><th>Net on ${esc(dFmt(day))}</th><th>Net this month</th><th></th></tr>${list.map((c) => `<tr class="${c.active ? '' : 'off'}"><td><button class="lnkb" data-open="${c.id}" title="Open ${esc(c.name)}">${esc(c.name)}</button>${c.active ? '' : ' <small>hidden</small>'}${c.last ? `<small style="color:#0d7a55;font-weight:700">orders of ${esc(dFmt(c.last.orders_day))}: ${c.last.found} of ${c.last.expected} reflected (net ${m2(c.last.net)})${c.last.pending ? ' · ' + c.last.pending + ' settling' : ''}${c.last.missing ? ' · ' + c.last.missing + ' not in file' : ''}</small>` : ''}</td><td>${c.day ? '<b>' + m2(c.day) + '</b>' : '<span class="sx-mut">—</span>'}${c.fee_day ? '<small>gross ' + m2(c.gross_day) + ' · charges ' + m2(c.fee_day) + '</small>' : ''}</td><td>${c.month ? m2(c.month) : '<span class="sx-mut">—</span>'}${c.fee_month ? '<small>gross ' + m2(c.gross_month) + ' · charges ' + m2(c.fee_month) + '</small>' : ''}</td><td style="white-space:nowrap"><button class="sx-btn" data-addrec="${c.id}" style="padding:2px 10px">+ Receipt</button> <button class="sx-btn" data-edch="${c.id}" style="padding:2px 10px">Edit</button></td></tr>`).join('')}
         <tr class="tot"><td>TOTAL</td><td>${m2(tD)}</td><td>${m2(tM)}</td><td></td></tr></table>` : `<div class="sx-mut">No channel yet. Click “+ Add channel”.</div>`}
       ${enteredTable(list)}</div>`;
   }
@@ -87,6 +87,7 @@
   const colName = (h, i) => (i + 1) + '. ' + (h[i] || '(empty)');
   async function chSection(id) {
     const c = Object.values(CH.channels).flat().find((x) => x.id === id); if (!c) return;
+    curChName = c.name;
     let ups = []; try { ups = (await api.get('fn.in_uploads', { channel_id: id })).uploads; } catch (e) { ups = []; }
     const mo = new Date(CH.month_from + 'T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     open(c.name + ' · ' + (CH.channels.cod.some((x) => x.id === id) ? 'COD' : 'Prepaid'), `
@@ -148,12 +149,14 @@
       <button class="sx-btn" data-copyd="1" style="padding:2px 10px;margin-top:8px">Copy this to send to Claude</button><textarea style="position:absolute;left:-9999px" id="dgTxt" readonly>${esc(txt)}</textarea></div></details>`;
   }
   // ---------- the comparison: your prepaid orders of a day against the settlement file
+  let curChName = '';
   function renderRecon(el, rc, title) {
     let filt = 'all', all = false;
     const draw2 = () => {
       const rows = rc.orders.filter((o) => filt === 'all' || (filt === 'came' ? o.found : filt === 'pend' ? o.pending : (!o.found && !o.pending))), shown = all ? rows : rows.slice(0, 40);
       const chg = rc.charges.length ? rc.charges.map((c) => `<tr><td style="text-align:left">${esc(c.name)}</td><td>${m2(c.amount)}</td><td>${rc.found.gross ? (100 * c.amount / rc.found.gross).toFixed(2) + '%' : ''}</td></tr>`).join('') + `<tr class="tot"><td>Total charges cut</td><td>${m2(rc.found.fee)}</td><td>${rc.found.gross ? (100 * rc.found.fee / rc.found.gross).toFixed(2) + '%' : ''}</td></tr>` : '';
       el.innerHTML = `<div class="sx-card wrap"><div class="cap" style="margin-top:0">${esc(title)} <small class="sx-mut">prepaid orders of ${esc(dFmt(rc.orders_day))}</small></div>
+        ${rc.expected.orders ? `<div class="sx-msg ${rc.found.orders ? 'ok' : 'warn'}" style="margin-bottom:8px">${sxi(rc.found.orders ? 'ok' : 'alert')}<span>Of <b>${rc.expected.orders}</b> prepaid orders of ${esc(dFmt(rc.orders_day))}, <b>${rc.found.orders}</b> reflected in ${esc(curChName || 'this file')} (gross ${m2(rc.found.gross)}, charges ${m2(rc.found.fee)}, <b>net ${m2(rc.found.net)}</b>)${rc.pending && rc.pending.orders ? ` · <b>${rc.pending.orders}</b> paid, settlement pending (${m2(rc.pending.net)})` : ''} · <b>${rc.missing.orders}</b> not in this file.</span></div>` : ''}
         ${salesLine(rc.sales)}${rc.diag ? diagHtml(rc) : ''}
         ${rc.expected.orders ? '' : `<div class="sx-msg warn">${sxi('alert')}<span>No prepaid order found for ${esc(dFmt(rc.orders_day))}. Check the “Orders of day”.</span></div>`}
         <div class="k3" style="margin-bottom:8px;grid-template-columns:repeat(4,1fr)"><div class="k"><small>Prepaid orders</small><b style="font-size:19px">${rc.expected.orders}</b><span>${m2(rc.expected.amount)}</span></div><div class="k"><small>Money came for</small><b style="font-size:19px">${rc.found.orders}</b><span>gross ${m2(rc.found.gross)}</span></div><div class="k"><small>Paid, not settled yet</small><b style="font-size:19px">${rc.pending ? rc.pending.orders : 0}</b><span>${m2(rc.pending ? rc.pending.net : 0)} net due</span></div><div class="k ${rc.missing.orders ? 'bad' : ''}"><small>Not in this file</small><b style="font-size:19px">${rc.missing.orders}</b><span>${m2(rc.missing.amount)}</span></div></div>
