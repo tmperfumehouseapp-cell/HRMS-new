@@ -928,7 +928,12 @@ function wo_track_link(PDO $pdo, array $p): string
     return preg_match('~^https?://[^\s<>"\']{4,220}$~i', $lk) ? $lk : '';
 }
 /** Can the "Tracking ID given" message go right now (switched on and approved by Meta)? */
-function wo_trk_ok(PDO $pdo): bool { static $ok = null; if ($ok === null) { try { $ok = !empty(wo_cfg($pdo)['statuses']['tracking']) && wo_tpl_for($pdo, 'tracking') !== null; } catch (Throwable $e) { $ok = false; } } return $ok; }
+function wo_trk_ok(PDO $pdo): bool
+{   // approved on EVERY WhatsApp account, not on some: with a part approval the numbers the customers are on could not send it, and 326 updates sat waiting (21 Nov)
+    static $ok = null;
+    if ($ok === null) { try { $ok = !empty(wo_cfg($pdo)['statuses']['tracking']) && wo_tpl_for($pdo, 'tracking') !== null && (string)(wo_tpl_state($pdo)['tmph_order_tracking']['status'] ?? '') === 'approved'; } catch (Throwable $e) { $ok = false; } }
+    return $ok;
+}
 /** The ONE message a parcel gets for where it is now ('' = none). While "Tracking ID given" cannot be sent (Meta has not approved it yet), a parcel that has its tracking ID gets the approved
  *  Shipped message at once instead - the number and the tracking link reach the customer the same day - and nothing more at pickup (one Shipped per parcel, ever). */
 function wo_pick_status(PDO $pdo, array $p, int $nowTs): string
@@ -1143,7 +1148,7 @@ function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
         $p = ['id' => 0, 'customer' => (string)$bdV['name'], 'phone' => (string)$bdV['phone'], 'order_name' => (string)$bdV['code'], 'courier' => '', 'tracking_no' => ''];
     } else {
     $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE id = ?"); $q->execute([(int)$row['parcel_id']]); $p = $q->fetch(); if (!$p) return $fin('skipped', 'Parcel not found', 'skipped');
-    if (($st === 'dispatch_late' ? (!in_array((string)$p['status'], ['placed', 'tracked'], true) || !empty($p['transit_at'])) : ($st === 'bday_ask' ? in_array(wo_class($p, $nowTs), ['cancelled', 'rto', 'lost', 'damaged'], true) : (in_array($st, ['review', 'review_nudge', 'care_d2', 'return_d15', 'return_d30'], true) ? wo_class($p, $nowTs) !== 'delivered' : (wo_send_status(wo_class($p, $nowTs)) !== $st && !($st === 'shipped' && wo_class($p, $nowTs) === 'packed' && trim((string)$p['tracking_no']) !== '' && !wo_trk_ok($pdo))))))) return $fin('skipped', 'The parcel has moved on - this update is no longer true', 'skipped');
+    if (($st === 'dispatch_late' ? (!in_array((string)$p['status'], ['placed', 'tracked'], true) || !empty($p['transit_at'])) : ($st === 'bday_ask' ? in_array(wo_class($p, $nowTs), ['cancelled', 'rto', 'lost', 'damaged'], true) : (in_array($st, ['review', 'review_nudge', 'care_d2', 'return_d15', 'return_d30'], true) ? wo_class($p, $nowTs) !== 'delivered' : (wo_send_status(wo_class($p, $nowTs)) !== $st && !($st === 'shipped' && wo_class($p, $nowTs) === 'packed' && trim((string)$p['tracking_no']) !== '')))))) return $fin('skipped', 'The parcel has moved on - this update is no longer true', 'skipped');
     if (wo_is_cx_parcel($pdo, $p)) return $fin('skipped', 'A complaint replacement - the ticket tells the customer itself', 'skipped');
     }
     $t = wo_tpl_for($pdo, $st); if (!$t) return $fin('skipped', 'The template is not approved', 'skipped');
@@ -1152,6 +1157,13 @@ function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
     if (wo_quiet($nowTs)) { $pdo->prepare("UPDATE wa_ord_sent SET due_at = ? WHERE id = ?")->execute([wo_dt(wo_next_open($nowTs)), $id]); return ['out' => 'waiting']; }
     $ck = (string)$t['id']; if (!isset($ctxCache[$ck])) $ctxCache[$ck] = wa_camp_ctx($pdo, $t, 99);   // 99: an unanswered earlier message never blocks an order update
     [$nid, $why] = wa_pick_number($pdo, $ct, $ctxCache[$ck]);
+    if ($nid === 0 && $st === 'tracking') {   // no number of this customer holds the new message: the approved Shipped message goes instead (same news: courier, tracking number, link), once
+        $hs = $pdo->prepare("SELECT 1 FROM wa_ord_sent WHERE parcel_id = ? AND status = 'shipped' LIMIT 1"); $hs->execute([(int)$row['parcel_id']]);
+        if ($hs->fetchColumn()) return $fin('skipped', 'Already told with the Shipped message', 'skipped');
+        if (empty($cfg['statuses']['shipped']) || wo_tpl_for($pdo, 'shipped') === null) { $pdo->prepare("UPDATE wa_ord_sent SET due_at = ?, err = ? WHERE id = ?")->execute([wo_dt($nowTs + 900), mb_substr($why, 0, 190), $id]); return ['out' => 'waiting']; }
+        $pdo->prepare("UPDATE wa_ord_sent SET status = 'shipped', tpl_name = ?, due_at = ?, err = '' WHERE id = ?")->execute([wo_send_defs()['shipped'][0], wo_dt($nowTs), $id]);
+        $row['status'] = 'shipped'; return wo_send_one($pdo, $row, $nowTs, $ctxCache);
+    }
     if ($nid === 0) { $pdo->prepare("UPDATE wa_ord_sent SET due_at = ?, err = ? WHERE id = ?")->execute([wo_dt($nowTs + 900), mb_substr($why, 0, 190), $id]); return ['out' => 'waiting']; }
     $vars = wo_vars($p, $st);
     // 🔗 the tracking link rides with the tracking number (the same approved message, no new approval): "… your tracking number is 7727… · Track it here: https://…"
