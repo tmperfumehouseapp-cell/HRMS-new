@@ -672,6 +672,20 @@ function wag_is_sales_query(PDO $pdo, array $c): bool
     } catch (Throwable $e) { }
     return true;
 }
+/** 🎯 Ticket size from Shopify (owner, 21 Nov): the average order value of orders where the BOT had talked to the customer in the 48 h before the order, against orders with no bot message. Orders matched by the last 10 digits of the phone. */
+function wag_bot_ticket(PDO $pdo, int $days = 7): ?array
+{
+    try {
+        $since = date('Y-m-d H:i:s', time() - $days * 86400); $k10 = function ($p) { return substr(preg_replace('/\D/', '', (string)$p), -10); };
+        $bot = []; foreach ($pdo->query("SELECT phone, MIN(ts) a, MAX(ts) z FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= '" . date('Y-m-d H:i:s', time() - ($days + 2) * 86400) . "' GROUP BY phone")->fetchAll(PDO::FETCH_ASSOC) as $r) $bot[$k10($r['phone'])] = [strtotime((string)$r['a']), strtotime((string)$r['z'])];
+        $b = ['n' => 0, 's' => 0.0, 'hi' => 0]; $o = ['n' => 0, 's' => 0.0, 'hi' => 0];
+        foreach ($pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE phone <> '' AND total > 0 AND created_at >= '" . $since . "'")->fetchAll(PDO::FETCH_ASSOC) as $x) {
+            $k = $k10($x['phone']); $ot = strtotime((string)$x['created_at']); $t = (float)$x['total']; $isB = isset($bot[$k]) && $bot[$k][0] <= $ot && $bot[$k][1] >= $ot - 48 * 3600; $g = &$b; if (!$isB) { unset($g); $g = &$o; } $g['n']++; $g['s'] += $t; if ($t >= 2700) $g['hi']++; unset($g);
+        }
+        $f = function ($x) { return [$x['n'], $x['n'] ? (int)round($x['s'] / $x['n']) : 0, $x['n'] ? (int)round(100 * $x['hi'] / $x['n']) : 0]; }; [$bn, $ba, $bp] = $f($b); [$on, $oa, $op] = $f($o);
+        return ['days' => $days, 'bot_n' => $bn, 'bot_avg' => $ba, 'bot_pct' => $bp, 'other_n' => $on, 'other_avg' => $oa, 'other_pct' => $op];
+    } catch (Throwable $e) { return null; }
+}
 /** 🏪 PERFORMANCE GATE (owner, 21 Nov): a person who picks many queries but converts BELOW the team average gets no more — "no point giving him queries". '' = may take, else the sentence shown.
  *  Blocks when (a) he took 4+ queries today and his orders / taken is under 60% of the team's last-7-days ratio (only when the team has orders recorded), (b) he left 2+ hot chats today, or (c) 3+ hot chats of his wait unanswered. Switch: wag_mkt_gate = 0. */
 function wag_mkt_gate_msg(PDO $pdo, int $emp): string
@@ -1432,7 +1446,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $now = time(); $off = 0; $tk4 = 0; $tk = 0; try { $q = $pdo->prepare("SELECT kind, wait_s FROM wa_mkt WHERE at >= ? AND kind IN ('offered','taken')"); $q->execute([date('Y-m-d 00:00:00')]); foreach ($q->fetchAll() as $r) { if ($r['kind'] === 'offered') $off++; else { $tk++; if ((int)$r['wait_s'] >= 0 && (int)$r['wait_s'] <= 240) $tk4++; } } } catch (Throwable $e) { }
             $wk = wag_mkt_board($pdo, 7); $tm = ['taken' => 0, 'orders' => 0, 'cherry' => 0, 'replies' => [], 'tickets' => []]; foreach ($wk as $b) { $tm['taken'] += $b['taken']; $tm['orders'] += $b['orders']; $tm['cherry'] += $b['cherry']; if ($b['reply_med_s'] !== null) $tm['replies'][] = $b['reply_med_s']; if ($b['avg_ticket'] > 0) $tm['tickets'][] = $b['avg_ticket']; } sort($tm['replies']); $team = ['taken' => $tm['taken'], 'orders' => $tm['orders'], 'ratio' => $tm['taken'] > 0 ? round(100 * $tm['orders'] / $tm['taken'], 1) : null, 'cherry' => $tm['cherry'], 'reply_med_s' => $tm['replies'] ? $tm['replies'][intdiv(count($tm['replies']), 2)] : null, 'avg_ticket' => $tm['tickets'] ? (int)round(array_sum($tm['tickets']) / count($tm['tickets'])) : 0];
             $hrs = []; try { $q = $pdo->prepare("SELECT emp_id, HOUR(at) h, SUM(kind = 'taken') tk, SUM(kind IN ('dropped','released')) dr FROM wa_mkt WHERE at >= ? AND emp_id > 0 AND kind IN ('taken','dropped','released') GROUP BY emp_id, HOUR(at)"); $q->execute([date('Y-m-d 00:00:00')]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $hrs[(int)$r['emp_id']][(int)$r['h']] = [(int)$r['tk'], (int)$r['dr']]; } catch (Throwable $e) { }   // taken / left per person per hour of today
-            json_response(['can' => true, 'team' => $team, 'week' => $wk, 'hours' => $hrs, 'today' => wag_mkt_board($pdo, 1), 'offered_today' => $off, 'taken_today' => $tk, 'taken_in_4min' => $tk4]);
+            json_response(['can' => true, 'team' => $team, 'week' => $wk, 'hours' => $hrs, 'today' => wag_mkt_board($pdo, 1), 'offered_today' => $off, 'taken_today' => $tk, 'taken_in_4min' => $tk4, 'bot_ticket' => wag_bot_ticket($pdo, 7)]);
         }
         case 'wa.g_hourly': {   // 📊 hour by hour (admin): campaign messages sent → customers who wrote → new queries (campaign / Meta / other, first-time / back again)
             if (!$adm && !(function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth))) json_response(['can' => false, 'hours' => []]);
