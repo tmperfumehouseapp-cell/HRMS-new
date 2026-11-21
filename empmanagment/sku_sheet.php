@@ -122,6 +122,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     $inTitle = 0; foreach (sku_pieces($full) as $x) if (sku_match($x) !== '') $inTitle++;      // 2 or more perfumes written in the line = a combo, even when the whole line also happens to name one
     if ($sku !== '' && !$props && $inTitle < 2) {
         $col = sku_col($full, $why); if ($col >= 0) { $put($sku, $col, $qty); return; }
+        if (preg_match('/^OG\d/', $sku)) { $put($sku, 2, $qty); return; }      // TM Originals (Dress to Impress: Compliment Getter / Dark Side / Caffeine Club) are written without a size on a "build your own original combo" line: they are the 50 ml bottles
         $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => $why ?: 'size not known', 'kind' => 'size']; return;
     }
     // 2. a combo: the perfumes are in the line's details, or written in the title / variant separated by + , / or a new line (and, only when that finds nothing, by & / "and":
@@ -150,7 +151,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
         }
         return;
     }
-    if ($sku !== '') { $col = sku_col($full, $why); if ($col >= 0) { $put($sku, $col, $qty); return; } $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => $why ?: 'size not known', 'kind' => 'size']; return; }
+    if ($sku !== '') { $col = sku_col($full, $why); if ($col >= 0) { $put($sku, $col, $qty); return; } if (preg_match('/^OG\d/', $sku)) { $put($sku, 2, $qty); return; } $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => $why ?: 'size not known', 'kind' => 'size']; return; }
     $det = []; foreach ($props as $p) $det[] = $p['name'] . ': ' . (is_scalar($p['value'] ?? '') ? $p['value'] : json_encode($p['value']));
     $bad[] = ['order' => $order, 'text' => $full . ($det ? ' — details: ' . mb_substr(implode(' · ', $det), 0, 300) : ''), 'qty' => $qty, 'why' => 'this product matches no SKU' . ($shopSku !== '' ? ' (shop SKU "' . $shopSku . '")' : ''), 'kind' => 'name'];
 }
