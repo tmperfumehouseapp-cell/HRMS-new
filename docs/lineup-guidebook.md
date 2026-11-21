@@ -42,3 +42,7 @@ Cautions: Meta can relabel or throttle templates that read as promotions; keep s
 - Tune with real numbers from the report, not feeling; change one thing at a time.
 - Watch "failed" and "waiting" reasons daily the first week.
 - Costs: utility ₹0.15, marketing ₹1.09 per message (shop rates).
+
+## 7. Update 21 Nov — the Lineup is now the 30-Day Lineup
+Twelve steps on day 1, 2, 3, 4, 6, 8, 10, 15, 18, 22, 26, 30 after the end of the conversation (plan and data: `docs/lineup-30day-plan.md`).
+Days 6, 10, 18, 26 carry the price of the 4 x 50 ml (200 ml) combo from the shop's price chart (one column deeper each time, never higher than what the customer was told, the chart's last column is the floor); day 8 carries the 2% prepaid. These are marketing messages that Meta must approve; until then the plain message of the same step goes.
