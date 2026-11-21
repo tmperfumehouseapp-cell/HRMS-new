@@ -718,11 +718,23 @@ function wag_bot_unsafe(string $t): bool
 function wag_bot_spawn(PDO $pdo, int $n = 5): int
 {
     if (!function_exists('wag_cfg') || wag_cfg($pdo)['bot'] !== 'on' || !function_exists('stream_socket_client')) return 0;
+    if (time() - (int)setting_get($pdo, 'wag_tick_at', '0') < 15) return 0;   // the one-second cron heartbeat (cron_bot.php) is alive: the long workers are not needed
     $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '') return 0; $host = (string)($_SERVER['HTTP_HOST'] ?? 'staging.fourpirates.space'); $sent = 0;
     $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $host]]);
     for ($i = 0; $i < $n; $i++) { $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 2, STREAM_CLIENT_CONNECT, $ctx); if (!$fp) continue;
         @fwrite($fp, "GET /empmanagment/api.php?action=wa.bot_run&key=" . urlencode($key) . " HTTP/1.1\r\nHost: $host\r\nUser-Agent: wa-bot-worker\r\nConnection: close\r\n\r\n"); @fclose($fp); $sent++; }
     return $sent;
+}
+/** ONE short bot tick (the fast heartbeat, driven once a second by cron_bot.php): claims a free slot (5 at most run at the same time — the others return at once, so no web-server worker is held), answers up to 2 waiting customers, slot 0 also runs the complaint / hot-open sweeps every 20 s. */
+function wag_bot_tick(PDO $pdo, int $slots = 5): array
+{
+    $o = ['slot' => -1, 'sent' => 0, 'handoff' => 0]; if (wag_cfg($pdo)['bot'] !== 'on') return $o;
+    if ((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') { for ($k = 0; $k < $slots; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('hrms_wag_tick_" . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
+    try {
+        if ($o['slot'] === 0) { setting_set($pdo, 'wag_tick_at', (string)time()); if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } } }
+        $r = wag_bot_scan($pdo, 2); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];
+    } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_tick_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
+    return $o;
 }
 /** One worker: claims a free slot (MySQL lock), then answers waiting customers every ~2 s for up to 55 s. */
 function wag_bot_run(PDO $pdo, int $slots = 5, int $secs = 55): array
@@ -744,7 +756,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
     $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $cfg['bot_after'])]);
     foreach ($st->fetchAll() as $c) {
         if ($o['sent'] + $o['handoff'] >= $max) break; $key = (string)$c['phone']; $age = $now - strtotime((string)$c['last_in_at']);
-        $__mk = $key . '|' . $c['last_in_at']; if (!empty($GLOBALS['wag_memo'][$__mk]) && $GLOBALS['wag_memo'][$__mk] > time()) continue; $GLOBALS['wag_memo'][$__mk] = time() + 45; if (count($GLOBALS['wag_memo']) > 3000) $GLOBALS['wag_memo'] = [];   // a chat looked at is not looked at again for 45 s (a worker loops every 2 s: no repeated work)
+        $__mv = wag_meta_get($pdo, 'bgm:' . $key, ''); if ($__mv !== '') { $__mp = explode('|', $__mv, 2); if ($__mp[0] === (string)$c['last_in_at'] && (int)($__mp[1] ?? 0) > time()) continue; } wag_meta_put($pdo, 'bgm:' . $key, $c['last_in_at'] . '|' . (time() + 45));   // a chat looked at is not looked at again for 45 s (kept in the database: every tick is a new short request, no memory between them)
         if (!empty($c['cx_id'])) continue;   // the chat is with the Complaint team: the bot never answers it
         if (true && function_exists('wq_ts') && wq_ts(wag_meta_get($pdo, 'typing:' . $key, '')) > time() - 90) continue;   // a person is typing an answer right now: the bot never talks over them
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
