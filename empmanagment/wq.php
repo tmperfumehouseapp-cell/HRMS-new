@@ -1103,6 +1103,20 @@ function wq_new_day(PDO $pdo, string $day): array
     $o = []; try { $q = $pdo->prepare("SELECT emp_id e, COUNT(*) n FROM wa_queries WHERE opened_at >= ? AND opened_at < ? AND emp_id > 0 GROUP BY emp_id"); $q->execute([wq_dt(wq_day_start($pdo, $day)), wq_dt(wq_day_start($pdo, wq_day_add($day, 1)))]); foreach ($q->fetchAll() as $r) $o[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }
     return $o;
 }
+/** One person's QUERY-card count of a business day (owner, 21 Nov): the queries held by a person that are NOT campaign / community (those belong to the Campaign card) — Meta, new and unclear types. */
+function wq_new_day_fresh(PDO $pdo, string $day): array
+{
+    $o = []; try { $q = $pdo->prepare("SELECT q.emp_id e, COUNT(*) n FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community') GROUP BY q.emp_id"); $q->execute([wq_dt(wq_day_start($pdo, $day)), wq_dt(wq_day_start($pdo, wq_day_add($day, 1)))]); foreach ($q->fetchAll() as $r) $o[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }
+    return $o;
+}
+/** Same as wq_qcount_days, but the WhatsApp Sales side counts only the Query-card kinds (no campaign / community). */
+function wq_qfresh_days(PDO $pdo, string $from, string $to): array
+{
+    $cut = wq_cutover_date($pdo); $out = [];
+    $oldTo = ($cut !== '' && $cut <= $to) ? wq_day_add($cut, -1) : $to; foreach (wq_old_days($pdo, $from, $oldTo) as $d => $m) $out[$d] = $m;
+    if ($cut !== '' && max($from, $cut) <= $to) foreach (wq_days_between(max($from, $cut), $to) as $d) { $m = wq_new_day_fresh($pdo, $d); if ($m) $out[$d] = $m; }
+    ksort($out); return $out;
+}
 /** ['YYYY-MM-DD' => [emp => n]] — each day from ONE side: old typed counts before the cut-over date (or when there is none), WhatsApp Sales from it. */
 function wq_qcount_days(PDO $pdo, string $from, string $to): array
 {
@@ -1533,6 +1547,7 @@ function wq_need_take(PDO $pdo, string $phone, int $me): array
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — it stays with its person.'];
     if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') return ['error' => $__bm];   // 🤖 the bot is answering this chat: wait, or press 👎 on its answer
+    if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') return ['error' => $__gm];   // 🏪 performance gate: no more queries for a person who is not closing
     $in = wq_ts($c['last_in_at'] ?? ''); if ($in <= 0 || wq_now() - $in > 86400) return ['error' => 'The 24-hour window of this chat has closed.'];
     $q = $pdo->prepare("SELECT 1 FROM wa_messages h WHERE h.phone = ? AND h.dir = 'out' AND (h.emp_id > 0 OR h.who IN ('emp', 'phone')) AND h.ts >= ? AND (h.mtype IN ('image', 'video', 'audio', 'document', 'template', 'interactive') OR CHAR_LENGTH(TRIM(COALESCE(h.body, ''))) >= 30) LIMIT 1"); $q->execute([$phone, wq_dt($in)]); if ($q->fetchColumn()) return ['error' => 'A person has already answered this customer.'];
     $from = (int)$c['assigned_emp'];
@@ -1557,6 +1572,7 @@ function wq_grab(PDO $pdo, string $phone, int $me): array
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — it stays with its person.'];
     if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') return ['error' => $__bm];   // 🤖 the bot is answering this chat: wait, or press 👎 on its answer
+    if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') return ['error' => $__gm];   // 🏪 performance gate: no more queries for a person who is not closing
     if ($in > 0 && wq_now() - $in > 86400) return ['error' => 'The 24-hour window of this chat has closed.'];
     if ($in <= 0 || $out >= $in) return ['error' => 'Somebody has already answered this customer.'];
     if (wq_now() - $in < $min * 60) return ['error' => 'This customer has waited less than ' . $min . ' minutes — the person handling it can still answer.'];
@@ -1634,6 +1650,7 @@ function wq_req_take(PDO $pdo, string $phone, int $me): array
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — the complaint team handles it.'];
     if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') return ['error' => $__bm];   // 🤖 the bot is answering this chat: wait, or press 👎 on its answer
+    if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') return ['error' => $__gm];   // 🏪 performance gate: no more queries for a person who is not closing
     if ((int)$c['assigned_emp'] > 0) return ['error' => (wq_name(wq_names($pdo), (int)$c['assigned_emp']) ?: 'Somebody') . ' already has this chat.'];
     if (function_exists('waa_pick_block')) { $wb = waa_pick_block($pdo, $me); if ($wb !== '') return ['error' => $wb]; }   // 🏪 overnight: a person below the ratio band takes at most 5 from Requests
     $u = $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ? AND (assigned_emp IS NULL OR assigned_emp = 0)"); $u->execute([$me, $phone]);

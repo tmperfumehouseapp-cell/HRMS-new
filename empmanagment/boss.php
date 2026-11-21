@@ -580,6 +580,14 @@ function bd_reassign(PDO $pdo, $date) {
     $rows->execute([$date]);
     foreach ($rows->fetchAll() as $t) {
         $owner = (int)$t['owner_emp'];
+        // a colleague took this over because the real owner was not in yet / away: when the real owner is back (punched in) and nothing is submitted, it goes back to him
+        $orig0 = (int)$t['orig_emp'];
+        if ($owner && $orig0 && $orig0 !== $owner && $t['status'] === 'open' && strpos((string)$t['cover_why'], 'given by') !== 0 && bd_away($pdo, $orig0, $date) === '') {   // a task a boss gave by hand stays where he put it
+            $pdo->prepare("UPDATE bd_tasks SET owner_emp = ?, cover_why = NULL, status = 'open', reminded = 0 WHERE id = ? AND proof_path IS NULL")->execute([$orig0, (int)$t['id']]);
+            bd_log('cover', $t['id'], bd_emp_name($pdo, $owner) . ' -> ' . bd_emp_name($pdo, $orig0) . ' (back to the owner): ' . $t['title']);
+            bd_push($pdo, $orig0, 'Your duty is back with you', $t['title'] . ' (you are in now)');
+            $moved++; continue;
+        }
         if ($owner && bd_away($pdo, $owner, $date) === '') continue;
         $duty = $pdo->prepare("SELECT * FROM bd_duties WHERE id = ?"); $duty->execute([(int)$t['duty_id']]); $duty = $duty->fetch(); if (!$duty) continue;
         $hit = null;

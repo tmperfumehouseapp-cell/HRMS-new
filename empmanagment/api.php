@@ -1433,7 +1433,7 @@ function ora_tick(PDO $pdo): int
             $w = $pdo->query("SELECT r.order_key, r.order_name, r.employee_id, r.rating, r.day, r.house, r.at FROM order_rate_auto r WHERE r.applied = 0 AND r.rating IS NOT NULL ORDER BY r.at DESC LIMIT 40")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($w as $r) { $ok = ora_apply($pdo, (string)$r['order_key'], ['order_name' => $r['order_name'], 'employee_id' => (int)$r['employee_id'], 'day' => (string)($r['day'] ?: date('Y-m-d', strtotime((string)$r['at']) - 10 * 3600)), 'house' => (string)$r['house'], 'rating' => (float)$r['rating']]); $pdo->prepare("UPDATE order_rate_auto SET applied = ? WHERE order_key = ?")->execute([$ok ? 1 : 2, (string)$r['order_key']]); }
         }
-    } catch (Throwable $e) { error_log('ora_tick: ' . $e->getMessage()); }
+    } catch (Throwable $e) { error_log('ora_tick: ' . $e->getMessage()); try { setting_set($pdo, 'ora_tick_info', date('Y-m-d H:i:s') . ' · ERROR ' . mb_substr($e->getMessage(), 0, 200)); } catch (Throwable $e2) { } }
     return $n;
 }
 /** Saves one judged order (replaces an older row of the same order: rows from before the two-part judge are read again and corrected). */
@@ -1704,6 +1704,7 @@ function day_timing_overrides(PDO $pdo): array
     static $ov = null; if ($ov !== null) return $ov;
     $ov = [];
     for ($d = strtotime('2026-11-08'); $d <= strtotime('2026-11-15'); $d += 86400) $ov[date('Y-m-d', $d)] = '12:00';   // owner (16 Nov): from the 16th every day is 10 AM → next day 10 AM again; the 8–15 Nov days keep their 12 PM start (history stays as it was counted)
+    $ov['2026-11-21'] = '12:25';   // owner (21 Nov, FINAL): this ONE date starts at 12:25 PM — the 20th (ad spend ₹3,00,027) reaches 3 ROAS (₹9,00,081) with the 12:24:56 order, so the 20th runs 10 AM → 21st 12:25 PM and the 21st starts at 12:25 PM. A date-specific start cannot be undone by somebody saving the weekday times; other Saturdays stay as the weekday setting says.
     try { $raw = (string)setting_get($pdo, 'day_timing_overrides', ''); if ($raw !== '') { $j = json_decode($raw, true); if (is_array($j)) { $ov = []; foreach ($j as $k => $v) if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$k) && preg_match('/^\d{2}:\d{2}$/', (string)$v)) $ov[(string)$k] = (string)$v; } } } catch (Throwable $e) { }
     return $ov;
 }
@@ -10459,12 +10460,18 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     $tl = teach_lessons($pdo, $last, !array_filter($msgs, fn($m) => $m['who'] === 'bot')); $tlT = teach_lessons_text($tl);
     [$factsT, $allowed, $factsOn] = teach_facts_prompt($pdo, $msgs); $budgetB = teach_facts_get($pdo)['budget'];
     foreach ($tl as $o) $allowed += teach_nums((string)$o['better'] . ' ' . (string)$o['remark']);       // numbers the owner wrote himself are allowed
+    if (!empty($GLOBALS['lib_fu_step'])) $allowed += teach_nums('2700 2800 50 100 20 10');   // a follow-up may name the Rs 2,700-2,800 target and the sizes without being blocked
     $exT = ''; foreach ($ex as $i => $t) $exT .= "EXAMPLE CHAT #$i:\n$t\n";
     $conv = ''; foreach (array_slice($msgs, -14) as $m) $conv .= ($m['who'] === 'customer' ? 'Customer: ' : 'Bot: ') . $m['text'] . "\n";
     $photoAsk = (function_exists('pc_photo_url') && pc_photo_url($pdo) !== '') ? " price_photo = true whenever the customer asks for the price list / price chart / rate card (the system sends its own price chart picture right after your reply - the 6.5% column, never an uploaded photo; do not paste the whole list in the text); otherwise false." : " price_photo = false (the price chart picture cannot be made yet).";
     $ask = $followup ? "The customer has NOT answered our last message. Write a short follow-up that brings them back (do not repeat our last message; give a reason to reply). stage = followup." : "Write the bot's next reply.";
+    if ($followup && !empty($GLOBALS['lib_fu_step'])) { $__fs = (int)$GLOBALS['lib_fu_step']; $ask .= " BOT FOLLOW-UP STEP " . $__fs . " OF 10 (the customer went silent after our last message; we hold him for the first hours and want the ORDER, aim for a ticket of Rs 2,700-2,800): " . [1 => "warm and short: ask if he has any confusion or doubt about which perfume ('Sir aapko kaunse perfume me confusion ya doubt hai? Order bana dun?').", 2 => "ask the ONE detail still missing (which perfumes / which size) so the order can be made now.", 3 => "quote the exact chart price for what he chose (only if a quantity is known) and ask 'Banau order?'.", 4 => "ask if the price is the doubt, and show the ONE add-on that lifts the order to Rs 2,700-2,800 using the chart price ('sirf Rs X aur mein Y ml extra'); yes / no.", 5 => "give two easy options so choosing is simple: option 1 = exactly what he already chose (same quantity and price) and option 2 = ONE step bigger from the chart (more ml, higher total) - never a smaller or cheaper combo, never a combo that is not in the chart; ask for the number 1 or 2.", 6 => "gentle urgency with TRUE facts only (today's order goes out in the next dispatch; never invent stock, offers or deadlines) and one simple question.", 7 => "remove the doubt: suggest the best seller for his taste or ask which occasion / for whom it is.", 8 => "make the answer one word: ask them to reply 'YES' or the perfume names; say we keep the order ready.", 9 => "soft, slower check-in: ask what time suits him to finish the order today.", 10 => "last friendly nudge: ask only for names + address, no pressure, thank them."][min(10, max(1, $__fs))] . " EVERY follow-up MUST end with ONE short question the customer can answer in one word (never a statement only). Never repeat an earlier message; never invent an offer or price; at most 2 short lines; match the customer's language."; }
     if ($situation !== '') $ask = "TEST MODE: pretend the chat so far is in this situation (the earlier messages are not shown): " . $situation . ". Answer the customer's last message as the bot would in exactly that situation. " . $ask;
     if (!empty($GLOBALS['lib_fast'])) $ask .= " HOW OUR SALESPEOPLE ANSWER (follow it): never ask again for something the customer already told you (perfume, size, quantity); when the customer gives a size or quantity (\"50ml\", \"5 chahiye\"), quote the matching price / combo price from STORE FACTS in the SAME message, then ask only the ONE thing still missing (which perfumes) and move toward the order (\"best deal\", \"combo\"); short Hinglish, no placeholders like [phone] or [name], never repeat your previous message.";
+    if (!empty($GLOBALS['lib_fast'])) $ask .= " WHEN THE CUSTOMER ASKS FOR AN \"OFFER\" / \"50ml offer\" / \"100ml offer\" / says it is expensive (\"mehanga\", \"too costly\"): do NOT paste the whole combo list. Our best salespeople ask ONE short question first (which perfumes do you like, or what budget) and then quote the one chart price for the quantity; for an expensive-complaint ask the budget and offer the next price level only after that.";
+    if (!empty($GLOBALS['lib_fast']) && !empty($GLOBALS['lib_order_mode']) && (string)setting_get($pdo, 'wag_onemore', '1') !== '0') $ask .= " ONE MORE (owner, 21 Nov): the customer has given the perfume names / address, so the order is nearly final. In the same reply add ONE short, polite line offering ONE more bottle of 50 ml with its exact chart price difference (e.g. 'sirf Rs X aur mein ek aur 50 ml add kar dun?'); only the chart price, no discount, no pressure; if he says no, never ask again and just continue with the details.";
+    if (!empty($GLOBALS['lib_fast'])) $ask .= " NO UNASKED DISCOUNTS (owner, 21 Nov): never offer a discount, a lower price, a 'best deal', 'Rs X tak karwa dungi' or any number except the chart price you are given - the customer did not ask. Quote the ONE chart price for his quantity once and keep it; say the same number in every later message. Only when the customer himself objects to the price (mehanga / kam karo) may you name the next chart level - never below the chart.";
+    if (!empty($GLOBALS['lib_fast'])) $ask .= " NEVER LET THE CUSTOMER GO (owner, 21 Nov): (1) END EVERY reply with ONE short, easy question the customer can answer in one word (which perfumes? 50 ml or 100 ml? shall I make the order?) - never end with a statement only. (2) LEAVING SIGNALS (\"baad me\", \"dekhta hu\", \"soch ke batata hu\", \"mehanga hai\", \"kal aaunga\", \"later\", \"thinking\"): do NOT say goodbye; answer ONCE with a counter that keeps him - for price: the next chart level only if he objected, or the add-on benefit (\"sirf Rs X aur mein Y ml extra\"); for later: ask 'kitne baje yaad dilau?' and what is still confusing; after his second no, stop pushing and stay polite.";
     if (!empty($GLOBALS['lib_fast'])) $ask .= " WHEN THE CUSTOMER SAYS YES (\"haa\", \"kardo\", \"ok\", \"theek hai\", \"done\", \"yes\") after you quoted a price or a combo: do NOT ask \"shall I finalise?\" again — move on: if the perfume names are not given yet ask for them, then ask for full name, delivery address with 6-digit pincode and an alternate phone, and offer the one add-on if the order is under the target (see the price block).";
     if (!empty($GLOBALS['lib_fast'])) $ask .= " WHEN THE CUSTOMER CUTS OR CANCELS PART OF THE ORDER (\"7 and 4 cancel kardo\", \"kam karo\", \"ek hata do\"): do NOT just accept and ask again. First keep the sale: say the price per piece is best on the bigger combo (use the combo prices from STORE FACTS), that dropping items makes the combo dearer or loses the combo deal, and suggest the better move — keep all of them, or replace the dropped ones with other perfumes of his choice, or even go UP to the next combo (8 -> 10) because it works out better. One short friendly reason, then one question (\"kaun se 2 naye lena chahoge?\"). Only if he insists again, accept and recalculate the price from STORE FACTS. Never invent a discount.";
     if (!empty($GLOBALS['lib_fast']) && function_exists('wag_price_context')) { try { $__pq = wag_price_context($pdo, (string)($GLOBALS['lib_phone'] ?? ''), $msgs); if ($__pq !== '') { $ask .= "\n" . $__pq; $allowed += teach_nums($__pq); } } catch (Throwable $e) { } }   // the exact chart price for the quantity the customer chose, starting at the 6.5% level
@@ -10629,8 +10636,9 @@ function lib_guide_go_live(PDO $pdo, array $draft, string $who): void
 function lib_guide_nightly(PDO $pdo, int $budget): ?string { $f0 = ai_feat('wa_guide'); try { return lib_guide_nightly_x($pdo, $budget); } finally { ai_feat($f0); } }
 function lib_guide_nightly_x(PDO $pdo, int $budget): ?string
 {
-    $today = date('Y-m-d'); $last = setting_get($pdo, 'lib_guide_nightly', ''); $first = ($last === '');
-    if (!$first && ($last === $today || (int)date('G') < 2)) return null;
+    // TWICE A DAY (owner, 21 Nov: "why wait for the night? update the guidebook twice a day"): the 02:00 run and a 14:00 run; the marker is "date|am" / "date|pm" (the old plain date counts as the morning run)
+    $today = date('Y-m-d'); $last = setting_get($pdo, 'lib_guide_nightly', ''); $first = ($last === ''); $__h = (int)date('G'); $__slot = $__h >= 14 ? 'pm' : ($__h >= 2 ? 'am' : '');
+    if (!$first && ($__slot === '' || $last === $today . '|' . $__slot || ($__slot === 'am' && $last === $today))) return null;
     $note = '';
     $draft = lib_guide_row($pdo, 'draft');
     if ($first && $draft) {      // the very first time: the guidebook that is already waiting goes live now
@@ -10642,11 +10650,11 @@ function lib_guide_nightly_x(PDO $pdo, int $budget): ?string
         if ($ok) { $d2 = lib_guide_row($pdo, 'draft'); if ($d2 && ($d2['source'] ?? '') === 'ai') {
                 $lv = lib_guide_public(lib_guide_row($pdo, 'live')); $dp = lib_guide_public($d2); [$ad, $de, $pc] = $lv ? lib_guide_change($lv['body'], $dp['body']) : [0, 0, 0];
                 // the owner asked for full auto: every AI-written guidebook goes live by itself (a draft written from numbers only, without real points, still waits)
-                lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live by itself' . ($lv ? ' (' . $pc . '% of the points changed: +' . $ad . ' new, −' . $de . ' removed)' : '') . '.';
+                lib_guide_go_live($pdo, $d2, 'Auto (' . ($__slot === 'pm' ? '2 PM' : '2 AM') . ')'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live by itself' . ($lv ? ' (' . $pc . '% of the points changed: +' . $ad . ' new, −' . $de . ' removed)' : '') . '.';
             } else $note = 'Written from numbers only, kept as a draft.'; }
         else $note = 'Not updated: ' . $msg;
     }
-    setting_set($pdo, 'lib_guide_nightly', $today); setting_set($pdo, 'lib_guide_nightly_note', date('Y-m-d H:i') . ' — ' . $note);
+    setting_set($pdo, 'lib_guide_nightly', $today . '|' . ($__slot !== '' ? $__slot : 'am')); setting_set($pdo, 'lib_guide_nightly_note', date('Y-m-d H:i') . ' — ' . $note);
     return $note;
 }
 function lib_tick_run(PDO $pdo, int $max, int $budget): array
@@ -11501,6 +11509,7 @@ function qa_new_days(PDO $pdo, string $from, string $to): array
 {
     $out = [];
     try {
+        if (function_exists('wq_qfresh_days')) { foreach ((array)wq_qfresh_days($pdo, $from, $to) as $d => $list) foreach ((array)$list as $emp => $n) if ((int)$n > 0) $out[(string)$d][(int)$emp] = (int)$n; return $out; }   // the Query card: no campaign / community queries (they are on the Campaign card)
         if (function_exists('wq_qcount_days')) { foreach ((array)wq_qcount_days($pdo, $from, $to) as $d => $list) foreach ((array)$list as $emp => $n) if ((int)$n > 0) $out[(string)$d][(int)$emp] = (int)$n; return $out; }
         $people = array_keys(qb_people($pdo));
         for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
@@ -17197,6 +17206,13 @@ function ai_feat(string $f): string { $old = (string)($GLOBALS['ai_feature'] ?? 
 /** Daily USD limit of one feature (the owner can change them: define('AI_CAPS', ['wa_bot' => 20, ...]) in config.php; 0 = no limit). A feature that reaches its limit simply waits until tomorrow — the people answer instead. */
 function ai_feature_cap(string $p): float
 {
+    $v = ai_feature_cap_raw($p);
+    // 🤖 owner, 21 Nov: the WhatsApp bot and its helpers must never stop at a daily AI limit (the bot had stopped at about 5 dollars and customers waited): wa_bot / wa_* have NO daily limit (set the setting ai_wa_caps_on = 1 to bring the limits back)
+    if ($v > 0 && strpos($p, 'wa_') === 0) { try { global $pdo; if ($pdo instanceof PDO && (string)setting_get($pdo, 'ai_wa_caps_on', '') === '1') return $v; } catch (Throwable $e) { } return 0.0; }
+    return $v;
+}
+function ai_feature_cap_raw(string $p): float
+{
     $d = [];   // no built-in daily limits any more (owner's decision); a limit only exists if AI_CAPS in config.php names the feature
     // 🛑 limits typed on the AI usage page (setting ai_caps: {"job": dollars per day}) come first; then AI_CAPS in config.php
     static $db = null; if ($db === null) { $db = []; try { global $pdo; if ($pdo instanceof PDO) { $j = json_decode((string)setting_get($pdo, 'ai_caps', ''), true); if (is_array($j)) $db = $j; } } catch (Throwable $e) { } }
@@ -19326,7 +19342,7 @@ if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_ba
 if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }
 if (strpos((string)$action, 'fb.') === 0) {
     require_once __DIR__ . '/feedback.php';
-    if (in_array((string)$action, ['fb.get', 'fb.send_now', 'fb.followup', 'fb.send_link', 'fb.send_thanks', 'fb.thanks_text'], true) && !function_exists('wd_send')) { foreach (['wa.php', 'wa_tpl.php', 'wa_console.php', 'wa_more.php'] as $__fbf) require_once __DIR__ . '/' . $__fbf; }      // the WhatsApp sender (message text, sending): the same files the wa.* actions load
+    if (in_array((string)$action, ['fb.get', 'fb.send_now', 'fb.followup', 'fb.send_link', 'fb.send_thanks', 'fb.thanks_text', 'fb.tpl_text'], true) && !function_exists('wd_send')) { foreach (['wa.php', 'wa_tpl.php', 'wa_console.php', 'wa_more.php'] as $__fbf) require_once __DIR__ . '/' . $__fbf; }      // the WhatsApp sender (message text, sending): the same files the wa.* actions load
     fb_route($pdo, (string)$action);
 }      // Feedback page (Dispatch → Feedback): delivered parcels → feedback message, screenshots, reward, complaint
 if (strpos((string)$action, 'psum.') === 0) { require_once __DIR__ . '/prod_summary.php'; psum_route($pdo, (string)$action); }   // 🧴 shower gel + ⭐ TM Originals summary of the Orders page (read-only)
@@ -23594,10 +23610,21 @@ switch ($action) {
         $byEmp = [];
         try { $be = $pdo->prepare("SELECT HOUR(created_at) AS h, employee_id, SUM(delta) AS n FROM employee_query_log WHERE query_date = ? AND kind = 'scout' GROUP BY HOUR(created_at), employee_id"); $be->execute([$date]);
               foreach ($be->fetchAll() as $r) if ((int)$r['n'] > 0) $byEmp[(string)(int)$r['h']][] = ['employee_id' => (int)$r['employee_id'], 'name' => $people[(int)$r['employee_id']] ?? ('#' . (int)$r['employee_id']), 'n' => (int)$r['n']]; } catch (PDOException $e) {}
+        $__wa = false;   // WhatsApp Sales era (from the cut-over date): the hour chips and the day total come from the LIVE query ledger (wa_queries, by the hour a query opened; complaints / order-status chats are not in it) — the old typed log is never written any more
+        if (function_exists('qa_cut') && ($__cut = qa_cut($pdo)) !== '' && $__cut <= $date) {
+            try {
+                $t0 = function_exists('wq_day_start') ? (int)wq_day_start($pdo, $date) : 0; $t1 = function_exists('wq_day_start') && function_exists('wq_day_add') ? (int)wq_day_start($pdo, wq_day_add($date, 1)) : 0; if (!$t0 || $t1 <= $t0) { $t0 = strtotime($date . ' 10:00:00'); $t1 = $t0 + 86400; }
+                $q = $pdo->prepare("SELECT HOUR(q.opened_at) h, q.emp_id, COUNT(*) n FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community') GROUP BY HOUR(q.opened_at), q.emp_id"); $q->execute([date('Y-m-d H:i:s', $t0), date('Y-m-d H:i:s', $t1)]);   // the Query tab: Meta / new / unclear (campaign and community have their own tab)
+                $hours = []; $byEmp = []; $logged = 0;
+                foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $hh = (int)$r['h']; $nn = (int)$r['n']; $hours[$hh] = ($hours[$hh] ?? 0) + $nn; $logged += $nn; if ((int)$r['emp_id'] > 0) $byEmp[(string)$hh][] = ['employee_id' => (int)$r['emp_id'], 'name' => $people[(int)$r['emp_id']] ?? ('#' . (int)$r['emp_id']), 'n' => $nn]; }
+                if ($hour !== null) { $hc = []; foreach (($byEmp[(string)$hour] ?? []) as $x) $hc[(int)$x['employee_id']] = (int)$x['n']; }   // the person counts of the chosen hour
+                $__wa = true;
+            } catch (Throwable $e) { }
+        }
         $seq = biz_hour_sequence($pdo, $date); $isToday = $date === biz_today($pdo); $nowIdx = $isToday ? array_search((int)date('G'), $seq, true) : false; $ord = [];
         foreach ($seq as $i => $hr) $ord[] = ['hour' => $hr, 'n' => max(0, (int)($hours[$hr] ?? 0)), 'future' => ($nowIdx !== false && $i > $nowIdx) ? 1 : 0, 'now' => ($nowIdx !== false && $i === $nowIdx) ? 1 : 0];
         $sum = array_sum(array_column($list, 'queries'));
-        json_response(['date' => $date, 'biz_today' => biz_today($pdo), 'now_hour' => (int)date('G'), 'people' => $list, 'hours' => $ord, 'earlier' => max(0, $sum - max(0, $logged)), 'total' => $sum, 'by_emp' => (object)$byEmp, 'plan' => (function () use ($pdo, $date, $people, $snapE) { try { return qb_plan($pdo, $date, $people, $snapE); } catch (Throwable $e) { error_log('qb_plan: ' . $e->getMessage()); return null; } })()]);
+        json_response(['date' => $date, 'biz_today' => biz_today($pdo), 'now_hour' => (int)date('G'), 'people' => $list, 'hours' => $ord, 'earlier' => $__wa ? 0 : max(0, $sum - max(0, $logged)), 'total' => $__wa ? max($sum, $logged) : $sum, 'live' => $__wa, 'by_emp' => (object)$byEmp, 'plan' => (function () use ($pdo, $date, $people, $snapE) { try { return qb_plan($pdo, $date, $people, $snapE); } catch (Throwable $e) { error_log('qb_plan: ' . $e->getMessage()); return null; } })()]);
         break;
     }
 
@@ -30318,15 +30345,16 @@ switch ($action) {
         $in = json_input();
         $start = (array)($in['start'] ?? []);
         if (count($start) !== 7) json_response(['error' => 'Send a start time for all seven days.'], 422);
+        $__base = (isset($in['base']) && is_array($in['base']) && count($in['base']) === 7) ? array_map('strval', array_values($in['base'])) : null;   // what the screen SAW: only the days it changed against that are written, so a screen left open (old values) cannot undo what somebody else set meanwhile
         ensure_day_timing_table($pdo);
         $ins = $pdo->prepare("INSERT INTO day_timing (weekday, start_time) VALUES (?, ?) ON DUPLICATE KEY UPDATE start_time = VALUES(start_time)");
         $__dn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; $__old = day_timing_get($pdo); $__chg = [];
         for ($wd = 0; $wd <= 6; $wd++) {   // check everything first, then write: a refused save changes nothing
-            $t = (string)($start[$wd] ?? '');
+            $t = (string)($start[$wd] ?? ''); if ($__base !== null && ($__base[$wd] ?? '') === $t) continue;
             if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t)) json_response(['error' => 'Times must be HH:MM (24-hour).'], 422);
             if ($t < '06:00') json_response(['error' => $__dn[$wd] . ' would start at ' . date('g:i A', strtotime($t)) . ' (the middle of the night). A business day that starts at night is almost always a slip: 12:00 AM is MIDNIGHT, 12:00 PM is NOON. Pick a time from 6:00 AM on.'], 422);
         }
-        for ($wd = 0; $wd <= 6; $wd++) { $t = (string)$start[$wd]; if (($__old[$wd] ?? '') !== $t) $__chg[] = $__dn[$wd] . ' ' . ($__old[$wd] ?? '?') . '→' . $t; $ins->execute([$wd, $t]); }
+        for ($wd = 0; $wd <= 6; $wd++) { $t = (string)$start[$wd]; if ($__base !== null && ($__base[$wd] ?? '') === $t) continue; if (($__old[$wd] ?? '') !== $t) $__chg[] = $__dn[$wd] . ' ' . ($__old[$wd] ?? '?') . '→' . $t; $ins->execute([$wd, $t]); }
         if ($__chg) { try { $lg = json_decode((string)setting_get($pdo, 'day_timing_log', ''), true); $lg = is_array($lg) ? $lg : []; $lg[] = ['at' => date('Y-m-d H:i:s'), 'by' => (string)($auth['full_name'] ?? $auth['username'] ?? ''), 'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''), 'ch' => $__chg]; setting_set($pdo, 'day_timing_log', json_encode(array_slice($lg, -30), JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { } }
         json_response(['message' => 'Day timing saved. It applies to orders counted from now on; run Sync now on Targets to recount the month.']);
         break;

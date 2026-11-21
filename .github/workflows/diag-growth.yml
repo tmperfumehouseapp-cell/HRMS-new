@@ -41,6 +41,7 @@ jobs:
           $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "(not set)" : (string)$v; } catch (Throwable $e) { return "n/a"; } };
           echo "mode (order_auto_rate) = " . $s("order_auto_rate") . "\n";
           echo "reader last step (ora_tick_info) = " . $s("ora_tick_info") . "\n";
+          $oa = $s("ora_at"); echo "reader step last passed its guard (ora_at) = " . (ctype_digit($oa) ? date("Y-m-d H:i:s", (int)$oa + 19800 - (int)date("Z")) . " IST" : $oa) . "\n";
           try {
             $cols = $d->query("SHOW COLUMNS FROM order_rate_auto")->fetchAll(PDO::FETCH_COLUMN);
             echo "new columns present: " . implode(",", array_values(array_intersect(["phone", "tries", "tip", "sz_ok", "sz_tried", "sz_worked", "sz_tries", "weak", "refused", "sz_weak", "sz_refused"], $cols))) . "\n";

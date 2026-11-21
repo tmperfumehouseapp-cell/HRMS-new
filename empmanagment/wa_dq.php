@@ -152,9 +152,11 @@ function wa_cpc_table(PDO $pdo): bool
     static $ok = null; if ($ok !== null) return $ok;
     try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cp_cache (k VARCHAR(40) NOT NULL PRIMARY KEY, v MEDIUMTEXT NOT NULL, at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"); return $ok = true; } catch (Throwable $e) { return $ok = false; }
 }
+/** ⚡ 21 Nov: the limit was 3,000,000 bytes. The message library (about 3,800 pre-made messages with their per-number matrix) grew past it, so it was NEVER stored again (the copy in the table was 19 hours old):
+ *  every call of wa.camp_templates and wa.tpl_list rebuilt it from scratch (about 50 s each, 14 calls in 5 minutes = 23% of all request time). The column is MEDIUMTEXT (16 MB) and the server accepts 64 MB packets. */
 function wa_cpc_put(PDO $pdo, string $k, array $v): void
 {
-    if (!wa_cpc_table($pdo)) return; try { $j = json_encode($v, JSON_UNESCAPED_UNICODE); if ($j !== false && strlen($j) < 3000000) $pdo->prepare("REPLACE INTO wa_cp_cache (k, v, at) VALUES (?, ?, ?)")->execute([$k, $j, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+    if (!wa_cpc_table($pdo)) return; try { $j = json_encode($v, JSON_UNESCAPED_UNICODE); if ($j !== false && strlen($j) < 15000000) $pdo->prepare("REPLACE INTO wa_cp_cache (k, v, at) VALUES (?, ?, ?)")->execute([$k, $j, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
 }
 function wa_cpc_get(PDO $pdo, string $k): ?array
 {
