@@ -127,4 +127,5 @@ jobs:
           PHP
           echo "VER $(grep -o 'wa_camp_ui.js?v=c[0-9]*\|wa_botlearn_ui.js?v=[0-9]*' "$1"whatsapp.html | tr '\n' ' ') · handed fix in wa_growth: $(grep -c 'strtotime(\$hand\[\$k\]) > 0' "$1"empmanagment/wa_growth.php) · whatsapp.html time $(stat -c %y "$1"whatsapp.html | cut -c1-19) · server time $(date '+%F %T')"
           php /tmp/tp.php "$1"; rm -f /tmp/tp.php
+          [ -f "$1"empmanagment/diag_won.php ] && php "$1"empmanagment/diag_won.php "$1" 7 || true
           REMOTE
