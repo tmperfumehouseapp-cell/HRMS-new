@@ -593,11 +593,11 @@ function wag_addon_calc(PDO $pdo, string $key): ?array
 {
     try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('bot','emp') AND mtype = 'text' ORDER BY id DESC LIMIT 12"); $q->execute([$key]);
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) { $t = str_replace(['×', '✕'], 'x', (string)$t);
-            if (!preg_match('/(\d{1,2})\s*x\s*(\d{2,3})\s*ml[^\n]{0,90}?(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $t, $mm)) {
+            if (!preg_match('/(\d{1,2})\s*x\s*(\d{2,3})\s*ml[^\n]{0,90}?(?:(?:rs\.?|₹)\s*([\d,]{3,6})|([\d,]{3,6})\s*(?:\/-|rs\b|rupees|₹))/iu', $t, $mm)) {
                 // a NEWER message with a price in it that this reader cannot understand ("Make 12 for 2500") = the deal changed after the quote it knows: no offer at all (never an offer on an old price)
                 if (preg_match('/(?:rs\.?|₹|\bfor\b|=|\btotal\b)\s*([\d,]{3,6})\b/iu', $t, $pm) && (int)str_replace(',', '', $pm[1]) >= 500 && (int)str_replace(',', '', $pm[1]) <= 20000) return null;
                 continue; }
-            $qty = (int)$mm[1]; $ml = (int)$mm[2]; $tot = (int)str_replace(',', '', $mm[3]); if ($qty < 2 || $qty > 20 || $tot < 500 || $tot > 20000 || !in_array($ml, [20, 30, 50, 100], true)) continue;
+            $qty = (int)$mm[1]; $ml = (int)$mm[2]; $tot = (int)str_replace(',', '', (string)(($mm[3] ?? '') !== '' ? $mm[3] : ($mm[4] ?? ''))); if ($qty < 2 || $qty > 20 || $tot < 500 || $tot > 20000 || !in_array($ml, [20, 30, 50, 100], true)) continue;
             try { $__cq = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 40"); $__cq->execute([$key]); foreach ($__cq->fetchAll(PDO::FETCH_COLUMN) as $__cb) { if (preg_match('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/iu', (string)$__cb, $__cm)) { if ((int)$__cm[1] !== $qty || (int)$__cm[2] !== $ml) return null; break; } } } catch (Throwable $e) { }   // the customer's own latest "N x S ml" differs from the quote this reader found (he chose 10 x 20, the quote was 5 x 20): never an offer on a stale quote
             $per = $tot / $qty; $hi = $tot >= 2800; $d1 = $hi ? 0.15 : 0.25; $d2 = $hi ? 0.20 : 0.32; $am = $ml;
             if ($tot < 1500 && $ml < 50) {   // a small order: the add-on is a 50 ml bottle (a bigger lift of the ticket), priced from OUR chart at the 6.5% start level
