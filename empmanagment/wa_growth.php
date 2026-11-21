@@ -786,7 +786,7 @@ function wag_bot_tick(PDO $pdo, int $slots = 5): array
     try {
         if ($o['slot'] === 0) { setting_set($pdo, 'wag_tick_at', (string)time()); if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } } }
         $r = wag_bot_scan($pdo, 2); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];
-        try { $o['followup'] = wag_bot_followup($pdo, 1); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
+        try { $o['followup'] = wag_bot_followup($pdo, 4); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
     } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_tick_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
     return $o;
 }
@@ -865,7 +865,7 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
 {
     if (defined('WA_IN_WEBHOOK') || (string)setting_get($pdo, 'wag_bfu_on', '1') === '0' || wag_cfg($pdo)['bot'] !== 'on') return 0;
     $now = time(); $hr = (int)date('G') * 60 + (int)date('i'); if ($hr < 9 * 60 || $hr > 21 * 60 + 30) return 0;
-    if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 20) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
+    if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 10) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
     $day = date('Y-m-d'); if (setting_get($pdo, 'wag_bfu_day', '') !== $day) { setting_set($pdo, 'wag_bfu_day', $day); setting_set($pdo, 'wag_bfu_n', '0'); } $cap = max(0, (int)setting_get($pdo, 'wag_bfu_max_day', '2500')); if ((int)setting_get($pdo, 'wag_bfu_n', '0') >= $cap) return 0;
     $steps = [300, 600, 1200, 1800, 3600, 7200, 10800, 14400, 28800, 64800]; $n = 0;   // 5 m, 10 m, 20 m, 30 m, 1 h, 2 h, 3 h, 4 h (hold the customer), then slower: 8 h, 18 h — afterwards the 30-day Lineup takes over (owner, 21 Nov)
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c JOIN (SELECT phone, MAX(ts) z FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= ? GROUP BY phone) b ON b.phone = c.phone WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= DATE_ADD(b.z, INTERVAL 5 SECOND) ORDER BY c.last_in_at DESC LIMIT 120");   // only chats where the BOT spoke last (a person / campaign / flow message after it = not ours)
@@ -873,7 +873,7 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
     $__rows = $st->fetchAll(); $D = ['cand' => count($__rows), 'early' => 0, 'old' => 0, 'off' => 0, 'hand' => 0, 'hotp' => 0, 'notsales' => 0, 'ai' => 0, 'handoff' => 0, 'unsafe' => 0, 'same' => 0, 'send' => 0, 'sent' => 0, 'err' => '']; $__tries = 0; $__i = 0; $__t0 = microtime(true); setting_set($pdo, 'wag_bfu_dbg', json_encode(['start' => date('H:i:s'), 'cand' => count($__rows)]));
     foreach ($__rows as $c) {
         try {
-        if ($n >= $max || $__tries >= 4 || microtime(true) - $__t0 > 12) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at']; $liT = strtotime($li);
+        if ($n >= $max || $__tries >= 6 || microtime(true) - $__t0 > 14) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at']; $liT = strtotime($li);
         $f = wag_meta_get($pdo, 'bgf:' . $key, ''); $fp = $f === '' ? [] : explode('|', $f); $cnt = ($fp && ($fp[0] ?? '') === $li) ? (int)($fp[1] ?? 0) : 0; $lastF = ($fp && ($fp[0] ?? '') === $li) ? (int)($fp[2] ?? 0) : 0;
         if ($cnt >= count($steps) + 1) continue;
         if ($cnt === count($steps)) {   // all 10 follow-ups are sent and the customer is still silent: the chat goes OUT to the market (orange) — anybody who wants to try may take it

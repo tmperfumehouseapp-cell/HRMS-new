@@ -11506,6 +11506,7 @@ function qa_new_days(PDO $pdo, string $from, string $to): array
 {
     $out = [];
     try {
+        if (function_exists('wq_qfresh_days')) { foreach ((array)wq_qfresh_days($pdo, $from, $to) as $d => $list) foreach ((array)$list as $emp => $n) if ((int)$n > 0) $out[(string)$d][(int)$emp] = (int)$n; return $out; }   // the Query card: no campaign / community queries (they are on the Campaign card)
         if (function_exists('wq_qcount_days')) { foreach ((array)wq_qcount_days($pdo, $from, $to) as $d => $list) foreach ((array)$list as $emp => $n) if ((int)$n > 0) $out[(string)$d][(int)$emp] = (int)$n; return $out; }
         $people = array_keys(qb_people($pdo));
         for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
@@ -23610,7 +23611,7 @@ switch ($action) {
         if (function_exists('qa_cut') && ($__cut = qa_cut($pdo)) !== '' && $__cut <= $date) {
             try {
                 $t0 = function_exists('wq_day_start') ? (int)wq_day_start($pdo, $date) : 0; $t1 = function_exists('wq_day_start') && function_exists('wq_day_add') ? (int)wq_day_start($pdo, wq_day_add($date, 1)) : 0; if (!$t0 || $t1 <= $t0) { $t0 = strtotime($date . ' 10:00:00'); $t1 = $t0 + 86400; }
-                $q = $pdo->prepare("SELECT HOUR(opened_at) h, emp_id, COUNT(*) n FROM wa_queries WHERE opened_at >= ? AND opened_at < ? GROUP BY HOUR(opened_at), emp_id"); $q->execute([date('Y-m-d H:i:s', $t0), date('Y-m-d H:i:s', $t1)]);
+                $q = $pdo->prepare("SELECT HOUR(q.opened_at) h, q.emp_id, COUNT(*) n FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community') GROUP BY HOUR(q.opened_at), q.emp_id"); $q->execute([date('Y-m-d H:i:s', $t0), date('Y-m-d H:i:s', $t1)]);   // the Query tab: Meta / new / unclear (campaign and community have their own tab)
                 $hours = []; $byEmp = []; $logged = 0;
                 foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $hh = (int)$r['h']; $nn = (int)$r['n']; $hours[$hh] = ($hours[$hh] ?? 0) + $nn; $logged += $nn; if ((int)$r['emp_id'] > 0) $byEmp[(string)$hh][] = ['employee_id' => (int)$r['emp_id'], 'name' => $people[(int)$r['emp_id']] ?? ('#' . (int)$r['emp_id']), 'n' => $nn]; }
                 if ($hour !== null) { $hc = []; foreach (($byEmp[(string)$hour] ?? []) as $x) $hc[(int)$x['employee_id']] = (int)$x['n']; }   // the person counts of the chosen hour
