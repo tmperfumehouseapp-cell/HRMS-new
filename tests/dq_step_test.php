@@ -33,6 +33,10 @@ stp(); ok($S['wa_dq_hourly'] === '9000' && $S['wa_dq_freeze_n'] === '0', 'good a
 // 7) too few messages -> nothing
 $S = ['wa_dq_hold_end' => (string)(time() - 7200), 'wa_dq_hourly' => '8000']; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 50, 10, 30, 30); wa_dq_auto_step($pdo); ok($S['wa_dq_hourly'] === '8000' && !wa_dq_hold_active($pdo), 'under 200 messages: nothing changes');
 // 8) marketing pause (owner 20 Nov 2026): only while the time has not passed
-$S = []; ok(!wa_mkt_paused($pdo), 'no pause set: not paused'); $S['wa_mkt_pause_until'] = (string)(time() + 3000); ok(wa_mkt_paused($pdo), 'pause until later: paused'); $S['wa_mkt_pause_until'] = (string)(time() - 5); ok(!wa_mkt_paused($pdo), 'pause time over: restarts by itself');
+$S = ['wa_mkt_night_on' => '0']; ok(!wa_mkt_paused($pdo), 'no pause set: not paused'); $S['wa_mkt_pause_until'] = (string)(time() + 3000); ok(wa_mkt_paused($pdo), 'pause until later: paused'); $S['wa_mkt_pause_until'] = (string)(time() - 5); ok(!wa_mkt_paused($pdo), 'pause time over: restarts by itself');
 $src2 = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_dq.php'); ok(strpos($src2, 'wa_dq_hold_active($pdo) || wa_mkt_paused($pdo)') !== false, 'the pause zeroes the marketing hour room'); ok(strpos(file_get_contents(dirname(__DIR__) . '/empmanagment/wa_rec_util.php'), 'wa_mkt_paused') === false, 'the pause does not touch Module B');
+// 6) owner 21 Nov 2026: the floor is a setting (3,000): bad delivery goes back to 3,000, good delivery climbs from it
+$S = ['wa_dq_hold_end' => (string)(time() - 7200), 'wa_dq_hourly' => '5000', 'wa_dq_floor' => '3000']; $pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 50, 170, 30); stp(); ok($S['wa_dq_hourly'] === '3000', 'bad delivery: back to the 3,000 floor (got ' . $S['wa_dq_hourly'] . ')');
+$pdo->exec("DELETE FROM wa_messages"); msgs($pdo, 400, 220, 20, 30); stp(); ok($S['wa_dq_hourly'] === '4000', 'good delivery at 3,000: climbs to 4,000 (got ' . $S['wa_dq_hourly'] . ')');
+$src2 = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_dq.php'); ok(strpos($src2, "'wa_dq_3k_2111'") !== false, 'one-shot 3,000 seed present');
 echo "dq ok\n";

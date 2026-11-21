@@ -1,0 +1,112 @@
+# READ-ONLY look at the Lineup on the VPS: is the new code there, did it start, which tables / settings / messages exist, what the engine log says. Counts and names only (no phone numbers, no customer data).
+# Changes nothing. Run it by hand: Actions → "Lineup check (read-only)" → Run workflow.
+name: Lineup check (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: "Run the Lineup screen's own queries (overview, status, summary, report) on the real data and print errors and timings"
+        type: boolean
+        default: false
+      brief:
+        description: "Short report: skip the lists of existing messages"
+        type: boolean
+        default: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Lineup state
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "${{ inputs.brief }}" "${{ inputs.probe }}" <<'REMOTE' || true
+          P="$1"; export LN_BRIEF="$2"; export LN_PROBE="$3"
+          if [ "$LN_PROBE" = "true" ]; then
+          echo "=== server files ===" ; echo "whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html) · wa_camp_ui.js $(stat -c '%y' "$P"assets/js/wa_camp_ui.js | cut -c1-19) · top-space marker: $(grep -c 'its own space' "$P"assets/js/wa_camp_ui.js) · speed cache marker: $(grep -c 'ONCE per message and 45 seconds' "$P"empmanagment/wa_line.php) · server time $(date '+%H:%M:%S')"
+          cat > /tmp/ln_probe.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; require $f;
+          $pdo = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+          function json_response($a, $c = 200) { throw new Exception("json_response"); } function wa_log($p, $k, $ok, $i) { }
+          function setting_get($p, $k, $d = "") { $q = $p->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? $d : (string)$v; } function setting_set($p, $k, $v) { }
+          function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen($d) > 10 ? substr($d, -10) : $d; }
+          $action = ""; require $argv[1] . "empmanagment/wa_line.php";
+          echo "\n=== PROBE: the Lineup screen's queries on the real data ===\n";
+          foreach (["wl_status" => fn() => wl_status($pdo, false), "wl_summary today" => fn() => wl_summary($pdo, strtotime(date("Y-m-d 00:00:00"))), "wl_summary total" => fn() => wl_summary($pdo, (int)strtotime(wl_cfg($pdo)["started"]) - 60), "wl_report" => fn() => wl_report($pdo, 30), "wl_overview" => fn() => wl_overview($pdo)] as $n => $fn) { $t = microtime(true); try { $r = $fn(); echo "  $n: ok in " . round(microtime(true) - $t, 2) . " s" . (isset($r["sent"]) ? " · sent " . $r["sent"] . " replied " . $r["replied"] . " orders " . $r["orders"] . " cost " . $r["cost"] : "") . "\n"; } catch (Throwable $e) { echo "  $n: FAIL after " . round(microtime(true) - $t, 2) . " s: " . substr($e->getMessage(), 0, 300) . " @ " . basename($e->getFile()) . ":" . $e->getLine() . "\n"; } }
+          echo "  last round: " . setting_get($pdo, "wl_last_round", "(none yet)") . "\n";
+          try { $c0 = wl_cfg($pdo); [$td0] = wl_ist(time()); $card = ["ok" => true, "started" => $c0["started"], "ready" => wl_ready($pdo), "status" => wl_status($pdo, false), "today" => wl_summary($pdo, wl_ist_at($td0, 0)), "total" => wl_summary($pdo, (int)strtotime($c0["started"] ?: "now") - 60), "tomorrow" => wl_overview($pdo)["tomorrow"]]; echo "  CARD_JSON " . json_encode($card, JSON_UNESCAPED_UNICODE) . "\n"; } catch (Throwable $e) { echo "  card payload FAIL: " . $e->getMessage() . "\n"; }
+          try { foreach ($pdo->query("SELECT why, COUNT(*) n FROM wa_line_plan WHERE status = 'failed' GROUP BY why ORDER BY n DESC LIMIT 6")->fetchAll() as $r) echo "  failed because: " . substr(preg_replace('/\s+/', ' ', (string)$r["why"]), 0, 220) . " x" . $r["n"] . "\n"; foreach ($pdo->query("SELECT tpl_key, step, COUNT(*) n FROM wa_line_plan WHERE status = 'failed' GROUP BY tpl_key, step ORDER BY n DESC LIMIT 6")->fetchAll() as $r) echo "  failed at " . $r["tpl_key"] . " step " . $r["step"] . ": " . $r["n"] . "\n"; foreach ($pdo->query("SELECT status, COUNT(*) n FROM wa_line_plan WHERE status IN ('sent','failed') AND sent_at >= DATE_SUB(NOW(), INTERVAL 6 MINUTE) GROUP BY status")->fetchAll() as $r) echo "  last 6 minutes " . $r["status"] . ": " . $r["n"] . "\n"; } catch (Throwable $e) { echo "  failed-reason query FAIL: " . $e->getMessage() . "\n"; }
+          try { $ov = wl_overview($pdo); echo "  customers by the day they wrote: " . json_encode($ov["by_day"]) . "\n"; try { $tz0 = date("Y-m-d 00:00:00"); $vin = $pdo->query("SELECT COUNT(*) FROM wa_line_plan p WHERE p.status = 'sent' AND p.sent_at >= '" . $tz0 . "' AND p.why = '' AND EXISTS (SELECT 1 FROM wa_messages m WHERE (m.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) AND m.dir = 'in' AND m.ts > DATE_SUB(p.sent_at, INTERVAL 24 HOUR) AND m.ts < p.sent_at)")->fetchColumn(); $vout = $pdo->query("SELECT COUNT(*) FROM wa_line_plan p WHERE p.status = 'sent' AND p.sent_at >= '" . $tz0 . "' AND p.why = '' AND EXISTS (SELECT 1 FROM wa_messages m WHERE (m.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) AND m.dir = 'out' AND m.who IN ('emp','person','phone') AND m.status <> 'failed' AND m.ts > DATE_SUB(p.sent_at, INTERVAL 24 HOUR) AND m.ts < p.sent_at)")->fetchColumn(); echo "  CHECK sent today to a customer who wrote in the 24 h before: " . $vin . " · to one a salesperson wrote to in the 24 h before: " . $vout . "\n"; } catch (Throwable $e) { echo "  CHECK failed: " . substr($e->getMessage(), 0, 120) . "\n"; } try { foreach ($pdo->query("SELECT m.err_code c, COUNT(*) n FROM wa_line_plan p JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (p.wamid COLLATE utf8mb4_unicode_ci) WHERE p.status = 'sent' AND p.sent_at >= '" . date("Y-m-d 00:00:00") . "' AND m.status = 'failed' GROUP BY m.err_code ORDER BY n DESC LIMIT 8")->fetchAll() as $r) echo "  RECEIPT FAILED today, code " . $r["c"] . ": " . $r["n"] . "\n"; echo "  RESCUED (utility again) rows today: " . $pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'sent' AND why LIKE 'utility rescue%' AND sent_at >= '" . date("Y-m-d 00:00:00") . "'")->fetchColumn() . "\n"; } catch (Throwable $e) { echo "  RECEIPT check failed: " . substr($e->getMessage(), 0, 100) . "\n"; } try { foreach ($pdo->query("SELECT SUBSTR(why, 1, 34) w, COUNT(*) n FROM wa_line_plan WHERE (why LIKE 'rescue%' OR why LIKE 'rescued%' OR why LIKE 'utility rescue%') AND sent_at >= '" . date("Y-m-d 00:00:00") . "' GROUP BY SUBSTR(why, 1, 34) ORDER BY n DESC LIMIT 8")->fetchAll() as $r) echo "  RESCUE reason: " . $r["w"] . " : " . $r["n"] . "\n"; } catch (Throwable $e) { echo "  RESCUE reason check failed: " . substr($e->getMessage(), 0, 100) . "\n"; } echo "  TODAY left by hour (IST): " . json_encode($ov["today"]["left_by_hour"] ?? []) . " · today sent " . ($ov["today"]["sent"] ?? 0) . " of " . ($ov["today"]["total"] ?? 0) . " · now " . date("H:i") . "\n"; $dd = $pdo->query("SELECT COUNT(*) FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND c.status = 'active' AND p.due_at <= NOW()")->fetchColumn(); echo "  DUE NOW (planned, due time passed, active): " . $dd . "\n"; echo "  PLAN (steps waiting, day of the ladder): " . json_encode($ov["calendar"]["steps"] ?? []) . "\n  PLAN (calendar day => messages): " . json_encode($ov["calendar"]["days"] ?? []) . "\n"; echo "  customers: " . json_encode($ov["status"]["customers"]) . "\n"; echo "  today: " . json_encode($ov["summary"]["today"]) . "\n"; echo "  total: " . json_encode($ov["summary"]["total"]) . "\n"; echo "  since: " . date("Y-m-d H:i", wl_cfg($pdo)["since"]) . "\n"; } catch (Throwable $e) { echo "  overview detail FAIL: " . $e->getMessage() . "\n"; }
+          PHP
+          php /tmp/ln_probe.php "$P"; rm -f /tmp/ln_probe.php
+          exit 0
+          fi
+          echo "=== files on the server ==="
+          for f in empmanagment/wa_line.php assets/js/wa_line_ui.js assets/js/wa_camp_ui.js; do if [ -f "$P$f" ]; then echo "$f  $(stat -c '%y' "$P$f" | cut -c1-19)  $(wc -c < "$P$f") bytes"; else echo "$f  MISSING"; fi; done
+          echo "wl_summary in wa_line.php: $(grep -c 'function wl_summary' "$P"empmanagment/wa_line.php 2>/dev/null)  ·  wa_line.php required by wa_more.php: $(grep -c "wa_line.php" "$P"empmanagment/wa_more.php 2>/dev/null)  ·  c28x in whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html 2>/dev/null)"
+          echo "Campaigns strip on the server: cLineCard in wa_camp_ui.js = $(grep -c 'cLineCard' "$P"assets/js/wa_camp_ui.js 2>/dev/null) · wa.line_card in wa_line.php = $(grep -c 'wa.line_card' "$P"empmanagment/wa_line.php 2>/dev/null) · wln_unwindow = $(grep -c 'function wln_unwindow' "$P"empmanagment/wa_line.php 2>/dev/null) · wln_send = $(grep -c 'function wln_send' "$P"empmanagment/wa_line.php 2>/dev/null)"
+          php -v | head -1
+          cat > /tmp/ln_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "db: " . $e->getMessage() . "\n"; exit; }
+          $all = function ($sql, $p = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "  (n/a: " . substr($e->getMessage(), 0, 120) . ")\n"; return []; } };
+          $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "(not set)" : (string)$v; } catch (Throwable $e) { return "(n/a)"; } };
+          echo "\n=== mysql ===\n"; foreach ($all("SELECT VERSION() v") as $r) echo "  " . $r["v"] . "\n";
+          echo "\n=== settings ===\n";
+          foreach (["wl_cfg", "wl_tpls", "wl_snap_at", "wl_tick_at", "wl_push_at", "wl_issues"] as $k) echo "  $k = " . substr($s($k), 0, 400) . "\n";
+          $wd = json_decode($s("wd_cfg"), true); echo "  old drip mode = " . (is_array($wd) ? ($wd["mode"] ?? "?") : $s("wd_cfg")) . "\n";
+          echo "\n=== sending so far ===\n";
+          foreach ($all("SELECT status, COUNT(*) n FROM wa_line_plan WHERE status IN ('sent','failed') GROUP BY status") as $r) echo "  " . $r["status"] . ": " . $r["n"] . "\n";
+          foreach ($all("SELECT why, COUNT(*) n FROM wa_line_plan WHERE status = 'failed' GROUP BY why ORDER BY n DESC LIMIT 5") as $r) echo "  failed because: " . substr($r["why"], 0, 150) . " x" . $r["n"] . "\n";
+          foreach ($all("SELECT status, why, COUNT(*) n FROM wa_line_plan WHERE status IN ('cancelled','skipped') GROUP BY status, why ORDER BY n DESC LIMIT 8") as $r) echo "  " . $r["status"] . " (" . substr($r["why"], 0, 60) . "): " . $r["n"] . "\n";
+          foreach ($all("SELECT COUNT(*) n, SUM(due_at <= NOW()) due FROM wa_line_plan WHERE status = 'planned' AND step = 1") as $r) echo "  step 1 still planned: " . $r["n"] . " · of them due by the clock now: " . ($r["due"] ?? 0) . "\n";
+          foreach ($all("SELECT status, COUNT(*) n FROM wa_line_cust GROUP BY status") as $r) echo "  customers " . $r["status"] . ": " . $r["n"] . "\n";
+          echo "\n=== tables ===\n";
+          foreach (["wa_line_cust", "wa_line_plan", "wa_line_log", "wa_line_snap"] as $t) { $x = $all("SHOW TABLES LIKE '$t'"); echo "  $t: " . ($x ? "exists" : "MISSING"); if ($x) { $c = $all("SELECT COUNT(*) n FROM $t"); echo " · rows " . ($c[0]["n"] ?? "?"); } echo "\n"; }
+          foreach ($all("SELECT status, COUNT(*) n FROM wa_line_plan GROUP BY status") as $r) echo "  plan rows " . $r["status"] . ": " . $r["n"] . "\n";
+          foreach ($all("SELECT topic, status, COUNT(*) n FROM wa_line_cust GROUP BY topic, status") as $r) echo "  customers " . $r["topic"] . " / " . $r["status"] . ": " . $r["n"] . "\n";
+          echo "\n=== lineup messages (ln_*) per account ===\n";
+          foreach ($all("SELECT w.status, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'ln\\_%' GROUP BY w.status") as $r) echo "  " . $r["status"] . ": " . $r["n"] . "\n";
+          foreach ($all("SELECT COUNT(*) n FROM wa_templates WHERE name LIKE 'ln\\_%'") as $r) echo "  templates saved: " . $r["n"] . "\n";
+          echo "\n=== how Meta answered the lineup messages (first 6) ===\n";
+          foreach ($all("SELECT t.name, w.* FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'ln\\_%' ORDER BY w.tpl_id, w.waba_id LIMIT 6") as $r) { $o = []; foreach ($r as $k => $v) { if ($v === null || $v === "") continue; $o[] = $k . "=" . substr(preg_replace('/\s+/', ' ', (string)$v), 0, 160); } echo "  " . implode(" | ", $o) . "\n"; }
+          echo "\n=== template body of ln_trust_1 ===\n"; foreach ($all("SELECT name, category, language, body, footer, buttons, header_format FROM wa_templates WHERE name = 'ln_trust_1' LIMIT 1") as $r) { foreach ($r as $k => $v) echo "  $k: " . substr(preg_replace('/\s+/', ' ', (string)$v), 0, 400) . "\n"; }
+          $brief = getenv("LN_BRIEF") === "true"; if (!$brief) {
+          echo "\n=== approved UTILITY messages that already exist (one blank at most, no photo): id | name | accounts approved | used | body ===\n";
+          foreach ($all("SELECT t.id, t.name, t.used, t.relabelled_at, t.body, t.header_format, t.buttons, SUM(w.status = 'APPROVED') ok, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.name NOT LIKE 'ln\\_%' GROUP BY t.id HAVING ok >= 1 ORDER BY ok DESC, t.used DESC LIMIT 80") as $r) { if (!empty($r["relabelled_at"]) || ($r["header_format"] ?? "") !== "") continue; $nv = preg_match_all('/\{\{\d+\}\}/', (string)$r["body"]); if ($nv > 1) continue; $b = json_decode((string)$r["buttons"], true); $bt = is_array($b) ? implode("/", array_map(function ($x) { return (string)($x["text"] ?? ""); }, $b)) : ""; echo "  #" . $r["id"] . " | " . $r["name"] . " | ok " . $r["ok"] . "/" . $r["n"] . " | used " . $r["used"] . " | " . substr(preg_replace('/\s+/', ' ', (string)$r["body"]), 0, 170) . ($bt !== "" ? "  [btn: " . substr($bt, 0, 50) . "]" : "") . "\n"; }
+          echo "\n=== every approved message by kind (category | blanks | photo/video on top | how many) ===\n";
+          $cnt = []; foreach ($all("SELECT t.id, t.category, t.body, t.header_format, t.relabelled_at, SUM(w.status = 'APPROVED') ok FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name NOT LIKE 'ln\\_%' GROUP BY t.id HAVING ok >= 1") as $r) { $nv = preg_match_all('/\{\{\d+\}\}/', (string)$r["body"]); $k = $r["category"] . (!empty($r["relabelled_at"]) ? " (made marketing by Meta)" : "") . " | blanks " . $nv . " | " . ($r["header_format"] !== "" ? $r["header_format"] : "text only"); $cnt[$k] = ($cnt[$k] ?? 0) + 1; } ksort($cnt); foreach ($cnt as $k => $n) echo "  $k: $n\n";
+          echo "\n=== approved MARKETING messages, one blank at most, text only (best used first): id | accounts | used | body ===\n";
+          foreach ($all("SELECT t.id, t.name, t.used, t.body, t.header_format, SUM(w.status = 'APPROVED') ok, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'MARKETING' AND t.name NOT LIKE 'ln\\_%' AND (t.header_format = '' OR t.header_format IS NULL) GROUP BY t.id HAVING ok >= 3 ORDER BY t.used DESC LIMIT 60") as $r) { $nv = preg_match_all('/\{\{\d+\}\}/', (string)$r["body"]); if ($nv > 1) continue; echo "  #" . $r["id"] . " | ok " . $r["ok"] . "/" . $r["n"] . " | used " . $r["used"] . " | " . substr(preg_replace('/\s+/', ' ', (string)$r["body"]), 0, 150) . "\n"; }
+          }
+          echo "\n=== campaign recipients (sizing only) ===\n";
+          $cols = []; foreach ($all("SHOW COLUMNS FROM wa_camp_items") as $r) $cols[] = $r["Field"]; echo "  wa_camp_items columns: " . implode(", ", $cols) . "\n";
+          $tc = in_array("sent_at", $cols) ? "sent_at" : (in_array("updated_at", $cols) ? "updated_at" : ""); echo "  time column used: " . ($tc ?: "(none)") . "\n";
+          if ($tc) { $since = date("Y-m-d 10:00:00", strtotime("-1 day")); echo "  since $since\n";
+            foreach ($all("SELECT COUNT(*) n, COUNT(DISTINCT phone) p FROM wa_camp_items WHERE status = 'sent' AND $tc >= ?", [$since]) as $r) echo "  campaign messages sent since: " . $r["n"] . " · different customers: " . $r["p"] . "\n";
+            foreach ($all("SELECT COUNT(DISTINCT i.phone) p FROM wa_camp_items i JOIN wa_contacts c ON c.phone COLLATE utf8mb4_general_ci = i.phone COLLATE utf8mb4_general_ci WHERE i.status = 'sent' AND i.$tc >= ? AND c.last_in_at >= ?", [$since, $since]) as $r) echo "  of them who wrote back since: " . $r["p"] . "\n";
+            foreach ($all("SELECT COUNT(DISTINCT i.phone) p FROM wa_camp_items i JOIN wa_line_cust l ON l.phone COLLATE utf8mb4_general_ci = i.phone COLLATE utf8mb4_general_ci WHERE i.status = 'sent' AND i.$tc >= ?", [$since]) as $r) echo "  of them already in the Lineup: " . $r["p"] . "\n"; }
+          echo "\n=== engine / template log lines about the lineup or errors (newest 20) ===\n";
+          foreach ($all("SELECT at, kind, ok, info FROM wa_log WHERE (kind IN ('engine','template')) AND (info LIKE '%ineup%' OR ok = 0) ORDER BY id DESC LIMIT 20") as $r) echo "  " . $r["at"] . " [" . $r["kind"] . ($r["ok"] ? "" : " FAIL") . "] " . substr($r["info"], 0, 200) . "\n";
+          echo "\n=== newest engine log lines (any) ===\n";
+          foreach ($all("SELECT at, ok, info FROM wa_log WHERE kind = 'engine' ORDER BY id DESC LIMIT 6") as $r) echo "  " . $r["at"] . ($r["ok"] ? "" : " FAIL") . " " . substr($r["info"], 0, 160) . "\n";
+          PHP
+          php /tmp/ln_check.php "$P"; rm -f /tmp/ln_check.php
+          REMOTE
