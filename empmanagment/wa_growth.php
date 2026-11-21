@@ -1609,7 +1609,8 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             json_response(['can' => true, 'day' => $off, 'date' => substr($d0, 0, 10), 'hours' => $h]);
         }
         case 'wa.g_mkt_top': {   // 🏪 for every salesperson: who are the best right now (shown above the OPEN list) and my own rank
-            $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released']];
+            $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released'], 'q' => 0, 'o' => 0];
+            try { if ($my && function_exists('wq_people_stats') && function_exists('wq_period')) { [$__f1, $__t1] = wq_period($pdo, 1); $__S = wq_people_stats($pdo, $__f1, $__t1)['rows'][$me] ?? null; if ($__S) { $my['q'] = (int)$__S['queries'] - (int)($__S['by_type']['community'] ?? 0); $my['o'] = (int)$__S['orders']; } } } catch (Throwable $e) { }   // the same ledger numbers as the Queries page and the sales strip
             json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me)]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
