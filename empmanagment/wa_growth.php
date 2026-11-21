@@ -37,6 +37,8 @@ function wag_cfg(PDO $pdo): array
     try { if (setting_get($pdo, 'wag_bot120', '') !== '1') { setting_set($pdo, 'wag_bot120', '1'); if (function_exists('wq_put')) wq_put($pdo, 'wq_hold_sec', '120'); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): the bot answers EVERYONE who wrote, 4 s after the message, until a salesperson presses Take over; up to 500 answers a day for one customer
     try { if (setting_get($pdo, 'wag_bot4', '') !== '1') { setting_set($pdo, 'wag_bot4', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 4; $j['bot_max_day'] = 500; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): OPEN MARKET — no chat is given to anybody: automatic assignment off (waa engine + wq auto), manual assignment on; salespeople take what they can close
+    try { if (setting_get($pdo, 'wag_openmkt', '') !== '1') { setting_set($pdo, 'wag_openmkt', '1'); setting_set($pdo, 'wag_open_market', '1'); setting_set($pdo, 'waa_off', '1'); setting_set($pdo, 'waa_on_day', ''); setting_set($pdo, 'wq_auto_on', '0'); setting_set($pdo, 'wa_manual_assign', '1'); if (function_exists('hrms_settings_bump')) hrms_settings_bump(); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
     try { if (setting_get($pdo, 'wag_rules4', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules4', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
@@ -556,27 +558,27 @@ function wag_bot_typing(PDO $pdo, array $c, string $wamid): void
     try { $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)($c['last_number_id'] ?? 0)]); $pid = (string)$q->fetchColumn(); if ($pid === '' && function_exists('wa_cfg_val')) $pid = (string)wa_cfg_val('WA_PHONE_ID'); if ($pid === '') return;
         wa_api('POST', '/' . $pid . '/messages', ['messaging_product' => 'whatsapp', 'status' => 'read', 'message_id' => $wamid, 'typing_indicator' => ['type' => 'text']]); } catch (Throwable $e) { }
 }
-/** A hot chat nobody answered for 10+ minutes and the bot cannot answer: the next free person (never a complaint chat) gets it with a push; a chat note says so. */
+/** A hot chat nobody answered and the bot cannot answer: it goes to OPEN (nobody is given it) and every salesperson at work gets a push; a chat note says so. */
 function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
 {
-    try {
-        if ((int)($c['cx_id'] ?? 0) > 0 || !function_exists('wa_next_person')) return; $cur = (int)$c['assigned_emp']; if ($cur <= 0 && (time() - strtotime((string)$c['last_in_at'])) < 600) return;   // a chat in OPEN stays in OPEN for the first 10 minutes: everybody sees it, anybody takes it $nx = wa_next_person($pdo, $cur, (int)($c['last_number_id'] ?? 0)); if (!$nx) return; $to = (int)$nx['emp_id']; if ($to <= 0 || $to === $cur) return;
-        wa_assign_to($pdo, $key, $to, 0, 'auto'); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
-        wa_event($pdo, $key, '🆘 Nobody answered this customer for 10+ minutes and the bot cannot help: given to ' . ($nm[$to] ?? ('#' . $to)) . ' now.');
-        if (function_exists('ct_push')) ct_push($pdo, [$to], 'Customer waiting 10+ min', (trim((string)($c['name'] ?? '')) !== '' ? $c['name'] : '+91 ' . $key) . ' wrote and nobody answered. Reply now.', '/my_chats.html?phone=' . $key, 'wa-stuck-' . $key);
+    try {   // OPEN MARKET (owner, 21 Nov): nobody is given a chat — it stays in OPEN and every salesperson at work is told, whoever can close it takes it
+        if ((int)($c['cx_id'] ?? 0) > 0) return; $cur = (int)$c['assigned_emp']; if ($cur > 0 && function_exists('wa_assign_to')) wa_assign_to($pdo, $key, 0, 0, 'auto');
+        $ids = []; if (function_exists('wa_people')) foreach (wa_people($pdo) as $p) if (!empty($p['present']) && (int)$p['emp_id'] > 0) $ids[] = (int)$p['emp_id'];
+        wa_event($pdo, $key, '🆘 A hot customer waits and the bot cannot help: the chat is in OPEN — anybody can take it.');
+        if ($ids && function_exists('ct_push')) ct_push($pdo, $ids, 'Hot customer waiting in OPEN', (trim((string)($c['name'] ?? '')) !== '' ? $c['name'] : '+91 ' . $key) . ' is waiting. Take it and close the order.', '/my_chats.html?phone=' . $key, 'wa-open-' . $key);
     } catch (Throwable $e) { }
 }
-/** OWNER (21 Nov): a HOT chat (ready to order / pay, or handed over by the bot) that the person who holds it has not answered for 2 minutes is taken off that person and put into OPEN (Requests): everybody sees it and anybody picks it. Once per customer message; the person who missed it is remembered for the admin card. */
+/** OWNER (21 Nov): a HOT chat (ready to order / pay, or handed over by the bot) that the person who holds it has not answered for 4 minutes (setting wag_hot_open_min) is taken off that person and put into OPEN (Requests): everybody sees it and anybody picks it. Once per customer message; the person who missed it is remembered for the admin card. */
 function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
 {
-    if (false || !function_exists('wa_assign_to')) return 0; $mins = max(1, min(60, (int)setting_get($pdo, 'wag_hot_open_min', '2'))); $n = 0; $now = time();
+    if (false || !function_exists('wa_assign_to')) return 0; $mins = max(1, min(60, (int)setting_get($pdo, 'wag_hot_open_min', '4'))); $n = 0; $now = time();
     try {
         $st = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND assigned_emp > 0 AND last_in_at >= ? AND last_in_at <= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT 150");
         $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $mins * 60)]); $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
         foreach ($st->fetchAll() as $c) {
             if ($n >= $max) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at'];
             $h = wag_meta_get($pdo, 'bothand:' . $key, ''); $handed = $h !== '' && strtotime($h) >= strtotime($li);
-            if (empty($c['hot']) && !$handed) continue; if (wag_bot_off($pdo, $key, true)) continue;
+            if (empty($c['hot']) && !$handed) continue;   // (a chat a person took over is checked too: it goes back to OPEN when the customer waits again and nobody answers)
             $mk = wag_meta_get($pdo, 'hotmiss:' . $key, ''); if ($mk !== '' && substr($mk, strrpos($mk, '|') + 1) === $li) continue;   // once per customer message
             if (function_exists('wq_ts') && wq_ts(wag_meta_get($pdo, 'typing:' . $key, '')) > $now - 90) continue;   // a person is typing the answer right now
             $emp = (int)$c['assigned_emp']; wag_meta_put($pdo, 'hotmiss:' . $key, $emp . '|' . date('Y-m-d H:i:s') . '|' . $li);

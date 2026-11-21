@@ -23,7 +23,7 @@ function waa_tables(PDO $pdo): bool
     catch (Throwable $e) { error_log('waa_tables: ' . $e->getMessage()); return $ok = false; }
 }
 /** The master switch. OFF until the owner starts it (setting waa_off = 0): the table and the buttons work, but nothing is given out and no overnight limit applies. */
-function waa_engine_on(PDO $pdo): bool { return (string)setting_get($pdo, 'waa_off', '1') === '0' && (string)setting_get($pdo, 'waa_on_day', '') === waa_day($pdo); }   // started for THIS business day (10 am → 10 am): it must be started again every morning
+function waa_engine_on(PDO $pdo): bool { if ((string)setting_get($pdo, 'wag_open_market', '') === '1') return false; /* 🏪 OPEN MARKET (owner, 21 Nov): nobody is given a chat; set wag_open_market = 0 to allow automatic assignment again */ return (string)setting_get($pdo, 'waa_off', '1') === '0' && (string)setting_get($pdo, 'waa_on_day', '') === waa_day($pdo); }   // started for THIS business day (10 am → 10 am): it must be started again every morning
 function waa_dt(int $t): string { return date('Y-m-d H:i:s', $t); }
 function waa_day(PDO $pdo): string { return function_exists('biz_today') ? (string)biz_today($pdo) : date('Y-m-d'); }
 /** Start of the business day (10 am by the panel's day timing). */
