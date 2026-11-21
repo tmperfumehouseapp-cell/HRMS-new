@@ -17203,8 +17203,8 @@ function ai_feat(string $f): string { $old = (string)($GLOBALS['ai_feature'] ?? 
 function ai_feature_cap(string $p): float
 {
     $v = ai_feature_cap_raw($p);
-    // 🤖 the 24/7 bot stopped answering when it reached a small daily limit (owner's goal: answer every customer in seconds): a limit on wa_bot is never lower than the floor (setting ai_cap_floor_wa_bot, default 60 dollars a day; 0 = no floor)
-    if ($p === 'wa_bot' && $v > 0) { $fl = 60.0; try { global $pdo; if ($pdo instanceof PDO) { $x = setting_get($pdo, 'ai_cap_floor_wa_bot', ''); if ($x !== '' && is_numeric($x)) $fl = (float)$x; } } catch (Throwable $e) { } if ($fl > 0 && $v < $fl) $v = $fl; }
+    // 🤖 owner, 21 Nov: the WhatsApp bot and its helpers must never stop at a daily AI limit (the bot had stopped at about 5 dollars and customers waited): wa_bot / wa_* have NO daily limit (set the setting ai_wa_caps_on = 1 to bring the limits back)
+    if ($v > 0 && strpos($p, 'wa_') === 0) { try { global $pdo; if ($pdo instanceof PDO && (string)setting_get($pdo, 'ai_wa_caps_on', '') === '1') return $v; } catch (Throwable $e) { } return 0.0; }
     return $v;
 }
 function ai_feature_cap_raw(string $p): float
