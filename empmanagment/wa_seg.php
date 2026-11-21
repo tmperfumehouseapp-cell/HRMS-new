@@ -454,6 +454,23 @@ function wsg_optout_sync(PDO $pdo): int
  * ONE grouped query. Filters that only look at the story table are answered from the story table alone (index only, tens of milliseconds);
  * filters that need the chat row or the order summary (messaged / bought recently, order counts, spend, last-wrote ranges) join those.
  */
+/** 🧵 What the 30-Day Lineup will do for THIS audience (owner, 21 Nov): how many of these people are in the Lineup, how many messages are still planned for them, how many customers get one on each coming day, and which steps. Counts only; a failure (no Lineup table) returns null. */
+function wsg_lineup(PDO $pdo, string $fq, array $p, int $total): ?array
+{
+    if ($total <= 0 || $total > 400000) return null;
+    try {
+        $sub = "SELECT (c.phone COLLATE utf8mb4_unicode_ci) FROM $fq"; $o = ['in' => 0, 'not_in' => $total, 'messages' => 0, 'days' => [], 'steps' => [], 'first' => '', 'last' => ''];
+        $q = $pdo->prepare("SELECT COUNT(*) FROM wa_line_cust lc WHERE lc.status IN ('active', 'replied') AND (lc.phone COLLATE utf8mb4_unicode_ci) IN ($sub)"); $q->execute($p); $o['in'] = (int)$q->fetchColumn(); $o['not_in'] = max(0, $total - $o['in']);
+        if ($o['in'] > 0) {
+            $q = $pdo->prepare("SELECT DATE(p.due_at) d, COUNT(*) n, COUNT(DISTINCT p.phone) c FROM wa_line_plan p WHERE p.status = 'planned' AND (p.phone COLLATE utf8mb4_unicode_ci) IN ($sub) AND (p.phone COLLATE utf8mb4_unicode_ci) IN (SELECT (lc.phone COLLATE utf8mb4_unicode_ci) FROM wa_line_cust lc WHERE lc.status = 'active') GROUP BY DATE(p.due_at) ORDER BY d LIMIT 70"); $q->execute($p);
+            foreach ($q->fetchAll() as $r) { $o['days'][] = ['date' => (string)$r['d'], 'messages' => (int)$r['n'], 'customers' => (int)$r['c']]; $o['messages'] += (int)$r['n']; }
+            $q = $pdo->prepare("SELECT p.step, COUNT(*) n FROM wa_line_plan p WHERE p.status = 'planned' AND (p.phone COLLATE utf8mb4_unicode_ci) IN ($sub) AND (p.phone COLLATE utf8mb4_unicode_ci) IN (SELECT (lc.phone COLLATE utf8mb4_unicode_ci) FROM wa_line_cust lc WHERE lc.status = 'active') GROUP BY p.step ORDER BY p.step"); $q->execute($p);
+            $dd = function_exists('wl_days') ? wl_days() : []; foreach ($q->fetchAll() as $r) $o['steps'][] = ['step' => (int)$r['step'], 'day' => (int)($dd[(int)$r['step']] ?? 0), 'n' => (int)$r['n']];
+            if ($o['days']) { $o['first'] = $o['days'][0]['date']; $o['last'] = $o['days'][count($o['days']) - 1]['date']; }
+        }
+        return $o;
+    } catch (Throwable $e) { return null; }
+}
 function wa_seg_count(PDO $pdo, array $filters): array
 {
     $t0 = microtime(true); wsg_tables($pdo); $f = wa_seg_filters_clean($filters); $pos = wsg_positive($f); $pos['_story'] = 1; [$fq, $p] = wa_aud_where('contacts', $pos, '');
@@ -482,7 +499,8 @@ function wa_seg_count(PDO $pdo, array $filters): array
     $parts = []; foreach ($why as $k => $n) if ($n > 0) $parts[] = trim($lab[$k]) . ' ' . wsg_n($n); $skipped = $total - $send;
     $text = 'Total ' . wsg_n($total) . ' = sending ' . wsg_n($send) . ' + skipped ' . wsg_n($skipped) . ($parts ? ' (' . implode(', ', $parts) . ')' : '');
     $unb = $stg['unbuilt']['total'] ?? 0;
-    return ['total' => $total, 'sendable' => $send, 'skipped' => $skipped, 'excluded' => $why, 'by_stage' => $stg, 'by_value' => $val, 'unbuilt' => $unb, 'adds_up' => ['ok' => $total === $send + array_sum($why), 'text' => $text],
+    $lineup = wsg_lineup($pdo, $fq, $p, $total);
+    return ['lineup' => $lineup, 'total' => $total, 'sendable' => $send, 'skipped' => $skipped, 'excluded' => $why, 'by_stage' => $stg, 'by_value' => $val, 'unbuilt' => $unb, 'adds_up' => ['ok' => $total === $send + array_sum($why), 'text' => $text],
         'filters' => $f, 'ms' => (int)round((microtime(true) - $t0) * 1000), 'fast' => $fast];
 }
 /** Month histogram of the matched customers: first contact month (imports counted separately) and last-wrote month. */
