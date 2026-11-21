@@ -228,6 +228,7 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
         $co = (int)($c['camp_optout'] ?? -1); if ($co < 0) { try { $qq = $pdo->prepare("SELECT camp_optout FROM wa_contacts WHERE phone = ?"); $qq->execute([(string)$c['phone']]); $co = (int)$qq->fetchColumn(); } catch (Throwable $e0) { $co = 0; } }
         if ($co === 1) return [false, 'This customer asked to stop promotional messages.', 0];
     }
+    if (!in_array($who, ['order', 'test'], true) && wa_quiet_hours()) return [false, 'No number has room now (quiet hours 03:00-09:00: no automatic message goes).', 0];   // 🌙 universal rule (owner, 21 Nov)
     if (in_array($who, ['flow', 'followup'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off until tomorrow night.', 0];
     $to = (string)($c['wa_id'] ?: '91' . $c['phone']);
     if (!in_array(strtoupper((string)($t['header_format'] ?? '')), ['', 'TEXT'], true)) {   // a photo / video / PDF on top needs its own parts
@@ -280,6 +281,8 @@ function wa_fu_scan(PDO $pdo): array
 }
 
 // ---------------------------------------------------------------------------------------------------------------- campaigns: time rules
+/** 🌙 UNIVERSAL QUIET HOURS (owner, 21 Nov): NO automatic message (campaign, marketing, follow-up, Lineup, recovery, drip) goes between 03:00 and 09:00 IST; follow-ups may run until 03:00. Replies to a customer who wrote, and order messages, are not touched. */
+if (!function_exists('wa_quiet_hours')) { function wa_quiet_hours($ts = null): bool { $h = (int)date('G', $ts === null ? time() : (int)$ts); return $h >= 3 && $h < 9; } }
 /** "Now" for the campaign engine (the real clock; a test may define WA_CAMP_NOW). */
 function wa_camp_now(): int { return defined('WA_CAMP_NOW') ? (int)WA_CAMP_NOW : time(); }
 /** The hours in which campaigns may send: [first hour, hour when it stops] — default 0 → 24: any hour, the owner sends whenever they want. Setting wa_camp_window = "8-21" would bring quiet hours back. */
@@ -288,10 +291,11 @@ function wa_camp_window(PDO $pdo): array
     // no time-slot restriction at all (owner, 12 Nov): campaigns may send at any hour of the day or night, so a scheduled 7 am campaign is never held back. The old wa_camp_window setting is ignored.
     return [0, 24];
 }
-function wa_camp_in_window(PDO $pdo, int $ts): bool { [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); return $h >= $o && $h < $c; }
+function wa_camp_in_window(PDO $pdo, int $ts): bool { [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); return $h >= $o && $h < $c && !wa_quiet_hours($ts); }   // + the universal quiet hours 03:00-09:00
 /** The next moment inside the sending window (the same time when it is already inside). */
 function wa_camp_clamp(PDO $pdo, int $ts): int
 {
+    if (wa_quiet_hours($ts)) return mktime(9, 0, 0, (int)date('n', $ts), (int)date('j', $ts), (int)date('Y', $ts));   // 03:00-09:00: the same morning at 09:00
     [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); if ($h >= $o && $h < $c) return $ts;
     return $h < $o ? mktime($o, 0, 0, (int)date('n', $ts), (int)date('j', $ts), (int)date('Y', $ts)) : mktime($o, 0, 0, (int)date('n', $ts), (int)date('j', $ts) + 1, (int)date('Y', $ts));
 }

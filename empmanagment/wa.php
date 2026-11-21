@@ -690,8 +690,11 @@ function wa_cx_owner(PDO $pdo, array $auth, array $c): bool
 function wa_contact(PDO $pdo, string $key): ?array { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $r = $q->fetch(); return $r ?: null; }
 
 /** Sends a text from the number the customer last used. Inside the 24-hour window only (templates come with the campaign step). */
+/** 🌙 UNIVERSAL QUIET HOURS (owner, 21 Nov): NO automatic message (campaign, marketing, follow-up, Lineup, recovery, drip) goes between 03:00 and 09:00 IST; follow-ups may run until 03:00. Replies to a customer who wrote, and order messages, are not touched. */
+if (!function_exists('wa_quiet_hours')) { function wa_quiet_hours($ts = null): bool { $h = (int)date('G', $ts === null ? time() : (int)$ts); return $h >= 3 && $h < 9; } }
 function wa_send_text(PDO $pdo, array $c, string $text, string $who, int $empId, string $replyTo = ''): array   // $replyTo: the wamid of the customer's / our message this one answers (↩ swipe to reply)
 {
+    if (in_array($who, ['followup', 'campaign', 'recover'], true) && wa_quiet_hours()) return [false, 'Quiet hours 03:00-09:00: no automatic message goes.'];   // 🌙 universal rule (owner, 21 Nov)
     if ((int)$c['optout'] === 1) return [false, 'This customer opted out — do not message them.'];
     if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off for this customer until tomorrow night.'];   // ✅ one lock for every engine
     if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed. Only an approved template can be sent now.'];
@@ -733,6 +736,7 @@ function wa_send_text(PDO $pdo, array $c, string $text, string $who, int $empId,
 /** A message with up to 3 quick-reply buttons (inside the 24-hour window, free): the customer answers with ONE tap and his tap arrives as a normal text (the button's title). Used by the bot's follow-ups (wording B). Returns [ok, wamid|error]. */
 function wa_send_buttons(PDO $pdo, array $c, string $text, array $buttons, string $who, int $empId): array
 {
+    if (in_array($who, ['followup', 'campaign', 'recover'], true) && wa_quiet_hours()) return [false, 'Quiet hours 03:00-09:00: no automatic message goes.'];   // 🌙 universal rule (owner, 21 Nov)
     if ((int)$c['optout'] === 1) return [false, 'This customer opted out.'];
     if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off.'];
     if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed.'];
