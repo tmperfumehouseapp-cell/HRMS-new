@@ -144,9 +144,10 @@
   }
   async function showRecon(id) { try { const r = await api.get('fn.in_upload_recon', { id }); renderRecon($('uRecon'), r.recon, 'Saved file: ' + r.file); $('uRecon').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { alert(e.message); } }
   function uPreview(id, p) {
-    const H = p.header, M = { utr: p.cols.utr, gross: p.cols.gross, net: p.cols.net, order: p.cols.order, fees: p.cols.fees.slice() };
+    const H = p.header, M = Object.assign({}, p.cols, { fees: p.cols.fees.slice() });      // status / action columns of a known report travel along
     const sel = (k, label) => `<label class="sx-f">${label}<select class="sx-in" data-m="${k}"><option value="-1">— none —</option>${H.map((_, i) => H[i] === '' ? '' : `<option value="${i}" ${M[k] === i ? 'selected' : ''}>${esc(colName(H, i))}</option>`).join('')}</select></label>`;
     $('uPrev').innerHTML = `<div class="cap">${esc(p.file)} <small class="sx-mut">${p.rows} rows</small></div>
+      ${p.provider ? `<div class="sx-msg ok" style="margin-bottom:6px">${sxi('ok')}<span><b>Recognised as a ${esc(p.provider)} report.</b> The columns are chosen for you: just check the totals and save.</span></div>` : ''}
       ${p.same_file ? `<div class="sx-msg warn">${sxi('alert')}<span>This same file was already saved: ${esc(p.same_file)}.</span></div>` : ''}
       <div class="sx-r2">${sel('utr', 'UTR column')}${sel('net', 'Net amount column (money that reached the bank)')}</div>
       <div class="sx-r2" style="margin-top:8px">${sel('order', 'Order number / transaction ID column (to match your orders)')}${sel('gross', 'Gross amount column (optional)')}</div>
