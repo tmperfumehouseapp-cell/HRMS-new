@@ -471,7 +471,7 @@ function wsg_lineup(PDO $pdo, string $fq, array $p, int $total): ?array
         return $o;
     } catch (Throwable $e) { return null; }
 }
-function wa_seg_count(PDO $pdo, array $filters): array
+function wa_seg_count(PDO $pdo, array $filters, bool $withLineup = false): array
 {
     $t0 = microtime(true); wsg_tables($pdo); $f = wa_seg_filters_clean($filters); $pos = wsg_positive($f); $pos['_story'] = 1; [$fq, $p] = wa_aud_where('contacts', $pos, '');
     $now = wsg_now(); $d = fn(int $n) => wsg_dt($now - $n * 86400); $par = []; $where = (strpos($fq, ' WHERE ') === false) ? '' : substr($fq, strpos($fq, ' WHERE '));
@@ -499,7 +499,7 @@ function wa_seg_count(PDO $pdo, array $filters): array
     $parts = []; foreach ($why as $k => $n) if ($n > 0) $parts[] = trim($lab[$k]) . ' ' . wsg_n($n); $skipped = $total - $send;
     $text = 'Total ' . wsg_n($total) . ' = sending ' . wsg_n($send) . ' + skipped ' . wsg_n($skipped) . ($parts ? ' (' . implode(', ', $parts) . ')' : '');
     $unb = $stg['unbuilt']['total'] ?? 0;
-    $lineup = wsg_lineup($pdo, $fq, $p, $total);
+    $lineup = $withLineup ? wsg_lineup($pdo, $fq, $p, $total) : null;   // only when asked (one tap on the screen): three more queries, not for every live count
     return ['lineup' => $lineup, 'total' => $total, 'sendable' => $send, 'skipped' => $skipped, 'excluded' => $why, 'by_stage' => $stg, 'by_value' => $val, 'unbuilt' => $unb, 'adds_up' => ['ok' => $total === $send + array_sum($why), 'text' => $text],
         'filters' => $f, 'ms' => (int)round((microtime(true) - $t0) * 1000), 'fast' => $fast];
 }
@@ -902,7 +902,7 @@ if (in_array($__wsa, ['wa.seg_count', 'wa.seg_stages', 'wa.seg_hist', 'wa.seg_cu
     $in = $isPost ? json_input() : $_GET; $adm = wa_is_admin($pdo, $auth); $needPost = function () use ($isPost) { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $needAdmin = function () use ($pdo, $auth) { wa_guard_admin($pdo, $auth); };
     switch ($__wsa) {
-        case 'wa.seg_count': { $needPost(); json_response(wa_seg_count($pdo, is_array($in['filters'] ?? null) ? $in['filters'] : [])); }
+        case 'wa.seg_count': { $needPost(); json_response(wa_seg_count($pdo, is_array($in['filters'] ?? null) ? $in['filters'] : [], !empty($in['lineup']))); }
         case 'wa.seg_hist': { $needPost(); json_response(wa_seg_hist($pdo, is_array($in['filters'] ?? null) ? $in['filters'] : [])); }
         case 'wa.seg_stages': { json_response(wsg_stages($pdo, $adm, !empty($in['fresh']))); }
         case 'wa.seg_customer': {
