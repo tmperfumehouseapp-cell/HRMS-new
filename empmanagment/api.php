@@ -17202,6 +17202,13 @@ function ai_feat(string $f): string { $old = (string)($GLOBALS['ai_feature'] ?? 
 /** Daily USD limit of one feature (the owner can change them: define('AI_CAPS', ['wa_bot' => 20, ...]) in config.php; 0 = no limit). A feature that reaches its limit simply waits until tomorrow — the people answer instead. */
 function ai_feature_cap(string $p): float
 {
+    $v = ai_feature_cap_raw($p);
+    // 🤖 the 24/7 bot stopped answering when it reached a small daily limit (owner's goal: answer every customer in seconds): a limit on wa_bot is never lower than the floor (setting ai_cap_floor_wa_bot, default 60 dollars a day; 0 = no floor)
+    if ($p === 'wa_bot' && $v > 0) { $fl = 60.0; try { global $pdo; if ($pdo instanceof PDO) { $x = setting_get($pdo, 'ai_cap_floor_wa_bot', ''); if ($x !== '' && is_numeric($x)) $fl = (float)$x; } } catch (Throwable $e) { } if ($fl > 0 && $v < $fl) $v = $fl; }
+    return $v;
+}
+function ai_feature_cap_raw(string $p): float
+{
     $d = [];   // no built-in daily limits any more (owner's decision); a limit only exists if AI_CAPS in config.php names the feature
     // 🛑 limits typed on the AI usage page (setting ai_caps: {"job": dollars per day}) come first; then AI_CAPS in config.php
     static $db = null; if ($db === null) { $db = []; try { global $pdo; if ($pdo instanceof PDO) { $j = json_decode((string)setting_get($pdo, 'ai_caps', ''), true); if (is_array($j)) $db = $j; } } catch (Throwable $e) { } }
