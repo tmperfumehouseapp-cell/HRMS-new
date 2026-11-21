@@ -10459,6 +10459,7 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     $tl = teach_lessons($pdo, $last, !array_filter($msgs, fn($m) => $m['who'] === 'bot')); $tlT = teach_lessons_text($tl);
     [$factsT, $allowed, $factsOn] = teach_facts_prompt($pdo, $msgs); $budgetB = teach_facts_get($pdo)['budget'];
     foreach ($tl as $o) $allowed += teach_nums((string)$o['better'] . ' ' . (string)$o['remark']);       // numbers the owner wrote himself are allowed
+    if (!empty($GLOBALS['lib_fu_step'])) $allowed += teach_nums('2700 2800 50 100 20 10');   // a follow-up may name the Rs 2,700-2,800 target and the sizes without being blocked
     $exT = ''; foreach ($ex as $i => $t) $exT .= "EXAMPLE CHAT #$i:\n$t\n";
     $conv = ''; foreach (array_slice($msgs, -14) as $m) $conv .= ($m['who'] === 'customer' ? 'Customer: ' : 'Bot: ') . $m['text'] . "\n";
     $photoAsk = (function_exists('pc_photo_url') && pc_photo_url($pdo) !== '') ? " price_photo = true whenever the customer asks for the price list / price chart / rate card (the system sends its own price chart picture right after your reply - the 6.5% column, never an uploaded photo; do not paste the whole list in the text); otherwise false." : " price_photo = false (the price chart picture cannot be made yet).";
