@@ -41,6 +41,9 @@ function wag_cfg(PDO $pdo): array
     try { if (setting_get($pdo, 'wag_fix_botoff1', '') !== '1') { setting_set($pdo, 'wag_fix_botoff1', '1');
         $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_assign_log WHERE how = 'manual' AND by_emp = to_emp AND at >= ? AND at < ?"); $q->execute(['2026-11-21 14:00:00', '2026-11-21 14:12:00']); $ph = $q->fetchAll(PDO::FETCH_COLUMN);
         foreach (array_chunk($ph, 300) as $ch) { $keys = array_map(fn($p) => 'botoff:' . $p, $ch); $d = $pdo->prepare("DELETE FROM wq_meta WHERE v <= ? AND k IN (" . implode(',', array_fill(0, count($keys), '?')) . ")"); $d->execute(array_merge(['2026-11-21 14:12:00'], $keys)); } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): complaint chats are removed from the query counts
+    try { if (setting_get($pdo, 'wag_cxq1', '') !== '1') { setting_set($pdo, 'wag_cxq1', '1');
+        $ph = $pdo->query("SELECT phone FROM wa_contacts WHERE (cx_id IS NOT NULL AND cx_id > 0) OR tag = 'complaint' LIMIT 5000")->fetchAll(PDO::FETCH_COLUMN); foreach ($ph as $__p) wag_q_forget($pdo, (string)$__p); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): OPEN MARKET — no chat is given to anybody: automatic assignment off (waa engine + wq auto), manual assignment on; salespeople take what they can close
     try { if (setting_get($pdo, 'wag_openmkt', '') !== '1') { setting_set($pdo, 'wag_openmkt', '1'); setting_set($pdo, 'wag_open_market', '1'); setting_set($pdo, 'waa_off', '1'); setting_set($pdo, 'waa_on_day', ''); setting_set($pdo, 'wq_auto_on', '0'); setting_set($pdo, 'wa_manual_assign', '1'); if (function_exists('hrms_settings_bump')) hrms_settings_bump(); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
@@ -700,6 +703,8 @@ function wag_bot_lock(PDO $pdo, array $c): array
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) { $r['why'] = 'muted'; return $r; }   // order completed: the bot is silent by rule — nothing to wait for, a person answers
         $li = !empty($c['last_in_at']) ? strtotime((string)$c['last_in_at']) : 0; $now = time();
         $h = true ? wag_meta_get($pdo, 'bothand:' . $key, '') : ''; if ($h !== '' && strtotime($h) >= $li) { $r['why'] = 'handed'; $r['engaged'] = true; return $r; }
+        if (function_exists('wq_ts') && wq_ts(wag_meta_get($pdo, 'typing:' . $key, '')) > $now - 90) { $r['why'] = 'person'; return $r; }   // a person is typing to this customer: the bot waits, nobody has to wait for the bot (no "bot is writing")
+        $lo = $pdo->prepare("SELECT who, ts FROM wa_messages WHERE phone = ? AND dir = 'out' ORDER BY id DESC LIMIT 1"); $lo->execute([$key]); $lo = $lo->fetch(); if ($lo && (string)$lo['who'] !== 'bot' && strtotime((string)$lo['ts']) > $now - 600) { $r['why'] = 'person'; return $r; }   // a person wrote to him in the last 10 min and is working on the chat: no bot lock
         $q = $pdo->prepare("SELECT body, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND mtype = 'text' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $b = $q->fetch();
         if ($b) { $r['bot_text'] = mb_substr((string)$b['body'], 0, 600); $r['bot_at'] = (string)$b['ts']; }
         if ($b && strtotime((string)$b['ts']) > $now - 7 * 86400) $r['engaged'] = true;   // the bot has been talking to this customer: only IT decides when a person takes over
@@ -1196,6 +1201,15 @@ function wag_history(PDO $pdo, int $emp, bool $adm, array $f, array $cfg): array
     }
     return ['chats' => $out, 'total' => $total, 'page' => $pg, 'more' => ($pg + 1) * $lim < $total];
 }
+/** Complaints are not sales queries (owner, 21 Nov): the query rows of a complaint chat are removed from the ledger (and its type / stats rows), so no count shows them. */
+function wag_q_forget(PDO $pdo, string $key, int $days = 95): void
+{
+    try {
+        $st = $pdo->prepare("SELECT id FROM wa_queries WHERE phone = ? AND opened_at >= ?"); $st->execute([$key, date('Y-m-d H:i:s', time() - $days * 86400)]); $ids = $st->fetchAll(PDO::FETCH_COLUMN); if (!$ids) return; $in = implode(',', array_map('intval', $ids));
+        foreach (['wq_qtype', 'wq_qstat'] as $t) { try { $pdo->exec("DELETE FROM $t WHERE query_id IN ($in)"); } catch (Throwable $e) { } }
+        $pdo->exec("DELETE FROM wa_queries WHERE id IN ($in)");
+    } catch (Throwable $e) { }
+}
 /** THE QUERY LEDGER — one row per query ("episode"):
  *  • A query opens when a customer writes and has no query that was active in the last 24 hours (the same 24 h that moves a chat to History). Writing again inside 24 h is the SAME query.
  *  • Its type is fixed at that moment: Meta ad > campaign reply > community > other. A customer who was here before (an earlier query, or an order) is marked "back again" — still counted in his type, shown separately.
@@ -1204,6 +1218,7 @@ function wag_history(PDO $pdo, int $emp, bool $adm, array $f, array $cfg): array
 function wag_q_touch(PDO $pdo, string $key, bool $adRef): void
 {
     wag_q_backfill($pdo); $c = wa_contact($pdo, $key); if (!$c) return; $now = date('Y-m-d H:i:s');
+    if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return;   // a complaint is not a sales query
     $q = $pdo->prepare("SELECT id, last_in_at FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $r = $q->fetch();
     if ($r && $r['last_in_at'] && strtotime((string)$r['last_in_at']) >= time() - 86400) { $pdo->prepare("UPDATE wa_queries SET last_in_at = ? WHERE id = ?")->execute([$now, $r['id']]); return; }
     $src = $adRef || $c['source'] === 'query' ? 'query' : (in_array($c['source'], ['campaign', 'community'], true) ? $c['source'] : '');
@@ -1231,7 +1246,7 @@ function wag_q_backfill(PDO $pdo): void
     try {
         $pdo->exec("INSERT INTO wa_queries (phone, opened_at, last_in_at, src, again, emp_id, first_emp)
             SELECT c.phone, COALESCE(c.assigned_at, c.first_seen), c.last_in_at, IF(c.source IN ('query','campaign','community'), c.source, ''), 0, c.assigned_emp, c.assigned_emp
-            FROM wa_contacts c WHERE c.last_in_at IS NOT NULL AND COALESCE(c.assigned_at, c.first_seen) >= '" . date('Y-m-d H:i:s', time() - 95 * 86400) . "' AND NOT EXISTS (SELECT 1 FROM wa_queries q WHERE q.phone = c.phone)");
+            FROM wa_contacts c WHERE c.last_in_at IS NOT NULL AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag != 'complaint') AND COALESCE(c.assigned_at, c.first_seen) >= '" . date('Y-m-d H:i:s', time() - 95 * 86400) . "' AND NOT EXISTS (SELECT 1 FROM wa_queries q WHERE q.phone = c.phone)");
         setting_set($pdo, 'wa_q_backfill', date('Y-m-d H:i:s'));
     } catch (Throwable $e) { }
 }
