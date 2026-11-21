@@ -1538,8 +1538,8 @@
     }
     function addonPrompt(p0, a, thenCart) {   // 🧩 the pop-up with the ready add-on messages (owner, 21 Nov): at the address and again when the link is made; he picks one and sends, or cancels
       const btns = (a.options || []).map((o, i) => ({ t: '✉️ <b>' + esc(o.label) + '</b><br><span style="font-weight:500;font-size:12.5px;line-height:1.35;display:block;margin-top:3px">' + esc(o.text) + '</span>', primary: i === 0, f: () => { api.post('wa.g_addon_offer', { phone: p0, opt: i }).then((r) => { toast(r.message || 'Done', !r.ok); if (!r.ok && thenCart) openCart2(); }).catch((e) => { toast(e.message, true); if (thenCart) openCart2(); }); } }));
-      btns.push({ t: 'Cancel — no add-on for this customer', f: () => { api.post('wa.g_addon_skip', { phone: p0 }).catch(() => { }); if (thenCart) openCart2(); } });
-      addonModal('➕ Add-on offer', 'Pick the message to send to the customer now (prices are made by the system). He answers with a button or words; make the link after his answer.', btns);
+      if (!btns.length) btns.push({ t: 'Continue', f: () => { if (thenCart) openCart2(); } });   // (owner, 21 Nov: COMPULSORY, no Cancel) only when the system has no message to offer, so nobody is ever stuck
+      addonModal('➕ Add-on offer (compulsory)', 'Pick ONE message below and send it to the customer now (prices are made by the system). He answers with a button or words; make the link after his answer.', btns);
     }
     function openCart() {   // 🧩 the add-on offer goes first and is COMPULSORY (owner, 21 Nov): before the payment link the customer is offered 1 or 2 more bottles — the pop-up cannot be skipped
       if (!S.cur) return; const c0 = S.cur.contact || {}, p0 = c0.phone || S.cur.phone;
