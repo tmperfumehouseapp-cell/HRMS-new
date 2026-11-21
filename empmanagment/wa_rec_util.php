@@ -304,6 +304,10 @@ function wa_ru_reset_once(PDO $pdo): void
             setting_set($pdo, 'wa_ru_now1500_2111', '1'); setting_set($pdo, 'wa_ru_ramp_max', '1500'); setting_set($pdo, 'wa_ru_hourly', '1500'); setting_set($pdo, 'wa_ru_lvl_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): speed set to 1,500 an hour now (owner)');
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_now1700_2111', '') !== '1') {   /* owner 21 Nov 2026 (21:00 IST): Module B maximum 1,700 an hour (the pool decides the real speed) */
+            setting_set($pdo, 'wa_ru_now1700_2111', '1'); setting_set($pdo, 'wa_ru_ramp_max', '1700'); setting_set($pdo, 'wa_ru_hourly', '1700'); setting_set($pdo, 'wa_ru_lvl_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the maximum is now 1,700 an hour (owner); the real speed follows the people still to reach');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_ru_base260', '') !== '1') {   /* owner 20 Nov 2026 (02:00): Module B must not run at 180; the floor is 260 an hour (it starts again from 260 after a bad stretch, never lower) */
             setting_set($pdo, 'wa_ru_base260', '1'); setting_set($pdo, 'wa_ru_ramp_base', '260'); if ((int)setting_get($pdo, 'wa_ru_hourly', '260') < 260) setting_set($pdo, 'wa_ru_hourly', '260'); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the floor is now 260 an hour (it never goes lower), it runs at ' . setting_get($pdo, 'wa_ru_hourly', '260') . ' now (owner)');
@@ -400,7 +404,7 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
         $hi = $cur >= 700; $hiOk = true; if ($hi) { $la = (int)setting_get($pdo, 'wa_ru_lvl_at', '0'); if ($la <= 0) { setting_set($pdo, 'wa_ru_lvl_at', (string)$now); $la = $now; } $hiOk = ($now - $la >= 3600) && $gf / max(1, $gn) < 0.02 && $gd / max(1, $gn) >= 0.85; }
         if ($cur < $max && $hiOk && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
             setting_set($pdo, 'wa_ru_freeze_n', '0');
-            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([240, 300, 360, 420, 480, 500, 540, 550, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 20 Nov 2026: 40 / 50 / 60 / 70 / 80 / 90 / 100 messages per 10 minutes = 240 ... 600 an hour; owner 20 Nov 2026 (15:20): from now the slots are 550 / 600 / 700 an hour (floor 550, top 700, never 800) */
+            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([240, 300, 360, 420, 480, 500, 540, 550, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 20 Nov 2026: 40 / 50 / 60 / 70 / 80 / 90 / 100 messages per 10 minutes = 240 ... 600 an hour; owner 20 Nov 2026 (15:20): from now the slots are 550 / 600 / 700 an hour (floor 550, top 700, never 800) */
             setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now); if ($to >= 700) setting_set($pdo, 'wa_ru_lvl_at', (string)$now);   // the 2-hour clock of a level from 700 up starts when it is reached
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered in the last look): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
