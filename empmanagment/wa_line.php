@@ -342,6 +342,13 @@ function wln_since_back(PDO $pdo): bool
     if ((string)setting_get($pdo, 'wl_since_v2', '') === '1') return false; $c = wl_cfg($pdo); if ($c['started'] === '' || $c['since'] <= 0) return false;
     $c['since'] = wl_yesterday_start(time()) - 86400; wl_cfg_put($pdo, $c); setting_set($pdo, 'wl_since_v2', '1'); wa_log($pdo, 'engine', true, 'Lineup: catching everybody who wrote since ' . date('Y-m-d H:i', $c['since'])); return true;
 }
+/** One time: steps that were marked failed only because no number could send the message at that moment ("No number can send…") go back to planned, if the customer has not been sent anything since (so his step 1 is still his first). */
+function wln_requeue_failed(PDO $pdo): int
+{
+    if ((string)setting_get($pdo, 'wl_requeue_v1', '') === '1') return 0;
+    $n = $pdo->exec("UPDATE wa_line_plan SET status = 'planned', why = '' WHERE status = 'failed' AND why LIKE 'No number can send%' AND phone NOT IN (SELECT phone FROM (SELECT DISTINCT phone FROM wa_line_plan WHERE status = 'sent') s)");
+    setting_set($pdo, 'wl_requeue_v1', '1'); return (int)$n;
+}
 /** The engine step. Sends what is due (cap per round), enrols new customers, re-reads the quiet ones. $force = the Send button (ignores the clock window and the "all approved" gate, never the blocks). */
 function wl_tick(PDO $pdo, array $opt = []): array
 {
@@ -352,7 +359,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     if (!$force && (!function_exists('wa_lock') || !wa_lock($pdo, 'wlrun', 50))) return $o;
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window (none unless wl_cfg.win = 1)
-    if (!$force) { try { wln_unwindow($pdo); wln_since_back($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
+    if (!$force) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
@@ -396,7 +403,8 @@ function wl_tick(PDO $pdo, array $opt = []): array
             $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$tid, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; break; }   // no number can send now: try again next round, nothing is written
         elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1]; $o['waiting']++; }
-        else { $upd->execute(['failed', mb_substr((string)$res[1], 0, 190), null, '', $row['tpl_key'], $row['id']]); $o['failed']++; $wcn('failed: ' . mb_substr((string)$res[1], 0, 50)); }
+        elseif (stripos((string)$res[1], 'No number can send') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; $wcn('no number can send message #' . $tid . ' (not approved on the numbers\' accounts)'); }   // a passing state, not a failure: the customer keeps his place and is tried again (before, he was marked failed for good and his next step went first)
+        else { $upd->execute(['failed', mb_substr((string)$res[1], 0, 190), null, '', $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$tid, $row['id']]); } catch (Throwable $e) { } $o['failed']++; $wcn('failed: ' . mb_substr((string)$res[1], 0, 50)); }
     }
     try { setting_set($pdo, 'wl_last_round', json_encode(['at' => date('Y-m-d H:i:s'), 'due' => count($byPhone), 'sent' => $o['sent'], 'skipped' => $o['skipped'], 'failed' => $o['failed'], 'waits' => $wc], JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { }   // why the due customers did not go this round
     return $o;
