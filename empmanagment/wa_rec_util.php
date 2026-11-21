@@ -590,19 +590,23 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
     try { if ((string)setting_get($pdo, 'wa_ru_warm_seed_2011', '') === '') { setting_set($pdo, 'wa_ru_warm', '{"9":10,"10":10}'); setting_set($pdo, 'wa_ru_warm_seed_2011', '1'); } } catch (Throwable $e) { return $o; }
     /* owner 20 Nov 2026, 23:40: "number 10: add it to Module B every hour" — a NEW number takes part in Module B with a small hourly allowance (setting wa_ru_new_hourly = {"10": 10}: messages an hour), never more than a tenth of an hour in any 10 minutes and never above 90% of its 250-a-day slow start; it stays locked for campaigns and for Module B's normal rounds (the lock is for those) */
     try { if ((string)setting_get($pdo, 'wa_ru_new_hourly_seed_2011', '') === '') { setting_set($pdo, 'wa_ru_new_hourly', '{"10":10}'); setting_set($pdo, 'wa_ru_new_hourly_seed_2011', '1'); } } catch (Throwable $e) { return $o; }
+    /* owner 22 Nov 2026: "9, 10 and 6: stop making utility messages there, start SENDING; send few, raise the limit slowly" - numbers 9 and 6 join number 10 with 10 an hour (number 11 stays closed until the owner says); the limit then climbs by itself (wa_ru_new_ramp) */
+    try { if ((string)setting_get($pdo, 'wa_ru_new_all_2211', '') === '') { $h0 = json_decode((string)setting_get($pdo, 'wa_ru_new_hourly', ''), true); $h0 = is_array($h0) ? $h0 : []; foreach ([9, 10, 6] as $k) if (empty($h0[$k])) $h0[$k] = 10; setting_set($pdo, 'wa_ru_new_hourly', json_encode((object)$h0)); setting_set($pdo, 'wa_tpl_util_off_wabas', '["1163092816071689","29716648784615015","2170501657190685","3059322737742478"]'); setting_set($pdo, 'wa_ru_new_all_2211', '1'); } } catch (Throwable $e) { return $o; }
+    try { wa_ru_new_ramp($pdo, $nowTs); } catch (Throwable $e) { }
     $w = json_decode((string)setting_get($pdo, 'wa_ru_warm', ''), true); if (!is_array($w)) $w = [];
     $w = array_filter(array_map('intval', $w), fn($n) => $n > 0);
     $hrly = json_decode((string)setting_get($pdo, 'wa_ru_new_hourly', ''), true); $hrly = is_array($hrly) ? array_filter(array_map('intval', $hrly), fn($n) => $n > 0) : [];
     if (!$w && !$hrly) return $o;
     $pool = wa_ru_pool($pdo); if (!$pool) { $o['note'] = 'no approved utility message yet'; return $o; }
     if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';
-    $st = []; $ql = []; if (function_exists('wa_health_all')) { foreach (wa_health_all($pdo, false) as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $ql[(int)$h['id']] = (string)($h['quality'] ?? ''); } }
+    $st = []; $ql = []; $tier = []; if (function_exists('wa_health_all')) { foreach (wa_health_all($pdo, false) as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $ql[(int)$h['id']] = (string)($h['quality'] ?? ''); $tier[(int)$h['id']] = (int)($h['tier'] ?? 0); } }
     $targets = $w; $hr = [];
     foreach ($hrly as $hn => $hv) {
         if (!in_array($ql[$hn] ?? '', ['GREEN', 'YELLOW'], true)) continue;   /* only a number with good rating takes part every hour */
         $q6 = $pdo->prepare("SELECT SUM(at >= ?) h1, SUM(at >= ?) m10 FROM wa_ru_log WHERE number_id = ? AND at >= ?"); $q6->execute([date('Y-m-d H:i:s', $nowTs - 3600), date('Y-m-d H:i:s', $nowTs - 600), $hn, date('Y-m-d H:i:s', $nowTs - 3600)]); $r6 = $q6->fetch();
         $q7 = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE number_id = ? AND dir = 'out' AND mtype = 'template' AND ts >= ?"); $q7->execute([$hn, date('Y-m-d H:i:s', $nowTs - 86400)]); $d24 = (int)$q7->fetchColumn();
-        $room = min($hv - (int)($r6['h1'] ?? 0), max(1, (int)ceil($hv / 6)) - (int)($r6['m10'] ?? 0), 225 - $d24);
+        $tr = $tier[$hn] ?? 0; $dcap = $tr > 0 ? (int)floor($tr * 0.9) : 5000;   /* 90% of Meta's own 24-hour tier of that number (250 -> 225; a higher tier gives more room); unknown / unlimited = 5000 */
+        $room = min($hv - (int)($r6['h1'] ?? 0), max(1, (int)ceil($hv / 6)) - (int)($r6['m10'] ?? 0), $dcap - $d24);
         if ($room > 0) { $targets[$hn] = max((int)($targets[$hn] ?? 0), $room); $hr[$hn] = 1; }
     }
     if (!$targets) return $o;
@@ -632,9 +636,9 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
         if (($st[$nid] ?? '') !== 'CONNECTED') { $o['note'] = 'number #' . $nid . ' is not connected at Meta'; continue; }
         $waba = wa_waba_of($n); $poolN = array_values(array_filter($pool, fn($z) => in_array($waba, array_map('strval', (array)($z['ok_wabas'] ?? [])), true)));
         if (!$poolN) { $o['note'] = 'number #' . $nid . ': no utility message approved on its WhatsApp account yet'; continue; }
-        $num = ['id' => (int)$n['id'], 'phone_id' => (string)$n['phone_id']]; $round = 0;
+        $num = ['id' => (int)$n['id'], 'phone_id' => (string)$n['phone_id']]; $round = 0; $rcap = max(3, min(20, (int)ceil(((int)($hrly[$nid] ?? 0)) / 6)));
         foreach ($items as $it) {
-            if ($left <= 0 || $round >= 3) break;
+            if ($left <= 0 || $round >= $rcap) break;
             $ph = (string)$it['phone']; $iid = (int)$it['id']; $ec = (int)$it['err_code']; if ((string)$it['status'] === 'skipped' && $ec === 131026) $ec = 131050;
             if (isset($lineup[$ph])) { $sw['in the line-up of a campaign'] = ($sw['in the line-up of a campaign'] ?? 0) + 1; continue; }
             if (isset($seen[$ph]) || isset($recent[$ph]) || isset($got[$ph])) { $sw[isset($got[$ph]) ? 'delivered another way' : 'already a message in 24 h'] = ($sw[isset($got[$ph]) ? 'delivered another way' : 'already a message in 24 h'] ?? 0) + 1; continue; }
@@ -659,6 +663,28 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
     try { setting_set($pdo, 'wa_ru_warm_last', json_encode(['at' => $nowTs, 'targets' => $targets, 'looked' => count($items), 'sent' => $o['sent'], 'failed' => $o['failed'], 'why' => $sw])); } catch (Throwable $e) { }   /* what the last round saw, for the 20-minute report */
     if ($o['sent'] || $o['failed']) { try { wa_log($pdo, 'campaign', $o['sent'] > 0, 'First messages from the new numbers: ' . $o['sent'] . ' sent, ' . $o['failed'] . ' failed (left: ' . json_encode((object)$w) . ')'); } catch (Throwable $e) { } }
     return $o;
+}
+
+/**
+ * Slow climb of the hourly allowance of NEW numbers (setting wa_ru_new_hourly = {"10": 10, ...}); owner 22 Nov 2026: "send few, raise the limit slowly".
+ * Every 30 minutes: when a number used at least 70% of its hour (>= 7 sent in the last hour) and at most 5% failed, it goes up by half (at least +10), never above
+ * 1,700 an hour; with 20+ sent and more than 5% failed it is halved (never below 10). Setting wa_ru_new_ramp_off=1 switches the climb off.
+ */
+function wa_ru_new_ramp(PDO $pdo, int $nowTs): void
+{
+    if ((string)setting_get($pdo, 'wa_ru_new_ramp_off', '0') === '1') return;
+    if ((int)setting_get($pdo, 'wa_ru_new_ramp_at', '0') > $nowTs - 1800) return;
+    setting_set($pdo, 'wa_ru_new_ramp_at', (string)$nowTs);
+    $h = json_decode((string)setting_get($pdo, 'wa_ru_new_hourly', ''), true); if (!is_array($h) || !$h) return; $ch = false;
+    foreach ($h as $nid => $hv) {
+        $hv = (int)$hv; if ($hv <= 0) continue;
+        $q = $pdo->prepare("SELECT COUNT(*) n, SUM(ok = 0) f FROM wa_ru_log WHERE number_id = ? AND at >= ?"); $q->execute([(int)$nid, date('Y-m-d H:i:s', $nowTs - 3600)]); $r = $q->fetch();
+        $n = (int)($r['n'] ?? 0); $f = (int)($r['f'] ?? 0); $nh = $hv;
+        if ($n >= 20 && $f * 20 > $n) $nh = max(10, (int)floor($hv / 2));
+        elseif ($n >= (int)ceil($hv * 0.7) && $f * 20 <= $n) $nh = min(1700, $hv + max(10, (int)floor($hv / 2)));
+        if ($nh !== $hv) { $h[$nid] = $nh; $ch = true; }
+    }
+    if ($ch) { setting_set($pdo, 'wa_ru_new_hourly', json_encode((object)$h)); try { wa_log($pdo, 'campaign', true, 'New numbers: hourly allowance now ' . json_encode((object)$h)); } catch (Throwable $e) { } }
 }
 
 /** ROUTE: people the campaign already KNEW Meta would hold or block for marketing (held in the last days / stopped marketing) are skipped before sending: they get the utility follow-up instead of nothing. */
