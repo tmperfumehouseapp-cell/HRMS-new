@@ -440,7 +440,12 @@ function wa_tpl_try_create(PDO $pdo, array $tpl, string $waba, array &$budget): 
     $queue = function () use ($pdo, $tpl) { try { if (empty(wa_mix_extra($tpl)['queued'])) wa_mix_extra_set($pdo, (int)$tpl['id'], ['queued' => 1]); } catch (Throwable $e) { } };   // not sent for lack of room: the engine picks it up later
     if (($budget['left'] ?? 0) <= 0) { $queue(); return [false, 'over the limit for one run - continues in the next minute']; }
     $b = wa_tpl_budget($pdo, $waba); if (!$b['ok']) { $queue(); return [false, $b['why']]; }
-    $budget['left']--; $budget['made'] = ($budget['made'] ?? 0) + 1; return wa_tpl_create_at($pdo, $tpl, $waba);
+    /* Meta's WEEKLY limit for new UTILITY templates (rolling 7 days, per business): once an account has answered with it, no new utility template is sent to that account for 6 hours (21 Nov 2026: the engine made ~4,500 hopeless calls an hour). Marketing templates are not touched. */
+    $isU = strtoupper((string)($tpl['category'] ?? '')) === 'UTILITY'; $blk = 'wa_tpl_wk_block_' . preg_replace('/\D/', '', $waba);
+    if ($isU && (int)setting_get($pdo, $blk, '0') > time()) { $queue(); return [false, 'Meta weekly limit for new utility messages: waiting (this account is tried again later)']; }
+    $budget['left']--; $budget['made'] = ($budget['made'] ?? 0) + 1; $r = wa_tpl_create_at($pdo, $tpl, $waba);
+    if ($isU && !$r[0] && preg_match('/weekly limit for creating utility/i', (string)$r[1])) { try { setting_set($pdo, $blk, (string)(time() + 6 * 3600)); } catch (Throwable $e) { } }
+    return $r;
 }
 function wa_tpl_live(PDO $pdo, array $r, array $rowsByWaba): bool
 {
