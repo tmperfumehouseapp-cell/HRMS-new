@@ -566,7 +566,7 @@ function wag_bot_typing(PDO $pdo, array $c, string $wamid): void
 function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
 {
     try {   // OPEN MARKET (owner, 21 Nov): nobody is given a chat — it stays in OPEN and every salesperson at work is told, whoever can close it takes it
-        if ((int)($c['cx_id'] ?? 0) > 0) return; $cur = (int)$c['assigned_emp']; if ($cur > 0 && function_exists('wa_assign_to')) wa_assign_to($pdo, $key, 0, 0, 'auto');
+        if (!wag_is_sales_query($pdo, $c)) return; $cur = (int)$c['assigned_emp']; if ($cur > 0 && function_exists('wa_assign_to')) wa_assign_to($pdo, $key, 0, 0, 'auto');
         $ids = []; if (function_exists('wa_people')) foreach (wa_people($pdo) as $p) if (!empty($p['present']) && (int)$p['emp_id'] > 0) $ids[] = (int)$p['emp_id'];
         if (function_exists('wa_mkt_note')) { wa_mkt_note($pdo, $key, 0, 'offered', -1, 'bot stuck'); if ($cur > 0) wa_mkt_note($pdo, $key, $cur, 'dropped', -1, 'bot stuck, no answer'); }
         wa_event($pdo, $key, '🆘 A hot customer waits and the bot cannot help: the chat is in OPEN — anybody can take it.');
@@ -583,7 +583,7 @@ function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
         foreach ($st->fetchAll() as $c) {
             if ($n >= $max) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at'];
             $h = wag_meta_get($pdo, 'bothand:' . $key, ''); $handed = $h !== '' && strtotime($h) >= strtotime($li);
-            if (empty($c['hot']) && !$handed) continue;   // (a chat a person took over is checked too: it goes back to OPEN when the customer waits again and nobody answers)
+            if (empty($c['hot']) && !$handed) continue; if (!wag_is_sales_query($pdo, $c)) continue;   // only good queries (not complaints / after-sales) go to the open market; (a chat a person took over is checked too: it goes back to OPEN when the customer waits again and nobody answers)
             $mk = wag_meta_get($pdo, 'hotmiss:' . $key, ''); if ($mk !== '' && substr($mk, strrpos($mk, '|') + 1) === $li) continue;   // once per customer message
             if (function_exists('wq_ts') && wq_ts(wag_meta_get($pdo, 'typing:' . $key, '')) > $now - 90) continue;   // a person is typing the answer right now
             $emp = (int)$c['assigned_emp']; wag_meta_put($pdo, 'hotmiss:' . $key, $emp . '|' . date('Y-m-d H:i:s') . '|' . $li);
@@ -640,6 +640,19 @@ function wag_mkt_board(PDO $pdo, int $days = 7): array
         $out[] = ['emp' => (int)$e, 'name' => (string)$x['name'], 'present' => !empty($x['present']), 'taken' => $tk, 'dropped' => (int)$x['dropped'], 'released' => (int)$x['released'], 'noreply' => (int)$x['noreply'], 'cherry' => $ch, 'flag' => $ch >= 3 && $tk > 0 && $ch / max(1, $tk + (int)$x['dropped']) >= 0.4, 'wait_med_s' => $mw, 'reply_med_s' => $mr, 'orders' => (int)$x['orders'], 'avg_ticket' => (int)round($avg), 'score' => (int)round($pOrd + $pTick + $pSpeed + $pEff)]; }
     usort($out, fn($a, $b) => $b['score'] <=> $a['score'] ?: $b['taken'] <=> $a['taken']);
     return $cache[$ck] = $out;
+}
+/** OWNER (21 Nov): only GOOD queries go to the open market — a customer who can really order. NOT: after-sales (order completed, order status / tracking / refund / return), complaints (open ticket or a complaint-like message), reactions without words. */
+function wag_is_sales_query(PDO $pdo, array $c): bool
+{
+    $key = (string)($c['phone'] ?? ''); if ($key === '' || (int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return false;
+    if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) return false;   // order completed: after-sales, not a sale
+    if (preg_match('/order question|refund|return|track|complain|status|delivery|payment problem/i', (string)($c['hot_why'] ?? ''))) return false;
+    try { if (!function_exists('cx_looks_like') && is_file(__DIR__ . '/complaints.php')) { /* loaded with the Boss Engine; skipped when not available */ }
+        if (function_exists('cx_looks_like') && cx_looks_like($pdo, $key)) return false;   // leak / wrong item / not delivered / quality / refund words
+        $q = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $m = $q->fetch(); if ($m && in_array((string)$m['mtype'], ['reaction', 'sticker'], true)) return false;
+        if ($m && preg_match('/\b(tracking|track my|where is my order|kab aayega|nahi mila|not received|refund|return|replace|damaged|leak|wrong (item|product)|cancel my order)\b/iu', (string)$m['body'])) return false;
+    } catch (Throwable $e) { }
+    return true;
 }
 /** 🏪 PERFORMANCE GATE (owner, 21 Nov): a person who picks many queries but converts BELOW the team average gets no more — "no point giving him queries". '' = may take, else the sentence shown.
  *  Blocks when (a) he took 4+ queries today and his orders / taken is under 60% of the team's last-7-days ratio (only when the team has orders recorded), (b) he left 2+ hot chats today, or (c) 3+ hot chats of his wait unanswered. Switch: wag_mkt_gate = 0. */
@@ -1321,7 +1334,8 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_mkt': {   // 🏪 the open-market scoreboard (admin / managers)
             if (!$adm && !(function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth))) json_response(['can' => false, 'week' => [], 'today' => []]);
             $now = time(); $off = 0; $tk4 = 0; $tk = 0; try { $q = $pdo->prepare("SELECT kind, wait_s FROM wa_mkt WHERE at >= ? AND kind IN ('offered','taken')"); $q->execute([date('Y-m-d 00:00:00')]); foreach ($q->fetchAll() as $r) { if ($r['kind'] === 'offered') $off++; else { $tk++; if ((int)$r['wait_s'] >= 0 && (int)$r['wait_s'] <= 240) $tk4++; } } } catch (Throwable $e) { }
-            json_response(['can' => true, 'week' => wag_mkt_board($pdo, 7), 'today' => wag_mkt_board($pdo, 1), 'offered_today' => $off, 'taken_today' => $tk, 'taken_in_4min' => $tk4]);
+            $wk = wag_mkt_board($pdo, 7); $tm = ['taken' => 0, 'orders' => 0, 'cherry' => 0, 'replies' => [], 'tickets' => []]; foreach ($wk as $b) { $tm['taken'] += $b['taken']; $tm['orders'] += $b['orders']; $tm['cherry'] += $b['cherry']; if ($b['reply_med_s'] !== null) $tm['replies'][] = $b['reply_med_s']; if ($b['avg_ticket'] > 0) $tm['tickets'][] = $b['avg_ticket']; } sort($tm['replies']); $team = ['taken' => $tm['taken'], 'orders' => $tm['orders'], 'ratio' => $tm['taken'] > 0 ? round(100 * $tm['orders'] / $tm['taken'], 1) : null, 'cherry' => $tm['cherry'], 'reply_med_s' => $tm['replies'] ? $tm['replies'][intdiv(count($tm['replies']), 2)] : null, 'avg_ticket' => $tm['tickets'] ? (int)round(array_sum($tm['tickets']) / count($tm['tickets'])) : 0];
+            json_response(['can' => true, 'team' => $team, 'week' => $wk, 'today' => wag_mkt_board($pdo, 1), 'offered_today' => $off, 'taken_today' => $tk, 'taken_in_4min' => $tk4]);
         }
         case 'wa.g_mkt_top': {   // 🏪 for every salesperson: who are the best right now (shown above the OPEN list) and my own rank
             $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released']];
