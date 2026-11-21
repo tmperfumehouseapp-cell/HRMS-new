@@ -24,7 +24,7 @@ $req = "GET /empmanagment/api.php?action=wa.bot_tick&key=" . urlencode($key) . "
 $reqFu = str_replace("action=wa.bot_tick&", "action=wa.bot_tick&role=fu&", $req);   // one extra tick a second only for FOLLOW-UPS (own slots): customer answers are never held back by a follow-up round, and follow-ups no longer starve (owner, 21 Nov)
 while (microtime(true) - $t0 < 58) {
     for ($i = 0; $i < 5; $i++) { $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 2, STREAM_CLIENT_CONNECT, $ctx); if (!$fp) { $fail++; continue; } @fwrite($fp, $req); @fclose($fp); $n++; }
-    $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 2, STREAM_CLIENT_CONNECT, $ctx); if ($fp) { @fwrite($fp, $reqFu); @fclose($fp); $n++; } else $fail++;
+    if (($tickNo = ($tickNo ?? 0) + 1) % 3 === 0) { $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 2, STREAM_CLIENT_CONNECT, $ctx); if ($fp) { @fwrite($fp, $reqFu); @fclose($fp); $n++; } else $fail++; }   // a follow-up tick every 3 seconds (the web server's PHP workers were saturated: heartbeat 80-120 s old, bot answers slower)
     usleep(1000000);
 }
 echo date('Y-m-d H:i:s') . " bot heartbeat: $n ticks fired, $fail failed to connect in " . round(microtime(true) - $t0, 1) . "s\n";
