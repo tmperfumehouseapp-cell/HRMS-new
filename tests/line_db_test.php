@@ -208,4 +208,9 @@ foreach (['9878000001' => 'wmF1', '9878000002' => 'wmF2'] as $ph => $wm) { $pdo-
 $GLOBALS['FAILSEND'] = true; wln_rescue($pdo, $now, 1); $GLOBALS['FAILSEND'] = false;
 ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE wamid IN ('wmF1', 'wmF2') AND why LIKE 'rescue: no utility message could go%'")->fetchColumn() === 1, 'the first unsendable one is marked');
 $SENT = []; wln_rescue($pdo, $now, 1); ok(count($SENT) === 1 && $SENT[0][0] === '9878000002', 'and the next failed message is rescued: ' . json_encode($SENT));
+// UTILITY FIRST: a mapped message that Meta counts as marketing is replaced by the lineup's own utility message of the step when that is approved on 3+ accounts
+$S['wl_map'] = json_encode(['ln_price_2' => 9101]); $ownIds = json_decode($S['wl_tpls'] ?? '{}', true) ?: []; $ownP2 = (int)($ownIds['ln_price_2'] ?? 0);
+ok($ownP2 > 0, 'the test has an own message for ln_price_2'); if ($ownP2 > 0) { $pdo->exec("INSERT INTO wa_templates (id, category, relabelled_at) VALUES (9101, 'MARKETING', NULL)"); $pdo->exec("UPDATE wa_templates SET category = 'UTILITY', relabelled_at = NULL WHERE id = $ownP2"); $pdo->exec("DELETE FROM wa_tpl_waba WHERE tpl_id = $ownP2"); foreach (['a', 'b', 'c'] as $wb) $pdo->exec("INSERT INTO wa_tpl_waba (tpl_id, waba_id, status) VALUES ($ownP2, '$wb', 'APPROVED')");
+    ok(wln_eff_ids($pdo)['ln_price_2'] === $ownP2, 'utility first: the own utility message replaces the marketing one'); $pdo->exec("DELETE FROM wa_tpl_waba WHERE tpl_id = $ownP2 AND waba_id = 'c'"); ok(wln_eff_ids($pdo)['ln_price_2'] === 9101, 'not approved on 3 accounts: the mapped one stays'); }
+$S['wl_map'] = '{}';
 echo "lineup db ok\n";
