@@ -485,7 +485,11 @@ function wln_mkt_codes(): array { return [131049, 131050, 130472]; }
 function wln_rescue(PDO $pdo, int $now = 0, int $cap = 40): int
 {
     $now = $now ?: time(); $in = implode(',', wln_mkt_codes()); $n = 0;
-    try { $q = $pdo->prepare("SELECT p.id, p.phone, p.topic, p.step, p.tpl_id, p.sent_at, m.err_code FROM wa_line_plan p JOIN wa_messages m ON m.wamid = p.wamid WHERE p.status = 'sent' AND p.wamid <> '' AND p.why = '' AND p.sent_at >= ? AND m.status = 'failed' AND m.err_code IN ($in) ORDER BY p.sent_at LIMIT " . (int)$cap); $q->execute([date('Y-m-d H:i:s', $now - 3 * 3600)]); $rows = $q->fetchAll(); } catch (Throwable $e) { return 0; }
+    // (no JOIN on the wamids: the two tables have different collations — that threw an error and nothing was rescued; the receipts are read with a bound list instead)
+    $rows = []; try { $q = $pdo->prepare("SELECT p.id, p.phone, p.topic, p.step, p.tpl_id, p.sent_at, p.wamid FROM wa_line_plan p WHERE p.status = 'sent' AND p.wamid <> '' AND p.why = '' AND p.sent_at >= ? ORDER BY p.sent_at LIMIT 4000"); $q->execute([date('Y-m-d H:i:s', $now - 3 * 3600)]); $cand = $q->fetchAll();
+        $by = []; foreach ($cand as $r) $by[(string)$r['wamid']] = $r; $bad = [];
+        foreach (array_chunk(array_keys($by), 400) as $ch) { $x = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE status = 'failed' AND err_code IN ($in) AND wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $m) $bad[(string)$m['wamid']] = (int)$m['err_code']; }
+        foreach ($cand as $r) if (isset($bad[(string)$r['wamid']])) { $r['err_code'] = $bad[(string)$r['wamid']]; $rows[] = $r; if (count($rows) >= $cap) break; } } catch (Throwable $e) { return 0; }
     $mark = $pdo->prepare("UPDATE wa_line_plan SET why = ? WHERE id = ?"); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, why, sent_at, wamid) VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)");
     foreach ($rows as $r) {
         $ph = (string)$r['phone']; $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $mark->execute(['rescue: no contact', $r['id']]); continue; }
