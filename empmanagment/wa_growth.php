@@ -597,9 +597,27 @@ function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
     } catch (Throwable $e) { }
 }
 /** OWNER (21 Nov): a HOT chat (ready to order / pay, or handed over by the bot) that the person who holds it has not answered for 4 minutes (setting wag_hot_open_min) is taken off that person and put into OPEN (Requests): everybody sees it and anybody picks it. Once per customer message; the person who missed it is remembered for the admin card. */
+/** 🌡 The open-market timing tunes itself (owner, 21 Nov): the minutes a hot chat waits before it goes back to OPEN (base) and while its holder is busy (busy) follow the load. MANY people working = chats are picked up fast, so the rule is SHORTER; a quiet time (few people writing) = LONGER again. Active people = who wrote to a customer in the last 10 minutes; queue = customers of the last 3 hours waiting 2+ minutes for an answer. Re-computed once a minute; base 4-10, busy 6-14. [base, busy] */
+function wag_open_tune(PDO $pdo): array
+{
+    $last = (int)setting_get($pdo, 'wag_tune_at', '0'); $b0 = (int)setting_get($pdo, 'wag_hot_open_min_eff', '7'); $y0 = (int)setting_get($pdo, 'wag_hot_open_busy_eff', '10');
+    if (time() - $last < 60) return [max(2, $b0), max($b0, $y0)];
+    setting_set($pdo, 'wag_tune_at', (string)time());
+    try {
+        $a = (int)$pdo->query("SELECT COUNT(DISTINCT emp_id) FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date('Y-m-d H:i:s', time() - 600) . "'")->fetchColumn();
+        $qn = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND last_in_at >= '" . date('Y-m-d H:i:s', time() - 3 * 3600) . "' AND last_in_at <= '" . date('Y-m-d H:i:s', time() - 120) . "' AND (last_out_at IS NULL OR last_out_at < last_in_at)")->fetchColumn();
+        $base = $a >= 14 ? 5 : ($a >= 8 ? 7 : 9); $ratio = $qn / max(1, $a); if ($ratio > 3) $base -= 1; elseif ($ratio < 0.5) $base += 1;
+        $base = max(4, min(10, $base)); $busy = max($base + 2, min(14, $base + 3));
+        // smooth: move at most 1 minute per step so the rule never jumps
+        $base = $base > $b0 ? $b0 + 1 : ($base < $b0 ? $b0 - 1 : $b0); $busy = $busy > $y0 ? $y0 + 1 : ($busy < $y0 ? $y0 - 1 : $y0); $busy = max($busy, $base + 2);
+        if ($base !== $b0 || $busy !== $y0) { setting_set($pdo, 'wag_hot_open_min_eff', (string)$base); setting_set($pdo, 'wag_hot_open_busy_eff', (string)$busy); }
+        setting_set($pdo, 'wag_tune_log', date('H:i') . ' people ' . $a . ' · waiting ' . $qn . ' -> base ' . $base . ' / busy ' . $busy . ' min');
+        return [$base, $busy];
+    } catch (Throwable $e) { return [max(2, $b0), max($b0, $y0)]; }
+}
 function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
 {
-    if (false || !function_exists('wa_assign_to')) return 0; $mins = max(1, min(60, (int)setting_get($pdo, 'wag_hot_open_min', '7'))); $busyMins = max($mins, min(60, (int)setting_get($pdo, 'wag_hot_open_busy_min', '10')));   // 7 minutes without an answer; 10 when the holder is busy answering other customers (owner, 21 Nov) $n = 0; $now = time();
+    if (false || !function_exists('wa_assign_to')) return 0; $__tn = wag_open_tune($pdo); $mins = max(1, min(60, $__tn[0])); $busyMins = max($mins, min(60, $__tn[1]));   // 7 minutes without an answer; 10 when the holder is busy answering other customers (owner, 21 Nov) $n = 0; $now = time();
     try {
         $st = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND assigned_emp > 0 AND last_in_at >= ? AND last_in_at <= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT 150");
         $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $mins * 60)]); $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
