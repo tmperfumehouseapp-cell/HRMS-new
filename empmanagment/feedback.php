@@ -142,9 +142,9 @@ function fb_text(PDO $pdo, int $tplId, string $name): string
 }
 
 /** Send one message of the order: kind = 'msg' (feedback) or 'fu' (follow-up). [ok, error] */
-function fb_send(PDO $pdo, array $row, string $kind, string $by = ''): array
+function fb_send(PDO $pdo, array $row, string $kind, string $by = '', int $tplPick = 0): array
 {
-    $cfg = fb_cfg($pdo); $tpl = $kind === 'fu' ? $cfg['tpl_fu'] : $cfg['tpl'];
+    $cfg = fb_cfg($pdo); $tpl = $tplPick > 0 ? $tplPick : ($kind === 'fu' ? $cfg['tpl_fu'] : $cfg['tpl']);      // $tplPick: a different approved message chosen by hand
     if ($tpl <= 0) return [false, 'Pick the approved ' . ($kind === 'fu' ? 'follow-up' : 'feedback') . ' message in the settings first.'];
     if (!function_exists('wd_send') || !function_exists('wa_ensure_contact')) return [false, 'The WhatsApp sender is not available.'];
     $key = (string)$row['phone']; if (strlen($key) < 10) return [false, 'This order has no phone number.'];
@@ -347,8 +347,9 @@ function fb_route(PDO $pdo, string $action): void
     // the actions on one order
     $in = $_SERVER['CONTENT_TYPE'] ?? ''; $in = stripos((string)$in, 'application/json') !== false ? json_input() : $_POST;
     $order = trim((string)($in['order'] ?? '')); $r = $get($order); if (!$r) json_response(['error' => 'Order not found.'], 404);
+    if ($action === 'fb.tpl_text') { json_response(['ok' => true, 'text' => fb_text($pdo, (int)($in['tpl'] ?? 0), trim((string)$r['customer']) !== '' ? (string)$r['customer'] : 'there')]); }
     if ($action === 'fb.send_now' || $action === 'fb.followup') {
-        [$ok, $why] = fb_send($pdo, $r, $action === 'fb.followup' ? 'fu' : 'msg', $by); if (!$ok) json_response(['error' => $why], 422);
+        [$ok, $why] = fb_send($pdo, $r, $action === 'fb.followup' ? 'fu' : 'msg', $by, (int)($in['tpl'] ?? 0)); if (!$ok) json_response(['error' => $why], 422);
         json_response(['ok' => true, 'message' => 'Message sent.']);
     }
     if ($action === 'fb.proof_add') {

@@ -123,7 +123,7 @@
       <div class="h" style="margin-top:10px;font-size:12.5px">History</div><div class="tl">${d.events.length ? d.events.map((e) => `<div><b>${esc(dt(e.at))}</b> ${esc(e.txt)}${e.by_name && e.by_name !== 'automatic' ? ' <span class="sm">· ' + esc(e.by_name) + '</span>' : ''}</div>`).join('') : '<div class="sm">Nothing yet.</div>'}</div>`;
     return { hdr, acts, rest };
   }
-  const ACTS = { now: () => send('fb.send_now'), fu: () => send('fb.followup'), call: () => callDone(), links: () => manageLinks(), pf: () => pickProof(), iss: () => issueOpen(), ifx: (e) => issueFix(e.currentTarget.dataset.k), isv: () => issueSolved(), rw: () => reward(), rws: () => rewardSent(), cx: () => complaint(), sk: () => leaveOut(), del: () => delTest(), chat: () => openPop() };
+  const ACTS = { now: () => confirmSend('fb.send_now'), fu: () => confirmSend('fb.followup'), call: () => callDone(), links: () => manageLinks(), pf: () => pickProof(), iss: () => issueOpen(), ifx: (e) => issueFix(e.currentTarget.dataset.k), isv: () => issueSolved(), rw: () => reward(), rws: () => rewardSent(), cx: () => complaint(), sk: () => leaveOut(), del: () => delTest(), chat: () => openPop() };
   // a message is put into the chat box (NOT sent): read it, change it, press Send
   function toChat(text) {
     if (!popOpen) openPop();
@@ -173,6 +173,18 @@
   document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if ($('ov').classList.contains('on')) closeM(); else if (popOpen) closePop(); });
   // a message sent from the panel (not typed in the chat) is shown in the chat at once: the chat is loaded again
   function chatRefresh() { setTimeout(() => { try { const fr = document.getElementById('chatFr'); if (fr && fr.contentWindow) fr.contentWindow.location.reload(); } catch (e) { } }, 600); }
+  // 👁 first see the message: send it as it is, pick a different approved message, or write it yourself in the chat box
+  async function confirmSend(act) {
+    const x = DET.row, fu = act === 'fb.followup'; let cur = fu ? CFG.tpl_fu : CFG.tpl;
+    if (!tplList) { try { const t = await api.get('wa.camp_templates'); tplList = ((t || {}).templates || []).filter((z) => (Array.isArray(z.vars) ? z.vars.length : (+z.vars || 0)) <= 1); } catch (e) { tplList = []; } }
+    modal(`<h3>${fu ? '📨 Follow-up' : '📨 Feedback message'} to ${esc(x.customer || x.order)}</h3><div class="sm">${esc(x.phone)} · check the message first</div><label>Message to send (approved by Meta)</label><select id="cs">${(tplList || []).map((z) => `<option value="${z.id}" ${+z.id === +cur ? 'selected' : ''}>${esc(z.name)}</option>`).join('') || '<option value="0">— no approved messages —</option>'}</select><div class="msg" id="cm" style="margin-top:8px;white-space:pre-wrap">Loading…</div>
+      <div class="sm" style="margin-top:6px">An approved message cannot be edited. To change the words, use <b>Write it myself</b>: the text goes into the chat box and you send it from there (only within 24 hours of the customer's last message).</div>
+      <div class="acts"><button class="btn g2" id="cgo">✅ Send this message</button><button class="btn gh" id="cme">✏ Write it myself in chat</button><button class="btn gh" id="cno">Cancel</button></div>`);
+    let txt = ''; const show = async () => { cur = +$('cs').value; $('cm').textContent = 'Loading…'; try { const r = await api.post('fb.tpl_text', { order: x.order, tpl: cur }); txt = r.text || ''; $('cm').textContent = txt || 'No text to show for this message.'; } catch (e) { $('cm').textContent = e.message; } };
+    $('cs').onchange = show; show(); $('cno').onclick = closeM;
+    $('cme').onclick = () => { closeM(); toChat(txt); };
+    $('cgo').onclick = async () => { const b = $('cgo'); b.disabled = true; try { await api.post(act, { order: x.order, tpl: cur }); closeM(); say('Message sent'); chatRefresh(); load(); } catch (e) { say(e.message, true); b.disabled = false; } };
+  }
   async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); chatRefresh(); load(); } catch (e) { say(e.message, true); } }
   /* several places + a new one typed by hand (it is kept in the list for next time) */
   function placeBox(sel) {
