@@ -706,7 +706,9 @@ function wag_hot_is_done(PDO $pdo, string $phone, string $lastIn = ''): bool
     try { if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) return true;
         $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) === 10) { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 36 * 3600)]); if ($q->fetchColumn()) return true; }
         if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
-        $t = trim(mb_strtolower($lastIn)); if ($t !== '' && mb_strlen($t) <= 24 && preg_match('/^[\s\p{P}\p{S}]*(ok|okay|okk|thanks|thank you|thankyou|thik hai|theek hai|ठीक है|done|haan|han|ji|yes|👍|🙏|😊|🙂|👌|✅)?[\s\p{P}\p{S}]*$/u', $t)) return true;
+        $t = trim(mb_strtolower($lastIn));
+        if ($t !== '' && (preg_match('/(order|ordr|payment|pay|paid|advance).{0,24}(already|kar diy|kar diya|kar liya|kar di\b|kar chuka|ho gaya|ho gya|hogaya|done|complete|place|kiya|kia)/u', $t) || preg_match('/(already|pehle se|maine).{0,18}(order|payment|paid)/u', $t))) return true;   // "Order toh already kar diy": he says he has ordered (owner, 21 Nov: the chat went to OPEN after 2 minutes although the customer had ordered)
+        if ($t !== '' && mb_strlen($t) <= 24 && preg_match('/^[\s\p{P}\p{S}]*(ok|okay|okk|thanks|thank you|thankyou|thik hai|theek hai|ठीक है|done|haan|han|ji|yes|👍|🙏|😊|🙂|👌|✅)?[\s\p{P}\p{S}]*$/u', $t)) return true;
     } catch (Throwable $e) { }
     return false;
 }
@@ -983,15 +985,15 @@ function wag_bot_spawn(PDO $pdo, int $n = 5): int
     return $sent;
 }
 /** ONE short bot tick (the fast heartbeat, driven once a second by cron_bot.php): claims a free slot (5 at most run at the same time — the others return at once, so no web-server worker is held), answers up to 2 waiting customers, slot 0 also runs the complaint / hot-open sweeps every 20 s. */
-function wag_bot_tick(PDO $pdo, int $slots = 5): array
+function wag_bot_tick(PDO $pdo, int $slots = 12): array   // owner, 21 Nov: 8 slots (was 5) — ~87 answers a minute had filled five slots and customers waited 30-45 s for "the bot is writing"
 {
     $o = ['slot' => -1, 'sent' => 0, 'handoff' => 0]; if (wag_cfg($pdo)['bot'] !== 'on') return $o;
     if ((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') { for ($k = 0; $k < $slots; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('hrms_wag_tick_" . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
     try {
         if ($o['slot'] === 0) { setting_set($pdo, 'wag_tick_at', (string)time()); if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } } }
-        $r = wag_bot_scan($pdo, 2); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];
+        $r = wag_bot_scan($pdo, $o['slot'] >= 10 ? 1 : 5); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];   // customer answers first (owner, 21 Nov: "the bot is writing" waits were too long): 3 per tick in the first slots, the last two slots do follow-ups
         if (time() - (int)setting_get($pdo, 'wag_exp_at', '0') >= 1800) { setting_set($pdo, 'wag_exp_at', (string)time()); try { wag_exp_eval($pdo); } catch (Throwable $e) { } }   // the self-learning check, every 30 minutes
-        try { $o['followup'] = wag_bot_followup($pdo, 4); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
+        try { if ($o['slot'] >= 10 || ($r['sent'] + $r['handoff']) === 0) $o['followup'] = wag_bot_followup($pdo, 6); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } }   // a slot that just answered customers does not start a long follow-up round: a waiting customer always comes first
     } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_tick_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
     return $o;
 }
@@ -1016,7 +1018,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
     $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $cfg['bot_after'])]);
     foreach ($st->fetchAll() as $c) {
         if ($o['sent'] + $o['handoff'] >= $max) break; $key = (string)$c['phone']; $age = $now - strtotime((string)$c['last_in_at']);
-        $__mv = wag_meta_get($pdo, 'bgm:' . $key, ''); if ($__mv !== '') { $__mp = explode('|', $__mv, 2); if ($__mp[0] === (string)$c['last_in_at'] && (int)($__mp[1] ?? 0) > time()) continue; } wag_meta_put($pdo, 'bgm:' . $key, $c['last_in_at'] . '|' . (time() + 45));   // a chat looked at is not looked at again for 45 s (kept in the database: every tick is a new short request, no memory between them)
+        $__mv = wag_meta_get($pdo, 'bgm:' . $key, ''); if ($__mv !== '') { $__mp = explode('|', $__mv, 2); if ($__mp[0] === (string)$c['last_in_at'] && (int)($__mp[1] ?? 0) > time()) continue; } wag_meta_put($pdo, 'bgm:' . $key, $c['last_in_at'] . '|' . (time() + 20));   // a chat looked at is not looked at again for 45 s (kept in the database: every tick is a new short request, no memory between them)
         if (!empty($c['cx_id'])) continue;   // the chat is with the Complaint team: the bot never answers it
         $__ad = wag_meta_get($pdo, 'addon:' . $key, ''); if (strpos($__ad, 'offered|') === 0) {   // an add-on offer is waiting for the answer (also in a chat a salesperson holds): code answers it, the AI stays quiet
             $__a0 = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__a0->execute([$key]); $__m0 = $__a0->fetch();
@@ -1080,7 +1082,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
 {
     if (defined('WA_IN_WEBHOOK') || (string)setting_get($pdo, 'wag_bfu_on', '1') === '0' || wag_cfg($pdo)['bot'] !== 'on') return 0;
     $now = time(); $hr = (int)date('G') * 60 + (int)date('i'); if ($hr < 9 * 60 || $hr > 21 * 60 + 30) return 0;
-    if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 10) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
+    if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 5) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
     $day = date('Y-m-d'); if (setting_get($pdo, 'wag_bfu_day', '') !== $day) { setting_set($pdo, 'wag_bfu_day', $day); setting_set($pdo, 'wag_bfu_n', '0'); } $cap = max(0, (int)setting_get($pdo, 'wag_bfu_max_day', '20000')); if ((int)setting_get($pdo, 'wag_bfu_n', '0') >= $cap) return 0;
     $steps = [300, 600, 1200, 1800, 3600, 7200, 10800, 14400, 28800, 64800]; $n = 0;   // 5 m, 10 m, 20 m, 30 m, 1 h, 2 h, 3 h, 4 h (hold the customer), then slower: 8 h, 18 h — afterwards the 30-day Lineup takes over (owner, 21 Nov)
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c JOIN (SELECT phone, MAX(ts) z FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= ? GROUP BY phone) b ON b.phone = c.phone WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= DATE_ADD(b.z, INTERVAL 5 SECOND) ORDER BY c.last_in_at DESC LIMIT 120");   // only chats where the BOT spoke last (a person / campaign / flow message after it = not ours)

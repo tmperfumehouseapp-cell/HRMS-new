@@ -228,6 +228,17 @@ function fn_file_rows(array $rows, int $headRow, array $cols, ?array &$stats = n
     }
     return $out;
 }
+/** An independent cross-check: the net column of the file added up as it is (signed, no rules of ours) over the rows of the chosen day. For a PayU report this must be the bank credit. $onlySettled = leave out the rows without a UTR. */
+function fn_raw_net(array $rows, int $headRow, array $cols, ?array $filter, bool $onlySettled): float
+{
+    $n = isset($cols['net']) ? (int)$cols['net'] : -1; if ($n < 0) return 0.0; $u = isset($cols['utr']) ? (int)$cols['utr'] : -1; $p = 0;
+    foreach ($rows as $i => $r) {
+        if ($i <= $headRow) continue; $utr = $u >= 0 ? trim((string)($r[$u] ?? '')) : ''; if ($u >= 0 && preg_match('/^(grand )?total$/i', $utr)) continue; if ($onlySettled && $u >= 0 && $utr === '') continue;
+        if ($filter) { $ct = fn_cell_time($r[$filter['col']] ?? ''); if ($ct !== null && $filter['dayOf']($ct[0], $ct[1]) !== $filter['day']) continue; }
+        $p += fn_p(fn_num($r[$n] ?? ''));
+    }
+    return fn_m($p);
+}
 /** Add up a file for the chosen columns. $includePending = also count the payments that are not settled yet (no UTR). A payment an earlier saved file already added is not counted again ('already'). The keys of the counted payments are returned for saving. */
 function fn_calc_file(array $rows, int $headRow, array $cols, bool $includePending = false, array $skip = [], ?array $filter = null): array
 {
@@ -569,7 +580,7 @@ switch ($action) {
         $in = json_input(); $u = $pdo->prepare("SELECT * FROM fn_in_uploads WHERE id = ? AND status = 'preview'"); $u->execute([(int)($in['upload_id'] ?? 0)]); $up = $u->fetch(); if (!$up) fn_err('This upload was already saved, or not found.', 404);
         $rows = json_decode((string)$up['rows_json'], true) ?: []; $cols = (array)($in['cols'] ?? []); $flt = fn_day_filter($pdo, $in['day_filter'] ?? null); $calc = fn_calc_file($rows, (int)$up['head_row'], $cols, !empty($in['include_pending']), fn_added_keys($pdo, (int)$up['channel_id']), $flt); $dups = fn_utr_dups($pdo, (int)$up['channel_id'], $calc['utrs']);
         $od = fn_day($in['orders_day'] ?? ''); $of = fn_day($in['orders_from'] ?? '') ?: $od; if ($of > $od) $of = $od; $recon = $od !== '' ? fn_recon($rows, (int)$up['head_row'], $cols, fn_prepaid_orders_r($pdo, $of, $od, !empty($in['gokwik_only'])), $od, fn_day_sales_r($pdo, $of, $od), $flt) : null; if ($recon) { $recon['orders_from'] = $of; $recon['gokwik'] = !empty($in['gokwik_only']); $recon['other_prepaid'] = fn_other_prepaid_r($pdo, $of, $od); }
-        json_response(['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped'], 'pending_included' => $calc['pending_included'], 'already' => $calc['already'], 'already_net' => $calc['already_net'], 'recon' => $recon]);
+        json_response(['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped'], 'pending_included' => $calc['pending_included'], 'already' => $calc['already'], 'already_net' => $calc['already_net'], 'raw_net' => fn_raw_net($rows, (int)$up['head_row'], $cols, $flt, empty($in['include_pending'])), 'recon' => $recon]);
         break;
     }
     // step 3: save it. The NET amount becomes a receipt on the channel's line (so the Receipt and Payment tab and the bank balance show it by themselves)
