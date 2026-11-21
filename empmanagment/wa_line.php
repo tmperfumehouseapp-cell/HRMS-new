@@ -505,8 +505,10 @@ function wln_rescue(PDO $pdo, int $now = 0, int $cap = 40): int
         foreach ($tw as [$tid, $key]) {
             $res = wln_send_any($pdo, $c, $tid);
             if ($res[0]) { $ts = date('Y-m-d H:i:s'); $ins->execute([$ph, (string)$r['topic'], (int)$r['step'], $key, $tid, $ts, 'utility rescue of #' . $r['id'] . ' (' . $r['err_code'] . ')', $ts, (string)($res[3] ?? '')]); $mark->execute(['rescued (' . $r['err_code'] . ') as utility #' . $tid, $r['id']]); $n++; wl_log($pdo, $ph, 'marketing failed (' . $r['err_code'] . ') -> utility #' . $tid . ' sent'); continue 2; }
-            if (stripos((string)$res[1], 'No number') === 0 || stripos((string)$res[1], 'The chosen number') === 0) continue 2;   // no room now: tried again next round (nothing written)
+            $why1 = mb_substr((string)$res[1], 0, 60);   // this twin could not go (no number of his account has it approved, no room...): the next twin is tried
         }
+        $mark->execute(['rescue: no utility message could go (' . ($why1 ?? '') . ')', $r['id']]);   // marked, so the next rounds go on with OTHER failed messages (before, the oldest unsendable 40 were tried again every minute and blocked all the others)
+        unset($why1);
     }
     return $n;
 }

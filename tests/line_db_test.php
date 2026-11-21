@@ -13,7 +13,7 @@ function json_response($a, $c = 200) { throw new Exception('json_response'); } f
 function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen($d) > 10 ? substr($d, -10) : $d; }
 function wa_contact($p, $k) { $q = $p->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$k]); return $q->fetch() ?: null; }
 function wa_lock($p, $n, $s) { return true; }
-$SENT = []; function wd_send($pdo, $c, $step) { global $SENT; $SENT[] = [$c['phone'], $step['tpl_id']]; return [true, '', 1, 'wamid' . count($SENT)]; }
+$SENT = []; function wd_send($pdo, $c, $step) { global $SENT; if (!empty($GLOBALS['FAILSEND'])) return [false, 'No number can send this message now (test)']; $SENT[] = [$c['phone'], $step['tpl_id']]; return [true, '', 1, 'wamid' . count($SENT)]; }
 $S['wl_map'] = '{}'; $pdo_ = $pdo; $GLOBALS['pdo'] = $pdo; require dirname(__DIR__) . '/empmanagment/wa_line.php';
 function ok($c, $m) { if (!$c) { echo "FAIL: $m\n"; exit(1); } }
 $now = time(); $since = wl_yesterday_start($now); $f = fn($t) => date('Y-m-d H:i:s', $t);
@@ -202,4 +202,10 @@ $S['wl_extra'] = '[]'; $S['wl_topics_extra'] = '[]'; wl_extra_load($pdo); ok(str
 $pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at, status, sent_at, wamid) VALUES ('9877000001', 'price', 1, 'ln_price_1', '2026-01-01 00:00:00', 'sent', '2026-01-01 00:00:00', 'wmE1'), ('9877000001', 'price', 2, 'ln_price_2', '2026-01-01 00:00:00', 'sent', '2026-01-02 00:00:00', 'wmE2'), ('9877000001', 'price', 3, 'ln_price_3', '2026-01-01 00:00:00', 'sent', '2026-01-03 00:00:00', 'wmE3')");
 $pdo->exec("INSERT INTO wa_messages (wamid, phone, dir, status, ts) VALUES ('wmE1', '9877000001', 'out', 'delivered', '2026-01-01 00:00:00'), ('wmE2', '9877000001', 'out', 'delivered', '2026-01-02 00:00:00'), ('wmE3', '9877000001', 'out', 'delivered', '2026-01-03 00:00:00')");
 ok(wln_engagement($pdo, '9877000001') === [3, 0], 'three delivered, none read: ' . json_encode(wln_engagement($pdo, '9877000001'))); $pdo->exec("UPDATE wa_messages SET status = 'read' WHERE wamid = 'wmE2'"); ok(wln_engagement($pdo, '9877000001') === [3, 1], 'one read'); ok(wln_engagement($pdo, '9800000000') === [0, 0], 'nothing sent');
+// a rescue that cannot be sent is marked and does not block the next ones
+$pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at) VALUES ('9878000001', 'RF', '2000-01-01 00:00:00'), ('9878000002', 'RF2', '2000-01-01 00:00:00')");
+foreach (['9878000001' => 'wmF1', '9878000002' => 'wmF2'] as $ph => $wm) { $pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, sent_at, wamid) VALUES ('$ph', 'price', 1, 'ln_price_1', 9001, '" . $f($now - 3600) . "', 'sent', '" . $f($now - 3000) . "', '$wm')"); $pdo->exec("INSERT INTO wa_messages (wamid, phone, dir, status, err_code, ts) VALUES ('$wm', '$ph', 'out', 'failed', 131049, '" . $f($now - 2900) . "')"); }
+$GLOBALS['FAILSEND'] = true; wln_rescue($pdo, $now, 1); $GLOBALS['FAILSEND'] = false;
+ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE wamid IN ('wmF1', 'wmF2') AND why LIKE 'rescue: no utility message could go%'")->fetchColumn() === 1, 'the first unsendable one is marked');
+$SENT = []; wln_rescue($pdo, $now, 1); ok(count($SENT) === 1 && $SENT[0][0] === '9878000002', 'and the next failed message is rescued: ' . json_encode($SENT));
 echo "lineup db ok\n";
