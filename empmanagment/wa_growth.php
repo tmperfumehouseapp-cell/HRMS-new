@@ -599,12 +599,13 @@ function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
 /** OWNER (21 Nov): a HOT chat (ready to order / pay, or handed over by the bot) that the person who holds it has not answered for 4 minutes (setting wag_hot_open_min) is taken off that person and put into OPEN (Requests): everybody sees it and anybody picks it. Once per customer message; the person who missed it is remembered for the admin card. */
 function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
 {
-    if (false || !function_exists('wa_assign_to')) return 0; $mins = max(1, min(60, (int)setting_get($pdo, 'wag_hot_open_min', '4'))); $n = 0; $now = time();
+    if (false || !function_exists('wa_assign_to')) return 0; $mins = max(1, min(60, (int)setting_get($pdo, 'wag_hot_open_min', '7'))); $busyMins = max($mins, min(60, (int)setting_get($pdo, 'wag_hot_open_busy_min', '10')));   // 7 minutes without an answer; 10 when the holder is busy answering other customers (owner, 21 Nov) $n = 0; $now = time();
     try {
         $st = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND assigned_emp > 0 AND last_in_at >= ? AND last_in_at <= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT 150");
         $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $mins * 60)]); $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
         foreach ($st->fetchAll() as $c) {
             if ($n >= $max) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at'];
+            if ($now - (int)strtotime($li) < $busyMins * 60 && wag_holder_busy($pdo, (int)$c['assigned_emp'])) continue;   // the holder is writing to other customers: more time
             $h = wag_meta_get($pdo, 'bothand:' . $key, ''); $handed = $h !== '' && strtotime($h) >= strtotime($li);
             if (empty($c['hot']) && !$handed) continue; if (!wag_is_sales_query($pdo, $c)) continue;   // only good queries (not complaints / after-sales) go to the open market; (a chat a person took over is checked too: it goes back to OPEN when the customer waits again and nobody answers)
             $__ml = wag_meta_get($pdo, 'mklink:' . $key, ''); if ($__ml !== '' && strtotime($__ml) > $now - 480) continue;   // the holder is making the payment link: up to 8 minutes, the chat stays with him
@@ -736,6 +737,13 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp): string
     } catch (Throwable $e) { }
     return $c[$ck] = $msg;
 }
+/** Is this salesperson busy answering OTHER customers right now (he sent a message to somebody in the last 2 minutes)? Cached 15 s per person. (owner, 21 Nov: a busy person gets more time, and the bot covers his waiting customers.) */
+function wag_holder_busy(PDO $pdo, int $emp, int $secs = 120): bool
+{
+    static $c = []; $k = $emp . ':' . $secs; if (isset($c[$k]) && $c[$k][0] > time() - 15) return $c[$k][1];
+    $b = false; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE emp_id = ? AND dir = 'out' AND ts >= ?"); $q->execute([$emp, date('Y-m-d H:i:s', time() - $secs)]); $b = (int)$q->fetchColumn() > 0; } catch (Throwable $e) { }
+    $c[$k] = [time(), $b]; return $b;
+}
 /** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
 function wag_bot_off(PDO $pdo, string $key, bool $ignoreHand = false): bool
 {
@@ -830,7 +838,11 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         // the bot answers after bot_after (4 s) — also when the chat is given to a salesperson — until that person presses "Take over" (or is writing to the customer right now): then the bot is silent
         // 🆘 STUCK (owner, 21 Nov): a hot chat (ready to order / pay, or the bot handed it over) that nobody answered for 10+ minutes: the bot tries ONCE more in ORDER MODE (details + address, never payment) and, if it cannot, the chat goes to the next free person with a push
         $__stuck = (!empty($c['hot']) || (true && ($__bh = wag_meta_get($pdo, 'bothand:' . $key, '')) !== '' && strtotime($__bh) >= strtotime((string)$c['last_in_at']))) && ($age >= 600 || (true && ($__hm = wag_meta_get($pdo, 'hotmiss:' . $key, '')) !== '' && substr($__hm, strrpos($__hm, '|') + 1) === (string)$c['last_in_at'])) && (false || wag_meta_get($pdo, 'stuck:' . $key, '') !== (string)$c['last_in_at']);   // 10+ min, or the 2-minute rule already moved the chat to OPEN: the bot answers it in ORDER MODE at once
-        if (wag_bot_off($pdo, $key, $__stuck)) continue;
+        $__cover = false;
+        if (wag_bot_off($pdo, $key, $__stuck)) {   // a person holds this chat: the bot stays silent — except when that person is busy with other customers and this customer has waited 90 s (owner, 21 Nov): then the bot answers meanwhile; the chat stays with the person
+            $__ho = (int)($c['assigned_emp'] ?? 0); $__bh3 = wag_meta_get($pdo, 'bothand:' . $key, '');
+            if ($__ho > 0 && $age >= 90 && !($__bh3 !== '' && strtotime($__bh3) >= strtotime((string)$c['last_in_at'])) && wag_holder_busy($pdo, $__ho)) $__cover = true; else continue;
+        }
         $li = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
         // wants to order / pay (hot): the bot takes the ORDER DETAILS and the ADDRESS — never the payment — and then a person finishes (ORDER MODE)
@@ -867,7 +879,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
         if ($ok && $__order) wag_order_done_check($pdo, $c, $key);
-        if ($ok) { $o['sent']++; wa_event($pdo, $key, '🤖 The bot answered (' . $age . ' s after the customer)'); if (function_exists('wq_rescue_price_intent') && function_exists('wq_tag_put') && wq_rescue_price_intent((string)$m['body'])) { wq_tag_put($pdo, $key, 'orange'); wa_event($pdo, $key, '🟠 The customer is interested: everyone can see this chat and pick it up'); } if (function_exists('wa_sugg_save')) wa_sugg_save($pdo, $key, $r['text'], $r['source'], (int)$r['ver']); if (function_exists('wa_prod_bot_after')) wa_prod_bot_after($pdo, $c, (string)$r['text']); }   // product photos follow the bot's text (max 3, never repeated within 24 h)
+        if ($ok) { $o['sent']++; wa_event($pdo, $key, '🤖 The bot answered (' . $age . ' s after the customer)' . ($__cover ? ' — the holder was busy with other customers' : '')); if (function_exists('wq_rescue_price_intent') && function_exists('wq_tag_put') && wq_rescue_price_intent((string)$m['body'])) { wq_tag_put($pdo, $key, 'orange'); wa_event($pdo, $key, '🟠 The customer is interested: everyone can see this chat and pick it up'); } if (function_exists('wa_sugg_save')) wa_sugg_save($pdo, $key, $r['text'], $r['source'], (int)$r['ver']); if (function_exists('wa_prod_bot_after')) wa_prod_bot_after($pdo, $c, (string)$r['text']); }   // product photos follow the bot's text (max 3, never repeated within 24 h)
         else { wag_log($pdo, 'bot', false, $key . ' · ' . $res); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); }
     }
     return $o;
