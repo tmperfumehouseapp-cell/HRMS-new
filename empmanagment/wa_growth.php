@@ -592,6 +592,15 @@ function wag_addon_calc(PDO $pdo, string $key): ?array
             $p1 = (int)(round($per * (1 - $d1) / 10) * 10); $p2 = (int)(round(2 * $per * (1 - $d2) / 10) * 10); if ($p1 < 50 || $p2 <= $p1) continue;
             return [$qty, $ml, $tot, $p1, $p2, $am]; }
     } catch (Throwable $e) { }
+    // no quote sentence in the chat (19 chats had "noprice"): the customer's own "N x S ml" and OUR chart price at the 6.5% start level (never when his own price is disputed above)
+    try { $__cq = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 40"); $__cq->execute([$key]); $qty = 0; $ml = 0;
+        foreach ($__cq->fetchAll(PDO::FETCH_COLUMN) as $__cb) { if (preg_match('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/iu', (string)$__cb, $__cm)) { $qty = (int)$__cm[1]; $ml = (int)$__cm[2]; break; } }
+        if ($qty >= 2 && $qty <= 20 && in_array($ml, [20, 30, 50, 100], true)) { $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true);
+            if (is_array($j) && !empty($j['cols']) && !empty($j['rows'])) { $ix = 1; foreach (array_values(array_map('floatval', (array)$j['cols'])) as $i2 => $cv) if (abs($cv - 6.5) < 0.01) $ix = $i2; $tot = 0; foreach ((array)$j['rows'] as $r2) if ((int)($r2['ml'] ?? 0) === $qty * $ml) { $tot = (int)($r2['p'][$ix] ?? 0); break; }
+                if ($tot >= 500 && $tot <= 20000) { $per = $tot / $qty; $hi = $tot >= 2800; $d1 = $hi ? 0.15 : 0.25; $d2 = $hi ? 0.20 : 0.32; $am = $ml;
+                    if ($tot < 1500 && $ml < 50) foreach ((array)$j['rows'] as $r3) if ((int)($r3['ml'] ?? 0) === 50 && (int)($r3['p'][$ix] ?? 0) > 0) { $per = (float)$r3['p'][$ix]; $am = 50; break; }
+                    $p1 = (int)(round($per * (1 - $d1) / 10) * 10); $p2 = (int)(round(2 * $per * (1 - $d2) / 10) * 10); if ($p1 >= 50 && $p2 > $p1) return [$qty, $ml, $tot, $p1, $p2, $am]; } } }
+    } catch (Throwable $e) { }
     return null;
 }
 /** The order is final: offer the add-on (true = offered, the bot waits for the answer). */
@@ -1117,7 +1126,7 @@ function wag_bot_tick(PDO $pdo, int $slots = 8, string $role = ''): array   // o
     $isMy = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $pfx = $role === 'fu' ? 'hrms_wag_fu_' : 'hrms_wag_tick_'; $n = $role === 'fu' ? 2 : $slots;
     if ($isMy) { for ($k = 0; $k < $n; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('" . $pfx . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
     try {
-        if ($role === 'fu') { try { $o['followup'] = wag_bot_followup($pdo, 6); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } } return $o; }
+        if ($role === 'fu') { try { $o['followup'] = wag_bot_followup($pdo, 20); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } } return $o; }
         if (time() - (int)setting_get($pdo, 'wag_tick_at', '0') >= 3) setting_set($pdo, 'wag_tick_at', (string)time());   // the heartbeat no longer depends on slot 0 being free
         if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_unrelated_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } }   // the sweeps run in whichever slot is free (a busy slot 0 used to delay them)
         $r = wag_bot_scan($pdo, 3); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];   // customer answers only; follow-ups have their own slots
@@ -1206,6 +1215,16 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
 /** 🔔 AGGRESSIVE BOT FOLLOW-UP (owner, 21 Nov): the bot answered and the customer went silent. Inside the 24-hour window (free text) the bot follows up by itself in 4 steps —
  *  15 min, 2 h, 6 h, 20 h after the customer's last message — each step with a different angle (the missing detail, the add-on towards Rs 2,700-2,800, a reason to decide now, a last easy ask). Daytime only (9:00-21:30).
  *  Never when a person took the chat, the bot handed it over, the order is done, the customer said stop / no, or a flow runs. Settings: wag_bfu_on (1), wag_bfu_max_day (2500). */
+/** Follow-up step 1 without AI: one short question, four wordings, the customer's first name and the perfume the bot named last (when there is one). */
+function wag_fu1_text(PDO $pdo, array $c, array $rows): string
+{
+    $nm = ''; $n0 = trim((string)($c['name'] ?? '')); if ($n0 !== '' && preg_match('/^[\p{L}]{2,14}$/u', ($__f = preg_split('/\s+/', $n0)[0]))) $nm = $__f;
+    $pf = ''; try { $bt = ''; foreach ($rows as $rw) if ((string)($rw['who'] ?? '') === 'bot') { $bt = (string)($rw['body'] ?? ''); break; } if ($bt !== '' && function_exists('wa_prod_find_named')) { $h = wa_prod_find_named($pdo, $bt, 1); if ($h) $pf = (string)($h[0]['name'] ?? ''); } } catch (Throwable $e) { }
+    $v = crc32((string)($c['phone'] ?? '')) % 4; $hi = $nm !== '' ? 'Hi ' . $nm . '! 😊 ' : 'Sir, ';
+    if ($pf !== '') { $t = [$hi . 'aapko ' . $pf . ' ke baare me koi confusion ya doubt hai? Order bana dun? 😊', 'Sir, ' . $pf . ' ke liye koi doubt ho to bataiye, main order bana deta hoon 😊', $hi . $pf . ' lena hai ya koi aur perfume dekhna hai? Bataiye, order bana dun? 🙏', 'Hello sir 🙏 ' . $pf . ' me koi confusion hai? Kaho to abhi order bana dun?'][$v]; }
+    else { $t = [$hi . 'aapko kaunse perfume me confusion ya doubt hai? Order bana dun? 😊', 'Hello sir 🙏 Koi confusion ya doubt ho to bataiye, main aapka order bana deta hoon 😊', $hi . 'kaunsa perfume pasand aaya? Bataiye, main order bana deta hoon 🙏', 'Sir, abhi order bana dun ya kuch aur dekhna hai? Bas ek message kar dijiye 😊'][$v]; }
+    return $t;
+}
 function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follow-ups must be FAST — 6 per tick (was 2; only ~4 a minute went out with 347 due)
 {
     if (defined('WA_IN_WEBHOOK') || (string)setting_get($pdo, 'wag_bfu_on', '1') === '0' || wag_cfg($pdo)['bot'] !== 'on') return 0;
@@ -1253,7 +1272,8 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         if (preg_match('/(stop|unsubscribe|not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|no thanks|don.?t message|remove)/iu', $lastIn)) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }
         $fl = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $fl->execute([$key]); if ((int)$fl->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now . ($__pp ? '|p|' . $refT : ''));   // claimed before the AI call: never twice
-        $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0); $__tries++;
+        if ($cnt === 0 && !$__pp && (string)setting_get($pdo, 'wag_fu_tpl1', '1') !== '0') { $r = ['ok' => true, 'text' => wag_fu1_text($pdo, $c, $rows)]; }   // ⚡ step 1 (the bulk: 378 of 400) is the same short question - made in code, no AI call (2.5 s each): follow-ups go out many times faster (owner, 21 Nov: "follow-ups faster")
+        else { $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0); $__tries++; }
         if (empty($r['ok']) || trim((string)($r['text'] ?? '')) === '') { $D['ai']++; $D['err'] = mb_substr((string)($GLOBALS['lib_last_why'] ?? '') . ' | ' . (string)($r['why'] ?? ''), 0, 160); continue; }
         if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
         $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) { $D['same']++; continue; } }   // never the same text again
