@@ -604,14 +604,19 @@ function wag_open_tune(PDO $pdo): array
     if (time() - $last < 60) return [max(2, $b0), max($b0, $y0)];
     setting_set($pdo, 'wag_tune_at', (string)time());
     try {
-        $a = (int)$pdo->query("SELECT COUNT(DISTINCT emp_id) FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date('Y-m-d H:i:s', time() - 600) . "'")->fetchColumn();
-        $qn = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND last_in_at >= '" . date('Y-m-d H:i:s', time() - 3 * 3600) . "' AND last_in_at <= '" . date('Y-m-d H:i:s', time() - 120) . "' AND (last_out_at IS NULL OR last_out_at < last_in_at)")->fetchColumn();
-        $base = $a >= 14 ? 5 : ($a >= 8 ? 7 : 9); $ratio = $qn / max(1, $a); if ($ratio > 3) $base -= 1; elseif ($ratio < 0.5) $base += 1;
+        // the OPEN market itself decides (owner, 21 Nov): how many chats sit in OPEN waiting to be tagged, how many were taken in the last 15 min and how fast they were taken
+        $a = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND assigned_emp = 0 AND last_in_at >= '" . date('Y-m-d H:i:s', time() - 3 * 3600) . "' AND (last_out_at IS NULL OR last_out_at < last_in_at)")->fetchColumn();   // chats showing in the free market now
+        $tk = $pdo->query("SELECT COUNT(*), AVG(CASE WHEN wait_s >= 0 THEN wait_s END) FROM wa_mkt WHERE kind = 'taken' AND at >= '" . date('Y-m-d H:i:s', time() - 900) . "'")->fetch(PDO::FETCH_NUM); $taken = (int)($tk[0] ?? 0); $avgw = $tk[1] === null ? -1 : (int)$tk[1];
+        $qn = $a;
+        if ($a <= 2 && ($avgw < 0 || $avgw <= 180)) $base = 5;        // market nearly empty and picked up quickly: release sooner
+        elseif ($a >= 9 || ($a >= 5 && $taken < 3) || ($avgw > 420)) $base = 9;   // market clogged / slow to pick up: do not dump more into it, the holder keeps longer
+        else $base = 7;
+        if ($taken >= 8 && $a <= 4) $base -= 1;                       // lively picking and a short list
         $base = max(4, min(10, $base)); $busy = max($base + 2, min(14, $base + 3));
         // smooth: move at most 1 minute per step so the rule never jumps
         $base = $base > $b0 ? $b0 + 1 : ($base < $b0 ? $b0 - 1 : $b0); $busy = $busy > $y0 ? $y0 + 1 : ($busy < $y0 ? $y0 - 1 : $y0); $busy = max($busy, $base + 2);
         if ($base !== $b0 || $busy !== $y0) { setting_set($pdo, 'wag_hot_open_min_eff', (string)$base); setting_set($pdo, 'wag_hot_open_busy_eff', (string)$busy); }
-        setting_set($pdo, 'wag_tune_log', date('H:i') . ' people ' . $a . ' · waiting ' . $qn . ' -> base ' . $base . ' / busy ' . $busy . ' min');
+        setting_set($pdo, 'wag_tune_log', date('H:i') . ' open ' . $a . ' · taken15 ' . $taken . ' · avg pick ' . $avgw . 's -> base ' . $base . ' / busy ' . $busy . ' min');
         return [$base, $busy];
     } catch (Throwable $e) { return [max(2, $b0), max($b0, $y0)]; }
 }
