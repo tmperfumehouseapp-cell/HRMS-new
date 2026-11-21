@@ -1140,10 +1140,10 @@ function wag_bot_spawn(PDO $pdo, int $n = 5): int
     return $sent;
 }
 /** ONE short bot tick (the fast heartbeat, driven once a second by cron_bot.php): claims a free slot (5 at most run at the same time — the others return at once, so no web-server worker is held), answers up to 2 waiting customers, slot 0 also runs the complaint / hot-open sweeps every 20 s. */
-function wag_bot_tick(PDO $pdo, int $slots = 8, string $role = ''): array   // owner, 21 Nov: 12 answer slots (was 5: ~87 answers a minute had filled five) + 3 slots only for follow-ups (role=fu, one tick a second from cron_bot.php)
+function wag_bot_tick(PDO $pdo, int $slots = 6, string $role = ''): array   // owner, 21 Nov: 12 answer slots (was 5: ~87 answers a minute had filled five) + 3 slots only for follow-ups (role=fu, one tick a second from cron_bot.php)
 {
     $o = ['slot' => -1, 'sent' => 0, 'handoff' => 0]; if (wag_cfg($pdo)['bot'] !== 'on') return $o;
-    $isMy = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $pfx = $role === 'fuw' ? 'hrms_wag_fuw_' : ($role === 'fu' ? 'hrms_wag_fu_' : 'hrms_wag_tick_'); $n = $role === 'fuw' ? 2 : ($role === 'fu' ? 2 : $slots);
+    $isMy = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $pfx = $role === 'fuw' ? 'hrms_wag_fuw_' : ($role === 'fu' ? 'hrms_wag_fu_' : 'hrms_wag_tick_'); $n = $role === 'fuw' ? 1 : ($role === 'fu' ? 2 : $slots);
     if ($isMy) { for ($k = 0; $k < $n; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('" . $pfx . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
     try {
         if ($role === 'fuw') {   // 🔁 a FOLLOW-UP WORKER (owner, 21 Nov: follow-ups were only ~3 a minute): ONE long request that loops for ~50 s (cron_bot.php starts two a minute) instead of a request every few seconds — it sends one round after the other without the 5 s limiter

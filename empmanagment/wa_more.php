@@ -710,7 +710,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
         $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
         try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
-        $r = ['ok' => true]; try { if (function_exists('wag_bot_tick')) $r['bot'] = wag_bot_tick($pdo, 8, (string)($_GET['role'] ?? '')); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'bot tick: ' . $e->getMessage()); }
+        $r = ['ok' => true]; try { if (function_exists('wag_bot_tick')) $r['bot'] = wag_bot_tick($pdo, 6, (string)($_GET['role'] ?? '')); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'bot tick: ' . $e->getMessage()); }
         json_response($r);
     }
     if ($__wm === 'wa.bot_run') {   // 🤖 a fast bot worker (3-8 s answers): ~55 s, under its own slot lock; the sending job starts three of them every minute
