@@ -1307,7 +1307,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (isset($flt['waiting'])) $w[] = "(c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.optout = 0)";   // ⏳ exactly what the "Waiting for a reply" counter counts: the customer wrote last
             if (isset($flt['noreply'])) $w[] = $noRep;
             if (isset($flt['unassigned'])) $w[] = 'c.assigned_emp = 0';
-            if (isset($flt['hot'])) $w[] = 'c.hot = 1';
+            if (isset($flt['hot'])) $w[] = "(c.hot = 1 OR c.tag = 'buy' OR EXISTS (SELECT 1 FROM wa_ctags ht WHERE ht.phone = c.phone AND ht.tag = 'hot'))";   // 🔥 every chat that shows the hot colour: the flag, the ready-to-buy tag, or hot marked by the bot
             if (isset($flt['late'])) { $w[] = $noRep; $w[] = 'c.last_in_at <= ?'; $p[] = date('Y-m-d H:i:s', time() - 60 * (function_exists('wa_team_cfg') ? max(1, (int)(wa_team_cfg($pdo)['unans_min'] ?? 5)) : 5)); }
             if (isset($flt['complaint'])) $w[] = "(c.cx_id > 0 OR c.tag = 'complaint')";
             // 📅 Today's chats / Yesterday's chats (the customer wrote that calendar day); both ticked = today AND yesterday together
