@@ -173,7 +173,7 @@ function sx_is_spam($text) {
 }
 function sx_guess_problem($text) {
     $t = ' ' . mb_strtolower((string)$text) . ' ';
-    $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill)/u', 'wrong' => '/(wrong|galat|alag|different (perfume|product))/u', 'notdelivered' => '/(not (delivered|received)|nahi (mila|aaya|pahucha)|never (came|arrived)|still (not|waiting))/u', 'quality' => '/(fake|duplicate|smell|khushbu|quality|bad)/u', 'refund' => '/(refund|paisa wapas|money back|return)/u'];
+    $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill)/u', 'wrong' => '/(wrong|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived))/u', 'notdelivered' => '/(not (delivered|received)|nahi (mila|aaya|pahucha)|never (came|arrived)|still (not|waiting))/u', 'quality' => '/(fake|duplicate|smell|khushbu|quality|bad)/u', 'refund' => '/(refund|paisa wapas|money back|return)/u'];
     foreach ($map as $k => $re) if (preg_match($re, $t)) return $k;
     return 'other';
 }
