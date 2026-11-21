@@ -146,6 +146,13 @@ function wag_cfg(PDO $pdo): array
             $rule = 'PRICE RULE (owner): whenever a customer asks the price of ANY combo or a single perfume, quote ONLY the price chart\'s 7% column for that quantity. If he then asks for a discount, give at most the 6.5% and then the 6% column of the chart - NEVER more discount than that and never a number that is not on the chart. When he still refuses, show the value of the bigger size or the add-on instead of a lower price.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): a customer who wants to CHECK the fragrance / doubts the quality gets reviews and a trial invitation - never a discount
+    try { if (setting_get($pdo, 'wag_rules17', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules17', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rule = 'QUALITY / "I only want to check the fragrance": when a customer says budget is no issue, doubts our claim or quality, or wants to check the smell first, do NOT talk price or discount. Tell him our fragrance is good (30% oil, long lasting), show our real reviews (a perfume with its rating and number of reviews, only the facts the system gives you), invite him to use one perfume once - he will definitely like it - and ask which fragrance family he prefers so you can suggest one.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $gb['owner_corrections'] = array_values(array_merge([['customer' => 'Budget ki baat nahi h, mujhe fragrance check karni hai. Ki aap log claim krte ho, wo quality h bhi ya yuhi', 'better' => 'Sir, hamare perfume 30% oil ke hain, bahut der tikte hain aur customers ke reviews bhi achhe hain (jaise [perfume] ka rating [x]/5 [n] reviews). Ek baar use karke dekhiye, aapko definitely pasand aayega. Aapko kaisi khushbu pasand hai - fresh, sweet ya woody? Main aapke liye best suggest karta hoon.']], (array)($gb['owner_corrections'] ?? [])));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov: "as fast as possible"): the bot starts 2 s after the message (the answer itself takes the AI 3-5 s)
     try { if (setting_get($pdo, 'wag_bot2', '') !== '1') { setting_set($pdo, 'wag_bot2', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 2; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
@@ -898,6 +905,16 @@ function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
         if (time() - (int)setting_get($pdo, 'wag_cherry_at', '0') >= 600) { setting_set($pdo, 'wag_cherry_at', (string)time()); $fl = []; foreach (wag_mkt_board($pdo, 7) as $b) if (!empty($b['flag']) && setting_get($pdo, 'wag_cherry_push_' . $b['emp'], '') !== date('Y-m-d')) { setting_set($pdo, 'wag_cherry_push_' . $b['emp'], date('Y-m-d')); $fl[] = $b['name'] . ' (' . $b['cherry'] . ' of ' . $b['taken'] . ')'; }
             if ($fl && function_exists('ct_push') && function_exists('wa_team_cfg')) { $al = (array)(wa_team_cfg($pdo)['alert_emps'] ?? []); if ($al) ct_push($pdo, $al, '⚠ Cherry-picking queries', implode(', ', $fl) . ' took queries and sent them back or never answered them.', '/whatsapp.html#signals', 'wa-cherry'); } } } catch (Throwable $e) { }
     return $n;
+}
+/** TRUST / "I only want to check the fragrance" (owner, 21 Nov, the customer wrote "budget ki baat nahi, mujhe fragrance check karni hai - ki aap log claim karte ho, wo quality hai bhi ya yuhi" and the bot answered with a price): answer about the FRAGRANCE, show our real reviews, invite him to try one - no discount, no price. The review facts come from the catalogue (rating + rating count), never invented. '' when the customer is not doubting quality. */
+function wag_trust_context(PDO $pdo, array $msgs): string
+{
+    try { $cust = ''; foreach (array_slice($msgs, -4) as $m) if ((string)($m['who'] ?? '') === 'customer') $cust .= ' ' . mb_strtolower((string)($m['text'] ?? ''));
+        if (!preg_match('/(fragrance|smell|khushbu|khushboo|quality|claim|asli|original|fake|nakli|duplicate|try (kr|kar)|pehle try|check (kr|kar)|review|trust|bharosa|sach|genuine|lasting|tikta)/u', $cust)) return '';
+        $q = $pdo->query("SELECT name, rating, rating_n FROM wa_prod WHERE kind = 'perfume' AND active = 1 AND rating >= 4.5 AND rating_n >= 30 ORDER BY rating_n DESC, rating DESC LIMIT 3"); $top = [];
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $top[] = $r['name'] . ' ' . rtrim(rtrim(number_format((float)$r['rating'], 1), '0'), '.') . '/5 (' . (int)$r['rating_n'] . ' reviews)';
+        return ' TRUST (owner): the customer doubts our quality / wants to CHECK the fragrance - this is NOT a price question. Do NOT mention any price or discount. Answer warmly: our perfumes are made with 30% oil, long lasting, and our customers review them well' . ($top ? ' - real review facts you may quote ONLY as given: ' . implode('; ', $top) : '') . '. Invite him to try one perfume once ("ek baar use karke dekhiye, aapko definitely pasand aayega") and ask which fragrance he likes (fresh / sweet / woody) so you can suggest one. Never invent a review, a rating or a number.';
+    } catch (Throwable $e) { return ''; }
 }
 /** Price chart columns (owner, 21 Nov): the FIRST price to every customer is the chart's 7% column; when he asks for a discount, at most the 6.5% and then the 6% column - never lower. [start index, floor index] of the columns. */
 function wag_chart_cols(array $cols): array
