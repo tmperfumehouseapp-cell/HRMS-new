@@ -554,7 +554,7 @@ function wag_bot_block_msg(PDO $pdo, array $c): string
 function wag_bot_unsafe(string $t): bool
 {
     $t = mb_strtolower($t);
-    return (bool)preg_match('/(free|muft|mufat|complimentary)\W+(\d+\s?ml|gift|tester|sample|bottle|perfume)|\d+\s?ml\W+(free|muft)|free gift|payment (is )?(received|mil gaya|mil gayi|ho gaya|ho gayi)|(payment|paisa) confirm (ho|hua)|order (is )?confirmed|order confirm ho (gaya|gya)|refund (done|kar diya)/u', $t);
+    return (bool)preg_match('/\[(phone|name|address|email|link|number|pincode|order)[^\]]*\]|(free|muft|mufat|complimentary)\W+(\d+\s?ml|gift|tester|sample|bottle|perfume)|\d+\s?ml\W+(free|muft)|free gift|payment (is )?(received|mil gaya|mil gayi|ho gaya|ho gayi)|(payment|paisa) confirm (ho|hua)|order (is )?confirmed|order confirm ho (gaya|gya)|refund (done|kar diya)/u', $t);
 }
 /** Several fast bot workers at once (3-8 s answers): the sending job calls this every minute; each worker runs ~55 s and answers whoever waits. wq_guard keeps it to one answer per customer message. */
 function wag_bot_spawn(PDO $pdo, int $n = 5): int
@@ -618,6 +618,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         wag_bot_typing($pdo, $c, (string)($m['wamid'] ?? ''));   // the customer sees "typing…" at once (WhatsApp shows it for up to 25 s) while the answer is made
         $f0 = ai_feat('wa_bot'); $GLOBALS['lib_fast'] = 1; if ($__order) $GLOBALS['lib_order_mode'] = 1; $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fast'], $GLOBALS['lib_order_mode']); ai_feat($f0);
         if (!$r['ok']) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], false); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (stripos((string)$r['why'], 'not been taught') !== false) { wag_log($pdo, 'bot', false, 'The bot has not been taught yet — nothing was sent.'); break; } continue; }
+        if (empty($r['handoff'])) { try { $pb = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND mtype = 'text' ORDER BY id DESC LIMIT 1"); $pb->execute([$key]); $pt = (string)$pb->fetchColumn(); if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $__pc); if ($__pc >= 82) { $r['handoff'] = true; wag_log($pdo, 'bot', false, $key . ' · the bot was about to repeat itself — a person takes over'); } } } catch (Throwable $e) { } }   // the same question twice = the bot is stuck: a person
         if (empty($r['handoff']) && wag_bot_unsafe((string)$r['text'])) { $r['handoff'] = true; wag_log($pdo, 'bot', false, $key . ' · blocked an unsafe reply (invented offer / payment claim) — a person takes over'); }
         if (!empty($r['handoff']) && function_exists('wq_meta_put')) wq_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s'));   // the bot hands this customer to a person: the lock opens
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
