@@ -510,7 +510,7 @@ return [
     ['509', 'JO MALONE BITTER MANDARIN', 'Jo mal Mandarin Twist'],
     ['510', 'JO MALONE FIG AND LOTUS FLOWER', 'Jo mal Lotus Fig'],
     ['511', 'JO MALONE RED HIBISCUS"', 'Jo mal Crimson Hibiscus'],
-    ['OG1', 'DTI Compliment Getter (Xerjoff Erba Pura)', ''],
-    ['OG2', 'DTI Dark Side (Born To Stand Out Black Karak)', ''],
-    ['OG3', 'DTI Caffeine Club (Bianco Latte Giardini Di Toscana)', ''],
+    ['OG1', 'DTI Compliment Getter (Xerjoff Erba Pura)', 'Compliment Getter ; Dress to Impress Compliment Getter'],
+    ['OG2', 'DTI Dark Side (Born To Stand Out Black Karak)', 'Dark Side ; Dress to Impress Dark Side'],
+    ['OG3', 'DTI Caffeine Club (Bianco Latte Giardini Di Toscana)', 'Caffeine Club ; Dress to Impress Caffeine Club'],
 ];
