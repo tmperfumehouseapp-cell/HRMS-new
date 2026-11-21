@@ -8,6 +8,7 @@
   function css() {
     if (document.getElementById('blCss')) return; var st = document.createElement('style'); st.id = 'blCss';
     st.textContent = '#blStrip{margin:0}.bl{margin:8px 12px;border:1px solid #cfe3d6;background:#f3faf6;border-radius:12px;font-size:13px;color:#1f2a37}.bl-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:9px 12px;cursor:pointer}.bl-h b{flex:1 1 0;min-width:140px;line-height:1.3}.bl-s{flex:1 1 100%;order:5;font-size:12px;line-height:1.35;padding-left:26px}.bl-h .bl-ar{margin-left:auto}.bl-b{padding:0 12px 10px}.bl-i{border-top:1px solid #dfece4;padding:9px 0}.bl-i q{display:block;color:#445;margin:2px 0}.bl-bad{color:#a33}.bl-good{color:#116b3a;font-weight:600}.bl-r{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.bl button{border:0;border-radius:9px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}.bl .ap{background:#128c4a;color:#fff}.bl .sk{background:#e6e9ee;color:#445}.bl textarea{width:100%;box-sizing:border-box;font:inherit;padding:6px;border:1px solid #cfd6dd;border-radius:8px;margin-top:4px}.bl table{font-size:12px}.bl td,.bl th{padding:3px 6px;white-space:nowrap}@media (max-width:520px){.bl{margin:6px 8px;font-size:12.5px}.bl-h{padding:8px 10px}}';
+    st.textContent += '#blChips{display:flex;gap:8px;flex-wrap:wrap;padding:8px 12px;flex:none}#blChips:empty{display:none}.bc{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #cfd6e4;background:#fff;color:#1f2a37;border-radius:999px;padding:5px 11px;font:700 12.5px/1.2 inherit;font-family:inherit;cursor:pointer;white-space:nowrap}.bc b{font-weight:900}.bc i{font-style:normal;opacity:.55;font-size:10px}.bc.o{border-color:#f0c9a8;background:#fff6ee;color:#9a3412}.bc.b{border-color:#c7d7f0;background:#f2f6fd;color:#1e3a8a}.bc.g{border-color:#cfe3d6;background:#f3faf6;color:#166534}.bc.on{outline:2px solid #16a34a}#blPend .bl-h,#blMkt .bl-h,#blHr .bl-h,#blStrip .bl-h{display:none}';
     document.head.appendChild(st);
   }
   function draw() {
@@ -93,5 +94,20 @@
   function loadMkt() { return api.get('wa.g_mkt').then(function (d) { mkt = d; drawMkt(); }).catch(function () { }); }
   function loadPend() { return api.get('wa.g_botpending').then(function (d) { pend = d; drawPend(); }).catch(function () { }); }
   function load() { return api.get('wa.g_botlearn').then(function (d) { data = d; draw(); }).catch(function () { }); }
+  // 🧭 one small row of chips instead of four tall strips: tap a chip to open its details below (one at a time, scrolls inside); closed = just the numbers
+  var chipBar = document.createElement('div'); chipBar.id = 'blChips'; host.parentNode.insertBefore(chipBar, host);
+  function pick(k) { var o = k === 'bl' ? !open : false, p = k === 'pend' ? !popen : false, m = k === 'mkt' ? !mopen : false, h = k === 'hr' ? !hopen : false; open = o; popen = p; mopen = m; hopen = h; draw(); drawPend(); drawMkt(); drawHourly(); }
+  function chips() {
+    var c = [];
+    if (pend && pend.can && pend.total) c.push(['pend', 'o', '🙋 Unanswered', String(pend.total), popen]);
+    if (mkt && mkt.can) { var rate = mkt.offered_today ? Math.round(100 * mkt.taken_in_4min / mkt.offered_today) : null; c.push(['mkt', 'b', '🏪 Open market', (mkt.taken_today || 0) + ' taken' + (rate == null ? '' : ' · ' + rate + '%'), mopen]); }
+    if (hrl && hrl.can) { var tq = 0; (hrl.hours || []).forEach(function (x) { tq += x.q; }); c.push(['hr', 'g', '📊 Queries by hour', tq + ' new', hopen]); }
+    var n = data && data.items ? data.items.length : 0; if (n || (data && data.applied_today)) c.push(['bl', 'g', '🧠 Bot learned', n + ' new', open]);
+    chipBar.innerHTML = c.map(function (x) { return '<button type="button" class="bc ' + x[1] + (x[4] ? ' on' : '') + '" data-bc="' + x[0] + '">' + x[2] + ' <b>' + esc(x[3]) + '</b> <i>' + (x[4] ? '▴' : '▾') + '</i></button>'; }).join('');
+    chipBar.querySelectorAll('[data-bc]').forEach(function (b) { b.onclick = function () { pick(b.getAttribute('data-bc')); }; });
+  }
+  function fold() { [['blPend', popen], ['blMkt', mopen], ['blHr', hopen]].forEach(function (x) { var e = document.getElementById(x[0]); if (e) e.style.display = x[1] ? '' : 'none'; }); host.style.display = open ? '' : 'none'; chips(); }
+  var _d = draw, _dp = drawPend, _dm = drawMkt, _dh = drawHourly;
+  draw = function () { _d(); fold(); }; drawPend = function () { _dp(); fold(); }; drawMkt = function () { _dm(); fold(); }; drawHourly = function () { _dh(); fold(); };
   load(); loadPend(); loadMkt(); loadHourly(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); loadMkt(); loadHourly(); } }, 60000);
 })();
