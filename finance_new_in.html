@@ -61,7 +61,7 @@
     { key: 'online_prepaid', title: 'Prepaid', hint: 'Online orders paid in advance (the gateway pays you later: Razorpay, PayU, Snapmint…)' },
     { key: 'online_cod', title: 'COD', hint: 'Online orders paid on delivery (the courier sends you the money later: ShipRocket, Rapidshyp…)' },
   ];
-  let day = '', O = null, W = {}, CH = null, DAYE = [], ACC = [];
+  let day = '', O = null, W = {}, CH = null, CHERR = '', DAYE = [], ACC = [];
   const SECKEY = { online_prepaid: 'prepaid', online_cod: 'cod' };
   const open = (title, body, foot, wide) => { $('drT').textContent = title; $('drB').innerHTML = body; $('drF').innerHTML = foot || ''; $('drF').style.display = foot ? '' : 'none'; $('dr').classList.toggle('wide', !!wide); $('dr').classList.add('on'); $('ov').classList.add('on'); $('dr').setAttribute('aria-hidden', 'false'); };
   const close = () => { $('dr').classList.remove('on'); $('ov').classList.remove('on'); $('dr').setAttribute('aria-hidden', 'true'); };
@@ -69,7 +69,7 @@
   const note = (id, m, bad) => { const e = $(id); if (e) e.innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
 
   function channelsCard(s) {
-    if (!CH) return '';
+    if (!CH) return `<div class="sx-card" style="margin-bottom:10px"><div class="sx-msg bad">${sxi('xc')}<span><b>The ${esc(s.title)} channels could not be loaded.</b> ${esc(CHERR)}<br>Press Ctrl+Shift+R. If this stays, send this message to Claude.</span></div></div>`;
     const sk = SECKEY[s.key], list = CH.channels[sk] || [];
     const live = list.filter((c) => c.active), tD = live.reduce((a, c) => a + c.day, 0), tM = live.reduce((a, c) => a + c.month, 0);
     return `<div class="sx-card wrap" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div class="cap" style="margin:0;flex:1">${esc(s.title)} channels <small class="sx-mut">net money received · click a channel to open it and upload its UTR file</small></div><button class="sx-btn" data-addch="${sk}" style="padding:2px 12px">+ Add channel</button></div>
@@ -223,7 +223,7 @@
       // the numbers come from the same books as the original Finance (read only: nothing here changes them)
       O = await api.get('fi.overview', d ? { date: d } : {}); day = O.date;
       const r = await Promise.all(SEC.map((s) => api.get('fi.outstanding', { channel: s.key }))); W = {}; SEC.forEach((s, i) => { W[s.key] = r[i]; });
-      try { CH = await api.get('fn.in_channels', { date: day }); DAYE = (await api.get('fn.day', { date: day })).entries || []; ACC = (await api.get('fn.accounts')).accounts.filter((a) => a.active); } catch (e) { CH = null; }
+      try { CH = await api.get('fn.in_channels', { date: day }); DAYE = (await api.get('fn.day', { date: day })).entries || []; ACC = (await api.get('fn.accounts')).accounts.filter((a) => a.active); CHERR = ''; } catch (e) { CH = null; CHERR = e.message || 'unknown error'; }
       draw();
     } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
