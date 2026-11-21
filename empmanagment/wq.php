@@ -1587,6 +1587,22 @@ function wq_grab(PDO $pdo, string $phone, int $me): array
 }
 /** 🙋 Requests: every open chat that is NOT given to anybody yet (new inquiries), newest first — only while the 24-hour window is open, never complaint or opted-out
  *  chats. A salesperson opens the Requests tab and takes one; the moment a chat has an owner it leaves the list. */
+/** What kind of request is this? (owner, 21 Nov: "write under each request what pattern it is — normal message, campaign reply ... so that I understand before I take it"). Source + what the customer's words are. */
+function wq_req_kind(string $src, string $last): string
+{
+    $t = ' ' . mb_strtolower(trim($last)) . ' '; $s = $src === 'campaign' ? 'Campaign reply' : ($src === 'query' ? 'Ad click' : ($src === 'community' ? 'Community' : 'Direct message'));
+    if (preg_match('/(leak|toota|broken|damaged|wrong (item|product|perfume)|galat|not (delivered|received)|nahi (mila|aaya)|refund|replace|fake|duplicate|complain)/u', $t)) $i = '⚠ Complaint — raised as a complaint';
+    elseif (preg_match('/(b2b|b to b|do you trade|supplier|vendor|seo|digital marketing|website (design|development)|loan|hiring|vacancy|job|collab|influencer|sponsor)/u', $t)) $i = '🏢 Business enquiry (not a customer)';
+    elseif (preg_match('/(build my own|build your own|combo)/u', $t)) $i = '🧩 Wants a combo';
+    elseif (preg_match('/(want to order|i want to order|order (karna|karo|dena|chahiye)|order krna|place (an )?order|buy)/u', $t)) $i = '🛒 Wants to order';
+    elseif (preg_match('/(price|rate|kitne ka|kitna|kimat|how much|cost)/u', $t)) $i = '💰 Asks the price';
+    elseif (preg_match('/(discount|offer|deal|free)/u', $t)) $i = '🏷 Asks for an offer / discount';
+    elseif (preg_match('/(call me|call karo|phone|number)/u', $t)) $i = '📞 Wants a call';
+    elseif (mb_strlen(trim($last)) <= 14 && !preg_match('/\?/u', $last)) $i = '💬 Short reply (to our message)';
+    elseif (strpos($t, '?') !== false) $i = '❓ Question';
+    else $i = '💬 Normal message';
+    return $s . ' · ' . $i;
+}
 function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
 {
     $now = wq_now(); $rows = [];
@@ -1599,7 +1615,8 @@ function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
     $rows = (function_exists('hrms_memo') && !defined('WQ_NOW')) ? hrms_memo('wq_req_rows:' . (int)$limit, 5, $__rd) : $__rd();
     $phs = array_values(array_map(fn($r) => (string)$r['phone'], $rows)); $lastIn = [];
     if ($phs) { try { foreach (wq_last_in_rows($pdo, $phs) as $t) $lastIn[(string)$t['phone']] = trim((string)$t['body']) !== '' ? (string)$t['body'] : '[' . (string)$t['mtype'] . ']'; } catch (Throwable $e) { } }
-    $o = []; foreach ($rows as $r) { $ph = (string)$r['phone']; $in = wq_ts($r['last_in_at']); $o[] = ['phone' => $ph, 'name' => (string)$r['name'], 'mins' => max(0, (int)floor(($now - $in) / 60)), 'answered' => wq_ts($r['last_out_at'] ?? '') >= $in, 'last_in' => mb_substr((string)($lastIn[$ph] ?? ''), 0, 120), 'src' => (string)($r['source'] ?? '')]; }
+    $o = []; foreach ($rows as $r) { $ph = (string)$r['phone']; $in = wq_ts($r['last_in_at']); $o[] = ['phone' => $ph, 'name' => (string)$r['name'], 'mins' => max(0, (int)floor(($now - $in) / 60)), 'answered' => wq_ts($r['last_out_at'] ?? '') >= $in, 'last_in' => mb_substr((string)($lastIn[$ph] ?? ''), 0, 120), 'src' => (string)($r['source'] ?? ''), 'sec' => max(0, $now - $in), 'kind' => wq_req_kind((string)($r['source'] ?? ''), (string)($lastIn[$ph] ?? ''))]; }
+    if ($me > 0 && function_exists('wag_fair_state')) { try { $__fs = wag_fair_state($pdo, $me); if (!empty($__fs['hidden'])) { $__w = (int)$__fs['window']; $o = array_values(array_filter($o, fn($x) => (int)($x['sec'] ?? 9999) >= $__w)); } } catch (Throwable $e) { } }   // fair share: a person who took queries lately sees the NEW ones only after the first-chance window
     // ⏱ pinned on top: customers waiting wq_grab_min (4) min+ with no reply from anyone — unassigned ones AND ones with a person who did not answer (taken with wq.grab)
     $late = []; try { $g = wq_grab_list($pdo, $me); foreach ($g['items'] as $x) if (empty($x['mine'])) $late[] = $x; } catch (Throwable $e) { }
     $lp = array_flip(array_column($late, 'phone')); $o = array_values(array_filter($o, fn($x) => !isset($lp[$x['phone']])));
@@ -1646,6 +1663,7 @@ function wq_req_take(PDO $pdo, string $phone, int $me): array
     if ($me <= 0) return ['error' => 'Only a logged-in employee can take a chat.'];
     $c = wq_contact($pdo, $phone); if (!$c) return ['error' => 'Chat not found.'];
     if ((int)$c['assigned_emp'] === $me) return ['ok' => true, 'already' => true];
+    if ((int)$c['assigned_emp'] === 0 && function_exists('wag_fair_state')) { try { $__fs = wag_fair_state($pdo, $me); $__age = $c['last_in_at'] ? wq_now() - wq_ts($c['last_in_at']) : 9999; if (!empty($__fs['hidden']) && $__age < (int)$__fs['window']) return ['error' => '🎯 Fair share: a colleague who took fewer queries gets the first chance. This chat opens for you in ' . max(1, (int)$__fs['window'] - $__age) . ' s.']; } catch (Throwable $e) { } }
     // everyone who opens the chat app (every sales agent, managers and admin too) may take a request — owner's rule
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — the complaint team handles it.'];
