@@ -1525,7 +1525,6 @@
     }
     function openManual() {
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
-      try { api.post('wa.g_makelink', { phone: p, on: 1 }).then(() => { try { botBanner(); } catch (e) { } }).catch(() => { }); } catch (e) { }   // opening the order / payment link screen also holds the chat (8 min)
       moReady(() => { if (!window.WaManual) { toast('Could not open the manual order. Refresh the page.', true); return; } WaManual.open({ phone: p, name: nm, api, onDone: () => { try { pollChat(); } catch (e) { } } }); });
     }
     function openCart() {
