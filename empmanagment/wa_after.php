@@ -9,14 +9,16 @@
  *  · Switch off: setting wa_aft_on = 0.  Runs from the minute job (wa.cron_send). PHP 7.4 safe.
  */
 if (!function_exists('wa_aft_days')) {
-    /** step => [day after delivery, template group, line key]. v2 (owner, 21 Nov: messages on at least 200 days of the year, every week a different offer): 4 care steps in weeks 1-4, then ONE message EVERY WEEK up to day 357 (51 steps); the line of a weekly step is made by code (wa_aft_line_dyn). */
-    function wa_aft_steps(): array
+    /** The ladder (v3, owner 21 Nov: "200 messages in a year, and the same every following year"): 4 care messages in weeks 1-4 (days 7, 14, 21, 28), then one message about every 1.7 days - 196 more in the first year (step 200 = day 357) - and the same pace for every following year.
+     *  The line of every step after the care weeks is made by code (wa_aft_line_dyn); the template group rotates. */
+    function wa_aft_step(int $k): array
     {
-        $rot = ['also', 'newsim', 'reorder', 'combo', 'best', 'small', 'valued', 'liked', 'gift', 'loved', 'long'];
-        $s = [1 => [7, 'enjoy', 'care1'], 2 => [14, 'doubt', 'care2'], 3 => [21, 'checkin', 'care3'], 4 => [28, 'enjoy', 'care4']];
-        for ($k = 5; $k <= 51; $k++) $s[$k] = [28 + 7 * ($k - 4), $rot[($k - 5) % count($rot)], 'dyn'];
-        return $s;
+        static $rot = ['also', 'newsim', 'reorder', 'combo', 'best', 'small', 'valued', 'liked', 'gift', 'loved', 'long'];
+        if ($k <= 4) return [[7, 'enjoy', 'care1'], [14, 'doubt', 'care2'], [21, 'checkin', 'care3'], [28, 'enjoy', 'care4']][max(0, $k - 1)];
+        return [28 + (int)round(($k - 4) * 329 / 196), $rot[($k - 5) % count($rot)], 'dyn'];
     }
+    /** The first $n steps (200 = the first year). */
+    function wa_aft_steps(int $n = 200): array { $s = []; for ($k = 1; $k <= $n; $k++) $s[$k] = wa_aft_step($k); return $s; }
     function wa_aft_days(): array { $o = []; foreach (wa_aft_steps() as $k => $v) $o[$k] = $v[0]; return $o; }
     /** group => the shop's approved templates ({{1}} name, {{2}}, {{3}}) */
     function wa_aft_groups(): array
@@ -66,20 +68,28 @@ if (!function_exists('wa_aft_days')) {
             $q = $pdo->prepare("SELECT DATE(due_at) d, COUNT(*) n FROM wa_aft_plan WHERE status = 'planned' AND due_at >= ? AND due_at < ? GROUP BY d ORDER BY d"); $q->execute([date('Y-m-d 00:00:00'), date('Y-m-d 00:00:00', $now + 15 * 86400)]); $o['days'] = $q->fetchAll(PDO::FETCH_KEY_PAIR);
             $o['failed'] = $pdo->query("SELECT SUBSTR(why, 1, 70) w, COUNT(*) n FROM wa_aft_plan WHERE status = 'failed' GROUP BY w ORDER BY n DESC LIMIT 5")->fetchAll(PDO::FETCH_KEY_PAIR);
         } catch (Throwable $e) { $o['error'] = $e->getMessage(); }
-        $st = []; foreach (wa_aft_steps() as $k => $v) $st[] = ['step' => $k, 'day' => $v[0], 'group' => $v[1], 'line' => $v[2] === 'dyn' ? wa_aft_line_dyn($pdo, $k, '0000', $now) : wa_aft_line($pdo, $v[2])]; $o['steps'] = $st;
+        $st = []; foreach (wa_aft_steps(40) as $k => $v) $st[] = ['step' => $k, 'day' => $v[0], 'group' => $v[1], 'line' => $v[2] === 'dyn' ? wa_aft_line_dyn($pdo, $k, '0000', $now) : wa_aft_line($pdo, $v[2])]; $o['steps'] = $st;
         return $o;
     }
     function wa_aft_k10($phone): string { return substr(preg_replace('/\D+/', '', (string)$phone), -10); }
-    /** Write the ladder of one customer: past steps are dropped except the newest one, which goes out spread over the next days (never a burst). */
-    function wa_aft_plan(PDO $pdo, string $phone, int $anchor, int $now, int $spreadDays): int
+    /** Write the ladder of one customer for the next 120 days (the minute job tops it up later, so a customer never has a year of rows): steps already sent are never written again; past steps are dropped except the newest one, which goes out spread over the next days (never a burst). */
+    function wa_aft_plan(PDO $pdo, string $phone, int $anchor, int $now, int $spreadDays, int $horizon = 120): int
     {
-        $pdo->prepare("DELETE FROM wa_aft_plan WHERE phone = ? AND status = 'planned'")->execute([$phone]); $sent = $pdo->prepare("SELECT step FROM wa_aft_plan WHERE phone = ? AND status = 'sent'"); $sent->execute([$phone]); $had = array_map('intval', $sent->fetchAll(PDO::FETCH_COLUMN));
-        $ins = $pdo->prepare("INSERT INTO wa_aft_plan (phone, step, due_at, status) VALUES (?, ?, ?, 'planned')"); $n = 0; $lastPast = 0; $steps = wa_aft_steps();
-        foreach ($steps as $k => $v) { if (in_array($k, $had, true)) continue; if ($anchor + $v[0] * 86400 <= $now) $lastPast = $k; }
-        foreach ($steps as $k => $v) {
-            if (in_array($k, $had, true)) continue; $due = $anchor + $v[0] * 86400;
+        $pdo->prepare("DELETE FROM wa_aft_plan WHERE phone = ? AND status = 'planned'")->execute([$phone]); $ms = $pdo->prepare("SELECT COALESCE(MAX(step), 0) FROM wa_aft_plan WHERE phone = ? AND status = 'sent'"); $ms->execute([$phone]); $from = (int)$ms->fetchColumn() + 1;
+        $ins = $pdo->prepare("INSERT INTO wa_aft_plan (phone, step, due_at, status) VALUES (?, ?, ?, 'planned')"); $n = 0; $lastPast = 0;
+        for ($k = $from; $k < $from + 1000; $k++) { $d = $anchor + wa_aft_step($k)[0] * 86400; if ($d > $now) break; $lastPast = $k; }
+        for ($k = $from; $k < $from + 1000; $k++) {
+            $due = $anchor + wa_aft_step($k)[0] * 86400; if ($due > $now + $horizon * 86400) break;
             if ($due <= $now) { if ($k !== $lastPast) continue; $due = $now + 600 + (int)(((int)substr($phone, -6)) % max(1, $spreadDays * 86400 - 600)); }
             $ins->execute([$phone, $k, date('Y-m-d H:i:s', $due)]); $n++; }
+        return $n;
+    }
+    /** Keeps every active customer's rows 60-120 days ahead (also the following years). */
+    function wa_aft_topup(PDO $pdo, int $now): int
+    {
+        $n = 0; try { $q = $pdo->prepare("SELECT c.phone, c.anchor_at, MAX(p.step) ms FROM wa_aft_cust c JOIN wa_aft_plan p ON p.phone = c.phone WHERE c.status = 'active' GROUP BY c.phone, c.anchor_at HAVING MAX(p.due_at) < ? LIMIT 400"); $q->execute([date('Y-m-d H:i:s', $now + 60 * 86400)]);
+            $ins = $pdo->prepare("INSERT INTO wa_aft_plan (phone, step, due_at, status) VALUES (?, ?, ?, 'planned')");
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $anchor = (int)strtotime((string)$r['anchor_at']); for ($k = (int)$r['ms'] + 1; $k < (int)$r['ms'] + 200; $k++) { $due = $anchor + wa_aft_step($k)[0] * 86400; if ($due > $now + 120 * 86400) break; $ins->execute([(string)$r['phone'], $k, date('Y-m-d H:i:s', $due)]); $n++; } } } catch (Throwable $e) { }
         return $n;
     }
     /** Customers whose order was DELIVERED (owner, 21 Nov: the plan starts after DELIVERY, never after the order or its confirmation; the order / tracking / delivery confirmations are the Orders module's own and are left alone).
@@ -120,22 +130,23 @@ if (!function_exists('wa_aft_days')) {
         $o = ['entered' => 0, 'sent' => 0, 'waiting' => 0]; if (wa_aft_set($pdo, 'wa_aft_on', '1') === '0' || !wa_aft_tables($pdo)) return $o;
         if (function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours'; return $o; }
         if (!function_exists('wa_lock') || !wa_lock($pdo, 'wlaft', 55)) return $o; $now = time(); $t0 = microtime(true);
-        if (wa_aft_set($pdo, 'wa_aft_ver', '1') !== '2') {   // one time: the first 23-step ladder becomes the weekly 51-step one (nobody has been sent a message yet); 600 customers per minute
-            try { $mq = $pdo->query("SELECT phone, anchor_at FROM wa_aft_cust WHERE status = 'active' AND why <> 'v2' LIMIT 600")->fetchAll(PDO::FETCH_ASSOC); $sp = max(1, (int)wa_aft_set($pdo, 'wa_aft_spread', '5'));
-                foreach ($mq as $mr) { wa_aft_plan($pdo, (string)$mr['phone'], (int)strtotime((string)$mr['anchor_at']), $now, $sp); $pdo->prepare("UPDATE wa_aft_cust SET why = 'v2' WHERE phone = ?")->execute([(string)$mr['phone']]); }
-                if (!$mq) setting_set($pdo, 'wa_aft_ver', '2'); } catch (Throwable $e) { }
+        if (wa_aft_set($pdo, 'wa_aft_ver', '1') !== '3') {   // one time: the earlier ladders become the v3 one (about 200 messages a year) (nobody has been sent a message yet); 600 customers per minute
+            try { $mq = $pdo->query("SELECT phone, anchor_at FROM wa_aft_cust WHERE status = 'active' AND why <> 'v3' LIMIT 600")->fetchAll(PDO::FETCH_ASSOC); $sp = max(1, (int)wa_aft_set($pdo, 'wa_aft_spread', '5'));
+                foreach ($mq as $mr) { wa_aft_plan($pdo, (string)$mr['phone'], (int)strtotime((string)$mr['anchor_at']), $now, $sp); $pdo->prepare("UPDATE wa_aft_cust SET why = 'v3' WHERE phone = ?")->execute([(string)$mr['phone']]); }
+                if (!$mq) setting_set($pdo, 'wa_aft_ver', '3'); } catch (Throwable $e) { }
             return $o; }
+        if ($now - (int)wa_aft_set($pdo, 'wa_aft_top_at', '0') >= 600) { setting_set($pdo, 'wa_aft_top_at', (string)$now); wa_aft_topup($pdo, $now); }
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_enrol_at', '0') >= 1800) { setting_set($pdo, 'wa_aft_enrol_at', (string)$now); $o['entered'] = wa_aft_enrol($pdo, $now); }
         $cap = max(0, (int)wa_aft_set($pdo, 'wa_aft_cap', '1500')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
         $rows = $pdo->prepare("SELECT p.id, p.phone, p.step, c.order_at, c.anchor_at FROM wa_aft_plan p JOIN wa_aft_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.due_at LIMIT 60"); $rows->execute([date('Y-m-d H:i:s', $now)]);
-        $upd = $pdo->prepare("UPDATE wa_aft_plan SET status = ?, why = ?, sent_at = ?, tpl_id = ?, wamid = ? WHERE id = ?"); $push = $pdo->prepare("UPDATE wa_aft_plan SET due_at = ? WHERE id = ?"); $steps = wa_aft_steps(); $grp = wa_aft_groups();
+        $upd = $pdo->prepare("UPDATE wa_aft_plan SET status = ?, why = ?, sent_at = ?, tpl_id = ?, wamid = ? WHERE id = ?"); $push = $pdo->prepare("UPDATE wa_aft_plan SET due_at = ? WHERE id = ?"); $grp = wa_aft_groups();
         foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $r) {
             if ($o['sent'] >= 25 || $today + $o['sent'] >= $cap || microtime(true) - $t0 > $budget) break; $ph = (string)$r['phone']; $id = (int)$r['id'];
             $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c || (int)($c['optout'] ?? 0) === 1 || (int)($c['camp_optout'] ?? 0) === 1) { $upd->execute(['cancelled', 'opted out / no contact', null, 0, '', $id]); continue; }
             try { $no = $pdo->prepare("SELECT COUNT(*) FROM shop_orders WHERE phone LIKE ? AND created_at > ?"); $no->execute(['%' . $ph, (string)$r['order_at']]); if ((int)$no->fetchColumn() > 0) { $pdo->prepare("UPDATE wa_aft_cust SET status = 'done', why = 'new order: his ladder restarts' WHERE phone = ?")->execute([$ph]); $pdo->prepare("UPDATE wa_aft_plan SET status = 'cancelled', why = 'new order' WHERE phone = ? AND status = 'planned'")->execute([$ph]); continue; } } catch (Throwable $e) { }
             $busy = false; foreach (['last_in_at', 'last_out_at'] as $f) if (!empty($c[$f]) && (int)strtotime((string)$c[$f]) > $now - 86400) $busy = true;   // a live chat: never over his conversation, try tomorrow
             if ($busy || (int)($c['cx_id'] ?? 0) > 0) { $push->execute([date('Y-m-d H:i:s', $now + 86400 + (int)substr($ph, -4)), $id]); $o['waiting']++; continue; }
-            $st = $steps[(int)$r['step']] ?? null; if (!$st) { $upd->execute(['cancelled', 'unknown step', null, 0, '', $id]); continue; }
+            $st = wa_aft_step((int)$r['step']); if (!$st) { $upd->execute(['cancelled', 'unknown step', null, 0, '', $id]); continue; }
             $ids = $grp[$st[1]] ?? []; if (!$ids) { $upd->execute(['cancelled', 'no template', null, 0, '', $id]); continue; }
             $tid = (int)$ids[(int)substr($ph, -3) % count($ids)]; [$ok, $why] = wa_aft_send($pdo, $c, $tid, $st[2] === 'dyn' ? wa_aft_line_dyn($pdo, (int)$r['step'], $ph, $now) : wa_aft_line($pdo, $st[2]));
             if ($ok) { $upd->execute(['sent', '', date('Y-m-d H:i:s'), $tid, $why, $id]); $o['sent']++; try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$ph, date('Y-m-d H:i:s'), 'after-order step ' . (int)$r['step']]); } catch (Throwable $e) { } }
