@@ -528,7 +528,7 @@ function wag_bot_typing(PDO $pdo, array $c, string $wamid): void
 function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
 {
     try {
-        if ((int)($c['cx_id'] ?? 0) > 0 || !function_exists('wa_next_person')) return; $cur = (int)$c['assigned_emp']; $nx = wa_next_person($pdo, $cur, (int)($c['last_number_id'] ?? 0)); if (!$nx) return; $to = (int)$nx['emp_id']; if ($to <= 0 || $to === $cur) return;
+        if ((int)($c['cx_id'] ?? 0) > 0 || !function_exists('wa_next_person')) return; $cur = (int)$c['assigned_emp']; if ($cur <= 0 && (time() - strtotime((string)$c['last_in_at'])) < 600) return;   // a chat in OPEN stays in OPEN for the first 10 minutes: everybody sees it, anybody takes it $nx = wa_next_person($pdo, $cur, (int)($c['last_number_id'] ?? 0)); if (!$nx) return; $to = (int)$nx['emp_id']; if ($to <= 0 || $to === $cur) return;
         wa_assign_to($pdo, $key, $to, 0, 'auto'); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
         wa_event($pdo, $key, '🆘 Nobody answered this customer for 10+ minutes and the bot cannot help: given to ' . ($nm[$to] ?? ('#' . $to)) . ' now.');
         if (function_exists('ct_push')) ct_push($pdo, [$to], 'Customer waiting 10+ min', (trim((string)($c['name'] ?? '')) !== '' ? $c['name'] : '+91 ' . $key) . ' wrote and nobody answered. Reply now.', '/my_chats.html?phone=' . $key, 'wa-stuck-' . $key);
@@ -631,7 +631,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
         // the bot answers after bot_after (4 s) — also when the chat is given to a salesperson — until that person presses "Take over" (or is writing to the customer right now): then the bot is silent
         // 🆘 STUCK (owner, 21 Nov): a hot chat (ready to order / pay, or the bot handed it over) that nobody answered for 10+ minutes: the bot tries ONCE more in ORDER MODE (details + address, never payment) and, if it cannot, the chat goes to the next free person with a push
-        $__stuck = (!empty($c['hot']) || (function_exists('wq_meta_get') && ($__bh = wq_meta_get($pdo, 'bothand:' . $key, '')) !== '' && strtotime($__bh) >= strtotime((string)$c['last_in_at']))) && $age >= 600 && (!function_exists('wq_meta_get') || wq_meta_get($pdo, 'stuck:' . $key, '') !== (string)$c['last_in_at']);
+        $__stuck = (!empty($c['hot']) || (function_exists('wq_meta_get') && ($__bh = wq_meta_get($pdo, 'bothand:' . $key, '')) !== '' && strtotime($__bh) >= strtotime((string)$c['last_in_at']))) && ($age >= 600 || (function_exists('wq_meta_get') && ($__hm = wq_meta_get($pdo, 'hotmiss:' . $key, '')) !== '' && substr($__hm, strrpos($__hm, '|') + 1) === (string)$c['last_in_at'])) && (!function_exists('wq_meta_get') || wq_meta_get($pdo, 'stuck:' . $key, '') !== (string)$c['last_in_at']);   // 10+ min, or the 2-minute rule already moved the chat to OPEN: the bot answers it in ORDER MODE at once
         if (wag_bot_off($pdo, $key, $__stuck)) continue;
         $li = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
