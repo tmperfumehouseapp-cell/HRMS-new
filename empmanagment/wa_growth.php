@@ -109,6 +109,13 @@ function wag_cfg(PDO $pdo): array
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => 'Paise kam kro toh lunga, varna nhi chahiye (5 x 20 ml, chart low Rs 1590)', 'better' => 'Sir, 5 x 50 ml sirf Rs 2750 mein (250 ml, 2.5 guna perfume, per ml sabse sasta) - kaunsa theek rahega? [if he still refuses: the system gives the next exact price, e.g. "aapke liye Rs 1550 kar deta hoon, order confirm karein?"]']], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): the deep step is NOT routine — only when the customer holds the price very firmly
+    try { if (setting_get($pdo, 'wag_rules11', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules11', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rule = 'DEEP PRICE STEP-DOWN (about 12% below the lowest chart price) is NOT for every customer and never the first move: use it only when a customer clings to the price very firmly - he has refused the earlier steps one after the other and is about to leave. A customer who accepts the chart price, or only asks once, gets no extra reduction. Always follow the exact step the system gives you; never offer a deeper step by yourself.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $gb['dont'] = array_values(array_merge(['Never give the deepest price step (12% below the lowest chart price) to a customer who has not held the price firmly through the earlier steps.'], array_slice((array)($gb['dont'] ?? []), 0, 20)));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov: "as fast as possible"): the bot starts 2 s after the message (the answer itself takes the AI 3-5 s)
     try { if (setting_get($pdo, 'wag_bot2', '') !== '1') { setting_set($pdo, 'wag_bot2', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 2; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
