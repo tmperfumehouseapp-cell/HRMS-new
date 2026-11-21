@@ -9,6 +9,10 @@ on:
         description: "Run the Lineup screen's own queries (overview, status, summary, report) on the real data and print errors and timings"
         type: boolean
         default: false
+      tpls:
+        description: "List the approved text templates (id, category, accounts, body) for the After-Order module"
+        type: boolean
+        default: false
       cli:
         description: "Run ONE command-line Lineup sending round (cron_line.php test) instead of the probe"
         type: boolean
@@ -67,7 +71,7 @@ jobs:
           try { $r8 = $pdo->query("SELECT COUNT(*) n, SUM(body REGEXP '(^|[^0-9])10 ?ml|solid|shower|roll-?on|\\bwax\\b|candle') bad FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= '" . date("Y-m-d H:i:s", time() - 1200) . "'")->fetch(PDO::FETCH_ASSOC); echo "  BOT8 bot messages in the last 20 min: " . $r8["n"] . " · mentioning solid / shower gel / 10 ml / roll-on / wax / candle (must be ~0): " . $r8["bad"] . "\n"; $h8 = $pdo->query("SELECT COUNT(*) FROM wq_meta WHERE k LIKE 'bothand:%' AND v >= '" . date("Y-m-d H:i:s", time() - 1200) . "'")->fetchColumn(); echo "  BOT8 bot hand-overs in the last 20 min: " . $h8 . "\n"; } catch (Throwable $e) { echo "  BOT8 error\n"; }
           try {  echo "  BOT10 settings: waa_off=" . setting_get($pdo, "waa_off", "?") . " wag_open_market=" . setting_get($pdo, "wag_open_market", "?") . " wq_auto_on=" . setting_get($pdo, "wq_auto_on", "?") . " manual=" . setting_get($pdo, "wa_manual_assign", "?") . " cutover=[" . setting_get($pdo, "wq_cutover", "") . "] bot_heartbeat_age_s=" . (time() - (int)setting_get($pdo, "wag_tick_at", "0")) . "\n"; } catch (Throwable $e) { echo "  BOT10 error " . $e->getMessage() . "\n"; }
           try { $t12 = date("Y-m-d 00:00:00"); $act = []; foreach ($pdo->query("SELECT e.full_name n, COUNT(*) c FROM wa_messages m JOIN employees e ON e.employee_id = m.emp_id WHERE m.dir = 'out' AND m.emp_id > 0 AND m.ts >= '" . date("Y-m-d H:i:s", time() - 900) . "' GROUP BY m.emp_id ORDER BY c DESC LIMIT 14")->fetchAll(PDO::FETCH_ASSOC) as $r) $act[] = $r["n"] . " " . $r["c"]; echo "  BOT12 salespeople who wrote to customers in the last 15 min (" . count($act) . "): " . implode(" · ", $act) . "\n"; foreach ($pdo->query("SELECT kind, COUNT(*) n FROM wa_mkt WHERE at >= '" . $t12 . "' GROUP BY kind")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  BOT12 open market today " . $r["kind"] . ": " . $r["n"] . "\n"; $o12 = $pdo->query("SELECT COUNT(*) n, COALESCE(SUM(amount), 0) a FROM wa_outcomes WHERE code = 'order' AND at >= '" . $t12 . "'")->fetch(PDO::FETCH_ASSOC); $a12 = $pdo->query("SELECT COUNT(*) FROM wa_messages WHERE dir = 'sys' AND mtype = 'event' AND ts >= '" . $t12 . "' AND body LIKE '%collected the order details%'")->fetchColumn(); echo "  BOT12 today: addresses collected by the bot " . $a12 . " · orders recorded by salespeople " . $o12["n"] . " (Rs " . round($o12["a"]) . ")\n"; } catch (Throwable $e) { echo "  BOT12 error " . $e->getMessage() . "\n"; }
-          try { $t13 = date("Y-m-d 00:00:00"); $o13 = []; foreach ($pdo->query("SELECT who, COUNT(*) m, COUNT(DISTINCT phone) c FROM wa_messages WHERE dir = 'out' AND ts >= '" . $t13 . "' AND mtype IN ('text','template') GROUP BY who ORDER BY m DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $r) $o13[] = $r["who"] . ": " . $r["m"] . " messages to " . $r["c"] . " chats"; $u13 = $pdo->query("SELECT COUNT(DISTINCT phone) FROM wa_messages WHERE dir = 'out' AND ts >= '" . $t13 . "' AND mtype IN ('text','template')")->fetchColumn(); echo "  BOT13 today we wrote to " . $u13 . " different chats · by sender: " . implode(" · ", $o13) . "\n"; } catch (Throwable $e) { echo "  BOT13 error\n"; }
+          try { $af = $pdo->query("SELECT status, COUNT(*) FROM wa_aft_plan GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR); $ac = $pdo->query("SELECT COUNT(*), COUNT(DISTINCT phone) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= '" . date("Y-m-d 00:00:00") . "'")->fetch(PDO::FETCH_NUM); $cu = $pdo->query("SELECT status, COUNT(*) FROM wa_aft_cust GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR); $du = $pdo->query("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'planned' AND due_at <= NOW()")->fetchColumn(); echo "  AF1 AFTER-ORDER plan rows " . json_encode($af) . " · customers " . json_encode($cu) . " · sent today " . $ac[0] . " · due now " . $du . " · on=" . setting_get($pdo, "wa_aft_on", "1") . "\n"; } catch (Throwable $e) { echo "  AF1 error " . $e->getMessage() . "\n"; }
           PHP
           php /tmp/ln_probe.php "$P"; rm -f /tmp/ln_probe.php
           exit 0
@@ -94,4 +98,26 @@ jobs:
           P="$1"; echo "start $(date +%T) load $(cut -d' ' -f1-3 /proc/loadavg) fpm $(pgrep -fc 'php-fpm: pool')"
           for i in 1 2 3 4 5 6; do T0=$(date +%s); timeout 90 php "$P"empmanagment/cron_line.php test 2>&1 | grep -o '"lineup":{[^}]*}' | head -c 300; echo " (copy $i took $(( $(date +%s) - T0 )) s)"; done; echo "end load $(cut -d' ' -f1-3 /proc/loadavg)"
           echo "php: $(php -v | head -1) · memory_limit $(php -r 'echo ini_get("memory_limit");') · cron_bot has spawn: $(grep -c cron_line "$P"empmanagment/cron_bot.php)"
+          REMOTE
+
+      - name: List approved templates
+        if: ${{ inputs.tpls }}
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          cat > /tmp/tp.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $pdo = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          foreach ($pdo->query("SELECT t.id, t.category, t.relabelled_at, t.header_format, REPLACE(LEFT(t.body, 150), CHAR(10), ' ') b, (SELECT SUM(UPPER(w.status) = 'APPROVED') FROM wa_tpl_waba w WHERE w.tpl_id = t.id) ap FROM wa_templates t WHERE t.header_format IN ('', 'TEXT') HAVING ap >= 3 ORDER BY ap DESC, t.id LIMIT 140")->fetchAll(PDO::FETCH_NUM) as $r) echo "TPL " . $r[0] . " " . substr($r[1], 0, 4) . ($r[2] ? "*" : "") . " ap" . $r[5] . " | " . $r[4] . "\n";
+          PHP
+          php /tmp/tp.php "$1"; rm -f /tmp/tp.php
           REMOTE

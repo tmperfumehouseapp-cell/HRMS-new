@@ -698,6 +698,7 @@ require_once __DIR__ . '/wa_planner.php';   // 🗓 Campaign Planner: files + me
 require_once __DIR__ . '/wa_plan.php';   // 🎯 Daily budget planner (wa.plan_get) - needs wa_bill.php and wa_camp.php
 require_once __DIR__ . '/wa_drip.php';   // 🔁 7-Day Drip: a pre-made message per day for new queries / campaign repliers (wa.drip_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_line.php';   // 🧵 Lineup: the 7-day follow-up by topic (replaces the 7-Day Drip when started; wa.line_*) - AFTER wa_drip.php (uses wd_send), BEFORE wa_seg.php
+require_once __DIR__ . '/wa_after.php';   // 🛍 After-Order plan: delivered customers get a 365-day ladder (care, soft offers, reorder); runs from wa.cron_send
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
 
@@ -736,6 +737,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         }
         try { $r['lineup'] = function_exists('wl_tick') ? wl_tick($pdo, ['sendonly' => 1]) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job lineup: ' . $e->getMessage()); }   // 🧵 the Lineup's sending round first: it works a shard of the due customers of its own (several callers at once = faster)
         if ($__cli) { try { setting_set($pdo, 'wa_cli_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { } json_response($r); }
+        try { $r['after'] = function_exists('wa_aft_tick') ? wa_aft_tick($pdo, 35) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'after-order: ' . $e->getMessage()); }   // 🛍 the After-Order plan
         try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
         try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job recovery: ' . $e->getMessage()); }
         try { setting_set($pdo, 'wa_send_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { }
