@@ -142,11 +142,18 @@
   const salesLine = (sl) => sl && sl.orders !== undefined ? `<div class="sx-mut" style="font-size:12.5px;margin:2px 0 8px"><b>Sales on ${esc(dFmt(sl.day))}:</b> ${sl.orders} orders ${m2(sl.total)} · <b>Prepaid</b> ${sl.prepaid_orders} orders ${m2(sl.prepaid)} · <b>COD</b> ${sl.cod_orders} order${sl.cod_orders === 1 ? '' : 's'} ${m2(sl.cod)}</div>` : '';
   function diagText(rc) {
     const d = rc.diag || {}, by = d.by || { ref: 0, name: 0, phone: 0 }, matched = rc.found.orders + (rc.pending ? rc.pending.orders : 0), L = [];
+    L.push(`Rows read from the file: ${d.read}. Left out: ${d.other_day} of another day, ${d.failed} failed / cancelled, ${d.no_amount} without an amount. Paid but not settled yet (no UTR): ${d.no_utr}. Without a readable date: ${d.undated}.`);
     L.push(`File: ${d.file_rows} payment rows. Order-ID column used: "${d.id_column || 'none'}" (filled in ${d.id_filled} rows${d.id_sample && d.id_sample.length ? '; examples: ' + d.id_sample.join(', ') : ''}).`);
     L.push(`Your prepaid orders of ${rc.orders_day}: ${d.orders}. With a payment transaction id saved: ${d.orders_with_ref}${d.ref_sample && d.ref_sample.length ? ' (examples: ' + d.ref_sample.join(', ') + ')' : ''}. Order numbers like: ${(d.name_sample || []).join(', ') || '-'}.`);
     L.push(`Matched ${matched} of ${d.orders} orders: ${by.ref} by transaction id, ${by.name} by order number, ${by.phone} by phone + amount.`);
     let why;
-    if (!d.file_rows) why = 'The file has no money rows that count (check the UTR, net amount and status columns).';
+    if (!d.file_rows) {
+      if (!d.read) why = 'The file has no data rows (or the header row was not found).';
+      else if (d.other_day >= d.read - d.failed - d.no_amount && d.other_day > 0) why = `All ${d.other_day} rows were left out because their date is NOT ${rc.orders_day} (the "one day" filter). Change “Take only one day's rows” to “All days in the file”, or check the Transaction date column and the “Orders of day”. If your file holds the settlement of ${rc.orders_day}, its AddedOn dates may be another day.`;
+      else if (d.failed >= d.read) why = 'Every row has a failed / cancelled / pending status, so no money is counted. Check the Status column.';
+      else if (d.no_amount) why = `${d.no_amount} rows have no amount: check the Amount and Net amount columns.`;
+      else why = 'The file has no money rows that count (check the UTR, net amount and status columns).';
+    }
     else if (!d.orders) why = `No prepaid order was found for ${rc.orders_day}. Change “Orders of day”: with T+1 the money of a day arrives the next day.`;
     else if (!matched && !d.id_filled) why = 'The order-ID column is empty in this file, so rows cannot be tied to orders. Choose another column in “Order number / transaction ID column”.';
     else if (!matched && !d.orders_with_ref) why = 'None of your orders has the payment transaction id saved (KWIK…), and no phone + amount fitted either. So the file cannot be tied to the orders by id.';
