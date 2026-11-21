@@ -155,17 +155,20 @@
       <div id="uCalc" style="margin-top:10px"></div>
       <details style="margin-top:8px"><summary class="sx-mut" style="cursor:pointer;font-size:12.5px">First rows as read</summary><div class="wrap"><table class="tb"><tr>${H.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${p.sample.map((r) => `<tr>${H.map((_, i) => `<td>${esc(r[i] || '')}</td>`).join('')}</tr>`).join('')}</table></div></details>
       <button class="sx-btn big" id="uSave" style="margin-top:10px" disabled>Save</button>`;
-    let last = null;
+    let last = null, incl = true;      // add the payments that are not settled yet (PayU settles them today)
     const show = (r) => {
-      last = r; const bad = r.dups > 0 || r.net <= 0;
+      last = r; const onlyRecord = r.rows === 0 && r.already > 0; const bad = r.dups > 0 || (r.net <= 0 && !onlyRecord);
       $('uCalc').innerHTML = `<div class="k3" style="grid-template-columns:repeat(4,1fr);margin-bottom:0"><div class="k"><small>Rows</small><b style="font-size:18px">${r.rows}</b><span>${r.utrs} UTR${r.utrs === 1 ? '' : 's'}</span></div><div class="k"><small>Gross</small><b style="font-size:18px">${m2(r.gross)}</b></div><div class="k"><small>Charges</small><b style="font-size:18px">${m2(r.fee)}</b></div><div class="k"><small>Net income</small><b style="font-size:18px">${m2(r.net)}</b></div></div>
         ${r.skipped ? `<div class="sx-mut" style="font-size:12.5px;margin-top:6px">Read ${r.skipped.read} rows: <b>${r.rows} counted</b>${r.skipped.no_utr ? ` · <b>${r.skipped.no_utr} paid but not settled yet</b> (no UTR)` : ''}${r.skipped.failed ? ` · ${r.skipped.failed} failed / cancelled` : ''}${r.skipped.no_amount ? ` · ${r.skipped.no_amount} without an amount` : ''}</div>` : ''}
-        ${r.dups > 0 ? `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>${r.dups} UTR${r.dups === 1 ? ' is' : 's are'} already saved from ${esc(r.dup_first)}. Cancel that file first, or this money would be counted twice.</span></div>` : r.net <= 0 ? `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>${r.skipped && r.skipped.no_utr && !r.rows ? '<b>None of these payments is settled to your bank yet</b> (the UTR is empty). PayU gives the UTR after it settles (T+1): upload the file again then, to save the money. The comparison below already shows which orders the customers paid.' : 'No settled money found. Check the UTR and the net amount column.'}</span></div>` : ''}`;
-      $('uSave').disabled = bad; $('uSave').textContent = bad ? 'Save' : 'Save ' + m2(r.net) + ' as received';
+        ${r.skipped && r.skipped.no_utr ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;padding:10px 12px;border-radius:14px;background:#fff4e0;font-size:13px;font-weight:700"><input type="checkbox" id="uIncl" ${incl ? 'checked' : ''} style="margin-top:3px"><span>Add the <b>${r.skipped.no_utr} payments not settled yet</b> as income now (PayU settles them today).<br><small style="font-weight:600;color:#7a4b00">When the settled file comes later, these payments are not added again.</small></span></label>` : ''}
+        ${r.already > 0 ? `<div class="sx-msg ok" style="margin-top:8px">${sxi('ok')}<span>${r.already} payment${r.already === 1 ? '' : 's'} (${m2(r.already_net)}) ${r.already === 1 ? 'was' : 'were'} already added as income by an earlier file: not added again.${onlyRecord ? ' Saving only records this file.' : ''}</span></div>` : ''}
+        ${r.dups > 0 ? `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>${r.dups} UTR${r.dups === 1 ? ' is' : 's are'} already saved from ${esc(r.dup_first)}. Cancel that file first, or this money would be counted twice.</span></div>` : r.net <= 0 ? `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>${r.skipped && r.skipped.no_utr && !r.rows && !incl ? '<b>None of these payments is settled to your bank yet</b> (the UTR is empty). Tick the box above to add them as income now, or upload the file again after PayU settles.' : 'No money found. Check the UTR and the net amount column.'}</span></div>` : ''}`;
+      const ic = $('uIncl'); if (ic) ic.onchange = () => { incl = ic.checked; recalc(); };
+      $('uSave').disabled = bad; $('uSave').textContent = bad ? 'Save' : onlyRecord ? 'Save the file (nothing new is added)' : 'Save ' + m2(r.net) + ' as income' + (r.pending_included ? ' (incl. ' + r.pending_included + ' not settled yet)' : '');
     };
     const recalc = async () => {
       M.utr = +document.querySelector('[data-m="utr"]').value; M.net = +document.querySelector('[data-m="net"]').value; M.gross = +document.querySelector('[data-m="gross"]').value; M.order = +document.querySelector('[data-m="order"]').value; M.fees = [...document.querySelectorAll('.mf:checked')].map((x) => +x.value);
-      try { const r = await api.post('fn.in_upload_calc', { upload_id: p.upload_id, cols: M, orders_day: $('uOd').value }); show(r); if (r.recon) renderRecon($('uRecon'), r.recon, 'Comparison with your orders'); else $('uRecon').innerHTML = ''; } catch (e) { note('uCalc', e.message, 1); }
+      try { const r = await api.post('fn.in_upload_calc', { upload_id: p.upload_id, cols: M, orders_day: $('uOd').value, include_pending: incl ? 1 : 0 }); show(r); if (r.recon) renderRecon($('uRecon'), r.recon, 'Comparison with your orders'); else $('uRecon').innerHTML = ''; } catch (e) { note('uCalc', e.message, 1); }
     };
     $('uDay').onchange = () => { if (!$('uOd').dataset.own) $('uOd').value = addDays($('uDay').value, -1); recalc(); };
     $('uOd').onchange = () => { $('uOd').dataset.own = '1'; recalc(); };
@@ -173,7 +176,7 @@
     show(Object.assign({ dup_first: p.calc.dup_first }, p.calc)); recalc();
     $('uSave').onclick = async () => {
       $('uSave').disabled = true;
-      try { await api.post('fn.in_upload_commit', { upload_id: p.upload_id, cols: M, date: $('uDay').value, account_id: +$('uAcc').value, orders_day: $('uOd').value }); await load($('uDay').value); await chSection(id); $('uMsg').innerHTML = `<div class="sx-msg ok">${sxi('ok')}<span>Saved: ${m2(last.net)} net income. It is now on the Receipt and Payment tab too.</span></div>`; }
+      try { const sv = await api.post('fn.in_upload_commit', { upload_id: p.upload_id, cols: M, date: $('uDay').value, account_id: +$('uAcc').value, orders_day: $('uOd').value, include_pending: incl ? 1 : 0 }); await load($('uDay').value); await chSection(id); $('uMsg').innerHTML = `<div class="sx-msg ok">${sxi('ok')}<span>${sv.entry_id ? 'Saved: ' + m2(sv.net) + ' added as income' + (sv.pending_included ? ' (including ' + sv.pending_included + ' payments not settled yet)' : '') + '. It is now on the Receipt and Payment tab too.' : 'File saved. These payments were already added as income earlier, so nothing new was added.'}</span></div>`; }
       catch (e) { note('uMsg', e.message, 1); $('uSave').disabled = false; }
     };
   }

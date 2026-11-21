@@ -180,7 +180,7 @@ function fn_guess_cols(array $header): array
     return $out;
 }
 /** The money rows of a file for the chosen columns: [row index, utr, gross, fee, net, fee parts per column]. A row counts when it has a UTR (if a UTR column is chosen) and an amount; a totals line without a UTR is left out. net = the net column, else gross - fees. */
-function fn_file_rows(array $rows, int $headRow, array $cols, ?array &$stats = null): array
+function fn_file_rows(array $rows, int $headRow, array $cols, ?array &$stats = null, array $skip = []): array
 {
     $u = isset($cols['utr']) ? (int)$cols['utr'] : -1; $g = isset($cols['gross']) ? (int)$cols['gross'] : -1; $n = isset($cols['net']) ? (int)$cols['net'] : -1; $fees = array_values(array_unique(array_map('intval', (array)($cols['fees'] ?? []))));
     $out = []; $stats = ['read' => 0, 'no_utr' => 0, 'failed' => 0, 'no_amount' => 0, 'pending' => []];
@@ -194,18 +194,32 @@ function fn_file_rows(array $rows, int $headRow, array $cols, ?array &$stats = n
         if (($g < 0 && $n < 0) || ($gv == 0.0 && $nv == 0.0)) { $stats['no_amount']++; continue; }
         $net = $n >= 0 ? $nv : $gv - $fv; $gross = $g >= 0 ? $gv : ($n >= 0 ? $nv + $fv : 0.0);
         if ($sign < 0) { $net = -abs($net); $gross = -abs($gross); $fv = $gross - $net; foreach ($parts as $k => $v) $parts[$k] = 0.0; }
-        $rec = ['i' => $i, 'utr' => $utr, 'gross' => $gross, 'fee' => $fv, 'net' => $net, 'parts' => $parts];
+        $oc0 = isset($cols['order']) ? (int)$cols['order'] : -1; $ok0 = $oc0 >= 0 ? fn_okey($r[$oc0] ?? '') : ''; $key = md5(($ok0 !== '' ? $ok0 : implode('|', array_map('strval', $r))) . '|' . round($gross, 2) . '|' . ($sign < 0 ? 'r' : 'p'));
+        $rec = ['i' => $i, 'utr' => $utr, 'gross' => $gross, 'fee' => $fv, 'net' => $net, 'parts' => $parts, 'key' => $key, 'already' => isset($skip[$key])];      // already = an earlier saved file added this same payment as income
         if ($u >= 0 && $utr === '') { $stats['no_utr']++; $stats['pending'][] = $rec; continue; }      // paid by the customer but not settled to the bank yet (PayU gives the UTR after it settles)
         $out[] = $rec;
     }
     return $out;
 }
-/** Add up a file for the chosen columns. */
-function fn_calc_file(array $rows, int $headRow, array $cols): array
+/** Add up a file for the chosen columns. $includePending = also count the payments that are not settled yet (no UTR). A payment an earlier saved file already added is not counted again ('already'). The keys of the counted payments are returned for saving. */
+function fn_calc_file(array $rows, int $headRow, array $cols, bool $includePending = false, array $skip = []): array
 {
-    $gP = 0; $fP = 0; $nP = 0; $cnt = 0; $utrs = []; $stats = null; $recs = fn_file_rows($rows, $headRow, $cols, $stats);
-    foreach ($recs as $r) { $gP += fn_p($r['gross']); $fP += fn_p($r['fee']); $nP += fn_p($r['net']); $cnt++; if ($r['utr'] !== '') $utrs[$r['utr']] = 1; }
-    return ['rows' => $cnt, 'gross' => fn_m($gP), 'fee' => fn_m($fP), 'net' => fn_m($nP), 'utrs' => array_map('strval', array_keys($utrs)), 'skipped' => ['read' => $stats['read'], 'no_utr' => $stats['no_utr'], 'failed' => $stats['failed'], 'no_amount' => $stats['no_amount']]];
+    $gP = 0; $fP = 0; $nP = 0; $cnt = 0; $utrs = []; $stats = null; $recs = fn_file_rows($rows, $headRow, $cols, $stats, $skip); $keys = []; $pendIn = 0; $already = 0; $alreadyNet = 0;
+    $all = $recs; if ($includePending) foreach ($stats['pending'] as $pr) $all[] = $pr;
+    foreach ($all as $r) {
+        if ($r['utr'] !== '') $utrs[$r['utr']] = 1;
+        if (!empty($r['already'])) { $already++; $alreadyNet += fn_p($r['net']); continue; }
+        $gP += fn_p($r['gross']); $fP += fn_p($r['fee']); $nP += fn_p($r['net']); $cnt++; $keys[] = $r['key']; if ($r['utr'] === '') $pendIn++;
+    }
+    return ['rows' => $cnt, 'gross' => fn_m($gP), 'fee' => fn_m($fP), 'net' => fn_m($nP), 'utrs' => array_map('strval', array_keys($utrs)), 'keys' => $keys, 'pending_included' => $pendIn, 'already' => $already, 'already_net' => fn_m($alreadyNet),
+        'skipped' => ['read' => $stats['read'], 'no_utr' => $stats['no_utr'], 'failed' => $stats['failed'], 'no_amount' => $stats['no_amount']]];
+}
+/** The payments (row keys) earlier saved files added as income, for one channel. */
+function fn_added_keys(PDO $pdo, int $channelId): array
+{
+    $out = [];
+    try { $q = $pdo->prepare("SELECT t.txn_key FROM fn_in_txn t JOIN fn_in_uploads u ON u.id = t.upload_id AND u.status = 'ok' WHERE t.channel_id = ?"); $q->execute([$channelId]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $k) $out[$k] = 1; } catch (Throwable $e) {}
+    return $out;
 }
 function fn_okey($s): string { return strtolower(preg_replace('/[^A-Za-z0-9]/', '', (string)$s)); }
 /** The PREPAID orders of one HRMS day (10 AM to 10 AM) from the Shopify copy: what the gateway should pay for. Read only. The prepaid part = total - the COD balance. */
@@ -293,6 +307,7 @@ function fn_void_upload(PDO $pdo, array $up, string $reason): void
     try {
         $pdo->prepare("UPDATE fn_in_uploads SET status = 'void', void_reason = ? WHERE id = ?")->execute([$reason, (int)$up['id']]);
         $pdo->prepare("DELETE FROM fn_in_utr WHERE upload_id = ?")->execute([(int)$up['id']]);
+        $pdo->prepare("DELETE FROM fn_in_txn WHERE upload_id = ?")->execute([(int)$up['id']]);
         if ((int)$up['entry_id']) $pdo->prepare("UPDATE fn_entries SET status = 'void', void_reason = ? WHERE id = ? AND status = 'ok'")->execute([mb_substr('UTR file cancelled: ' . $reason, 0, 200), (int)$up['entry_id']]);
         $pdo->commit();
     } catch (Throwable $e) { $pdo->rollBack(); error_log('fn_void_upload: ' . $e->getMessage()); fn_err('Could not cancel the file.', 500); }
@@ -306,6 +321,16 @@ function fn_ensure6(PDO $pdo): bool
         foreach (['orders_day' => "DATE NULL", 'recon_json' => "MEDIUMTEXT NULL"] as $col => $def) { try { $pdo->query("SELECT $col FROM fn_in_uploads LIMIT 1")->fetch(); } catch (Throwable $e) { $pdo->exec("ALTER TABLE fn_in_uploads ADD COLUMN $col $def"); } }
         @file_put_contents($flag, '1'); return true;
     } catch (Throwable $e) { error_log('fn_ensure6: ' . $e->getMessage()); return false; }
+}
+/** v7: the payments (rows) a saved file added as income, so that the same payment is never added twice: a payment added while it was "not settled yet" is not added again when the settled file (with its UTR) comes. */
+function fn_ensure7(PDO $pdo): bool
+{
+    $flag = sys_get_temp_dir() . '/hrms_fn_tables_v7_' . substr(md5(__DIR__), 0, 8);
+    if (is_file($flag)) return true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fn_in_txn (id INT AUTO_INCREMENT PRIMARY KEY, upload_id INT NOT NULL, channel_id INT NOT NULL, txn_key CHAR(32) NOT NULL, KEY idx_fn_tx (channel_id, txn_key), KEY idx_fn_tx_u (upload_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        @file_put_contents($flag, '1'); return true;
+    } catch (Throwable $e) { error_log('fn_ensure7: ' . $e->getMessage()); return false; }
 }
 function fn_p($x): int { return (int)round(((float)$x) * 100); }      // rupees -> paise: all sums are integer paise
 function fn_m(int $p): float { return round($p / 100, 2); }
@@ -328,7 +353,7 @@ function fn_balances(PDO $pdo, string $day): array
     return $out;
 }
 
-if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo) || !fn_ensure4($pdo) || !fn_ensure5($pdo) || !fn_ensure6($pdo)) fn_err('Could not create the Finance New tables.', 500);
+if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo) || !fn_ensure4($pdo) || !fn_ensure5($pdo) || !fn_ensure6($pdo) || !fn_ensure7($pdo)) fn_err('Could not create the Finance New tables.', 500);
 $auth = require_auth();
 
 switch ($action) {
@@ -434,19 +459,19 @@ switch ($action) {
         $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION)); if (!in_array($ext, ['xlsx', 'csv', 'txt', 'tsv'], true)) fn_err('Upload an Excel (.xlsx) or CSV file. An old .xls: open it and Save as .xlsx first.');
         try { $rows = fn_read_sheet((string)$f['tmp_name'], (string)$f['name']); } catch (Throwable $e) { fn_err($e->getMessage()); }
         if (count($rows) < 2) fn_err('The file has no data rows.');
-        $hr = fn_header_row($rows); $header = array_map('strval', $rows[$hr] ?? []); $cols = fn_guess_cols($header); $calc = fn_calc_file($rows, $hr, $cols); $hash = md5_file((string)$f['tmp_name']);
+        $hr = fn_header_row($rows); $header = array_map('strval', $rows[$hr] ?? []); $cols = fn_guess_cols($header); $calc = fn_calc_file($rows, $hr, $cols, false, fn_added_keys($pdo, $cid)); $hash = md5_file((string)$f['tmp_name']);
         $dupFile = $pdo->prepare("SELECT file_name, day FROM fn_in_uploads WHERE channel_id = ? AND file_hash = ? AND status = 'ok' LIMIT 1"); $dupFile->execute([$cid, $hash]); $df = $dupFile->fetch();
         $pdo->prepare("INSERT INTO fn_in_uploads (channel_id, day, file_name, file_hash, head_row, rows_json, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)")->execute([$cid, fn_today($pdo), mb_substr((string)$f['name'], 0, 200), $hash, $hr, json_encode($rows, JSON_UNESCAPED_UNICODE), fn_who($auth), date('Y-m-d H:i:s')]);
         $uid = (int)$pdo->lastInsertId(); $dups = fn_utr_dups($pdo, $cid, $calc['utrs']);
-        json_response(['upload_id' => $uid, 'file' => $f['name'], 'provider' => (string)($cols['provider'] ?? ''), 'rows' => count($rows) - $hr - 1, 'header' => $header, 'cols' => $cols, 'sample' => array_slice($rows, $hr + 1, 5), 'calc' => ['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped']], 'same_file' => $df ? $df['file_name'] . ' (' . $df['day'] . ')' : '']);
+        json_response(['upload_id' => $uid, 'file' => $f['name'], 'provider' => (string)($cols['provider'] ?? ''), 'rows' => count($rows) - $hr - 1, 'header' => $header, 'cols' => $cols, 'sample' => array_slice($rows, $hr + 1, 5), 'calc' => ['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped'], 'pending_included' => 0, 'already' => $calc['already'], 'already_net' => $calc['already_net']], 'same_file' => $df ? $df['file_name'] . ' (' . $df['day'] . ')' : '']);
         break;
     }
     // step 2 (as often as the owner changes a column): the totals for the chosen columns
     case 'fn.in_upload_calc': {
         $in = json_input(); $u = $pdo->prepare("SELECT * FROM fn_in_uploads WHERE id = ? AND status = 'preview'"); $u->execute([(int)($in['upload_id'] ?? 0)]); $up = $u->fetch(); if (!$up) fn_err('This upload was already saved, or not found.', 404);
-        $rows = json_decode((string)$up['rows_json'], true) ?: []; $cols = (array)($in['cols'] ?? []); $calc = fn_calc_file($rows, (int)$up['head_row'], $cols); $dups = fn_utr_dups($pdo, (int)$up['channel_id'], $calc['utrs']);
+        $rows = json_decode((string)$up['rows_json'], true) ?: []; $cols = (array)($in['cols'] ?? []); $calc = fn_calc_file($rows, (int)$up['head_row'], $cols, !empty($in['include_pending']), fn_added_keys($pdo, (int)$up['channel_id'])); $dups = fn_utr_dups($pdo, (int)$up['channel_id'], $calc['utrs']);
         $od = fn_day($in['orders_day'] ?? ''); $recon = $od !== '' ? fn_recon($rows, (int)$up['head_row'], $cols, fn_prepaid_orders($pdo, $od), $od) : null;
-        json_response(['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped'], 'recon' => $recon]);
+        json_response(['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped'], 'pending_included' => $calc['pending_included'], 'already' => $calc['already'], 'already_net' => $calc['already_net'], 'recon' => $recon]);
         break;
     }
     // step 3: save it. The NET amount becomes a receipt on the channel's line (so the Receipt and Payment tab and the bank balance show it by themselves)
@@ -454,20 +479,22 @@ switch ($action) {
         $in = json_input(); $today = fn_today($pdo); $u = $pdo->prepare("SELECT * FROM fn_in_uploads WHERE id = ? AND status = 'preview'"); $u->execute([(int)($in['upload_id'] ?? 0)]); $up = $u->fetch(); if (!$up) fn_err('This upload was already saved, or not found.', 404);
         $day = fn_day($in['date'] ?? ''); if ($day === '') fn_err('Choose the day this money came.'); if ($day > $today) fn_err('The date is in the future.');
         $a = $pdo->prepare("SELECT id FROM fn_accounts WHERE id = ? AND active = 1"); $a->execute([(int)($in['account_id'] ?? 0)]); if (!$a->fetchColumn()) fn_err('Choose the bank the money came into.');
-        $rows = json_decode((string)$up['rows_json'], true) ?: []; $calc = fn_calc_file($rows, (int)$up['head_row'], (array)($in['cols'] ?? [])); $cid = (int)$up['channel_id'];
-        if ($calc['rows'] < 1 || $calc['net'] <= 0) fn_err('No money found with these columns. Check the UTR and amount columns.');
+        $cid = (int)$up['channel_id']; $rows = json_decode((string)$up['rows_json'], true) ?: []; $calc = fn_calc_file($rows, (int)$up['head_row'], (array)($in['cols'] ?? []), !empty($in['include_pending']), fn_added_keys($pdo, $cid));
+        $noNew = $calc['rows'] < 1 && $calc['already'] > 0;      // everything in the file was already added as income before: only the file is recorded
+        if (!$noNew && ($calc['rows'] < 1 || $calc['net'] <= 0)) fn_err($calc['skipped']['no_utr'] > 0 && empty($in['include_pending']) ? 'These payments are not settled yet. Tick “add the payments not settled yet”, or upload the file after PayU settles.' : 'No money found with these columns. Check the UTR and amount columns.');
         $dups = fn_utr_dups($pdo, $cid, $calc['utrs']); if ($dups) fn_err(count($dups) . ' UTR' . (count($dups) === 1 ? ' is' : 's are') . ' already saved from ' . array_values($dups)[0] . '. Cancel that file first if you want to upload this one.');
         $same = $pdo->prepare("SELECT file_name, day FROM fn_in_uploads WHERE channel_id = ? AND file_hash = ? AND status = 'ok' AND id <> ? LIMIT 1"); $same->execute([$cid, $up['file_hash'], (int)$up['id']]); if ($r0 = $same->fetch()) fn_err('This same file was already saved (' . $r0['file_name'] . ', ' . $r0['day'] . ').');
-        $note = mb_substr('UTR file ' . $up['file_name'] . ' · ' . $calc['rows'] . ' rows · gross ' . number_format($calc['gross'], 2) . ' − charges ' . number_format($calc['fee'], 2), 0, 255);
+        $note = mb_substr('UTR file ' . $up['file_name'] . ' · ' . $calc['rows'] . ' rows · gross ' . number_format($calc['gross'], 2) . ' − charges ' . number_format($calc['fee'], 2) . ($calc['pending_included'] ? ' · incl. ' . $calc['pending_included'] . ' not settled yet' : '') . ($calc['already'] ? ' · ' . $calc['already'] . ' already added before' : ''), 0, 255);
         $od = fn_day($in['orders_day'] ?? ''); $recon = $od !== '' ? fn_recon($rows, (int)$up['head_row'], (array)($in['cols'] ?? []), fn_prepaid_orders($pdo, $od), $od) : null;
         $hid = fn_channel_head($pdo, $cid); $pdo->beginTransaction();
         try {
-            $pdo->prepare("INSERT INTO fn_entries (day, side, head_id, account_id, amount, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)")->execute([$day, 'in', $hid, (int)$in['account_id'], $calc['net'], $note, fn_who($auth), date('Y-m-d H:i:s')]); $eid = (int)$pdo->lastInsertId();
+            $eid = 0; if (!$noNew) { $pdo->prepare("INSERT INTO fn_entries (day, side, head_id, account_id, amount, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)")->execute([$day, 'in', $hid, (int)$in['account_id'], $calc['net'], $note, fn_who($auth), date('Y-m-d H:i:s')]); $eid = (int)$pdo->lastInsertId(); }
+            $ik = $pdo->prepare("INSERT INTO fn_in_txn (upload_id, channel_id, txn_key) VALUES (?,?,?)"); foreach ($calc['keys'] as $k) $ik->execute([(int)$up['id'], $cid, $k]);
             $pdo->prepare("UPDATE fn_in_uploads SET status = 'ok', day = ?, rows_n = ?, gross = ?, fee = ?, net = ?, account_id = ?, entry_id = ?, orders_day = ?, recon_json = ?, rows_json = NULL WHERE id = ?")->execute([$day, $calc['rows'], $calc['gross'], $calc['fee'], $calc['net'], (int)$in['account_id'], $eid, $od !== '' ? $od : null, $recon ? json_encode($recon, JSON_UNESCAPED_UNICODE) : null, (int)$up['id']]);
             $ins = $pdo->prepare("INSERT INTO fn_in_utr (upload_id, channel_id, utr) VALUES (?,?,?)"); foreach ($calc['utrs'] as $t) $ins->execute([(int)$up['id'], $cid, mb_substr($t, 0, 80)]);
             $pdo->commit();
         } catch (Throwable $e) { $pdo->rollBack(); error_log('fn.in_upload_commit: ' . $e->getMessage()); fn_err('Could not save the file. Nothing was changed.', 500); }
-        json_response(['ok' => true, 'net' => $calc['net'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'rows' => $calc['rows'], 'entry_id' => $eid]);
+        json_response(['ok' => true, 'net' => $calc['net'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'rows' => $calc['rows'], 'entry_id' => $eid, 'pending_included' => $calc['pending_included'], 'already' => $calc['already'], 'already_net' => $calc['already_net']]);
         break;
     }
     // the saved files of one channel
