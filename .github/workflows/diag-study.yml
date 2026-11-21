@@ -1,0 +1,68 @@
+# READ-ONLY study for the owner: which customer age / hour / campaign answered and ordered best; what the live guidebook says about offers. Counts only (no phone numbers, no customer data). Changes nothing.
+name: Offer study (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Study
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/ln_study.php <<'PHP'
+          <?php
+          set_time_limit(280);
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+          $all = function ($sql, $p = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($p); return $q->fetchAll(); } catch (Throwable $e) { echo "  (query failed: " . substr($e->getMessage(), 0, 120) . ")\n"; return []; } };
+          $key = function ($n) { $x = preg_replace('/\D+/', '', (string)$n); return strlen($x) > 10 ? substr($x, -10) : $x; };
+          echo "=== campaigns, last 30 days ===\n";
+          foreach ($all("SELECT c.id, c.name, COUNT(i.id) n, MIN(i.sent_at) a FROM wa_campaigns c JOIN wa_camp_items i ON i.camp_id = c.id AND i.status = 'sent' WHERE i.sent_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) GROUP BY c.id ORDER BY c.id DESC LIMIT 25") as $r) echo "  #" . $r["id"] . " " . substr($r["name"], 0, 40) . " sent " . $r["n"] . " from " . $r["a"] . "\n";
+          // orders map: phone => list of order times (30+7 days)
+          $ord = [];
+          foreach ($all("SELECT phone, created_at FROM shop_orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 40 DAY) AND phone IS NOT NULL AND phone <> ''") as $o) $ord[$key($o["phone"])][] = strtotime($o["created_at"]);
+          $items = $all("SELECT phone, sent_at, camp_id FROM wa_camp_items WHERE status = 'sent' AND sent_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) AND sent_at <= DATE_SUB(NOW(), INTERVAL 3 DAY) ORDER BY RAND() LIMIT 14000");
+          echo "\n=== sample of " . count($items) . " campaign sends (sent 3-30 days ago) ===\n";
+          $qa = $d->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts < ?");
+          $qb = $d->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? AND ts <= DATE_ADD(?, INTERVAL 2 DAY) LIMIT 1");
+          $age = []; $hr = []; $dow = []; $t0 = microtime(true);
+          $bk = function ($days) { if ($days === null) return "never wrote"; if ($days < 1) return "0-1 day"; if ($days < 2) return "1-2 days"; if ($days < 4) return "2-4 days"; if ($days < 8) return "4-8 days"; if ($days < 15) return "8-15 days"; if ($days < 30) return "15-30 days"; return "30+ days"; };
+          foreach ($items as $it) {
+            if (microtime(true) - $t0 > 200) break;
+            $ph = (string)$it["phone"]; $s = strtotime($it["sent_at"]);
+            $qa->execute([$ph, $it["sent_at"]]); $last = $qa->fetchColumn(); $days = $last ? ($s - strtotime($last)) / 86400 : null;
+            $qb->execute([$ph, $it["sent_at"], $it["sent_at"]]); $rep = (bool)$qb->fetchColumn();
+            $o = false; foreach (($ord[$key($ph)] ?? []) as $ot) if ($ot > $s && $ot <= $s + 7 * 86400) { $o = true; break; }
+            $b = $bk($days); $h = (int)date("G", $s + 19800 - 0 * 0); $w = date("D", $s + 19800);
+            foreach ([[&$age, $b], [&$hr, $h], [&$dow, $w]] as [&$arr, $k]) { $arr[$k][0] = ($arr[$k][0] ?? 0) + 1; $arr[$k][1] = ($arr[$k][1] ?? 0) + ($rep ? 1 : 0); $arr[$k][2] = ($arr[$k][2] ?? 0) + ($o ? 1 : 0); } unset($arr);
+          }
+          $show = function ($t, $a) { ksort($a); echo "\n  $t  (sent · replied in 2 d · ordered in 7 d)\n"; foreach ($a as $k => $v) printf("    %-12s %5d · %5.1f%% · %5.2f%%\n", $k, $v[0], 100 * $v[1] / max(1, $v[0]), 100 * $v[2] / max(1, $v[0])); };
+          $show("by days since the customer last wrote", $age); $show("by hour sent (IST, assuming server clock is IST-based +5:30 applied)", $hr); $show("by weekday", $dow);
+          echo "\n=== Lineup so far: reply rate by topic/step (sent, replied) ===\n";
+          foreach ($all("SELECT p.topic, p.step, COUNT(*) n, SUM(EXISTS(SELECT 1 FROM wa_messages m WHERE m.phone = p.phone AND m.dir = 'in' AND m.ts > p.sent_at AND m.ts <= DATE_ADD(p.sent_at, INTERVAL 2 DAY))) r FROM wa_line_plan p WHERE p.status = 'sent' AND p.sent_at IS NOT NULL GROUP BY p.topic, p.step ORDER BY p.topic, p.step") as $r) echo "  " . $r["topic"] . " step " . $r["step"] . ": sent " . $r["n"] . " replied " . $r["r"] . "\n";
+          echo "\n=== live guidebook: lines that mention price / discount / offer / combo / COD / free ===\n";
+          $g = $all("SELECT version, status, body FROM lib_guide WHERE status = 'live' ORDER BY version DESC LIMIT 1");
+          if (!$g) $g = $all("SELECT version, status, body FROM lib_guide ORDER BY version DESC LIMIT 1");
+          if ($g) { echo "  guidebook v" . $g[0]["version"] . " (" . $g[0]["status"] . "), " . strlen($g[0]["body"]) . " chars\n"; $n = 0; foreach (preg_split('/\R/', (string)$g[0]["body"]) as $ln) { if (preg_match('/price|discount|offer|rate|combo|COD|free|%|₹|rupee|bargain|negotiat/i', $ln)) { echo "  | " . substr(trim($ln), 0, 260) . "\n"; if (++$n >= 45) break; } } } else echo "  (no guidebook found)\n";
+          echo "\n=== discount tiers the team uses (order_rate_auto tips that worked) ===\n";
+          foreach ($all("SELECT tip, COUNT(*) n FROM order_rate_auto WHERE worked = 1 AND tip <> '' AND at >= DATE_SUB(NOW(), INTERVAL 30 DAY) GROUP BY tip ORDER BY n DESC LIMIT 12") as $r) echo "  " . $r["n"] . "x  " . substr($r["tip"], 0, 200) . "\n";
+          PHP
+          php /tmp/ln_study.php "$P"; rm -f /tmp/ln_study.php
+          REMOTE
