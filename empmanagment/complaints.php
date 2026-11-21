@@ -186,7 +186,7 @@ function cx_notify(PDO $pdo, array $emps, $title, $body, $caseId, $exceptEmp = 0
 function cx_case_numbers(PDO $pdo, $phone) {
     $out = ['in' => null, 'sent' => null]; if ((string)$phone === '') return $out;
     try {
-        $N = []; foreach ($pdo->query("SELECT id, label, display, retired FROM wa_numbers")->fetchAll() as $n) $N[(int)$n['id']] = ['id' => (int)$n['id'], 'retired' => !empty($n['retired']), 'label' => trim((string)$n['label']) !== '' ? trim((string)$n['label']) : 'Number ' . $n['id'], 'display' => trim((string)($n['display'] ?? ''))];
+        $N = []; foreach ($pdo->query("SELECT * FROM wa_numbers")->fetchAll() as $n) $N[(int)$n['id']] = ['id' => (int)$n['id'], 'retired' => !empty($n['retired']), 'label' => trim((string)$n['label']) !== '' ? trim((string)$n['label']) : 'Number ' . $n['id'], 'display' => trim((string)($n['display'] ?? ''))];
         $hc = []; try { $hc = json_decode((string)setting_get($pdo, 'wa_health', ''), true); } catch (Throwable $e) { } $hc = is_array($hc) ? $hc : [];
         foreach ($N as $nid => $nn) {   // the phone number itself is what the team reads out: from the list, else from what Meta told us about the number; always shown as +91 98765 43210
             $dsp = $nn['display'] !== '' ? $nn['display'] : trim((string)($hc[$nid]['display'] ?? '')); $dg = preg_replace('/\D/', '', $dsp);
@@ -244,7 +244,7 @@ function cx_views(PDO $pdo, array $rows, $full = false) {
     $names = cx_names($pdo); $P = cx_problems(); $D = cx_desks(); $S = cx_sources();
     $keys = array_values(array_unique(array_filter(array_column($rows, 'phone')))); $wa = [];
     if ($keys && function_exists('wa_contact')) { $in = implode(',', array_map(function ($k) use ($pdo) { return $pdo->quote($k); }, $keys)); try { foreach ($pdo->query("SELECT phone, last_in_at, last_out_at, last_number_id FROM wa_contacts WHERE phone IN ($in)")->fetchAll() as $c) $wa[$c['phone']] = $c; } catch (Throwable $e) {} }
-    $retN = []; try { foreach ($pdo->query("SELECT id FROM wa_numbers WHERE retired = 1")->fetchAll(PDO::FETCH_COLUMN) as $rid) $retN[(int)$rid] = true; } catch (Throwable $e) {}   /* owner 21 Nov 2026: a complaint whose customer is on a number that is being closed gets a tag */
+    $retN = []; try { foreach ($pdo->query("SELECT * FROM wa_numbers")->fetchAll() as $rn) { if (!empty($rn['retired'])) $retN[(int)$rn['id']] = true; } } catch (Throwable $e) {}   /* owner 21 Nov 2026: a complaint whose customer is on a number that is being closed gets a tag */
     $ids = array_map('intval', array_column($rows, 'id')); $rep = [];
     if ($keys) { $in = implode(',', array_map(function ($k) use ($pdo) { return $pdo->quote($k); }, $keys)); try { foreach ($pdo->query("SELECT phone, COUNT(*) n FROM cx_cases WHERE phone IN ($in) AND raised_at >= '" . date('Y-m-d', strtotime('-90 days')) . "' GROUP BY phone")->fetchAll() as $x) $rep[$x['phone']] = (int)$x['n']; } catch (Throwable $e) {} }
     $last = []; if ($ids) { try { foreach ($pdo->query("SELECT e.case_id, e.text FROM cx_events e JOIN (SELECT case_id, MAX(id) mid FROM cx_events WHERE kind IN ('desk','note','link','resolve') AND case_id IN (" . implode(',', $ids) . ") GROUP BY case_id) m ON m.mid = e.id")->fetchAll() as $x) $last[(int)$x['case_id']] = $x['text']; } catch (Throwable $e) {} }
