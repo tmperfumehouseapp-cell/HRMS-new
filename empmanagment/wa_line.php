@@ -761,7 +761,13 @@ function wl_summary(PDO $pdo, int $from): array
     $o['buyers'] = count($buy); return $o;
 }
 /** The picture the owner looks at: customers by topic and status, how many go today / tomorrow (by hour), the templates, the old drip. */
-function wl_overview(PDO $pdo): array
+function wl_overview(PDO $pdo, bool $fresh = false): array
+{
+    // the Lineup page and the Lineup card read it often (wa.line_get / wa.line_card: 3 heavy counts over the whole plan each time): one shared copy per 45 s
+    if (!$fresh && function_exists('hrms_memo')) return hrms_memo('wl_overview45', 45, function () use ($pdo) { return wl_overview_calc($pdo); });
+    return wl_overview_calc($pdo);
+}
+function wl_overview_calc(PDO $pdo): array
 {
     $cfg = wl_cfg($pdo); $o = ['cfg' => $cfg, 'topics' => wl_topics(), 'by_topic' => [], 'board' => [], 'tomorrow' => ['total' => 0, 'by_topic' => [], 'by_hour' => []], 'today' => ['total' => 0, 'sent' => 0, 'by_topic' => [], 'left_by_hour' => []], 'left' => [], 'tpl' => [], 'now' => date('Y-m-d H:i')];
     foreach ($pdo->query("SELECT topic, status, COUNT(*) n FROM wa_line_cust GROUP BY topic, status")->fetchAll() as $r) $o['by_topic'][$r['topic']][$r['status']] = (int)$r['n'];
@@ -1011,7 +1017,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
         }
         case 'wa.line_start': {   // POST — the same start the engine does by itself (kept as a button in case the engine has not run yet). Nothing is SENT to a customer here.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); @set_time_limit(120);
-            json_response(['ok' => true] + wl_start_all($pdo, (int)($auth['employee_id'] ?? 0)) + wl_overview($pdo));
+            json_response(['ok' => true] + wl_start_all($pdo, (int)($auth['employee_id'] ?? 0)) + wl_overview($pdo, true));
         }
         case 'wa.line_run': {   // POST — send what is due now (manual mode), in batches; call again while "waiting" > 0
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (wl_cfg($pdo)['started'] === '') json_response(['error' => 'The Lineup has not started yet — press Start first.'], 422);
