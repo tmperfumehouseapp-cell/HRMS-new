@@ -116,8 +116,17 @@ ok($look(1000, 30, 0, 0) === '1000', '30 minutes at 1,000: stays');
 ok($look(1100, 125, 0, 0) === '1200', '1 hour at 1,100, good: 1,200');
 ok($look(1200, 300, 0, 0) === '1200', 'ceiling 1,200');
 ok($look(1000, 125, 4, 0) === '1000', 'failed 3% at 1,000: no step to 1,100');
+// owner 21 Nov 2026: ceiling 1,500 (1,200 -> 1,300 -> 1,400 -> 1,500, one hour each)
+$H2['wa_ru_ramp_max'] = '1500';
+$look15 = function ($hourly, $lvlAgeMin, $failed, $sentOnly) use ($pdo, &$H2, &$S) { $S = $H2; $S['wa_ru_hourly'] = (string)$hourly; $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_lvl_at'] = (string)(time() - $lvlAgeMin * 60); $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 220, $failed, 20); wa_ru_ramp($pdo, ['hourly' => $hourly]); return $S['wa_ru_hourly']; };   /* the 1,200+ levels need a bigger look (150+ messages) */
+ok($look15(1200, 125, 0, 0) === '1300', '1 hour at 1,200, good: 1,300');
+ok($look15(1300, 125, 0, 0) === '1400', '1 hour at 1,300, good: 1,400');
+$r14 = $look15(1400, 125, 0, 0); ok($r14 === '1500', '1 hour at 1,400, good: 1,500 (got ' . $r14 . ')');
+ok($look15(1500, 300, 0, 0) === '1500', 'ceiling 1,500');
+ok($look15(1200, 30, 0, 0) === '1200', '30 minutes at 1,200: stays');
+ok($look15(1200, 125, 9, 0) === '1200', 'failed 4% at 1,200: no step to 1,300');
 $H2['wa_ru_ramp_max'] = '1000';
-ok(strpos(file_get_contents(dirname(__DIR__) . '/empmanagment/wa_rec_util.php'), "'wa_ru_to1200_2111'") !== false, 'one-shot 1,200 seed present');
+ok(strpos(file_get_contents(dirname(__DIR__) . '/empmanagment/wa_rec_util.php'), "'wa_ru_to1200_2111'") !== false, 'one-shot 1,200 seed present'); ok(strpos(file_get_contents(dirname(__DIR__) . '/empmanagment/wa_rec_util.php'), "'wa_ru_to1500_2111'") !== false, 'one-shot 1,500 seed present');
 ok($look(700, 130, 4, 0) === '700', 'failed 3%: no step up (and no bad look either)');
 ok($look(700, 130, 0, 40) === '700', 'delivered under 85%: no step up');
 ok($look(800, 130, 9, 0) === '800' && ($S['wa_ru_freeze_n'] ?? '') === '1', 'failed 7%: a bad look holds the level');

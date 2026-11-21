@@ -645,7 +645,8 @@ function wag_price_context(PDO $pdo, string $phone, array $msgs): string
     // ORDER-VALUE GOAL (owner, 21 Nov): the average order should reach Rs 2,700-2,800 — push ONE add-on that lifts this order there, at the same price level
     $add = ''; if ($v0 < 2700) { $rs = (array)$j['rows']; usort($rs, fn($a, $b) => (int)($a['ml'] ?? 0) <=> (int)($b['ml'] ?? 0)); foreach ($rs as $r2) if ((int)($r2['ml'] ?? 0) > $total) { $vv = (int)($r2['p'][$idx] ?? 0); if ($vv >= 2700) { $add = ' ORDER-VALUE GOAL (owner): our average order should reach about Rs 2,700-2,800. This order is Rs ' . $v0 . ': once he has chosen (or in the same message), offer ONE add-on that lifts it: add ' . ((int)$r2['ml'] - $total) . ' ml (for example one more bottle) so the total becomes ' . (int)$r2['ml'] . ' ml for Rs ' . $vv . ' at the same price level — say it as "sirf Rs ' . ($vv - $v0) . ' aur mein ' . ((int)$r2['ml'] - $total) . ' ml extra". If he says no, try once more at most; never push after the second no.'; break; } } } elseif ($v0 >= 2700) $add = ' ORDER-VALUE GOAL: this order is already at the Rs 2,700-2,800 target: keep it and move to the order details; only a small add-on if he asks.';
     $__lc = ''; foreach (array_reverse($msgs) as $__m) if (($__m['who'] ?? '') === 'customer') { $__lc = mb_strtolower((string)($__m['text'] ?? '')); break; } $__obj = (bool)preg_match('/(mehang|mahang|costly|expensive|too much|zyada|jyada|kam kar|kam do|thoda kam|discount|best price|final price|last price|budget|sasta|cheaper|reduce|negotiat|bargain|rate kam|price kam)/iu', $__lc);   // the next (lower) price is only handed to the AI when the customer's own last message objects to the price: it cannot offer it by itself
-    $__up = ''; if ($size === 20) { foreach ((array)$j['rows'] as $r3) if ((int)($r3['ml'] ?? 0) === 250) { $u5 = (int)($r3['p'][$idx] ?? 0); if ($u5 > $v0 && $u5 <= 3300) $__up = ' UPGRADE OFFER (owner): he is buying 20 ml bottles; after the price add ONE short line: "5 x 50 ml sirf Rs ' . $u5 . ' mein (2.5 guna perfume)" - use exactly Rs ' . $u5 . ' (the chart price at the same level), never any other number, and ask which one he prefers. Say it once; if he says no, never repeat it.'; break; } }   // 20 ml buyers have the lowest tickets: show the 5 x 50 ml chart price next to the 20 ml price (the same chart, no discount)
+    $__up = ''; if ($size === 20 && wag_exp_arm($pdo, 'up20', $phone) === 'T') {   // self-learning experiment 'up20' (shown to half of the customers until the revenue per customer decides)
+        foreach ((array)$j['rows'] as $r3) if ((int)($r3['ml'] ?? 0) === 250) { $u5 = (int)($r3['p'][$idx] ?? 0); if ($u5 > $v0 && $u5 <= 3300) $__up = ' UPGRADE OFFER (owner): he is buying 20 ml bottles; after the price add ONE short line: "5 x 50 ml sirf Rs ' . $u5 . ' mein (2.5 guna perfume)" - use exactly Rs ' . $u5 . ' (the chart price at the same level), never any other number, and ask which one he prefers. Say it once; if he says no, never repeat it.'; break; } }   // 20 ml buyers have the lowest tickets: show the 5 x 50 ml chart price next to the 20 ml price (the same chart, no discount)
     return 'PRICE FROM OUR CHART for this customer (use ONLY these numbers for ' . $qty . ' x ' . $size . ' ml = ' . $total . ' ml total; never take a price from the combo list for a different quantity or ml): ' . ($seen ? 'the price he has already seen is Rs ' . $v0 . ' — repeat it, do not quote higher or lower unless he pushes back on price' : 'nothing is negotiated yet: quote Rs ' . $v0 . ' (the start level) and do NOT give a lower price') . '.' . ($v1 > 0 && $v1 < $v0 && $__obj ? ' He is objecting to the price: you may now give the next chart price, Rs ' . $v1 . ' (never lower).' : '') . ' Always say the total ml correctly (' . $total . ' ml).' . $add . $__up;
 }
 /** 🏪 OPEN MARKET scoreboard (owner, 21 Nov: "decide how to measure the good salespeople": most orders, fast reply, add-on / ticket, and who really takes the hot chats). Per salesperson, last $days days:
@@ -704,6 +705,44 @@ function wag_strip_unasked_discount(string $text, string $customer): string
     $bad = '/(tak\s+(karwa|kar|kam|le\s*aa|laa)\w*|best deal|discount|special (price|offer|rate)|kam\s+kar(wa)?\s*(dung|dunga|dungi|denge|dege)|extra\s+off|\bchhoot\b|\bchhut\b|lowest price|final price)/iu';
     foreach ($parts as $x) { $cl = preg_split('/\s*,\s*|\s+aur\s+(?=best|discount|special)/iu', $x); $ok = []; foreach ($cl as $y) if (!preg_match($bad, $y)) $ok[] = $y; if (!$ok) continue; $z = implode(', ', $ok); if (!preg_match('/[.!?।]$/u', $z) && preg_match('/[.!?।]$/u', $x)) $z .= substr($x, -1); $keep[] = $z; }
     $o = trim(implode(' ', $keep)); return $o !== '' ? $o : $text;
+}
+/** 🧪 SELF-LEARNING EXPERIMENTS (owner, 21 Nov: no manual switches — the system decides). An upsell line (exp 'up20' = the 20 ml -> 5 x 50 ml line, 'one' = the one-more bottle at order details) is first shown to HALF the customers (arm T) and withheld from the other half (arm C, by phone parity). wag_exp_eval() compares the revenue per customer (Shopify orders of the same phone within 48 h after he was first assigned an arm) and by itself turns the line ON for everybody, or OFF, and writes the decision down. Mode per experiment: setting wag_exp_<name> = test | on | off. */
+function wag_exp_arm(PDO $pdo, string $exp, string $phone): string
+{
+    $mode = (string)setting_get($pdo, 'wag_exp_' . $exp, 'test'); if ($mode === 'on') return 'T'; if ($mode === 'off') return 'C'; if ($phone === '') return 'C';
+    $arm = (crc32($exp . '|' . $phone) % 2) ? 'T' : 'C';
+    try { static $ok = null; if ($ok === null) { $pdo->exec("CREATE TABLE IF NOT EXISTS wag_exp (exp VARCHAR(12) NOT NULL, phone VARCHAR(12) NOT NULL, arm CHAR(1) NOT NULL, at DATETIME NOT NULL, PRIMARY KEY (exp, phone), KEY k_at (exp, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $ok = true; } $pdo->prepare("INSERT IGNORE INTO wag_exp (exp, phone, arm, at) VALUES (?, ?, ?, ?)")->execute([$exp, $phone, $arm, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+    return $arm;
+}
+function wag_exp_eval(PDO $pdo): void
+{
+    $now = time(); $k10 = function ($p) { return substr(preg_replace('/\D/', '', (string)$p), -10); };
+    $orders = null;
+    foreach (['up20', 'one'] as $exp) {
+        if ((string)setting_get($pdo, 'wag_exp_' . $exp, 'test') !== 'test') continue;
+        try {
+            $st = $pdo->prepare("SELECT arm, phone, at FROM wag_exp WHERE exp = ? AND at <= ? AND at >= ?"); $st->execute([$exp, date('Y-m-d H:i:s', $now - 24 * 3600), date('Y-m-d H:i:s', $now - 6 * 86400)]); $rows = $st->fetchAll(); if (!$rows) continue;
+            if ($orders === null) { $orders = []; foreach ($pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE phone <> '' AND total > 0 AND created_at >= '" . date('Y-m-d H:i:s', $now - 7 * 86400) . "'")->fetchAll(PDO::FETCH_ASSOC) as $o) $orders[$k10($o['phone'])][] = [(int)strtotime((string)$o['created_at']), (float)$o['total']]; }
+            $n = ['T' => 0, 'C' => 0]; $rev = ['T' => 0.0, 'C' => 0.0]; $first = $now;
+            foreach ($rows as $r) { $a = (string)$r['arm']; $t0 = (int)strtotime((string)$r['at']); $first = min($first, $t0); $n[$a]++; foreach ($orders[$k10($r['phone'])] ?? [] as [$ot, $tot]) if ($ot >= $t0 && $ot <= $t0 + 48 * 3600) $rev[$a] += $tot; }
+            if ($n['T'] < 40 || $n['C'] < 40) continue;   // too few customers to judge
+            $rT = $rev['T'] / $n['T']; $rC = $rev['C'] / $n['C']; $dec = '';
+            if ($rT < 0.85 * $rC) $dec = 'off'; elseif ($rT >= 1.05 * $rC) $dec = 'on'; elseif ($now - $first >= 3 * 86400) $dec = $rT >= $rC ? 'on' : 'off';
+            if ($dec !== '') { setting_set($pdo, 'wag_exp_' . $exp, $dec); wag_log($pdo, 'engine', true, 'self-learning: "' . $exp . '" turned ' . strtoupper($dec) . ' · revenue per customer with the line Rs ' . round($rT) . ' (' . $n['T'] . ' customers) vs without Rs ' . round($rC) . ' (' . $n['C'] . ')'); setting_set($pdo, 'wag_exp_log_' . $exp, date('Y-m-d H:i') . ' ' . $dec . ' · with Rs ' . round($rT) . ' (' . $n['T'] . ') vs without Rs ' . round($rC) . ' (' . $n['C'] . ')'); }
+            else setting_set($pdo, 'wag_exp_log_' . $exp, date('Y-m-d H:i') . ' testing · with Rs ' . round($rT) . ' (' . $n['T'] . ') vs without Rs ' . round($rC) . ' (' . $n['C'] . ')');
+        } catch (Throwable $e) { }
+    }
+    // follow-up wording: A = plain text, B = with quick-reply buttons: by the share of customers who wrote back within 2 hours
+    try {
+        if ((string)setting_get($pdo, 'wag_fu_var', 'AB') === 'AB') {
+            $st = $pdo->query("SELECT phone, ts, body FROM wa_messages WHERE dir = 'sys' AND body LIKE '%The bot followed up%[%' AND ts <= '" . date('Y-m-d H:i:s', $now - 2 * 3600) . "' AND ts >= '" . date('Y-m-d H:i:s', $now - 6 * 86400) . "' LIMIT 4000"); $n = ['A' => 0, 'B' => 0]; $h = ['A' => 0, 'B' => 0];
+            $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? AND ts <= ? LIMIT 1");
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) { if (!preg_match('/\[([AB])\]/', (string)$r['body'], $m)) continue; $v = $m[1]; $n[$v]++; $q->execute([$r['phone'], $r['ts'], date('Y-m-d H:i:s', strtotime((string)$r['ts']) + 7200)]); if ($q->fetchColumn()) $h[$v]++; }
+            if ($n['A'] >= 80 && $n['B'] >= 80) { $ra = $h['A'] / $n['A']; $rb = $h['B'] / $n['B']; $dec = ''; if ($rb >= 1.2 * $ra) $dec = 'B'; elseif ($rb <= 0.8 * $ra) $dec = 'A';
+                setting_set($pdo, 'wag_exp_log_fu', date('Y-m-d H:i') . ' plain ' . round(100 * $ra, 1) . '% (' . $n['A'] . ') vs buttons ' . round(100 * $rb, 1) . '% (' . $n['B'] . ')' . ($dec !== '' ? ' -> ' . $dec : ' -> still testing'));
+                if ($dec !== '') { setting_set($pdo, 'wag_fu_var', $dec); wag_log($pdo, 'engine', true, 'self-learning: follow-up wording ' . ($dec === 'B' ? 'WITH BUTTONS' : 'PLAIN') . ' wins · plain ' . round(100 * $ra, 1) . '% vs buttons ' . round(100 * $rb, 1) . '% replied within 2 h'); } }
+        }
+    } catch (Throwable $e) { }
 }
 /** 🎯 Ticket size from Shopify (owner, 21 Nov): the average order value of orders where the BOT had talked to the customer in the 48 h before the order, against orders with no bot message. Orders matched by the last 10 digits of the phone. */
 function wag_bot_ticket(PDO $pdo, int $days = 7): ?array
@@ -808,6 +847,7 @@ function wag_bot_tick(PDO $pdo, int $slots = 5): array
     try {
         if ($o['slot'] === 0) { setting_set($pdo, 'wag_tick_at', (string)time()); if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } } }
         $r = wag_bot_scan($pdo, 2); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];
+        if (time() - (int)setting_get($pdo, 'wag_exp_at', '0') >= 1800) { setting_set($pdo, 'wag_exp_at', (string)time()); try { wag_exp_eval($pdo); } catch (Throwable $e) { } }   // the self-learning check, every 30 minutes
         try { $o['followup'] = wag_bot_followup($pdo, 4); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
     } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_tick_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
     return $o;
@@ -940,7 +980,7 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
         $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) { $D['same']++; continue; } }   // never the same text again
         $r['text'] = wag_strip_unasked_discount((string)$r['text'], (string)$lastIn);
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
-        $__var = (crc32($key) % 2) ? 'B' : 'A';   // 🧪 A/B (owner, 21 Nov): A = plain text, B = the same text with 3 quick-reply buttons; the winner is read from the replies (event text carries the letter)
+        $__fv = (string)setting_get($pdo, 'wag_fu_var', 'AB'); $__var = ($__fv === 'A' || $__fv === 'B') ? $__fv : ((crc32($key) % 2) ? 'B' : 'A');   // 🧪 A/B (owner, 21 Nov): A = plain text, B = the same text with 3 quick-reply buttons; the winner is read from the replies (event text carries the letter)
         if ($__var === 'B' && function_exists('wa_send_buttons')) { [$ok, $res] = wa_send_buttons($pdo, $c, $r['text'], ['✅ Order karo', '💬 Doubt hai', '⏰ Baad me'], 'bot', 0); if (!$ok) { $__var = 'A'; [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0); } }
         else [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if ($ok) { $D['sent']++; $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up' . ($__pp ? ' for the salesperson' : '') . ' [' . $__var . '] (step ' . ($cnt + 1) . ' of ' . count($stp) . ', ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
