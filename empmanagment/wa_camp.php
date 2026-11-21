@@ -1214,7 +1214,7 @@ function wa_camp_days(PDO $pdo, int $days): array
 /** ⏱ One business day, hour by hour: campaign messages sent / delivered, the estimated spend, and the queries generated = customers who wrote back (within 24 h) to a campaign message sent in that hour. Remembered 5 minutes. */
 function wa_camp_hourly(PDO $pdo, string $day): array
 {
-    $ck = 'camp_hourly2_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 300) return $hit['v'];
+    $ck = 'camp_hourly3_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 300) return $hit['v'];
     $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     if (!$t0 || $t1 <= $t0) { $t0 = strtotime($day . ' 10:00:00'); $t1 = $t0 + 86400; }
@@ -1231,6 +1231,11 @@ function wa_camp_hourly(PDO $pdo, string $day): array
             FROM wa_camp_items i WHERE i.status = 'sent' AND i.sent_at >= ? AND i.sent_at < ? GROUP BY h, c"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $H[$h]['camps'][] = ['id' => (int)$r['c'], 'name' => $cn[(int)$r['c']] ?? ('#' . (int)$r['c']), 'sent' => (int)$r['sent'], 'queries' => (int)$r['rp']]; $H[$h]['queries'] += (int)$r['rp']; }
     } catch (Throwable $e) { error_log('camp_hourly queries: ' . $e->getMessage()); }
+    try {   // 🔁 replies to campaign messages that were NOT sent through the campaign list (drip / recover / Lineup also write who = 'campaign'): the first message a customer wrote is credited to the hour of the last campaign message he got in the 24 h before it (owner, 21 Nov: several hours showed no queries)
+        $until = date('Y-m-d H:i:s', min($t1 + 86400, time()));
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(14000) */ HOUR(x.ls) h, COUNT(DISTINCT x.phone) n FROM (SELECT i.phone, (SELECT MAX(o.ts) FROM wa_messages o WHERE o.phone = i.phone AND o.dir = 'out' AND o.who = 'campaign' AND o.ts < i.ts AND o.ts >= DATE_SUB(i.ts, INTERVAL 24 HOUR)) ls FROM (SELECT phone, MIN(ts) ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts < ? GROUP BY phone) i) x WHERE x.ls >= ? AND x.ls < ? GROUP BY h"); $q->execute([$a, $until, $a, $b]);
+        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h]) && (int)$r['n'] > $H[$h]['queries']) $H[$h]['queries'] = (int)$r['n']; }
+    } catch (Throwable $e) { error_log('camp_hourly replies: ' . $e->getMessage()); }
     try {   // 🔎 the NEW queries that opened in each hour (any type; complaints and order-status chats are not in the ledger) and the customers who wrote in that hour
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(opened_at) h, COUNT(*) n, SUM(src = 'campaign') c FROM wa_queries WHERE opened_at >= ? AND opened_at < ? GROUP BY h"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) { $H[$h]['newq'] = (int)$r['n']; $H[$h]['newq_camp'] = (int)$r['c']; } }
