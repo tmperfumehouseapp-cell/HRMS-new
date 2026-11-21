@@ -235,6 +235,18 @@ window.WaSeg = (function () {
         h += '<div class="wsg-leg"><span style="--c:#1fa855">Sending ' + nf(c.sendable) + '</span><span style="--c:#f59e0b">Bought / messaged lately ' + nf((why.bought || 0) + (why.messaged || 0)) + '</span><span style="--c:#e5484d">Opted out / complaint ' + nf((why.optout || 0) + (why.complaint || 0)) + '</span></div>';
         if (c.unbuilt) h += '<div class="wsg-sub">' + nf(c.unbuilt) + ' newer contacts are not analysed yet (done in the nightly run).</div>';
         h += '</div>';
+        const L = c.lineup;   // 🧵 what the 30-Day Lineup will do for these people
+        if (L) {
+          const dl = (d) => { const t = new Date(d + 'T00:00:00'); return isNaN(t) ? d : t.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
+          const days = (L.days || []); const today = new Date().toISOString().slice(0, 10);
+          h += '<div class="wsg-add"><b>🧵 30-Day Lineup for these people</b><div class="wsg-sub" style="margin-top:4px"><b>' + nf(L.in) + '</b> of ' + nf(c.total) + ' are already in the Lineup (their follow-ups go there); <b>' + nf(L.not_in) + '</b> are not.</div>';
+          if (L.in > 0) {
+            h += '<div class="wsg-sub"><b>' + nf(L.messages) + '</b> messages are still planned for them' + (L.first ? ', from ' + dl(L.first) + ' to ' + dl(L.last) + ' (' + days.length + ' days with messages)' : '') + '.</div>';
+            if (days.length) h += '<div class="wsg-sub" style="line-height:1.7">' + days.slice(0, 16).map((x) => '<span style="white-space:nowrap">' + dl(x.date) + (x.date === today ? ' (today)' : '') + ': <b>' + nf(x.customers) + '</b> customers · ' + nf(x.messages) + ' msgs</span>').join(' · ') + (days.length > 16 ? ' · … and ' + (days.length - 16) + ' more days' : '') + '</div>';
+            if ((L.steps || []).length) h += '<div class="wsg-sub">By step: ' + L.steps.map((x) => 'step ' + x.step + ' (day ' + x.day + ') <b>' + nf(x.n) + '</b>').join(' · ') + '</div>';
+          }
+          h += '<div class="wsg-sub">Tip: switch on “Already in the 30-Day Lineup” under Skip these people to keep them out of this campaign.</div></div>';
+        }
       }
       return h;
     }
