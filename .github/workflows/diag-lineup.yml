@@ -122,9 +122,7 @@ jobs:
           $q1 = function ($sql) use ($pdo) { try { return $pdo->query($sql)->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return [["ERR " . substr($e->getMessage(), 0, 80)]]; } };
           $st = function ($k) use ($pdo) { $x = $pdo->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $x->execute([$k]); return (string)$x->fetchColumn(); };
           $ex = json_decode($st("wl_extra"), true); $te = json_decode($st("wl_topics_extra"), true); $ll = json_decode($st("wl_learn_log"), true); $sc = json_decode($st("wl_scores"), true);
-          echo "CHAT " . json_encode($q1("SELECT DATE_FORMAT(ts,'%d %H:%i:%s'), dir, COALESCE(who,''), mtype, LEFT(REPLACE(body,CHAR(10),' '),110) FROM wa_messages WHERE phone LIKE '%8595159562' ORDER BY id DESC LIMIT 14"), JSON_UNESCAPED_UNICODE) . "\n";
-          echo "CHATLOG " . json_encode($q1("SELECT at, kind, ok, info FROM wa_log WHERE info LIKE '%8595159562%' ORDER BY id DESC LIMIT 8"), JSON_UNESCAPED_UNICODE) . "\n";
-          echo "CHATC " . json_encode($q1("SELECT assigned_emp, status, hot, hot_at, source, optout, tag, last_in_at, last_out_at FROM wa_contacts WHERE phone LIKE '%8595159562'")) . "\n";
+          echo "PH status " . json_encode($q1("SELECT tpl_id, UPPER(status), COUNT(*) FROM wa_tpl_waba WHERE tpl_id IN (3872,3877) GROUP BY tpl_id, UPPER(status)")) . " | aft photo sent " . json_encode($q1("SELECT tpl_id, status, COUNT(*) FROM wa_aft_plan WHERE tpl_id IN (3872,3877) GROUP BY tpl_id, status")) . " | tpl " . json_encode($q1("SELECT id, category, header_format, LEFT(body,60) FROM wa_templates WHERE id IN (3872,3877)"), JSON_UNESCAPED_UNICODE) . " | media " . json_encode($q1("SELECT id, kind, name FROM wa_lib WHERE id IN (35,36,37,38,39,43,44)"), JSON_UNESCAPED_UNICODE) . "\n";
           PHP
           echo "VER $(grep -o 'wa_camp_ui.js?v=c[0-9]*\|wa_botlearn_ui.js?v=[0-9]*' "$1"whatsapp.html | tr '\n' ' ') · handed fix in wa_growth: $(grep -c 'strtotime(\$hand\[\$k\]) > 0' "$1"empmanagment/wa_growth.php) · whatsapp.html time $(stat -c %y "$1"whatsapp.html | cut -c1-19) · server time $(date '+%F %T')"
           php /tmp/tp.php "$1"; rm -f /tmp/tp.php
