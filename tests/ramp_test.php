@@ -102,13 +102,22 @@ $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill
 wa_ru_ramp($pdo, ['hourly' => 260]); ok($S['wa_ru_hourly'] === '260' && (int)($S['wa_ru_freeze_n'] ?? 0) === 0 && (int)($S['wa_ru_pause_until'] ?? 0) === 0, 'low delivered without failures: no hold count, no rest, no growth (got ' . $S['wa_ru_hourly'] . ' / ' . ($S['wa_ru_freeze_n'] ?? '') . ')');
 // owner 20 Nov 2026 (18:55): 700 -> 800 -> 900 -> 1,000, one hour at each level, failed under 2% and delivered 85% or more
 $H2 = ['wa_ru_hourly' => '700', 'wa_ru_ramp_base' => '550', 'wa_ru_ramp_step' => '60', 'wa_ru_ramp_every' => '600', 'wa_ru_ramp_max' => '1000', 'wa_ru_ramp_drop' => '100'];
-$look = function ($hourly, $lvlAgeMin, $failed, $sentOnly) use ($pdo, $H2, &$S) { $S = $H2; $S['wa_ru_hourly'] = (string)$hourly; $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_lvl_at'] = (string)(time() - $lvlAgeMin * 60); $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 130, $failed, 20); if ($sentOnly > 0) $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE status = 'delivered' AND rowid <= " . (130 + $sentOnly)); wa_ru_ramp($pdo, ['hourly' => $hourly]); return $S['wa_ru_hourly']; };
+$look = function ($hourly, $lvlAgeMin, $failed, $sentOnly) use ($pdo, &$H2, &$S) { $S = $H2; $S['wa_ru_hourly'] = (string)$hourly; $S['wa_ru_ramp_at'] = (string)(time() - 700); $S['wa_ru_lvl_at'] = (string)(time() - $lvlAgeMin * 60); $pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 130, $failed, 20); if ($sentOnly > 0) $pdo->exec("UPDATE wa_messages SET status = 'sent' WHERE status = 'delivered' AND rowid <= " . (130 + $sentOnly)); wa_ru_ramp($pdo, ['hourly' => $hourly]); return $S['wa_ru_hourly']; };
 ok($look(700, 30, 0, 0) === '700', 'only 30 minutes at 700: stays 700 (got ' . $S['wa_ru_hourly'] . ')');
 ok($look(700, 130, 0, 0) === '800' && (time() - (int)$S['wa_ru_lvl_at']) < 60, '1 hour at 700, good: 800 and the clock restarts');
 ok($look(800, 40, 0, 0) === '800', '800 for 40 minutes: stays 800');
 ok($look(800, 125, 0, 0) === '900', '1 hour at 800, good: 900');
 ok($look(900, 125, 0, 0) === '1000', '1 hour at 900, good: 1,000');
 ok($look(1000, 300, 0, 0) === '1000', 'ceiling 1,000');
+// owner 21 Nov 2026: ceiling 1,200 (1,000 -> 1,100 -> 1,200, one hour each)
+$H2['wa_ru_ramp_max'] = '1200';
+ok($look(1000, 125, 0, 0) === '1100', '1 hour at 1,000, good: 1,100');
+ok($look(1000, 30, 0, 0) === '1000', '30 minutes at 1,000: stays');
+ok($look(1100, 125, 0, 0) === '1200', '1 hour at 1,100, good: 1,200');
+ok($look(1200, 300, 0, 0) === '1200', 'ceiling 1,200');
+ok($look(1000, 125, 4, 0) === '1000', 'failed 3% at 1,000: no step to 1,100');
+$H2['wa_ru_ramp_max'] = '1000';
+ok(strpos(file_get_contents(dirname(__DIR__) . '/empmanagment/wa_rec_util.php'), "'wa_ru_to1200_2111'") !== false, 'one-shot 1,200 seed present');
 ok($look(700, 130, 4, 0) === '700', 'failed 3%: no step up (and no bad look either)');
 ok($look(700, 130, 0, 40) === '700', 'delivered under 85%: no step up');
 ok($look(800, 130, 9, 0) === '800' && ($S['wa_ru_freeze_n'] ?? '') === '1', 'failed 7%: a bad look holds the level');
