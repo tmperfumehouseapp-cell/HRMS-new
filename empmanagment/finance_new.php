@@ -259,14 +259,23 @@ function fn_day_orders(PDO $pdo, string $day): array
             $d = function_exists('biz_day_of') ? biz_day_of($pdo, strtotime((string)$o['created_at'])) : substr((string)$o['created_at'], 0, 10); if ($d !== $day) continue;
             $tot = fn_p($o['total']); $cod = $o['outstanding'] !== null ? fn_p($o['outstanding']) : (in_array($fs, ['paid', 'partially_refunded'], true) ? 0 : $tot); $cod = max(0, min($tot, $cod));
             $refs = array_values(array_filter(array_map('fn_okey', explode(',', (string)($o['pay_ref'] ?? '')))));
-            $out[] = ['key' => fn_okey($o['order_name']), 'name' => (string)$o['order_name'], 'customer' => (string)$o['customer'], 'phone' => substr(preg_replace('/\D+/', '', (string)$o['phone']), -10), 'total_p' => $tot, 'pre_p' => $tot - $cod, 'cod_p' => $cod, 'refs' => $refs, 'at' => (string)$o['created_at']];
+            $out[] = ['sid' => (int)$o['shopify_id'], 'key' => fn_okey($o['order_name']), 'name' => (string)$o['order_name'], 'customer' => (string)$o['customer'], 'phone' => substr(preg_replace('/\D+/', '', (string)$o['phone']), -10), 'total_p' => $tot, 'pre_p' => $tot - $cod, 'cod_p' => $cod, 'refs' => $refs, 'at' => (string)$o['created_at']];
         }
     } catch (Throwable $e) { /* no Shopify copy here */ }
+    // the payment mode: a MANUAL order (WhatsApp / QR / payment link) carries its gateway (Razorpay, Quick = GoKwik, UPI QR, Bank transfer, Cash / COD); a Shopify checkout order is told by its payment id (KWIK… = GoKwik → PayU, pay_… = Razorpay)
+    $man = []; try { foreach (array_chunk(array_column($out, 'sid'), 400) as $part) { if (!$part) continue; $mq = $pdo->prepare("SELECT shop_id, gateway FROM wmo_order WHERE status = 'confirmed' AND shop_id IN (" . implode(',', array_fill(0, count($part), '?')) . ")"); $mq->execute($part); foreach ($mq->fetchAll() as $m) $man[(int)$m['shop_id']] = strtolower((string)$m['gateway']); } } catch (Throwable $e) { /* no manual orders table here */ }
+    foreach ($out as $i => $o) {
+        $isMan = isset($man[$o['sid']]); $gw = $man[$o['sid']] ?? ''; $mode = 'Other';
+        if ($isMan && $gw !== '') { if (strpos($gw, 'quick') !== false || strpos($gw, 'gokwik') !== false || strpos($gw, 'payu') !== false) $mode = 'GoKwik / PayU'; elseif (strpos($gw, 'razor') !== false) $mode = 'Razorpay'; elseif (strpos($gw, 'upi') !== false || strpos($gw, 'qr') !== false || strpos($gw, 'phonepe') !== false) $mode = 'UPI QR'; elseif (strpos($gw, 'bank') !== false) $mode = 'Bank transfer'; elseif (strpos($gw, 'cash') !== false || strpos($gw, 'cod') !== false) $mode = 'Cash / COD'; }
+        else { $r0 = $o['refs'][0] ?? ''; if (!$o['refs']) $mode = 'No payment id'; elseif (strpos($r0, 'kwik') === 0) $mode = 'GoKwik / PayU'; elseif (strpos($r0, 'pay') === 0) $mode = 'Razorpay'; }
+        if ($mode === 'Other' || $mode === 'No payment id') { foreach ($o['refs'] as $r0) if (strpos($r0, 'kwik') === 0) { $mode = 'GoKwik / PayU'; break; } }
+        $out[$i]['manual'] = $isMan; $out[$i]['mode'] = $mode;
+    }
     usort($out, fn($a, $b) => strcmp($a['at'], $b['at']));
     return $memo[$day] = $out;
 }
 /** An order paid through GoKwik (its payment transaction id starts with KWIK). */
-function fn_is_gokwik(array $o): bool { foreach ((array)($o['refs'] ?? []) as $r) { if (strpos((string)$r, 'kwik') === 0) return true; } return false; }
+function fn_is_gokwik(array $o): bool { if (($o['mode'] ?? '') === 'GoKwik / PayU') return true; foreach ((array)($o['refs'] ?? []) as $r) { if (strpos((string)$r, 'kwik') === 0) return true; } return false; }
 /** The prepaid orders of a day that are NOT GoKwik orders (another gateway / no id): count and amount, for the statement. */
 function fn_other_prepaid(PDO $pdo, string $day): array
 {
@@ -276,15 +285,16 @@ function fn_other_prepaid(PDO $pdo, string $day): array
 /** The PREPAID orders of one HRMS day: what the gateway should pay for. $gokwikOnly = only the orders paid through GoKwik / PayU. */
 function fn_prepaid_orders(PDO $pdo, string $day, bool $gokwikOnly = false): array
 {
-    $out = []; foreach (fn_day_orders($pdo, $day) as $o) { if ($o['pre_p'] <= 0) continue; if ($gokwikOnly && !fn_is_gokwik($o)) continue; $out[] = ['key' => $o['key'], 'name' => $o['name'], 'customer' => $o['customer'], 'phone' => $o['phone'], 'amount' => fn_m($o['pre_p']), 'refs' => $o['refs'], 'at' => $o['at']]; }
+    $out = []; foreach (fn_day_orders($pdo, $day) as $o) { if ($o['pre_p'] <= 0) continue; if ($gokwikOnly && !fn_is_gokwik($o)) continue; $out[] = ['key' => $o['key'], 'name' => $o['name'], 'customer' => $o['customer'], 'phone' => $o['phone'], 'amount' => fn_m($o['pre_p']), 'refs' => $o['refs'], 'mode' => $o['mode'], 'manual' => $o['manual'], 'at' => $o['at']]; }
     return $out;
 }
 /** The sales of one day: all orders, the prepaid part and the COD part. */
 function fn_day_sales(PDO $pdo, string $day): array
 {
-    $n = 0; $t = 0; $pn = 0; $p = 0; $cn = 0; $c = 0;
-    foreach (fn_day_orders($pdo, $day) as $o) { $n++; $t += $o['total_p']; if ($o['pre_p'] > 0) { $pn++; $p += $o['pre_p']; } if ($o['cod_p'] > 0) { $cn++; $c += $o['cod_p']; } }
-    return ['day' => $day, 'orders' => $n, 'total' => fn_m($t), 'prepaid_orders' => $pn, 'prepaid' => fn_m($p), 'cod_orders' => $cn, 'cod' => fn_m($c)];
+    $n = 0; $t = 0; $pn = 0; $p = 0; $cn = 0; $c = 0; $mn = 0; $modes = [];
+    foreach (fn_day_orders($pdo, $day) as $o) { $n++; $t += $o['total_p']; if (!empty($o['manual'])) $mn++; if ($o['pre_p'] > 0) { $pn++; $p += $o['pre_p']; $k = $o['mode']; if (!isset($modes[$k])) $modes[$k] = [0, 0]; $modes[$k][0]++; $modes[$k][1] += $o['pre_p']; } if ($o['cod_p'] > 0) { $cn++; $c += $o['cod_p']; } }
+    $ml = []; foreach ($modes as $k => $v) $ml[] = ['mode' => $k, 'orders' => $v[0], 'amount' => fn_m($v[1])]; usort($ml, fn($a, $b) => $b['amount'] <=> $a['amount']);
+    return ['day' => $day, 'orders' => $n, 'manual_orders' => $mn, 'total' => fn_m($t), 'prepaid_orders' => $pn, 'prepaid' => fn_m($p), 'cod_orders' => $cn, 'cod' => fn_m($c), 'modes' => $ml];
 }
 /**
  * THE COMPARISON: the prepaid orders of a day against the money rows of a settlement file. A file row belongs to an order when a cell of the row (the chosen order column first, then every cell) is the order number or the payment transaction id (KWIK...) saved on the order.
@@ -393,7 +403,17 @@ function fn_m(int $p): float { return round($p / 100, 2); }
 function fn_day($s): string { $s = trim((string)$s); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return ''; $t = strtotime($s); return ($t && date('Y-m-d', $t) === $s) ? $s : ''; }
 function fn_today(PDO $pdo): string { return function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); }
 function fn_who($auth): string { return (string)($auth['username'] ?? $auth['name'] ?? ('user ' . ($auth['user_id'] ?? ''))); }
-function fn_err(string $m, int $c = 422) { json_response(['error' => $m], $c); }
+/** The error log of Finance New: every refused request and every crash is written down (time, action, message) so that the Diagnose report can show it. Never blocks the answer. */
+function fn_log(string $kind, string $msg): void
+{
+    global $pdo, $action;
+    try {
+        if (!isset($pdo)) return; $pdo->exec("CREATE TABLE IF NOT EXISTS fn_log (id INT AUTO_INCREMENT PRIMARY KEY, at DATETIME NOT NULL, action VARCHAR(40) NOT NULL DEFAULT '', kind VARCHAR(10) NOT NULL DEFAULT '', message VARCHAR(400) NOT NULL DEFAULT '', KEY idx_fn_log (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->prepare("INSERT INTO fn_log (at, action, kind, message) VALUES (?,?,?,?)")->execute([date('Y-m-d H:i:s'), mb_substr((string)($action ?? ''), 0, 40), $kind, mb_substr($msg, 0, 400)]);
+        if (mt_rand(1, 40) === 1) $pdo->exec("DELETE FROM fn_log WHERE at < '" . date('Y-m-d H:i:s', time() - 14 * 86400) . "'");
+    } catch (Throwable $e) { /* the log must never break the answer */ }
+}
+function fn_err(string $m, int $c = 422) { if ($c >= 500 || strpos((string)($GLOBALS['action'] ?? ''), 'fn.in_') === 0) fn_log($c >= 500 ? 'crash' : 'refused', $m); json_response(['error' => $m], $c); }
 
 /** Per bank / cash box for one day: opening (start of the day), money in, money out, closing. Money before the account's opening-balance day is ignored. */
 function fn_balances(PDO $pdo, string $day): array
@@ -412,6 +432,7 @@ function fn_balances(PDO $pdo, string $day): array
 if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo) || !fn_ensure4($pdo) || !fn_ensure5($pdo) || !fn_ensure6($pdo) || !fn_ensure7($pdo)) fn_err('Could not create the Finance New tables.', 500);
 $auth = require_auth();
 
+try {
 switch ($action) {
     // a check that the new section is wired up (page -> api -> this file)
     case 'fn.ping': {
@@ -577,6 +598,12 @@ switch ($action) {
         $cl = is_array($in['client'] ?? null) ? $in['client'] : []; $od = fn_day($in['orders_day'] ?? '') ?: date('Y-m-d', strtotime(fn_today($pdo) . ' -1 day'));
         $add('FINANCE NEW · INCOMING · DIAGNOSIS · ' . date('Y-m-d H:i:s'));
         $add('Page: ' . mb_substr((string)($cl['ver'] ?? '?'), 0, 60) . ' | day the money came: ' . mb_substr((string)($cl['day'] ?? ''), 0, 12) . ' | orders of day: ' . $od . ' | take-one-day mode: ' . mb_substr((string)($cl['mode'] ?? ''), 0, 12) . ' | include not-settled: ' . (!empty($in['include_pending']) ? 'yes' : 'no'));
+        $sec('0. ERRORS (what went wrong)');
+        $cErr = array_values(array_filter(array_map(fn($x) => mb_substr((string)$x, 0, 220), (array)($cl['errors'] ?? []))));
+        $add('in the browser since this page was opened: ' . ($cErr ? count($cErr) : 'none')); foreach (array_slice($cErr, -10) as $x) $add('  · ' . $x);
+        $sErr = []; try { $eq = $pdo->query("SELECT at, action, kind, message FROM fn_log ORDER BY id DESC LIMIT 15"); $sErr = $eq->fetchAll(); } catch (Throwable $e) { $sErr = []; }
+        $add('on the server (last 15 of the log): ' . ($sErr ? count($sErr) : 'none')); foreach ($sErr as $x) $add('  · ' . $x['at'] . ' ' . $x['action'] . ' [' . $x['kind'] . '] ' . $x['message']);
+        $sErr24 = 0; foreach ($sErr as $x) if (strtotime($x['at']) > time() - 86400) $sErr24++;
         $sec('1. SERVER');
         $add('PHP ' . PHP_VERSION . ' | memory_limit ' . ini_get('memory_limit') . ' | upload_max_filesize ' . ini_get('upload_max_filesize') . ' | post_max_size ' . ini_get('post_max_size') . ' | zip ' . (class_exists('ZipArchive') ? 'yes' : 'NO') . ' | mbstring ' . (function_exists('mb_strlen') ? 'yes' : 'NO'));
         $add('fn_today ' . fn_today($pdo) . ' | biz_day_of ' . (function_exists('biz_day_of') ? 'yes' : 'NO (calendar days are used)') . ' | order_cancels_map ' . (function_exists('order_cancels_map') ? 'yes' : 'no'));
@@ -593,12 +620,13 @@ switch ($action) {
         $add('orders per calendar day around the orders day: ' . implode(', ', $win));
         $all = fn_day_orders($pdo, $od); $pre = fn_prepaid_orders($pdo, $od, !empty($in['gokwik_only'])); $sl = fn_day_sales($pdo, $od);
         $add('HRMS day ' . $od . ' (10 AM to 10 AM): ' . $sl['orders'] . ' orders, total ' . $sl['total'] . ' | prepaid part in ' . $sl['prepaid_orders'] . ' orders = ' . $sl['prepaid'] . ' | COD part in ' . $sl['cod_orders'] . ' orders = ' . $sl['cod']);
+        $ml = []; foreach ($sl['modes'] as $m) $ml[] = $m['mode'] . ' ' . $m['orders'] . ' (' . $m['amount'] . ')'; $add('prepaid by payment mode: ' . ($ml ? implode(' | ', $ml) : '-') . ' | manual orders (WhatsApp / QR / link) in the day: ' . $sl['manual_orders'] . ' | all prepaid orders without a payment id: ' . count(array_filter(fn_prepaid_orders($pdo, $od, false), fn($o) => !$o['refs'])));
         $withRef = 0; $pfx = []; $ex = []; foreach ($pre as $o) { if ($o['refs']) { $withRef++; $k = strtoupper(substr($o['refs'][0], 0, 4)); $pfx[$k] = ($pfx[$k] ?? 0) + 1; if (count($ex) < 4) $ex[] = strtoupper($o['refs'][0]); } }
         $add('prepaid orders of the day: ' . count($pre) . ' | with a transaction id saved: ' . $withRef . ' | id prefixes: ' . ($pfx ? json_encode($pfx) : 'none') . ' | examples: ' . implode(', ', $ex));
         $nm = []; foreach (array_slice($pre, 0, 4) as $o) $nm[] = $o['name'] . ' ' . $o['amount']; $add('first prepaid orders: ' . implode(' · ', $nm));
-        $sec('5. FILES SAVED FOR THIS CHANNEL (last 5)');
+        $sec('5. FILES SAVED FOR THIS CHANNEL (last 5)'); $lr = null; $lastUp = null;
         try { $uq = $pdo->prepare("SELECT id, status, file_name, day, orders_day, rows_n, gross, fee, net, entry_id, (recon_json IS NOT NULL) hr FROM fn_in_uploads WHERE channel_id = ? AND status IN ('ok','void') ORDER BY id DESC LIMIT 5"); $uq->execute([$cid]); $any = false;
-            foreach ($uq->fetchAll() as $u) { $any = true; $add('#' . $u['id'] . ' ' . $u['status'] . ' | ' . $u['file_name'] . ' | money day ' . $u['day'] . ' | orders day ' . ($u['orders_day'] ?: '-') . ' | rows ' . $u['rows_n'] . ' | gross ' . $u['gross'] . ' fee ' . $u['fee'] . ' net ' . $u['net'] . ' | receipt ' . ((int)$u['entry_id'] ?: 'none') . ' | comparison saved ' . ((int)$u['hr'] ? 'yes' : 'no')); } if (!$any) $add('none yet'); } catch (Throwable $e) { $add('ERROR ' . $e->getMessage()); }
+            foreach ($uq->fetchAll() as $u) { $any = true; if ($lastUp === null && $u['status'] === 'ok') $lastUp = $u; $add('#' . $u['id'] . ' ' . $u['status'] . ' | ' . $u['file_name'] . ' | money day ' . $u['day'] . ' | orders day ' . ($u['orders_day'] ?: '-') . ' | rows ' . $u['rows_n'] . ' | gross ' . $u['gross'] . ' fee ' . $u['fee'] . ' net ' . $u['net'] . ' | receipt ' . ((int)$u['entry_id'] ?: 'none') . ' | comparison saved ' . ((int)$u['hr'] ? 'yes' : 'no')); } if (!$any) $add('none yet'); } catch (Throwable $e) { $add('ERROR ' . $e->getMessage()); }
         $sec('5b. THE LATEST SAVED COMPARISON OF THIS CHANNEL (no file needed)');
         try {
             $lq = $pdo->prepare("SELECT id, file_name, day, orders_day, recon_json FROM fn_in_uploads WHERE channel_id = ? AND status = 'ok' AND recon_json IS NOT NULL ORDER BY id DESC LIMIT 1"); $lq->execute([$cid]); $lu = $lq->fetch(); $lr = $lu ? json_decode((string)$lu['recon_json'], true) : null;
@@ -656,6 +684,21 @@ switch ($action) {
             $why = []; if (!$rc['expected']['orders']) $why[] = 'no prepaid orders were found for ' . $od; if ($rc['expected']['orders'] && !$d['orders_with_ref']) $why[] = 'none of the orders has a payment transaction id saved'; if ($d['id_filled'] === 0) $why[] = 'the order-id column of the file is empty'; if (!count($recs) && !$stats['no_utr']) $why[] = 'no row of the file counts (check UTR / amount / status / day filter)'; if ($stats['other_day'] && !count($recs)) $why[] = 'every row was left out as another day: check the transaction date column and "Orders of day"';
             $add('LIKELY REASONS: ' . ($why ? implode('; ', $why) : 'none found by the checks'));
         }
+        // THE QUICK VERDICT: the problems found, put at the top of the report
+        $V = []; $good = fn($t) => '✓ ' . $t; $bad = fn($t) => '✗ ' . $t;
+        $V[] = $sErr24 ? $bad($sErr24 . ' server error(s) in the last 24 hours (see 0)') : $good('no server error in the last 24 hours');
+        $V[] = $cErr ? $bad(count($cErr) . ' error(s) in the browser (see 0)') : $good('no error in the browser');
+        $sy = $cnt("SELECT MAX(synced_at) FROM shop_orders"); $age = strtotime($sy) ? max(0, (int)round((time() - strtotime($sy)) / 60)) : -1; $V[] = ($age >= 0 && $age <= 30) ? $good('Shopify orders synced ' . $age . ' minutes ago') : $bad('Shopify orders last synced ' . ($age >= 0 ? $age . ' minutes ago' : 'unknown'));
+        $V[] = $sl['prepaid_orders'] > 0 ? $good($sl['prepaid_orders'] . ' prepaid orders found for ' . $od . ' (' . $sl['prepaid'] . ')') : $bad('no prepaid order found for ' . $od . ': change "Orders of day"');
+        $noId = count(array_filter(fn_prepaid_orders($pdo, $od, false), fn($o) => !$o['refs'])); $V[] = $noId ? $bad($noId . ' prepaid orders have no payment id saved: they cannot be matched by id') : $good('every prepaid order has a payment id');
+        $V[] = 'payment modes of the prepaid orders: ' . ($ml ? implode(' | ', $ml) : '-') . ' | COD ' . $sl['cod_orders'] . ' orders (' . $sl['cod'] . ')';
+        if (is_array($lr)) { $mt = (int)($lr['found']['orders'] ?? 0); $ex2 = (int)($lr['expected']['orders'] ?? 0); $pd = (int)($lr['pending']['orders'] ?? 0); $mi = (int)($lr['missing']['orders'] ?? 0);
+            $V[] = ($ex2 && $mt === $ex2) ? $good('latest saved file: all ' . $ex2 . ' orders reconciled') : $bad('latest saved file: ' . $mt . ' of ' . $ex2 . ' orders reconciled, ' . $pd . ' settlement pending, ' . $mi . ' not in the file (see 5b)'); }
+        else $V[] = '• no saved comparison yet for this channel';
+        if ($lastUp) { $gap = round((float)$lastUp['gross'] - (float)$lastUp['fee'] - (float)$lastUp['net'], 2); $V[] = abs($gap) <= 1 ? $good('latest saved file: gross − charges = net') : $bad('latest saved file #' . $lastUp['id'] . ': gross − charges ≠ net (gap ' . $gap . '): its charges were counted only from the fee columns; a new save shows all deductions'); }
+        $V[] = $u ? $good('a file is chosen: ' . $u['file_name']) : '• no file is chosen now (choose it and press Diagnose again for the full matching check)';
+        $pv = (int)$cnt("SELECT COUNT(*) FROM fn_in_uploads WHERE status = 'preview'"); if ($pv > 5) $V[] = '• ' . $pv . ' unsaved file previews are stored (removed automatically after 6 hours)';
+        array_splice($L, 2, 0, array_merge(['', '=== QUICK VERDICT (✓ fine · ✗ problem) ==='], $V));
         json_response(['ok' => true, 'text' => implode("\n", $L)]);
         break;
     }
@@ -735,3 +778,4 @@ switch ($action) {
     }
     default: json_response(['error' => 'Unknown Finance New action.'], 404);
 }
+} catch (Throwable $fnEx) { if ($fnEx instanceof JrCapture || get_class($fnEx) === 'Done') throw $fnEx; fn_log('crash', $fnEx->getMessage() . ' @' . basename($fnEx->getFile()) . ':' . $fnEx->getLine()); fn_err('Server error in Finance New: ' . mb_substr($fnEx->getMessage(), 0, 200), 500); }
