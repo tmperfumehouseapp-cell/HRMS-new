@@ -587,6 +587,18 @@ function wag_addon_sweep(PDO $pdo): void
         $cs = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $cs->execute([$key]); $c = $cs->fetch(PDO::FETCH_ASSOC); wag_meta_put($pdo, 'addon:' . $key, 'passed|' . date('Y-m-d H:i:s')); if (!$c) continue;
         wag_addon_ensure($pdo); try { $pdo->prepare("UPDATE wag_addon SET status = 'passed' WHERE phone = ? AND status = 'offered' ORDER BY id DESC LIMIT 1")->execute([$key]); } catch (Throwable $e) { } wag_order_finalize($pdo, $c, $key, ' (the add-on offer got no answer)'); } } catch (Throwable $e) { }
 }
+/** 🧩 The address is confirmed in ANY chat (also one a salesperson holds): the add-on offer goes out by itself ~5 seconds later unless the person already sent the payment link (owner, 21 Nov). The person sees "🧩 … offered" in the chat. */
+function wag_addon_scan(PDO $pdo): void
+{
+    try { if ((string)setting_get($pdo, 'wag_addon_on', '1') === '0') return; $now = time();
+        $q = $pdo->prepare("SELECT phone, MAX(id) id, MAX(ts) ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts <= ? AND body REGEXP '(^|[^0-9])[0-9]{6}([^0-9]|$)' GROUP BY phone ORDER BY MAX(id) DESC LIMIT 25");
+        $q->execute([date('Y-m-d H:i:s', $now - 900), date('Y-m-d H:i:s', $now - 5)]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $key = (string)$r['phone']; if (wag_meta_get($pdo, 'addon:' . $key, '') !== '') continue;
+            $cs = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ? AND status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0)"); $cs->execute([$key]); $c = $cs->fetch(PDO::FETCH_ASSOC); if (!$c) continue;
+            $lk = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND id > ? AND (body LIKE '%tmperfumehouse.com%' OR body LIKE '%payment link%' OR body LIKE '%cart link%' OR body LIKE '%pay.%' OR body LIKE '%rzp.io%' OR body LIKE '%razorpay%') LIMIT 1"); $lk->execute([$key, (int)$r['id'] - 30]); if ($lk->fetchColumn()) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s')); continue; }   // the link is already sent: too late
+            wag_addon_offer($pdo, $c, $key); }
+    } catch (Throwable $e) { }
+}
 /** ORDER MODE finished? The customer's messages now hold a 6-digit pincode (the address): before the link the bot offers the add-on (once); then it stops on this chat, the salesperson is alerted to send the payment and confirm. */
 function wag_order_done_check(PDO $pdo, array $c, string $key): void
 {
@@ -977,7 +989,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
 {
     $cfg = wag_cfg($pdo); $o = ['sent' => 0, 'handoff' => 0]; if ($cfg['bot'] !== 'on') return $o;
     if (defined('WA_IN_WEBHOOK')) return $o;   // never inside Meta's webhook call (an AI answer takes seconds)
-    wag_addon_sweep($pdo);
+    wag_addon_sweep($pdo); wag_addon_scan($pdo);
     $now = time(); $unans = $cfg['unans_min'] * 60;
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.last_in_at >= ? AND c.last_in_at <= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) ORDER BY c.last_in_at DESC LIMIT 60");
     $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $cfg['bot_after'])]);
@@ -985,6 +997,9 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if ($o['sent'] + $o['handoff'] >= $max) break; $key = (string)$c['phone']; $age = $now - strtotime((string)$c['last_in_at']);
         $__mv = wag_meta_get($pdo, 'bgm:' . $key, ''); if ($__mv !== '') { $__mp = explode('|', $__mv, 2); if ($__mp[0] === (string)$c['last_in_at'] && (int)($__mp[1] ?? 0) > time()) continue; } wag_meta_put($pdo, 'bgm:' . $key, $c['last_in_at'] . '|' . (time() + 45));   // a chat looked at is not looked at again for 45 s (kept in the database: every tick is a new short request, no memory between them)
         if (!empty($c['cx_id'])) continue;   // the chat is with the Complaint team: the bot never answers it
+        $__ad = wag_meta_get($pdo, 'addon:' . $key, ''); if (strpos($__ad, 'offered|') === 0) {   // an add-on offer is waiting for the answer (also in a chat a salesperson holds): code answers it, the AI stays quiet
+            $__a0 = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__a0->execute([$key]); $__m0 = $__a0->fetch();
+            if ($__m0 && in_array((string)$__m0['mtype'], ['text', 'button', 'interactive'], true) && wag_addon_handle($pdo, $c, $key, $__m0)) $o['sent']++; continue; }
         if (true && function_exists('wq_ts') && wq_ts(wag_meta_get($pdo, 'typing:' . $key, '')) > time() - 90) continue;   // a person is typing an answer right now: the bot never talks over them
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
         // the bot answers after bot_after (4 s) — also when the chat is given to a salesperson — until that person presses "Take over" (or is writing to the customer right now): then the bot is silent
