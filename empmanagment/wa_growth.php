@@ -487,6 +487,27 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
     }
     return $n;
 }
+/** A person's replacement answer is safe to teach the bot at once: normal length, no price / amount (those stay for the owner), no invented offer, no link / handle. */
+function wag_learn_safe_text(string $t): bool
+{
+    $t = trim($t); if (mb_strlen($t) < 8 || mb_strlen($t) > 400) return false;
+    if (preg_match('/(₹|\brs\.?|\binr\b)\s*\d|\d{3,}|https?:|www\.|@|\bupi\b|\[TEMPLATE/iu', $t)) return false;
+    return !wag_bot_unsafe($t);
+}
+/** ON THE SPOT: what a salesperson wrote instead of a bad bot answer goes into the LIVE guidebook at once when it is safe (the owner's standing permission); others wait in the owner's "bot learned" strip. Returns true when applied. */
+function wag_learn_auto_apply(PDO $pdo, int $learnId): bool
+{
+    try {
+        if (!function_exists('lib_guide_row')) return false; $q = $pdo->prepare("SELECT * FROM wa_learn WHERE id = ? AND kind = 'botbad' AND status = 'new'"); $q->execute([$learnId]); $r = $q->fetch(); if (!$r) return false;
+        $better = trim(preg_replace('/\n\[reason: [^\]]*\]\s*$/u', '', (string)$r['sent'])); $bot = trim((string)$r['sugg']);
+        if ($bot === '' || mb_strtolower($better) === mb_strtolower($bot) || !wag_learn_safe_text($better)) return false;
+        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; $body = json_decode((string)$g['body'], true); if (!is_array($body)) return false;
+        $corr = array_values((array)($body['owner_corrections'] ?? [])); $k = md5(mb_strtolower($better)); foreach ($corr as $o) if (md5(mb_strtolower((string)($o['better'] ?? ''))) === $k) { $pdo->prepare("UPDATE wa_learn SET status = 'done' WHERE id = ?")->execute([$learnId]); return true; }
+        array_unshift($corr, ['customer' => mb_substr((string)$r['customer'], 0, 240), 'better' => mb_substr($better, 0, 400)]);
+        $body['owner_corrections'] = array_slice($corr, 0, 60); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($body, JSON_UNESCAPED_UNICODE), (int)$g['id']]);
+        $pdo->prepare("UPDATE wa_learn SET status = 'done' WHERE id = ?")->execute([$learnId]); return true;
+    } catch (Throwable $e) { return false; }
+}
 /** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
 function wag_bot_off(PDO $pdo, string $key): bool
 {
@@ -1154,7 +1175,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             wa_assign_to($pdo, $key, $me, $me, 'takeover'); unset($GLOBALS['bot_replace']);
             $nm = employee_names_by_id($pdo); $who = $nm[$me] ?? 'A salesperson';
             wa_event($pdo, $key, '🔄 ' . $who . ' replaced the bot’s answer and took this chat. Bot said: “' . mb_substr((string)$l['bot_text'], 0, 160) . '” · ' . $who . ' said: “' . mb_substr($text, 0, 160) . '”' . ($reason !== '' ? ' · reason: ' . $reason : ''));
-            try { if (function_exists('wa_learn_tables') && wa_learn_tables($pdo)) { [$inId, $cu] = wa_last_in($pdo, $key); $pdo->prepare("INSERT INTO wa_learn (phone, in_id, customer, sugg, sent, kind, emp_id, ver, status, created_at) VALUES (?, ?, ?, ?, ?, 'botbad', ?, 0, 'new', ?)")->execute([$key, $inId, mb_substr((string)$cu, 0, 800), mb_substr((string)$l['bot_text'], 0, 1500), mb_substr($text . ($reason !== '' ? "\n[reason: " . $reason . "]" : ''), 0, 1500), $me, date('Y-m-d H:i:s')]); } } catch (Throwable $e) { }
+            try { if (function_exists('wa_learn_tables') && wa_learn_tables($pdo)) { [$inId, $cu] = wa_last_in($pdo, $key); $pdo->prepare("INSERT INTO wa_learn (phone, in_id, customer, sugg, sent, kind, emp_id, ver, status, created_at) VALUES (?, ?, ?, ?, ?, 'botbad', ?, 0, 'new', ?)")->execute([$key, $inId, mb_substr((string)$cu, 0, 800), mb_substr((string)$l['bot_text'], 0, 1500), mb_substr($text . ($reason !== '' ? "\n[reason: " . $reason . "]" : ''), 0, 1500), $me, date('Y-m-d H:i:s')]); wag_learn_auto_apply($pdo, (int)$pdo->lastInsertId()); } } catch (Throwable $e) { }
             json_response(['ok' => true]);
         }
         case 'wa.g_find': {   // 🔍 search ANY customer by number or name (top of the salesperson's Chats): who has the chat, may I open it
