@@ -1517,6 +1517,7 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT m.phone) FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.who = 'campaign' AND m.status IN ('delivered','read') AND m.ts >= ? AND m.ts < ?
             AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts > m.ts AND i.ts <= ?)"); $q->execute([$from, $to, $now]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $rr = wa_rec_range($pdo, $from, $to); $o['retried'] = $rr['tried']; $o['recovered'] = $rr['recovered']; } catch (Throwable $e) { }
+    try { if (function_exists('wl_summary')) { $ls = wl_summary($pdo, (int)strtotime($from)); $o['lineup'] = ['sent' => (int)$ls['sent'], 'delivered' => (int)$ls['delivered'], 'read' => (int)$ls['read'], 'failed' => (int)$ls['failed'], 'replied' => (int)$ls['replied'], 'utility' => (int)$ls['utility'], 'plain' => (int)$ls['plain'], 'cost' => (float)$ls['cost'], 'cost_utility' => (float)$ls['cost_utility'], 'cost_plain' => (float)$ls['cost_plain'], 'orders' => (int)$ls['orders'], 'revenue' => (int)$ls['revenue']]; } } catch (Throwable $e) { }   // 🧵 the 30-Day Lineup is its own module: its numbers are added to the "all three together" line on the screen
     try { $o['meta'] = wa_meta_spend_cached($pdo); } catch (Throwable $e) { }   // 🏦 Meta's own spend (prepared in the background)
     try { setting_set($pdo, 'wa_camp_spend4', json_encode($o)); } catch (Throwable $e) { }
     return $o;
