@@ -815,7 +815,13 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp): string
         $ttk = 0; $tod = 0; foreach (wag_mkt_board($pdo, 7) as $__b) { $ttk += (int)$__b['taken']; $tod += (int)$__b['orders']; } $avg = $ttk >= 40 && $tod > 0 ? min(0.5, $tod / $ttk) : 0;   // orders are not all tied to takes: cap the team ratio so it can never exceed 50% (person must reach 60% of it)
         if ($un >= 3) $msg = '🔒 ' . $un . ' hot customers of yours are waiting for an answer. Answer them first — then you can take new queries.';
         elseif ($dr >= 2 && $dr * 2 > $tk) $msg = '🔒 You left ' . $dr . ' hot chats today without answering. New queries go to people who answer: answer your open chats first.';
-        elseif ($tk >= 4 && $avg > 0 && ($od / $tk) < 0.6 * $avg) $msg = '🔒 You took ' . $tk . ' queries today with ' . $od . ' order' . ($od === 1 ? '' : 's') . ' — below the team level (' . round(100 * $od / $tk) . '% vs ' . round(100 * $avg) . '%). Close the chats you already have; new queries go to people who convert better.';
+        else {   // ONE source for the numbers (owner, 21 Nov: the market banner said 7 / 1, the Queries page 70, the sales strip 0/1): the query ledger — the same queries and orders the Queries page and the sales strip show (community not counted)
+            $lq = 0; $lo = 0; $lavg = 0.0;
+            try { if (function_exists('wq_people_stats') && function_exists('wq_period')) {
+                [$f1, $t1] = wq_period($pdo, 1); $S1 = wq_people_stats($pdo, $f1, $t1)['rows'][$emp] ?? null; if ($S1) { $lq = (int)$S1['queries'] - (int)($S1['by_type']['community'] ?? 0); $lo = (int)$S1['orders']; }
+                [$f7, $t7] = wq_period($pdo, 7); $tq = 0; $to = 0; foreach (wq_people_stats($pdo, $f7, $t7)['rows'] as $__r) { $tq += (int)$__r['queries'] - (int)($__r['by_type']['community'] ?? 0); $to += (int)$__r['orders']; } $lavg = $tq >= 40 && $to > 0 ? min(0.5, $to / $tq) : 0.0;
+            } } catch (Throwable $e) { }
+            if ($lq >= 4 && $lavg > 0 && ($lo / $lq) < 0.6 * $lavg) $msg = '🔒 You have ' . $lq . ' queries today with ' . $lo . ' order' . ($lo === 1 ? '' : 's') . ' — below the team level (' . round(100 * $lo / $lq) . '% vs ' . round(100 * $lavg) . '%). Close the chats you already have; new queries go to people who convert better.'; }
     } catch (Throwable $e) { }
     return $c[$ck] = $msg;
 }
