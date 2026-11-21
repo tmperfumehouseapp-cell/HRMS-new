@@ -286,6 +286,7 @@ body.waui .body{flex:1 0 auto;min-height:42vh;min-height:42dvh;}
   body.waui .cq small{font-size:8px;} body.waui .fc{font-size:10px;} body.waui .fc b{font-size:11px;} body.waui .wp-seg button{font-size:11.5px;padding:6px 8px;}
   body.waui .wp-in:not(textarea):not([type=text]):not([type=search]):not([type=number]):not([type=date]):not(select){font-size:13px;}
 }
+body.wa-solo #blStrip, body.wa-solo #blChips, body.wa-solo #blPend, body.wa-solo #blMkt{display:none !important}
 </style>
 <style>
   *{box-sizing:border-box;} html,body{height:100%; margin:0;} [hidden]{display:none !important;} body{overflow:hidden; -webkit-font-smoothing:antialiased;}
@@ -500,7 +501,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/cx_raise.js?v=cx9"></script>
 <script src="assets/js/wa_inbox.js?v=wa89"></script>
 <script src="assets/js/wa_unans_ui.js?v=2"></script>
-<script src="assets/js/wa_panels.js?v=wa50"></script>
+<script src="assets/js/wa_panels.js?v=wa51"></script>
 <script src="assets/js/wa_cust_ui.js?v=k32"></script>
 <script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
 <script src="assets/js/wj_ui.js?v=wj7"></script>
@@ -509,15 +510,15 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wq_speed_ui.js?v=sp5"></script>
 <script src="assets/js/wq_topics_ui.js?v=tp2"></script>
 <script src="assets/js/wa_bill_ui.js?v=b1"></script>
-<script src="assets/js/wa_ord_ui.js?v=26"></script>
+<script src="assets/js/wa_ord_ui.js?v=27"></script>
 <script src="assets/js/wa_cx_ui.js?v=3"></script>
 <script src="assets/js/wa_lists_ui.js?v=l12"></script>
 <script src="assets/js/wa_camp_rep_ui.js?v=r4"></script>
 <script src="assets/js/wa_growth.js?v=g8"></script>
 <script src="assets/js/wa_prod_ui.js?v=pr4"></script>
 <script src="assets/js/wa_tpl_ui.js?v=t11"></script>
-<script src="assets/js/wa_camp_ui.js?v=c302"></script>
-<script src="assets/js/wa_botlearn_ui.js?v=13"></script>
+<script src="assets/js/wa_camp_ui.js?v=c303"></script>
+<script src="assets/js/wa_botlearn_ui.js?v=14"></script>
 <script src="assets/js/wa_insights_ui.js?v=i2"></script>
 <script src="assets/js/wa_seg_ui.js?v=4"></script>
 <script src="assets/js/wa_smart_ui.js?v=s4"></script>
@@ -583,6 +584,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'gallery', t: 'Gallery & storage', ic: 'img', mode: 'native', sub: 'Photos and videos in topic folders — Claude shows what can go' },
     { k: 'media', t: 'Media library', ic: 'film', mode: 'native', sub: 'Photos, videos and PDFs saved once' },
     { k: 'followups', t: 'Journey', ic: 'bell', mode: 'native', sub: 'One plan for every customer for 60 days: the Autopilot in the first 10 days (6 paths, offers on day 2/4/7/10), then the Journey to day 60 — one offer registry, festival box, Claude as the general brain' },
+    { k: 'orderupd', t: 'Order updates', ic: 'send', mode: 'native', sub: 'The tracking messages customers get by themselves (shipped, out for delivery, delivered …): who got which update, send what is missing, the words of each message' },
     { k: 'cxmsgs', t: 'Complaint messages', ic: 'send', mode: 'frame', src: 'complaints.html?in=sales&tab=settings&go=msgs', sub: 'The photo and words of every message the Complaints desk sends — the same screen as Complaints → Settings' },
     { k: 'fixedb', t: 'Fixed messages & builder', ic: 'wand', mode: 'native', sub: 'Say what you want to send — Claude writes it — and the one approved message for each situation' },
     { k: 'mymsgs', t: 'My messages', ic: 'tpl', mode: 'native', sub: 'Every offer and message you or Claude made for the 60-day plan — pick them on any day, add new ones, see what Meta approved' },
@@ -610,7 +612,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'templates', t: 'Messages', ic: 'tpl', sub: 'The message library: Meta-approved messages, the builder, one per situation, every automatic message in one list, and the complaint messages', tabs: [['mymsgs', 'Plan messages'], ['premade', 'Pre-made'], ['fixedb', 'Fixed & builder'], ['allmsgs', 'Where each message lives'], ['cxmsgs', 'Complaint messages']] },
     { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists']] },
     { k: 'mediag', t: 'Media', ic: 'film', sub: 'Photos, videos and PDFs — one library, in topic folders', tabs: [['media', 'Library'], ['gallery', 'Folders & clean-up']] },
-    { k: 'automation', t: 'Autobot', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['followups', 'Journey'], ['topics', 'Topics']] },
+    { k: 'automation', t: 'Autobot', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['followups', 'Journey'], ['topics', 'Topics'], ['orderupd', '📦 Order updates']] },
     { k: 'setupg', t: 'Numbers & setup', ic: 'phone', sub: 'Numbers, connection and the go-live check', tabs: [['numbers', 'Numbers'], ['setup', 'Setup & connection'], ['golive', 'Go-live check']] },
     { k: 'rules', t: 'Team & rules', ic: 'group', sub: 'Who gets chats, the waiting limits, the Claude button and exports', tabs: [['team', 'Team & routing'], ['hq', 'Claude button'], ['export', 'Export']] },
     { k: 'teach', t: 'Teach & groups', ic: 'bulb', sub: 'Teach the bot once · your WhatsApp groups', tabs: [['learn', 'Teach'], ['groups', 'Groups']] },
@@ -689,7 +691,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   let started = false;   // the first section replaces the entry; every section opened after it is one step Back can return to
   function go(k, noPush) {
     if (k !== cur && document.getElementById('waSide')) closeSide(true);   // another screen: the side chat closes
-    if (['orderupd', 'afterdel', 'birthdays'].indexOf(k) >= 0) { try { localStorage.setItem('wa_fu_sub2', k); } catch (e) { } k = 'followups'; }   // moved into Journey (old links still work)
+    if (['afterdel', 'birthdays'].indexOf(k) >= 0) { try { localStorage.setItem('wa_fu_sub2', k); } catch (e) { } k = 'followups'; }   // moved into Journey (old links still work). 📦 Order updates is its own page again (owner, 21 Nov): inside Journey it was squeezed under the other boxes
     k = ALIAS[k] || k;
     { const g = groupOf(k); if (g) { let last = ''; try { last = localStorage.getItem('wa_tab_' + g.k) || ''; } catch (e) { } k = g.tabs.some(([x]) => x === last) ? last : g.tabs[0][0]; } }
     if (String(k).indexOf('f_') === 0) { const f = ITEMS.find((x) => x.k === k); if (f) { openFeed(f.feed); return; } }
@@ -697,6 +699,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     const gt = $('gtabs'); if (G) { try { localStorage.setItem('wa_tab_' + G.k, cur); } catch (e) { } gt.hidden = false; gt.innerHTML = G.tabs.map(([x, l]) => `<button type="button" data-k="${x}" class="${x === cur ? 'on' : ''}">${esc(l)}</button>`).join(''); } else { gt.hidden = true; gt.innerHTML = ''; }
     try { sessionStorage.setItem('wa_last_sec', cur + '|' + Date.now()); } catch (e) { }   // a refresh (the page sits inside the hub, so the address bar has no #section) comes back to this screen
     if (location.hash !== '#' + cur) { if (!started || noPush) history.replaceState(history.state, '', '#' + cur); else history.pushState({ waSec: cur }, '', '#' + cur); }
+    document.body.classList.toggle('wa-solo', cur === 'orderupd');   // 📦 Order updates is a page of its own: the Unanswered / Open market / Bot learned strip of the sales screens is not shown on top of it
     Object.keys(secs).forEach((x) => { secs[x].hidden = x !== cur; });
     if (!secs[cur]) {
       const d = document.createElement('div'); d.className = 'sec'; secs[cur] = d; $('body').appendChild(d);
@@ -704,7 +707,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
       else if (m.mode === 'native' && cur === 'chats') { d.classList.add('fill'); d.innerHTML = '<div id="wi"></div>'; if (!inboxStarted) { inboxStarted = true; WaInbox.start({ mode: 'admin', root: 'wi', onUnans: () => go('unans'), onFeed: (k) => { feedNow = k || ''; const m = ITEMS.find((x) => x.feed === feedNow); if (cur === 'chats') { $('ttl').textContent = m ? m.t : 'Chats'; } drawRail(); }, onCounts: (c) => { srcN = (c && c.src) || srcN; unN = (c && c.unassigned != null) ? c.unassigned : unN; drawRail(); } }); } }
       else if (m.mode === 'native' && cur === 'unans' && window.WaUnans) { reload[cur] = WaUnans.mount(d, { openChat }); }
       else if (m.mode === 'frame') { d.classList.add('frame'); d.innerHTML = '<iframe allow="camera; microphone; geolocation; clipboard-read; clipboard-write; fullscreen" title="' + esc(m.t) + '" src="' + esc(m.src) + '"></iframe>'; }
-      else if (m.mode === 'native' && window.WaPanels && WaPanels.has(cur)) { reload[cur] = WaPanels.mount(cur, d, { go, openChat, closeSide }); if (window.WaGrowth) WaGrowth.claudeBar(d, cur, { go, openChat }); }
+      else if (m.mode === 'native' && window.WaPanels && WaPanels.has(cur)) { reload[cur] = WaPanels.mount(cur, d, { go, openChat, closeSide }); if (window.WaGrowth && cur !== 'orderupd') WaGrowth.claudeBar(d, cur, { go, openChat }); }   /* 📦 Order updates is its own page: no Unanswered / Open market / Bot learned bar on top of it */
       else { d.classList.add('pad'); d.innerHTML = '<div class="err">This screen could not load. Refresh the page.</div>'; }
     } else if (cur === 'overview') loadOverview(true);
     else if (reload[cur]) { try { reload[cur](); } catch (e) { } }
@@ -797,7 +800,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   document.addEventListener('visibilitychange', () => { if (!document.hidden && cur === 'overview') loadOverview(true); });
 
   // ---------- start
-  const first0 = (location.hash || '').replace('#', ''); if (['orderupd', 'afterdel', 'birthdays'].indexOf(first0) >= 0) { try { localStorage.setItem('wa_fu_sub2', first0); } catch (e) { } location.hash = '#followups'; }
+  const first0 = (location.hash || '').replace('#', ''); if (['afterdel', 'birthdays'].indexOf(first0) >= 0) { try { localStorage.setItem('wa_fu_sub2', first0); } catch (e) { } location.hash = '#followups'; }
   let first = ALIAS[(location.hash || '').replace('#', '')] || (location.hash || '').replace('#', '');
   if (!first) { try { const sv = String(sessionStorage.getItem('wa_last_sec') || '').split('|'); if (sv[0] && Date.now() - (+sv[1] || 0) < 6 * 3600 * 1000) first = ALIAS[sv[0]] || sv[0]; } catch (e) { } }   // refresh: stay where you were (this tab, last 6 hours)
   if (first.indexOf('f_') === 0 && ITEMS.some((m) => m.k === first)) openFeed(first.slice(2)); else go(ITEMS.some((m) => m.k === first) ? first : 'overview');

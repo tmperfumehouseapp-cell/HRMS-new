@@ -8,7 +8,7 @@
   function css() {
     if (document.getElementById('blCss')) return; var st = document.createElement('style'); st.id = 'blCss';
     st.textContent = '#blStrip{margin:0}.bl{margin:8px 12px;border:1px solid #cfe3d6;background:#f3faf6;border-radius:12px;font-size:13px;color:#1f2a37}.bl-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:9px 12px;cursor:pointer}.bl-h b{flex:1 1 0;min-width:140px;line-height:1.3}.bl-s{flex:1 1 100%;order:5;font-size:12px;line-height:1.35;padding-left:26px}.bl-h .bl-ar{margin-left:auto}.bl-b{padding:0 12px 10px}.bl-i{border-top:1px solid #dfece4;padding:9px 0}.bl-i q{display:block;color:#445;margin:2px 0}.bl-bad{color:#a33}.bl-good{color:#116b3a;font-weight:600}.bl-r{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.bl button{border:0;border-radius:9px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}.bl .ap{background:#128c4a;color:#fff}.bl .sk{background:#e6e9ee;color:#445}.bl textarea{width:100%;box-sizing:border-box;font:inherit;padding:6px;border:1px solid #cfd6dd;border-radius:8px;margin-top:4px}.bl table{font-size:12px}.bl td,.bl th{padding:3px 6px;white-space:nowrap}@media (max-width:520px){.bl{margin:6px 8px;font-size:12.5px}.bl-h{padding:8px 10px}}';
-    st.textContent += '#blChips{display:flex;gap:8px;flex-wrap:wrap;padding:8px 12px;flex:none}#blChips:empty{display:none}.bc{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #cfd6e4;background:#fff;color:#1f2a37;border-radius:999px;padding:5px 11px;font:700 12.5px/1.2 inherit;font-family:inherit;cursor:pointer;white-space:nowrap}.bc b{font-weight:900}.bc i{font-style:normal;opacity:.55;font-size:10px}.bc.o{border-color:#f0c9a8;background:#fff6ee;color:#9a3412}.bc.b{border-color:#c7d7f0;background:#f2f6fd;color:#1e3a8a}.bc.g{border-color:#cfe3d6;background:#f3faf6;color:#166534}.bc.on{outline:2px solid #16a34a}#blPend .bl-h,#blMkt .bl-h,#blHr .bl-h,#blStrip .bl-h{display:none}';
+    st.textContent += '#blChips{display:flex;gap:8px;flex-wrap:wrap;padding:8px 12px;flex:none}#blChips:empty{display:none}.bc{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #cfd6e4;background:#fff;color:#1f2a37;border-radius:999px;padding:5px 11px;font:700 12.5px/1.2 inherit;font-family:inherit;cursor:pointer;white-space:nowrap}.bc b{font-weight:900}.bc i{font-style:normal;opacity:.55;font-size:10px}.bc.o{border-color:#e8590c;background:#ffe8d6;color:#9a3412;font-size:13.5px;padding:7px 14px;box-shadow:0 0 0 2px rgba(232,89,12,.25)}.bc.b{border-color:#c7d7f0;background:#f2f6fd;color:#1e3a8a}.bc.g{border-color:#cfe3d6;background:#f3faf6;color:#166534}.bc.on{outline:2px solid #16a34a}#blPend .bl-h,#blMkt .bl-h,#blHr .bl-h,#blStrip .bl-h{display:none}';
     document.head.appendChild(st);
   }
   function draw() {
@@ -35,7 +35,7 @@
   }
   function say(msg, bad) { var t = document.createElement('div'); t.className = 'wp-toast' + (bad ? ' bad' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(function () { t.remove(); }, 3500); }
   function act(body) { if (busy) return; busy = true; api.post('wa.g_botlearn_apply', body).then(function (r) { say(body.ignore ? 'Ignored' : '✅ Applied to the live guidebook (' + (r.applied || 0) + '). The bot uses it now.'); return load(); }).catch(function (e) { say(e.message, true); }).then(function () { busy = false; }); }
-  var pend = null, popen = false;
+  var pend = null, popen = false, pfirst = false;
   function drawPend() {
     var host2 = document.getElementById('blPend'); if (!host2) { host2 = document.createElement('div'); host2.id = 'blPend'; host.parentNode.insertBefore(host2, host); }
     if (!pend || !pend.can || !pend.total) { host2.innerHTML = ''; return; } css();
@@ -63,6 +63,7 @@
     var rate = mkt.offered_today ? Math.round(100 * mkt.taken_in_4min / mkt.offered_today) : null;
     var h = '<div class="bl" style="border-color:#c7d7f0;background:#f2f6fd"><div class="bl-h" id="bmH"><span>🏪</span><b>Open market — who takes the hot chats and closes orders</b><span class="bl-s" style="color:#357">today: offered ' + (mkt.offered_today || 0) + ' · taken ' + (mkt.taken_today || 0) + (rate === null ? '' : ' · within 4 min ' + rate + '%') + '</span><span class="bl-ar">' + (mopen ? '▲' : '▼') + '</span></div>';
     if (mopen) {
+      var bt = mkt.bot_ticket; if (bt) h += '<div class="bl-b" style="padding-bottom:0"><div style="background:#fff;border:1px solid #c7d7f0;border-radius:10px;padding:8px 10px;font-size:12.5px;color:#1e3a8a"><b>🎯 Ticket size from Shopify (last ' + bt.days + ' days)</b><br>Orders where the bot talked to the customer first: <b>' + bt.bot_n + '</b> · average <b>₹' + bt.bot_avg + '</b> · ₹2,700+ in <b>' + bt.bot_pct + '%</b><br>Orders with no bot message: <b>' + bt.other_n + '</b> · average <b>₹' + bt.other_avg + '</b> · ₹2,700+ in <b>' + bt.other_pct + '%</b></div></div>';
       h += '<div class="bl-b"><div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px"><tr style="text-align:left;color:#567"><th>#</th><th>Person</th><th>Score</th><th>Orders</th><th>Avg order</th><th>Taken</th><th>🔴 Left</th><th>🟥 Cherry</th><th>Take after</th><th>1st reply</th><th>Today</th></tr>';
       w.forEach(function (x, i) { var d = tt[x.emp] || {}; h += '<tr style="border-top:1px solid #dbe4f2"><td>' + (i + 1) + '</td><td>' + esc(x.name) + (x.present ? ' 🟢' : '') + '</td><td><b>' + x.score + '</b></td><td>' + x.orders + '</td><td>' + (x.avg_ticket ? '₹' + x.avg_ticket : '–') + '</td><td>' + x.taken + '</td><td style="color:' + ((x.dropped + x.released) ? '#b00' : '#567') + '">' + (x.dropped + x.released) + '</td><td style="color:' + (x.cherry ? '#b00' : '#567') + ';font-weight:' + (x.flag ? 800 : 400) + '">' + (x.cherry || 0) + (x.flag ? ' ⚠' : '') + '</td><td>' + mm(x.wait_med_s) + '</td><td>' + mm(x.reply_med_s) + '</td><td>' + (d.taken || 0) + ' taken · ' + (d.orders || 0) + ' orders' + ((d.dropped || d.released) ? ' · <span style="color:#b00">' + (d.dropped + d.released) + ' left</span>' : '') + '</td></tr>'; });
       if (mkt.team) h += '<tr style="border-top:2px solid #9fb6dc;background:#e6eefb"><td></td><td><b>Team average</b></td><td></td><td>' + mkt.team.orders + '</td><td>' + (mkt.team.avg_ticket ? '₹' + mkt.team.avg_ticket : '–') + '</td><td>' + mkt.team.taken + '</td><td></td><td>' + (mkt.team.cherry || 0) + '</td><td></td><td>' + mm(mkt.team.reply_med_s) + '</td><td>' + (mkt.team.ratio === null ? '–' : mkt.team.ratio + '% of taken became orders') + '</td></tr>';
@@ -74,40 +75,22 @@
     h3.innerHTML = h + '</div>';
     var hd = document.getElementById('bmH'); if (hd) hd.onclick = function () { mopen = !mopen; drawMkt(); };
   }
-  var hrl = null, hopen = false, hday = 0;
-  function drawHourly() {
-    var el = document.getElementById('blHr'); if (!el) { el = document.createElement('div'); el.id = 'blHr'; host.parentNode.insertBefore(el, host); }
-    if (!hrl || !hrl.can) { el.innerHTML = ''; return; } css();
-    var H = hrl.hours || [], tq = 0, tw = 0, ts = 0; H.forEach(function (x) { tq += x.q; tw += x.wrote; ts += x.sent; });
-    var h = '<div class="bl" style="border-color:#cfe3d6;background:#f3faf5"><div class="bl-h" id="bhH"><span>📊</span><b>Queries hour by hour — campaign sent → customers wrote → new queries</b><span class="bl-s" style="color:#357">' + esc(hrl.date) + ' · new queries ' + tq + ' · customers wrote ' + tw + ' · campaign msgs ' + ts + '</span><span class="bl-ar">' + (hopen ? '▲' : '▼') + '</span></div>';
-    if (hopen) {
-      h += '<div class="bl-b"><div style="margin-bottom:6px">' + [0, 1, 2, 3].map(function (d) { return '<button type="button" data-hd="' + d + '" style="margin-right:6px;border:1px solid #9ab;border-radius:8px;padding:3px 10px;background:' + (hday === d ? '#2c7' : '#fff') + ';color:' + (hday === d ? '#fff' : '#234') + '">' + (d === 0 ? 'Today' : d === 1 ? 'Yesterday' : d + ' days ago') + '</button>'; }).join('') + '</div>';
-      h += '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12.5px;min-width:520px"><tr style="text-align:left;color:#567"><th style="padding:2px 6px">Hour</th><th>Campaign msgs sent</th><th>Customers wrote</th><th>New queries</th><th>Campaign</th><th>Meta ad</th><th>Other</th><th>Back again</th></tr>';
-      H.forEach(function (x, i) { if (!x.q && !x.wrote && !x.sent) return; h += '<tr style="border-top:1px solid #dbe9de"><td style="padding:2px 6px">' + i + ':00–' + (i + 1) + ':00</td><td>' + x.sent + '</td><td>' + x.wrote + '</td><td><b>' + x.q + '</b></td><td>' + x.camp + '</td><td>' + x.meta + '</td><td>' + x.other + '</td><td>' + x.again + '</td></tr>'; });
-      h += '</table></div><div style="margin-top:8px;color:#567;font-size:12px">A query = a customer who wrote and had no query in the last 24 hours (writing again inside 24 h is the same query). Complaints, order-status / tracking / refund chats are not counted. "Customers wrote" counts every customer who sent a message in that hour.</div></div>';
-    }
-    el.innerHTML = h + '</div>';
-    var hd = document.getElementById('bhH'); if (hd) hd.onclick = function () { hopen = !hopen; drawHourly(); };
-    el.querySelectorAll('[data-hd]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); hday = +b.getAttribute('data-hd'); loadHourly(); }; });
-  }
-  function loadHourly() { return api.get('wa.g_hourly', { day: hday }).then(function (d) { hrl = d; drawHourly(); }).catch(function () { }); }
   function loadMkt() { return api.get('wa.g_mkt').then(function (d) { mkt = d; drawMkt(); }).catch(function () { }); }
-  function loadPend() { return api.get('wa.g_botpending').then(function (d) { pend = d; drawPend(); }).catch(function () { }); }
+  function loadPend() { return api.get('wa.g_botpending').then(function (d) { if (!pfirst && d && d.can) { pfirst = true; if (d.total) { popen = true; mopen = false; open = false; } } pend = d; drawPend(); }).catch(function () { }); }
   function load() { return api.get('wa.g_botlearn').then(function (d) { data = d; draw(); }).catch(function () { }); }
   // 🧭 one small row of chips instead of four tall strips: tap a chip to open its details below (one at a time, scrolls inside); closed = just the numbers
   var chipBar = document.createElement('div'); chipBar.id = 'blChips'; host.parentNode.insertBefore(chipBar, host);
-  function pick(k) { var o = k === 'bl' ? !open : false, p = k === 'pend' ? !popen : false, m = k === 'mkt' ? !mopen : false, h = k === 'hr' ? !hopen : false; open = o; popen = p; mopen = m; hopen = h; draw(); drawPend(); drawMkt(); drawHourly(); }
+  function pick(k) { var o = k === 'bl' ? !open : false, p = k === 'pend' ? !popen : false, m = k === 'mkt' ? !mopen : false; open = o; popen = p; mopen = m; draw(); drawPend(); drawMkt(); }
   function chips() {
     var c = [];
     if (pend && pend.can && pend.total) c.push(['pend', 'o', '🙋 Unanswered', String(pend.total), popen]);
     if (mkt && mkt.can) { var rate = mkt.offered_today ? Math.round(100 * mkt.taken_in_4min / mkt.offered_today) : null; c.push(['mkt', 'b', '🏪 Open market', (mkt.taken_today || 0) + ' taken' + (rate == null ? '' : ' · ' + rate + '%'), mopen]); }
-    if (hrl && hrl.can) { var tq = 0; (hrl.hours || []).forEach(function (x) { tq += x.q; }); c.push(['hr', 'g', '📊 Queries by hour', tq + ' new', hopen]); }
     var n = data && data.items ? data.items.length : 0; if (n || (data && data.applied_today)) c.push(['bl', 'g', '🧠 Bot learned', n + ' new', open]);
     chipBar.innerHTML = c.map(function (x) { return '<button type="button" class="bc ' + x[1] + (x[4] ? ' on' : '') + '" data-bc="' + x[0] + '">' + x[2] + ' <b>' + esc(x[3]) + '</b> <i>' + (x[4] ? '▴' : '▾') + '</i></button>'; }).join('');
     chipBar.querySelectorAll('[data-bc]').forEach(function (b) { b.onclick = function () { pick(b.getAttribute('data-bc')); }; });
   }
-  function fold() { [['blPend', popen], ['blMkt', mopen], ['blHr', hopen]].forEach(function (x) { var e = document.getElementById(x[0]); if (e) e.style.display = x[1] ? '' : 'none'; }); host.style.display = open ? '' : 'none'; chips(); }
-  var _d = draw, _dp = drawPend, _dm = drawMkt, _dh = drawHourly;
-  draw = function () { _d(); fold(); }; drawPend = function () { _dp(); fold(); }; drawMkt = function () { _dm(); fold(); }; drawHourly = function () { _dh(); fold(); };
-  load(); loadPend(); loadMkt(); loadHourly(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); loadMkt(); loadHourly(); } }, 60000);
+  function fold() { [['blPend', popen], ['blMkt', mopen]].forEach(function (x) { var e = document.getElementById(x[0]); if (e) e.style.display = x[1] ? '' : 'none'; }); host.style.display = open ? '' : 'none'; chips(); }
+  var _d = draw, _dp = drawPend, _dm = drawMkt;
+  draw = function () { _d(); fold(); }; drawPend = function () { _dp(); fold(); }; drawMkt = function () { _dm(); fold(); };
+  load(); loadPend(); loadMkt(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); loadMkt(); } }, 60000);
 })();
