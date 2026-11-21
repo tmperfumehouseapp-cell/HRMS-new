@@ -1529,12 +1529,18 @@
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
       moReady(() => { if (!window.WaManual) { toast('Could not open the manual order. Refresh the page.', true); return; } WaManual.open({ phone: p, name: nm, api, onDone: () => { try { pollChat(); } catch (e) { } } }); });
     }
-    function openCart() {   // 🧩 the add-on offer goes first (owner, 21 Nov): before the payment link the customer is offered 1 or 2 more bottles
+    function addonModal(title, body, btns) {   // a pop-up the salesperson cannot ignore (owner, 21 Nov: "the add-on must go before the link - a pop-up")
+      const old = document.getElementById('wxAdM'); if (old) old.remove();
+      const d = document.createElement('div'); d.id = 'wxAdM'; d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px';
+      d.innerHTML = `<div style="background:#fff;color:#111827;border-radius:16px;max-width:380px;width:100%;padding:18px 16px;box-shadow:0 10px 40px rgba(0,0,0,.35);font:inherit"><div style="font-size:17px;font-weight:800;margin-bottom:8px">${title}</div><div style="font-size:14px;line-height:1.5;margin-bottom:14px;white-space:pre-line">${body}</div><div style="display:flex;flex-direction:column;gap:8px">${btns.map((x, i) => `<button type="button" data-i="${i}" style="border:0;border-radius:12px;padding:12px;font:inherit;font-weight:800;font-size:15px;cursor:pointer;${x.primary ? 'background:#128c4a;color:#fff' : 'background:#eef2f7;color:#334155'}">${x.t}</button>`).join('')}</div></div>`;
+      document.body.appendChild(d); d.querySelectorAll('button').forEach((bt) => { bt.onclick = () => { d.remove(); const f = btns[+bt.dataset.i].f; if (f) f(); }; });
+    }
+    function openCart() {   // 🧩 the add-on offer goes first and is COMPULSORY (owner, 21 Nov): before the payment link the customer is offered 1 or 2 more bottles — the pop-up cannot be skipped
       if (!S.cur) return; const c0 = S.cur.contact || {}, p0 = c0.phone || S.cur.phone;
       api.post('wa.g_addon_check', { phone: p0 }).then((a) => {
-        if (a && a.can_offer) { if (confirm('Send the ADD-ON offer first?\n\nThe customer is offered 1 or 2 more bottles at a special price before the payment link. Wait for his answer, then make the link with the new total.\n\nOK = send the offer now · Cancel = make the link without it')) { api.post('wa.g_addon_offer', { phone: p0 }).then((r) => { toast(r.message || 'Done', !r.ok); if (!r.ok) openCart2(); }).catch((e) => { toast(e.message, true); openCart2(); }); return; } }
-        else if (a && a.state === 'offered') { if (!confirm('The add-on offer is waiting for the customer\'s answer (' + Math.ceil((a.left || 0) / 60) + ' min left).\n\nOK = wait · Cancel = make the link anyway')) { openCart2(); } else { toast('Wait for his answer: the add-on is added to the total'); } return; }
-        else if (a && a.state === 'accepted') toast('➕ Add-on accepted: ' + a.n + ' bottle(s), Rs ' + a.amount + ' — put it in the cart');
+        if (a && a.can_offer) { addonModal('➕ Add-on first', 'Before you make the payment link, the customer must get the ADD-ON offer (1 or 2 more bottles at a special price, made by the system).\n\nPress the button: it goes to the customer now. Make the link after his answer (the total changes if he says yes).', [{ t: '➕ Send the add-on offer now', primary: true, f: () => { api.post('wa.g_addon_offer', { phone: p0 }).then((r) => { toast(r.message || 'Done', !r.ok); if (!r.ok) openCart2(); }).catch((e) => { toast(e.message, true); openCart2(); }); } }]); return; }
+        if (a && a.state === 'offered') { const lm = Math.max(1, Math.ceil((a.left || 0) / 60)); const btns = [{ t: 'OK — I will wait for his answer', primary: true }]; if ((a.left || 0) < 180) btns.push({ t: 'He is not answering — make the link', f: () => openCart2() }); addonModal('⏳ Add-on offer is with the customer', 'He has not answered yet (about ' + lm + ' min left). Make the link after his answer — the total changes if he accepts.', btns); return; }
+        if (a && a.state === 'accepted') { addonModal('✅ Add-on accepted', a.n + ' extra bottle(s), Rs ' + a.amount + ' — put it in the cart before you make the link. You earn a fixed 6% on it.', [{ t: 'Open the cart', primary: true, f: () => openCart2() }]); return; }
         openCart2();
       }).catch(() => openCart2());
     }
