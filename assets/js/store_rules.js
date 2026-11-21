@@ -12,7 +12,7 @@ window.StoreRules = (function () {
   }
   function draw(d) {
     const R = d.rules || {}, win = d.window || 20, team = (d.team || []);
-    const offers = (d.offers || []).map((o) => `<tr style="border-top:1px solid var(--sx-line)"><td style="padding:5px 8px"><b>${o.ml} ml</b></td><td style="padding:5px 8px">${inr(o.price)} (±₹${f(win)})</td><td style="padding:5px 8px"><b>${f(o.pct)}%</b></td><td style="padding:5px 8px">${dd(o.from)}${o.to ? ' – ' + dd(o.to) : ' → keeps going'}</td><td style="padding:5px 8px">${esc(o.note || '')}</td></tr>`).join('');
+    const offers = (d.offers || []).map((o) => `<tr style="border-top:1px solid var(--sx-line);${o.off ? 'opacity:.5' : ''}"><td style="padding:5px 8px"><b>${o.ml} ml</b></td><td style="padding:5px 8px">${inr(o.price)} (±₹${f(win)})</td><td style="padding:5px 8px"><b>${f(o.pct)}%</b></td><td style="padding:5px 8px">${dd(o.from)}${o.to ? ' – ' + dd(o.to) : ' → keeps going'}</td><td style="padding:5px 8px">${esc(o.note || '')}</td><td style="padding:5px 8px">${d.can_edit ? `<button type="button" class="sx-btn ${o.off ? 'ghost' : ''}" data-offid="${o.id}" data-offnow="${o.off ? 1 : 0}" style="padding:4px 10px;font-size:12px">${o.off ? 'OFF · turn on' : 'ON · turn off'}</button>` : (o.off ? 'OFF' : 'ON')}</td></tr>`).join('');
     const flash = (d.flash || []).map((x) => `<div class="sx-mut" style="font-size:12.5px">⚡ Flash offer: ${(x.sizes || []).join(' / ')} ml → <b>${f(x.pct)}%</b> till ${esc(String(x.ends_at).slice(11, 16))}</div>`).join('');
     const cols = d.cols || [], rows = d.rows || [];
     const chart = rows.length ? `<div style="overflow:auto"><table style="border-collapse:collapse;font-size:12.5px;min-width:420px"><thead><tr><th style="text-align:left;padding:4px 8px">ML</th>${cols.map((c) => `<th style="padding:4px 8px;text-align:right">pays ${f(c)}%</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr style="border-top:1px solid var(--sx-line)"><td style="padding:4px 8px"><b>${r.ml}</b></td>${cols.map((c, i) => `<td style="padding:4px 8px;text-align:right">${r.p[i] > 0 ? inr(r.p[i]) : '–'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="sx-mut">The price chart is not available.</div>';
@@ -23,7 +23,7 @@ window.StoreRules = (function () {
         <div><b>🎁 Offers</b> — a bill with exactly the offer’s total size and a price within ±₹${f(win)} of the offer price pays the <b>offer’s %</b> instead of the chart. The same offers the online sales get, on the day they ran.</div>
         <div><b>🏬 Store</b> — same rules as online, but no over-target extra and no boost.</div></div>
       <h4 style="margin:12px 0 4px">Offers running now</h4>
-      ${offers ? `<div style="overflow:auto"><table style="border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left;padding:4px 8px">Size</th><th style="text-align:left;padding:4px 8px">Price</th><th style="text-align:left;padding:4px 8px">Pays</th><th style="text-align:left;padding:4px 8px">Runs</th><th style="text-align:left;padding:4px 8px">Note</th></tr></thead><tbody>${offers}</tbody></table></div>` : '<div class="sx-mut" style="font-size:12.5px">No offer is running now — the normal price chart applies.</div>'}${flash}
+      ${offers ? `<div style="overflow:auto"><table style="border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left;padding:4px 8px">Size</th><th style="text-align:left;padding:4px 8px">Price</th><th style="text-align:left;padding:4px 8px">Pays</th><th style="text-align:left;padding:4px 8px">Runs</th><th style="text-align:left;padding:4px 8px">Note</th><th style="text-align:left;padding:4px 8px">For the store</th></tr></thead><tbody>${offers}</tbody></table></div>` : '<div class="sx-mut" style="font-size:12.5px">No offer is running now — the normal price chart applies.</div>'}${flash}
       <h4 style="margin:12px 0 4px">Fixed-price perfumes <small class="sx-mut" style="font-weight:600">(for example the OG perfumes: this size always sells at this price)</small></h4>
       <div id="srFix">${fixHtml(d)}</div>
       <details class="sx-d" style="margin-top:10px"><summary>💰 The price chart (what each size pays)</summary><div style="margin-top:8px">${chart}</div></details>`;
@@ -33,6 +33,8 @@ window.StoreRules = (function () {
     try {
       const d = await api.get('st_price.card'); el.innerHTML = draw(d);
       el.addEventListener('click', async (e) => {
+        const ob = e.target.closest && e.target.closest('[data-offid]');
+        if (ob) { ob.disabled = true; try { await api.post('st_fix.offer', { id: Number(ob.dataset.offid), off: ob.dataset.offnow !== '1' }); el.innerHTML = draw(await api.get('st_price.card')); } catch (er) { ob.disabled = false; alert((er && er.message) || 'Could not save.'); } return; }
         const box = el.querySelector('#srFix'); if (!box) return;
         if (e.target.id === 'srAdd') { const f0 = box.firstElementChild; if (f0 && !f0.classList.contains('srf') && f0.classList.contains('sx-mut')) f0.remove(); const row = document.createElement('div'); row.innerHTML = fixRow({}, true); box.insertBefore(row.firstChild, e.target.closest('div')); }
         else if (e.target.dataset && e.target.dataset.x) { e.target.closest('.srf').remove(); }

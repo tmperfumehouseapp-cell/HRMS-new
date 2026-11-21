@@ -1603,6 +1603,18 @@ if (!function_exists('budget_store_calc')) {
         return is_numeric($v) && (float)$v >= 0 && (float)$v <= 30 ? (float)$v : 6.0;
     }
     function st_name_key(string $n): string { return strtolower(trim(preg_replace('/\s+/', ' ', $n))); }
+    /** offers switched OFF for the store only (the online sales keep them): offer ids */
+    function st_offers_off(PDO $pdo): array
+    {
+        $j = null; try { if (function_exists('setting_get')) $j = json_decode((string)setting_get($pdo, 'st_offers_off', ''), true); } catch (Throwable $e) { }
+        return array_values(array_unique(array_filter(array_map('intval', (array)$j))));
+    }
+    /** the offers the store uses: every offer except the ones switched off for the store */
+    function st_store_offers(PDO $pdo): array
+    {
+        $off = array_flip(st_offers_off($pdo));
+        return array_values(array_filter(cm_offers($pdo), fn($o) => !isset($off[(int)$o['id']])));
+    }
     /** old POS bills the owner pointed at an employee by hand: POS order id => employee id */
     function st_oldpos_assign_get(PDO $pdo): array
     {
@@ -1641,7 +1653,7 @@ if (!function_exists('budget_store_calc')) {
     function budget_store_calc(PDO $pdo, string $from, string $to): array
     {
         static $memo = []; $mk = $from . '|' . $to; if (isset($memo[$mk])) return $memo[$mk];
-        $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0; $pool = array_flip(st_pool_ids($pdo));
+        $ch = cm_chart($pdo); $offers = st_store_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0; $pool = array_flip(st_pool_ids($pdo));
         $flashList = []; try { if (function_exists('cm_is_live') && !cm_is_live($pdo) && function_exists('flash_offer_list_get')) $flashList = flash_offer_list_get($pdo); } catch (Throwable $e) { }     // a Flash Offer only counts while the old engine pays (the new engine has no flash offers)
         if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
         $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
