@@ -9,6 +9,7 @@ foreach (["CREATE TABLE wa_contacts (phone TEXT PRIMARY KEY, name TEXT DEFAULT '
  "CREATE TABLE wa_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT DEFAULT 'UTILITY', relabelled_at TEXT)", "CREATE TABLE wa_tpl_waba (tpl_id INT, waba_id TEXT, status TEXT)",
  "CREATE TABLE wa_camp_items (id INTEGER PRIMARY KEY AUTOINCREMENT, camp_id INT DEFAULT 0, phone TEXT, status TEXT, last_status TEXT, sent_at TEXT)", "CREATE TABLE wa_fu_ev (phone TEXT, status TEXT, sent_at TEXT)", "CREATE TABLE wa_wj_ev (phone TEXT, status TEXT, sent_at TEXT)"] as $q) $pdo->exec($q);
 $S = []; function setting_get($p, $k, $d = '') { global $S; return $S[$k] ?? $d; } function setting_set($p, $k, $v) { global $S; $S[$k] = (string)$v; }
+$__t = time() + 19800; $S['wl_learn_day'] = gmdate('Y-m-d', $__t) . '|' . (((int)gmdate('G', $__t) >= 14 && (int)gmdate('G', $__t) < 17) ? 'pm' : 'am');   // the learning run is not part of these cases (it would add topics when the test runs in a learning window)
 function json_response($a, $c = 200) { throw new Exception('json_response'); } function wa_log($p, $k, $ok, $i) { }
 function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen($d) > 10 ? substr($d, -10) : $d; }
 function wa_contact($p, $k) { $q = $p->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$k]); return $q->fetch() ?: null; }
