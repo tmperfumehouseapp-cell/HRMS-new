@@ -23,9 +23,10 @@ $S = ['wa_ucat_hour' => '700', 'wa_ucat_step_at' => (string)($T - 3700)]; lad($d
 $S['wa_ucat_step_at'] = (string)($T - 3700); $S['wa_ucat_chk'] = '0'; wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '900', 'good hour: 800 -> 900');
 $S['wa_ucat_step_at'] = (string)($T - 3700); $S['wa_ucat_chk'] = '0'; wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '1000', 'good hour: 900 -> 1,000 (owner 21 Nov: ladder up to 1,200)');
 for ($z = 1100; $z <= 1200; $z += 100) { $S['wa_ucat_step_at'] = (string)($T - 3700); $S['wa_ucat_chk'] = '0'; wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === (string)$z, 'good hour: -> ' . $z); }
-$S['wa_ucat_step_at'] = (string)($T - 3700); $S['wa_ucat_chk'] = '0'; wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '1200', 'good hour: 1,200 is the top and stays');
+for ($z = 1300; $z <= 1500; $z += 100) { $S['wa_ucat_step_at'] = (string)($T - 1900); $S['wa_ucat_chk'] = '0'; wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === (string)$z, 'good half hour: -> ' . $z); }
+$S['wa_ucat_step_at'] = (string)($T - 1900); $S['wa_ucat_chk'] = '0'; wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '1500', 'good half hour: 1,500 is the roof and stays');
 $S['wa_ucat_hour'] = '900';
-$S['wa_ucat_step_at'] = (string)($T - 1800); $S['wa_ucat_chk'] = '0'; lad($db, 300, 60, $T); wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '900', 'no look before the hour is over');
+$S['wa_ucat_step_at'] = (string)($T - 1000); $S['wa_ucat_chk'] = '0'; lad($db, 300, 60, $T); wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '900', 'no look before the half hour is over');
 $S['wa_ucat_step_at'] = (string)($T - 3700); $S['wa_ucat_chk'] = '0'; wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '700', 'bad hour at 900+ -> back to 700 (got ' . $S['wa_ucat_hour'] . ')');
 $S['wa_ucat_step_at'] = (string)($T - 3700); $S['wa_ucat_chk'] = '0'; wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '700' && (int)$S['wa_ucat_pause_until'] > $T + 3 * 3600 - 60 && (int)$S['wa_ucat_pause_until'] <= $T + 3 * 3600 + 5, 'bad hour at 700 -> 3 hour rest');
 $S = ['wa_ucat_hour' => '700', 'wa_ucat_step_at' => (string)($T - 3700)]; lad($db, 50, 0, $T); wa_ucat_auto_step($db, $T); ok($S['wa_ucat_hour'] === '700', 'fewer than 100 messages: no decision');
