@@ -23598,10 +23598,21 @@ switch ($action) {
         $byEmp = [];
         try { $be = $pdo->prepare("SELECT HOUR(created_at) AS h, employee_id, SUM(delta) AS n FROM employee_query_log WHERE query_date = ? AND kind = 'scout' GROUP BY HOUR(created_at), employee_id"); $be->execute([$date]);
               foreach ($be->fetchAll() as $r) if ((int)$r['n'] > 0) $byEmp[(string)(int)$r['h']][] = ['employee_id' => (int)$r['employee_id'], 'name' => $people[(int)$r['employee_id']] ?? ('#' . (int)$r['employee_id']), 'n' => (int)$r['n']]; } catch (PDOException $e) {}
+        $__wa = false;   // WhatsApp Sales era (from the cut-over date): the hour chips and the day total come from the LIVE query ledger (wa_queries, by the hour a query opened; complaints / order-status chats are not in it) — the old typed log is never written any more
+        if (function_exists('qa_cut') && ($__cut = qa_cut($pdo)) !== '' && $__cut <= $date) {
+            try {
+                $t0 = function_exists('wq_day_start') ? (int)wq_day_start($pdo, $date) : 0; $t1 = function_exists('wq_day_start') && function_exists('wq_day_add') ? (int)wq_day_start($pdo, wq_day_add($date, 1)) : 0; if (!$t0 || $t1 <= $t0) { $t0 = strtotime($date . ' 10:00:00'); $t1 = $t0 + 86400; }
+                $q = $pdo->prepare("SELECT HOUR(opened_at) h, emp_id, COUNT(*) n FROM wa_queries WHERE opened_at >= ? AND opened_at < ? GROUP BY HOUR(opened_at), emp_id"); $q->execute([date('Y-m-d H:i:s', $t0), date('Y-m-d H:i:s', $t1)]);
+                $hours = []; $byEmp = []; $logged = 0;
+                foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $hh = (int)$r['h']; $nn = (int)$r['n']; $hours[$hh] = ($hours[$hh] ?? 0) + $nn; $logged += $nn; if ((int)$r['emp_id'] > 0) $byEmp[(string)$hh][] = ['employee_id' => (int)$r['emp_id'], 'name' => $people[(int)$r['emp_id']] ?? ('#' . (int)$r['emp_id']), 'n' => $nn]; }
+                if ($hour !== null) { $hc = []; foreach (($byEmp[(string)$hour] ?? []) as $x) $hc[(int)$x['employee_id']] = (int)$x['n']; }   // the person counts of the chosen hour
+                $__wa = true;
+            } catch (Throwable $e) { }
+        }
         $seq = biz_hour_sequence($pdo, $date); $isToday = $date === biz_today($pdo); $nowIdx = $isToday ? array_search((int)date('G'), $seq, true) : false; $ord = [];
         foreach ($seq as $i => $hr) $ord[] = ['hour' => $hr, 'n' => max(0, (int)($hours[$hr] ?? 0)), 'future' => ($nowIdx !== false && $i > $nowIdx) ? 1 : 0, 'now' => ($nowIdx !== false && $i === $nowIdx) ? 1 : 0];
         $sum = array_sum(array_column($list, 'queries'));
-        json_response(['date' => $date, 'biz_today' => biz_today($pdo), 'now_hour' => (int)date('G'), 'people' => $list, 'hours' => $ord, 'earlier' => max(0, $sum - max(0, $logged)), 'total' => $sum, 'by_emp' => (object)$byEmp, 'plan' => (function () use ($pdo, $date, $people, $snapE) { try { return qb_plan($pdo, $date, $people, $snapE); } catch (Throwable $e) { error_log('qb_plan: ' . $e->getMessage()); return null; } })()]);
+        json_response(['date' => $date, 'biz_today' => biz_today($pdo), 'now_hour' => (int)date('G'), 'people' => $list, 'hours' => $ord, 'earlier' => $__wa ? 0 : max(0, $sum - max(0, $logged)), 'total' => $__wa ? max($sum, $logged) : $sum, 'live' => $__wa, 'by_emp' => (object)$byEmp, 'plan' => (function () use ($pdo, $date, $people, $snapE) { try { return qb_plan($pdo, $date, $people, $snapE); } catch (Throwable $e) { error_log('qb_plan: ' . $e->getMessage()); return null; } })()]);
         break;
     }
 
