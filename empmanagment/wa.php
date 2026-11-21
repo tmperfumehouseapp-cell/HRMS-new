@@ -892,7 +892,7 @@ function wa_notice_add(PDO $pdo, int $to, int $by, string $phone, string $cname,
 function wa_assign_to(PDO $pdo, string $key, int $emp, int $by, string $how): void
 {
     $c = wa_contact($pdo, $key); if (!$c) return; $now = date('Y-m-d H:i:s');
-    if ($emp > 0 && $by === $emp && $how !== 'auto' && function_exists('wq_meta_put')) wq_meta_put($pdo, 'botoff:' . $key, $now);   // 🤖 the salesperson took the chat (Take over / grab / pick): the bot stops answering it
+    if ($emp > 0 && $by === $emp && $how !== 'auto') { try { $pdo->exec("CREATE TABLE IF NOT EXISTS wq_meta (k VARCHAR(40) NOT NULL PRIMARY KEY, v TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $pdo->prepare("INSERT INTO wq_meta (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")->execute(['botoff:' . $key, $now]); } catch (Throwable $e) { } }   // 🤖 the salesperson took the chat (Take over / grab / pick): the bot stops answering it
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ?, assigned_at = ?, state = ?, status = 'open', closed_at = NULL WHERE phone = ?")->execute([$emp, $emp > 0 ? $now : null, $emp > 0 ? 'human' : 'unassigned', $key]);
     $pdo->prepare("INSERT INTO wa_assign_log (phone, from_emp, to_emp, by_emp, how, at) VALUES (?, ?, ?, ?, ?, ?)")->execute([$key, (int)$c['assigned_emp'], $emp, $by, $how, $now]);
     $nm = employee_names_by_id($pdo); $to = $emp > 0 ? ($nm[$emp] ?? 'someone') : ''; $from = (int)$c['assigned_emp'] > 0 ? ($nm[(int)$c['assigned_emp']] ?? 'someone') : ''; $who = $by > 0 ? ($nm[$by] ?? 'Admin') : ($how === 'auto' ? 'the system (automatic)' : 'Admin');
