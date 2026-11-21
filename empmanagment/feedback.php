@@ -166,6 +166,7 @@ function fb_tick(PDO $pdo): array
 
 function fb_can(PDO $pdo, array $auth): bool
 {
+    if (function_exists('user_can') && user_can($auth, 'feedback')) return true;      // the 'Feedback' tick on the Roles page
     if (!function_exists('sku_can') && is_file(__DIR__ . '/sku_sheet.php')) require_once __DIR__ . '/sku_sheet.php';
     return function_exists('sku_can') ? sku_can($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
 }
@@ -193,6 +194,7 @@ function fb_row_out(array $r): array
 function fb_route(PDO $pdo, string $action): void
 {
     $auth = require_auth(); $by = (string)($auth['username'] ?? $auth['name'] ?? ''); $role = (string)($auth['role'] ?? '');
+    if ($action === 'fb.access') json_response(['ok' => fb_can($pdo, $auth)]);
     if (!fb_can($pdo, $auth)) json_response(['error' => 'The Feedback page is for Admin, HR, Dispatch, the Admin department, Sales Heads and roles with the Orders page.'], 403);
     if (!fb_tables($pdo)) json_response(['error' => 'The Feedback storage could not be set up.'], 500);
     $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $cfg = fb_cfg($pdo);

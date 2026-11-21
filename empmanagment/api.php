@@ -408,6 +408,7 @@ function all_permissions(): array
         'store_pos' => 'Store · POS only (billing, inventory, returns, cash out, expenses) — for store staff logins',
         'dispatch_restock' => 'Dispatch · Store orders only (plan and send restock memos, record what was dispatched) — for the dispatch person',
         'sku_sheet' => 'SKU sheet (the day\'s orders counted per SKU and size, with the Excel download)',
+        'feedback' => 'Feedback (Dispatch → Feedback: ask delivered customers for feedback, keep the proof, rewards, complaints, the WhatsApp chat with the customer)',
         'manual_orders' => 'Manual orders: the full list and the Manual order sheet (every manual order, with export)',
         'server_load' => 'Server load (CPU, what the database and each function cost): technical, give with care',
         'finance' => 'Finance (bank and card statements, settlements, bills, reports): money data, give with care',
