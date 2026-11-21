@@ -893,7 +893,8 @@ function wa_notice_add(PDO $pdo, int $to, int $by, string $phone, string $cname,
 function wa_mkt_note(PDO $pdo, string $phone, int $emp, string $kind, int $waitS = -1, string $note = ''): void
 {
     static $ok = null; if ($ok === null) { $ok = true; try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_mkt (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, kind VARCHAR(10) NOT NULL, at DATETIME NOT NULL, wait_s INT NOT NULL DEFAULT -1, note VARCHAR(80) NOT NULL DEFAULT '', KEY k_emp (emp_id, at), KEY k_ph (phone, id), KEY k_kind (kind, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { $ok = false; } }
-    if (!$ok) return; try { $pdo->prepare("INSERT INTO wa_mkt (phone, emp_id, kind, at, wait_s, note) VALUES (?, ?, ?, ?, ?, ?)")->execute([$phone, $emp, $kind, date('Y-m-d H:i:s'), $waitS, mb_substr($note, 0, 80)]); } catch (Throwable $e) { }
+    if (!$ok) return; if ($kind === 'taken' && $emp > 0) { try { $dq = $pdo->prepare("SELECT 1 FROM wa_mkt WHERE phone = ? AND emp_id = ? AND kind = 'taken' AND at >= ? LIMIT 1"); $dq->execute([$phone, $emp, date('Y-m-d 00:00:00')]); if ($dq->fetchColumn()) return; } catch (Throwable $e) { } }   // the same chat taken again by the same person today is one query
+    try { $pdo->prepare("INSERT INTO wa_mkt (phone, emp_id, kind, at, wait_s, note) VALUES (?, ?, ?, ?, ?, ?)")->execute([$phone, $emp, $kind, date('Y-m-d H:i:s'), $waitS, mb_substr($note, 0, 80)]); } catch (Throwable $e) { }
 }
 function wa_assign_to(PDO $pdo, string $key, int $emp, int $by, string $how): void
 {
