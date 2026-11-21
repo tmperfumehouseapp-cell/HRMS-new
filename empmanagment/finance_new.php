@@ -153,19 +153,23 @@ function fn_header_row(array $rows): int
     }
     return 0;
 }
-/** The PayU transaction / settlement report (headers like "Merchant UTR", "Net Amount", "Merchant Txn ID", "PayU ID", "Total Processing fees", "Total Service Tax"): the columns are known, nothing is guessed.
+/** (learned from the real PayU settlement report, 21 Nov 2026: one UTR for the whole batch, UDF 2 = the order number, Amount(Net) = what the bank gets, refunds / chargebacks of older orders inside as minus)
+ *  The PayU transaction / settlement report (headers like "Merchant UTR", "Net Amount", "Merchant Txn ID", "PayU ID", "Total Processing fees", "Total Service Tax"): the columns are known, nothing is guessed.
  *  UTR = Merchant UTR; gross = Amount; net = Net Amount; order = Merchant Txn ID (the KWIK... id on the order); charges = Total Processing fees + Total Service Tax (the totals only, the single fee / tax columns are parts of them);
  *  status / action = Status, Requested Action (failed rows are left out, refunds count as minus). Returns [] when the file is not a PayU report. */
 function fn_payu_cols(array $h): array
 {
     $h = array_map(fn($t) => trim(preg_replace('/\s+/u', ' ', str_replace("\xC2\xA0", ' ', (string)$t))), $h);
     $ix = function ($name) use ($h) { foreach ($h as $i => $t) if ($t === $name) return $i; return -1; };
-    $utr = $ix('merchant utr'); $net = $ix('net amount'); $gross = $ix('amount'); $ord = $ix('merchant txn id'); if ($ord < 0) $ord = $ix('payu id');
-    if ($utr < 0 || $net < 0 || $gross < 0 || ($ix('payu id') < 0 && $ix('merchant txn id') < 0)) return [];
-    $fees = []; foreach (['total processing fees', 'total service tax'] as $n) { $i = $ix($n); if ($i >= 0) $fees[] = $i; }
-    if (!$fees) foreach (['payment processing fee', 'additional service fee', 'additional service tax', 'convenience fee', 'convenience tax', 'priority settlement fee', 'priority settlement tax', 'additional charges', 'service tax'] as $n) { $i = $ix($n); if ($i >= 0) $fees[] = $i; }
+    $utr = $ix('merchant utr'); $gross = $ix('amount'); $net = $ix('amount(net)'); if ($net < 0) $net = $ix('net amount'); $txn = $ix('merchant txn id'); $udf2 = $ix('udf 2');
+    if ($utr < 0 || $net < 0 || $gross < 0 || ($ix('payu id') < 0 && $txn < 0)) return [];
+    // the order: UDF 2 holds the Shopify order number ("#72894") when GoKwik sends it; else the KWIK… transaction id (saved on the order)
+    $ord = $txn >= 0 ? $txn : $ix('payu id'); if ($udf2 >= 0) $ord = $udf2;
+    // the charges = gross - net: payment processing fee + service tax + additional service fee + additional service tax (+ convenience / priority / additional charges when filled). The "Total ..." columns are only parts of them.
+    $fees = []; foreach (['payment processing fee', 'service tax', 'additional service fee', 'additional service tax', 'additional charges', 'convenience fee', 'convenience tax', 'priority settlement fee', 'priority settlement tax'] as $n) { $i = $ix($n); if ($i >= 0) $fees[] = $i; }
+    if (!$fees) foreach (['total processing fees', 'total service tax'] as $n) { $i = $ix($n); if ($i >= 0) $fees[] = $i; }
     $dt = $ix('addedon'); if ($dt < 0) $dt = $ix('succeedon');
-    return ['utr' => $utr, 'gross' => $gross, 'net' => $net, 'order' => $ord, 'fees' => $fees, 'status' => $ix('status'), 'action' => $ix('requested action'), 'date' => $dt, 'sdate' => $ix('settlement date'), 'provider' => 'PayU'];
+    return ['utr' => $utr, 'gross' => $gross, 'net' => $net, 'order' => $ord, 'order_alt' => $txn, 'fees' => $fees, 'status' => $ix('status'), 'action' => $ix('requested action'), 'date' => $dt, 'sdate' => $ix('settlement date'), 'provider' => 'PayU'];
 }
 /** Guess the columns from the header words: UTR, gross, net, fee columns. The owner can correct every one of them on the screen. */
 function fn_guess_cols(array $header): array
@@ -218,7 +222,7 @@ function fn_file_rows(array $rows, int $headRow, array $cols, ?array &$stats = n
         if ($sign < 0) { $net = -abs($net); $gross = -abs($gross); $fv = $gross - $net; foreach ($parts as $k => $v) $parts[$k] = 0.0; }
         $oc0 = isset($cols['order']) ? (int)$cols['order'] : -1; $ok0 = $oc0 >= 0 ? fn_okey($r[$oc0] ?? '') : ''; $key = md5(($ok0 !== '' ? $ok0 : implode('|', array_map('strval', $r))) . '|' . round($gross, 2) . '|' . ($sign < 0 ? 'r' : 'p'));
         $other = 0.0; if ($g >= 0 && $n >= 0 && $sign > 0) { $tot = $gross - $net; $other = max(0.0, round($tot - $fv, 2)); $fv = $fv + $other; }      // everything PayU cut = gross - net; the charge columns explain only a part, the rest is shown as "other deductions"
-        $rec = ['i' => $i, 'utr' => $utr, 'gross' => $gross, 'fee' => $fv, 'net' => $net, 'parts' => $parts, 'other' => $other, 'key' => $key, 'already' => isset($skip[$key])];      // already = an earlier saved file added this same payment as income
+        $rec = ['i' => $i, 'utr' => $utr, 'gross' => $gross, 'fee' => $fv, 'net' => $net, 'parts' => $parts, 'other' => $other, 'adj' => $sign < 0, 'key' => $key, 'already' => isset($skip[$key])];      // already = an earlier saved file added this same payment as income
         if ($u >= 0 && $utr === '') { $stats['no_utr']++; $stats['pending'][] = $rec; continue; }      // paid by the customer but not settled to the bank yet (PayU gives the UTR after it settles)
         $out[] = $rec;
     }
@@ -288,6 +292,19 @@ function fn_prepaid_orders(PDO $pdo, string $day, bool $gokwikOnly = false): arr
     $out = []; foreach (fn_day_orders($pdo, $day) as $o) { if ($o['pre_p'] <= 0) continue; if ($gokwikOnly && !fn_is_gokwik($o)) continue; $out[] = ['key' => $o['key'], 'name' => $o['name'], 'customer' => $o['customer'], 'phone' => $o['phone'], 'amount' => fn_m($o['pre_p']), 'refs' => $o['refs'], 'mode' => $o['mode'], 'manual' => $o['manual'], 'at' => $o['at']]; }
     return $out;
 }
+/** The days from..to (at most 10), as Y-m-d. */
+function fn_range_days(string $from, string $to): array { $out = []; if ($from === '' || $to === '' || $from > $to) return [$to]; for ($d = $from, $g = 0; $d <= $to && $g < 10; $d = date('Y-m-d', strtotime($d . ' +1 day')), $g++) $out[] = $d; return $out; }
+/** The prepaid orders of several days (a settlement after a weekend pays Friday, Saturday and Sunday together). */
+function fn_prepaid_orders_r(PDO $pdo, string $from, string $to, bool $gk = false): array { $o = []; foreach (fn_range_days($from, $to) as $d) foreach (fn_prepaid_orders($pdo, $d, $gk) as $x) $o[] = $x; usort($o, fn($a, $b) => strcmp($a['at'], $b['at'])); return $o; }
+/** The sales of several days added up. */
+function fn_day_sales_r(PDO $pdo, string $from, string $to): array
+{
+    $days = fn_range_days($from, $to); if (count($days) === 1) return fn_day_sales($pdo, $days[0]);
+    $t = ['day' => $from . ' – ' . $to, 'orders' => 0, 'manual_orders' => 0, 'total' => 0, 'prepaid_orders' => 0, 'prepaid' => 0, 'cod_orders' => 0, 'cod' => 0, 'modes' => []]; $m = [];
+    foreach ($days as $d) { $x = fn_day_sales($pdo, $d); foreach (['orders', 'manual_orders', 'prepaid_orders', 'cod_orders'] as $k) $t[$k] += $x[$k]; foreach (['total', 'prepaid', 'cod'] as $k) $t[$k] = round($t[$k] + $x[$k], 2); foreach ($x['modes'] as $mo) { $m[$mo['mode']] = ['orders' => ($m[$mo['mode']]['orders'] ?? 0) + $mo['orders'], 'amount' => round(($m[$mo['mode']]['amount'] ?? 0) + $mo['amount'], 2)]; } }
+    foreach ($m as $k => $v) $t['modes'][] = ['mode' => $k, 'orders' => $v['orders'], 'amount' => $v['amount']]; usort($t['modes'], fn($a, $b) => $b['amount'] <=> $a['amount']); return $t;
+}
+function fn_other_prepaid_r(PDO $pdo, string $from, string $to): array { $n = 0; $a = 0; foreach (fn_range_days($from, $to) as $d) { $x = fn_other_prepaid($pdo, $d); $n += $x['orders']; $a += $x['amount']; } return ['orders' => $n, 'amount' => round($a, 2)]; }
 /** The sales of one day: all orders, the prepaid part and the COD part. */
 function fn_day_sales(PDO $pdo, string $day): array
 {
@@ -333,14 +350,15 @@ function fn_recon(array $rows, int $headRow, array $cols, array $orders, string 
         else { $missP += fn_p($o['amount']); $missN++; }
         $list[] = $row;
     }
-    $parts = []; foreach ($feeCols as $ci => $p) $parts[] = ['name' => trim((string)($header[$ci] ?? ('Column ' . ($ci + 1)))), 'amount' => fn_m($p)];
+    $parts = []; foreach ($feeCols as $ci => $p) if ($p != 0) $parts[] = ['name' => trim((string)($header[$ci] ?? ('Column ' . ($ci + 1)))), 'amount' => fn_m($p)];
     if ($otherP > 0) $parts[] = ['name' => 'Other deductions (gross − net, not in the charge columns)', 'amount' => fn_m($otherP)];
+    $adjN = 0; $adjP = 0; foreach ($recs as $r0) { if (!empty($r0['adj'])) { $adjN++; $adjP += fn_p($r0['net']); } }
     $lp = 0; $ln = 0; $lrows = []; foreach ($loose as $r) { $lp += fn_p($r['net']); $ln++; if (count($lrows) < 40) $lrows[] = ['utr' => $r['utr'], 'id' => $oc >= 0 ? trim((string)(($rows[$r['i']] ?? [])[$oc] ?? '')) : '', 'gross' => round($r['gross'], 2), 'fee' => round($r['fee'], 2), 'net' => round($r['net'], 2)]; }
     $idCol = $oc >= 0 ? trim((string)($header[$oc] ?? '')) : ''; $idVals = []; $idFilled = 0; if ($oc >= 0) foreach (array_merge($recs, $stats['pending']) as $r) { $v = trim((string)(($rows[$r['i']] ?? [])[$oc] ?? '')); if ($v !== '') { $idFilled++; if (count($idVals) < 3 && !in_array($v, $idVals, true)) $idVals[] = $v; } }
     $withRef = 0; $refSample = []; $nameSample = []; foreach ($orders as $o) { if ($o['refs']) { $withRef++; if (count($refSample) < 3) $refSample[] = strtoupper($o['refs'][0]); } if (count($nameSample) < 3) $nameSample[] = $o['name']; }
-    $diag = ['file_rows' => count($recs) + count($stats['pending']), 'id_column' => $idCol, 'id_filled' => $idFilled, 'id_sample' => $idVals, 'read' => (int)$stats['read'], 'other_day' => (int)$stats['other_day'], 'failed' => (int)$stats['failed'], 'no_amount' => (int)$stats['no_amount'], 'no_utr' => (int)$stats['no_utr'], 'undated' => (int)$stats['undated'], 'orders' => count($orders), 'orders_with_ref' => $withRef, 'ref_sample' => $refSample, 'name_sample' => $nameSample, 'by' => $by];
+    $diag = ['file_rows' => count($recs) + count($stats['pending']), 'id_column' => $idCol, 'id_filled' => $idFilled, 'id_sample' => $idVals, 'filter_day' => $filter ? $filter['day'] : '', 'filter_col' => $filter ? trim((string)($header[$filter['col']] ?? '')) : '', 'read' => (int)$stats['read'], 'other_day' => (int)$stats['other_day'], 'failed' => (int)$stats['failed'], 'no_amount' => (int)$stats['no_amount'], 'no_utr' => (int)$stats['no_utr'], 'undated' => (int)$stats['undated'], 'orders' => count($orders), 'orders_with_ref' => $withRef, 'ref_sample' => $refSample, 'name_sample' => $nameSample, 'by' => $by];
     return ['sales' => $sales, 'diag' => $diag, 'orders_day' => $ordersDay, 'expected' => ['orders' => count($orders), 'amount' => fn_m($expP)], 'found' => ['orders' => count($hit), 'gross' => fn_m($mG), 'fee' => fn_m($mF), 'net' => fn_m($mN), 'differs' => $diff, 'diff_amount' => fn_m($diffP), 'order_amount' => fn_m($mG - $diffP)], 'missing' => ['orders' => $missN, 'amount' => fn_m($missP)], 'pending' => ['orders' => $pendN, 'gross' => fn_m($pendG), 'net' => fn_m($pendNet), 'amount' => fn_m($pendAmt)],
-        'charges' => $parts, 'other_rows' => ['rows' => $ln, 'net' => fn_m($lp), 'list' => $lrows], 'orders' => array_slice($list, 0, 600), 'truncated' => count($list) > 600];
+        'charges' => $parts, 'other_rows' => ['rows' => $ln, 'net' => fn_m($lp), 'list' => $lrows], 'adjustments' => ['rows' => $adjN, 'net' => fn_m($adjP)], 'orders' => array_slice($list, 0, 600), 'truncated' => count($list) > 600];
 }
 /** UTRs of this file already saved for this channel by another (not cancelled) file. */
 function fn_utr_dups(PDO $pdo, int $channelId, array $utrs, int $exceptUpload = 0): array
@@ -550,7 +568,7 @@ switch ($action) {
     case 'fn.in_upload_calc': {
         $in = json_input(); $u = $pdo->prepare("SELECT * FROM fn_in_uploads WHERE id = ? AND status = 'preview'"); $u->execute([(int)($in['upload_id'] ?? 0)]); $up = $u->fetch(); if (!$up) fn_err('This upload was already saved, or not found.', 404);
         $rows = json_decode((string)$up['rows_json'], true) ?: []; $cols = (array)($in['cols'] ?? []); $flt = fn_day_filter($pdo, $in['day_filter'] ?? null); $calc = fn_calc_file($rows, (int)$up['head_row'], $cols, !empty($in['include_pending']), fn_added_keys($pdo, (int)$up['channel_id']), $flt); $dups = fn_utr_dups($pdo, (int)$up['channel_id'], $calc['utrs']);
-        $od = fn_day($in['orders_day'] ?? ''); $recon = $od !== '' ? fn_recon($rows, (int)$up['head_row'], $cols, fn_prepaid_orders($pdo, $od, !empty($in['gokwik_only'])), $od, fn_day_sales($pdo, $od), $flt) : null; if ($recon) { $recon['gokwik'] = !empty($in['gokwik_only']); $recon['other_prepaid'] = fn_other_prepaid($pdo, $od); }
+        $od = fn_day($in['orders_day'] ?? ''); $of = fn_day($in['orders_from'] ?? '') ?: $od; if ($of > $od) $of = $od; $recon = $od !== '' ? fn_recon($rows, (int)$up['head_row'], $cols, fn_prepaid_orders_r($pdo, $of, $od, !empty($in['gokwik_only'])), $od, fn_day_sales_r($pdo, $of, $od), $flt) : null; if ($recon) { $recon['orders_from'] = $of; $recon['gokwik'] = !empty($in['gokwik_only']); $recon['other_prepaid'] = fn_other_prepaid_r($pdo, $of, $od); }
         json_response(['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped'], 'pending_included' => $calc['pending_included'], 'already' => $calc['already'], 'already_net' => $calc['already_net'], 'recon' => $recon]);
         break;
     }
@@ -565,7 +583,7 @@ switch ($action) {
         $dups = fn_utr_dups($pdo, $cid, $calc['utrs']); if ($dups) fn_err(count($dups) . ' UTR' . (count($dups) === 1 ? ' is' : 's are') . ' already saved from ' . array_values($dups)[0] . '. Cancel that file first if you want to upload this one.');
         $same = $pdo->prepare("SELECT file_name, day FROM fn_in_uploads WHERE channel_id = ? AND file_hash = ? AND status = 'ok' AND id <> ? LIMIT 1"); $same->execute([$cid, $up['file_hash'], (int)$up['id']]); if ($r0 = $same->fetch()) fn_err('This same file was already saved (' . $r0['file_name'] . ', ' . $r0['day'] . ').');
         $note = mb_substr('UTR file ' . $up['file_name'] . ' · ' . $calc['rows'] . ' rows · gross ' . number_format($calc['gross'], 2) . ' − charges ' . number_format($calc['fee'], 2) . ($calc['pending_included'] ? ' · incl. ' . $calc['pending_included'] . ' not settled yet' : '') . ($calc['already'] ? ' · ' . $calc['already'] . ' already added before' : '') . ($flt ? ' · only ' . $flt['day'] : ''), 0, 255);
-        $od = fn_day($in['orders_day'] ?? ''); $recon = $od !== '' ? fn_recon($rows, (int)$up['head_row'], (array)($in['cols'] ?? []), fn_prepaid_orders($pdo, $od, !empty($in['gokwik_only'])), $od, fn_day_sales($pdo, $od), $flt) : null; if ($recon) { $recon['gokwik'] = !empty($in['gokwik_only']); $recon['other_prepaid'] = fn_other_prepaid($pdo, $od); $recon['bank_id'] = (int)($in['account_id'] ?? 0); }
+        $od = fn_day($in['orders_day'] ?? ''); $of = fn_day($in['orders_from'] ?? '') ?: $od; if ($of > $od) $of = $od; $recon = $od !== '' ? fn_recon($rows, (int)$up['head_row'], (array)($in['cols'] ?? []), fn_prepaid_orders_r($pdo, $of, $od, !empty($in['gokwik_only'])), $od, fn_day_sales_r($pdo, $of, $od), $flt) : null; if ($recon) { $recon['orders_from'] = $of; $recon['gokwik'] = !empty($in['gokwik_only']); $recon['other_prepaid'] = fn_other_prepaid_r($pdo, $of, $od); $recon['bank_id'] = (int)($in['account_id'] ?? 0); }
         $hid = fn_channel_head($pdo, $cid); $pdo->beginTransaction();
         try {
             $eid = 0; if (!$noNew) { $pdo->prepare("INSERT INTO fn_entries (day, side, head_id, account_id, amount, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)")->execute([$day, 'in', $hid, (int)$in['account_id'], $calc['net'], $note, fn_who($auth), date('Y-m-d H:i:s')]); $eid = (int)$pdo->lastInsertId(); }
@@ -587,8 +605,8 @@ switch ($action) {
     }
     // the prepaid orders of a day (before any file is uploaded): the list the settlement file will be compared with
     case 'fn.in_orders_day': {
-        $d = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime(fn_today($pdo) . ' -1 day')); $gk = !empty($_GET['gokwik_only']); $list = fn_prepaid_orders($pdo, $d, $gk); $tot = 0; foreach ($list as $o) $tot += fn_p($o['amount']);
-        json_response(['sales' => fn_day_sales($pdo, $d), 'other_prepaid' => fn_other_prepaid($pdo, $d), 'gokwik' => $gk, 'orders_day' => $d, 'count' => count($list), 'amount' => fn_m($tot), 'orders' => array_map(fn($o) => ['name' => $o['name'], 'customer' => $o['customer'], 'amount' => $o['amount']], array_slice($list, 0, 600))]);
+        $d = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime(fn_today($pdo) . ' -1 day')); $gk = !empty($_GET['gokwik_only']); $of = fn_day($_GET['orders_from'] ?? '') ?: $d; if ($of > $d) $of = $d; $list = fn_prepaid_orders_r($pdo, $of, $d, $gk); $tot = 0; foreach ($list as $o) $tot += fn_p($o['amount']);
+        json_response(['sales' => fn_day_sales_r($pdo, $of, $d), 'other_prepaid' => fn_other_prepaid_r($pdo, $of, $d), 'gokwik' => $gk, 'orders_from' => $of, 'orders_day' => $d, 'count' => count($list), 'amount' => fn_m($tot), 'orders' => array_map(fn($o) => ['name' => $o['name'], 'customer' => $o['customer'], 'amount' => $o['amount']], array_slice($list, 0, 600))]);
         break;
     }
     // THE DIAGNOSIS of an Incoming channel: reads the whole chain (server, tables, Shopify orders, the saved files, the file chosen now, the matching) and writes it as plain text the owner can copy and send. No customer names, phones or e-mails are written (only the last 4 digits of a phone).
@@ -618,7 +636,7 @@ switch ($action) {
         $add('pay_ref column: ' . $cnt("SELECT COUNT(*) FROM shop_orders WHERE pay_ref IS NOT NULL AND pay_ref <> ''") . ' orders have a payment transaction id saved, ' . $cnt("SELECT COUNT(*) FROM shop_orders WHERE pay_ref IS NULL") . ' have NULL (never read)');
         $win = []; try { $wq = $pdo->prepare("SELECT DATE(created_at) d, COUNT(*) n FROM shop_orders WHERE created_at >= ? AND created_at < ? GROUP BY DATE(created_at) ORDER BY d"); $wq->execute([date('Y-m-d', strtotime($od . ' -2 day')), date('Y-m-d', strtotime($od . ' +3 day'))]); foreach ($wq->fetchAll() as $r) $win[] = $r['d'] . '=' . $r['n']; } catch (Throwable $e) { $win[] = 'ERROR'; }
         $add('orders per calendar day around the orders day: ' . implode(', ', $win));
-        $all = fn_day_orders($pdo, $od); $pre = fn_prepaid_orders($pdo, $od, !empty($in['gokwik_only'])); $sl = fn_day_sales($pdo, $od);
+        $of = fn_day($in['orders_from'] ?? '') ?: $od; if ($of > $od) $of = $od; $all = fn_day_orders($pdo, $od); $pre = fn_prepaid_orders_r($pdo, $of, $od, !empty($in['gokwik_only'])); $sl = fn_day_sales_r($pdo, $of, $od);
         $add('HRMS day ' . $od . ' (10 AM to 10 AM): ' . $sl['orders'] . ' orders, total ' . $sl['total'] . ' | prepaid part in ' . $sl['prepaid_orders'] . ' orders = ' . $sl['prepaid'] . ' | COD part in ' . $sl['cod_orders'] . ' orders = ' . $sl['cod']);
         $ml = []; foreach ($sl['modes'] as $m) $ml[] = $m['mode'] . ' ' . $m['orders'] . ' (' . $m['amount'] . ')'; $add('prepaid by payment mode: ' . ($ml ? implode(' | ', $ml) : '-') . ' | manual orders (WhatsApp / QR / link) in the day: ' . $sl['manual_orders'] . ' | all prepaid orders without a payment id: ' . count(array_filter(fn_prepaid_orders($pdo, $od, false), fn($o) => !$o['refs'])));
         $withRef = 0; $pfx = []; $ex = []; foreach ($pre as $o) { if ($o['refs']) { $withRef++; $k = strtoupper(substr($o['refs'][0], 0, 4)); $pfx[$k] = ($pfx[$k] ?? 0) + 1; if (count($ex) < 4) $ex[] = strtoupper($o['refs'][0]); } }

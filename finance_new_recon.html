@@ -75,23 +75,24 @@
         <div class="sx-r2" style="margin-top:8px"><label class="sx-f">Gateway channel<select class="sx-in" id="rCh">${CHN.map((c) => `<option value="${c.id}" ${pu && pu.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
           <label class="sx-f">Came into (bank)<select class="sx-in" id="rAcc">${ACC.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label></div>
         <div class="sx-r2" style="margin-top:8px"><label class="sx-f">Day the money came <small class="sx-mut">(settlement day)</small><input class="sx-in" id="rDay" type="date" value="${esc(TODAY)}" max="${esc(TODAY)}"></label>
-          <label class="sx-f">Orders of day <small class="sx-mut">(T+1: the day before)</small><input class="sx-in" id="rOd" type="date" value="${esc(addDays(TODAY, -1))}" max="${esc(TODAY)}"></label></div>
+          <label class="sx-f">Orders from – to <small class="sx-mut">(T+1; Monday also takes Fri–Sun)</small><span style="display:flex;gap:6px"><input class="sx-in" id="rOf" type="date" value="${esc(defFrom(TODAY))}" max="${esc(TODAY)}"><input class="sx-in" id="rOd" type="date" value="${esc(addDays(TODAY, -1))}" max="${esc(TODAY)}"></span></label></div>
         <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;font-weight:700"><input type="checkbox" id="rGk" checked> Only the orders paid through GoKwik (payment id starts with KWIK)</label>
         <label class="drop" for="rFile">Choose the daily PayU settlement file (.xlsx or .csv)<small>The PayU report is recognised by itself: nothing to set.</small></label><input type="file" id="rFile" accept=".xlsx,.csv,.txt,.tsv" style="display:none">
         <div id="rMsg" style="margin-top:8px"></div><div id="rOpt"></div></div>
       <div id="rDiag"></div><div id="rPre" class="noprint"></div><div id="rStmt"></div>
       <div class="sx-card wrap noprint"><div class="cap" style="margin-top:0">Earlier statements</div><div id="rHist"><div class="sx-mut">Loading…</div></div></div>`;
     if (!ACC.length) $('rMsg').innerHTML = `<div class="sx-msg warn">${sxi('alert')}<span>Add a bank first: Finance New → Bank Accounts.</span></div>`;
-    $('rDay').onchange = () => { if (!$('rOd').dataset.own) $('rOd').value = addDays($('rDay').value, -1); changed(); };
-    $('rOd').onchange = () => { $('rOd').dataset.own = '1'; changed(); };
+    $('rDay').onchange = () => { if (!$('rOd').dataset.own) { $('rOd').value = addDays($('rDay').value, -1); $('rOf').value = defFrom($('rDay').value); } changed(); };
+    $('rOd').onchange = () => { $('rOd').dataset.own = '1'; changed(); }; $('rOf').onchange = () => { $('rOd').dataset.own = '1'; changed(); };
     $('rGk').onchange = changed; $('rCh').onchange = () => { cur = null; $('rOpt').innerHTML = ''; $('rStmt').innerHTML = ''; changed(); };
     $('rFile').onchange = onFile; $('bDiag').onclick = runDiag;
   }
+  const defFrom = (money) => { const wd = new Date(money + 'T00:00:00').getDay(); return addDays(money, wd === 1 ? -3 : -1); };      // after the weekend the settlement pays Friday, Saturday and Sunday together
   const changed = () => { if (cur) recalc(); else loadPre(); };
   async function loadPre() {
     const el = $('rPre'); if (!el || cur) return;
     try {
-      const r = await api.get('fn.in_orders_day', { date: $('rOd').value, gokwik_only: $('rGk').checked ? 1 : '' });
+      const r = await api.get('fn.in_orders_day', { date: $('rOd').value, orders_from: $('rOf').value, gokwik_only: $('rGk').checked ? 1 : '' });
       el.innerHTML = `<div class="sx-card"><div class="cap" style="margin-top:0">Orders to reconcile <small class="sx-mut">${esc(dFmt(r.orders_day))}</small></div>
         <div class="k3"><div class="k"><small>Sales of the day</small><b style="font-size:19px">${r.sales.orders}</b><span>${m2(r.sales.total)}</span></div><div class="k"><small>${r.gokwik ? 'Prepaid via GoKwik / PayU' : 'Prepaid orders'}</small><b style="font-size:19px">${r.count}</b><span>${m2(r.amount)}</span></div><div class="k"><small>Other prepaid (no GoKwik id)</small><b style="font-size:19px">${r.other_prepaid.orders}</b><span>${m2(r.other_prepaid.amount)}</span></div></div>
         <div class="cap">Prepaid by payment mode <small class="sx-mut">${r.sales.manual_orders ? r.sales.manual_orders + ' manual orders (WhatsApp / QR / link) are inside the sales' : ''}</small></div>
@@ -117,12 +118,13 @@
         <div class="sx-r2" style="margin-top:8px"><label class="sx-f">Take only one day's rows<select class="sx-in" id="rDm"><option value="tx">Only the Orders-of-day (transaction date)</option><option value="settle">Only the settlement date = Day the money came</option><option value="off">All days in the file</option></select></label>${sel('date', 'Transaction date column')}</div>
         <div class="sx-r2" style="margin-top:8px">${sel('sdate', 'Settlement date column')}<div></div></div>
         <div class="sx-f" style="margin-top:8px">Charges columns<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px">${H.map((h, i) => h === '' ? '' : `<label style="display:flex;gap:4px;align-items:center;font-size:12.5px;font-weight:600"><input type="checkbox" class="mf" value="${i}" ${M.fees.includes(i) ? 'checked' : ''}>${esc(h)}</label>`).join('')}</div></div></details>`;
+    if ($('rDm') && M.sdate >= 0) $('rDm').value = 'settle';      // PayU: the rows of the day the money came (the bank credit ties to this)
     $('rOpt').querySelectorAll('select,.mf').forEach((x) => { x.onchange = recalc; });
     recalc();
   }
   const dayFilter = () => { const m = $('rDm') ? $('rDm').value : 'tx', M = cur.M; if (m === 'tx' && M.date >= 0) return { col: M.date, day: $('rOd').value }; if (m === 'settle' && M.sdate >= 0) return { col: M.sdate, day: $('rDay').value }; return null; };
   const body = () => { const M = cur.M; const g = (k) => { const e = document.querySelector('[data-m="' + k + '"]'); return e ? +e.value : M[k]; }; ['utr', 'net', 'gross', 'order', 'date', 'sdate'].forEach((k) => { M[k] = g(k); }); M.fees = [...document.querySelectorAll('.mf:checked')].map((x) => +x.value);
-    return { upload_id: cur.p.upload_id, cols: M, orders_day: $('rOd').value, include_pending: incl ? 1 : 0, day_filter: dayFilter(), gokwik_only: $('rGk').checked ? 1 : 0, account_id: +$('rAcc').value }; };
+    return { upload_id: cur.p.upload_id, cols: M, orders_day: $('rOd').value, orders_from: $('rOf').value, include_pending: incl ? 1 : 0, day_filter: dayFilter(), gokwik_only: $('rGk').checked ? 1 : 0, account_id: +$('rAcc').value }; };
   async function recalc() {
     if (!cur) return;
     try {
@@ -152,7 +154,7 @@
     const draw2 = () => {
       const rows = rc.orders.filter((o) => filt === 'all' || (filt === 'came' ? o.found : filt === 'pend' ? o.pending : filt === 'diff' ? o.differs : (!o.found && !o.pending))), shown = all ? rows : rows.slice(0, 60);
       el.innerHTML = `<div class="sx-card wrap" id="stmtBox"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:16px">PayU Reconciliation Statement</div><span class="noprint" style="display:flex;gap:6px"><button class="sx-btn" id="bPrint" style="padding:2px 12px">Print</button><button class="sx-btn" id="bCsv" style="padding:2px 12px">Download CSV</button>${meta.mode === 'new' ? `<button class="sx-btn big" id="bSave" style="padding:4px 16px" ${meta.calc && (meta.calc.dups > 0 || (meta.calc.net <= 0 && !(meta.calc.rows === 0 && meta.calc.already > 0))) ? 'disabled' : ''}>Save and add ${m2(meta.calc ? meta.calc.net : 0)} to the bank</button>` : ''}</span></div>
-        <div class="sx-mut" style="font-size:12.5px;margin:4px 0 10px">Orders of <b>${esc(dFmt(rc.orders_day))}</b> (HRMS day, 10 AM to 10 AM) · ${rc.gokwik ? 'paid through <b>GoKwik / PayU</b> (KWIK id)' : 'all prepaid orders'} · Settlement file <b>${esc(meta.file || '')}</b> · money came <b>${esc(dFmt(meta.day))}</b>${meta.bank ? ' · bank <b>' + esc(meta.bank) + '</b>' : ''}</div>
+        <div class="sx-mut" style="font-size:12.5px;margin:4px 0 10px">Orders of <b>${rc.orders_from && rc.orders_from !== rc.orders_day ? esc(dFmt(rc.orders_from)) + ' to ' : ''}${esc(dFmt(rc.orders_day))}</b> (HRMS days, 10 AM to 10 AM) · ${rc.gokwik ? 'paid through <b>GoKwik / PayU</b> (KWIK id)' : 'all prepaid orders'} · Settlement file <b>${esc(meta.file || '')}</b> · money came <b>${esc(dFmt(meta.day))}</b>${meta.bank ? ' · bank <b>' + esc(meta.bank) + '</b>' : ''}</div>
         <table class="st"><tr class="h"><td>1. Orders against the file</td><td>Orders</td><td>Amount</td></tr>
           <tr><td>A. Prepaid orders on the website${rc.gokwik ? ' (GoKwik → PayU)' : ''}</td><td>${ex.orders}</td><td>${m2(ex.amount)}</td></tr>
           <tr><td>B. Reconciled: PayU settled them in this file<small>the order amount of the matched orders</small></td><td>${f.orders}</td><td>${m2(f.order_amount)}</td></tr>
@@ -166,6 +168,7 @@
           <tr class="t"><td>Net settlement for the reconciled orders<small>charges ${m2(f.fee)} = ${f.gross ? (100 * f.fee / f.gross).toFixed(2) : '0.00'}% of gross</small></td><td>${f.orders}</td><td>${m2(f.net)}</td></tr>
           <tr class="h"><td>3. The whole file</td><td></td><td>Amount</td></tr>
           <tr><td>Add: other settled rows in the file<small>not these orders: older orders, other gateway orders, or no order number</small></td><td>${oth.rows}</td><td>${m2(oth.net)}</td></tr>
+          ${rc.adjustments && rc.adjustments.rows ? `<tr><td class="sx-mut">Of which refunds / chargebacks netted in this settlement<small>${rc.adjustments.rows} row${rc.adjustments.rows === 1 ? '' : 's'}, of this or of older orders</small></td><td class="sx-mut">${rc.adjustments.rows}</td><td class="sx-mut">${m2(rc.adjustments.net)}</td></tr>` : ''}
           <tr class="t"><td>Net settlement in the file<small>what should reach the bank</small></td><td></td><td>${m2(fileNet)}</td></tr>
           ${rc.gokwik && rc.sales && rc.sales.modes ? rc.sales.modes.filter((m) => m.mode !== 'GoKwik / PayU').map((m) => `<tr><td class="sx-mut">Not part of this statement: ${esc(m.mode)} (prepaid, settles another way)</td><td class="sx-mut">${m.orders}</td><td class="sx-mut">${m2(m.amount)}</td></tr>`).join('') : (op && op.orders && rc.gokwik ? `<tr><td class="sx-mut">Not part of this statement: other prepaid orders without a GoKwik id</td><td class="sx-mut">${op.orders}</td><td class="sx-mut">${m2(op.amount)}</td></tr>` : '')}
         </table>
@@ -208,7 +211,7 @@
   async function runDiag() {
     const out = $('rDiag'); out.innerHTML = '<div class="sx-card"><div class="sx-mut">Checking everything…</div></div>';
     try {
-      const b = Object.assign({ channel_id: +$('rCh').value, orders_day: $('rOd').value, gokwik_only: $('rGk').checked ? 1 : 0, client: { ver: PAGE_VER, day: $('rDay').value, mode: $('rDm') ? $('rDm').value : '', errors: FN_ERRS.slice(-15) } }, cur ? body() : {});
+      const b = Object.assign({ channel_id: +$('rCh').value, orders_day: $('rOd').value, orders_from: $('rOf').value, gokwik_only: $('rGk').checked ? 1 : 0, client: { ver: PAGE_VER, day: $('rDay').value, mode: $('rDm') ? $('rDm').value : '', errors: FN_ERRS.slice(-15) } }, cur ? body() : {});
       const r = await api.post('fn.in_diag', b);
       out.innerHTML = `<div class="sx-card noprint"><div style="display:flex;align-items:center;gap:8px"><div class="cap" style="margin:0;flex:1">🩺 Diagnosis <small class="sx-mut">${cur ? 'with the file chosen now' : 'no file chosen yet: choose the file and press Diagnose again for the full check'}</small></div><button class="sx-btn" id="dgCopy" style="padding:2px 12px">Copy all</button></div>
         <textarea id="dgBox" readonly style="width:100%;height:280px;margin-top:8px;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--sx-line);border-radius:12px;padding:8px;background:#fafbfc">${esc(r.text)}</textarea>
