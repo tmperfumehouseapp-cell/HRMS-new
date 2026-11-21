@@ -495,15 +495,16 @@ function wag_bot_off(PDO $pdo, string $key): bool
 /** The bot is "answering" this chat: it is on, nobody took the chat, it has not handed it over, and it spoke in the last 30 min and has not handed over, or a customer message waits for it (3 min). A salesperson cannot take over / write meanwhile — only 👎. */
 function wag_bot_lock(PDO $pdo, array $c): array
 {
-    $r = ['on' => false, 'why' => '', 'bot_text' => '', 'bot_at' => '']; $key = (string)($c['phone'] ?? '');
+    $r = ['on' => false, 'why' => '', 'bot_text' => '', 'bot_at' => '', 'engaged' => false]; $key = (string)($c['phone'] ?? '');
     try {
         if ($key === '' || wag_cfg($pdo)['bot'] !== 'on') return $r;
         if ((int)($c['cx_id'] ?? 0) > 0 || (int)($c['optout'] ?? 0) === 1 || (string)($c['status'] ?? '') !== 'open') return $r;
         if (wag_bot_off($pdo, $key)) { $r['why'] = 'taken'; return $r; }
         $li = !empty($c['last_in_at']) ? strtotime((string)$c['last_in_at']) : 0; $now = time();
-        $h = function_exists('wq_meta_get') ? wq_meta_get($pdo, 'bothand:' . $key, '') : ''; if ($h !== '' && strtotime($h) >= $li) { $r['why'] = 'handed'; return $r; }
+        $h = function_exists('wq_meta_get') ? wq_meta_get($pdo, 'bothand:' . $key, '') : ''; if ($h !== '' && strtotime($h) >= $li) { $r['why'] = 'handed'; $r['engaged'] = true; return $r; }
         $q = $pdo->prepare("SELECT body, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND mtype = 'text' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $b = $q->fetch();
         if ($b) { $r['bot_text'] = mb_substr((string)$b['body'], 0, 600); $r['bot_at'] = (string)$b['ts']; }
+        if ($b && strtotime((string)$b['ts']) > $now - 7 * 86400) $r['engaged'] = true;   // the bot has been talking to this customer: only IT decides when a person takes over
         $botRecent = $b && strtotime((string)$b['ts']) > $now - 1800;   // the bot decides when a person may take over (its hand-over); only if the customer is silent 30 min — or the bot fails to answer for 3 min — the lock opens by itself
         $waiting = $li > $now - 180 && (empty($c['last_out_at']) || strtotime((string)$c['last_out_at']) < $li);
         if ($botRecent || $waiting) { $r['on'] = true; $r['why'] = $waiting && !$botRecent ? 'writing' : 'answered'; }
@@ -1124,7 +1125,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             json_response(['ok' => true, 'applied' => $done, 'guide_version' => (int)$g['version']]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
-            $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on']);
+            $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'engaged' => $l['engaged'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on']);
         }
         case 'wa.g_botbad': {   // 👎 the bot's answer is not good: {phone, mode: 'draft'} → Claude's better answer; {phone, mode: 'send', text, reason} → it is sent, the chat becomes the person's, the bot stops, the owner's bot learns
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
