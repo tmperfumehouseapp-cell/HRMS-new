@@ -1736,9 +1736,21 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $respCp = ['campaigns' => $out, 'total' => $totalCamps, 'offset' => 0, 'sched' => $schedN, 'fast' => $fastNow, 'rec_status' => wa_rec_status($pdo), 'ru_status' => (function () use ($pdo) { try { return wa_ru_status($pdo); } catch (Throwable $e) { return null; } })(), 'dq' => wa_dq_status($pdo), 'spend' => wa_camp_spend_today($pdo, !empty($_GET['fresh'])), 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; if ($lite) wa_cpc_put($pdo, 'camp_list', $respCp); json_response($respCp);
         }
         case 'wa.camp_templates': {
-            $hit = wa_cpc_get($pdo, 'camp_tpls1'); if ($hit && $hit['age'] < 120 && empty($_GET['fresh'])) json_response($hit['v']);   // the message library is the slowest answer: remembered for 2 minutes, so the New-campaign form opens at once
-            $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
-            $resp = ['templates' => $tplList(true), 'pieces' => $pc, 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; try { wa_cpc_put($pdo, 'camp_tpls1', $resp); } catch (Throwable $e) { }
+            // ⚡ the message library is the slowest answer (about 50 s): remembered 2 minutes, so the New-campaign form opens at once. When the copy is older, or the library was changed, the OLD copy is sent at once and ONE
+            // process rebuilds it after the answer (a database lock); before, every call after the 2 minutes rebuilt it at the same time (14 calls in 5 minutes, 23% of all request time). 🔄 (fresh) and a copy older than 6 h build now.
+            $hit = wa_cpc_get($pdo, 'camp_tpls1'); $__fresh = !empty($_GET['fresh']); $__dirty = (int)setting_get($pdo, 'wa_tpl_dirty', '0');
+            if ($hit && !$__fresh && $hit['age'] < 120 && (time() - (int)$hit['age']) > $__dirty) json_response($hit['v']);
+            $__build = function () use ($pdo, $tplList) {
+                $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
+                $resp = ['templates' => $tplList(true), 'pieces' => $pc, 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; try { wa_cpc_put($pdo, 'camp_tpls1', $resp); } catch (Throwable $e) { }
+                return $resp;
+            };
+            $__got = 0; try { $__got = (int)$pdo->query("SELECT GET_LOCK('wa_camp_tpls', 0)")->fetchColumn(); } catch (Throwable $e) { }
+            if ($hit && !$__fresh && $hit['age'] < 21600) {
+                if ($__got === 1) register_shutdown_function(function () use ($pdo, $__build) { if (function_exists('hrms_release')) hrms_release(); ignore_user_abort(true); @set_time_limit(300); try { $__build(); } catch (Throwable $e) { } try { $pdo->query("SELECT RELEASE_LOCK('wa_camp_tpls')"); } catch (Throwable $e) { } });
+                json_response($hit['v']);
+            }
+            try { $resp = $__build(); } finally { if ($__got === 1) { try { $pdo->query("SELECT RELEASE_LOCK('wa_camp_tpls')"); } catch (Throwable $e) { } } }
             json_response($resp);
         }
         case 'wa.camp_get': {
