@@ -1167,6 +1167,16 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             if ($add) { $body['owner_corrections'] = array_slice(array_merge($add, $corr), 0, 60); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($body, JSON_UNESCAPED_UNICODE), (int)$g['id']]); }
             json_response(['ok' => true, 'applied' => $done, 'guide_version' => (int)$g['version']]);
         }
+        case 'wa.g_botpending': {   // 🙋 chats the bot handed to a person that nobody has answered yet (admin / managers): who has it, how long, what the customer wrote
+            if (!$adm && !(function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth))) json_response(['items' => [], 'total' => 0, 'can' => false]);
+            $now = time(); $rows = $pdo->query("SELECT phone, name, assigned_emp, hot, hot_why, last_in_at FROM wa_contacts WHERE status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND last_in_at >= '" . date('Y-m-d H:i:s', $now - 23 * 3600) . "' AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT 500")->fetchAll();
+            $hand = []; foreach (array_chunk(array_map(fn($r) => 'bothand:' . $r['phone'], $rows), 300) as $ch) { $q = $pdo->prepare("SELECT k, v FROM wq_meta WHERE k IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $m) $hand[substr((string)$m['k'], 8)] = (string)$m['v']; }
+            $names = employee_names_by_id($pdo); $items = []; $lm = $pdo->prepare("SELECT body, mtype FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1");
+            foreach ($rows as $r) { $k = (string)$r['phone']; if (!isset($hand[$k]) || strtotime($hand[$k]) < strtotime((string)$r['last_in_at'])) continue;
+                $lm->execute([$k]); $m = $lm->fetch(); $items[] = ['phone' => $k, 'name' => (string)$r['name'], 'holder' => (int)$r['assigned_emp'] > 0 ? ($names[(int)$r['assigned_emp']] ?? '#' . $r['assigned_emp']) : '', 'wait_min' => max(0, (int)round(($now - strtotime((string)$r['last_in_at'])) / 60)), 'handed_min' => max(0, (int)round(($now - strtotime($hand[$k])) / 60)), 'hot' => $r['hot_why'] ? (string)$r['hot_why'] : ((int)$r['hot'] ? 'hot' : ''), 'last' => $m ? mb_substr((string)($m['body'] !== '' ? $m['body'] : '[' . $m['mtype'] . ']'), 0, 140) : ''];
+            }
+            usort($items, fn($a, $b) => $b['wait_min'] <=> $a['wait_min']); json_response(['items' => array_slice($items, 0, 60), 'total' => count($items), 'can' => true]);
+        }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
             $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'engaged' => $l['engaged'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on']);
         }
