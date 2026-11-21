@@ -981,6 +981,18 @@ const DSP = (() => {
       show();
     }
     /* ---------- 🩺 Diagnose: read-only report (see diagReport above) ---------- */
+    /* how fresh the statuses are: when Shiprocket was last read, whether its instant updates arrive, the 5-minute safety check - so the builder can see it without the live site */
+    function diagFresh() {
+      const sr = (PB && PB.shiprocket) || {}, lv = sr.live || {}, L = ['', '--- HOW FRESH IS THE DATA (Shiprocket -> HRMS) ---'];
+      L.push('This report was made: ' + new Date().toString().slice(0, 24));
+      L.push('Shiprocket login: ' + (sr.connected ? (sr.last_err ? 'NOT WORKING - ' + sr.last_err : 'connected') : 'NOT connected (or this login cannot see it)'));
+      L.push('Regular read (every 10 minutes): last ' + (sr.last_at || 'never') + (sr.last_msg ? ' - ' + sr.last_msg : ''));
+      L.push('Instant updates from Shiprocket (webhook): ' + (lv.hook_ts ? 'RECEIVING - last ' + lv.hook_at + ' · ' + (lv.hook_today || 0) + ' today · ' + (lv.hook_total || 0) + ' in all' : 'NOT CONNECTED - a status change reaches HRMS only with the 10-minute read'));
+      L.push('Safety check (every 5 minutes, parcels not heard of for 20 minutes): last ' + (lv.tick_at || 'never') + ' - ' + (lv.tick_ok || 0) + ' refreshed, ' + (lv.tick_bad || 0) + ' failed' + (lv.tick_err ? ' - ' + lv.tick_err : ''));
+      L.push('Orders last read into Dispatch: ' + ((R && R.last_sync) || '?'));
+      if (sr.shop_ok && sr.shop) L.push('Shop orders read: last ' + (sr.shop.at || '?') + (sr.shop.msg ? ' - ' + sr.shop.msg : ''));
+      return L.join('\n');
+    }
     function diagnose() {
       const m = BD.modal('<button type="button" id="dgX" title="Close" aria-label="Close" style="float:right;border:1px solid #cfd5dd;background:#fff;color:#111827;border-radius:99px;width:30px;height:30px;font-size:15px;line-height:1;cursor:pointer;margin:-4px -4px 0 10px">✕</button><h3>🩺 Diagnose the parcels (nothing is changed)</h3>'
         + '<p style="font-size:13.5px;line-height:1.5;color:#4a505c;margin:0 0 10px">Reads every parcel of the days chosen on this page and writes a text report. To compare with the real courier status, paste your hand-tracked rows below: copy <b>4 columns</b> from Excel in this order — <b>Order ID · Tracking ID · Courier · Final status</b>. Leave it empty for the HRMS side only.</p>'
@@ -997,7 +1009,7 @@ const DSP = (() => {
           const p = win(); delete p.sdays; delete p.sfrom; delete p.sto;
           const x = await api.get('dp.dsp_report', Object.assign(p, { export: 1, page: 1 }));
           const pasted = diagPaste($m('dgIn').value);
-          $m('dgOut').value = diagReport(x.rows || [], pasted, { from: x.filters && x.filters.from, to: x.filters && x.filters.to, total: x.total });
+          $m('dgOut').value = diagReport(x.rows || [], pasted, { from: x.filters && x.filters.from, to: x.filters && x.filters.to, total: x.total }) + '\n' + diagFresh();
           $m('dgMsg').textContent = (x.rows || []).length + ' parcels read' + (pasted.length ? ', ' + pasted.length + ' pasted rows compared' : ', nothing pasted') + '. Copy the report and send it to Claude.';
           $m('dgCopy').disabled = false; $m('dgSave').disabled = false;
         } catch (e) { $m('dgMsg').textContent = 'Could not run: ' + e.message; }
