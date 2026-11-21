@@ -720,10 +720,20 @@ function wag_real_queries(PDO $pdo, int $days): array
     } catch (Throwable $e) { }
     return $out;
 }
+/** AFTER DELIVERY (owner, 21 Nov: "the order was delivered, the customer wrote 'received, the fragrance is a little different' and the system took the chat over — stop the take-over after delivery"): a customer with a shipped / delivered Shopify order of the last 14 days who writes something that is not a new purchase is an AFTER-SALES chat — it stays with the person who has it (or the complaint team); it is never moved to OPEN, never "stuck", never counted as a waiting hot customer. */
+function wag_after_delivery(PDO $pdo, string $phone, string $lastIn = ''): bool
+{
+    try { $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) !== 10) return false;
+        $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? AND fulfillment_status IN ('fulfilled', 'partial', 'delivered') LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 14 * 86400)]); if (!$q->fetchColumn()) return false;
+        if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
+        return !preg_match('/(new order|another order|order karna|order karo|order dena|order chahiye|\bbuy\b|lena hai|lunga|price|rate|combo|add on|add-on|chahiye|offer|discount|\d+\s?ml)/iu', mb_strtolower($lastIn));   // a new purchase wish keeps it a sales chat
+    } catch (Throwable $e) { return false; }
+}
 /** The customer already ORDERED (a Shopify order of the same phone in the last 36 hours) or his last words are only a thanks / ok / emoji: such a chat is not a "hot customer waiting for an answer" (owner, 21 Nov: the order had come, the chat stayed hot, and 70% of the salespeople were blocked from taking queries because of it). */
 function wag_hot_is_done(PDO $pdo, string $phone, string $lastIn = ''): bool
 {
     try { if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) return true;
+        if (wag_after_delivery($pdo, $phone, $lastIn)) return true;
         $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) === 10) { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 36 * 3600)]); if ($q->fetchColumn()) return true; }
         if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
         $t = trim(mb_strtolower($lastIn));
@@ -855,6 +865,7 @@ function wag_is_sales_query(PDO $pdo, array $c): bool
 {
     $key = (string)($c['phone'] ?? ''); if ($key === '' || (int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return false;
     if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) return false;   // order completed: after-sales, not a sale
+    if (wag_after_delivery($pdo, $key)) return false;   // delivered order + a message that is not a new purchase: after-sales
     if (preg_match('/order question|refund|return|track|complain|status|delivery|payment problem/i', (string)($c['hot_why'] ?? ''))) return false;
     try { if (!function_exists('cx_looks_like') && is_file(__DIR__ . '/complaints.php')) { /* loaded with the Boss Engine; skipped when not available */ }
         if (function_exists('cx_looks_like') && cx_looks_like($pdo, $key)) return false;   // leak / wrong item / not delivered / quality / refund words
@@ -1060,7 +1071,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
         // the bot answers after bot_after (4 s) — also when the chat is given to a salesperson — until that person presses "Take over" (or is writing to the customer right now): then the bot is silent
         // 🆘 STUCK (owner, 21 Nov): a hot chat (ready to order / pay, or the bot handed it over) that nobody answered for 10+ minutes: the bot tries ONCE more in ORDER MODE (details + address, never payment) and, if it cannot, the chat goes to the next free person with a push
-        $__stuck = (!empty($c['hot']) || (true && ($__bh = wag_meta_get($pdo, 'bothand:' . $key, '')) !== '' && strtotime($__bh) >= strtotime((string)$c['last_in_at']))) && ($age >= 600 || (true && ($__hm = wag_meta_get($pdo, 'hotmiss:' . $key, '')) !== '' && substr($__hm, strrpos($__hm, '|') + 1) === (string)$c['last_in_at'])) && (false || wag_meta_get($pdo, 'stuck:' . $key, '') !== (string)$c['last_in_at']);   // 10+ min, or the 2-minute rule already moved the chat to OPEN: the bot answers it in ORDER MODE at once
+        $__stuck = (!empty($c['hot']) || (true && ($__bh = wag_meta_get($pdo, 'bothand:' . $key, '')) !== '' && strtotime($__bh) >= strtotime((string)$c['last_in_at']))) && ($age >= 600 || (true && ($__hm = wag_meta_get($pdo, 'hotmiss:' . $key, '')) !== '' && substr($__hm, strrpos($__hm, '|') + 1) === (string)$c['last_in_at'])) && (false || wag_meta_get($pdo, 'stuck:' . $key, '') !== (string)$c['last_in_at']) && !wag_after_delivery($pdo, $key);   // 10+ min, or the 2-minute rule already moved the chat to OPEN: the bot answers it in ORDER MODE at once
         $__cover = false;
         if (wag_bot_off($pdo, $key, $__stuck)) {   // a person holds this chat: the bot stays silent — except when that person is busy with other customers and this customer has waited 90 s (owner, 21 Nov): then the bot answers meanwhile; the chat stays with the person
             $__ho = (int)($c['assigned_emp'] ?? 0); $__bh3 = wag_meta_get($pdo, 'bothand:' . $key, '');
