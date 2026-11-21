@@ -1226,12 +1226,12 @@
       v.innerHTML = `<div class="wx-ch"><button class="bk" id="wxBk" aria-label="Back">‹</button><div class="wx-av" style="background:hsl(${hue(c.phone)} 55% 48%);width:34px;height:34px;font-size:12px">${esc(initials(c.name, c.phone))}</div>
         <div class="wx-mid" id="wxCi" style="cursor:pointer"><div class="wx-nm" id="wxCn">${esc(c.name || pretty(c.phone))} ${badgeOf(r)}</div><div class="wx-sub" id="wxCs">${esc(pretty(c.phone))}</div><div id="wxOs"></div></div>
         ${S.me && S.me.team ? `${r.emp && r.emp === S.me.emp_id || S.me.can_to === false ? '' : '<button class="wx-ib g" id="wxTk" title="Take this chat for yourself — one tap">✋<small>Take over</small></button>'}${S.me.can_as === false ? '' : '<button class="wx-ib" id="wxAs" title="Give this chat to a salesperson">👤<small>Assign</small></button>'}` : ''}<button class="wx-ib g" id="wxRs" title="Resolve: one tap — the chat is closed and leaves your list (and the inbox)">✅<small>Resolve</small></button><button class="wx-ib" id="wxFin" title="Done: say how the chat ended (order, later, price …) and close it">✔<small>Done</small></button><button class="wx-ib" id="wxMore" aria-haspopup="dialog" title="More: complaint, report, journey, customer">⋯<small>More</small></button></div>
-        <div id="wxRd"></div><div id="wxGrow"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
+        <div id="wxRd"></div><div id="wxGrow"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxBotB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
       $('#wxBk').onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; $('#wxCi').onclick = openCustomer; $('#wxFin').onclick = openFinish; $('#wxRs').onclick = async function () { if (CXID) { /* 🎫 inside a complaint ticket "Resolve" means the TICKET: it used to close only the chat, so the ticket stayed in "Still to solve" */ try { window.parent.postMessage({ cxResolve: CXID }, location.origin); } catch (e) { } return; } this.disabled = true; const phone = S.cur.phone; try { await api.post('wa.close', { phone, quick: 1 }); closeChat(); toast('Resolved ✓ — removed from your chats'); loadList(true); } catch (e) { toast(e.message, true); this.disabled = false; } }; $('#wxMore').onclick = openMore;
       if ($('#wxToB')) $('#wxToB').onclick = takeOver;
       if ($('#wxTk')) $('#wxTk').onclick = function () { this.disabled = true; takeOver().then(() => { const t = $('#wxTk'); if (S.cur && S.cur.row && S.cur.row.emp === (S.me && S.me.emp_id) && t) t.remove(); else if (t) t.disabled = false; }); };   // ✋ manager / admin: one tap, no confirmation
       if ($('#wxAs')) $('#wxAs').onclick = () => openHandover(true);   // 👤 give this chat to anybody
-      if ($('#wxPrc')) $('#wxPrc').onclick = async function () { this.disabled = true; try { pcView(await api.post('wa.price_photo', { phone: S.cur.phone, preview: true })); } catch (e) { toast(e.message, true); } this.disabled = false; }; cxBanner(); odBanner(); orderPill(); readLines();
+      if ($('#wxPrc')) $('#wxPrc').onclick = async function () { this.disabled = true; try { pcView(await api.post('wa.price_photo', { phone: S.cur.phone, preview: true })); } catch (e) { toast(e.message, true); } this.disabled = false; }; botBanner(); cxBanner(); odBanner(); orderPill(); readLines();
       $('#wxMs').onclick = async (e) => {
         const rb0 = e.target.closest('[data-rb]'); if (rb0) { rpSet(rb0.dataset.rb); return; }
         const rt = e.target.closest('[data-rt]'); if (rt) { const m = S.cur && S.cur.msgs.find((x) => x.cid === rt.dataset.rt); if (m) sendText(m.body, null, false, m); return; }   // Retry: same id, so it can never go twice
@@ -1268,6 +1268,36 @@
       if (o === null) return; try { const r = await api.post('wa.order_done', { phone: ph, order: o.trim() }); toast('✅ Order completed' + (r.thanks ? ' · ' + r.thanks : '')); } catch (e) { toast(e.message, true); } odBanner();
     }
     // ---- Complaints: the ⚠ button raises a case; once the chat is with the Complaint team a red strip says so
+    // 🤖 the bot is answering this chat: a clear banner, Take over / writing locked meanwhile, and 👎 "Bot answer not good" (you write the better answer, the chat becomes yours, the bot learns)
+    async function botBanner() {
+      const ph = S.cur && S.cur.phone; if (!ph) return; if (S.botT) clearInterval(S.botT);
+      const paint = async () => {
+        if (!S.cur || S.cur.phone !== ph) { clearInterval(S.botT); return; }
+        let st; try { st = await api.get('wa.g_botstate', { phone: ph }); } catch (e) { return; } if (!S.cur || S.cur.phone !== ph) return;
+        const b = $('#wxBotB'); const on = !!(st && st.on); S.cur.botLock = on;
+        if (b) b.innerHTML = !st || !st.bot_enabled ? '' : on
+          ? `<div class="wx-banner y" style="margin:6px 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px">🤖 <b>The bot is answering this customer — wait.</b> Take over is locked while it types. If its answer is not good, press 👎.</span><button type="button" id="wxBotBad" style="border:0;border-radius:10px;background:#c0392b;color:#fff;padding:8px 12px;font:inherit;font-weight:600">👎 Bot answer not good</button></div>`
+          : (st.why === 'handed' || st.why === 'taken' ? `<div class="wx-banner" style="margin:6px 8px;background:#e8f7ee;color:#1b6b3a">✅ The bot has handed this chat to a person — ${st.why === 'taken' ? 'a salesperson has it' : 'you can take over now'}.</div>` : '');
+        for (const id of ['wxTk', 'wxToB']) { const t = $('#' + id); if (t) { t.disabled = on; t.title = on ? 'The bot is answering — wait, or press 👎 Bot answer not good' : ''; t.style.opacity = on ? '.45' : ''; } }
+        const bb = $('#wxBotBad'); if (bb) bb.onclick = openBotBad;
+      };
+      await paint(); S.botT = setInterval(paint, 6000);
+    }
+    function openBotBad() {
+      if (!S.cur) return; const phone = S.cur.phone, sh = sheet('Bot answer not good');
+      sh.body.innerHTML = '<p style="margin:0 0 8px;font-size:13px;color:#667">The bot said:</p><div id="bbT" style="background:#f3f4f6;border-radius:10px;padding:8px;font-size:13px;white-space:pre-wrap;margin-bottom:8px">…</div>'
+        + '<p style="margin:0 0 6px;font-size:13px;color:#667">Claude’s better answer (change it if you like). When you send it, this chat becomes yours and the bot stops. Everybody sees what you replaced.</p>'
+        + '<textarea id="bbN" rows="5" style="width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid #d9dde3;border-radius:10px" placeholder="Writing a better answer…"></textarea>'
+        + '<select id="bbR" style="width:100%;margin:8px 0;padding:8px;border-radius:10px;border:1px solid #d9dde3;font:inherit"><option value="">Why was it not good? (optional)</option><option>Wrong price</option><option>Wrong language</option><option>Invented offer</option><option>Did not answer the question</option><option>Too long / pushy</option><option>Other</option></select>'
+        + '<button type="button" id="bbS" style="width:100%;border:0;border-radius:12px;background:#128c4a;color:#fff;padding:12px;font:inherit;font-weight:700">Send my answer and take over</button>';
+      api.post('wa.g_botbad', { phone, mode: 'draft' }).then((d) => { const t = sh.body.querySelector('#bbT'), n = sh.body.querySelector('#bbN'); if (t) t.textContent = d.bot_text || '(no bot message found)'; if (n && !n.value) { n.value = d.suggestion || ''; n.placeholder = 'Write the better answer'; } }).catch((e) => toast(e.message, true));
+      sh.body.querySelector('#bbS').onclick = async function () {
+        const text = sh.body.querySelector('#bbN').value.trim(); if (text.length < 2) { toast('Write the better answer first.', true); return; }
+        this.disabled = true; this.textContent = 'Sending…';
+        try { await api.post('wa.g_botbad', { phone, mode: 'send', text, reason: sh.body.querySelector('#bbR').value }); toast('✅ Sent. The chat is yours; the bot has stopped here and will learn from this.'); if (sh.close) sh.close(); else if (sh.m && sh.m._shut) sh.m._shut(); if (S.cur && S.cur.phone === phone) { S.cur.row.emp = S.me.emp_id; S.cur.botLock = false; loadChat(); botBanner(); } }
+        catch (e) { toast(e.message, true); this.disabled = false; this.textContent = 'Send my answer and take over'; }
+      };
+    }
     async function cxBanner() {
       const ph = S.cur && S.cur.phone; if (!ph || !window.CXR) return; const st = await CXR.state(ph); if (!S.cur || S.cur.phone !== ph) return;
       const b = $('#wxCxB'); if (b) b.innerHTML = CXR.bannerHtml(st); const x = $('#wxMore'); if (x && st && st.case) { x.style.background = '#f3efff'; x.style.color = '#6d4fc2'; }
@@ -1353,7 +1383,7 @@
     function pushChatState(ph) {
       try { ph = ph || S.pushAfter; S.pushAfter = null; if (ph && S.cur && S.cur.phone === ph && !(history.state && history.state.wxChat)) history.pushState({ wxChat: ph }, ''); } catch (e) { }
     }
-    function closeChat() { stopRec(true); suggStop(); const phone = S.cur && S.cur.phone; S.cur = null; markSel(); const v = $('.wx-chat'); if (v) v.remove(); loadList(true); if (S.tab === 'history') drawHistory(false); if (S.tab === 'queries' && S.qView && S.qView.refresh) S.qView.refresh(); }
+    function closeChat() { if (S.botT) { clearInterval(S.botT); S.botT = 0; } stopRec(true); suggStop(); const phone = S.cur && S.cur.phone; S.cur = null; markSel(); const v = $('.wx-chat'); if (v) v.remove(); loadList(true); if (S.tab === 'history') drawHistory(false); if (S.tab === 'queries' && S.qView && S.qView.refresh) S.qView.refresh(); }
 
     // ---- Claude's suggestion (written before you open the chat)
     const QK_T = [   // what the customer asked → which quick replies (by their TITLE) fit
