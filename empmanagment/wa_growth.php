@@ -562,7 +562,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         $li = $pdo->prepare("SELECT id, mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
         // wants to order / pay (hot): the bot takes the ORDER DETAILS and the ADDRESS — never the payment — and then a person finishes (ORDER MODE)
-        $__order = !empty($c['hot']) || (function_exists('wa_hot_intent') && wa_hot_intent((string)$m['body']) !== '');
+        $__order = (function_exists('wa_hot_intent') && wa_hot_intent((string)$m['body']) !== '') || (!empty($c['hot']) && !empty($c['hot_at']) && strtotime((string)$c['hot_at']) > time() - 2 * 3600 && !preg_match('/(address|change|badal|edit|cancel|refund|return|tracking|status)/iu', (string)$m['body']));   // order mode only while the customer is really ordering (not for "change my address" in an old hot chat)
         // a Flow is running for this customer (sending, waiting for a time or for this answer): the flow answers, never the bot as well — order answers included
         $f = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $f->execute([$key]); if ((int)$f->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         // order questions (status / where is my order / kab aayega): the answer comes from the order data, never from the AI; a manual link or another number is never revealed
@@ -1097,7 +1097,8 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
     switch ($__wg) {
         case 'wa.g_botlearn': {   // 🧠 what the bot learned from the 👎 answers: waiting for the owner to apply to the guidebook (live) — the nightly guidebook then keeps it
             if (!$adm && !(function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth))) json_response(['items' => [], 'can' => false]);
-            wa_learn_tables($pdo); $names = employee_names_by_id($pdo); $items = [];
+            wa_learn_tables($pdo); try { $pdo->exec("UPDATE wa_learn SET status = 'skip' WHERE kind = 'botbad' AND status = 'new' AND (sugg IS NULL OR TRIM(sugg) = '')"); } catch (Throwable $e) { }   // a 👎 without a bot answer is not something the bot can learn from
+            $names = employee_names_by_id($pdo); $items = [];
             foreach ($pdo->query("SELECT id, customer, sugg, sent, emp_id, created_at FROM wa_learn WHERE kind = 'botbad' AND status = 'new' ORDER BY id DESC LIMIT 40")->fetchAll() as $r) {
                 $sent = (string)$r['sent']; $reason = ''; if (preg_match('/\n\[reason: ([^\]]*)\]\s*$/u', $sent, $m)) { $reason = $m[1]; $sent = trim(preg_replace('/\n\[reason: [^\]]*\]\s*$/u', '', $sent)); }
                 $items[] = ['id' => (int)$r['id'], 'customer' => (string)$r['customer'], 'bot' => (string)$r['sugg'], 'better' => $sent, 'reason' => $reason, 'by' => $names[(int)$r['emp_id']] ?? '', 'at' => (string)$r['created_at'], 'pending_tpl' => strpos($sent, '[TEMPLATE —') === 0];
@@ -1130,6 +1131,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_botbad': {   // 👎 the bot's answer is not good: {phone, mode: 'draft'} → Claude's better answer; {phone, mode: 'send', text, reason} → it is sent, the chat becomes the person's, the bot stops, the owner's bot learns
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $l = wag_bot_lock($pdo, $c);
+            if (trim((string)$l['bot_text']) === '') json_response(['error' => 'The bot has not answered yet — wait for its answer. 👎 is for an answer that is not good.'], 422);
             if (($in['mode'] ?? '') === 'draft') {
                 $sug = ''; try { $GLOBALS['lib_fast'] = 1; $rr = wag_brain_reply($pdo, $c, (string)$l['bot_text'], true); unset($GLOBALS['lib_fast']); if (!empty($rr['ok'])) $sug = (string)$rr['text']; } catch (Throwable $e) { }
                 json_response(['bot_text' => $l['bot_text'], 'suggestion' => $sug, 'lock' => $l['on']]);
