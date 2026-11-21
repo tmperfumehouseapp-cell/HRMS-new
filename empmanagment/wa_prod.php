@@ -822,6 +822,13 @@ function wa_prod_all(PDO $pdo, bool $fresh = false): array
     $c = []; foreach ($pdo->query("SELECT * FROM wa_prod WHERE active = 1 ORDER BY units_sold DESC, id")->fetchAll() as $r) $c[] = wa_prod_dec($r);
     return $c;
 }
+/** A "small" product the bot never shows on its own (owner, 21 Nov): attar / roll-on / solid / 10 ml / mini / gel / wax / candle — checked on title, name, handle, url, collections and the product kind (the roll-on photos have plain names like "Aqua Water"). */
+function wa_prod_small(array $pr): bool
+{
+    $k = (string)($pr['kind'] ?? ''); if ($k !== '' && $k !== 'perfume') return true;
+    $t = mb_strtolower(implode(' ', [(string)($pr['title'] ?? ''), (string)($pr['name'] ?? ''), (string)($pr['handle'] ?? ''), (string)($pr['url'] ?? ''), is_array($pr['cats'] ?? null) ? implode(' ', array_map('strval', array_map(fn($x) => is_array($x) ? ($x['title'] ?? $x['name'] ?? '') : $x, $pr['cats']))) : '']));
+    return (bool)preg_match('/solid|10 ?ml|roll[- ]?on|rollon|\bmini\b|attar|\batar\b|ittar|\bitar\b|perfume[- ]oil|shower|\bgel\b|\bwax\b|candle|sample|tester|travel|pocket/iu', $t);
+}
 function wa_prod_get(PDO $pdo, array $ids): array
 {
     $ids = array_values(array_unique(array_filter(array_map('intval', $ids)))); if (!$ids) return [];
@@ -1352,7 +1359,7 @@ function wa_prod_decide(PDO $pdo, string $phone, string $text, array $opt = []):
             $ft = mb_strtolower($text); $wantsOther = (bool)preg_match('/shower|\bgel\b|body\s*wash|wax|candle|solid|roll[- ]?on|10 ?ml|\bmini\b|sample|tester|travel|pocket/iu', $ft);   // OWNER RULE (21 Nov): while perfumes are talked about, no shower gel / wax / candle / solid perfume / 10 ml / roll-on / mini unless the customer asks for it
             $popt = ['exclude' => $ex, 'fill_similar' => (bool)$similar, 'parse' => $in['parse']]; if (!$wantsOther) $popt['kind'] = 'perfume';
             $picks = wa_prod_pick($pdo, (string)$in['q'], $room + ($wantsOther ? 0 : 6), $popt);
-            if (!$wantsOther) $picks = array_values(array_filter($picks, fn($it) => !preg_match('/solid|10 ?ml|roll[- ]?on|\bmini\b|shower|\bgel\b|wax|candle/iu', (string)($it['title'] ?? '') . ' ' . (string)($it['name'] ?? ''))));
+            if (!$wantsOther) $picks = array_values(array_filter($picks, fn($it) => !wa_prod_small((array)$it)));
         }
         foreach (array_slice($picks, 0, $room) as $it) {
             $o['ids'][] = (int)$it['id']; $w = (string)$it['why'];
@@ -1411,8 +1418,8 @@ function wa_prod_bot_after(PDO $pdo, array $c, string $botText = ''): int
         // 📸 FIXED RULE (owner, 10 Nov): whenever the bot's own words name a perfume of ours, its picture goes with it — even when the customer's message alone did not match the catalogue (e.g. "Azz The Most Desired")
         if ($botText !== '' && count($ids) < 6) { foreach (wa_prod_find_named($pdo, $botText, 6) as $p) { if (count($ids) >= 6) break; if (!in_array((int)$p['id'], $ids, true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } } }
         // 💸 the bot's pictures are the 50 ml perfumes that make real orders: solid perfumes / 10 ml / roll-ons / minis (cheap, best-selling by count — the collage showed them first) only when the customer asked for them or the bot's own words name one
-        try { $li = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([(string)$c['phone']]); $cm = mb_strtolower((string)$li->fetchColumn()); $small = '/solid|10 ?ml|roll[- ]?on|\bmini\b|sample|tester|travel|pocket/iu';
-            if ($ids && !preg_match($small, $cm . ' ' . $botText)) { $keep = []; foreach (wa_prod_get($pdo, $ids) as $pr) if (!preg_match($small, (string)($pr['title'] ?? '') . ' ' . (string)($pr['name'] ?? ''))) $keep[] = (int)$pr['id']; $ids = array_values(array_filter($ids, fn($i) => in_array((int)$i, $keep, true))); } } catch (Throwable $e) { }
+        try { $li = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([(string)$c['phone']]); $cm = mb_strtolower((string)$li->fetchColumn()); $small = '/solid|10 ?ml|roll[- ]?on|rollon|\bmini\b|attar|\batar\b|ittar|\bitar\b|sample|tester|travel|pocket/iu';
+            if ($ids && !preg_match($small, $cm . ' ' . $botText)) { $keep = []; foreach (wa_prod_get($pdo, $ids) as $pr) if (!wa_prod_small($pr)) $keep[] = (int)$pr['id']; $ids = array_values(array_filter($ids, fn($i) => in_array((int)$i, $keep, true))); } } catch (Throwable $e) { }
         $n = 0;
         if ($ids) $n += function_exists('wa_collage_send') ? wa_collage_send($pdo, $c, $ids, 'bot', 0, $why) : (int)count((wa_prod_send_items($pdo, $c, $ids, 'why', 'bot', 0, ['why' => $why]))['sent'] ?? []);
         if ($libs) { $r = wa_prod_send_items($pdo, $c, $libs, 'why', 'bot', 0, ['why' => $why]); $n += count($r['sent'] ?? []); }
