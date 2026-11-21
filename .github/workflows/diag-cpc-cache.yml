@@ -1,0 +1,42 @@
+# READ-ONLY: the screens' remembered answers (table wa_cp_cache): name, size and age. No customer data. Changes nothing.
+# Run it by hand: Actions -> "Remembered answers (read-only)" -> Run workflow.
+name: Remembered answers (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: List
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/cpc_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "database: " . $e->getMessage() . "\n"; exit; }
+          echo "server time " . date("Y-m-d H:i:s") . "\n";
+          echo "max_allowed_packet = " . $d->query("SELECT @@max_allowed_packet")->fetchColumn() . "\n\n";
+          echo "remembered answers (key · size · age):\n";
+          try { foreach ($d->query("SELECT k, LENGTH(v) len, TIMESTAMPDIFF(SECOND, at, NOW()) age FROM wa_cp_cache ORDER BY LENGTH(v) DESC LIMIT 25")->fetchAll(PDO::FETCH_NUM) as $x) echo "  " . str_pad($x[0], 28) . str_pad(number_format($x[1]) . " bytes", 18) . $x[2] . " s old" . ((int)$x[1] >= 3000000 ? "   <-- over the 3,000,000 limit: would never be stored" : "") . "\n"; } catch (Throwable $e) { echo "  " . substr($e->getMessage(), 0, 120) . "\n"; }
+          echo "\ntemplates: " . $d->query("SELECT COUNT(*) FROM wa_templates")->fetchColumn() . " rows · wa_tpl_waba rows: " . $d->query("SELECT COUNT(*) FROM wa_tpl_waba")->fetchColumn() . "\n";
+          PHP
+          php /tmp/cpc_check.php "$P"; rm -f /tmp/cpc_check.php
+          REMOTE
