@@ -223,6 +223,8 @@ window.WaSeg = (function () {
       h += '<div class="wsg-two"><div><label for="wsg-' + a + '">From date</label><input id="wsg-' + a + '" class="wsg-in" type="date" data-date="' + a + '" value="' + esc(F[a] || '') + '"></div><div><label for="wsg-' + b + '">To date</label><input id="wsg-' + b + '" class="wsg-in" type="date" data-date="' + b + '" value="' + esc(F[b] || '') + '"></div></div>';
       return h;
     }
+    let LD = null, ldBusy = false;
+    async function showLineup() { if (ldBusy) return; ldBusy = true; paintCount(); try { const r = await api.post('wa.seg_count', { filters: filters(), lineup: 1 }); LD = r.lineup || { in: 0, not_in: (r.total || 0), messages: 0, days: [], steps: [] }; } catch (e) { err = 'Could not read the Lineup. ' + errMsg(e); } ldBusy = false; paintCount(); }
     function countHtml() {
       const c = last; let h = '';
       if (err) h += '<div class="wsg-err">' + esc(err) + ' <button type="button" data-retry>Try again</button></div>';
@@ -235,7 +237,8 @@ window.WaSeg = (function () {
         h += '<div class="wsg-leg"><span style="--c:#1fa855">Sending ' + nf(c.sendable) + '</span><span style="--c:#f59e0b">Bought / messaged lately ' + nf((why.bought || 0) + (why.messaged || 0)) + '</span><span style="--c:#e5484d">Opted out / complaint ' + nf((why.optout || 0) + (why.complaint || 0)) + '</span></div>';
         if (c.unbuilt) h += '<div class="wsg-sub">' + nf(c.unbuilt) + ' newer contacts are not analysed yet (done in the nightly run).</div>';
         h += '</div>';
-        const L = c.lineup;   // 🧵 what the 30-Day Lineup will do for these people
+        const L = LD;   // 🧵 what the 30-Day Lineup will do for these people — only when asked (one tap), so the live count stays light
+        if (!L && c.total > 0) h += '<button type="button" class="wsg-more" data-ldshow>' + (ldBusy ? 'Counting…' : '🧵 Show the 30-Day Lineup detail for these people') + '</button>';
         if (L) {
           const dl = (d) => { const t = new Date(d + 'T00:00:00'); return isNaN(t) ? d : t.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
           const days = (L.days || []); const today = new Date().toISOString().slice(0, 10);
@@ -282,7 +285,7 @@ window.WaSeg = (function () {
     function paintCount() { const el = root.querySelector('[data-count]'); if (el) el.innerHTML = countHtml(); }
     function emit() { try { if (typeof opts.onChange === 'function') opts.onChange(filters(), last); } catch (e) { /* the host's problem */ } }
     async function loadCount() {
-      const my = ++cSeq; err = ''; try { const r = await api.post('wa.seg_count', { filters: filters() }); if (dead || my !== cSeq) return; last = r; } catch (e) { if (dead || my !== cSeq) return; err = 'Could not count. ' + errMsg(e); last = null; }
+      const my = ++cSeq; err = ''; try { const r = await api.post('wa.seg_count', { filters: filters() }); if (dead || my !== cSeq) return; last = r; LD = null; } catch (e) { if (dead || my !== cSeq) return; err = 'Could not count. ' + errMsg(e); last = null; }
       paintCount(); emit();
     }
     async function loadHist(force) {
@@ -303,6 +306,7 @@ window.WaSeg = (function () {
         delete F.order_count_min; delete F.order_count_max; if (!was) { if (o === 'bought') F.order_count_min = 1; else if (o === 'never') F.order_count_max = 0; else F.order_count_min = 2; } return changed(true); }
       if (t.hasAttribute('data-more')) { more = !more; return render(); }
       if (t.hasAttribute('data-reset')) { set({}); return changed(true); }
+      if (t.hasAttribute('data-ldshow')) { return showLineup(); }
       if (t.hasAttribute('data-retry')) { last = null; paintCount(); return loadCount(); }
     });
     root.addEventListener('change', (e) => {
