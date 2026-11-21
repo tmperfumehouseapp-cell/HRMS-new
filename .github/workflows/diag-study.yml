@@ -50,17 +50,22 @@ jobs:
             $qa->execute([$ph, $it["sent_at"]]); $last = $qa->fetchColumn(); $days = $last ? ($s - strtotime($last)) / 86400 : null;
             $qb->execute([$ph, $it["sent_at"], $it["sent_at"]]); $rep = (bool)$qb->fetchColumn();
             $o = false; foreach (($ord[$key($ph)] ?? []) as $ot) if ($ot > $s && $ot <= $s + 7 * 86400) { $o = true; break; }
-            $b = $bk($days); $h = (int)date("G", $s + 19800 - 0 * 0); $w = date("D", $s + 19800);
+            $b = $bk($days); $h = (int)date("G", $s); $w = date("D", $s);
             foreach ([[&$age, $b], [&$hr, $h], [&$dow, $w]] as [&$arr, $k]) { $arr[$k][0] = ($arr[$k][0] ?? 0) + 1; $arr[$k][1] = ($arr[$k][1] ?? 0) + ($rep ? 1 : 0); $arr[$k][2] = ($arr[$k][2] ?? 0) + ($o ? 1 : 0); } unset($arr);
           }
           $show = function ($t, $a) { ksort($a); echo "\n  $t  (sent · replied in 2 d · ordered in 7 d)\n"; foreach ($a as $k => $v) printf("    %-12s %5d · %5.1f%% · %5.2f%%\n", $k, $v[0], 100 * $v[1] / max(1, $v[0]), 100 * $v[2] / max(1, $v[0])); };
-          $show("by days since the customer last wrote", $age); $show("by hour sent (IST, assuming server clock is IST-based +5:30 applied)", $hr); $show("by weekday", $dow);
+          $show("by days since the customer last wrote", $age); $show("by hour sent (server clock = IST)", $hr); $show("by weekday", $dow);
           echo "\n=== Lineup so far: reply rate by topic/step (sent, replied) ===\n";
-          foreach ($all("SELECT p.topic, p.step, COUNT(*) n, SUM(EXISTS(SELECT 1 FROM wa_messages m WHERE m.phone = p.phone AND m.dir = 'in' AND m.ts > p.sent_at AND m.ts <= DATE_ADD(p.sent_at, INTERVAL 2 DAY))) r FROM wa_line_plan p WHERE p.status = 'sent' AND p.sent_at IS NOT NULL GROUP BY p.topic, p.step ORDER BY p.topic, p.step") as $r) echo "  " . $r["topic"] . " step " . $r["step"] . ": sent " . $r["n"] . " replied " . $r["r"] . "\n";
+          foreach ($all("SELECT p.topic, p.step, COUNT(*) n, SUM(EXISTS(SELECT 1 FROM wa_messages m WHERE m.phone = p.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'in' AND m.ts > p.sent_at AND m.ts <= DATE_ADD(p.sent_at, INTERVAL 2 DAY))) r FROM wa_line_plan p WHERE p.status = 'sent' AND p.sent_at IS NOT NULL GROUP BY p.topic, p.step ORDER BY p.topic, p.step") as $r) echo "  " . $r["topic"] . " step " . $r["step"] . ": sent " . $r["n"] . " replied " . $r["r"] . "\n";
           echo "\n=== live guidebook: lines that mention price / discount / offer / combo / COD / free ===\n";
           $g = $all("SELECT version, status, body FROM lib_guide WHERE status = 'live' ORDER BY version DESC LIMIT 1");
           if (!$g) $g = $all("SELECT version, status, body FROM lib_guide ORDER BY version DESC LIMIT 1");
-          if ($g) { echo "  guidebook v" . $g[0]["version"] . " (" . $g[0]["status"] . "), " . strlen($g[0]["body"]) . " chars\n"; $n = 0; foreach (preg_split('/\R/', (string)$g[0]["body"]) as $ln) { if (preg_match('/price|discount|offer|rate|combo|COD|free|%|₹|rupee|bargain|negotiat/i', $ln)) { echo "  | " . substr(trim($ln), 0, 260) . "\n"; if (++$n >= 45) break; } } } else echo "  (no guidebook found)\n";
+          if ($g) { echo "  guidebook v" . $g[0]["version"] . " (" . $g[0]["status"] . "), " . strlen($g[0]["body"]) . " chars\n"; echo wordwrap((string)$g[0]["body"], 200, "\n  | ") . "\n"; } else echo "  (no guidebook found)\n";
+          echo "\n=== price chart (perfume slab chart, setting ml_slab_chart) ===\n";
+          $sv = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); return (string)$q->fetchColumn(); } catch (Throwable $e) { return ""; } };
+          echo "  " . substr($sv("ml_slab_chart"), 0, 2500) . "\n";
+          echo "\n=== combo price chart ===\n  " . substr($sv("combo_price_chart"), 0, 1500) . "\n";
+          echo "\n=== other chart settings ===\n  price_chart_cust_col=" . $sv("price_chart_cust_col") . "\n";
           echo "\n=== discount tiers the team uses (order_rate_auto tips that worked) ===\n";
           foreach ($all("SELECT tip, COUNT(*) n FROM order_rate_auto WHERE worked = 1 AND tip <> '' AND at >= DATE_SUB(NOW(), INTERVAL 30 DAY) GROUP BY tip ORDER BY n DESC LIMIT 12") as $r) echo "  " . $r["n"] . "x  " . substr($r["tip"], 0, 200) . "\n";
           PHP
