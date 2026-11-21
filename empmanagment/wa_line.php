@@ -239,6 +239,7 @@ function wl_enroll(PDO $pdo, int $since): int
     $have = []; $h = $pdo->prepare("SELECT phone FROM wa_line_cust WHERE created_at >= ?"); $h->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p) $have[(string)$p] = 1;
     $q = $pdo->prepare("SELECT c.phone FROM wa_contacts c WHERE c.last_in_at >= ? AND c.optout = 0 AND c.camp_optout = 0 LIMIT 60000"); $q->execute([date('Y-m-d H:i:s', $since)]);
     $cand = []; foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) if (!isset($have[(string)$p])) $cand[] = (string)$p;
+    $cand = array_slice($cand, 0, 3000);   // the rest comes in the next rounds
     foreach (array_chunk($cand, 400) as $ch) {
         $in = implode(',', array_fill(0, count($ch), '?'));
         $f = $pdo->prepare("SELECT phone, MIN(ts) t FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN ($in) GROUP BY phone"); $f->execute(array_merge([date('Y-m-d H:i:s', $since)], $ch)); $first = [];
@@ -369,6 +370,13 @@ function wln_unwindow(PDO $pdo): int
     setting_set($pdo, 'wl_unwin', '1'); return $n;
 }
 /** One time (owner, 21 Nov): the Lineup also catches everybody who wrote since the day BEFORE yesterday 10:00 IST (it started with yesterday 10:00). The new people join through the normal enrolment; their timing is the same rule as everybody's: step 1 only when his last message is more than 24 h old. */
+/** Owner, 21 Nov: "take everybody from the 15th" — one time: the Lineup catches every customer who wrote since 15 Nov 10:00 IST (before: 19 Nov 10:00). Those who already are in the Lineup stay as they are; the older ones start at step 1 now (their first step is due at once, the next ones follow by the 30-day gaps). Enrolment takes 3,000 people a round. */
+function wln_since_15(PDO $pdo): bool
+{
+    if ((string)setting_get($pdo, 'wl_since_v3', '') === '1') return false; $c = wl_cfg($pdo); if ($c['started'] === '' || $c['since'] <= 0) return false;
+    $to = wl_ist_at('2026-11-15', 10); setting_set($pdo, 'wl_since_v3', '1'); if ($c['since'] <= $to) return false;
+    $c['since'] = $to; wl_cfg_put($pdo, $c); wa_log($pdo, 'engine', true, 'Lineup: catching everybody who wrote since ' . date('Y-m-d H:i', $to) . ' (15 Nov 10:00 IST)'); return true;
+}
 function wln_since_back(PDO $pdo): bool
 {
     if ((string)setting_get($pdo, 'wl_since_v2', '') === '1') return false; $c = wl_cfg($pdo); if ($c['started'] === '' || $c['since'] <= 0) return false;
@@ -496,7 +504,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     if (!$force && (!function_exists('wa_lock') || !wa_lock($pdo, 'wlrun', 50))) return $o;
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window (none unless wl_cfg.win = 1)
-    if (!$force) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); wln_ladder30($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
+    if (!$force) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); wln_ladder30($pdo); wln_since_15($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if (!$force && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     if (!$force) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }   // failed as marketing -> sent again as utility on the spot

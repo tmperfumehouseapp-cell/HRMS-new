@@ -182,4 +182,6 @@ $dm = wl_days_auto($pdo, ['steps' => $steps]); ok(strpos($dm, 'days: step 4 move
 ok(strpos((string)$pdo->query("SELECT due_at FROM wa_line_plan WHERE phone = '9870000055'")->fetchColumn(), '2026-12-02') === 0, 'its planned rows moved with it'); ok(wl_days_auto($pdo, ['steps' => $steps]) === '', 'only one move a week');
 wl_days([1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 6, 6 => 8, 7 => 10, 8 => 15, 9 => 18, 10 => 22, 11 => 26, 12 => 30]); $S['wl_days'] = '';
 $cu = wl_customer($pdo, '9810000002'); ok(isset($cu['replies'], $cu['orders'], $cu['days']) && isset($cu['plan'][0]['receipt']), 'the customer timeline carries receipts, replies, orders');
+// 15 Nov: one time the catch-up date moves back to 15 Nov 10:00 IST
+$S['wl_since_v3'] = ''; $c0 = wl_cfg($pdo); ok(wln_since_15($pdo) === true && wl_cfg($pdo)['since'] === wl_ist_at('2026-11-15', 10), 'the Lineup catches everybody since 15 Nov 10:00 IST: ' . date('c', wl_cfg($pdo)['since'])); ok(wln_since_15($pdo) === false, 'only once');
 echo "lineup db ok\n";
