@@ -153,6 +153,8 @@ function wag_cfg(PDO $pdo): array
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => 'Budget ki baat nahi h, mujhe fragrance check karni hai. Ki aap log claim krte ho, wo quality h bhi ya yuhi', 'better' => 'Sir, hamare perfume 30% oil ke hain, bahut der tikte hain aur customers ke reviews bhi achhe hain (jaise [perfume] ka rating [x]/5 [n] reviews). Ek baar use karke dekhiye, aapko definitely pasand aayega. Aapko kaisi khushbu pasand hai - fresh, sweet ya woody? Main aapke liye best suggest karta hoon.']], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // the goal rule must survive a NEW live guidebook version (a new version made by the learning dropped it at 21 Nov night): when the live one does not carry it, the once-only switch is re-armed (checked every 5 min)
+    try { if (setting_get($pdo, 'wag_rules18', '') === '1' && time() - (int)setting_get($pdo, 'wag_rules18_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules18_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0 && strpos((string)$g0['body'], 'MAXIMUM ORDERS') === false) setting_set($pdo, 'wag_rules18', ''); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): TARGET = maximum orders with the HIGHEST good ticket size, margin never hurt: the guidebook gets the "bigger first, discount last" rule
     try { if (setting_get($pdo, 'wag_rules18', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules18', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
@@ -1133,9 +1135,11 @@ function wag_bot_ticket(PDO $pdo, int $days = 7): ?array
 }
 /** 🏪 PERFORMANCE GATE (owner, 21 Nov): a person who picks many queries but converts BELOW the team average gets no more — "no point giving him queries". '' = may take, else the sentence shown.
  *  Blocks when (a) he took 4+ queries today and his orders / taken is under 60% of the team's last-7-days ratio (only when the team has orders recorded), (b) he left 2+ hot chats today, or (c) 3+ hot chats of his wait unanswered. Switch: wag_mkt_gate = 0. */
-function wag_mkt_gate_msg(PDO $pdo, int $emp): string
+function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
 {
-    static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
+    // owner 22 Nov: the conversion part of the gate never blocks a customer who waited 4 minutes with no reply (unassigned or held by somebody who did not answer) (a person must always be able to pick waiting queries); it needs 25+ queries and a ratio under half of the team's
+    $waited = $chat !== null && ($__li = (int)strtotime((string)($chat['last_in_at'] ?? ''))) > 0 && $__li < time() - 240 && (int)strtotime((string)($chat['last_out_at'] ?? '')) < $__li;   // waiting 4+ min with no reply from anyone: unassigned OR held by a person who did not answer
+    static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)$waited . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
     $msg = '';
     try {
         $t0 = date('Y-m-d 00:00:00'); $w0 = date('Y-m-d 00:00:00', time() - 6 * 86400); $one = function (string $sql, array $a = []) use ($pdo) { $q = $pdo->prepare($sql); $q->execute($a); return (int)$q->fetchColumn(); };
@@ -1149,7 +1153,7 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp): string
         else {   // ONE source for the numbers (owner, 21 Nov: the market banner said 7 / 1, the Queries page 70, the sales strip 0/1): the query ledger — the same queries and orders the Queries page and the sales strip show (community not counted)
             $lq = 0; $lo = 0; $lavg = 0.0;
             try { $d1 = wag_real_queries($pdo, 1); $lq = (int)($d1[$emp][0] ?? 0); $lo = (int)($d1[$emp][1] ?? 0); $tq = 0; $to = 0; foreach (wag_real_queries($pdo, 7) as $__r) { $tq += $__r[0]; $to += $__r[1]; } $lavg = $tq >= 40 && $to > 0 ? min(0.5, $to / $tq) : 0.0; } catch (Throwable $e) { }
-            if ($lq >= 12 && $lavg > 0 && ($lo / $lq) < 0.6 * $lavg) $msg = '🔒 You have ' . $lq . ' queries today with ' . $lo . ' order' . ($lo === 1 ? '' : 's') . ' — below the team level (' . round(100 * $lo / $lq) . '% vs ' . round(100 * $lavg) . '%). Close the chats you already have; new queries go to people who convert better.'; }
+            if (!$waited && $lq >= 25 && $lavg > 0 && ($lo / $lq) < 0.5 * $lavg) $msg = '🔒 You have ' . $lq . ' queries today with ' . $lo . ' order' . ($lo === 1 ? '' : 's') . ' — below the team level (' . round(100 * $lo / $lq) . '% vs ' . round(100 * $lavg) . '%). Close the chats you already have; new queries go to people who convert better.'; }
     } catch (Throwable $e) { }
     return $c[$ck] = $msg;
 }
@@ -1313,6 +1317,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         $__wqc = function_exists('wq_guard') ? wq_guard($pdo, $key, (int)$m['id'], 'reply', 'bot') : true; if (!$__wqc) continue;   // one answer per customer message: bot, holding message or countdown — whoever claims first
         wag_bot_typing($pdo, $c, (string)($m['wamid'] ?? ''));   // the customer sees "typing…" at once (WhatsApp shows it for up to 25 s) while the answer is made
         $__t0 = microtime(true); $f0 = ai_feat('wa_bot'); $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; if ($__order) $GLOBALS['lib_order_mode'] = 1; $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fast'], $GLOBALS['lib_order_mode'], $GLOBALS['lib_phone']); ai_feat($f0); try { wag_log($pdo, 'botms', true, 'ai ' . round(microtime(true) - $__t0, 1) . ' s · wait ' . $age . ' s'); } catch (Throwable $e) { }
+        if (!$r['ok'] || !empty($r['handoff'])) { try { wag_meta_put($pdo, 'brainwhy:' . $key, date('Y-m-d H:i:s') . ' ok=' . (int)$r['ok'] . ' handoff=' . (int)!empty($r['handoff']) . ' ' . mb_substr((string)($r['why'] ?? ''), 0, 200)); } catch (Throwable $e) { } }   // why the bot did not answer this chat (kept per chat, the log keeps only 300 lines)
         if (!$r['ok']) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], false); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (stripos((string)$r['why'], 'not been taught') !== false) { wag_log($pdo, 'bot', false, 'The bot has not been taught yet — nothing was sent.'); break; } continue; }
         if (empty($r['handoff'])) { try { $pb = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND mtype = 'text' ORDER BY id DESC LIMIT 1"); $pb->execute([$key]); $pt = (string)$pb->fetchColumn(); if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $__pc); if ($__pc >= 82) { $r['handoff'] = true; wag_log($pdo, 'bot', false, $key . ' · the bot was about to repeat itself — a person takes over'); } } } catch (Throwable $e) { } }   // the same question twice = the bot is stuck: a person
         if (empty($r['handoff']) && wag_bot_unsafe((string)$r['text'])) { $r['handoff'] = true; wag_log($pdo, 'bot', false, $key . ' · blocked an unsafe reply (invented offer / payment claim) — a person takes over'); }
