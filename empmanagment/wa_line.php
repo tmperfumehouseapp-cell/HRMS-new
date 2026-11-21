@@ -472,6 +472,12 @@ function wln_twins(PDO $pdo, string $phone, string $topic, int $step, int $faile
     $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $q->execute([$phone]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
     $o = []; foreach ($cand as $id => $k) if (isset($util[$id]) && !isset($got[$id])) $o[] = [(int)$id, (string)$k]; return $o;
 }
+/** How much of what we sent a customer he actually OPENED: [messages sent, messages read]. A customer who never opened 3+ messages does not get the paid (marketing) price steps — the plain utility message goes instead (cheaper, and it protects the numbers' quality); one who read but did not answer gets the price step. */
+function wln_engagement(PDO $pdo, string $phone): array
+{
+    try { $q = $pdo->prepare("SELECT wamid FROM wa_line_plan WHERE phone = ? AND status = 'sent' AND wamid <> '' ORDER BY id DESC LIMIT 20"); $q->execute([$phone]); $w = $q->fetchAll(PDO::FETCH_COLUMN); if (!$w) return [0, 0];
+        $in = implode(',', array_fill(0, count($w), '?')); $r = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE wamid IN ($in) AND status = 'read'"); $r->execute($w); return [count($w), (int)$r->fetchColumn()]; } catch (Throwable $e) { return [0, 0]; }
+}
 /** Marketing-only blocks (Meta: too many marketing messages to this customer / he stopped marketing / marketing holdback). Utility is not held by them. */
 function wln_mkt_codes(): array { return [131049, 131050, 130472]; }
 /** THE RESCUE: a Lineup message whose delivery receipt says FAILED for a marketing-only reason is sent again at once as its utility twin (one rescue per message; not if he wrote since, ordered or opted out).
@@ -581,7 +587,7 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
                     $rq0 = $pdo->prepare("SELECT id, phone, step, tpl_key, due_at FROM wa_line_plan WHERE phone = ? AND status = 'planned' ORDER BY step LIMIT 1"); $rq0->execute([$phone]); $nr = $rq0->fetch(); if (!$nr) continue; $row = $nr + ['anchor_at' => $row['anchor_at'], 'topic' => $nt]; }
             } catch (Throwable $e) { }
         }
-        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $v2 = ''; $pxPct = ''; $pk = wln_pref_key((int)$row['step']);
+        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $v2 = ''; $pxPct = ''; $pk = wln_pref_key((int)$row['step']); if ($pk !== '') { [$es, $er] = wln_engagement($pdo, (string)$phone); if ($es >= 3 && $er === 0) $pk = ''; }   // never opened 3+ messages: no paid price step for him
         if ($pk !== '' && isset($ids[$pk]) && in_array($pk, $okKeys, true)) { if ($pk === 'ln_pp_6') $key = $pk; else { $pi = wln_price_info($pdo, (string)$phone); $v2 = $pi ? $pi['text'] : ''; if ($v2 !== '') { $key = $pk; $pxPct = (string)$pi['pct']; } } }   // the price / prepaid message of this step when Meta approved it everywhere; no chart or no price = the plain message of the step
         $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send'))) { $o['waiting']++; continue; }
         $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
