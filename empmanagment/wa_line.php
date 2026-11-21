@@ -413,6 +413,22 @@ function wln_ladder30(PDO $pdo): int
     }
     return $n;
 }
+/** 🧵 For the campaign cards: how many people each campaign SENT TO (last 30 days only) are in the 30-Day Lineup now. Worked out in PHP from the Lineup's own phone list (no slow join), kept 10 minutes in a setting, 8 campaigns per call; {campaign id => n}. */
+function wl_camp_lineup_counts(PDO $pdo, array $ids): array
+{
+    $ids = array_values(array_filter(array_map('intval', $ids))); if (!$ids) return [];
+    $cache = json_decode((string)setting_get($pdo, 'wl_camp_lineup', ''), true); if (!is_array($cache)) $cache = [];
+    $out = []; $todo = []; foreach ($ids as $id) { $c = $cache[(string)$id] ?? null; if (is_array($c) && (int)($c['at'] ?? 0) > time() - 600) $out[$id] = (int)$c['n']; else $todo[] = $id; }
+    if ($todo) {
+        $set = []; try { foreach ($pdo->query("SELECT phone FROM wa_line_cust WHERE status IN ('active', 'replied')")->fetchAll(PDO::FETCH_COLUMN) as $ph) $set[(string)$ph] = 1; } catch (Throwable $e) { return $out; }
+        $from = date('Y-m-d H:i:s', time() - 30 * 86400); $done = 0;
+        foreach ($todo as $id) { if ($done >= 8) { $out[$id] = (int)($cache[(string)$id]['n'] ?? 0); continue; } $done++;
+            try { $q = $pdo->prepare("SELECT phone FROM wa_camp_items WHERE camp_id = ? AND status = 'sent' AND sent_at >= ? LIMIT 60000"); $q->execute([$id, $from]); $n = 0; foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $ph) if (isset($set[(string)$ph])) $n++; } catch (Throwable $e) { $n = 0; }
+            $out[$id] = $n; $cache[(string)$id] = ['n' => $n, 'at' => time()]; }
+        if (count($cache) > 300) $cache = array_slice($cache, -150, null, true); setting_set($pdo, 'wl_camp_lineup', json_encode($cache));
+    }
+    return $out;
+}
 /** The plan as the owner reads it: how many customers have each step still to go, on which day of the ladder it goes, and how many go on each calendar day (IST) for the next 31 days. */
 function wl_calendar(PDO $pdo): array
 {

@@ -7,7 +7,7 @@ foreach (["CREATE TABLE wa_contacts (phone TEXT PRIMARY KEY, name TEXT DEFAULT '
  "CREATE TABLE wa_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, wamid TEXT DEFAULT '', phone TEXT, dir TEXT, mtype TEXT DEFAULT 'text', body TEXT, status TEXT DEFAULT 'received', who TEXT DEFAULT 'customer', ts TEXT, err_code INT DEFAULT 0)",
  "CREATE TABLE wa_cust (phone TEXT PRIMARY KEY, n INT DEFAULT 0, last_order TEXT)", "CREATE TABLE shop_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, created_at TEXT, total REAL, tags TEXT DEFAULT '')",
  "CREATE TABLE wa_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT DEFAULT 'UTILITY', relabelled_at TEXT)", "CREATE TABLE wa_tpl_waba (tpl_id INT, waba_id TEXT, status TEXT)",
- "CREATE TABLE wa_camp_items (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, status TEXT, last_status TEXT, sent_at TEXT)", "CREATE TABLE wa_fu_ev (phone TEXT, status TEXT, sent_at TEXT)", "CREATE TABLE wa_wj_ev (phone TEXT, status TEXT, sent_at TEXT)"] as $q) $pdo->exec($q);
+ "CREATE TABLE wa_camp_items (id INTEGER PRIMARY KEY AUTOINCREMENT, camp_id INT DEFAULT 0, phone TEXT, status TEXT, last_status TEXT, sent_at TEXT)", "CREATE TABLE wa_fu_ev (phone TEXT, status TEXT, sent_at TEXT)", "CREATE TABLE wa_wj_ev (phone TEXT, status TEXT, sent_at TEXT)"] as $q) $pdo->exec($q);
 $S = []; function setting_get($p, $k, $d = '') { global $S; return $S[$k] ?? $d; } function setting_set($p, $k, $v) { global $S; $S[$k] = (string)$v; }
 function json_response($a, $c = 200) { throw new Exception('json_response'); } function wa_log($p, $k, $ok, $i) { }
 function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen($d) > 10 ? substr($d, -10) : $d; }
@@ -165,4 +165,7 @@ ok(isset($cl['6'], $cl['5']) && $cl['6']['orders'] === 1 && $cl['6']['revenue'] 
 $pdo->exec("CREATE TABLE lib_guide (id INTEGER PRIMARY KEY AUTOINCREMENT, version INT, status TEXT, body TEXT)"); $pdo->exec("CREATE TABLE order_rate_auto (tip TEXT, worked INT, at TEXT)");
 $pdo->prepare("INSERT INTO lib_guide (version, status, body) VALUES (25, 'live', ?)")->execute([json_encode(['openers' => ['Sir aapko konsa perfume buy karna hai?'], 'offers' => [['offer' => 'Combo of 50 ml bottles for the total ml row price', 'when' => 'after the customer names perfume and count']], 'do' => ['Prepaid ke liye poochho: 76% of those chats ended in an order']])]);
 $sg = wl_suggest($pdo, true); ok(count($sg['items']) === 3 && $sg['items'][0]['from'] === 'guidebook v25', 'winning sentences from the guidebook: ' . json_encode($sg['items']));
+// campaign cards: how many people of a campaign are in the Lineup
+$pdo->exec("INSERT INTO wa_camp_items (camp_id, phone, status, sent_at) VALUES (77, '9810000001', 'sent', '" . $f($now - 3600) . "'), (77, '9810000002', 'sent', '" . $f($now - 3600) . "'), (77, '9899999999', 'sent', '" . $f($now - 3600) . "')");
+$lc = wl_camp_lineup_counts($pdo, [77]); $exp = (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE phone IN ('9810000001', '9810000002') AND status IN ('active', 'replied')")->fetchColumn(); ok(($lc[77] ?? -1) === $exp && $exp >= 1, 'campaign 77: its people who are in the Lineup are counted (not the stranger): ' . json_encode($lc)); ok(wl_camp_lineup_counts($pdo, [77]) === $lc, 'second call comes from the cache');
 echo "lineup db ok\n";
