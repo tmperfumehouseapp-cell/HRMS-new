@@ -603,8 +603,16 @@ function wag_addon_calc(PDO $pdo, string $key): ?array
     } catch (Throwable $e) { }
     return null;
 }
+/** The three ready messages of the add-on offer (owner, 21 Nov: "make 2-3 messages in the pop-up, he sends the one he likes"): [label, text, with_buttons]. Prices are made by code. */
+function wag_addon_texts(array $x): array
+{
+    [$qty, $mlo, $tot, $p1, $p2, $ml] = $x;
+    return [['Buttons (easiest for the customer)', 'Sir, order final karne se pehle ek special offer 🎁 Aapke ' . $qty . ' x ' . $mlo . ' ml ke saath ek aur ' . $ml . ' ml perfume sirf Rs ' . $p1 . ' mein, ya do aur sirf Rs ' . $p2 . ' mein add kar sakte hain. Add karun?', true],
+        ['Plain message', 'Sir, order final karne se pehle ek chhota sa special offer 🎁 Aapke ' . $qty . ' x ' . $mlo . ' ml ke saath ek extra ' . $ml . ' ml sirf Rs ' . $p1 . ' mein, ya do extra sirf Rs ' . $p2 . ' mein. Kitne add karwana chahenge? 😊', false],
+        ['Short & friendly', 'Sir, is order ke saath ek extra ' . $ml . ' ml sirf Rs ' . $p1 . ' (ya 2 sirf Rs ' . $p2 . ') — add kar dun? 🙏', false]];
+}
 /** The order is final: offer the add-on (true = offered, the bot waits for the answer). */
-function wag_addon_offer(PDO $pdo, array $c, string $key): bool
+function wag_addon_offer(PDO $pdo, array $c, string $key, int $opt = 0, int $by = 0): bool
 {
     try { if ((string)setting_get($pdo, 'wag_addon_on', '1') === '0') return false; if (wag_meta_get($pdo, 'addon:' . $key, '') !== '') return false;   // once per customer
         $__cl = $pdo->prepare("INSERT IGNORE INTO wq_meta (k, v) VALUES (?, ?)"); $__cl->execute(['addon:' . $key, 'claim|' . time()]); if ($__cl->rowCount() !== 1) return false;   // atomic claim: two bot ticks at once must not send the offer twice
@@ -612,8 +620,9 @@ function wag_addon_offer(PDO $pdo, array $c, string $key): bool
         $__ci = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 3"); $__ci->execute([$key]); if (preg_match('/\b(not|nahi|nhi|galat|wrong|change|badal|cancel)\b/iu', implode(' ', $__ci->fetchAll(PDO::FETCH_COLUMN)))) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|disputed'); return false; }   // the customer disputes the quoted order ("this is my cart, not 8"): no offer on a stale price
         [$qty, $mlo, $tot, $p1, $p2, $ml] = $x;   // $mlo = the size he orders, $ml = the size of the add-on bottle (this assignment sat inside the comment above for a while: the offer went out with empty numbers)
         $li = (int)$pdo->query("SELECT MAX(id) FROM wa_messages WHERE phone = '" . addslashes($key) . "' AND dir = 'in'")->fetchColumn();
-        $txt = 'Sir, order final karne se pehle ek special offer 🎁 Aapke ' . $qty . ' x ' . $mlo . ' ml ke saath ek aur ' . $ml . ' ml perfume sirf Rs ' . $p1 . ' mein, ya do aur sirf Rs ' . $p2 . ' mein add kar sakte hain. Add karun?';
-        [$ok] = wa_send_buttons($pdo, $c, $txt, ['➕ 1 add Rs ' . $p1, '➕➕ 2 add Rs ' . $p2, '❌ Nahi'], 'bot', 0); if (!$ok) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|sendfail'); return false; }
+        $__tx = wag_addon_texts($x); $__o = $__tx[max(0, min(2, $opt))]; $txt = $__o[1];
+        if ($__o[2]) [$ok] = wa_send_buttons($pdo, $c, $txt, ['➕ 1 add Rs ' . $p1, '➕➕ 2 add Rs ' . $p2, '❌ Nahi'], $by > 0 ? 'emp' : 'bot', $by); else [$ok] = wa_send_text($pdo, $c, $txt, $by > 0 ? 'emp' : 'bot', $by);
+        if (!$ok) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|sendfail'); return false; }
         wag_meta_put($pdo, 'addon:' . $key, 'offered|' . time() . '|' . $li . '|' . $qty . '|' . $ml . '|' . $tot . '|' . $p1 . '|' . $p2);
         wag_addon_ensure($pdo); $pdo->prepare("INSERT INTO wag_addon (phone, emp_id, at, status, size_ml, total_before, p1, p2) VALUES (?, ?, ?, 'offered', ?, ?, ?, ?)")->execute([$key, (int)($c['assigned_emp'] ?? 0), date('Y-m-d H:i:s'), $ml, $tot, $p1, $p2]);
         wa_event($pdo, $key, '🧩 The bot offered an add-on before the link: 1 more ' . $ml . ' ml for Rs ' . $p1 . ' or 2 more for Rs ' . $p2 . ' (order Rs ' . $tot . ').'); return true;
@@ -656,6 +665,7 @@ function wag_addon_scan(PDO $pdo): void
         $q->execute([date('Y-m-d H:i:s', $now - 900), date('Y-m-d H:i:s', $now - 5)]);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $key = (string)$r['phone']; if (wag_meta_get($pdo, 'addon:' . $key, '') !== '') continue;
             $cs = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ? AND status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0)"); $cs->execute([$key]); $c = $cs->fetch(PDO::FETCH_ASSOC); if (!$c) continue;
+            if ((int)($c['assigned_emp'] ?? 0) > 0 && (int)strtotime((string)$r['ts']) > $now - 90) continue;   // a person holds the chat: his pop-up (messages to choose from) comes first, the system sends by itself after 90 s
             $lk = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND id > ? AND (body LIKE '%tmperfumehouse.com%' OR body LIKE '%payment link%' OR body LIKE '%cart link%' OR body LIKE '%pay.%' OR body LIKE '%rzp.io%' OR body LIKE '%razorpay%') LIMIT 1"); $lk->execute([$key, (int)$r['id'] - 30]); if ($lk->fetchColumn()) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|link'); continue; }   // the link is already sent: too late
             wag_addon_offer($pdo, $c, $key); }
     } catch (Throwable $e) { }
@@ -1876,15 +1886,22 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_addon_check': {   // 🧩 before the link: has the add-on offer gone out? ('' = not yet · offered · accepted · declined · passed · skip)
             $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $st = wag_meta_get($pdo, 'addon:' . $key, ''); $p = explode('|', $st);
             $can = (string)setting_get($pdo, 'wag_addon_on', '1') !== '0' && ($st === '' || $p[0] === 'skip') && wag_address_seen($pdo, $key) && wag_addon_calc($pdo, $key) !== null;
+            $__opts = []; if ($can) { $__x = wag_addon_calc($pdo, $key); if ($__x) foreach (wag_addon_texts($__x) as $__t) $__opts[] = ['label' => $__t[0], 'text' => $__t[1]]; }
             if ($can) wag_addon_count($pdo, (int)($auth['employee_id'] ?? 0), 'cart_open'); elseif ($p[0] === 'accepted') wag_addon_count($pdo, (int)($auth['employee_id'] ?? 0), 'cart_after_accept');
-            json_response(['ok' => true, 'state' => $p[0], 'can_offer' => $can, 'n' => $p[0] === 'accepted' ? (int)($p[2] ?? 0) : 0, 'amount' => $p[0] === 'accepted' ? (int)($p[3] ?? 0) : 0, 'left' => $p[0] === 'offered' ? max(0, 300 - (time() - (int)($p[1] ?? 0))) : 0]);
+            json_response(['ok' => true, 'options' => $__opts, 'state' => $p[0], 'can_offer' => $can && count($__opts) > 0, 'n' => $p[0] === 'accepted' ? (int)($p[2] ?? 0) : 0, 'amount' => $p[0] === 'accepted' ? (int)($p[3] ?? 0) : 0, 'left' => $p[0] === 'offered' ? max(0, 300 - (time() - (int)($p[1] ?? 0))) : 0]);
+        }
+        case 'wa.g_addon_skip': {   // the salesperson cancels the add-on offer for this customer (recorded: nobody can say "it was not offered")
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $me = (int)($auth['employee_id'] ?? 0);
+            if (wag_meta_get($pdo, 'addon:' . $key, '') === '') { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|person'); wag_addon_count($pdo, $me, 'cancelled'); wa_event($pdo, $key, '➕ The salesperson cancelled the add-on offer for this customer.'); }
+            json_response(['ok' => true]);
         }
         case 'wa.g_addon_offer': {   // 🧩 "Send add-on offer first": the same offer the bot sends by itself ~5 s after the address
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $me = (int)($auth['employee_id'] ?? 0);
             if (!$adm && (int)($c['assigned_emp'] ?? 0) !== $me) json_response(['error' => 'Only the person who holds this chat can send the add-on offer.'], 403);
             $st = wag_meta_get($pdo, 'addon:' . $key, ''); if (strpos($st, 'skip|') === 0) { try { $pdo->prepare("DELETE FROM wq_meta WHERE k = ?")->execute(['addon:' . $key]); } catch (Throwable $e) { } }
-            $ok = wag_addon_offer($pdo, $c, $key); if ($ok) wag_addon_count($pdo, $me, 'sent'); json_response(['ok' => $ok, 'message' => $ok ? 'The add-on offer was sent. Wait for the customer\'s answer, then make the link with the new total.' : 'The add-on offer could not be sent (no clear price in the chat, or already offered). You can make the link.']);
+            $ok = wag_addon_offer($pdo, $c, $key, max(0, min(2, (int)($in['opt'] ?? 0))), $me); if ($ok) wag_addon_count($pdo, $me, 'sent'); json_response(['ok' => $ok, 'message' => $ok ? 'The add-on offer was sent. Wait for the customer\'s answer, then make the link with the new total.' : 'The add-on offer could not be sent (no clear price in the chat, or already offered). You can make the link.']);
         }
         case 'wa.g_makelink': {   // 🔗 the holder is making the payment link / order link: the chat stays with him up to 8 minutes (it does not go back to OPEN)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
