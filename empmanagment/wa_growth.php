@@ -37,6 +37,13 @@ function wag_cfg(PDO $pdo): array
     try { if (setting_get($pdo, 'wag_bot120', '') !== '1') { setting_set($pdo, 'wag_bot120', '1'); if (function_exists('wq_put')) wq_put($pdo, 'wq_hold_sec', '120'); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): the bot answers EVERYONE who wrote, 4 s after the message, until a salesperson presses Take over; up to 500 answers a day for one customer
     try { if (setting_get($pdo, 'wag_bot4', '') !== '1') { setting_set($pdo, 'wag_bot4', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 4; $j['bot_max_day'] = 500; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): the guidebook learns to keep the sale when a customer cancels part of an order
+    try { if (setting_get($pdo, 'wag_rules2', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules2', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rule = 'When a customer cancels or cuts part of his order, do not just accept: explain that the bigger combo gives the best price per piece, suggest keeping all, replacing the dropped perfumes with others of his choice, or going up to the next combo (8 to 10); only if he insists again, accept and recalculate from the price chart. Never invent a discount.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $gb['owner_corrections'] = array_values(array_merge([['customer' => '7 and 4 cancel kardo (part of an 8 perfume order)', 'better' => 'Sir, 8 ka combo sabse best deal hai — 7 aur 4 hatane se rate badh jayega. Aap unki jagah koi aur 2 pasand ke perfume le lo, ya 10 ka combo le lo to per perfume aur sasta padega. Kaun se naye 2 add karu?']], (array)($gb['owner_corrections'] ?? [])));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): the guidebook gets the rule "perfumes only — no shower gel / wax / candle / solid perfume / 10 ml / roll-on / mini unless asked" (a standing correction survives the nightly rewrite)
     try { if (setting_get($pdo, 'wag_rules1', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules1', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
