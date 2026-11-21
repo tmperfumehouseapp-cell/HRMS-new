@@ -775,7 +775,7 @@ function wag_bot_tick(PDO $pdo, int $slots = 5): array
     try {
         if ($o['slot'] === 0) { setting_set($pdo, 'wag_tick_at', (string)time()); if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } } }
         $r = wag_bot_scan($pdo, 2); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];
-        try { $o['followup'] = wag_bot_followup($pdo, 1); } catch (Throwable $e) { }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
+        try { $o['followup'] = wag_bot_followup($pdo, 1); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
     } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_tick_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
     return $o;
 }
@@ -857,10 +857,11 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
     if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 20) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
     $day = date('Y-m-d'); if (setting_get($pdo, 'wag_bfu_day', '') !== $day) { setting_set($pdo, 'wag_bfu_day', $day); setting_set($pdo, 'wag_bfu_n', '0'); } $cap = max(0, (int)setting_get($pdo, 'wag_bfu_max_day', '2500')); if ((int)setting_get($pdo, 'wag_bfu_n', '0') >= $cap) return 0;
     $steps = [300, 600, 1200, 1800, 3600, 7200, 10800, 14400, 28800, 64800]; $n = 0;   // 5 m, 10 m, 20 m, 30 m, 1 h, 2 h, 3 h, 4 h (hold the customer), then slower: 8 h, 18 h — afterwards the 30-day Lineup takes over (owner, 21 Nov)
-    $st = $pdo->prepare("SELECT c.* FROM wa_contacts c JOIN (SELECT phone, MAX(ts) z FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= ? GROUP BY phone) b ON b.phone = c.phone WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= DATE_ADD(b.z, INTERVAL 5 SECOND) ORDER BY c.last_in_at ASC LIMIT 120");   // only chats where the BOT spoke last (a person / campaign / flow message after it = not ours)
+    $st = $pdo->prepare("SELECT c.* FROM wa_contacts c JOIN (SELECT phone, MAX(ts) z FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= ? GROUP BY phone) b ON b.phone = c.phone WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= DATE_ADD(b.z, INTERVAL 5 SECOND) ORDER BY c.last_in_at DESC LIMIT 120");   // only chats where the BOT spoke last (a person / campaign / flow message after it = not ours)
     $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - 22 * 3600 - 1800), date('Y-m-d H:i:s', $now - 150)]);
-    foreach ($st->fetchAll() as $c) {
-        if ($n >= $max) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at']; $liT = strtotime($li);
+    $__rows = $st->fetchAll(); $D = ['cand' => count($__rows), 'early' => 0, 'old' => 0, 'off' => 0, 'hand' => 0, 'hotp' => 0, 'notsales' => 0, 'ai' => 0, 'handoff' => 0, 'unsafe' => 0, 'same' => 0, 'send' => 0, 'sent' => 0, 'err' => '']; $__tries = 0; $__t0 = microtime(true);
+    foreach ($__rows as $c) {
+        if ($n >= $max || $__tries >= 4 || microtime(true) - $__t0 > 12) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at']; $liT = strtotime($li);
         $f = wag_meta_get($pdo, 'bgf:' . $key, ''); $fp = $f === '' ? [] : explode('|', $f); $cnt = ($fp && ($fp[0] ?? '') === $li) ? (int)($fp[1] ?? 0) : 0; $lastF = ($fp && ($fp[0] ?? '') === $li) ? (int)($fp[2] ?? 0) : 0;
         if ($cnt >= count($steps) + 1) continue;
         if ($cnt === count($steps)) {   // all 10 follow-ups are sent and the customer is still silent: the chat goes OUT to the market (orange) — anybody who wants to try may take it
@@ -871,13 +872,14 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
             if (function_exists('wa_mkt_note')) { try { wa_mkt_note($pdo, $key, 0, 'offered', -1, 'followup'); } catch (Throwable $e) { } }
             wa_event($pdo, $key, '🟠 The customer did not answer the bot\'s 10 follow-ups: the chat is in OPEN (orange) — anybody who wants to try can take it.'); $n++; continue;
         }
-        if ($cnt >= count($steps)) continue; $__need = $steps[$cnt]; $__gap = 180;
+        if ($cnt >= count($steps)) continue; if ($cnt === 0 && $now - $liT > 6 * 3600) { $D['old']++; continue; }   // a customer who has been silent for hours is for the 30-day Lineup, not for the first minutes ladder
+        $__need = $steps[$cnt]; $__gap = 180;
         if ($cnt === 0 && $now - $liT >= 150) { $__rs = $pdo->prepare("SELECT status FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' ORDER BY id DESC LIMIT 1"); $__rs->execute([$key]); if ((string)$__rs->fetchColumn() === 'read') { $__need = 150; $__gap = 120; } }   // read (blue ticks) but silent = a warm customer: the first follow-up comes after 2.5 min instead of 5
-        if ($now - $liT < $__need) continue; if ($lastF && $now - $lastF < 240) continue; if ($now - (int)strtotime((string)$c['last_out_at']) < $__gap) continue;
-        if (wag_bot_off($pdo, $key) || (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key))) continue;
-        $bh = wag_meta_get($pdo, 'bothand:' . $key, ''); if ($bh !== '' && strtotime($bh) >= $liT) continue;   // the bot handed this customer to a person
-        if (!empty($c['hot']) && !empty($c['assigned_emp'])) continue;   // a person holds a hot chat: his job
-        if (function_exists('wag_is_sales_query') && !wag_is_sales_query($pdo, $c)) continue;   // only sales queries (not after-sales / complaints)
+        if ($now - $liT < $__need || ($lastF && $now - $lastF < 240) || $now - (int)strtotime((string)$c['last_out_at']) < $__gap) { $D['early']++; continue; }
+        if (wag_bot_off($pdo, $key) || (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key))) { $D['off']++; continue; }
+        $bh = wag_meta_get($pdo, 'bothand:' . $key, ''); if ($bh !== '' && strtotime($bh) >= $liT) { $D['hand']++; continue; }   // the bot handed this customer to a person
+        if (!empty($c['hot']) && !empty($c['assigned_emp'])) { $D['hotp']++; continue; }   // a person holds a hot chat: his job
+        if (function_exists('wag_is_sales_query') && !wag_is_sales_query($pdo, $c)) { $D['notsales']++; continue; }   // only sales queries (not after-sales / complaints)
         $q = $pdo->prepare("SELECT who, body, ts, mtype FROM wa_messages WHERE phone = ? AND dir != 'sys' ORDER BY id DESC LIMIT 6"); $q->execute([$key]); $rows = $q->fetchAll(); if (!$rows) continue;
         $lastOut = $rows[0]; if ((string)$lastOut['who'] !== 'bot' && !($cnt > 0)) continue;   // only a customer the BOT was talking to; later steps continue after our own follow-up
         if ($cnt > 0 && (string)$lastOut['who'] !== 'bot') continue; if ((string)$lastOut['mtype'] !== 'text') continue;
@@ -885,14 +887,16 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
         if (preg_match('/(stop|unsubscribe|not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|no thanks|don.?t message|remove)/iu', $lastIn)) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }
         $fl = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $fl->execute([$key]); if ((int)$fl->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now);   // claimed before the AI call: never twice
-        $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0);
-        if (empty($r['ok']) || !empty($r['handoff']) || trim((string)($r['text'] ?? '')) === '' || wag_bot_unsafe((string)$r['text'])) continue;
-        $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) continue; }   // never the same text again
+        $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0); $__tries++;
+        if (empty($r['ok']) || trim((string)($r['text'] ?? '')) === '') { $D['ai']++; $D['err'] = mb_substr((string)($r['why'] ?? ''), 0, 80); continue; }
+        if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
+        $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) { $D['same']++; continue; } }   // never the same text again
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
-        if ($ok) { $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up (step ' . ($cnt + 1) . ' of 10, ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
-        else wag_log($pdo, 'bot', false, $key . ' · follow-up: ' . $res);
+        if ($ok) { $D['sent']++; $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up (step ' . ($cnt + 1) . ' of 10, ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
+        else { $D['send']++; $D['err'] = mb_substr((string)$res, 0, 80); wag_log($pdo, 'bot', false, $key . ' · follow-up: ' . $res); }
     }
+    $D['at'] = date('H:i:s'); setting_set($pdo, 'wag_bfu_dbg', json_encode($D));
     return $n;
 }
 /** Chats a customer wrote to and nobody answered for N minutes: one note in the chat, one push to the person and to the admins. */
