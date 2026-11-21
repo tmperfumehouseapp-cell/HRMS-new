@@ -94,6 +94,14 @@ function wag_cfg(PDO $pdo): array
             $gb['dont'] = array_values(array_merge([$rule], array_slice((array)($gb['dont'] ?? []), 0, 20)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '(any message while perfumes are discussed)', 'better' => $rule]], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): NO TM Originals / "OG" / "build your own original combo 3499" suggestions (own pricing, not needed) — everything about them leaves the guidebook and a standing rule is added; they come back only when a person suggests them by hand
+    try { if (setting_get($pdo, 'wag_rules9', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules9', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rx = '/(\bOGs?\b|originals?\b|dress to impress|compliment getter|dark side|caffeine club|build your own|\b3499\b)/iu';
+            $clean = function ($v) use (&$clean, $rx) { if (is_array($v)) { $o = []; foreach ($v as $k => $x) { if (is_string($x) ? preg_match($rx, $x) : (is_array($x) && preg_match($rx, json_encode($x, JSON_UNESCAPED_UNICODE)))) continue; $o[$k] = is_array($x) ? $clean($x) : $x; } return is_list_arr($o) ? array_values($o) : $o; } return $v; };
+            $gb = $clean($gb); $rule = 'Never suggest or mention TM Originals / OG / "build your own original combo" (own pricing). Offer only our normal perfumes and the price chart; Originals only if a person suggests them by hand.';
+            $gb['dont'] = array_values(array_merge([$rule], array_slice((array)($gb['dont'] ?? []), 0, 20)));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov: "as fast as possible"): the bot starts 2 s after the message (the answer itself takes the AI 3-5 s)
     try { if (setting_get($pdo, 'wag_bot2', '') !== '1') { setting_set($pdo, 'wag_bot2', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 2; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
@@ -605,6 +613,7 @@ function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
 }
 /** OWNER (21 Nov): a HOT chat (ready to order / pay, or handed over by the bot) that the person who holds it has not answered for 4 minutes (setting wag_hot_open_min) is taken off that person and put into OPEN (Requests): everybody sees it and anybody picks it. Once per customer message; the person who missed it is remembered for the admin card. */
 /** 🌡 The open-market timing tunes itself (owner, 21 Nov): the minutes a hot chat waits before it goes back to OPEN (base) and while its holder is busy (busy) follow the load. MANY people working = chats are picked up fast, so the rule is SHORTER; a quiet time (few people writing) = LONGER again. Active people = who wrote to a customer in the last 10 minutes; queue = customers of the last 3 hours waiting 2+ minutes for an answer. Re-computed once a minute; base 4-10, busy 6-14. [base, busy] */
+function is_list_arr(array $a): bool { return $a === [] || array_keys($a) === range(0, count($a) - 1); }
 function wag_open_tune(PDO $pdo): array
 {
     $last = (int)setting_get($pdo, 'wag_tune_at', '0'); $b0 = (int)setting_get($pdo, 'wag_hot_open_min_eff', '7'); $y0 = (int)setting_get($pdo, 'wag_hot_open_busy_eff', '10');
