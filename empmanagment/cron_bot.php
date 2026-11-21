@@ -22,9 +22,13 @@ $host = 'staging.fourpirates.space'; $n = 0; $fail = 0;
 $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $host]]);
 $req = "GET /empmanagment/api.php?action=wa.bot_tick&key=" . urlencode($key) . " HTTP/1.1\r\nHost: $host\r\nUser-Agent: wa-bot-heartbeat\r\nConnection: close\r\n\r\n";
 $reqFu = str_replace("action=wa.bot_tick&", "action=wa.bot_tick&role=fuw&", $req);   // 🔁 TWO follow-up workers, each one long request (50 s) that loops follow-up rounds, started once at the start of this 58-second run   // one extra tick a second only for FOLLOW-UPS (own slots): customer answers are never held back by a follow-up round, and follow-ups no longer starve (owner, 21 Nov)
-for ($w = 0; $w < 1; $w++) { $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 1, STREAM_CLIENT_CONNECT, $ctx); if ($fp) { @fwrite($fp, $reqFu); @fclose($fp); $n++; } else $fail++; }
+// The connections are KEPT OPEN for a few seconds (the follow-up worker for the whole run): a request that had to wait in the web server's queue was dropped when we closed the socket at once (nginx cancels a request whose client has gone) - the follow-up worker never started (wag_fuw_n = 0) and ticks were lost (heartbeat gaps up to 155 s).
+$open = [];
+$fire = function (string $rq, float $keep) use (&$open, &$n, &$fail, $ctx) { $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 1, STREAM_CLIENT_CONNECT, $ctx); if (!$fp) { $fail++; return; } @fwrite($fp, $rq); @stream_set_blocking($fp, false); $open[] = [$fp, microtime(true) + $keep]; $n++; };
+$fire($reqFu, 70.0);
 while (microtime(true) - $t0 < 58) {
-    for ($i = 0; $i < 3; $i++) { if (microtime(true) - $t0 >= 57) break 2; $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 1, STREAM_CLIENT_CONNECT, $ctx); if (!$fp) { $fail++; continue; } @fwrite($fp, $req); @fclose($fp); $n++; }
+    for ($i = 0; $i < 3; $i++) { if (microtime(true) - $t0 >= 57) break 2; $fire($req, 4.0); }
+    foreach ($open as $k => $o) { if ($o[1] < microtime(true)) { @fclose($o[0]); unset($open[$k]); } }
     usleep(1000000);
 }
 echo date('Y-m-d H:i:s') . " bot heartbeat: $n ticks fired, $fail failed to connect in " . round(microtime(true) - $t0, 1) . "s\n";
