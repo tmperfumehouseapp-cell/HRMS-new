@@ -39,7 +39,7 @@
 <div class="app">
   <div id="sidebar"></div>
   <main class="main">
-    <div class="topbar"><div><h1>Finance New · Incoming</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Your two major incomes: Prepaid and COD <span style="margin-left:8px;padding:1px 8px;border-radius:999px;background:#e3f6ee;color:#0d7a55;font-weight:800;font-size:11px">version 21 Nov · PayU comparison</span></div></div></div>
+    <div class="topbar"><div><h1>Finance New · Incoming</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Your two major incomes: Prepaid and COD <span style="margin-left:8px;padding:1px 8px;border-radius:999px;background:#e3f6ee;color:#0d7a55;font-weight:800;font-size:11px">version 21 Nov · Diagnose</span></div></div></div>
     <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
   </main>
 </div>
@@ -87,23 +87,36 @@
   const colName = (h, i) => (i + 1) + '. ' + (h[i] || '(empty)');
   async function chSection(id) {
     const c = Object.values(CH.channels).flat().find((x) => x.id === id); if (!c) return;
-    curChName = c.name;
+    curChName = c.name; curPrev = null;
     let ups = []; try { ups = (await api.get('fn.in_uploads', { channel_id: id })).uploads; } catch (e) { ups = []; }
     const mo = new Date(CH.month_from + 'T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     open(c.name + ' · ' + (CH.channels.cod.some((x) => x.id === id) ? 'COD' : 'Prepaid'), `
       <div class="k3" style="margin-bottom:0"><div class="k"><small>Net income · ${esc(mo)}</small><b>${m2(c.month)}</b><span>${c.files_month || 0} file${c.files_month === 1 ? '' : 's'} + receipts</span></div>
         <div class="k"><small>Gross from files</small><b>${m2(c.gross_month)}</b><span>before charges</span></div>
         <div class="k"><small>Charges taken</small><b>${m2(c.fee_month)}</b><span>fees + GST</span></div></div>
-      <div class="sx-card"><div class="cap" style="margin-top:0">Upload the UTR file</div>
+      <div class="sx-card"><div style="display:flex;align-items:center;gap:8px"><div class="cap" style="margin:0;flex:1">Upload the UTR file</div><button class="sx-btn" id="uDiag" style="padding:2px 12px" title="Checks everything and writes a report you can copy and send to Claude">🩺 Diagnose</button></div>
         <div class="sx-r2"><label class="sx-f">Day the money came<input class="sx-in" id="uDay" type="date" value="${esc(day)}" max="${esc(O.today)}"></label>
         <label class="sx-f">Orders of day <small class="sx-mut">(T+1: the day before)</small><input class="sx-in" id="uOd" type="date" value="${esc(addDays(day, -1))}" max="${esc(O.today)}"></label></div>
         <label class="sx-f" style="margin-top:8px">Came into (bank)<select class="sx-in" id="uAcc">${ACC.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label>
         <label class="drop" for="uFile">Choose the settlement / UTR file (.xlsx or .csv)<small>The columns are found by themselves; you can correct them before saving.</small></label><input type="file" id="uFile" accept=".xlsx,.csv,.txt,.tsv" style="display:none">
         <div id="uMsg" style="margin-top:8px"></div><div id="uPrev"></div></div>
+      <div id="uDiagOut"></div>
       <div id="uRecon"><div class="sx-card"><div class="sx-mut">Loading the prepaid orders…</div></div></div>
       <div class="sx-card wrap"><div class="cap" style="margin-top:0">Files saved for ${esc(c.name)}</div>
         ${ups.length ? `<table class="tb"><tr><th>Day</th><th>File</th><th>Rows</th><th>Gross</th><th>Charges</th><th>Net</th><th></th></tr>${ups.map((u) => `<tr class="${u.status === 'void' ? 'void' : ''}"><td>${esc(dFmt(u.day))}<small>${esc(u.account)}</small></td><td style="text-align:left">${esc(u.file)}${u.status === 'void' ? '<small>cancelled: ' + esc(u.void_reason) + '</small>' : u.orders_day ? '<small>orders of ' + esc(dFmt(u.orders_day)) + '</small>' : ''}</td><td>${u.rows}</td><td>${m2(u.gross)}</td><td>${m2(u.fee)}</td><td><b>${m2(u.net)}</b></td><td style="white-space:nowrap">${u.status === 'ok' && u.has_recon ? `<button class="sx-btn" data-uprec="${u.id}" style="padding:2px 10px">Compare</button> ` : ''}${u.status === 'ok' ? `<button class="sx-btn" data-upvoid="${u.id}" data-ch="${id}" style="padding:2px 10px">Cancel</button>` : ''}</td></tr>`).join('')}</table>` : '<div class="sx-mut">No file yet.</div>'}</div>
       <button class="sx-btn" data-addrec="${id}">+ Add a receipt without a file</button>`, '', true);
+    $('uDiag').onclick = async () => {
+      const out = $('uDiagOut'); out.innerHTML = '<div class="sx-card"><div class="sx-mut">Checking everything…</div></div>';
+      try {
+        const body = Object.assign({ channel_id: id, orders_day: $('uOd').value, client: { ver: PAGE_VER, day: $('uDay').value, mode: $('uDm') ? $('uDm').value : '' } }, curPrev ? Object.assign({ upload_id: curPrev.id }, curPrev.get()) : {});
+        const r = await api.post('fn.in_diag', body);
+        out.innerHTML = `<div class="sx-card"><div style="display:flex;align-items:center;gap:8px"><div class="cap" style="margin:0;flex:1">🩺 Diagnosis <small class="sx-mut">${curPrev ? 'with the file chosen now' : 'no file chosen yet: choose the file and press Diagnose again for the full check'}</small></div><button class="sx-btn" id="dgCopy" style="padding:2px 12px">Copy all</button></div>
+          <textarea id="dgBox" readonly style="width:100%;height:280px;margin-top:8px;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--sx-line);border-radius:12px;padding:8px;background:#fafbfc">${esc(r.text)}</textarea>
+          <div class="sx-mut" style="font-size:12px;margin-top:4px">Copy this and send it to Claude. It has no customer names, phone numbers or e-mails (only the last 4 digits of a phone).</div></div>`;
+        $('dgCopy').onclick = async () => { const t = $('dgBox'); try { await navigator.clipboard.writeText(t.value); $('dgCopy').textContent = 'Copied ✓'; } catch (e) { t.focus(); t.select(); $('dgCopy').textContent = 'Now press Ctrl+C'; } };
+        out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (e) { note('uDiagOut', e.message, 1); }
+    };
     const ordersOnly = async () => {
       const el = $('uRecon'); if (!el) return;
       try {
@@ -149,7 +162,8 @@
       <button class="sx-btn" data-copyd="1" style="padding:2px 10px;margin-top:8px">Copy this to send to Claude</button><textarea style="position:absolute;left:-9999px" id="dgTxt" readonly>${esc(txt)}</textarea></div></details>`;
   }
   // ---------- the comparison: your prepaid orders of a day against the settlement file
-  let curChName = '';
+  const PAGE_VER = 'Incoming 21 Nov · diagnose v1';
+  let curChName = '', curPrev = null;
   function renderRecon(el, rc, title) {
     let filt = 'all', all = false;
     const draw2 = () => {
@@ -187,6 +201,7 @@
       <details style="margin-top:8px"><summary class="sx-mut" style="cursor:pointer;font-size:12.5px">First rows as read</summary><div class="wrap"><table class="tb"><tr>${H.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${p.sample.map((r) => `<tr>${H.map((_, i) => `<td>${esc(r[i] || '')}</td>`).join('')}</tr>`).join('')}</table></div></details>
       <button class="sx-btn big" id="uSave" style="margin-top:10px" disabled>Save</button>`;
     let last = null, incl = true;
+    curPrev = { id: p.upload_id, get: () => ({ cols: M, include_pending: incl ? 1 : 0, day_filter: dayFilter() }) };
     const dayFilter = () => { const m = $('uDm') ? $('uDm').value : 'tx'; if (m === 'tx' && M.date >= 0) return { col: M.date, day: $('uOd').value }; if (m === 'settle' && M.sdate >= 0) return { col: M.sdate, day: $('uDay').value }; return null; };      // add the payments that are not settled yet (PayU settles them today)
     const show = (r) => {
       last = r; const onlyRecord = r.rows === 0 && r.already > 0; const bad = r.dups > 0 || (r.net <= 0 && !onlyRecord);
