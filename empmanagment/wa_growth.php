@@ -562,6 +562,20 @@ function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
     } catch (Throwable $e) { wag_log($pdo, 'bot', false, 'hot open sweep: ' . $e->getMessage()); }
     return $n;
 }
+/** The EXACT price from our chart for the quantity the customer chose (owner, 21 Nov: with nothing negotiated yet the bot starts at the 6.5% level, never at a deep combo price; the AI had used the 3 x 50 ml price for 5 x 50 ml). '' when the chat names no quantity x size. */
+function wag_price_context(PDO $pdo, string $phone, array $msgs): string
+{
+    $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return '';
+    $txt = ''; $cust = ''; foreach (array_slice($msgs, -10) as $m) { $t = mb_strtolower((string)($m['text'] ?? '')); $txt .= ' ' . $t; if (($m['who'] ?? '') === 'customer') $cust .= ' ' . $t; }
+    $qty = 0; $size = 0;
+    if (preg_match_all('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/u', $txt, $mm, PREG_SET_ORDER)) { $l = end($mm); $qty = (int)$l[1]; $size = (int)$l[2]; }
+    else { if (preg_match_all('/\b(10|20|30|50|100)\s*ml\b/u', $txt, $sm)) $size = (int)end($sm[1]); if ($size && preg_match_all('/(?<![\d.])(\d{1,2})(?![\d.])(?!\s*ml)/u', $cust, $qm)) { $qty = (int)end($qm[1]); } }
+    if ($qty < 1 || $qty > 30 || $size < 10) return ''; $total = $qty * $size; $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $total) { $row = $r; break; } if (!$row || empty($row['p'])) return '';
+    $idx = 1; foreach ($cols as $i => $cv) if (abs($cv - 6.5) < 0.01) $idx = $i; $seen = false;
+    if (function_exists('pc_chat_level') && $phone !== '') { try { $lv = pc_chat_level($pdo, $phone); if (empty($lv['default'])) { $seen = true; foreach ($cols as $i => $cv) if (abs($cv - (float)$lv['pct']) < 0.01) $idx = max($idx, $i); } } catch (Throwable $e) { } }
+    $v0 = (int)($row['p'][$idx] ?? 0); if ($v0 <= 0) return ''; $nx = min(count($cols) - 1, $idx + 1); $v1 = (int)($row['p'][$nx] ?? 0);
+    return 'PRICE FROM OUR CHART for this customer (use ONLY these numbers for ' . $qty . ' x ' . $size . ' ml = ' . $total . ' ml total; never take a price from the combo list for a different quantity or ml): ' . ($seen ? 'the price he has already seen is Rs ' . $v0 . ' — repeat it, do not quote higher or lower unless he pushes back on price' : 'nothing is negotiated yet: quote Rs ' . $v0 . ' (the start level) and do NOT give a lower price') . '.' . ($v1 > 0 && $v1 < $v0 ? ' ONLY if he objects to that price after you quoted it, the next price you may give is Rs ' . $v1 . '.' : '') . ' Always say the total ml correctly (' . $total . ' ml).';
+}
 /** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
 function wag_bot_off(PDO $pdo, string $key, bool $ignoreHand = false): bool
 {
@@ -665,7 +679,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if (!$__stuck && wag_neg_skip($pdo, 'bgn:' . $key, (int)$m['id'])) continue;   // already tried for this message
         $__wqc = function_exists('wq_guard') ? wq_guard($pdo, $key, (int)$m['id'], 'reply', 'bot') : true; if (!$__wqc) continue;   // one answer per customer message: bot, holding message or countdown — whoever claims first
         wag_bot_typing($pdo, $c, (string)($m['wamid'] ?? ''));   // the customer sees "typing…" at once (WhatsApp shows it for up to 25 s) while the answer is made
-        $f0 = ai_feat('wa_bot'); $GLOBALS['lib_fast'] = 1; if ($__order) $GLOBALS['lib_order_mode'] = 1; $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fast'], $GLOBALS['lib_order_mode']); ai_feat($f0);
+        $f0 = ai_feat('wa_bot'); $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; if ($__order) $GLOBALS['lib_order_mode'] = 1; $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fast'], $GLOBALS['lib_order_mode'], $GLOBALS['lib_phone']); ai_feat($f0);
         if (!$r['ok']) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], false); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (stripos((string)$r['why'], 'not been taught') !== false) { wag_log($pdo, 'bot', false, 'The bot has not been taught yet — nothing was sent.'); break; } continue; }
         if (empty($r['handoff'])) { try { $pb = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND mtype = 'text' ORDER BY id DESC LIMIT 1"); $pb->execute([$key]); $pt = (string)$pb->fetchColumn(); if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $__pc); if ($__pc >= 82) { $r['handoff'] = true; wag_log($pdo, 'bot', false, $key . ' · the bot was about to repeat itself — a person takes over'); } } } catch (Throwable $e) { } }   // the same question twice = the bot is stuck: a person
         if (empty($r['handoff']) && wag_bot_unsafe((string)$r['text'])) { $r['handoff'] = true; wag_log($pdo, 'bot', false, $key . ' · blocked an unsafe reply (invented offer / payment claim) — a person takes over'); }
