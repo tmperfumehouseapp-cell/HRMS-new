@@ -770,6 +770,19 @@ function wag_hot_is_done(PDO $pdo, string $phone, string $lastIn = ''): bool
     } catch (Throwable $e) { }
     return false;
 }
+/** 🎯 FAIR SHARE of new queries (owner, 21 Nov: "queries come in and are taken in seconds — some people take many; the best ratio may always see them, the others equal: whoever took a query recently does not see the NEXT new queries for a short time, the others who did not take see them first; if nobody takes, it goes to the other section for everybody"). A NEW query (arrived less than wag_fair_window seconds ago, 45 by default) is hidden from a person who is NOT a star (best conversion) and who took queries lately: he rests 40 s per query taken in the last 30 minutes (max 4 minutes). After the window every query is visible to everybody. Switch: wag_fair_on = 0. */
+function wag_fair_state(PDO $pdo, int $emp): array
+{
+    static $c = []; $ck = $emp . ':' . (int)(time() / 10); if (isset($c[$ck])) return $c[$ck];
+    $r = ['hidden' => false, 'left' => 0, 'star' => false, 'picks' => 0, 'window' => 45];
+    try { if ($emp <= 0 || (string)setting_get($pdo, 'wag_fair_on', '1') === '0') return $c[$ck] = $r; $r['window'] = max(10, min(180, (int)setting_get($pdo, 'wag_fair_window', '45')));
+        $q = $pdo->prepare("SELECT COUNT(DISTINCT phone), MAX(at) FROM wa_mkt WHERE emp_id = ? AND kind = 'taken' AND at >= ?"); $q->execute([$emp, date('Y-m-d H:i:s', time() - 1800)]); $x = $q->fetch(PDO::FETCH_NUM); $picks = (int)($x[0] ?? 0); $last = $x[1] ? (int)strtotime((string)$x[1]) : 0; $r['picks'] = $picks;
+        static $stars = null, $sAt = 0; if ($stars === null || time() - $sAt > 120) { $sAt = time(); $stars = []; $d7 = function_exists('wag_real_queries') ? wag_real_queries($pdo, 7) : []; $tq = 0; $to = 0; foreach ($d7 as $v) { $tq += $v[0]; $to += $v[1]; } $avg = $tq >= 40 && $to > 0 ? $to / $tq : 0; if ($avg > 0) foreach ($d7 as $e2 => $v) if ($v[0] >= 10 && $v[1] >= 1 && $v[1] / $v[0] >= 1.2 * $avg) $stars[(int)$e2] = 1; }
+        $r['star'] = isset($stars[$emp]);   // the best ratio always sees every new query
+        if (!$r['star'] && $picks >= 1 && $last > 0) { $cd = min(240, 40 + 40 * $picks); $since = time() - $last; if ($since < $cd) { $r['hidden'] = true; $r['left'] = $cd - $since; } }
+    } catch (Throwable $e) { }
+    return $c[$ck] = $r;
+}
 function wag_open_tune(PDO $pdo): array
 {
     $last = (int)setting_get($pdo, 'wag_tune_at', '0'); $b0 = (int)setting_get($pdo, 'wag_hot_open_min_eff', '7'); $y0 = (int)setting_get($pdo, 'wag_hot_open_busy_eff', '10');
@@ -1791,7 +1804,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_mkt_top': {   // 🏪 for every salesperson: who are the best right now (shown above the OPEN list) and my own rank
             $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released'], 'q' => 0, 'o' => 0];
             try { if ($my) { $__d = wag_real_queries($pdo, 1); $my['q'] = (int)($__d[$me][0] ?? 0); $my['o'] = (int)($__d[$me][1] ?? 0); } } catch (Throwable $e) { }   // the owner's definition: no campaign, no community — same as the sales strip
-            json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me)]);
+            json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me), 'fair' => wag_fair_state($pdo, $me)]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
             $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'engaged' => $l['engaged'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on', 'can_mk' => ((int)($c['assigned_emp'] ?? 0) > 0 && (int)($c['assigned_emp'] ?? 0) === (int)($auth['employee_id'] ?? 0) && (string)($c['status'] ?? '') === 'open' && wag_address_seen($pdo, (string)$c['phone'])), 'mk_left' => (function () use ($pdo, $c) { $v = wag_meta_get($pdo, 'mklink:' . (string)$c['phone'], ''); return $v === '' ? 0 : max(0, 3600 - (time() - (int)strtotime($v))); })()]);
