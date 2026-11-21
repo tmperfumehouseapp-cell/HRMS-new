@@ -910,8 +910,9 @@ function wl_new_topic(PDO $pdo): string
 }
 function wl_learn_night(PDO $pdo): void
 {
-    [$td, $h] = wl_ist(time()); if ($h < 2 || $h >= 5 || (string)setting_get($pdo, 'wl_learn_day', '') === $td) return;
-    if (function_exists('wa_lock') && !wa_lock($pdo, 'wllearn', 280)) return; setting_set($pdo, 'wl_learn_day', $td);
+    // TWICE A DAY (owner, 21 Nov): the night run (02-05 IST) and an afternoon run (14-17 IST); the marker is "date|am" / "date|pm" (the old plain date counts as the night run)
+    [$td, $h] = wl_ist(time()); $slot = ($h >= 14 && $h < 17) ? 'pm' : (($h >= 2 && $h < 5) ? 'am' : ''); $__ld = (string)setting_get($pdo, 'wl_learn_day', ''); if ($slot === '' || $__ld === $td . '|' . $slot || ($slot === 'am' && $__ld === $td)) return;
+    if (function_exists('wa_lock') && !wa_lock($pdo, 'wllearn', 280)) return; setting_set($pdo, 'wl_learn_day', $td . '|' . $slot);
     try { $rep = wl_report($pdo, 30, 30); } catch (Throwable $e) { return; }
     foreach ([fn() => wl_days_auto($pdo, $rep), fn() => wl_new_word($pdo, $rep), fn() => wl_theme_scan($pdo), fn() => wl_new_topic($pdo), function () use ($pdo) { $x = wl_suggest($pdo, true); return 'sentences: ' . count($x['items']) . ' winning sentences listed'; }] as $step) { try { $m = $step(); if ($m !== '') wl_learn_log($pdo, $m); } catch (Throwable $e) { wl_learn_log($pdo, 'learning step failed: ' . $e->getMessage()); } }
 }

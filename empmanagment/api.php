@@ -10629,8 +10629,9 @@ function lib_guide_go_live(PDO $pdo, array $draft, string $who): void
 function lib_guide_nightly(PDO $pdo, int $budget): ?string { $f0 = ai_feat('wa_guide'); try { return lib_guide_nightly_x($pdo, $budget); } finally { ai_feat($f0); } }
 function lib_guide_nightly_x(PDO $pdo, int $budget): ?string
 {
-    $today = date('Y-m-d'); $last = setting_get($pdo, 'lib_guide_nightly', ''); $first = ($last === '');
-    if (!$first && ($last === $today || (int)date('G') < 2)) return null;
+    // TWICE A DAY (owner, 21 Nov: "why wait for the night? update the guidebook twice a day"): the 02:00 run and a 14:00 run; the marker is "date|am" / "date|pm" (the old plain date counts as the morning run)
+    $today = date('Y-m-d'); $last = setting_get($pdo, 'lib_guide_nightly', ''); $first = ($last === ''); $__h = (int)date('G'); $__slot = $__h >= 14 ? 'pm' : ($__h >= 2 ? 'am' : '');
+    if (!$first && ($__slot === '' || $last === $today . '|' . $__slot || ($__slot === 'am' && $last === $today))) return null;
     $note = '';
     $draft = lib_guide_row($pdo, 'draft');
     if ($first && $draft) {      // the very first time: the guidebook that is already waiting goes live now
@@ -10642,11 +10643,11 @@ function lib_guide_nightly_x(PDO $pdo, int $budget): ?string
         if ($ok) { $d2 = lib_guide_row($pdo, 'draft'); if ($d2 && ($d2['source'] ?? '') === 'ai') {
                 $lv = lib_guide_public(lib_guide_row($pdo, 'live')); $dp = lib_guide_public($d2); [$ad, $de, $pc] = $lv ? lib_guide_change($lv['body'], $dp['body']) : [0, 0, 0];
                 // the owner asked for full auto: every AI-written guidebook goes live by itself (a draft written from numbers only, without real points, still waits)
-                lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live by itself' . ($lv ? ' (' . $pc . '% of the points changed: +' . $ad . ' new, −' . $de . ' removed)' : '') . '.';
+                lib_guide_go_live($pdo, $d2, 'Auto (' . ($__slot === 'pm' ? '2 PM' : '2 AM') . ')'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live by itself' . ($lv ? ' (' . $pc . '% of the points changed: +' . $ad . ' new, −' . $de . ' removed)' : '') . '.';
             } else $note = 'Written from numbers only, kept as a draft.'; }
         else $note = 'Not updated: ' . $msg;
     }
-    setting_set($pdo, 'lib_guide_nightly', $today); setting_set($pdo, 'lib_guide_nightly_note', date('Y-m-d H:i') . ' — ' . $note);
+    setting_set($pdo, 'lib_guide_nightly', $today . '|' . ($__slot !== '' ? $__slot : 'am')); setting_set($pdo, 'lib_guide_nightly_note', date('Y-m-d H:i') . ' — ' . $note);
     return $note;
 }
 function lib_tick_run(PDO $pdo, int $max, int $budget): array
