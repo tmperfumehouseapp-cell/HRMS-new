@@ -425,7 +425,7 @@ function wln_price_info(PDO $pdo, string $phone, int $ml = 200): ?array
 {
     $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return null;
     $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $ml) { $row = $r; break; } if (!$row || empty($row['p'])) return null;
-    $base = 1; foreach ($cols as $i => $cv) if (abs($cv - 6.5) < 0.01) $base = $i;   // the photo / first offer starts at 6.5%
+    $base = 0; $bb = 1e9; foreach ($cols as $i => $cv) { $d = abs($cv - 7.0); if ($d < $bb) { $bb = $d; $base = $i; } }   // owner, 21 Nov: the first price is the 7% column; the Lineup's price steps then go 6.5% (day 1 evening / night), 6% (next day), 5% (day 5-6), then the deeper columns - one column per price step
     if (function_exists('pc_chat_level')) { try { $lv = pc_chat_level($pdo, $phone); if (empty($lv['default'])) foreach ($cols as $i => $cv) if (abs($cv - (float)$lv['pct']) < 0.01) $base = max($base, $i); } catch (Throwable $e) { } }
     $k = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone = ? AND status = 'sent' AND SUBSTR(tpl_key, 1, 6) = 'ln_px_'"); $q->execute([$phone]); $k = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     $idx = min(count($cols) - 1, $base + 1 + $k); $v = (int)($row['p'][$idx] ?? 0); if ($v <= 0) return null;
