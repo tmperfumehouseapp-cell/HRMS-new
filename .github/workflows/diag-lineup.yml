@@ -37,6 +37,7 @@ jobs:
           ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "${{ inputs.brief }}" "${{ inputs.probe }}" <<'REMOTE' || true
           P="$1"; export LN_BRIEF="$2"; export LN_PROBE="$3"
           if [ "$LN_PROBE" = "true" ]; then
+          echo "=== server files ===" ; echo "whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html) · wa_camp_ui.js $(stat -c '%y' "$P"assets/js/wa_camp_ui.js | cut -c1-19) · top-space marker: $(grep -c 'its own space' "$P"assets/js/wa_camp_ui.js) · speed cache marker: $(grep -c 'ONCE per message and 45 seconds' "$P"empmanagment/wa_line.php) · server time $(date '+%H:%M:%S')"
           cat > /tmp/ln_probe.php <<'PHP'
           <?php
           $f = $argv[1] . "empmanagment/config.php"; require $f;
@@ -47,6 +48,7 @@ jobs:
           $action = ""; require $argv[1] . "empmanagment/wa_line.php";
           echo "\n=== PROBE: the Lineup screen's queries on the real data ===\n";
           foreach (["wl_status" => fn() => wl_status($pdo, false), "wl_summary today" => fn() => wl_summary($pdo, strtotime(date("Y-m-d 00:00:00"))), "wl_summary total" => fn() => wl_summary($pdo, (int)strtotime(wl_cfg($pdo)["started"]) - 60), "wl_report" => fn() => wl_report($pdo, 30), "wl_overview" => fn() => wl_overview($pdo)] as $n => $fn) { $t = microtime(true); try { $r = $fn(); echo "  $n: ok in " . round(microtime(true) - $t, 2) . " s" . (isset($r["sent"]) ? " · sent " . $r["sent"] . " replied " . $r["replied"] . " orders " . $r["orders"] . " cost " . $r["cost"] : "") . "\n"; } catch (Throwable $e) { echo "  $n: FAIL after " . round(microtime(true) - $t, 2) . " s: " . substr($e->getMessage(), 0, 300) . " @ " . basename($e->getFile()) . ":" . $e->getLine() . "\n"; } }
+          echo "  last round: " . setting_get($pdo, "wl_last_round", "(none yet)") . "\n";
           try { $ov = wl_overview($pdo); echo "  customers by the day they wrote: " . json_encode($ov["by_day"]) . "\n"; echo "  customers: " . json_encode($ov["status"]["customers"]) . "\n"; echo "  today: " . json_encode($ov["summary"]["today"]) . "\n"; echo "  total: " . json_encode($ov["summary"]["total"]) . "\n"; echo "  since: " . date("Y-m-d H:i", wl_cfg($pdo)["since"]) . "\n"; } catch (Throwable $e) { echo "  overview detail FAIL: " . $e->getMessage() . "\n"; }
           PHP
           php /tmp/ln_probe.php "$P"; rm -f /tmp/ln_probe.php
