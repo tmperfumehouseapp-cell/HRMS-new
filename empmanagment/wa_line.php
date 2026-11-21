@@ -576,9 +576,9 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
 {
     $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
     $cap = $force ? (int)($opt['cap'] ?? 60) : max((int)$cfg['cap'], 400); $dl = microtime(true) + ($force ? 40 : 52);   // a shard's round may work 52 s
-    $my = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $shsql = ($shard >= 0 && $N > 1 && $my) ? ' AND MOD(CRC32(p.phone), ' . (int)$N . ') = ' . (int)$shard : '';
+    $my = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $shsql = ($shard >= 0 && $N > 1 && $my) ? ' AND MOD(CAST(RIGHT(p.phone, 6) AS UNSIGNED), ' . (int)$N . ') = ' . (int)$shard : '';
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at, c.topic FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active'" . $shsql . " ORDER BY p.phone, p.step LIMIT 3000");
-    $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if ($shard >= 0 && $N > 1 && !$my) $rows = array_values(array_filter($rows, fn($r) => crc32((string)$r['phone']) % $N === $shard)); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
+    $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if ($shard >= 0 && $N > 1 && !$my) $rows = array_values(array_filter($rows, fn($r) => ((int)substr(preg_replace('/\\D/', '', (string)$r['phone']), -6)) % $N === $shard)); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
     $orders = wl_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = wln_wide_ok($pdo);
     $upd = $pdo->prepare("UPDATE wa_line_plan SET status = ?, why = ?, sent_at = ?, wamid = ?, tpl_key = ? WHERE id = ?");
     $wc = []; $wcn = function (string $k) use (&$wc) { $wc[$k] = ($wc[$k] ?? 0) + 1; };
