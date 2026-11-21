@@ -286,6 +286,7 @@ body.waui .body{flex:1 0 auto;min-height:42vh;min-height:42dvh;}
   body.waui .cq small{font-size:8px;} body.waui .fc{font-size:10px;} body.waui .fc b{font-size:11px;} body.waui .wp-seg button{font-size:11.5px;padding:6px 8px;}
   body.waui .wp-in:not(textarea):not([type=text]):not([type=search]):not([type=number]):not([type=date]):not(select){font-size:13px;}
 }
+body.wa-solo #blStrip, body.wa-solo #blChips, body.wa-solo #blPend, body.wa-solo #blMkt{display:none !important}
 </style>
 <style>
   *{box-sizing:border-box;} html,body{height:100%; margin:0;} [hidden]{display:none !important;} body{overflow:hidden; -webkit-font-smoothing:antialiased;}
@@ -698,6 +699,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     const gt = $('gtabs'); if (G) { try { localStorage.setItem('wa_tab_' + G.k, cur); } catch (e) { } gt.hidden = false; gt.innerHTML = G.tabs.map(([x, l]) => `<button type="button" data-k="${x}" class="${x === cur ? 'on' : ''}">${esc(l)}</button>`).join(''); } else { gt.hidden = true; gt.innerHTML = ''; }
     try { sessionStorage.setItem('wa_last_sec', cur + '|' + Date.now()); } catch (e) { }   // a refresh (the page sits inside the hub, so the address bar has no #section) comes back to this screen
     if (location.hash !== '#' + cur) { if (!started || noPush) history.replaceState(history.state, '', '#' + cur); else history.pushState({ waSec: cur }, '', '#' + cur); }
+    document.body.classList.toggle('wa-solo', cur === 'orderupd');   // 📦 Order updates is a page of its own: the Unanswered / Open market / Bot learned strip of the sales screens is not shown on top of it
     Object.keys(secs).forEach((x) => { secs[x].hidden = x !== cur; });
     if (!secs[cur]) {
       const d = document.createElement('div'); d.className = 'sec'; secs[cur] = d; $('body').appendChild(d);
@@ -705,7 +707,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
       else if (m.mode === 'native' && cur === 'chats') { d.classList.add('fill'); d.innerHTML = '<div id="wi"></div>'; if (!inboxStarted) { inboxStarted = true; WaInbox.start({ mode: 'admin', root: 'wi', onUnans: () => go('unans'), onFeed: (k) => { feedNow = k || ''; const m = ITEMS.find((x) => x.feed === feedNow); if (cur === 'chats') { $('ttl').textContent = m ? m.t : 'Chats'; } drawRail(); }, onCounts: (c) => { srcN = (c && c.src) || srcN; unN = (c && c.unassigned != null) ? c.unassigned : unN; drawRail(); } }); } }
       else if (m.mode === 'native' && cur === 'unans' && window.WaUnans) { reload[cur] = WaUnans.mount(d, { openChat }); }
       else if (m.mode === 'frame') { d.classList.add('frame'); d.innerHTML = '<iframe allow="camera; microphone; geolocation; clipboard-read; clipboard-write; fullscreen" title="' + esc(m.t) + '" src="' + esc(m.src) + '"></iframe>'; }
-      else if (m.mode === 'native' && window.WaPanels && WaPanels.has(cur)) { reload[cur] = WaPanels.mount(cur, d, { go, openChat, closeSide }); if (window.WaGrowth) WaGrowth.claudeBar(d, cur, { go, openChat }); }
+      else if (m.mode === 'native' && window.WaPanels && WaPanels.has(cur)) { reload[cur] = WaPanels.mount(cur, d, { go, openChat, closeSide }); if (window.WaGrowth && cur !== 'orderupd') WaGrowth.claudeBar(d, cur, { go, openChat }); }   /* 📦 Order updates is its own page: no Unanswered / Open market / Bot learned bar on top of it */
       else { d.classList.add('pad'); d.innerHTML = '<div class="err">This screen could not load. Refresh the page.</div>'; }
     } else if (cur === 'overview') loadOverview(true);
     else if (reload[cur]) { try { reload[cur](); } catch (e) { } }
