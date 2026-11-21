@@ -138,7 +138,7 @@ function cx2_guess($text) {
     $map = ['rto' => '/(\brto\b|return to origin|returned to (origin|us)|wapas (ja|aa) raha)/u',
             'ndr' => '/(\bndr\b|delivery attempt|attempt(s)? failed|undelivered|not at home|customer not available|reschedule|new date|address (issue|incorrect|wrong)|courier (call|called|asked))/u',
             'leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|bottle.{0,12}(crack|toot))/u',
-            'wrong' => '/(wrong (item|product|perfume)|galat|alag (perfume|product)|different (perfume|product))/u',
+            'wrong' => '/(wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived))/u',
             'notdelivered' => '/(not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|marked delivered)/u',
             'tracking' => '/(tracking (id|number|link|status)|\bawb\b|where is my (order|parcel)|order status|track (my|the)|tracking nahi)/u',
             'quality' => '/(fake|smell.{0,14}(different|bad|weak|not same)|khushbu.{0,14}(alag|nahi|kam)|quality (is )?(bad|poor)|duplicate)/u',
@@ -827,7 +827,7 @@ function cx4_words(PDO $pdo, $key, array $orders) {
     $delivered = false; foreach ($orders as $o) if (!empty($o['parcel']) && (!empty($o['parcel']['delivered_at']) || stripos((string)$o['parcel']['status'], 'deliver') === 0)) { $delivered = true; break; }
     $notGot = preg_match("/(not (delivered|received|recieved|got)|didn'?t (receive|recieve|got|get)|did not (receive|get)|haven'?t (received|got)|nahi (mila|aaya|aayi|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|missing|kam aaya|ek (item|product|bottle) nahi)/u", $t);
     if ($notGot && (preg_match('/(missing|kam aaya|only \d|one (item|product|bottle)|ek (item|product|bottle))/u', $t) || $delivered)) return 'missing';
-    $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|bottle.{0,12}(crack|toot))/u', 'wrong' => '/(wrong (item|product|perfume)|galat|alag (perfume|product)|different (perfume|product))/u',
+    $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|bottle.{0,12}(crack|toot))/u', 'wrong' => '/(wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived))/u',
         'notdelivered' => '/(not (delivered|received)|didn\'?t (receive|recieve|get)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|marked delivered)/u', 'tracking' => '/(tracking|awb|where is my (order|parcel)|order status)/u',
         'quality' => '/(fake|smell.{0,14}(different|bad|weak|not same)|khushbu.{0,14}(alag|nahi|kam)|quality (is )?(bad|poor)|duplicate)/u', 'refund' => '/(refund|paisa wapas|money back|return kar)/u'];
     foreach ($map as $k => $re) if (preg_match($re, $t)) return $k;

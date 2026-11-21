@@ -186,7 +186,7 @@ function wl_cfg(PDO $pdo): array
     wl_days_load($pdo); wl_extra_load($pdo); $j = json_decode((string)setting_get($pdo, 'wl_cfg', ''), true); if (!is_array($j)) $j = [];
     $mode = (string)($j['mode'] ?? 'auto'); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'auto';   // owner 21 Nov: always on (no switch on the screen); 'off' stays only as an emergency value the API accepts
     // owner 21 Nov: no clock window of its own (the 10-20 one is gone; Module A / B's times do not apply): a step goes when its customer is ready; 'win' = 1 brings a from / to window back
-    return ['shards' => max(1, min(8, (int)($j['shards'] ?? 4))), 'mode' => $mode, 'cap' => max(5, min(300, (int)($j['cap'] ?? 60))), 'from' => !empty($j['win']) ? max(0, min(23, (int)($j['from'] ?? 0))) : 0, 'to' => !empty($j['win']) ? max(1, min(24, (int)($j['to'] ?? 24))) : 24, 'win' => !empty($j['win']) ? 1 : 0, 'since' => (int)($j['since'] ?? 0),
+    return ['shards' => max(1, min(8, (int)($j['shards'] ?? 8))), 'mode' => $mode, 'cap' => max(5, min(300, (int)($j['cap'] ?? 60))), 'from' => !empty($j['win']) ? max(0, min(23, (int)($j['from'] ?? 0))) : 0, 'to' => !empty($j['win']) ? max(1, min(24, (int)($j['to'] ?? 24))) : 24, 'win' => !empty($j['win']) ? 1 : 0, 'since' => (int)($j['since'] ?? 0),
         'offer' => (string)($j['offer'] ?? ''), 'started' => (string)($j['started'] ?? ''),
         'camp' => in_array((string)($j['camp'] ?? 'off'), ['off', 'read', 'delivered'], true) ? (string)($j['camp'] ?? 'off') : 'off', 'camp_cap' => max(0, min(20000, (int)($j['camp_cap'] ?? 2000)))];   // campaign recipients: who joins (read = opened the campaign message) and at most how many new ones a day
 }
@@ -425,7 +425,7 @@ function wln_price_info(PDO $pdo, string $phone, int $ml = 200): ?array
 {
     $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return null;
     $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $ml) { $row = $r; break; } if (!$row || empty($row['p'])) return null;
-    $base = 1; foreach ($cols as $i => $cv) if (abs($cv - 6.5) < 0.01) $base = $i;   // the photo / first offer starts at 6.5%
+    $base = 0; $bb = 1e9; foreach ($cols as $i => $cv) { $d = abs($cv - 7.0); if ($d < $bb) { $bb = $d; $base = $i; } }   // owner, 21 Nov: the first price is the 7% column; the Lineup's price steps then go 6.5% (day 1 evening / night), 6% (next day), 5% (day 5-6), then the deeper columns - one column per price step
     if (function_exists('pc_chat_level')) { try { $lv = pc_chat_level($pdo, $phone); if (empty($lv['default'])) foreach ($cols as $i => $cv) if (abs($cv - (float)$lv['pct']) < 0.01) $base = max($base, $i); } catch (Throwable $e) { } }
     $k = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone = ? AND status = 'sent' AND SUBSTR(tpl_key, 1, 6) = 'ln_px_'"); $q->execute([$phone]); $k = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     $idx = min(count($cols) - 1, $base + 1 + $k); $v = (int)($row['p'][$idx] ?? 0); if ($v <= 0) return null;
@@ -533,7 +533,8 @@ function wln_push(PDO $pdo, string $phone, int $until): void
 function wln_claim_shard(PDO $pdo, int $n): int
 {
     $my = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
-    for ($k = 0; $k < $n; $k++) {
+    $st0 = mt_rand(0, max(0, $n - 1));   // random start: several callers at once do not all knock on shard 0 first
+    for ($j = 0; $j < $n; $j++) { $k = ($st0 + $j) % $n;
         if ($my) { try { $g = $pdo->prepare('SELECT GET_LOCK(?, 0)'); $g->execute(['hrms_wl_shard_' . $k]); if ((int)$g->fetchColumn() === 1) return $k; } catch (Throwable $e) { } }
         elseif (!function_exists('wa_lock') || wa_lock($pdo, 'wlshard' . $k, 50)) return $k;
     }
@@ -542,6 +543,7 @@ function wln_claim_shard(PDO $pdo, int $n): int
 /** FAN-OUT: when hundreds are due, the engine calls the sending job (wa.cron_send) a few more times at the same moment (a request that is not waited for; the job ignores a hung-up caller), so several shards send at once even when the extra cron lines do not fire. At most N-1 calls a minute. */
 function wln_fanout(PDO $pdo, int $n, int $now): int
 {
+    if ((string)setting_get($pdo, 'wl_cli', '') !== '0') return 0;   // the command-line copies (cron_line.php) send: no extra web-server requests (they starved the bot follow-up worker)
     if ($n < 2 || !function_exists('wa_lock') || !wa_lock($pdo, 'wlfan', 40)) return 0;
     try { $q = $pdo->prepare("SELECT COUNT(*) FROM (SELECT 1 FROM wa_line_plan WHERE status = 'planned' AND due_at <= ? LIMIT 300) t"); $q->execute([date('Y-m-d H:i:s', $now)]); if ((int)$q->fetchColumn() < 300) return 0; } catch (Throwable $e) { return 0; }
     $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !function_exists('stream_socket_client')) return 0; $host = (string)($_SERVER['HTTP_HOST'] ?? 'staging.fourpirates.space'); $sent = 0;
@@ -555,6 +557,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
 {
     $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wln_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']); $sendonly = !empty($opt['sendonly']);   // sendonly = the sending job (wa.cron_send): only the sending round, no bookkeeping
     if ($cfg['mode'] === 'off') return $o;
+    if (!$force && function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours 03:00-09:00'; return $o; }   // universal rule (owner, 21 Nov)
     if (!$force && !$sendonly) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
     if ($sendonly && ($cfg['started'] === '' || $cfg['since'] <= 0)) return $o;
     if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
@@ -565,7 +568,8 @@ function wl_tick(PDO $pdo, array $opt = []): array
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if ($book && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }   // failed as marketing -> sent again as utility on the spot
-    $N = max(1, min(8, (int)($cfg['shards'] ?? 4))); $shard = -1;   // SHARDS (owner, 21 Nov: speed): the due customers are split into N groups by their phone; every caller (the engine and the sending job) takes the first group nobody works on, so several run at once
+    $N = 8; $shard = -1;   // 8 groups always (owner 21 Nov: finish the day's plan before the next day's steps are added): cron_line.php runs up to 8 sending copies on the command line
+      // SHARDS (owner, 21 Nov: speed): the due customers are split into N groups by their phone; every caller (the engine and the sending job) takes the first group nobody works on, so several run at once
     if (!$force) { $shard = wln_claim_shard($pdo, $N); if ($shard < 0) return $o; }
     if (!$force && !$sendonly) { try { $o['fanout'] = wln_fanout($pdo, $N, $now); } catch (Throwable $e) { } }   // more sending jobs at once while a lot is due
     try { return wln_send_round($pdo, $opt, $cfg, $force, $now, $shard, $N, $o); } finally { wln_release_shard($pdo, $shard); }
@@ -575,9 +579,9 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
 {
     $ids = wln_eff_ids($pdo); if (!$ids) return $o; if (!$force && !wl_ready($pdo)) { $o['why'] = 'waiting for Meta to approve every lineup message'; return $o; }
     $cap = $force ? (int)($opt['cap'] ?? 60) : max((int)$cfg['cap'], 400); $dl = microtime(true) + ($force ? 40 : 52);   // a shard's round may work 52 s
-    $my = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $shsql = ($shard >= 0 && $N > 1 && $my) ? ' AND MOD(CRC32(p.phone), ' . (int)$N . ') = ' . (int)$shard : '';
+    $my = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $shsql = ($shard >= 0 && $N > 1 && $my) ? ' AND MOD(CAST(RIGHT(p.phone, 6) AS UNSIGNED), ' . (int)$N . ') = ' . (int)$shard : '';
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at, c.topic FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active'" . $shsql . " ORDER BY p.phone, p.step LIMIT 3000");
-    $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if ($shard >= 0 && $N > 1 && !$my) $rows = array_values(array_filter($rows, fn($r) => crc32((string)$r['phone']) % $N === $shard)); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
+    $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if ($shard >= 0 && $N > 1 && !$my) $rows = array_values(array_filter($rows, fn($r) => ((int)substr(preg_replace('/\\D/', '', (string)$r['phone']), -6)) % $N === $shard)); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
     $orders = wl_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = wln_wide_ok($pdo);
     $upd = $pdo->prepare("UPDATE wa_line_plan SET status = ?, why = ?, sent_at = ?, wamid = ?, tpl_key = ? WHERE id = ?");
     $wc = []; $wcn = function (string $k) use (&$wc) { $wc[$k] = ($wc[$k] ?? 0) + 1; };
@@ -761,7 +765,13 @@ function wl_summary(PDO $pdo, int $from): array
     $o['buyers'] = count($buy); return $o;
 }
 /** The picture the owner looks at: customers by topic and status, how many go today / tomorrow (by hour), the templates, the old drip. */
-function wl_overview(PDO $pdo): array
+function wl_overview(PDO $pdo, bool $fresh = false): array
+{
+    // the Lineup page and the Lineup card read it often (wa.line_get / wa.line_card: 3 heavy counts over the whole plan each time): one shared copy per 45 s
+    if (!$fresh && function_exists('hrms_memo')) return hrms_memo('wl_overview45', 45, function () use ($pdo) { return wl_overview_calc($pdo); });
+    return wl_overview_calc($pdo);
+}
+function wl_overview_calc(PDO $pdo): array
 {
     $cfg = wl_cfg($pdo); $o = ['cfg' => $cfg, 'topics' => wl_topics(), 'by_topic' => [], 'board' => [], 'tomorrow' => ['total' => 0, 'by_topic' => [], 'by_hour' => []], 'today' => ['total' => 0, 'sent' => 0, 'by_topic' => [], 'left_by_hour' => []], 'left' => [], 'tpl' => [], 'now' => date('Y-m-d H:i')];
     foreach ($pdo->query("SELECT topic, status, COUNT(*) n FROM wa_line_cust GROUP BY topic, status")->fetchAll() as $r) $o['by_topic'][$r['topic']][$r['status']] = (int)$r['n'];
@@ -1011,7 +1021,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
         }
         case 'wa.line_start': {   // POST — the same start the engine does by itself (kept as a button in case the engine has not run yet). Nothing is SENT to a customer here.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); @set_time_limit(120);
-            json_response(['ok' => true] + wl_start_all($pdo, (int)($auth['employee_id'] ?? 0)) + wl_overview($pdo));
+            json_response(['ok' => true] + wl_start_all($pdo, (int)($auth['employee_id'] ?? 0)) + wl_overview($pdo, true));
         }
         case 'wa.line_run': {   // POST — send what is due now (manual mode), in batches; call again while "waiting" > 0
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (wl_cfg($pdo)['started'] === '') json_response(['error' => 'The Lineup has not started yet — press Start first.'], 422);
