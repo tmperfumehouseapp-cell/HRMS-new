@@ -690,6 +690,15 @@ function wag_address_seen(PDO $pdo, string $key): bool
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND ts >= ? AND ((dir = 'in' AND mtype = 'text' AND body REGEXP '(^|[^0-9])[1-9][0-9]{5}([^0-9]|$)') OR (dir = 'sys' AND body LIKE '%collected the order details%'))"); $q->execute([$key, date('Y-m-d H:i:s', time() - 24 * 3600)]); return (int)$q->fetchColumn() > 0;
     } catch (Throwable $e) { return false; }
 }
+/** Owner, 21 Nov: the bot never offers a discount / a lower price / a "best deal" the customer did not ask for (it had said Rs 2350, then "Rs 2200 tak karwa dungi", then Rs 2050). Such sentences are removed unless the customer's own words are about price. */
+function wag_strip_unasked_discount(string $text, string $customer): string
+{
+    if (preg_match('/(discount|kam\b|kam kar|mehang|mahang|costly|expensive|price|rate|bhav|bhaav|sasta|cheap|offer|deal|best|budget|paise|rupee|rs\b|₹|\d{3,4})/iu', $customer)) return $text;
+    $parts = preg_split('/(?<=[.!?।])\s+/u', trim($text)); if (!$parts || count($parts) < 2) return $text; $keep = [];
+    $bad = '/(tak\s+(karwa|kar|kam|le\s*aa|laa)\w*|best deal|discount|special (price|offer|rate)|kam\s+kar(wa)?\s*(dung|dunga|dungi|denge|dege)|extra\s+off|\bchhoot\b|\bchhut\b|lowest price|final price)/iu';
+    foreach ($parts as $x) { $cl = preg_split('/\s*,\s*|\s+aur\s+(?=best|discount|special)/iu', $x); $ok = []; foreach ($cl as $y) if (!preg_match($bad, $y)) $ok[] = $y; if (!$ok) continue; $z = implode(', ', $ok); if (!preg_match('/[.!?।]$/u', $z) && preg_match('/[.!?।]$/u', $x)) $z .= substr($x, -1); $keep[] = $z; }
+    $o = trim(implode(' ', $keep)); return $o !== '' ? $o : $text;
+}
 /** 🎯 Ticket size from Shopify (owner, 21 Nov): the average order value of orders where the BOT had talked to the customer in the 48 h before the order, against orders with no bot message. Orders matched by the last 10 digits of the phone. */
 function wag_bot_ticket(PDO $pdo, int $days = 7): ?array
 {
@@ -850,6 +859,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if ($__stuck && (!empty($r['handoff']) || !$r['ok'])) wag_stuck_escalate($pdo, $c, $key);   // the bot cannot help: a free person gets it now, with a push
         if (!empty($r['handoff']) && true) wag_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s'));   // the bot hands this customer to a person: the lock opens
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
+        $r['text'] = wag_strip_unasked_discount((string)$r['text'], (string)($m['body'] ?? ''));
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
         if ($ok && $__order) wag_order_done_check($pdo, $c, $key);
@@ -903,6 +913,7 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
         if (empty($r['ok']) || trim((string)($r['text'] ?? '')) === '') { $D['ai']++; $D['err'] = mb_substr((string)($GLOBALS['lib_last_why'] ?? '') . ' | ' . (string)($r['why'] ?? ''), 0, 160); continue; }
         if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
         $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) { $D['same']++; continue; } }   // never the same text again
+        $r['text'] = wag_strip_unasked_discount((string)$r['text'], (string)$lastIn);
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if ($ok) { $D['sent']++; $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up (step ' . ($cnt + 1) . ' of 10, ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
