@@ -1010,6 +1010,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
     if (!wln_tables($pdo)) json_response(['error' => 'Lineup storage is not available.'], 500);
     switch ($__wl) {
         case 'wa.line_get': json_response(['ok' => true] + wl_overview($pdo));
+        case 'wa.line_aft': { if (!function_exists('wa_aft_overview')) require_once __DIR__ . '/wa_after.php'; json_response(['ok' => true] + wa_aft_overview($pdo)); }   // the After-Order plan card under the 30-day plan
         case 'wa.line_card': { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); json_response(['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60), 'tomorrow' => wl_overview($pdo)['tomorrow']]); }
         case 'wa.line_report': json_response(['ok' => true] + wl_report($pdo, max(7, min(90, (int)($_GET['days'] ?? 30)))));
         case 'wa.line_customer': json_response(['ok' => true] + wl_customer($pdo, preg_replace('/\D/', '', (string)($_GET['phone'] ?? ''))));

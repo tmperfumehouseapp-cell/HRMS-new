@@ -56,6 +56,19 @@ if (!function_exists('wa_aft_days')) {
         $h = (int)substr(preg_replace('/\D/', '', $phone), -4); $c = $combos[($step * 5 + $h) % count($combos)]; $ph = $phrase[($step + $h) % count($phrase)];
         return $season . ': ' . $c[0] . ' x ' . $c[1] . ' ml ' . $ph . ' Rs ' . $c[2] . '. Reply kijiye, hum order bana denge.';
     }
+    /** The screen's numbers (Campaigns -> Lineup, "After-Order plan" under the 30-day plan). */
+    function wa_aft_overview(PDO $pdo): array
+    {
+        wa_aft_tables($pdo); $now = time(); $o = ['on' => wa_aft_set($pdo, 'wa_aft_on', '1') !== '0', 'cap' => (int)wa_aft_set($pdo, 'wa_aft_cap', '1500'), 'spread' => (int)wa_aft_set($pdo, 'wa_aft_spread', '5'), 'ver' => wa_aft_set($pdo, 'wa_aft_ver', '1'), 'quiet' => function_exists('wa_quiet_hours') && wa_quiet_hours()];
+        try { $o['cust'] = $pdo->query("SELECT status, COUNT(*) FROM wa_aft_cust GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR); $o['plan'] = $pdo->query("SELECT status, COUNT(*) FROM wa_aft_plan GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
+            $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $o['sent_today'] = (int)$q->fetchColumn();
+            $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan p JOIN wa_aft_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active'"); $q->execute([date('Y-m-d H:i:s', $now)]); $o['due_now'] = (int)$q->fetchColumn();
+            $q = $pdo->prepare("SELECT DATE(due_at) d, COUNT(*) n FROM wa_aft_plan WHERE status = 'planned' AND due_at >= ? AND due_at < ? GROUP BY d ORDER BY d"); $q->execute([date('Y-m-d 00:00:00'), date('Y-m-d 00:00:00', $now + 15 * 86400)]); $o['days'] = $q->fetchAll(PDO::FETCH_KEY_PAIR);
+            $o['failed'] = $pdo->query("SELECT SUBSTR(why, 1, 70) w, COUNT(*) n FROM wa_aft_plan WHERE status = 'failed' GROUP BY w ORDER BY n DESC LIMIT 5")->fetchAll(PDO::FETCH_KEY_PAIR);
+        } catch (Throwable $e) { $o['error'] = $e->getMessage(); }
+        $st = []; foreach (wa_aft_steps() as $k => $v) $st[] = ['step' => $k, 'day' => $v[0], 'group' => $v[1], 'line' => $v[2] === 'dyn' ? wa_aft_line_dyn($pdo, $k, '0000', $now) : wa_aft_line($pdo, $v[2])]; $o['steps'] = $st;
+        return $o;
+    }
     function wa_aft_k10($phone): string { return substr(preg_replace('/\D+/', '', (string)$phone), -10); }
     /** Write the ladder of one customer: past steps are dropped except the newest one, which goes out spread over the next days (never a burst). */
     function wa_aft_plan(PDO $pdo, string $phone, int $anchor, int $now, int $spreadDays): int
