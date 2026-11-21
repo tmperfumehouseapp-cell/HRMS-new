@@ -729,6 +729,11 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         $r = ['ok' => true];
         $__cli = !empty($_GET['cli']) && PHP_SAPI === 'cli';   // cron_line.php (command line): ONLY the Lineup round - no bot workers, campaigns or recovery (they would take web-server workers from the bot)
         try { if (!$__cli && function_exists('wag_bot_spawn') && function_exists('wa_lock') && wa_lock($pdo, 'wagspawn', 15)) $r['bot_workers'] = wag_bot_spawn($pdo, 5); } catch (Throwable $e) { }   // 🤖 fast bot workers: answers within seconds, whoever calls first
+        if ($__cli && function_exists('wl_tick')) {   // a command-line copy works until ~50 s: an empty shard ends at once, so it takes the next one (shards are tried from a random start)
+            $__t0 = microtime(true); $__tot = ['sent' => 0, 'rounds' => 0];
+            try { for ($__k = 0; $__k < 10 && microtime(true) - $__t0 < 45; $__k++) { $__o = wl_tick($pdo, ['sendonly' => 1]); $__tot['rounds']++; $__tot['sent'] += (int)($__o['sent'] ?? 0); if (isset($__o['cfg']) && empty($__o['sent']) && empty($__o['waiting']) && empty($__o['skipped']) && empty($__o['failed'])) { usleep(200000); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cli lineup: ' . $e->getMessage()); }
+            $r['lineup'] = $__tot; try { setting_set($pdo, 'wa_cli_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { } json_response($r);
+        }
         try { $r['lineup'] = function_exists('wl_tick') ? wl_tick($pdo, ['sendonly' => 1]) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job lineup: ' . $e->getMessage()); }   // 🧵 the Lineup's sending round first: it works a shard of the due customers of its own (several callers at once = faster)
         if ($__cli) { try { setting_set($pdo, 'wa_cli_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { } json_response($r); }
         try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }

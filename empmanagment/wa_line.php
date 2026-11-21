@@ -533,7 +533,8 @@ function wln_push(PDO $pdo, string $phone, int $until): void
 function wln_claim_shard(PDO $pdo, int $n): int
 {
     $my = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
-    for ($k = 0; $k < $n; $k++) {
+    $st0 = mt_rand(0, max(0, $n - 1));   // random start: several callers at once do not all knock on shard 0 first
+    for ($j = 0; $j < $n; $j++) { $k = ($st0 + $j) % $n;
         if ($my) { try { $g = $pdo->prepare('SELECT GET_LOCK(?, 0)'); $g->execute(['hrms_wl_shard_' . $k]); if ((int)$g->fetchColumn() === 1) return $k; } catch (Throwable $e) { } }
         elseif (!function_exists('wa_lock') || wa_lock($pdo, 'wlshard' . $k, 50)) return $k;
     }
@@ -542,6 +543,7 @@ function wln_claim_shard(PDO $pdo, int $n): int
 /** FAN-OUT: when hundreds are due, the engine calls the sending job (wa.cron_send) a few more times at the same moment (a request that is not waited for; the job ignores a hung-up caller), so several shards send at once even when the extra cron lines do not fire. At most N-1 calls a minute. */
 function wln_fanout(PDO $pdo, int $n, int $now): int
 {
+    if ((string)setting_get($pdo, 'wl_cli', '') !== '0') return 0;   // the command-line copies (cron_line.php) send: no extra web-server requests (they starved the bot follow-up worker)
     if ($n < 2 || !function_exists('wa_lock') || !wa_lock($pdo, 'wlfan', 40)) return 0;
     try { $q = $pdo->prepare("SELECT COUNT(*) FROM (SELECT 1 FROM wa_line_plan WHERE status = 'planned' AND due_at <= ? LIMIT 300) t"); $q->execute([date('Y-m-d H:i:s', $now)]); if ((int)$q->fetchColumn() < 300) return 0; } catch (Throwable $e) { return 0; }
     $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !function_exists('stream_socket_client')) return 0; $host = (string)($_SERVER['HTTP_HOST'] ?? 'staging.fourpirates.space'); $sent = 0;
