@@ -248,6 +248,10 @@ body.waui .tabs,body.waui .more{display:none;}
 #waSide .wsd-x{border:0; background:#f1f3f6; width:34px; height:34px; border-radius:50%; font-size:15px; cursor:pointer;} #waSide .wsd-f{border:1px solid #e4e7ec; background:#fff; border-radius:999px; padding:6px 12px; font-size:12.5px; font-weight:700; cursor:pointer;}
 #waSide iframe{flex:1; border:0; width:100%;}
 @media (min-width:861px){ body.side-on #body > .sec{right:min(560px, 50vw);} }
+/* 📱💻 the strips above the list (nobody answered · Open market · bot learned) are capped and scroll inside themselves; if they still do not leave room, the whole panel scrolls — an opened long table can no longer push the list out of the screen and block scrolling */
+body.waui .main{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}   /* phone AND PC: the strips are capped, the list keeps room; the whole column scrolls if they still do not fit */
+body.waui #blPend,body.waui #blMkt,body.waui #blStrip{flex:none;max-height:52vh;max-height:52dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+body.waui .body{flex:1 0 auto;min-height:42vh;min-height:42dvh;}
 @media (max-width:860px){ #waSide{width:100%; border-left:0; box-shadow:none;} }
 /* 📱 phone: wide tables scroll sideways instead of being cut, buttons are easy to tap, long rows wrap */
 @media (max-width:860px){
