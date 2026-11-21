@@ -58,6 +58,10 @@ function sku_index(): array
         $names = preg_split('/\s*[;\r\n]+\s*/u', (string)($r[2] ?? '')) ?: []; $names[] = (string)($r[1] ?? '');      // the third column may hold several shop names: "GUCH ESHA & FLORA ; Guchhi Esha & Flora"
         foreach ($names as $n) { $k = sku_norm((string)$n); if ($k !== '' && !isset($by[$k])) $by[$k] = $sku; }      // the shop / HRMS names win over the original name
     }
+    if (is_file(__DIR__ . '/sku_alias.php')) {      // extra shop names (sku_alias.php): the SKU is found by its original name, so they work with any uploaded list
+        $al = require __DIR__ . '/sku_alias.php';
+        foreach ((is_array($al) ? $al : []) as $pair) { $ok = sku_norm((string)($pair[0] ?? '')); $to = ''; foreach ($name as $sk => $nm) if (sku_norm((string)$nm) === $ok) { $to = (string)$sk; break; } $k = sku_norm((string)($pair[1] ?? '')); if ($to !== '' && $k !== '' && !isset($by[$k])) $by[$k] = $to; }
+    }
     uksort($by, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));       // the longest name first: "afn 9 night elixir" before "afn 9 night"
     return $ix = ['by' => $by, 'name' => $name, 'ids' => $ids];
 }
