@@ -51,6 +51,15 @@ function wa_ru_cfg(PDO $pdo): array
             'ask_days' => in_array((int)$g('wa_ru_ask_days', '90'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ask_days', '90') : 90, 'make_on' => $g('wa_ru_make_on', '1') !== '0'];
 }
 /** Can utility fix this failure? 'now' = marketing-only block · 'after_rec' = a generic failure, utility only once Module A used its tries · 'never'. */
+/** owner 21 Nov 2026 (21:15 IST): people who are in the LINE-UP of a running / scheduled campaign (queued or sending: today's line-up, the 30-day campaign, a new line-up) are never sent a Module B follow-up: the campaign goes first. Returns phone => 1. Uses the k_phone index. Switch off: wa_ru_lineup_skip = 0. */
+function wa_ru_lineup(PDO $pdo, array $phones): array
+{
+    $o = []; $phones = array_values(array_unique(array_filter(array_map('strval', $phones), fn($x) => $x !== ''))); if (!$phones || (string)setting_get($pdo, 'wa_ru_lineup_skip', '1') === '0') return $o;
+    try { foreach (array_chunk($phones, 1500) as $ch) { $in = implode(',', array_map(fn($x) => $pdo->quote($x), $ch));
+            foreach ($pdo->query("SELECT DISTINCT i.phone FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.phone IN ($in) AND i.status IN ('queued', 'sending') AND c.status IN ('running', 'scheduled')")->fetchAll(PDO::FETCH_COLUMN) as $p) $o[(string)$p] = 1; } }
+    catch (Throwable $e) { }
+    return $o;
+}
 function wa_ru_class(int $ec): string
 {
     if (in_array($ec, WA_RU_MARKETING_ONLY, true)) return 'now';
@@ -217,6 +226,7 @@ function wa_ru_retry_tick(PDO $pdo, int $nowTs, int &$left, float $t0): array
         $rest = wa_ru_numbers($pdo, $nowTs, false); $cache = [];
         foreach ($rows as $r) {
             if ($left <= 0 || microtime(true) - $t0 > 40) break;
+            if (wa_ru_lineup($pdo, [(string)$r['phone']])) continue;   // in a campaign line-up: the campaign goes first
             $ct = wa_contact($pdo, (string)$r['phone']); if (!$ct || (int)($ct['optout'] ?? 0) === 1) continue;
             $tid = (int)$r['tpl_id']; if (!array_key_exists($tid, $cache)) { $tp = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $tid, true, 0) : null; $cache[$tid] = $tp ? wa_ru_tpl_ctx($pdo, $tp) : [null, null]; }
             [$tUse, $ctx] = $cache[$tid]; if (!$tUse || !$ctx) continue; $vars = json_decode((string)$r['vars_json'], true); if (!is_array($vars)) continue;
@@ -489,6 +499,7 @@ function wa_ru_tick(PDO $pdo): array
         $phones = array_values(array_unique(array_map(fn($x) => (string)$x['phone'], $items))); $pin = implode(',', array_map(fn($p) => $pdo->quote($p), $phones));
         $ct = []; foreach ($pdo->query("SELECT phone, wa_id, name, optout, camp_optout, last_in_at, last_number_id FROM wa_contacts WHERE phone IN ($pin)")->fetchAll() as $r) $ct[(string)$r['phone']] = $r;
         $got = []; $q3 = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE phone IN ($pin) AND dir = 'out' AND mtype = 'template' AND status IN ('delivered', 'read') AND ts >= ?"); $q3->execute([date('Y-m-d H:i:s', strtotime($from) - 86400)]); foreach ($q3->fetchAll(PDO::FETCH_COLUMN) as $p) $got[(string)$p] = 1;
+        $lineup = wa_ru_lineup($pdo, $phones);
         $recent = []; $q4 = $pdo->prepare("SELECT DISTINCT phone FROM wa_ru_log WHERE at >= ?"); $q4->execute([date('Y-m-d H:i:s', $nowTs - 86400)]); foreach ($q4->fetchAll(PDO::FETCH_COLUMN) as $p) $recent[(string)$p] = 1;
         $rec = []; if (function_exists('wa_rec_tables') && wa_rec_tables($pdo)) { foreach ($pdo->query("SELECT item_id, COUNT(*) AS n, MAX(at) AS last FROM wa_rec_log WHERE item_id IN ($in) GROUP BY item_id")->fetchAll() as $r) $rec[(int)$r['item_id']] = $r; }
         if ((string)setting_get($pdo, 'wa_ru_lanes', '1') !== '0') { try {   // 🛤 safest people and never-reached people first (see wa_ru_lane_order)
@@ -527,6 +538,7 @@ function wa_ru_tick(PDO $pdo): array
             $cls = wa_ru_class($ec);
             if ($cls === 'never') { $sk('Meta will not deliver this one'); continue; }
             if (isset($recent[$ph]) || isset($seen[$ph])) { $sk('already got a utility message in the last 24 hours'); continue; }
+            if (isset($lineup[$ph])) { $sk('in the line-up of a campaign (the campaign goes first)'); continue; }
             if (isset($got[$ph])) { $sk('delivered another way today'); continue; }
             $c = $ct[$ph] ?? null; if (!$c) { $sk('no contact record'); continue; } if ((int)$c['optout'] === 1) { $sk('opted out'); continue; }
             if (!empty($c['last_in_at']) && !empty($it['sent_at']) && strtotime((string)$c['last_in_at']) > strtotime((string)$it['sent_at'])) { $sk('wrote back'); continue; }
@@ -604,6 +616,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
     $phones = array_values(array_unique(array_map(fn($x) => (string)$x['phone'], $items))); $pin = implode(',', array_map(fn($p) => $pdo->quote($p), $phones));
     $ct = []; foreach ($pdo->query("SELECT phone, wa_id, name, optout, camp_optout, last_in_at, last_number_id FROM wa_contacts WHERE phone IN ($pin)")->fetchAll() as $r) $ct[(string)$r['phone']] = $r;
     $got = []; $q3 = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE phone IN ($pin) AND dir = 'out' AND mtype = 'template' AND status IN ('delivered', 'read') AND ts >= ?"); $q3->execute([date('Y-m-d H:i:s', strtotime($from) - 86400)]); foreach ($q3->fetchAll(PDO::FETCH_COLUMN) as $p) $got[(string)$p] = 1;
+    $lineup = wa_ru_lineup($pdo, $phones);
     $recent = []; $q4 = $pdo->prepare("SELECT DISTINCT phone FROM wa_ru_log WHERE at >= ?"); $q4->execute([date('Y-m-d H:i:s', $nowTs - 86400)]); foreach ($q4->fetchAll(PDO::FETCH_COLUMN) as $p) $recent[(string)$p] = 1;
     $in = implode(',', array_map(fn($x) => (int)$x['id'], $items)); $rec = [];
     if (function_exists('wa_rec_tables') && wa_rec_tables($pdo)) { foreach ($pdo->query("SELECT item_id, COUNT(*) AS n, MAX(at) AS last FROM wa_rec_log WHERE item_id IN ($in) GROUP BY item_id")->fetchAll() as $r) $rec[(int)$r['item_id']] = $r; }
@@ -623,6 +636,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
         foreach ($items as $it) {
             if ($left <= 0 || $round >= 3) break;
             $ph = (string)$it['phone']; $iid = (int)$it['id']; $ec = (int)$it['err_code']; if ((string)$it['status'] === 'skipped' && $ec === 131026) $ec = 131050;
+            if (isset($lineup[$ph])) { $sw['in the line-up of a campaign'] = ($sw['in the line-up of a campaign'] ?? 0) + 1; continue; }
             if (isset($seen[$ph]) || isset($recent[$ph]) || isset($got[$ph])) { $sw[isset($got[$ph]) ? 'delivered another way' : 'already a message in 24 h'] = ($sw[isset($got[$ph]) ? 'delivered another way' : 'already a message in 24 h'] ?? 0) + 1; continue; }
             $cls = wa_ru_class($ec); if ($cls === 'never') { $sw['Meta will not deliver'] = ($sw['Meta will not deliver'] ?? 0) + 1; continue; }
             $c = $ct[$ph] ?? null; if (!$c || (int)$c['optout'] === 1) { $sw['no contact / opted out'] = ($sw['no contact / opted out'] ?? 0) + 1; continue; }
