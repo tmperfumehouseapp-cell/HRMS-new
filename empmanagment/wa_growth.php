@@ -762,6 +762,12 @@ function is_list_arr(array $a): bool { return $a === [] || array_keys($a) === ra
 /** The owner's definition of a query (21 Nov): NOT campaign, NOT community — the same numbers as the sales strip ("orders / queries"). Returns [emp => [queries, orders]] for the days list of wq_period. */
 function wag_real_queries(PDO $pdo, int $days, bool $withCampaign = false): array
 {
+    // read once per 20 s for everybody (the take / request screens asked for it ~500 times a minute; one of the biggest reads of the database)
+    if (function_exists('hrms_memo')) return hrms_memo('wag_realq_' . $days . ($withCampaign ? 'c' : ''), 20, function () use ($pdo, $days, $withCampaign) { return wag_real_queries_calc($pdo, $days, $withCampaign); });
+    return wag_real_queries_calc($pdo, $days, $withCampaign);
+}
+function wag_real_queries_calc(PDO $pdo, int $days, bool $withCampaign = false): array
+{
     $out = [];
     try { if ((!function_exists('wq_period') || !function_exists('wq_dt')) && is_file(__DIR__ . '/wq.php')) { try { require_once __DIR__ . '/wq.php'; } catch (Throwable $e) { } }   // the market screen route does not load the query ledger by itself (the banner showed 0 while the gate showed 4)
         if (!function_exists('wq_period') || !function_exists('wq_dt')) return $out; [$f, $t] = wq_period($pdo, $days);
