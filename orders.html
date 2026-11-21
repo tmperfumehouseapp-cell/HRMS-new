@@ -3175,12 +3175,18 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
         <span class="timing-win" data-wd="${i}" style="font-size:11.5px; color:var(--muted);"></span></div>`).join('');
     paintWindows();
   }
-  let TIMING_BASE = null, TIMING_LAST = null;   // the values this screen last SAW on the server: only the days changed against them are saved (a screen left open all day can no longer put an old Saturday back)
+  let TIMING_BASE = null, TIMING_LAST = null, TIMING_OV = {};   // the values this screen last SAW on the server: only the days changed against them are saved (a screen left open all day can no longer put an old Saturday back)
   async function timingFresh() {
-    try { const d = await api.get('day_timing.get'); if (Array.isArray(d.start) && d.start.length === 7) { DAY_START = d.start; TIMING_BASE = [...d.start]; } TIMING_LAST = d.last || null; }
+    try { const d = await api.get('day_timing.get'); if (Array.isArray(d.start) && d.start.length === 7) { DAY_START = d.start; TIMING_BASE = [...d.start]; } TIMING_LAST = d.last || null; TIMING_OV = d.overrides || {}; }
     catch (e) { await timingReady; TIMING_BASE = [...DAY_START]; }
   }
-  function timingLastHtml() { const l = TIMING_LAST; if (!l) return ''; return '<div style="font-size:12px;color:var(--muted);margin:0 0 8px;">Last changed by <b>' + String(l.by || '').replace(/[<>&]/g, '') + '</b> · ' + String(l.at || '').slice(5, 16) + ' · ' + (l.ch || []).join(', ').replace(/[<>&]/g, '') + '</div>'; }
+  function timingLastHtml() {
+    const td = new Date(), today = td.getFullYear() + '-' + String(td.getMonth() + 1).padStart(2, '0') + '-' + String(td.getDate()).padStart(2, '0');
+    const fx = Object.keys(TIMING_OV || {}).filter((k) => k >= today).sort().map((k) => { const dd = new Date(k + 'T12:00:00'), [h, m] = String(TIMING_OV[k]).split(':').map(Number); return dd.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ' starts at ' + (((h + 11) % 12) + 1) + ':' + String(m).padStart(2, '0') + ' ' + (h >= 12 ? 'PM' : 'AM'); });
+    const fxHtml = fx.length ? '<div style="font-size:12px;margin:0 0 8px;padding:6px 10px;border-radius:8px;background:rgba(249,115,22,.12);color:#9a3412;">📌 Fixed date: ' + fx.join(' · ') + ' — set separately, the weekday times below do not change it.</div>' : '';
+    return fxHtml + timingLastOnly();
+  }
+  function timingLastOnly() { const l = TIMING_LAST; if (!l) return ''; return '<div style="font-size:12px;color:var(--muted);margin:0 0 8px;">Last changed by <b>' + String(l.by || '').replace(/[<>&]/g, '') + '</b> · ' + String(l.at || '').slice(5, 16) + ' · ' + (l.ch || []).join(', ').replace(/[<>&]/g, '') + '</div>'; }
   function timingVals() { const v = [...DAY_START]; document.querySelectorAll('.timing-in').forEach(i => { v[Number(i.dataset.wd)] = i.value || '10:00'; }); return v; }
   function paintWindows() {
     const v = timingVals();
