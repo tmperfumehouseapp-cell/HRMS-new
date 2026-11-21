@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Finance New · Reconciliation — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.bar .sp{flex:1}
+  .nav{display:flex;gap:4px;align-items:center;background:#fff;border-radius:999px;padding:3px 6px;box-shadow:inset 0 0 0 1.5px var(--sx-line)}
+  .nav button{border:0;background:none;width:34px;height:34px;border-radius:12px;font-size:18px;font-weight:800;cursor:pointer}.nav button:hover{background:var(--sx-bg)}.nav button:disabled{opacity:.3;cursor:default}
+  .nav input{border:0;background:none;font:800 14px inherit;min-height:34px;padding:0 4px}
+  .sec{margin-bottom:16px}.sec>h2{font-size:17px;margin:0 0 2px}.sec>.hint{font-size:12.5px;color:var(--sx-mut);margin-bottom:10px}
+  .k3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}@media (max-width:760px){.k3{grid-template-columns:1fr}}
+  .k{background:#fff;border-radius:18px;box-shadow:0 0 0 1px var(--sx-line);padding:12px 14px}.k small{display:block;color:var(--sx-mut);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .k b{display:block;font-size:22px;margin-top:2px;font-variant-numeric:tabular-nums}.k span{font-size:12px;color:var(--sx-mut)}.k.bad b{color:#b42318}
+  .tb{width:100%;border-collapse:collapse;font-size:13px}.tb th{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--sx-mut);text-align:right;padding:4px 6px;white-space:nowrap}.tb th:first-child,.tb td:first-child{text-align:left}
+  .tb td{padding:7px 6px;border-top:1px solid var(--sx-line);text-align:right;white-space:nowrap}.tb td small{display:block;color:var(--sx-mut);font-size:11px}.tb tr.void td{opacity:.45;text-decoration:line-through}
+  .age{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;background:#eef0f3;color:#475467}.age.w{background:#fff4e0;color:#b45309}.age.b{background:#fdecea;color:#b42318}
+  .wrap{overflow-x:auto}.cap{font-weight:800;font-size:13px;margin:12px 0 4px}
+  .tb tr.tot td{font-weight:800;border-top:2px solid var(--sx-ink);background:#eef0f6}.tb tr.off td{opacity:.5}
+  .drop{display:block;border:2px dashed var(--sx-line);border-radius:16px;padding:18px 12px;text-align:center;background:#fff;cursor:pointer;color:var(--sx-mut);font-weight:700;margin-top:10px}.drop:hover{border-color:var(--sx-accent);color:var(--sx-ink)}.drop small{display:block;font-weight:600;margin-top:3px}
+  .lnkb{border:0;background:none;font:800 13.5px inherit;color:var(--sx-ink);padding:0;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}.lnkb:hover{color:var(--sx-accent)}
+
+  .st{width:100%;border-collapse:collapse;font-size:13.5px}.st td{padding:8px 10px;border-top:1px solid var(--sx-line);text-align:right;font-variant-numeric:tabular-nums}.st td:first-child{text-align:left}.st td.c{text-align:center}
+  .st tr.h td{font-weight:800;background:#f6f7f9;border-top:2px solid var(--sx-ink);text-align:left;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#475467}
+  .st tr.t td{font-weight:800;background:#eef0f6}.st tr.ok td:last-child,.st .good{color:#0d7a55;font-weight:800}.st .bad{color:#b42318;font-weight:800}.st td small{display:block;color:var(--sx-mut);font-size:11px;font-weight:600}
+  @media print{#sidebar,.topbar,.noprint,.sx-btn{display:none !important}.main{margin:0 !important;padding:0 !important}.sx-card{box-shadow:none !important;border:1px solid #ccc}body{background:#fff !important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Finance New · Reconciliation</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Prepaid orders of the website (GoKwik → PayU) against your daily PayU settlement file <span style="margin-left:8px;padding:1px 8px;border-radius:999px;background:#e3f6ee;color:#0d7a55;font-weight:800;font-size:11px">version 21 Nov · Reconciliation</span></div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('fn_recon');
+  const PAGE_VER = 'Reconciliation 21 Nov · v1';
+  const m2 = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dFmt = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+  const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  const note = (id, m, bad) => { const e = $(id); if (e) e.innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
+  let TODAY = '', CHN = [], ACC = [], cur = null, incl = true, lastStmt = null;
+
+  // ---------- the page
+  async function init() {
+    try {
+      const o = await api.get('fi.settings_get'); TODAY = o.today;
+      const ch = await api.get('fn.in_channels', { date: TODAY }); CHN = (ch.channels.prepaid || []).filter((c) => c.active);
+      ACC = (await api.get('fn.accounts')).accounts.filter((a) => a.active);
+      draw(); loadPre(); loadHist();
+    } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  function draw() {
+    const pu = CHN.find((c) => /payu/i.test(c.name)) || CHN[0];
+    $('root').innerHTML = `<div class="sx-card noprint"><div style="display:flex;align-items:center;gap:8px"><div class="cap" style="margin:0;flex:1">New reconciliation</div><button class="sx-btn" id="bDiag" style="padding:2px 12px" title="Checks everything and writes a report you can copy and send to Claude">🩺 Diagnose</button></div>
+        <div class="sx-r2" style="margin-top:8px"><label class="sx-f">Gateway channel<select class="sx-in" id="rCh">${CHN.map((c) => `<option value="${c.id}" ${pu && pu.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+          <label class="sx-f">Came into (bank)<select class="sx-in" id="rAcc">${ACC.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label></div>
+        <div class="sx-r2" style="margin-top:8px"><label class="sx-f">Day the money came <small class="sx-mut">(settlement day)</small><input class="sx-in" id="rDay" type="date" value="${esc(TODAY)}" max="${esc(TODAY)}"></label>
+          <label class="sx-f">Orders of day <small class="sx-mut">(T+1: the day before)</small><input class="sx-in" id="rOd" type="date" value="${esc(addDays(TODAY, -1))}" max="${esc(TODAY)}"></label></div>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;font-weight:700"><input type="checkbox" id="rGk" checked> Only the orders paid through GoKwik (payment id starts with KWIK)</label>
+        <label class="drop" for="rFile">Choose the daily PayU settlement file (.xlsx or .csv)<small>The PayU report is recognised by itself: nothing to set.</small></label><input type="file" id="rFile" accept=".xlsx,.csv,.txt,.tsv" style="display:none">
+        <div id="rMsg" style="margin-top:8px"></div><div id="rOpt"></div></div>
+      <div id="rDiag"></div><div id="rPre" class="noprint"></div><div id="rStmt"></div>
+      <div class="sx-card wrap noprint"><div class="cap" style="margin-top:0">Earlier statements</div><div id="rHist"><div class="sx-mut">Loading…</div></div></div>`;
+    if (!ACC.length) $('rMsg').innerHTML = `<div class="sx-msg warn">${sxi('alert')}<span>Add a bank first: Finance New → Bank Accounts.</span></div>`;
+    $('rDay').onchange = () => { if (!$('rOd').dataset.own) $('rOd').value = addDays($('rDay').value, -1); changed(); };
+    $('rOd').onchange = () => { $('rOd').dataset.own = '1'; changed(); };
+    $('rGk').onchange = changed; $('rCh').onchange = () => { cur = null; $('rOpt').innerHTML = ''; $('rStmt').innerHTML = ''; changed(); };
+    $('rFile').onchange = onFile; $('bDiag').onclick = runDiag;
+  }
+  const changed = () => { if (cur) recalc(); else loadPre(); };
+  async function loadPre() {
+    const el = $('rPre'); if (!el || cur) return;
+    try {
+      const r = await api.get('fn.in_orders_day', { date: $('rOd').value, gokwik_only: $('rGk').checked ? 1 : '' });
+      el.innerHTML = `<div class="sx-card"><div class="cap" style="margin-top:0">Orders to reconcile <small class="sx-mut">${esc(dFmt(r.orders_day))}</small></div>
+        <div class="k3"><div class="k"><small>Sales of the day</small><b style="font-size:19px">${r.sales.orders}</b><span>${m2(r.sales.total)}</span></div><div class="k"><small>${r.gokwik ? 'Prepaid via GoKwik / PayU' : 'Prepaid orders'}</small><b style="font-size:19px">${r.count}</b><span>${m2(r.amount)}</span></div><div class="k"><small>Other prepaid (no GoKwik id)</small><b style="font-size:19px">${r.other_prepaid.orders}</b><span>${m2(r.other_prepaid.amount)}</span></div></div>
+        <div class="sx-msg ok">${sxi('ok')}<span>Choose the PayU settlement file above. The statement will show, order by order, what PayU paid, the charges cut and the net.</span></div></div>`;
+    } catch (e) { el.innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+
+  // ---------- the file
+  async function onFile() {
+    const f = $('rFile').files[0]; if (!f) return; cur = null; $('rStmt').innerHTML = ''; $('rMsg').innerHTML = `<div class="sx-mut">Reading ${esc(f.name)} …</div>`;
+    try { const fd = new FormData(); fd.append('file', f); fd.append('channel_id', $('rCh').value); const p = await api.upload('fn.in_upload_preview', fd); $('rMsg').innerHTML = ''; $('rPre').innerHTML = ''; startPreview(p); }
+    catch (e) { note('rMsg', e.message, 1); }
+  }
+  function startPreview(p) {
+    const M = Object.assign({}, p.cols, { fees: p.cols.fees.slice() }); cur = { p, M, calc: null }; incl = true;
+    const H = p.header, sel = (k, label) => `<label class="sx-f">${label}<select class="sx-in" data-m="${k}"><option value="-1">— none —</option>${H.map((h, i) => h === '' ? '' : `<option value="${i}" ${M[k] === i ? 'selected' : ''}>${i + 1}. ${esc(h)}</option>`).join('')}</select></label>`;
+    $('rOpt').innerHTML = `${p.provider ? `<div class="sx-msg ok" style="margin-top:8px">${sxi('ok')}<span><b>Recognised as a ${esc(p.provider)} report.</b> ${p.same_file ? 'But this same file was already saved: ' + esc(p.same_file) + '.' : 'The columns are chosen for you.'}</span></div>` : `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>Not a known report: check the columns below.</span></div>`}
+      <div id="rFlags"></div>
+      <details ${p.provider ? '' : 'open'} style="margin-top:8px"><summary class="sx-mut" style="cursor:pointer;font-size:12.5px">Columns and day filter</summary>
+        <div class="sx-r2" style="margin-top:8px">${sel('utr', 'UTR column')}${sel('net', 'Net amount column')}</div>
+        <div class="sx-r2" style="margin-top:8px">${sel('order', 'Order number / transaction ID column')}${sel('gross', 'Gross amount column')}</div>
+        <div class="sx-r2" style="margin-top:8px"><label class="sx-f">Take only one day's rows<select class="sx-in" id="rDm"><option value="tx">Only the Orders-of-day (transaction date)</option><option value="settle">Only the settlement date = Day the money came</option><option value="off">All days in the file</option></select></label>${sel('date', 'Transaction date column')}</div>
+        <div class="sx-r2" style="margin-top:8px">${sel('sdate', 'Settlement date column')}<div></div></div>
+        <div class="sx-f" style="margin-top:8px">Charges columns<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px">${H.map((h, i) => h === '' ? '' : `<label style="display:flex;gap:4px;align-items:center;font-size:12.5px;font-weight:600"><input type="checkbox" class="mf" value="${i}" ${M.fees.includes(i) ? 'checked' : ''}>${esc(h)}</label>`).join('')}</div></div></details>`;
+    $('rOpt').querySelectorAll('select,.mf').forEach((x) => { x.onchange = recalc; });
+    recalc();
+  }
+  const dayFilter = () => { const m = $('rDm') ? $('rDm').value : 'tx', M = cur.M; if (m === 'tx' && M.date >= 0) return { col: M.date, day: $('rOd').value }; if (m === 'settle' && M.sdate >= 0) return { col: M.sdate, day: $('rDay').value }; return null; };
+  const body = () => { const M = cur.M; const g = (k) => { const e = document.querySelector('[data-m="' + k + '"]'); return e ? +e.value : M[k]; }; ['utr', 'net', 'gross', 'order', 'date', 'sdate'].forEach((k) => { M[k] = g(k); }); M.fees = [...document.querySelectorAll('.mf:checked')].map((x) => +x.value);
+    return { upload_id: cur.p.upload_id, cols: M, orders_day: $('rOd').value, include_pending: incl ? 1 : 0, day_filter: dayFilter(), gokwik_only: $('rGk').checked ? 1 : 0, account_id: +$('rAcc').value }; };
+  async function recalc() {
+    if (!cur) return;
+    try {
+      const r = await api.post('fn.in_upload_calc', body()); cur.calc = r;
+      $('rFlags').innerHTML = (r.skipped && r.skipped.no_utr ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;padding:10px 12px;border-radius:14px;background:#fff4e0;font-size:13px;font-weight:700"><input type="checkbox" id="rIncl" ${incl ? 'checked' : ''} style="margin-top:3px"><span>Add the <b>${r.skipped.no_utr} payment${r.skipped.no_utr === 1 ? '' : 's'} not settled yet</b> as income now (PayU settles them today).<br><small style="font-weight:600;color:#7a4b00">When the settled file comes later, these are not added again.</small></span></label>` : '')
+        + `<div class="sx-mut" style="font-size:12.5px;margin-top:6px">Read ${r.skipped.read} rows: <b>${r.rows} counted</b>${r.skipped.no_utr ? ` · ${r.skipped.no_utr} paid but not settled yet` : ''}${r.skipped.other_day ? ` · <b>${r.skipped.other_day} rows of other days left out</b>` : ''}${r.skipped.failed ? ` · ${r.skipped.failed} failed / cancelled` : ''}${r.already ? ` · ${r.already} already added before (${m2(r.already_net)})` : ''}</div>`;
+      const ic = $('rIncl'); if (ic) ic.onchange = () => { incl = ic.checked; recalc(); };
+      renderStatement($('rStmt'), r.recon, { file: cur.p.file, day: $('rDay').value, bank: $('rAcc').selectedOptions[0] ? $('rAcc').selectedOptions[0].textContent : '', calc: r, mode: 'new' });
+    } catch (e) { note('rMsg', e.message, 1); }
+  }
+  async function saveStmt() {
+    const b = $('bSave'); if (b) b.disabled = true;
+    try {
+      const x = Object.assign(body(), { date: $('rDay').value }); const sv = await api.post('fn.in_upload_commit', x);
+      note('rMsg', sv.entry_id ? `Saved: ${m2(sv.net)} added as income to ${$('rAcc').selectedOptions[0].textContent}. The statement is kept under “Earlier statements”.` : 'Statement saved. These payments were already added as income earlier, so nothing new was added.');
+      cur = null; $('rOpt').innerHTML = ''; $('rFile').value = ''; loadHist();
+    } catch (e) { note('rMsg', e.message, 1); if (b) b.disabled = false; }
+  }
+
+  // ---------- the statement
+  function renderStatement(el, rc, meta) {
+    if (!rc) { el.innerHTML = '<div class="sx-card"><div class="sx-mut">No comparison: choose the “Orders of day”.</div></div>'; return; }
+    lastStmt = { rc, meta }; let filt = 'all', all = false;
+    const f = rc.found, ex = rc.expected, pe = rc.pending || { orders: 0, amount: 0, net: 0 }, mi = rc.missing, oth = rc.other_rows, op = rc.other_prepaid;
+    const sumOrders = f.orders + pe.orders + mi.orders, sumAmt = Math.round((f.order_amount + pe.amount + mi.amount) * 100) / 100, tie = sumOrders === ex.orders && Math.abs(sumAmt - ex.amount) < 0.05;
+    const fileNet = Math.round((f.net + oth.net) * 100) / 100;
+    const draw2 = () => {
+      const rows = rc.orders.filter((o) => filt === 'all' || (filt === 'came' ? o.found : filt === 'pend' ? o.pending : filt === 'diff' ? o.differs : (!o.found && !o.pending))), shown = all ? rows : rows.slice(0, 60);
+      el.innerHTML = `<div class="sx-card wrap" id="stmtBox"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:16px">PayU Reconciliation Statement</div><span class="noprint" style="display:flex;gap:6px"><button class="sx-btn" id="bPrint" style="padding:2px 12px">Print</button><button class="sx-btn" id="bCsv" style="padding:2px 12px">Download CSV</button>${meta.mode === 'new' ? `<button class="sx-btn big" id="bSave" style="padding:4px 16px" ${meta.calc && (meta.calc.dups > 0 || (meta.calc.net <= 0 && !(meta.calc.rows === 0 && meta.calc.already > 0))) ? 'disabled' : ''}>Save and add ${m2(meta.calc ? meta.calc.net : 0)} to the bank</button>` : ''}</span></div>
+        <div class="sx-mut" style="font-size:12.5px;margin:4px 0 10px">Orders of <b>${esc(dFmt(rc.orders_day))}</b> (HRMS day, 10 AM to 10 AM) · ${rc.gokwik ? 'paid through <b>GoKwik / PayU</b> (KWIK id)' : 'all prepaid orders'} · Settlement file <b>${esc(meta.file || '')}</b> · money came <b>${esc(dFmt(meta.day))}</b>${meta.bank ? ' · bank <b>' + esc(meta.bank) + '</b>' : ''}</div>
+        <table class="st"><tr class="h"><td>1. Orders against the file</td><td>Orders</td><td>Amount</td></tr>
+          <tr><td>A. Prepaid orders on the website${rc.gokwik ? ' (GoKwik → PayU)' : ''}</td><td>${ex.orders}</td><td>${m2(ex.amount)}</td></tr>
+          <tr><td>B. Reconciled: PayU settled them in this file<small>the order amount of the matched orders</small></td><td>${f.orders}</td><td>${m2(f.order_amount)}</td></tr>
+          <tr><td>C. Paid by the customer, settlement still pending<small>in the file but no UTR yet</small></td><td>${pe.orders}</td><td>${m2(pe.amount)}</td></tr>
+          <tr><td>D. Not found in the PayU file<small>another day, another gateway, or not paid</small></td><td>${mi.orders}</td><td>${m2(mi.amount)}</td></tr>
+          <tr class="t"><td>Check: B + C + D = A</td><td>${sumOrders}</td><td class="${tie ? 'good' : 'bad'}">${m2(sumAmt)} ${tie ? '✓ ties' : '✗ does not tie'}</td></tr>
+          <tr class="h"><td>2. Money for the reconciled orders</td><td></td><td>Amount</td></tr>
+          <tr><td>Gross paid to PayU by the customers</td><td></td><td>${m2(f.gross)}</td></tr>
+          ${f.differs ? `<tr><td>Of which different from the order amount<small>${f.differs} order${f.differs === 1 ? '' : 's'}: a refund or a short payment (${m2(f.diff_amount)})</small></td><td>${f.differs}</td><td>${m2(f.diff_amount)}</td></tr>` : ''}
+          ${(rc.charges || []).map((c) => `<tr><td>Less: ${esc(c.name)}</td><td></td><td>− ${m2(c.amount)}</td></tr>`).join('')}
+          <tr class="t"><td>Net settlement for the reconciled orders<small>charges ${m2(f.fee)} = ${f.gross ? (100 * f.fee / f.gross).toFixed(2) : '0.00'}% of gross</small></td><td>${f.orders}</td><td>${m2(f.net)}</td></tr>
+          <tr class="h"><td>3. The whole file</td><td></td><td>Amount</td></tr>
+          <tr><td>Add: other settled rows in the file<small>not these orders: older orders, other gateway orders, or no order number</small></td><td>${oth.rows}</td><td>${m2(oth.net)}</td></tr>
+          <tr class="t"><td>Net settlement in the file<small>what should reach the bank</small></td><td></td><td>${m2(fileNet)}</td></tr>
+          ${op && op.orders && rc.gokwik ? `<tr><td class="sx-mut">Not part of this statement: other prepaid orders without a GoKwik id (Razorpay, Snapmint…)</td><td class="sx-mut">${op.orders}</td><td class="sx-mut">${m2(op.amount)}</td></tr>` : ''}
+        </table>
+        <div class="cap" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">Order by order <span class="noprint" style="display:flex;gap:6px;flex-wrap:wrap"><button class="sx-btn" data-rf="all" style="padding:2px 10px;${filt === 'all' ? '' : 'opacity:.55'}">All ${rc.orders.length}</button><button class="sx-btn" data-rf="came" style="padding:2px 10px;${filt === 'came' ? '' : 'opacity:.55'}">Reconciled ${f.orders}</button><button class="sx-btn" data-rf="pend" style="padding:2px 10px;${filt === 'pend' ? '' : 'opacity:.55'}">Pending ${pe.orders}</button><button class="sx-btn" data-rf="miss" style="padding:2px 10px;${filt === 'miss' ? '' : 'opacity:.55'}">Not in file ${mi.orders}</button><button class="sx-btn" data-rf="diff" style="padding:2px 10px;${filt === 'diff' ? '' : 'opacity:.55'}">Amount differs ${f.differs || 0}</button></span></div>
+        ${shown.length ? `<table class="tb"><tr><th>Order</th><th>Customer</th><th>Order amt</th><th>Status</th><th>Gross</th><th>Charges</th><th>Net</th><th>Diff</th><th>UTR</th></tr>${shown.map((o) => `<tr><td><b>${esc(o.name)}</b></td><td style="text-align:left">${esc(o.customer)}</td><td>${m2(o.amount)}</td><td>${o.found ? '<span class="age" style="background:#e3f6ee;color:#0d7a55">reconciled</span>' : o.pending ? '<span class="age w">pending</span>' : '<span class="age b">not in file</span>'}</td><td>${o.found || o.pending ? m2(o.gross) : ''}</td><td>${o.found || o.pending ? m2(o.fee) : ''}</td><td>${o.found ? '<b>' + m2(o.net) + '</b>' : o.pending ? '<span class="sx-mut">' + m2(o.net) + '</span>' : ''}</td><td>${o.found && o.diff ? '<span class="' + (o.differs ? 'bad' : '') + '">' + m2(o.diff) + '</span>' : ''}</td><td style="font-size:11.5px">${esc(o.utr)}</td></tr>`).join('')}</table>${rows.length > 60 && !all ? `<div class="noprint" style="padding:8px 0"><button class="sx-btn" data-rall="1">Show all ${rows.length}</button></div>` : ''}${rc.truncated ? '<div class="sx-mut" style="font-size:12px">Only the first 600 orders are listed.</div>' : ''}` : '<div class="sx-mut">None.</div>'}
+        ${oth.rows ? `<div class="cap">In the file but not an order of this statement <small class="sx-mut">${oth.rows} row${oth.rows === 1 ? '' : 's'} · net ${m2(oth.net)}</small></div><table class="tb"><tr><th>Id in the file</th><th>Gross</th><th>Charges</th><th>Net</th><th>UTR</th></tr>${oth.list.slice(0, 15).map((r) => `<tr><td style="text-align:left">${esc(r.id || '')}</td><td>${m2(r.gross)}</td><td>${m2(r.fee)}</td><td>${m2(r.net)}</td><td style="font-size:11.5px">${esc(r.utr)}</td></tr>`).join('')}</table>` : ''}</div>`;
+      el.querySelectorAll('[data-rf]').forEach((b) => { b.onclick = () => { filt = b.dataset.rf; all = false; draw2(); }; });
+      const ra = el.querySelector('[data-rall]'); if (ra) ra.onclick = () => { all = true; draw2(); };
+      $('bPrint').onclick = () => window.print(); $('bCsv').onclick = () => csv(); const sv = $('bSave'); if (sv) sv.onclick = saveStmt;
+    };
+    draw2();
+  }
+  function csv() {
+    const { rc, meta } = lastStmt, q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"', L = [];
+    L.push([q('PayU Reconciliation Statement'), q('Orders of ' + rc.orders_day), q('File ' + (meta.file || '')), q('Money came ' + (meta.day || ''))].join(','));
+    L.push([q('A Prepaid orders'), rc.expected.orders, rc.expected.amount].join(',')); L.push([q('B Reconciled'), rc.found.orders, rc.found.order_amount].join(','));
+    L.push([q('C Settlement pending'), rc.pending.orders, rc.pending.amount].join(',')); L.push([q('D Not in file'), rc.missing.orders, rc.missing.amount].join(','));
+    L.push([q('Gross paid'), '', rc.found.gross].join(',')); (rc.charges || []).forEach((c) => L.push([q('Less ' + c.name), '', c.amount].join(','))); L.push([q('Net settlement (reconciled orders)'), rc.found.orders, rc.found.net].join(','));
+    L.push([q('Other rows in the file'), rc.other_rows.rows, rc.other_rows.net].join(',')); L.push('');
+    L.push(['Order', 'Customer', 'Order amount', 'Status', 'Gross', 'Charges', 'Net', 'Difference', 'UTR'].map(q).join(','));
+    rc.orders.forEach((o) => L.push([q(o.name), q(o.customer), o.amount, q(o.found ? 'reconciled' : o.pending ? 'pending' : 'not in file'), o.found || o.pending ? o.gross : '', o.found || o.pending ? o.fee : '', o.found || o.pending ? o.net : '', o.found ? (o.diff || 0) : '', q(o.utr)].join(',')));
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + L.join('\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'payu-reconciliation-' + rc.orders_day + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ---------- earlier statements
+  async function loadHist() {
+    const el = $('rHist'); if (!el) return;
+    try {
+      const r = await api.get('fn.recon_list', {});
+      el.innerHTML = r.statements.length ? `<table class="tb"><tr><th>Orders of</th><th>Channel · file</th><th>Reconciled</th><th>Pending</th><th>Not in file</th><th>Net</th><th></th></tr>${r.statements.map((u) => `<tr class="${u.status === 'void' ? 'void' : ''}"><td>${esc(dFmt(u.orders_day))}<small>money ${esc(dFmt(u.day))}</small></td><td style="text-align:left">${esc(u.channel)}<small>${esc(u.file)}${u.gokwik ? ' · GoKwik' : ''}</small></td><td><b>${u.found}</b> of ${u.expected}</td><td>${u.pending}</td><td>${u.missing}</td><td><b>${m2(u.net)}</b></td><td style="white-space:nowrap">${u.status === 'ok' ? `<button class="sx-btn" data-open="${u.id}" style="padding:2px 10px">Open</button> <button class="sx-btn" data-void="${u.id}" style="padding:2px 10px">Cancel</button>` : '<small>cancelled</small>'}</td></tr>`).join('')}</table>` : '<div class="sx-mut">No statement saved yet.</div>';
+    } catch (e) { el.innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  document.addEventListener('click', async (e) => {
+    const t = e.target.closest('button'); if (!t) return;
+    if (t.dataset.open) { try { const r = await api.get('fn.in_upload_recon', { id: t.dataset.open }); cur = null; $('rPre').innerHTML = ''; $('rOpt').innerHTML = ''; renderStatement($('rStmt'), r.recon, { file: r.file, day: r.day, mode: 'saved' }); $('rStmt').scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (er) { alert(er.message); } }
+    else if (t.dataset.void) { const why = prompt('Why is this statement cancelled? Its money is taken off again.'); if (!why) return; try { await api.post('fn.in_upload_void', { id: +t.dataset.void, reason: why }); loadHist(); } catch (er) { alert(er.message); } }
+  });
+
+  // ---------- diagnose
+  async function runDiag() {
+    const out = $('rDiag'); out.innerHTML = '<div class="sx-card"><div class="sx-mut">Checking everything…</div></div>';
+    try {
+      const b = Object.assign({ channel_id: +$('rCh').value, orders_day: $('rOd').value, gokwik_only: $('rGk').checked ? 1 : 0, client: { ver: PAGE_VER, day: $('rDay').value, mode: $('rDm') ? $('rDm').value : '' } }, cur ? body() : {});
+      const r = await api.post('fn.in_diag', b);
+      out.innerHTML = `<div class="sx-card noprint"><div style="display:flex;align-items:center;gap:8px"><div class="cap" style="margin:0;flex:1">🩺 Diagnosis <small class="sx-mut">${cur ? 'with the file chosen now' : 'no file chosen yet: choose the file and press Diagnose again for the full check'}</small></div><button class="sx-btn" id="dgCopy" style="padding:2px 12px">Copy all</button></div>
+        <textarea id="dgBox" readonly style="width:100%;height:280px;margin-top:8px;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--sx-line);border-radius:12px;padding:8px;background:#fafbfc">${esc(r.text)}</textarea>
+        <div class="sx-mut" style="font-size:12px;margin-top:4px">Copy this and send it to Claude. It has no customer names, phone numbers or e-mails.</div></div>`;
+      $('dgCopy').onclick = async () => { const t = $('dgBox'); try { await navigator.clipboard.writeText(t.value); $('dgCopy').textContent = 'Copied ✓'; } catch (e) { t.focus(); t.select(); $('dgCopy').textContent = 'Now press Ctrl+C'; } };
+    } catch (e) { note('rDiag', e.message, 1); }
+  }
+  init();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
