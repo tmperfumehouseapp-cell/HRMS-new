@@ -16,6 +16,7 @@
   .fb .c{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
   .fb .bar{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center}.fb .bar input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font:inherit;background:#fff;color:#111}
   .fb .btn{background:#111;color:#fff;border:0;border-radius:10px;padding:9px 13px;font:700 12.5px inherit;cursor:pointer;text-decoration:none;display:inline-block}.fb .btn.g2{background:#0f766e}.fb .btn.gh{background:#fff;color:#111;border:1px solid var(--line)}.fb .btn.rd{background:#fff1f2;color:#b91c1c;border:1px solid #fecdd3}.fb .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .fb td .btn{white-space:nowrap}
   .fb .wrap{overflow-x:auto}.fb table{width:100%;border-collapse:collapse}.fb th{font-size:10.5px;text-align:left;color:#777;text-transform:uppercase;padding:5px 6px;white-space:nowrap}.fb td{padding:8px 6px;border-top:1px solid #eef0f2;vertical-align:top}
   .fb tr.row{cursor:pointer}.fb tr.row:hover td{background:#f8fafb}.fb tr.sel td{background:#f0fdf4!important}
   .fb .t{display:inline-block;border-radius:99px;padding:2px 9px;font-size:11px;font-weight:700;white-space:nowrap}.s-wait{background:#f3f4f6;color:#555}.s-sent{background:#fef3c7;color:#92400e}.s-replied{background:#e0e7ff;color:#3730a3}.s-proof{background:#dcfce7;color:#166534}.s-cmp{background:#fee2e2;color:#991b1b}.s-rew{background:#ede9fe;color:#5b21b6}.s-skip{background:#eceff1;color:#607d8b}
@@ -34,6 +35,26 @@
   .fb .pop.fold .pR{display:none}.fb .pop.full{padding:0}.fb .pop.full .pp{border-radius:0}.fb .pT{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 6px}.fb .pT .sp{flex:1}.fb .pT button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:5px 10px;font:700 12px inherit;cursor:pointer;color:#111}.fb .pT button.x{background:#111;color:#fff;border-color:#111}
   @media(max-width:900px){.fb .pp{flex-direction:column}.fb .pL{flex:1 1 60%}.fb .pR{width:auto;flex:1 1 40%;border-left:0;border-top:1px solid var(--line)}}
   @media(max-width:900px){.fb .g{grid-template-columns:1fr}.fb .k{grid-template-columns:repeat(3,1fr)}}
+  /* 📱 phone: one scrolling row of tabs, small number boxes, every order is a card (no sideways scrolling) */
+  @media(max-width:700px){
+    .fb{padding:4px 10px 90px;font-size:14px}
+    .fb .pills{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -10px 8px;padding:2px 10px}.fb .pills::-webkit-scrollbar{display:none}.fb .pills button{flex:none;padding:8px 13px;font-size:13px}
+    .fb .k{grid-template-columns:repeat(3,1fr);gap:6px}.fb .k div{padding:7px 8px;font-size:10.5px;line-height:1.25}.fb .k b{font-size:17px}
+    .fb .bar{gap:6px}.fb .bar input{min-width:0;flex:1 1 100%}.fb .bar .btn{flex:1;text-align:center;padding:11px 8px}
+    .fb .c{padding:8px;border-radius:12px}
+    .fb .wrap{overflow:visible}.fb table,.fb tbody{display:block}.fb thead{display:none}
+    .fb tr.row{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0;background:#fff}
+    .fb tr.row td{display:block;border:0;padding:2px 0;min-width:0;overflow-wrap:anywhere}
+    .fb tr.row td[data-l]::before{content:attr(data-l);display:block;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.03em}
+    .fb tr.row td[data-l="Order"],.fb tr.row td[data-l="Chat"]{grid-column:1/-1}.fb tr.row td[data-l="Order"]::before,.fb tr.row td[data-l="Chat"]::before{display:none}
+    .fb tr.row td[data-l="Chat"] .btn{width:100%;padding:11px;margin-top:4px}
+    .fb tr.row:hover td,.fb tr.sel td{background:transparent!important}.fb tr.sel{border-color:#0f766e;background:#f0fdf4}
+    .fb .set .row{gap:8px}.fb .set .row>div{flex:1 1 100%}.fb .set input,.fb .set select,.fb .set textarea{width:100%;box-sizing:border-box}
+    .fb .md{width:100%;max-height:92vh;padding:14px}.fb .ov{align-items:flex-end;padding:0}.fb .md{border-radius:16px 16px 0 0}
+    .fb .acts .btn,.fb .pR .acts .btn{padding:10px 12px;font-size:13px}
+    .fb .pop{padding:0}.fb .pp{border-radius:0}.fb .pL{padding:6px}.fb .pT button{padding:8px 11px}
+    #side{display:none}
+  }
 </style>
 </head>
 <body>
@@ -63,7 +84,7 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ST = { wait: ['Waiting', 's-wait'], sent: ['Message sent', 's-sent'], replied: ['Replied', 's-replied'], proof: ['Proof received', 's-proof'], rew: ['Reward given', 's-rew'], cmp: ['Complaint', 's-cmp'], skip: ['Left out', 's-skip'] };
-  const TABS = [['need', '🔔 Needs you'], ['owed', '🎁 Rewards owed'], ['all', 'All'], ['wait', 'Waiting'], ['sent', 'Message sent'], ['unseen', 'Not seen'], ['replied', 'Replied'], ['proof', 'Proof received'], ['rew', 'Reward given'], ['cmp', 'Complaint'], ['skip', 'Left out']];
+  const TABS = [['need', '🔔 Needs you'], ['issue', '🛠 Small issues'], ['owed', '🎁 Rewards owed'], ['all', 'All'], ['wait', 'Waiting'], ['sent', 'Message sent'], ['unseen', 'Not seen'], ['replied', 'Replied'], ['proof', 'Proof received'], ['rew', 'Reward given'], ['cmp', 'Complaint'], ['skip', 'Left out']];
   let tab = 'need', sel = '', query = '', L = null, CFG = null, CAN = false, DET = null, tplList = null, seq = 0;
   function say(t, bad) { const e = $('ts'); e.textContent = t; e.style.background = bad ? '#b91c1c' : '#111'; e.classList.add('on'); setTimeout(() => e.classList.remove('on'), 3200); }
   const dt = (s) => { if (!s) return ''; const m = /^\d{4}-(\d\d)-(\d\d)[ T](\d\d:\d\d)/.exec(s); if (!m) return s; return new Date(2000, +m[1] - 1, +m[2]).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' + m[3]; };
@@ -80,8 +101,9 @@
     $('kp').innerHTML = `<div>Delivered<b>${c.all}</b>last 60 days</div><div>Message sent<b>${c.sent_total}</b></div><div>Seen<b>${c.seen}</b>${c.sent_total ? Math.round(c.seen * 100 / c.sent_total) + '%' : ''}</div><div>Replied<b>${c.replied + c.proof + c.rew}</b></div><div>Proof received<b>${c.proof_orders}</b>orders with a screenshot</div><div>Complaints<b>${c.cmp}</b></div>`;
     $('warn').innerHTML = !CFG.on ? '<div class="warn">⚠ <b>Automatic messages are OFF.</b> Nothing is sent by itself yet. Open ⚙ Settings, pick the approved messages and switch it on.</div>' : (CFG.on && !CFG.start ? '<div class="warn">⚠ Set a <b>Start from</b> date in ⚙ Settings, or nothing is sent.</div>' : !CFG.tpl ? '<div class="warn">⚠ Pick the approved <b>feedback message</b> in ⚙ Settings, or nothing can be sent.</div>' : '');
     $('setSum').textContent = '· ' + (CFG.on ? 'automatic ON' : 'automatic OFF') + ' · message after ' + CFG.wait + ' days · follow-up after ' + CFG.fu + ' days';
+    { const st = L.counts.issue_stats || {}, ks = Object.keys(st); $('warn').insertAdjacentHTML('beforeend', tab === 'issue' && ks.length ? '<div class="sm" style="margin:6px 0">Last 30 days: ' + ks.map((k) => esc((ISS.find((z) => z[0] === k) || ['', k])[1]) + ' ' + st[k]).join(' · ') + '</div>' : ''); }
     $('none').style.display = L.rows.length ? 'none' : 'block';
-    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="font-weight:800;color:#c2410c">${esc(x.order)}</a>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '<span style="color:#b91c1c" title="' + esc(x.msg_why) + '">✗ Failed</span><br><span class="sm" style="color:#b91c1c">open it to see why</span>' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span>${x.last_call ? '<br><span class="sm">📞 ' + esc(x.last_call.replace(/^Call:\s*/, '')) + '</span>' : ''}</td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td><td><button class="btn g2" data-chat="${esc(x.order)}" type="button" style="padding:5px 9px">💬 Open chat</button></td></tr>`).join('');
+    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td data-l="Order"><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="font-weight:800;color:#c2410c">${esc(x.order)}</a>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td data-l="Customer">${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td data-l="Delivered">${esc(dd(x.delivered))}</td><td data-l="Message">${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td data-l="Seen">${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '<span style="color:#b91c1c" title="' + esc(x.msg_why) + '">✗ Failed</span><br><span class="sm" style="color:#b91c1c">open it to see why</span>' : '✓ Not seen')) : '—'}</td><td data-l="Status"><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span>${x.last_call ? '<br><span class="sm">📞 ' + esc(x.last_call.replace(/^Call:\s*/, '')) + '</span>' : ''}</td><td data-l="Proof">${x.proofs ? '🖼 ' + x.proofs : '—'}</td><td data-l="Chat"><button class="btn g2" data-chat="${esc(x.order)}" type="button" style="padding:5px 9px">💬 Open chat</button></td></tr>`).join('');
     renderSet();
   }
   function renderSet() {
@@ -115,23 +137,28 @@
     const hdr = `<div class="h"><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="color:#c2410c">${esc(x.order)}</a> · ${esc(x.customer || '')}</div><div class="sm">${esc(x.phone)} · delivered ${esc(dt(x.delivered))} · <span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span></div>
       ${d.proofs.length ? '<div class="ph phs">Loading…</div>' : '<div class="sm" style="margin:6px 0">No feedback screenshot yet</div>'}
       ${x.msg_state === 'failed' ? `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:12px;line-height:1.45"><b>✗ WhatsApp could not deliver the message.</b><br>${esc(x.msg_why)}</div>` : ''}${x.place ? `<div class="sm">Given on: <b>${esc(x.place)}</b></div>` : ''}${x.reward_note ? `<div class="sm">Reward: <b>${esc(x.reward_note)}</b>${x.reward_order ? ' · order ' + esc(x.reward_order) : ''}</div>` : ''}${x.cx_code ? `<div class="sm">Complaint: <b>${esc(x.cx_code)}</b></div>` : ''}`;
-    const acts = `<div class="acts">${x.status === 'wait' ? '<button class="btn g2" data-act="now">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" data-act="fu">📨 Send follow-up</button>' : ''}<button class="btn gh" data-act="call">📞 Call done</button><button class="btn gh" data-act="pf">⬆ Add proof manually</button><button class="btn g2" data-act="rw">🎁 Reward</button>${x.reward_state === 'owed' ? '<button class="btn g2" data-act="rws">✅ Reward sent</button>' : ''}<button class="btn rd" data-act="cx">⚠ Customer has an issue</button><button class="btn gh" data-act="sk">Leave out</button>${x.test ? '<button class="btn rd" data-act="del">🗑 Delete this test</button>' : ''}</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">💛 THANK-YOU — ONE TAP</div><div class="acts">${(CFG.thanks || []).map((t, i) => `<button class="btn g2" data-th="${i}" type="button">💛 ${esc(t.name)}</button>`).join('')}</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">🔗 SEND A REVIEW LINK — ONE TAP</div><div class="acts">${(CFG.links || []).map((l, i) => `<button class="btn g2" data-lk="${i}" type="button">🔗 ${esc(l.name)}</button>`).join('')}<button class="btn gh" data-act="links" type="button">＋ Add / manage links</button></div>`;
+    const issBox = x.issue_state === 'open' ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;margin:8px 0"><div class="h" style="font-size:12.5px">🛠 SMALL ISSUE · ${esc((ISS.find((z) => z[0] === x.issue_type) || ['', x.issue_type])[1])}</div><div class="sm">${esc(x.issue_note)} · since ${esc(dt(x.issue_at))}</div><div class="acts"><button class="btn g2" data-act="ifx" data-k="msg">💬 Apology message</button><button class="btn g2" data-act="ifx" data-k="gift">🎁 Free 10/20 ML</button><button class="btn g2" data-act="ifx" data-k="repl">📦 Replacement (₹0 order)</button><button class="btn gh" data-act="call">📞 Call done</button><button class="btn rd" data-act="cx">⚠ Escalate to Complaint</button><button class="btn g2" data-act="isv">✅ Solved</button></div></div>` : '';
+    const acts = issBox + `<div class="acts">${x.status === 'wait' ? '<button class="btn g2" data-act="now">📨 Send message now</button>' : ''}${x.msg_at ? '<button class="btn gh" data-act="fu">📨 Send follow-up</button>' : ''}<button class="btn gh" data-act="call">📞 Call done</button><button class="btn gh" data-act="pf">⬆ Add proof manually</button><button class="btn g2" data-act="rw">🎁 Reward</button>${x.reward_state === 'owed' ? '<button class="btn g2" data-act="rws">✅ Reward sent</button>' : ''}<button class="btn g2" data-act="iss">🛠 Small issue</button><button class="btn rd" data-act="cx">⚠ Customer has an issue</button><button class="btn gh" data-act="sk">Leave out</button>${x.test ? '<button class="btn rd" data-act="del">🗑 Delete this test</button>' : ''}</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">💛 THANK-YOU — ONE TAP</div><div class="acts">${(CFG.thanks || []).map((t, i) => `<button class="btn g2" data-th="${i}" type="button">💛 ${esc(t.name)}</button>`).join('')}</div><div class="h" style="margin-top:10px;font-size:12px;color:#0f766e">🔗 SEND A REVIEW LINK — ONE TAP</div><div class="acts">${(CFG.links || []).map((l, i) => `<button class="btn g2" data-lk="${i}" type="button">🔗 ${esc(l.name)}</button>`).join('')}<button class="btn gh" data-act="links" type="button">＋ Add / manage links</button></div>`;
     const rest = `${x.test ? '<div class="sm" style="margin-top:6px">🧪 This is a test: nothing is sent automatically for it. Use the chat and the buttons, reply from the customer\'s WhatsApp, and send a screenshot to see the whole flow.</div>' : ''}
       ${txt ? `<div class="h" style="margin-top:12px;font-size:12.5px">Message that ${x.msg_at ? 'was' : 'will be'} sent</div><div class="msg">${esc(txt)}</div>` : '<div class="sm" style="margin-top:10px">No message is picked yet (⚙ Settings).</div>'}
       <div class="h" style="margin-top:10px;font-size:12.5px">History</div><div class="tl">${d.events.length ? d.events.map((e) => `<div><b>${esc(dt(e.at))}</b> ${esc(e.txt)}${e.by_name && e.by_name !== 'automatic' ? ' <span class="sm">· ' + esc(e.by_name) + '</span>' : ''}</div>`).join('') : '<div class="sm">Nothing yet.</div>'}</div>`;
     return { hdr, acts, rest };
   }
-  const ACTS = { now: () => send('fb.send_now'), fu: () => send('fb.followup'), call: () => callDone(), links: () => manageLinks(), pf: () => pickProof(), rw: () => reward(), rws: () => rewardSent(), cx: () => complaint(), sk: () => leaveOut(), del: () => delTest(), chat: () => openPop() };
+  const ACTS = { now: () => confirmSend('fb.send_now'), fu: () => confirmSend('fb.followup'), call: () => callDone(), links: () => manageLinks(), pf: () => pickProof(), iss: () => issueOpen(), ifx: (e) => issueFix(e.currentTarget.dataset.k), isv: () => issueSolved(), rw: () => reward(), rws: () => rewardSent(), cx: () => complaint(), sk: () => leaveOut(), del: () => delTest(), chat: () => openPop() };
+  // a message is put into the chat box (NOT sent): read it, change it, press Send
+  function toChat(text) {
+    if (!popOpen) openPop();
+    let n = 0; const put = () => { const fr = document.getElementById('chatFr'); const ta = fr && fr.contentDocument && fr.contentDocument.getElementById('wxTx');
+      if (ta) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); say('Message is in the chat box — change it if you like, then Send'); }
+      else if (++n < 40) setTimeout(put, 300); else say('Open the chat first, then tap again.', true); }; put();
+  }
   function wire(root, d) {
     root.querySelectorAll('[data-act]').forEach((b) => { const f = ACTS[b.dataset.act]; if (f) b.onclick = f; });
     root.querySelectorAll('[data-th]').forEach((b) => { b.onclick = async () => {      // the message goes into the chat box (not sent): read it, change it, press Send
       const t = CFG.thanks[+b.dataset.th]; if (!t) return; b.disabled = true;
       try {
         const r = await api.post('fb.thanks_text', { order: sel, text: t.msg });
-        if (!popOpen) openPop();
-        let n = 0; const put = () => { const fr = document.getElementById('chatFr'); const ta = fr && fr.contentDocument && fr.contentDocument.getElementById('wxTx');
-          if (ta) { ta.value = r.text; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); say('Message is in the chat box — change it if you like, then Send'); }
-          else if (++n < 40) setTimeout(put, 300); else say('Open the chat first, then tap again.', true); }; put();
+        toChat(r.text);
       } catch (e) { say(e.message, true); } b.disabled = false; }; });
     root.querySelectorAll('[data-lk]').forEach((b) => { b.onclick = () => askLink(+b.dataset.lk); });
     const box = root.querySelector('.phs'); if (!d.proofs.length || !box) return; box.innerHTML = '';
@@ -167,6 +194,18 @@
   document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if ($('ov').classList.contains('on')) closeM(); else if (popOpen) closePop(); });
   // a message sent from the panel (not typed in the chat) is shown in the chat at once: the chat is loaded again
   function chatRefresh() { setTimeout(() => { try { const fr = document.getElementById('chatFr'); if (fr && fr.contentWindow) fr.contentWindow.location.reload(); } catch (e) { } }, 600); }
+  // 👁 first see the message: send it as it is, pick a different approved message, or write it yourself in the chat box
+  async function confirmSend(act) {
+    const x = DET.row, fu = act === 'fb.followup'; let cur = fu ? CFG.tpl_fu : CFG.tpl;
+    if (!tplList) { try { const t = await api.get('wa.camp_templates'); tplList = ((t || {}).templates || []).filter((z) => (Array.isArray(z.vars) ? z.vars.length : (+z.vars || 0)) <= 1); } catch (e) { tplList = []; } }
+    modal(`<h3>${fu ? '📨 Follow-up' : '📨 Feedback message'} to ${esc(x.customer || x.order)}</h3><div class="sm">${esc(x.phone)} · check the message first</div><label>Message to send (approved by Meta)</label><select id="cs">${(tplList || []).map((z) => `<option value="${z.id}" ${+z.id === +cur ? 'selected' : ''}>${esc(z.name)}</option>`).join('') || '<option value="0">— no approved messages —</option>'}</select><div class="msg" id="cm" style="margin-top:8px;white-space:pre-wrap">Loading…</div>
+      <div class="sm" style="margin-top:6px">An approved message cannot be edited. To change the words, use <b>Write it myself</b>: the text goes into the chat box and you send it from there (only within 24 hours of the customer's last message).</div>
+      <div class="acts"><button class="btn g2" id="cgo">✅ Send this message</button><button class="btn gh" id="cme">✏ Write it myself in chat</button><button class="btn gh" id="cno">Cancel</button></div>`);
+    let txt = ''; const show = async () => { cur = +$('cs').value; $('cm').textContent = 'Loading…'; try { const r = await api.post('fb.tpl_text', { order: x.order, tpl: cur }); txt = r.text || ''; $('cm').textContent = txt || 'No text to show for this message.'; } catch (e) { $('cm').textContent = e.message; } };
+    $('cs').onchange = show; show(); $('cno').onclick = closeM;
+    $('cme').onclick = () => { closeM(); toChat(txt); };
+    $('cgo').onclick = async () => { const b = $('cgo'); b.disabled = true; try { await api.post(act, { order: x.order, tpl: cur }); closeM(); say('Message sent'); chatRefresh(); load(); } catch (e) { say(e.message, true); b.disabled = false; } };
+  }
   async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); chatRefresh(); load(); } catch (e) { say(e.message, true); } }
   /* several places + a new one typed by hand (it is kept in the list for next time) */
   function placeBox(sel) {
@@ -199,6 +238,30 @@
     $('rgc').onclick = (e) => { const c = e.target.closest('.chip'); if (c) $('rg').value = c.dataset.g; };
     $('rno').onclick = closeM;
     $('rgo').onclick = async () => { try { await api.post('fb.reward', { order: x.order, gift: $('rg').value, place: [...document.querySelectorAll('#pch .chip.on')].map((c) => c.dataset.p).join(', '), reward_order: $('ro').value }); closeM(); say('Reward saved'); load(); } catch (e) { say(e.message, true); } };
+  }
+  const ISS = [['smell', 'Smell different from before'], ['bottle', 'Bottle / packing not proper'], ['less', 'Less quantity'], ['item', 'Wrong or missing small item'], ['notrecv', 'Delivered in the system but not received'], ['other', 'Other']];
+  const APOLOGY = { smell: 'Hello {name} ji 🙏 Aapne smell ke baare mein bataya, uske liye sorry. Hum is par dhyaan de rahe hain. Aapke liye hum kuch behtar kar denge — aap bas hume yahi bata dijiye ki aapko kaisa lag raha hai.', bottle: 'Hello {name} ji 🙏 Bottle / packing mein jo dikkat aayi, uske liye sorry. Hum ise theek karenge — kripya ek photo bhej dijiye.', less: 'Hello {name} ji 🙏 Quantity kam lagi, uske liye sorry. Kripya ek photo bhej dijiye, hum ise dekhkar theek karenge.', item: 'Hello {name} ji 🙏 Item mein jo kami rahi uske liye sorry. Hum use bhej denge — bas aap confirm kar dijiye.', notrecv: 'Hello {name} ji 🙏 Hum aapka parcel check kar rahe hain. Kripya ek baar apne aas-paas / ghar walon se pooch lijiye, hum courier se bhi baat karte hain.', other: 'Hello {name} ji 🙏 Aapko jo dikkat aayi uske liye sorry. Hum ise theek karenge — kripya thoda detail bata dijiye.' };
+  function issueOpen() {
+    const x = DET.row;
+    modal(`<h3>🛠 Small issue — ${esc(x.order)}</h3><div class="sm">${esc(x.customer)} · it stays here (no complaint ticket) until you tap Solved.</div><div class="chips" id="ic" style="margin-top:8px">${ISS.map(([k, l]) => `<span class="chip" data-k="${k}">${l}</span>`).join('')}</div><label>Note</label><input id="in" placeholder="What the customer said">
+      <div class="acts"><button class="btn g2" id="igo">Save</button><button class="btn gh" id="ino">Cancel</button></div>`);
+    let pick = ''; $('ic').onclick = (e) => { const c = e.target.closest('.chip'); if (!c) return; pick = c.dataset.k; document.querySelectorAll('#ic .chip').forEach((z) => z.classList.toggle('on', z === c)); };
+    $('ino').onclick = closeM;
+    $('igo').onclick = async () => { if (!pick) { say('Pick the type of issue.', true); return; } try { await api.post('fb.issue_open', { order: x.order, type: pick, note: $('in').value }); closeM(); say('Small issue saved'); load(); } catch (e) { say(e.message, true); } };
+  }
+  async function issueFix(k) {
+    const x = DET.row;
+    if (k === 'msg') { toChat((APOLOGY[x.issue_type] || APOLOGY.other).replace(/\{name\}/g, x.customer || '')); try { await api.post('fb.issue_fix', { order: x.order, fix: 'apology message prepared' }); } catch (e) { } return; }
+    if (k === 'gift') { reward(); try { await api.post('fb.issue_fix', { order: x.order, fix: 'free perfume offered' }); } catch (e) { } return; }
+    modal(`<h3>📦 Replacement for ${esc(x.order)}</h3><div class="sm">First make a ₹0 order on the <a href="hub.html?w=dispatch&t=dispatch_manual" target="_top">Manual order page</a>, then type its number. Its tracking ID goes to the customer by the automatic order messages.</div><label>Replacement order number</label><input id="rpo" placeholder="WM-00044">
+      <div class="acts"><button class="btn g2" id="rpg">Save</button><button class="btn gh" id="rpn">Cancel</button></div>`);
+    $('rpn').onclick = closeM;
+    $('rpg').onclick = async () => { const n = $('rpo').value.trim(); if (!n) { say('Type the replacement order number.', true); return; } try { await api.post('fb.issue_fix', { order: x.order, fix: 'replacement order ' + n }); closeM(); say('Saved'); load(); } catch (e) { say(e.message, true); } };
+  }
+  function issueSolved() {
+    const x = DET.row;
+    modal(`<h3>✅ Solved — ${esc(x.order)}</h3><label>How was it solved? (short)</label><input id="ish" placeholder="e.g. apology + 10 ML free"><div class="acts"><button class="btn g2" id="isg">Mark solved</button><button class="btn gh" id="isn">Cancel</button></div>`);
+    $('isn').onclick = closeM; $('isg').onclick = async () => { try { await api.post('fb.issue_solved', { order: x.order, how: $('ish').value }); closeM(); say('Solved'); load(); } catch (e) { say(e.message, true); } };
   }
   async function rewardSent() { const ro = prompt('Reward order number (WM-…), optional:', DET.row.reward_order || ''); if (ro === null) return; try { await api.post('fb.reward_sent', { order: sel, reward_order: ro }); say('Reward marked sent'); load(); } catch (e) { say(e.message, true); } }
   function listEditor(title, hint, key, fields, save) {
@@ -240,13 +303,9 @@
   }
   const LKMSG = 'Hello {name}, thank you for your order {order}. If you liked it, please share your feedback here: {link}';
   const fillMsg = (l, x) => (l.msg || LKMSG).replace(/\{name\}/g, (x.customer || '').split(' ')[0] || 'ji').replace(/\{order\}/g, x.order).replace(/\{link\}/g, l.url);
-  function askLink(i) {
+  function askLink(i) {      // the review link goes into the chat box (not sent): change the words if you like, then Send
     const x = DET.row, l = (CFG.links || [])[i]; if (!l) return;
-    modal(`<h3>Send “${esc(l.name)}” to ${esc(x.customer || x.order)}?</h3><div class="sm">${esc(x.phone)} · goes on WhatsApp from HRMS now. You can change the words below.</div><textarea id="lm" rows="5" style="margin-top:8px">${esc(fillMsg(l, x))}</textarea>
-      <div class="sm" style="margin-top:6px">A typed message goes only within 24 hours of the customer's last message. After that, send an approved pre-made message with the link from the chat (✨).</div>
-      <div class="acts"><button class="btn g2" id="lgo">Send now</button><button class="btn gh" id="lno">Cancel</button></div>`);
-    $('lno').onclick = closeM;
-    $('lgo').onclick = async () => { const b = $('lgo'); b.disabled = true; try { await api.post('fb.send_link', { order: x.order, url: l.url, text: $('lm').value }); closeM(); say(l.name + ' link sent on WhatsApp'); chatRefresh(); load(); } catch (e) { say(e.message, true); b.disabled = false; } };
+    let t = fillMsg(l, x); if (t.indexOf(l.url) < 0) t += '\n' + l.url; toChat(t);
   }
   async function saveLinks(list) { const r = await api.post('fb.links_save', { links: list }); CFG.links = r.links; if (DET) drawSide(); return r.links; }
   function manageLinks() {
@@ -292,7 +351,7 @@
     }
     const t = e.target.closest('[data-t]'); if (t) { tab = t.dataset.t; query = ''; $('q').value = ''; load(); return; }
     const cb = e.target.closest('[data-chat]'); if (cb) { e.stopPropagation(); openOrder(cb.dataset.chat).then(() => openPop()); return; }
-    const r = e.target.closest('tr.row'); if (r) { openOrder(r.dataset.o); }
+    const r = e.target.closest('tr.row'); if (r) { if (window.innerWidth <= 700) openOrder(r.dataset.o).then(() => openPop()); else openOrder(r.dataset.o); }
   });
   let qt = 0; $('q').oninput = (e) => { clearTimeout(qt); qt = setTimeout(() => { query = e.target.value.trim(); load(); }, 350); };
   load(); setInterval(() => { if (!document.hidden && !$('ov').classList.contains('on')) load(); }, 60000);
