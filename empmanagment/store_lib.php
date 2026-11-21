@@ -1603,6 +1603,13 @@ if (!function_exists('budget_store_calc')) {
         return is_numeric($v) && (float)$v >= 0 && (float)$v <= 30 ? (float)$v : 6.0;
     }
     function st_name_key(string $n): string { return strtolower(trim(preg_replace('/\s+/', ' ', $n))); }
+    /** old POS bills the owner pointed at an employee by hand: POS order id => employee id */
+    function st_oldpos_assign_get(PDO $pdo): array
+    {
+        $j = null; try { if (function_exists('setting_get')) $j = json_decode((string)setting_get($pdo, 'st_oldpos_assign', ''), true); } catch (Throwable $e) { }
+        $out = []; foreach ((array)$j as $k => $v) if ((int)$k > 0 && (int)$v > 0) $out[(string)(int)$k] = (int)$v;
+        return $out;
+    }
     function budget_oldpos_rows(PDO $pdo, string $from, string $to, array $newDays): array
     {
         $h = function_exists('st_day_hour') ? st_day_hour() : 3; $dd = "DATE(DATE_SUB(o.created_at, INTERVAL $h HOUR))";
@@ -1616,13 +1623,14 @@ if (!function_exists('budget_store_calc')) {
             $qi = $pdo->prepare("SELECT oi.order_id, oi.variant_title vt, oi.title t, oi.qty q FROM pos_order_items oi JOIN pos_orders o ON o.id = oi.order_id WHERE o.created_at >= ? AND o.created_at < ?");
             $qi->execute([$lo, $hi]);
             foreach ($qi->fetchAll() as $r) { if (preg_match('/(\d+)\s*ml/i', (string)$r['vt'], $m) || preg_match('/(\d+)\s*ml/i', (string)$r['t'], $m)) $ml[(int)$r['order_id']] = ($ml[(int)$r['order_id']] ?? 0) + (int)$m[1] * (int)$r['q']; }
-            $alias = st_name_alias($pdo);
+            $alias = st_name_alias($pdo); $hand = st_oldpos_assign_get($pdo);
             $emps = $pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll(); $byFull = []; $byFirst = [];
             foreach ($emps as $e) { $fn = strtolower(trim(preg_replace('/\s+/', ' ', (string)$e['full_name']))); $byFull[$fn] = $e; $f1 = (string)strtok($fn, ' '); $byFirst[$f1][] = $e; }
             foreach ($ord as $o) {
                 if (isset($newDays[(string)$o['d']])) continue;
                 $nm = trim((string)$o['billed_by']); $k = strtolower(trim(preg_replace('/\s+/', ' ', $nm))); $e = $byFull[$k] ?? null;
                 if (!$e) { $f1 = (string)strtok($k, ' '); if (isset($byFirst[$f1]) && count($byFirst[$f1]) === 1) $e = $byFirst[$f1][0]; }
+                if (isset($hand[(string)(int)$o['id']])) { foreach ($emps as $ee) if ((int)$ee['employee_id'] === (int)$hand[(string)(int)$o['id']]) { $e = $ee; break; } }   // set by hand on this bill
                 if (!$e && $k !== '' && isset($alias[$k])) { foreach ($emps as $ee) if ((int)$ee['employee_id'] === (int)$alias[$k]) { $e = $ee; break; } }   // the owner linked this written name
                 $rows[] = ['bill_id' => -(int)$o['id'], 'bill_no' => 'POS-' . (int)$o['id'], 'biz_date' => (string)$o['d'], 'created_at' => (string)$o['created_at'], 'emp_id' => $e ? (int)$e['employee_id'] : 0,
                     'emp_name' => $e ? (string)$e['full_name'] : ($nm !== '' ? $nm : 'Old POS'), 'order_code' => $hasCode ? (string)($o['order_code'] ?? '') : '', 'total_ml' => (int)($ml[(int)$o['id']] ?? 0), 'total' => (float)$o['total'], 'real_id' => $e ? (int)$e['employee_id'] : null, 'src' => 'old_pos'];
