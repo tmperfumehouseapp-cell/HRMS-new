@@ -398,6 +398,13 @@ function wln_since_15(PDO $pdo): bool
     $to = wl_ist_at('2026-11-15', 10); setting_set($pdo, 'wl_since_v3', '1'); if ($c['since'] <= $to) return false;
     $c['since'] = $to; wl_cfg_put($pdo, $c); wa_log($pdo, 'engine', true, 'Lineup: catching everybody who wrote since ' . date('Y-m-d H:i', $to) . ' (15 Nov 10:00 IST)'); return true;
 }
+/** Owner, 21 Nov: "today take the 1st to the 14th as well" - one time: the Lineup also catches everybody who wrote since 1 Nov 10:00 IST (the enrolment takes 3,000 a round; the older ones start at step 1 now, like the 15th ones did). */
+function wln_since_1(PDO $pdo): bool
+{
+    if ((string)setting_get($pdo, 'wl_since_v4', '') === '1') return false; $c = wl_cfg($pdo); if ($c['started'] === '' || $c['since'] <= 0) return false;
+    $to = wl_ist_at('2026-11-01', 10); setting_set($pdo, 'wl_since_v4', '1'); if ($c['since'] <= $to) return false;
+    $c['since'] = $to; wl_cfg_put($pdo, $c); wa_log($pdo, 'engine', true, 'Lineup: catching everybody who wrote since ' . date('Y-m-d H:i', $to) . ' (1 Nov 10:00 IST)'); return true;
+}
 function wln_since_back(PDO $pdo): bool
 {
     if ((string)setting_get($pdo, 'wl_since_v2', '') === '1') return false; $c = wl_cfg($pdo); if ($c['started'] === '' || $c['since'] <= 0) return false;
@@ -564,7 +571,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && !$sendonly && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     $book = !$force && !$sendonly && function_exists('wa_lock') && wa_lock($pdo, 'wlbook', 50);   // the bookkeeping (enrolment, re-reads, rescue) is done by ONE caller a minute; the sending is shared by shards below
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window (none unless wl_cfg.win = 1)
-    if ($book) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); wln_ladder30($pdo); wln_since_15($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
+    if ($book) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); wln_ladder30($pdo); wln_since_15($pdo); wln_since_1($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if ($book && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }   // failed as marketing -> sent again as utility on the spot
