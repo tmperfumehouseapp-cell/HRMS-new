@@ -68,7 +68,7 @@ window.WaOrd = (function () {
   .wor-res{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid #f0f2f5} .wor-res>div{flex:1;min-width:0} .wor-res b{font-size:14.5px} .wor-res small{display:block;color:#667781;font-size:12.5px;line-height:1.3}
   .wor-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#111b21;color:#fff;padding:11px 18px;border-radius:999px;font:600 14px Inter,system-ui,sans-serif;z-index:2147483200;max-width:88vw;text-align:center} .wor-toast.bad{background:#b3261e}
   /* the Dispatch tab and the settings / store forms: the HRMS look */
-  .wor-pg{max-width:980px;margin:0 auto} .wor-tile{background:var(--surface,#fff);border-radius:var(--radius,20px);padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 2px rgba(20,22,26,.04),0 6px 18px -10px rgba(20,22,26,.12)}
+  .wor-page{max-width:980px;margin:0 auto}   /* the page wrapper has its OWN name: it shared ".wor-pg" with the 5-step progress row, so a whole page was laid out in 5 narrow columns */ .wor-tile{background:var(--surface,#fff);border-radius:var(--radius,20px);padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 2px rgba(20,22,26,.04),0 6px 18px -10px rgba(20,22,26,.12)}
   .wor-tile h2{margin:0 0 4px;font-size:17px;font-weight:800;color:var(--ink,#14161a)} .wor-sub{font-size:13px;color:var(--muted,#6f7480);margin:0 0 10px;line-height:1.4}
   .wor-stats{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px} .wor-st{background:var(--surface,#fff);border-radius:16px;padding:9px 14px;box-shadow:0 1px 2px rgba(20,22,26,.04);min-width:84px} .wor-st b{display:block;font-size:20px;font-weight:800;color:var(--ink,#14161a)} .wor-st span{font-size:12px;color:var(--muted,#6f7480);font-weight:600}
   .wor-tabs{display:flex;gap:6px;margin:0 0 12px;overflow-x:auto} .wor-tabs button{flex:none;border:1px solid var(--line,#e6e8ec);background:#fff;border-radius:99px;padding:8px 15px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;color:#4a505c} .wor-tabs button.on{background:var(--ink,#14161a);color:#fff;border-color:var(--ink,#14161a)}
@@ -403,12 +403,12 @@ window.WaOrd = (function () {
   function attention(el, o) {
     css(); o = o || {}; el.classList.add('wor'); const S = { tab: 'open', d: null, t: null };
     async function load(quiet) {
-      if (!quiet) el.innerHTML = '<div class="wor-pg"><div class="wor-empty">Loading…</div></div>';
-      try { S.d = await api.get('wa.ord_cases', { status: S.tab, limit: 120 }); } catch (e) { el.innerHTML = '<div class="wor-pg"><div class="wor-tile"><div class="wor-err">' + esc(errMsg(e)) + '</div></div></div>'; return; }
+      if (!quiet) el.innerHTML = '<div class="wor-page"><div class="wor-empty">Loading…</div></div>';
+      try { S.d = await api.get('wa.ord_cases', { status: S.tab, limit: 120 }); } catch (e) { el.innerHTML = '<div class="wor-page"><div class="wor-tile"><div class="wor-err">' + esc(errMsg(e)) + '</div></div></div>'; return; }
       draw(); if (o.onCount) o.onCount(S.d.counts.open);
     }
     function draw() {
-      const d = S.d, c = d.counts; let h = '<div class="wor-pg"><div class="wor-stats"><div class="wor-st"><b>' + c.open + '</b><span>Open</span></div><div class="wor-st"><b>' + c.unowned + '</b><span>Nobody has it</span></div><div class="wor-st"><b>' + c.mine + '</b><span>Mine</span></div><div class="wor-st"><b>' + c.auto + '</b><span>From the courier</span></div><div class="wor-st"><b>' + c.done_today + '</b><span>Done today</span></div></div>';
+      const d = S.d, c = d.counts; let h = '<div class="wor-page"><div class="wor-stats"><div class="wor-st"><b>' + c.open + '</b><span>Open</span></div><div class="wor-st"><b>' + c.unowned + '</b><span>Nobody has it</span></div><div class="wor-st"><b>' + c.mine + '</b><span>Mine</span></div><div class="wor-st"><b>' + c.auto + '</b><span>From the courier</span></div><div class="wor-st"><b>' + c.done_today + '</b><span>Done today</span></div></div>';
       h += '<div class="wor-tabs"><button data-tab="open" class="' + (S.tab === 'open' ? 'on' : '') + '">Open</button><button data-tab="done" class="' + (S.tab === 'done' ? 'on' : '') + '">Done</button></div>';
       h += d.cases.length ? d.cases.map((x) => caseHtml(x, d.is_admin)).join('') : '<div class="wor-tile"><div class="wor-empty"><b>' + (S.tab === 'open' ? 'Nothing needs attention' : 'Nothing finished yet') + '</b>' + (S.tab === 'open' ? 'Urgent cases from WhatsApp chats and delivery problems from the courier show up here.' : '') + '</div></div>';
       h += '<div data-settings></div></div>'; el.innerHTML = h;
@@ -541,7 +541,7 @@ window.WaOrd = (function () {
     }
     function draw() {
       const d = S.d, i = d.info, ro = d.can_edit ? '' : ' disabled'; const f = (k, label, ph, extra) => '<div><label>' + label + '</label><input class="wor-in" data-f="' + k + '" value="' + esc(i[k]) + '" placeholder="' + esc(ph || '') + '"' + ro + (extra || '') + '></div>';
-      let h = '<div class="wor-pg"><div class="wor-tile"><h2>Store info</h2><p class="wor-sub">The bot and the pre-made messages read this. If something is empty the bot says a team member will confirm it, it never guesses.' + (d.can_edit ? '' : ' Only Admin and HR can change it.') + '</p>';
+      let h = '<div class="wor-page"><div class="wor-tile"><h2>Store info</h2><p class="wor-sub">The bot and the pre-made messages read this. If something is empty the bot says a team member will confirm it, it never guesses.' + (d.can_edit ? '' : ' Only Admin and HR can change it.') + '</p>';
       h += d.open_now ? '<span class="wor-now ' + (d.open_now.open ? 'open' : 'shut') + '">' + (d.open_now.open ? '● ' : '○ ') + esc(d.open_now.text) + '</span>' : '<span class="wor-now">Add the timings to see if the shop is open now</span>';
       h += '<div class="wor-f two" style="margin-top:12px">' + f('name', 'Store name', 'TM Perfume House') + f('phone', 'Phone', '+91 …') + '</div><div class="wor-f" style="margin-top:10px">' + f('address', 'Address', 'Shop number, street, city') + f('map_link', 'Google Maps link', 'https://maps.google.com/…', ' inputmode="url"') + '</div></div>';
       h += '<div class="wor-tile"><h2>Timings</h2><p class="wor-sub">Opening and closing time for each day. Tick "Closed" for a day off.</p><div class="wor-hrs">';
