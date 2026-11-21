@@ -1527,7 +1527,16 @@
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
       moReady(() => { if (!window.WaManual) { toast('Could not open the manual order. Refresh the page.', true); return; } WaManual.open({ phone: p, name: nm, api, onDone: () => { try { pollChat(); } catch (e) { } } }); });
     }
-    function openCart() {
+    function openCart() {   // 🧩 the add-on offer goes first (owner, 21 Nov): before the payment link the customer is offered 1 or 2 more bottles
+      if (!S.cur) return; const c0 = S.cur.contact || {}, p0 = c0.phone || S.cur.phone;
+      api.post('wa.g_addon_check', { phone: p0 }).then((a) => {
+        if (a && a.can_offer) { if (confirm('Send the ADD-ON offer first?\n\nThe customer is offered 1 or 2 more bottles at a special price before the payment link. Wait for his answer, then make the link with the new total.\n\nOK = send the offer now · Cancel = make the link without it')) { api.post('wa.g_addon_offer', { phone: p0 }).then((r) => { toast(r.message || 'Done', !r.ok); if (!r.ok) openCart2(); }).catch((e) => { toast(e.message, true); openCart2(); }); return; } }
+        else if (a && a.state === 'offered') { if (!confirm('The add-on offer is waiting for the customer\'s answer (' + Math.ceil((a.left || 0) / 60) + ' min left).\n\nOK = wait · Cancel = make the link anyway')) { openCart2(); } else { toast('Wait for his answer: the add-on is added to the total'); } return; }
+        else if (a && a.state === 'accepted') toast('➕ Add-on accepted: ' + a.n + ' bottle(s), Rs ' + a.amount + ' — put it in the cart');
+        openCart2();
+      }).catch(() => openCart2());
+    }
+    function openCart2() {
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
       chReady(() => { if (!window.WaCart) { toast('Could not open the cart. Refresh the page.', true); return; } WaCart.open({ phone: p, name: nm, api, onChange: () => { try { pollChat(); } catch (e) { } } }); });
     }
