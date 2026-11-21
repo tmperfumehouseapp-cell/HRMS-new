@@ -558,6 +558,11 @@ function wag_read(array $r, bool $waiting, bool $win, bool $hot, bool $cx, int $
     return ['k' => 'ask', 'u' => '💬 New message' . $w, 'd' => 'Reply now'];
 }
 /** 🧩 ADD-ON MODULE (owner, 21 Nov): when the customer gave the address (the order is final) and BEFORE the payment link, the bot offers ONE add-on bottle (same size) at a fixed discount, or TWO. The price is made by CODE from the agreed order, never by the AI or the guidebook: normal order = 25% off for one / 32% off for two bottles; an order already at the 2,800+ ticket = 15% / 20%. Switch: wag_addon_on = 0. The salesperson earns a fixed 6% on the add-on amount (recorded in wag_addon; payroll hookup is checked with the owner). */
+/** Add-on use before the link (owner, 21 Nov: "check whether people add the add-on before making the link"): per day and person — cart_open (Cart pressed while the offer was still possible), sent (he pressed "send the add-on offer first"), skipped (he made the link without it). */
+function wag_addon_count(PDO $pdo, int $emp, string $what): void
+{
+    try { $k = 'adc:' . date('md'); $j = json_decode((string)setting_get($pdo, $k, '{}'), true); if (!is_array($j)) $j = []; $j[$emp][$what] = (int)($j[$emp][$what] ?? 0) + 1; setting_set($pdo, $k, json_encode($j)); } catch (Throwable $e) { }
+}
 function wag_addon_ensure(PDO $pdo): void { static $ok = null; if ($ok) return; $ok = true; try { $pdo->exec("CREATE TABLE IF NOT EXISTS wag_addon (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, at DATETIME NOT NULL, status VARCHAR(10) NOT NULL, n TINYINT NOT NULL DEFAULT 0, size_ml INT NOT NULL DEFAULT 0, total_before INT NOT NULL DEFAULT 0, amount INT NOT NULL DEFAULT 0, p1 INT NOT NULL DEFAULT 0, p2 INT NOT NULL DEFAULT 0, KEY k_ph (phone), KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { } }
 /** [qty, size_ml, total, p1, p2] from the price the bot / person quoted ("5 x 20 ml ... Rs 1760"); null when it is not clear (then no offer: never guess a price). */
 function wag_addon_calc(PDO $pdo, string $key): ?array
@@ -1791,6 +1796,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_addon_check': {   // 🧩 before the link: has the add-on offer gone out? ('' = not yet · offered · accepted · declined · passed · skip)
             $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $st = wag_meta_get($pdo, 'addon:' . $key, ''); $p = explode('|', $st);
             $can = (string)setting_get($pdo, 'wag_addon_on', '1') !== '0' && ($st === '' || $p[0] === 'skip') && wag_address_seen($pdo, $key) && wag_addon_calc($pdo, $key) !== null;
+            if ($can) wag_addon_count($pdo, (int)($auth['employee_id'] ?? 0), 'cart_open'); elseif ($p[0] === 'accepted') wag_addon_count($pdo, (int)($auth['employee_id'] ?? 0), 'cart_after_accept');
             json_response(['ok' => true, 'state' => $p[0], 'can_offer' => $can, 'n' => $p[0] === 'accepted' ? (int)($p[2] ?? 0) : 0, 'amount' => $p[0] === 'accepted' ? (int)($p[3] ?? 0) : 0, 'left' => $p[0] === 'offered' ? max(0, 300 - (time() - (int)($p[1] ?? 0))) : 0]);
         }
         case 'wa.g_addon_offer': {   // 🧩 "Send add-on offer first": the same offer the bot sends by itself ~5 s after the address
@@ -1798,7 +1804,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $me = (int)($auth['employee_id'] ?? 0);
             if (!$adm && (int)($c['assigned_emp'] ?? 0) !== $me) json_response(['error' => 'Only the person who holds this chat can send the add-on offer.'], 403);
             $st = wag_meta_get($pdo, 'addon:' . $key, ''); if (strpos($st, 'skip|') === 0) { try { $pdo->prepare("DELETE FROM wq_meta WHERE k = ?")->execute(['addon:' . $key]); } catch (Throwable $e) { } }
-            $ok = wag_addon_offer($pdo, $c, $key); json_response(['ok' => $ok, 'message' => $ok ? 'The add-on offer was sent. Wait for the customer\'s answer, then make the link with the new total.' : 'The add-on offer could not be sent (no clear price in the chat, or already offered). You can make the link.']);
+            $ok = wag_addon_offer($pdo, $c, $key); if ($ok) wag_addon_count($pdo, $me, 'sent'); json_response(['ok' => $ok, 'message' => $ok ? 'The add-on offer was sent. Wait for the customer\'s answer, then make the link with the new total.' : 'The add-on offer could not be sent (no clear price in the chat, or already offered). You can make the link.']);
         }
         case 'wa.g_makelink': {   // 🔗 the holder is making the payment link / order link: the chat stays with him up to 8 minutes (it does not go back to OPEN)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
