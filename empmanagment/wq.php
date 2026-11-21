@@ -1103,6 +1103,20 @@ function wq_new_day(PDO $pdo, string $day): array
     $o = []; try { $q = $pdo->prepare("SELECT emp_id e, COUNT(*) n FROM wa_queries WHERE opened_at >= ? AND opened_at < ? AND emp_id > 0 GROUP BY emp_id"); $q->execute([wq_dt(wq_day_start($pdo, $day)), wq_dt(wq_day_start($pdo, wq_day_add($day, 1)))]); foreach ($q->fetchAll() as $r) $o[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }
     return $o;
 }
+/** One person's QUERY-card count of a business day (owner, 21 Nov): the queries held by a person that are NOT campaign / community (those belong to the Campaign card) — Meta, new and unclear types. */
+function wq_new_day_fresh(PDO $pdo, string $day): array
+{
+    $o = []; try { $q = $pdo->prepare("SELECT q.emp_id e, COUNT(*) n FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community') GROUP BY q.emp_id"); $q->execute([wq_dt(wq_day_start($pdo, $day)), wq_dt(wq_day_start($pdo, wq_day_add($day, 1)))]); foreach ($q->fetchAll() as $r) $o[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }
+    return $o;
+}
+/** Same as wq_qcount_days, but the WhatsApp Sales side counts only the Query-card kinds (no campaign / community). */
+function wq_qfresh_days(PDO $pdo, string $from, string $to): array
+{
+    $cut = wq_cutover_date($pdo); $out = [];
+    $oldTo = ($cut !== '' && $cut <= $to) ? wq_day_add($cut, -1) : $to; foreach (wq_old_days($pdo, $from, $oldTo) as $d => $m) $out[$d] = $m;
+    if ($cut !== '' && max($from, $cut) <= $to) foreach (wq_days_between(max($from, $cut), $to) as $d) { $m = wq_new_day_fresh($pdo, $d); if ($m) $out[$d] = $m; }
+    ksort($out); return $out;
+}
 /** ['YYYY-MM-DD' => [emp => n]] — each day from ONE side: old typed counts before the cut-over date (or when there is none), WhatsApp Sales from it. */
 function wq_qcount_days(PDO $pdo, string $from, string $to): array
 {

@@ -492,7 +492,7 @@
   const TST = { approved: ['Approved', 'ok'], partial: ['Approved (1 account)', 'ok'], pending: ['Pending at Meta', 'warn'], rejected: ['Rejected', 'bad'], paused: ['Paused', 'warn'], draft: ['Draft', 'b'], missing: ['Not at Meta', 'warn'] };
   // ⏱ ONE Journey: the Timeline (jny_ui.js) is the plan; the rest of the tabs are its own screens (wj_ui.js) and the order messages.
   P.followups = (el, ctx) => {
-    const T = [['jtimeline', '⏱ Timeline'], ['wjclaude', '🧠 Claude'], ['wjtopics', '💡 Topics'], ['wjfest', '🪔 Festivals'], ['jresults', '📊 Results'], ['orderupd', '📦 Order updates'], ['afterdel', '⭐ After delivery'], ['birthdays', '🎂 Birthdays']]; let cur = 'jtimeline'; try { const sv = localStorage.getItem('wa_fu_sub2'); cur = T.some((x) => x[0] === sv) ? sv : 'jtimeline'; } catch (e) { /* private mode */ }
+    const T = [['jtimeline', '⏱ Timeline'], ['wjclaude', '🧠 Claude'], ['wjtopics', '💡 Topics'], ['wjfest', '🪔 Festivals'], ['jresults', '📊 Results'], ['afterdel', '⭐ After delivery'], ['birthdays', '🎂 Birthdays']]; let cur = 'jtimeline';   /* 📦 Order updates has its own page (Autobot → Order updates) */ try { const sv = localStorage.getItem('wa_fu_sub2'); cur = T.some((x) => x[0] === sv) ? sv : 'jtimeline'; } catch (e) { /* private mode */ }
     el.innerHTML = '<div id="fuOneK"></div><div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneX"></div>';
     // 🎯 THE number that matters: orders that came from follow-ups (Autopilot, Journey, and chats people won through Rescue)
     const KP = el.querySelector('#fuOneK'); let kd = 30;

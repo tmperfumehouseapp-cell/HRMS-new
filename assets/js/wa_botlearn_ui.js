@@ -8,6 +8,7 @@
   function css() {
     if (document.getElementById('blCss')) return; var st = document.createElement('style'); st.id = 'blCss';
     st.textContent = '#blStrip{margin:0}.bl{margin:8px 12px;border:1px solid #cfe3d6;background:#f3faf6;border-radius:12px;font-size:13px;color:#1f2a37}.bl-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:9px 12px;cursor:pointer}.bl-h b{flex:1 1 0;min-width:140px;line-height:1.3}.bl-s{flex:1 1 100%;order:5;font-size:12px;line-height:1.35;padding-left:26px}.bl-h .bl-ar{margin-left:auto}.bl-b{padding:0 12px 10px}.bl-i{border-top:1px solid #dfece4;padding:9px 0}.bl-i q{display:block;color:#445;margin:2px 0}.bl-bad{color:#a33}.bl-good{color:#116b3a;font-weight:600}.bl-r{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.bl button{border:0;border-radius:9px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}.bl .ap{background:#128c4a;color:#fff}.bl .sk{background:#e6e9ee;color:#445}.bl textarea{width:100%;box-sizing:border-box;font:inherit;padding:6px;border:1px solid #cfd6dd;border-radius:8px;margin-top:4px}.bl table{font-size:12px}.bl td,.bl th{padding:3px 6px;white-space:nowrap}@media (max-width:520px){.bl{margin:6px 8px;font-size:12.5px}.bl-h{padding:8px 10px}}';
+    st.textContent += '#blChips{display:flex;gap:8px;flex-wrap:wrap;padding:8px 12px;flex:none}#blChips:empty{display:none}.bc{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #cfd6e4;background:#fff;color:#1f2a37;border-radius:999px;padding:5px 11px;font:700 12.5px/1.2 inherit;font-family:inherit;cursor:pointer;white-space:nowrap}.bc b{font-weight:900}.bc i{font-style:normal;opacity:.55;font-size:10px}.bc.o{border-color:#e8590c;background:#ffe8d6;color:#9a3412;font-size:13.5px;padding:7px 14px;box-shadow:0 0 0 2px rgba(232,89,12,.25)}.bc.b{border-color:#c7d7f0;background:#f2f6fd;color:#1e3a8a}.bc.g{border-color:#cfe3d6;background:#f3faf6;color:#166534}.bc.on{outline:2px solid #16a34a}#blPend .bl-h,#blMkt .bl-h,#blHr .bl-h,#blStrip .bl-h{display:none}';
     document.head.appendChild(st);
   }
   function draw() {
@@ -34,7 +35,7 @@
   }
   function say(msg, bad) { var t = document.createElement('div'); t.className = 'wp-toast' + (bad ? ' bad' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(function () { t.remove(); }, 3500); }
   function act(body) { if (busy) return; busy = true; api.post('wa.g_botlearn_apply', body).then(function (r) { say(body.ignore ? 'Ignored' : '✅ Applied to the live guidebook (' + (r.applied || 0) + '). The bot uses it now.'); return load(); }).catch(function (e) { say(e.message, true); }).then(function () { busy = false; }); }
-  var pend = null, popen = false;
+  var pend = null, popen = false, pfirst = false;
   function drawPend() {
     var host2 = document.getElementById('blPend'); if (!host2) { host2 = document.createElement('div'); host2.id = 'blPend'; host.parentNode.insertBefore(host2, host); }
     if (!pend || !pend.can || !pend.total) { host2.innerHTML = ''; return; } css();
@@ -62,16 +63,34 @@
     var rate = mkt.offered_today ? Math.round(100 * mkt.taken_in_4min / mkt.offered_today) : null;
     var h = '<div class="bl" style="border-color:#c7d7f0;background:#f2f6fd"><div class="bl-h" id="bmH"><span>🏪</span><b>Open market — who takes the hot chats and closes orders</b><span class="bl-s" style="color:#357">today: offered ' + (mkt.offered_today || 0) + ' · taken ' + (mkt.taken_today || 0) + (rate === null ? '' : ' · within 4 min ' + rate + '%') + '</span><span class="bl-ar">' + (mopen ? '▲' : '▼') + '</span></div>';
     if (mopen) {
+      var bt = mkt.bot_ticket; if (bt) h += '<div class="bl-b" style="padding-bottom:0"><div style="background:#fff;border:1px solid #c7d7f0;border-radius:10px;padding:8px 10px;font-size:12.5px;color:#1e3a8a"><b>🎯 Ticket size from Shopify (last ' + bt.days + ' days)</b><br>Orders where the bot talked to the customer first: <b>' + bt.bot_n + '</b> · average <b>₹' + bt.bot_avg + '</b> · ₹2,700+ in <b>' + bt.bot_pct + '%</b><br>Orders with no bot message: <b>' + bt.other_n + '</b> · average <b>₹' + bt.other_avg + '</b> · ₹2,700+ in <b>' + bt.other_pct + '%</b></div></div>';
       h += '<div class="bl-b"><div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px"><tr style="text-align:left;color:#567"><th>#</th><th>Person</th><th>Score</th><th>Orders</th><th>Avg order</th><th>Taken</th><th>🔴 Left</th><th>🟥 Cherry</th><th>Take after</th><th>1st reply</th><th>Today</th></tr>';
       w.forEach(function (x, i) { var d = tt[x.emp] || {}; h += '<tr style="border-top:1px solid #dbe4f2"><td>' + (i + 1) + '</td><td>' + esc(x.name) + (x.present ? ' 🟢' : '') + '</td><td><b>' + x.score + '</b></td><td>' + x.orders + '</td><td>' + (x.avg_ticket ? '₹' + x.avg_ticket : '–') + '</td><td>' + x.taken + '</td><td style="color:' + ((x.dropped + x.released) ? '#b00' : '#567') + '">' + (x.dropped + x.released) + '</td><td style="color:' + (x.cherry ? '#b00' : '#567') + ';font-weight:' + (x.flag ? 800 : 400) + '">' + (x.cherry || 0) + (x.flag ? ' ⚠' : '') + '</td><td>' + mm(x.wait_med_s) + '</td><td>' + mm(x.reply_med_s) + '</td><td>' + (d.taken || 0) + ' taken · ' + (d.orders || 0) + ' orders' + ((d.dropped || d.released) ? ' · <span style="color:#b00">' + (d.dropped + d.released) + ' left</span>' : '') + '</td></tr>'; });
       if (mkt.team) h += '<tr style="border-top:2px solid #9fb6dc;background:#e6eefb"><td></td><td><b>Team average</b></td><td></td><td>' + mkt.team.orders + '</td><td>' + (mkt.team.avg_ticket ? '₹' + mkt.team.avg_ticket : '–') + '</td><td>' + mkt.team.taken + '</td><td></td><td>' + (mkt.team.cherry || 0) + '</td><td></td><td>' + mm(mkt.team.reply_med_s) + '</td><td>' + (mkt.team.ratio === null ? '–' : mkt.team.ratio + '% of taken became orders') + '</td></tr>';
+      var hh = mkt.hours || {}, hrs = []; for (var k = 8; k <= 22; k++) hrs.push(k);
+      h += '</table></div><div style="margin-top:10px;font-weight:700;color:#357">Hour by hour today — taken / 🔴 left</div><div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12px"><tr style="color:#567"><th style="text-align:left;padding:2px 6px">Person</th>' + hrs.map(function (k) { return '<th style="padding:2px 6px">' + k + '</th>'; }).join('') + '<th style="padding:2px 6px">Total</th></tr>';
+      w.forEach(function (x) { var r = hh[x.emp]; if (!r) return; var tk = 0, dr = 0; h += '<tr style="border-top:1px solid #dbe4f2"><td style="padding:2px 6px;white-space:nowrap">' + esc(x.name) + '</td>' + hrs.map(function (k) { var c = r[k]; if (!c) return '<td style="padding:2px 6px;color:#9ab">·</td>'; tk += c[0]; dr += c[1]; return '<td style="padding:2px 6px;text-align:center">' + c[0] + (c[1] ? '/<b style="color:#b00">' + c[1] + '</b>' : '') + '</td>'; }).join('') + '<td style="padding:2px 6px"><b>' + tk + '</b>' + (dr ? '/<b style="color:#b00">' + dr + '</b>' : '') + '</td></tr>'; });
       h += '</table></div><div style="margin-top:8px;color:#567;font-size:12px">Last 7 days. Score 0-100 = orders 40 (4 points each) + average order near ₹2,750 (add-ons) 20 + first reply within 1 minute of taking 20 + effort 20 (taken ÷ (taken + left)). 🔴 Left = took a chat or was holding a hot chat and did not answer in time (it went back to OPEN). 🟥 Cherry = left + gave back to OPEN + took and never wrote to the customer (⚠ = 3+ and 40%+ of what he took: cherry-picking, the admins get a push once a day). The best present people are shown above the OPEN list to everybody.</div></div>';
     }
     h3.innerHTML = h + '</div>';
     var hd = document.getElementById('bmH'); if (hd) hd.onclick = function () { mopen = !mopen; drawMkt(); };
   }
   function loadMkt() { return api.get('wa.g_mkt').then(function (d) { mkt = d; drawMkt(); }).catch(function () { }); }
-  function loadPend() { return api.get('wa.g_botpending').then(function (d) { pend = d; drawPend(); }).catch(function () { }); }
+  function loadPend() { return api.get('wa.g_botpending').then(function (d) { if (!pfirst && d && d.can) { pfirst = true; if (d.total) { popen = true; mopen = false; open = false; } } pend = d; drawPend(); }).catch(function () { }); }
   function load() { return api.get('wa.g_botlearn').then(function (d) { data = d; draw(); }).catch(function () { }); }
+  // 🧭 one small row of chips instead of four tall strips: tap a chip to open its details below (one at a time, scrolls inside); closed = just the numbers
+  var chipBar = document.createElement('div'); chipBar.id = 'blChips'; host.parentNode.insertBefore(chipBar, host);
+  function pick(k) { var o = k === 'bl' ? !open : false, p = k === 'pend' ? !popen : false, m = k === 'mkt' ? !mopen : false; open = o; popen = p; mopen = m; draw(); drawPend(); drawMkt(); }
+  function chips() {
+    var c = [];
+    if (pend && pend.can && pend.total) c.push(['pend', 'o', '🙋 Unanswered', String(pend.total), popen]);
+    if (mkt && mkt.can) { var rate = mkt.offered_today ? Math.round(100 * mkt.taken_in_4min / mkt.offered_today) : null; c.push(['mkt', 'b', '🏪 Open market', (mkt.taken_today || 0) + ' taken' + (rate == null ? '' : ' · ' + rate + '%'), mopen]); }
+    var n = data && data.items ? data.items.length : 0; if (n || (data && data.applied_today)) c.push(['bl', 'g', '🧠 Bot learned', n + ' new', open]);
+    chipBar.innerHTML = c.map(function (x) { return '<button type="button" class="bc ' + x[1] + (x[4] ? ' on' : '') + '" data-bc="' + x[0] + '">' + x[2] + ' <b>' + esc(x[3]) + '</b> <i>' + (x[4] ? '▴' : '▾') + '</i></button>'; }).join('');
+    chipBar.querySelectorAll('[data-bc]').forEach(function (b) { b.onclick = function () { pick(b.getAttribute('data-bc')); }; });
+  }
+  function fold() { [['blPend', popen], ['blMkt', mopen]].forEach(function (x) { var e = document.getElementById(x[0]); if (e) e.style.display = x[1] ? '' : 'none'; }); host.style.display = open ? '' : 'none'; chips(); }
+  var _d = draw, _dp = drawPend, _dm = drawMkt;
+  draw = function () { _d(); fold(); }; drawPend = function () { _dp(); fold(); }; drawMkt = function () { _dm(); fold(); };
   load(); loadPend(); loadMkt(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); loadMkt(); } }, 60000);
 })();
