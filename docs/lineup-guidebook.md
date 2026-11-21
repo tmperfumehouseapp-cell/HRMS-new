@@ -1,0 +1,44 @@
+# 7-Day Lineup — Guidebook
+
+How the whole system works, how to read it, and ideas to push it harder (including sharper price offers).
+The 33 messages themselves are in `docs/lineup-messages.md`. The live screen is on Campaigns (top card) and at `/lineup.html`.
+
+## 1. What it does
+A follow-up ladder of up to 7 days for every customer who wrote to us and did not order. Each customer gets the ladder of the **topic he asked about** (price, trust, size, address/payment pending, reorder, general, campaign reply). The newest topic in the chat wins; if the topic changes, the ladder switches.
+
+## 2. Rules (all built in)
+- **Who:** customers who wrote or replied (not just "read"), from the day before yesterday 10:00 onward; that backlog counts as "today".
+- **When:** step 1 goes 24 h after the END of the conversation (either side's last message — a salesperson's message counts too, Option A). Step 2+ go 24 h after the previous lineup message really went.
+- **Stops:** order placed, opt-out, complaint, muted, Autopilot / Journey follow-up that day.
+- **Pause:** if the customer replies, the ladder pauses and is re-read after 24 quiet hours.
+- **Always on:** no on/off switch. "Send what is due now" is only a manual extra.
+- **Independent:** no Module A/B time windows, allowances or campaign holds.
+- **Number:** the message leaves from the number the customer wrote to.
+- **Messages:** the shop's own already-approved templates (utility or marketing) mapped per step.
+
+## 3. What to watch (Campaigns top card → open)
+- Sent / Replies / Orders / Cost, today and since the start.
+- Last round: due, sent, and the reasons the rest waited.
+- Self-check (issues found / fixed).
+- Report: orders credited to the last lineup message within 7 days, per topic / step / wording.
+- Customer lookup: one customer's whole ladder.
+
+## 4. How it learns
+Each topic/step has two wordings in some places. The report counts orders per wording; compare after enough volume (hundreds of sends per wording, not dozens) and keep the better one for the first step.
+
+## 5. Making it more aggressive — ideas (suggestions, not yet built)
+Price is the topic where the biggest lift is likely. Ideas, safest first:
+1. **Step 1 of `price` carries a real number.** Instead of "budget batao", state the entry price ("20 ml from ₹xxx") so the customer decides faster. Test as a second wording and let the report decide.
+2. **Combo / bundle by step 3–4.** Offer a fixed combo price (2 × 20 ml) instead of asking whether they want to see combos.
+3. **Time-boxed offer on the last step (day 6–7).** One clear deadline ("today only"). Needs a marketing-category template; costs ₹1.09 vs ₹0.15 for utility, so use only on the last step, only for price/size topics.
+4. **Free-delivery or COD-fee waiver as the nudge** for `pending` (address/payment) customers — they already wanted to buy.
+5. **Reorder topic:** a loyalty price for repeat buyers on step 2.
+6. **Send-hour:** the Best-hours card on Campaigns shows which hour replies best; shift step 1 toward it.
+7. **Stop-loss:** pause a wording whose orders-per-100-sends is clearly lowest after enough volume.
+
+Cautions: Meta can relabel or throttle templates that read as promotions; keep step 1–4 utility-style and put offers late. Never quote a price or discount you are not ready to honour — the message is sent automatically.
+
+## 6. Operating notes
+- Tune with real numbers from the report, not feeling; change one thing at a time.
+- Watch "failed" and "waiting" reasons daily the first week.
+- Costs: utility ₹0.15, marketing ₹1.09 per message (shop rates).
