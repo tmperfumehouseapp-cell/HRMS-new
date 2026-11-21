@@ -108,6 +108,7 @@
       try {
         const r = await api.get('fn.in_orders_day', { date: $('uOd').value });
         el.innerHTML = `<div class="sx-card wrap"><div class="cap" style="margin-top:0">Comparison with your orders <small class="sx-mut">prepaid orders of ${esc(dFmt(r.orders_day))}</small></div>
+          ${salesLine(r.sales)}
           <div class="k3" style="margin-bottom:8px"><div class="k"><small>Prepaid orders</small><b style="font-size:19px">${r.count}</b><span>${m2(r.amount)}</span></div><div class="k"><small>Money came for</small><b style="font-size:19px">—</b><span>after you choose the file</span></div><div class="k"><small>Net received</small><b style="font-size:19px">—</b><span>after you choose the file</span></div></div>
           <div class="sx-msg ok" style="margin-bottom:8px">${sxi('ok')}<span>Choose the ${esc(c.name)} settlement file above. These orders will be checked against it: which came, which did not, the charges cut and the net.</span></div>
           ${r.orders.length ? `<table class="tb"><tr><th>Order</th><th>Customer</th><th>Order amount</th></tr>${r.orders.slice(0, 60).map((o) => `<tr><td><b>${esc(o.name)}</b></td><td style="text-align:left">${esc(o.customer)}</td><td>${m2(o.amount)}</td></tr>`).join('')}</table>${r.orders.length > 60 ? `<div class="sx-mut" style="font-size:12px;margin-top:6px">Showing 60 of ${r.orders.length}.</div>` : ''}` : '<div class="sx-mut">No prepaid order found for this day. Change “Orders of day”.</div>'}</div>`;
@@ -123,6 +124,29 @@
       catch (e) { note('uMsg', e.message, 1); }
     };
   }
+  // ---------- sales line and the "why did it not match" check
+  const salesLine = (sl) => sl && sl.orders !== undefined ? `<div class="sx-mut" style="font-size:12.5px;margin:2px 0 8px"><b>Sales on ${esc(dFmt(sl.day))}:</b> ${sl.orders} orders ${m2(sl.total)} · <b>Prepaid</b> ${sl.prepaid_orders} orders ${m2(sl.prepaid)} · <b>COD</b> ${sl.cod_orders} order${sl.cod_orders === 1 ? '' : 's'} ${m2(sl.cod)}</div>` : '';
+  function diagText(rc) {
+    const d = rc.diag || {}, by = d.by || { ref: 0, name: 0, phone: 0 }, matched = rc.found.orders + (rc.pending ? rc.pending.orders : 0), L = [];
+    L.push(`File: ${d.file_rows} payment rows. Order-ID column used: "${d.id_column || 'none'}" (filled in ${d.id_filled} rows${d.id_sample && d.id_sample.length ? '; examples: ' + d.id_sample.join(', ') : ''}).`);
+    L.push(`Your prepaid orders of ${rc.orders_day}: ${d.orders}. With a payment transaction id saved: ${d.orders_with_ref}${d.ref_sample && d.ref_sample.length ? ' (examples: ' + d.ref_sample.join(', ') + ')' : ''}. Order numbers like: ${(d.name_sample || []).join(', ') || '-'}.`);
+    L.push(`Matched ${matched} of ${d.orders} orders: ${by.ref} by transaction id, ${by.name} by order number, ${by.phone} by phone + amount.`);
+    let why;
+    if (!d.file_rows) why = 'The file has no money rows that count (check the UTR, net amount and status columns).';
+    else if (!d.orders) why = `No prepaid order was found for ${rc.orders_day}. Change “Orders of day”: with T+1 the money of a day arrives the next day.`;
+    else if (!matched && !d.id_filled) why = 'The order-ID column is empty in this file, so rows cannot be tied to orders. Choose another column in “Order number / transaction ID column”.';
+    else if (!matched && !d.orders_with_ref) why = 'None of your orders has the payment transaction id saved (KWIK…), and no phone + amount fitted either. So the file cannot be tied to the orders by id.';
+    else if (!matched) why = 'The ids in the file do not look like the ids saved on your orders. Probably another day, another gateway, or another column: compare the examples above.';
+    else if (matched < d.orders) why = `${d.orders - matched} orders are not in this file: paid through another gateway (Razorpay, Snapmint…), settled on another day, or not paid.`;
+    else why = 'All the orders were found in the file.';
+    return { lines: L, why, matched };
+  }
+  function diagHtml(rc) {
+    const t = diagText(rc), txt = t.lines.join('\n') + '\nResult: ' + t.why;
+    return `<details ${t.matched ? '' : 'open'} style="margin:6px 0 10px"><summary style="cursor:pointer;font-weight:800;font-size:13px">Match check <small class="sx-mut" style="font-weight:600">${t.matched ? t.matched + ' of ' + rc.diag.orders + ' orders matched' : 'no order matched: see why'}</small></summary>
+      <div style="background:#f6f7f9;border-radius:12px;padding:10px 12px;margin-top:6px;font-size:12.5px;line-height:1.5">${t.lines.map((l) => '<div>' + esc(l) + '</div>').join('')}<div style="margin-top:6px;font-weight:800;color:${t.matched ? '#0d7a55' : '#b42318'}">${esc(t.why)}</div>
+      <button class="sx-btn" data-copyd="1" style="padding:2px 10px;margin-top:8px">Copy this to send to Claude</button><textarea style="position:absolute;left:-9999px" id="dgTxt" readonly>${esc(txt)}</textarea></div></details>`;
+  }
   // ---------- the comparison: your prepaid orders of a day against the settlement file
   function renderRecon(el, rc, title) {
     let filt = 'all', all = false;
@@ -130,6 +154,7 @@
       const rows = rc.orders.filter((o) => filt === 'all' || (filt === 'came' ? o.found : filt === 'pend' ? o.pending : (!o.found && !o.pending))), shown = all ? rows : rows.slice(0, 40);
       const chg = rc.charges.length ? rc.charges.map((c) => `<tr><td style="text-align:left">${esc(c.name)}</td><td>${m2(c.amount)}</td><td>${rc.found.gross ? (100 * c.amount / rc.found.gross).toFixed(2) + '%' : ''}</td></tr>`).join('') + `<tr class="tot"><td>Total charges cut</td><td>${m2(rc.found.fee)}</td><td>${rc.found.gross ? (100 * rc.found.fee / rc.found.gross).toFixed(2) + '%' : ''}</td></tr>` : '';
       el.innerHTML = `<div class="sx-card wrap"><div class="cap" style="margin-top:0">${esc(title)} <small class="sx-mut">prepaid orders of ${esc(dFmt(rc.orders_day))}</small></div>
+        ${salesLine(rc.sales)}${rc.diag ? diagHtml(rc) : ''}
         ${rc.expected.orders ? '' : `<div class="sx-msg warn">${sxi('alert')}<span>No prepaid order found for ${esc(dFmt(rc.orders_day))}. Check the “Orders of day”.</span></div>`}
         <div class="k3" style="margin-bottom:8px;grid-template-columns:repeat(4,1fr)"><div class="k"><small>Prepaid orders</small><b style="font-size:19px">${rc.expected.orders}</b><span>${m2(rc.expected.amount)}</span></div><div class="k"><small>Money came for</small><b style="font-size:19px">${rc.found.orders}</b><span>gross ${m2(rc.found.gross)}</span></div><div class="k"><small>Paid, not settled yet</small><b style="font-size:19px">${rc.pending ? rc.pending.orders : 0}</b><span>${m2(rc.pending ? rc.pending.net : 0)} net due</span></div><div class="k ${rc.missing.orders ? 'bad' : ''}"><small>Not in this file</small><b style="font-size:19px">${rc.missing.orders}</b><span>${m2(rc.missing.amount)}</span></div></div>
         <div class="k3" style="margin-bottom:8px"><div class="k"><small>Gross (these orders)</small><b style="font-size:19px">${m2(rc.found.gross)}</b></div><div class="k"><small>Charges cut (these orders)</small><b style="font-size:19px">${m2(rc.found.fee)}</b><span>${rc.found.gross ? (100 * rc.found.fee / rc.found.gross).toFixed(2) + '% of gross' : ''}</span></div><div class="k"><small>Net (these orders)</small><b style="font-size:19px">${m2(rc.found.net)}</b></div></div>
@@ -139,6 +164,7 @@
         ${rc.other_rows.rows ? `<div class="cap">In the file but not an order of ${esc(dFmt(rc.orders_day))} <small class="sx-mut">${rc.other_rows.rows} row${rc.other_rows.rows === 1 ? '' : 's'} · net ${m2(rc.other_rows.net)} (older orders, other gateway orders, or no order number)</small></div><table class="tb"><tr><th>UTR</th><th>Gross</th><th>Charges</th><th>Net</th></tr>${rc.other_rows.list.slice(0, 10).map((r) => `<tr><td style="text-align:left">${esc(r.utr)}</td><td>${m2(r.gross)}</td><td>${m2(r.fee)}</td><td>${m2(r.net)}</td></tr>`).join('')}</table>` : ''}</div>`;
       el.querySelectorAll('[data-rf]').forEach((b) => { b.onclick = () => { filt = b.dataset.rf; all = false; draw2(); }; });
       const ra = el.querySelector('[data-rall]'); if (ra) ra.onclick = () => { all = true; draw2(); };
+      const cd = el.querySelector('[data-copyd]'); if (cd) cd.onclick = async () => { const t = el.querySelector('#dgTxt'); try { await navigator.clipboard.writeText(t.value); cd.textContent = 'Copied ✓'; } catch (e) { t.style.position = 'static'; t.select(); cd.textContent = 'Select and copy the text'; } };
     };
     draw2();
   }
@@ -160,7 +186,7 @@
       last = r; const onlyRecord = r.rows === 0 && r.already > 0; const bad = r.dups > 0 || (r.net <= 0 && !onlyRecord);
       $('uCalc').innerHTML = `<div class="k3" style="grid-template-columns:repeat(4,1fr);margin-bottom:0"><div class="k"><small>Rows</small><b style="font-size:18px">${r.rows}</b><span>${r.utrs} UTR${r.utrs === 1 ? '' : 's'}</span></div><div class="k"><small>Gross</small><b style="font-size:18px">${m2(r.gross)}</b></div><div class="k"><small>Charges</small><b style="font-size:18px">${m2(r.fee)}</b></div><div class="k"><small>Net income</small><b style="font-size:18px">${m2(r.net)}</b></div></div>
         ${r.skipped ? `<div class="sx-mut" style="font-size:12.5px;margin-top:6px">Read ${r.skipped.read} rows: <b>${r.rows} counted</b>${r.skipped.no_utr ? ` · <b>${r.skipped.no_utr} paid but not settled yet</b> (no UTR)` : ''}${r.skipped.failed ? ` · ${r.skipped.failed} failed / cancelled` : ''}${r.skipped.no_amount ? ` · ${r.skipped.no_amount} without an amount` : ''}</div>` : ''}
-        ${r.skipped && r.skipped.no_utr ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;padding:10px 12px;border-radius:14px;background:#fff4e0;font-size:13px;font-weight:700"><input type="checkbox" id="uIncl" ${incl ? 'checked' : ''} style="margin-top:3px"><span>Add the <b>${r.skipped.no_utr} payments not settled yet</b> as income now (PayU settles them today).<br><small style="font-weight:600;color:#7a4b00">When the settled file comes later, these payments are not added again.</small></span></label>` : ''}
+        ${r.skipped && r.skipped.no_utr ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;padding:10px 12px;border-radius:14px;background:#fff4e0;font-size:13px;font-weight:700"><input type="checkbox" id="uIncl" ${incl ? 'checked' : ''} style="margin-top:3px"><span>Add the <b>${r.skipped.no_utr} payment${r.skipped.no_utr === 1 ? '' : 's'} not settled yet</b> as income now (PayU settles them today).<br><small style="font-weight:600;color:#7a4b00">When the settled file comes later, these payments are not added again.</small></span></label>` : ''}
         ${r.already > 0 ? `<div class="sx-msg ok" style="margin-top:8px">${sxi('ok')}<span>${r.already} payment${r.already === 1 ? '' : 's'} (${m2(r.already_net)}) ${r.already === 1 ? 'was' : 'were'} already added as income by an earlier file: not added again.${onlyRecord ? ' Saving only records this file.' : ''}</span></div>` : ''}
         ${r.dups > 0 ? `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>${r.dups} UTR${r.dups === 1 ? ' is' : 's are'} already saved from ${esc(r.dup_first)}. Cancel that file first, or this money would be counted twice.</span></div>` : r.net <= 0 ? `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>${r.skipped && r.skipped.no_utr && !r.rows && !incl ? '<b>None of these payments is settled to your bank yet</b> (the UTR is empty). Tick the box above to add them as income now, or upload the file again after PayU settles.' : 'No money found. Check the UTR and the net amount column.'}</span></div>` : ''}`;
       const ic = $('uIncl'); if (ic) ic.onchange = () => { incl = ic.checked; recalc(); };
