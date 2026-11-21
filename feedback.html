@@ -165,7 +165,9 @@
   $('popTop').onclick = (e) => { const b = e.target.closest('[data-pf]'); if (!b) return; const k = b.dataset.pf; if (k === 'x') return closePop(); if (k === 'fold') popFold = !popFold; if (k === 'full') { popFull = !popFull; goFull(popFull); } if (DET) drawPop(DET); };
   $('popX').onclick = closePop; $('pop').onclick = (e) => { if (e.target.id === 'pop') closePop(); };
   document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if ($('ov').classList.contains('on')) closeM(); else if (popOpen) closePop(); });
-  async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); load(); } catch (e) { say(e.message, true); } }
+  // a message sent from the panel (not typed in the chat) is shown in the chat at once: the chat is loaded again
+  function chatRefresh() { setTimeout(() => { try { const fr = document.getElementById('chatFr'); if (fr && fr.contentWindow) fr.contentWindow.location.reload(); } catch (e) { } }, 600); }
+  async function send(a) { try { await api.post(a, { order: sel }); say('Message sent'); chatRefresh(); load(); } catch (e) { say(e.message, true); } }
   /* several places + a new one typed by hand (it is kept in the list for next time) */
   function placeBox(sel) {
     const draw = () => { const all = CFG.places.concat(sel.filter((p) => CFG.places.indexOf(p) < 0)); $('pch').innerHTML = all.map((p) => `<span class="chip ${sel.indexOf(p) > -1 ? 'on' : ''}" data-p="${esc(p)}">${sel.indexOf(p) > -1 ? '✓ ' : ''}${esc(p)}</span>`).join(''); };
@@ -244,7 +246,7 @@
       <div class="sm" style="margin-top:6px">A typed message goes only within 24 hours of the customer's last message. After that, send an approved pre-made message with the link from the chat (✨).</div>
       <div class="acts"><button class="btn g2" id="lgo">Send now</button><button class="btn gh" id="lno">Cancel</button></div>`);
     $('lno').onclick = closeM;
-    $('lgo').onclick = async () => { const b = $('lgo'); b.disabled = true; try { await api.post('fb.send_link', { order: x.order, url: l.url, text: $('lm').value }); closeM(); say(l.name + ' link sent on WhatsApp'); load(); } catch (e) { say(e.message, true); b.disabled = false; } };
+    $('lgo').onclick = async () => { const b = $('lgo'); b.disabled = true; try { await api.post('fb.send_link', { order: x.order, url: l.url, text: $('lm').value }); closeM(); say(l.name + ' link sent on WhatsApp'); chatRefresh(); load(); } catch (e) { say(e.message, true); b.disabled = false; } };
   }
   async function saveLinks(list) { const r = await api.post('fb.links_save', { links: list }); CFG.links = r.links; if (DET) drawSide(); return r.links; }
   function manageLinks() {
@@ -272,7 +274,7 @@
     $('tno').onclick = closeM;
     $('tgo').onclick = async () => {
       const b = $('tgo'); b.disabled = true; let o = '';
-      try { const r = await api.post('fb.test_add', { phone: $('tp').value, name: $('tn').value }); o = r.order; await api.post('fb.send_now', { order: o }); closeM(); sel = o; say('Test message sent to ' + $('tp').value); load(); }
+      try { const r = await api.post('fb.test_add', { phone: $('tp').value, name: $('tn').value }); o = r.order; await api.post('fb.send_now', { order: o }); closeM(); sel = o; say('Test message sent to ' + $('tp').value); chatRefresh(); load(); }
       catch (e) { if (o) { closeM(); sel = o; load(); } say(e.message + (o ? ' (the TEST order was made: fix it, then press "Send message now")' : ''), true); b.disabled = false; }
     };
   };
