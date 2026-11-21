@@ -986,14 +986,14 @@ function ofp_dispatch(PDO $pdo, $action) {
             if (!$tid && (int)($_GET['zone_id'] ?? 0)) { $s = $pdo->prepare("SELECT t.id FROM bd_tasks t JOIN bd_duties d ON d.id = t.duty_id WHERE d.lib_key = ? AND t.task_date = ? AND t.status != 'excused' ORDER BY t.id LIMIT 1"); $s->execute(['ofc:' . (int)$_GET['zone_id'], bd_today()]); $tid = (int)$s->fetchColumn(); }
             if (!$tid) json_response(['error' => 'There is no count task for this place today.'], 404);
             list($t, $z, $o, $pl) = ofp_task_ctx($pdo, $tid);
-            if (!ofp_may_open_task($auth, $w, $t)) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '.'], 403);
+            if (!ofp_may_open_task($auth, $w, $t) && !((int)$w['emp'] && in_array((int)$w['emp'], ofp_owner_ids($pdo, $pl), true))) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '.'], 403);
             json_response(ofp_form($pdo, $t, $z, $o, $pl, ofp_lang($pdo, $emp)));
         }
         case 'of.pl_check_submit': {
             $needPost();
             if (!$emp && !$isAdmin) json_response(['error' => 'This login is not linked to an employee.'], 400);
             list($t, $z, $o, $pl) = ofp_task_ctx($pdo, (int)($in['task_id'] ?? 0));
-            if (!ofp_may_open_task($auth, $w, $t)) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '.'], 403);
+            if (!ofp_may_open_task($auth, $w, $t) && !((int)$w['emp'] && in_array((int)$w['emp'], ofp_owner_ids($pdo, $pl), true))) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '.'], 403);
             if (bd_mode() === 'shadow' && !$isAdmin) json_response(['error' => 'The Boss Engine is in test mode. Duties are not live yet.'], 409);
             if ($t['task_date'] !== bd_today()) json_response(['error' => 'Only today\'s check can be done.'], 409);
             if ($t['status'] === 'done') json_response(['error' => 'This check is already done.'], 409);
