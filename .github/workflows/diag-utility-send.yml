@@ -229,6 +229,8 @@ jobs:
           echo "  submissions by account (last 1 h / 24 h):\n";
           foreach ($all("SELECT waba_id, SUM(at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)) h1, SUM(at >= DATE_SUB(NOW(), INTERVAL 1 DAY)) d1, SUM(ok = 0) bad FROM wa_tpl_subs WHERE at >= DATE_SUB(NOW(), INTERVAL 1 DAY) GROUP BY waba_id") as $r) echo "  " . json_encode($r) . "\n";
           foreach (["wa_tpl_auto", "wa_tpl_tick_max", "wa_tpl_hour_cap", "wa_tpl_day_cap", "wa_tpl_total_cap", "wa_tpl_auto_at"] as $k) echo "  cfg $k=" . $s($k) . "\n";
+          echo "  newest submission errors of the OTHER accounts (not #11):\n";
+          foreach ($all("SELECT s.at, s.waba_id, LEFT(s.note, 160) AS note FROM wa_tpl_subs s WHERE s.ok = 0 AND s.waba_id <> '3059322737742478' ORDER BY s.at DESC LIMIT 6") as $r) echo "  " . json_encode($r) . "\n";
           echo "  newest submission errors (any account):\n";
           foreach ($all("SELECT at, waba_id, LEFT(note, 160) note FROM wa_tpl_subs WHERE ok = 0 ORDER BY id DESC LIMIT 5") as $r) echo "  " . json_encode($r) . "\n";
           echo "\n=== FIRST MESSAGES OF NEW NUMBERS (wa_ru_warm) ===\n"; echo "  wa_ru_warm=" . $s("wa_ru_warm") . " · seed=" . $s("wa_ru_warm_seed_2011") . "\n"; echo "  wa_ru_new_hourly=" . $s("wa_ru_new_hourly") . " · last round: " . $s("wa_ru_warm_last") . " · now=" . time() . "\n";
