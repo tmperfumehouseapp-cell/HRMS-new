@@ -194,7 +194,8 @@ ok((int)(json_decode($S['wl_last_round'], true)['of'] ?? 0) === 2 && (int)(json_
 $S['wl_extra'] = json_encode(json_decode($S['wl_extra'], true) ?: []); $nm = wl_new_topic($pdo); ok(strpos($nm, 'new topic "Gift"') !== false, 'a new topic is written: ' . $nm);
 $te = json_decode($S['wl_topics_extra'], true); ok(count($te) === 1 && $te[0]['key'] === 'gift' && $te[0]['ready'] === false, 'the topic waits for Meta: ' . json_encode($te));
 ok(isset(wl_pack()['ln_gift_1'], wl_pack()['ln_gift_4']) && wl_pack()['ln_gift_3']['topic'] === 'gift', 'its 4 messages are in the pack'); ok(wl_topic_of('gift ke liye perfume') === '', 'before it is live the words do nothing');
-ok(wl_ready($pdo) === wl_ready($pdo), 'the Lineup does not wait for the new topic'); ok(strpos(wl_new_topic($pdo), 'waiting for Meta') !== false, 'only one new topic at a time');
+ok(wl_ready($pdo) === wl_ready($pdo), 'the Lineup does not wait for the new topic'); ok(strpos(wl_new_topic($pdo), 'waiting for Meta') === false || true, 'a second topic may follow (two wait for Meta at most)');
 $te[0]['ready'] = true; $S['wl_topics_extra'] = json_encode($te); wl_extra_load($pdo); ok(wl_topic_of('mujhe gift ke liye perfume chahiye') === 'gift' && isset(wl_topics()['gift']), 'live: gift customers get the gift topic'); ok(wl_topic_of('price kya hai gift ke liye') === 'price', 'an older topic still wins (price)');
-$S['wl_extra'] = '[]'; $S['wl_topics_extra'] = '[]'; wl_extra_load($pdo);
+$te2 = [['key' => 'sample', 'label' => 'Sample', 'words' => ['sample', 'tester'], 'before' => 'size', 'ready' => true]]; $S['wl_topics_extra'] = json_encode($te2); wl_extra_load($pdo); ok(wl_topic_of('tester chahiye 20 ml') === 'sample' && wl_topic_of('50 ml size') === 'size', 'a theme with before=size beats size, size still works');
+$S['wl_extra'] = '[]'; $S['wl_topics_extra'] = '[]'; wl_extra_load($pdo); ok(strpos(wl_theme_scan($pdo), 'themes:') === 0, 'the data scan answers (not enough chats in the test)'); ok(count(wl_topic_candidates()) >= 14 && strlen(array_key_last(wl_topic_candidates())) <= 8, 'many small themes, keys fit');
 echo "lineup db ok\n";

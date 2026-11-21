@@ -30,8 +30,9 @@ function wl_words(): array
         'trust' => ['original', 'asli', 'real', 'fake', 'genuine', 'review', 'cod', 'cash on delivery', 'trust', 'bharosa', 'vishwas', 'proof', 'guarantee', 'nakli', 'duplicate', 'batch', 'અસલી', 'ઓરિજિનલ', 'નકલી', 'વિશ્વાસ', 'असली', 'ओरिजिनल', 'नकली', 'भरोसा'],
         'size' => ['ml', 'size', 'quantity', 'sample', 'tester', 'bottle', 'ટેસ્ટર', 'સાઇઝ', 'साइज'],
     ];
-    foreach (wl_topics_extra_get() as $t) if (!empty($t['ready']) && !empty($t['key']) && !empty($t['words'])) $w[(string)$t['key']] = array_map('strval', (array)$t['words']);   // new topics come last: only customers with no older topic
-    return $w;
+    $late = []; foreach (wl_topics_extra_get() as $t) { if (empty($t['ready']) || empty($t['key']) || empty($t['words'])) continue; $ws = array_map('strval', (array)$t['words']);
+        if (!empty($t['before']) && isset($w[(string)$t['before']])) { $o = []; foreach ($w as $k => $v) { if ($k === (string)$t['before']) $o[(string)$t['key']] = $ws; $o[$k] = $v; } $w = $o; } else $late[(string)$t['key']] = $ws; }   // a theme that beats an older topic ('before'), else new topics come last: only customers with no older topic
+    return $w + $late;
 }
 /** Topic from what the customer wrote. $texts = his messages since he came in; $bought = he has ordered before. */
 /** The topic of ONE message ('' = no clear topic). Latin words match as whole words, Gujarati / Hindi script as parts. */
@@ -811,11 +812,22 @@ function wl_new_word(PDO $pdo, array $report): string
 /** The themes the old data showed to convert well (150 days of chats, 21 Nov: everybody who wrote 5.8% ordered; gift 22%, women 20%, men 13.7%, best-selling 12.2%). The learning adds them one at a time. */
 function wl_topic_candidates(): array
 {
+    $c = function (string $label, string $brief, array $words, string $before = '') { return ['label' => $label, 'brief' => $brief, 'words' => $words, 'before' => $before]; };
     return [
-        'gift' => ['label' => 'Gift', 'brief' => 'a customer who is looking for a perfume as a GIFT (birthday, wedding, anniversary, for someone special)', 'words' => ['gift', 'gifting', 'gifts', 'present', 'birthday', 'wedding', 'anniversary', 'bhet', 'ગિફ્ટ', 'भेंट', 'उपहार']],
-        'women' => ['label' => "Women's", 'brief' => 'a customer who is looking for a perfume for a WOMAN (herself, wife, sister, mother)', 'words' => ['women', 'womens', 'woman', 'ladies', 'lady', 'female', 'girls', 'wife', 'મહિલા', 'महिला']],
-        'men' => ['label' => "Men's", 'brief' => 'a customer who is looking for a perfume for a MAN (himself, husband, brother, father)', 'words' => ['men', 'mens', 'gents', 'male', 'gentleman', 'boys', 'પુરુષ', 'पुरुष']],
-        'bestsell' => ['label' => 'Best-sellers', 'brief' => 'a customer who asks for the BEST / TOP-SELLING / most recommended perfumes and wants a safe choice', 'words' => ['best selling', 'bestseller', 'bestsellers', 'top selling', 'popular', 'trending', 'recommend', 'recommendation', 'recommendations']],
+        'gift' => $c('Gift', 'a customer who is looking for a perfume as a GIFT (birthday, wedding, anniversary, for someone special)', ['gift', 'gifting', 'gifts', 'present', 'birthday', 'wedding', 'anniversary', 'bhet', 'ગિફ્ટ', 'भेंट', 'उपहार']),
+        'women' => $c("Women's", 'a customer who is looking for a perfume for a WOMAN (herself, wife, sister, mother)', ['women', 'womens', 'woman', 'ladies', 'lady', 'female', 'girls', 'wife', 'મહિલા', 'महिला']),
+        'sample' => $c('Sample / tester', 'a customer who wants to TRY first: a sample, a tester or a small bottle before buying', ['sample', 'samples', 'tester', 'testers', 'trial', 'try', 'mini', 'small bottle'], 'size'),
+        'men' => $c("Men's", 'a customer who is looking for a perfume for a MAN (himself, husband, brother, father)', ['men', 'mens', 'gents', 'male', 'gentleman', 'boys', 'પુરુષ', 'पुरुष']),
+        'bestsell' => $c('Best-sellers', 'a customer who asks for the BEST / TOP-SELLING / most recommended perfumes and wants a safe choice', ['best selling', 'bestseller', 'bestsellers', 'top selling', 'popular', 'trending', 'recommend', 'recommendation', 'recommendations']),
+        'attar' => $c('Attar / oil', 'a customer who is looking for an ATTAR / perfume oil (alcohol-free, traditional)', ['attar', 'attars', 'itra', 'ittar', 'oil', 'oils', 'alcohol free', 'અત્તર', 'इत्र']),
+        'lasting' => $c('Long-lasting', 'a customer who wants a perfume that LASTS LONG / has strong projection', ['lasting', 'longest', 'long lasting', 'long-lasting', 'projection', 'strong', 'beast mode', 'stays']),
+        'brand' => $c('Brand / inspired by', 'a customer who asks for a particular famous perfume or brand (inspired-by versions) and wants that scent', ['rasasi', 'elixir', 'hawas', 'creed', 'dior', 'tom ford', 'armaf', 'lattafa', 'afnan', 'sauvage', 'aventus', 'bleu', 'oud wood']),
+        'party' => $c('Party / occasion', 'a customer who wants a perfume for a PARTY, night out, date or special occasion', ['party', 'night', 'date', 'club', 'occasion', 'function', 'celebration']),
+        'office' => $c('Daily / office', 'a customer who wants a light perfume for DAILY use, office or college', ['office', 'daily', 'everyday', 'college', 'work', 'light', 'fresh', 'summer']),
+        'travel' => $c('Travel / mini', 'a customer who wants a small TRAVEL / pocket size perfume', ['travel', 'pocket', 'mini', 'compact', 'small size']),
+        'collect' => $c('Collection', 'a customer who wants to see the whole COLLECTION / catalogue / list of perfumes', ['collection', 'catalogue', 'catalog', 'exclusive', 'list', 'all perfumes']),
+        'wholesal' => $c('Wholesale / resell', 'a customer who wants to buy in BULK / wholesale / to resell', ['wholesale', 'bulk', 'resell', 'reseller', 'dealer', 'business']),
+        'combo' => $c('Combo', 'a customer who asks for COMBO / multi-bottle packs', ['combo', 'combos', 'pack of', 'set of', 'bundle']),
     ];
 }
 /** A new topic becomes live (its words join the classification) when its 4 messages are approved on 3+ accounts. */
@@ -827,14 +839,33 @@ function wl_topics_refresh(PDO $pdo): int
     if ($n) { setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t); }
     return $n;
 }
+/** THE DATA SCAN (owner, 21 Nov: "make topics for all small things, orders are what matters"): once a night the last 120 days of inbound chats are read and, for every theme of wl_topic_candidates(), the customers who wrote its words and the share that ORDERED within 14 days after their last message are written to wl_theme_stats. wl_new_topic takes the themes in the order of that order rate. */
+function wl_theme_scan(PDO $pdo): string
+{
+    $from = date('Y-m-d H:i:s', time() - 120 * 86400); $msgs = []; $last = [];
+    try { $q = $pdo->prepare("SELECT phone, body, ts FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND ts >= ? AND body <> '' ORDER BY id DESC LIMIT 400000"); $q->execute([$from]);
+        foreach ($q as $r) { $p = (string)$r['phone']; if (!isset($msgs[$p])) $msgs[$p] = []; if (count($msgs[$p]) < 25) $msgs[$p][] = (string)$r['body']; if (!isset($last[$p])) $last[$p] = (int)strtotime((string)$r['ts']); } } catch (Throwable $e) { return 'themes: the scan failed (' . mb_substr($e->getMessage(), 0, 80) . ')'; }
+    if (count($msgs) < 500) return 'themes: not enough chats yet (' . count($msgs) . ')';
+    $ord = []; try { foreach ($pdo->query("SELECT phone, created_at FROM shop_orders WHERE created_at >= '" . date('Y-m-d H:i:s', time() - 140 * 86400) . "' AND phone IS NOT NULL AND phone <> ''") as $o) { $k = function_exists('wa_key') ? wa_key($o['phone']) : substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $ord[$k][] = (int)strtotime((string)$o['created_at']); } } catch (Throwable $e) { }
+    $ordered = []; $nOrd = 0; foreach ($msgs as $p => $t) { $k = function_exists('wa_key') ? wa_key($p) : substr($p, -10); $ok = false; foreach (($ord[$k] ?? []) as $ot) if ($ot >= $last[$p] - 86400 && $ot <= $last[$p] + 14 * 86400) { $ok = true; break; } $ordered[$p] = $ok; if ($ok) $nOrd++; }
+    $out = ['at' => date('Y-m-d H:i:s'), 'overall' => ['n' => count($msgs), 'o' => $nOrd, 'rate' => round(100 * $nOrd / max(1, count($msgs)), 2)], 'themes' => []];
+    foreach (wl_topic_candidates() as $key => $c) { $n = 0; $o = 0;
+        foreach ($msgs as $p => $t) { $hit = false; foreach ($t as $b) { $nb = ' ' . trim((string)preg_replace('/[^\p{L}\p{N}\p{M}]+/u', ' ', mb_strtolower($b))) . ' '; foreach ($c['words'] as $w) { $w = mb_strtolower($w); if (strpos($nb, ' ' . $w . ' ') !== false || (!preg_match('/^[a-z ]+$/', $w) && strpos($nb, $w) !== false)) { $hit = true; break 2; } } } if ($hit) { $n++; if ($ordered[$p]) $o++; } }
+        $out['themes'][$key] = ['n' => $n, 'o' => $o, 'rate' => round(100 * $o / max(1, $n), 2)]; }
+    setting_set($pdo, 'wl_theme_stats', json_encode($out, JSON_UNESCAPED_UNICODE));
+    return 'themes: scanned ' . count($msgs) . ' customers (' . $out['overall']['rate'] . '% ordered): ' . implode(', ', array_map(fn($k, $v) => $k . ' ' . $v['rate'] . '% of ' . $v['n'], array_keys($out['themes']), $out['themes']));
+}
 /** One new topic a night (setting wl_auto_topics = 0 stops it): the next theme of wl_topic_candidates() that is not there yet; Claude writes its 4 messages (utility, the rules of wl_check_wording), they go to Meta for approval with the normal template maker. Used only when approved. */
 function wl_new_topic(PDO $pdo): string
 {
     if ((string)setting_get($pdo, 'wl_auto_topics', '1') === '0') return '';
     if (!function_exists('wcr_ai')) return 'topics: Claude is not available on this server';
     $t = json_decode((string)setting_get($pdo, 'wl_topics_extra', ''), true); if (!is_array($t)) $t = [];
-    foreach ($t as $x) if (empty($x['ready']) && time() - (int)strtotime((string)($x['at'] ?? 'now')) < 4 * 86400) return 'topics: waiting for Meta to approve the messages of "' . $x['label'] . '"';
-    $have = array_column($t, 'key'); $pick = null; foreach (wl_topic_candidates() as $k => $c) if (!in_array($k, $have, true)) { $pick = [$k, $c]; break; }
+    $waiting = []; foreach ($t as $x) if (empty($x['ready']) && time() - (int)strtotime((string)($x['at'] ?? 'now')) < 4 * 86400) $waiting[] = (string)$x['label']; if (count($waiting) >= 2) return 'topics: waiting for Meta to approve the messages of ' . implode(', ', $waiting);
+    $have = array_column($t, 'key'); $st = json_decode((string)setting_get($pdo, 'wl_theme_stats', ''), true); $pick = null; $best = -1.0;
+    foreach (wl_topic_candidates() as $k => $c) { if (in_array($k, $have, true)) continue; $v = is_array($st) ? ($st['themes'][$k] ?? null) : null;
+        if ($v !== null) { if ((int)$v['n'] < 250 || (float)$v['rate'] < 1.3 * (float)($st['overall']['rate'] ?? 0)) continue; if ((float)$v['rate'] > $best) { $best = (float)$v['rate']; $pick = [$k, $c]; } }
+        elseif ($pick === null && !is_array($st)) { $pick = [$k, $c]; break; } }   // no scan yet: the list's own order
     if (!$pick) return 'topics: every known theme is added already';
     [$key, $c] = $pick; $P = wl_pack();
     $gb = ''; try { $g = $pdo->query("SELECT body FROM lib_guide WHERE status = 'live' ORDER BY version DESC LIMIT 1")->fetchColumn(); if ($g) { $j = json_decode((string)$g, true); if (is_array($j)) $gb = json_encode(['do' => array_slice((array)($j['do'] ?? []), 0, 8), 'openers' => array_slice((array)($j['openers'] ?? []), 0, 5)], JSON_UNESCAPED_UNICODE); } } catch (Throwable $e) { }
@@ -845,7 +876,7 @@ function wl_new_topic(PDO $pdo): string
     for ($i = 0; $i < 4; $i++) { $w = ['body' => (string)($ms[$i]['body'] ?? ''), 'button' => (string)($ms[$i]['button'] ?? ''), 'free' => (string)($ms[$i]['free'] ?? '')]; [$ok, $why] = wl_check_wording($w, $pool); if (!$ok) return 'topics: message ' . ($i + 1) . ' of "' . $c['label'] . '" was refused (' . $why . ')';
         $k = 'ln_' . $key . '_' . ($i + 1); $pool[$k] = ['body' => $w['body'], 'button' => $w['button']]; $add[] = ['key' => $k, 'topic' => $key, 'step' => $i + 1, 'body' => $w['body'], 'button' => $w['button'], 'free' => $w['free'], 'newtopic' => 1, 'at' => date('Y-m-d H:i:s')]; }
     foreach ($add as $e) $extra[] = $e; setting_set($pdo, 'wl_extra', json_encode($extra, JSON_UNESCAPED_UNICODE)); wl_extra_get($extra);
-    $t[] = ['key' => $key, 'label' => $c['label'], 'words' => $c['words'], 'ready' => false, 'at' => date('Y-m-d H:i:s')]; setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t);
+    $t[] = ['key' => $key, 'label' => $c['label'], 'words' => $c['words'], 'before' => $c['before'], 'ready' => false, 'at' => date('Y-m-d H:i:s')]; setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t);
     $mk = ['made' => 0]; try { $mk = wl_make_templates($pdo); } catch (Throwable $e) { }
     return 'topics: new topic "' . $c['label'] . '" (the old data: its customers order more than average): 4 messages written and sent to Meta for approval (' . (int)$mk['made'] . ' made); it goes live when approved on 3+ accounts';
 }
@@ -854,7 +885,7 @@ function wl_learn_night(PDO $pdo): void
     [$td, $h] = wl_ist(time()); if ($h < 2 || $h >= 5 || (string)setting_get($pdo, 'wl_learn_day', '') === $td) return;
     if (function_exists('wa_lock') && !wa_lock($pdo, 'wllearn', 280)) return; setting_set($pdo, 'wl_learn_day', $td);
     try { $rep = wl_report($pdo, 30, 30); } catch (Throwable $e) { return; }
-    foreach ([fn() => wl_days_auto($pdo, $rep), fn() => wl_new_word($pdo, $rep), fn() => wl_new_topic($pdo), function () use ($pdo) { $x = wl_suggest($pdo, true); return 'sentences: ' . count($x['items']) . ' winning sentences listed'; }] as $step) { try { $m = $step(); if ($m !== '') wl_learn_log($pdo, $m); } catch (Throwable $e) { wl_learn_log($pdo, 'learning step failed: ' . $e->getMessage()); } }
+    foreach ([fn() => wl_days_auto($pdo, $rep), fn() => wl_new_word($pdo, $rep), fn() => wl_theme_scan($pdo), fn() => wl_new_topic($pdo), function () use ($pdo) { $x = wl_suggest($pdo, true); return 'sentences: ' . count($x['items']) . ' winning sentences listed'; }] as $step) { try { $m = $step(); if ($m !== '') wl_learn_log($pdo, $m); } catch (Throwable $e) { wl_learn_log($pdo, 'learning step failed: ' . $e->getMessage()); } }
 }
 /** NEW WINNING SENTENCES (owner, 21 Nov): once a day the live guidebook (and the words of the team's own offers that worked) is read and the sentences that win in real chats are listed as ideas for NEW wordings of the Lineup messages.
  *  They are only listed (screen: "New winning sentences"): a new message goes to Meta for approval and into the Lineup only after it is approved. Returns the stored list. */
