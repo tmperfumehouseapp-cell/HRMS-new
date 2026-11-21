@@ -1,0 +1,64 @@
+# READ-ONLY study of the OLD data for the Lineup (owner, 21 Nov): which topics do customers write about, and which of them ORDER afterwards? Finds the themes inside "no clear topic". Counts and common words only (no phone numbers, no messages). Changes nothing.
+name: Topic study (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Study
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/ln_topics.php <<'PHP'
+          <?php
+          set_time_limit(280); ini_set("memory_limit", "1024M");
+          require $argv[1] . "empmanagment/config.php";
+          $pdo = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+          function json_response($a, $c = 200) { throw new Exception("json_response"); } function wa_log($p, $k, $ok, $i) { }
+          function setting_get($p, $k, $d = "") { $q = $p->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? $d : (string)$v; } function setting_set($p, $k, $v) { }
+          function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen($d) > 10 ? substr($d, -10) : $d; }
+          $action = ""; require $argv[1] . "empmanagment/wa_line.php";
+          $days = 150; $from = date("Y-m-d H:i:s", time() - $days * 86400);
+          echo "=== customers who wrote in the last $days days, by topic (what the Lineup's rules say), and how many of them ORDERED within 14 days after their last message ===\n";
+          $msgs = []; $n = 0; $last = [];
+          $q = $pdo->prepare("SELECT phone, body, ts FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND ts >= ? AND body <> '' ORDER BY id DESC LIMIT 500000"); $q->execute([$from]);
+          foreach ($q as $r) { $p = (string)$r["phone"]; if (!isset($msgs[$p])) $msgs[$p] = []; if (count($msgs[$p]) < 25) array_unshift($msgs[$p], (string)$r["body"]); if (!isset($last[$p])) $last[$p] = strtotime($r["ts"]); $n++; }
+          echo "  inbound text messages read: $n · customers: " . count($msgs) . "\n";
+          $ord = []; foreach ($pdo->query("SELECT phone, created_at FROM shop_orders WHERE created_at >= '" . date("Y-m-d H:i:s", time() - ($days + 20) * 86400) . "' AND phone IS NOT NULL AND phone <> ''") as $o) $ord[wa_key($o["phone"])][] = strtotime($o["created_at"]);
+          $bought = []; foreach ($pdo->query("SELECT phone FROM wa_cust WHERE n > 0") as $r) $bought[(string)$r["phone"]] = 1;
+          $stat = []; $topicOf = []; $ordered = [];
+          foreach ($msgs as $p => $t) { $tp = wl_classify($t, false); $topicOf[$p] = $tp; $ok = false; foreach (($ord[wa_key($p)] ?? []) as $ot) if ($ot >= $last[$p] - 86400 && $ot <= $last[$p] + 14 * 86400) { $ok = true; break; } $ordered[$p] = $ok; $stat[$tp][0] = ($stat[$tp][0] ?? 0) + 1; $stat[$tp][1] = ($stat[$tp][1] ?? 0) + ($ok ? 1 : 0); }
+          arsort($stat); foreach ($stat as $tp => $v) printf("  %-10s customers %6d · ordered %5d · order rate %5.1f%%\n", $tp, $v[0], $v[1], 100 * $v[1] / max(1, $v[0]));
+          echo "\n=== candidate NEW topics (customers who wrote these words), order rate within 14 days after the last message ===\n";
+          $cand = ["combo / offers / deal" => ["combo", "offers", "offer", "deal", "deals"], "longest lasting" => ["lasting", "longest", "long lasting", "projection"], "top selling / best / recommendations" => ["selling", "recommendations", "best", "top", "popular"], "men" => ["men", "mens", "male", "gents"], "women" => ["women", "womens", "ladies", "female", "girls"], "collection / exclusive / catalogue" => ["collection", "exclusive", "catalogue", "catalog", "list"], "gift" => ["gift", "gifting", "birthday", "wedding", "anniversary"], "wholesale / bulk / resell" => ["wholesale", "bulk", "resell", "reseller", "business", "dealer"], "delivery / shipping" => ["delivery", "shipping", "courier", "dispatch", "tracking"], "attar / oil" => ["attar", "oil", "itra", "ittar"], "sample / tester" => ["sample", "tester", "trial", "small"]];
+          foreach ($cand as $name => $ws) { $c = 0; $o = 0; foreach ($msgs as $p => $t) { $hit = false; foreach ($t as $b) { $nb = " " . trim(preg_replace("/[^\p{L}\p{N}]+/u", " ", mb_strtolower($b))) . " "; foreach ($ws as $w) if (strpos($nb, " " . $w . " ") !== false) { $hit = true; break 2; } } if ($hit) { $c++; if ($ordered[$p]) $o++; } } printf("  %-38s customers %6d · ordered %5d · order rate %5.1f%%\n", $name, $c, $o, 100 * $o / max(1, $c)); }
+          $allc = count($msgs); $allo = count(array_filter($ordered)); printf("  %-38s customers %6d · ordered %5d · order rate %5.1f%%\n", "(everybody who wrote)", $allc, $allo, 100 * $allo / max(1, $allc));
+          echo "\n=== inside 'general' (no clear topic): the words customers use, with how many customers and the share that ordered ===\n";
+          $stop = array_flip(["the","and","for","you","are","hai","hain","hi","hello","hii","ok","okay","yes","not","nahi","ka","ki","ke","ko","se","me","mein","main","aap","aapka","aapke","kya","ho","he","hu","hoon","to","tha","thi","are","this","that","with","have","what","how","please","pls","plz","thank","thanks","sir","bhai","ji","madam","good","morning","evening","night","namaste","can","will","would","your","from","just","like","also","but","kar","karo","karna","kro","krna","bata","batao","bataiye","dena","dijiye","kaise","kab","kuch","mujhe","muje","mera","meri","mere","hum","hame","hamare","tum","aur","bhi","abhi","jo","yeh","ye","woh","wo","koi","kisi","tak","par","pe","liye","wala","wali","wale","jaldi","apka","aapko","apko","hamko","mil","mila","mili","milega","milegi","chahiye","chahie","chaiye"]);
+          $df = []; $do = []; $gen = 0; $genOrd = 0;
+          foreach ($msgs as $p => $t) { if ($topicOf[$p] !== "general") continue; $gen++; if ($ordered[$p]) $genOrd++; $seen = [];
+              foreach ($t as $b) { $b = mb_strtolower($b); if (!preg_match_all('/\p{L}{3,}/u', $b, $m)) continue; foreach ($m[0] as $w) { if (isset($stop[$w]) || isset($seen[$w])) continue; $seen[$w] = 1; } }
+              foreach ($seen as $w => $_) { $df[$w] = ($df[$w] ?? 0) + 1; if ($ordered[$p]) $do[$w] = ($do[$w] ?? 0) + 1; } }
+          echo "  general customers: $gen · ordered $genOrd (" . round(100 * $genOrd / max(1, $gen), 1) . "%)\n"; arsort($df); $i = 0;
+          foreach ($df as $w => $c) { if ($c < 40) break; if (++$i > 70) break; printf("  %-18s customers %5d · ordered %4d · rate %5.1f%%\n", $w, $c, $do[$w] ?? 0, 100 * ($do[$w] ?? 0) / $c); }
+          echo "\n=== words with the HIGHEST order rate (at least 40 customers) ===\n"; $rt = []; foreach ($df as $w => $c) if ($c >= 40) $rt[$w] = ($do[$w] ?? 0) / $c; arsort($rt); $i = 0; foreach ($rt as $w => $r) { if (++$i > 25) break; printf("  %-18s customers %5d · rate %5.1f%%\n", $w, $df[$w], 100 * $r); }
+          PHP
+          php /tmp/ln_topics.php "$P"; rm -f /tmp/ln_topics.php
+          REMOTE

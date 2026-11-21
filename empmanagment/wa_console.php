@@ -69,10 +69,17 @@ function wa_health_one(array $n): array
     $q = strtoupper((string)($i['quality_rating'] ?? '')); if (!in_array($q, ['GREEN', 'YELLOW', 'RED'], true)) $q = 'UNKNOWN';   // a new number has no rating yet
     $h = ['id' => (int)$n['id'], 'phone_id' => (string)$n['phone_id'], 'label' => (string)$n['label'], 'display' => (string)($i['display_phone_number'] ?? $n['display']), 'verified_name' => (string)($i['verified_name'] ?? ''),
         'name_status' => (string)($i['name_status'] ?? ''), 'quality' => $q, 'status' => (string)($i['status'] ?? ''), 'subscribed' => $ck['subscribed'], 'error' => (string)($ck['error'] ?: ''), 'tier' => null, 'at' => date('Y-m-d H:i:s')];
-    if ($i) foreach (['messaging_limit_tier', 'whatsapp_business_manager_messaging_limit'] as $f) {   // asked one by one: a field Meta does not know must not spoil the rest
+    // owner 20 Nov 2026: Meta tells the limit in TWO fields and they can differ for a number of another portfolio: messaging_limit_tier (the API's own) said 1 lakh while WhatsApp Manager showed 2,000.
+    // Both are asked (one by one: a field Meta does not know must not spoil the rest) and the LOWER one is used — what WhatsApp Manager shows is the safe truth.
+    $tv = ['messaging_limit_tier' => null, 'whatsapp_business_manager_messaging_limit' => null];
+    if ($i) foreach (array_keys($tv) as $f) {
         [$c, $d] = wa_api('GET', '/' . $n['phone_id'] . '?fields=' . $f);
-        if ($c >= 200 && $c < 300 && is_array($d) && !empty($d[$f])) { $h['tier'] = wa_tier_num((string)$d[$f]); break; }
+        if ($c >= 200 && $c < 300 && is_array($d) && !empty($d[$f])) $tv[$f] = wa_tier_num((string)$d[$f]);
     }
+    $h['tier_api'] = $tv['messaging_limit_tier']; $h['tier_mgr'] = $tv['whatsapp_business_manager_messaging_limit'];
+    $big = fn($x) => $x === -1 ? PHP_INT_MAX : (int)$x;   // 'unlimited' (-1) counts as the biggest
+    $got = array_values(array_filter([$h['tier_api'], $h['tier_mgr']], fn($x) => $x !== null));
+    if ($got) { usort($got, fn($a, $b) => $big($a) <=> $big($b)); $h['tier'] = $got[0]; }
     $bad = $h['error'] !== '' || ($h['status'] !== '' && $h['status'] !== 'CONNECTED') || $q === 'RED' || $h['subscribed'] === false;
     $warn = $q === 'YELLOW' || ($h['name_status'] !== '' && !in_array($h['name_status'], ['APPROVED', 'AVAILABLE_WITHOUT_REVIEW'], true));
     $h['level'] = $bad ? 'bad' : ($warn ? 'warn' : 'ok');
@@ -90,6 +97,9 @@ function wa_health_all(PDO $pdo, bool $force): array
             $h = wa_health_one($n);
             if ($h['error'] !== '' && $old && $h['status'] === '') { $old['stale'] = true; $h = $old; }   // Meta did not answer: show the last answer, marked old
             else { $cache[$id] = $h; $dirty = true; }
+            if (array_key_exists('waba_name', $n) && (string)$n['waba_name'] === '' && function_exists('wa_waba_of')) {   // owner 20 Nov 2026: the portfolio tag comes from Meta by itself (the WhatsApp account's name and its owner portfolio)
+                try { $wbx = wa_waba_of($n); if ($wbx !== '') { [$c9, $d9] = wa_api('GET', '/' . $wbx . '?fields=name,owner_business_info'); if ($c9 >= 200 && $c9 < 300 && is_array($d9)) $pdo->prepare("UPDATE wa_numbers SET waba_name = ?, biz_name = ? WHERE id = ?")->execute([mb_substr((string)($d9['name'] ?? ''), 0, 80), mb_substr((string)(is_array($d9['owner_business_info'] ?? null) ? ($d9['owner_business_info']['name'] ?? '') : ''), 0, 80), $id]); } } catch (Throwable $e9) { }
+            }
         } else $h = $old;
         $h['label'] = (string)$n['label'] !== '' ? (string)$n['label'] : ($h['verified_name'] ?: ($h['display'] ?: 'Number ' . $id)); $h['id'] = $id;
         $out[] = $h;

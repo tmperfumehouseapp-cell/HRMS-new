@@ -5,8 +5,8 @@ $bad = 0; $eq = function ($n, $a, $b) use (&$bad) { if ($a !== $b) { echo "FAIL 
 // ratio band: average 25% → allowed from 20%
 $eq('22% allowed', waa_below(20, 4, 0.25), false);   // 20%: exactly on the line = allowed
 $eq('19% below', waa_below(21, 4, 0.25), true);      // 19.05%
-$eq('not judged before 6 queries', waa_below(5, 0, 0.25), false);
-$eq('judged at 6 queries', waa_below(6, 0, 0.25), true);
+$eq('not judged before 5 queries', waa_below(4, 0, 0.25), false);
+$eq('judged at 5 queries', waa_below(5, 0, 0.25), true);
 $eq('no company ratio', waa_below(30, 0, 0.0), false);
 // speed
 $eq('as fast as the team', waa_speed_factor(1.0, 1.0), 1.0); $eq('twice as slow = half', waa_speed_factor(2.0, 1.0), 0.5); $eq('faster = normal', waa_speed_factor(0.5, 1.0), 1.0); $eq('unknown = normal', waa_speed_factor(null, 1.0), 1.0);
@@ -35,20 +35,38 @@ $eq('campaign 1 : 2', [$n[1], $n[2]], [30, 60]);
 $eq('night hours', [waa_night(0), waa_night(9), waa_night(10), waa_night(23)], [true, true, false, false]);
 $eq('night: 5 picked, below = blocked', waa_night_block(true, false, 5), true); $eq('night: 4 picked = ok', waa_night_block(true, false, 4), false);
 $eq('night: good ratio unlimited', waa_night_block(false, false, 50), false); $eq('night: admin on unlimited', waa_night_block(true, true, 50), false);
-// tiers: green first, then the band / not judged yet; red never
-$eq('tier: not judged yet', waa_tier(3, 3, 0.25), 2); $eq('tier: green at the average', waa_tier(10, 3, 0.25), 1); $eq('tier: green above', waa_tier(10, 6, 0.25), 1);
-$eq('tier: inside the band', waa_tier(10, 2, 0.25), 2); $eq('tier: red', waa_tier(10, 1, 0.25), 3);
-$cand = [1 => ['w' => 1.0, 'cnt' => 6, 'tier' => 2, 'full' => false], 2 => ['w' => 1.0, 'cnt' => 20, 'tier' => 1, 'full' => false]];
-$eq('green is chosen first, however many it has', waa_pick_tiers($cand, 6), 2);
-$cand[2]['full'] = true; $eq('a full green is skipped', waa_pick_tiers($cand, 6), 1);
-$cand[1]['full'] = true; $eq('everybody full: still given, green first', waa_pick_tiers($cand, 6), 2);
-$eq('two greens share by target', (function () { $c = [1 => ['w' => 25000.0, 'cnt' => 0, 'tier' => 1], 2 => ['w' => 70000.0, 'cnt' => 0, 'tier' => 1]]; $n = [1 => 0, 2 => 0]; for ($i = 0; $i < 95; $i++) { $e = waa_pick_tiers($c, 6); $n[$e]++; $c[$e]['cnt']++; } return [$n[1] >= 24 && $n[1] <= 27, $n[2] >= 68 && $n[2] <= 71]; })(), [true, true]);
-$eq('no red in the list: band people get it when no green', waa_pick_tiers([5 => ['w' => 1.0, 'cnt' => 3, 'tier' => 2]], 6), 5);
-$eq('nobody', waa_pick_tiers([], 6), 0);
-// one query at a time: a green who was just given one rests while another green can take it; with only him left he still gets it
-$two = [1 => ['w' => 1.0, 'cnt' => 2, 'tier' => 1, 'full' => false, 'rest' => true], 2 => ['w' => 1.0, 'cnt' => 3, 'tier' => 1, 'full' => false, 'rest' => false]];
-$eq('a resting green is skipped for another green', waa_pick_tiers($two, 6), 2);
-$one = [1 => ['w' => 1.0, 'cnt' => 2, 'tier' => 1, 'full' => false, 'rest' => true], 3 => ['w' => 1.0, 'cnt' => 9, 'tier' => 2, 'full' => false, 'rest' => false]];
-$eq('all greens resting: the next person takes it (no 2-4 at once)', waa_pick_tiers($one, 6), 3);
-$eq('only a resting green exists: he still gets it', waa_pick_tiers([1 => ['w' => 1.0, 'cnt' => 2, 'tier' => 1, 'full' => false, 'rest' => true]], 6), 1);
+// tiers (owner, 20 Nov): GREY (under 5 queries) first, one query each in turn; then green, green, yellow; red nothing
+$eq('tier: grey under 5 queries', waa_tier(3, 3, 0.25), 0); $eq('tier: 4 queries is still grey', waa_tier(4, 4, 0.25), 0); $eq('tier: 5 queries is judged: green at the average', waa_tier(5, 2, 0.25), 1);
+$eq('tier: green above', waa_tier(10, 6, 0.25), 1); $eq('tier: inside the band', waa_tier(10, 2, 0.25), 2); $eq('tier: red', waa_tier(10, 1, 0.25), 3);
+$eq('tier: team ratio unknown = yellow', waa_tier(10, 2, 0.0), 2);
+$g = fn($c, $t, $extra = []) => array_merge(['w' => 1.0, 'cnt' => $c, 'tier' => $t, 'full' => false], $extra);
+// grey first, fewest first, in line (ties by the lower id) — 3 greys with 0 queries get 1, 2, 3 in turn
+$cand = [3 => $g(0, 0), 5 => $g(0, 0), 7 => $g(0, 0), 1 => $g(20, 1), 2 => $g(9, 2)];
+$seq = []; for ($i = 0; $i < 15; $i++) { $e = waa_pick_tiers($cand, 5, 0); $seq[] = $e; $cand[$e]['cnt']++; if ($cand[$e]['cnt'] >= 5) $cand[$e]['tier'] = 1; }
+$eq('grey people are filled one query at a time, in line, until 5 each', array_slice($seq, 0, 15), [3, 5, 7, 3, 5, 7, 3, 5, 7, 3, 5, 7, 3, 5, 7]);
+$eq('the greens are untouched until every grey has 5', $cand[1]['cnt'], 20);
+// pattern green, green, yellow (6 to the greens = 3 to the yellows), each group in line
+$P = [1 => $g(0, 1), 2 => $g(0, 1), 3 => $g(0, 1), 8 => $g(0, 2), 9 => $g(0, 2)]; $n = [1 => 0, 2 => 0, 3 => 0, 8 => 0, 9 => 0]; $pos = 0; $order = [];
+for ($i = 0; $i < 9; $i++) { $e = waa_pick_tiers($P, 5, $pos); $n[$e]++; $P[$e]['cnt']++; $pos++; $order[] = $e; }
+$eq('9 queries: 6 to the greens, 3 to the yellows', [$n[1] + $n[2] + $n[3], $n[8] + $n[9]], [6, 3]);
+$eq('the pattern is green, green, yellow, in line', $order, [1, 2, 8, 3, 1, 9, 2, 3, 8]);
+$eq('red is never given', waa_pick_tiers([4 => $g(9, 3)], 5, 0), 0);
+$eq('no yellow can take it: the green does', waa_pick_tiers([1 => $g(3, 1)], 5, 2), 1); $eq('no green can take it: the yellow does', waa_pick_tiers([8 => $g(3, 2)], 5, 0), 8);
+$eq('nobody', waa_pick_tiers([], 5, 0), 0);
+// a full person is skipped (waiting customers), a resting one too while somebody else can take it
+$F = [3 => $g(0, 0, ['full' => true]), 5 => $g(2, 0)]; $eq('a full grey is skipped', waa_pick_tiers($F, 5, 0), 5);
+$R = [3 => $g(0, 0, ['rest' => true]), 1 => $g(9, 1)]; $eq('the only grey rests (just given one): the next group takes it, never 2 at once', waa_pick_tiers($R, 5, 0), 1);
+$eq('only a resting grey exists: he still gets it', waa_pick_tiers([3 => $g(0, 0, ['rest' => true])], 5, 0), 3);
+// THE LINE: inside a group the person whose last query is the OLDEST goes next (nobody given one yet = first); the target weight does not change the turn
+$L = [1 => $g(14, 1, ['last' => 1000]), 2 => $g(9, 1, ['last' => 2000]), 3 => $g(12, 1, ['last' => 0]), 4 => $g(13, 1, ['last' => 0])];
+$eq('green line: nobody given yet today first, fewer queries first', waa_pick_tiers($L, 5, 0), 3);
+$L[3]['last'] = 3000; $eq('then the other who was never given', waa_pick_tiers($L, 5, 0), 4); $L[4]['last'] = 4000; $eq('then the oldest last give', waa_pick_tiers($L, 5, 0), 1);
+$seq = []; $T = [1 => ['last' => 0, 'cnt' => 12], 2 => ['last' => 0, 'cnt' => 12], 3 => ['last' => 0, 'cnt' => 9]]; $clock = 100;
+for ($i = 0; $i < 9; $i++) { $cand = []; foreach ($T as $e => $x) $cand[$e] = $g($x['cnt'], 1, ['last' => $x['last'], 'w' => $e === 1 ? 70000.0 : 25000.0]); $e = waa_pick_tiers($cand, 5, 0); $seq[] = $e; $T[$e]['last'] = ++$clock; $T[$e]['cnt']++; }
+$eq('three greens (one with a 70,000 target) take turns: 3 each, in order', $seq, [3, 1, 2, 3, 1, 2, 3, 1, 2]);
+$eq('yellows take turns too', (function () use ($g) { $c = [8 => $g(5, 2, ['last' => 10]), 9 => $g(5, 2, ['last' => 5])]; return waa_pick_tiers($c, 5, 2); })(), 9);
+// a customer's last message that needs no answer (it must not count as "waiting for his answer")
+foreach (['ok', 'Ok thank you', 'K', 'thanks!', '👍', 'Already Ordered', 'order ho gaya', 'Thank you.'] as $b) $eq('no answer needed: ' . $b, waa_no_answer_needed('text', $b), true);
+foreach (['Sir ??', 'Kb tk aaega', 'Bro where is my tracking id?', 'Please call me', 'Change address', 'Aa rakho'] as $b) $eq('needs an answer: ' . $b, waa_no_answer_needed('text', $b), false);
+$eq('a reaction needs no answer', waa_no_answer_needed('reaction', ''), true); $eq('a voice note needs one', waa_no_answer_needed('audio', '🎤 Voice note'), false);
 echo $bad ? "waa test: $bad problem(s)\n" : "waa test: ok\n"; exit($bad ? 1 : 0);

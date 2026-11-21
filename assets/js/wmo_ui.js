@@ -115,15 +115,15 @@
   // ------------------------------------------------------------------------------------------------------------------ the new order
   function open(o) {
     o = o || {}; const API = o.api || (typeof api !== 'undefined' ? api : null); if (!API) { alert('Not logged in.'); return; }
-    const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, shot2: null, proof: null, proofing: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), single: new Map(), otype: o.outside ? 'query' : '', cust: { phone: o.phone || '', name: o.name || '', addr1: '', landmark: '', pin: '', city: '', state: '' }, busy: false, order: null, seq: { perfume: 0, chain: 0, other: 0 }, cache: {}, msg: '', nn: { 20: { q: 0, p: 0 }, 50: { q: 0, p: 0 }, 100: { q: 0, p: 0 } }, ck: { q: 0, p: 0 } };
+    const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, shot2: null, proof: null, proofing: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), single: new Map(), otype: o.outside ? 'query' : '', cust: { phone: o.phone || '', name: o.name || '', addr1: '', landmark: '', pin: '', city: '', state: '' }, busy: false, order: null, seq: { perfume: 0, chain: 0, other: 0 }, cache: {}, msg: '', nn: { 10: { q: 0, p: 0 }, 20: { q: 0, p: 0 }, 50: { q: 0, p: 0 }, 100: { q: 0, p: 0 } }, ck: { q: 0, p: 0 } };
     const NN = !!o.noname;   // 🏷 No Name order: no perfume is picked — sizes + prices + quantities (and a Car kit)
     const { bd, ft, top } = shell(NN ? 'No Name order' : 'Manual order', (o.name || '') + ' · QR / UPI / COD'); top.innerHTML = '<button type="button" class="mo-lk" id="moList">Orders</button>'; top.querySelector('#moList').onclick = () => orders(o);
 
     const needShot = () => S.pay !== 'cod';
     const paidP = () => (S.pay === 'cod' ? 0 : paise(num(S.paid)));
-    const nnSum = () => { let t = 0; [20, 50, 100].forEach((m) => { t += S.nn[m].q * S.nn[m].p; }); return t + S.ck.q * S.ck.p; };
-    const nnMl = () => [20, 50, 100].reduce((a, m) => a + m * S.nn[m].q, 0);
-    const nnItems = () => [20, 50, 100].some((m) => S.nn[m].q > 0) || S.ck.q > 0;
+    const nnSum = () => { let t = 0; [10, 20, 50, 100].forEach((m) => { t += S.nn[m].q * S.nn[m].p; }); return t + S.ck.q * S.ck.p; };
+    const nnMl = () => [10, 20, 50, 100].reduce((a, m) => a + m * S.nn[m].q, 0);
+    const nnItems = () => [10, 20, 50, 100].some((m) => S.nn[m].q > 0) || S.ck.q > 0;
     const totalP = () => (NN ? nnSum() : S.pay === 'prepaid' ? paidP() : paise(num(S.total)));
     const sum = (m) => { let t = 0; m.forEach((x) => { t += x.price * x.qty; }); return t; };
     const hasItems = () => (NN ? nnItems() : S.perf.size > 0 || S.single.size > 0);
@@ -136,7 +136,7 @@
       const comboOk = !S.perf.size || !S.combo || S.combo.every((c) => filled(c.ml) === c.n) && Array.from(S.perf.values()).every((x) => S.combo.some((c) => c.ml === x.ml));
       const proofOk = !needShot() || (S.shot && S.shot2 && S.proof && S.proof.ok && Math.abs(pd - Math.round((S.proof.amount || 0) * 100)) <= 100);
       const why = !needShot() ? '' : !S.shot ? "Upload the customer's paid screen." : !S.shot2 ? "Upload the receiver's screen." : S.proofing ? 'Checking the two screenshots…' : !S.proof ? '' : !S.proof.ok ? S.proof.reason : (Math.abs(pd - Math.round((S.proof.amount || 0) * 100)) > 100 ? 'The amount received must equal the screenshots (' + rs(Math.round(S.proof.amount * 100)) + ').' : '');
-      const nnAct = NN ? [20, 50, 100].map((m) => S.nn[m]).concat([S.ck]).filter((x) => x.q > 0) : [];
+      const nnAct = NN ? [10, 20, 50, 100].map((m) => S.nn[m]).concat([S.ck]).filter((x) => x.q > 0) : [];
       const nnWhy = NN && S.pay === 'prepaid' && pd > 0 && T > 0 && Math.abs(pd - T) > 100 ? 'The customer paid ' + rs(pd) + ' but the lines add up to ' + rs(T) + ' (price of ONE piece × quantity). Change the price or the quantity so the lines add up to ' + rs(pd) + (nnAct.length === 1 && nnAct[0].q > 0 && pd % nnAct[0].q === 0 ? ' — for ' + nnAct[0].q + ' pieces that is ' + rs(pd / nnAct[0].q) + ' each' : '') + '.' : '';
       const custOk = !o.outside || (S.cust.phone.replace(/\D+/g, '').slice(-10).length === 10); const singlesOk = Array.from(S.single.values()).every((x) => x.price >= 100);
       const ok = custOk && singlesOk && T >= 10000 && hasItems() && (NN ? (S.pay !== 'prepaid' || Math.abs(pd - T) <= 100) : (S.perf.size ? P >= pieces * 1000 : P === 0)) && (!needShot() || (proofOk && pd >= 100)) && !S.proofing && (S.pay !== 'partial' || (pd >= 100 && pd < T)) && comboOk && !S.reading && !S.busy;
@@ -164,7 +164,7 @@
     }
     function nnHtml() {
       const row = (key, ttl, sub, q, pr) => '<div class="mo-ln" data-nn="' + key + '"><div class="mid"><div class="nm">' + ttl + '</div><small>' + sub + '</small><small data-nl style="display:block;color:#12794a;font-weight:700">' + (q && pr ? rs(pr) + ' × ' + q + ' = ' + rs(pr * q) : '') + '</small></div><div class="mo-in" style="width:128px;flex:none"><span>₹</span><input data-np inputmode="decimal" autocomplete="off" placeholder="1 piece" value="' + (pr ? esc(String(pr / 100)) : '') + '"></div><div class="mo-q"><button type="button" data-nq="-1">−</button><input data-nqi inputmode="numeric" value="' + q + '" style="width:46px;text-align:center;border:1px solid #d6dbe0;border-radius:8px;padding:4px 2px;font-weight:700"><button type="button" data-nq="1">+</button></div></div>';
-      return '<div class="mo-h">2 · What was sold? <em>type the price of ONE piece and the quantity (you can type the number)</em></div><div id="moNn">' + [20, 50, 100].map((m) => row(m, '🏷 No name ' + m + ' ml', 'one bottle · commission by ML', S.nn[m].q, S.nn[m].p)).join('')
+      return '<div class="mo-h">2 · What was sold? <em>type the price of ONE piece and the quantity (you can type the number)</em></div><div id="moNn">' + [10, 20, 50, 100].map((m) => row(m, '🏷 No name ' + m + ' ml', 'one bottle · commission by ML', S.nn[m].q, S.nn[m].p)).join('')
         + '<div class="mo-h" style="margin-top:12px">Car kit <em>🚗 commission is a flat 6% of its price</em></div>' + row('ck', '🚗 Car kit', 'one piece · flat 6%', S.ck.q, S.ck.p) + '</div><div id="moMsg" style="margin-top:12px"></div>';
     }
     function custHtml() {
@@ -284,7 +284,7 @@
       try {
         if (!S.order) {
           if (o.outside) { const st = await API.post('wmo.start', { phone: S.cust.phone, name: S.cust.name }); o.phone = st.phone; o.name = S.cust.name || st.name || ''; }
-          const r = await API.post('wmo.create', { kind: NN ? 'noname' : '', nn: NN ? [20, 50, 100].map((m) => ({ ml: m, qty: S.nn[m].q, price: S.nn[m].p / 100 })).filter((x) => x.qty > 0) : [], ck: NN ? { qty: S.ck.q, price: S.ck.p / 100 } : null, channel: o.channel || '', otype: o.outside ? S.otype : '', cust: o.outside ? S.cust : null, singles: Array.from(S.single.values()).map((x) => ({ vid: x.vid, qty: x.qty, price: x.price / 100 })), phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot2: S.shot2 ? S.shot2.b64 : '', shot2_mime: S.shot2 ? S.shot2.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
+          const r = await API.post('wmo.create', { kind: NN ? 'noname' : '', nn: NN ? [10, 20, 50, 100].map((m) => ({ ml: m, qty: S.nn[m].q, price: S.nn[m].p / 100 })).filter((x) => x.qty > 0) : [], ck: NN ? { qty: S.ck.q, price: S.ck.p / 100 } : null, channel: o.channel || '', otype: o.outside ? S.otype : '', cust: o.outside ? S.cust : null, singles: Array.from(S.single.values()).map((x) => ({ vid: x.vid, qty: x.qty, price: x.price / 100 })), phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot2: S.shot2 ? S.shot2.b64 : '', shot2_mime: S.shot2 ? S.shot2.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
           S.order = r.order;
         }
         if (addrOk()) { const r2 = await API.post('wmo.confirm', { id: S.order.id, cust: S.cust }); S.busy = false; S.order.order_no = r2.order_no || S.order.order_no; doneFinal(); if (o.onDone) { try { o.onDone({ stage: 'confirmed', order: S.order }); } catch (e) { } } return; }

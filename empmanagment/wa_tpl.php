@@ -815,13 +815,13 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
     switch ($__wt) {
         case 'wa.tpl_list': {
             // ⚡ the phone app's "Pre-made messages" sheet asks for the LITE list: the approved messages without the per-number matrix / utility twins / Meta check, remembered for 60 s (the full list made the sheet hang on "loading" with hundreds of messages)
-            $__lite = !empty($_GET['lite']); if ($__lite && function_exists('wa_cpc_get')) { try { $__h = wa_cpc_get($pdo, 'tpl_list_lite1'); if ($__h && $__h['age'] < 60) json_response($__h['v']); } catch (Throwable $e) { } }
+            $__lite = !empty($_GET['lite']); if ($__lite && function_exists('wa_cpc_get')) { try { $__h = wa_cpc_get($pdo, 'tpl_list_lite1'); if ($__h && $__h['age'] < 60) { $__v = $__h['v']; $__v['can_edit'] = wa_is_admin($pdo, $auth); json_response($__v); } } catch (Throwable $e) { } }
             if ($__lite) {
                 $rows = $pdo->query("SELECT * FROM wa_templates ORDER BY star DESC, used DESC, id DESC")->fetchAll();
                 $out = []; foreach ($rows as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $o1 = wa_tpl_public($pdo, $r, $wabas); if (in_array($o1['status'], ['approved', 'partial'], true)) $out[] = $o1; }
                 $out = wa_tpl_mark_auto($out, !empty($_GET['all'])); $resp = ['templates' => $out, 'lite' => 1];
                 if (function_exists('wa_cpc_put')) { try { wa_cpc_put($pdo, 'tpl_list_lite1', $resp); } catch (Throwable $e) { } }
-                json_response($resp);
+                $resp['can_edit'] = wa_is_admin($pdo, $auth); json_response($resp);   // can_edit is per user: set after the remembered copy is stored
             }
             // ⚡ the full list is heavy with hundreds of messages (a minute and more): it is remembered. A copy up to 90 s old is shown at once; an older one is shown at once TOO and rebuilt after the answer is sent;
             //    any change to the messages (a POST on a wa.tpl_ action) throws the copy away.
@@ -993,6 +993,7 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
             $cxOwn = function_exists('wa_cx_owner') && wa_cx_owner($pdo, $auth, $c);   // the complaint owner sends the after-24-hours message from the case
             if (!$cxOwn && !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             if (!$cxOwn && function_exists('wa_cx_lock') && ($__cx = wa_cx_lock($pdo, $auth, $c)) !== '') json_response(['error' => $__cx, 'complaint' => (int)$c['cx_id']], 423);
+            if (!$cxOwn && function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);   // 🤖 the bot is answering: 👎 first (it takes the chat), then the template
             if ((int)$c['optout'] === 1) json_response(['error' => 'This customer opted out — do not message them.'], 422);
             $t = wa_tpl_row($pdo, (int)($in['id'] ?? 0)); if (!$t) json_response(['error' => 'Pre-made message not found.'], 404);
             if ((int)($c['camp_optout'] ?? 0) === 1 && !in_array(strtolower((string)($t['category'] ?? 'marketing')), ['utility', 'authentication'], true)) json_response(['error' => 'This customer asked to stop promotional messages. Chat with them normally, or send a Utility message.'], 422);

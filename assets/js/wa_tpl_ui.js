@@ -481,9 +481,17 @@
   WaPanels.add('premade', (el, ctx) => {
     const S = { list: [], filter: 'all', folder: '*', q: '', counts: {}, accounts: 1, can: false, folders: [], appId: true, uf: 'all', auto: null, hl: 0 };
     el.innerHTML = loading;
+    // The full list (per-number details, Utility versions, folders) can take a minute to build after a change. So: ask for it, and if it is not back in 4 seconds show the quick (approved-only) list at once, then swap in the full one when it arrives.
+    let loadSeq = 0;
+    function apply(d, partial) { S.list = d.templates || []; S.counts = d.counts || (partial ? { approved: S.list.length, pending: 0, rejected: 0 } : {}); S.accounts = d.accounts || S.accounts || 1; S.can = d.can_edit != null ? !!d.can_edit : S.can; if (d.folders) S.folders = d.folders.map((f) => f.name); S.appId = d.app_id_set !== false; S.auto = d.auto || S.auto || null; S.partial = !!partial; }
+    function drawP() { draw(); if (S.partial) el.insertAdjacentHTML('afterbegin', '<div style="margin:8px 12px;padding:8px 12px;border-radius:10px;background:#fff4d6;color:#8a5a00;font-size:12.5px;font-weight:700">⏳ Showing the approved messages now — the full details (Utility versions, waiting / rejected ones) are still loading…</div>'); }
     async function load() {
-      try { const d = await api.get('wa.tpl_list'); S.list = d.templates || []; S.counts = d.counts || {}; S.accounts = d.accounts || 1; S.can = !!d.can_edit; S.folders = (d.folders || []).map((f) => f.name); S.appId = d.app_id_set !== false; S.auto = d.auto || null; } catch (e) { el.innerHTML = errBox(e.message); return; }
-      libItems(true).catch(() => { }); draw();
+      const my = ++loadSeq; let got = false, fullErr = null;
+      const quick = setTimeout(async () => { if (got || my !== loadSeq) return; try { const q = await api.get('wa.tpl_list', { lite: 1 }); if (!got && my === loadSeq) { apply(q, true); drawP(); } } catch (e) { /* keep waiting for the full list */ } }, 4000);
+      let d = null; try { d = await api.get('wa.tpl_list'); } catch (e) { fullErr = e; }
+      clearTimeout(quick); if (my !== loadSeq) return; got = true;
+      if (!d) { if (S.partial && S.list.length) { S.partial = false; draw(); el.insertAdjacentHTML('afterbegin', '<div style="margin:8px 12px;padding:8px 12px;border-radius:10px;background:#fde8e8;color:#9b1c1c;font-size:12.5px;font-weight:700">The full details did not load (' + esc((fullErr && fullErr.message) || 'timeout') + '). Press Refresh to try again.</div>'); return; } el.innerHTML = errBox((fullErr && fullErr.message) || 'Could not load'); return; }
+      apply(d, false); libItems(true).catch(() => { }); draw();
     }
     const okStatus = (t) => ['approved', 'partial'].indexOf(t.status) >= 0;
     function draw() {

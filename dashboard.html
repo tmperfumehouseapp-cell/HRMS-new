@@ -67,7 +67,6 @@
   </main>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=33"></script>
@@ -246,6 +245,8 @@
         'Emergency Contact Relation': e.emergency_contact_relation || '',
       }));
 
+      // the Excel library is loaded only now (it used to block the whole page while it downloaded)
+      if (!window.XLSX) await new Promise((ok, no) => { const x = document.createElement('script'); x.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; x.onload = ok; x.onerror = () => no(new Error('Could not load the Excel library')); document.head.appendChild(x); });
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Employees');

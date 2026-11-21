@@ -1659,7 +1659,7 @@ if (!function_exists('budget_store_calc')) {
                     $pc = cm_pct($ch, $ml, $gross);
                     if ($pc === null) {
                         $maxMl = 0; foreach ((array)($ch['rows'] ?? []) as $cr) $maxMl = max($maxMl, (float)$cr['ml']);
-                        if ($maxMl > 0 && $ml > $maxMl) { $pct = st_big_flat_pct($pdo); $rule = 'flat'; $com = $gross * $pct / 100; }      // a bill BIGGER than the last size of the price chart pays a flat % (default 6), not 0
+                        if ($maxMl > 0) { $pct = st_big_flat_pct($pdo); $rule = 'flat'; $com = $gross * $pct / 100; }      // a size that is NOT in the price chart (bigger than the last row, or smaller than the first, e.g. a 10 ml bottle) pays a flat % (default 6) instead of 0
                         else { $unpriced++; $rule = 'ML not priced'; }
                     } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; }
                 }

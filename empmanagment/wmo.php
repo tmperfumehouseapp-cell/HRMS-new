@@ -182,7 +182,7 @@ function wmo_noname_lines(array $nn, array $ck): array
     $L = []; $ml = 0; $sum = 0;
     foreach ($nn as $x) {
         if (!is_array($x)) continue; $m = (int)($x['ml'] ?? 0); $q = (int)($x['qty'] ?? 0); if ($q < 1) continue; $q = min(500, $q);
-        if (!in_array($m, [20, 50, 100], true)) return [[], 0, 'No Name comes in 20, 50 or 100 ml.', 0];
+        if (!in_array($m, [10, 20, 50, 100], true)) return [[], 0, 'No Name comes in 10, 20, 50 or 100 ml.', 0];
         $pr = wmo_p($x['price'] ?? 0); if ($pr < 5000 || $pr > 5000000) return [[], 0, 'Type the price of one No name ' . $m . ' ml (₹50 to ₹50000).', 0];
         $L[] = ['vid' => -$m, 'sku' => 'NONAME-' . $m, 'pid' => 0, 'title' => 'No name ' . $m . ' ml', 'short' => 'No name', 'label' => $m . ' ml', 'ml' => $m, 'qty' => $q, 'mrp_p' => $pr, 'chain' => false, 'noname' => true, 'unit_p' => $pr, 'total_p' => $pr * $q];
         $ml += $m * $q; $sum += $pr * $q;

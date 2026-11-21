@@ -1532,6 +1532,8 @@ function wq_need_take(PDO $pdo, string $phone, int $me): array
     if ((int)$c['assigned_emp'] === $me) return ['ok' => true, 'already' => true];
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — it stays with its person.'];
+    if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') return ['error' => $__bm];   // 🤖 the bot is answering this chat: wait, or press 👎 on its answer
+    if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') return ['error' => $__gm];   // 🏪 performance gate: no more queries for a person who is not closing
     $in = wq_ts($c['last_in_at'] ?? ''); if ($in <= 0 || wq_now() - $in > 86400) return ['error' => 'The 24-hour window of this chat has closed.'];
     $q = $pdo->prepare("SELECT 1 FROM wa_messages h WHERE h.phone = ? AND h.dir = 'out' AND (h.emp_id > 0 OR h.who IN ('emp', 'phone')) AND h.ts >= ? AND (h.mtype IN ('image', 'video', 'audio', 'document', 'template', 'interactive') OR CHAR_LENGTH(TRIM(COALESCE(h.body, ''))) >= 30) LIMIT 1"); $q->execute([$phone, wq_dt($in)]); if ($q->fetchColumn()) return ['error' => 'A person has already answered this customer.'];
     $from = (int)$c['assigned_emp'];
@@ -1555,6 +1557,8 @@ function wq_grab(PDO $pdo, string $phone, int $me): array
     // everyone in the chat app may take a late chat (owner's rule)
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — it stays with its person.'];
+    if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') return ['error' => $__bm];   // 🤖 the bot is answering this chat: wait, or press 👎 on its answer
+    if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') return ['error' => $__gm];   // 🏪 performance gate: no more queries for a person who is not closing
     if ($in > 0 && wq_now() - $in > 86400) return ['error' => 'The 24-hour window of this chat has closed.'];
     if ($in <= 0 || $out >= $in) return ['error' => 'Somebody has already answered this customer.'];
     if (wq_now() - $in < $min * 60) return ['error' => 'This customer has waited less than ' . $min . ' minutes — the person handling it can still answer.'];
@@ -1631,12 +1635,15 @@ function wq_req_take(PDO $pdo, string $phone, int $me): array
     // everyone who opens the chat app (every sales agent, managers and admin too) may take a request — owner's rule
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — the complaint team handles it.'];
+    if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') return ['error' => $__bm];   // 🤖 the bot is answering this chat: wait, or press 👎 on its answer
+    if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') return ['error' => $__gm];   // 🏪 performance gate: no more queries for a person who is not closing
     if ((int)$c['assigned_emp'] > 0) return ['error' => (wq_name(wq_names($pdo), (int)$c['assigned_emp']) ?: 'Somebody') . ' already has this chat.'];
     if (function_exists('waa_pick_block')) { $wb = waa_pick_block($pdo, $me); if ($wb !== '') return ['error' => $wb]; }   // 🏪 overnight: a person below the ratio band takes at most 5 from Requests
     $u = $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ? AND (assigned_emp IS NULL OR assigned_emp = 0)"); $u->execute([$me, $phone]);
     if ($u->rowCount() === 0) return ['error' => 'Somebody else just took this chat.'];
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0 WHERE phone = ?")->execute([$phone]);   // back for one line: wa_assign_to writes the log, the event and the query owner
     wa_assign_to($pdo, $phone, $me, $me, 'request'); wq_clear_attention($pdo, $phone, $me, 'Taken from Requests');
+    if (function_exists('waa_count_taken')) waa_count_taken($pdo, $me, $phone);   // 🌙 overnight: counted in the person's Overnight / Query numbers by itself
     return ['ok' => true];
 }
 /** "Who takes the most": per person, for the last 1 / 7 / 30 days — chats taken after a late reply, chats taken FROM them (they were late), how many taken chats got a reply

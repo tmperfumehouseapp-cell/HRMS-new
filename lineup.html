@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>30-Day Lineup</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e1a15">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+  /* The 30-Day Lineup on a page of its own (owner, 21 Nov): the same screen as the card on Campaigns, open at a fixed address, independent of the Campaigns page. */
+  :root { --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font); background: #f3f6f4; color: #1b2430; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; align-items: center; background: #0b7a5a; color: #fff; padding: 12px 14px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+  header a { color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; white-space: nowrap; }
+  header h1 { flex: 1; margin: 0; font-size: 19px; }
+  main { padding: 12px 12px 40px; max-width: 1100px; margin: 0 auto; }
+  .big { background: linear-gradient(180deg, #faf5ff, #fff); border: 2px solid #c4b5fd; border-radius: 18px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(124, 58, 237, .15); }
+  .ver { margin: 8px 2px 0; font-size: 12px; color: #6b7a73; }
+</style>
+</head>
+<body>
+<header><a href="dashboard.html">‹ HRMS</a><h1>🧵 30-Day Lineup</h1><a href="whatsapp.html">WhatsApp ›</a></header>
+<main>
+  <div class="wp big" id="app"><div style="padding:8px 0">Loading the Lineup…</div></div>
+  <div class="ver">Lineup page · updates itself every minute</div>
+</main>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/wa_panels.js?v=wa50"></script>
+<script src="assets/js/wa_line_ui.js?v=l12"></script>
+<script>
+  (function () {
+    const host = document.getElementById('app');
+    const fail = (m) => { host.innerHTML = '<div style="padding:8px 0;color:#b42318"><b>The Lineup could not open.</b> ' + String(m).replace(/[<>&]/g, '') + '<br><button type="button" id="rt" style="margin-top:8px;padding:8px 14px">Try again</button></div>'; const b = document.getElementById('rt'); if (b) b.onclick = () => location.reload(); };
+    try {
+      if (typeof api === 'undefined' || !window.WaPanels || !window.WaLine || !WaLine.mount) return fail('A script did not load (api / panels / lineup). Close this tab and open it again.');
+      if (!api.token()) { location.href = 'index.html'; return; }
+      const reload = WaLine.mount(host);
+      setInterval(() => { if (!document.hidden) { try { reload(); } catch (e) { } } }, 60000);
+    } catch (e) { fail(e && e.message ? e.message : e); }
+  })();
+</script>
+</body>
+</html>

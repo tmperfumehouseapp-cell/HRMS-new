@@ -52,6 +52,8 @@
 
   const CSS = `
   .wx:not(.cxm) #wxCxR{display:none !important}.wx.cxm #wxPf,.wx.cxm #wxOr,.wx.cxm #wxOd,.wx.cxm #wxCt,.wx.cxm #wxLs,.wx.cxm #wxPrc,.wx.cxm #wxFin{display:none !important}.wx.cxm #wxCxR{background:#f5f0ff;color:#5b21b6}
+  .wx.fbm .wx-b{font-size:13px !important;line-height:1.28 !important;padding:4px 8px 3px 9px !important;margin:1px 8px !important;max-width:70% !important}.wx.fbm .wx-ch{padding:4px 8px !important;gap:6px !important}.wx.fbm .wx-ev{margin:3px 10px !important;font-size:11px !important}
+  .wx.fbm #wxSug,.wx.fbm #wxPc,.wx.fbm #wxPp,.wx.fbm #wxRd,.wx.fbm #wxGrow,.wx.fbm #wxLife,.wx.fbm #wxCxB,.wx.fbm #wxOdB,.wx.fbm #wxAs,.wx.fbm #wxRs,.wx.fbm #wxMore,.wx.fbm #wxCxR,.wx.fbm .pc-row{display:none !important}
   .wx.emb>*:not(.wx-chat):not(.wx-md):not(.wx-toast){visibility:hidden}.wx.emb .wx-chat{left:0 !important;border-left:0 !important;animation:none}.wx.emb .wx-chat .bk{display:none !important}.wx.emb::after{display:none !important}html.wx-emb body{overflow:hidden}
   .wx{--g:#16a34a;--gd:#0f7a3a;--ink:#0f172a;--mut:#64748b;--line:#e8ecf2;--bg:#f4f6fa;--or:#f97316;--rd:#e5484d;--bl:#3b82f6;--pu:#7c5cfc;position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font-size:14px;overflow:hidden}
   .wx *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}.wx button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}.wx input,.wx textarea,.wx select{font:inherit;color:inherit}
@@ -133,6 +135,11 @@
   .wx{--g:#00a884;--gd:#0f6e7e;--ink:#111b21;--mut:#667781;--line:#e9edef;--bg:#fff;font-size:14px;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
   .wx-top{background:#0f6e7e;color:#fff;padding:calc(8px + env(safe-area-inset-top)) 10px 8px;gap:8px}.wx-top h1{font-size:20px;font-weight:600;color:#fff;letter-spacing:.1px}
   .wx-sp{width:32px;height:32px;background:rgba(255,255,255,.16);border:0;color:#fff}.wx-sp.wx-pc{width:auto;min-width:32px;border-radius:99px;padding:0 10px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:800;line-height:1;white-space:nowrap}
+    /* 🧭 the coach / ticket / call-back strips fold into ONE small bar (tap to open) so the chat list gets the screen */
+  .wx>.wx-top{order:-30}.wx>#wxSlow{order:-40}.wx>#wxFold{order:-20}.wx>#wxMgr,.wx>#wxTkS,.wx>#wxGl,.wx>#wxNt{order:-10}
+  .wx.wx-tips-off>#wxMgr,.wx.wx-tips-off>#wxTkS,.wx.wx-tips-off>#wxGl,.wx.wx-tips-off>#wxNt{display:none !important}
+  #wxFold{display:flex;align-items:center;gap:8px;margin:3px 8px;padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font-weight:700;font-size:12px;line-height:1.2;font-family:inherit;text-align:left;cursor:pointer;flex:none}
+  #wxFold .fl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#wxFold b{background:#f97316;color:#fff;border-radius:9px;padding:1px 7px;font-size:11px}#wxFold i{font-style:normal;opacity:.6;transition:transform .15s}.wx:not(.wx-tips-off) #wxFold i{transform:rotate(180deg)}
   .wx .wx-top #wxPace{height:22px;min-width:0;width:auto;padding:0 7px;gap:3px;font-size:10px;font-weight:700;opacity:.92;align-self:center}.wx .wx-top #wxPace i{width:6px !important;height:6px !important}.wx .wx-top #wxPace .wx-tmt{display:none}.wx .wx-top #wxPaceT{gap:3px !important}
   .wx .wx-b{position:relative}.wx .wx-rb{position:absolute;top:4px;right:-30px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(0,0,0,.08);color:#54656f;font-size:14px;cursor:pointer;opacity:0;transition:opacity .15s;padding:0}.wx .wx-b.out .wx-rb{right:auto;left:-30px}.wx .wx-b:hover .wx-rb{opacity:1}@media (hover:none){.wx .wx-rb{display:none}}.wx .wx-rpb{display:flex;gap:8px;align-items:center;padding:6px 10px;background:#f0f2f5;border-top:1px solid #e9edef}.wx .wx-rpb>button{border:0;background:none;font-size:18px;color:#54656f;cursor:pointer;padding:4px 8px}.wx .wx-qt{display:block;border-left:4px solid #06cf9c;background:rgba(0,0,0,.06);border-radius:8px;padding:5px 8px;margin:0 0 5px;cursor:pointer;font-size:13px;line-height:1.35}.wx .wx-qt b{display:block;color:#059669;font-size:12px}.wx .wx-qt span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;opacity:.8}@keyframes wxFl{0%,60%{box-shadow:0 0 0 3px #fbbf24}100%{box-shadow:none}}.wx .wx-fl{animation:wxFl 1.6s ease}
   .wx .wx-row.sel,.wx .wx-row.sel.h-hot,.wx .wx-row.sel.h-late,.wx .wx-row.sel.h-active,.wx .wx-row.sel.h-slow,.wx .wx-row.sel.h-cx{background:#cdeedd!important;box-shadow:inset 4px 0 0 #00a884!important}.wx .wx-row.sel .wx-nm{font-weight:800}
@@ -259,7 +266,8 @@
     try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=5'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     root.innerHTML = ''; const R = document.createElement('div'); R.className = 'wx'; root.appendChild(R);
     const EMB = new URLSearchParams(location.search).get('embed') === '1'; if (EMB) { R.classList.add('emb'); document.documentElement.classList.add('wx-emb'); }
-    const CXID = EMB ? (Number(new URLSearchParams(location.search).get('cx')) || 0) : 0; if (CXID) R.classList.add('cxm');   // 🎫 inside a complaint ticket: voice + attach + ✨ Replies (Claude's suggestion + the complaint pre-made messages); no sales tools   // 🎫 ONE chat inside another page (the complaint ticket): the same chat box — voice notes, photos, videos, "/" quick replies, pre-made messages — no list
+    const CXID = EMB ? (Number(new URLSearchParams(location.search).get('cx')) || 0) : 0; if (CXID) R.classList.add('cxm');
+    const FBM = EMB && new URLSearchParams(location.search).get('fb') === '1'; if (FBM) R.classList.add('cxm', 'fbm');   // 💬 the chat inside the Feedback page: the Complaints-style chat (no sales tools) and NO suggestions / rescue / price-chart bars   // 🎫 inside a complaint ticket: voice + attach + ✨ Replies (Claude's suggestion + the complaint pre-made messages); no sales tools   // 🎫 ONE chat inside another page (the complaint ticket): the same chat box — voice notes, photos, videos, "/" quick replies, pre-made messages — no list
     const S = { tab: 'chats', filter: '', chats: [], counts: {}, stats: {}, cfg: { unans_min: 3, target: 5, sound: true }, me: {}, results: [], mentions: [], reminders: [], fetched: 0, loaded: false,
       hist: { rows: [], page: 0, more: false, q: '', f: '', total: 0, loading: false, sel: new Set(), selOn: false }, board: null, cur: null, sound: (localStorage.getItem('wa_sound') || '1') === '1', seen: null, quick: null, tpls: null, gallery: null, push: null };
     const $ = (q, r) => (r || R).querySelector(q);
@@ -399,7 +407,11 @@
         + `<div style="color:var(--ink,#111827);font-size:14.5px;line-height:1.4;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word">${x.last_in ? esc(x.last_in) : '…'}</div></div>`
         + `<button type="button" data-tk="${esc(x.phone)}" data-pk="${x.rescue ? 'rescue' : late ? 'grab' : 'req'}" style="flex:none;border:0;border-radius:99px;background:#00a884;color:#fff;font-weight:800;font-size:13.5px;padding:9px 14px;min-height:40px;cursor:pointer">✋ Take over</button></div>`; };
       const byNew = (a, b) => (+a.mins || 0) - (+b.mins || 0), byNewL = (a, b) => (+a.waiting_min || 0) - (+b.waiting_min || 0);
-      let h = '';   // 🆕 the newest query is always on top; the ones nobody answered for 4+ min come after
+      // 🏪 OPEN MARKET (owner, 21 Nov): nobody is given a chat — the best people right now are shown so everybody sees who will take it; the chat does not open until it is taken
+      if (!S.mktAt || Date.now() - S.mktAt > 60000) { S.mktAt = Date.now(); api.get('wa.g_mkt_top').then((r) => { S.mkt = r; if (S.tab === 'chats' && S.filter === 'req') drawReq(); }).catch(() => { }); }
+      let h = S.mkt && (S.mkt.top || []).length ? '<div style="margin:8px 12px;padding:9px 12px;border-radius:12px;background:#f2f6fd;color:#2a4a7a;font-size:13px">🏪 <b>Open market.</b> Nobody is given a chat — take what you can close. 🏅 Taking the hot chats now: <b>' + S.mkt.top.map(esc).join(' · ') + '</b>' + (S.mkt.my ? '<br>You: #' + S.mkt.my.rank + ' of ' + S.mkt.my.of + ' · score ' + S.mkt.my.score + ' · taken ' + S.mkt.my.taken + (S.mkt.my.dropped ? ' · <span style="color:#b00">🔴 left ' + S.mkt.my.dropped + '</span>' : '') : '') + '</div>' : '';
+      if (S.mkt && S.mkt.gate) h += '<div style="margin:8px 12px;padding:10px 12px;border-radius:12px;background:#fdecec;color:#a11;font-size:13px;font-weight:600">' + esc(S.mkt.gate) + '</div>';
+      h += '';   // 🆕 the newest query is always on top; the ones nobody answered for 4+ min come after
       h += '<div class="wx-h">🆕 New — not given to anyone · ' + L.length + '</div>' + (L.length ? '<div class="wx-card wx-lst">' + L.slice().sort(byNew).map((x) => line(x, false)).join('') + '</div>' : '<div class="wx-empty"><b>🙋</b>No new requests — every chat has someone.</div>');
       if (LT.length) h += `<div class="wx-h r">⏱ Waiting ${S.reqMin}+ min — nobody replied · ${LT.length}</div><div class="wx-card wx-lst">${LT.slice().sort(byNewL).map((x) => line(x, true)).join('')}</div>`;
       M.innerHTML = h;
@@ -408,7 +420,7 @@
         if (t) { e.stopPropagation(); const ph = t.dataset.tk, pk = t.dataset.pk; t.disabled = true; t.textContent = 'Taking…';
           try { await api.post(pk === 'grab' ? 'wq.grab' : pk === 'rescue' ? 'wq.rescue_take' : 'wq.req_take', { phone: ph }); const x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; S.req = (S.req || []).filter((y) => y.phone !== ph); S.reqLate = (S.reqLate || []).filter((y) => y.phone !== ph); S.grab = (S.grab || []).filter((y) => y.phone !== ph); toast('The chat is yours now ✓'); loadList(true); openChat(ph, { name: x.name || '' }); }
           catch (er) { toast(er.message, true); t.disabled = false; t.textContent = '✋ Take over'; loadReq(); } return; }
-        const b = e.target.closest('[data-peek]'); if (!b) return; const ph = b.dataset.peek, x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; openChat(ph, { peek: b.dataset.pk, name: x.name || '' }); };
+        const b = e.target.closest('[data-peek]'); if (!b) return; toast('Take the chat first ✋ — it opens after you take it. Nobody is given chats: take what you can close.'); };   // 🏪 the chat does not open before it is taken
     }
     async function loadList(quiet) {
       try {
@@ -448,7 +460,7 @@
       return loadList(true);
     }
     // 💤 a screen nobody has touched for 2 minutes asks the server every 10 s instead of every 5 s (half the requests of every idle screen); the first touch / key / mouse move brings it up to date at once
-    let lastAct = Date.now(); const idleNow = () => Date.now() - lastAct > 120000;
+    let lastAct = Date.now(); const idleNow = () => !EMB && Date.now() - lastAct > 120000;      // a chat shown INSIDE another page (Feedback / Complaints) is always live: the person works on the page around it, so this frame never sees a touch and must not slow down
     ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { const was = idleNow(); lastAct = Date.now(); if (was && !document.hidden) { if (S.cur) once('poll', pollChat); once('list', smartList); } }, { passive: true, capture: true }));
     function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; const __idle = idleNow(); if (__idle && beat % 4) return; const __ev = beat % 2 === 0; if (S.cur) once('poll', pollChat); if (__ev) once('list', smartList); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && __ev) once('team', loadTeam); }, 5000); }   // ⚡ the OPEN chat asks every 5 s (new messages and ticks show at once); the lists and Requests every 10 s (was 5 s); a screen nobody touched for 2 minutes asks every 20 s
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (S.cur) pollChat(); loadList(true); } });
@@ -458,6 +470,15 @@
     R.innerHTML = `<div class="wx-top"><a class="wx-sp" href="my_app.html" title="My Sales" aria-label="Back to My Sales"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg></a><h1 id="wxT">Chats</h1><button type="button" class="wx-sp" id="wxCxN" aria-label="Raise a complaint" title="Raise a complaint — any customer, just the phone number (also customers on our old phone)">⚠</button><button type="button" class="wx-sp wx-pc" id="wxPace" aria-label="My reply pace" title="My reply pace">⚡<span id="wxPaceT" style="display:inline-flex;align-items:center;gap:5px"></span></button><button type="button" class="wx-sp wx-pc" id="wxTk" aria-label="My ticket" title="My ticket today" hidden>🎯<span id="wxTkT" style="display:inline-flex;align-items:center;gap:5px"></span></button><button type="button" class="wx-sp" id="wxOf" aria-label="Running offers" title="Running offers (view only)">🏷</button><button type="button" class="wx-sp" id="wxDk" aria-label="Dark mode" title="Dark / light">🌙</button><span class="wx-pill" id="wxS1"></span><span class="wx-pill" id="wxS2"></span></div><div class="wx-fb"><span class="ic" aria-hidden="true">🔍</span><input id="wxFb" type="search" inputmode="search" autocomplete="off" placeholder="Search any customer — number or name" aria-label="Search any customer by number or name"><button type="button" id="wxFbX" aria-label="Clear search" hidden>✕</button><button type="button" id="wxAdd" class="wx-addc" title="Add a customer and send a message">＋ Add customer</button></div><div class="wx-seg" id="wxSeg"></div><div class="wx-main" id="wxM"></div><div class="wx-main" id="wxFR" hidden></div>
       <div class="wx-tabs" id="wxTabs"><button data-t="chats"><i>💬</i>Chats</button><button data-t="queries"><i>📋</i>Queries</button><button data-t="history"><i>🕘</i>History</button><button data-t="me"><i>🏆</i>Me</button><button data-home="1" onclick="location.href='my_sales.html'"><i>📈</i>My Sales</button></div>`;
     { const dk = R.querySelector('#wxDk'); if (dk) dk.onclick = themeNext; themeApply(); }
+    { // 🧭 one small bar that opens / closes the coach strips
+      const top = R.querySelector('.wx-top'); if (top && !document.getElementById('wxFold')) {
+        const fb = document.createElement('button'); fb.type = 'button'; fb.id = 'wxFold'; fb.innerHTML = '<span class="fl">🧭 Today\u2019s tips &amp; targets</span><span id="wxFoldN"></span><i>▾</i>'; top.insertAdjacentElement('afterend', fb);
+        const get = () => { try { return localStorage.getItem('wx_tips') === '1'; } catch (e) { return false; } };
+        const apply = (open) => { R.classList.toggle('wx-tips-off', !open); try { localStorage.setItem('wx_tips', open ? '1' : '0'); } catch (e) { } };
+        R.classList.toggle('wx-tips-off', !get()); fb.onclick = () => apply(R.classList.contains('wx-tips-off'));
+        const sync = () => { const nt = document.getElementById('wxNt'), n = document.getElementById('wxFoldN'); if (!n) return; const m = nt && /(\d+)\s*customer|ko call karo/.test(nt.textContent || '') ? ((nt.textContent || '').match(/(\d+)\s*customer/) || [0, 1])[1] : 0; n.innerHTML = m ? '<b>📞 ' + m + '</b>' : ''; };
+        sync(); setInterval(sync, 3000);
+      } }
     { const of = R.querySelector('#wxOf'); if (of) of.onclick = async () => { if (!window.OffersView) { toast('Refresh the page and try again'); return; } const sh = sheet('🏷 Running offers'); sh.body.innerHTML = '<div class="wx-empty" style="padding:20px;text-align:center">Loading…</div>'; sh.body.innerHTML = await OffersView.load(); OffersView.wire(sh.body); }; }
     { const pc = R.querySelector('#wxPace'); if (pc) pc.onclick = () => { const go = () => window.WaPace && window.WaPace.open(); if (window.WaPace) go(); else { const sc = document.createElement('script'); sc.src = 'assets/js/wq_pace_ui.js?v=8'; sc.onload = go; document.head.appendChild(sc); } }; }   // ⚡ my reply pace (own numbers only)
     // 🧭 Team manager card: one line from Claude for ME (only when the admin has switched the manager to Apply): what to do now — clear complaints, take orders, raise the ticket, or "take more chats"
@@ -1209,12 +1230,12 @@
       v.innerHTML = `<div class="wx-ch"><button class="bk" id="wxBk" aria-label="Back">‹</button><div class="wx-av" style="background:hsl(${hue(c.phone)} 55% 48%);width:34px;height:34px;font-size:12px">${esc(initials(c.name, c.phone))}</div>
         <div class="wx-mid" id="wxCi" style="cursor:pointer"><div class="wx-nm" id="wxCn">${esc(c.name || pretty(c.phone))} ${badgeOf(r)}</div><div class="wx-sub" id="wxCs">${esc(pretty(c.phone))}</div><div id="wxOs"></div></div>
         ${S.me && S.me.team ? `${r.emp && r.emp === S.me.emp_id || S.me.can_to === false ? '' : '<button class="wx-ib g" id="wxTk" title="Take this chat for yourself — one tap">✋<small>Take over</small></button>'}${S.me.can_as === false ? '' : '<button class="wx-ib" id="wxAs" title="Give this chat to a salesperson">👤<small>Assign</small></button>'}` : ''}<button class="wx-ib g" id="wxRs" title="Resolve: one tap — the chat is closed and leaves your list (and the inbox)">✅<small>Resolve</small></button><button class="wx-ib" id="wxFin" title="Done: say how the chat ended (order, later, price …) and close it">✔<small>Done</small></button><button class="wx-ib" id="wxMore" aria-haspopup="dialog" title="More: complaint, report, journey, customer">⋯<small>More</small></button></div>
-        <div id="wxRd"></div><div id="wxGrow"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
+        <div id="wxRd"></div><div id="wxGrow"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxBotB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
       $('#wxBk').onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; $('#wxCi').onclick = openCustomer; $('#wxFin').onclick = openFinish; $('#wxRs').onclick = async function () { if (CXID) { /* 🎫 inside a complaint ticket "Resolve" means the TICKET: it used to close only the chat, so the ticket stayed in "Still to solve" */ try { window.parent.postMessage({ cxResolve: CXID }, location.origin); } catch (e) { } return; } this.disabled = true; const phone = S.cur.phone; try { await api.post('wa.close', { phone, quick: 1 }); closeChat(); toast('Resolved ✓ — removed from your chats'); loadList(true); } catch (e) { toast(e.message, true); this.disabled = false; } }; $('#wxMore').onclick = openMore;
       if ($('#wxToB')) $('#wxToB').onclick = takeOver;
       if ($('#wxTk')) $('#wxTk').onclick = function () { this.disabled = true; takeOver().then(() => { const t = $('#wxTk'); if (S.cur && S.cur.row && S.cur.row.emp === (S.me && S.me.emp_id) && t) t.remove(); else if (t) t.disabled = false; }); };   // ✋ manager / admin: one tap, no confirmation
       if ($('#wxAs')) $('#wxAs').onclick = () => openHandover(true);   // 👤 give this chat to anybody
-      if ($('#wxPrc')) $('#wxPrc').onclick = async function () { this.disabled = true; try { pcView(await api.post('wa.price_photo', { phone: S.cur.phone, preview: true })); } catch (e) { toast(e.message, true); } this.disabled = false; }; cxBanner(); odBanner(); orderPill(); readLines();
+      if ($('#wxPrc')) $('#wxPrc').onclick = async function () { this.disabled = true; try { pcView(await api.post('wa.price_photo', { phone: S.cur.phone, preview: true })); } catch (e) { toast(e.message, true); } this.disabled = false; }; botBanner(); cxBanner(); odBanner(); orderPill(); readLines();
       $('#wxMs').onclick = async (e) => {
         const rb0 = e.target.closest('[data-rb]'); if (rb0) { rpSet(rb0.dataset.rb); return; }
         const rt = e.target.closest('[data-rt]'); if (rt) { const m = S.cur && S.cur.msgs.find((x) => x.cid === rt.dataset.rt); if (m) sendText(m.body, null, false, m); return; }   // Retry: same id, so it can never go twice
@@ -1251,6 +1272,45 @@
       if (o === null) return; try { const r = await api.post('wa.order_done', { phone: ph, order: o.trim() }); toast('✅ Order completed' + (r.thanks ? ' · ' + r.thanks : '')); } catch (e) { toast(e.message, true); } odBanner();
     }
     // ---- Complaints: the ⚠ button raises a case; once the chat is with the Complaint team a red strip says so
+    // 🤖 the bot is answering this chat: a clear banner, Take over / writing locked meanwhile, and 👎 "Bot answer not good" (you write the better answer, the chat becomes yours, the bot learns)
+    async function botBanner() {
+      const ph = S.cur && S.cur.phone; if (!ph) return; if (S.botT) clearInterval(S.botT);
+      const paint = async () => {
+        if (!S.cur || S.cur.phone !== ph) { clearInterval(S.botT); return; }
+        let st; try { st = await api.get('wa.g_botstate', { phone: ph }); } catch (e) { return; } if (!S.cur || S.cur.phone !== ph) return;
+        const b = $('#wxBotB'); const on = !!(st && st.on); S.cur.botLock = on; S.cur.botHasText = !!(st && st.bot_text);
+        const offer = !!(st && st.bot_enabled && !on && st.engaged && st.why !== 'taken');   // the bot decided: the person may take over now
+        if (b) b.innerHTML = !st || !st.bot_enabled ? '' : on
+          ? `<div class="wx-banner y" style="margin:6px 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px">🤖 <b>The bot is answering this customer — wait.</b> Only the bot decides when you take over. If its answer is not good, press 👎.</span>${st.bot_text ? '<button type="button" id="wxBotBad" style="border:0;border-radius:10px;background:#c0392b;color:#fff;padding:8px 12px;font:inherit;font-weight:600">👎 Bot answer not good</button>' : '<span style="color:#a60">⏳ the bot is writing…</span>'}</div>`
+          : (offer ? `<div class="wx-banner" style="margin:6px 8px;background:#e8f7ee;color:#1b6b3a;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px">✅ <b>The bot hands this chat to you.</b> Take over now.</span><button type="button" id="wxBotTake" style="border:0;border-radius:10px;background:#128c4a;color:#fff;padding:9px 14px;font:inherit;font-weight:700">✋ Take over now</button></div>` : (st.why === 'taken' ? '<div class="wx-banner" style="margin:6px 8px;background:#e8f7ee;color:#1b6b3a">✅ A salesperson has this chat — the bot is silent.</div>' : ''));
+        // the normal Take over buttons are hidden while the bot is in charge: the bot's "Take over now" is the only way in (a chat the bot never touched keeps the normal button)
+        for (const id of ['wxTk', 'wxToB']) { const t = $('#' + id); if (t) t.style.display = (on || offer) && st.bot_enabled ? 'none' : ''; }
+        const tk = $('#wxBotTake'); if (tk) tk.onclick = function () { this.disabled = true; this.textContent = 'Taking over…'; takeOver().then(() => { if (S.cur && S.cur.phone === ph) botBanner(); }); };
+        const bb = $('#wxBotBad'); if (bb) bb.onclick = openBotBad;
+      };
+      await paint(); S.botT = setInterval(paint, 6000);
+    }
+    function openBotBad() {
+      if (!S.cur) return; const phone = S.cur.phone, sh = sheet('Bot answer not good');
+      sh.body.innerHTML = '<p style="margin:0 0 8px;font-size:13px;color:#667">The bot said:</p><div id="bbT" style="background:#f3f4f6;border-radius:10px;padding:8px;font-size:13px;white-space:pre-wrap;margin-bottom:8px">…</div>'
+        + '<p style="margin:0 0 6px;font-size:13px;color:#667">Claude’s better answer (change it if you like). When you send it, this chat becomes yours and the bot stops. Everybody sees what you replaced.</p>'
+        + '<textarea id="bbN" rows="5" style="width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid #d9dde3;border-radius:10px" placeholder="Writing a better answer…"></textarea>'
+        + '<select id="bbR" style="width:100%;margin:8px 0;padding:8px;border-radius:10px;border:1px solid #d9dde3;font:inherit"><option value="">Why was it not good? (optional)</option><option>Wrong price</option><option>Wrong language</option><option>Invented offer</option><option>Did not answer the question</option><option>Too long / pushy</option><option>Other</option></select>'
+        + '<button type="button" id="bbS" style="width:100%;border:0;border-radius:12px;background:#128c4a;color:#fff;padding:12px;font:inherit;font-weight:700">Send my answer and take over</button>' + '<button type="button" id="bbT2" style="width:100%;margin-top:8px;border:1px solid #128c4a;border-radius:12px;background:#fff;color:#128c4a;padding:11px;font:inherit;font-weight:700">📋 Send a pre-made message (template) instead</button>';
+      const typed = S.cur.botTyped || ''; S.cur.botTyped = ''; if (typed) { const n0 = sh.body.querySelector('#bbN'); if (n0) n0.value = typed; }
+      api.post('wa.g_botbad', { phone, mode: 'draft' }).then((d) => { const t = sh.body.querySelector('#bbT'), n = sh.body.querySelector('#bbN'); if (t) t.textContent = d.bot_text || '(the bot has not answered yet)'; if (n && !n.value && !typed) { n.value = d.suggestion || ''; n.placeholder = 'Write the better answer'; } }).catch((e) => { const t = sh.body.querySelector('#bbT'); if (t) t.textContent = '(the bot has not answered yet)'; });
+      sh.body.querySelector('#bbT2').onclick = async function () {
+        this.disabled = true; this.textContent = 'Taking the chat…';
+        try { await api.post('wa.g_botbad', { phone, mode: 'take', reason: sh.body.querySelector('#bbR').value }); if (sh.close) sh.close(); if (S.cur && S.cur.phone === phone) { S.cur.row.emp = S.me.emp_id; S.cur.botLock = false; S.cur.botTplLearn = true; botBanner(); openTemplates(); } }
+        catch (e) { toast(e.message, true); this.disabled = false; this.textContent = '📋 Send a pre-made message (template) instead'; }
+      };
+      sh.body.querySelector('#bbS').onclick = async function () {
+        const text = sh.body.querySelector('#bbN').value.trim(); if (text.length < 2) { toast('Write the better answer first.', true); return; }
+        this.disabled = true; this.textContent = 'Sending…';
+        try { await api.post('wa.g_botbad', { phone, mode: 'send', text, reason: sh.body.querySelector('#bbR').value }); toast('✅ Sent. The chat is yours; the bot has stopped here and will learn from this.'); if (sh.close) sh.close(); else if (sh.m && sh.m._shut) sh.m._shut(); if (S.cur && S.cur.phone === phone) { S.cur.row.emp = S.me.emp_id; S.cur.botLock = false; loadChat(); botBanner(); } }
+        catch (e) { toast(e.message, true); this.disabled = false; this.textContent = 'Send my answer and take over'; }
+      };
+    }
     async function cxBanner() {
       const ph = S.cur && S.cur.phone; if (!ph || !window.CXR) return; const st = await CXR.state(ph); if (!S.cur || S.cur.phone !== ph) return;
       const b = $('#wxCxB'); if (b) b.innerHTML = CXR.bannerHtml(st); const x = $('#wxMore'); if (x && st && st.case) { x.style.background = '#f3efff'; x.style.color = '#6d4fc2'; }
@@ -1336,7 +1396,7 @@
     function pushChatState(ph) {
       try { ph = ph || S.pushAfter; S.pushAfter = null; if (ph && S.cur && S.cur.phone === ph && !(history.state && history.state.wxChat)) history.pushState({ wxChat: ph }, ''); } catch (e) { }
     }
-    function closeChat() { stopRec(true); suggStop(); const phone = S.cur && S.cur.phone; S.cur = null; markSel(); const v = $('.wx-chat'); if (v) v.remove(); loadList(true); if (S.tab === 'history') drawHistory(false); if (S.tab === 'queries' && S.qView && S.qView.refresh) S.qView.refresh(); }
+    function closeChat() { if (S.botT) { clearInterval(S.botT); S.botT = 0; } stopRec(true); suggStop(); const phone = S.cur && S.cur.phone; S.cur = null; markSel(); const v = $('.wx-chat'); if (v) v.remove(); loadList(true); if (S.tab === 'history') drawHistory(false); if (S.tab === 'queries' && S.qView && S.qView.refresh) S.qView.refresh(); }
 
     // ---- Claude's suggestion (written before you open the chat)
     const QK_T = [   // what the customer asked → which quick replies (by their TITLE) fit
@@ -1369,6 +1429,7 @@
       if (!S.quick) { try { S.quick = (await api.get('wa.quick_list')).items || []; } catch (e) { S.quick = []; } }
       if (!S.cur || S.cur.phone !== phone) return; let hit = qkMatch(last.body, S.quick); const t = $('#wxTx');
       if (!hit.length) { const rk = ((S.chats || []).find((y) => y.phone === phone) || S.cur.row || {}).read, RQ = { pay: /pay|link|upi|order|confirm/i, addr: /address|confirm|order|deliver/i, neg: /discount|offer|price|sample|best/i, think: /think|follow|time|wait|ok/i, ask: /price|best|available|photo|list|recommend/i }[rk && rk.k]; if (RQ) hit = S.quick.filter((x) => RQ.test(x.title || '')).slice(0, 3); }
+      { const OFF = /shower|\bgel\b|body\s*wash|wax|candle|solid|roll[- ]?on|10 ?ml|\bmini\b/i, lb = String(last.body || ''); hit = hit.filter((x) => !OFF.test(x.title || '') || OFF.test(lb)); }   // owner rule: no shower gel / wax / solid perfume chips while perfumes are talked about, unless the customer asks
       if (!hit.length || (t && t.value.trim())) { q.hidden = true; return; }
       const fn = first(c.name); q.hidden = false; q.innerHTML = '<span>⚡</span>' + hit.map((x, i) => `<button data-i="${i}">${esc(x.title)}</button>`).join('');
       q.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const x = hit[+b.dataset.i], tx = $('#wxTx'); if (!x || !tx) return; suggStop(); if (S.cur.sg) S.auDone[S.cur.phone + ':' + S.cur.sg.li] = 1; tx.value = x.body.replace(/\{name\}/gi, fn).replace(/\s+([!,.])/g, '$1').replace(/  +/g, ' '); autoGrow(tx); swapSend(); tx.focus(); q.hidden = true; if (S.cur.sg) { suggDraw(); } };
@@ -1395,7 +1456,7 @@
       S.auDone[phone + ':' + g.li] = 1; const pr = g.prod; S.cur.sg = null; $('#wxSug').innerHTML = ''; sendText(g.text, pr, true);
     }
     async function loadSugg(force) {
-      const box = $('#wxSug'); if (!box || !S.cur) return; const phone = S.cur.phone; const c = S.cur.contact; const last = S.cur.msgs.filter((m) => m.dir !== 'sys').slice(-1)[0];
+      const box = $('#wxSug'); if (!box || !S.cur) return; if (FBM) { box.innerHTML = ''; return; }      // Feedback: no suggestion is written (and no AI call is made) const phone = S.cur.phone; const c = S.cur.contact; const last = S.cur.msgs.filter((m) => m.dir !== 'sys').slice(-1)[0];
       suggStop(); S.cur.sg = null; S.cur.armed = null; drawPp(); drawQk(); pcDraw();
       const afterBot = !!last && last.dir === 'out' && last.who === 'bot';   // 🤖 the bot answered first: the person still gets a suggestion for the NEXT step
       if (!c.window_open || c.optout || !last || (last.dir !== 'in' && !afterBot)) { box.innerHTML = ''; return; }
@@ -1434,7 +1495,7 @@
     let segLd = null;
     function segReady(cb) {
       if (window.WaSeg) return cb(); if (segLd) { segLd.push(cb); return; } segLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wa_seg_ui.js?v=1';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wa_seg_ui.js?v=4';
       sc.onload = () => { const q = segLd || []; segLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = segLd || []; segLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     function openJourney() {
@@ -1452,7 +1513,7 @@
     let moLd = null;
     function moReady(cb) {
       if (window.WaManual) return cb(); if (moLd) { moLd.push(cb); return; } moLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=13';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=14';
       sc.onload = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     function openManual() {
@@ -1574,6 +1635,7 @@
           window.__wxGrowNext = ch.action === 'waive' ? { grow_waive: ch.reason } : { grow_ok: 1 }; return sendText(text, prod, auto);
         }
         if (auto && /already (been )?(answered|replied|claimed)|someone else/i.test(e.message || '')) { if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); } toast('Already answered by the bot or a colleague. Nothing was sent twice.'); return; }   // HTTP 409 from wq: quiet
+        if (!auto && /bot is answering this customer/i.test(e.message || '')) { if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); } if (S.cur.botHasText) { S.cur.botTyped = text; try { openBotBad(); } catch (x) { } } else { const t = $('#wxTx'); if (t) { t.value = text; autoGrow(t); } toast('The bot is writing — your words are kept; send them in a few seconds.'); } return; }   // the bot is answering: your words are not lost — the "Bot answer not good" sheet opens with them (send them there and the chat becomes yours)
         if (/open complaint/i.test(e.message || '')) { S.cur.cxLock = true; S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); const t = $('#wxTx'); if (t) { t.value = text; t.placeholder = '📝 Note for the complaint team (the customer will not see it)'; t.classList.add('cxl'); } toast(e.message, true); return; }   // the server says: complaint team only — keep the words, send them as a note
         tmp.status = 'failed'; tmp.retry = !auto && !/opted out|window is closed|assigned to someone|not written to this number/i.test(e.message || ''); if (/not written to this number|window is closed/i.test(e.message || '') && S.cur && S.cur.phone === phone) setTimeout(() => { try { openTemplates(); } catch (x) { } }, 400);   // a chat on another number has no window yet → open the pre-made messages straight away
          if (S.cur && S.cur.phone === phone) redrawBubble(tmp); toast(e.message, true);
@@ -1717,7 +1779,7 @@
         const vals = () => [...sh.body.querySelectorAll('.wxv')].map((x) => x.value.trim()); const prev = () => { $('#wxTpP').textContent = (t.header_text ? fill(t.header_text, [$('#wxTpH') ? $('#wxTpH').value : '']) + '\n' : '') + fill(t.body, vals()) + (t.footer ? '\n' + t.footer : ''); }; sh.body.querySelectorAll('input').forEach((x) => { x.oninput = prev; }); prev();
         $('#wxTpB').onclick = () => { list(); sh.body.onclick = (e) => { const r = e.target.closest('[data-i]'); if (r) one(ok[+r.dataset.i]); }; };
         $('#wxTpS').onclick = async function () { const v = vals(); const bad = v.map((x, i) => tplVarBad(H[i] || {}, x)).find(Boolean); if (bad) { $('#wxTpE').innerHTML = '<div class="wx-banner y">' + esc(bad) + '</div>'; return; } this.disabled = true; this.textContent = 'Sending…';
-          try { await api.post('wa.tpl_send', { phone: c.phone, id: t.id, vars: v, header_var: $('#wxTpH') ? $('#wxTpH').value.trim() : '' }); sh.close(); toast('Sent ✓'); pollChat(); } catch (er) { $('#wxTpE').innerHTML = `<div class="wx-banner y">${esc(er.message)}</div>`; this.disabled = false; this.textContent = 'Send'; } };
+          try { await api.post('wa.tpl_send', { phone: c.phone, id: t.id, vars: v, header_var: $('#wxTpH') ? $('#wxTpH').value.trim() : '' }); if (S.cur && S.cur.botTplLearn) { S.cur.botTplLearn = false; api.post('wa.g_botbad', { phone: c.phone, mode: 'tpl_done', tpl_id: t.id }).catch(() => { }); } sh.close(); toast('Sent ✓'); pollChat(); } catch (er) { $('#wxTpE').innerHTML = `<div class="wx-banner y">${esc(er.message)}</div>`; this.disabled = false; this.textContent = 'Send'; } };
       }
     }
 

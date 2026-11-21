@@ -58,6 +58,16 @@ function sku_index(): array
         $names = preg_split('/\s*[;\r\n]+\s*/u', (string)($r[2] ?? '')) ?: []; $names[] = (string)($r[1] ?? '');      // the third column may hold several shop names: "GUCH ESHA & FLORA ; Guchhi Esha & Flora"
         foreach ($names as $n) { $k = sku_norm((string)$n); if ($k !== '' && !isset($by[$k])) $by[$k] = $sku; }      // the shop / HRMS names win over the original name
     }
+    if (is_file(__DIR__ . '/sku_alias.php')) {      // extra shop names (sku_alias.php): the SKU is found by its original name (or one of its shop names, or its code when its name still has the "must contain" word), so they work with any uploaded list
+        $al = require __DIR__ . '/sku_alias.php';
+        foreach ((is_array($al) ? $al : []) as $pair) {
+            $anch = (array)($pair[0] ?? []); $to = '';
+            foreach ($anch as $a0) { $ok = sku_norm((string)$a0); if ($ok === '') continue; foreach ($name as $sk => $nm) if (sku_norm((string)$nm) === $ok) { $to = (string)$sk; break 2; } if (isset($by[$ok])) { $to = (string)$by[$ok]; break; } }
+            if ($to === '') foreach ($anch as $a0) { $ok = sku_norm((string)$a0); if ($ok === '') continue; $hits = []; foreach ($name as $sk => $nm) if (strpos(' ' . sku_norm((string)$nm) . ' ', ' ' . $ok . ' ') !== false) $hits[] = (string)$sk; if (count($hits) === 1) { $to = $hits[0]; break; } }
+            if ($to === '' && !empty($pair[2]) && isset($name[(string)$pair[2]]) && ($pair[3] ?? '') !== '' && stripos((string)$name[(string)$pair[2]], (string)$pair[3]) !== false) $to = (string)$pair[2];      // last: the code, only when that SKU's name has the word that proves it is the same perfume
+            $k = sku_norm((string)($pair[1] ?? '')); if ($to !== '' && $k !== '' && !isset($by[$k])) $by[$k] = $to;
+        }
+    }
     uksort($by, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));       // the longest name first: "afn 9 night elixir" before "afn 9 night"
     return $ix = ['by' => $by, 'name' => $name, 'ids' => $ids];
 }
@@ -112,6 +122,11 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     if (preg_match('/(?<![a-z0-9])chain+s?(?![a-z0-9])|necklace|bracelet|pendant|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone)(?![a-z0-9])/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
     if (preg_match('/^\s*(tmperfumehouse|tm perfume house)\s*x\s*\d+\s*\(\s*inside:\s*build your own/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'build-your-own pack: the perfumes are not named on the order', 'kind' => 'left']; return; }
     $put = function (string $sku, int $col, int $q) use (&$grid, $order) { if (!isset($grid[$sku])) $grid[$sku] = array_fill(0, 10, 0); $grid[$sku][$col] += $q; $GLOBALS['__sku_ord'][$sku][$col][$order] = ($GLOBALS['__sku_ord'][$sku][$col][$order] ?? 0) + $q; };      // which orders make each number of the sheet
+    if (preg_match('/^\s*no[ -]?name\b/i', $full) || preg_match('/^NONAME-\d+/i', $shopSku)) {      // 🏷 "No name 50 ml" (a perfume sold without a name, from the manual orders): counted on its own row "No Name", in its size column
+        $w1 = ''; $c1 = sku_col($full, $w1); if ($c1 < 0 && preg_match('/^NONAME-(\d+)/i', $shopSku, $m1)) $c1 = sku_col($m1[1] . ' ml', $w1);
+        if ($c1 >= 0) { $put('NONAME', $c1, $qty); return; }
+        $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'No name perfume: size not known', 'kind' => 'size']; return;
+    }
     if (preg_match('/^\s*complimentary\b/i', $full)) {      // "complimentary 10ml": a free sample — its perfume is not written on the order, so it is counted on its own row "Complimentary (free gift)" in its size column
         $w0 = ''; $c0 = sku_col($full, $w0); if ($c0 >= 0) { $put('FREE', $c0, $qty); return; }
         $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'free gift: size not known', 'kind' => 'size']; return;
@@ -122,6 +137,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     $inTitle = 0; foreach (sku_pieces($full) as $x) if (sku_match($x) !== '') $inTitle++;      // 2 or more perfumes written in the line = a combo, even when the whole line also happens to name one
     if ($sku !== '' && !$props && $inTitle < 2) {
         $col = sku_col($full, $why); if ($col >= 0) { $put($sku, $col, $qty); return; }
+        if (preg_match('/^OG\d/', $sku) || preg_match('/compliment getter|dark side|caffeine club|dress to impress/i', $full)) { $put($sku, 2, $qty); return; }      // TM Originals (Dress to Impress: Compliment Getter / Dark Side / Caffeine Club) are written without a size on a "build your own original combo" line: they are the 50 ml bottles
         $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => $why ?: 'size not known', 'kind' => 'size']; return;
     }
     // 2. a combo: the perfumes are in the line's details, or written in the title / variant separated by + , / or a new line (and, only when that finds nothing, by & / "and":
@@ -139,6 +155,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
             continue;
         }
         $w2 = ''; $col = sku_col($c . ' ' . $nm, $w2); if ($col < 0) $col = sku_col($full, $w2);
+        if ($col < 0 && (preg_match('/^OG\d/', $s2) || preg_match('/compliment getter|dark side|caffeine club|dress to impress/i', $c))) $col = 2;      // a TM Original inside a "build your own original combo": they exist only as 50 ml bottles
         if ($col < 0) { $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty, 'why' => $w2 ?: 'size not known', 'kind' => 'size']; $hit++; continue; }
         $n = 1; if (preg_match('/^\s*(\d{1,2})\s*[x×]\s+/iu', $c, $m)) $n = max(1, (int)$m[1]);
         $put($s2, $col, $qty * $n); $hit++;
@@ -150,15 +167,19 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
         }
         return;
     }
-    if ($sku !== '') { $col = sku_col($full, $why); if ($col >= 0) { $put($sku, $col, $qty); return; } $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => $why ?: 'size not known', 'kind' => 'size']; return; }
+    if ($sku !== '') { $col = sku_col($full, $why); if ($col >= 0) { $put($sku, $col, $qty); return; } if (preg_match('/^OG\d/', $sku) || preg_match('/compliment getter|dark side|caffeine club|dress to impress/i', $full)) { $put($sku, 2, $qty); return; } $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => $why ?: 'size not known', 'kind' => 'size']; return; }
     $det = []; foreach ($props as $p) $det[] = $p['name'] . ': ' . (is_scalar($p['value'] ?? '') ? $p['value'] : json_encode($p['value']));
+    if ($sku === '' && !$props) {      // a single product whose name is not in the list but whose size is known: it is still COUNTED (row "Not in SKU list", in its size column) and listed in the red box, so no piece is ever lost
+        $w4 = ''; $c4 = sku_col($full, $w4);
+        if ($c4 >= 0) { $put('NOTFOUND', $c4, $qty); $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'this product matches no SKU — counted on the row "Not in SKU list"', 'kind' => 'counted']; return; }
+    }
     $bad[] = ['order' => $order, 'text' => $full . ($det ? ' — details: ' . mb_substr(implode(' · ', $det), 0, 300) : ''), 'qty' => $qty, 'why' => 'this product matches no SKU' . ($shopSku !== '' ? ' (shop SKU "' . $shopSku . '")' : ''), 'kind' => 'name'];
 }
 
 /** Every order of one business day with its product lines, straight from Shopify (all pages). Returns [orders, errors]. */
-function sku_shopify_day(PDO $pdo, string $day): array
+function sku_shopify_day(PDO $pdo, string $day, string $to = '', ?array $winOverride = null): array
 {
-    $out = []; $errs = []; $win = biz_window($pdo, $day, $day);
+    $out = []; $errs = []; $win = $winOverride ?: biz_window($pdo, $day, $to !== '' ? $to : $day);
     foreach (shopify_stores() as $key => $store) {
         if (strpos((string)($store['client_id'] ?? ''), 'PASTE_') !== false) continue;
         $tok = shopify_get_token($key, $store); if (is_array($tok)) { $errs[] = ($store['label'] ?? $key) . ': ' . ($tok['error'] ?? 'no access'); continue; }
@@ -176,11 +197,46 @@ function sku_shopify_day(PDO $pdo, string $day): array
     return [$out, $errs];
 }
 
+/** ⛓ Every product line whose name has "chain" in it (any shop, any spelling), over a range of business days: which chain, how many pieces, in how many orders, how much money. Cancelled orders left out. */
+function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): array
+{
+    // 🕛 $noon (kept as the name of the switch) = one calendar day of 24 hours: 12:00 AM on $from to 12:00 AM the next day (not the 10 AM business day)
+    $nw = $noon ? [$from . ' 00:00:00', $from . ' 23:59:59'] : null;
+    $by = []; $nOrd = 0; $nManC = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
+    $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
+        $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
+        if ($name === '' || stripos($name, 'chain') === false) return;
+        $k = mb_strtolower($name); if (!isset($by[$k])) $by[$k] = ['name' => $name, 'sku' => $sku, 'qty' => 0, 'amount' => 0.0, 'orders' => []];
+        $by[$k]['qty'] += $q; $by[$k]['amount'] += $amt; if ($sku !== '' && $by[$k]['sku'] === '') $by[$k]['sku'] = $sku; $by[$k]['orders'][$order] = 1;
+    };
+    [$orders, $errs] = sku_shopify_day($pdo, $from, $to, $nw);
+    foreach ($orders as $o) {
+        if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) continue; $nOrd++;
+        foreach ((array)($o['line_items'] ?? []) as $li) {
+            $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;
+            $add((string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (float)($li['price'] ?? 0) * $q, (string)($o['name'] ?? ''));
+        }
+    }
+    try {   // the manual orders (WM-xxxxx) confirmed in the range
+        $win = $nw ?: biz_window($pdo, $from, $to);
+        $q = $pdo->prepare("SELECT order_no, lines_json FROM wmo_order WHERE status = 'confirmed' AND COALESCE(confirmed_at, created_at) BETWEEN ? AND ?"); $q->execute([$win[0], $win[1]]);
+        foreach ($q->fetchAll() as $r) { $nManC++; foreach ((array)(json_decode((string)$r['lines_json'], true) ?: []) as $l) {
+            $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$r['order_no']);
+        } }
+    } catch (Throwable $e) { $errs[] = 'Manual orders: ' . $e->getMessage(); }
+    $rows = []; $pieces = 0; $money = 0.0; $withChain = [];
+    foreach ($by as $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_keys($r['orders']), 0, 60)]; $pieces += $r['qty']; $money += $r['amount']; }
+    usort($rows, fn($a, $b) => $b['qty'] <=> $a['qty'] ?: strcmp($a['name'], $b['name']));
+    return ['from' => $from, 'to' => $to, 'noon' => $noon, 'window' => $nw, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd + $nManC, 'orders_with' => count($withChain), 'errors' => $errs];
+}
+
 /** The whole sheet of one business day. */
 function sku_sheet(PDO $pdo, string $day): array
 {
     $grid = []; $bad = []; $nOrd = 0; $nCancel = 0; $nLines = 0; $nMan = 0; $GLOBALS['__sku_ord'] = []; $oid = [];
-    [$orders, $errs] = sku_shopify_day($pdo, $day);
+    // 🕛 the sheet is one calendar day of 24 hours: 12:00 AM to 12:00 AM (not the 10 AM business day)
+    $cal = [$day . ' 00:00:00', $day . ' 23:59:59'];
+    [$orders, $errs] = sku_shopify_day($pdo, $day, '', $cal);
     $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
     foreach ($orders as $o) {
         if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) { $nCancel++; continue; }
@@ -191,9 +247,9 @@ function sku_sheet(PDO $pdo, string $day): array
             $nLines++; sku_take($grid, $bad, (string)($o['name'] ?? ''), (string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, ($__bp[$__i] ?? (array)($li['properties'] ?? [])));
         }
     }
-    // the manual orders (WM-xxxxx) confirmed on that business day
+    // the manual orders (WM-xxxxx) confirmed on that day (12 AM to 12 AM)
     try {
-        $win = biz_window($pdo, $day, $day);
+        $win = $cal;
         $q = $pdo->prepare("SELECT id, order_no, lines_json FROM wmo_order WHERE status = 'confirmed' AND COALESCE(confirmed_at, created_at) BETWEEN ? AND ?"); $q->execute([$win[0], $win[1]]);
         foreach ($q->fetchAll() as $r) {
             $nMan++; $oid[(string)$r['order_no']] = [(string)(array_key_first(shopify_stores()) ?? ''), (string)(7000000000000000 + (int)$r['id'])];      // the order popup opens a manual order with its id + 7,000,000,000,000,000
@@ -201,8 +257,8 @@ function sku_sheet(PDO $pdo, string $day): array
         }
     } catch (Throwable $e) { }
     $ix = sku_index(); $rows = [];
-    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : ($sku === 'NOTFOUND' ? 'Not in SKU list (names are in the box above)' : (string)($ix['name'][$sku] ?? 'Not Found')), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
-    usort($rows, function ($a, $b) { $la = ['FREE' => 1, 'NOTFOUND' => 2][$a['sku']] ?? 0; $lb = ['FREE' => 1, 'NOTFOUND' => 2][$b['sku']] ?? 0; if ($la !== $lb) return $la <=> $lb; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
+    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : ($sku === 'NONAME' ? 'No Name (perfume sold without a name)' : ($sku === 'NOTFOUND' ? 'Not in SKU list (names are in the box above)' : (string)($ix['name'][$sku] ?? 'Not Found'))), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
+    usort($rows, function ($a, $b) { $la = ['FREE' => 1, 'NONAME' => 1, 'NOTFOUND' => 2][$a['sku']] ?? 0; $lb = ['FREE' => 1, 'NONAME' => 1, 'NOTFOUND' => 2][$b['sku']] ?? 0; if ($la !== $lb) return $la <=> $lb; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
     $tot = array_fill(0, 10, 0); foreach ($rows as $r) foreach ($r['q'] as $i => $v) $tot[$i] += $v;
     // the list on top of the page: the same product from many orders is ONE line with its pieces and its orders
     $grp = [];
@@ -235,9 +291,15 @@ function sku_route(PDO $pdo, string $action): void
     if ($action === 'sku.access') json_response(['ok' => sku_can($pdo, $auth)]);
     if (!sku_can($pdo, $auth)) json_response(['error' => 'The SKU sheet is for Admin, HR, Dispatch, the Admin department, Sales Heads and roles with the Orders page.'], 403);
     if ($action === 'sku.sheet') {
-        $day = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = biz_today($pdo);
+        $day = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = gmdate('Y-m-d', time() + 19800);      // today, India time (12 AM to 12 AM)
         if (!sku_list()) json_response(['error' => 'The SKU list is empty. Upload the SKU file (SKU · original name · shop name) on this page.'], 422);
-        @set_time_limit(180); json_response(sku_sheet($pdo, $day) + ['today' => biz_today($pdo)]);
+        @set_time_limit(180); json_response(sku_sheet($pdo, $day) + ['today' => gmdate('Y-m-d', time() + 19800)]);
+    }
+    if ($action === 'sku.chain') {
+        $f = (string)($_GET['from'] ?? ''); $t = (string)($_GET['to'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f)) $f = gmdate('Y-m-d', time() + 19800); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $t) || $t < $f) $t = $f;
+        if ((strtotime($t) - strtotime($f)) / 86400 > 62) json_response(['error' => 'Pick at most 62 days.'], 422);
+        $noon = !empty($_GET['noon']); if ($noon) $t = $f;
+        @set_time_limit(240); json_response(sku_chain($pdo, $f, $t, $noon));
     }
     if ($action === 'sku.list') json_response(['rows' => sku_list(), 'custom' => sku_list_file() !== '']);
     if ($action === 'sku.list_save') {

@@ -38,7 +38,7 @@
         <button type="button" class="btn" data-k="amazon" style="background:#fff;color:#111;border:1px solid var(--line)">📦 Amazon</button>
         <button type="button" class="btn" data-k="flipkart" style="background:#fff;color:#111;border:1px solid var(--line)">🛒 Flipkart</button>
       </div>
-      <p class="hint" id="moKindH" style="margin-top:8px"><b>🏷 No Name</b>: no perfume to pick — the size (20 / 50 / 100 ml), the price of one piece and the quantity, and a 🚗 Car kit (flat 6% commission). <b>Regular</b> and <b>AiSensy</b>: pick the perfumes, payment and address (AiSensy is the same order, only tagged AiSensy). <b>Myntra / Amazon / Flipkart</b>: the customer already ordered there, so you only attach the screenshot.</p>
+      <p class="hint" id="moKindH" style="margin-top:8px"><b>🏷 No Name</b>: no perfume to pick — the size (10 / 20 / 50 / 100 ml), the price of one piece and the quantity, and a 🚗 Car kit (flat 6% commission). <b>Regular</b> and <b>AiSensy</b>: pick the perfumes, payment and address (AiSensy is the same order, only tagged AiSensy). <b>Myntra / Amazon / Flipkart</b>: the customer already ordered there, so you only attach the screenshot.</p>
       <div id="moMp" hidden style="border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:6px;background:#fff">
         <b id="mpT">Marketplace order</b>
         <label>Order number shown on the marketplace *</label><input id="mpNo" placeholder="e.g. 408-1234567-1234567" autocomplete="off">
@@ -69,7 +69,7 @@
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function loadUi(cb) {
     if (window.WaManual) return cb();
-    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=13'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
+    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=14'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
   }
   async function start(listOnly) {
     $('moMsg').innerHTML = '';

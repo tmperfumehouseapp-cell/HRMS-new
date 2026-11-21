@@ -351,6 +351,16 @@ body.emb .tabs{display:none;}
     const depts = Object.keys(deptMap).map(id => ({ id: Number(id), name: deptMap[id] })).sort((a, b) => a.name.localeCompare(b.name));
     const people = empAll.map(e => ({ id: Number(e.employee_id), name: String(e.full_name || ''), code: String(e.employee_code || ''), role: String(e.designation || ''), deptId: Number(e.department_id) || 0, monthly: Number(e.monthly_salary) || 0, photo: e.photo || '', joined: String(e.joining_date || ''), pending: e.status && e.status !== 'approved' })).sort((a, b) => a.name.localeCompare(b.name));
     S.M = { engineLive: !!((ok(5) || {}).engine_live), sp: (ok(12) || null) && (ok(12).people || null), spTotals: ok(12) ? { flat: ok(12).flat_total, earned: ok(12).earned_total } : null, closed: ((ok(5) || {}).closed) || {}, dayMoves: ((ok(5) || {}).days) || {}, timing: ((ok(10) || {}).timing) || {}, exAll: ((ok(9) || {}).employees || []), rawStore: ((ok(7) || {}).people || []), storeCm: ok(7) || {}, rawRetail: ((ok(8) || {}).people || []), rawPen: [].concat(((ok(3) || {}).rows || []), ((ok(4) || {}).rows || [])), all, empAllLite: empAll.map(e => ({ id: Number(e.employee_id), name: String(e.full_name), sales: /sales/i.test(e.department_name || '') })), rowBy: byEmpAll, duty: new Set(((ok(5) || {}).duty || []).map(Number)), depts, people, month, from, last, dim, today, shown, days, team, leaders, lrRow, bud, roasKind: lr.rules };
+    /* store head: the whole one-team store commission goes to him; the fixed salaries of the others in the team are taken out of it day by day (they are still paid their salary). Total store pay stays the same. */
+    (() => {
+      const C = S.M.storeCm || {}, hid = Number(C.head_id) || 0, H = hid ? byEmpAll[hid] : null; if (!H || H.leader || H.sc === 0) return;
+      const ids = ((C.pool || {}).ids || []).map(Number).filter(id => id !== hid && byEmpAll[id] && !byEmpAll[id].leader && byEmpAll[id].grp === 'store' && byEmpAll[id].sc !== 0), mem = ids.map(id => byEmpAll[id]); if (!mem.length) return;
+      days.forEach(d => {
+        let own = 0, sal = 0; mem.forEach(m => { own += m.scomm[d] || 0; if (Number(d.slice(8)) <= PAYDAYS && !((m.at && m.at[d]) || m).np) sal += perDayAt(m, d); delete m.scomm[d]; });
+        if (own || sal) H.scomm[d] = (H.scomm[d] || 0) + own - sal;
+      });
+      S.M.headNote = { head: H.name, from: mem.map(m => m.name) };
+    })();
     if (S.billsFor !== month) { S.bills = null; }
     S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses, goals: Object.assign({ sales: 0, leader: 0, helper: 0, retail: 0, store: 0, other: 0 }, bud.goals || {}), retail: Object.assign({ pct: 0, basis: 'paid', target: 0, bonus_type: 'flat', bonus_v: 0, minus_type: 'flat', minus_v: 0 }, bud.retail || {}) }));
     S.claudeFor = '';
@@ -494,6 +504,7 @@ body.emb .tabs{display:none;}
     const teamRow = team.length > 1 ? '<tr class="sec"><td class="n" style="text-align:left">' + team.map(p => esc(p.name.split(' ')[0])).join(' + ') + ' · counted as ONE team</td><td></td><td>' + P.bills + '</td><td>' + P.code_bills + '</td><td><b>' + rs(P.sales) + '</b></td><td><b>' + rs(P.commission) + '</b></td><td>' + pc(P.commission, P.sales) + '</td></tr>' : '';
     return '<h3 style="margin-top:12px">Store commission · ' + dnice(M.from) + ' to ' + dnice(M.today < M.last ? M.today : M.last) + ' (month to date)</h3><div class="sheet plain" style="max-height:none"><table><thead><tr><th style="text-align:left">Person</th><th>Team</th><th>Bills</th><th>With code</th><th>Collection</th><th>Commission</th><th>Effective %</th></tr></thead><tbody>'
       + teamRow + team.map(row).join('') + solo.map(row).join('') + '</tbody><tfoot><tr class="sum"><td style="text-align:left">All store people</td><td></td><td>' + ppl.reduce((a, p) => a + p.bills, 0) + '</td><td>' + ppl.reduce((a, p) => a + p.code_bills, 0) + '</td><td><b>' + rs(tS) + '</b></td><td><b>' + rs(tC) + '</b></td><td>' + pc(tC, tS) + '</td></tr></tfoot></table></div>'
+      + '<div style="margin:8px 0;padding:10px 12px;border:1px solid var(--line,#e6e8ec);border-radius:12px;font-size:13px"><b>Store head</b> <select data-shead="1" ' + (ed ? '' : 'disabled ') + 'style="font:inherit;padding:4px 8px;margin:0 6px"><option value="0">None - everybody gets his own commission</option>' + ppl.filter(p => p.pooled && p.employee_id).map(p => '<option value="' + p.employee_id + '"' + (Number(C.head_id) === Number(p.employee_id) ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select><span class="hint">' + (M.headNote ? 'The whole one-team commission goes to <b>' + esc(M.headNote.head) + '</b>; the fixed salary of ' + M.headNote.from.map(esc).join(' and ') + ' is taken out of it (they are still paid their salary). Total store pay does not change.' : 'Pick the head: the one-team commission goes to him and the others\' fixed salaries are taken out of it.') + '</span></div>'
       + '<div class="hint" style="margin:4px 0 10px">Collection = the store bills of the month so far. Commission = the online rules (price chart, offers, order-code rule), no over-target extra. People ticked <b>one team</b> share the order-code rule (the code count is for the whole team); anybody else who bills in the store, like a new person, is counted on their own. '
       + (old.bills ? 'Days before the new POS started are read from the <b>old POS</b>: ' + old.bills + ' bills · ' + rs(old.sales) + (old.unmatched ? ' (' + old.unmatched + ' could not be matched to an employee)' : '') + '.' : 'Every day of the month is read from the new store POS.') + '</div>';
   }
@@ -619,8 +630,13 @@ body.emb .tabs{display:none;}
   }
   async function askClaude() {
     if (S.claudeFor === S.M.month + '|' + S.M.today) return; S.claudeFor = S.M.month + '|' + S.M.today; S.claude = '';
-    try { const r = await api.post('budget.summary', { facts: claudeFacts(figures()) }); S.claude = r.summary || ''; } catch (x) { S.claude = ''; }
-    const b = document.getElementById('clSum'); if (b) b.textContent = S.claude;
+    // ⚡ Claude's lines are asked for when the box is really on screen (or after 25 s), not on every open of the page; a same-day answer is kept 30 minutes in this browser
+    const ck = 'tb_claude_' + S.M.month + '|' + S.M.today; let hit = null; try { hit = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (x) { }
+    const paint = () => { const b = document.getElementById('clSum'); if (b) b.textContent = S.claude; };
+    if (hit && hit.t > Date.now() - 1800000 && hit.s) { S.claude = hit.s; paint(); return; }
+    const go = async () => { if (go.done) return; go.done = true; try { const r = await api.post('budget.summary', { facts: claudeFacts(figures()) }); S.claude = r.summary || ''; if (S.claude) { try { localStorage.setItem(ck, JSON.stringify({ t: Date.now(), s: S.claude })); } catch (x) { } } } catch (x) { S.claude = ''; } paint(); };
+    const el = document.getElementById('clSum');
+    if (el && 'IntersectionObserver' in window) { const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); go(); } }); io.observe(el); setTimeout(go, 25000); } else go();
   }
   function claudeBox(F) {
     const n = needs(F);
@@ -1115,6 +1131,7 @@ body.emb .tabs{display:none;}
       api.post('budget.leader_link', { name: ll.dataset.llink, employee_id: Number(ll.value) || 0 }).then(() => { S.msg = ll.value ? ll.dataset.llink + ' linked. They are a leader only: no fixed salary, no salesperson commission.' : ll.dataset.llink + ' unlinked.'; S.msgBad = false; return load(); }).catch(err => { S.msg = (err && err.message) || 'Could not link.'; S.msgBad = true; render(); });
       return;
     }
+    const sh = e.target; if (sh.dataset && sh.dataset.shead) { sh.disabled = true; api.post('budget.store_head', { employee_id: Number(sh.value) || 0 }).then(() => { S.msg = 'Saved. The store pay is recounted.'; S.msgBad = false; return load(); }).catch(err => { sh.disabled = false; S.msg = (err && err.message) || 'Could not save.'; S.msgBad = true; render(); }); return; }
     const pl = e.target; if (pl.dataset && pl.dataset.pool) { pl.disabled = true; api.post('budget.store_pool', { employee_id: Number(pl.dataset.pool), in: pl.checked }).then(() => { S.msg = 'Saved. The store commission is recounted.'; S.msgBad = false; return load(); }).catch(err => { pl.disabled = false; pl.checked = !pl.checked; S.msg = (err && err.message) || 'Could not save.'; S.msgBad = true; render(); }); return; }
     const bf = e.target; if (bf.dataset && bf.dataset.bf) { S[bf.dataset.bf] = bf.value; S.bn = 300; render(); return; }
     const sb = e.target; if (sb.dataset && sb.dataset.bill) {
@@ -1185,5 +1202,6 @@ body.emb .tabs{display:none;}
   $('mon').onchange();
 })();
 </script>
+<script src="assets/js/min_text.js?v=3"></script>
 </body>
 </html>

@@ -1,0 +1,41 @@
+# READ-ONLY: business day 2026-11-19 — all orders vs the orders that have an allocation row (what the Leaders collection counts), the orders WITHOUT one, and the HRMS-typed manual orders. No customer names or phone numbers. Changes nothing.
+# Run it by hand: Actions -> "Uncounted orders (read-only)" -> Run workflow.
+name: Uncounted orders (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Uncounted orders
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/un_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $one = function ($label, $sql, $par = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($par); $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo $label . ": " . count($rows) . " row(s)\n"; foreach (array_slice($rows, 0, 40) as $r) echo "   " . json_encode($r, JSON_UNESCAPED_UNICODE) . "\n"; } catch (Throwable $e) { echo $label . ": n/a " . substr($e->getMessage(), 0, 160) . "\n"; } };
+          $one("employee 320 - add-ons of 3-5 Nov (which order numbers did this person type)", "SELECT addon_id, addon_date, order_name, product_name, qty, ROUND(price) price FROM employee_addons WHERE employee_id = 320 AND addon_date >= '2026-11-02' AND addon_date <= '2026-11-05' ORDER BY addon_id");
+          $one("orders of business day 4 Nov given to employee 320 (candidates)", "SELECT o.order_name, o.created_at, ROUND(o.total) total, o.financial_status fs, a.order_type ot, LEFT(o.xparts, 160) parts FROM shop_orders o JOIN order_allocations a ON a.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci WHERE a.employee_id = 320 AND o.created_at >= '2026-11-04 10:00:00' AND o.created_at < '2026-11-05 10:00:00' ORDER BY o.created_at");
+          $one("who is employee 320", "SELECT employee_id, employee_code FROM employees WHERE employee_id = 320");
+          PHP
+          php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
+          REMOTE

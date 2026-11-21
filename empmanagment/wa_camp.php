@@ -109,10 +109,13 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
     $skip = []; $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
     foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
         $id = (int)$n['id']; $c = $caps[$id] ?? null; $lb = trim((string)($n['label'] ?? '')) !== '' ? trim((string)$n['label']) : (trim((string)($n['display'] ?? '')) !== '' ? trim((string)$n['display']) : '#' . $id);
+        if (!empty($n['retired'])) { $skip[] = $lb . ': retired (being closed)'; continue; }   // owner 20 Nov 2026: nothing is sent from a retired number (campaigns, utility follow-ups, recovery)
+        if (!empty($n['hold'])) { $skip[] = $lb . ': 🔒 locked (replies only)'; continue; }   // owner 20 Nov 2026
         if (!$c) { $skip[] = $lb . ': no limit information'; continue; }
-        if ($burst > 0 ? (int)$c['cap'] <= 0 : $c['left'] <= 0) { $skip[] = $lb . ': ' . (trim((string)($c['why'] ?? '')) !== '' ? $c['why'] : 'no room (' . number_format((int)$c['used']) . ' of ' . number_format((int)$c['cap']) . ' used in 24h)'); continue; }
+        $slowN = strpos((string)($c['why'] ?? ''), 'slow start') === 0;   // owner 20 Nov 2026: a NEW number on its slow start (250 / 500 / 1,000 … a day) is limited by it also for ⚡ Send fast / Module B — the burst never lifts it (a new number got 525 messages in its first hours from the fast campaigns)
+        if (($burst > 0 && !$slowN) ? (int)$c['cap'] <= 0 : $c['left'] <= 0) { $skip[] = $lb . ': ' . (trim((string)($c['why'] ?? '')) !== '' ? $c['why'] : 'no room (' . number_format((int)$c['used']) . ' of ' . number_format((int)$c['cap']) . ' used in 24h)'); continue; }
         if (!in_array(wa_waba_of($n), $t['ok_wabas'], true)) { $skip[] = $lb . ': message not approved on its WhatsApp account (paused by Meta?)'; continue; }
-        if ($burst > 0) $c['left'] = max((int)$c['left'], $burst);
+        if ($burst > 0 && !$slowN) $c['left'] = max((int)$c['left'], $burst);
         if ($only && !in_array($id, $only, true)) { $skip[] = $lb . ': not chosen in this campaign\'s "Send from"'; continue; }                     // the campaign chose its numbers ("Send from")
         if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') { $skip[] = $lb . ': not connected at Meta (' . $st[$id] . ')'; continue; }      // pending / not connected at Meta: never used
         $nums[$id] = ['id' => $id, 'q' => (string)($qm[$id] ?? ''), 'phone_id' => (string)$n['phone_id'], 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left']];
@@ -581,9 +584,26 @@ function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UP
 function wa_cat_util_room(PDO $pdo, int $now): int
 {
     try { if ((int)setting_get($pdo, 'wa_dq_hold_until', '0') > $now) return 0;   /* marketing hold (131048) running: utility-template campaigns stop too (owner, 19 Nov 2026, 16:15) */
+        if ((int)setting_get($pdo, 'wa_ucat_pause_until', '0') > $now) return 0;   /* owner 20 Nov 2026: too many failures at 700 -> utility campaigns rest for 3 hours */
+        wa_ucat_auto_step($pdo, $now);
         $cap = max(10, min(100000, (int)setting_get($pdo, 'wa_ucat_hour', '700'))); $L = json_decode((string)setting_get($pdo, 'wa_ucat_log', ''), true); $L = is_array($L) ? $L : []; $u60 = 0; $u10 = 0;
         foreach ($L as $r) { $t = (int)($r[0] ?? 0); $n = (int)($r[1] ?? 0); if ($t >= $now - 3600) $u60 += $n; if ($t >= $now - 600) $u10 += $n; }
         return max(0, min($cap - $u60, (int)ceil($cap / 6 * 1.3) - $u10)); } catch (Throwable $e) { return 0; }
+}
+/** 📶 owner 20 Nov 2026 (06:30): the campaign utility limit moves by itself, one look an hour: 700 -> 800 -> 900 an hour while the failures stay at 5% or less; more than 5% failed at 800 / 900 -> back to 700; more than 5% failed at 700 -> utility campaigns rest 3 hours
+ *  (wa_ucat_pause_until), then start again at 700. The look judges utility-template campaign messages sent 15 to 75 minutes ago (their receipts are in), at least 100 of them. */
+function wa_ucat_auto_step(PDO $pdo, int $now): void
+{
+    try { if ((string)setting_get($pdo, 'wa_ucat_auto', '1') !== '1') return;
+        $at = (int)setting_get($pdo, 'wa_ucat_step_at', '0'); if ($at === 0) { setting_set($pdo, 'wa_ucat_step_at', (string)$now); return; }
+        if ($now - $at < 3600 || (int)setting_get($pdo, 'wa_ucat_chk', '0') > $now - 300) return; setting_set($pdo, 'wa_ucat_chk', (string)$now);
+        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(i.status = 'failed' OR m.status = 'failed') AS f FROM wa_camp_items i JOIN wa_templates t ON t.id = i.tpl_used AND t.category = 'UTILITY' LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.tpl_used > 0 AND i.sent_at >= ? AND i.sent_at <= ?");
+        $q->execute([date('Y-m-d H:i:s', $now - 4500), date('Y-m-d H:i:s', $now - 900)]); $r = $q->fetch(); $n = (int)($r['n'] ?? 0); $f = (int)($r['f'] ?? 0); if ($n < 100) return;
+        $cur = (int)setting_get($pdo, 'wa_ucat_hour', '700'); $bad = $f / $n > 0.05;
+        if ($bad && $cur > 700) { setting_set($pdo, 'wa_ucat_hour', '700'); setting_set($pdo, 'wa_ucat_step_at', (string)$now); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility campaigns: ' . $f . ' of ' . $n . ' failed -> the limit goes back from ' . $cur . ' to 700 an hour'); }
+        elseif ($bad) { $u = $now + 3 * 3600; setting_set($pdo, 'wa_ucat_pause_until', (string)$u); setting_set($pdo, 'wa_ucat_step_at', (string)$u); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility campaigns: ' . $f . ' of ' . $n . ' failed at 700 an hour -> they rest for 3 hours, then start again at 700'); }
+        else { if ($cur < 900) { setting_set($pdo, 'wa_ucat_hour', (string)min(900, $cur + 100)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility campaigns run well (' . $f . ' of ' . $n . ' failed): the limit ' . $cur . ' -> ' . min(900, $cur + 100) . ' an hour'); } setting_set($pdo, 'wa_ucat_step_at', (string)$now); }
+    } catch (Throwable $e) { }
 }
 function wa_cat_util_note(PDO $pdo, int $now, int $n): void
 {
@@ -805,6 +825,7 @@ function wa_camp_tick(PDO $pdo, int $only = 0): array   // $only > 0: the ⚡ Se
 function wa_unreach_cond(PDO $pdo): array
 {
     if ((string)setting_get($pdo, 'wa_unreach_on', '1') === '0' || !function_exists('wa_unreach_tables') || !wa_unreach_tables($pdo)) return ['', []];
+    try { if ((string)setting_get($pdo, 'wa_unreach_10d_2111', '') !== '1') { setting_set($pdo, 'wa_unreach_10d_2111', '1'); setting_set($pdo, 'wa_unreach_days', '10'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing: people Meta held (131049) are left out for 10 days instead of 5 (owner, 21 Nov 2026: 98% of the failures were this code)'); } } catch (Throwable $e0) { }
     $hd = max(1, min(30, (int)setting_get($pdo, 'wa_unreach_days', '5')));
     return ["((code IN (131049, 131048) AND at >= ?) OR (code IN (131026, 131050) AND at >= ?) OR (code = 130472 AND at >= ?))", [date('Y-m-d H:i:s', time() - $hd * 86400), date('Y-m-d H:i:s', time() - 90 * 86400), date('Y-m-d H:i:s', time() - 7 * 86400)]];
 }
@@ -956,7 +977,8 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                     $rq = $uFirst ? (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND variant = 'R'")->fetchColumn() : 0;
                     if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 60), counted over all campaigns; the marketing allowance is not touched
                         $perMin = max(5, min(1000000, (int)setting_get($pdo, 'wa_u_per_min', '100000'))); $usedMin = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE variant = 'U' AND status = 'sent' AND sent_at >= '" . date('Y-m-d H:i:s', $nowTs - 60) . "'")->fetchColumn(); $room = $perMin - $usedMin;
-                        if ($room > 0) { $ucond = " AND i.variant = 'R'"; $poolLeft = min(100, $room); } else { $stop = 'Utility: the limit of ' . $perMin . ' a minute is reached — it continues in a moment.'; break; } }
+                        $room = min($room, wa_cat_util_room($pdo, time()));   /* owner 19 Nov 2026, 21:05: utility never above 700 an hour, on EVERY path (these people went out with no hourly limit) */
+                        if ($room > 0) { $ucond = " AND i.variant = 'R'"; $poolLeft = min(100, $room, $rq); wa_cat_util_note($pdo, time(), $poolLeft); } else { $stop = 'Utility: the limit of ' . $perMin . ' a minute is reached — it continues in a moment.'; break; } }
                     else { $stop = wa_dq_why_text($dqF); break; } } }   // the cap is counted again before every batch: several senders at once never go over it
             $take = min($burstLeft > 0 ? $fastBatch : 90, $quota - ($sent + $failed + $skipped)); if ($poolOn && $burstLeft <= 0) $take = max(1, min($take, $poolLeft));   // ⚡ 90 people per round trip to Meta (was 40)
             $pick = ($poolOn ? $pdo->query("SELECT i.id, i.status FROM wa_camp_items i LEFT JOIN wa_contacts ct ON ct.phone = i.phone LEFT JOIN wa_cust cu ON cu.phone = i.phone WHERE i.camp_id = $id AND $dueI$ucond ORDER BY CASE WHEN ct.last_in_at IS NULL THEN 3 WHEN ct.last_in_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 0 WHEN ct.last_in_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) THEN 1 ELSE 2 END, (COALESCE(cu.n, 0) = 0), ct.last_in_at DESC, i.id LIMIT $take") : $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take"))->fetchAll();   // 📅 the best people go first: wrote in the last 30 days, then 90 days, then the rest; buyers before non-buyers inside each group, newest chat first
@@ -1039,7 +1061,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                 if (!$okReq && $variant === 'U') {   // the utility message cannot be put together for this person: marketing instead
                     $variant = 'M'; $tSent = $tUse; $vars = $resolveM($tSent, $ct, $it, $iid); $extra = (array)$c['extra']; [$okReq, $req] = wa_camp_request($pdo, $tSent, $ctx['nums'][$nid], (string)($ct['wa_id'] ?: '91' . $ct['phone']), $vars, $extra);
                 }
-                $vj = json_encode($vars, JSON_UNESCAPED_UNICODE); $tuId = (int)$tSent['id'] === (int)$c['tpl_id'] ? 0 : (int)$tSent['id'];
+                $vj = json_encode($vars, JSON_UNESCAPED_UNICODE); $tuId = (int)$tSent['id'] === (int)$c['tpl_id'] ? 0 : (int)$tSent['id']; if ($variant !== 'U' && strtoupper((string)($tSent['category'] ?? '')) === 'UTILITY') $tuId = (int)$tSent['id'];   /* owner 19 Nov 2026, 21:20: a message sent with a UTILITY template is marked (tpl_used) so the campaign colour line can show it in blue */
                 if (!$okReq) { $pdo->prepare("UPDATE wa_camp_items SET status = 'failed', number_id = ?, err = ?, vars_json = ?, tries = ?, variant = ?, tpl_used = ? WHERE id = ?")->execute([$nid, mb_substr(trim((string)$req) !== '' ? (string)$req : 'HRMS could not build the message (not sent to Meta)', 0, 190), $vj, $attempt, $variant, $tuId, $iid]); $failed++; continue; }
                 $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $reqs[] = $req; $batch[] = [$it, $nid, $vars, $attempt, $vj, $variant, $tSent, $tuId];
             }
@@ -1469,6 +1491,10 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     } catch (Throwable $e) { $o['error'] = 'The billing columns are not ready yet.'; }
     try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status = 'failed' AND ts >= ? AND ts < ?"); $q->execute([$from, $to]); $o['failed'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT camp_id) FROM wa_camp_items WHERE status = 'sent' AND sent_at >= ? AND sent_at < ?"); $q->execute([$from, $to]); $o['campaigns'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    // 🔧 owner 20 Nov 2026: the utility follow-ups (Module B) are shown SEPARATELY (own boxes); the Sent / Delivered / Failed / Spent boxes above stay campaign-only
+    $o['ru'] = ['sent' => 0, 'delivered' => 0, 'failed' => 0, 'amount' => 0.0];
+    try { if (function_exists('wa_ru_tables') && wa_ru_tables($pdo)) { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at < ?"); $q->execute([$from, $to]); $r = $q->fetch();
+        $o['ru'] = ['sent' => (int)$r['n'], 'delivered' => (int)$r['d'], 'failed' => (int)$r['f'], 'amount' => round((int)$r['d'] * (float)$R['utility'], 2)]; } } catch (Throwable $e) { }
     // 🔁 the 7-Day Drip messages of the same day are added to Sent / Delivered / Read / Failed / Replied / Spent (the drip goes out as follow-ups, so it is not in the campaign rows above); o['drip'] keeps its own share
     try {
         $dq = $pdo->prepare("SELECT wamid FROM wa_drip_ev WHERE status = 'sent' AND wamid <> '' AND at >= ? AND at < ?"); $dq->execute([date('Y-m-d H:i:s', strtotime($from) - 7200), date('Y-m-d H:i:s', strtotime($to) + 7200)]); $dids = $dq->fetchAll(PDO::FETCH_COLUMN);
@@ -1491,6 +1517,7 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT m.phone) FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.who = 'campaign' AND m.status IN ('delivered','read') AND m.ts >= ? AND m.ts < ?
             AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts > m.ts AND i.ts <= ?)"); $q->execute([$from, $to, $now]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $rr = wa_rec_range($pdo, $from, $to); $o['retried'] = $rr['tried']; $o['recovered'] = $rr['recovered']; } catch (Throwable $e) { }
+    try { if (function_exists('wl_summary')) { $ls = wl_summary($pdo, (int)strtotime($from)); $o['lineup'] = ['sent' => (int)$ls['sent'], 'delivered' => (int)$ls['delivered'], 'read' => (int)$ls['read'], 'failed' => (int)$ls['failed'], 'replied' => (int)$ls['replied'], 'utility' => (int)$ls['utility'], 'plain' => (int)$ls['plain'], 'cost' => (float)$ls['cost'], 'cost_utility' => (float)$ls['cost_utility'], 'cost_plain' => (float)$ls['cost_plain'], 'orders' => (int)$ls['orders'], 'revenue' => (int)$ls['revenue']]; } } catch (Throwable $e) { }   // 🧵 the 30-Day Lineup is its own module: its numbers are added to the "all three together" line on the screen
     try { $o['meta'] = wa_meta_spend_cached($pdo); } catch (Throwable $e) { }   // 🏦 Meta's own spend (prepared in the background)
     try { setting_set($pdo, 'wa_camp_spend4', json_encode($o)); } catch (Throwable $e) { }
     return $o;
@@ -1700,8 +1727,8 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             { $ruBy = function_exists('wa_ru_counts') ? wa_ru_counts($pdo, array_column($out, 'id')) : []; foreach ($out as $k0 => $o0) $out[$k0]['ru'] = $ruBy[(int)$o0['id']] ?? ['ru_sent' => 0, 'ru_del' => 0, 'ru_fail' => 0, 'mix_sent' => 0, 'mix_del' => 0]; $fam = function_exists('wa_ru_fam_states') ? wa_ru_fam_states($pdo, array_column($out, 'tpl_id')) : []; foreach ($out as $k0 => $o0) $out[$k0]['ru']['fam'] = $fam[(int)($o0['tpl_id'] ?? 0)] ?? null; } { $rst = function_exists('wa_ru_restart_stats') ? wa_ru_restart_stats($pdo, array_column($out, 'id')) : []; foreach ($out as $k0 => $o0) $out[$k0]['ru']['restart'] = $rst[(int)$o0['id']] ?? null; }   // 💸 utility sent / delivered per campaign, for the colour line   // 🔁 retried / delivered again, per campaign
             if ($off > 0) json_response(['campaigns' => $out, 'total' => $totalCamps, 'offset' => $off]);   // "Load more": only the next campaigns — numbers, limits and the engine are already on the screen
             $health = wa_camp_health($pdo); $caps = wa_number_caps($pdo, $health); $nums = [];
-            $campOk = []; foreach ($pdo->query("SELECT id, camp_ok, display FROM wa_numbers")->fetchAll() as $r0) $campOk[(int)$r0['id']] = [(int)$r0['camp_ok'] === 1, (string)$r0['display']];
-            foreach ($health as $h) { $c = $caps[(int)$h['id']] ?? null; if ($c) $nums[] = ['id' => (int)$h['id'], 'label' => $h['label'], 'display' => (string)($h['display'] ?? ($campOk[(int)$h['id']][1] ?? '')), 'quality' => $h['quality'], 'status' => (string)($h['status'] ?? ''), 'camp_ok' => $campOk[(int)$h['id']][0] ?? false, 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left'], 'why' => $c['why']]; }
+            $campOk = []; foreach ($pdo->query("SELECT * FROM wa_numbers")->fetchAll() as $r0) $campOk[(int)$r0['id']] = [(int)($r0['camp_ok'] ?? 1) === 1, (string)($r0['display'] ?? ''), !empty($r0['retired'])];
+            foreach ($health as $h) { $c = $caps[(int)$h['id']] ?? null; if ($c) $nums[] = ['id' => (int)$h['id'], 'label' => $h['label'], 'display' => (string)($h['display'] ?? ($campOk[(int)$h['id']][1] ?? '')), 'quality' => $h['quality'], 'status' => (string)($h['status'] ?? ''), 'camp_ok' => $campOk[(int)$h['id']][0] ?? false, 'retired' => $campOk[(int)$h['id']][2] ?? false, 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left'], 'why' => $c['why']]; }
             $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
             $lite = !empty($_GET['lite']);   // ⚡ the list screen does not need the message library (it is the slowest part: one row per message with its per-number matrix); the New-campaign wizard asks for it by itself (wa.camp_templates)
             $fastNow = ['ids' => array_keys(wa_camp_fast_all($pdo)), 'now' => time()];

@@ -408,6 +408,7 @@ function all_permissions(): array
         'store_pos' => 'Store · POS only (billing, inventory, returns, cash out, expenses) — for store staff logins',
         'dispatch_restock' => 'Dispatch · Store orders only (plan and send restock memos, record what was dispatched) — for the dispatch person',
         'sku_sheet' => 'SKU sheet (the day\'s orders counted per SKU and size, with the Excel download)',
+        'feedback' => 'Feedback (Dispatch → Feedback: ask delivered customers for feedback, keep the proof, rewards, complaints, the WhatsApp chat with the customer)',
         'manual_orders' => 'Manual orders: the full list and the Manual order sheet (every manual order, with export)',
         'server_load' => 'Server load (CPU, what the database and each function cost): technical, give with care',
         'finance' => 'Finance (bank and card statements, settlements, bills, reports): money data, give with care',
@@ -1244,6 +1245,28 @@ function order_gel_fix(PDO $pdo): int
     } catch (Throwable $e) { error_log('order_gel_fix: ' . $e->getMessage()); }
     return $n;
 }
+/** An order given to a salesperson BY HAND with no Query / Campaign chosen is counted as neither (the Orders page said 401 of 402). 30 minutes after it was allocated, a still-empty type is filled in the same way the robot types an order
+ *  (order_chat_type: Campaign = a real campaign reply / repeat customer, else Query) from the customer's WhatsApp chat. No chat with that number = left alone (a person must pick). Only empty types of orders given to a person
+ *  (not the shower-gel panel-only rows) in the last 3 days. Every 10 minutes from the WhatsApp engine. Returns how many were filled. */
+function order_type_fill(PDO $pdo): int
+{
+    try { if ((int)setting_get($pdo, 'otf_at', '0') > time() - 600) return 0; setting_set($pdo, 'otf_at', (string)time()); if (!ensure_order_allocations_table($pdo)) return 0; } catch (Throwable $e) { return 0; }
+    $n = 0;
+    try {
+        $st = $pdo->prepare("SELECT a.alloc_id, o.created_at, o.phone FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci = a.order_id COLLATE utf8mb4_unicode_ci
+            WHERE (a.order_type = '' OR a.order_type IS NULL) AND a.employee_id > 0 AND o.created_at >= ? AND a.allocated_at < ? AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') LIMIT 100");
+        $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400), date('Y-m-d H:i:s', time() - 1800)]);
+        $up = $pdo->prepare("UPDATE order_allocations SET order_type = ? WHERE alloc_id = ? AND (order_type = '' OR order_type IS NULL)");
+        $cq = $pdo->prepare("SELECT phone, source FROM wa_contacts WHERE phone = ?");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $d = preg_replace('/\D+/', '', (string)$r['phone']) ?? ''; $ph = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($ph) !== 10) continue;
+            $cq->execute([$ph]); $c = $cq->fetch(PDO::FETCH_ASSOC); if (!$c) continue;
+            $type = order_chat_type($pdo, $c, (int)strtotime((string)$r['created_at']));
+            if (in_array($type, ['query', 'campaign'], true)) { $up->execute([$type, (int)$r['alloc_id']]); $n += $up->rowCount(); }
+        }
+    } catch (Throwable $e) { error_log('order_type_fill: ' . $e->getMessage()); }
+    return $n;
+}
 // ---------------------------------------------------------------------------------------------------------------------------- ⭐ AUTO "TICKET SIZE CONVINCING" STARS (owner, 18 Nov)
 /** The stars of the Order Allocation page ("did the salesperson try to make the customer take more?") are now worked out by Claude from the CHAT: did the salesperson offer more (200 ml instead of 100 ml, two instead of one,
  *  a second bottle / tester) and did the customer take it. Mode (setting order_auto_rate): 'off' · 'suggest' (default: shown as a light "🤖 suggestion", nothing is saved as a rating) · 'apply' (saved as the order's stars, "Claude (auto)").
@@ -1315,29 +1338,61 @@ function ora_judge_text(string $text, string $final = '', int $finalMl = 0): arr
         . "NOT AN OFFER (counted only in weak / big_weak, never in tries): vague questions without a concrete item or benefit — 'ek aur kar du?', 'kuch aur chahiye?', 'anything else?', 'aur lena hai?' — a bare thank-you, repeating the customer's own order, quoting the price of the same order, a discount on the same items, BOT / campaign messages. "
         . "A customer who bargains the PRICE while confirming the quantity ('3500 kar dijiye, 8 x 50 le lunga') HAS taken the quantity (big_worked = true); a customer who only says 'ok' to a clear offer and then orders exactly that quantity / price has taken it too. A customer who asked for the bigger / extra thing by himself earns the salesperson no credit; a customer who came with his own list or quantity (for example 820 ml, 300 ml or 650 ml) and the salesperson simply sold exactly that, with nothing added, earns NO credit (tries = 0, no offer). A copy-pasted combo / price line followed by a question ('5 x 50ml - 250ml - Rs 2,940 Better Savings' + 'You interested in this offer sir?') IS a proper offer for more pieces; lines marked [replying to: ...] show which message the customer answered, so 'No no' as a reply to that offer is a refusal (the salesperson TRIED). A customer who flatly says NO to the salesperson's push for more (came for 10, the salesperson asked for 12 or 15, the customer refused at once) means the salesperson TRIED: set refused / big_refused = true and tries / big_tries to at least 1, even when the offer was one short line. Only when no push at all can be found is it 'none'. WORK OUT THE BASE ORDER: from the chat find what the customer had agreed BEFORE the salesperson's offer (for example 8 x 20ml = 160 ml for Rs 1999). If the final order has MORE ml / pieces / price than that base (for example 200 ml / Rs 2,4xx after a base of 160 ml / Rs 1999), the extra was added, so the offer was TAKEN (worked = true for an offer made after the order details, big_worked = true for one made before), even if the final price differs a little because of a discount. A customer who answers yes / ok / haan / done to the offer and the salesperson then confirms the new total ('total 2499 done, cart bhej deti hu') TOOK it. COMPARE WITH THE FINAL ORDER given at the end: if the final order's total price, number of pieces or ml equals what the salesperson offered (for example the offer was 10 x 20ml for Rs 2399 and the final order is Rs 2399 / 200 ml), the customer TOOK that offer, even if he only said 'ok' in between and then talked about something else.  worked / big_worked = true ONLY when the customer clearly took a PROPER offer of that kind (took the higher quantity / bigger size before the order was final for bigger; added the extra perfume after the order was final for add-on). refused / big_refused = true when the customer clearly said no to a proper offer of that kind. Read the order of the messages carefully: a customer who first stays with the old quantity and LATER agrees to the new one has taken the offer. "
         . "Stars (0.5 steps, about the whole effort): 1 = no proper offer at all · 2 = only vague lines · 3 = one clear proper offer, customer did not take · 4 = proper offers, one worked a little · 5 = proper offers and a clear win (a bigger order, an add-on, or both). "
-        . "asked = what the customer first asked for (short). offered = the best proper offer made (short, empty if none). reason = ONE short sentence in simple English about the ADD-ON judgement ONLY (what happened after the order was final) · big_reason = ONE short sentence in simple English about the BIGGER judgement ONLY (what happened before the order was final); never mix the two. base_ml = the total ml the customer had agreed BEFORE the salesperson's add-on offer (e.g. 8 x 20ml = 160; 0 if unknown); extra_ml = the total ml of the extra perfume offered as add-on (e.g. 2 x 20ml = 40; 0 if none or unknown).  tip / big_tip = ONLY when that kind worked: the salesperson's own winning words, shortened, in the chat's language (else empty). "
+        . "asked = what the customer first asked for (short). offered = the best proper offer made (short, empty if none). reason = ONE short sentence in simple English about the ADD-ON judgement ONLY (what happened after the order was final) · big_reason = ONE short sentence in simple English about the BIGGER judgement ONLY (what happened before the order was final); never mix the two. base_ml = the total ml the customer had agreed BEFORE the salesperson's add-on offer (e.g. 8 x 20ml = 160; 0 if unknown); extra_ml = the total ml of the extra perfume offered as add-on (e.g. 2 x 20ml = 40; 0 if none or unknown); asked_ml = the total ml the customer FIRST asked for or came with (e.g. 5 x 50ml = 250; 0 if unknown); big_offer_ml = the total ml of the BIGGEST quantity offer the salesperson made before the order was final (e.g. 7 x 50ml = 350; 0 if none).  tip / big_tip = ONLY when that kind worked: the salesperson's own winning words, shortened, in the chat's language (else empty). "
         . $final;
     $sch = ['type' => 'OBJECT', 'properties' => ['asked' => ['type' => 'STRING'], 'offered' => ['type' => 'STRING'], 'worked' => ['type' => 'BOOLEAN'], 'stars' => ['type' => 'NUMBER'], 'reason' => ['type' => 'STRING'], 'big_reason' => ['type' => 'STRING'], 'tries' => ['type' => 'NUMBER'], 'weak' => ['type' => 'NUMBER'], 'refused' => ['type' => 'BOOLEAN'], 'tip' => ['type' => 'STRING'],
-        'big_worked' => ['type' => 'BOOLEAN'], 'big_tries' => ['type' => 'NUMBER'], 'big_weak' => ['type' => 'NUMBER'], 'big_refused' => ['type' => 'BOOLEAN'], 'big_tip' => ['type' => 'STRING'], 'base_ml' => ['type' => 'NUMBER'], 'extra_ml' => ['type' => 'NUMBER']],
-        'required' => ['asked', 'offered', 'worked', 'stars', 'reason', 'big_reason', 'tries', 'weak', 'refused', 'tip', 'big_worked', 'big_tries', 'big_weak', 'big_refused', 'big_tip', 'base_ml', 'extra_ml']];
+        'big_worked' => ['type' => 'BOOLEAN'], 'big_tries' => ['type' => 'NUMBER'], 'big_weak' => ['type' => 'NUMBER'], 'big_refused' => ['type' => 'BOOLEAN'], 'big_tip' => ['type' => 'STRING'], 'base_ml' => ['type' => 'NUMBER'], 'extra_ml' => ['type' => 'NUMBER'], 'asked_ml' => ['type' => 'NUMBER'], 'big_offer_ml' => ['type' => 'NUMBER']],
+        'required' => ['asked', 'offered', 'worked', 'stars', 'reason', 'big_reason', 'tries', 'weak', 'refused', 'tip', 'big_worked', 'big_tries', 'big_weak', 'big_refused', 'big_tip', 'base_ml', 'extra_ml', 'asked_ml', 'big_offer_ml']];
     [$ok, $v, $why] = convo_ai($sys, [['text' => $text]], $sch, false, 700, 'claude'); if (!$ok || !is_array($v)) return ['rating' => null, 'why' => 'Claude could not rate it: ' . mb_substr((string)$why, 0, 120), 'retry' => true];
     $st = round(max(1.0, min(5.0, (float)($v['stars'] ?? 1))) * 2) / 2;
     $n = fn($k) => (int)max(0, min(9, round((float)($v[$k] ?? 0))));
+    $aml = (int)round((float)($v['asked_ml'] ?? 0));
     $tr = $n('tries'); $btr = $n('big_tries'); if (!empty($v['refused'])) $tr = max($tr, 1); if (!empty($v['big_refused'])) $btr = max($btr, 1);   // a customer who says no to a push means the salesperson tried
      $wk = !empty($v['worked']) ? 1 : 0; $bwk = !empty($v['big_worked']) ? 1 : 0;
-    $bml = (int)round((float)($v['base_ml'] ?? 0)); $eml = (int)round((float)($v['extra_ml'] ?? 0)); $note = '';
+    $bml = (int)round((float)($v['base_ml'] ?? 0)); $eml = (int)round((float)($v['extra_ml'] ?? 0)); $note = ''; $bnote = '';
+    $bom = (int)round((float)($v['big_offer_ml'] ?? 0));
+    if (!$bwk && !$wk && $btr >= 1 && $finalMl > 0 && $bom > 0 && $finalMl >= (int)round($bom * 0.95) && $finalMl <= (int)round($bom * 1.15)) { $bwk = 1; $bnote = 'Checked by numbers: the salesperson offered ' . $bom . ' ml and the final order has ' . $finalMl . ' ml, so the offer was taken.'; }   // the final order equals the bigger offer
+    if (!$bwk && !$wk && $finalMl > 0 && $aml > 0 && $finalMl >= (int)round($aml * 1.2) && ($n('big_weak') >= 1 || $btr >= 1)) { $bwk = 1; $btr = max($btr, 1); $bnote = 'Checked by numbers: the customer first asked for ' . $aml . ' ml and the final order has ' . $finalMl . ' ml after the salesperson pushed for more.'; }   // the order itself grew after the salesperson's push
     if (!$wk && $tr >= 1 && $finalMl > 0 && $bml > 0 && $eml > 0 && $finalMl >= $bml + (int)round($eml * 0.9)) { $wk = 1; $note = ' [Checked by numbers: the final order has ' . $finalMl . ' ml, more than the ' . $bml . ' ml agreed before the offer, so the extra was added.]'; }   // the judge's own sums are not trusted when the order itself proves the extra was added
     return ['rating' => $st * 2, 'tried' => ($tr >= 1 || $wk) ? 1 : 0, 'worked' => $wk, 'tries' => max($tr, $wk ? 1 : 0), 'weak' => $n('weak'), 'refused' => !empty($v['refused']) ? 1 : 0, 'tip' => $wk ? mb_substr((string)($v['tip'] ?? ''), 0, 240) : '',
         'big_tried' => ($btr >= 1 || $bwk) ? 1 : 0, 'big_worked' => $bwk, 'big_tries' => max($btr, $bwk ? 1 : 0), 'big_weak' => $n('big_weak'), 'big_refused' => !empty($v['big_refused']) ? 1 : 0, 'big_tip' => $bwk ? mb_substr((string)($v['big_tip'] ?? ''), 0, 240) : '',
-        'asked' => mb_substr((string)($v['asked'] ?? ''), 0, 200), 'offered' => mb_substr((string)($v['offered'] ?? ''), 0, 200), 'why' => mb_substr($note !== '' ? trim($note) : (string)($v['reason'] ?? ''), 0, 400), 'big_why' => mb_substr((string)($v['big_reason'] ?? ''), 0, 400)];
+        'asked' => mb_substr((string)($v['asked'] ?? ''), 0, 200), 'offered' => mb_substr((string)($v['offered'] ?? ''), 0, 200), 'why' => mb_substr($note !== '' ? trim($note) : (string)($v['reason'] ?? ''), 0, 400), 'big_why' => mb_substr($bnote !== '' ? $bnote : (string)($v['big_reason'] ?? ''), 0, 400)];
+}
+/** The chat number of an order whose own number has no chat: the customer's address reply ('8. Primary No:- ... 9. External No:- ...') names the order's number, so the inbound message that mentions it comes from the real chat. Returns the 10 digits of that chat's number or ''. */
+function ora_alt_chat_phone(PDO $pdo, string $k, int $t): string
+{
+    try {
+        $q = $pdo->prepare("SELECT phone, body FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts <= ? AND body LIKE ? AND phone <> ? ORDER BY id DESC LIMIT 6");
+        $q->execute([date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 15 * 60), '%' . $k . '%', $k]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if (!preg_match('/primary|external|alternate|mobile|whatsapp|contact/i', (string)$r['body'])) continue;   // the address reply names its numbers
+            $p = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if (strlen($p) === 10 && $p !== $k) return $p;
+        }
+    } catch (Throwable $e) { error_log('ora_alt_chat_phone: ' . $e->getMessage()); }
+    return '';
 }
 function ora_rate_one(PDO $pdo, array $o): array
 {
     $t = strtotime((string)$o['created_at']); $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) return ['rating' => null, 'why' => 'No mobile number on the order'];
-    $q = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts, wamid, reply_to FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 800"); $q->execute([$k, date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]);   // the NEWEST 400 messages up to the order (the oldest 400 used to be taken, which cut off the recent ones of a busy chat)
+    $ks = [$k]; try { if (!empty($o['store_key']) && !empty($o['shopify_id'])) { $xq = $pdo->prepare("SELECT phone FROM order_extra_phones WHERE source = ? AND order_id = ? LIMIT 1"); $xq->execute([(string)$o['store_key'], (string)$o['shopify_id']]); $xk = substr(preg_replace('/\D+/', '', (string)$xq->fetchColumn()), -10); if (strlen($xk) === 10 && $xk !== $k) $ks[] = $xk; } } catch (Throwable $e) { }   // the 'Extra mobile no.' of Order Allocation: the customer's chat may be on that number
+    $q = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts, wamid, reply_to FROM wa_messages WHERE phone IN (" . implode(',', array_fill(0, count($ks), '?')) . ") AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 800"); $q->execute(array_merge($ks, [date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]));   // the NEWEST 400 messages up to the order (the oldest 400 used to be taken, which cut off the recent ones of a busy chat)
     $rows = array_reverse($q->fetchAll(PDO::FETCH_ASSOC)); $by = []; foreach ($rows as $m0) if (!empty($m0['wamid'])) $by[(string)$m0['wamid']] = trim(preg_replace('/\s+/u', ' ', (string)$m0['body']));
     foreach ($rows as &$m1) { if (!empty($m1['reply_to']) && isset($by[(string)$m1['reply_to']])) $m1['quote'] = $by[(string)$m1['reply_to']]; } unset($m1);
-    [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 2 || $ns < 1) return ['rating' => null, 'why' => 'No chat with a salesperson before this order'];
+    [$text, $nc, $ns] = ora_transcript($rows);
+    if (($nc < 2 || $ns < 1) && count($ks) === 1) {   // no chat on the order's number: the customer's address reply may name the number the chat is really on
+        $alt = ora_alt_chat_phone($pdo, $k, $t);
+        if ($alt !== '') {
+            $q2 = $pdo->prepare("SELECT dir, who, emp_id, mtype, body, ts, wamid, reply_to FROM wa_messages WHERE phone IN (?, ?) AND ts >= ? AND ts <= ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 800"); $q2->execute([$k, $alt, date('Y-m-d H:i:s', $t - 7 * 86400), date('Y-m-d H:i:s', $t + 15 * 60)]);
+            $rows2 = array_reverse($q2->fetchAll(PDO::FETCH_ASSOC)); $by2 = []; foreach ($rows2 as $m0) if (!empty($m0['wamid'])) $by2[(string)$m0['wamid']] = trim(preg_replace('/\s+/u', ' ', (string)$m0['body']));
+            foreach ($rows2 as &$m2) { if (!empty($m2['reply_to']) && isset($by2[(string)$m2['reply_to']])) $m2['quote'] = $by2[(string)$m2['reply_to']]; } unset($m2);
+            [$t2, $nc2, $ns2] = ora_transcript($rows2);
+            if ($nc2 >= 2 && $ns2 >= 1) {
+                $text = $t2; $nc = $nc2; $ns = $ns2;
+                try { if (function_exists('ensure_order_phones_table')) ensure_order_phones_table($pdo); if (!empty($o['store_key']) && !empty($o['shopify_id'])) $pdo->prepare("INSERT IGNORE INTO order_extra_phones (source, order_id, order_name, phone, updated_by) VALUES (?, ?, ?, ?, 'auto: address reply')")->execute([(string)$o['store_key'], (string)$o['shopify_id'], mb_substr((string)($o['order_name'] ?? ''), 0, 40), $alt]); } catch (Throwable $e) { }   // shows in Order Allocation as the Extra mobile no.
+            }
+        }
+    }
+    if ($nc < 2 || $ns < 1) return ['rating' => null, 'why' => 'No chat with a salesperson before this order'];
     return ora_judge_text($text, "Final order for reference: Rs " . round((float)$o['total']) . ($o['ml_total'] ? ', ' . (int)$o['ml_total'] . ' ml in total' : '') . '.', (int)($o['ml_total'] ?? 0));
 }
 /** Saves the suggestion as the order's real stars (only when nobody has rated it). Returns true when saved. */
@@ -1364,19 +1419,21 @@ function ora_tick(PDO $pdo): int
               AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 7)
             ORDER BY o.created_at DESC LIMIT 8");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
         $bd = biz_today($pdo); $st->execute([$bd . ' ' . day_start_for($pdo, $bd) . ':00', date('Y-m-d H:i:s', time() - 600)]);   // only the orders of the current business day (from its 10:00 start) are read
-        $t0 = time(); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
+        $t0 = time(); $cands = $st->fetchAll(PDO::FETCH_ASSOC); $fails = 0; $lastWhy = '';
+        foreach ($cands as $o) {
             if (time() - $t0 > 28) break;   // the engine step must stay short
-            $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;   // an AI hiccup: try again next time
+            $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) { $fails++; $lastWhy = $key . ' · ' . mb_substr((string)($r['why'] ?? ''), 0, 200); continue; }   // an AI hiccup: try again next time
             $day = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
             ora_store($pdo, $key, $o, $r, $day);
             if ($r['rating'] !== null && $mode === 'apply' && ora_apply($pdo, $key, ['order_name' => (string)$o['order_name'], 'employee_id' => (int)$o['employee_id'], 'day' => $day, 'house' => (string)$o['house'], 'rating' => $r['rating']])) $pdo->prepare("UPDATE order_rate_auto SET applied = 1 WHERE order_key = ?")->execute([$key]);
             $n++;
         }
+        try { setting_set($pdo, 'ora_tick_info', date('Y-m-d H:i:s') . ' · candidates ' . count($cands) . ' · rated ' . $n . ' · AI failures ' . $fails . ($lastWhy !== '' ? ' · last failure: ' . $lastWhy : '')); } catch (Throwable $e) { }   // read-only diagnostic: why reading may stand still
         if ($mode === 'apply') {   // suggestions made earlier become real stars (nobody's own rating is touched)
             $w = $pdo->query("SELECT r.order_key, r.order_name, r.employee_id, r.rating, r.day, r.house, r.at FROM order_rate_auto r WHERE r.applied = 0 AND r.rating IS NOT NULL ORDER BY r.at DESC LIMIT 40")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($w as $r) { $ok = ora_apply($pdo, (string)$r['order_key'], ['order_name' => $r['order_name'], 'employee_id' => (int)$r['employee_id'], 'day' => (string)($r['day'] ?: date('Y-m-d', strtotime((string)$r['at']) - 10 * 3600)), 'house' => (string)$r['house'], 'rating' => (float)$r['rating']]); $pdo->prepare("UPDATE order_rate_auto SET applied = ? WHERE order_key = ?")->execute([$ok ? 1 : 2, (string)$r['order_key']]); }
         }
-    } catch (Throwable $e) { error_log('ora_tick: ' . $e->getMessage()); }
+    } catch (Throwable $e) { error_log('ora_tick: ' . $e->getMessage()); try { setting_set($pdo, 'ora_tick_info', date('Y-m-d H:i:s') . ' · ERROR ' . mb_substr($e->getMessage(), 0, 200)); } catch (Throwable $e2) { } }
     return $n;
 }
 /** Saves one judged order (replaces an older row of the same order: rows from before the two-part judge are read again and corrected). */
@@ -1459,6 +1516,9 @@ function ora_catchup(PDO $pdo): int
 {
     if (ora_mode($pdo) === 'off' || !function_exists('convo_ai')) return 0;
     try { if ((int)setting_get($pdo, 'ora_cu_at', '0') > time() - 45) return 0; setting_set($pdo, 'ora_cu_at', (string)time()); } catch (Throwable $e) { return 0; }
+    try { if ((string)setting_get($pdo, 'ora_fix14', '') !== '1') { setting_set($pdo, 'ora_fix14', '1'); $pdo->exec("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_name IN ('72738', '#72738')"); } } catch (Throwable $e) { }   // one-off: #72738 (7 x 50 ml taken) is read again with the offer = final order check
+    try { if ((string)setting_get($pdo, 'ora_fix13', '') !== '1') { setting_set($pdo, 'ora_fix13', '1'); $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE sz_ok = 7 AND rating IS NULL AND day >= ?")->execute([date('Y-m-d', strtotime(biz_today($pdo) . ' -1 day'))]); } } catch (Throwable $e) { }   // one-off: 'chat not found' orders of today / yesterday are read again (extra numbers from the address reply)
+    try { if ((string)setting_get($pdo, 'ora_fix12', '') !== '1') { setting_set($pdo, 'ora_fix12', '1'); $pdo->exec("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_name IN ('72344', '#72344')"); } } catch (Throwable $e) { }   // one-off: #72344 (5 -> 8 pieces) is read again with the numbers check
     try { if ((string)setting_get($pdo, 'ora_fix11', '') !== '1') { setting_set($pdo, 'ora_fix11', '1'); $pdo->exec("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_name IN ('72338', '#72338')"); } } catch (Throwable $e) { }   // one-off: #72338 is read again with the quoted-reply context (the owner's example)
     try { try { if ((string)setting_get($pdo, 'ora_fix10', '') !== '1') { setting_set($pdo, 'ora_fix10', '1'); $pdo->exec("UPDATE order_rate_auto SET tries = 1, tried = 1 WHERE sz_ok = 7 AND refused = 1 AND tries = 0"); $pdo->exec("UPDATE order_rate_auto SET sz_tries = 1, sz_tried = 1 WHERE sz_ok = 7 AND sz_refused = 1 AND sz_tries = 0"); } } catch (Throwable $e) { }   // one-off: a refusal already stored without a try becomes a try (no new AI reading)
     try { if ((string)setting_get($pdo, 'ora_fix9', '') !== '1') { setting_set($pdo, 'ora_fix9', '1'); $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE sz_ok = 7 AND tries >= 1 AND worked = 0 AND day >= ?")->execute([date('Y-m-d', strtotime(biz_today($pdo) . ' -1 day'))]); } } catch (Throwable $e) { }   // one-off: add-on offers judged 'not taken' are read again with the base-order comparison
@@ -7888,6 +7948,8 @@ function ml_bonus_for(array $chart, float $sales, float $target): float
  * need = round(N × codepct / 100), at least 1 when there is an order (at 65%: 6 orders → 4 codes, 10 → 7, 5 → 3). codepct 0 = rule off.
  * Same maths as MLSLAB.codeNeed() in ml_slab.js.
  */
+/** Flat commission % of a Myntra / Amazon / Flipkart order added by a sales person (owner, 20 Nov 2026: 6%, no code needed). Setting mp_flat_pct. */
+function mp_flat_pct(PDO $pdo): float { static $m = null; if ($m === null) { $v = (string)setting_get($pdo, 'mp_flat_pct', ''); $m = ($v !== '' && is_numeric($v)) ? max(0.0, min(30.0, (float)$v)) : 6.0; } return $m; }
 function ml_code_need(int $n, float $pct): int
 {
     if ($n <= 0 || $pct <= 0) return 0;
@@ -8248,8 +8310,8 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
     // so the Commission page / tower / target % showed fewer orders and less sales than the Orders page for the same day (18 orders ₹39,964 there, 14 orders ₹36,068 here).
     // Their products are not known (no ML), so they add to the SALES and the target, and the commission chart pays nothing for them.
     try {
-        $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0");
-        $mq->execute(biz_window($pdo, $from, $day));
+        try { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch, channel FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }
+        catch (Throwable $e0) { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }   // 'channel' exists once a Myntra / Amazon / Flipkart order was added
         foreach ($mq->fetchAll() as $m) {
             $mk2 = 'manual|' . (string)$m['manual_order_id']; if (isset($cancel[$mk2])) continue;
             $a = $allocMap[$mk2] ?? null; if ($a && !empty($a['direct'])) continue;
@@ -8257,7 +8319,8 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             $ts = strtotime((string)$m['order_date']); $fs = strtolower((string)$m['payment_status']);
             $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => null, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false,
                 'xnote' => ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
-                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? ''))];
+                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
+                'mp' => in_array((string)($m['channel'] ?? ''), ['Myntra', 'Amazon', 'Flipkart'], true) ? (string)$m['channel'] : ''];   // 🛍 marketplace order: a flat % without a code (mp_flat_pct)
         }
     } catch (Throwable $e) { error_log('coach_sales_load manual orders: ' . $e->getMessage()); }
     // ➕ add-ons: an order is paid on its own amount PLUS its add-ons (1000 + 500 = 1500), so the add-on money, ML and advance count on the same order
@@ -8485,10 +8548,16 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
         // 70% code rule: enough of the day's orders carry a code → every order of the day pays full (the no-code cut is skipped).
         $codePct = (float)($chart['codepct'] ?? 0);
         $codeHave = 0; foreach ($list as $o) if ($o['code'] !== '') $codeHave++;
-        $codeNeed = ml_code_need(count($list), $codePct);
+        // manual orders / quick entries / Myntra / Amazon / Flipkart orders cannot carry a code: they count in the sales, but NOT in "how many orders need a code" — the same as the commission engine (boss2.php cm_day) that pays (owner, 20 Nov)
+        $nManC = 0; foreach ($list as $o) if (strpos((string)($o['key'] ?? ''), 'manual|') === 0) $nManC++;
+        $codeNeed = ml_code_need(count($list) - $nManC, $codePct);
         $codeOk = $codeNeed > 0 && $codeHave >= $codeNeed;
         foreach ($list as $o) {
             $sales += $o['amt']; $last = max($last, $o['ts']);
+            if (!empty($o['mp'])) {   // 🛍 Myntra / Amazon / Flipkart: a flat % on the whole amount, no code needed, no code goal, no daily bonus (like a flash offer)
+                $v = $o['amt'] * mp_flat_pct($pdo) / 100; $comAmt += $v; $comBase += $o['amt']; $com += $v; $comFlash += $v; $ordCom[$o['key']] = $v; $flashKeys[$o['key']] = true;
+                if (!$o['pre']) $nCod++; $h = date('G', $o['ts']); $byHour[$h] = ($byHour[$h] ?? 0) + 1; continue;
+            }
             if ($o['code'] !== '') $nCode++; else { $nNo++; $noCodeNames[] = $o['name']; }
             if (!$o['pre']) $nCod++;
             $h = date('G', $o['ts']); $byHour[$h] = ($byHour[$h] ?? 0) + 1;
@@ -10376,7 +10445,7 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     $judgeOn = setting_get($pdo, 'lib_judge', '1') !== '0';
     // ⚡ a reply made while a salesperson waits with the chat open (wa_sugg): ONE draft in ONE call (about 2–3 s) instead of three drafts + a second "pick the best" call (5–6 s).
     // The facts check below still runs on it. Switch on Admin → AI usage (setting ai_sugg_fast, '0' = three drafts again).
-    if ((string)($GLOBALS['ai_feature'] ?? '') === 'wa_sugg' && (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0') $judgeOn = false;
+    if (((string)($GLOBALS['ai_feature'] ?? '') === 'wa_sugg' && (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0') || !empty($GLOBALS['lib_fast'])) $judgeOn = false;   // (the 24/7 bot answers within seconds: one draft)
     $sys = "You are the WhatsApp sales assistant of TM Perfume House, an Indian online perfume brand (Surat). Write the NEXT reply to the customer as our best salesperson would: short WhatsApp style (1–4 lines), warm, in the customer's own language and script "
         . "(Gujarati / Hindi / Hinglish / English). LEARN ONLY from: (1) the approved GUIDEBOOK, (2) OWNER CORRECTIONS and TEACHER LESSONS — follow them before anything else, (3) STORE FACTS — the only source of prices, offers and policies, (4) EXAMPLE CHATS — real winning chats (C = customer, S = our salesperson): copy their way of selling, never their personal details or their old prices. "
         . "NEVER invent prices, discounts, stock, delivery dates or product facts that are in none of these; if the customer needs something you do not know, say you will confirm it and hand over. "
@@ -10395,6 +10464,13 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     $photoAsk = (function_exists('pc_photo_url') && pc_photo_url($pdo) !== '') ? " price_photo = true whenever the customer asks for the price list / price chart / rate card (the system sends its own price chart picture right after your reply - the 6.5% column, never an uploaded photo; do not paste the whole list in the text); otherwise false." : " price_photo = false (the price chart picture cannot be made yet).";
     $ask = $followup ? "The customer has NOT answered our last message. Write a short follow-up that brings them back (do not repeat our last message; give a reason to reply). stage = followup." : "Write the bot's next reply.";
     if ($situation !== '') $ask = "TEST MODE: pretend the chat so far is in this situation (the earlier messages are not shown): " . $situation . ". Answer the customer's last message as the bot would in exactly that situation. " . $ask;
+    if (!empty($GLOBALS['lib_fast'])) $ask .= " HOW OUR SALESPEOPLE ANSWER (follow it): never ask again for something the customer already told you (perfume, size, quantity); when the customer gives a size or quantity (\"50ml\", \"5 chahiye\"), quote the matching price / combo price from STORE FACTS in the SAME message, then ask only the ONE thing still missing (which perfumes) and move toward the order (\"best deal\", \"combo\"); short Hinglish, no placeholders like [phone] or [name], never repeat your previous message.";
+    if (!empty($GLOBALS['lib_fast'])) $ask .= " WHEN THE CUSTOMER ASKS FOR AN \"OFFER\" / \"50ml offer\" / \"100ml offer\" / says it is expensive (\"mehanga\", \"too costly\"): do NOT paste the whole combo list. Our best salespeople ask ONE short question first (which perfumes do you like, or what budget) and then quote the one chart price for the quantity; for an expensive-complaint ask the budget and offer the next price level only after that.";
+    if (!empty($GLOBALS['lib_fast'])) $ask .= " WHEN THE CUSTOMER SAYS YES (\"haa\", \"kardo\", \"ok\", \"theek hai\", \"done\", \"yes\") after you quoted a price or a combo: do NOT ask \"shall I finalise?\" again — move on: if the perfume names are not given yet ask for them, then ask for full name, delivery address with 6-digit pincode and an alternate phone, and offer the one add-on if the order is under the target (see the price block).";
+    if (!empty($GLOBALS['lib_fast'])) $ask .= " WHEN THE CUSTOMER CUTS OR CANCELS PART OF THE ORDER (\"7 and 4 cancel kardo\", \"kam karo\", \"ek hata do\"): do NOT just accept and ask again. First keep the sale: say the price per piece is best on the bigger combo (use the combo prices from STORE FACTS), that dropping items makes the combo dearer or loses the combo deal, and suggest the better move — keep all of them, or replace the dropped ones with other perfumes of his choice, or even go UP to the next combo (8 -> 10) because it works out better. One short friendly reason, then one question (\"kaun se 2 naye lena chahoge?\"). Only if he insists again, accept and recalculate the price from STORE FACTS. Never invent a discount.";
+    if (!empty($GLOBALS['lib_fast']) && function_exists('wag_price_context')) { try { $__pq = wag_price_context($pdo, (string)($GLOBALS['lib_phone'] ?? ''), $msgs); if ($__pq !== '') { $ask .= "\n" . $__pq; $allowed += teach_nums($__pq); } } catch (Throwable $e) { } }   // the exact chart price for the quantity the customer chose, starting at the 6.5% level
+    if (!empty($GLOBALS['lib_fast'])) { $__c10 = ''; foreach ($msgs as $__m) if (($__m['who'] ?? '') === 'customer') $__c10 .= ' ' . mb_strtolower((string)$__m['text']); if (!preg_match('/10 ?ml/', $__c10)) $ask .= " 10 ML RULE (owner): never mention 10 ml, samples or small bottles yourself. The main offer is the 50 ml / 100 ml combos (20 ml only as 5 x 20 ml). A 10 ml is only a small ADD-ON on top of a combo, and only if the customer asks for it."; }
+    if (!empty($GLOBALS['lib_order_mode'])) $ask .= " ORDER MODE: the customer wants to order or pay. In the customer's language, ONE short step at a time, collect: which perfume(s), size and quantity (repeat the choice back with the store-fact price only), then full name, full delivery address with 6-digit pincode, and an alternate phone. NEVER ask for, give or confirm payment, never say the order is confirmed, placed, done or dispatched (do not start with \"done\" / \"ok done\"), never invent offers; if the customer's message is about something else (change address, status, price doubt), answer THAT question instead of asking for order details: once the address is complete say a team member will send the payment link and confirm shortly. If they ask for UPI / QR / payment link, say it comes right after the details and address. handoff = false while you are collecting.";
     if ($judgeOn) $ask .= " Write 3 DIFFERENT candidate replies (for example: one short and direct, one that leads with the benefit or offer, one that asks a single smart question). All three must follow the lessons and the facts.";
     // 💾 PROMPT CACHING. The guidebook + owner corrections are the same for every customer and are ~3/4 of the whole prompt (≈19,000 tokens a call). They were sent inside the
     // customer's message, where nothing is cached, so every call paid them in full. They now sit in the system text (which IS cached: a cached read costs a tenth), and only what
@@ -10554,8 +10630,9 @@ function lib_guide_go_live(PDO $pdo, array $draft, string $who): void
 function lib_guide_nightly(PDO $pdo, int $budget): ?string { $f0 = ai_feat('wa_guide'); try { return lib_guide_nightly_x($pdo, $budget); } finally { ai_feat($f0); } }
 function lib_guide_nightly_x(PDO $pdo, int $budget): ?string
 {
-    $today = date('Y-m-d'); $last = setting_get($pdo, 'lib_guide_nightly', ''); $first = ($last === '');
-    if (!$first && ($last === $today || (int)date('G') < 2)) return null;
+    // TWICE A DAY (owner, 21 Nov: "why wait for the night? update the guidebook twice a day"): the 02:00 run and a 14:00 run; the marker is "date|am" / "date|pm" (the old plain date counts as the morning run)
+    $today = date('Y-m-d'); $last = setting_get($pdo, 'lib_guide_nightly', ''); $first = ($last === ''); $__h = (int)date('G'); $__slot = $__h >= 14 ? 'pm' : ($__h >= 2 ? 'am' : '');
+    if (!$first && ($__slot === '' || $last === $today . '|' . $__slot || ($__slot === 'am' && $last === $today))) return null;
     $note = '';
     $draft = lib_guide_row($pdo, 'draft');
     if ($first && $draft) {      // the very first time: the guidebook that is already waiting goes live now
@@ -10567,11 +10644,11 @@ function lib_guide_nightly_x(PDO $pdo, int $budget): ?string
         if ($ok) { $d2 = lib_guide_row($pdo, 'draft'); if ($d2 && ($d2['source'] ?? '') === 'ai') {
                 $lv = lib_guide_public(lib_guide_row($pdo, 'live')); $dp = lib_guide_public($d2); [$ad, $de, $pc] = $lv ? lib_guide_change($lv['body'], $dp['body']) : [0, 0, 0];
                 // the owner asked for full auto: every AI-written guidebook goes live by itself (a draft written from numbers only, without real points, still waits)
-                lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live by itself' . ($lv ? ' (' . $pc . '% of the points changed: +' . $ad . ' new, −' . $de . ' removed)' : '') . '.';
+                lib_guide_go_live($pdo, $d2, 'Auto (' . ($__slot === 'pm' ? '2 PM' : '2 AM') . ')'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live by itself' . ($lv ? ' (' . $pc . '% of the points changed: +' . $ad . ' new, −' . $de . ' removed)' : '') . '.';
             } else $note = 'Written from numbers only, kept as a draft.'; }
         else $note = 'Not updated: ' . $msg;
     }
-    setting_set($pdo, 'lib_guide_nightly', $today); setting_set($pdo, 'lib_guide_nightly_note', date('Y-m-d H:i') . ' — ' . $note);
+    setting_set($pdo, 'lib_guide_nightly', $today . '|' . ($__slot !== '' ? $__slot : 'am')); setting_set($pdo, 'lib_guide_nightly_note', date('Y-m-d H:i') . ' — ' . $note);
     return $note;
 }
 function lib_tick_run(PDO $pdo, int $max, int $budget): array
@@ -18135,7 +18212,7 @@ function tmph_sales_summary(array $orders): array
     $houses = []; $count = 0; $amount = 0.0; $unCount = 0; $unAmount = 0.0; $cancelled = 0;
     foreach ($orders as $o) {
         if (!empty($o['cancelled'])) { $cancelled++; continue; }
-        $total = (float)($o['total'] ?? 0);
+        $total = (float)($o['total'] ?? 0) + (float)($o['addon_total'] ?? 0);   // add-on sold on the order counts in its total, as on the Orders page
         $counted = ($o['store_key'] ?? '') === 'manual' || (int)($o['allocated'] ?? 0) === 1;
         if (!$counted) { $unCount++; $unAmount += $total; continue; }
         $label = trim((string)(($o['house'] ?? '') !== '' ? ($o['store'] ?? '') : '')) ?: (($o['store_key'] ?? '') === 'manual' ? 'Manual orders' : 'Other (no house)');
@@ -18939,7 +19016,8 @@ function report_detail_build(PDO $pdo, string $from, string $to, string $house, 
     $isDay = array_flip($days);
     foreach ((array)($j['orders'] ?? []) as $o) {
         if (!empty($o['cancelled'])) continue;
-        $total = (float)($o['total'] ?? 0);
+        $adC = 0.0; foreach ((array)($o['addons'] ?? []) as $__g) $adC += (float)($__g['cod'] ?? 0);
+        $total = (float)($o['total'] ?? 0) + (float)($o['addon_total'] ?? 0);   // ➕ an add-on sold on an order counts in its total — the same as the Orders page (order 1000 + add-on 500 = 1500)
         $day = (string)($o['biz_date'] ?? substr((string)($o['created_at'] ?? ''), 0, 10));
         if (!isset($isDay[$day])) continue;
         $counted = ($o['store_key'] ?? '') === 'manual' || (int)($o['allocated'] ?? 0) === 1;
@@ -18947,10 +19025,11 @@ function report_detail_build(PDO $pdo, string $from, string $to, string $house, 
         $b = in_array((string)($o['house'] ?? ''), report_houses(), true) ? (string)$o['house'] : 'none';
         if ($house !== '' && $b !== $house) continue;
         $tags = array_map(function ($t) { return strtolower(trim($t)); }, explode(',', (string)($o['tags'] ?? '')));
-        $out = isset($o['outstanding']) && $o['outstanding'] !== null ? min($total, max(0.0, (float)$o['outstanding'])) : (preg_match('/cod|pending/i', (string)($o['financial_status'] ?? '')) ? $total : 0.0);
+        $out = isset($o['outstanding']) && $o['outstanding'] !== null ? min($total, max(0.0, (float)$o['outstanding'])) : (preg_match('/cod|pending/i', (string)($o['financial_status'] ?? '')) ? (float)($o['total'] ?? 0) : 0.0);
+        $out = min($total, $out + $adC);   // the COD part of the add-on is still to be collected
         $bump($day, $b, 'order', 1); $bump($day, $b, 'qty', (float)($o['items'] ?? 0)); $bump($day, $b, 'coll', $total);
         $bump($day, $b, 'cod', $out); $bump($day, $b, 'pre', $total - $out);   // COD = only what is still to be paid on delivery; Prepaid = what is already paid
-        if (($o['chain'] ?? '') === 'yes') $bump($day, $b, 'chain', $total);
+        if (($o['chain'] ?? '') === 'yes') $bump($day, $b, 'chain', (float)($o['total'] ?? 0));
         if (array_intersect($tags, ['query', 's'])) $bump($day, $b, 'qo', 1); elseif (array_intersect($tags, ['campaign', 'c'])) $bump($day, $b, 'camp', 1);
     }
     // counter / WhatsApp orders typed in the HRMS have no house: they count in "All houses" only (as on the Orders page)
@@ -19247,6 +19326,11 @@ if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') 
 if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_backups/.last'; if (!is_file($__lbl) || filemtime($__lbl) < time() - 86400) { require_once __DIR__ . '/learn_backup.php'; lb_schedule($pdo); } } catch (Throwable $e) {} }
 
 if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }
+if (strpos((string)$action, 'fb.') === 0) {
+    require_once __DIR__ . '/feedback.php';
+    if (in_array((string)$action, ['fb.get', 'fb.send_now', 'fb.followup', 'fb.send_link', 'fb.send_thanks', 'fb.thanks_text', 'fb.tpl_text'], true) && !function_exists('wd_send')) { foreach (['wa.php', 'wa_tpl.php', 'wa_console.php', 'wa_more.php'] as $__fbf) require_once __DIR__ . '/' . $__fbf; }      // the WhatsApp sender (message text, sending): the same files the wa.* actions load
+    fb_route($pdo, (string)$action);
+}      // Feedback page (Dispatch → Feedback): delivered parcels → feedback message, screenshots, reward, complaint
 if (strpos((string)$action, 'psum.') === 0) { require_once __DIR__ . '/prod_summary.php'; psum_route($pdo, (string)$action); }   // 🧴 shower gel + ⭐ TM Originals summary of the Orders page (read-only)
 if (strpos((string)$action, 'dpx.') === 0) { require_once __DIR__ . '/dispatch_push.php'; if ($action === 'dpx.feed') dpx_feed($pdo); if ($action === 'dpx.feed_shop') dpx_feed_shop($pdo); dpx_route($pdo, (string)$action); }          // automatic send of the HRMS (manual) orders to the dispatch panel through n8n, at a set time (Admin / HR)          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
 if (strpos((string)$action, 'sysload.') === 0 && function_exists('sysload_route')) { sysload_route($pdo, (string)$action); }          // Admin → Server load: what the server is busy with
@@ -25232,8 +25316,9 @@ switch ($action) {
     case 'ml_slab.get': {
         // The ML price slab chart (Commission Rules page editor, Commission page, My Sales). Every logged-in user may read it.
         require_auth();
-        $__co = []; try { if (!function_exists('cm_offers') && function_exists('cm_engine_load')) cm_engine_load($pdo); if (function_exists('cm_offers')) foreach (cm_offers($pdo) as $__o) $__co[] = ['ml' => (int)$__o['ml'], 'price' => (float)$__o['price'], 'pct' => (float)$__o['pct'], 'from' => (string)$__o['from_date'], 'to' => (string)($__o['to_date'] ?? ''), 'active' => !empty($__o['active']) ? 1 : 0, 'stopped' => substr((string)($__o['stopped_at'] ?? ''), 0, 10)]; } catch (Throwable $__e) { }
-        json_response(['chart' => ml_slab_get($pdo), 'offers' => $__co, 'offer_window' => 110]);   // offers = the Commission page's Offers (ML + price +- window), so the order card shows the same % as the Commission page
+        $__co = []; try { if (!function_exists('cm_offers') && function_exists('cm_engine_load')) cm_engine_load($pdo); if (function_exists('cm_offers')) foreach (cm_offers($pdo) as $__o) $__co[] = ['ml' => (int)$__o['ml'], 'price' => (float)$__o['price'], 'pct' => (float)$__o['pct'], 'from' => (string)$__o['from_date'], 'to' => (string)($__o['to_date'] ?? ''), 'active' => !empty($__o['active']) ? 1 : 0, 'stopped' => substr((string)($__o['stopped_at'] ?? ''), 0, 10), 'addons' => (array)($__o['addons'] ?? [])]; } catch (Throwable $__e) { }
+        $__ch = ml_slab_get($pdo); try { if (function_exists('cm_global_addons')) $__ch['addons'] = cm_global_addons($pdo, true); } catch (Throwable $__e) { }
+        json_response(['chart' => $__ch, 'offers' => $__co, 'offer_window' => 110]);   // offers = the Commission page's Offers (ML + price +- window), so the order card shows the same % as the Commission page
         break;
     }
     case 'ml_slab.save': {
@@ -30235,13 +30320,17 @@ switch ($action) {
         $in = json_input();
         $start = (array)($in['start'] ?? []);
         if (count($start) !== 7) json_response(['error' => 'Send a start time for all seven days.'], 422);
+        $__base = (isset($in['base']) && is_array($in['base']) && count($in['base']) === 7) ? array_map('strval', array_values($in['base'])) : null;   // what the screen SAW: only the days it changed against that are written, so a screen left open (old values) cannot undo what somebody else set meanwhile
         ensure_day_timing_table($pdo);
         $ins = $pdo->prepare("INSERT INTO day_timing (weekday, start_time) VALUES (?, ?) ON DUPLICATE KEY UPDATE start_time = VALUES(start_time)");
-        for ($wd = 0; $wd <= 6; $wd++) {
-            $t = (string)($start[$wd] ?? '');
+        $__dn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; $__old = day_timing_get($pdo); $__chg = [];
+        for ($wd = 0; $wd <= 6; $wd++) {   // check everything first, then write: a refused save changes nothing
+            $t = (string)($start[$wd] ?? ''); if ($__base !== null && ($__base[$wd] ?? '') === $t) continue;
             if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t)) json_response(['error' => 'Times must be HH:MM (24-hour).'], 422);
-            $ins->execute([$wd, $t]);
+            if ($t < '06:00') json_response(['error' => $__dn[$wd] . ' would start at ' . date('g:i A', strtotime($t)) . ' (the middle of the night). A business day that starts at night is almost always a slip: 12:00 AM is MIDNIGHT, 12:00 PM is NOON. Pick a time from 6:00 AM on.'], 422);
         }
+        for ($wd = 0; $wd <= 6; $wd++) { $t = (string)$start[$wd]; if ($__base !== null && ($__base[$wd] ?? '') === $t) continue; if (($__old[$wd] ?? '') !== $t) $__chg[] = $__dn[$wd] . ' ' . ($__old[$wd] ?? '?') . '→' . $t; $ins->execute([$wd, $t]); }
+        if ($__chg) { try { $lg = json_decode((string)setting_get($pdo, 'day_timing_log', ''), true); $lg = is_array($lg) ? $lg : []; $lg[] = ['at' => date('Y-m-d H:i:s'), 'by' => (string)($auth['full_name'] ?? $auth['username'] ?? ''), 'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''), 'ch' => $__chg]; setting_set($pdo, 'day_timing_log', json_encode(array_slice($lg, -30), JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { } }
         json_response(['message' => 'Day timing saved. It applies to orders counted from now on; run Sync now on Targets to recount the month.']);
         break;
     }
@@ -31676,13 +31765,15 @@ switch ($action) {
         $phone = preg_replace('/[\s().-]+/', '', trim((string)($in['phone'] ?? '')));
         if ($phone === '') {
             $pdo->prepare("DELETE FROM order_extra_phones WHERE source = ? AND order_id = ?")->execute([$source, $orderId]);
-            json_response(['phone' => '', 'message' => 'Extra mobile number removed.']);
+            try { $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_key = CONCAT(?, ':', ?)")->execute([$source, $orderId]); } catch (Throwable $e) { }   // the growth judge reads this order's chat again
+        json_response(['phone' => '', 'message' => 'Extra mobile number removed.']);
         }
         if (!preg_match('/^\+?\d{10,15}$/', $phone)) json_response(['error' => 'Enter a valid mobile number (10 to 15 digits).'], 422);
         $pdo->prepare(
             "INSERT INTO order_extra_phones (source, order_id, order_name, phone, updated_by) VALUES (?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE order_name = VALUES(order_name), phone = VALUES(phone), updated_by = VALUES(updated_by)"
         )->execute([$source, $orderId, mb_substr(trim((string)($in['order_name'] ?? '')), 0, 40), $phone, (string)($auth['username'] ?? '')]);
+        try { $pdo->prepare("UPDATE order_rate_auto SET sz_ok = 0 WHERE order_key = CONCAT(?, ':', ?)")->execute([$source, $orderId]); } catch (Throwable $e) { }   // the growth judge reads this order's chat again (also on the extra number)
         json_response(['phone' => $phone, 'message' => 'Extra mobile number saved.']);
         break;
     }

@@ -24,10 +24,12 @@ if (!function_exists('wa_more_tables')) {
 function wa_more_tables(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok; if (function_exists('schema_done') && schema_done($pdo, __FUNCTION__, __FILE__)) return $ok = true;   // tables already set up for this upload
+    $colsOk = true;   /* the numbers' columns must ALL exist before this set-up is marked done — otherwise it is tried again on the next request */
     try {
-        foreach (['camp_ok' => 'TINYINT NOT NULL DEFAULT 1', 'handlers' => "VARCHAR(300) NOT NULL DEFAULT ''", 'camp_tag' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {   // camp_tag: 📢 every chat on this number is a Campaign chat
-            try { $pdo->query("SELECT $col FROM wa_numbers LIMIT 0"); } catch (PDOException $e) { $pdo->exec("ALTER TABLE wa_numbers ADD COLUMN $col $def"); }
+        foreach (['camp_ok' => 'TINYINT NOT NULL DEFAULT 1', 'handlers' => "VARCHAR(300) NOT NULL DEFAULT ''", 'camp_tag' => 'TINYINT NOT NULL DEFAULT 0', 'retired' => 'TINYINT NOT NULL DEFAULT 0', 'tier_manual' => 'INT NOT NULL DEFAULT 0', 'hold' => 'TINYINT NOT NULL DEFAULT 0', 'waba_name' => "VARCHAR(80) NOT NULL DEFAULT ''", 'biz_name' => "VARCHAR(80) NOT NULL DEFAULT ''", 'portfolio' => "VARCHAR(30) NOT NULL DEFAULT ''"] as $col => $def) {   // tier_manual (owner 20 Nov 2026): the daily limit the owner types for a number when Meta does not tell it yet (0 = not set) · portfolio: a short tag of the Meta business portfolio the number belongs to · retired (owner 20 Nov 2026): a number that is being closed: no campaign / follow-up / complaint message goes from it, the chats stay visible and can be answered · camp_tag: 📢 every chat on this number is a Campaign chat
+            try { $pdo->query("SELECT `$col` FROM wa_numbers LIMIT 0"); } catch (PDOException $e) { try { $pdo->exec("ALTER TABLE wa_numbers ADD COLUMN `$col` $def"); } catch (PDOException $e2) { $colsOk = false; try { setting_set($pdo, 'wa_more_schema_err', mb_substr($col . ': ' . $e2->getMessage(), 0, 300)); } catch (Throwable $e3) { } } }   /* owner 20 Nov 2026: every column on its own try (a failing one never stops the next ones), names in backticks (hold is a keyword in some MySQL versions), the error is kept in wa_more_schema_err */
         }
+        try { if ((string)setting_get($pdo, 'wa_hold_seed_1120', '') === '') { $pdo->exec("UPDATE wa_numbers SET `hold` = 1, camp_ok = 0 WHERE phone_id IN ('1503802359479664', '1489908264204455')"); setting_set($pdo, 'wa_hold_seed_1120', '1'); } } catch (Throwable $e) { }   // owner 20 Nov 2026: the 2nd and 3rd numbers (other portfolios) are locked once, now; the owner unlocks them
         foreach (['callnow' => 'TINYINT NOT NULL DEFAULT 0', 'callnow_at' => 'DATETIME NULL', 'hot' => 'TINYINT NOT NULL DEFAULT 0', 'hot_at' => 'DATETIME NULL', 'hot_why' => "VARCHAR(40) NOT NULL DEFAULT ''", 'remind_at' => 'DATETIME NULL', 'pay_at' => 'DATETIME NULL', 'accepted_at' => 'DATETIME NULL', 'reassigns' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {
             try { $pdo->query("SELECT $col FROM wa_contacts LIMIT 0"); } catch (PDOException $e) { $pdo->exec("ALTER TABLE wa_contacts ADD COLUMN $col $def"); }
         }
@@ -57,7 +59,7 @@ function wa_more_tables(PDO $pdo): bool
         }
         try { $q = $pdo->query("SHOW INDEX FROM wa_camp_items WHERE Key_name = 'k_wamid'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_camp_items ADD INDEX k_wamid (wamid)"); } catch (PDOException $e) { }
         try { $q = $pdo->query("SHOW INDEX FROM wa_camp_items WHERE Key_name = 'k_var'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_camp_items ADD INDEX k_var (variant, number_id, sent_at)"); } catch (PDOException $e) { }   // the utility sends of a number (share judging, "what Claude learned")
-        $ok = true; if (function_exists('schema_mark')) schema_mark($pdo, __FUNCTION__, __FILE__);
+        $ok = true; if ($colsOk && function_exists('schema_mark')) schema_mark($pdo, __FUNCTION__, __FILE__);
     } catch (PDOException $e) { $ok = false; }
     return $ok;
 }
@@ -187,6 +189,7 @@ function wa_auto_alloc(PDO $pdo): int
     }
     try { wa_camp_requery($pdo, 30); } catch (Throwable $e) { }
     try { if (function_exists('order_gel_fix')) $n += order_gel_fix($pdo); } catch (Throwable $e) { }
+    try { if (function_exists('order_type_fill')) $n += order_type_fill($pdo); } catch (Throwable $e) { }   // a hand-allocated order with no Query / Campaign type is typed from the chat
     try { if (function_exists('ora_tick')) ora_tick($pdo); } catch (Throwable $e) { }
     try { if (function_exists('grow_learn_tick')) grow_learn_tick($pdo); } catch (Throwable $e) { }   // 📚 15-minute learning pulse + hourly digest for the guidebook   // ⭐ the stars of new orders are worked out from the chat   // 🧴 shower-gel orders of the month belong to TM Shower Gel
     return $n;
@@ -241,6 +244,8 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('wa_status_flush')) wa_status_flush($pdo, true); } catch (Throwable $e) { }   // ⚡ whatever delivery receipts still wait (the block is normally applied by the webhook itself every 7 s)
     $__ts = []; $__lt = microtime(true); $__mk = function (string $k) use (&$__ts, &$__lt) { $n = microtime(true); $d = $n - $__lt; $__lt = $n; if ($d >= 0.5) $__ts[$k] = round(($__ts[$k] ?? 0) + $d, 1); };   // ⏱ which part of the tick takes the time (only parts of 0.5 s and more are kept)
     if ($force && !defined('WA_IN_WEBHOOK') && (int)date('G') >= 3 && (string)setting_get($pdo, 'pvb_day', '') !== date('Y-m-d') && function_exists('wcr_pvb_run')) { try { wcr_pvb_run($pdo); } catch (Throwable $e) { } } $__mk('wcr_pvb_run');   // person vs bot: once a day, early morning
+    // 🕘 one time: chats of customers who already said Stop are still open at the top of the lists: close them (they show in History). Complaint chats stay.
+    try { if ((string)setting_get($pdo, 'wa_stop_sweep', '') !== '1') { setting_set($pdo, 'wa_stop_sweep', '1'); $sw = $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE optout = 1 AND status = 'open' AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag <> 'complaint')"); $sw->execute([date('Y-m-d H:i:s')]); if (function_exists('wa_log')) wa_log($pdo, 'engine', true, 'Stop chats moved to History: ' . (int)$sw->rowCount()); } } catch (Throwable $e) { }
     $o = ['assigned' => 0]; $__late = function (): bool { return !empty($GLOBALS['__wa_dl']) && microtime(true) > (float)$GLOBALS['__wa_dl']; };   // ⏱ the engine run has a time budget: after its deadline the non-essential jobs below wait for the next run
     try { if (function_exists('wa_hot_scan')) $o['hot'] = wa_hot_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'hot chats: ' . $e->getMessage()); } $__mk('wa_hot_scan');   // a customer who asks to pay is given to a person at once
     if (!$__late()) try { if (function_exists('wa_tpl_autosync') && !defined('WA_IN_WEBHOOK')) $o['tpl'] = wa_tpl_autosync($pdo, 1800); } catch (Throwable $e) { } $__mk('wa_tpl_autosync');   // waiting templates: ask Meta every 30 min (Meta's webhook may not tell us)
@@ -265,6 +270,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && (int)setting_get($pdo, 'wa_pbf_at', '0') < time() - 600) { setting_set($pdo, 'wa_pbf_at', (string)time()); $o['pbuyer'] = wa_prior_buyer_fix($pdo); $o['optin'] = wa_optin_again_fix($pdo); } } catch (Throwable $e) { } $__mk('wa_prior_buyer_fix');   // a customer who already ordered is not a New query
     if (!$__late()) try { if (function_exists('wkw_fu_tick') && !defined('WA_IN_WEBHOOK')) $o['kwfu'] = wkw_fu_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'button follow-ups: ' . $e->getMessage()); } $__mk('wkw_fu_tick');   // ↪ Button replies: the follow-up when the customer does not answer
     if (!$__late()) try { if (function_exists('wd_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['drip'] = wd_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); } $__mk('wd_tick');   // 🔁 7-Day Drip
+    if (!$__late()) try { if (function_exists('wl_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['lineup'] = wl_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup: ' . $e->getMessage()); } $__mk('wl_tick');   // 🧵 Lineup
     if (!$__late()) try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); } $__mk('wj_tick');   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
     if (!$__late()) try { if (function_exists('wtp_gen_tick') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_topics'); try { wtp_gen_tick($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'topics: ' . $e->getMessage()); } $__mk('wtp_gen_tick');   // 🧭 Claude writes the topic messages one topic at a time and sends them to Meta
     if (!$__late()) try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_learn'); try { wlr_nightly($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); } $__mk('wlr_nightly');   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
@@ -584,8 +590,17 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
 /** For each number: today's cap (slow ramp-up, quality, Meta's daily limit), what is used in the last 24 h and what is left. Also the shared portfolio limit. */
 function wa_number_caps(PDO $pdo, array $health): array
 {
+    try { if (function_exists('wa_more_tables')) wa_more_tables($pdo); } catch (Throwable $e) { }   // owner 20 Nov 2026: the numbers' columns (hold, retired, tier_manual …) are made BEFORE anything reads them, in whatever request comes first after a deploy
+    // owner 20 Nov 2026: a number whose limit Meta does not tell yet (new number, name in review) must NOT borrow the biggest limit of the other numbers (1 lakh) — it uses the limit the owner typed, else a low 250
+    $anyKnown = false; foreach ($health as $h) if ($h['tier'] !== null) { $anyKnown = true; break; }
+    $man = []; try { foreach ($pdo->query("SELECT * FROM wa_numbers")->fetchAll() as $r) $man[(int)$r['id']] = (int)($r['tier_manual'] ?? 0); } catch (Throwable $e) { }
+    $tsrc = []; foreach ($health as $k => $h) { $id0 = (int)$h['id']; $m0 = $man[$id0] ?? 0; if ($m0 > 0) { $health[$k]['tier'] = $m0; $tsrc[$id0] = 'manual'; } elseif ($h['tier'] === null) { $health[$k]['tier'] = 250; $tsrc[$id0] = 'assumed'; } else $tsrc[$id0] = 'meta'; }   // a limit the owner typed for a number ALWAYS wins over what Meta's API says
     $tier = null; foreach ($health as $h) if ($h['tier'] !== null) { if ($h['tier'] === -1) { $tier = 1000000; break; } $tier = max((int)$tier, (int)$h['tier']); }
-    $tierAssumed = $tier === null; if ($tier === null) $tier = 250;
+    $tierAssumed = !$anyKnown; if ($tier === null) $tier = 250;
+    // owner 20 Nov 2026: numbers of ONE WhatsApp account share Meta's limit (the highest of them); a number of ANOTHER account / portfolio has its OWN limit — it must never take the biggest limit of the other accounts (1 lakh), also not when the mode went back to 'shared'
+    $wb = []; try { foreach ($pdo->query("SELECT id, waba_id FROM wa_numbers")->fetchAll() as $r) { $w = trim((string)$r['waba_id']); $wb[(int)$r['id']] = $w !== '' ? $w : wa_cfg_val('WA_WABA_ID'); } } catch (Throwable $e) { }
+    $gT = []; foreach ($health as $h) { $w = $wb[(int)$h['id']] ?? ''; $t = $h['tier'] === -1 ? 1000000 : (int)$h['tier']; $gT[$w] = max($gT[$w] ?? 0, $t); }
+    $gUsed = [];
     $perNum = (string)setting_get($pdo, 'wa_limit_mode', 'per_number') === 'per_number';   // (14 Nov: unset now means per number — one shared pool of 90% of the tier blocked every normal campaign while Meta kept accepting messages; the guard in wa_limit_guard() goes back to 'shared' by itself if Meta really refuses)
     $sumT = 0;   // 'shared': Meta's limit is ONE pool for the whole business account (the highest number's limit) · 'per_number': every number has its own limit (guarded: see wa_limit_guard)
     $cfg = wa_team_cfg($pdo); $since = date('Y-m-d H:i:s', time() - 86400);
@@ -600,27 +615,31 @@ function wa_number_caps(PDO $pdo, array $health): array
     }
     foreach ($fc as $k => $v) if ($k !== '_t' && $v) $first[(int)$k] = (string)$v;
     $port = $lu['all'];
-    $rows = $pdo->query("SELECT id, camp_ok FROM wa_numbers")->fetchAll(); $camp = []; foreach ($rows as $r) $camp[(int)$r['id']] = (int)$r['camp_ok'] === 1;
+    $rows = $pdo->query("SELECT * FROM wa_numbers")->fetchAll(); $camp = []; $holdM = []; foreach ($rows as $r) { $camp[(int)$r['id']] = (int)($r['camp_ok'] ?? 1) === 1; $holdM[(int)$r['id']] = (int)($r['hold'] ?? 0) === 1; }   /* owner 20 Nov 2026: SELECT * and ?? — a column that is added in a later deploy (hold, retired …) must never break this page when the table is not updated yet (it did: 'Unknown column hold' on the Campaigns page) */
     $allBlocked = true; foreach ($health as $h0) { $pb0 = (string)setting_get($pdo, 'wa_payblock_' . (int)$h0['id'], ''); if ($pb0 === '' || strtotime($pb0) <= time() - 3 * 3600) { $allBlocked = false; break; } }   // EVERY number marked → none is skipped (each is still tried; Meta decides) so a campaign never sits idle behind my own rule
     $out = [];
     foreach ($health as $h) {
         $id = (int)$h['id']; $age = isset($first[$id]) ? (int)floor((time() - strtotime($first[$id])) / 86400) : 0;
-        // slow start protects a NEW account only: once Meta itself trusts the account (limit 10,000 or more, shared by every number) Meta's own limit is the cap
-        $ramp = $cfg['ramp'] && $tier < 10000;
-        $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $tier ? 'slow start (day ' . ($age + 1) . ')' : '';
-        $ownT = $tier; if ($perNum) { $ownT = $h['tier'] === null ? $tier : ($h['tier'] === -1 ? 1000000 : (int)$h['tier']); }
-        $cap = min($cap, $perNum ? max(1, (int)floor($ownT * 0.9)) : $tier);
+        $ownT = $perNum ? ($h['tier'] === -1 ? 1000000 : (int)$h['tier']) : ($gT[$wb[$id] ?? ''] ?? $tier);   // per number: its own limit · shared: the limit of ITS OWN WhatsApp account (never another portfolio's)
+        // slow start protects a NEW account only: once Meta itself trusts the account (limit 10,000 or more) Meta's own limit is the cap; owner 20 Nov 2026: in per-number mode it is the NUMBER's own limit that counts, so a new number of another portfolio (limit 2,000) gets the slow start (250 / 500 / 1,000 … a day by its age) although the old numbers are trusted
+        $young = $ownT < 10000 && $age < 42;   // owner 20 Nov 2026: a YOUNG number with a small own limit (a new number of another portfolio) ALWAYS gets the slow start, whatever the team setting says — the 2nd port number got 835 campaign + 2,086 follow-up messages in its first hours and its rating fell to Yellow
+        $ramp = ($cfg['ramp'] && $ownT < 10000) || $young;
+        $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $ownT ? 'slow start (day ' . ($age + 1) . ')' : '';
+        $cap = min($cap, max(1, (int)$ownT));   // owner 20 Nov 2026: the full limit of the number (2,000 = 2,000), no 90% gate of our own
         // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
+        if (($h['subscribed'] ?? null) === false && !isset($first[$id])) { $cap = 0; $why = 'webhook not connected — replies to its messages would not arrive; connect the app to this WhatsApp account first'; }   // owner 20 Nov 2026: a new number that has not sent anything yet is not used while its webhook is not connected
+        if ((string)($h['status'] ?? '') === '' && empty($h['stale'])) { $cap = 0; $why = 'not checked at Meta yet (no status could be read) — not used for campaigns until it shows CONNECTED'; }   // owner 20 Nov 2026: a brand-new number (e.g. from another portfolio / token) is never used before Meta confirms it is connected
         if (empty($camp[$id])) { $cap = 0; $why = 'switched off for campaigns'; }
+        if (!empty($holdM[$id])) { $cap = 0; $why = '🔒 locked — replies only (no campaigns, follow-ups or complaint messages) until you unlock it'; }   // owner 20 Nov 2026: a new number stays locked until its messages are approved and its Meta limit is checked
         try { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($allBlocked === false && $pb !== '' && strtotime($pb) > time() - 3 * 3600) { $cap = 0; $why = 'payment problem at Meta (131042) — campaigns go through the other number(s) now; tried again after 3 hours'; } } catch (Throwable $e) { }   // owner (9 Nov): when one number has the payment problem, everything moves to the other number by itself
         // 🛑 Meta spam limit (131048) hit on THIS number: it rests (default 3 hours, setting wa_spam_hours) while the other numbers send; the campaign is not paused. Every number resting = nothing sends until the first one is back.
         try { $sbk = (string)setting_get($pdo, 'wa_spamblock_' . $id, ''); $sph = max(1, min(24, (int)(setting_get($pdo, 'wa_spam_hours', '3') ?: 3))); if ($sbk !== '' && strtotime($sbk) > time() - $sph * 3600) { $cap = 0; $why = 'Meta spam limit on this number (131048) — it rests for ' . $sph . ' hours, the other numbers send'; } } catch (Throwable $e) { }
-        if ($cap > 0) $sumT += $ownT;
-        $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age];
+        if ($cap > 0) { $sumT += $ownT; if (!$perNum) $gUsed[$wb[$id] ?? ''] = $ownT; }
+        $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age, 'tier' => $ownT, 'tier_src' => $tsrc[$id] ?? 'meta'];
     }
-    $pT = ($perNum && $sumT > 0) ? $sumT : $tier;
+    $pT = $perNum ? ($sumT > 0 ? $sumT : $tier) : ($gUsed ? array_sum($gUsed) : $tier);   // shared: one pool PER WhatsApp account, added up
     $out['_port'] = ['tier' => $pT, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($pT * WA_TIER_MARGIN) - $port), 'mode' => $perNum ? 'per_number' : 'shared'];
     if ($tier >= 10000 && (string)setting_get($pdo, 'wa_camp_auto_on', '1') === '1') {   // trusted account: the owner's growing hourly cap (1,000 an hour → doubles each good hour)
         $au = wa_camp_auto_cap($pdo, $tier, $health); $out['_port']['auto'] = $au;   // this hour's speed is PER NUMBER (applied by the campaign sender only); order updates, tickets and follow-ups never wait for it
@@ -677,19 +696,38 @@ require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, cat
 require_once __DIR__ . '/wa_planner.php';   // 🗓 Campaign Planner: files + messages planned the day before, started by themselves one after another (wa.pl_*)
 require_once __DIR__ . '/wa_plan.php';   // 🎯 Daily budget planner (wa.plan_get) - needs wa_bill.php and wa_camp.php
 require_once __DIR__ . '/wa_drip.php';   // 🔁 7-Day Drip: a pre-made message per day for new queries / campaign repliers (wa.drip_*) - BEFORE wa_seg.php
+require_once __DIR__ . '/wa_line.php';   // 🧵 Lineup: the 7-day follow-up by topic (replaces the 7-Day Drip when started; wa.line_*) - AFTER wa_drip.php (uses wd_send), BEFORE wa_seg.php
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wm = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.cron_send', 'wa.alloc_why', 'wa.alloc_run'], true)) {
+if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.cron_send', 'wa.bot_run', 'wa.bot_tick', 'wa.alloc_why', 'wa.alloc_run'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
+    if ($__wm === 'wa.bot_tick') {   // 🤖 ONE short bot tick (cron_bot.php fires five a second): returns at once when all five slots are busy
+        ignore_user_abort(true); @set_time_limit(40);
+        if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
+        $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
+        try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
+        $r = ['ok' => true]; try { if (function_exists('wag_bot_tick')) $r['bot'] = wag_bot_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'bot tick: ' . $e->getMessage()); }
+        json_response($r);
+    }
+    if ($__wm === 'wa.bot_run') {   // 🤖 a fast bot worker (3-8 s answers): ~55 s, under its own slot lock; the sending job starts three of them every minute
+        ignore_user_abort(true); @set_time_limit(90);
+        if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
+        $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
+        try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
+        $r = ['ok' => true]; try { if (function_exists('wag_bot_run')) $r['bot'] = wag_bot_run($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'bot worker: ' . $e->getMessage()); }
+        json_response($r);
+    }
     if ($__wm === 'wa.cron_send') {   // ⚡ the SENDING job: only campaigns + recovery, under their own locks, so it runs every minute and never waits behind the heavy engine (wa.cron)
         ignore_user_abort(true); @set_time_limit(100);
         if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
         $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
         try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
         $r = ['ok' => true];
+        try { if (function_exists('wag_bot_spawn') && function_exists('wa_lock') && wa_lock($pdo, 'wagspawn', 15)) $r['bot_workers'] = wag_bot_spawn($pdo, 5); } catch (Throwable $e) { }   // 🤖 fast bot workers: answers within seconds, whoever calls first
+        try { $r['lineup'] = function_exists('wl_tick') ? wl_tick($pdo, ['sendonly' => 1]) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job lineup: ' . $e->getMessage()); }   // 🧵 the Lineup's sending round first: it works a shard of the due customers of its own (several callers at once = faster)
         try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
         try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job recovery: ' . $e->getMessage()); }
         try { setting_set($pdo, 'wa_send_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { }
@@ -738,7 +776,11 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         };
         $GLOBALS['__wa_dl'] = $__t0 + $__BUD;   // the soft deadline for the non-essential jobs inside the tick
         $r = [];
+        try { $r['drip'] = $__T('drip', fn() => function_exists('wd_tick') ? wd_tick($pdo) : null); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); }
+        try { $r['lineup'] = $__T('lineup', fn() => function_exists('wl_tick') ? wl_tick($pdo) : null); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup: ' . $e->getMessage()); }   // 🧵 Lineup (topic follow-up) goes right after the old drip
+        // (the old drip note:) 🔁 the 7-Day Drip goes FIRST of all (owner, 20 Nov: it must never be skipped): it used to sit at the end of the tick and was left out whenever the run's time budget was used up
         try { $r['campaigns'] = $__T('campaigns', fn() => wa_camp_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }   // sending goes FIRST: the tick below took the whole budget and campaigns were skipped
+        try { if (!function_exists('fb_tick') && is_file(__DIR__ . '/feedback.php')) require_once __DIR__ . '/feedback.php'; $r['feedback'] = $__T('feedback', fn() => function_exists('fb_tick') ? fb_tick($pdo) : null); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'feedback: ' . $e->getMessage()); }   // 💬 Feedback page: enrol delivered parcels, send what is due (only when Admin switched it on), read the answers / screenshots
         try { $r['recover'] = $__T('recovery', fn() => wa_rec_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'recovery: ' . $e->getMessage()); }   // 🔁 failed messages from another number / an alternative wording, slowly
         try { $r['tick'] = $__T('tick', fn() => wa_tick($pdo, true)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tick: ' . $e->getMessage()); $r['tick'] = 'error'; }
         $__heavy = [
@@ -844,8 +886,8 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 if ($m === null) { try { setting_set($pdo, $mk . '_lk', (string)time()); } catch (Throwable $e) { } $q = $pdo->prepare("SELECT SUM(CASE WHEN dir = 'in' THEN 1 ELSE 0 END) AS i, SUM(CASE WHEN dir = 'out' THEN 1 ELSE 0 END) AS o FROM wa_messages WHERE number_id = ? AND ts >= ?"); $q->execute([$id, $week]); $m = $q->fetch(); try { setting_set($pdo, $mk, json_encode(['t' => time(), 'i' => (int)$m['i'], 'o' => (int)$m['o']])); } catch (Throwable $e) { } }
                 $hid = array_values(array_filter(array_map('intval', explode(',', (string)$r['handlers'])))); $c = $caps[$id] ?? ['cap' => 0, 'used' => 0, 'left' => 0, 'why' => '', 'age' => 0];
                 $out[] = ['id' => $id, 'label' => $h['label'], 'raw_label' => (string)$r['label'], 'display' => $h['display'] ?: (string)$r['display'], 'phone_id' => (string)$r['phone_id'], 'waba_id' => wa_waba_of($r), 'verified_name' => $h['verified_name'], 'name_status' => $h['name_status'],
-                    'quality' => $h['quality'], 'status' => $h['status'], 'subscribed' => $h['subscribed'], 'error' => $h['error'], 'tier' => $h['tier'], 'level' => $h['level'] ?? 'ok', 'checked_at' => $h['at'] ?? '', 'stale' => !empty($h['stale']),
-                    'camp_ok' => (int)$r['camp_ok'] === 1, 'camp_tag' => (int)($r['camp_tag'] ?? 0) === 1, 'handlers' => $hid, 'handler_names' => array_values(array_filter(array_map(fn($x) => $names[$x] ?? '', $hid))), 'in_7d' => (int)$m['i'], 'out_7d' => (int)$m['o'], 'cap' => $c, 'is_main' => (string)$r['phone_id'] === wa_cfg_val('WA_PHONE_ID')];
+                    'quality' => $h['quality'], 'status' => $h['status'], 'subscribed' => $h['subscribed'], 'error' => $h['error'], 'tier' => $h['tier'], 'tier_api' => $h['tier_api'] ?? null, 'tier_mgr' => $h['tier_mgr'] ?? null, 'level' => $h['level'] ?? 'ok', 'checked_at' => $h['at'] ?? '', 'stale' => !empty($h['stale']),
+                    'camp_ok' => (int)$r['camp_ok'] === 1, 'retired' => !empty($r['retired']), 'camp_tag' => (int)($r['camp_tag'] ?? 0) === 1, 'tier_manual' => (int)($r['tier_manual'] ?? 0), 'portfolio' => (string)($r['portfolio'] ?? ''), 'portfolio_auto' => (string)(($r['biz_name'] ?? '') !== '' ? $r['biz_name'] : ($r['waba_name'] ?? '')), 'hold' => (int)($r['hold'] ?? 0) === 1, 'handlers' => $hid, 'handler_names' => array_values(array_filter(array_map(fn($x) => $names[$x] ?? '', $hid))), 'in_7d' => (int)$m['i'], 'out_7d' => (int)$m['o'], 'cap' => $c, 'is_main' => (string)$r['phone_id'] === wa_cfg_val('WA_PHONE_ID')];
             }
             json_response(['numbers' => $out, 'portfolio' => $caps['_port'] ?? null, 'people' => array_map(fn($p) => ['emp_id' => $p['emp_id'], 'name' => $p['name']], wa_people($pdo))]);
         }
@@ -881,7 +923,10 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             $camp = array_key_exists('camp_ok', $in) ? (empty($in['camp_ok']) ? 0 : 1) : (int)$n['camp_ok'];
             $ctag = array_key_exists('camp_tag', $in) ? (empty($in['camp_tag']) ? 0 : 1) : (int)($n['camp_tag'] ?? 0);
             $valid = array_column(wa_people($pdo), 'emp_id'); $h = array_key_exists('handlers', $in) ? array_values(array_unique(array_filter(array_map('intval', (array)$in['handlers']), fn($x) => in_array($x, $valid, true)))) : array_values(array_filter(array_map('intval', explode(',', (string)$n['handlers']))));
-            $pdo->prepare("UPDATE wa_numbers SET label = ?, camp_ok = ?, handlers = ?, camp_tag = ? WHERE id = ?")->execute([$label, $camp, implode(',', $h), $ctag, $id]);
+            $tm = array_key_exists('tier_manual', $in) ? (int)preg_replace('/\D+/', '', (string)$in['tier_manual']) : (int)($n['tier_manual'] ?? 0); if ($tm > 10000000) json_response(['error' => 'The daily limit looks too big. Type a number such as 2000 (0 = not set).'], 422);
+            $hold = array_key_exists('hold', $in) ? (empty($in['hold']) ? 0 : 1) : (int)($n['hold'] ?? 0); if ($hold) $camp = 0;   // locked = no campaigns either
+            $pf = array_key_exists('portfolio', $in) ? trim(mb_substr((string)$in['portfolio'], 0, 30)) : (string)($n['portfolio'] ?? '');
+            $pdo->prepare("UPDATE wa_numbers SET label = ?, camp_ok = ?, handlers = ?, camp_tag = ?, tier_manual = ?, portfolio = ?, `hold` = ? WHERE id = ?")->execute([$label, $camp, implode(',', $h), $ctag, $tm, $pf, $hold, $id]);
             $marked = 0;
             if ($ctag && !(int)($n['camp_tag'] ?? 0)) {   // just switched on: the chats already on this number (the customer's last message came to it) become Campaign too
                 $now = date('Y-m-d H:i:s'); $st = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_number_id = ? AND last_in_at IS NOT NULL"); $st->execute([$id]);
