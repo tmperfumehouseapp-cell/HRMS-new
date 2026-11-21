@@ -859,7 +859,7 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
     $steps = [300, 600, 1200, 1800, 3600, 7200, 10800, 14400, 28800, 64800]; $n = 0;   // 5 m, 10 m, 20 m, 30 m, 1 h, 2 h, 3 h, 4 h (hold the customer), then slower: 8 h, 18 h — afterwards the 30-day Lineup takes over (owner, 21 Nov)
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c JOIN (SELECT phone, MAX(ts) z FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= ? GROUP BY phone) b ON b.phone = c.phone WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= DATE_ADD(b.z, INTERVAL 5 SECOND) ORDER BY c.last_in_at DESC LIMIT 120");   // only chats where the BOT spoke last (a person / campaign / flow message after it = not ours)
     $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - 22 * 3600 - 1800), date('Y-m-d H:i:s', $now - 150)]);
-    $__rows = $st->fetchAll(); $D = ['cand' => count($__rows), 'early' => 0, 'old' => 0, 'off' => 0, 'hand' => 0, 'hotp' => 0, 'notsales' => 0, 'ai' => 0, 'handoff' => 0, 'unsafe' => 0, 'same' => 0, 'send' => 0, 'sent' => 0, 'err' => '']; $__tries = 0; $__t0 = microtime(true); setting_set($pdo, 'wag_bfu_dbg', json_encode(['start' => date('H:i:s'), 'cand' => count($__rows)]));
+    $__rows = $st->fetchAll(); $D = ['cand' => count($__rows), 'early' => 0, 'old' => 0, 'off' => 0, 'hand' => 0, 'hotp' => 0, 'notsales' => 0, 'ai' => 0, 'handoff' => 0, 'unsafe' => 0, 'same' => 0, 'send' => 0, 'sent' => 0, 'err' => '']; $__tries = 0; $__i = 0; $__t0 = microtime(true); setting_set($pdo, 'wag_bfu_dbg', json_encode(['start' => date('H:i:s'), 'cand' => count($__rows)]));
     foreach ($__rows as $c) {
         try {
         if ($n >= $max || $__tries >= 4 || microtime(true) - $__t0 > 12) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at']; $liT = strtotime($li);
@@ -896,7 +896,7 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if ($ok) { $D['sent']++; $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up (step ' . ($cnt + 1) . ' of 10, ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
         else { $D['send']++; $D['err'] = mb_substr((string)$res, 0, 80); wag_log($pdo, 'bot', false, $key . ' · follow-up: ' . $res); }
-        } catch (Throwable $__ex) { $D['err'] = 'EX ' . mb_substr($__ex->getMessage(), 0, 110); }
+        } catch (Throwable $__ex) { $D['err'] = 'EX ' . mb_substr($__ex->getMessage(), 0, 110); } finally { $D['t'] = round(microtime(true) - $__t0, 1); if ($__tries > 0 || (++$__i % 15) === 0) setting_set($pdo, 'wag_bfu_dbg', json_encode($D)); }
     }
     $D['at'] = date('H:i:s'); setting_set($pdo, 'wag_bfu_dbg', json_encode($D));
     return $n;
