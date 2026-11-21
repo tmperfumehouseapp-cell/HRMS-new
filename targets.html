@@ -1157,22 +1157,29 @@
         <span class="timing-win" data-wd="${i}" style="font-size:11.5px; color:var(--muted);"></span></div>`; }).join('');
     paintWindows();
   }
+  let TIMING_BASE = null, TIMING_LAST = null;   // the values this screen last SAW on the server: only the days changed against them are saved (a screen left open all day can no longer put an old Saturday back)
+  async function timingFresh() {
+    try { const d = await api.get('day_timing.get'); if (Array.isArray(d.start) && d.start.length === 7) { DAY_START = d.start; TIMING_BASE = [...d.start]; } TIMING_LAST = d.last || null; }
+    catch (e) { await timingReady; TIMING_BASE = [...DAY_START]; }
+  }
+  function timingLastHtml() { const l = TIMING_LAST; if (!l) return ''; return '<div style="font-size:12px;color:var(--muted);margin:0 0 8px;">Last changed by <b>' + String(l.by || '').replace(/[<>&]/g, '') + '</b> · ' + String(l.at || '').slice(5, 16) + ' · ' + (l.ch || []).join(', ').replace(/[<>&]/g, '') + '</div>'; }
   function timingVals() { const v = [...DAY_START]; document.querySelectorAll('.timing-in').forEach(i => { v[Number(i.dataset.wd)] = i.value || '10:00'; }); return v; }
   function paintWindows() {
     const v = timingVals(); const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     document.querySelectorAll('.timing-win').forEach(el => { const i = Number(el.dataset.wd), n = (i + 1) % 7;
       el.textContent = `${names[i]} ${fmtHM(v[i])} → ${names[n]} ${fmtHM(v[n])}`; el.style.color = (v[i] !== '10:00' || v[n] !== '10:00') ? 'var(--accent)' : 'var(--muted)'; });
   }
-  document.getElementById('btnTiming').addEventListener('click', async () => { await timingReady; document.getElementById('timingAlert').innerHTML = ''; renderTiming(DAY_START); timingModal.classList.add('open'); });
+  document.getElementById('btnTiming').addEventListener('click', async () => { await timingFresh(); document.getElementById('timingAlert').innerHTML = timingLastHtml(); renderTiming(DAY_START); timingModal.classList.add('open'); });
   document.getElementById('timingCancel').addEventListener('click', () => timingModal.classList.remove('open'));
   timingModal.addEventListener('click', (e) => { if (e.target === timingModal) timingModal.classList.remove('open'); });
   timingModal.addEventListener('input', (e) => { if (e.target.classList.contains('timing-in')) paintWindows(); });
-  document.getElementById('timingReset').addEventListener('click', () => renderTiming(['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00']));
+  document.getElementById('timingReset').addEventListener('click', () => { if (!confirm('Put EVERY day back to 10:00 AM? This is one setting for the whole team.')) return; renderTiming(['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00']); });
   document.getElementById('timingSave').addEventListener('click', async () => {
     const btn = document.getElementById('timingSave'); btn.disabled = true;
     try {
-      const d = await api.post('day_timing.save', { start: timingVals() });
+      const d = await api.post('day_timing.save', { start: timingVals(), base: TIMING_BASE });
       DAY_START = timingVals();
+      TIMING_BASE = [...DAY_START];
       timingModal.classList.remove('open');
       showAlert(d.message || 'Day timing saved.');
       paintDayHints();

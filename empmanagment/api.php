@@ -30320,15 +30320,16 @@ switch ($action) {
         $in = json_input();
         $start = (array)($in['start'] ?? []);
         if (count($start) !== 7) json_response(['error' => 'Send a start time for all seven days.'], 422);
+        $__base = (isset($in['base']) && is_array($in['base']) && count($in['base']) === 7) ? array_map('strval', array_values($in['base'])) : null;   // what the screen SAW: only the days it changed against that are written, so a screen left open (old values) cannot undo what somebody else set meanwhile
         ensure_day_timing_table($pdo);
         $ins = $pdo->prepare("INSERT INTO day_timing (weekday, start_time) VALUES (?, ?) ON DUPLICATE KEY UPDATE start_time = VALUES(start_time)");
         $__dn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; $__old = day_timing_get($pdo); $__chg = [];
         for ($wd = 0; $wd <= 6; $wd++) {   // check everything first, then write: a refused save changes nothing
-            $t = (string)($start[$wd] ?? '');
+            $t = (string)($start[$wd] ?? ''); if ($__base !== null && ($__base[$wd] ?? '') === $t) continue;
             if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t)) json_response(['error' => 'Times must be HH:MM (24-hour).'], 422);
             if ($t < '06:00') json_response(['error' => $__dn[$wd] . ' would start at ' . date('g:i A', strtotime($t)) . ' (the middle of the night). A business day that starts at night is almost always a slip: 12:00 AM is MIDNIGHT, 12:00 PM is NOON. Pick a time from 6:00 AM on.'], 422);
         }
-        for ($wd = 0; $wd <= 6; $wd++) { $t = (string)$start[$wd]; if (($__old[$wd] ?? '') !== $t) $__chg[] = $__dn[$wd] . ' ' . ($__old[$wd] ?? '?') . '→' . $t; $ins->execute([$wd, $t]); }
+        for ($wd = 0; $wd <= 6; $wd++) { $t = (string)$start[$wd]; if ($__base !== null && ($__base[$wd] ?? '') === $t) continue; if (($__old[$wd] ?? '') !== $t) $__chg[] = $__dn[$wd] . ' ' . ($__old[$wd] ?? '?') . '→' . $t; $ins->execute([$wd, $t]); }
         if ($__chg) { try { $lg = json_decode((string)setting_get($pdo, 'day_timing_log', ''), true); $lg = is_array($lg) ? $lg : []; $lg[] = ['at' => date('Y-m-d H:i:s'), 'by' => (string)($auth['full_name'] ?? $auth['username'] ?? ''), 'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''), 'ch' => $__chg]; setting_set($pdo, 'day_timing_log', json_encode(array_slice($lg, -30), JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { } }
         json_response(['message' => 'Day timing saved. It applies to orders counted from now on; run Sync now on Targets to recount the month.']);
         break;
