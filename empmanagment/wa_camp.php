@@ -602,7 +602,7 @@ function wa_ucat_auto_step(PDO $pdo, int $now): void
         $cur = (int)setting_get($pdo, 'wa_ucat_hour', '700'); $bad = $f / $n > 0.05;
         if ($bad && $cur > 700) { setting_set($pdo, 'wa_ucat_hour', '700'); setting_set($pdo, 'wa_ucat_step_at', (string)$now); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility campaigns: ' . $f . ' of ' . $n . ' failed -> the limit goes back from ' . $cur . ' to 700 an hour'); }
         elseif ($bad) { $u = $now + 3 * 3600; setting_set($pdo, 'wa_ucat_pause_until', (string)$u); setting_set($pdo, 'wa_ucat_step_at', (string)$u); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Utility campaigns: ' . $f . ' of ' . $n . ' failed at 700 an hour -> they rest for 3 hours, then start again at 700'); }
-        else { if ($cur < 900) { setting_set($pdo, 'wa_ucat_hour', (string)min(900, $cur + 100)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility campaigns run well (' . $f . ' of ' . $n . ' failed): the limit ' . $cur . ' -> ' . min(900, $cur + 100) . ' an hour'); } setting_set($pdo, 'wa_ucat_step_at', (string)$now); }
+        else { $mx = max(700, min(5000, (int)setting_get($pdo, 'wa_ucat_max', '1200'))); /* owner 21 Nov 2026: the ladder now goes up to 1,200 an hour (setting wa_ucat_max), one step of 100 every good hour */ if ($cur < $mx) { setting_set($pdo, 'wa_ucat_hour', (string)min($mx, $cur + 100)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility campaigns run well (' . $f . ' of ' . $n . ' failed): the limit ' . $cur . ' -> ' . min($mx, $cur + 100) . ' an hour'); } setting_set($pdo, 'wa_ucat_step_at', (string)$now); }
     } catch (Throwable $e) { }
 }
 function wa_cat_util_note(PDO $pdo, int $now, int $n): void
