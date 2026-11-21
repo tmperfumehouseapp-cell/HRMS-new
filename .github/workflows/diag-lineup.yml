@@ -37,6 +37,7 @@ jobs:
           ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "${{ inputs.brief }}" "${{ inputs.probe }}" <<'REMOTE' || true
           P="$1"; export LN_BRIEF="$2"; export LN_PROBE="$3"
           if [ "$LN_PROBE" = "true" ]; then
+          echo "=== server files ===" ; echo "whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html) · wa_camp_ui.js $(stat -c '%y' "$P"assets/js/wa_camp_ui.js | cut -c1-19) · top-space marker: $(grep -c 'its own space' "$P"assets/js/wa_camp_ui.js) · speed cache marker: $(grep -c 'ONCE per message and 45 seconds' "$P"empmanagment/wa_line.php) · server time $(date '+%H:%M:%S')"
           cat > /tmp/ln_probe.php <<'PHP'
           <?php
           $f = $argv[1] . "empmanagment/config.php"; require $f;
