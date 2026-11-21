@@ -126,7 +126,7 @@ if (!function_exists('wa_aft_days')) {
     /** The screen's numbers (Campaigns -> Lineup, "After-Order plan" under the 30-day plan). */
     function wa_aft_overview(PDO $pdo): array
     {
-        wa_aft_tables($pdo); $now = time(); $o = ['on' => wa_aft_set($pdo, 'wa_aft_on', '1') !== '0', 'cap' => (int)wa_aft_set($pdo, 'wa_aft_cap', '1500'), 'spread' => (int)wa_aft_set($pdo, 'wa_aft_spread', '5'), 'ver' => wa_aft_set($pdo, 'wa_aft_ver', '1'), 'quiet' => function_exists('wa_quiet_hours') && wa_quiet_hours()];
+        wa_aft_tables($pdo); $now = time(); $o = ['on' => wa_aft_set($pdo, 'wa_aft_on', '1') !== '0', 'cap' => (int)wa_aft_set($pdo, 'wa_aft_cap', '3000'), 'spread' => (int)wa_aft_set($pdo, 'wa_aft_spread', '5'), 'ver' => wa_aft_set($pdo, 'wa_aft_ver', '1'), 'quiet' => function_exists('wa_quiet_hours') && wa_quiet_hours()];
         try { $o['cust'] = $pdo->query("SELECT status, COUNT(*) FROM wa_aft_cust GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR); $o['plan'] = $pdo->query("SELECT status, COUNT(*) FROM wa_aft_plan GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $o['sent_today'] = (int)$q->fetchColumn();
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan p JOIN wa_aft_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active'"); $q->execute([date('Y-m-d H:i:s', $now)]); $o['due_now'] = (int)$q->fetchColumn();
@@ -187,7 +187,7 @@ if (!function_exists('wa_aft_days')) {
                 $ph = wa_aft_k10($r['phone']); if (strlen($ph) !== 10 || isset($seen[$ph])) continue; $seen[$ph] = 1; $oat = (int)strtotime((string)$r['created_at']); $anchor = !empty($r['dl']) ? (int)strtotime((string)$r['dl']) : $oat + 7 * 86400; if ($anchor <= 0 || $anchor > $now) continue;   // an old order without a parcel record counts as delivered a week after the order
                 $ex->execute([$ph]); $e = $ex->fetchColumn(); if ($e !== false && (int)strtotime((string)$e) >= $oat) continue;   // already on the ladder of this (or a newer) order
                 $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c || (int)($c['optout'] ?? 0) === 1 || (int)($c['camp_optout'] ?? 0) === 1) continue;
-                $age = (int)(($now - $anchor) / 86400); $spread = $age <= 31 ? 5 : ($age <= 90 ? 12 : ($age <= 180 ? 25 : 40));
+                $age = (int)(($now - $anchor) / 86400); $spread = $age <= 31 ? 2 : ($age <= 90 ? 3 : ($age <= 180 ? 4 : 6));   // owner 22 Nov: only 56 went out in the first hours (spread 5 / 12 / 25 / 40 days): now 2 / 3 / 4 / 6 days
                 $pdo->prepare("REPLACE INTO wa_aft_cust (phone, order_name, order_at, anchor_at, status, why, total, created_at) VALUES (?, ?, ?, ?, 'active', 'v3', ?, ?)")->execute([$ph, (string)$r['order_name'], date('Y-m-d H:i:s', $oat), date('Y-m-d H:i:s', $anchor), (int)$r['total'], date('Y-m-d H:i:s', $now)]);
                 if (wa_aft_plan($pdo, $ph, $anchor, $now, $spread) > 0) $n++; if ($n >= 1500) break; }
         } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'after-order enrol: ' . $e->getMessage()); }
@@ -207,6 +207,24 @@ if (!function_exists('wa_aft_days')) {
         [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $nv ? $vars : [], 'followup');
         return $ok ? [true, (string)$res] : [false, (string)$res];
     }
+    /** 🛟 A message of the After-Order plan whose delivery receipt says FAILED for a marketing-only reason is sent again as a utility twin (the 30-day Lineup's twins: the shop's utility messages and the eight rescue wordings). One rescue per message, never if he wrote since / opted out. */
+    function wa_aft_rescue(PDO $pdo, int $now, int $cap = 60): int
+    {
+        if (!function_exists('wln_twins') || !function_exists('wln_send_any') || !function_exists('wln_mkt_codes')) return 0;
+        $in = implode(',', wln_mkt_codes()); $n = 0; $t0 = microtime(true); $rows = [];
+        try { $f = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND status = 'failed' AND err_code IN ($in) ORDER BY id DESC LIMIT 600"); $f->execute([date('Y-m-d H:i:s', $now - 24 * 3600)]); $bad = []; foreach ($f->fetchAll() as $m) $bad[(string)$m['wamid']] = (int)$m['err_code'];
+            foreach (array_chunk(array_keys($bad), 300) as $ch) { $x = $pdo->prepare("SELECT id, phone, step, tpl_id, sent_at, wamid FROM wa_aft_plan WHERE status = 'sent' AND why = '' AND wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $r) { $r['err_code'] = $bad[(string)$r['wamid']]; $rows[] = $r; if (count($rows) >= $cap) break 2; } } } catch (Throwable $e) { return 0; }
+        $mark = $pdo->prepare("UPDATE wa_aft_plan SET why = ? WHERE id = ?"); $ins = $pdo->prepare("INSERT INTO wa_aft_plan (phone, step, due_at, status, tpl_id, sent_at, wamid, why) VALUES (?, ?, ?, 'sent', ?, ?, ?, ?)");
+        foreach ($rows as $r) {
+            if (microtime(true) - $t0 > 12) break; $ph = (string)$r['phone']; $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $mark->execute(['rescue: no contact', $r['id']]); continue; }
+            if (!empty($c['optout']) || !empty($c['camp_optout'])) { $mark->execute(['rescue: opted out', $r['id']]); continue; }
+            if (!empty($c['last_in_at']) && (int)strtotime((string)$c['last_in_at']) > (int)strtotime((string)$r['sent_at'])) { $mark->execute(['rescue not needed: he wrote', $r['id']]); continue; }
+            $tw = wln_twins($pdo, $ph, 'all', 0, (int)$r['tpl_id']); if (!$tw) { $mark->execute(['rescue: no utility message left', $r['id']]); continue; }
+            foreach ($tw as [$tid, $key]) { $res = wln_send_any($pdo, $c, $tid); if ($res[0]) { $ts = date('Y-m-d H:i:s'); $ins->execute([$ph, (int)$r['step'], $ts, $tid, $ts, (string)($res[3] ?? ''), 'utility rescue of #' . $r['id'] . ' (' . $r['err_code'] . ')']); $mark->execute(['rescued (' . $r['err_code'] . ') as utility #' . $tid, $r['id']]); $n++; continue 2; } }
+            $mark->execute(['rescue: no utility message could go', $r['id']]);
+        }
+        return $n;
+    }
     /** The minute job: enrol (every 30 min) and send what is due (daily cap, 03:00-09:00 quiet). */
     function wa_aft_tick(PDO $pdo, int $budget = 40): array
     {
@@ -222,7 +240,11 @@ if (!function_exists('wa_aft_days')) {
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_learn_at', '0') >= 21600) { setting_set($pdo, 'wa_aft_learn_at', (string)$now); wa_aft_learn($pdo, $now); }
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_top_at', '0') >= 600) { setting_set($pdo, 'wa_aft_top_at', (string)$now); wa_aft_topup($pdo, $now); }
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_enrol_at', '0') >= 1800) { setting_set($pdo, 'wa_aft_enrol_at', (string)$now); $o['entered'] = wa_aft_enrol($pdo, $now); }
-        $cap = max(0, (int)wa_aft_set($pdo, 'wa_aft_cap', '1500')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
+        // 🛟 owner 22 Nov: a message that failed for a marketing-only reason (131049 / 131050 / 130472) is sent again at once as a UTILITY twin (the same rescue as the 30-day Lineup)
+        try { $o['rescued'] = wa_aft_rescue($pdo, $now); } catch (Throwable $e) { }
+        // one time: the older buyers' first message goes out within 4 days (it was spread over 12-40 days: 56 messages in the first hours)
+        try { if (wa_aft_set($pdo, 'wa_aft_respread', '') !== '1') { setting_set($pdo, 'wa_aft_respread', '1'); $pdo->prepare("UPDATE wa_aft_plan p JOIN (SELECT phone, MIN(id) mid FROM wa_aft_plan WHERE status = 'planned' GROUP BY phone) m ON m.mid = p.id JOIN wa_aft_cust c ON c.phone = p.phone SET p.due_at = DATE_ADD(?, INTERVAL (600 + CAST(RIGHT(p.phone, 6) AS UNSIGNED) % 345000) SECOND) WHERE p.status = 'planned' AND p.due_at > ? AND c.status = 'active' AND c.anchor_at < ? AND NOT EXISTS (SELECT 1 FROM wa_aft_plan s WHERE s.phone = p.phone AND s.status = 'sent')")->execute([date('Y-m-d H:i:s', $now), date('Y-m-d H:i:s', $now + 4 * 86400), date('Y-m-d H:i:s', $now - 31 * 86400)]); } } catch (Throwable $e) { }
+        $cap = max(0, (int)wa_aft_set($pdo, 'wa_aft_cap', '3000')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
         $rows = $pdo->prepare("SELECT p.id, p.phone, p.step, c.order_at, c.anchor_at FROM wa_aft_plan p JOIN wa_aft_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.due_at LIMIT 60"); $rows->execute([date('Y-m-d H:i:s', $now)]);
         $upd = $pdo->prepare("UPDATE wa_aft_plan SET status = ?, why = ?, sent_at = ?, tpl_id = ?, wamid = ? WHERE id = ?"); $push = $pdo->prepare("UPDATE wa_aft_plan SET due_at = ? WHERE id = ?"); $grp = wa_aft_groups();
         foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -249,6 +271,7 @@ if (!function_exists('wa_aft_days')) {
             $ln = ''; for ($try = 0; $try < 8; $try++) { $ln = $kind === 'care' ? wa_aft_line($pdo, $st[2]) : wa_aft_line_dyn($pdo, (int)$r['step'] + $try * 11, $ph, $now, $kind, $beh + ['reorder' => $isRe ? 1 : 0]); $lh = substr(md5($tid . '|' . $ln), 0, 12); if (!isset($sentH[$lh]) || $kind === 'care') break; if ($try === 3 && !empty($ids)) $tid = (int)$ids[((int)substr($ph, -3) + 1) % count($ids)]; } $lk = $GLOBALS['wa_aft_last'] ?? ['kind' => $kind, 'sz' => 0]; if ($isRe) { $lk['kind'] = 'reorder'; $ids = $grp['reorder'] ?? $ids; $tid = (int)$ids[(int)substr($ph, -3) % count($ids)]; } $ok = false; $why = '';
             if ($kind !== 'care' && (int)$r['step'] % 6 === 3) { $pt = json_decode((string)setting_get($pdo, 'wa_aft_photo_tpls', ''), true); $ptid = is_array($pt) ? (int)($pt[$kind === 'season' ? 'gift' : 'bottles'] ?? 0) : 0; if ($ptid > 0) { [$ok, $why] = wa_aft_send($pdo, $c, $ptid, $ln); if ($ok) $tid = $ptid; } }   // 📷 about every 6th message goes with a photo once Meta approved the photo template
             if (!$ok) [$ok, $why] = wa_aft_send($pdo, $c, $tid, $ln);
+            if (!$ok && strpos((string)$why, 'wait') === 0) { foreach (array_slice($ids, 0, 8) as $__alt) { if ((int)$__alt === $tid) continue; [$__ok2, $__why2] = wa_aft_send($pdo, $c, (int)$__alt, $ln); if ($__ok2) { $ok = true; $why = $__why2; $tid = (int)$__alt; break; } } }   // this template cannot go (no number of his account has it approved): another of the same group goes instead of waiting 30 minutes
             if ($ok) { $upd->execute(['sent', '', date('Y-m-d H:i:s'), $tid, $why, $id]); try { $pdo->prepare("UPDATE wa_aft_plan SET kind = ?, sz = ?, lh = ? WHERE id = ?")->execute([(string)$lk['kind'], (int)$lk['sz'], $lh, $id]); } catch (Throwable $e) { } $o['sent']++; try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$ph, date('Y-m-d H:i:s'), 'after-order step ' . (int)$r['step']]); } catch (Throwable $e) { } }
             elseif (strpos($why, 'wait') === 0) { try { setting_set($pdo, 'wa_aft_dbg', json_encode(['at' => date('H:i:s'), 'tid' => $tid, 'step' => (int)$r['step'], 'why' => mb_substr((string)$why, 0, 160), 'busy_skips' => (int)($o['waiting'] ?? 0)])); } catch (Throwable $e) { } $push->execute([date('Y-m-d H:i:s', $now + 1800), $id]); $o['waiting']++; if (strpos($why, 'no number') !== false) break; }
             else { try { setting_set($pdo, 'wa_aft_dbg', json_encode(['at' => date('H:i:s'), 'tid' => $tid, 'step' => (int)$r['step'], 'fail' => mb_substr((string)$why, 0, 160)])); } catch (Throwable $e) { } $upd->execute(['failed', mb_substr($why, 0, 150), null, $tid, '', $id]); }

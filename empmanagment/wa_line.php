@@ -125,6 +125,16 @@ function wl_pack(): array
         'size' => ["Namaste {{1}} ji 🙏 Aapne size ke baare mein poocha tha. Ye hamari bottles ki photo hai, 20 ml, 50 ml ya 100 ml mein se kaunsa dekhna hai?", 'Bottle size batao'],
         'reorder' => ["Namaste {{1}} ji 🙏 Pichhli baar aapne hamse perfume liya tha, shukriya. Ye hamare perfumes ki photo hai, is baar kaunsi khushboo dekhni hai?", 'Nayi khushboo dekhni hai']];
     foreach ($PHV as $topic => $r) { $k = 'ln_' . $topic . '_1p'; if (!isset($P['ln_' . $topic . '_1'])) continue; $add($k, $topic, 1, $r[0], $r[1], $P['ln_' . $topic . '_1']['free']); $P[$k]['of'] = 'ln_' . $topic . '_1'; $P[$k]['photo'] = 39; }
+    // 🛟 UTILITY RESCUE POOL (owner 22 Nov: "13,790 did not reach: send them as utility, make utility alternatives"): eight generic wordings that refer to the customer's own request (so Meta keeps them UTILITY). They are only used as the twin of a message that failed for a marketing-only reason (wln_twins / wln_rescue / wa_aft_rescue), never in the ladder.
+    $RSC = [["Namaste {{1}} ji 🙏 Aapne perfume ke baare mein jaankari maangi thi. Aapki request abhi hamare paas hai, kaunsa perfume dekhna hai bata dein.", 'Request jaari rakhein'],
+        ["{{1}} ji, aapki perfume ki request ke baare mein hamari team ne details taiyaar ki hain. Dekhna chahenge?", 'Details dekhni hain'],
+        ["Namaste {{1}} ji 🙏 Aapne hamare perfumes ke baare mein poocha tha. Aapke sawal ka jawab dene ke liye perfume ka naam ya size bata dein.", 'Naam bata raha hoon'],
+        ["{{1}} ji, aapki perfume enquiry par details bhejne ke liye bas ek reply chahiye. Kaunsa perfume pasand hai?", 'Reply kar raha hoon'],
+        ["Namaste {{1}} ji 🙏 Aapki pichhli request par hum aapko size aur details bata sakte hain. Kaunsa size dekhna hai?", 'Size ki details'],
+        ["{{1}} ji, aapne jo perfume dekha tha uski jaankari bhejni baaki hai. Naam ya photo bhej dein to hum bhej dete hain.", 'Photo bhejta hoon'],
+        ["Namaste {{1}} ji 🙏 Aapki enquiry ke hisaab se hum aapko perfume suggest kar sakte hain. Kaisi khushboo pasand hai?", 'Khushboo batata hoon'],
+        ["{{1}} ji, aapki perfume ki request abhi open hai. Jaankari ya order ke liye yahin reply kar dijiye.", 'Order dena hai']];
+    foreach ($RSC as $__i => $r) { $k = 'ln_rescue_' . ($__i + 1); $add($k, 'all', 5, $r[0], $r[1], "Zaroor 🙏 Aap perfume ka naam ya size bata dein, hum turant details bhej dete hain."); $P[$k]['rescue'] = 1; }
     // the same last three steps for every topic
     $add('ln_all_5', 'all', 5, "{{1}} ji, aapke sawal ka jawab aapko mil gaya? Aur jaankari chahiye to yahin likh dijiye.", 'Aur jaankari chahiye', "Zaroor 🙏 Aap yahin likh dein ki aur kya jaanna hai, hum turant batate hain.");
     $add('ln_all_6', 'all', 6, "{{1}} ji, aapki request ke baare mein final details taiyaar hain. Dekhna chahenge?", 'Final details dekhein', "__OFFER__");
@@ -502,6 +512,7 @@ function wln_twins(PDO $pdo, string $phone, string $topic, int $step, int $faile
     $own = wl_tpl_ids($pdo); $cand = []; foreach (wl_variants(wl_key($topic, $step)) as $k) if (!empty($own[$k]) && empty(wl_pack()[$k]['cat'])) $cand[(int)$own[$k]] = $k;
     foreach (wln_existing_map() as $k => $id) if ((int)$id === 386) { $cand[386] = $k; break; } if (!isset($cand[386])) $cand[386] = 'ln_util_386';
     if (function_exists('wa_util_pool_usable')) { try { foreach (wa_util_pool_usable($pdo) as $t0) { $pid = (int)($t0['id'] ?? 0); if ($pid > 0 && (int)($t0['nvars'] ?? 0) <= 1 && (string)($t0['pool_kind'] ?? 'open') === 'open' && !isset($cand[$pid])) $cand[$pid] = 'ln_util_pool'; } } catch (Throwable $e) { } }   // the shop's own older utility follow-ups (name only, approved, not made marketing) when the lineup's own ones are not enough
+    foreach (wl_pack() as $__rk => $__rm) if (!empty($__rm['rescue']) && !empty($own[$__rk])) $cand[(int)$own[$__rk]] = $__rk;   // the eight own rescue wordings (utility, refer to his request)
     unset($cand[$failedTid]); if (!$cand) return [];
     $util = []; try { foreach ($pdo->query("SELECT id, category FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_keys($cand))) . ")")->fetchAll() as $r) if (strtoupper((string)$r['category']) === 'UTILITY') $util[(int)$r['id']] = 1; } catch (Throwable $e) { return []; }
     $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $q->execute([$phone]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
@@ -517,17 +528,18 @@ function wln_engagement(PDO $pdo, string $phone): array
 function wln_mkt_codes(): array { return [131049, 131050, 130472]; }
 /** THE RESCUE: a Lineup message whose delivery receipt says FAILED for a marketing-only reason is sent again at once as its utility twin (one rescue per message; not if he wrote since, ordered or opted out).
  *  The rescue is a row of its own (status sent, why 'utility rescue'), so it is counted — and its receipt counts as delivered — like any other message. 40 a round, receipts of the last 3 hours. Returns the number of rescues sent. */
-function wln_rescue(PDO $pdo, int $now = 0, int $cap = 40): int
+function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150): int   // owner 22 Nov: 40 a round / 3 hours rescued only 3,960 of 13,790 failed sends: now 150 a round, receipts of the last 24 hours, 20 s budget
 {
-    $now = $now ?: time(); $in = implode(',', wln_mkt_codes()); $n = 0;
+    $now = $now ?: time(); $in = implode(',', wln_mkt_codes()); $n = 0; $__t0 = microtime(true);
     // (no JOIN on the wamids: the two tables have different collations — that threw an error and nothing was rescued; the receipts are read with a bound list instead)
     // (the FAILED receipts are read first, newest first, then their plan rows by a bound wamid list — before, the 4,000 oldest sent rows of the last 3 hours were read and the newer failures were never seen once more than 4,000 had gone)
-    $rows = []; try { $f = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND status = 'failed' AND err_code IN ($in) ORDER BY id DESC LIMIT 1500"); $f->execute([date('Y-m-d H:i:s', $now - 3 * 3600)]); $bad = [];
+    $rows = []; try { $f = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND status = 'failed' AND err_code IN ($in) ORDER BY id DESC LIMIT 1500"); $f->execute([date('Y-m-d H:i:s', $now - 24 * 3600)]); $bad = [];
         foreach ($f->fetchAll() as $m) $bad[(string)$m['wamid']] = (int)$m['err_code'];
         foreach (array_chunk(array_keys($bad), 400) as $ch) { $x = $pdo->prepare("SELECT id, phone, topic, step, tpl_id, sent_at, wamid FROM wa_line_plan WHERE status = 'sent' AND why = '' AND wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch);
             foreach ($x->fetchAll() as $r) { $r['err_code'] = $bad[(string)$r['wamid']]; $rows[] = $r; if (count($rows) >= $cap) break 2; } } } catch (Throwable $e) { return 0; }
     $mark = $pdo->prepare("UPDATE wa_line_plan SET why = ? WHERE id = ?"); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, why, sent_at, wamid) VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)");
     foreach ($rows as $r) {
+        if (microtime(true) - $__t0 > 20) break;
         $ph = (string)$r['phone']; $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $mark->execute(['rescue: no contact', $r['id']]); continue; }
         if (!empty($c['optout']) || !empty($c['camp_optout'])) { $mark->execute(['rescue: opted out', $r['id']]); continue; }
         if (!empty($c['last_in_at']) && (int)strtotime((string)$c['last_in_at']) > (int)strtotime((string)$r['sent_at'])) { $mark->execute(['rescue not needed: he wrote', $r['id']]); continue; }
