@@ -1169,12 +1169,21 @@ function wag_bot_run(PDO $pdo, int $slots = 5, int $secs = 55): array
     finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_bot_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
     return $o;
 }
+/** True for ONE caller per 2 seconds on the whole server (a shared time stamp in the temp folder, claimed under a file lock). If the file cannot be used it says true: the look then runs as before. */
+function wag_addon_gate(): bool
+{
+    $f = rtrim(sys_get_temp_dir(), '/') . '/hrms_wag_addon_gate_' . substr(md5(__DIR__), 0, 6); $h = @fopen($f, 'c+'); if (!$h) return true;
+    try { if (!@flock($h, LOCK_EX | LOCK_NB)) return false;   // somebody is claiming it right now: that one does the look
+        $last = (float)trim((string)stream_get_contents($h)); $now = microtime(true); if ($now - $last < 2.0 && $last <= $now) return false;
+        ftruncate($h, 0); rewind($h); fwrite($h, sprintf('%.3f', $now)); return true;
+    } finally { @flock($h, LOCK_UN); @fclose($h); }
+}
 /** The 24/7 bot: answers a waiting customer by itself — only from the taught guidebook, only text chats inside the 24-hour window, never a HOT chat. */
 function wag_bot_scan(PDO $pdo, int $max = 4): array
 {
     $cfg = wag_cfg($pdo); $o = ['sent' => 0, 'handoff' => 0]; if ($cfg['bot'] !== 'on') return $o;
     if (defined('WA_IN_WEBHOOK')) return $o;   // never inside Meta's webhook call (an AI answer takes seconds)
-    wag_addon_sweep($pdo); wag_addon_scan($pdo);
+    if (wag_addon_gate()) { wag_addon_sweep($pdo); wag_addon_scan($pdo); }   // the add-on look (every message of 15 minutes + the unanswered offers) once per 2 s for ALL bot workers together, not in every loop of every worker (5 workers x 2 loops a second)
     $now = time(); $unans = $cfg['unans_min'] * 60;
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.last_in_at >= ? AND c.last_in_at <= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) ORDER BY c.last_in_at DESC LIMIT 60");
     $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $cfg['bot_after'])]);
