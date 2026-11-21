@@ -33,31 +33,24 @@ jobs:
           require $f;
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
           date_default_timezone_set("Asia/Kolkata");
-          $SPEND = 300027.0; $ROAS = 3.0; $TARGET = $SPEND * $ROAS;
-          echo "spend of 20 Nov Rs " . number_format($SPEND) . " x ROAS " . $ROAS . " = target collection Rs " . number_format($TARGET) . "\n";
+          echo "now (IST) " . date("Y-m-d H:i") . "\n";
           $sql = "SELECT o.store_key sk, o.order_name nm, o.created_at ca, o.total total, o.tags tg, a.alloc_id aid, a.order_type ot
                   FROM shop_orders o LEFT JOIN order_allocations a ON a.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
-                  WHERE o.created_at >= '2026-11-20 10:00:00' AND o.created_at < '2026-11-22 00:00:00' AND o.total > 0 ORDER BY o.created_at";
+                  WHERE o.created_at >= '2026-11-15 10:00:00' AND o.created_at < '2026-11-23 00:00:00' AND o.total > 0 ORDER BY o.created_at";
           try { $rows = $d->query($sql)->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 200) . "\n"; exit; }
-          $addon = []; try { foreach ($d->query("SELECT LOWER(TRIM(LEADING '#' FROM TRIM(order_name))) k, SUM(price) s FROM employee_addons WHERE addon_date >= '2026-11-19' GROUP BY k")->fetchAll(PDO::FETCH_ASSOC) as $r) $addon[$r["k"]] = (float)$r["s"]; } catch (Throwable $e) { }
+          $addon = []; try { foreach ($d->query("SELECT LOWER(TRIM(LEADING '#' FROM TRIM(order_name))) k, SUM(price) s FROM employee_addons WHERE addon_date >= '2026-11-13' GROUP BY k")->fetchAll(PDO::FETCH_ASSOC) as $r) $addon[$r["k"]] = (float)$r["s"]; } catch (Throwable $e) { }
           $ev = [];
-          foreach ($rows as $r) {
-            if (stripos((string)$r["tg"], "cancel") !== false || $r["aid"] === null) continue;
-            $k = strtolower(trim(ltrim(trim($r["nm"]), "#"))); $ev[] = [$r["ca"], (float)$r["total"] + ($addon[$k] ?? 0.0), in_array($r["ot"], ["query", "campaign"], true) ? $r["ot"] : "other", $r["nm"]];
-          }
-          try { foreach ($d->query("SELECT order_date, total, order_type, order_no FROM manual_orders WHERE order_date >= '2026-11-20 10:00:00' AND order_date < '2026-11-22 00:00:00'")->fetchAll(PDO::FETCH_ASSOC) as $m) $ev[] = [$m["order_date"], (float)$m["total"], in_array($m["order_type"], ["query", "campaign"], true) ? $m["order_type"] : "other", "manual " . $m["order_no"]]; } catch (Throwable $e) { }
-          usort($ev, function ($x, $y) { return strcmp($x[0], $y[0]); });
-          $cum = 0.0; $cross = null; $n = 0; $q = [0, 0.0]; $c = [0, 0.0]; $o = [0, 0.0]; $before = 0.0;
-          foreach ($ev as $e) { $before = $cum; $cum += $e[1]; $n++; $t = $e[2] === "query" ? "q" : ($e[2] === "campaign" ? "c" : "o"); if ($t === "q") { $q[0]++; $q[1] += $e[1]; } elseif ($t === "c") { $c[0]++; $c[1] += $e[1]; } else { $o[0]++; $o[1] += $e[1]; } if ($cross === null && $cum >= $TARGET) { $cross = $e; $crossCum = $cum; $crossBefore = $before; $crossN = $n; $snap = [$q, $c, $o]; } }
-          if ($cross === null) { echo "target not reached yet: collection so far Rs " . number_format(round($cum)) . " in $n orders\n"; exit; }
-          echo "TARGET REACHED at order time " . $cross[0] . " (order " . $cross[3] . ", Rs " . round($cross[1]) . ") -> cumulative before it Rs " . number_format(round($crossBefore)) . ", with it Rs " . number_format(round($crossCum)) . " = ROAS " . round($crossCum / $SPEND, 3) . " · orders so far $crossN\n";
-          echo "  split at that moment: Query " . $snap[0][0] . " / Rs " . number_format(round($snap[0][1])) . " · Campaign " . $snap[1][0] . " / Rs " . number_format(round($snap[1][1])) . " · Other " . $snap[2][0] . " / Rs " . number_format(round($snap[2][1])) . "\n";
-          echo "\ncumulative around the crossing (time · order amount · running collection · ROAS):\n";
-          $i0 = 0; foreach ($ev as $i => $e) if ($e[0] === $cross[0] && $e[3] === $cross[3]) $i0 = $i;
-          $run = 0.0; foreach ($ev as $i => $e) { $run += $e[1]; if ($i >= $i0 - 4 && $i <= $i0 + 4) echo "  " . $e[0] . " · Rs " . str_pad(round($e[1]), 6) . " · Rs " . str_pad(number_format(round($run)), 9) . " · ROAS " . round($run / $SPEND, 3) . ($i === $i0 ? "   <== 3 ROAS complete" : "") . "\n"; }
-          $after = [0, 0.0, 0, 0.0, 0, 0.0, 0]; foreach ($ev as $i => $e) if ($i > $i0) { $after[6]++; if ($e[2] === "query") { $after[0]++; $after[1] += $e[1]; } elseif ($e[2] === "campaign") { $after[2]++; $after[3] += $e[1]; } else { $after[4]++; $after[5] += $e[1]; } }
-          echo "\nAFTER that order (new day 21 Nov would start here) up to now: orders " . $after[6] . " · collection Rs " . number_format(round($after[1] + $after[3] + $after[5])) . " · Query " . $after[0] . " / Rs " . number_format(round($after[1])) . " · Campaign " . $after[2] . " / Rs " . number_format(round($after[3])) . " · Other " . $after[4] . " / Rs " . number_format(round($after[5])) . "\n";
-          echo "now " . date("Y-m-d H:i") . "\n";
+          foreach ($rows as $r) { if (stripos((string)$r["tg"], "cancel") !== false || $r["aid"] === null) continue; $k = strtolower(trim(ltrim(trim($r["nm"]), "#"))); $ev[] = [$r["ca"], (float)$r["total"] + ($addon[$k] ?? 0.0), in_array($r["ot"], ["query", "campaign"], true) ? $r["ot"] : "other"]; }
+          try { foreach ($d->query("SELECT order_date, total, order_type FROM manual_orders WHERE order_date >= '2026-11-15 10:00:00' AND order_date < '2026-11-23 00:00:00'")->fetchAll(PDO::FETCH_ASSOC) as $m) $ev[] = [$m["order_date"], (float)$m["total"], in_array($m["order_type"], ["query", "campaign"], true) ? $m["order_type"] : "other"]; } catch (Throwable $e) { }
+          $win = function ($label, $from, $to) use ($ev) { $n = 0; $s = 0.0; $t = ["query" => [0, 0.0], "campaign" => [0, 0.0], "other" => [0, 0.0]]; foreach ($ev as $e) { if ($e[0] < $from || $e[0] >= $to) continue; $n++; $s += $e[1]; $t[$e[2]][0]++; $t[$e[2]][1] += $e[1]; }
+            echo str_pad($label, 40) . " orders " . str_pad($n, 4) . " · collection Rs " . str_pad(number_format(round($s)), 9) . " · Query " . $t["query"][0] . " / Rs " . number_format(round($t["query"][1])) . " · Campaign " . $t["campaign"][0] . " / Rs " . number_format(round($t["campaign"][1])) . " · Other " . $t["other"][0] . " / Rs " . number_format(round($t["other"][1])) . "\n"; };
+          echo "\n=== TODAY 21 Nov, day started 12:25 PM (and what 10 AM would have given) ===\n";
+          $win("21 Nov 12:25 -> now", "2026-11-21 12:25:00", "2026-11-22 10:00:00");
+          echo "\n=== hour by hour, 21 Nov (clock hours) ===\n";
+          $win("12:25 - 13:00", "2026-11-21 12:25:00", "2026-11-21 13:00:00");
+          for ($h = 13; $h <= 23; $h++) $win(sprintf("%02d:00 - %02d:00", $h, $h + 1), sprintf("2026-11-21 %02d:00:00", $h), $h < 23 ? sprintf("2026-11-21 %02d:00:00", $h + 1) : "2026-11-22 00:00:00");
+          echo "\n=== earlier days, 10 AM -> next day 10 AM (20th ends 21st 12:25 PM) ===\n";
+          foreach (["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"] as $dd) { $nx = date("Y-m-d", strtotime($dd . " +1 day")); $win($dd . " 10:00 -> " . $nx . ($dd === "2026-11-20" ? " 12:25" : " 10:00"), $dd . " 10:00:00", $dd === "2026-11-20" ? "2026-11-21 12:25:00" : $nx . " 10:00:00"); }
           PHP
           php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
           REMOTE
