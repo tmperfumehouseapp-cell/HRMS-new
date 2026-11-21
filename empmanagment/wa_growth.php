@@ -720,6 +720,19 @@ function wag_real_queries(PDO $pdo, int $days): array
     } catch (Throwable $e) { }
     return $out;
 }
+/** ORDER SETTLED (owner, 21 Nov: "once the order is done NO chat may be transferred unless we sent him a campaign / another message again and he answered it, or he put a new inquiry"): the customer has a Shopify order of the last 14 days (or the order is marked done), and since that order NO campaign / recovery / flow message of ours was answered by him, and his last words are no new purchase wish. Such a chat stays exactly where it is. */
+function wag_order_settled(PDO $pdo, string $phone): bool
+{
+    try { $k10 = substr(preg_replace('/\D/', '', $phone), -10); $ot = 0;
+        if (strlen($k10) === 10) { $q = $pdo->prepare("SELECT MAX(created_at) FROM shop_orders WHERE phone LIKE ? AND created_at >= ?"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 14 * 86400)]); $t = $q->fetchColumn(); if ($t) $ot = (int)strtotime((string)$t); }
+        if ($ot === 0 && function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) $ot = time() - 2 * 86400;   // marked done: counted from two days ago at the latest
+        if ($ot === 0) return false;
+        $q = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('campaign', 'recover', 'flow') AND ts > ?"); $q->execute([$phone, date('Y-m-d H:i:s', $ot)]); $cm = $q->fetchColumn();
+        if ($cm) { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? LIMIT 1"); $q->execute([$phone, (string)$cm]); if ($q->fetchColumn()) return false; }   // he answered a new campaign message of ours: a new conversation
+        $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = mb_strtolower((string)$q->fetchColumn());
+        return !preg_match('/(new order|another order|order karna|order karo|order dena|order chahiye|\bbuy\b|lena hai|lunga|price|rate|combo|add on|add-on|chahiye|offer|discount|\d+\s?ml)/iu', $lastIn);
+    } catch (Throwable $e) { return false; }
+}
 /** AFTER DELIVERY (owner, 21 Nov: "the order was delivered, the customer wrote 'received, the fragrance is a little different' and the system took the chat over — stop the take-over after delivery"): a customer with a shipped / delivered Shopify order of the last 14 days who writes something that is not a new purchase is an AFTER-SALES chat — it stays with the person who has it (or the complaint team); it is never moved to OPEN, never "stuck", never counted as a waiting hot customer. */
 function wag_after_delivery(PDO $pdo, string $phone, string $lastIn = ''): bool
 {
@@ -734,6 +747,7 @@ function wag_hot_is_done(PDO $pdo, string $phone, string $lastIn = ''): bool
 {
     try { if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) return true;
         if (wag_after_delivery($pdo, $phone, $lastIn)) return true;
+        if (wag_order_settled($pdo, $phone)) return true;
         $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) === 10) { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 36 * 3600)]); if ($q->fetchColumn()) return true; }
         if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
         $t = trim(mb_strtolower($lastIn));
