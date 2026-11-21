@@ -636,9 +636,11 @@ function wag_addon_calc(PDO $pdo, string $key): ?array
 function wag_addon_texts(array $x): array
 {
     [$qty, $mlo, $tot, $p1, $p2, $ml] = $x;
-    return [['Buttons (easiest for the customer)', 'Sir, order final karne se pehle ek special offer 🎁 Aapke ' . $qty . ' x ' . $mlo . ' ml ke saath ek aur ' . $ml . ' ml perfume sirf Rs ' . $p1 . ' mein, ya do aur sirf Rs ' . $p2 . ' mein add kar sakte hain. Add karun?', true],
-        ['Plain message', 'Sir, order final karne se pehle ek chhota sa special offer 🎁 Aapke ' . $qty . ' x ' . $mlo . ' ml ke saath ek extra ' . $ml . ' ml sirf Rs ' . $p1 . ' mein, ya do extra sirf Rs ' . $p2 . ' mein. Kitne add karwana chahenge? 😊', false],
-        ['Short & friendly', 'Sir, is order ke saath ek extra ' . $ml . ' ml sirf Rs ' . $p1 . ' (ya 2 sirf Rs ' . $p2 . ') — add kar dun? 🙏', false]];
+    // owner 22 Nov (decide yourself, the ticket size must rise without losing orders): the offer shows his NEW TOTAL for each choice (he sees what he pays, not only the add-on price) and the saving per bottle; prices stay the code-made ones
+    $t1 = $tot + $p1; $t2 = $tot + $p2; $pb2 = (int)round($p2 / 2);
+    return [['Buttons (easiest for the customer)', 'Sir, order final karne se pehle ek offer 🎁 Aapka order Rs ' . $tot . ' ka hai. Ek aur ' . $ml . ' ml sirf Rs ' . $p1 . ' mein add karein to total Rs ' . $t1 . ', ya do aur sirf Rs ' . $p2 . ' mein (ek bottle Rs ' . $pb2 . ') to total Rs ' . $t2 . '. Kaunsa add karun?', true],
+        ['Plain message', 'Sir, aapke ' . $qty . ' x ' . $mlo . ' ml (Rs ' . $tot . ') ke saath ek extra ' . $ml . ' ml sirf Rs ' . $p1 . ' mein (total Rs ' . $t1 . '), ya do extra sirf Rs ' . $p2 . ' mein (total Rs ' . $t2 . ', ek bottle Rs ' . $pb2 . '). Kitne add karwana chahenge? 😊', false],
+        ['Short & friendly', 'Sir, is order ke saath ek extra ' . $ml . ' ml sirf Rs ' . $p1 . ' (total Rs ' . $t1 . ') ya 2 sirf Rs ' . $p2 . ' (total Rs ' . $t2 . ') — add kar dun? 🙏', false]];
 }
 /** The order is final: offer the add-on (true = offered, the bot waits for the answer). */
 function wag_addon_offer(PDO $pdo, array $c, string $key, int $opt = 0, int $by = 0): bool
