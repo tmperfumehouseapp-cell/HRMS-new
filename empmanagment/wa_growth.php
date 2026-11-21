@@ -1094,6 +1094,35 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         if (!($read ? (wa_can_watch($pdo, $auth, $c) || (function_exists('wa_req_peek') && wa_req_peek($pdo, $c) !== '') || (function_exists('wa_was_mine') && wa_was_mine($pdo, $k, (int)($auth['employee_id'] ?? 0)))) : wa_can_chat($pdo, $auth, $c))) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $c;   // 🙋 a Requests chat may be read before Take over
     };
     switch ($__wg) {
+        case 'wa.g_botlearn': {   // 🧠 what the bot learned from the 👎 answers: waiting for the owner to apply to the guidebook (live) — the nightly guidebook then keeps it
+            if (!$adm && !(function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth))) json_response(['items' => [], 'can' => false]);
+            wa_learn_tables($pdo); $names = employee_names_by_id($pdo); $items = [];
+            foreach ($pdo->query("SELECT id, customer, sugg, sent, emp_id, created_at FROM wa_learn WHERE kind = 'botbad' AND status = 'new' ORDER BY id DESC LIMIT 40")->fetchAll() as $r) {
+                $sent = (string)$r['sent']; $reason = ''; if (preg_match('/\n\[reason: ([^\]]*)\]\s*$/u', $sent, $m)) { $reason = $m[1]; $sent = trim(preg_replace('/\n\[reason: [^\]]*\]\s*$/u', '', $sent)); }
+                $items[] = ['id' => (int)$r['id'], 'customer' => (string)$r['customer'], 'bot' => (string)$r['sugg'], 'better' => $sent, 'reason' => $reason, 'by' => $names[(int)$r['emp_id']] ?? '', 'at' => (string)$r['created_at'], 'pending_tpl' => strpos($sent, '[TEMPLATE —') === 0];
+            }
+            $ap = (int)$pdo->query("SELECT COUNT(*) FROM wa_learn WHERE kind = 'botbad' AND status = 'done' AND created_at >= '" . date('Y-m-d 00:00:00') . "'")->fetchColumn();
+            json_response(['items' => $items, 'applied_today' => $ap, 'can' => $adm]);
+        }
+        case 'wa.g_botlearn_apply': {   // apply one learned answer to the LIVE guidebook now (admin): {id, text?} · {id, ignore: 1} · {all: 1}
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (!$adm) json_response(['error' => 'Only the owner / an admin can change the guidebook.'], 403);
+            wa_learn_tables($pdo); if (!function_exists('lib_guide_row')) json_response(['error' => 'The guidebook is not available.'], 500);
+            $ids = !empty($in['all']) ? array_map('intval', $pdo->query("SELECT id FROM wa_learn WHERE kind = 'botbad' AND status = 'new' ORDER BY id DESC LIMIT 40")->fetchAll(PDO::FETCH_COLUMN)) : [(int)($in['id'] ?? 0)];
+            if (!empty($in['ignore'])) { foreach ($ids as $i) $pdo->prepare("UPDATE wa_learn SET status = 'skip' WHERE id = ? AND kind = 'botbad'")->execute([$i]); json_response(['ok' => true, 'n' => count($ids)]); }
+            $g = lib_guide_row($pdo, 'live'); if (!$g) json_response(['error' => 'There is no live guidebook yet.'], 422);
+            $body = json_decode((string)$g['body'], true); if (!is_array($body)) json_response(['error' => 'The live guidebook cannot be read.'], 500);
+            $corr = array_values((array)($body['owner_corrections'] ?? [])); $seen = []; foreach ($corr as $o) $seen[md5(mb_strtolower((string)($o['better'] ?? '')))] = 1; $add = []; $done = 0;
+            foreach (array_reverse($ids) as $i) {
+                $q = $pdo->prepare("SELECT * FROM wa_learn WHERE id = ? AND kind = 'botbad' AND status = 'new'"); $q->execute([$i]); $r = $q->fetch(); if (!$r) continue;
+                $better = count($ids) === 1 && isset($in['text']) ? trim((string)$in['text']) : trim(preg_replace('/\n\[reason: [^\]]*\]\s*$/u', '', (string)$r['sent']));
+                if (strpos($better, '[TEMPLATE —') === 0 || mb_strlen($better) < 2) continue;
+                if (preg_match('/^\[TEMPLATE #(\d+) ([^\]]*)\]\s*(.*)$/su', $better, $tm)) $better = $tm[3] . ' (send as the pre-made message "' . trim($tm[2]) . '" when the 24-hour window is closed)';
+                $k = md5(mb_strtolower($better)); if (!isset($seen[$k])) { $seen[$k] = 1; $add[] = ['customer' => mb_substr((string)$r['customer'], 0, 240), 'better' => mb_substr($better, 0, 400)]; }
+                $pdo->prepare("UPDATE wa_learn SET status = 'done' WHERE id = ?")->execute([$i]); $done++;
+            }
+            if ($add) { $body['owner_corrections'] = array_slice(array_merge($add, $corr), 0, 60); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($body, JSON_UNESCAPED_UNICODE), (int)$g['id']]); }
+            json_response(['ok' => true, 'applied' => $done, 'guide_version' => (int)$g['version']]);
+        }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
             $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on']);
         }
