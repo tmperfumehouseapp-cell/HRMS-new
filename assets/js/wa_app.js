@@ -1289,8 +1289,13 @@
         + '<p style="margin:0 0 6px;font-size:13px;color:#667">Claude’s better answer (change it if you like). When you send it, this chat becomes yours and the bot stops. Everybody sees what you replaced.</p>'
         + '<textarea id="bbN" rows="5" style="width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid #d9dde3;border-radius:10px" placeholder="Writing a better answer…"></textarea>'
         + '<select id="bbR" style="width:100%;margin:8px 0;padding:8px;border-radius:10px;border:1px solid #d9dde3;font:inherit"><option value="">Why was it not good? (optional)</option><option>Wrong price</option><option>Wrong language</option><option>Invented offer</option><option>Did not answer the question</option><option>Too long / pushy</option><option>Other</option></select>'
-        + '<button type="button" id="bbS" style="width:100%;border:0;border-radius:12px;background:#128c4a;color:#fff;padding:12px;font:inherit;font-weight:700">Send my answer and take over</button>';
+        + '<button type="button" id="bbS" style="width:100%;border:0;border-radius:12px;background:#128c4a;color:#fff;padding:12px;font:inherit;font-weight:700">Send my answer and take over</button>' + '<button type="button" id="bbT2" style="width:100%;margin-top:8px;border:1px solid #128c4a;border-radius:12px;background:#fff;color:#128c4a;padding:11px;font:inherit;font-weight:700">📋 Send a pre-made message (template) instead</button>';
       api.post('wa.g_botbad', { phone, mode: 'draft' }).then((d) => { const t = sh.body.querySelector('#bbT'), n = sh.body.querySelector('#bbN'); if (t) t.textContent = d.bot_text || '(no bot message found)'; if (n && !n.value) { n.value = d.suggestion || ''; n.placeholder = 'Write the better answer'; } }).catch((e) => toast(e.message, true));
+      sh.body.querySelector('#bbT2').onclick = async function () {
+        this.disabled = true; this.textContent = 'Taking the chat…';
+        try { await api.post('wa.g_botbad', { phone, mode: 'take', reason: sh.body.querySelector('#bbR').value }); if (sh.close) sh.close(); if (S.cur && S.cur.phone === phone) { S.cur.row.emp = S.me.emp_id; S.cur.botLock = false; S.cur.botTplLearn = true; botBanner(); openTemplates(); } }
+        catch (e) { toast(e.message, true); this.disabled = false; this.textContent = '📋 Send a pre-made message (template) instead'; }
+      };
       sh.body.querySelector('#bbS').onclick = async function () {
         const text = sh.body.querySelector('#bbN').value.trim(); if (text.length < 2) { toast('Write the better answer first.', true); return; }
         this.disabled = true; this.textContent = 'Sending…';
@@ -1764,7 +1769,7 @@
         const vals = () => [...sh.body.querySelectorAll('.wxv')].map((x) => x.value.trim()); const prev = () => { $('#wxTpP').textContent = (t.header_text ? fill(t.header_text, [$('#wxTpH') ? $('#wxTpH').value : '']) + '\n' : '') + fill(t.body, vals()) + (t.footer ? '\n' + t.footer : ''); }; sh.body.querySelectorAll('input').forEach((x) => { x.oninput = prev; }); prev();
         $('#wxTpB').onclick = () => { list(); sh.body.onclick = (e) => { const r = e.target.closest('[data-i]'); if (r) one(ok[+r.dataset.i]); }; };
         $('#wxTpS').onclick = async function () { const v = vals(); const bad = v.map((x, i) => tplVarBad(H[i] || {}, x)).find(Boolean); if (bad) { $('#wxTpE').innerHTML = '<div class="wx-banner y">' + esc(bad) + '</div>'; return; } this.disabled = true; this.textContent = 'Sending…';
-          try { await api.post('wa.tpl_send', { phone: c.phone, id: t.id, vars: v, header_var: $('#wxTpH') ? $('#wxTpH').value.trim() : '' }); sh.close(); toast('Sent ✓'); pollChat(); } catch (er) { $('#wxTpE').innerHTML = `<div class="wx-banner y">${esc(er.message)}</div>`; this.disabled = false; this.textContent = 'Send'; } };
+          try { await api.post('wa.tpl_send', { phone: c.phone, id: t.id, vars: v, header_var: $('#wxTpH') ? $('#wxTpH').value.trim() : '' }); if (S.cur && S.cur.botTplLearn) { S.cur.botTplLearn = false; api.post('wa.g_botbad', { phone: c.phone, mode: 'tpl_done', tpl_id: t.id }).catch(() => { }); } sh.close(); toast('Sent ✓'); pollChat(); } catch (er) { $('#wxTpE').innerHTML = `<div class="wx-banner y">${esc(er.message)}</div>`; this.disabled = false; this.textContent = 'Send'; } };
       }
     }
 

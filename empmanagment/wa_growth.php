@@ -1104,6 +1104,18 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
                 $sug = ''; try { $GLOBALS['lib_fast'] = 1; $rr = wag_brain_reply($pdo, $c, (string)$l['bot_text'], true); unset($GLOBALS['lib_fast']); if (!empty($rr['ok'])) $sug = (string)$rr['text']; } catch (Throwable $e) { }
                 json_response(['bot_text' => $l['bot_text'], 'suggestion' => $sug, 'lock' => $l['on']]);
             }
+            if (($in['mode'] ?? '') === 'tpl_done') {   // the template the person chose after 👎 went out: the learning row keeps which one (the bot learns that a pre-made message may be the right answer)
+                $tid = (int)($in['tpl_id'] ?? 0); $tr = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $tid) : null;
+                try { $pdo->prepare("UPDATE wa_learn SET sent = ? WHERE phone = ? AND kind = 'botbad' AND emp_id = ? ORDER BY id DESC LIMIT 1")->execute([mb_substr('[TEMPLATE #' . $tid . ' ' . ($tr ? (string)$tr['name'] : '') . '] ' . ($tr ? (string)$tr['body'] : ''), 0, 1500), $key, $me]); } catch (Throwable $e) { }
+                json_response(['ok' => true]);
+            }
+            if (($in['mode'] ?? '') === 'take') {   // 👎 → "send a pre-made message instead": the chat becomes the person's, the bot stops, the person then picks the template
+                $reason = mb_substr(trim((string)($in['reason'] ?? '')), 0, 60); $GLOBALS['bot_replace'] = 1; wa_assign_to($pdo, $key, $me, $me, 'takeover'); unset($GLOBALS['bot_replace']);
+                $nm = employee_names_by_id($pdo); $who = $nm[$me] ?? 'A salesperson';
+                wa_event($pdo, $key, '🔄 ' . $who . ' marked the bot’s answer not good, took this chat and sends a pre-made message instead. Bot said: “' . mb_substr((string)$l['bot_text'], 0, 160) . '”' . ($reason !== '' ? ' · reason: ' . $reason : ''));
+                try { if (function_exists('wa_learn_tables') && wa_learn_tables($pdo)) { [$inId, $cu] = wa_last_in($pdo, $key); $pdo->prepare("INSERT INTO wa_learn (phone, in_id, customer, sugg, sent, kind, emp_id, ver, status, created_at) VALUES (?, ?, ?, ?, ?, 'botbad', ?, 0, 'new', ?)")->execute([$key, $inId, mb_substr((string)$cu, 0, 800), mb_substr((string)$l['bot_text'], 0, 1500), '[TEMPLATE — being chosen]', $me, date('Y-m-d H:i:s')]); } } catch (Throwable $e) { }
+                json_response(['ok' => true]);
+            }
             $text = trim((string)($in['text'] ?? '')); if (mb_strlen($text) < 2) json_response(['error' => 'Write the better answer first.'], 422);
             $reason = mb_substr(trim((string)($in['reason'] ?? '')), 0, 60); $GLOBALS['bot_replace'] = 1;
             [$ok, $res] = wa_send_text($pdo, $c, $text, 'emp', $me); if (!$ok) { unset($GLOBALS['bot_replace']); json_response(['error' => (string)$res], 422); }
