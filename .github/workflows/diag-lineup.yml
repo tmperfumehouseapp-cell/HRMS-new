@@ -13,6 +13,10 @@ on:
         description: "List the approved text templates (id, category, accounts, body) for the After-Order module"
         type: boolean
         default: false
+      won:
+        description: 'Also run diag_won.php (who closes the orders, 7 days)'
+        type: boolean
+        default: false
       cli:
         description: "Run ONE command-line Lineup sending round (cron_line.php test) instead of the probe"
         type: boolean
@@ -113,7 +117,7 @@ jobs:
           printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
           ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "${{ inputs.won }}" <<'REMOTE' || true
           cat > /tmp/tp.php <<'PHP'
           <?php
           require $argv[1] . "empmanagment/config.php";
@@ -128,5 +132,5 @@ jobs:
           PHP
           echo "VER $(grep -o 'wa_camp_ui.js?v=c[0-9]*\|wa_botlearn_ui.js?v=[0-9]*' "$1"whatsapp.html | tr '\n' ' ') · handed fix in wa_growth: $(grep -c 'strtotime(\$hand\[\$k\]) > 0' "$1"empmanagment/wa_growth.php) · whatsapp.html time $(stat -c %y "$1"whatsapp.html | cut -c1-19) · server time $(date '+%F %T')"
           php /tmp/tp.php "$1"; rm -f /tmp/tp.php
-          [ -f "$1"empmanagment/diag_won.php ] && php "$1"empmanagment/diag_won.php "$1" 7 || true
+          [ "$2" = "true" ] && [ -f "$1"empmanagment/diag_won.php ] && php "$1"empmanagment/diag_won.php "$1" 7 || true
           REMOTE
