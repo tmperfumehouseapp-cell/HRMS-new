@@ -28,6 +28,9 @@ function fb_tables(PDO $pdo): bool
             try { $pdo->exec("ALTER TABLE fb_orders ADD COLUMN reward_state VARCHAR(8) NOT NULL DEFAULT ''"); } catch (Throwable $e) { }
             setting_set($pdo, 'fb_rs_col', '1');
         }
+        if ((string)setting_get($pdo, 'fb_iss_col', '') !== '1') {      // small issues (smell different, bottle not proper, not received …) solved here, without a complaint: type / open|solved|esc / since / note
+            try { $pdo->exec("ALTER TABLE fb_orders ADD COLUMN issue_type VARCHAR(20) NOT NULL DEFAULT '', ADD COLUMN issue_state VARCHAR(8) NOT NULL DEFAULT '', ADD COLUMN issue_at DATETIME NULL, ADD COLUMN issue_note VARCHAR(300) NOT NULL DEFAULT ''"); setting_set($pdo, 'fb_iss_col', '1'); } catch (Throwable $e) { error_log('fb issue cols: ' . $e->getMessage()); }
+        }
         if ((string)setting_get($pdo, 'fb_place_w', '') !== '1') {      // the places of an older copy of the table were 60 characters: several places need more room (once)
             try { $pdo->exec("ALTER TABLE fb_orders MODIFY place VARCHAR(200) NOT NULL DEFAULT ''"); $pdo->exec("ALTER TABLE fb_proofs MODIFY place VARCHAR(200) NOT NULL DEFAULT ''"); setting_set($pdo, 'fb_place_w', '1'); } catch (Throwable $e) { error_log('fb place width: ' . $e->getMessage()); }
         }
@@ -243,7 +246,7 @@ function fb_row_out(array $r): array
     $seen = (string)($r['msg_status'] ?? '') === 'read';
     return ['id' => (int)$r['id'], 'order' => (string)$r['order_name'], 'customer' => (string)$r['customer'], 'phone' => (string)$r['phone'], 'delivered' => substr((string)$r['delivered_at'], 0, 16), 'store' => (string)($r['store_key'] ?? ''), 'last_call' => (string)($r['last_call'] ?? ''), 'status' => (string)$r['status'], 'test' => strpos((string)$r['order_name'], 'TEST-') === 0,
         'msg_at' => (string)($r['msg_at'] ?? ''), 'fu_at' => (string)($r['fu_at'] ?? ''), 'seen' => $seen, 'msg_state' => (string)($r['msg_status'] ?? ''), 'msg_why' => (string)($r['msg_status'] ?? '') === 'failed' ? fb_why((int)($r['msg_code'] ?? 0), (string)($r['msg_errtext'] ?? '')) : '', 'msg_err' => (string)$r['msg_err'], 'place' => (string)$r['place'],
-        'reward_state' => (string)($r['reward_state'] ?? ''), 'reward_order' => (string)$r['reward_order'], 'reward_note' => (string)$r['reward_note'], 'cx_code' => (string)$r['cx_code'], 'skip_why' => (string)$r['skip_why'], 'proofs' => (int)($r['proofs'] ?? 0)];
+        'issue_type' => (string)($r['issue_type'] ?? ''), 'issue_state' => (string)($r['issue_state'] ?? ''), 'issue_at' => (string)($r['issue_at'] ?? ''), 'issue_note' => (string)($r['issue_note'] ?? ''), 'reward_state' => (string)($r['reward_state'] ?? ''), 'reward_order' => (string)$r['reward_order'], 'reward_note' => (string)$r['reward_note'], 'cx_code' => (string)$r['cx_code'], 'skip_why' => (string)$r['skip_why'], 'proofs' => (int)($r['proofs'] ?? 0)];
 }
 
 function fb_route(PDO $pdo, string $action): void
@@ -258,13 +261,14 @@ function fb_route(PDO $pdo, string $action): void
     if ($action === 'fb.list') {
         fb_enroll($pdo, false);
         // 🔔 what needs a PERSON (everything else runs by itself): the customer wrote back in words, a reward is promised and not sent, a message failed, a screenshot came and no thank-you went yet
-        $needSql = "(f.status = 'replied' OR f.reward_state = 'owed' OR COALESCE(m.status, '') = 'failed' OR (f.status = 'proof' AND NOT EXISTS (SELECT 1 FROM fb_events ev WHERE ev.order_name = f.order_name AND ev.txt LIKE 'Thank-you sent%')))";
+        $needSql = "(f.issue_state = 'open' OR f.status = 'replied' OR f.reward_state = 'owed' OR COALESCE(m.status, '') = 'failed' OR (f.status = 'proof' AND NOT EXISTS (SELECT 1 FROM fb_events ev WHERE ev.order_name = f.order_name AND ev.txt LIKE 'Thank-you sent%')))";
         $tab = (string)($_GET['tab'] ?? 'all'); $qs = trim((string)($_GET['q'] ?? '')); $qs = ltrim($qs, '#');
         $w = []; $p = [];
         if ($qs !== '') { $like = '%' . $qs . '%'; $w[] = "(f.order_name LIKE ? OR f.customer LIKE ? OR f.phone LIKE ?)"; array_push($p, $like, $like, $like); }
         elseif ($tab === 'unseen') $w[] = "f.msg_at IS NOT NULL AND COALESCE(m.status, '') <> 'read'";
         elseif ($tab === 'need') $w[] = $needSql;
         elseif ($tab === 'owed') $w[] = "f.reward_state = 'owed'";
+        elseif ($tab === 'issue') $w[] = "f.issue_state = 'open'";
         elseif (in_array($tab, ['wait', 'sent', 'replied', 'proof', 'rew', 'cmp', 'skip'], true)) { $w[] = "f.status = ?"; $p[] = $tab; }
         $sql = "SELECT f.*, m.status AS msg_status, m.err AS msg_errtext, m.err_code AS msg_code, (SELECT e.txt FROM fb_events e WHERE e.order_name = f.order_name AND e.txt LIKE 'Call:%' ORDER BY e.id DESC LIMIT 1) AS last_call, (SELECT COUNT(*) FROM fb_proofs pp WHERE pp.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> ''" . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . " ORDER BY f.delivered_at DESC LIMIT 300";
         $st = $pdo->prepare($sql); $st->execute($p); $rows = array_map('fb_row_out', $st->fetchAll());
@@ -274,8 +278,10 @@ function fb_route(PDO $pdo, string $action): void
         $seen = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders f JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE m.status = 'read' AND f.order_name NOT LIKE 'TEST-%'")->fetchColumn();
         $proofs = (int)$pdo->query("SELECT COUNT(DISTINCT order_name) FROM fb_proofs WHERE order_name NOT LIKE 'TEST-%'")->fetchColumn();
         $need = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE f.order_name NOT LIKE 'TEST-%' AND " . $needSql)->fetchColumn();
+        $issue = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders WHERE issue_state = 'open' AND order_name NOT LIKE 'TEST-%'")->fetchColumn();
+        $istat = []; try { foreach ($pdo->query("SELECT issue_type t, COUNT(*) n FROM fb_orders WHERE issue_type <> '' AND issue_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) AND order_name NOT LIKE 'TEST-%' GROUP BY issue_type ORDER BY n DESC")->fetchAll() as $z) $istat[(string)$z['t']] = (int)$z['n']; } catch (Throwable $e) { }
         $owed = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders WHERE reward_state = 'owed' AND order_name NOT LIKE 'TEST-%'")->fetchColumn();
-        json_response(['rows' => $rows, 'counts' => $c + ['sent_total' => $sent, 'seen' => $seen, 'unseen' => max(0, $sent - $seen), 'proof_orders' => $proofs, 'need' => $need, 'owed' => $owed], 'cfg' => $cfg, 'can_edit' => in_array($role, ['Admin', 'HR'], true)]);
+        json_response(['rows' => $rows, 'counts' => $c + ['sent_total' => $sent, 'seen' => $seen, 'unseen' => max(0, $sent - $seen), 'proof_orders' => $proofs, 'need' => $need, 'owed' => $owed, 'issue' => $issue, 'issue_stats' => $istat], 'cfg' => $cfg, 'can_edit' => in_array($role, ['Admin', 'HR'], true)]);
     }
     if ($action === 'fb.get') {
         $o = trim((string)($_GET['order'] ?? '')); $r = $get($o); if (!$r) json_response(['error' => 'Order not found.'], 404);
@@ -375,6 +381,20 @@ function fb_route(PDO $pdo, string $action): void
     if ($action === 'fb.thanks_text') {      // the thank-you with name / order / links filled in — it goes into the chat box, NOT sent
         json_response(['ok' => true, 'text' => fb_fill($pdo, trim((string)($in['text'] ?? '')), $r)]);
     }
+    if ($action === 'fb.issue_open') {      // 🛠 a small issue: kept open here until solved (no complaint ticket)
+        $ty = preg_replace('/[^a-z_]/', '', (string)($in['type'] ?? 'other')) ?: 'other'; $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 300);
+        $pdo->prepare("UPDATE fb_orders SET issue_type = ?, issue_state = 'open', issue_at = NOW(), issue_note = ? WHERE id = ?")->execute([$ty, $note, (int)$r['id']]);
+        fb_log($pdo, $order, 'Small issue opened: ' . $ty . ($note !== '' ? ' — ' . $note : ''), $by); json_response(['ok' => true]);
+    }
+    if ($action === 'fb.issue_fix') {       // what was done about it (message / free perfume / replacement / call): only written in the history
+        $fx = mb_substr(trim((string)($in['fix'] ?? '')), 0, 200); if ($fx === '') json_response(['error' => 'Write what was done.'], 422);
+        fb_log($pdo, $order, 'Small issue — ' . $fx, $by); json_response(['ok' => true]);
+    }
+    if ($action === 'fb.issue_solved') {
+        $how = mb_substr(trim((string)($in['how'] ?? '')), 0, 200);
+        $pdo->prepare("UPDATE fb_orders SET issue_state = 'solved' WHERE id = ?")->execute([(int)$r['id']]);
+        fb_log($pdo, $order, 'Small issue solved' . ($how !== '' ? ': ' . $how : ''), $by); json_response(['ok' => true]);
+    }
     if ($action === 'fb.send_thanks') {      // 💛 a thank-you after the screenshot: typed, one tap
         $text = trim((string)($in['text'] ?? '')); if ($text === '') json_response(['error' => 'Write the thank-you first.'], 422);
         [$ok, $why] = fb_typed($pdo, $r, fb_fill($pdo, $text, $r), (int)($auth['employee_id'] ?? 0), 'emp'); if (!$ok) json_response(['error' => $why], 422);
@@ -382,7 +402,7 @@ function fb_route(PDO $pdo, string $action): void
     }
     if ($action === 'fb.cx_done') {   // the complaint itself is raised by the page through bd.cx_raise (the Complaints page); this keeps the link and the history
         $code = mb_substr(trim((string)($in['code'] ?? '')), 0, 30); $why = mb_substr(trim((string)($in['why'] ?? '')), 0, 200);
-        $pdo->prepare("UPDATE fb_orders SET status = 'cmp', cx_code = ? WHERE id = ?")->execute([$code, (int)$r['id']]);
+        $pdo->prepare("UPDATE fb_orders SET status = 'cmp', cx_code = ?, issue_state = CASE WHEN issue_state = 'open' THEN 'esc' ELSE issue_state END WHERE id = ?")->execute([$code, (int)$r['id']]);
         fb_log($pdo, $order, 'Complaint ' . ($code !== '' ? $code . ' ' : '') . 'opened in the Complaints page' . ($why !== '' ? ': ' . $why : ''), $by);
         json_response(['ok' => true]);
     }
