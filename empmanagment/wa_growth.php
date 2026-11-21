@@ -537,7 +537,10 @@ function wag_addon_calc(PDO $pdo, string $key): ?array
 {
     try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('bot','emp') AND mtype = 'text' ORDER BY id DESC LIMIT 12"); $q->execute([$key]);
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) { $t = str_replace(['×', '✕'], 'x', (string)$t);
-            if (!preg_match('/(\d{1,2})\s*x\s*(\d{2,3})\s*ml[^\n]{0,90}?(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $t, $mm)) continue;
+            if (!preg_match('/(\d{1,2})\s*x\s*(\d{2,3})\s*ml[^\n]{0,90}?(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $t, $mm)) {
+                // a NEWER message with a price in it that this reader cannot understand ("Make 12 for 2500") = the deal changed after the quote it knows: no offer at all (never an offer on an old price)
+                if (preg_match('/(?:rs\.?|₹|\bfor\b|=|\btotal\b)\s*([\d,]{3,6})\b/iu', $t, $pm) && (int)str_replace(',', '', $pm[1]) >= 500 && (int)str_replace(',', '', $pm[1]) <= 20000) return null;
+                continue; }
             $qty = (int)$mm[1]; $ml = (int)$mm[2]; $tot = (int)str_replace(',', '', $mm[3]); if ($qty < 2 || $qty > 20 || $tot < 500 || $tot > 20000 || !in_array($ml, [20, 30, 50, 100], true)) continue;
             $per = $tot / $qty; $hi = $tot >= 2800; $d1 = $hi ? 0.15 : 0.25; $d2 = $hi ? 0.20 : 0.32;
             $p1 = (int)(round($per * (1 - $d1) / 10) * 10); $p2 = (int)(round(2 * $per * (1 - $d2) / 10) * 10); if ($p1 < 50 || $p2 <= $p1) continue;
