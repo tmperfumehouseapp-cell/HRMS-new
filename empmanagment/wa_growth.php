@@ -1148,6 +1148,7 @@ function wag_bot_tick(PDO $pdo, int $slots = 8, string $role = ''): array   // o
     try {
         if ($role === 'fuw') {   // 🔁 a FOLLOW-UP WORKER (owner, 21 Nov: follow-ups were only ~3 a minute): ONE long request that loops for ~50 s (cron_bot.php starts two a minute) instead of a request every few seconds — it sends one round after the other without the 5 s limiter
             $GLOBALS['wag_bfu_nolimit'] = 1; $t0 = time(); $o['followup'] = 0;
+            setting_set($pdo, 'wag_fuw_at', (string)time()); setting_set($pdo, 'wag_fuw_n', (string)((int)setting_get($pdo, 'wag_fuw_n', '0') + 1));   // diag: a worker started
             while (time() - $t0 < 50) { try { $k = wag_bot_followup($pdo, 20); } catch (Throwable $e) { $k = 0; } $o['followup'] += $k; if ($k === 0) sleep(2); }
             return $o; }
         if ($role === 'fu') { try { $o['followup'] = wag_bot_followup($pdo, 20); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } } return $o; }
