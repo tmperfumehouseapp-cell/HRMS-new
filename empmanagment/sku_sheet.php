@@ -112,6 +112,11 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     if (preg_match('/(?<![a-z0-9])chain+s?(?![a-z0-9])|necklace|bracelet|pendant|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone)(?![a-z0-9])/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
     if (preg_match('/^\s*(tmperfumehouse|tm perfume house)\s*x\s*\d+\s*\(\s*inside:\s*build your own/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'build-your-own pack: the perfumes are not named on the order', 'kind' => 'left']; return; }
     $put = function (string $sku, int $col, int $q) use (&$grid, $order) { if (!isset($grid[$sku])) $grid[$sku] = array_fill(0, 10, 0); $grid[$sku][$col] += $q; $GLOBALS['__sku_ord'][$sku][$col][$order] = ($GLOBALS['__sku_ord'][$sku][$col][$order] ?? 0) + $q; };      // which orders make each number of the sheet
+    if (preg_match('/^\s*no[ -]?name\b/i', $full) || preg_match('/^NONAME-\d+/i', $shopSku)) {      // 🏷 "No name 50 ml" (a perfume sold without a name, from the manual orders): counted on its own row "No Name", in its size column
+        $w1 = ''; $c1 = sku_col($full, $w1); if ($c1 < 0 && preg_match('/^NONAME-(\d+)/i', $shopSku, $m1)) $c1 = sku_col($m1[1] . ' ml', $w1);
+        if ($c1 >= 0) { $put('NONAME', $c1, $qty); return; }
+        $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'No name perfume: size not known', 'kind' => 'size']; return;
+    }
     if (preg_match('/^\s*complimentary\b/i', $full)) {      // "complimentary 10ml": a free sample — its perfume is not written on the order, so it is counted on its own row "Complimentary (free gift)" in its size column
         $w0 = ''; $c0 = sku_col($full, $w0); if ($c0 >= 0) { $put('FREE', $c0, $qty); return; }
         $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'free gift: size not known', 'kind' => 'size']; return;
@@ -237,8 +242,8 @@ function sku_sheet(PDO $pdo, string $day): array
         }
     } catch (Throwable $e) { }
     $ix = sku_index(); $rows = [];
-    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : ($sku === 'NOTFOUND' ? 'Not in SKU list (names are in the box above)' : (string)($ix['name'][$sku] ?? 'Not Found')), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
-    usort($rows, function ($a, $b) { $la = ['FREE' => 1, 'NOTFOUND' => 2][$a['sku']] ?? 0; $lb = ['FREE' => 1, 'NOTFOUND' => 2][$b['sku']] ?? 0; if ($la !== $lb) return $la <=> $lb; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
+    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : ($sku === 'NONAME' ? 'No Name (perfume sold without a name)' : ($sku === 'NOTFOUND' ? 'Not in SKU list (names are in the box above)' : (string)($ix['name'][$sku] ?? 'Not Found'))), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
+    usort($rows, function ($a, $b) { $la = ['FREE' => 1, 'NONAME' => 1, 'NOTFOUND' => 2][$a['sku']] ?? 0; $lb = ['FREE' => 1, 'NONAME' => 1, 'NOTFOUND' => 2][$b['sku']] ?? 0; if ($la !== $lb) return $la <=> $lb; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
     $tot = array_fill(0, 10, 0); foreach ($rows as $r) foreach ($r['q'] as $i => $v) $tot[$i] += $v;
     // the list on top of the page: the same product from many orders is ONE line with its pieces and its orders
     $grp = [];
