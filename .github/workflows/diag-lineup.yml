@@ -38,6 +38,7 @@ jobs:
           P="$1"; export LN_BRIEF="$2"; export LN_PROBE="$3"
           if [ "$LN_PROBE" = "true" ]; then
           echo "=== server files ===" ; echo "whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html) · wa_camp_ui.js $(stat -c '%y' "$P"assets/js/wa_camp_ui.js | cut -c1-19) · top-space marker: $(grep -c 'its own space' "$P"assets/js/wa_camp_ui.js) · speed cache marker: $(grep -c 'ONCE per message and 45 seconds' "$P"empmanagment/wa_line.php) · server time $(date '+%H:%M:%S')"
+          echo "=== cron_bot on the server === file: $(stat -c %y "$P"empmanagment/cron_bot.php | cut -c1-19) · has role=fuw: $(grep -c 'role=fuw' "$P"empmanagment/cron_bot.php) · has 3 ticks: $(grep -c 'i < 3' "$P"empmanagment/cron_bot.php) · running now: $(pgrep -fc cron_bot.php) · hits of role=fuw in the access log (last 2000 lines): $(tail -n 2000 /home/*/logs/nginx/access.log 2>/dev/null | grep -c 'role=fuw')"
           cat > /tmp/ln_probe.php <<'PHP'
           <?php
           $f = $argv[1] . "empmanagment/config.php"; require $f;
