@@ -145,6 +145,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
             continue;
         }
         $w2 = ''; $col = sku_col($c . ' ' . $nm, $w2); if ($col < 0) $col = sku_col($full, $w2);
+        if ($col < 0 && (preg_match('/^OG\d/', $s2) || preg_match('/compliment getter|dark side|caffeine club|dress to impress/i', $c))) $col = 2;      // a TM Original inside a "build your own original combo": they exist only as 50 ml bottles
         if ($col < 0) { $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty, 'why' => $w2 ?: 'size not known', 'kind' => 'size']; $hit++; continue; }
         $n = 1; if (preg_match('/^\s*(\d{1,2})\s*[x×]\s+/iu', $c, $m)) $n = max(1, (int)$m[1]);
         $put($s2, $col, $qty * $n); $hit++;
