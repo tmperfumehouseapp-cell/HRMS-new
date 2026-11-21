@@ -120,5 +120,6 @@ jobs:
           foreach ($pdo->query("SELECT t.id, t.category, t.relabelled_at, t.header_format, REPLACE(LEFT(t.body, 150), CHAR(10), ' ') b, (SELECT SUM(UPPER(w.status) = 'APPROVED') FROM wa_tpl_waba w WHERE w.tpl_id = t.id) ap FROM wa_templates t WHERE t.header_format IN ('', 'TEXT') HAVING ap >= 3 ORDER BY ap DESC, t.id LIMIT 3")->fetchAll(PDO::FETCH_NUM) as $r) echo "TPL " . $r[0] . " " . substr($r[1], 0, 4) . ($r[2] ? "*" : "") . " ap" . $r[5] . " | " . $r[4] . "\n";
           foreach ($pdo->query("SELECT id, kind, title, mime, size FROM wa_media_lib ORDER BY id DESC LIMIT 60")->fetchAll(PDO::FETCH_NUM) as $r) echo "LIB " . implode(" | ", $r) . "\n";
           PHP
+          echo "VER $(grep -o 'wa_camp_ui.js?v=c[0-9]*\|wa_botlearn_ui.js?v=[0-9]*' "$1"whatsapp.html | tr '\n' ' ') · handed fix in wa_growth: $(grep -c 'strtotime(\$hand\[\$k\]) > 0' "$1"empmanagment/wa_growth.php) · whatsapp.html time $(stat -c %y "$1"whatsapp.html | cut -c1-19) · server time $(date '+%F %T')"
           php /tmp/tp.php "$1"; rm -f /tmp/tp.php
           REMOTE
