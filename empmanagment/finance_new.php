@@ -451,6 +451,12 @@ switch ($action) {
         json_response(['uploads' => $list]);
         break;
     }
+    // the prepaid orders of a day (before any file is uploaded): the list the settlement file will be compared with
+    case 'fn.in_orders_day': {
+        $d = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime(fn_today($pdo) . ' -1 day')); $list = fn_prepaid_orders($pdo, $d); $tot = 0; foreach ($list as $o) $tot += fn_p($o['amount']);
+        json_response(['orders_day' => $d, 'count' => count($list), 'amount' => fn_m($tot), 'orders' => array_map(fn($o) => ['name' => $o['name'], 'customer' => $o['customer'], 'amount' => $o['amount']], array_slice($list, 0, 600))]);
+        break;
+    }
     case 'fn.in_upload_recon': {
         $q = $pdo->prepare("SELECT file_name, day, net, recon_json FROM fn_in_uploads WHERE id = ?"); $q->execute([(int)($_GET['id'] ?? 0)]); $u = $q->fetch(); if (!$u || (string)$u['recon_json'] === '') fn_err('No comparison was saved for this file.', 404);
         json_response(['file' => $u['file_name'], 'day' => $u['day'], 'recon' => json_decode((string)$u['recon_json'], true)]);

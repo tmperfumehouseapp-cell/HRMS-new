@@ -99,10 +99,23 @@
         <label class="sx-f" style="margin-top:8px">Came into (bank)<select class="sx-in" id="uAcc">${ACC.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label>
         <label class="drop" for="uFile">Choose the settlement / UTR file (.xlsx or .csv)<small>The columns are found by themselves; you can correct them before saving.</small></label><input type="file" id="uFile" accept=".xlsx,.csv,.txt,.tsv" style="display:none">
         <div id="uMsg" style="margin-top:8px"></div><div id="uPrev"></div></div>
-      <div id="uRecon"></div>
+      <div id="uRecon"><div class="sx-card"><div class="sx-mut">Loading the prepaid orders…</div></div></div>
       <div class="sx-card wrap"><div class="cap" style="margin-top:0">Files saved for ${esc(c.name)}</div>
         ${ups.length ? `<table class="tb"><tr><th>Day</th><th>File</th><th>Rows</th><th>Gross</th><th>Charges</th><th>Net</th><th></th></tr>${ups.map((u) => `<tr class="${u.status === 'void' ? 'void' : ''}"><td>${esc(dFmt(u.day))}<small>${esc(u.account)}</small></td><td style="text-align:left">${esc(u.file)}${u.status === 'void' ? '<small>cancelled: ' + esc(u.void_reason) + '</small>' : u.orders_day ? '<small>orders of ' + esc(dFmt(u.orders_day)) + '</small>' : ''}</td><td>${u.rows}</td><td>${m2(u.gross)}</td><td>${m2(u.fee)}</td><td><b>${m2(u.net)}</b></td><td style="white-space:nowrap">${u.status === 'ok' && u.has_recon ? `<button class="sx-btn" data-uprec="${u.id}" style="padding:2px 10px">Compare</button> ` : ''}${u.status === 'ok' ? `<button class="sx-btn" data-upvoid="${u.id}" data-ch="${id}" style="padding:2px 10px">Cancel</button>` : ''}</td></tr>`).join('')}</table>` : '<div class="sx-mut">No file yet.</div>'}</div>
       <button class="sx-btn" data-addrec="${id}">+ Add a receipt without a file</button>`, '', true);
+    const ordersOnly = async () => {
+      const el = $('uRecon'); if (!el) return;
+      try {
+        const r = await api.get('fn.in_orders_day', { date: $('uOd').value });
+        el.innerHTML = `<div class="sx-card wrap"><div class="cap" style="margin-top:0">Comparison with your orders <small class="sx-mut">prepaid orders of ${esc(dFmt(r.orders_day))}</small></div>
+          <div class="k3" style="margin-bottom:8px"><div class="k"><small>Prepaid orders</small><b style="font-size:19px">${r.count}</b><span>${m2(r.amount)}</span></div><div class="k"><small>Money came for</small><b style="font-size:19px">—</b><span>after you choose the file</span></div><div class="k"><small>Net received</small><b style="font-size:19px">—</b><span>after you choose the file</span></div></div>
+          <div class="sx-msg ok" style="margin-bottom:8px">${sxi('ok')}<span>Choose the ${esc(c.name)} settlement file above. These orders will be checked against it: which came, which did not, the charges cut and the net.</span></div>
+          ${r.orders.length ? `<table class="tb"><tr><th>Order</th><th>Customer</th><th>Order amount</th></tr>${r.orders.slice(0, 60).map((o) => `<tr><td><b>${esc(o.name)}</b></td><td style="text-align:left">${esc(o.customer)}</td><td>${m2(o.amount)}</td></tr>`).join('')}</table>${r.orders.length > 60 ? `<div class="sx-mut" style="font-size:12px;margin-top:6px">Showing 60 of ${r.orders.length}.</div>` : ''}` : '<div class="sx-mut">No prepaid order found for this day. Change “Orders of day”.</div>'}</div>`;
+      } catch (e) { el.innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+    };
+    $('uDay').onchange = () => { if (!$('uOd').dataset.own) $('uOd').value = addDays($('uDay').value, -1); ordersOnly(); };
+    $('uOd').onchange = () => { $('uOd').dataset.own = '1'; ordersOnly(); };
+    ordersOnly();
     if (!ACC.length) $('uMsg').innerHTML = '<div class="sx-msg warn">' + sxi('alert') + '<span>Add a bank first: Finance New → Bank Accounts.</span></div>';
     $('uFile').onchange = async () => {
       const f = $('uFile').files[0]; if (!f) return; $('uPrev').innerHTML = ''; $('uMsg').innerHTML = `<div class="sx-mut">Reading ${esc(f.name)} …</div>`;
