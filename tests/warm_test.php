@@ -6,7 +6,7 @@ $f = strpos($src, 'function wa_ru_warm_tick'); $chk('function exists', $f !== fa
 $body = substr($src, $f, strpos($src, '/** ROUTE:', $f) - $f);
 $chk('allowance lives in the setting wa_ru_warm', strpos($body, "'wa_ru_warm'") !== false);
 $chk('seeded once with 10 each for numbers 9 and 10', strpos($body, '{"9":10,"10":10}') !== false && strpos($body, 'wa_ru_warm_seed_2011') !== false);
-$chk('at most 3 per number per round', strpos($body, '$round >= 3') !== false);
+$chk('at most 3 per number per round (more only for a number with an hourly allowance, capped at 20)', strpos($body, '$round >= $rcap') !== false && strpos($body, 'max(3, min(20,') !== false);
 $chk('only a CONNECTED number sends', strpos($body, "!== 'CONNECTED'") !== false);
 $chk('a retired number never sends', strpos($body, "!empty(\$n['retired'])") !== false);
 $chk('only messages approved on that number\'s WhatsApp account', strpos($body, "'ok_wabas'") !== false && strpos($body, 'wa_waba_of($n)') !== false);
