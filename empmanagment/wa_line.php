@@ -268,8 +268,8 @@ function wl_block(PDO $pdo, array $c, string $anchor, array $orders = [], bool $
     try { $q = $pdo->prepare("SELECT MAX(sent_at) FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $q->execute([$phone]); $last = (string)$q->fetchColumn();
         if ($last !== '' && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > strtotime($last)) return 'replied'; } catch (Throwable $e) { }
     if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) return 'wait: muted (order / ticket / thank-you)';
-    // a PERSON (salesperson) who wrote in the last 36 hours is still working him: wait. Campaigns (Module A / B) and templates do NOT hold the Lineup any more (owner 21 Nov: it runs as its own module)
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND status <> 'failed' AND ts >= ? LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $now - 36 * 3600)]); if ($q->fetchColumn()) return 'wait: a person wrote in the last 36 h'; } catch (Throwable $e) { }
+    // the conversation ends with the last message of EITHER side: a PERSON (salesperson) who wrote in the last 24 hours is still working him: wait (24 h like the customer's own last message). Campaigns (Module A / B) and templates do NOT hold the Lineup any more (owner 21 Nov: it runs as its own module)
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND status <> 'failed' AND ts >= ? LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $now - 24 * 3600)]); if ($q->fetchColumn()) return 'wait: a person wrote in the last 24 h'; } catch (Throwable $e) { }
     if ($first && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > $now - 24 * 3600) return 'wait: conversation not over';   // owner 21 Nov: the 24 hours count from the END of the conversation (his last message); only then, with no order, the lineup starts
     if (!$first && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > $now - 6 * 3600) return 'wait: chatting now';   // he wrote in the last 6 hours: the chat answers him, not a template
     foreach (['wa_fu_ev', 'wa_wj_ev'] as $t) { try { $q = $pdo->prepare("SELECT 1 FROM $t WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $now - 86400)]); if ($q->fetchColumn()) return 'wait: got a follow-up today'; } catch (Throwable $e) { } }
@@ -361,17 +361,20 @@ function wl_tick(PDO $pdo, array $opt = []): array
     $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
     $orders = wl_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = array_keys(array_filter(wl_tpl_status($pdo), fn($x) => $x === 'approved'));
     $upd = $pdo->prepare("UPDATE wa_line_plan SET status = ?, why = ?, sent_at = ?, wamid = ?, tpl_key = ? WHERE id = ?");
+    $wc = []; $wcn = function (string $k) use (&$wc) { $wc[$k] = ($wc[$k] ?? 0) + 1; };
     foreach ($byPhone as $phone => $list) {
-        if ($sent >= $cap || microtime(true) > $dl) { $o['waiting'] += count($list); continue; }
+        if ($sent >= $cap || microtime(true) > $dl) { $o['waiting'] += count($list); $wcn('round full (60 a round) or out of time'); continue; }
         $row = $list[0];   // the lowest due step goes (the list is ordered by step); the steps after it are moved to 24 h after the message that really went
         $c = function_exists('wa_contact') ? wa_contact($pdo, (string)$phone) : null; if (!$c) { $upd->execute(['skipped', 'no contact', null, '', $row['tpl_key'], $row['id']]); $o['skipped']++; continue; }
         $fq = $pdo->prepare("SELECT 1 FROM wa_line_plan WHERE phone = ? AND status = 'sent' LIMIT 1"); $fq->execute([$phone]); $isFirst = !$fq->fetchColumn();
         $why = wl_block($pdo, $c, (string)$row['anchor_at'], $orders, $isFirst);
         if ($why !== '') {
             if ($why === 'wait: conversation not over') {   // still talking: wait as long as it takes (up to 14 days from his first message), then drop
+                $wcn('conversation not over (last message < 24 h)');
                 if ($now > (int)strtotime((string)$row['anchor_at']) + 14 * 86400) { $pdo->prepare("UPDATE wa_line_plan SET status = 'cancelled', why = 'the conversation never ended' WHERE phone = ? AND status = 'planned'")->execute([$phone]); $pdo->prepare("UPDATE wa_line_cust SET status = 'done', left_why = 'conversation never ended' WHERE phone = ?")->execute([$phone]); $o['skipped']++; } else $o['waiting']++;
                 continue; }
             if (strpos($why, 'wait') === 0) {
+                $wcn(mb_substr($why, 6, 60));
                 if ((int)strtotime((string)$row['due_at']) < $now - 30 * 3600) { $upd->execute(['skipped', 'too late (' . mb_substr($why, 6, 80) . ')', null, '', $row['tpl_key'], $row['id']]); $o['skipped']++; } else $o['waiting']++;   // waited more than 30 h past its time: dropped, not sent stale
                 continue; }
             if ($why === 'replied') { $pdo->prepare("UPDATE wa_line_plan SET status = 'cancelled', why = 'replied' WHERE phone = ? AND status = 'planned'")->execute([$phone]);
@@ -393,8 +396,9 @@ function wl_tick(PDO $pdo, array $opt = []): array
             $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ? WHERE id = ?")->execute([$tid, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; break; }   // no number can send now: try again next round, nothing is written
         elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1]; $o['waiting']++; }
-        else { $upd->execute(['failed', mb_substr((string)$res[1], 0, 190), null, '', $row['tpl_key'], $row['id']]); $o['failed']++; }
+        else { $upd->execute(['failed', mb_substr((string)$res[1], 0, 190), null, '', $row['tpl_key'], $row['id']]); $o['failed']++; $wcn('failed: ' . mb_substr((string)$res[1], 0, 50)); }
     }
+    try { setting_set($pdo, 'wl_last_round', json_encode(['at' => date('Y-m-d H:i:s'), 'due' => count($byPhone), 'sent' => $o['sent'], 'skipped' => $o['skipped'], 'failed' => $o['failed'], 'waits' => $wc], JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { }   // why the due customers did not go this round
     return $o;
 }
 /** The button cards: a tap on a button answers at once with the FREE message (Button replies, wa_kw.php). Our cards are ln_*; the owner's own cards are never touched. */
@@ -452,6 +456,7 @@ function wl_status(PDO $pdo, bool $withOrders = true): array
     $o['customers'] = ['identified' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust")->fetchColumn(), 'active' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'active'")->fetchColumn(), 'replied' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'replied'")->fetchColumn(), 'left' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'done'")->fetchColumn(),
         'got_message' => (int)$pdo->query("SELECT COUNT(DISTINCT phone) FROM wa_line_plan WHERE status = 'sent'")->fetchColumn(), 'planned_rows' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'planned'")->fetchColumn()];
     $o['sending'] = ['sent' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'sent'")->fetchColumn(), 'failed' => (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'failed'")->fetchColumn(), 'delivered' => 0, 'read' => 0, 'buttons' => 0];
+    $o['round'] = json_decode((string)setting_get($pdo, 'wl_last_round', ''), true) ?: null;
     $o['health'] = json_decode((string)setting_get($pdo, 'wl_issues', ''), true) ?: ['at' => '', 'fixed' => [], 'issues' => []];
     $o['orders'] = ['orders' => 0, 'buyers' => 0, 'revenue' => 0];
     if ($withOrders && $o['sending']['sent'] > 0) { try { $r = wl_report($pdo, 30); foreach ($r['steps'] as $x) { $o['sending']['delivered'] += $x['delivered']; $o['sending']['buttons'] += $x['taps']; $o['orders']['orders'] += $x['orders']; $o['orders']['revenue'] += $x['revenue']; } foreach ($r['topics'] as $t) $o['orders']['buyers'] += $t['buyers']; } catch (Throwable $e) { } }
