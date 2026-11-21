@@ -168,7 +168,18 @@ if ($__bg === 'budget.store_comm') {
     foreach ($by as &$x) { $x['sales'] = round($x['sales'], 2); $x['commission'] = round($x['commission'], 2); $x['pct'] = $x['sales'] > 0 ? round($x['commission'] / $x['sales'] * 100, 2) : 0; $x['perday'] = array_values(array_map(function ($d) { $d['sales'] = round($d['sales'], 2); $d['commission'] = round($d['commission'], 2); return $d; }, $x['days'])); unset($x['days']); } unset($x);
     $pool['sales'] = round($pool['sales'], 2); $pool['commission'] = round($pool['commission'], 2); $pool['pct'] = $pool['sales'] > 0 ? round($pool['commission'] / $pool['sales'] * 100, 2) : 0; $old['sales'] = round($old['sales'], 2);
     ksort($days);
-    json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'pool' => $pool, 'old_pos' => $old, 'sources' => $days, 'no_ml_bills' => $r['no_ml'], 'unpriced_bills' => $r['unpriced']]);
+    json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'pool' => $pool, 'head_id' => (int)setting_get($pdo, 'store_head', 0), 'old_pos' => $old, 'sources' => $days, 'no_ml_bills' => $r['no_ml'], 'unpriced_bills' => $r['unpriced']]);
+}
+if ($__bg === 'budget.store_head') {
+    // The store head: the whole one-team store commission goes to him; the fixed salaries of the others in the team are taken out of it (Total Budgeting). 0 = nobody (everybody is paid his own commission).
+    $auth = require_auth();
+    if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $id = (int)(json_input()['employee_id'] ?? 0); $nm = '';
+    if ($id) { $n = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $n->execute([$id]); $nm = $n->fetchColumn(); if ($nm === false) json_response(['error' => 'Choose an employee.'], 422); }
+    budget_lock($pdo); setting_set($pdo, 'store_head', (string)$id);
+    budget_audit($pdo, $auth, $id ? $nm . ' is now the store head: the one-team store commission goes to him, the others\' fixed salaries are taken out of it' : 'Store head removed: everybody is paid his own store commission', $id);
+    json_response(['ok' => true, 'head_id' => $id]);
 }
 if ($__bg === 'budget.store_pool') {
     // Who counts as ONE store team for the order-code rule (default Neil, Krish and Anil). Anybody else who bills in the store is counted on their own. Admin / Commission role.
