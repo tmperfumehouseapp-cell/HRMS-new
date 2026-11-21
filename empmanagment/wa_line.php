@@ -531,9 +531,11 @@ function wln_mkt_codes(): array { return [131049, 131050, 130472]; }
 function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150): int   // owner 22 Nov: 40 a round / 3 hours rescued only 3,960 of 13,790 failed sends: now 150 a round, receipts of the last 24 hours, 20 s budget
 {
     $now = $now ?: time(); $in = implode(',', wln_mkt_codes()); $n = 0; $__t0 = microtime(true);
+    // once a day: the sends that were marked 'no utility message left / could go' (the pool had 4 wordings) get another try now that the pool is bigger (owner 22 Nov: every blocked message must go out as utility)
+    try { if (setting_get($pdo, 'wl_rescue_reopen', '') !== date('Y-m-d', $now)) { setting_set($pdo, 'wl_rescue_reopen', date('Y-m-d', $now)); $pdo->prepare("UPDATE wa_line_plan SET why = '' WHERE status = 'sent' AND why LIKE 'rescue: no utility message%' AND sent_at >= ?")->execute([date('Y-m-d H:i:s', $now - 36 * 3600)]); } } catch (Throwable $e) { }
     // (no JOIN on the wamids: the two tables have different collations — that threw an error and nothing was rescued; the receipts are read with a bound list instead)
     // (the FAILED receipts are read first, newest first, then their plan rows by a bound wamid list — before, the 4,000 oldest sent rows of the last 3 hours were read and the newer failures were never seen once more than 4,000 had gone)
-    $rows = []; try { $f = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND status = 'failed' AND err_code IN ($in) ORDER BY id DESC LIMIT 1500"); $f->execute([date('Y-m-d H:i:s', $now - 24 * 3600)]); $bad = [];
+    $rows = []; try { $f = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND status = 'failed' AND err_code IN ($in) ORDER BY id DESC LIMIT 1500"); $f->execute([date('Y-m-d H:i:s', $now - 36 * 3600)]); $bad = [];
         foreach ($f->fetchAll() as $m) $bad[(string)$m['wamid']] = (int)$m['err_code'];
         foreach (array_chunk(array_keys($bad), 400) as $ch) { $x = $pdo->prepare("SELECT id, phone, topic, step, tpl_id, sent_at, wamid FROM wa_line_plan WHERE status = 'sent' AND why = '' AND wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch);
             foreach ($x->fetchAll() as $r) { $r['err_code'] = $bad[(string)$r['wamid']]; $rows[] = $r; if (count($rows) >= $cap) break 2; } } } catch (Throwable $e) { return 0; }
