@@ -134,6 +134,11 @@ function wag_cfg(PDO $pdo): array
         if ($g) { $raw = (string)$g['body']; $new = preg_replace('/(Rs\.?\s*)?2[,.]?[78]00\s*[-–]\s*(Rs\.?\s*)?2[,.]?[78]00|\b2[,.]?[78]00\s*(ticket|target)|(ticket|target)[^"\\]{0,12}Rs\.?\s*2[,.]?[78]00/iu', 'a big ticket', $raw);
             $new = (string)$new; $new = preg_replace('/(?<![\d,.])(Rs\.?\s*)?2,?[78]00(?![\d,])\s*(ticket)/iu', 'a big ticket', $new);
             $gb = json_decode($new, true); if (is_array($gb)) { $gb['dont'] = array_values(array_merge(['Never tell the customer any internal target, minimum, floor or ceiling price. Quote ONLY the exact chart price given to you; a lower price appears only when the system gives it after the customer objects.'], array_slice((array)($gb['dont'] ?? []), 0, 20))); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): never confirm a perfume that is not in the catalogue
+    try { if (setting_get($pdo, 'wag_rules15', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules15', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $gb['dont'] = array_values(array_merge(['Never say a perfume is "available" / "in stock" unless its exact name is in our catalogue list. For a name you cannot find, say "Sir, ye naam ek baar confirm karke batata hoon", ask size and quantity, or offer two similar perfumes that are in the list; a person confirms the rest.'], array_slice((array)($gb['dont'] ?? []), 0, 20)));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov: "as fast as possible"): the bot starts 2 s after the message (the answer itself takes the AI 3-5 s)
     try { if (setting_get($pdo, 'wag_bot2', '') !== '1') { setting_set($pdo, 'wag_bot2', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 2; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
