@@ -158,6 +158,7 @@ function fn_header_row(array $rows): int
  *  status / action = Status, Requested Action (failed rows are left out, refunds count as minus). Returns [] when the file is not a PayU report. */
 function fn_payu_cols(array $h): array
 {
+    $h = array_map(fn($t) => trim(preg_replace('/\s+/u', ' ', str_replace("\xC2\xA0", ' ', (string)$t))), $h);
     $ix = function ($name) use ($h) { foreach ($h as $i => $t) if ($t === $name) return $i; return -1; };
     $utr = $ix('merchant utr'); $net = $ix('net amount'); $gross = $ix('amount'); $ord = $ix('merchant txn id'); if ($ord < 0) $ord = $ix('payu id');
     if ($utr < 0 || $net < 0 || $gross < 0 || ($ix('payu id') < 0 && $ix('merchant txn id') < 0)) return [];
@@ -168,7 +169,7 @@ function fn_payu_cols(array $h): array
 /** Guess the columns from the header words: UTR, gross, net, fee columns. The owner can correct every one of them on the screen. */
 function fn_guess_cols(array $header): array
 {
-    $h = array_map(fn($c) => mb_strtolower(trim((string)$c)), $header); $out = ['utr' => -1, 'gross' => -1, 'net' => -1, 'order' => -1, 'fees' => []];
+    $h = array_map(fn($c) => mb_strtolower(trim(preg_replace('/\s+/u', ' ', str_replace("\xC2\xA0", ' ', (string)$c)))), $header); $out = ['utr' => -1, 'gross' => -1, 'net' => -1, 'order' => -1, 'fees' => []];
     $pu = fn_payu_cols($h); if ($pu) return $pu;
     foreach ([['/\butr\b/'], ['/bank.?ref/', '/\brrn\b/'], ['/settlement.?(id|utr|ref)|transfer.?(id|ref)|payout.?(id|ref)|reference.?(no|number|id)/']] as $tier) { foreach ($tier as $re) foreach ($h as $i => $t) if ($out['utr'] < 0 && preg_match($re, $t)) { $out['utr'] = $i; } if ($out['utr'] >= 0) break; }
     foreach ($h as $i => $t) { if (preg_match('/\bnet\b|net.?(amount|settle|payout|credit)/', $t) && !preg_match('/network/', $t)) { $out['net'] = $i; break; } }
@@ -179,29 +180,32 @@ function fn_guess_cols(array $header): array
     return $out;
 }
 /** The money rows of a file for the chosen columns: [row index, utr, gross, fee, net, fee parts per column]. A row counts when it has a UTR (if a UTR column is chosen) and an amount; a totals line without a UTR is left out. net = the net column, else gross - fees. */
-function fn_file_rows(array $rows, int $headRow, array $cols): array
+function fn_file_rows(array $rows, int $headRow, array $cols, ?array &$stats = null): array
 {
     $u = isset($cols['utr']) ? (int)$cols['utr'] : -1; $g = isset($cols['gross']) ? (int)$cols['gross'] : -1; $n = isset($cols['net']) ? (int)$cols['net'] : -1; $fees = array_values(array_unique(array_map('intval', (array)($cols['fees'] ?? []))));
-    $out = [];
+    $out = []; $stats = ['read' => 0, 'no_utr' => 0, 'failed' => 0, 'no_amount' => 0, 'pending' => []];
     foreach ($rows as $i => $r) {
         if ($i <= $headRow) continue;
-        $utr = $u >= 0 ? trim((string)($r[$u] ?? '')) : ''; if ($u >= 0 && ($utr === '' || preg_match('/^(grand )?total$/i', $utr))) continue;
-        $st = isset($cols['status']) && (int)$cols['status'] >= 0 ? mb_strtolower(trim((string)($r[(int)$cols['status']] ?? ''))) : ''; if ($st !== '' && preg_match('/fail|cancel|pending|dropped|bounce|incomplete|initiat|declin|reject/', $st)) continue;      // a payment that did not go through is no money
+        $utr = $u >= 0 ? trim((string)($r[$u] ?? '')) : ''; if ($u >= 0 && preg_match('/^(grand )?total$/i', $utr)) continue;
+        $stats['read']++;
+        $st = isset($cols['status']) && (int)$cols['status'] >= 0 ? mb_strtolower(trim((string)($r[(int)$cols['status']] ?? ''))) : ''; if ($st !== '' && preg_match('/fail|cancel|pending|dropped|bounce|incomplete|initiat|declin|reject/', $st)) { $stats['failed']++; continue; }      // a payment that did not go through is no money
         $ac = isset($cols['action']) && (int)$cols['action'] >= 0 ? mb_strtolower(trim((string)($r[(int)$cols['action']] ?? ''))) : ''; $sign = ($ac !== '' && preg_match('/refund|chargeback|reversal/', $ac)) ? -1 : 1;      // a refund takes money back
         $gv = $g >= 0 ? fn_num($r[$g] ?? '') : 0.0; $nv = $n >= 0 ? fn_num($r[$n] ?? '') : 0.0; $fv = 0.0; $parts = []; foreach ($fees as $fi) { $x = abs(fn_num($r[$fi] ?? '')); $fv += $x; $parts[$fi] = $x; }
-        if ($g < 0 && $n < 0) continue; if ($gv == 0.0 && $nv == 0.0) continue;
+        if (($g < 0 && $n < 0) || ($gv == 0.0 && $nv == 0.0)) { $stats['no_amount']++; continue; }
         $net = $n >= 0 ? $nv : $gv - $fv; $gross = $g >= 0 ? $gv : ($n >= 0 ? $nv + $fv : 0.0);
         if ($sign < 0) { $net = -abs($net); $gross = -abs($gross); $fv = $gross - $net; foreach ($parts as $k => $v) $parts[$k] = 0.0; }
-        $out[] = ['i' => $i, 'utr' => $utr, 'gross' => $gross, 'fee' => $fv, 'net' => $net, 'parts' => $parts];
+        $rec = ['i' => $i, 'utr' => $utr, 'gross' => $gross, 'fee' => $fv, 'net' => $net, 'parts' => $parts];
+        if ($u >= 0 && $utr === '') { $stats['no_utr']++; $stats['pending'][] = $rec; continue; }      // paid by the customer but not settled to the bank yet (PayU gives the UTR after it settles)
+        $out[] = $rec;
     }
     return $out;
 }
 /** Add up a file for the chosen columns. */
 function fn_calc_file(array $rows, int $headRow, array $cols): array
 {
-    $gP = 0; $fP = 0; $nP = 0; $cnt = 0; $utrs = [];
-    foreach (fn_file_rows($rows, $headRow, $cols) as $r) { $gP += fn_p($r['gross']); $fP += fn_p($r['fee']); $nP += fn_p($r['net']); $cnt++; if ($r['utr'] !== '') $utrs[$r['utr']] = 1; }
-    return ['rows' => $cnt, 'gross' => fn_m($gP), 'fee' => fn_m($fP), 'net' => fn_m($nP), 'utrs' => array_map('strval', array_keys($utrs))];
+    $gP = 0; $fP = 0; $nP = 0; $cnt = 0; $utrs = []; $stats = null; $recs = fn_file_rows($rows, $headRow, $cols, $stats);
+    foreach ($recs as $r) { $gP += fn_p($r['gross']); $fP += fn_p($r['fee']); $nP += fn_p($r['net']); $cnt++; if ($r['utr'] !== '') $utrs[$r['utr']] = 1; }
+    return ['rows' => $cnt, 'gross' => fn_m($gP), 'fee' => fn_m($fP), 'net' => fn_m($nP), 'utrs' => array_map('strval', array_keys($utrs)), 'skipped' => ['read' => $stats['read'], 'no_utr' => $stats['no_utr'], 'failed' => $stats['failed'], 'no_amount' => $stats['no_amount']]];
 }
 function fn_okey($s): string { return strtolower(preg_replace('/[^A-Za-z0-9]/', '', (string)$s)); }
 /** The PREPAID orders of one HRMS day (10 AM to 10 AM) from the Shopify copy: what the gateway should pay for. Read only. The prepaid part = total - the COD balance. */
@@ -229,26 +233,33 @@ function fn_prepaid_orders(PDO $pdo, string $day): array
  */
 function fn_recon(array $rows, int $headRow, array $cols, array $orders, string $ordersDay): array
 {
-    $recs = fn_file_rows($rows, $headRow, $cols); $header = $rows[$headRow] ?? []; $oc = isset($cols['order']) ? (int)$cols['order'] : -1;
+    $stats = null; $recs = fn_file_rows($rows, $headRow, $cols, $stats); $header = $rows[$headRow] ?? []; $oc = isset($cols['order']) ? (int)$cols['order'] : -1;
     $byKey = []; $byRef = []; foreach ($orders as $i => $o) { if ($o['key'] !== '') $byKey[$o['key']] = $i; foreach ($o['refs'] as $r) $byRef[$r] = $i; }
-    $hit = []; $loose = []; $feeCols = []; $mF = 0; $mG = 0; $mN = 0;
-    foreach ($recs as $rec) {
+    $hit = []; $pend = []; $loose = []; $feeCols = []; $mF = 0; $mG = 0; $mN = 0;
+    $find = function ($rec) use ($rows, $oc, $byKey, $byRef) {
         $cells = $rows[$rec['i']] ?? []; $try = []; if ($oc >= 0 && isset($cells[$oc])) $try[] = fn_okey($cells[$oc]); foreach ($cells as $ci => $c) { if ($ci !== $oc) $try[] = fn_okey($c); }
-        $idx = null; foreach ($try as $t) { if (strlen($t) < 5) continue; if (isset($byKey[$t])) { $idx = $byKey[$t]; break; } if (isset($byRef[$t])) { $idx = $byRef[$t]; break; } }
+        foreach ($try as $t) { if (strlen($t) < 5) continue; if (isset($byKey[$t])) return $byKey[$t]; if (isset($byRef[$t])) return $byRef[$t]; }
+        return null;
+    };
+    foreach ($stats['pending'] as $rec) { $idx = $find($rec); if ($idx !== null) { if (!isset($pend[$idx])) $pend[$idx] = ['gross' => 0, 'fee' => 0, 'net' => 0]; $pend[$idx]['gross'] += fn_p($rec['gross']); $pend[$idx]['fee'] += fn_p($rec['fee']); $pend[$idx]['net'] += fn_p($rec['net']); } }
+    foreach ($recs as $rec) {
+        $idx = $find($rec);
         if ($idx === null) { $loose[] = $rec; continue; }
         if (!isset($hit[$idx])) $hit[$idx] = ['gross' => 0, 'fee' => 0, 'net' => 0, 'utr' => $rec['utr'], 'rows' => 0];
         $hit[$idx]['gross'] += fn_p($rec['gross']); $hit[$idx]['fee'] += fn_p($rec['fee']); $hit[$idx]['net'] += fn_p($rec['net']); $hit[$idx]['rows']++;
         $mG += fn_p($rec['gross']); $mF += fn_p($rec['fee']); $mN += fn_p($rec['net']); foreach ($rec['parts'] as $ci => $v) $feeCols[$ci] = ($feeCols[$ci] ?? 0) + fn_p($v);
     }
-    $list = []; $expP = 0; $missP = 0; $missN = 0; $diff = 0;
+    $list = []; $expP = 0; $missP = 0; $missN = 0; $diff = 0; $pendN = 0; $pendG = 0; $pendNet = 0;
     foreach ($orders as $i => $o) {
-        $h = $hit[$i] ?? null; $expP += fn_p($o['amount']); $row = ['name' => $o['name'], 'customer' => $o['customer'], 'amount' => $o['amount'], 'found' => $h !== null, 'gross' => $h ? fn_m($h['gross']) : 0, 'fee' => $h ? fn_m($h['fee']) : 0, 'net' => $h ? fn_m($h['net']) : 0, 'utr' => $h ? $h['utr'] : ''];
-        if ($h) { if (abs(fn_m($h['gross']) - $o['amount']) > 1.0) { $row['differs'] = true; $diff++; } } else { $missP += fn_p($o['amount']); $missN++; }
+        $h = $hit[$i] ?? null; $pd = ($h === null) ? ($pend[$i] ?? null) : null; $expP += fn_p($o['amount']); $row = ['name' => $o['name'], 'customer' => $o['customer'], 'amount' => $o['amount'], 'found' => $h !== null, 'pending' => $pd !== null, 'gross' => $h ? fn_m($h['gross']) : ($pd ? fn_m($pd['gross']) : 0), 'fee' => $h ? fn_m($h['fee']) : ($pd ? fn_m($pd['fee']) : 0), 'net' => $h ? fn_m($h['net']) : ($pd ? fn_m($pd['net']) : 0), 'utr' => $h ? $h['utr'] : ''];
+        if ($h) { if (abs(fn_m($h['gross']) - $o['amount']) > 1.0) { $row['differs'] = true; $diff++; } }
+        elseif ($pd) { $pendN++; $pendG += $pd['gross']; $pendNet += $pd['net']; }
+        else { $missP += fn_p($o['amount']); $missN++; }
         $list[] = $row;
     }
     $parts = []; foreach ($feeCols as $ci => $p) $parts[] = ['name' => trim((string)($header[$ci] ?? ('Column ' . ($ci + 1)))), 'amount' => fn_m($p)];
     $lp = 0; $ln = 0; $lrows = []; foreach ($loose as $r) { $lp += fn_p($r['net']); $ln++; if (count($lrows) < 40) $lrows[] = ['utr' => $r['utr'], 'gross' => round($r['gross'], 2), 'fee' => round($r['fee'], 2), 'net' => round($r['net'], 2)]; }
-    return ['orders_day' => $ordersDay, 'expected' => ['orders' => count($orders), 'amount' => fn_m($expP)], 'found' => ['orders' => count($hit), 'gross' => fn_m($mG), 'fee' => fn_m($mF), 'net' => fn_m($mN), 'differs' => $diff], 'missing' => ['orders' => $missN, 'amount' => fn_m($missP)],
+    return ['orders_day' => $ordersDay, 'expected' => ['orders' => count($orders), 'amount' => fn_m($expP)], 'found' => ['orders' => count($hit), 'gross' => fn_m($mG), 'fee' => fn_m($mF), 'net' => fn_m($mN), 'differs' => $diff], 'missing' => ['orders' => $missN, 'amount' => fn_m($missP)], 'pending' => ['orders' => $pendN, 'gross' => fn_m($pendG), 'net' => fn_m($pendNet)],
         'charges' => $parts, 'other_rows' => ['rows' => $ln, 'net' => fn_m($lp), 'list' => $lrows], 'orders' => array_slice($list, 0, 600), 'truncated' => count($list) > 600];
 }
 /** UTRs of this file already saved for this channel by another (not cancelled) file. */
@@ -427,7 +438,7 @@ switch ($action) {
         $dupFile = $pdo->prepare("SELECT file_name, day FROM fn_in_uploads WHERE channel_id = ? AND file_hash = ? AND status = 'ok' LIMIT 1"); $dupFile->execute([$cid, $hash]); $df = $dupFile->fetch();
         $pdo->prepare("INSERT INTO fn_in_uploads (channel_id, day, file_name, file_hash, head_row, rows_json, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)")->execute([$cid, fn_today($pdo), mb_substr((string)$f['name'], 0, 200), $hash, $hr, json_encode($rows, JSON_UNESCAPED_UNICODE), fn_who($auth), date('Y-m-d H:i:s')]);
         $uid = (int)$pdo->lastInsertId(); $dups = fn_utr_dups($pdo, $cid, $calc['utrs']);
-        json_response(['upload_id' => $uid, 'file' => $f['name'], 'provider' => (string)($cols['provider'] ?? ''), 'rows' => count($rows) - $hr - 1, 'header' => $header, 'cols' => $cols, 'sample' => array_slice($rows, $hr + 1, 5), 'calc' => ['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : ''], 'same_file' => $df ? $df['file_name'] . ' (' . $df['day'] . ')' : '']);
+        json_response(['upload_id' => $uid, 'file' => $f['name'], 'provider' => (string)($cols['provider'] ?? ''), 'rows' => count($rows) - $hr - 1, 'header' => $header, 'cols' => $cols, 'sample' => array_slice($rows, $hr + 1, 5), 'calc' => ['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped']], 'same_file' => $df ? $df['file_name'] . ' (' . $df['day'] . ')' : '']);
         break;
     }
     // step 2 (as often as the owner changes a column): the totals for the chosen columns
@@ -435,7 +446,7 @@ switch ($action) {
         $in = json_input(); $u = $pdo->prepare("SELECT * FROM fn_in_uploads WHERE id = ? AND status = 'preview'"); $u->execute([(int)($in['upload_id'] ?? 0)]); $up = $u->fetch(); if (!$up) fn_err('This upload was already saved, or not found.', 404);
         $rows = json_decode((string)$up['rows_json'], true) ?: []; $cols = (array)($in['cols'] ?? []); $calc = fn_calc_file($rows, (int)$up['head_row'], $cols); $dups = fn_utr_dups($pdo, (int)$up['channel_id'], $calc['utrs']);
         $od = fn_day($in['orders_day'] ?? ''); $recon = $od !== '' ? fn_recon($rows, (int)$up['head_row'], $cols, fn_prepaid_orders($pdo, $od), $od) : null;
-        json_response(['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'recon' => $recon]);
+        json_response(['rows' => $calc['rows'], 'gross' => $calc['gross'], 'fee' => $calc['fee'], 'net' => $calc['net'], 'utrs' => count($calc['utrs']), 'dups' => count($dups), 'dup_first' => $dups ? array_values($dups)[0] : '', 'skipped' => $calc['skipped'], 'recon' => $recon]);
         break;
     }
     // step 3: save it. The NET amount becomes a receipt on the channel's line (so the Receipt and Payment tab and the bank balance show it by themselves)
