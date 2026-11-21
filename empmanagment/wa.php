@@ -730,6 +730,22 @@ function wa_send_text(PDO $pdo, array $c, string $text, string $who, int $empId,
     return [true, $wamid];
 }
 
+/** A message with up to 3 quick-reply buttons (inside the 24-hour window, free): the customer answers with ONE tap and his tap arrives as a normal text (the button's title). Used by the bot's follow-ups (wording B). Returns [ok, wamid|error]. */
+function wa_send_buttons(PDO $pdo, array $c, string $text, array $buttons, string $who, int $empId): array
+{
+    if ((int)$c['optout'] === 1) return [false, 'This customer opted out.'];
+    if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off.'];
+    if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed.'];
+    $text = mb_substr(trim($text), 0, 1000); $btn = []; foreach (array_slice(array_values($buttons), 0, 3) as $i => $t) $btn[] = ['type' => 'reply', 'reply' => ['id' => 'fu_' . ($i + 1), 'title' => mb_substr((string)$t, 0, 20)]]; if ($text === '' || !$btn) return [false, 'Nothing to send.'];
+    $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)$c['last_number_id']]); $pid = (string)$q->fetchColumn(); if ($pid === '') $pid = wa_cfg_val('WA_PHONE_ID'); if ($pid === '') return [false, 'WA_PHONE_ID is missing.'];
+    [$code, $d] = wa_api('POST', '/' . $pid . '/messages', ['messaging_product' => 'whatsapp', 'to' => (string)($c['wa_id'] ?: '91' . $c['phone']), 'type' => 'interactive', 'interactive' => ['type' => 'button', 'body' => ['text' => $text], 'action' => ['buttons' => $btn]]]);
+    $wamid = (string)($d['messages'][0]['id'] ?? ''); if ($code < 200 || $code >= 300 || $wamid === '') return [false, wa_err($d)];
+    $now = date('Y-m-d H:i:s'); $shown = $text . "\n▫ " . implode(' · ', array_map(fn($b) => (string)$b['reply']['title'], $btn));
+    $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'text', ?, 'sent', ?, ?, ?)")->execute([$wamid, $c['phone'], (int)$c['last_number_id'], $shown, $who, $empId, $now]);
+    $pdo->prepare("UPDATE wa_contacts SET last_out_at = ? WHERE phone = ?")->execute([$now, $c['phone']]);
+    return [true, $wamid];
+}
+
 /** Answer the browser now and keep working (LiteSpeed on Hostinger / PHP-FPM). Without either, it is a normal answer at the end. */
 function wa_reply_early(array $data): void
 {
