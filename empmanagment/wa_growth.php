@@ -775,7 +775,7 @@ function wag_bot_tick(PDO $pdo, int $slots = 5): array
     try {
         if ($o['slot'] === 0) { setting_set($pdo, 'wag_tick_at', (string)time()); if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } } }
         $r = wag_bot_scan($pdo, 2); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];
-        try { $o['followup'] = wag_bot_followup($pdo, 1); } catch (Throwable $e) { }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
+        try { $o['followup'] = wag_bot_followup($pdo, 1); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
     } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_tick_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
     return $o;
 }
