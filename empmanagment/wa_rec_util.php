@@ -300,6 +300,10 @@ function wa_ru_reset_once(PDO $pdo): void
             setting_set($pdo, 'wa_ru_to1500_2111', '1'); setting_set($pdo, 'wa_ru_ramp_max', '1500'); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): ceiling 1,500 an hour (owner): 1,200 now, then 1,300 / 1,400 / 1,500, one hour at each level while failed stays under 2% and delivered 85% or more');
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_now1500_2111', '') !== '1') {   /* owner 21 Nov 2026 (18:05 IST): Module B speed straight to 1,500 an hour now (no waiting at 1,400) */
+            setting_set($pdo, 'wa_ru_now1500_2111', '1'); setting_set($pdo, 'wa_ru_ramp_max', '1500'); setting_set($pdo, 'wa_ru_hourly', '1500'); setting_set($pdo, 'wa_ru_lvl_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): speed set to 1,500 an hour now (owner)');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_ru_base260', '') !== '1') {   /* owner 20 Nov 2026 (02:00): Module B must not run at 180; the floor is 260 an hour (it starts again from 260 after a bad stretch, never lower) */
             setting_set($pdo, 'wa_ru_base260', '1'); setting_set($pdo, 'wa_ru_ramp_base', '260'); if ((int)setting_get($pdo, 'wa_ru_hourly', '260') < 260) setting_set($pdo, 'wa_ru_hourly', '260'); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the floor is now 260 an hour (it never goes lower), it runs at ' . setting_get($pdo, 'wa_ru_hourly', '260') . ' now (owner)');
