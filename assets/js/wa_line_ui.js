@@ -16,9 +16,9 @@
     api.get('wa.line_aft').then((a) => {
       const P = a.plan || {}, C = a.cust || {}, G = { enjoy: 'care', doubt: 'care', checkin: 'care' };
       const days = Object.entries(a.days || {}).map(([d, n]) => `<span class="wp-pill" title="${esc(d)}">${esc(d.slice(5))} · ${fmt(n)}</span>`).join(' ') || '<span style="color:#94a3b8">nothing planned in the next 15 days yet</span>';
-      const rows = (a.steps || []).map((x) => `<tr><td>${x.step}</td><td>day ${x.day}</td><td>${esc(G[x.group] || x.group)}</td><td style="font-size:12px;color:#334155">${esc(x.line)}</td></tr>`).join('');
+      const rows = (a.steps || []).map((x) => `<tr><td>${x.step}</td><td>day ${x.day}</td><td>${esc(x.kind || x.group)}</td><td style="font-size:12px;color:#334155">${esc(x.line)}</td></tr>`).join('');
       const fails = Object.entries(a.failed || {}).map(([w, n]) => esc(w) + ' × ' + fmt(n)).join('<br>');
-      const box = `<div class="wp-note" style="margin-top:14px"><b>🛍 After-Order plan</b> <small style="color:#64748b">starts after the parcel is DELIVERED · about 200 messages a year (4 care messages in weeks 1-4, then one about every 2 days) and the same in every following year · ${a.on ? 'ON' : '<b style="color:#c2262b">OFF</b>'}${a.quiet ? ' · quiet hours 03:00-09:00 now' : ''}</small>
+      const box = `<div class="wp-note" style="margin-top:14px"><b>🛍 After-Order plan</b> <small style="color:#64748b">starts after the parcel is DELIVERED · about 200 messages a year (4 care messages, then one about every 2 days: half OFFERS from the chart, half trust / ratings / new arrivals / small sizes / season) and the same every following year · ${a.on ? 'ON' : '<b style="color:#c2262b">OFF</b>'}${a.quiet ? ' · quiet hours 03:00-09:00 now' : ''}</small>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0">
           <div><div class="wp-hint">Customers on the plan</div><b style="font-size:20px">${fmt(C.active || 0)}</b>${C.done ? ' · restarted by a new order ' + fmt(C.done) : ''}</div>
           <div><div class="wp-hint">Messages waiting</div><b style="font-size:20px">${fmt(P.planned || 0)}</b></div>
