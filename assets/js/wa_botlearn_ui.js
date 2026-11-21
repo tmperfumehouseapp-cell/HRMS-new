@@ -73,8 +73,25 @@
     h3.innerHTML = h + '</div>';
     var hd = document.getElementById('bmH'); if (hd) hd.onclick = function () { mopen = !mopen; drawMkt(); };
   }
+  var hrl = null, hopen = false, hday = 0;
+  function drawHourly() {
+    var el = document.getElementById('blHr'); if (!el) { el = document.createElement('div'); el.id = 'blHr'; host.parentNode.insertBefore(el, host); }
+    if (!hrl || !hrl.can) { el.innerHTML = ''; return; } css();
+    var H = hrl.hours || [], tq = 0, tw = 0, ts = 0; H.forEach(function (x) { tq += x.q; tw += x.wrote; ts += x.sent; });
+    var h = '<div class="bl" style="border-color:#cfe3d6;background:#f3faf5"><div class="bl-h" id="bhH"><span>📊</span><b>Queries hour by hour — campaign sent → customers wrote → new queries</b><span class="bl-s" style="color:#357">' + esc(hrl.date) + ' · new queries ' + tq + ' · customers wrote ' + tw + ' · campaign msgs ' + ts + '</span><span class="bl-ar">' + (hopen ? '▲' : '▼') + '</span></div>';
+    if (hopen) {
+      h += '<div class="bl-b"><div style="margin-bottom:6px">' + [0, 1, 2, 3].map(function (d) { return '<button type="button" data-hd="' + d + '" style="margin-right:6px;border:1px solid #9ab;border-radius:8px;padding:3px 10px;background:' + (hday === d ? '#2c7' : '#fff') + ';color:' + (hday === d ? '#fff' : '#234') + '">' + (d === 0 ? 'Today' : d === 1 ? 'Yesterday' : d + ' days ago') + '</button>'; }).join('') + '</div>';
+      h += '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12.5px;min-width:520px"><tr style="text-align:left;color:#567"><th style="padding:2px 6px">Hour</th><th>Campaign msgs sent</th><th>Customers wrote</th><th>New queries</th><th>Campaign</th><th>Meta ad</th><th>Other</th><th>Back again</th></tr>';
+      H.forEach(function (x, i) { if (!x.q && !x.wrote && !x.sent) return; h += '<tr style="border-top:1px solid #dbe9de"><td style="padding:2px 6px">' + i + ':00–' + (i + 1) + ':00</td><td>' + x.sent + '</td><td>' + x.wrote + '</td><td><b>' + x.q + '</b></td><td>' + x.camp + '</td><td>' + x.meta + '</td><td>' + x.other + '</td><td>' + x.again + '</td></tr>'; });
+      h += '</table></div><div style="margin-top:8px;color:#567;font-size:12px">A query = a customer who wrote and had no query in the last 24 hours (writing again inside 24 h is the same query). Complaints, order-status / tracking / refund chats are not counted. "Customers wrote" counts every customer who sent a message in that hour.</div></div>';
+    }
+    el.innerHTML = h + '</div>';
+    var hd = document.getElementById('bhH'); if (hd) hd.onclick = function () { hopen = !hopen; drawHourly(); };
+    el.querySelectorAll('[data-hd]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); hday = +b.getAttribute('data-hd'); loadHourly(); }; });
+  }
+  function loadHourly() { return api.get('wa.g_hourly', { day: hday }).then(function (d) { hrl = d; drawHourly(); }).catch(function () { }); }
   function loadMkt() { return api.get('wa.g_mkt').then(function (d) { mkt = d; drawMkt(); }).catch(function () { }); }
   function loadPend() { return api.get('wa.g_botpending').then(function (d) { pend = d; drawPend(); }).catch(function () { }); }
   function load() { return api.get('wa.g_botlearn').then(function (d) { data = d; draw(); }).catch(function () { }); }
-  load(); loadPend(); loadMkt(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); loadMkt(); } }, 60000);
+  load(); loadPend(); loadMkt(); loadHourly(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); loadMkt(); loadHourly(); } }, 60000);
 })();
