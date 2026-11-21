@@ -199,7 +199,7 @@ if (!function_exists('wa_aft_days')) {
     {
         $o = ['entered' => 0, 'sent' => 0, 'waiting' => 0]; if (wa_aft_set($pdo, 'wa_aft_on', '1') === '0' || !wa_aft_tables($pdo)) return $o;
         if (function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours'; return $o; }
-        if (!function_exists('wa_lock') || !wa_lock($pdo, 'wlaft', 55)) return $o; $now = time(); $t0 = microtime(true);
+        if (!function_exists('wa_lock') || !wa_lock($pdo, 'wlaft', 55)) return $o; $now = time(); $t0 = microtime(true); setting_set($pdo, 'wa_aft_tick_at', date('Y-m-d H:i:s', $now));
         if (wa_aft_set($pdo, 'wa_aft_ver', '1') !== '3') {   // one time: the earlier ladders become the v3 one (about 200 messages a year) (nobody has been sent a message yet); 600 customers per minute
             try { $mq = $pdo->query("SELECT phone, anchor_at FROM wa_aft_cust WHERE status = 'active' AND why <> 'v3' LIMIT 600")->fetchAll(PDO::FETCH_ASSOC); $sp = max(1, (int)wa_aft_set($pdo, 'wa_aft_spread', '5'));
                 foreach ($mq as $mr) { wa_aft_plan($pdo, (string)$mr['phone'], (int)strtotime((string)$mr['anchor_at']), $now, $sp); $pdo->prepare("UPDATE wa_aft_cust SET why = 'v3' WHERE phone = ?")->execute([(string)$mr['phone']]); }
@@ -230,8 +230,8 @@ if (!function_exists('wa_aft_days')) {
             if ($kind !== 'care' && (int)$r['step'] % 6 === 3) { $pt = json_decode((string)setting_get($pdo, 'wa_aft_photo_tpls', ''), true); $ptid = is_array($pt) ? (int)($pt[$kind === 'season' ? 'gift' : 'bottles'] ?? 0) : 0; if ($ptid > 0) { [$ok, $why] = wa_aft_send($pdo, $c, $ptid, $ln); if ($ok) $tid = $ptid; } }   // 📷 about every 6th message goes with a photo once Meta approved the photo template
             if (!$ok) [$ok, $why] = wa_aft_send($pdo, $c, $tid, $ln);
             if ($ok) { $upd->execute(['sent', '', date('Y-m-d H:i:s'), $tid, $why, $id]); try { $pdo->prepare("UPDATE wa_aft_plan SET kind = ?, sz = ? WHERE id = ?")->execute([(string)$lk['kind'], (int)$lk['sz'], $id]); } catch (Throwable $e) { } $o['sent']++; try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$ph, date('Y-m-d H:i:s'), 'after-order step ' . (int)$r['step']]); } catch (Throwable $e) { } }
-            elseif (strpos($why, 'wait') === 0) { $push->execute([date('Y-m-d H:i:s', $now + 1800), $id]); $o['waiting']++; if (strpos($why, 'no number') !== false) break; }
-            else { $upd->execute(['failed', mb_substr($why, 0, 150), null, $tid, '', $id]); }
+            elseif (strpos($why, 'wait') === 0) { try { setting_set($pdo, 'wa_aft_dbg', json_encode(['at' => date('H:i:s'), 'tid' => $tid, 'step' => (int)$r['step'], 'why' => mb_substr((string)$why, 0, 160), 'busy_skips' => (int)($o['waiting'] ?? 0)])); } catch (Throwable $e) { } $push->execute([date('Y-m-d H:i:s', $now + 1800), $id]); $o['waiting']++; if (strpos($why, 'no number') !== false) break; }
+            else { try { setting_set($pdo, 'wa_aft_dbg', json_encode(['at' => date('H:i:s'), 'tid' => $tid, 'step' => (int)$r['step'], 'fail' => mb_substr((string)$why, 0, 160)])); } catch (Throwable $e) { } $upd->execute(['failed', mb_substr($why, 0, 150), null, $tid, '', $id]); }
         }
         return $o;
     }
