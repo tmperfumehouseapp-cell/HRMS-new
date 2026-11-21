@@ -1297,7 +1297,7 @@ function wag_fu1_text(PDO $pdo, array $c, array $rows): string
 function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follow-ups must be FAST — 6 per tick (was 2; only ~4 a minute went out with 347 due)
 {
     if (defined('WA_IN_WEBHOOK') || (string)setting_get($pdo, 'wag_bfu_on', '1') === '0' || wag_cfg($pdo)['bot'] !== 'on') return 0;
-    $now = time(); $hr = (int)date('G') * 60 + (int)date('i'); if ($hr < 9 * 60 || $hr > 21 * 60 + 30) return 0;
+    $now = time(); $hr = (int)date('G') * 60 + (int)date('i'); if ($hr >= 3 * 60 && $hr < 9 * 60) return 0;   // owner 21 Nov: follow-ups run until 03:00, quiet 03:00-09:00 (universal rule)
     if (empty($GLOBALS['wag_bfu_nolimit']) && time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 5) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
     $day = date('Y-m-d'); if (setting_get($pdo, 'wag_bfu_day', '') !== $day) { setting_set($pdo, 'wag_bfu_day', $day); setting_set($pdo, 'wag_bfu_n', '0'); } $cap = max(0, (int)setting_get($pdo, 'wag_bfu_max_day', '20000')); if ((int)setting_get($pdo, 'wag_bfu_n', '0') >= $cap) return 0;
     $steps = [300, 600, 1200, 1800, 3600, 7200, 10800, 14400, 28800, 64800]; $n = 0;   // 5 m, 10 m, 20 m, 30 m, 1 h, 2 h, 3 h, 4 h (hold the customer), then slower: 8 h, 18 h — afterwards the 30-day Lineup takes over (owner, 21 Nov)

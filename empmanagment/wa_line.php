@@ -557,6 +557,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
 {
     $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wln_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']); $sendonly = !empty($opt['sendonly']);   // sendonly = the sending job (wa.cron_send): only the sending round, no bookkeeping
     if ($cfg['mode'] === 'off') return $o;
+    if (!$force && function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours 03:00-09:00'; return $o; }   // universal rule (owner, 21 Nov)
     if (!$force && !$sendonly) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
     if ($sendonly && ($cfg['started'] === '' || $cfg['since'] <= 0)) return $o;
     if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself

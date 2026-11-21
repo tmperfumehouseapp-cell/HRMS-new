@@ -148,7 +148,7 @@ function fu_parse_quiet(string $v): ?array
 function fu_parse_minutes(string $v): int { if (!preg_match('/(\d+(?:\.\d+)?)\s*(h|hr|hour|hours|min|mins|minute|minutes|d|day|days)?/i', $v, $m)) return 0; $n = (float)$m[1]; $u = strtolower($m[2] ?? 'min'); return (int)round($n * ($u[0] === 'h' ? 60 : ($u[0] === 'd' ? 1440 : 1))); }
 function fu_limits(PDO $pdo): array
 {
-    $L = ['max' => 4, 'gap_min' => 60, 'day_max' => 2, 'quiet' => [22 * 60, 9 * 60], 'deep' => 0, 'set' => []];
+    $L = ['max' => 4, 'gap_min' => 60, 'day_max' => 2, 'quiet' => [3 * 60, 9 * 60], 'deep' => 0, 'set' => []];
     $A = function_exists('teach_limits_active') ? teach_limits_active($pdo) : ['gen' => []];
     foreach ((array)$A['gen'] as $g) {
         $k = function_exists('teach_limit_key') ? teach_limit_key((string)$g['name']) : strtolower(preg_replace('/[^a-z0-9]/i', '', (string)$g['name'])); $v = (string)$g['value'];
