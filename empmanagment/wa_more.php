@@ -146,6 +146,7 @@ function wa_callnow_scan(PDO $pdo): void
     foreach ($rows as $r) {
         $out->execute([$r['phone'], $r['callnow_at'] ?: '1970-01-01 00:00:00']);
         if ((int)$out->fetchColumn() > 0 || (int)$r['assigned_emp'] <= 0) { $pdo->prepare("UPDATE wa_contacts SET callnow = 9 WHERE phone = ?")->execute([$r['phone']]); continue; }
+        if (function_exists('wag_hot_is_done') && wag_hot_is_done($pdo, (string)$r['phone'])) { $pdo->prepare("UPDATE wa_contacts SET callnow = 9 WHERE phone = ?")->execute([$r['phone']]); continue; }   // the customer already ordered / says it is done / got his delivery and only writes about it: no "nobody has reacted" alert and no "Call this customer NOW" push (owner, 21 Nov)
         if ((int)$r['callnow'] === 1 && $r['callnow_at'] && time() - strtotime((string)$r['callnow_at']) >= $cfg['escalate_min'] * 60) {
             $isCx = (int)($r['cx_id'] ?? 0) > 0 || (string)($r['tag'] ?? '') === 'complaint';   // a complaint chat stays with its person — it is never moved by itself (the alert still goes up)
             if (!$isCx && !wa_manual_assign($pdo) && (string)setting_get($pdo, 'wa_reassign', '0') === '1' && (int)$r['reassigns'] < 2 && function_exists('wa_next_person')) {   // not accepted in time → the next present person gets it
