@@ -1506,6 +1506,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (!wa_is_admin($pdo, $auth) && ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint')) json_response(['error' => 'This is a complaint chat — it stays with its person. Ask the admin.'], 409);
             $from = (int)$c['assigned_emp']; if ($from === $me) json_response(['ok' => true, 'already' => true]);
             if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);   // 🤖 the bot is answering
+            if (!wa_is_admin($pdo, $auth) && function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);   // 🏪 performance gate
             wa_assign_to($pdo, $key, $me, $me, 'takeover');
             $nm = employee_names_by_id($pdo); $who = $nm[$me] ?? 'Manager'; $was = $from > 0 ? ($nm[$from] ?? 'someone') : '';
             wa_event($pdo, $key, '🔄 ' . $who . ' took over this chat' . ($was !== '' ? ' from ' . $was : ''));
@@ -1547,6 +1548,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 if ($me <= 0 || $emp !== $me) json_response(['error' => 'Only an admin can assign a chat to someone else. Use Transfer for your own chats.'], 403);
                 if ((int)$c0['assigned_emp'] > 0) json_response(['error' => 'This chat is already with ' . (employee_names_by_id($pdo)[(int)$c0['assigned_emp']] ?? 'someone') . '.'], 409);
                 if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c0)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);
+                if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);
                 wa_assign_to($pdo, $key, $me, $me, 'take'); json_response(['ok' => true]);
             }
             if ($emp > 0 && !isset(employee_names_by_id($pdo)[$emp])) json_response(['error' => 'That person was not found.'], 422);
