@@ -119,6 +119,12 @@ function wl_pack(): array
         'reorder' => ["Namaste {{1}} ji 🙏 Pichhli baar aapne hamse perfume liya tha, shukriya. Is baar kaunsi khushboo try karni hai?", 'Nayi khushboo batayein'],
         'general' => ["Namaste {{1}} ji 🙏 Hamse sampark karne ke liye shukriya. Aap kaunsi khushboo dhoondh rahe hain, bata dein to hum sahi perfume dikhate hain.", 'Khushboo batani hai']];
     foreach ($V as $topic => $r) { $k = 'ln_' . $topic . '_1b'; $add($k, $topic, 1, $r[0], $r[1], $P['ln_' . $topic . '_1']['free']); $P[$k]['of'] = 'ln_' . $topic . '_1'; }
+    // 📷 PHOTO WORDINGS (owner 22 Nov: "photo templates can go in utility too, put them in the 30-day plan"): the first message of the busiest topics with a product photo in the header (media library 39 = perfume bottles). Made as UTILITY (informational wording, no price / offer words); used ONLY when Meta kept them UTILITY and approved them everywhere (wln_wide_ok), at first for a small test share, and for more when they beat the plain wordings (wl_pick).
+    $PHV = ['general' => ["Namaste {{1}} ji 🙏 Aapne hamse sampark kiya tha. Ye hamare kuch perfumes ki photo hai. Kaunsa pasand aaya, bata dein to uski details bhej dete hain.", 'Details chahiye'],
+        'price' => ["Namaste {{1}} ji 🙏 Aapne rate ke baare mein poocha tha. Ye hamare perfumes ki photo hai, kaunsa dekh rahe hain bata dein to uski kimat bata dete hain.", 'Kimat batao'],
+        'size' => ["Namaste {{1}} ji 🙏 Aapne size ke baare mein poocha tha. Ye hamari bottles ki photo hai, 20 ml, 50 ml ya 100 ml mein se kaunsa dekhna hai?", 'Bottle size batao'],
+        'reorder' => ["Namaste {{1}} ji 🙏 Pichhli baar aapne hamse perfume liya tha, shukriya. Ye hamare perfumes ki photo hai, is baar kaunsi khushboo dekhni hai?", 'Nayi khushboo dekhni hai']];
+    foreach ($PHV as $topic => $r) { $k = 'ln_' . $topic . '_1p'; if (!isset($P['ln_' . $topic . '_1'])) continue; $add($k, $topic, 1, $r[0], $r[1], $P['ln_' . $topic . '_1']['free']); $P[$k]['of'] = 'ln_' . $topic . '_1'; $P[$k]['photo'] = 39; }
     // the same last three steps for every topic
     $add('ln_all_5', 'all', 5, "{{1}} ji, aapke sawal ka jawab aapko mil gaya? Aur jaankari chahiye to yahin likh dijiye.", 'Aur jaankari chahiye', "Zaroor 🙏 Aap yahin likh dein ki aur kya jaanna hai, hum turant batate hain.");
     $add('ln_all_6', 'all', 6, "{{1}} ji, aapki request ke baare mein final details taiyaar hain. Dekhna chahenge?", 'Final details dekhein', "__OFFER__");
@@ -150,7 +156,11 @@ function wl_variants(string $key): array { $o = [$key]; foreach (wl_pack() as $k
 /** Which wording goes to this customer. $score = [key => [delivered, score]] (what the last 30 days showed), $ok = keys that Meta approved. Below 40 delivered per wording: an even split (he is placed by his number, so the same customer always gets the same). Then 80% the wording with the best score, 20% the others (keeps learning). */
 function wl_pick(string $key, string $phone, array $score, array $ok): string
 {
-    $v = array_values(array_filter(wl_variants($key), fn($k) => in_array($k, $ok, true))); if (count($v) < 2) return $v ? $v[0] : $key;
+    $v = array_values(array_filter(wl_variants($key), fn($k) => in_array($k, $ok, true)));
+    $__pk = wl_pack(); $__vp = array_values(array_filter($v, fn($k) => !empty($__pk[$k]['photo'])));   // photo wordings: a small test share (6 of 100) until one beats the best plain wording by 15% on 100+ delivered
+    if ($__vp) { $__bo = 0.0; foreach ($v as $k) if (empty($__pk[$k]['photo'])) $__bo = max($__bo, (float)($score[$k][1] ?? 0)); $__hp = (int)(abs(crc32($phone . '|ph|' . $key)) % 100); $__win = array_values(array_filter($__vp, fn($k) => (int)($score[$k][0] ?? 0) >= 100 && (float)($score[$k][1] ?? 0) > 1.15 * $__bo));
+        $v = array_values(array_diff($v, $__vp)); if ($__win) $v = array_values(array_merge($v, $__win)); elseif ($__hp < 6) return $__vp[$__hp % count($__vp)]; if (!$v) return $__vp[0]; }
+    if (count($v) < 2) return $v ? $v[0] : $key;
     // STOP-LOSS (owner, 21 Nov): a wording that got NO order in 150+ delivered while the best wording of the same step got 3+ is not used any more; one that is clearly weaker (less than a third of the best's orders per delivered, 150+ delivered) gets only the small test share. Fewer than 2 wordings are never reduced.
     $best = null; foreach ($v as $k) if ($best === null || ($score[$k][1] ?? 0) > ($score[$best][1] ?? 0)) $best = $k;
     if ($best !== null && count($v) > 1 && ($score[$best][2] ?? 0) >= 3) { $keep = []; foreach ($v as $k) { $d0 = (int)($score[$k][0] ?? 0); $o0 = (int)($score[$k][2] ?? 0); if ($k !== $best && $d0 >= 150 && $o0 === 0) continue; $keep[] = $k; } if ($keep) $v = $keep; if (count($v) < 2) return $v[0]; }
@@ -421,7 +431,10 @@ function wln_requeue_failed(PDO $pdo): int
 function wln_wide_ok(PDO $pdo): array
 {
     $ids = wln_eff_ids($pdo); $n = []; try { foreach ($pdo->query("SELECT tpl_id, SUM(UPPER(status) = 'APPROVED') ok FROM wa_tpl_waba GROUP BY tpl_id")->fetchAll() as $r) $n[(int)$r['tpl_id']] = (int)$r['ok']; } catch (Throwable $e) { }
-    $o = []; foreach ($ids as $k => $id) if (($n[(int)$id] ?? 0) >= 3) $o[] = $k; return $o;
+    $o = []; foreach ($ids as $k => $id) if (($n[(int)$id] ?? 0) >= 3) $o[] = $k;
+    $__pk = wl_pack(); $__pi = []; foreach ($o as $k) if (!empty($__pk[$k]['photo'])) $__pi[(int)$ids[$k]] = $k;
+    if ($__pi) { try { $__u = []; foreach ($pdo->query("SELECT id, category FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_keys($__pi))) . ")")->fetchAll() as $r) if (strtoupper((string)$r['category']) === 'UTILITY') $__u[(int)$r['id']] = 1; $o = array_values(array_filter($o, fn($k) => empty($__pk[$k]['photo']) || isset($__u[(int)$ids[$k]]))); } catch (Throwable $e) { $o = array_values(array_filter($o, fn($k) => empty($__pk[$k]['photo']))); } }   // a photo wording that Meta made MARKETING is never used by the lineup (it would cost 7x)
+    return $o;
 }
 /** THE PRICE OF THIS CUSTOMER'S NEXT PRICE STEP, worked out from the shop's own price chart (setting ml_slab_chart: rows = total ml, columns = 7 / 6.5 / 6 / 5 / 4 / 3.5 / 3 %; a higher % is a HIGHER price).
  *  The quote is the 4 x 50 ml = 200 ml combo row. Start = the deepest column already quoted in his chat (never above 6.5%); every price step goes ONE column deeper than the one before (never higher than what he was told), the last column of the chart is the floor.
@@ -654,7 +667,7 @@ function wl_make_templates(PDO $pdo, int $by = 0): array
     foreach (wl_pack() as $k => $m) {
         if (!empty($ids[$k])) { $res['already']++; continue; }
         $two = (int)($m['vars'] ?? 1) > 1;
-        [$t, $err] = wa_tpl_clean(['name' => $k, 'language' => 'en', 'category' => $m['cat'] ?? 'UTILITY', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => [['type' => 'QUICK_REPLY', 'text' => $m['button']]],
+        [$t, $err] = wa_tpl_clean(['name' => $k, 'language' => 'en', 'category' => $m['cat'] ?? 'UTILITY', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => [['type' => 'QUICK_REPLY', 'text' => $m['button']]]] + (!empty($m['photo']) ? ['header_format' => 'IMAGE', 'header_lib_id' => (int)$m['photo']] : []) + [
             'examples' => ['body' => $two ? ['Rahul', '4 x 50 ml (200 ml) combo sirf Rs 2280'] : ['Rahul'], 'labels' => $two ? ['Name', 'Rate'] : ['Name']], 'folder' => 'Lineup']);
         if ($err !== '') { $res['failed'][] = $k . ': ' . $err; continue; }
         $id = wa_tpl_insert($pdo, $t, $by, 'Lineup follow-up (' . $m['topic'] . ' step ' . $m['step'] . '): answers what the customer asked; the offer goes free after the button.', 'Utility follow-up to a customer who asked.');
