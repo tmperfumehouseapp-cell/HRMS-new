@@ -23,6 +23,7 @@
           + (x.pending_tpl ? '<div style="color:#a60">A pre-made message is being chosen…</div>' : '<div class="bl-good">Better: <textarea rows="3" data-t="' + x.id + '">' + esc(x.better) + '</textarea></div>')
           + (data.can && !x.pending_tpl ? '<div class="bl-r"><button class="ap" data-ap="' + x.id + '">✅ Apply to guidebook</button><button class="sk" data-sk="' + x.id + '">Ignore</button></div>' : '') + '</div>';
       });
+      if ((data.applied || []).length) { h += '<div class="bl-i"><b>✅ Already in the guidebook (latest ' + data.applied.length + ')</b>'; data.applied.forEach(function (x) { h += '<div style="margin-top:6px;color:#445"><span style="color:#667">' + esc(x.by) + ' · ' + esc(String(x.at).slice(5, 16)) + '</span><br>Customer: <q>' + esc(x.customer) + '</q><span class="bl-bad">Bot said: ' + esc(x.bot) + '</span><br><span class="bl-good">Now it says: ' + esc(x.better) + '</span></div>'; }); h += '</div>'; }
       h += '</div>';
     }
     host.innerHTML = h + '</div>';
