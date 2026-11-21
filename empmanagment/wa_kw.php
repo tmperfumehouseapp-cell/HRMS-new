@@ -35,7 +35,7 @@ function wkw_clean(array $in): array
         $words = []; foreach ((array)($r['words'] ?? []) as $w) { $w = mb_substr(trim((string)$w), 0, 40); if ($w !== '') $words[] = $w; }
         $rules[] = ['id' => $id, 'name' => $name, 'on' => !empty($r['on']), 'words' => array_slice(array_values(array_unique($words)), 0, 12), 'text' => mb_substr(trim((string)($r['text'] ?? '')), 0, 1000), 'lib_id' => max(0, (int)($r['lib_id'] ?? 0)), 'tpl_id' => max(0, (int)($r['tpl_id'] ?? 0)), 'fu' => wkw_fu_clean($r['fu'] ?? [])];
     }
-    return ['auto' => !empty($in['auto']), 'rules' => array_slice($rules, 0, 80)];
+    return ['auto' => !empty($in['auto']), 'rules' => array_slice($rules, 0, 160)];
 }
 /** The follow-ups of a card: if the customer does not answer, after N minutes (since the previous automatic message) this goes. Empty ones are dropped. */
 function wkw_fu_clean($arr): array

@@ -406,6 +406,7 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
     // exclusions read the live summary / chat row, so a customer who ordered or was messaged a minute ago is never missed
     if (($n = $num('exclude_bought_days')) !== null) { $w[] = '(s.last_order IS NULL OR s.last_order < ?)'; $p[] = $d($n); }
     if (($n = $num('exclude_messaged_days')) !== null) { $w[] = '(c.last_out_at IS NULL OR c.last_out_at < ?)'; $p[] = $d($n); }
+    if (!empty($f['exclude_lineup'])) $w[] = "NOT EXISTS (SELECT 1 FROM wa_line_cust lc WHERE (lc.phone COLLATE utf8mb4_unicode_ci) = ($P COLLATE utf8mb4_unicode_ci) AND lc.status IN ('active', 'replied'))";   // owner 21 Nov: leave out people who are already in the 30-Day Lineup (they get their follow-ups there)
     if ($q !== '') { $l = '%' . addcslashes($q, '%_\\') . '%'; $w[] = "($P LIKE ? OR COALESCE(c.name, s.name) LIKE ?)"; $p[] = function_exists('wa_q_like') ? wa_q_like($q) : $l; $p[] = $l; }
     return [$from . ($w ? ' WHERE ' . implode(' AND ', $w) : ''), $p, $P];
 }

@@ -107,3 +107,35 @@ Every 10 minutes the engine (`wl_snap`) writes one status line (messages made / 
 The approved guidebook (`wk_guide_text`) is shown on the Lineup screen next to the messages; the 27 + 6 texts were written to its rules (short, polite, no price or number invented). The learning loop is the report: per wording, taps and orders; the picker sends the better wording more. New wordings are added the same way: write a second text for a step (`$V` in `wl_pack`), Meta approves it, it enters the 50/50 test and the better one takes 80%.
 
 The same status goes to Admin / HR phones as a push notification (tag `hrms-lineup`, replaces the previous one) every 10 minutes for the first 6 hours after the start, every half hour until 48 hours, then only when the self-check finds a warning.
+
+## Which messages really go (21 Nov update)
+
+Meta stopped new utility messages (weekly limit on 4 of 6 accounts) and re-labelled `ln_trust_1` as marketing, so the Lineup sends the shop's own approved messages: `wln_existing_map()` in `empmanagment/wa_line.php` maps every step to a message that is approved on 5–6 of 6 accounts (text only, at most one blank). `#386` (utility enquiry follow-up) opens most ladders; the rest are marketing at the shop's rate. The setting `wl_map` (JSON key => template id; `{}` = the lineup's own messages) overrides it.
+
+## Campaign recipients
+
+The base is the **reply** (owner, 21 Nov): everybody who wrote to us since the Lineup's start (a new query, a reply to a campaign, a button tap, an old customer; whatever the contact's `source` says) is read once and gets the ladder of his topic. People who only received or opened a campaign are NOT enrolled by default: `wl_cfg.camp` = `off`. (`read` / `delivered` with `camp_cap` a day exist for a later decision; switching to `off` takes everybody on that ladder off again.) On 21 Nov about 66,000 customers got a campaign in one day and only 1,446 wrote back.
+
+## Sending (21 Nov)
+
+The Lineup goes slowly, one message at a time (60 a round at most), and Module A / Module B's allowances do not apply to it: `wln_send` picks the number with the burst switch of `wa_camp_ctx`, so only Meta's own limits, a Low-quality / disconnected / locked number and a new number's slow start can stop a message. There is no marketing limit of its own.
+
+## When a customer's ladder starts (owner, 21 Nov)
+
+The 24 hours count from the **end of the conversation**: Step 1 goes when the customer's last message is more than 24 hours old, he has not ordered, nobody has opted out, and no person / campaign / follow-up has just spoken to him. While the talk goes on the engine only waits (up to 14 days from his first message). Every next step is 24 hours after the message that really went (not after his first message). If he answers a step, the ladder stops; 24 quiet hours after his last answer he is read again and a new ladder starts.
+
+## Its own clock (owner, 21 Nov)
+
+The Lineup has **no clock window** (the 10:00-20:00 one is gone; Module A / Module B's times and the marketing night pause do not apply to it): a step goes when its customer is ready (his conversation ended 24 h ago, no order, nobody else spoke to him today). `wl_cfg.win = 1` with `from` / `to` brings a window back. Steps that had been pushed into 10-20 go back to their natural time once (`wln_unwindow`). The message goes back **from the number he wrote to** (`wa_contacts.last_number_id`, where his reply came in); another number only if that one cannot send the message.
+
+Independent of Module A / B (owner, 21 Nov): a campaign or any template sent by another module no longer holds the Lineup (no "campaign in the last 2 days", no "template in the last 20 h"). What still holds a customer: his conversation is not over (24 h), a **person** wrote to him in the last 36 h, an Autopilot / Journey follow-up went today, an order / ticket / thank-you mute, an order, an opt-out, a complaint.
+
+## How the topic is decided (owner, 21 Nov)
+
+The topic is read from the customer's **whole conversation**, not from his first message: when his conversation is over (24 h after his last message) and his first Lineup message is about to go, his messages since he came in (the latest 12, text and button taps) are read again and the **newest message with a clear topic decides** (pending > price > trust > size inside one message; a later "ok thanks" does not wipe an earlier topic). If it differs from the topic he was enrolled with, his ladder is replaced by the ladder of the new topic (written in the log). The same reading is used when he answers a step: he is read again after 24 quiet hours; a new topic = a new ladder (messages already sent are never repeated; at most 2 changes, never beyond 14 days). People who only got a campaign (not enrolled by default) keep the `campaign` ladder.
+
+## Each customer has his own timeline (owner, 21 Nov)
+
+- Catches everybody who wrote since the day before yesterday 10:00 IST (one-time move of `wl_cfg.since`, `wln_since_back`).
+- Step 1 goes when his conversation is over (his last message > 24 h old), no order; step 2 is 24 h after step 1 went, step 3 24 h after step 2…
+- If he answers a step, the ladder stops. When that new conversation is over (24 h after his NEW last message) he is read again (whole chat, newest topic) and the unsent messages continue; the first one goes right then, the next ones 24 h after each message. If he writes again before that, the 24 hours simply move to his latest message.

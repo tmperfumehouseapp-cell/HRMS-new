@@ -164,8 +164,8 @@ window.WaSeg = (function () {
   const VALUES_ORDER = ['vip', 'high', 'mid', 'low', 'not_bought'];
   const LANGS = [['en', 'English'], ['hi', 'Hindi'], ['gu', 'Gujarati'], ['hinglish', 'Hinglish'], ['unknown', 'Unknown']];
   const DATE_KEYS = ['first_on_from', 'first_on_to', 'last_in_on_from', 'last_in_on_to'];
-  const KEYS = ['stage', 'value', 'source', 'language', 'first_number', 'first_on_from', 'first_on_to', 'last_in_on_from', 'last_in_on_to', 'silent_min_days', 'returned_within_days', 'asked_days', 'order_count_min', 'order_count_max', 'spent_min', 'exclude_bought_days', 'exclude_messaged_days', 'exclude_complaint'];
-  const REASON = { optout: 'opted out', complaint: 'open complaint', bought: 'bought lately', messaged: 'messaged lately' };
+  const KEYS = ['stage', 'value', 'source', 'language', 'first_number', 'first_on_from', 'first_on_to', 'last_in_on_from', 'last_in_on_to', 'silent_min_days', 'returned_within_days', 'asked_days', 'order_count_min', 'order_count_max', 'spent_min', 'exclude_bought_days', 'exclude_messaged_days', 'exclude_complaint', 'exclude_lineup'];
+  const REASON = { optout: 'opted out', complaint: 'open complaint', bought: 'bought lately', messaged: 'messaged lately', lineup: 'already in the 30-Day Lineup' };
   let metaCache = null, metaAt = 0;
   async function meta() { if (metaCache && Date.now() - metaAt < 60000) return metaCache; metaCache = await api.get('wa.seg_stages'); metaAt = Date.now(); return metaCache; }
 
@@ -223,6 +223,8 @@ window.WaSeg = (function () {
       h += '<div class="wsg-two"><div><label for="wsg-' + a + '">From date</label><input id="wsg-' + a + '" class="wsg-in" type="date" data-date="' + a + '" value="' + esc(F[a] || '') + '"></div><div><label for="wsg-' + b + '">To date</label><input id="wsg-' + b + '" class="wsg-in" type="date" data-date="' + b + '" value="' + esc(F[b] || '') + '"></div></div>';
       return h;
     }
+    let LD = null, ldBusy = false;
+    async function showLineup() { if (ldBusy) return; ldBusy = true; paintCount(); try { const r = await api.post('wa.seg_count', { filters: filters(), lineup: 1 }); LD = r.lineup || { in: 0, not_in: (r.total || 0), messages: 0, days: [], steps: [] }; } catch (e) { err = 'Could not read the Lineup. ' + errMsg(e); } ldBusy = false; paintCount(); }
     function countHtml() {
       const c = last; let h = '';
       if (err) h += '<div class="wsg-err">' + esc(err) + ' <button type="button" data-retry>Try again</button></div>';
@@ -235,6 +237,19 @@ window.WaSeg = (function () {
         h += '<div class="wsg-leg"><span style="--c:#1fa855">Sending ' + nf(c.sendable) + '</span><span style="--c:#f59e0b">Bought / messaged lately ' + nf((why.bought || 0) + (why.messaged || 0)) + '</span><span style="--c:#e5484d">Opted out / complaint ' + nf((why.optout || 0) + (why.complaint || 0)) + '</span></div>';
         if (c.unbuilt) h += '<div class="wsg-sub">' + nf(c.unbuilt) + ' newer contacts are not analysed yet (done in the nightly run).</div>';
         h += '</div>';
+        const L = LD;   // 🧵 what the 30-Day Lineup will do for these people — only when asked (one tap), so the live count stays light
+        if (!L && c.total > 0) h += '<button type="button" class="wsg-more" data-ldshow>' + (ldBusy ? 'Counting…' : '🧵 Show the 30-Day Lineup detail for these people') + '</button>';
+        if (L) {
+          const dl = (d) => { const t = new Date(d + 'T00:00:00'); return isNaN(t) ? d : t.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
+          const days = (L.days || []); const today = new Date().toISOString().slice(0, 10);
+          h += '<div class="wsg-add"><b>🧵 30-Day Lineup for these people</b><div class="wsg-sub" style="margin-top:4px"><b>' + nf(L.in) + '</b> of ' + nf(c.total) + ' are already in the Lineup (their follow-ups go there); <b>' + nf(L.not_in) + '</b> are not.</div>';
+          if (L.in > 0) {
+            h += '<div class="wsg-sub"><b>' + nf(L.messages) + '</b> messages are still planned for them' + (L.first ? ', from ' + dl(L.first) + ' to ' + dl(L.last) + ' (' + days.length + ' days with messages)' : '') + '.</div>';
+            if (days.length) h += '<div class="wsg-sub" style="line-height:1.7">' + days.slice(0, 16).map((x) => '<span style="white-space:nowrap">' + dl(x.date) + (x.date === today ? ' (today)' : '') + ': <b>' + nf(x.customers) + '</b> customers · ' + nf(x.messages) + ' msgs</span>').join(' · ') + (days.length > 16 ? ' · … and ' + (days.length - 16) + ' more days' : '') + '</div>';
+            if ((L.steps || []).length) h += '<div class="wsg-sub">By step: ' + L.steps.map((x) => 'step ' + x.step + ' (day ' + x.day + ') <b>' + nf(x.n) + '</b>').join(' · ') + '</div>';
+          }
+          h += '<div class="wsg-sub">Tip: switch on “Already in the 30-Day Lineup” under Skip these people to keep them out of this campaign.</div></div>';
+        }
       }
       return h;
     }
@@ -261,6 +276,7 @@ window.WaSeg = (function () {
       h += '</div><div class="wsg-card"><div class="wsg-h">Skip these people</div><div class="wsg-sub">Opted-out numbers are always skipped.</div>';
       h += '<label class="wsg-sw"><span>Bought in the last 14 days<small>do not push a sale right after an order</small></span><input type="checkbox" data-ex="exclude_bought_days|14"' + (F.exclude_bought_days === 14 ? ' checked' : '') + '></label>';
       h += '<label class="wsg-sw"><span>Messaged this week<small>they already heard from us in the last 7 days</small></span><input type="checkbox" data-ex="exclude_messaged_days|7"' + (F.exclude_messaged_days === 7 ? ' checked' : '') + '></label>';
+      h += '<label class="wsg-sw"><span>Already in the 30-Day Lineup<small>they are getting follow-ups there: leave them out of this campaign</small></span><input type="checkbox" data-ex="exclude_lineup|1"' + (F.exclude_lineup ? ' checked' : '') + '></label>';
       h += '<label class="wsg-sw"><span>Has an open complaint<small>sort the problem first</small></span><input type="checkbox" data-ex="exclude_complaint|1"' + (F.exclude_complaint ? ' checked' : '') + '></label>';
       h += '</div><div data-count>' + countHtml() + '</div>';
       if (Object.keys(filters()).length) h += '<button type="button" class="wsg-reset" data-reset>Clear everything</button>';
@@ -269,7 +285,7 @@ window.WaSeg = (function () {
     function paintCount() { const el = root.querySelector('[data-count]'); if (el) el.innerHTML = countHtml(); }
     function emit() { try { if (typeof opts.onChange === 'function') opts.onChange(filters(), last); } catch (e) { /* the host's problem */ } }
     async function loadCount() {
-      const my = ++cSeq; err = ''; try { const r = await api.post('wa.seg_count', { filters: filters() }); if (dead || my !== cSeq) return; last = r; } catch (e) { if (dead || my !== cSeq) return; err = 'Could not count. ' + errMsg(e); last = null; }
+      const my = ++cSeq; err = ''; try { const r = await api.post('wa.seg_count', { filters: filters() }); if (dead || my !== cSeq) return; last = r; LD = null; } catch (e) { if (dead || my !== cSeq) return; err = 'Could not count. ' + errMsg(e); last = null; }
       paintCount(); emit();
     }
     async function loadHist(force) {
@@ -290,6 +306,7 @@ window.WaSeg = (function () {
         delete F.order_count_min; delete F.order_count_max; if (!was) { if (o === 'bought') F.order_count_min = 1; else if (o === 'never') F.order_count_max = 0; else F.order_count_min = 2; } return changed(true); }
       if (t.hasAttribute('data-more')) { more = !more; return render(); }
       if (t.hasAttribute('data-reset')) { set({}); return changed(true); }
+      if (t.hasAttribute('data-ldshow')) { return showLineup(); }
       if (t.hasAttribute('data-retry')) { last = null; paintCount(); return loadCount(); }
     });
     root.addEventListener('change', (e) => {
