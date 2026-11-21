@@ -706,7 +706,7 @@ $__wm = (string)($action ?? ($_GET['action'] ?? ''));
 if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.cron_send', 'wa.bot_run', 'wa.bot_tick', 'wa.alloc_why', 'wa.alloc_run'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if ($__wm === 'wa.bot_tick') {   // 🤖 ONE short bot tick (cron_bot.php fires five a second): returns at once when all five slots are busy
-        ignore_user_abort(true); @set_time_limit(40);
+        ignore_user_abort(true); @set_time_limit(((string)($_GET['role'] ?? '') === 'fuw') ? 75 : 40);
         if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
         $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
         try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
