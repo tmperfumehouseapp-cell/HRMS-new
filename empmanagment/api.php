@@ -1704,7 +1704,7 @@ function day_timing_overrides(PDO $pdo): array
     static $ov = null; if ($ov !== null) return $ov;
     $ov = [];
     for ($d = strtotime('2026-11-08'); $d <= strtotime('2026-11-15'); $d += 86400) $ov[date('Y-m-d', $d)] = '12:00';   // owner (16 Nov): from the 16th every day is 10 AM → next day 10 AM again; the 8–15 Nov days keep their 12 PM start (history stays as it was counted)
-    $ov['2026-11-21'] = '12:00';   // owner (21 Nov, final): this ONE date starts at 12:00 PM (the 20th runs 10 AM → 21st 12:00 PM; first hour row = 12–1 PM). A date-specific start cannot be undone by somebody saving the weekday times; other Saturdays stay as the weekday setting says.
+    $ov['2026-11-21'] = '12:25';   // owner (21 Nov, FINAL): this ONE date starts at 12:25 PM — the 20th (ad spend ₹3,00,027) reaches 3 ROAS (₹9,00,081) with the 12:24:56 order, so the 20th runs 10 AM → 21st 12:25 PM and the 21st starts at 12:25 PM. A date-specific start cannot be undone by somebody saving the weekday times; other Saturdays stay as the weekday setting says.
     try { $raw = (string)setting_get($pdo, 'day_timing_overrides', ''); if ($raw !== '') { $j = json_decode($raw, true); if (is_array($j)) { $ov = []; foreach ($j as $k => $v) if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$k) && preg_match('/^\d{2}:\d{2}$/', (string)$v)) $ov[(string)$k] = (string)$v; } } } catch (Throwable $e) { }
     return $ov;
 }
