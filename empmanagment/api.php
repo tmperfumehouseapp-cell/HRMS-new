@@ -1433,7 +1433,7 @@ function ora_tick(PDO $pdo): int
             $w = $pdo->query("SELECT r.order_key, r.order_name, r.employee_id, r.rating, r.day, r.house, r.at FROM order_rate_auto r WHERE r.applied = 0 AND r.rating IS NOT NULL ORDER BY r.at DESC LIMIT 40")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($w as $r) { $ok = ora_apply($pdo, (string)$r['order_key'], ['order_name' => $r['order_name'], 'employee_id' => (int)$r['employee_id'], 'day' => (string)($r['day'] ?: date('Y-m-d', strtotime((string)$r['at']) - 10 * 3600)), 'house' => (string)$r['house'], 'rating' => (float)$r['rating']]); $pdo->prepare("UPDATE order_rate_auto SET applied = ? WHERE order_key = ?")->execute([$ok ? 1 : 2, (string)$r['order_key']]); }
         }
-    } catch (Throwable $e) { error_log('ora_tick: ' . $e->getMessage()); }
+    } catch (Throwable $e) { error_log('ora_tick: ' . $e->getMessage()); try { setting_set($pdo, 'ora_tick_info', date('Y-m-d H:i:s') . ' · ERROR ' . mb_substr($e->getMessage(), 0, 200)); } catch (Throwable $e2) { } }
     return $n;
 }
 /** Saves one judged order (replaces an older row of the same order: rows from before the two-part judge are read again and corrected). */
