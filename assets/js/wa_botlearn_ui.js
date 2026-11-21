@@ -1,0 +1,59 @@
+/* 🧠 "The bot learned" strip (top of the WhatsApp sales panel): the answers people replaced with 👎 — the owner applies them to the LIVE guidebook with one tap;
+   the nightly guidebook keeps them (owner_corrections). Admin / managers only; nothing shows when there is nothing to apply. */
+(function () {
+  'use strict';
+  var host = document.getElementById('blStrip'); if (!host || typeof api === 'undefined') return;
+  var open = false, data = null, busy = false;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function css() {
+    if (document.getElementById('blCss')) return; var st = document.createElement('style'); st.id = 'blCss';
+    st.textContent = '#blStrip{margin:0}.bl{margin:8px 12px;border:1px solid #cfe3d6;background:#f3faf6;border-radius:12px;font-size:13px}.bl-h{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer}.bl-h b{flex:1}.bl-b{padding:0 12px 10px}.bl-i{border-top:1px solid #dfece4;padding:9px 0}.bl-i q{display:block;color:#445;margin:2px 0}.bl-bad{color:#a33}.bl-good{color:#116b3a;font-weight:600}.bl-r{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.bl button{border:0;border-radius:9px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}.bl .ap{background:#128c4a;color:#fff}.bl .sk{background:#e6e9ee;color:#445}.bl textarea{width:100%;box-sizing:border-box;font:inherit;padding:6px;border:1px solid #cfd6dd;border-radius:8px;margin-top:4px}@media (prefers-color-scheme:dark){.bl{background:#16251d;border-color:#294636}.bl-i{border-color:#294636}.bl-i q{color:#c9d4ce}.bl .sk{background:#2b323a;color:#cdd}}';
+    document.head.appendChild(st);
+  }
+  function draw() {
+    css(); if (!data || !data.can && !(data.items || []).length) { host.innerHTML = ''; return; }
+    var items = data.items || []; if (!items.length && !data.applied_today) { host.innerHTML = ''; return; }
+    var h = '<div class="bl"><div class="bl-h" id="blH"><span>🧠</span><b>The bot learned ' + items.length + ' new thing' + (items.length === 1 ? '' : 's') + (data.applied_today ? ' · ' + data.applied_today + ' applied today' : '') + '</b><span>' + (open ? '▲' : '▼') + '</span></div>';
+    if (open) {
+      h += '<div class="bl-b">' + (!items.length ? '<div class="bl-i">Nothing waiting. Everything is in the guidebook.</div>' : '');
+      if (items.length > 1 && data.can) h += '<div class="bl-r"><button class="ap" id="blAll">✅ Apply all ' + items.length + ' to the guidebook</button></div>';
+      items.forEach(function (x) {
+        h += '<div class="bl-i" data-id="' + x.id + '"><div style="color:#667">' + esc(x.by) + ' · ' + esc(String(x.at).slice(5, 16)) + (x.reason ? ' · ' + esc(x.reason) : '') + '</div>'
+          + '<div>Customer: <q>' + esc(x.customer) + '</q></div><div class="bl-bad">Bot said: <q>' + esc(x.bot) + '</q></div>'
+          + (x.pending_tpl ? '<div style="color:#a60">A pre-made message is being chosen…</div>' : '<div class="bl-good">Better: <textarea rows="3" data-t="' + x.id + '">' + esc(x.better) + '</textarea></div>')
+          + (data.can && !x.pending_tpl ? '<div class="bl-r"><button class="ap" data-ap="' + x.id + '">✅ Apply to guidebook</button><button class="sk" data-sk="' + x.id + '">Ignore</button></div>' : '') + '</div>';
+      });
+      if ((data.applied || []).length) { h += '<div class="bl-i"><b>✅ Already in the guidebook (latest ' + data.applied.length + ')</b>'; data.applied.forEach(function (x) { h += '<div style="margin-top:6px;color:#445"><span style="color:#667">' + esc(x.by) + ' · ' + esc(String(x.at).slice(5, 16)) + '</span><br>Customer: <q>' + esc(x.customer) + '</q><span class="bl-bad">Bot said: ' + esc(x.bot) + '</span><br><span class="bl-good">Now it says: ' + esc(x.better) + '</span></div>'; }); h += '</div>'; }
+      h += '</div>';
+    }
+    host.innerHTML = h + '</div>';
+    var hd = document.getElementById('blH'); if (hd) hd.onclick = function () { open = !open; draw(); };
+    var all = document.getElementById('blAll'); if (all) all.onclick = function () { act({ all: 1 }); };
+    host.querySelectorAll('[data-ap]').forEach(function (b) { b.onclick = function () { var id = +b.dataset.ap, t = host.querySelector('[data-t="' + id + '"]'); act({ id: id, text: t ? t.value : undefined }); }; });
+    host.querySelectorAll('[data-sk]').forEach(function (b) { b.onclick = function () { act({ id: +b.dataset.sk, ignore: 1 }); }; });
+  }
+  function say(msg, bad) { var t = document.createElement('div'); t.className = 'wp-toast' + (bad ? ' bad' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(function () { t.remove(); }, 3500); }
+  function act(body) { if (busy) return; busy = true; api.post('wa.g_botlearn_apply', body).then(function (r) { say(body.ignore ? 'Ignored' : '✅ Applied to the live guidebook (' + (r.applied || 0) + '). The bot uses it now.'); return load(); }).catch(function (e) { say(e.message, true); }).then(function () { busy = false; }); }
+  var pend = null, popen = false;
+  function drawPend() {
+    var host2 = document.getElementById('blPend'); if (!host2) { host2 = document.createElement('div'); host2.id = 'blPend'; host.parentNode.insertBefore(host2, host); }
+    if (!pend || !pend.can || !pend.total) { host2.innerHTML = ''; return; } css();
+    var by = {}; pend.items.forEach(function (x) { var w = x.missed_by || x.holder || 'nobody'; by[w] = (by[w] || 0) + 1; }); var sum = Object.keys(by).sort(function (a, b) { return by[b] - by[a]; }).slice(0, 6).map(function (k) { return esc(k) + ' ' + by[k]; }).join(' · ');
+    var h = '<div class="bl" style="border-color:#f0c9a8;background:#fff6ee"><div class="bl-h" id="bpH"><span>🙋</span><b>Hot or bot-handed chats nobody answered: ' + pend.total + ' chat' + (pend.total === 1 ? '' : 's') + '</b><span style="color:#a60;font-size:12px">' + sum + '</span><span>' + (popen ? '▲' : '▼') + '</span></div>';
+    if (popen) {
+      h += '<div class="bl-b">';
+      pend.items.forEach(function (x) {
+        h += '<div class="bl-i"><div><b>' + esc(x.name || ('+91 ' + x.phone)) + '</b> · waiting <span style="color:' + (x.wait_min >= 10 ? '#b00' : '#a60') + '">' + x.wait_min + ' min</span> · handed over ' + x.handed_min + ' min ago' + (x.hot ? ' · 🔥 ' + esc(x.hot) : '') + '</div>'
+          + '<div style="color:#667">Holder: ' + (x.holder ? esc(x.holder) : 'nobody (in OPEN)') + (x.missed_by ? ' · did not answer: <b>' + esc(x.missed_by) + '</b>' : '') + '</div><q>' + esc(x.last) + '</q>'
+          + '<div class="bl-r"><a class="sk" style="text-decoration:none;border-radius:9px;padding:7px 11px;font-weight:600" target="_blank" href="my_chats.html?phone=' + encodeURIComponent(x.phone) + '">Open chat</a><button class="ap" data-nf="' + esc(x.phone) + '">Give to the next free person</button></div></div>';
+      });
+      h += '</div>';
+    }
+    host2.innerHTML = h + '</div>';
+    var hd = document.getElementById('bpH'); if (hd) hd.onclick = function () { popen = !popen; drawPend(); };
+    host2.querySelectorAll('[data-nf]').forEach(function (b) { b.onclick = function () { b.disabled = true; api.post('wa.g_reassign', { phone: b.dataset.nf, emp_id: 0 }).then(function (r) { say('Given to ' + (r.to || 'the next free person')); loadPend(); }).catch(function (e) { say(e.message, true); b.disabled = false; }); }; });
+  }
+  function loadPend() { return api.get('wa.g_botpending').then(function (d) { pend = d; drawPend(); }).catch(function () { }); }
+  function load() { return api.get('wa.g_botlearn').then(function (d) { data = d; draw(); }).catch(function () { }); }
+  load(); loadPend(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); } }, 60000);
+})();

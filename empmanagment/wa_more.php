@@ -702,14 +702,23 @@ require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value fi
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wm = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.cron_send', 'wa.alloc_why', 'wa.alloc_run'], true)) {
+if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.cron_send', 'wa.bot_run', 'wa.alloc_why', 'wa.alloc_run'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
+    if ($__wm === 'wa.bot_run') {   // 🤖 a fast bot worker (3-8 s answers): ~55 s, under its own slot lock; the sending job starts three of them every minute
+        ignore_user_abort(true); @set_time_limit(90);
+        if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
+        $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
+        try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
+        $r = ['ok' => true]; try { if (function_exists('wag_bot_run')) $r['bot'] = wag_bot_run($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'bot worker: ' . $e->getMessage()); }
+        json_response($r);
+    }
     if ($__wm === 'wa.cron_send') {   // ⚡ the SENDING job: only campaigns + recovery, under their own locks, so it runs every minute and never waits behind the heavy engine (wa.cron)
         ignore_user_abort(true); @set_time_limit(100);
         if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
         $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
         try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
         $r = ['ok' => true];
+        try { if (function_exists('wag_bot_spawn') && function_exists('wa_lock') && wa_lock($pdo, 'wagspawn', 15)) $r['bot_workers'] = wag_bot_spawn($pdo, 5); } catch (Throwable $e) { }   // 🤖 fast bot workers: answers within seconds, whoever calls first
         try { $r['lineup'] = function_exists('wl_tick') ? wl_tick($pdo, ['sendonly' => 1]) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job lineup: ' . $e->getMessage()); }   // 🧵 the Lineup's sending round first: it works a shard of the due customers of its own (several callers at once = faster)
         try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
         try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job recovery: ' . $e->getMessage()); }
