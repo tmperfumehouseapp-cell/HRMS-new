@@ -1135,8 +1135,8 @@ function wag_bot_ticket(PDO $pdo, int $days = 7): ?array
  *  Blocks when (a) he took 4+ queries today and his orders / taken is under 60% of the team's last-7-days ratio (only when the team has orders recorded), (b) he left 2+ hot chats today, or (c) 3+ hot chats of his wait unanswered. Switch: wag_mkt_gate = 0. */
 function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
 {
-    // owner 22 Nov: the conversion part of the gate never blocks a query that nobody took for 4 minutes (a person must always be able to pick waiting queries); it needs 25+ queries and a ratio under half of the team's
-    $waited = $chat !== null && (int)($chat['assigned_emp'] ?? 0) === 0 && ($__li = (int)strtotime((string)($chat['last_in_at'] ?? ''))) > 0 && $__li < time() - 240;
+    // owner 22 Nov: the conversion part of the gate never blocks a customer who waited 4 minutes with no reply (unassigned or held by somebody who did not answer) (a person must always be able to pick waiting queries); it needs 25+ queries and a ratio under half of the team's
+    $waited = $chat !== null && ($__li = (int)strtotime((string)($chat['last_in_at'] ?? ''))) > 0 && $__li < time() - 240 && (int)strtotime((string)($chat['last_out_at'] ?? '')) < $__li;   // waiting 4+ min with no reply from anyone: unassigned OR held by a person who did not answer
     static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)$waited . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
     $msg = '';
     try {
