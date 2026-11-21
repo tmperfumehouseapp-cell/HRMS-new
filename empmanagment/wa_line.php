@@ -505,6 +505,17 @@ function wln_claim_shard(PDO $pdo, int $n): int
     }
     return -1;
 }
+/** FAN-OUT: when hundreds are due, the engine calls the sending job (wa.cron_send) a few more times at the same moment (a request that is not waited for; the job ignores a hung-up caller), so several shards send at once even when the extra cron lines do not fire. At most N-1 calls a minute. */
+function wln_fanout(PDO $pdo, int $n, int $now): int
+{
+    if ($n < 2 || !function_exists('wa_lock') || !wa_lock($pdo, 'wlfan', 40)) return 0;
+    try { $q = $pdo->prepare("SELECT COUNT(*) FROM (SELECT 1 FROM wa_line_plan WHERE status = 'planned' AND due_at <= ? LIMIT 300) t"); $q->execute([date('Y-m-d H:i:s', $now)]); if ((int)$q->fetchColumn() < 300) return 0; } catch (Throwable $e) { return 0; }
+    $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !function_exists('stream_socket_client')) return 0; $host = (string)($_SERVER['HTTP_HOST'] ?? 'staging.fourpirates.space'); $sent = 0;
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $host]]);
+    for ($i = 1; $i < $n; $i++) { $fp = @stream_socket_client('ssl://127.0.0.1:443', $en, $es, 2, STREAM_CLIENT_CONNECT, $ctx); if (!$fp) continue;
+        @fwrite($fp, "GET /empmanagment/api.php?action=wa.cron_send&key=" . urlencode($key) . " HTTP/1.1\r\nHost: $host\r\nUser-Agent: wa-line-fanout\r\nConnection: close\r\n\r\n"); @fclose($fp); $sent++; }
+    return $sent;
+}
 function wln_release_shard(PDO $pdo, int $k): void { if ($k < 0 || (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'mysql') return; try { $pdo->prepare('SELECT RELEASE_LOCK(?)')->execute(['hrms_wl_shard_' . $k]); } catch (Throwable $e) { } }
 function wl_tick(PDO $pdo, array $opt = []): array
 {
@@ -522,6 +533,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }   // failed as marketing -> sent again as utility on the spot
     $N = max(1, min(8, (int)($cfg['shards'] ?? 4))); $shard = -1;   // SHARDS (owner, 21 Nov: speed): the due customers are split into N groups by their phone; every caller (the engine and the sending job) takes the first group nobody works on, so several run at once
     if (!$force) { $shard = wln_claim_shard($pdo, $N); if ($shard < 0) return $o; }
+    if (!$force && !$sendonly) { try { $o['fanout'] = wln_fanout($pdo, $N, $now); } catch (Throwable $e) { } }   // more sending jobs at once while a lot is due
     try { return wln_send_round($pdo, $opt, $cfg, $force, $now, $shard, $N, $o); } finally { wln_release_shard($pdo, $shard); }
 }
 /** The sending round of one shard (all of the old wl_tick below the bookkeeping). */
