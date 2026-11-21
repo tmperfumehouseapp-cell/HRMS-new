@@ -724,12 +724,12 @@ function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
 /** 🌡 The open-market timing tunes itself (owner, 21 Nov): the minutes a hot chat waits before it goes back to OPEN (base) and while its holder is busy (busy) follow the load. MANY people working = chats are picked up fast, so the rule is SHORTER; a quiet time (few people writing) = LONGER again. Active people = who wrote to a customer in the last 10 minutes; queue = customers of the last 3 hours waiting 2+ minutes for an answer. Re-computed once a minute; base 4-10, busy 6-14. [base, busy] */
 function is_list_arr(array $a): bool { return $a === [] || array_keys($a) === range(0, count($a) - 1); }
 /** The owner's definition of a query (21 Nov): NOT campaign, NOT community — the same numbers as the sales strip ("orders / queries"). Returns [emp => [queries, orders]] for the days list of wq_period. */
-function wag_real_queries(PDO $pdo, int $days): array
+function wag_real_queries(PDO $pdo, int $days, bool $withCampaign = false): array
 {
     $out = [];
     try { if ((!function_exists('wq_period') || !function_exists('wq_dt')) && is_file(__DIR__ . '/wq.php')) { try { require_once __DIR__ . '/wq.php'; } catch (Throwable $e) { } }   // the market screen route does not load the query ledger by itself (the banner showed 0 while the gate showed 4)
         if (!function_exists('wq_period') || !function_exists('wq_dt')) return $out; [$f, $t] = wq_period($pdo, $days);
-        $q = $pdo->prepare("SELECT q.emp_id, COUNT(*) n, SUM(CASE WHEN COALESCE(s.orders, 0) > 0 THEN 1 ELSE 0 END) o FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community') GROUP BY q.emp_id");
+        $q = $pdo->prepare("SELECT q.emp_id, COUNT(*) n, SUM(CASE WHEN COALESCE(s.orders, 0) > 0 THEN 1 ELSE 0 END) o FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN (" . ($withCampaign ? "'community'" : "'campaign', 'community'") . ") GROUP BY q.emp_id");
         $q->execute([wq_dt($f), wq_dt($t)]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(int)$r['emp_id']] = [(int)$r['n'], (int)$r['o']];
     } catch (Throwable $e) { }
     return $out;
@@ -774,12 +774,16 @@ function wag_hot_is_done(PDO $pdo, string $phone, string $lastIn = ''): bool
 function wag_fair_state(PDO $pdo, int $emp): array
 {
     static $c = []; $ck = $emp . ':' . (int)(time() / 10); if (isset($c[$ck])) return $c[$ck];
-    $r = ['hidden' => false, 'left' => 0, 'star' => false, 'picks' => 0, 'window' => 45];
+    $r = ['hidden' => false, 'left' => 0, 'star' => false, 'picks' => 0, 'min' => 0, 'window' => 45];
     try { if ($emp <= 0 || (string)setting_get($pdo, 'wag_fair_on', '1') === '0') return $c[$ck] = $r; $r['window'] = max(10, min(180, (int)setting_get($pdo, 'wag_fair_window', '45')));
-        $q = $pdo->prepare("SELECT COUNT(DISTINCT phone), MAX(at) FROM wa_mkt WHERE emp_id = ? AND kind = 'taken' AND at >= ?"); $q->execute([$emp, date('Y-m-d H:i:s', time() - 1800)]); $x = $q->fetch(PDO::FETCH_NUM); $picks = (int)($x[0] ?? 0); $last = $x[1] ? (int)strtotime((string)$x[1]) : 0; $r['picks'] = $picks;
-        static $stars = null, $sAt = 0; if ($stars === null || time() - $sAt > 120) { $sAt = time(); $stars = []; $d7 = function_exists('wag_real_queries') ? wag_real_queries($pdo, 7) : []; $tq = 0; $to = 0; foreach ($d7 as $v) { $tq += $v[0]; $to += $v[1]; } $avg = $tq >= 40 && $to > 0 ? $to / $tq : 0; if ($avg > 0) foreach ($d7 as $e2 => $v) if ($v[0] >= 10 && $v[1] >= 1 && $v[1] / $v[0] >= 1.2 * $avg) $stars[(int)$e2] = 1; }
-        $r['star'] = isset($stars[$emp]);   // the best ratio always sees every new query
-        if (!$r['star'] && $picks >= 1 && $last > 0) { $cd = min(240, 40 + 40 * $picks); $since = time() - $last; if ($since < $cd) { $r['hidden'] = true; $r['left'] = $cd - $since; } }
+        static $pk = null, $pkAt = 0, $pres = [], $stars = null, $sAt = 0;
+        if ($pk === null || time() - $pkAt > 10) { $pkAt = time(); $pk = []; $q = $pdo->query("SELECT emp_id, COUNT(DISTINCT phone) FROM wa_mkt WHERE kind = 'taken' AND emp_id > 0 AND at >= '" . date('Y-m-d 00:00:00') . "' GROUP BY emp_id"); foreach ($q->fetchAll(PDO::FETCH_NUM) as $x) $pk[(int)$x[0]] = (int)$x[1];
+            $pres = []; $q = $pdo->query("SELECT DISTINCT emp_id FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date('Y-m-d H:i:s', time() - 1800) . "'"); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $e2) $pres[(int)$e2] = 1; }   // people who are working: wrote to a customer in the last 30 minutes
+        if ($stars === null || time() - $sAt > 120) { $sAt = time(); $stars = []; $d7 = function_exists('wag_real_queries') ? wag_real_queries($pdo, 7, true) : []; $tq = 0; $to = 0; foreach ($d7 as $v) { $tq += $v[0]; $to += $v[1]; } $avg = $tq >= 40 && $to > 0 ? $to / $tq : 0; if ($avg > 0) foreach ($d7 as $e2 => $v) if ($v[0] >= 8 && $v[1] >= 1 && $v[1] / $v[0] >= 1.1 * $avg) $stars[(int)$e2] = 1; }   // the ratio counts queries AND campaign chats (community not), and "best" is only 10% above the team (not extraordinary)
+        $r['star'] = isset($stars[$emp]); $mine = (int)($pk[$emp] ?? 0); $r['picks'] = $mine;
+        $min = null; foreach ($pres as $e2 => $_) { if (isset($stars[$e2])) continue; $v = (int)($pk[$e2] ?? 0); if ($min === null || $v < $min) $min = $v; } $min = $min ?? 0; $r['min'] = $min;
+        // EQUAL SHARE: in the first seconds a new query is shown to the best-ratio people and to the working people who have taken the FEWEST queries today (ties all see it); somebody with more takes than the minimum waits for the window. As soon as one takes, the next new query goes to those still at the minimum — so everybody, also one who got nothing yet, gets his turn.
+        if (!$r['star'] && $mine > $min) { $r['hidden'] = true; $r['left'] = $r['window']; }
     } catch (Throwable $e) { }
     return $c[$ck] = $r;
 }
@@ -1073,16 +1077,16 @@ function wag_bot_spawn(PDO $pdo, int $n = 5): int
     return $sent;
 }
 /** ONE short bot tick (the fast heartbeat, driven once a second by cron_bot.php): claims a free slot (5 at most run at the same time — the others return at once, so no web-server worker is held), answers up to 2 waiting customers, slot 0 also runs the complaint / hot-open sweeps every 20 s. */
-function wag_bot_tick(PDO $pdo, int $slots = 12, string $role = ''): array   // owner, 21 Nov: 12 answer slots (was 5: ~87 answers a minute had filled five) + 3 slots only for follow-ups (role=fu, one tick a second from cron_bot.php)
+function wag_bot_tick(PDO $pdo, int $slots = 8, string $role = ''): array   // owner, 21 Nov: 12 answer slots (was 5: ~87 answers a minute had filled five) + 3 slots only for follow-ups (role=fu, one tick a second from cron_bot.php)
 {
     $o = ['slot' => -1, 'sent' => 0, 'handoff' => 0]; if (wag_cfg($pdo)['bot'] !== 'on') return $o;
-    $isMy = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $pfx = $role === 'fu' ? 'hrms_wag_fu_' : 'hrms_wag_tick_'; $n = $role === 'fu' ? 3 : $slots;
+    $isMy = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $pfx = $role === 'fu' ? 'hrms_wag_fu_' : 'hrms_wag_tick_'; $n = $role === 'fu' ? 2 : $slots;
     if ($isMy) { for ($k = 0; $k < $n; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('" . $pfx . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
     try {
         if ($role === 'fu') { try { $o['followup'] = wag_bot_followup($pdo, 6); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } } return $o; }
         if (time() - (int)setting_get($pdo, 'wag_tick_at', '0') >= 3) setting_set($pdo, 'wag_tick_at', (string)time());   // the heartbeat no longer depends on slot 0 being free
         if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } }   // the sweeps run in whichever slot is free (a busy slot 0 used to delay them)
-        $r = wag_bot_scan($pdo, 5); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];   // customer answers only; follow-ups have their own slots
+        $r = wag_bot_scan($pdo, 3); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];   // customer answers only; follow-ups have their own slots
         if (time() - (int)setting_get($pdo, 'wag_exp_at', '0') >= 1800) { setting_set($pdo, 'wag_exp_at', (string)time()); try { wag_exp_eval($pdo); } catch (Throwable $e) { } }   // the self-learning check, every 30 minutes
     } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('" . $pfx . $o['slot'] . "')"); } catch (Throwable $e) { } } }
     return $o;
