@@ -24,11 +24,56 @@ function fb_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS fb_proofs (id INT AUTO_INCREMENT PRIMARY KEY, order_name VARCHAR(40) NOT NULL, path VARCHAR(160) NOT NULL, mime VARCHAR(40) NOT NULL DEFAULT '', src VARCHAR(10) NOT NULL DEFAULT 'manual', media_id VARCHAR(60) NULL,
             place VARCHAR(200) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, KEY idx_fbp_order (order_name), UNIQUE KEY uq_fbp_media (order_name, media_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fb_events (id INT AUTO_INCREMENT PRIMARY KEY, order_name VARCHAR(40) NOT NULL, at DATETIME NOT NULL, txt VARCHAR(300) NOT NULL DEFAULT '', by_name VARCHAR(80) NOT NULL DEFAULT '', KEY idx_fbe_order (order_name, id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if ((string)setting_get($pdo, 'fb_rs_col', '') !== '1') {      // reward_state: '' none / 'owed' (promised, not sent yet) / 'sent' (once)
+            try { $pdo->exec("ALTER TABLE fb_orders ADD COLUMN reward_state VARCHAR(8) NOT NULL DEFAULT ''"); } catch (Throwable $e) { }
+            setting_set($pdo, 'fb_rs_col', '1');
+        }
         if ((string)setting_get($pdo, 'fb_place_w', '') !== '1') {      // the places of an older copy of the table were 60 characters: several places need more room (once)
             try { $pdo->exec("ALTER TABLE fb_orders MODIFY place VARCHAR(200) NOT NULL DEFAULT ''"); $pdo->exec("ALTER TABLE fb_proofs MODIFY place VARCHAR(200) NOT NULL DEFAULT ''"); setting_set($pdo, 'fb_place_w', '1'); } catch (Throwable $e) { error_log('fb place width: ' . $e->getMessage()); }
         }
         return $ok = true;
     } catch (Throwable $e) { error_log('fb_tables: ' . $e->getMessage()); return $ok = false; }
+}
+
+/** Thank-you messages (typed, for after the screenshot): [{name, msg}], {name} {order} {links} are filled in. A first set is there until you change it. */
+function fb_thanks(PDO $pdo): array
+{
+    $j = json_decode((string)setting_get($pdo, 'fb_thanks', ''), true);
+    if (is_array($j)) { $o = []; foreach ($j as $x) if (is_array($x) && trim((string)($x['msg'] ?? '')) !== '') $o[] = ['name' => mb_substr(trim((string)($x['name'] ?? '')), 0, 40) ?: 'Thank you', 'msg' => mb_substr(trim((string)$x['msg']), 0, 700)]; return array_slice($o, 0, 10); }
+    return [['name' => 'Warm and simple', 'msg' => 'Bahut bahut shukriya {name} ji! 🙏 Aapka review aur screenshot mil gaya. Aapka support hamare chhote business ke liye bahut mayne rakhta hai ❤️'],
+        ['name' => 'Short and cheerful', 'msg' => 'Thank you so much, {name}! 😊 Aapka feedback mil gaya. TMPerfumeHouse ko chunne ke liye dil se shukriya ✨'],
+        ['name' => 'Warm, keeps the chat open', 'msg' => 'Shukriya {name} ji! 💛 Screenshot mil gaya, hum bahut khush hue. Aage bhi koi perfume chahiye ya koi sawal ho to bas yahin message kar dijiye, hum madad ke liye hain 🌸']];
+}
+function fb_thanks_put(PDO $pdo, array $l): array
+{
+    $o = []; foreach ($l as $x) if (is_array($x) && trim((string)($x['msg'] ?? '')) !== '') $o[] = ['name' => mb_substr(trim((string)($x['name'] ?? '')), 0, 40) ?: 'Thank you', 'msg' => mb_substr(trim((string)$x['msg']), 0, 700)];
+    $o = array_slice($o, 0, 10); setting_set($pdo, 'fb_thanks', json_encode($o, JSON_UNESCAPED_UNICODE)); return $o;
+}
+/** What the customer's quick-reply button (WhatsApp "button" reply) triggers: [{match, reply, issue}]. match = a word of the button text. */
+function fb_qr(PDO $pdo): array
+{
+    $j = json_decode((string)setting_get($pdo, 'fb_qr', ''), true);
+    if (is_array($j)) { $o = []; foreach ($j as $x) if (is_array($x) && trim((string)($x['match'] ?? '')) !== '' && trim((string)($x['reply'] ?? '')) !== '') $o[] = ['match' => mb_substr(trim((string)$x['match']), 0, 40), 'reply' => mb_substr(trim((string)$x['reply']), 0, 700), 'issue' => !empty($x['issue']) ? 1 : 0]; return array_slice($o, 0, 10); }
+    return [['match' => 'pasand', 'reply' => "Wah, bahut khushi hui {name} ji! 🥰 Aapka review hamare liye bahut kimti hai, yahan likh dijiye:\n{links}", 'issue' => 0],
+        ['match' => 'issue', 'reply' => 'Sorry {name} ji 🙏 Humein bataiye kya problem hui. Hamari care team abhi aapse baat karegi aur solve karegi.', 'issue' => 1]];
+}
+function fb_qr_put(PDO $pdo, array $l): array
+{
+    $o = []; foreach ($l as $x) if (is_array($x) && trim((string)($x['match'] ?? '')) !== '' && trim((string)($x['reply'] ?? '')) !== '') $o[] = ['match' => mb_substr(trim((string)$x['match']), 0, 40), 'reply' => mb_substr(trim((string)$x['reply']), 0, 700), 'issue' => !empty($x['issue']) ? 1 : 0];
+    $o = array_slice($o, 0, 10); setting_set($pdo, 'fb_qr', json_encode($o, JSON_UNESCAPED_UNICODE)); return $o;
+}
+/** {name} {order} {links} filled in. */
+function fb_fill(PDO $pdo, string $t, array $row): string
+{
+    $nm = trim(explode(' ', trim((string)$row['customer']))[0] ?? ''); if ($nm === '') $nm = 'ji'; $ln = ''; foreach (fb_links($pdo) as $l) $ln .= '⭐ ' . $l['name'] . ': ' . $l['url'] . "\n";
+    return trim(str_replace(['{name}', '{order}', '{links}'], [$nm, (string)$row['order_name'], rtrim($ln)], $t));
+}
+/** A typed message to this order's customer (works within WhatsApp's 24 hours). [ok, error] */
+function fb_typed(PDO $pdo, array $row, string $text, int $empId = 0, string $who = 'emp'): array
+{
+    if (!function_exists('wa_send_text') || !function_exists('wa_contact')) return [false, 'The WhatsApp sender is not available.'];
+    $c = wa_contact($pdo, (string)$row['phone']); if (!$c) return [false, 'There is no chat with this customer.'];
+    $r = wa_send_text($pdo, $c, mb_substr($text, 0, 900), $who, $empId); return empty($r[0]) ? [false, (string)$r[1]] : [true, ''];
 }
 
 /** The review links (Google, Instagram …) made once and reused: [{name, url, msg}]. msg is the message with {name} {order} {link} filled in for each customer. */
@@ -50,7 +95,7 @@ function fb_cfg(PDO $pdo): array
 {
     $places = array_values(array_filter(array_map('trim', explode('|', (string)setting_get($pdo, 'fb_places', 'Google review|Instagram|Facebook|Shopify review')))));
     return ['on' => (string)setting_get($pdo, 'fb_on', '0') === '1', 'wait' => max(1, min(30, (int)setting_get($pdo, 'fb_wait', '5'))), 'fu' => max(1, min(30, (int)setting_get($pdo, 'fb_fu', '3'))),
-        'tpl' => (int)setting_get($pdo, 'fb_tpl', '0'), 'tpl_fu' => (int)setting_get($pdo, 'fb_tpl_fu', '0'), 'places' => $places ?: ['Google review'], 'links' => fb_links($pdo), 'reward' => (string)setting_get($pdo, 'fb_reward', '10 ML perfume')];
+        'tpl' => (int)setting_get($pdo, 'fb_tpl', '0'), 'tpl_fu' => (int)setting_get($pdo, 'fb_tpl_fu', '0'), 'places' => $places ?: ['Google review'], 'links' => fb_links($pdo), 'thanks' => fb_thanks($pdo), 'qr' => fb_qr($pdo), 'start' => (string)setting_get($pdo, 'fb_start', ''), 'auto_thanks' => (string)setting_get($pdo, 'fb_auto_thanks', '0') === '1', 'reward' => (string)setting_get($pdo, 'fb_reward', '10 ML perfume')];
 }
 
 /** One or several places ("Google review", ["Google review", "Instagram"]) → "Google review, Instagram" (clean, no repeats, at most 200 characters). */
@@ -134,31 +179,41 @@ function fb_tick(PDO $pdo): array
     $o['enrolled'] = fb_enroll($pdo);
     // 1. what is due (only when Admin switched it on; only 10 AM – 8 PM India time; at most 15 a round)
     $hr = (int)gmdate('G', $now + 19800);
-    if ($cfg['on'] && $cfg['tpl'] > 0 && $hr >= 10 && $hr < 20) {
-        $q = $pdo->prepare("SELECT * FROM fb_orders WHERE status = 'wait' AND msg_at IS NULL AND delivered_at <= ? AND phone <> '' AND order_name NOT LIKE 'TEST-%' ORDER BY delivered_at ASC LIMIT 15"); $q->execute([date('Y-m-d H:i:s', $now - $cfg['wait'] * 86400)]);
+    // ⛔ start-from date (safeguard): nothing is sent until a start date is set, and only orders delivered ON or AFTER it ever get a message — the old orders already in the list stay silent
+    if ($cfg['on'] && $cfg['tpl'] > 0 && $cfg['start'] !== '' && $hr >= 10 && $hr < 20) {
+        $q = $pdo->prepare("SELECT * FROM fb_orders WHERE status = 'wait' AND msg_at IS NULL AND delivered_at <= ? AND delivered_at >= ? AND phone <> '' AND order_name NOT LIKE 'TEST-%' ORDER BY delivered_at ASC LIMIT 15"); $q->execute([date('Y-m-d H:i:s', $now - $cfg['wait'] * 86400), $cfg['start'] . ' 00:00:00']);
         foreach ($q->fetchAll() as $r) {
             if (microtime(true) - $t0 > 12) break;
             [$ok, $why] = fb_send($pdo, $r, 'msg');
             if ($ok) $o['sent']++; else { $pdo->prepare("UPDATE fb_orders SET msg_err = ?, status = CASE WHEN ? LIKE '%stop messages%' THEN 'skip' ELSE status END, skip_why = CASE WHEN ? LIKE '%stop messages%' THEN 'opted out' ELSE skip_why END WHERE id = ?")->execute([mb_substr($why, 0, 190), $why, $why, (int)$r['id']]); }
         }
         if ($cfg['tpl_fu'] > 0) {
-            $q = $pdo->prepare("SELECT * FROM fb_orders WHERE status = 'sent' AND fu_at IS NULL AND replied_at IS NULL AND msg_at IS NOT NULL AND msg_at <= ? AND order_name NOT LIKE 'TEST-%' ORDER BY msg_at ASC LIMIT 10"); $q->execute([date('Y-m-d H:i:s', $now - $cfg['fu'] * 86400)]);
+            $q = $pdo->prepare("SELECT * FROM fb_orders WHERE status = 'sent' AND fu_at IS NULL AND replied_at IS NULL AND msg_at IS NOT NULL AND msg_at <= ? AND delivered_at >= ? AND order_name NOT LIKE 'TEST-%' ORDER BY msg_at ASC LIMIT 10"); $q->execute([date('Y-m-d H:i:s', $now - $cfg['fu'] * 86400), $cfg['start'] . ' 00:00:00']);
             foreach ($q->fetchAll() as $r) { if (microtime(true) - $t0 > 12) break; [$ok] = fb_send($pdo, $r, 'fu'); if ($ok) $o['fu']++; else $pdo->prepare("UPDATE fb_orders SET fu_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s'), (int)$r['id']]); }   // a follow-up that cannot be sent is not tried every minute
         }
     }
     // 2. the customers' answers after our message: a reply, and the pictures (screenshots) they sent
     $q = $pdo->prepare("SELECT * FROM fb_orders WHERE msg_at IS NOT NULL AND msg_at >= ? AND status IN ('sent', 'replied', 'proof') ORDER BY id DESC LIMIT 40"); $q->execute([date('Y-m-d H:i:s', $now - 45 * 86400)]);
-    $mq = $pdo->prepare("SELECT id, mtype, media_id, media_mime, ts FROM wa_messages WHERE phone = ? AND dir = 'in' AND id > ? AND ts > ? ORDER BY id ASC LIMIT 20");
+    $mq = $pdo->prepare("SELECT id, mtype, body, media_id, media_mime, ts FROM wa_messages WHERE phone = ? AND dir = 'in' AND id > ? AND ts > ? ORDER BY id ASC LIMIT 20");
     foreach ($q->fetchAll() as $r) {
         if (microtime(true) - $t0 > 12) break;
         $mq->execute([(string)$r['phone'], (int)$r['last_in_id'], (string)$r['msg_at']]); $msgs = $mq->fetchAll(); if (!$msgs) continue;
-        $maxId = (int)$r['last_in_id']; $st = (string)$r['status']; $got = 0;
+        $maxId = (int)$r['last_in_id']; $st = (string)$r['status']; $got = 0; $wasProof = ($st === 'proof');
         foreach ($msgs as $m) {
             $maxId = max($maxId, (int)$m['id']);
             if ($st === 'sent') { $st = 'replied'; $pdo->prepare("UPDATE fb_orders SET replied_at = ? WHERE id = ?")->execute([(string)$m['ts'], (int)$r['id']]); fb_log($pdo, (string)$r['order_name'], 'The customer replied on WhatsApp', 'automatic'); $o['replied']++; }
+            if (in_array((string)$m['mtype'], ['button', 'interactive'], true) && trim((string)$m['body']) !== '') {      // 🔘 the customer tapped a quick-reply button of our message: the matching automatic answer goes (typed: the customer has just written)
+                foreach ($cfg['qr'] as $rule) if (stripos((string)$m['body'], (string)$rule['match']) !== false) {
+                    [$okq, $eq] = fb_typed($pdo, $r, fb_fill($pdo, (string)$rule['reply'], $r), 0, 'auto');
+                    fb_log($pdo, (string)$r['order_name'], 'The customer tapped "' . mb_substr((string)$m['body'], 0, 60) . '" → automatic reply ' . ($okq ? 'sent' : 'NOT sent (' . $eq . ')'), 'automatic');
+                    if (!empty($rule['issue'])) fb_log($pdo, (string)$r['order_name'], '⚠ The customer says there is an issue → needs a person (open the chat, then ⚠ Customer has an issue)', 'automatic');
+                    break;
+                }
+            }
             if ((string)$m['mtype'] === 'image' && (string)$m['media_id'] !== '' && fb_save_wa_media($pdo, $r, (string)$m['media_id'], (string)$m['media_mime'])) { $got++; $o['proofs']++; if ($st !== 'proof') $st = 'proof'; }
         }
         if ($got) fb_log($pdo, (string)$r['order_name'], 'The customer sent ' . $got . ' screenshot' . ($got > 1 ? 's' : '') . ' → saved on ' . $r['order_name'], 'automatic');
+        if ($got && !$wasProof && $cfg['auto_thanks'] && $cfg['thanks']) { [$okt, $et] = fb_typed($pdo, $r, fb_fill($pdo, (string)$cfg['thanks'][0]['msg'], $r), 0, 'auto'); fb_log($pdo, (string)$r['order_name'], $okt ? 'Thank-you sent (automatic): ' . $cfg['thanks'][0]['name'] : 'Thank-you NOT sent (' . $et . ')', 'automatic'); }      // the first thank-you message, once, when the first screenshot arrives
         $pdo->prepare("UPDATE fb_orders SET last_in_id = ?, status = ? WHERE id = ?")->execute([$maxId, $st, (int)$r['id']]);
     }
     return $o;
@@ -188,7 +243,7 @@ function fb_row_out(array $r): array
     $seen = (string)($r['msg_status'] ?? '') === 'read';
     return ['id' => (int)$r['id'], 'order' => (string)$r['order_name'], 'customer' => (string)$r['customer'], 'phone' => (string)$r['phone'], 'delivered' => substr((string)$r['delivered_at'], 0, 16), 'store' => (string)($r['store_key'] ?? ''), 'last_call' => (string)($r['last_call'] ?? ''), 'status' => (string)$r['status'], 'test' => strpos((string)$r['order_name'], 'TEST-') === 0,
         'msg_at' => (string)($r['msg_at'] ?? ''), 'fu_at' => (string)($r['fu_at'] ?? ''), 'seen' => $seen, 'msg_state' => (string)($r['msg_status'] ?? ''), 'msg_why' => (string)($r['msg_status'] ?? '') === 'failed' ? fb_why((int)($r['msg_code'] ?? 0), (string)($r['msg_errtext'] ?? '')) : '', 'msg_err' => (string)$r['msg_err'], 'place' => (string)$r['place'],
-        'reward_order' => (string)$r['reward_order'], 'reward_note' => (string)$r['reward_note'], 'cx_code' => (string)$r['cx_code'], 'skip_why' => (string)$r['skip_why'], 'proofs' => (int)($r['proofs'] ?? 0)];
+        'reward_state' => (string)($r['reward_state'] ?? ''), 'reward_order' => (string)$r['reward_order'], 'reward_note' => (string)$r['reward_note'], 'cx_code' => (string)$r['cx_code'], 'skip_why' => (string)$r['skip_why'], 'proofs' => (int)($r['proofs'] ?? 0)];
 }
 
 function fb_route(PDO $pdo, string $action): void
@@ -202,10 +257,14 @@ function fb_route(PDO $pdo, string $action): void
 
     if ($action === 'fb.list') {
         fb_enroll($pdo, false);
+        // 🔔 what needs a PERSON (everything else runs by itself): the customer wrote back in words, a reward is promised and not sent, a message failed, a screenshot came and no thank-you went yet
+        $needSql = "(f.status = 'replied' OR f.reward_state = 'owed' OR COALESCE(m.status, '') = 'failed' OR (f.status = 'proof' AND NOT EXISTS (SELECT 1 FROM fb_events ev WHERE ev.order_name = f.order_name AND ev.txt LIKE 'Thank-you sent%')))";
         $tab = (string)($_GET['tab'] ?? 'all'); $qs = trim((string)($_GET['q'] ?? '')); $qs = ltrim($qs, '#');
         $w = []; $p = [];
         if ($qs !== '') { $like = '%' . $qs . '%'; $w[] = "(f.order_name LIKE ? OR f.customer LIKE ? OR f.phone LIKE ?)"; array_push($p, $like, $like, $like); }
         elseif ($tab === 'unseen') $w[] = "f.msg_at IS NOT NULL AND COALESCE(m.status, '') <> 'read'";
+        elseif ($tab === 'need') $w[] = $needSql;
+        elseif ($tab === 'owed') $w[] = "f.reward_state = 'owed'";
         elseif (in_array($tab, ['wait', 'sent', 'replied', 'proof', 'rew', 'cmp', 'skip'], true)) { $w[] = "f.status = ?"; $p[] = $tab; }
         $sql = "SELECT f.*, m.status AS msg_status, m.err AS msg_errtext, m.err_code AS msg_code, (SELECT e.txt FROM fb_events e WHERE e.order_name = f.order_name AND e.txt LIKE 'Call:%' ORDER BY e.id DESC LIMIT 1) AS last_call, (SELECT COUNT(*) FROM fb_proofs pp WHERE pp.order_name = f.order_name) AS proofs FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> ''" . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . " ORDER BY f.delivered_at DESC LIMIT 300";
         $st = $pdo->prepare($sql); $st->execute($p); $rows = array_map('fb_row_out', $st->fetchAll());
@@ -214,7 +273,9 @@ function fb_route(PDO $pdo, string $action): void
         $sent = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders WHERE msg_at IS NOT NULL AND order_name NOT LIKE 'TEST-%'")->fetchColumn();
         $seen = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders f JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE m.status = 'read' AND f.order_name NOT LIKE 'TEST-%'")->fetchColumn();
         $proofs = (int)$pdo->query("SELECT COUNT(DISTINCT order_name) FROM fb_proofs WHERE order_name NOT LIKE 'TEST-%'")->fetchColumn();
-        json_response(['rows' => $rows, 'counts' => $c + ['sent_total' => $sent, 'seen' => $seen, 'unseen' => max(0, $sent - $seen), 'proof_orders' => $proofs], 'cfg' => $cfg, 'can_edit' => in_array($role, ['Admin', 'HR'], true)]);
+        $need = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders f LEFT JOIN wa_messages m ON m.wamid = f.msg_wamid COLLATE utf8mb4_unicode_ci AND f.msg_wamid <> '' WHERE f.order_name NOT LIKE 'TEST-%' AND " . $needSql)->fetchColumn();
+        $owed = (int)$pdo->query("SELECT COUNT(*) FROM fb_orders WHERE reward_state = 'owed' AND order_name NOT LIKE 'TEST-%'")->fetchColumn();
+        json_response(['rows' => $rows, 'counts' => $c + ['sent_total' => $sent, 'seen' => $seen, 'unseen' => max(0, $sent - $seen), 'proof_orders' => $proofs, 'need' => $need, 'owed' => $owed], 'cfg' => $cfg, 'can_edit' => in_array($role, ['Admin', 'HR'], true)]);
     }
     if ($action === 'fb.get') {
         $o = trim((string)($_GET['order'] ?? '')); $r = $get($o); if (!$r) json_response(['error' => 'Order not found.'], 404);
@@ -230,6 +291,10 @@ function fb_route(PDO $pdo, string $action): void
         setting_set($pdo, 'fb_tpl', (string)max(0, (int)($in['tpl'] ?? 0))); setting_set($pdo, 'fb_tpl_fu', (string)max(0, (int)($in['tpl_fu'] ?? 0)));
         $pl = array_values(array_filter(array_map(fn($x) => mb_substr(trim(str_replace('|', ' ', (string)$x)), 0, 40), (array)($in['places'] ?? [])))); if ($pl) setting_set($pdo, 'fb_places', implode('|', array_slice($pl, 0, 12)));
         $rw = mb_substr(trim((string)($in['reward'] ?? '')), 0, 60); if ($rw !== '') setting_set($pdo, 'fb_reward', $rw);
+        setting_set($pdo, 'fb_auto_thanks', !empty($in['auto_thanks']) ? '1' : '0');
+        $st = trim((string)($in['start'] ?? '')); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $st)) $st = '';
+        if ($st === '' && !empty($in['on']) && (string)setting_get($pdo, 'fb_start', '') === '') $st = gmdate('Y-m-d', time() + 19800);      // switching ON with no start date: the start is TODAY, so the old orders in the list never get a message
+        if ($st !== '' || array_key_exists('start', $in)) setting_set($pdo, 'fb_start', $st !== '' ? $st : (string)setting_get($pdo, 'fb_start', ''));
         json_response(['ok' => true, 'cfg' => fb_cfg($pdo)]);
     }
     if ($action === 'fb.proof_data') {      // the picture as data inside a normal answer (works everywhere the other answers work; the page shows it directly)
@@ -268,6 +333,8 @@ function fb_route(PDO $pdo, string $action): void
         fb_log($pdo, (string)$r['order_name'], 'A proof picture was removed', $by);
         json_response(['ok' => true]);
     }
+    if ($action === 'fb.thanks_save') { $in = json_input(); json_response(['ok' => true, 'thanks' => fb_thanks_put($pdo, (array)($in['list'] ?? []))]); }
+    if ($action === 'fb.qr_save') { $in = json_input(); json_response(['ok' => true, 'qr' => fb_qr_put($pdo, (array)($in['list'] ?? []))]); }
     if ($action === 'fb.links_save') {      // the review links (add / edit / delete): made once, one tap to send
         $in = json_input(); $ls = fb_links_put($pdo, (array)($in['links'] ?? [])); json_response(['ok' => true, 'links' => $ls]);
     }
@@ -293,11 +360,22 @@ function fb_route(PDO $pdo, string $action): void
         fb_log($pdo, $order, 'Screenshot added by hand' . ($place !== '' ? ' (' . $place . ')' : '') . ' → attached to ' . $order, $by);
         json_response(['ok' => true]);
     }
-    if ($action === 'fb.reward') {
+    if ($action === 'fb.reward') {      // 🎁 a reward for THIS customer (10 ML / 20 ML free …): "owed" until its order number is typed, then "sent"
         $gift = mb_substr(trim((string)($in['gift'] ?? $cfg['reward'])), 0, 80); $ro = mb_substr(trim((string)($in['reward_order'] ?? '')), 0, 40); $place = fb_place_str($in['place'] ?? '');
-        $pdo->prepare("UPDATE fb_orders SET status = 'rew', reward_note = ?, reward_order = ?, place = CASE WHEN ? <> '' THEN ? ELSE place END WHERE id = ?")->execute([$gift, $ro, $place, $place, (int)$r['id']]);
-        fb_log($pdo, $order, 'Reward given: ' . $gift . ($ro !== '' ? ' · order ' . $ro : '') . ($place !== '' ? ' · feedback on ' . $place : ''), $by);
+        $rs = $ro !== '' ? 'sent' : 'owed';
+        $pdo->prepare("UPDATE fb_orders SET status = 'rew', reward_note = ?, reward_order = ?, reward_state = ?, place = CASE WHEN ? <> '' THEN ? ELSE place END WHERE id = ?")->execute([$gift, $ro, $rs, $place, $place, (int)$r['id']]);
+        fb_log($pdo, $order, 'Reward ' . ($rs === 'sent' ? 'sent' : 'promised (owed)') . ': ' . $gift . ($ro !== '' ? ' · order ' . $ro : '') . ($place !== '' ? ' · feedback on ' . $place : ''), $by);
         json_response(['ok' => true]);
+    }
+    if ($action === 'fb.reward_sent') {
+        $ro = mb_substr(trim((string)($in['reward_order'] ?? '')), 0, 40);
+        $pdo->prepare("UPDATE fb_orders SET reward_state = 'sent', reward_order = CASE WHEN ? <> '' THEN ? ELSE reward_order END WHERE id = ?")->execute([$ro, $ro, (int)$r['id']]);
+        fb_log($pdo, $order, 'Reward marked as sent' . ($ro !== '' ? ' · order ' . $ro : ''), $by); json_response(['ok' => true]);
+    }
+    if ($action === 'fb.send_thanks') {      // 💛 a thank-you after the screenshot: typed, one tap
+        $text = trim((string)($in['text'] ?? '')); if ($text === '') json_response(['error' => 'Write the thank-you first.'], 422);
+        [$ok, $why] = fb_typed($pdo, $r, fb_fill($pdo, $text, $r), (int)($auth['employee_id'] ?? 0), 'emp'); if (!$ok) json_response(['error' => $why], 422);
+        fb_log($pdo, $order, 'Thank-you sent', $by); json_response(['ok' => true]);
     }
     if ($action === 'fb.cx_done') {   // the complaint itself is raised by the page through bd.cx_raise (the Complaints page); this keeps the link and the history
         $code = mb_substr(trim((string)($in['code'] ?? '')), 0, 30); $why = mb_substr(trim((string)($in['why'] ?? '')), 0, 200);
