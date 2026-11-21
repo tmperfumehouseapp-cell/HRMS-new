@@ -4,7 +4,7 @@ date_default_timezone_set('Asia/Kolkata');
 class T extends PDO { public function exec($q) { $q = preg_replace('/\)\s*ENGINE=InnoDB[^;]*$/', ')', $q); $q = str_replace('BIGINT AUTO_INCREMENT PRIMARY KEY', 'INTEGER PRIMARY KEY AUTOINCREMENT', $q); $q = preg_replace('/,\s*KEY\s+\w+\s*\([^)]*\)/', '', $q); return parent::exec($q); } }
 $pdo = new T('sqlite::memory:'); $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION); $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 foreach (["CREATE TABLE wa_contacts (phone TEXT PRIMARY KEY, name TEXT DEFAULT '', last_in_at TEXT, optout INT DEFAULT 0, camp_optout INT DEFAULT 0, source TEXT DEFAULT 'query', tag TEXT DEFAULT '', cx_id INT DEFAULT 0)",
- "CREATE TABLE wa_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, wamid TEXT DEFAULT '', phone TEXT, dir TEXT, mtype TEXT DEFAULT 'text', body TEXT, status TEXT DEFAULT 'received', who TEXT DEFAULT 'customer', ts TEXT)",
+ "CREATE TABLE wa_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, wamid TEXT DEFAULT '', phone TEXT, dir TEXT, mtype TEXT DEFAULT 'text', body TEXT, status TEXT DEFAULT 'received', who TEXT DEFAULT 'customer', ts TEXT, err_code INT DEFAULT 0)",
  "CREATE TABLE wa_cust (phone TEXT PRIMARY KEY, n INT DEFAULT 0, last_order TEXT)", "CREATE TABLE shop_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, created_at TEXT, total REAL, tags TEXT DEFAULT '')",
  "CREATE TABLE wa_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT DEFAULT 'UTILITY', relabelled_at TEXT)", "CREATE TABLE wa_tpl_waba (tpl_id INT, waba_id TEXT, status TEXT)",
  "CREATE TABLE wa_camp_items (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, status TEXT, last_status TEXT, sent_at TEXT)", "CREATE TABLE wa_fu_ev (phone TEXT, status TEXT, sent_at TEXT)", "CREATE TABLE wa_wj_ev (phone TEXT, status TEXT, sent_at TEXT)"] as $q) $pdo->exec($q);
@@ -142,4 +142,13 @@ for ($st = 1; $st <= 7; $st++) $pdo->exec("INSERT INTO wa_line_plan (phone, topi
 ok(wln_ladder30($pdo) >= 1, 'migration ran'); $m = []; foreach ($pdo->query("SELECT step, due_at FROM wa_line_plan WHERE phone = '9899990001' ORDER BY step")->fetchAll() as $r) $m[(int)$r['step']] = (int)strtotime($r['due_at']);
 ok(count($m) === 12 && abs($m[1] - ($now + 86400)) < 5 && abs(($m[5] - $m[1]) - 5 * 86400) < 5 && abs(($m[12] - $m[1]) - 29 * 86400) < 5, 'old customer: step 1 keeps its time, the rest is re-timed, 8-12 added'); ok(wln_ladder30($pdo) === 0 || true, 'idempotent');
 $cal = wl_calendar($pdo); ok($cal['total'] > 0 && count($cal['steps']) >= 5 && $cal['steps'][4]['day'] === 6 && count($cal['days']) >= 1, 'calendar: steps with their day and the calendar days');
+// --- the rescue: a marketing message that FAILED (131049) goes again at once as a utility message
+$pdo->exec("INSERT INTO wa_templates (id, category) VALUES (386, 'UTILITY')"); $pdo->exec("INSERT INTO wa_templates (id, category) VALUES (9001, 'MARKETING')");
+$pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at) VALUES ('9870000099', 'Resc', '" . $f($now - 7200) . "')"); $pdo->exec("INSERT INTO wa_contacts (phone, name, last_in_at) VALUES ('9870000098', 'Wrote', '" . $f($now) . "')");
+foreach (['9870000099' => 'wmR1', '9870000098' => 'wmR2'] as $ph => $wm) { $pdo->exec("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, sent_at, wamid) VALUES ('$ph', 'price', 1, 'ln_price_1', 9001, '" . $f($now - 3600) . "', 'sent', '" . $f($now - 3000) . "', '$wm')"); $pdo->exec("INSERT INTO wa_messages (wamid, phone, dir, status, err_code, ts) VALUES ('$wm', '$ph', 'out', 'failed', 131049, '" . $f($now - 2900) . "')"); }
+$SENT = []; ok(wln_rescue($pdo, $now) === 1, 'one marketing failure is rescued as utility (the other customer wrote since)'); ok(count($SENT) === 1 && $SENT[0][0] === '9870000099' && $SENT[0][1] !== 9001 && $SENT[0][1] > 0, 'sent as a utility twin (not the marketing one): ' . json_encode($SENT));
+ok((int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE phone = '9870000099' AND status = 'sent' AND why LIKE 'utility rescue%'")->fetchColumn() === 1, 'the rescue is its own sent row');
+ok(wln_rescue($pdo, $now) === 0 && count($SENT) === 1, 'a message is rescued only once');
+ok((string)$pdo->query("SELECT why FROM wa_line_plan WHERE phone = '9870000098' AND wamid = 'wmR2'")->fetchColumn() === 'rescue not needed: he wrote', 'a customer who wrote since is not sent again');
+$ov = wl_overview($pdo); ok(isset($ov['today']['left_by_hour']), 'today left by hour');
 echo "lineup db ok\n";
