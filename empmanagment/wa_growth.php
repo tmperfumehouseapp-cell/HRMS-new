@@ -564,6 +564,7 @@ function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
     try {   // OPEN MARKET (owner, 21 Nov): nobody is given a chat — it stays in OPEN and every salesperson at work is told, whoever can close it takes it
         if ((int)($c['cx_id'] ?? 0) > 0) return; $cur = (int)$c['assigned_emp']; if ($cur > 0 && function_exists('wa_assign_to')) wa_assign_to($pdo, $key, 0, 0, 'auto');
         $ids = []; if (function_exists('wa_people')) foreach (wa_people($pdo) as $p) if (!empty($p['present']) && (int)$p['emp_id'] > 0) $ids[] = (int)$p['emp_id'];
+        if (function_exists('wa_mkt_note')) { wa_mkt_note($pdo, $key, 0, 'offered', -1, 'bot stuck'); if ($cur > 0) wa_mkt_note($pdo, $key, $cur, 'dropped', -1, 'bot stuck, no answer'); }
         wa_event($pdo, $key, '🆘 A hot customer waits and the bot cannot help: the chat is in OPEN — anybody can take it.');
         if ($ids && function_exists('ct_push')) ct_push($pdo, $ids, 'Hot customer waiting in OPEN', (trim((string)($c['name'] ?? '')) !== '' ? $c['name'] : '+91 ' . $key) . ' is waiting. Take it and close the order.', '/my_chats.html?phone=' . $key, 'wa-open-' . $key);
     } catch (Throwable $e) { }
@@ -583,6 +584,7 @@ function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
             if (function_exists('wq_ts') && wq_ts(wag_meta_get($pdo, 'typing:' . $key, '')) > $now - 90) continue;   // a person is typing the answer right now
             $emp = (int)$c['assigned_emp']; wag_meta_put($pdo, 'hotmiss:' . $key, $emp . '|' . date('Y-m-d H:i:s') . '|' . $li);
             wa_assign_to($pdo, $key, 0, 0, 'auto'); if (function_exists('wq_tag_put')) { try { wq_tag_put($pdo, $key, 'red'); } catch (Throwable $e) { } }
+            if (function_exists('wa_mkt_note')) { wa_mkt_note($pdo, $key, 0, 'offered', -1, 'hot'); if ($emp > 0) wa_mkt_note($pdo, $key, $emp, 'dropped', max(0, $now - (int)strtotime($li)), 'no answer ' . $mins . ' min'); }   // track record: the holder left it (red), the chat is offered to everybody
             wa_event($pdo, $key, '🔓 A hot customer waited ' . $mins . '+ minutes and ' . ($names[$emp] ?? 'the holder') . ' did not answer: the chat is in OPEN now — anybody can take it.'); $n++;
         }
         if ($n && function_exists('ct_push') && function_exists('wa_team_cfg')) { $al = (array)(wa_team_cfg($pdo)['alert_emps'] ?? []); if ($al) ct_push($pdo, $al, $n . ' hot chat' . ($n === 1 ? '' : 's') . ' moved to Open', 'Nobody answered for ' . $mins . ' min. Anybody can take them now.', '/whatsapp.html#signals', 'wa-hotopen'); }
@@ -607,6 +609,30 @@ function wag_price_context(PDO $pdo, string $phone, array $msgs): string
     // ORDER-VALUE GOAL (owner, 21 Nov): the average order should reach Rs 2,700-2,800 — push ONE add-on that lifts this order there, at the same price level
     $add = ''; if ($v0 < 2700) { $rs = (array)$j['rows']; usort($rs, fn($a, $b) => (int)($a['ml'] ?? 0) <=> (int)($b['ml'] ?? 0)); foreach ($rs as $r2) if ((int)($r2['ml'] ?? 0) > $total) { $vv = (int)($r2['p'][$idx] ?? 0); if ($vv >= 2700) { $add = ' ORDER-VALUE GOAL (owner): our average order should reach about Rs 2,700-2,800. This order is Rs ' . $v0 . ': once he has chosen (or in the same message), offer ONE add-on that lifts it: add ' . ((int)$r2['ml'] - $total) . ' ml (for example one more bottle) so the total becomes ' . (int)$r2['ml'] . ' ml for Rs ' . $vv . ' at the same price level — say it as "sirf Rs ' . ($vv - $v0) . ' aur mein ' . ((int)$r2['ml'] - $total) . ' ml extra". If he says no, try once more at most; never push after the second no.'; break; } } } elseif ($v0 >= 2700) $add = ' ORDER-VALUE GOAL: this order is already at the Rs 2,700-2,800 target: keep it and move to the order details; only a small add-on if he asks.';
     return 'PRICE FROM OUR CHART for this customer (use ONLY these numbers for ' . $qty . ' x ' . $size . ' ml = ' . $total . ' ml total; never take a price from the combo list for a different quantity or ml): ' . ($seen ? 'the price he has already seen is Rs ' . $v0 . ' — repeat it, do not quote higher or lower unless he pushes back on price' : 'nothing is negotiated yet: quote Rs ' . $v0 . ' (the start level) and do NOT give a lower price') . '.' . ($v1 > 0 && $v1 < $v0 ? ' ONLY if he objects to that price after you quoted it, the next price you may give is Rs ' . $v1 . '.' : '') . ' Always say the total ml correctly (' . $total . ' ml).' . $add;
+}
+/** 🏪 OPEN MARKET scoreboard (owner, 21 Nov: "decide how to measure the good salespeople": most orders, fast reply, add-on / ticket, and who really takes the hot chats). Per salesperson, last $days days:
+ *  score (0-100) = orders 40 (4 points each) + ticket 20 (average order / Rs 2,750) + first-reply speed 20 (60 s = full, 10 min = 0) + effort 20 (taken / (taken + dropped)). */
+function wag_mkt_board(PDO $pdo, int $days = 7): array
+{
+    static $cache = []; $ck = $days . ':' . (int)(time() / 60); if (isset($cache[$ck])) return $cache[$ck];
+    $since = date('Y-m-d 00:00:00', time() - ($days - 1) * 86400); $by = []; $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $present = [];
+    if (function_exists('wa_people')) { try { foreach (wa_people($pdo) as $p) { $by[(int)$p['emp_id']] = ['emp' => (int)$p['emp_id'], 'name' => (string)($names[(int)$p['emp_id']] ?? ($p['name'] ?? '')), 'present' => !empty($p['present'])]; } } catch (Throwable $e) { } }
+    $blank = ['offered' => 0, 'taken' => 0, 'dropped' => 0, 'released' => 0, 'waits' => [], 'replies' => [], 'orders' => 0, 'amount' => 0];
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wa_mkt (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, kind VARCHAR(10) NOT NULL, at DATETIME NOT NULL, wait_s INT NOT NULL DEFAULT -1, note VARCHAR(80) NOT NULL DEFAULT '', KEY k_emp (emp_id, at), KEY k_ph (phone, id), KEY k_kind (kind, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $st = $pdo->prepare("SELECT id, phone, emp_id, kind, at, wait_s FROM wa_mkt WHERE at >= ? AND kind IN ('taken','dropped','released') ORDER BY id DESC LIMIT 1500"); $st->execute([$since]); $q2 = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id = ? AND ts >= ? AND ts <= ?"); $nq = 0;
+        foreach ($st->fetchAll() as $r) { $e = (int)$r['emp_id']; if ($e <= 0) continue; if (!isset($by[$e])) $by[$e] = ['emp' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'present' => false]; $by[$e] += $blank; if (!isset($by[$e]['taken'])) $by[$e] += $blank;
+            $k = (string)$r['kind']; $by[$e][$k]++; if ($k === 'taken') { if ((int)$r['wait_s'] >= 0) $by[$e]['waits'][] = (int)$r['wait_s'];
+                if ($nq < 500) { $nq++; $q2->execute([(string)$r['phone'], $e, (string)$r['at'], date('Y-m-d H:i:s', strtotime((string)$r['at']) + 3 * 3600)]); $f = $q2->fetchColumn(); if ($f) $by[$e]['replies'][] = max(0, (int)strtotime((string)$f) - (int)strtotime((string)$r['at'])); } } }
+        $oq = $pdo->prepare("SELECT emp_id, COUNT(*) n, COALESCE(SUM(amount), 0) a FROM wa_outcomes WHERE code = 'order' AND at >= ? GROUP BY emp_id"); $oq->execute([$since]);
+        foreach ($oq->fetchAll() as $r) { $e = (int)$r['emp_id']; if ($e <= 0) continue; if (!isset($by[$e])) $by[$e] = ['emp' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'present' => false]; $by[$e] += $blank; $by[$e]['orders'] = (int)$r['n']; $by[$e]['amount'] = (float)$r['a']; }
+    } catch (Throwable $e) { }
+    $med = function (array $a) { if (!$a) return null; sort($a); return $a[intdiv(count($a), 2)]; }; $out = [];
+    foreach ($by as $e => $x) { $x += $blank; $tk = (int)$x['taken']; $dr = (int)$x['dropped'] + (int)$x['released']; $mr = $med($x['replies']); $mw = $med($x['waits']); $avg = $x['orders'] > 0 ? $x['amount'] / $x['orders'] : 0;
+        $pOrd = min(40, $x['orders'] * 4); $pTick = $x['orders'] > 0 ? min(22, 20 * $avg / 2750) : 0; $pSpeed = $mr === null ? 0 : 20 * (1 - max(0, min(1, ($mr - 60) / 540))); $pEff = ($tk + $dr) > 0 ? 20 * $tk / ($tk + $dr) : 0;
+        $out[] = ['emp' => (int)$e, 'name' => (string)$x['name'], 'present' => !empty($x['present']), 'taken' => $tk, 'dropped' => (int)$x['dropped'], 'released' => (int)$x['released'], 'wait_med_s' => $mw, 'reply_med_s' => $mr, 'orders' => (int)$x['orders'], 'avg_ticket' => (int)round($avg), 'score' => (int)round($pOrd + $pTick + $pSpeed + $pEff)]; }
+    usort($out, fn($a, $b) => $b['score'] <=> $a['score'] ?: $b['taken'] <=> $a['taken']);
+    return $cache[$ck] = $out;
 }
 /** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
 function wag_bot_off(PDO $pdo, string $key, bool $ignoreHand = false): bool
@@ -1267,6 +1293,15 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
                 $lm->execute([$k]); $m = $lm->fetch(); $items[] = ['phone' => $k, 'name' => (string)$r['name'], 'holder' => (int)$r['assigned_emp'] > 0 ? ($names[(int)$r['assigned_emp']] ?? '#' . $r['assigned_emp']) : '', 'missed_by' => $missed[$k] ?? '', 'wait_min' => max(0, (int)round(($now - strtotime((string)$r['last_in_at'])) / 60)), 'handed_min' => max(0, (int)round(($now - strtotime($hand[$k])) / 60)), 'hot' => $r['hot_why'] ? (string)$r['hot_why'] : ((int)$r['hot'] ? 'hot' : ''), 'last' => $m ? mb_substr((string)($m['body'] !== '' ? $m['body'] : '[' . $m['mtype'] . ']'), 0, 140) : ''];
             }
             usort($items, fn($a, $b) => $b['wait_min'] <=> $a['wait_min']); json_response(['items' => array_slice($items, 0, 60), 'total' => count($items), 'can' => true]);
+        }
+        case 'wa.g_mkt': {   // 🏪 the open-market scoreboard (admin / managers)
+            if (!$adm && !(function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth))) json_response(['can' => false, 'week' => [], 'today' => []]);
+            $now = time(); $off = 0; $tk4 = 0; $tk = 0; try { $q = $pdo->prepare("SELECT kind, wait_s FROM wa_mkt WHERE at >= ? AND kind IN ('offered','taken')"); $q->execute([date('Y-m-d 00:00:00')]); foreach ($q->fetchAll() as $r) { if ($r['kind'] === 'offered') $off++; else { $tk++; if ((int)$r['wait_s'] >= 0 && (int)$r['wait_s'] <= 240) $tk4++; } } } catch (Throwable $e) { }
+            json_response(['can' => true, 'week' => wag_mkt_board($pdo, 7), 'today' => wag_mkt_board($pdo, 1), 'offered_today' => $off, 'taken_today' => $tk, 'taken_in_4min' => $tk4]);
+        }
+        case 'wa.g_mkt_top': {   // 🏪 for every salesperson: who are the best right now (shown above the OPEN list) and my own rank
+            $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released']];
+            json_response(['top' => $top, 'my' => $my]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
             $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'engaged' => $l['engaged'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on']);

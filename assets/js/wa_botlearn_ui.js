@@ -53,7 +53,24 @@
     var hd = document.getElementById('bpH'); if (hd) hd.onclick = function () { popen = !popen; drawPend(); };
     host2.querySelectorAll('[data-nf]').forEach(function (b) { b.onclick = function () { b.disabled = true; api.post('wa.g_reassign', { phone: b.dataset.nf, emp_id: 0 }).then(function (r) { say('Given to ' + (r.to || 'the next free person')); loadPend(); }).catch(function (e) { say(e.message, true); b.disabled = false; }); }; });
   }
+  var mkt = null, mopen = false;
+  function mm(sec) { return sec == null ? '–' : (sec < 90 ? Math.round(sec) + ' s' : Math.round(sec / 60) + ' min'); }
+  function drawMkt() {
+    var h3 = document.getElementById('blMkt'); if (!h3) { h3 = document.createElement('div'); h3.id = 'blMkt'; host.parentNode.insertBefore(h3, host); }
+    if (!mkt || !mkt.can) { h3.innerHTML = ''; return; } css();
+    var w = mkt.week || [], t = mkt.today || [], tt = {}; t.forEach(function (x) { tt[x.emp] = x; });
+    var rate = mkt.offered_today ? Math.round(100 * mkt.taken_in_4min / mkt.offered_today) : null;
+    var h = '<div class="bl" style="border-color:#c7d7f0;background:#f2f6fd"><div class="bl-h" id="bmH"><span>🏪</span><b>Open market — who takes the hot chats and closes orders</b><span style="color:#357;font-size:12px">today: offered ' + (mkt.offered_today || 0) + ' · taken ' + (mkt.taken_today || 0) + (rate === null ? '' : ' · within 4 min ' + rate + '%') + '</span><span>' + (mopen ? '▲' : '▼') + '</span></div>';
+    if (mopen) {
+      h += '<div class="bl-b"><div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px"><tr style="text-align:left;color:#567"><th>#</th><th>Person</th><th>Score</th><th>Orders</th><th>Avg order</th><th>Taken</th><th>🔴 Left</th><th>Take after</th><th>1st reply</th><th>Today</th></tr>';
+      w.forEach(function (x, i) { var d = tt[x.emp] || {}; h += '<tr style="border-top:1px solid #dbe4f2"><td>' + (i + 1) + '</td><td>' + esc(x.name) + (x.present ? ' 🟢' : '') + '</td><td><b>' + x.score + '</b></td><td>' + x.orders + '</td><td>' + (x.avg_ticket ? '₹' + x.avg_ticket : '–') + '</td><td>' + x.taken + '</td><td style="color:' + ((x.dropped + x.released) ? '#b00' : '#567') + '">' + (x.dropped + x.released) + '</td><td>' + mm(x.wait_med_s) + '</td><td>' + mm(x.reply_med_s) + '</td><td>' + (d.taken || 0) + ' taken · ' + (d.orders || 0) + ' orders' + ((d.dropped || d.released) ? ' · <span style="color:#b00">' + (d.dropped + d.released) + ' left</span>' : '') + '</td></tr>'; });
+      h += '</table></div><div style="margin-top:8px;color:#567;font-size:12px">Last 7 days. Score 0-100 = orders 40 (4 points each) + average order near ₹2,750 (add-ons) 20 + first reply within 1 minute of taking 20 + effort 20 (taken ÷ (taken + left)). 🔴 Left = took a chat or was holding a hot chat and did not answer in time (it went back to OPEN). The best present people are shown above the OPEN list to everybody.</div></div>';
+    }
+    h3.innerHTML = h + '</div>';
+    var hd = document.getElementById('bmH'); if (hd) hd.onclick = function () { mopen = !mopen; drawMkt(); };
+  }
+  function loadMkt() { return api.get('wa.g_mkt').then(function (d) { mkt = d; drawMkt(); }).catch(function () { }); }
   function loadPend() { return api.get('wa.g_botpending').then(function (d) { pend = d; drawPend(); }).catch(function () { }); }
   function load() { return api.get('wa.g_botlearn').then(function (d) { data = d; draw(); }).catch(function () { }); }
-  load(); loadPend(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); } }, 60000);
+  load(); loadPend(); loadMkt(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); loadMkt(); } }, 60000);
 })();
