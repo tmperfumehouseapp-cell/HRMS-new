@@ -44,6 +44,10 @@ function wag_cfg(PDO $pdo): array
     // once (owner, 21 Nov): complaint chats are removed from the query counts
     try { if (setting_get($pdo, 'wag_cxq1', '') !== '1') { setting_set($pdo, 'wag_cxq1', '1');
         $ph = $pdo->query("SELECT phone FROM wa_contacts WHERE (cx_id IS NOT NULL AND cx_id > 0) OR tag = 'complaint' LIMIT 5000")->fetchAll(PDO::FETCH_COLUMN); foreach ($ph as $__p) wag_q_forget($pdo, (string)$__p); } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): order-status / tracking / refund chats are removed from the query counts (last 3 days)
+    try { if (setting_get($pdo, 'wag_cxq2', '') !== '1') { setting_set($pdo, 'wag_cxq2', '1');
+        $st = $pdo->prepare("SELECT DISTINCT q.phone FROM wa_queries q JOIN wa_messages m ON m.phone = q.phone AND m.dir = 'in' AND m.ts >= q.opened_at AND m.ts <= DATE_ADD(q.opened_at, INTERVAL 10 MINUTE) WHERE q.opened_at >= ? AND m.body REGEXP 'tracking|track my|track order|where is my order|order status|order id|order no|kab aayega|kab tak aayega|kab milega|nahi mila|not received|refund|return|replace|damaged|leak|wrong item|wrong product|cancel my order|order kaha|parcel' LIMIT 4000"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $__p) wag_q_forget($pdo, (string)$__p, 3); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): OPEN MARKET — no chat is given to anybody: automatic assignment off (waa engine + wq auto), manual assignment on; salespeople take what they can close
     try { if (setting_get($pdo, 'wag_openmkt', '') !== '1') { setting_set($pdo, 'wag_openmkt', '1'); setting_set($pdo, 'wag_open_market', '1'); setting_set($pdo, 'waa_off', '1'); setting_set($pdo, 'waa_on_day', ''); setting_set($pdo, 'wq_auto_on', '0'); setting_set($pdo, 'wa_manual_assign', '1'); if (function_exists('hrms_settings_bump')) hrms_settings_bump(); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
@@ -1201,6 +1205,8 @@ function wag_history(PDO $pdo, int $emp, bool $adm, array $f, array $cfg): array
     }
     return ['chats' => $out, 'total' => $total, 'page' => $pg, 'more' => ($pg + 1) * $lim < $total];
 }
+/** Order status / tracking / refund / return / damage words: the customer talks about an order he already made — after-sales, never a sales query (owner, 21 Nov). */
+function wag_after_sales_text(string $t): bool { return $t !== '' && (bool)preg_match('/(tracking|track my|track order|where is my order|order status|order id|order no|\bawb\b|kab aayega|kab tak aayega|kab milega|nahi mila|not received|refund|return|replace|damaged|leak|wrong (item|product)|cancel my order|order kaha|parcel)/iu', $t); }
 /** Complaints are not sales queries (owner, 21 Nov): the query rows of a complaint chat are removed from the ledger (and its type / stats rows), so no count shows them. */
 function wag_q_forget(PDO $pdo, string $key, int $days = 95): void
 {
@@ -1219,6 +1225,7 @@ function wag_q_touch(PDO $pdo, string $key, bool $adRef): void
 {
     wag_q_backfill($pdo); $c = wa_contact($pdo, $key); if (!$c) return; $now = date('Y-m-d H:i:s');
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return;   // a complaint is not a sales query
+    if (wag_after_sales_text((string)($c['last_body'] ?? ''))) { $q0 = $pdo->prepare("SELECT last_in_at FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q0->execute([$key]); $l0 = $q0->fetchColumn(); if (!$l0 || strtotime((string)$l0) < time() - 86400) return; }   // order status / tracking / refund / return… of a customer is after-sales: it does not open a new query (an episode already open stays)
     $q = $pdo->prepare("SELECT id, last_in_at FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $r = $q->fetch();
     if ($r && $r['last_in_at'] && strtotime((string)$r['last_in_at']) >= time() - 86400) { $pdo->prepare("UPDATE wa_queries SET last_in_at = ? WHERE id = ?")->execute([$now, $r['id']]); return; }
     $src = $adRef || $c['source'] === 'query' ? 'query' : (in_array($c['source'], ['campaign', 'community'], true) ? $c['source'] : '');
