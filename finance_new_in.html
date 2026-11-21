@@ -22,6 +22,14 @@
   .tb td{padding:7px 6px;border-top:1px solid var(--sx-line);text-align:right;white-space:nowrap}.tb td small{display:block;color:var(--sx-mut);font-size:11px}.tb tr.void td{opacity:.45;text-decoration:line-through}
   .age{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;background:#eef0f3;color:#475467}.age.w{background:#fff4e0;color:#b45309}.age.b{background:#fdecea;color:#b42318}
   .wrap{overflow-x:auto}.cap{font-weight:800;font-size:13px;margin:12px 0 4px}
+  .tb tr.tot td{font-weight:800;border-top:2px solid var(--sx-ink);background:#eef0f6}.tb tr.off td{opacity:.5}
+  .ov{position:fixed;inset:0;background:rgba(20,22,26,.42);opacity:0;pointer-events:none;transition:opacity .18s;z-index:40}.ov.on{opacity:1;pointer-events:auto}
+  .dr{position:fixed;top:0;right:0;bottom:0;width:min(500px,96vw);background:var(--sx-bg);z-index:41;display:flex;flex-direction:column;transform:translateX(104%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:-18px 0 50px rgba(20,22,26,.22);border-radius:26px 0 0 26px}.dr.on{transform:none}
+  @media (max-width:640px){.dr{width:100%;border-radius:0}}
+  .dr-h{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:26px 0 0 0;box-shadow:0 1px 0 var(--sx-line)}@media (max-width:640px){.dr-h{border-radius:0}}
+  .dr-h b{font-size:16px;flex:1}.dr-x{border:0;background:var(--sx-bg);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;font-weight:700}
+  .dr-b{flex:1;overflow-y:auto;padding:12px 14px;display:grid;gap:10px;align-content:start}.dr-f{padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;box-shadow:0 -1px 0 var(--sx-line)}
+  .dr .sx-card{padding:12px 14px;border-radius:18px;box-shadow:none;border:1px solid var(--sx-line)}.dr .sx-in{min-height:38px;padding:7px 10px;font-size:14px}
 </style>
 </head>
 <body>
@@ -32,6 +40,8 @@
     <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
   </main>
 </div>
+<div class="ov" id="ov"></div>
+<aside class="dr" id="dr" aria-hidden="true"><div class="dr-h"><b id="drT"></b><button class="dr-x" id="drX" aria-label="Close">×</button></div><div class="dr-b" id="drB"></div><div class="dr-f" id="drF"></div></aside>
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
@@ -48,8 +58,36 @@
     { key: 'online_prepaid', title: 'Prepaid', hint: 'Online orders paid in advance (the gateway pays you later: Razorpay, PayU, Snapmint…)' },
     { key: 'online_cod', title: 'COD', hint: 'Online orders paid on delivery (the courier sends you the money later: ShipRocket, Rapidshyp…)' },
   ];
-  let day = '', O = null, W = {};
+  let day = '', O = null, W = {}, CH = null;
+  const SECKEY = { online_prepaid: 'prepaid', online_cod: 'cod' };
+  const open = (title, body, foot) => { $('drT').textContent = title; $('drB').innerHTML = body; $('drF').innerHTML = foot || ''; $('drF').style.display = foot ? '' : 'none'; $('dr').classList.add('on'); $('ov').classList.add('on'); $('dr').setAttribute('aria-hidden', 'false'); };
+  const close = () => { $('dr').classList.remove('on'); $('ov').classList.remove('on'); $('dr').setAttribute('aria-hidden', 'true'); };
+  $('drX').onclick = close; $('ov').onclick = close; document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  const note = (id, m, bad) => { const e = $(id); if (e) e.innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
 
+  function channelsCard(s) {
+    if (!CH) return '';
+    const sk = SECKEY[s.key], list = CH.channels[sk] || [];
+    const live = list.filter((c) => c.active), tD = live.reduce((a, c) => a + c.day, 0), tM = live.reduce((a, c) => a + c.month, 0);
+    return `<div class="sx-card wrap" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div class="cap" style="margin:0;flex:1">${esc(s.title)} channels <small class="sx-mut">money received through each</small></div><button class="sx-btn" data-addch="${sk}" style="padding:2px 12px">+ Add channel</button></div>
+      ${list.length ? `<table class="tb"><tr><th>Channel</th><th>On ${esc(dFmt(day))}</th><th>This month</th><th></th></tr>${list.map((c) => `<tr class="${c.active ? '' : 'off'}"><td><b>${esc(c.name)}</b>${c.head ? '' : ' <small>no receipt line linked</small>'}${c.active ? '' : ' <small>hidden</small>'}</td><td>${c.day ? '<b>' + m2(c.day) + '</b>' : '<span class="sx-mut">—</span>'}${c.n > 1 ? '<small>' + c.n + ' entries</small>' : ''}</td><td>${c.month ? m2(c.month) : '<span class="sx-mut">—</span>'}</td><td><button class="sx-btn" data-edch="${c.id}" style="padding:2px 10px">Edit</button></td></tr>`).join('')}
+        <tr class="tot"><td>TOTAL</td><td>${m2(tD)}</td><td>${m2(tM)}</td><td></td></tr></table>` : `<div class="sx-mut">No channel yet. Click “+ Add channel”.</div>`}</div>`;
+  }
+  function chDrawer(sec, id) {
+    const c = id ? Object.values(CH.channels).flat().find((x) => x.id === id) : null;
+    const heads = CH.heads.filter((h) => h.active || (c && h.id === c.head_id));
+    open(c ? 'Edit: ' + c.name : 'Add a ' + (sec === 'cod' ? 'COD' : 'Prepaid') + ' channel', `<div class="sx-card">
+      <label class="sx-f">Channel name<input class="sx-in" id="cN" autocomplete="off" placeholder="e.g. Flipkart, Razorpay" value="${c ? esc(c.name) : ''}"></label>
+      <label class="sx-f" style="margin-top:10px">Receipt line it uses<select class="sx-in" id="cH"><option value="0">— none yet —</option>${heads.map((h) => `<option value="${h.id}" ${c && c.head_id === h.id ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}</select></label>
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">The money you enter on this line (Receipt and Payment tab) is what this channel shows.</div>
+      ${c ? `<label class="sx-f" style="margin-top:8px;display:flex;flex-direction:row;gap:6px;align-items:center"><input type="checkbox" id="cX" ${c.active ? '' : 'checked'}> Hide this channel</label>` : ''}<div id="cM" style="margin-top:8px"></div></div>`,
+      `<button class="sx-btn big" id="cS">${c ? 'Save changes' : 'Add channel'}</button>`);
+    $('cN').focus();
+    $('cS').onclick = async () => {
+      try { await api.post('fn.in_channel_save', { id: id || 0, section: sec, name: $('cN').value, head_id: +$('cH').value, active: c && $('cX').checked ? 0 : 1 }); close(); await load(day); }
+      catch (e) { note('cM', e.message, 1); }
+    };
+  }
   function section(s) {
     const c = (O.channels || []).find((x) => x.key === s.key) || {};
     const w = W[s.key] || {}, list = (w.orders && w.orders.list) || [];
@@ -59,6 +97,7 @@
       <div class="k3"><div class="k"><small>Booked on this day</small><b>${m2(c.booked_day)}</b><span>${c.orders_day || 0} order${c.orders_day === 1 ? '' : 's'}</span></div>
         <div class="k"><small>Received on this day</small><b>${m2(c.received_day)}</b><span>${alive.length} receipt${alive.length === 1 ? '' : 's'}</span></div>
         <div class="k ${c.outstanding > 0 ? 'bad' : ''}"><small>Still to come (all days)</small><b>${m2(c.outstanding)}</b><span>${c.oldest_age ? 'oldest day waiting ' + c.oldest_age + ' days' : 'nothing is late'}${c.advance ? ' · received ahead ' + m2(c.advance) : ''}</span></div></div>
+      ${channelsCard(s)}
       <div class="sx-card wrap"><div class="cap" style="margin-top:0">Money received on ${esc(dFmt(day))}</div>
         ${rec.length ? `<table class="tb"><tr><th>No</th><th>Bank</th><th>Reference</th><th>Note</th><th>Amount</th></tr>${rec.map((r) => `<tr class="${r.status === 'void' ? 'void' : ''}"><td>${esc(r.no)}</td><td>${esc(r.account)}</td><td style="text-align:left">${esc(r.ref)}</td><td style="text-align:left">${esc(r.note || r.payer)}</td><td><b>${m2(r.amount)}</b></td></tr>`).join('')}</table>` : '<div class="sx-mut">No money received on this day.</div>'}
         <div class="cap">Orders still waiting for the money <small class="sx-mut">${w.orders ? w.orders.waiting + ' orders · ' + m2(w.orders.waiting_amount) : ''}</small></div>
@@ -73,10 +112,11 @@
       // the numbers come from the same books as the original Finance (read only: nothing here changes them)
       O = await api.get('fi.overview', d ? { date: d } : {}); day = O.date;
       const r = await Promise.all(SEC.map((s) => api.get('fi.outstanding', { channel: s.key }))); W = {}; SEC.forEach((s, i) => { W[s.key] = r[i]; });
+      try { CH = await api.get('fn.in_channels', { date: day }); } catch (e) { CH = null; }
       draw();
     } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
-  document.addEventListener('click', (e) => { const t = e.target.closest('button'); if (!t) return; if (t.id === 'pv') load(addDays(day, -1)); else if (t.id === 'nx' && !t.disabled) load(addDays(day, 1)); else if (t.id === 'tdy') load(''); });
+  document.addEventListener('click', (e) => { const t = e.target.closest('button'); if (!t) return; if (t.id === 'pv') load(addDays(day, -1)); else if (t.id === 'nx' && !t.disabled) load(addDays(day, 1)); else if (t.id === 'tdy') load(''); else if (t.dataset.addch) chDrawer(t.dataset.addch, 0); else if (t.dataset.edch) chDrawer('', +t.dataset.edch); });
   document.addEventListener('change', (e) => { if (e.target.id === 'dp' && e.target.value) load(e.target.value); });
   load('');
 </script>

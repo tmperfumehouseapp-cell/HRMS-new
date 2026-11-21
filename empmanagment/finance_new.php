@@ -82,6 +82,21 @@ function fn_ensure3(PDO $pdo): bool
         @file_put_contents($flag, '1'); return true;
     } catch (Throwable $e) { error_log('fn_ensure3: ' . $e->getMessage()); return false; }
 }
+/** v4: the INCOMING channels (Prepaid: Flipkart, Razorpay, PayU...; COD later). Each channel can be linked to one receipt line of the day sheet; the money received on that line is what the channel shows. Own table fn_in_channels. */
+function fn_ensure4(PDO $pdo): bool
+{
+    $flag = sys_get_temp_dir() . '/hrms_fn_tables_v4_' . substr(md5(__DIR__), 0, 8);
+    if (is_file($flag)) return true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fn_in_channels (id INT AUTO_INCREMENT PRIMARY KEY, section VARCHAR(8) NOT NULL, name VARCHAR(80) NOT NULL, head_id INT NOT NULL DEFAULT 0, active TINYINT NOT NULL DEFAULT 1, sort_no INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL, KEY idx_fn_ic (section, active, sort_no)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if (!(int)$pdo->query("SELECT COUNT(*) FROM fn_in_channels")->fetchColumn()) {
+            $heads = []; foreach ($pdo->query("SELECT id, name FROM fn_heads WHERE side = 'in'")->fetchAll() as $h) $heads[mb_strtolower(trim((string)$h['name']))] = (int)$h['id'];
+            $ins = $pdo->prepare("INSERT INTO fn_in_channels (section, name, head_id, sort_no, created_at) VALUES ('prepaid', ?, ?, ?, ?)"); $now = date('Y-m-d H:i:s');
+            foreach ([['Flipkart', 'flipkart hdfc'], ['Razorpay', 'razorpay'], ['PayU', 'payu idfc'], ['Snapmint', 'snapmint'], ['ICICI Merchant', 'icici merchant'], ['Myntra', 'myntra'], ['Easebuzz', 'easebuzz']] as $i => $c) $ins->execute([$c[0], $heads[$c[1]] ?? 0, ($i + 1) * 10, $now]);
+        }
+        @file_put_contents($flag, '1'); return true;
+    } catch (Throwable $e) { error_log('fn_ensure4: ' . $e->getMessage()); return false; }
+}
 function fn_p($x): int { return (int)round(((float)$x) * 100); }      // rupees -> paise: all sums are integer paise
 function fn_m(int $p): float { return round($p / 100, 2); }
 function fn_day($s): string { $s = trim((string)$s); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return ''; $t = strtotime($s); return ($t && date('Y-m-d', $t) === $s) ? $s : ''; }
@@ -103,7 +118,7 @@ function fn_balances(PDO $pdo, string $day): array
     return $out;
 }
 
-if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo)) fn_err('Could not create the Finance New tables.', 500);
+if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo) || !fn_ensure4($pdo)) fn_err('Could not create the Finance New tables.', 500);
 $auth = require_auth();
 
 switch ($action) {
@@ -165,6 +180,33 @@ switch ($action) {
         foreach ($acc as $k => $x) { $a = $x['a']; $bal = fn_p($a['opening_balance']) + $x['in'] - $x['out']; if ((int)$a['active']) $tot += $bal;
             $list[] = ['id' => $k, 'name' => $a['name'], 'last4' => (string)($a['last4'] ?? ''), 'active' => (int)$a['active'], 'opening_balance' => round((float)$a['opening_balance'], 2), 'opening_date' => (string)($a['opening_date'] ?? ''), 'in' => fn_m($x['in']), 'out' => fn_m($x['out']), 'balance' => fn_m($bal)]; }
         json_response(['today' => $today, 'banks' => $list, 'total' => fn_m($tot)]);
+        break;
+    }
+
+    // INCOMING: the channels of Prepaid / COD with the money received on the day and in the month (from the receipt line each channel is linked to)
+    case 'fn.in_channels': {
+        $today = fn_today($pdo); $day = fn_day($_GET['date'] ?? '') ?: $today; if ($day > $today) $day = $today; $m0 = substr($day, 0, 8) . '01';
+        $q = $pdo->prepare("SELECT head_id, SUM(CASE WHEN day = ? THEN amount ELSE 0 END) d, SUM(CASE WHEN day = ? THEN 1 ELSE 0 END) dn, SUM(amount) m FROM fn_entries WHERE status = 'ok' AND side = 'in' AND day BETWEEN ? AND ? GROUP BY head_id"); $q->execute([$day, $day, $m0, $day]); $sum = [];
+        foreach ($q->fetchAll() as $r) $sum[(int)$r['head_id']] = [fn_p($r['d']), (int)$r['dn'], fn_p($r['m'])];
+        $heads = []; foreach ($pdo->query("SELECT id, name, active FROM fn_heads WHERE side = 'in' ORDER BY sort_no, name")->fetchAll() as $h) $heads[(int)$h['id']] = ['id' => (int)$h['id'], 'name' => $h['name'], 'active' => (int)$h['active']];
+        $out = ['prepaid' => [], 'cod' => []];
+        foreach ($pdo->query("SELECT * FROM fn_in_channels ORDER BY active DESC, sort_no, name")->fetchAll() as $c) {
+            $s = $sum[(int)$c['head_id']] ?? [0, 0, 0]; if (!isset($out[$c['section']])) continue;
+            $out[$c['section']][] = ['id' => (int)$c['id'], 'name' => $c['name'], 'head_id' => (int)$c['head_id'], 'head' => $heads[(int)$c['head_id']]['name'] ?? '', 'active' => (int)$c['active'], 'day' => fn_m($s[0]), 'n' => $s[1], 'month' => fn_m($s[2])];
+        }
+        json_response(['date' => $day, 'month_from' => $m0, 'channels' => $out, 'heads' => array_values($heads)]);
+        break;
+    }
+    case 'fn.in_channel_save': {
+        $in = json_input(); $id = (int)($in['id'] ?? 0); $sec = (string)($in['section'] ?? ''); $name = trim(mb_substr((string)($in['name'] ?? ''), 0, 80)); if (mb_strlen($name) < 2) fn_err('Give the channel a name.');
+        if ($id) { $c = $pdo->prepare("SELECT section FROM fn_in_channels WHERE id = ?"); $c->execute([$id]); $sec = (string)$c->fetchColumn(); }
+        if (!in_array($sec, ['prepaid', 'cod'], true)) fn_err('Choose Prepaid or COD.');
+        $dup = $pdo->prepare("SELECT COUNT(*) FROM fn_in_channels WHERE section = ? AND LOWER(name) = LOWER(?) AND id <> ?"); $dup->execute([$sec, $name, $id]); if ((int)$dup->fetchColumn()) fn_err('This channel already exists.');
+        $hid = (int)($in['head_id'] ?? 0); if ($hid) { $h = $pdo->prepare("SELECT COUNT(*) FROM fn_heads WHERE id = ? AND side = 'in'"); $h->execute([$hid]); if (!(int)$h->fetchColumn()) fn_err('Choose a receipt line from the list.'); }
+        $act = !isset($in['active']) || !empty($in['active']) ? 1 : 0;
+        if ($id) { $pdo->prepare("UPDATE fn_in_channels SET name = ?, head_id = ?, active = ? WHERE id = ?")->execute([$name, $hid, $act, $id]); }
+        else { $mx = $pdo->prepare("SELECT COALESCE(MAX(sort_no), 0) FROM fn_in_channels WHERE section = ?"); $mx->execute([$sec]); $pdo->prepare("INSERT INTO fn_in_channels (section, name, head_id, active, sort_no, created_at) VALUES (?,?,?,1,?,?)")->execute([$sec, $name, $hid, (int)$mx->fetchColumn() + 10, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId(); }
+        json_response(['ok' => true, 'id' => $id]);
         break;
     }
 
