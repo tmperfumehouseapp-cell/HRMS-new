@@ -706,7 +706,9 @@ function wag_hot_is_done(PDO $pdo, string $phone, string $lastIn = ''): bool
     try { if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) return true;
         $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) === 10) { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 36 * 3600)]); if ($q->fetchColumn()) return true; }
         if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
-        $t = trim(mb_strtolower($lastIn)); if ($t !== '' && mb_strlen($t) <= 24 && preg_match('/^[\s\p{P}\p{S}]*(ok|okay|okk|thanks|thank you|thankyou|thik hai|theek hai|ठीक है|done|haan|han|ji|yes|👍|🙏|😊|🙂|👌|✅)?[\s\p{P}\p{S}]*$/u', $t)) return true;
+        $t = trim(mb_strtolower($lastIn));
+        if ($t !== '' && (preg_match('/(order|ordr|payment|pay|paid|advance).{0,24}(already|kar diy|kar diya|kar liya|kar di\b|kar chuka|ho gaya|ho gya|hogaya|done|complete|place|kiya|kia)/u', $t) || preg_match('/(already|pehle se|maine).{0,18}(order|payment|paid)/u', $t))) return true;   // "Order toh already kar diy": he says he has ordered (owner, 21 Nov: the chat went to OPEN after 2 minutes although the customer had ordered)
+        if ($t !== '' && mb_strlen($t) <= 24 && preg_match('/^[\s\p{P}\p{S}]*(ok|okay|okk|thanks|thank you|thankyou|thik hai|theek hai|ठीक है|done|haan|han|ji|yes|👍|🙏|😊|🙂|👌|✅)?[\s\p{P}\p{S}]*$/u', $t)) return true;
     } catch (Throwable $e) { }
     return false;
 }
