@@ -221,7 +221,16 @@ function wln_existing_map(): array
 }
 function wln_map(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wl_map', ''), true); return is_array($j) ? array_map('intval', $j) : wln_existing_map(); }
 /** key => the template id that really goes out: the shop's approved message where one is mapped, else the lineup's own. */
-function wln_eff_ids(PDO $pdo): array { $ids = wl_tpl_ids($pdo); foreach (wln_map($pdo) as $k => $id) if ($id > 0) $ids[$k] = $id; return $ids; }
+function wln_eff_ids(PDO $pdo): array
+{
+    $own = wl_tpl_ids($pdo); $ids = $own; $cand = []; foreach (wln_map($pdo) as $k => $id) if ($id > 0) { $ids[$k] = $id; if (!empty($own[$k]) && (int)$own[$k] !== (int)$id) $cand[$k] = [(int)$id, (int)$own[$k]]; }
+    // UTILITY FIRST (owner, 21 Nov: "the idea is done"): where the shop's mapped message is counted as MARKETING by Meta (₹1.09 and ~10% fail with "too many marketing messages") and the Lineup's own message of the same step is UTILITY and approved on 3+ accounts, the own one goes. Marketing stays for the price steps only.
+    if ($cand) { try { $all = []; foreach ($cand as [$m, $w]) { $all[$m] = 1; $all[$w] = 1; } $in = implode(',', array_map('intval', array_keys($all))); $cat = []; $ok = [];
+            foreach ($pdo->query("SELECT id, category, relabelled_at FROM wa_templates WHERE id IN ($in)")->fetchAll() as $r) $cat[(int)$r['id']] = (strtoupper((string)$r['category']) === 'UTILITY' && empty($r['relabelled_at']));
+            foreach ($pdo->query("SELECT tpl_id, SUM(UPPER(status) = 'APPROVED') n FROM wa_tpl_waba WHERE tpl_id IN ($in) GROUP BY tpl_id")->fetchAll() as $r) $ok[(int)$r['tpl_id']] = (int)$r['n'];
+            foreach ($cand as $k => [$m, $w]) if (empty($cat[$m]) && !empty($cat[$w]) && ($ok[$w] ?? 0) >= 3) $ids[$k] = $w; } catch (Throwable $e) { } }
+    return $ids;
+}
 function wl_log(PDO $pdo, string $phone, string $what): void { try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$phone, date('Y-m-d H:i:s'), mb_substr($what, 0, 200)]); } catch (Throwable $e) { } }
 
 /** Write the lineup of a customer: one row per step still to go. $skipKeys = messages he already got (never sent again). Returns the number of rows. */
