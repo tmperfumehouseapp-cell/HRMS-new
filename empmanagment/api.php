@@ -23053,13 +23053,26 @@ switch ($action) {
                 $st = $pdo->prepare("SELECT o.order_name, o.created_at, o.phone, o.customer, o.total, a.employee_id FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
                     WHERE o.created_at >= ? AND o.created_at < ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') ORDER BY o.created_at DESC LIMIT 400");
                 $st->execute([$from, $to]); $P = [];
-                $rx = ['a' => '/recheck your delivery address|change address\s*\/\s*add new address/i', 'c' => '/chain_index|jewell?ery item from this catalogue|chain or any other jewell?ery/i', 'p' => '/2\s*%\s*(extra\s*)?(full\s*)?discount|extra discount on prepaid|prepaid[^.]{0,60}2\s*%|2\s*%[^.]{0,60}prepaid/i'];
+                // 📌 Owner (21 Nov): the discount on full prepaid payment is ALWAYS 2%, so ANY message of the salesperson / bot that says "2%" (any words, any language) or talks about a discount for full / prepaid / online payment counts as "told". A chain photo counts for the chain message too:
+                //    an outgoing text / caption that mentions a chain, OR an outgoing photo with a chain talked about around it (the customer or the salesperson says chain / necklace / pendant … within 6 messages).
+                $rxA = '/recheck your delivery address|change address\s*\/\s*add new address/i'; $rxC = '/chain_index|jewell?ery item from this catalogue|chain or any other jewell?ery/i';
+                $rxChainWord = '/\b(chains?|necklaces?|pendants?|bracelets?|lockets?|jewell?ery|jewelry|mala|kada)\b/iu';
+                $rxP = '/((?<![\d.])2|\bdo|\btwo)\s*(%|percent|per\s*cent|pratishat)|extra discount|(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)[^.\n]{0,80}(discount|off|less|kam|chhut|chut|cashback)|(discount|off|less|kam|chhut|chut|cashback)[^.\n]{0,80}(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)/iu';
                 foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
                     $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $t = strtotime((string)$o['created_at']); $f = ['a' => null, 'c' => null, 'p' => null];
                     if (strlen($k) === 10) {
-                        $q = $pdo->prepare("SELECT body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? AND ts <= ? AND (body LIKE '%Recheck Your Delivery%' OR body LIKE '%Change Address%' OR body LIKE '%chain_index%' OR body LIKE '%Jewellery%' OR body LIKE '%Jewelry%' OR body LIKE '%Chain or any%' OR body LIKE '%extra discount%' OR body LIKE '%prepaid%') ORDER BY id ASC LIMIT 60");
+                        $q = $pdo->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 300");
                         $q->execute([$k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 30 * 60)]);
-                        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $m) foreach ($rx as $key => $re) if ($f[$key] === null && preg_match($re, (string)$m['body'])) $f[$key] = [substr((string)$m['ts'], 11, 5), (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'];
+                        $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms);
+                        foreach ($ms as $mi => $m) {
+                            if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; $mark = [substr((string)$m['ts'], 11, 5), $by];
+                            if ($f['a'] === null && preg_match($rxA, $body)) $f['a'] = $mark;
+                            if ($f['p'] === null && $body !== '' && preg_match($rxP, $body)) $f['p'] = $mark;
+                            if ($f['c'] === null) {
+                                if (preg_match($rxC, $body) || preg_match($rxChainWord, $body)) $f['c'] = $mark;
+                                elseif ((string)$m['mtype'] === 'image') { for ($z = max(0, $mi - 6); $z <= min($nm - 1, $mi + 6); $z++) if ($z !== $mi && preg_match($rxChainWord, (string)$ms[$z]['body'])) { $f['c'] = $mark; break; } }
+                            }
+                        }
                     }
                     $e = (int)$o['employee_id'];
                     if (!isset($P[$e])) $P[$e] = ['id' => $e, 'name' => $names[$e] ?? ('#' . $e), 'n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'orders' => []];
