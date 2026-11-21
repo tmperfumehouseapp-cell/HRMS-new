@@ -37,12 +37,13 @@
   function drawPend() {
     var host2 = document.getElementById('blPend'); if (!host2) { host2 = document.createElement('div'); host2.id = 'blPend'; host.parentNode.insertBefore(host2, host); }
     if (!pend || !pend.can || !pend.total) { host2.innerHTML = ''; return; } css();
-    var h = '<div class="bl" style="border-color:#f0c9a8;background:#fff6ee"><div class="bl-h" id="bpH"><span>🙋</span><b>The bot handed over ' + pend.total + ' chat' + (pend.total === 1 ? '' : 's') + ' — nobody has answered yet</b><span>' + (popen ? '▲' : '▼') + '</span></div>';
+    var by = {}; pend.items.forEach(function (x) { var w = x.missed_by || x.holder || 'nobody'; by[w] = (by[w] || 0) + 1; }); var sum = Object.keys(by).sort(function (a, b) { return by[b] - by[a]; }).slice(0, 6).map(function (k) { return esc(k) + ' ' + by[k]; }).join(' · ');
+    var h = '<div class="bl" style="border-color:#f0c9a8;background:#fff6ee"><div class="bl-h" id="bpH"><span>🙋</span><b>Hot or bot-handed chats nobody answered: ' + pend.total + ' chat' + (pend.total === 1 ? '' : 's') + '</b><span style="color:#a60;font-size:12px">' + sum + '</span><span>' + (popen ? '▲' : '▼') + '</span></div>';
     if (popen) {
       h += '<div class="bl-b">';
       pend.items.forEach(function (x) {
         h += '<div class="bl-i"><div><b>' + esc(x.name || ('+91 ' + x.phone)) + '</b> · waiting <span style="color:' + (x.wait_min >= 10 ? '#b00' : '#a60') + '">' + x.wait_min + ' min</span> · handed over ' + x.handed_min + ' min ago' + (x.hot ? ' · 🔥 ' + esc(x.hot) : '') + '</div>'
-          + '<div style="color:#667">Holder: ' + (x.holder ? esc(x.holder) : 'nobody') + '</div><q>' + esc(x.last) + '</q>'
+          + '<div style="color:#667">Holder: ' + (x.holder ? esc(x.holder) : 'nobody (in OPEN)') + (x.missed_by ? ' · did not answer: <b>' + esc(x.missed_by) + '</b>' : '') + '</div><q>' + esc(x.last) + '</q>'
           + '<div class="bl-r"><a class="sk" style="text-decoration:none;border-radius:9px;padding:7px 11px;font-weight:600" target="_blank" href="my_chats.html?phone=' + encodeURIComponent(x.phone) + '">Open chat</a><button class="ap" data-nf="' + esc(x.phone) + '">Give to the next free person</button></div></div>';
       });
       h += '</div>';
