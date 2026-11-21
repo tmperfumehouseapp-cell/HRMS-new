@@ -656,6 +656,23 @@ function wag_order_done_check(PDO $pdo, array $c, string $key): void
         wag_order_finalize($pdo, $c, $key);
     } catch (Throwable $e) { }
 }
+/** 🗑 NOT RELATED TO US (owner, 21 Nov: "a business-type message nothing will come of - take it out of Requests, it must not count as a query"): an unassigned chat nobody of ours has written to, whose last message is another business's auto-reply ("Thank you for contacting Audi Delhi West!"), a B2B / supplier / vendor / marketing / job offer, is closed quietly, removed from the query ledger and tagged in the chat history. Complaints are NOT touched here (the complaint sweep raises a ticket for them). */
+function wag_unrelated_sweep(PDO $pdo, int $max = 8): int
+{
+    $n = 0; $now = time();
+    try { $st = $pdo->prepare("SELECT c.phone, c.name FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND (c.assigned_emp IS NULL OR c.assigned_emp = 0) AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) ORDER BY c.last_in_at DESC LIMIT 60"); $st->execute([date('Y-m-d H:i:s', $now - 3 * 3600), date('Y-m-d H:i:s', $now - 20)]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $c) { if ($n >= $max) break; $key = (string)$c['phone'];
+            $q = $pdo->prepare("SELECT body, mtype FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $m = $q->fetch(PDO::FETCH_ASSOC); if (!$m || (string)$m['mtype'] !== 'text') continue; $t = mb_strtolower(trim((string)$m['body'])); $why = '';
+            if (preg_match('/(thank you|thanks) for (contacting|reaching|messaging|connecting)\b/u', $t) && !preg_match('/tm ?perfume/u', $t) && preg_match('/(let us know|how (we|can)|get back|respond|will (reply|contact|connect)|business hours|please wait|assist you)/u', $t)) $why = 'another business\'s automatic reply';
+            elseif (preg_match('/(b2b|b to b|do you trade|trade in\b|supplier|vendor|seo\b|digital marketing|website (design|development)|social media (marketing|management)|lead generation|\bloan\b|insurance|hiring|vacancy|job opening|internship|collaboration|influencer|sponsor|investment)/u', $t) && !preg_match('/(perfume|order|price|combo|attar|buy)/u', $t)) $why = 'a business / marketing / job message';
+            if ($why === '') continue;
+            $o = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp', 'bot')"); $o->execute([$key]); if ((int)$o->fetchColumn() > 0) continue;   // somebody of ours already talked to him: not touched
+            $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND (assigned_emp IS NULL OR assigned_emp = 0)")->execute([date('Y-m-d H:i:s'), $key]);
+            if (function_exists('wag_q_forget')) wag_q_forget($pdo, $key, 2);   // not counted as a query
+            wa_event($pdo, $key, '🗑 Not related to our business (' . $why . '): removed from Requests and not counted as a query'); $n++; }
+    } catch (Throwable $e) { }
+    return $n;
+}
 /** Customers who wrote a complaint (leak, wrong item, not delivered, quality, refund) and nobody answered: a complaint ticket is raised for them at once (the Complaint team owns it), they are told the number. */
 function wag_complaint_sweep(PDO $pdo, int $max = 6): int
 {
@@ -1097,7 +1114,7 @@ function wag_bot_tick(PDO $pdo, int $slots = 8, string $role = ''): array   // o
     try {
         if ($role === 'fu') { try { $o['followup'] = wag_bot_followup($pdo, 6); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } } return $o; }
         if (time() - (int)setting_get($pdo, 'wag_tick_at', '0') >= 3) setting_set($pdo, 'wag_tick_at', (string)time());   // the heartbeat no longer depends on slot 0 being free
-        if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } }   // the sweeps run in whichever slot is free (a busy slot 0 used to delay them)
+        if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_unrelated_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } }   // the sweeps run in whichever slot is free (a busy slot 0 used to delay them)
         $r = wag_bot_scan($pdo, 3); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];   // customer answers only; follow-ups have their own slots
         if (time() - (int)setting_get($pdo, 'wag_exp_at', '0') >= 1800) { setting_set($pdo, 'wag_exp_at', (string)time()); try { wag_exp_eval($pdo); } catch (Throwable $e) { } }   // the self-learning check, every 30 minutes
     } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('" . $pfx . $o['slot'] . "')"); } catch (Throwable $e) { } } }
