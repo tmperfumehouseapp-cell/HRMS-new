@@ -16,6 +16,7 @@
   .fb .c{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
   .fb .bar{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center}.fb .bar input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font:inherit;background:#fff;color:#111}
   .fb .btn{background:#111;color:#fff;border:0;border-radius:10px;padding:9px 13px;font:700 12.5px inherit;cursor:pointer;text-decoration:none;display:inline-block}.fb .btn.g2{background:#0f766e}.fb .btn.gh{background:#fff;color:#111;border:1px solid var(--line)}.fb .btn.rd{background:#fff1f2;color:#b91c1c;border:1px solid #fecdd3}.fb .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .fb td .btn{white-space:nowrap}
   .fb .wrap{overflow-x:auto}.fb table{width:100%;border-collapse:collapse}.fb th{font-size:10.5px;text-align:left;color:#777;text-transform:uppercase;padding:5px 6px;white-space:nowrap}.fb td{padding:8px 6px;border-top:1px solid #eef0f2;vertical-align:top}
   .fb tr.row{cursor:pointer}.fb tr.row:hover td{background:#f8fafb}.fb tr.sel td{background:#f0fdf4!important}
   .fb .t{display:inline-block;border-radius:99px;padding:2px 9px;font-size:11px;font-weight:700;white-space:nowrap}.s-wait{background:#f3f4f6;color:#555}.s-sent{background:#fef3c7;color:#92400e}.s-replied{background:#e0e7ff;color:#3730a3}.s-proof{background:#dcfce7;color:#166534}.s-cmp{background:#fee2e2;color:#991b1b}.s-rew{background:#ede9fe;color:#5b21b6}.s-skip{background:#eceff1;color:#607d8b}
@@ -34,6 +35,26 @@
   .fb .pop.fold .pR{display:none}.fb .pop.full{padding:0}.fb .pop.full .pp{border-radius:0}.fb .pT{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 6px}.fb .pT .sp{flex:1}.fb .pT button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:5px 10px;font:700 12px inherit;cursor:pointer;color:#111}.fb .pT button.x{background:#111;color:#fff;border-color:#111}
   @media(max-width:900px){.fb .pp{flex-direction:column}.fb .pL{flex:1 1 60%}.fb .pR{width:auto;flex:1 1 40%;border-left:0;border-top:1px solid var(--line)}}
   @media(max-width:900px){.fb .g{grid-template-columns:1fr}.fb .k{grid-template-columns:repeat(3,1fr)}}
+  /* 📱 phone: one scrolling row of tabs, small number boxes, every order is a card (no sideways scrolling) */
+  @media(max-width:700px){
+    .fb{padding:4px 10px 90px;font-size:14px}
+    .fb .pills{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -10px 8px;padding:2px 10px}.fb .pills::-webkit-scrollbar{display:none}.fb .pills button{flex:none;padding:8px 13px;font-size:13px}
+    .fb .k{grid-template-columns:repeat(3,1fr);gap:6px}.fb .k div{padding:7px 8px;font-size:10.5px;line-height:1.25}.fb .k b{font-size:17px}
+    .fb .bar{gap:6px}.fb .bar input{min-width:0;flex:1 1 100%}.fb .bar .btn{flex:1;text-align:center;padding:11px 8px}
+    .fb .c{padding:8px;border-radius:12px}
+    .fb .wrap{overflow:visible}.fb table,.fb tbody{display:block}.fb thead{display:none}
+    .fb tr.row{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0;background:#fff}
+    .fb tr.row td{display:block;border:0;padding:2px 0;min-width:0;overflow-wrap:anywhere}
+    .fb tr.row td[data-l]::before{content:attr(data-l);display:block;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.03em}
+    .fb tr.row td[data-l="Order"],.fb tr.row td[data-l="Chat"]{grid-column:1/-1}.fb tr.row td[data-l="Order"]::before,.fb tr.row td[data-l="Chat"]::before{display:none}
+    .fb tr.row td[data-l="Chat"] .btn{width:100%;padding:11px;margin-top:4px}
+    .fb tr.row:hover td,.fb tr.sel td{background:transparent!important}.fb tr.sel{border-color:#0f766e;background:#f0fdf4}
+    .fb .set .row{gap:8px}.fb .set .row>div{flex:1 1 100%}.fb .set input,.fb .set select,.fb .set textarea{width:100%;box-sizing:border-box}
+    .fb .md{width:100%;max-height:92vh;padding:14px}.fb .ov{align-items:flex-end;padding:0}.fb .md{border-radius:16px 16px 0 0}
+    .fb .acts .btn,.fb .pR .acts .btn{padding:10px 12px;font-size:13px}
+    .fb .pop{padding:0}.fb .pp{border-radius:0}.fb .pL{padding:6px}.fb .pT button{padding:8px 11px}
+    #side{display:none}
+  }
 </style>
 </head>
 <body>
@@ -82,7 +103,7 @@
     $('setSum').textContent = '· ' + (CFG.on ? 'automatic ON' : 'automatic OFF') + ' · message after ' + CFG.wait + ' days · follow-up after ' + CFG.fu + ' days';
     { const st = L.counts.issue_stats || {}, ks = Object.keys(st); $('warn').insertAdjacentHTML('beforeend', tab === 'issue' && ks.length ? '<div class="sm" style="margin:6px 0">Last 30 days: ' + ks.map((k) => esc((ISS.find((z) => z[0] === k) || ['', k])[1]) + ' ' + st[k]).join(' · ') + '</div>' : ''); }
     $('none').style.display = L.rows.length ? 'none' : 'block';
-    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="font-weight:800;color:#c2410c">${esc(x.order)}</a>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td>${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td>${esc(dd(x.delivered))}</td><td>${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td>${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '<span style="color:#b91c1c" title="' + esc(x.msg_why) + '">✗ Failed</span><br><span class="sm" style="color:#b91c1c">open it to see why</span>' : '✓ Not seen')) : '—'}</td><td><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span>${x.last_call ? '<br><span class="sm">📞 ' + esc(x.last_call.replace(/^Call:\s*/, '')) + '</span>' : ''}</td><td>${x.proofs ? '🖼 ' + x.proofs : '—'}</td><td><button class="btn g2" data-chat="${esc(x.order)}" type="button" style="padding:5px 9px">💬 Open chat</button></td></tr>`).join('');
+    $('rows').innerHTML = L.rows.map((x) => `<tr class="row ${x.order === sel ? 'sel' : ''}" data-o="${esc(x.order)}"><td data-l="Order"><a href="#" class="oid" data-o="${esc(x.order)}" data-s="${esc(x.store)}" data-p="${esc(x.phone)}" title="Open the order details" style="font-weight:800;color:#c2410c">${esc(x.order)}</a>${x.test ? ' <span class="t s-skip">🧪 TEST</span>' : ''}</td><td data-l="Customer">${esc(x.customer || '—')}<br><span class="sm">${esc(x.phone)}</span></td><td data-l="Delivered">${esc(dd(x.delivered))}</td><td data-l="Message">${x.msg_at ? esc(dt(x.msg_at)) + (x.fu_at ? '<br><span class="sm">+ follow-up ' + esc(dd(x.fu_at)) + '</span>' : '') : '<span class="sm">goes after ' + CFG.wait + ' days</span>' + (x.msg_err ? '<br><span class="sm" style="color:#b91c1c">' + esc(x.msg_err) + '</span>' : '')}</td><td data-l="Seen">${x.msg_at ? (x.seen ? '✓✓ Seen' : (x.msg_state === 'failed' ? '<span style="color:#b91c1c" title="' + esc(x.msg_why) + '">✗ Failed</span><br><span class="sm" style="color:#b91c1c">open it to see why</span>' : '✓ Not seen')) : '—'}</td><td data-l="Status"><span class="t ${(ST[x.status] || ST.wait)[1]}">${(ST[x.status] || ST.wait)[0]}</span>${x.last_call ? '<br><span class="sm">📞 ' + esc(x.last_call.replace(/^Call:\s*/, '')) + '</span>' : ''}</td><td data-l="Proof">${x.proofs ? '🖼 ' + x.proofs : '—'}</td><td data-l="Chat"><button class="btn g2" data-chat="${esc(x.order)}" type="button" style="padding:5px 9px">💬 Open chat</button></td></tr>`).join('');
     renderSet();
   }
   function renderSet() {
@@ -330,7 +351,7 @@
     }
     const t = e.target.closest('[data-t]'); if (t) { tab = t.dataset.t; query = ''; $('q').value = ''; load(); return; }
     const cb = e.target.closest('[data-chat]'); if (cb) { e.stopPropagation(); openOrder(cb.dataset.chat).then(() => openPop()); return; }
-    const r = e.target.closest('tr.row'); if (r) { openOrder(r.dataset.o); }
+    const r = e.target.closest('tr.row'); if (r) { if (window.innerWidth <= 700) openOrder(r.dataset.o).then(() => openPop()); else openOrder(r.dataset.o); }
   });
   let qt = 0; $('q').oninput = (e) => { clearTimeout(qt); qt = setTimeout(() => { query = e.target.value.trim(); load(); }, 350); };
   load(); setInterval(() => { if (!document.hidden && !$('ov').classList.contains('on')) load(); }, 60000);
