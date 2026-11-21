@@ -9,14 +9,12 @@
  *  · Switch off: setting wa_aft_on = 0.  Runs from the minute job (wa.cron_send). PHP 7.4 safe.
  */
 if (!function_exists('wa_aft_days')) {
-    /** step => [day after delivery, template group, line key] */
+    /** step => [day after delivery, template group, line key]. v2 (owner, 21 Nov: messages on at least 200 days of the year, every week a different offer): 4 care steps in weeks 1-4, then ONE message EVERY WEEK up to day 357 (51 steps); the line of a weekly step is made by code (wa_aft_line_dyn). */
     function wa_aft_steps(): array
     {
-        $rot = ['valued', 'liked', 'gift', 'loved', 'long', 'also', 'reorder', 'combo', 'newsim'];
-        $s = [1 => [7, 'enjoy', 'care1'], 2 => [14, 'doubt', 'care2'], 3 => [21, 'checkin', 'care3'], 4 => [28, 'enjoy', 'care4'], 5 => [38, 'also', 'fresh'], 6 => [52, 'newsim', 'offer'],
-            7 => [66, 'reorder', 'reorder'], 8 => [80, 'combo', 'offer'], 9 => [94, 'best', 'best'], 10 => [108, 'small', 'small']];
-        $d = 122; for ($i = 0; $i < 9; $i++) { $s[11 + $i] = [$d, $rot[$i], 'love']; $d += 14; }
-        $s[20] = [270, 'valued', 'love']; $s[21] = [300, 'reorder', 'reorder']; $s[22] = [330, 'liked', 'fresh']; $s[23] = [360, 'valued', 'love'];
+        $rot = ['also', 'newsim', 'reorder', 'combo', 'best', 'small', 'valued', 'liked', 'gift', 'loved', 'long'];
+        $s = [1 => [7, 'enjoy', 'care1'], 2 => [14, 'doubt', 'care2'], 3 => [21, 'checkin', 'care3'], 4 => [28, 'enjoy', 'care4']];
+        for ($k = 5; $k <= 51; $k++) $s[$k] = [28 + 7 * ($k - 4), $rot[($k - 5) % count($rot)], 'dyn'];
         return $s;
     }
     function wa_aft_days(): array { $o = []; foreach (wa_aft_steps() as $k => $v) $o[$k] = $v[0]; return $o; }
@@ -46,6 +44,17 @@ if (!function_exists('wa_aft_days')) {
             'best' => 'Hamare best-sellers aapke liye ready hain.', 'small' => 'Naya fragrance chhoti size mein try karna chahein to batayiye.', 'love' => 'Aapki pasand ke naye options ke liye bas reply kijiye.'];
         if ($key === 'offer') return $p250 > 0 ? '5 x 50 ml sirf Rs ' . $p250 . ' mein. Order ke liye yahin reply kijiye.' : 'Best price ke liye yahin reply kijiye.';
         return $L[$key] ?? $L['love'];
+    }
+    /** The weekly line ({{3}}): a DIFFERENT offer every week - the size (20 / 30 / 50 / 100 ml) and the number of bottles rotate per customer and per week, the price is ALWAYS the shop's chart price (7% column) of that exact quantity, the season sets the greeting. No invented offer. */
+    function wa_aft_line_dyn(PDO $pdo, int $step, string $phone, int $now): string
+    {
+        static $combos = null; if ($combos === null) { $combos = []; try { $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (is_array($j) && !empty($j['rows'])) { $ix = function_exists('wag_chart_cols') ? wag_chart_cols(array_values(array_map('floatval', (array)$j['cols'])))[0] : 0; $pr = []; foreach ((array)$j['rows'] as $r) { $p = (int)($r['p'][$ix] ?? 0); if ($p > 0) $pr[(int)($r['ml'] ?? 0)] = $p; }
+                foreach ([20, 30, 50, 100] as $sz) foreach ([2, 3, 4, 5, 6, 8, 10] as $q) if (isset($pr[$q * $sz])) $combos[] = [$q, $sz, $pr[$q * $sz]]; } } catch (Throwable $e) { } }
+        $m = (int)date('n', $now); $season = [1 => 'Naye saal ki shuruaat', 2 => 'Valentine ka mahina', 3 => 'Holi ke rang', 4 => 'Garmi ke fresh fragrances', 5 => 'Garmi mein fresh rehne ke liye', 6 => 'Garmi ka mausam', 7 => 'Barsaat ka mausam', 8 => 'Raksha Bandhan / gifting ka mausam', 9 => 'Tyohaaron ka mausam', 10 => 'Navratri / Dussehra ke din', 11 => 'Diwali aur shaadi ka mausam', 12 => 'Winter aur shaadi season'][$m];
+        $phrase = ['sirf', 'bas', 'special value:', 'is hafte ka option:'];
+        if (!$combos) return $season . ' - best price ke liye yahin reply kijiye.';
+        $h = (int)substr(preg_replace('/\D/', '', $phone), -4); $c = $combos[($step * 5 + $h) % count($combos)]; $ph = $phrase[($step + $h) % count($phrase)];
+        return $season . ': ' . $c[0] . ' x ' . $c[1] . ' ml ' . $ph . ' Rs ' . $c[2] . '. Reply kijiye, hum order bana denge.';
     }
     function wa_aft_k10($phone): string { return substr(preg_replace('/\D+/', '', (string)$phone), -10); }
     /** Write the ladder of one customer: past steps are dropped except the newest one, which goes out spread over the next days (never a burst). */
@@ -98,6 +107,11 @@ if (!function_exists('wa_aft_days')) {
         $o = ['entered' => 0, 'sent' => 0, 'waiting' => 0]; if (wa_aft_set($pdo, 'wa_aft_on', '1') === '0' || !wa_aft_tables($pdo)) return $o;
         if (function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours'; return $o; }
         if (!function_exists('wa_lock') || !wa_lock($pdo, 'wlaft', 55)) return $o; $now = time(); $t0 = microtime(true);
+        if (wa_aft_set($pdo, 'wa_aft_ver', '1') !== '2') {   // one time: the first 23-step ladder becomes the weekly 51-step one (nobody has been sent a message yet); 600 customers per minute
+            try { $mq = $pdo->query("SELECT phone, anchor_at FROM wa_aft_cust WHERE status = 'active' AND why <> 'v2' LIMIT 600")->fetchAll(PDO::FETCH_ASSOC); $sp = max(1, (int)wa_aft_set($pdo, 'wa_aft_spread', '5'));
+                foreach ($mq as $mr) { wa_aft_plan($pdo, (string)$mr['phone'], (int)strtotime((string)$mr['anchor_at']), $now, $sp); $pdo->prepare("UPDATE wa_aft_cust SET why = 'v2' WHERE phone = ?")->execute([(string)$mr['phone']]); }
+                if (!$mq) setting_set($pdo, 'wa_aft_ver', '2'); } catch (Throwable $e) { }
+            return $o; }
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_enrol_at', '0') >= 1800) { setting_set($pdo, 'wa_aft_enrol_at', (string)$now); $o['entered'] = wa_aft_enrol($pdo, $now); }
         $cap = max(0, (int)wa_aft_set($pdo, 'wa_aft_cap', '1500')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
         $rows = $pdo->prepare("SELECT p.id, p.phone, p.step, c.order_at, c.anchor_at FROM wa_aft_plan p JOIN wa_aft_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.due_at LIMIT 60"); $rows->execute([date('Y-m-d H:i:s', $now)]);
@@ -110,7 +124,7 @@ if (!function_exists('wa_aft_days')) {
             if ($busy || (int)($c['cx_id'] ?? 0) > 0) { $push->execute([date('Y-m-d H:i:s', $now + 86400 + (int)substr($ph, -4)), $id]); $o['waiting']++; continue; }
             $st = $steps[(int)$r['step']] ?? null; if (!$st) { $upd->execute(['cancelled', 'unknown step', null, 0, '', $id]); continue; }
             $ids = $grp[$st[1]] ?? []; if (!$ids) { $upd->execute(['cancelled', 'no template', null, 0, '', $id]); continue; }
-            $tid = (int)$ids[(int)substr($ph, -3) % count($ids)]; [$ok, $why] = wa_aft_send($pdo, $c, $tid, wa_aft_line($pdo, $st[2]));
+            $tid = (int)$ids[(int)substr($ph, -3) % count($ids)]; [$ok, $why] = wa_aft_send($pdo, $c, $tid, $st[2] === 'dyn' ? wa_aft_line_dyn($pdo, (int)$r['step'], $ph, $now) : wa_aft_line($pdo, $st[2]));
             if ($ok) { $upd->execute(['sent', '', date('Y-m-d H:i:s'), $tid, $why, $id]); $o['sent']++; try { $pdo->prepare("INSERT INTO wa_line_log (phone, at, what) VALUES (?, ?, ?)")->execute([$ph, date('Y-m-d H:i:s'), 'after-order step ' . (int)$r['step']]); } catch (Throwable $e) { } }
             elseif (strpos($why, 'wait') === 0) { $push->execute([date('Y-m-d H:i:s', $now + 1800), $id]); $o['waiting']++; if (strpos($why, 'no number') !== false) break; }
             else { $upd->execute(['failed', mb_substr($why, 0, 150), null, $tid, '', $id]); }
