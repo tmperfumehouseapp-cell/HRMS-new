@@ -9,6 +9,10 @@ on:
         description: "Run the Lineup screen's own queries (overview, status, summary, report) on the real data and print errors and timings"
         type: boolean
         default: false
+      cli:
+        description: "Run ONE command-line Lineup sending round (cron_line.php test) instead of the probe"
+        type: boolean
+        default: false
       brief:
         description: "Short report: skip the lists of existing messages"
         type: boolean
@@ -72,4 +76,21 @@ jobs:
           echo "wl_summary in wa_line.php: $(grep -c 'function wl_summary' "$P"empmanagment/wa_line.php 2>/dev/null)  ·  wa_line.php required by wa_more.php: $(grep -c "wa_line.php" "$P"empmanagment/wa_more.php 2>/dev/null)  ·  c28x in whatsapp.html: $(grep -o 'wa_camp_ui.js?v=c[0-9]*' "$P"whatsapp.html 2>/dev/null)"
           echo "Campaigns strip on the server: cLineCard in wa_camp_ui.js = $(grep -c 'cLineCard' "$P"assets/js/wa_camp_ui.js 2>/dev/null) · wa.line_card in wa_line.php = $(grep -c 'wa.line_card' "$P"empmanagment/wa_line.php 2>/dev/null) · wln_unwindow = $(grep -c 'function wln_unwindow' "$P"empmanagment/wa_line.php 2>/dev/null) · wln_send = $(grep -c 'function wln_send' "$P"empmanagment/wa_line.php 2>/dev/null)"
           php -v | head -1
+          REMOTE
+      - name: Run one CLI round
+        if: ${{ inputs.cli }}
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"; echo "start $(date +%T) load $(cut -d' ' -f1-3 /proc/loadavg) fpm $(pgrep -fc 'php-fpm: pool')"
+          T0=$(date +%s); timeout 90 php "$P"empmanagment/cron_line.php test 2>&1 | head -c 1500; echo; echo "rc=$? took $(( $(date +%s) - T0 )) s · end load $(cut -d' ' -f1-3 /proc/loadavg)"
+          echo "php: $(php -v | head -1) · memory_limit $(php -r 'echo ini_get("memory_limit");') · cron_bot has spawn: $(grep -c cron_line "$P"empmanagment/cron_bot.php)"
           REMOTE
