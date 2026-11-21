@@ -7,7 +7,7 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function css() {
     if (document.getElementById('blCss')) return; var st = document.createElement('style'); st.id = 'blCss';
-    st.textContent = '#blStrip{margin:0}.bl{margin:8px 12px;border:1px solid #cfe3d6;background:#f3faf6;border-radius:12px;font-size:13px;color:#1f2a37}.bl-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:9px 12px;cursor:pointer}.bl-h b{flex:1 1 0;min-width:140px;line-height:1.3}.bl-s{flex:1 1 100%;order:5;font-size:12px;line-height:1.35;padding-left:26px}.bl-h .bl-ar{margin-left:auto}.bl-b{padding:0 12px 10px}.bl-i{border-top:1px solid #dfece4;padding:9px 0}.bl-i q{display:block;color:#445;margin:2px 0}.bl-bad{color:#a33}.bl-good{color:#116b3a;font-weight:600}.bl-r{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.bl button{border:0;border-radius:9px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}.bl .ap{background:#128c4a;color:#fff}.bl .sk{background:#e6e9ee;color:#445}.bl textarea{width:100%;box-sizing:border-box;font:inherit;padding:6px;border:1px solid #cfd6dd;border-radius:8px;margin-top:4px}.bl table{font-size:12px}.bl td,.bl th{padding:3px 6px;white-space:nowrap}@media (max-width:520px){.bl{margin:6px 8px;font-size:12.5px}.bl-h{padding:8px 10px}}';
+    st.textContent = '#blStrip{margin:0}.bl{margin:8px 12px;border:1px solid #cfe3d6;background:#f3faf6;border-radius:12px;font-size:13px;color:#1f2a37}.bl-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:9px 12px;cursor:pointer}.bl-h b{flex:1 1 0;min-width:140px;line-height:1.3}.bl-s{flex:1 1 100%;order:5;font-size:12px;line-height:1.35;padding-left:26px}.bl-h .bl-ar{margin-left:auto}.bl-b{padding:0 12px 10px}.bl-i{border-top:1px solid #dfece4;padding:9px 0}.bl-i q{display:block;color:#445;margin:2px 0}.bl-bad{color:#a33}.bl-good{color:#116b3a;font-weight:600}.bl-r{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.bl button{border:0;border-radius:9px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}.bl .ap{background:#128c4a;color:#fff}.bl .sk{background:#e6e9ee;color:#445}.bl textarea{width:100%;box-sizing:border-box;font:inherit;padding:6px;border:1px solid #cfd6dd;border-radius:8px;margin-top:4px}.bl table{font-size:12px}.bl td,.bl th{padding:3px 6px;white-space:nowrap}@media (max-width:520px){.bl{margin:6px 8px;font-size:12.5px}.bl-h{padding:8px 10px}}.bl-c{padding:5px 0!important}.bl-l{line-height:1.3}.bl-q{display:flex;align-items:center;gap:6px;margin-top:2px}.bl-q q{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0!important;color:#667}.bl-q .sk,.bl-q .ap{flex:none;font-size:11.5px!important;padding:3px 8px!important;border-radius:7px!important;text-decoration:none;font-weight:600}.bl-q a.sk{background:#e6e9ee;color:#445}';
     st.textContent += '#blChips{display:flex;gap:8px;flex-wrap:wrap;padding:8px 12px;flex:none}#blChips:empty{display:none}.bc{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #cfd6e4;background:#fff;color:#1f2a37;border-radius:999px;padding:5px 11px;font:700 12.5px/1.2 inherit;font-family:inherit;cursor:pointer;white-space:nowrap}.bc b{font-weight:900}.bc i{font-style:normal;opacity:.55;font-size:10px}.bc.o{border-color:#e8590c;background:#ffe8d6;color:#9a3412;font-size:13.5px;padding:7px 14px;box-shadow:0 0 0 2px rgba(232,89,12,.25)}.bc.b{border-color:#c7d7f0;background:#f2f6fd;color:#1e3a8a}.bc.g{border-color:#cfe3d6;background:#f3faf6;color:#166534}.bc.on{outline:2px solid #16a34a}#blPend .bl-h,#blMkt .bl-h,#blHr .bl-h,#blStrip .bl-h{display:none}';
     document.head.appendChild(st);
   }
@@ -35,7 +35,7 @@
   }
   function say(msg, bad) { var t = document.createElement('div'); t.className = 'wp-toast' + (bad ? ' bad' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(function () { t.remove(); }, 3500); }
   function act(body) { if (busy) return; busy = true; api.post('wa.g_botlearn_apply', body).then(function (r) { say(body.ignore ? 'Ignored' : '✅ Applied to the live guidebook (' + (r.applied || 0) + '). The bot uses it now.'); return load(); }).catch(function (e) { say(e.message, true); }).then(function () { busy = false; }); }
-  var pend = null, popen = false, pfirst = false;
+  var pend = null, popen = false, pfirst = false, pall = false;
   function drawPend() {
     var host2 = document.getElementById('blPend'); if (!host2) { host2 = document.createElement('div'); host2.id = 'blPend'; host.parentNode.insertBefore(host2, host); }
     if (!pend || !pend.can || !pend.total) { host2.innerHTML = ''; return; } css();
@@ -43,15 +43,17 @@
     var h = '<div class="bl" style="border-color:#f0c9a8;background:#fff6ee"><div class="bl-h" id="bpH"><span>🙋</span><b>Hot or bot-handed chats nobody answered: ' + pend.total + ' chat' + (pend.total === 1 ? '' : 's') + '</b><span class="bl-s" style="color:#a60">' + sum + '</span><span class="bl-ar">' + (popen ? '▲' : '▼') + '</span></div>';
     if (popen) {
       h += '<div class="bl-b">';
-      pend.items.forEach(function (x) {
-        h += '<div class="bl-i"><div><b>' + esc(x.name || ('+91 ' + x.phone)) + '</b> · waiting <span style="color:' + (x.wait_min >= 10 ? '#b00' : '#a60') + '">' + x.wait_min + ' min</span> · handed over ' + x.handed_min + ' min ago' + (x.hot ? ' · 🔥 ' + esc(x.hot) : '') + '</div>'
-          + '<div style="color:#667">Holder: ' + (x.holder ? esc(x.holder) : 'nobody (in OPEN)') + (x.missed_by ? ' · did not answer: <b>' + esc(x.missed_by) + '</b>' : '') + '</div><q>' + esc(x.last) + '</q>'
-          + '<div class="bl-r"><a class="sk" style="text-decoration:none;border-radius:9px;padding:7px 11px;font-weight:600" target="_blank" href="my_chats.html?phone=' + encodeURIComponent(x.phone) + '">Open chat</a><button class="ap" data-nf="' + esc(x.phone) + '">Give to the next free person</button></div></div>';
+      var lim = pall ? pend.items.length : Math.min(8, pend.items.length);
+      pend.items.slice(0, lim).forEach(function (x) {
+        h += '<div class="bl-i bl-c"><div class="bl-l"><b>' + esc(x.name || ('+91 ' + x.phone)) + '</b> <span style="color:' + (x.wait_min >= 10 ? '#b00' : '#a60') + '">' + x.wait_min + 'm</span>' + (x.handed_min > 0 && x.handed_min < 100000 ? ' <span style="color:#889">· handed ' + x.handed_min + 'm</span>' : '') + (x.hot ? ' · 🔥 ' + esc(x.hot) : '') + ' <span style="color:#667">· ' + (x.holder ? esc(x.holder) : 'open') + (x.missed_by ? ' (missed: ' + esc(x.missed_by) + ')' : '') + '</span></div>'
+          + '<div class="bl-q"><q>' + esc(x.last) + '</q><a class="sk" target="_blank" href="my_chats.html?phone=' + encodeURIComponent(x.phone) + '">Open</a><button class="ap" data-nf="' + esc(x.phone) + '">Next free</button></div></div>';
       });
+      if (pend.items.length > lim) h += '<div style="padding:6px 0;text-align:center"><button class="sk" id="bpAll">Show all ' + pend.items.length + '</button></div>';
       h += '</div>';
     }
     host2.innerHTML = h + '</div>';
     var hd = document.getElementById('bpH'); if (hd) hd.onclick = function () { popen = !popen; drawPend(); };
+    var al = document.getElementById('bpAll'); if (al) al.onclick = function () { pall = true; drawPend(); };
     host2.querySelectorAll('[data-nf]').forEach(function (b) { b.onclick = function () { b.disabled = true; api.post('wa.g_reassign', { phone: b.dataset.nf, emp_id: 0 }).then(function (r) { say('Given to ' + (r.to || 'the next free person')); loadPend(); }).catch(function (e) { say(e.message, true); b.disabled = false; }); }; });
   }
   var mkt = null, mopen = false;
@@ -76,7 +78,7 @@
     var hd = document.getElementById('bmH'); if (hd) hd.onclick = function () { mopen = !mopen; drawMkt(); };
   }
   function loadMkt() { return api.get('wa.g_mkt').then(function (d) { mkt = d; drawMkt(); }).catch(function () { }); }
-  function loadPend() { return api.get('wa.g_botpending').then(function (d) { if (!pfirst && d && d.can) { pfirst = true; if (d.total) { popen = true; mopen = false; open = false; } } pend = d; drawPend(); }).catch(function () { }); }
+  function loadPend() { return api.get('wa.g_botpending').then(function (d) { if (!pfirst && d && d.can) { pfirst = true; /* owner 21 Nov: compact - the list stays closed, the chip shows the number */ } pend = d; drawPend(); }).catch(function () { }); }
   function load() { return api.get('wa.g_botlearn').then(function (d) { data = d; draw(); }).catch(function () { }); }
   // 🧭 one small row of chips instead of four tall strips: tap a chip to open its details below (one at a time, scrolls inside); closed = just the numbers
   var chipBar = document.createElement('div'); chipBar.id = 'blChips'; host.parentNode.insertBefore(chipBar, host);
