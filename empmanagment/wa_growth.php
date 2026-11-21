@@ -1233,7 +1233,8 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
                 $items[] = ['id' => (int)$r['id'], 'customer' => (string)$r['customer'], 'bot' => (string)$r['sugg'], 'better' => $sent, 'reason' => $reason, 'by' => $names[(int)$r['emp_id']] ?? '', 'at' => (string)$r['created_at'], 'pending_tpl' => strpos($sent, '[TEMPLATE —') === 0];
             }
             $ap = (int)$pdo->query("SELECT COUNT(*) FROM wa_learn WHERE kind = 'botbad' AND status = 'done' AND created_at >= '" . date('Y-m-d 00:00:00') . "'")->fetchColumn();
-            json_response(['items' => $items, 'applied_today' => $ap, 'can' => $adm]);
+            $done = []; foreach ($pdo->query("SELECT customer, sugg, sent, emp_id, created_at FROM wa_learn WHERE kind = 'botbad' AND status = 'done' ORDER BY id DESC LIMIT 15")->fetchAll() as $r) { $sent = trim(preg_replace('/\n\[reason: [^\]]*\]\s*$/u', '', (string)$r['sent'])); $done[] = ['customer' => mb_substr((string)$r['customer'], 0, 140), 'bot' => mb_substr((string)$r['sugg'], 0, 160), 'better' => mb_substr($sent, 0, 200), 'by' => $names[(int)$r['emp_id']] ?? '', 'at' => (string)$r['created_at']]; }
+            json_response(['items' => $items, 'applied_today' => $ap, 'applied' => $done, 'can' => $adm]);
         }
         case 'wa.g_botlearn_apply': {   // apply one learned answer to the LIVE guidebook now (admin): {id, text?} · {id, ignore: 1} · {all: 1}
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (!$adm) json_response(['error' => 'Only the owner / an admin can change the guidebook.'], 403);
