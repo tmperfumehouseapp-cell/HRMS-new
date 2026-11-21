@@ -372,6 +372,9 @@ function fb_route(PDO $pdo, string $action): void
         $pdo->prepare("UPDATE fb_orders SET reward_state = 'sent', reward_order = CASE WHEN ? <> '' THEN ? ELSE reward_order END WHERE id = ?")->execute([$ro, $ro, (int)$r['id']]);
         fb_log($pdo, $order, 'Reward marked as sent' . ($ro !== '' ? ' · order ' . $ro : ''), $by); json_response(['ok' => true]);
     }
+    if ($action === 'fb.thanks_text') {      // the thank-you with name / order / links filled in — it goes into the chat box, NOT sent
+        json_response(['ok' => true, 'text' => fb_fill($pdo, trim((string)($in['text'] ?? '')), $r)]);
+    }
     if ($action === 'fb.send_thanks') {      // 💛 a thank-you after the screenshot: typed, one tap
         $text = trim((string)($in['text'] ?? '')); if ($text === '') json_response(['error' => 'Write the thank-you first.'], 422);
         [$ok, $why] = fb_typed($pdo, $r, fb_fill($pdo, $text, $r), (int)($auth['employee_id'] ?? 0), 'emp'); if (!$ok) json_response(['error' => $why], 422);

@@ -124,7 +124,15 @@
   const ACTS = { now: () => send('fb.send_now'), fu: () => send('fb.followup'), call: () => callDone(), links: () => manageLinks(), pf: () => pickProof(), rw: () => reward(), rws: () => rewardSent(), cx: () => complaint(), sk: () => leaveOut(), del: () => delTest(), chat: () => openPop() };
   function wire(root, d) {
     root.querySelectorAll('[data-act]').forEach((b) => { const f = ACTS[b.dataset.act]; if (f) b.onclick = f; });
-    root.querySelectorAll('[data-th]').forEach((b) => { b.onclick = async () => { const t = CFG.thanks[+b.dataset.th]; if (!t || !confirm('Send "' + t.name + '" to ' + (DET.row.customer || DET.row.phone) + '?')) return; b.disabled = true; try { await api.post('fb.send_thanks', { order: sel, text: t.msg }); say('Thank-you sent'); load(); } catch (e) { say(e.message, true); b.disabled = false; } }; });
+    root.querySelectorAll('[data-th]').forEach((b) => { b.onclick = async () => {      // the message goes into the chat box (not sent): read it, change it, press Send
+      const t = CFG.thanks[+b.dataset.th]; if (!t) return; b.disabled = true;
+      try {
+        const r = await api.post('fb.thanks_text', { order: sel, text: t.msg });
+        if (!popOpen) openPop();
+        let n = 0; const put = () => { const fr = document.getElementById('chatFr'); const ta = fr && fr.contentDocument && fr.contentDocument.getElementById('wxTx');
+          if (ta) { ta.value = r.text; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); say('Message is in the chat box — change it if you like, then Send'); }
+          else if (++n < 40) setTimeout(put, 300); else say('Open the chat first, then tap again.', true); }; put();
+      } catch (e) { say(e.message, true); } b.disabled = false; }; });
     root.querySelectorAll('[data-lk]').forEach((b) => { b.onclick = () => askLink(+b.dataset.lk); });
     const box = root.querySelector('.phs'); if (!d.proofs.length || !box) return; box.innerHTML = '';
     d.proofs.forEach((p) => { imgUrl(p.id).then((u) => { const i = document.createElement('img'); i.src = u; i.title = (p.src === 'whatsapp' ? 'Sent by the customer on WhatsApp' : 'Added by hand') + ' · ' + dt(p.created_at); i.onclick = () => { const w = window.open('', '_blank'); if (w) w.document.write('<img src="' + u + '" style="max-width:100%">'); };
