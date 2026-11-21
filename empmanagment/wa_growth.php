@@ -629,7 +629,10 @@ function wag_price_context(PDO $pdo, string $phone, array $msgs): string
     $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return '';
     $txt = ''; $cust = ''; foreach (array_slice($msgs, -10) as $m) { $t = mb_strtolower((string)($m['text'] ?? '')); $txt .= ' ' . $t; if (($m['who'] ?? '') === 'customer') $cust .= ' ' . $t; }
     $qty = 0; $size = 0;
-    if (preg_match_all('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/u', $txt, $mm, PREG_SET_ORDER)) { $l = end($mm); $qty = (int)$l[1]; $size = (int)$l[2]; }
+    // 🧮 what the CUSTOMER asked for wins over every number the bot itself wrote earlier (a customer said "20 pice" + "20 ml" and the bot kept quoting its own earlier "8 x 20 ml"): the customer's x-pattern, else his "N pieces / pcs / bottles" with his ml size
+    if (preg_match_all('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/u', $cust, $cm0, PREG_SET_ORDER)) { $l = end($cm0); $qty = (int)$l[1]; $size = (int)$l[2]; }
+    elseif (preg_match_all('/(?<![\d.])(\d{1,2})\s*(?:pice|piece|pieces|pcs|pc|bottles?|nang|nag)\b/u', $cust, $cp) && preg_match_all('/\b(10|20|30|50|100)\s*ml\b/u', $cust, $cs)) { $qty = (int)end($cp[1]); $size = (int)end($cs[1]); }
+    elseif (preg_match_all('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/u', $txt, $mm, PREG_SET_ORDER)) { $l = end($mm); $qty = (int)$l[1]; $size = (int)$l[2]; }
     else { if (preg_match_all('/\b(10|20|30|50|100)\s*ml\b/u', $txt, $sm)) $size = (int)end($sm[1]); if ($size && preg_match_all('/(?<![\d.])(\d{1,2})(?![\d.])(?!\s*ml)/u', $cust, $qm)) { $qty = (int)end($qm[1]); } }
     if (!$qty && $size && preg_match('/\bsingle\b|\bek (hi )?perfume\b|\b1 perfume\b|\bone perfume\b|combo nahi|no combo|don.?t want (a )?combo|alag se|\bsirf ek\b/u', $cust)) $qty = 1;   // "I do not want a combo, 100 ml price" = one bottle at the chart's single-bottle row
     if ($qty < 1 || $qty > 30 || $size < 10) return ''; $total = $qty * $size; $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $total) { $row = $r; break; } if (!$row || empty($row['p'])) return '';
