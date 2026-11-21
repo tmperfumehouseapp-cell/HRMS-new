@@ -102,6 +102,43 @@ function wag_cfg(PDO $pdo): array
             $gb = $clean($gb); $rule = 'Never suggest or mention TM Originals / OG / "build your own original combo" (own pricing). Offer only our normal perfumes and the price chart; Originals only if a person suggests them by hand.';
             $gb['dont'] = array_values(array_merge([$rule], array_slice((array)($gb['dont'] ?? []), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): the guidebook gets the rule "price objections: never let the customer go" — maximum orders; the code-made step-downs hold him, the AI never invents a price
+    try { if (setting_get($pdo, 'wag_rules10', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules10', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rule = 'PRICE OBJECTIONS: whatever happens, never let the customer go (the owner wants the MAXIMUM number of orders). When he says "paise kam karo / varna nahi chahiye / mehanga", do not stop at "price hi rahegi" and do not say goodbye: show the value of the bigger size from the chart, then step down ONE level at a time only after each new refusal, using only the exact numbers the system gives you (we may go well below the lowest chart price at the very end, but never two levels in one message and never a number you were not given). After the last level, thank him warmly and keep the door open. Never invent a price yourself.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $gb['owner_corrections'] = array_values(array_merge([['customer' => 'Paise kam kro toh lunga, varna nhi chahiye (5 x 20 ml, chart low Rs 1590)', 'better' => 'Sir, 5 x 50 ml sirf Rs 2750 mein (250 ml, 2.5 guna perfume, per ml sabse sasta) - kaunsa theek rahega? [if he still refuses: the system gives the next exact price, e.g. "aapke liye Rs 1550 kar deta hoon, order confirm karein?"]']], (array)($gb['owner_corrections'] ?? [])));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): the deep step is NOT routine — only when the customer holds the price very firmly
+    try { if (setting_get($pdo, 'wag_rules11', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules11', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rule = 'DEEP PRICE STEP-DOWN (about 12% below the lowest chart price) is NOT for every customer and never the first move: use it only when a customer clings to the price very firmly - he has refused the earlier steps one after the other and is about to leave. A customer who accepts the chart price, or only asks once, gets no extra reduction. Always follow the exact step the system gives you; never offer a deeper step by yourself.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $gb['dont'] = array_values(array_merge(['Never give the deepest price step (12% below the lowest chart price) to a customer who has not held the price firmly through the earlier steps.'], array_slice((array)($gb['dont'] ?? []), 0, 20)));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): price talk is a chance for the add-on; negotiate to the end (even above the Rs 2,800 ticket) only while the customer keeps discussing price
+    try { if (setting_get($pdo, 'wag_rules12', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules12', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rule = 'PRICE TALK AND THE ADD-ON: when a customer pushes on price, before (or together with) a lower price offer him the ADD-ON instead: "Sir price me kam nahi ho sakta, lekin ek extra 20 ml sirf Rs X mein add kar sakte hain" (use only the exact add-on price the system gives you). Negotiate to the very end - even an order already above the Rs 2,800 ticket - but ONLY while the customer keeps discussing price; if he does not push on price, no reduction: go for the add-on and the order.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): a customer who asks for 1-2 bottles is shown 3 / 4 / 5 — we sell MORE perfumes
+    try { if (setting_get($pdo, 'wag_rules13', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules13', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $rule = 'SELL MORE PERFUMES: when a customer asks the price of only 1 or 2 bottles ("how much for 2 50ml"), answer his price AND in the same message show the 3, 4 and 5 bottle combos of the same size with the exact chart prices ("Sir 3 lijiye, 4 lijiye ya 5 - 5 x 50 ml Better Savings"), then ask which one he prefers. Never just sell the 1-2 he asked for and never answer with a price that is not on our chart.';
+            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $gb['owner_corrections'] = array_values(array_merge([['customer' => 'How much for 2 50ml', 'better' => 'Sir 2 x 50 ml Rs [chart price] hai; lekin 3 x 50 ml Rs [chart], 4 x 50 ml Rs [chart], 5 x 50 ml Rs [chart] (Better Savings) - kaunsa lena pasand karenge, 3, 4 ya 5?']], (array)($gb['owner_corrections'] ?? [])));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): the guidebook must not carry our internal ticket target (Rs 2,700-2,800) — the bot told a customer "minimum Rs 2,800 tak hi de sakte hain" next to the real price Rs 3,200
+    try { if (setting_get($pdo, 'wag_rules14', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules14', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $raw = (string)$g['body']; $new = preg_replace('/(Rs\.?\s*)?2[,.]?[78]00\s*[-–]\s*(Rs\.?\s*)?2[,.]?[78]00|\b2[,.]?[78]00\s*(ticket|target)|(ticket|target)[^"\\]{0,12}Rs\.?\s*2[,.]?[78]00/iu', 'a big ticket', $raw);
+            $new = (string)$new; $new = preg_replace('/(?<![\d,.])(Rs\.?\s*)?2,?[78]00(?![\d,])\s*(ticket)/iu', 'a big ticket', $new);
+            $gb = json_decode($new, true); if (is_array($gb)) { $gb['dont'] = array_values(array_merge(['Never tell the customer any internal target, minimum, floor or ceiling price. Quote ONLY the exact chart price given to you; a lower price appears only when the system gives it after the customer objects.'], array_slice((array)($gb['dont'] ?? []), 0, 20))); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    // once (owner, 21 Nov): never confirm a perfume that is not in the catalogue
+    try { if (setting_get($pdo, 'wag_rules15', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules15', '1'); $g = lib_guide_row($pdo, 'live');
+        if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
+            $gb['dont'] = array_values(array_merge(['Never say a perfume is "available" / "in stock" unless its exact name is in our catalogue list. For a name you cannot find, say "Sir, ye naam ek baar confirm karke batata hoon", ask size and quantity, or offer two similar perfumes that are in the list; a person confirms the rest.'], array_slice((array)($gb['dont'] ?? []), 0, 20)));
+            $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov: "as fast as possible"): the bot starts 2 s after the message (the answer itself takes the AI 3-5 s)
     try { if (setting_get($pdo, 'wag_bot2', '') !== '1') { setting_set($pdo, 'wag_bot2', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 2; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
@@ -531,20 +568,38 @@ function wag_read(array $r, bool $waiting, bool $win, bool $hot, bool $cx, int $
     return ['k' => 'ask', 'u' => '💬 New message' . $w, 'd' => 'Reply now'];
 }
 /** 🧩 ADD-ON MODULE (owner, 21 Nov): when the customer gave the address (the order is final) and BEFORE the payment link, the bot offers ONE add-on bottle (same size) at a fixed discount, or TWO. The price is made by CODE from the agreed order, never by the AI or the guidebook: normal order = 25% off for one / 32% off for two bottles; an order already at the 2,800+ ticket = 15% / 20%. Switch: wag_addon_on = 0. The salesperson earns a fixed 6% on the add-on amount (recorded in wag_addon; payroll hookup is checked with the owner). */
+/** Add-on use before the link (owner, 21 Nov: "check whether people add the add-on before making the link"): per day and person — cart_open (Cart pressed while the offer was still possible), sent (he pressed "send the add-on offer first"), skipped (he made the link without it). */
+function wag_addon_count(PDO $pdo, int $emp, string $what): void
+{
+    try { $k = 'adc:' . date('md'); $j = json_decode((string)setting_get($pdo, $k, '{}'), true); if (!is_array($j)) $j = []; $j[$emp][$what] = (int)($j[$emp][$what] ?? 0) + 1; setting_set($pdo, $k, json_encode($j)); } catch (Throwable $e) { }
+}
 function wag_addon_ensure(PDO $pdo): void { static $ok = null; if ($ok) return; $ok = true; try { $pdo->exec("CREATE TABLE IF NOT EXISTS wag_addon (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, at DATETIME NOT NULL, status VARCHAR(10) NOT NULL, n TINYINT NOT NULL DEFAULT 0, size_ml INT NOT NULL DEFAULT 0, total_before INT NOT NULL DEFAULT 0, amount INT NOT NULL DEFAULT 0, p1 INT NOT NULL DEFAULT 0, p2 INT NOT NULL DEFAULT 0, KEY k_ph (phone), KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { } }
 /** [qty, size_ml, total, p1, p2] from the price the bot / person quoted ("5 x 20 ml ... Rs 1760"); null when it is not clear (then no offer: never guess a price). */
 function wag_addon_calc(PDO $pdo, string $key): ?array
 {
     try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('bot','emp') AND mtype = 'text' ORDER BY id DESC LIMIT 12"); $q->execute([$key]);
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) { $t = str_replace(['×', '✕'], 'x', (string)$t);
-            if (!preg_match('/(\d{1,2})\s*x\s*(\d{2,3})\s*ml[^\n]{0,90}?(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $t, $mm)) continue;
+            if (!preg_match('/(\d{1,2})\s*x\s*(\d{2,3})\s*ml[^\n]{0,90}?(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $t, $mm)) {
+                // a NEWER message with a price in it that this reader cannot understand ("Make 12 for 2500") = the deal changed after the quote it knows: no offer at all (never an offer on an old price)
+                if (preg_match('/(?:rs\.?|₹|\bfor\b|=|\btotal\b)\s*([\d,]{3,6})\b/iu', $t, $pm) && (int)str_replace(',', '', $pm[1]) >= 500 && (int)str_replace(',', '', $pm[1]) <= 20000) return null;
+                continue; }
             $qty = (int)$mm[1]; $ml = (int)$mm[2]; $tot = (int)str_replace(',', '', $mm[3]); if ($qty < 2 || $qty > 20 || $tot < 500 || $tot > 20000 || !in_array($ml, [20, 30, 50, 100], true)) continue;
+            try { $__cq = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 40"); $__cq->execute([$key]); foreach ($__cq->fetchAll(PDO::FETCH_COLUMN) as $__cb) { if (preg_match('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/iu', (string)$__cb, $__cm)) { if ((int)$__cm[1] !== $qty || (int)$__cm[2] !== $ml) return null; break; } } } catch (Throwable $e) { }   // the customer's own latest "N x S ml" differs from the quote this reader found (he chose 10 x 20, the quote was 5 x 20): never an offer on a stale quote
             $per = $tot / $qty; $hi = $tot >= 2800; $d1 = $hi ? 0.15 : 0.25; $d2 = $hi ? 0.20 : 0.32; $am = $ml;
             if ($tot < 1500 && $ml < 50) {   // a small order: the add-on is a 50 ml bottle (a bigger lift of the ticket), priced from OUR chart at the 6.5% start level
                 try { $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (is_array($j) && !empty($j['cols']) && !empty($j['rows'])) { $ix = 1; foreach (array_values(array_map('floatval', (array)$j['cols'])) as $i2 => $cv) if (abs($cv - 6.5) < 0.01) $ix = $i2; foreach ((array)$j['rows'] as $r2) if ((int)($r2['ml'] ?? 0) === 50 && (int)($r2['p'][$ix] ?? 0) > 0) { $per = (float)$r2['p'][$ix]; $am = 50; break; } } } catch (Throwable $e) { }
             }
             $p1 = (int)(round($per * (1 - $d1) / 10) * 10); $p2 = (int)(round(2 * $per * (1 - $d2) / 10) * 10); if ($p1 < 50 || $p2 <= $p1) continue;
             return [$qty, $ml, $tot, $p1, $p2, $am]; }
+    } catch (Throwable $e) { }
+    // no quote sentence in the chat (19 chats had "noprice"): the customer's own "N x S ml" and OUR chart price at the 6.5% start level (never when his own price is disputed above)
+    try { $__cq = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 40"); $__cq->execute([$key]); $qty = 0; $ml = 0;
+        foreach ($__cq->fetchAll(PDO::FETCH_COLUMN) as $__cb) { if (preg_match('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/iu', (string)$__cb, $__cm)) { $qty = (int)$__cm[1]; $ml = (int)$__cm[2]; break; } }
+        if ($qty >= 2 && $qty <= 20 && in_array($ml, [20, 30, 50, 100], true)) { $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true);
+            if (is_array($j) && !empty($j['cols']) && !empty($j['rows'])) { $ix = 1; foreach (array_values(array_map('floatval', (array)$j['cols'])) as $i2 => $cv) if (abs($cv - 6.5) < 0.01) $ix = $i2; $tot = 0; foreach ((array)$j['rows'] as $r2) if ((int)($r2['ml'] ?? 0) === $qty * $ml) { $tot = (int)($r2['p'][$ix] ?? 0); break; }
+                if ($tot >= 500 && $tot <= 20000) { $per = $tot / $qty; $hi = $tot >= 2800; $d1 = $hi ? 0.15 : 0.25; $d2 = $hi ? 0.20 : 0.32; $am = $ml;
+                    if ($tot < 1500 && $ml < 50) foreach ((array)$j['rows'] as $r3) if ((int)($r3['ml'] ?? 0) === 50 && (int)($r3['p'][$ix] ?? 0) > 0) { $per = (float)$r3['p'][$ix]; $am = 50; break; }
+                    $p1 = (int)(round($per * (1 - $d1) / 10) * 10); $p2 = (int)(round(2 * $per * (1 - $d2) / 10) * 10); if ($p1 >= 50 && $p2 > $p1) return [$qty, $ml, $tot, $p1, $p2, $am]; } } }
     } catch (Throwable $e) { }
     return null;
 }
@@ -554,7 +609,8 @@ function wag_addon_offer(PDO $pdo, array $c, string $key): bool
     try { if ((string)setting_get($pdo, 'wag_addon_on', '1') === '0') return false; if (wag_meta_get($pdo, 'addon:' . $key, '') !== '') return false;   // once per customer
         $__cl = $pdo->prepare("INSERT IGNORE INTO wq_meta (k, v) VALUES (?, ?)"); $__cl->execute(['addon:' . $key, 'claim|' . time()]); if ($__cl->rowCount() !== 1) return false;   // atomic claim: two bot ticks at once must not send the offer twice
         $x = wag_addon_calc($pdo, $key); if (!$x) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|noprice'); return false; }
-        $__ci = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 3"); $__ci->execute([$key]); if (preg_match('/\b(not|nahi|nhi|galat|wrong|change|badal|cancel)\b/iu', implode(' ', $__ci->fetchAll(PDO::FETCH_COLUMN)))) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|disputed'); return false; }   // the customer disputes the quoted order ("this is my cart, not 8"): no offer on a stale price [$qty, $mlo, $tot, $p1, $p2, $ml] = $x;   // $mlo = the size he orders, $ml = the size of the add-on bottle
+        $__ci = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 3"); $__ci->execute([$key]); if (preg_match('/\b(not|nahi|nhi|galat|wrong|change|badal|cancel)\b/iu', implode(' ', $__ci->fetchAll(PDO::FETCH_COLUMN)))) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|disputed'); return false; }   // the customer disputes the quoted order ("this is my cart, not 8"): no offer on a stale price
+        [$qty, $mlo, $tot, $p1, $p2, $ml] = $x;   // $mlo = the size he orders, $ml = the size of the add-on bottle (this assignment sat inside the comment above for a while: the offer went out with empty numbers)
         $li = (int)$pdo->query("SELECT MAX(id) FROM wa_messages WHERE phone = '" . addslashes($key) . "' AND dir = 'in'")->fetchColumn();
         $txt = 'Sir, order final karne se pehle ek special offer 🎁 Aapke ' . $qty . ' x ' . $mlo . ' ml ke saath ek aur ' . $ml . ' ml perfume sirf Rs ' . $p1 . ' mein, ya do aur sirf Rs ' . $p2 . ' mein add kar sakte hain. Add karun?';
         [$ok] = wa_send_buttons($pdo, $c, $txt, ['➕ 1 add Rs ' . $p1, '➕➕ 2 add Rs ' . $p2, '❌ Nahi'], 'bot', 0); if (!$ok) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|sendfail'); return false; }
@@ -613,6 +669,23 @@ function wag_order_done_check(PDO $pdo, array $c, string $key): void
         $ad = wag_meta_get($pdo, 'addon:' . $key, ''); if (strpos($ad, 'offered|') === 0) return; if ($ad === '' && wag_addon_offer($pdo, $c, $key)) return;   // the add-on is offered first (once)
         wag_order_finalize($pdo, $c, $key);
     } catch (Throwable $e) { }
+}
+/** 🗑 NOT RELATED TO US (owner, 21 Nov: "a business-type message nothing will come of - take it out of Requests, it must not count as a query"): an unassigned chat nobody of ours has written to, whose last message is another business's auto-reply ("Thank you for contacting Audi Delhi West!"), a B2B / supplier / vendor / marketing / job offer, is closed quietly, removed from the query ledger and tagged in the chat history. Complaints are NOT touched here (the complaint sweep raises a ticket for them). */
+function wag_unrelated_sweep(PDO $pdo, int $max = 8): int
+{
+    $n = 0; $now = time();
+    try { $st = $pdo->prepare("SELECT c.phone, c.name FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND (c.assigned_emp IS NULL OR c.assigned_emp = 0) AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) ORDER BY c.last_in_at DESC LIMIT 60"); $st->execute([date('Y-m-d H:i:s', $now - 3 * 3600), date('Y-m-d H:i:s', $now - 20)]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $c) { if ($n >= $max) break; $key = (string)$c['phone'];
+            $q = $pdo->prepare("SELECT body, mtype FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $m = $q->fetch(PDO::FETCH_ASSOC); if (!$m || (string)$m['mtype'] !== 'text') continue; $t = mb_strtolower(trim((string)$m['body'])); $why = '';
+            if (preg_match('/(thank you|thanks) for (contacting|reaching|messaging|connecting)\b/u', $t) && !preg_match('/tm ?perfume/u', $t) && preg_match('/(let us know|how (we|can)|get back|respond|will (reply|contact|connect)|business hours|please wait|assist you)/u', $t)) $why = 'another business\'s automatic reply';
+            elseif (preg_match('/(b2b|b to b|do you trade|trade in\b|supplier|vendor|seo\b|digital marketing|website (design|development)|social media (marketing|management)|lead generation|\bloan\b|insurance|hiring|vacancy|job opening|internship|collaboration|influencer|sponsor|investment)/u', $t) && !preg_match('/(perfume|order|price|combo|attar|buy)/u', $t)) $why = 'a business / marketing / job message';
+            if ($why === '') continue;
+            $o = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp', 'bot')"); $o->execute([$key]); if ((int)$o->fetchColumn() > 0) continue;   // somebody of ours already talked to him: not touched
+            $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND (assigned_emp IS NULL OR assigned_emp = 0)")->execute([date('Y-m-d H:i:s'), $key]);
+            if (function_exists('wag_q_forget')) wag_q_forget($pdo, $key, 2);   // not counted as a query
+            wa_event($pdo, $key, '🗑 Not related to our business (' . $why . '): removed from Requests and not counted as a query'); $n++; }
+    } catch (Throwable $e) { }
+    return $n;
 }
 /** Customers who wrote a complaint (leak, wrong item, not delivered, quality, refund) and nobody answered: a complaint ticket is raised for them at once (the Complaint team owns it), they are told the number. */
 function wag_complaint_sweep(PDO $pdo, int $max = 6): int
@@ -687,25 +760,69 @@ function wag_stuck_escalate(PDO $pdo, array $c, string $key): void
 /** 🌡 The open-market timing tunes itself (owner, 21 Nov): the minutes a hot chat waits before it goes back to OPEN (base) and while its holder is busy (busy) follow the load. MANY people working = chats are picked up fast, so the rule is SHORTER; a quiet time (few people writing) = LONGER again. Active people = who wrote to a customer in the last 10 minutes; queue = customers of the last 3 hours waiting 2+ minutes for an answer. Re-computed once a minute; base 4-10, busy 6-14. [base, busy] */
 function is_list_arr(array $a): bool { return $a === [] || array_keys($a) === range(0, count($a) - 1); }
 /** The owner's definition of a query (21 Nov): NOT campaign, NOT community — the same numbers as the sales strip ("orders / queries"). Returns [emp => [queries, orders]] for the days list of wq_period. */
-function wag_real_queries(PDO $pdo, int $days): array
+function wag_real_queries(PDO $pdo, int $days, bool $withCampaign = false): array
 {
     $out = [];
     try { if ((!function_exists('wq_period') || !function_exists('wq_dt')) && is_file(__DIR__ . '/wq.php')) { try { require_once __DIR__ . '/wq.php'; } catch (Throwable $e) { } }   // the market screen route does not load the query ledger by itself (the banner showed 0 while the gate showed 4)
         if (!function_exists('wq_period') || !function_exists('wq_dt')) return $out; [$f, $t] = wq_period($pdo, $days);
-        $q = $pdo->prepare("SELECT q.emp_id, COUNT(*) n, SUM(CASE WHEN COALESCE(s.orders, 0) > 0 THEN 1 ELSE 0 END) o FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community') GROUP BY q.emp_id");
+        $q = $pdo->prepare("SELECT q.emp_id, COUNT(*) n, SUM(CASE WHEN COALESCE(s.orders, 0) > 0 THEN 1 ELSE 0 END) o FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN (" . ($withCampaign ? "'community'" : "'campaign', 'community'") . ") GROUP BY q.emp_id");
         $q->execute([wq_dt($f), wq_dt($t)]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(int)$r['emp_id']] = [(int)$r['n'], (int)$r['o']];
     } catch (Throwable $e) { }
     return $out;
+}
+/** ORDER SETTLED (owner, 21 Nov: "once the order is done NO chat may be transferred unless we sent him a campaign / another message again and he answered it, or he put a new inquiry"): the customer has a Shopify order of the last 14 days (or the order is marked done), and since that order NO campaign / recovery / flow message of ours was answered by him, and his last words are no new purchase wish. Such a chat stays exactly where it is. */
+function wag_order_settled(PDO $pdo, string $phone): bool
+{
+    try { $k10 = substr(preg_replace('/\D/', '', $phone), -10); $ot = 0;
+        if (strlen($k10) === 10) { $q = $pdo->prepare("SELECT MAX(created_at) FROM shop_orders WHERE phone LIKE ? AND created_at >= ?"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 14 * 86400)]); $t = $q->fetchColumn(); if ($t) $ot = (int)strtotime((string)$t); }
+        if ($ot === 0 && function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) $ot = time() - 2 * 86400;   // marked done: counted from two days ago at the latest
+        if ($ot === 0) return false;
+        $q = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('campaign', 'recover', 'flow') AND ts > ?"); $q->execute([$phone, date('Y-m-d H:i:s', $ot)]); $cm = $q->fetchColumn();
+        if ($cm) { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? LIMIT 1"); $q->execute([$phone, (string)$cm]); if ($q->fetchColumn()) return false; }   // he answered a new campaign message of ours: a new conversation
+        $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = mb_strtolower((string)$q->fetchColumn());
+        return !preg_match('/(new order|another order|order karna|order karo|order dena|order chahiye|\bbuy\b|lena hai|lunga|price|rate|combo|add on|add-on|chahiye|offer|discount|\d+\s?ml)/iu', $lastIn);
+    } catch (Throwable $e) { return false; }
+}
+/** AFTER DELIVERY (owner, 21 Nov: "the order was delivered, the customer wrote 'received, the fragrance is a little different' and the system took the chat over — stop the take-over after delivery"): a customer with a shipped / delivered Shopify order of the last 14 days who writes something that is not a new purchase is an AFTER-SALES chat — it stays with the person who has it (or the complaint team); it is never moved to OPEN, never "stuck", never counted as a waiting hot customer. */
+function wag_after_delivery(PDO $pdo, string $phone, string $lastIn = ''): bool
+{
+    try { $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) !== 10) return false;
+        $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? AND fulfillment_status IN ('fulfilled', 'partial', 'delivered') LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 14 * 86400)]); if (!$q->fetchColumn()) return false;
+        if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
+        return !preg_match('/(new order|another order|order karna|order karo|order dena|order chahiye|\bbuy\b|lena hai|lunga|price|rate|combo|add on|add-on|chahiye|offer|discount|\d+\s?ml)/iu', mb_strtolower($lastIn));   // a new purchase wish keeps it a sales chat
+    } catch (Throwable $e) { return false; }
 }
 /** The customer already ORDERED (a Shopify order of the same phone in the last 36 hours) or his last words are only a thanks / ok / emoji: such a chat is not a "hot customer waiting for an answer" (owner, 21 Nov: the order had come, the chat stayed hot, and 70% of the salespeople were blocked from taking queries because of it). */
 function wag_hot_is_done(PDO $pdo, string $phone, string $lastIn = ''): bool
 {
     try { if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) return true;
+        if (wag_after_delivery($pdo, $phone, $lastIn)) return true;
+        if (wag_order_settled($pdo, $phone)) return true;
         $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) === 10) { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 36 * 3600)]); if ($q->fetchColumn()) return true; }
         if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
-        $t = trim(mb_strtolower($lastIn)); if ($t !== '' && mb_strlen($t) <= 24 && preg_match('/^[\s\p{P}\p{S}]*(ok|okay|okk|thanks|thank you|thankyou|thik hai|theek hai|ठीक है|done|haan|han|ji|yes|👍|🙏|😊|🙂|👌|✅)?[\s\p{P}\p{S}]*$/u', $t)) return true;
+        $t = trim(mb_strtolower($lastIn));
+        if ($t !== '' && (preg_match('/(order|ordr|payment|pay|paid|advance).{0,24}(already|kar diy|kar diya|kar liya|kar di\b|kar chuka|ho gaya|ho gya|hogaya|done|complete|place|kiya|kia)/u', $t) || preg_match('/(already|pehle se|maine).{0,18}(order|payment|paid)/u', $t))) return true;   // "Order toh already kar diy": he says he has ordered (owner, 21 Nov: the chat went to OPEN after 2 minutes although the customer had ordered)
+        if ($t !== '' && mb_strlen($t) <= 24 && preg_match('/^[\s\p{P}\p{S}]*(ok|okay|okk|thanks|thank you|thankyou|thik hai|theek hai|ठीक है|done|haan|han|ji|yes|👍|🙏|😊|🙂|👌|✅)?[\s\p{P}\p{S}]*$/u', $t)) return true;
     } catch (Throwable $e) { }
     return false;
+}
+/** 🎯 FAIR SHARE of new queries (owner, 21 Nov: "queries come in and are taken in seconds — some people take many; the best ratio may always see them, the others equal: whoever took a query recently does not see the NEXT new queries for a short time, the others who did not take see them first; if nobody takes, it goes to the other section for everybody"). A NEW query (arrived less than wag_fair_window seconds ago, 45 by default) is hidden from a person who is NOT a star (best conversion) and who took queries lately: he rests 40 s per query taken in the last 30 minutes (max 4 minutes). After the window every query is visible to everybody. Switch: wag_fair_on = 0. */
+function wag_fair_state(PDO $pdo, int $emp): array
+{
+    static $c = []; $ck = $emp . ':' . (int)(time() / 10); if (isset($c[$ck])) return $c[$ck];
+    $r = ['hidden' => false, 'left' => 0, 'star' => false, 'picks' => 0, 'min' => 0, 'window' => 45];
+    try { if ($emp <= 0 || (string)setting_get($pdo, 'wag_fair_on', '1') === '0') return $c[$ck] = $r; $r['window'] = max(10, min(180, (int)setting_get($pdo, 'wag_fair_window', '45')));
+        static $pk = null, $pkAt = 0, $pres = [], $stars = null, $sAt = 0;
+        if ($pk === null || time() - $pkAt > 10) { $pkAt = time(); $pk = []; $q = $pdo->query("SELECT emp_id, COUNT(DISTINCT phone) FROM wa_mkt WHERE kind = 'taken' AND emp_id > 0 AND at >= '" . date('Y-m-d 00:00:00') . "' GROUP BY emp_id"); foreach ($q->fetchAll(PDO::FETCH_NUM) as $x) $pk[(int)$x[0]] = (int)$x[1];
+            $pres = []; $q = $pdo->query("SELECT DISTINCT emp_id FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date('Y-m-d H:i:s', time() - 1800) . "'"); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $e2) $pres[(int)$e2] = 1; }   // people who are working: wrote to a customer in the last 30 minutes
+        if ($stars === null || time() - $sAt > 120) { $sAt = time(); $stars = []; $d7 = function_exists('wag_real_queries') ? wag_real_queries($pdo, 7, true) : []; $tq = 0; $to = 0; foreach ($d7 as $v) { $tq += $v[0]; $to += $v[1]; } $avg = $tq >= 40 && $to > 0 ? $to / $tq : 0; if ($avg > 0) foreach ($d7 as $e2 => $v) if ($v[0] >= 8 && $v[1] >= 1 && $v[1] / $v[0] >= 1.1 * $avg) $stars[(int)$e2] = 1; }   // the ratio counts queries AND campaign chats (community not), and "best" is only 10% above the team (not extraordinary)
+        $r['star'] = isset($stars[$emp]); $mine = (int)($pk[$emp] ?? 0); $r['picks'] = $mine;
+        $min = null; $sum = 0; $cnt = 0; foreach ($pres as $e2 => $_) { $v = (int)($pk[$e2] ?? 0); $sum += $v; $cnt++; if ($min === null || $v < $min) $min = $v; } $min = $min ?? 0; $r['min'] = $min;   // all working people count, the best ratio too
+        // 🎯 EQUAL SHARE OVER THE WHOLE DAY (owner, 21 Nov: "somebody with a good ratio took 5-6 queries and the others never get a chance"): the count is the queries taken today. Everybody may take a new query during its first 45 s only while his count is not above the lowest count of the working people; the best-ratio people get a small SPARE on top (wag_fair_star_slack, 3 queries or 15% of the average, whichever is more) - never more, so a star cannot run away. Above that he waits for the window to end (then everybody sees it). As the others take, the lowest count rises and he is allowed again.
+        $mean = $cnt > 0 ? $sum / $cnt : 0; $slack = $r['star'] ? max((int)setting_get($pdo, 'wag_fair_star_slack', '3'), (int)ceil(0.15 * $mean)) : 0; $r['slack'] = $slack;
+        if ($mine > $min + $slack) { $r['hidden'] = true; $r['left'] = $r['window']; }
+    } catch (Throwable $e) { }
+    return $c[$ck] = $r;
 }
 function wag_open_tune(PDO $pdo): array
 {
@@ -740,7 +857,7 @@ function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
             if ($now - (int)strtotime($li) < $busyMins * 60 && wag_holder_busy($pdo, (int)$c['assigned_emp'])) continue;   // the holder is writing to other customers: more time
             $h = wag_meta_get($pdo, 'bothand:' . $key, ''); $handed = $h !== '' && strtotime($h) >= strtotime($li);
             if (empty($c['hot']) && !$handed) continue; if (!wag_is_sales_query($pdo, $c)) continue;   // only good queries (not complaints / after-sales) go to the open market; (a chat a person took over is checked too: it goes back to OPEN when the customer waits again and nobody answers)
-            $__ml = wag_meta_get($pdo, 'mklink:' . $key, ''); if ($__ml !== '' && strtotime($__ml) > $now - 480) continue;   // the holder is making the payment link: up to 8 minutes, the chat stays with him
+            $__ml = wag_meta_get($pdo, 'mklink:' . $key, ''); if ($__ml !== '' && strtotime($__ml) > $now - 3600) continue;   // the holder is making the payment link: up to 1 hour, the chat stays with him
             $mk = wag_meta_get($pdo, 'hotmiss:' . $key, ''); if ($mk !== '' && substr($mk, strrpos($mk, '|') + 1) === $li) continue;   // once per customer message
             if (function_exists('wq_ts') && wq_ts(wag_meta_get($pdo, 'typing:' . $key, '')) > $now - 90) continue;   // a person is typing the answer right now
             if (wag_hot_is_done($pdo, $key)) continue;   // he already ordered / only said thanks: not a lost hot chat
@@ -762,9 +879,11 @@ function wag_price_context(PDO $pdo, string $phone, array $msgs): string
 {
     $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return '';
     $txt = ''; $cust = ''; foreach (array_slice($msgs, -10) as $m) { $t = mb_strtolower((string)($m['text'] ?? '')); $txt .= ' ' . $t; if (($m['who'] ?? '') === 'customer') $cust .= ' ' . $t; }
+    $custAll = ''; foreach (array_slice($msgs, -40) as $m) if (($m['who'] ?? '') === 'customer') $custAll .= ' ' . mb_strtolower((string)($m['text'] ?? ''));   // the customer's OWN selection can be older than 10 messages (the ad: "10 x 20ml combo"), and his order-details form pushes it out: it still wins over our earlier quotes
     $qty = 0; $size = 0;
     // 🧮 what the CUSTOMER asked for wins over every number the bot itself wrote earlier (a customer said "20 pice" + "20 ml" and the bot kept quoting its own earlier "8 x 20 ml"): the customer's x-pattern, else his "N pieces / pcs / bottles" with his ml size
-    if (preg_match_all('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/u', $cust, $cm0, PREG_SET_ORDER)) { $l = end($cm0); $qty = (int)$l[1]; $size = (int)$l[2]; }
+    if (preg_match_all('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/u', $custAll, $cm0, PREG_SET_ORDER)) { $l = end($cm0); $qty = (int)$l[1]; $size = (int)$l[2]; }
+    elseif (preg_match_all('/(?<![\d.])(\d{1,2})\s*(?:x|×|\*)?\s*(10|20|30|50|100)\s*ml\b/u', $cust, $cn2, PREG_SET_ORDER) && (int)end($cn2)[1] >= 1 && (int)end($cn2)[1] <= 30) { $l = end($cn2); $qty = (int)$l[1]; $size = (int)$l[2]; }   // "how much for 2 50ml" (no x between the numbers): quantity 2, size 50
     elseif (preg_match_all('/(?<![\d.])(\d{1,2})\s*(?:pice|piece|pieces|pcs|pc|bottles?|nang|nag)\b/u', $cust, $cp) && preg_match_all('/\b(10|20|30|50|100)\s*ml\b/u', $cust, $cs)) { $qty = (int)end($cp[1]); $size = (int)end($cs[1]); }
     elseif (preg_match_all('/(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/u', $txt, $mm, PREG_SET_ORDER)) { $l = end($mm); $qty = (int)$l[1]; $size = (int)$l[2]; }
     else { if (preg_match_all('/\b(10|20|30|50|100)\s*ml\b/u', $txt, $sm)) $size = (int)end($sm[1]); if ($size && preg_match_all('/(?<![\d.])(\d{1,2})(?![\d.])(?!\s*ml)/u', $cust, $qm)) { $qty = (int)end($qm[1]); } }
@@ -778,11 +897,25 @@ function wag_price_context(PDO $pdo, string $phone, array $msgs): string
     // ORDER-VALUE GOAL (owner, 21 Nov): the average order should reach Rs 2,700-2,800 — push ONE add-on that lifts this order there, at the same price level
     $add = ''; if ($v0 < 2700) { $rs = (array)$j['rows']; usort($rs, fn($a, $b) => (int)($a['ml'] ?? 0) <=> (int)($b['ml'] ?? 0)); $pick = null;
         foreach ([$size, 50] as $stepMl) { if ($pick || $stepMl < 10) continue; foreach ($rs as $r2) { $ml2 = (int)($r2['ml'] ?? 0); $ex = $ml2 - $total; if ($ex <= 0 || $ex % $stepMl !== 0 || intdiv($ex, $stepMl) > 6) continue; $vv = (int)($r2['p'][$idx] ?? 0); if ($vv >= 2700) { $pick = [$ml2, $vv, intdiv($ex, $stepMl), $stepMl]; break; } } }   // a NATURAL add-on only: N more bottles of the SAME size (else of 50 ml), never an odd amount such as "170 ml extra"
-        if ($pick) $add = ' ORDER-VALUE GOAL (owner): our average order should reach about Rs 2,700-2,800. This order is Rs ' . $v0 . ': once he has chosen (or in the same message), offer ONE add-on that lifts it: ' . $pick[2] . ' more bottle' . ($pick[2] > 1 ? 's' : '') . ' of ' . $pick[3] . ' ml, so the total becomes ' . $pick[0] . ' ml for Rs ' . $pick[1] . ' at the same price level - say it as "sirf Rs ' . ($pick[1] - $v0) . ' aur mein ' . $pick[2] . ' bottle (' . $pick[3] . ' ml) aur". Never talk about an odd ml amount. If he says no, try once more at most; never push after the second no.';
-    } elseif ($v0 >= 2700) $add = ' ORDER-VALUE GOAL: this order is already at the Rs 2,700-2,800 target: keep it and move to the order details; only a small add-on if he asks.';
+        if ($pick) $add = ' ORDER-VALUE GOAL (internal - NEVER tell the customer about any target, minimum, ceiling or floor price): we want bigger orders. This order is Rs ' . $v0 . ': once he has chosen (or in the same message), offer ONE add-on that lifts it: ' . $pick[2] . ' more bottle' . ($pick[2] > 1 ? 's' : '') . ' of ' . $pick[3] . ' ml, so the total becomes ' . $pick[0] . ' ml for Rs ' . $pick[1] . ' at the same price level - say it as "sirf Rs ' . ($pick[1] - $v0) . ' aur mein ' . $pick[2] . ' bottle (' . $pick[3] . ' ml) aur". Never talk about an odd ml amount. If he says no, try once more at most; never push after the second no.';
+    } elseif ($v0 >= 2700) $add = ' ORDER-VALUE GOAL (internal - never mention it): this order is already a big one: keep it and move to the order details; only a small add-on if he asks.';
     $__lc = ''; foreach (array_reverse($msgs) as $__m) if (($__m['who'] ?? '') === 'customer') { $__lc = mb_strtolower((string)($__m['text'] ?? '')); break; } $__obj = (bool)preg_match('/(mehang|mahang|costly|expensive|too much|zyada|jyada|kam kar|kam do|thoda kam|discount|best price|final price|last price|budget|sasta|cheaper|reduce|negotiat|bargain|rate kam|price kam)/iu', $__lc);   // the next (lower) price is only handed to the AI when the customer's own last message objects to the price: it cannot offer it by itself
     $__up = ''; if ($size === 20 && wag_exp_arm($pdo, 'up20', $phone) === 'T') {   // self-learning experiment 'up20' (shown to half of the customers until the revenue per customer decides)
         foreach ((array)$j['rows'] as $r3) if ((int)($r3['ml'] ?? 0) === 250) { $u5 = (int)($r3['p'][$idx] ?? 0); if ($u5 > $v0 && $u5 <= 3300) $__up = ' UPGRADE OFFER (owner): he is buying 20 ml bottles; after the price add ONE short line: "5 x 50 ml sirf Rs ' . $u5 . ' mein (2.5 guna perfume)" - use exactly Rs ' . $u5 . ' (the chart price at the same level), never any other number, and ask which one he prefers. Say it once; if he says no, never repeat it.'; break; } }   // 20 ml buyers have the lowest tickets: show the 5 x 50 ml chart price next to the 20 ml price (the same chart, no discount)
+    $__al = '';   // 🧩 the ADD-ON as a lever instead of a price cut (owner, 21 Nov: "tell him I can add 20 ml for you - the customer does not leave"): the same code-made add-on price as the add-on module (25% off per bottle; a 50 ml bottle on small orders)
+    try { if ($qty >= 2 && $v0 >= 800) { $perB = $v0 / $qty; $mlA = $size; if ($v0 < 1500 && $size < 50) foreach ((array)$j['rows'] as $r5) if ((int)($r5['ml'] ?? 0) === 50 && (int)($r5['p'][$idx] ?? 0) > 0) { $perB = (float)$r5['p'][$idx]; $mlA = 50; break; } $pa = (int)(round($perB * 0.75 / 10) * 10); if ($pa >= 50) $__al = ' ADD-ON LEVER (owner: never let him go, price talk is a chance for the add-on): you may also say ONCE, as an alternative to a lower price: "Sir price me kam nahi ho sakta, lekin ek extra ' . $mlA . ' ml sirf Rs ' . $pa . ' mein add kar sakte hain" - use exactly Rs ' . $pa . '.'; } } catch (Throwable $e) { }
+    if ($__obj && $size > 0 && $size < 50 && ($v1 <= 0 || $v1 >= $v0)) {   // he objects to the price and we are ALREADY at the lowest chart price: never invent a lower one, never only repeat it — show the value of the bigger size (owner, 21 Nov: "1590 hi rahegi" and the customer left)
+        foreach ((array)$j['rows'] as $r4) if ((int)($r4['ml'] ?? 0) === 250) { $u6 = (int)($r4['p'][$idx] ?? 0); if ($u6 > $v0 && $u6 <= 3400) $__up = $__al . ' LOWEST PRICE REACHED: Rs ' . $v0 . ' is already our lowest chart price and he objects. Do NOT invent a lower price and do NOT only repeat it. In ONE short line show the better value instead: "5 x 50 ml sirf Rs ' . $u6 . ' mein (250 ml, 2.5 guna perfume, per ml sabse sasta)" - use exactly Rs ' . $u6 . ' - and ask which one he prefers. If he still says no, thank him politely and stop.'; break; }
+    }
+    // 🏁 HOLD THE CUSTOMER (owner, 21 Nov: "maximum orders; at the end even Rs 1,400 for a Rs 1,590 chart price is fine - never let him go"): at the LOWEST chart price, after we told him that price and he still refuses, the bot steps down ONE level at a time - 2.5%, then 6%, then 12% below the lowest chart price (all made by CODE, never by the AI) - only after each refusal, never two levels in one message, and stops politely after the last
+    try { if ($v0 >= 1000 && ($v1 <= 0 || $v1 >= $v0)) { $lv = [$v0, (int)(round($v0 * 0.975 / 10) * 10), (int)(round($v0 * 0.94 / 10) * 10), (int)(round($v0 * 0.88 / 10) * 10)]; $cur = -1; $refused = false;
+            foreach (array_slice($msgs, -14) as $__fm) { $tx = str_replace(',', '', (string)($__fm['text'] ?? '')); if ((string)($__fm['who'] ?? '') !== 'customer') { foreach ($lv as $li2 => $pv) if (preg_match('/(?<!\d)' . $pv . '(?!\d)/', $tx) && $li2 >= $cur) { $cur = $li2; $refused = false; } }
+                elseif ($cur >= 0 && preg_match('/(\bnhi\b|\bnahi\b|\bvarna\b|\bno\b|mehang|mahang|costly|expensive|kam kar|kam do|paise kam|discount|last price|final price|thoda kam|nhi chahiye|nahi chahiye)/iu', mb_strtolower($tx))) $refused = true; }
+            if ($cur >= 0 && $refused && $cur < 3) { $nx2 = $lv[$cur + 1]; $__up .= ($cur === 0 ? $__al : '') . ' PRICE STEP-DOWN (owner: maximum orders, never let the customer go): he has seen Rs ' . $lv[$cur] . ' and still refuses. Say ONCE, politely and short: "Sir, aapke liye Rs ' . $nx2 . ' kar deta hoon' . ($cur + 1 === 3 ? ' - ye meri taraf se final hai, isse niche possible nahi' : '') . ', order confirm karein?" - use exactly Rs ' . $nx2 . ' and no other number; never go lower than this in this message.'; }
+            elseif ($cur === 3 && $refused) $__up .= ' He refuses even our final price Rs ' . $lv[3] . ': thank him warmly, say the price stays open for today, and stop pushing.'; } } catch (Throwable $e) { }
+    // 📈 HE ASKED FOR ONLY 1-2 BOTTLES (owner, 21 Nov: "we sell more perfumes - he asked for 2, why do we sell 2? say 3, 4, 5"): answer the price he asked AND show the 3 / 4 / 5 bottle combos of the same size from our chart (same level) in the same message
+    try { if ($qty >= 1 && $qty <= 2 && $size >= 20) { $ladder = []; foreach ([3, 4, 5] as $qq) { $tt = $qq * $size; foreach ((array)$j['rows'] as $r6) if ((int)($r6['ml'] ?? 0) === $tt && (int)($r6['p'][$idx] ?? 0) > 0) { $ladder[] = $qq . ' x ' . $size . ' ml Rs ' . (int)$r6['p'][$idx]; break; } }
+            if ($ladder) $__up .= ' SELL MORE BOTTLES (owner: maximum perfumes per order): he asked for only ' . $qty . ' x ' . $size . ' ml. In the SAME message give his price, then show the bigger combos with these exact chart numbers: ' . implode(', ', $ladder) . ' - say the best value is the biggest one ("Better Savings") - and end by asking which he prefers (3, 4 or 5). Never just sell ' . $qty . '.'; } } catch (Throwable $e) { }
     return 'PRICE FROM OUR CHART for this customer (use ONLY these numbers for ' . $qty . ' x ' . $size . ' ml = ' . $total . ' ml total; never take a price from the combo list for a different quantity or ml): ' . ($seen ? 'the price he has already seen is Rs ' . $v0 . ' — repeat it, do not quote higher or lower unless he pushes back on price' : 'nothing is negotiated yet: quote Rs ' . $v0 . ' (the start level) and do NOT give a lower price') . '.' . ($v1 > 0 && $v1 < $v0 && $__obj ? ' He is objecting to the price: you may now give the next chart price, Rs ' . $v1 . ' (never lower).' : '') . ' Always say the total ml correctly (' . $total . ' ml).' . $add . $__up;
 }
 /** 🏪 OPEN MARKET scoreboard (owner, 21 Nov: "decide how to measure the good salespeople": most orders, fast reply, add-on / ticket, and who really takes the hot chats). Per salesperson, last $days days:
@@ -819,6 +952,7 @@ function wag_is_sales_query(PDO $pdo, array $c): bool
 {
     $key = (string)($c['phone'] ?? ''); if ($key === '' || (int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return false;
     if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) return false;   // order completed: after-sales, not a sale
+    if (wag_after_delivery($pdo, $key)) return false;   // delivered order + a message that is not a new purchase: after-sales
     if (preg_match('/order question|refund|return|track|complain|status|delivery|payment problem/i', (string)($c['hot_why'] ?? ''))) return false;
     try { if (!function_exists('cx_looks_like') && is_file(__DIR__ . '/complaints.php')) { /* loaded with the Boss Engine; skipped when not available */ }
         if (function_exists('cx_looks_like') && cx_looks_like($pdo, $key)) return false;   // leak / wrong item / not delivered / quality / refund words
@@ -906,7 +1040,7 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp): string
         $tk = $one("SELECT COUNT(DISTINCT phone) FROM wa_mkt WHERE emp_id = ? AND kind = 'taken' AND at >= ?", [$emp, $t0]); $dr = $one("SELECT COUNT(DISTINCT d.phone) FROM wa_mkt d WHERE d.emp_id = ? AND d.kind IN ('dropped','released') AND d.at >= ? AND EXISTS (SELECT 1 FROM wa_mkt t WHERE t.phone = d.phone AND t.emp_id = d.emp_id AND t.kind = 'taken' AND t.at >= ?)", [$emp, $t0, $t0]);   // only chats he took and left
         $od = 0; foreach (wag_mkt_board($pdo, 1) as $__b) if ((int)$__b['emp'] === $emp) $od = (int)$__b['orders'];   // orders credited from Shopify (or recorded)
         $un = 0; $__uq = $pdo->prepare("SELECT phone FROM wa_contacts WHERE assigned_emp = ? AND status = 'open' AND hot = 1 AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) LIMIT 40"); $__uq->execute([$emp, date('Y-m-d H:i:s', time() - 23 * 3600)]);
-        foreach ($__uq->fetchAll(PDO::FETCH_COLUMN) as $__up) { $__ml = wag_meta_get($pdo, 'mklink:' . $__up, ''); if ($__ml !== '' && strtotime($__ml) > time() - 480) continue; if (wag_hot_is_done($pdo, (string)$__up)) continue; $un++; }   // a chat whose holder is making the payment link (8 min) is not "waiting"
+        foreach ($__uq->fetchAll(PDO::FETCH_COLUMN) as $__up) { $__ml = wag_meta_get($pdo, 'mklink:' . $__up, ''); if ($__ml !== '' && strtotime($__ml) > time() - 3600) continue; if (wag_hot_is_done($pdo, (string)$__up)) continue; $un++; }   // a chat whose holder is making the payment link (8 min) is not "waiting"
         $ttk = 0; $tod = 0; foreach (wag_mkt_board($pdo, 7) as $__b) { $ttk += (int)$__b['taken']; $tod += (int)$__b['orders']; } $avg = $ttk >= 40 && $tod > 0 ? min(0.5, $tod / $ttk) : 0;   // orders are not all tied to takes: cap the team ratio so it can never exceed 50% (person must reach 60% of it)
         if ($un >= 3) $msg = '🔒 ' . $un . ' hot customers of yours are waiting for an answer. Answer them first — then you can take new queries.';
         elseif ($dr >= 2 && $dr * 2 > $tk) $msg = '🔒 You left ' . $dr . ' hot chats today without answering. New queries go to people who answer: answer your open chats first.';
@@ -963,6 +1097,12 @@ function wag_bot_block_msg(PDO $pdo, array $c): string
     return wag_bot_lock($pdo, $c)['on'] ? '🤖 The bot is answering this customer — wait. If its answer is not good, press 👎 "Bot answer not good": you write the better answer and the chat becomes yours.' : '';
 }
 /** A bot reply that would invent an offer or claim a payment: never sent — a person answers (the replay test found exactly these). */
+/** The bot must never tell the customer our internal target / minimum / floor price ("minimum Rs 2,800 tak hi de sakte hain", owner 21 Nov: the customer asked 6 x 50 ml, the bot said Rs 3,200 and then "minimum Rs 2,800"): such sentences are cut out of a reply. */
+function wag_strip_internal(string $t): string
+{
+    $o = preg_replace('/[^.!?\n]*\b(minimum|min\.?|kam se kam|floor|target|lowest price)\b[^.!?\n]*(rs\.?|₹)\s*[\d,]{4,6}[^.!?\n]*[.!?]?\s*/iu', '', $t); $o = trim((string)$o);
+    return $o !== '' ? $o : $t;
+}
 function wag_bot_unsafe(string $t): bool
 {
     $t = mb_strtolower($t);
@@ -980,16 +1120,18 @@ function wag_bot_spawn(PDO $pdo, int $n = 5): int
     return $sent;
 }
 /** ONE short bot tick (the fast heartbeat, driven once a second by cron_bot.php): claims a free slot (5 at most run at the same time — the others return at once, so no web-server worker is held), answers up to 2 waiting customers, slot 0 also runs the complaint / hot-open sweeps every 20 s. */
-function wag_bot_tick(PDO $pdo, int $slots = 5): array
+function wag_bot_tick(PDO $pdo, int $slots = 8, string $role = ''): array   // owner, 21 Nov: 12 answer slots (was 5: ~87 answers a minute had filled five) + 3 slots only for follow-ups (role=fu, one tick a second from cron_bot.php)
 {
     $o = ['slot' => -1, 'sent' => 0, 'handoff' => 0]; if (wag_cfg($pdo)['bot'] !== 'on') return $o;
-    if ((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') { for ($k = 0; $k < $slots; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('hrms_wag_tick_" . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
+    $isMy = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $pfx = $role === 'fu' ? 'hrms_wag_fu_' : 'hrms_wag_tick_'; $n = $role === 'fu' ? 2 : $slots;
+    if ($isMy) { for ($k = 0; $k < $n; $k++) { try { if ((int)$pdo->query("SELECT GET_LOCK('" . $pfx . $k . "', 0)")->fetchColumn()) { $o['slot'] = $k; break; } } catch (Throwable $e) { } } if ($o['slot'] < 0) return $o; }
     try {
-        if ($o['slot'] === 0) { setting_set($pdo, 'wag_tick_at', (string)time()); if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } } }
-        $r = wag_bot_scan($pdo, 2); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];
+        if ($role === 'fu') { try { $o['followup'] = wag_bot_followup($pdo, 20); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } } return $o; }
+        if (time() - (int)setting_get($pdo, 'wag_tick_at', '0') >= 3) setting_set($pdo, 'wag_tick_at', (string)time());   // the heartbeat no longer depends on slot 0 being free
+        if (time() - (int)setting_get($pdo, 'wag_sweep_at', '0') >= 20) { setting_set($pdo, 'wag_sweep_at', (string)time()); try { wag_complaint_sweep($pdo); } catch (Throwable $e) { } try { wag_unrelated_sweep($pdo); } catch (Throwable $e) { } try { wag_hot_open_sweep($pdo); } catch (Throwable $e) { } }   // the sweeps run in whichever slot is free (a busy slot 0 used to delay them)
+        $r = wag_bot_scan($pdo, 3); $o['sent'] = $r['sent']; $o['handoff'] = $r['handoff'];   // customer answers only; follow-ups have their own slots
         if (time() - (int)setting_get($pdo, 'wag_exp_at', '0') >= 1800) { setting_set($pdo, 'wag_exp_at', (string)time()); try { wag_exp_eval($pdo); } catch (Throwable $e) { } }   // the self-learning check, every 30 minutes
-        try { $o['followup'] = wag_bot_followup($pdo, 4); } catch (Throwable $e) { try { wag_log($pdo, 'bot', false, 'follow-up: ' . $e->getMessage()); } catch (Throwable $e2) { } }   // customers who went silent after the bot's answer: the bot follows up (own 20 s limiter)
-    } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('hrms_wag_tick_" . $o['slot'] . "')"); } catch (Throwable $e) { } } }
+    } finally { if ($o['slot'] >= 0) { try { $pdo->query("SELECT RELEASE_LOCK('" . $pfx . $o['slot'] . "')"); } catch (Throwable $e) { } } }
     return $o;
 }
 /** One worker: claims a free slot (MySQL lock), then answers waiting customers every ~2 s for up to 55 s. */
@@ -1013,7 +1155,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
     $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - $cfg['bot_after'])]);
     foreach ($st->fetchAll() as $c) {
         if ($o['sent'] + $o['handoff'] >= $max) break; $key = (string)$c['phone']; $age = $now - strtotime((string)$c['last_in_at']);
-        $__mv = wag_meta_get($pdo, 'bgm:' . $key, ''); if ($__mv !== '') { $__mp = explode('|', $__mv, 2); if ($__mp[0] === (string)$c['last_in_at'] && (int)($__mp[1] ?? 0) > time()) continue; } wag_meta_put($pdo, 'bgm:' . $key, $c['last_in_at'] . '|' . (time() + 45));   // a chat looked at is not looked at again for 45 s (kept in the database: every tick is a new short request, no memory between them)
+        $__mv = wag_meta_get($pdo, 'bgm:' . $key, ''); if ($__mv !== '') { $__mp = explode('|', $__mv, 2); if ($__mp[0] === (string)$c['last_in_at'] && (int)($__mp[1] ?? 0) > time()) continue; } wag_meta_put($pdo, 'bgm:' . $key, $c['last_in_at'] . '|' . (time() + 20));   // a chat looked at is not looked at again for 45 s (kept in the database: every tick is a new short request, no memory between them)
         if (!empty($c['cx_id'])) continue;   // the chat is with the Complaint team: the bot never answers it
         $__ad = wag_meta_get($pdo, 'addon:' . $key, ''); if (strpos($__ad, 'offered|') === 0) {   // an add-on offer is waiting for the answer (also in a chat a salesperson holds): code answers it, the AI stays quiet
             $__a0 = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__a0->execute([$key]); $__m0 = $__a0->fetch();
@@ -1022,7 +1164,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
         // the bot answers after bot_after (4 s) — also when the chat is given to a salesperson — until that person presses "Take over" (or is writing to the customer right now): then the bot is silent
         // 🆘 STUCK (owner, 21 Nov): a hot chat (ready to order / pay, or the bot handed it over) that nobody answered for 10+ minutes: the bot tries ONCE more in ORDER MODE (details + address, never payment) and, if it cannot, the chat goes to the next free person with a push
-        $__stuck = (!empty($c['hot']) || (true && ($__bh = wag_meta_get($pdo, 'bothand:' . $key, '')) !== '' && strtotime($__bh) >= strtotime((string)$c['last_in_at']))) && ($age >= 600 || (true && ($__hm = wag_meta_get($pdo, 'hotmiss:' . $key, '')) !== '' && substr($__hm, strrpos($__hm, '|') + 1) === (string)$c['last_in_at'])) && (false || wag_meta_get($pdo, 'stuck:' . $key, '') !== (string)$c['last_in_at']);   // 10+ min, or the 2-minute rule already moved the chat to OPEN: the bot answers it in ORDER MODE at once
+        $__stuck = (!empty($c['hot']) || (true && ($__bh = wag_meta_get($pdo, 'bothand:' . $key, '')) !== '' && strtotime($__bh) >= strtotime((string)$c['last_in_at']))) && ($age >= 600 || (true && ($__hm = wag_meta_get($pdo, 'hotmiss:' . $key, '')) !== '' && substr($__hm, strrpos($__hm, '|') + 1) === (string)$c['last_in_at'])) && (false || wag_meta_get($pdo, 'stuck:' . $key, '') !== (string)$c['last_in_at']) && !wag_after_delivery($pdo, $key);   // 10+ min, or the 2-minute rule already moved the chat to OPEN: the bot answers it in ORDER MODE at once
         $__cover = false;
         if (wag_bot_off($pdo, $key, $__stuck)) {   // a person holds this chat: the bot stays silent — except when that person is busy with other customers and this customer has waited 90 s (owner, 21 Nov): then the bot answers meanwhile; the chat stays with the person
             $__ho = (int)($c['assigned_emp'] ?? 0); $__bh3 = wag_meta_get($pdo, 'bothand:' . $key, '');
@@ -1061,7 +1203,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if ($__stuck && (!empty($r['handoff']) || !$r['ok'])) wag_stuck_escalate($pdo, $c, $key);   // the bot cannot help: a free person gets it now, with a push
         if (!empty($r['handoff']) && true) wag_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s'));   // the bot hands this customer to a person: the lock opens
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
-        $r['text'] = wag_strip_unasked_discount((string)$r['text'], (string)($m['body'] ?? ''));
+        $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)($m['body'] ?? '')));
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
         if ($ok && $__order) wag_order_done_check($pdo, $c, $key);
@@ -1073,11 +1215,21 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
 /** 🔔 AGGRESSIVE BOT FOLLOW-UP (owner, 21 Nov): the bot answered and the customer went silent. Inside the 24-hour window (free text) the bot follows up by itself in 4 steps —
  *  15 min, 2 h, 6 h, 20 h after the customer's last message — each step with a different angle (the missing detail, the add-on towards Rs 2,700-2,800, a reason to decide now, a last easy ask). Daytime only (9:00-21:30).
  *  Never when a person took the chat, the bot handed it over, the order is done, the customer said stop / no, or a flow runs. Settings: wag_bfu_on (1), wag_bfu_max_day (2500). */
+/** Follow-up step 1 without AI: one short question, four wordings, the customer's first name and the perfume the bot named last (when there is one). */
+function wag_fu1_text(PDO $pdo, array $c, array $rows): string
+{
+    $nm = ''; $n0 = trim((string)($c['name'] ?? '')); if ($n0 !== '' && preg_match('/^[\p{L}]{2,14}$/u', ($__f = preg_split('/\s+/', $n0)[0]))) $nm = $__f;
+    $pf = ''; try { $bt = ''; foreach ($rows as $rw) if ((string)($rw['who'] ?? '') === 'bot') { $bt = (string)($rw['body'] ?? ''); break; } if ($bt !== '' && function_exists('wa_prod_find_named')) { $h = wa_prod_find_named($pdo, $bt, 1); if ($h) $pf = (string)($h[0]['name'] ?? ''); } } catch (Throwable $e) { }
+    $v = crc32((string)($c['phone'] ?? '')) % 4; $hi = $nm !== '' ? 'Hi ' . $nm . '! 😊 ' : 'Sir, ';
+    if ($pf !== '') { $t = [$hi . 'aapko ' . $pf . ' ke baare me koi confusion ya doubt hai? Order bana dun? 😊', 'Sir, ' . $pf . ' ke liye koi doubt ho to bataiye, main order bana deta hoon 😊', $hi . $pf . ' lena hai ya koi aur perfume dekhna hai? Bataiye, order bana dun? 🙏', 'Hello sir 🙏 ' . $pf . ' me koi confusion hai? Kaho to abhi order bana dun?'][$v]; }
+    else { $t = [$hi . 'aapko kaunse perfume me confusion ya doubt hai? Order bana dun? 😊', 'Hello sir 🙏 Koi confusion ya doubt ho to bataiye, main aapka order bana deta hoon 😊', $hi . 'kaunsa perfume pasand aaya? Bataiye, main order bana deta hoon 🙏', 'Sir, abhi order bana dun ya kuch aur dekhna hai? Bas ek message kar dijiye 😊'][$v]; }
+    return $t;
+}
 function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follow-ups must be FAST — 6 per tick (was 2; only ~4 a minute went out with 347 due)
 {
     if (defined('WA_IN_WEBHOOK') || (string)setting_get($pdo, 'wag_bfu_on', '1') === '0' || wag_cfg($pdo)['bot'] !== 'on') return 0;
     $now = time(); $hr = (int)date('G') * 60 + (int)date('i'); if ($hr < 9 * 60 || $hr > 21 * 60 + 30) return 0;
-    if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 10) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
+    if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 5) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
     $day = date('Y-m-d'); if (setting_get($pdo, 'wag_bfu_day', '') !== $day) { setting_set($pdo, 'wag_bfu_day', $day); setting_set($pdo, 'wag_bfu_n', '0'); } $cap = max(0, (int)setting_get($pdo, 'wag_bfu_max_day', '20000')); if ((int)setting_get($pdo, 'wag_bfu_n', '0') >= $cap) return 0;
     $steps = [300, 600, 1200, 1800, 3600, 7200, 10800, 14400, 28800, 64800]; $n = 0;   // 5 m, 10 m, 20 m, 30 m, 1 h, 2 h, 3 h, 4 h (hold the customer), then slower: 8 h, 18 h — afterwards the 30-day Lineup takes over (owner, 21 Nov)
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c JOIN (SELECT phone, MAX(ts) z FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND ts >= ? GROUP BY phone) b ON b.phone = c.phone WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= DATE_ADD(b.z, INTERVAL 5 SECOND) ORDER BY c.last_in_at DESC LIMIT 120");   // only chats where the BOT spoke last (a person / campaign / flow message after it = not ours)
@@ -1109,7 +1261,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         if ($cnt === 0 && !$__pp && $now - $liT >= 150) { $__rs = $pdo->prepare("SELECT status FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' ORDER BY id DESC LIMIT 1"); $__rs->execute([$key]); if ((string)$__rs->fetchColumn() === 'read') { $__need = 150; $__gap = 120; } }   // read (blue ticks) but silent = a warm customer: the first follow-up comes after 2.5 min instead of 5
         if ($now - $refT < $__need || ($lastF && $now - $lastF < 240) || $now - (int)strtotime((string)$c['last_out_at']) < $__gap) { $D['early']++; if ($__pp) $D['pearly'] = (int)($D['pearly'] ?? 0) + 1; continue; }
         if ((!$__pp && wag_bot_off($pdo, $key)) || (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key))) { $D['off']++; continue; }
-        if ($__pp) { $__tm = wag_meta_get($pdo, 'typing:' . $key, ''); if (function_exists('wq_ts') && wq_ts($__tm) > $now - 180) { $D['early']++; continue; } $__ml = wag_meta_get($pdo, 'mklink:' . $key, ''); if ($__ml !== '' && strtotime($__ml) > $now - 480) { $D['early']++; continue; } }   // the holder is typing / making the link: not now
+        if ($__pp) { $__tm = wag_meta_get($pdo, 'typing:' . $key, ''); if (function_exists('wq_ts') && wq_ts($__tm) > $now - 180) { $D['early']++; continue; } $__ml = wag_meta_get($pdo, 'mklink:' . $key, ''); if ($__ml !== '' && strtotime($__ml) > $now - 3600) { $D['early']++; continue; } }   // the holder is typing / making the link: not now
         $bh = wag_meta_get($pdo, 'bothand:' . $key, ''); if (!$__pp && $bh !== '' && strtotime($bh) >= $liT) { $D['hand']++; continue; }   // the bot handed this customer to a person
         if (!$__pp && !empty($c['hot']) && !empty($c['assigned_emp'])) { $D['hotp']++; continue; }   // a person holds a hot chat: his job
         if (function_exists('wag_is_sales_query') && !wag_is_sales_query($pdo, $c)) { $D['notsales']++; continue; }   // only sales queries (not after-sales / complaints)
@@ -1120,11 +1272,12 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         if (preg_match('/(stop|unsubscribe|not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|no thanks|don.?t message|remove)/iu', $lastIn)) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }
         $fl = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $fl->execute([$key]); if ((int)$fl->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now . ($__pp ? '|p|' . $refT : ''));   // claimed before the AI call: never twice
-        $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0); $__tries++;
+        if ($cnt === 0 && !$__pp && (string)setting_get($pdo, 'wag_fu_tpl1', '1') !== '0') { $r = ['ok' => true, 'text' => wag_fu1_text($pdo, $c, $rows)]; }   // ⚡ step 1 (the bulk: 378 of 400) is the same short question - made in code, no AI call (2.5 s each): follow-ups go out many times faster (owner, 21 Nov: "follow-ups faster")
+        else { $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0); $__tries++; }
         if (empty($r['ok']) || trim((string)($r['text'] ?? '')) === '') { $D['ai']++; $D['err'] = mb_substr((string)($GLOBALS['lib_last_why'] ?? '') . ' | ' . (string)($r['why'] ?? ''), 0, 160); continue; }
         if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
         $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) { $D['same']++; continue; } }   // never the same text again
-        $r['text'] = wag_strip_unasked_discount((string)$r['text'], (string)$lastIn);
+        $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)$lastIn));
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         $__fv = (string)setting_get($pdo, 'wag_fu_var', 'AB'); $__var = ($__fv === 'A' || $__fv === 'B') ? $__fv : ((crc32($key) % 2) ? 'B' : 'A');   // 🧪 A/B (owner, 21 Nov): A = plain text, B = the same text with 3 quick-reply buttons; the winner is read from the replies (event text carries the letter)
         if ($__var === 'B' && function_exists('wa_send_buttons')) { [$ok, $res] = wa_send_buttons($pdo, $c, $r['text'], ['✅ Order karo', '💬 Doubt hai', '⏰ Baad me'], 'bot', 0); if (!$ok) { $__var = 'A'; [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0); } }
@@ -1709,14 +1862,15 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_mkt_top': {   // 🏪 for every salesperson: who are the best right now (shown above the OPEN list) and my own rank
             $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released'], 'q' => 0, 'o' => 0];
             try { if ($my) { $__d = wag_real_queries($pdo, 1); $my['q'] = (int)($__d[$me][0] ?? 0); $my['o'] = (int)($__d[$me][1] ?? 0); } } catch (Throwable $e) { }   // the owner's definition: no campaign, no community — same as the sales strip
-            json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me)]);
+            json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me), 'fair' => wag_fair_state($pdo, $me)]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
-            $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'engaged' => $l['engaged'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on', 'can_mk' => ((int)($c['assigned_emp'] ?? 0) > 0 && (int)($c['assigned_emp'] ?? 0) === (int)($auth['employee_id'] ?? 0) && (string)($c['status'] ?? '') === 'open' && wag_address_seen($pdo, (string)$c['phone'])), 'mk_left' => (function () use ($pdo, $c) { $v = wag_meta_get($pdo, 'mklink:' . (string)$c['phone'], ''); return $v === '' ? 0 : max(0, 480 - (time() - (int)strtotime($v))); })()]);
+            $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'engaged' => $l['engaged'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on', 'can_mk' => ((int)($c['assigned_emp'] ?? 0) > 0 && (int)($c['assigned_emp'] ?? 0) === (int)($auth['employee_id'] ?? 0) && (string)($c['status'] ?? '') === 'open' && wag_address_seen($pdo, (string)$c['phone'])), 'mk_left' => (function () use ($pdo, $c) { $v = wag_meta_get($pdo, 'mklink:' . (string)$c['phone'], ''); return $v === '' ? 0 : max(0, 3600 - (time() - (int)strtotime($v))); })()]);
         }
         case 'wa.g_addon_check': {   // 🧩 before the link: has the add-on offer gone out? ('' = not yet · offered · accepted · declined · passed · skip)
             $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $st = wag_meta_get($pdo, 'addon:' . $key, ''); $p = explode('|', $st);
             $can = (string)setting_get($pdo, 'wag_addon_on', '1') !== '0' && ($st === '' || $p[0] === 'skip') && wag_address_seen($pdo, $key) && wag_addon_calc($pdo, $key) !== null;
+            if ($can) wag_addon_count($pdo, (int)($auth['employee_id'] ?? 0), 'cart_open'); elseif ($p[0] === 'accepted') wag_addon_count($pdo, (int)($auth['employee_id'] ?? 0), 'cart_after_accept');
             json_response(['ok' => true, 'state' => $p[0], 'can_offer' => $can, 'n' => $p[0] === 'accepted' ? (int)($p[2] ?? 0) : 0, 'amount' => $p[0] === 'accepted' ? (int)($p[3] ?? 0) : 0, 'left' => $p[0] === 'offered' ? max(0, 300 - (time() - (int)($p[1] ?? 0))) : 0]);
         }
         case 'wa.g_addon_offer': {   // 🧩 "Send add-on offer first": the same offer the bot sends by itself ~5 s after the address
@@ -1724,7 +1878,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $me = (int)($auth['employee_id'] ?? 0);
             if (!$adm && (int)($c['assigned_emp'] ?? 0) !== $me) json_response(['error' => 'Only the person who holds this chat can send the add-on offer.'], 403);
             $st = wag_meta_get($pdo, 'addon:' . $key, ''); if (strpos($st, 'skip|') === 0) { try { $pdo->prepare("DELETE FROM wq_meta WHERE k = ?")->execute(['addon:' . $key]); } catch (Throwable $e) { } }
-            $ok = wag_addon_offer($pdo, $c, $key); json_response(['ok' => $ok, 'message' => $ok ? 'The add-on offer was sent. Wait for the customer\'s answer, then make the link with the new total.' : 'The add-on offer could not be sent (no clear price in the chat, or already offered). You can make the link.']);
+            $ok = wag_addon_offer($pdo, $c, $key); if ($ok) wag_addon_count($pdo, $me, 'sent'); json_response(['ok' => $ok, 'message' => $ok ? 'The add-on offer was sent. Wait for the customer\'s answer, then make the link with the new total.' : 'The add-on offer could not be sent (no clear price in the chat, or already offered). You can make the link.']);
         }
         case 'wa.g_makelink': {   // 🔗 the holder is making the payment link / order link: the chat stays with him up to 8 minutes (it does not go back to OPEN)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
@@ -1732,8 +1886,8 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             if (!$adm && (int)($c['assigned_emp'] ?? 0) !== $me) json_response(['error' => 'Only the person who holds this chat can use Making link.'], 403);
             $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $nm = $names[$me] ?? 'The holder';
             if (!empty($in['on']) && !wag_address_seen($pdo, $key)) json_response(['error' => 'The customer has not sent the address yet — Making link is for after the address.'], 422);
-            if (!empty($in['on'])) { wag_meta_put($pdo, 'mklink:' . $key, date('Y-m-d H:i:s')); wa_event($pdo, $key, '🔗 ' . $nm . ' is making the link (held for up to 8 minutes)'); json_response(['ok' => true, 'mk_left' => 480]); }
-            wag_meta_put($pdo, 'mklink:' . $key, ''); wa_event($pdo, $key, '🔗 ' . $nm . ' finished the link'); json_response(['ok' => true, 'mk_left' => 0]);
+            if (!empty($in['on'])) { wag_meta_put($pdo, 'mklink:' . $key, date('Y-m-d H:i:s')); wa_event($pdo, $key, '🔗 ' . $nm . ' is making the link (held for up to 1 hour)'); json_response(['ok' => true, 'mk_left' => 3600]); }
+            wag_meta_put($pdo, 'mklink:' . $key, ''); wa_event($pdo, $key, '✋ ' . $nm . ' released the chat'); json_response(['ok' => true, 'mk_left' => 0]);
         }
         case 'wa.g_botbad': {   // 👎 the bot's answer is not good: {phone, mode: 'draft'} → Claude's better answer; {phone, mode: 'send', text, reason} → it is sent, the chat becomes the person's, the bot stops, the owner's bot learns
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

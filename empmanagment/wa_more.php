@@ -146,6 +146,7 @@ function wa_callnow_scan(PDO $pdo): void
     foreach ($rows as $r) {
         $out->execute([$r['phone'], $r['callnow_at'] ?: '1970-01-01 00:00:00']);
         if ((int)$out->fetchColumn() > 0 || (int)$r['assigned_emp'] <= 0) { $pdo->prepare("UPDATE wa_contacts SET callnow = 9 WHERE phone = ?")->execute([$r['phone']]); continue; }
+        if (function_exists('wag_hot_is_done') && wag_hot_is_done($pdo, (string)$r['phone'])) { $pdo->prepare("UPDATE wa_contacts SET callnow = 9 WHERE phone = ?")->execute([$r['phone']]); continue; }   // the customer already ordered / says it is done / got his delivery and only writes about it: no "nobody has reacted" alert and no "Call this customer NOW" push (owner, 21 Nov)
         if ((int)$r['callnow'] === 1 && $r['callnow_at'] && time() - strtotime((string)$r['callnow_at']) >= $cfg['escalate_min'] * 60) {
             $isCx = (int)($r['cx_id'] ?? 0) > 0 || (string)($r['tag'] ?? '') === 'complaint';   // a complaint chat stays with its person — it is never moved by itself (the alert still goes up)
             if (!$isCx && !wa_manual_assign($pdo) && (string)setting_get($pdo, 'wa_reassign', '0') === '1' && (int)$r['reassigns'] < 2 && function_exists('wa_next_person')) {   // not accepted in time → the next present person gets it
@@ -709,7 +710,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
         $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
         try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
-        $r = ['ok' => true]; try { if (function_exists('wag_bot_tick')) $r['bot'] = wag_bot_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'bot tick: ' . $e->getMessage()); }
+        $r = ['ok' => true]; try { if (function_exists('wag_bot_tick')) $r['bot'] = wag_bot_tick($pdo, 8, (string)($_GET['role'] ?? '')); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'bot tick: ' . $e->getMessage()); }
         json_response($r);
     }
     if ($__wm === 'wa.bot_run') {   // 🤖 a fast bot worker (3-8 s answers): ~55 s, under its own slot lock; the sending job starts three of them every minute

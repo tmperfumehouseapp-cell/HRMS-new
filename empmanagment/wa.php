@@ -915,6 +915,8 @@ function wa_mkt_note(PDO $pdo, string $phone, int $emp, string $kind, int $waitS
 function wa_assign_to(PDO $pdo, string $key, int $emp, int $by, string $how): void
 {
     $c = wa_contact($pdo, $key); if (!$c) return; $now = date('Y-m-d H:i:s');
+    if ($how === 'auto' && $by === 0 && (int)$c['assigned_emp'] > 0 && $emp !== (int)$c['assigned_emp'] && function_exists('wag_meta_get')) { $__mk = wag_meta_get($pdo, 'mklink:' . $key, ''); if ($__mk !== '' && strtotime($__mk) > time() - 3600) return; }   // "Make mine": the holder pressed it after the address — the system never moves this chat for 1 hour (owner, 21 Nov)
+    if ($how === 'auto' && $by === 0 && (int)$c['assigned_emp'] > 0 && $emp !== (int)$c['assigned_emp'] && function_exists('wag_order_settled') && wag_order_settled($pdo, $key)) return;   // the order is settled: the system never moves this chat away from its holder (owner, 21 Nov)
     if ($emp > 0 && $by === $emp && in_array($how, ['takeover', 'grab', 'request', 'take', 'rescue'], true)) { try { $pdo->exec("CREATE TABLE IF NOT EXISTS wq_meta (k VARCHAR(40) NOT NULL PRIMARY KEY, v TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $pdo->prepare("INSERT INTO wq_meta (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")->execute(['botoff:' . $key, $now]); } catch (Throwable $e) { } }   // 🤖 the salesperson took the chat (Take over / grab / pick): the bot stops answering it
     try {   // 🏪 open market: a person took the chat (how long it had waited in OPEN) / a person gave it back to OPEN
         if ($emp > 0 && $by === $emp && in_array($how, ['takeover', 'grab', 'request', 'take', 'rescue'], true)) { $w = -1; try { $q0 = $pdo->prepare("SELECT at FROM wa_mkt WHERE phone = ? AND kind = 'offered' ORDER BY id DESC LIMIT 1"); $q0->execute([$key]); $t0 = $q0->fetchColumn(); if ($t0) $w = max(0, time() - (int)strtotime((string)$t0)); } catch (Throwable $e) { } wa_mkt_note($pdo, $key, $emp, 'taken', $w, $how); }
@@ -1307,7 +1309,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (isset($flt['waiting'])) $w[] = "(c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.optout = 0)";   // ⏳ exactly what the "Waiting for a reply" counter counts: the customer wrote last
             if (isset($flt['noreply'])) $w[] = $noRep;
             if (isset($flt['unassigned'])) $w[] = 'c.assigned_emp = 0';
-            if (isset($flt['hot'])) $w[] = 'c.hot = 1';
+            if (isset($flt['hot'])) $w[] = "(c.hot = 1 OR c.tag = 'buy' OR EXISTS (SELECT 1 FROM wa_ctags ht WHERE ht.phone = c.phone AND ht.tag = 'hot'))";   // 🔥 every chat that shows the hot colour: the flag, the ready-to-buy tag, or hot marked by the bot
             if (isset($flt['late'])) { $w[] = $noRep; $w[] = 'c.last_in_at <= ?'; $p[] = date('Y-m-d H:i:s', time() - 60 * (function_exists('wa_team_cfg') ? max(1, (int)(wa_team_cfg($pdo)['unans_min'] ?? 5)) : 5)); }
             if (isset($flt['complaint'])) $w[] = "(c.cx_id > 0 OR c.tag = 'complaint')";
             // 📅 Today's chats / Yesterday's chats (the customer wrote that calendar day); both ticked = today AND yesterday together
