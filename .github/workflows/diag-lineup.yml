@@ -91,6 +91,6 @@ jobs:
           printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
           ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
           P="$1"; echo "start $(date +%T) load $(cut -d' ' -f1-3 /proc/loadavg) fpm $(pgrep -fc 'php-fpm: pool')"
-          T0=$(date +%s); timeout 90 php "$P"empmanagment/cron_line.php test 2>&1 | head -c 1500; echo; echo "rc=$? took $(( $(date +%s) - T0 )) s · end load $(cut -d' ' -f1-3 /proc/loadavg)"
+          for i in 1 2 3 4 5 6; do T0=$(date +%s); timeout 90 php "$P"empmanagment/cron_line.php test 2>&1 | grep -o '"lineup":{[^}]*}' | head -c 300; echo " (copy $i took $(( $(date +%s) - T0 )) s)"; done; echo "end load $(cut -d' ' -f1-3 /proc/loadavg)"
           echo "php: $(php -v | head -1) · memory_limit $(php -r 'echo ini_get("memory_limit");') · cron_bot has spawn: $(grep -c cron_line "$P"empmanagment/cron_bot.php)"
           REMOTE
