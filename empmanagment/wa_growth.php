@@ -51,10 +51,10 @@ function wag_cfg(PDO $pdo): array
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '(price talk / order of less than Rs 2,700)', 'better' => $rule]], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): aggressive follow-up topic for the bot
-    try { if (setting_get($pdo, 'wag_rules5', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules5', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (setting_get($pdo, 'wag_rules6', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules6', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
-            $rule = 'FOLLOW-UP (aggressive but polite): when a customer goes silent after our answer, the bot follows up by itself — 15 min (ask the one missing detail), 2 h (the add-on that lifts the order to Rs 2,700-2,800 / best-fit combo), 6 h (true urgency: the next dispatch; one-word answer YES), 20 h (last friendly nudge, names + address). Each message has a NEW angle, 1-2 short lines, never a copy, never an invented offer; stop at once on "no / stop / nahi chahiye".';
-            $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 20)));
+            $rule = 'FOLLOW-UP (aggressive but polite): when a customer goes silent after our answer, the bot follows up by itself 7 times — 15 min (ask the one missing detail), 30 min (the exact chart price for what he chose), 1 h (the add-on that lifts the order to Rs 2,700-2,800), 2 h (two easy options), 4 h (true urgency: the next dispatch), 8 h (one-word answer YES / names + address, we keep it ready), 18 h (last friendly nudge); then the chat goes to OPEN in orange for anybody to try. Each message has a NEW angle, 1-2 short lines, never a copy, never an invented offer; stop at once on "no / stop / nahi chahiye".';
+            $gb['do'] = array_values(array_merge([$rule], array_slice(array_values(array_filter((array)($gb['do'] ?? []), function ($x) { return strpos((string)$x, 'FOLLOW-UP (aggressive') !== 0; })), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): 10 ml is only an add-on, never part of the opening
     try { if (setting_get($pdo, 'wag_rules3', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules3', '1'); $g = lib_guide_row($pdo, 'live');
@@ -826,12 +826,21 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
     $now = time(); $hr = (int)date('G') * 60 + (int)date('i'); if ($hr < 9 * 60 || $hr > 21 * 60 + 30) return 0;
     if (time() - (int)setting_get($pdo, 'wag_bfu_at', '0') < 20) return 0; setting_set($pdo, 'wag_bfu_at', (string)time());   // one look every 20 s
     $day = date('Y-m-d'); if (setting_get($pdo, 'wag_bfu_day', '') !== $day) { setting_set($pdo, 'wag_bfu_day', $day); setting_set($pdo, 'wag_bfu_n', '0'); } $cap = max(0, (int)setting_get($pdo, 'wag_bfu_max_day', '2500')); if ((int)setting_get($pdo, 'wag_bfu_n', '0') >= $cap) return 0;
-    $steps = [900, 7200, 21600, 72000]; $n = 0;
+    $steps = [900, 1800, 3600, 7200, 14400, 28800, 64800]; $n = 0;   // 15 min, 30 min, 1 h, 2 h, 4 h, 8 h, 18 h after the customer's last message
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at >= ? ORDER BY c.last_out_at ASC LIMIT 80");
     $st->execute([date('Y-m-d H:i:s', $now - 22 * 3600 - 1800), date('Y-m-d H:i:s', $now - 900), date('Y-m-d H:i:s', $now - 22 * 3600 - 1800)]);
     foreach ($st->fetchAll() as $c) {
         if ($n >= $max) break; $key = (string)$c['phone']; $li = (string)$c['last_in_at']; $liT = strtotime($li);
         $f = wag_meta_get($pdo, 'bgf:' . $key, ''); $fp = $f === '' ? [] : explode('|', $f); $cnt = ($fp && ($fp[0] ?? '') === $li) ? (int)($fp[1] ?? 0) : 0; $lastF = ($fp && ($fp[0] ?? '') === $li) ? (int)($fp[2] ?? 0) : 0;
+        if ($cnt >= count($steps) + 1) continue;
+        if ($cnt === count($steps)) {   // all 7 follow-ups are sent and the customer is still silent: the chat goes OUT to the market (orange) — anybody who wants to try may take it
+            if ($lastF && $now - $lastF < 900) continue; if (wag_bot_off($pdo, $key) || ($now - $liT) > 23 * 3600 - 600) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now); continue; }
+            wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now);
+            if (function_exists('wa_assign_to')) { try { wa_assign_to($pdo, $key, 0, 0, 'auto'); } catch (Throwable $e) { } }
+            if (function_exists('wq_tag_put')) { try { wq_tag_put($pdo, $key, 'orange'); } catch (Throwable $e) { } }
+            if (function_exists('wa_mkt_note')) { try { wa_mkt_note($pdo, $key, 0, 'offered', -1, 'followup'); } catch (Throwable $e) { } }
+            wa_event($pdo, $key, '🟠 The customer did not answer the bot\'s 7 follow-ups: the chat is in OPEN (orange) — anybody who wants to try can take it.'); $n++; continue;
+        }
         if ($cnt >= count($steps)) continue; if ($now - $liT < $steps[$cnt]) continue; if ($lastF && $now - $lastF < 600) continue;
         if (wag_bot_off($pdo, $key) || (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key))) continue;
         $bh = wag_meta_get($pdo, 'bothand:' . $key, ''); if ($bh !== '' && strtotime($bh) >= $liT) continue;   // the bot handed this customer to a person
@@ -849,7 +858,7 @@ function wag_bot_followup(PDO $pdo, int $max = 2): int
         $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) continue; }   // never the same text again
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
-        if ($ok) { $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up (step ' . ($cnt + 1) . ' of 4, ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
+        if ($ok) { $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up (step ' . ($cnt + 1) . ' of 7, ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
         else wag_log($pdo, 'bot', false, $key . ' · follow-up: ' . $res);
     }
     return $n;
