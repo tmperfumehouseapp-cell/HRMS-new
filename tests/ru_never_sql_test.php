@@ -8,4 +8,6 @@ foreach ([131049, 131050, 130472] as $c) ok(strpos(',' . $nvr . ',', ',' . $c . 
 $src = file_get_contents(dirname(__DIR__) . '/empmanagment/wa_rec_util.php');
 ok(strpos($src, "i.err_code <> 131049 AND i.err_code NOT IN (\$nvr)") !== false, 'the failed-people query leaves the never codes out');
 ok(strpos($src, "\$nvr = implode(',', array_map('intval'") !== false, 'the never list is built before the query');
+$wf = strpos($src, 'function wa_ru_warm_tick'); $wb = substr($src, $wf, strpos($src, '/** ROUTE:', $wf) - $wf);
+ok(strpos($wb, "i.err_code <> 131049 AND i.err_code NOT IN (\$nvr)") !== false, 'the new numbers\' look leaves the never codes out too');
 echo "ru never sql ok\n";
