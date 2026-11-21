@@ -1375,6 +1375,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             if (($__cx = wa_cx_lock($pdo, $auth, $c)) !== '') json_response(['error' => $__cx, 'complaint' => (int)$c['cx_id']], 423);
+            if (empty($in['auto']) && function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_bad' => 1, 'bot_lock' => 1], 423);   // 🤖 the bot is answering: a person's message would talk over it
             if ($text === '') json_response(['error' => 'Write a message first.'], 422); if (mb_strlen($text) > 4000) json_response(['error' => 'The message is too long (max 4000 characters).'], 422);
             if (empty($in['auto']) && function_exists('wq_grow_is_pay_link') && wq_grow_is_pay_link($pdo, $text)) { $__gg = wq_grow_check($pdo, $auth, $key, $in); if ($__gg['gate'] !== '') json_response(['error' => $__gg['error'], 'grow_gate' => $__gg['gate'], 'grow_missing' => $__gg['missing'], 'grow_ideas' => $__gg['ideas'] ?? null], 409); }   // 🔗 payment link: both efforts first (warning, later strict) — wq_grow_check in tk_goal.php
             // never twice: the same tap arriving again (slow network, double tap, a retry) or the same text to the same customer within 20 seconds → answered with the first send, nothing goes out
@@ -1493,6 +1494,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $key = wa_key(json_input()['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_is_admin($pdo, $auth) && ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint')) json_response(['error' => 'This is a complaint chat — it stays with its person. Ask the admin.'], 409);
             $from = (int)$c['assigned_emp']; if ($from === $me) json_response(['ok' => true, 'already' => true]);
+            if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);   // 🤖 the bot is answering
             wa_assign_to($pdo, $key, $me, $me, 'takeover');
             $nm = employee_names_by_id($pdo); $who = $nm[$me] ?? 'Manager'; $was = $from > 0 ? ($nm[$from] ?? 'someone') : '';
             wa_event($pdo, $key, '🔄 ' . $who . ' took over this chat' . ($was !== '' ? ' from ' . $was : ''));
@@ -1533,6 +1535,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 $me = (int)($auth['employee_id'] ?? 0);
                 if ($me <= 0 || $emp !== $me) json_response(['error' => 'Only an admin can assign a chat to someone else. Use Transfer for your own chats.'], 403);
                 if ((int)$c0['assigned_emp'] > 0) json_response(['error' => 'This chat is already with ' . (employee_names_by_id($pdo)[(int)$c0['assigned_emp']] ?? 'someone') . '.'], 409);
+                if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c0)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);
                 wa_assign_to($pdo, $key, $me, $me, 'take'); json_response(['ok' => true]);
             }
             if ($emp > 0 && !isset(employee_names_by_id($pdo)[$emp])) json_response(['error' => 'That person was not found.'], 422);

@@ -458,7 +458,7 @@ function wag_order_done_check(PDO $pdo, array $c, string $key): void
     try {
         $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id DESC LIMIT 12"); $q->execute([$key, date('Y-m-d H:i:s', time() - 6 * 3600)]);
         $t = implode(' ', array_column($q->fetchAll(), 'body')); if (!preg_match('/(?<!\d)\d{6}(?!\d)/', $t)) return;
-        if (function_exists('wq_meta_put')) wq_meta_put($pdo, 'botoff:' . $key, date('Y-m-d H:i:s'));
+        if (function_exists('wq_meta_put')) { wq_meta_put($pdo, 'botoff:' . $key, date('Y-m-d H:i:s')); wq_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s')); }
         wa_event($pdo, $key, '🛒 The bot collected the order details and the address. A person: send the payment link and confirm the order now.');
         $emp = (int)$c['assigned_emp'];
         if ($emp > 0 && function_exists('ct_push')) { $cu = trim((string)($c['name'] ?? '')) !== '' ? (string)$c['name'] : '+91 ' . $key; ct_push($pdo, [$emp], 'Order details ready', $cu . ': details + address are in the chat. Send the payment link.', '/my_chats.html?phone=' . $key, 'wa-ord-' . $key); }
@@ -490,11 +490,31 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
 /** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
 function wag_bot_off(PDO $pdo, string $key): bool
 {
+    try { if (!function_exists('wq_meta_get')) return false; $t = wq_meta_get($pdo, 'botoff:' . $key, ''); if ($t !== '' && strtotime($t) > time() - 36 * 3600) return true; $h = wq_meta_get($pdo, 'bothand:' . $key, ''); return $h !== '' && strtotime($h) > time() - 2 * 3600; } catch (Throwable $e) { return false; }   // taken by a person (36 h) or handed to a person by the bot (2 h)
+}
+/** The bot is "answering" this chat: it is on, nobody took the chat, it has not handed it over, and it just spoke (3 min) or a customer message waits for it (3 min). A salesperson cannot take over / write meanwhile — only 👎. */
+function wag_bot_lock(PDO $pdo, array $c): array
+{
+    $r = ['on' => false, 'why' => '', 'bot_text' => '', 'bot_at' => '']; $key = (string)($c['phone'] ?? '');
     try {
-        $t = function_exists('wq_meta_get') ? wq_meta_get($pdo, 'botoff:' . $key, '') : ''; if ($t !== '' && strtotime($t) > time() - 36 * 3600) return true;
-        if (function_exists('wq_meta_get') && function_exists('wq_ts') && wq_ts(wq_meta_get($pdo, 'typing:' . $key, '')) > time() - 90) return true;
-        $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp', 'person', 'phone') AND ts >= ? LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', time() - 20 * 60)]); return (bool)$q->fetchColumn();
-    } catch (Throwable $e) { return false; }
+        if ($key === '' || wag_cfg($pdo)['bot'] !== 'on') return $r;
+        if ((int)($c['cx_id'] ?? 0) > 0 || (int)($c['optout'] ?? 0) === 1 || (string)($c['status'] ?? '') !== 'open') return $r;
+        if (wag_bot_off($pdo, $key)) { $r['why'] = 'taken'; return $r; }
+        $li = !empty($c['last_in_at']) ? strtotime((string)$c['last_in_at']) : 0; $now = time();
+        $h = function_exists('wq_meta_get') ? wq_meta_get($pdo, 'bothand:' . $key, '') : ''; if ($h !== '' && strtotime($h) >= $li) { $r['why'] = 'handed'; return $r; }
+        $q = $pdo->prepare("SELECT body, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND mtype = 'text' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $b = $q->fetch();
+        if ($b) { $r['bot_text'] = mb_substr((string)$b['body'], 0, 600); $r['bot_at'] = (string)$b['ts']; }
+        $botRecent = $b && strtotime((string)$b['ts']) > $now - 180;
+        $waiting = $li > $now - 180 && (empty($c['last_out_at']) || strtotime((string)$c['last_out_at']) < $li);
+        if ($botRecent || $waiting) { $r['on'] = true; $r['why'] = $waiting && !$botRecent ? 'writing' : 'answered'; }
+    } catch (Throwable $e) { }
+    return $r;
+}
+/** '' when a person may act on this chat, else the sentence shown to them. */
+function wag_bot_block_msg(PDO $pdo, array $c): string
+{
+    if (!empty($GLOBALS['bot_replace'])) return '';
+    return wag_bot_lock($pdo, $c)['on'] ? '🤖 The bot is answering this customer — wait. If its answer is not good, press 👎 "Bot answer not good": you write the better answer and the chat becomes yours.' : '';
 }
 /** A bot reply that would invent an offer or claim a payment: never sent — a person answers (the replay test found exactly these). */
 function wag_bot_unsafe(string $t): bool
@@ -564,6 +584,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         $f0 = ai_feat('wa_bot'); $GLOBALS['lib_fast'] = 1; if ($__order) $GLOBALS['lib_order_mode'] = 1; $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fast'], $GLOBALS['lib_order_mode']); ai_feat($f0);
         if (!$r['ok']) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], false); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (stripos((string)$r['why'], 'not been taught') !== false) { wag_log($pdo, 'bot', false, 'The bot has not been taught yet — nothing was sent.'); break; } continue; }
         if (empty($r['handoff']) && wag_bot_unsafe((string)$r['text'])) { $r['handoff'] = true; wag_log($pdo, 'bot', false, $key . ' · blocked an unsafe reply (invented offer / payment claim) — a person takes over'); }
+        if (!empty($r['handoff']) && function_exists('wq_meta_put')) wq_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s'));   // the bot hands this customer to a person: the lock opens
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
@@ -1073,6 +1094,25 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         if (!($read ? (wa_can_watch($pdo, $auth, $c) || (function_exists('wa_req_peek') && wa_req_peek($pdo, $c) !== '') || (function_exists('wa_was_mine') && wa_was_mine($pdo, $k, (int)($auth['employee_id'] ?? 0)))) : wa_can_chat($pdo, $auth, $c))) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $c;   // 🙋 a Requests chat may be read before Take over
     };
     switch ($__wg) {
+        case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
+            $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on']);
+        }
+        case 'wa.g_botbad': {   // 👎 the bot's answer is not good: {phone, mode: 'draft'} → Claude's better answer; {phone, mode: 'send', text, reason} → it is sent, the chat becomes the person's, the bot stops, the owner's bot learns
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $c = $chatOf((string)($in['phone'] ?? '')); $key = (string)$c['phone']; $l = wag_bot_lock($pdo, $c);
+            if (($in['mode'] ?? '') === 'draft') {
+                $sug = ''; try { $GLOBALS['lib_fast'] = 1; $rr = wag_brain_reply($pdo, $c, (string)$l['bot_text'], true); unset($GLOBALS['lib_fast']); if (!empty($rr['ok'])) $sug = (string)$rr['text']; } catch (Throwable $e) { }
+                json_response(['bot_text' => $l['bot_text'], 'suggestion' => $sug, 'lock' => $l['on']]);
+            }
+            $text = trim((string)($in['text'] ?? '')); if (mb_strlen($text) < 2) json_response(['error' => 'Write the better answer first.'], 422);
+            $reason = mb_substr(trim((string)($in['reason'] ?? '')), 0, 60); $GLOBALS['bot_replace'] = 1;
+            [$ok, $res] = wa_send_text($pdo, $c, $text, 'emp', $me); if (!$ok) { unset($GLOBALS['bot_replace']); json_response(['error' => (string)$res], 422); }
+            wa_assign_to($pdo, $key, $me, $me, 'takeover'); unset($GLOBALS['bot_replace']);
+            $nm = employee_names_by_id($pdo); $who = $nm[$me] ?? 'A salesperson';
+            wa_event($pdo, $key, '🔄 ' . $who . ' replaced the bot’s answer and took this chat. Bot said: “' . mb_substr((string)$l['bot_text'], 0, 160) . '” · ' . $who . ' said: “' . mb_substr($text, 0, 160) . '”' . ($reason !== '' ? ' · reason: ' . $reason : ''));
+            try { if (function_exists('wa_learn_tables') && wa_learn_tables($pdo)) { [$inId, $cu] = wa_last_in($pdo, $key); $pdo->prepare("INSERT INTO wa_learn (phone, in_id, customer, sugg, sent, kind, emp_id, ver, status, created_at) VALUES (?, ?, ?, ?, ?, 'botbad', ?, 0, 'new', ?)")->execute([$key, $inId, mb_substr((string)$cu, 0, 800), mb_substr((string)$l['bot_text'], 0, 1500), mb_substr($text . ($reason !== '' ? "\n[reason: " . $reason . "]" : ''), 0, 1500), $me, date('Y-m-d H:i:s')]); } } catch (Throwable $e) { }
+            json_response(['ok' => true]);
+        }
         case 'wa.g_find': {   // 🔍 search ANY customer by number or name (top of the salesperson's Chats): who has the chat, may I open it
             $qq = trim((string)($_GET['q'] ?? '')); if (mb_strlen($qq) < 3) json_response(['items' => []]);
             $like = wa_q_like($qq); $names = employee_names_by_id($pdo); $canAll = function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth);
