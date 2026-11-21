@@ -593,6 +593,9 @@ function wag_hot_open_sweep(PDO $pdo, int $max = 10): int
         }
         if ($n && function_exists('ct_push') && function_exists('wa_team_cfg')) { $al = (array)(wa_team_cfg($pdo)['alert_emps'] ?? []); if ($al) ct_push($pdo, $al, $n . ' hot chat' . ($n === 1 ? '' : 's') . ' moved to Open', 'Nobody answered for ' . $mins . ' min. Anybody can take them now.', '/whatsapp.html#signals', 'wa-hotopen'); }
     } catch (Throwable $e) { wag_log($pdo, 'bot', false, 'hot open sweep: ' . $e->getMessage()); }
+    try {   // every 10 minutes: a person who takes queries and sends them back / leaves them (cherry-picking) is reported to the admins once a day
+        if (time() - (int)setting_get($pdo, 'wag_cherry_at', '0') >= 600) { setting_set($pdo, 'wag_cherry_at', (string)time()); $fl = []; foreach (wag_mkt_board($pdo, 7) as $b) if (!empty($b['flag']) && setting_get($pdo, 'wag_cherry_push_' . $b['emp'], '') !== date('Y-m-d')) { setting_set($pdo, 'wag_cherry_push_' . $b['emp'], date('Y-m-d')); $fl[] = $b['name'] . ' (' . $b['cherry'] . ' of ' . $b['taken'] . ')'; }
+            if ($fl && function_exists('ct_push') && function_exists('wa_team_cfg')) { $al = (array)(wa_team_cfg($pdo)['alert_emps'] ?? []); if ($al) ct_push($pdo, $al, '⚠ Cherry-picking queries', implode(', ', $fl) . ' took queries and sent them back or never answered them.', '/whatsapp.html#signals', 'wa-cherry'); } } } catch (Throwable $e) { }
     return $n;
 }
 /** The EXACT price from our chart for the quantity the customer chose (owner, 21 Nov: with nothing negotiated yet the bot starts at the 6.5% level, never at a deep combo price; the AI had used the 3 x 50 ml price for 5 x 50 ml). '' when the chat names no quantity x size. */
@@ -621,20 +624,20 @@ function wag_mkt_board(PDO $pdo, int $days = 7): array
     static $cache = []; $ck = $days . ':' . (int)(time() / 60); if (isset($cache[$ck])) return $cache[$ck];
     $since = date('Y-m-d 00:00:00', time() - ($days - 1) * 86400); $by = []; $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $present = [];
     if (function_exists('wa_people')) { try { foreach (wa_people($pdo) as $p) { $by[(int)$p['emp_id']] = ['emp' => (int)$p['emp_id'], 'name' => (string)($names[(int)$p['emp_id']] ?? ($p['name'] ?? '')), 'present' => !empty($p['present'])]; } } catch (Throwable $e) { } }
-    $blank = ['offered' => 0, 'taken' => 0, 'dropped' => 0, 'released' => 0, 'waits' => [], 'replies' => [], 'orders' => 0, 'amount' => 0];
+    $blank = ['offered' => 0, 'taken' => 0, 'dropped' => 0, 'released' => 0, 'noreply' => 0, 'waits' => [], 'replies' => [], 'orders' => 0, 'amount' => 0];
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_mkt (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, kind VARCHAR(10) NOT NULL, at DATETIME NOT NULL, wait_s INT NOT NULL DEFAULT -1, note VARCHAR(80) NOT NULL DEFAULT '', KEY k_emp (emp_id, at), KEY k_ph (phone, id), KEY k_kind (kind, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $st = $pdo->prepare("SELECT id, phone, emp_id, kind, at, wait_s FROM wa_mkt WHERE at >= ? AND kind IN ('taken','dropped','released') ORDER BY id DESC LIMIT 1500"); $st->execute([$since]); $q2 = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id = ? AND ts >= ? AND ts <= ?"); $nq = 0;
         foreach ($st->fetchAll() as $r) { $e = (int)$r['emp_id']; if ($e <= 0) continue; if (!isset($by[$e])) $by[$e] = ['emp' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'present' => false]; $by[$e] += $blank; if (!isset($by[$e]['taken'])) $by[$e] += $blank;
             $k = (string)$r['kind']; $by[$e][$k]++; if ($k === 'taken') { if ((int)$r['wait_s'] >= 0) $by[$e]['waits'][] = (int)$r['wait_s'];
-                if ($nq < 500) { $nq++; $q2->execute([(string)$r['phone'], $e, (string)$r['at'], date('Y-m-d H:i:s', strtotime((string)$r['at']) + 3 * 3600)]); $f = $q2->fetchColumn(); if ($f) $by[$e]['replies'][] = max(0, (int)strtotime((string)$f) - (int)strtotime((string)$r['at'])); } } }
+                if ($nq < 500) { $nq++; $q2->execute([(string)$r['phone'], $e, (string)$r['at'], date('Y-m-d H:i:s', strtotime((string)$r['at']) + 3 * 3600)]); $f = $q2->fetchColumn(); if ($f) $by[$e]['replies'][] = max(0, (int)strtotime((string)$f) - (int)strtotime((string)$r['at'])); elseif (time() - (int)strtotime((string)$r['at']) > 3 * 3600) $by[$e]['noreply']++; } } }   // took the chat and never wrote to the customer = cherry-picking
         $oq = $pdo->prepare("SELECT emp_id, COUNT(*) n, COALESCE(SUM(amount), 0) a FROM wa_outcomes WHERE code = 'order' AND at >= ? GROUP BY emp_id"); $oq->execute([$since]);
         foreach ($oq->fetchAll() as $r) { $e = (int)$r['emp_id']; if ($e <= 0) continue; if (!isset($by[$e])) $by[$e] = ['emp' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'present' => false]; $by[$e] += $blank; $by[$e]['orders'] = (int)$r['n']; $by[$e]['amount'] = (float)$r['a']; }
     } catch (Throwable $e) { }
     $med = function (array $a) { if (!$a) return null; sort($a); return $a[intdiv(count($a), 2)]; }; $out = [];
-    foreach ($by as $e => $x) { $x += $blank; $tk = (int)$x['taken']; $dr = (int)$x['dropped'] + (int)$x['released']; $mr = $med($x['replies']); $mw = $med($x['waits']); $avg = $x['orders'] > 0 ? $x['amount'] / $x['orders'] : 0;
+    foreach ($by as $e => $x) { $x += $blank; $tk = (int)$x['taken']; $ch = (int)$x['dropped'] + (int)$x['released'] + (int)$x['noreply']; $dr = $ch; $mr = $med($x['replies']); $mw = $med($x['waits']); $avg = $x['orders'] > 0 ? $x['amount'] / $x['orders'] : 0;
         $pOrd = min(40, $x['orders'] * 4); $pTick = $x['orders'] > 0 ? min(22, 20 * $avg / 2750) : 0; $pSpeed = $mr === null ? 0 : 20 * (1 - max(0, min(1, ($mr - 60) / 540))); $pEff = ($tk + $dr) > 0 ? 20 * $tk / ($tk + $dr) : 0;
-        $out[] = ['emp' => (int)$e, 'name' => (string)$x['name'], 'present' => !empty($x['present']), 'taken' => $tk, 'dropped' => (int)$x['dropped'], 'released' => (int)$x['released'], 'wait_med_s' => $mw, 'reply_med_s' => $mr, 'orders' => (int)$x['orders'], 'avg_ticket' => (int)round($avg), 'score' => (int)round($pOrd + $pTick + $pSpeed + $pEff)]; }
+        $out[] = ['emp' => (int)$e, 'name' => (string)$x['name'], 'present' => !empty($x['present']), 'taken' => $tk, 'dropped' => (int)$x['dropped'], 'released' => (int)$x['released'], 'noreply' => (int)$x['noreply'], 'cherry' => $ch, 'flag' => $ch >= 3 && $tk > 0 && $ch / max(1, $tk + (int)$x['dropped']) >= 0.4, 'wait_med_s' => $mw, 'reply_med_s' => $mr, 'orders' => (int)$x['orders'], 'avg_ticket' => (int)round($avg), 'score' => (int)round($pOrd + $pTick + $pSpeed + $pEff)]; }
     usort($out, fn($a, $b) => $b['score'] <=> $a['score'] ?: $b['taken'] <=> $a['taken']);
     return $cache[$ck] = $out;
 }
