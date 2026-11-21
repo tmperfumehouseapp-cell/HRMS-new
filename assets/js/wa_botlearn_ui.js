@@ -33,6 +33,25 @@
   }
   function say(msg, bad) { var t = document.createElement('div'); t.className = 'wp-toast' + (bad ? ' bad' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(function () { t.remove(); }, 3500); }
   function act(body) { if (busy) return; busy = true; api.post('wa.g_botlearn_apply', body).then(function (r) { say(body.ignore ? 'Ignored' : '✅ Applied to the live guidebook (' + (r.applied || 0) + '). The bot uses it now.'); return load(); }).catch(function (e) { say(e.message, true); }).then(function () { busy = false; }); }
+  var pend = null, popen = false;
+  function drawPend() {
+    var host2 = document.getElementById('blPend'); if (!host2) { host2 = document.createElement('div'); host2.id = 'blPend'; host.parentNode.insertBefore(host2, host); }
+    if (!pend || !pend.can || !pend.total) { host2.innerHTML = ''; return; } css();
+    var h = '<div class="bl" style="border-color:#f0c9a8;background:#fff6ee"><div class="bl-h" id="bpH"><span>🙋</span><b>The bot handed over ' + pend.total + ' chat' + (pend.total === 1 ? '' : 's') + ' — nobody has answered yet</b><span>' + (popen ? '▲' : '▼') + '</span></div>';
+    if (popen) {
+      h += '<div class="bl-b">';
+      pend.items.forEach(function (x) {
+        h += '<div class="bl-i"><div><b>' + esc(x.name || ('+91 ' + x.phone)) + '</b> · waiting <span style="color:' + (x.wait_min >= 10 ? '#b00' : '#a60') + '">' + x.wait_min + ' min</span> · handed over ' + x.handed_min + ' min ago' + (x.hot ? ' · 🔥 ' + esc(x.hot) : '') + '</div>'
+          + '<div style="color:#667">Holder: ' + (x.holder ? esc(x.holder) : 'nobody') + '</div><q>' + esc(x.last) + '</q>'
+          + '<div class="bl-r"><a class="sk" style="text-decoration:none;border-radius:9px;padding:7px 11px;font-weight:600" target="_blank" href="my_chats.html?phone=' + encodeURIComponent(x.phone) + '">Open chat</a><button class="ap" data-nf="' + esc(x.phone) + '">Give to the next free person</button></div></div>';
+      });
+      h += '</div>';
+    }
+    host2.innerHTML = h + '</div>';
+    var hd = document.getElementById('bpH'); if (hd) hd.onclick = function () { popen = !popen; drawPend(); };
+    host2.querySelectorAll('[data-nf]').forEach(function (b) { b.onclick = function () { b.disabled = true; api.post('wa.g_reassign', { phone: b.dataset.nf, emp_id: 0 }).then(function (r) { say('Given to ' + (r.to || 'the next free person')); loadPend(); }).catch(function (e) { say(e.message, true); b.disabled = false; }); }; });
+  }
+  function loadPend() { return api.get('wa.g_botpending').then(function (d) { pend = d; drawPend(); }).catch(function () { }); }
   function load() { return api.get('wa.g_botlearn').then(function (d) { data = d; draw(); }).catch(function () { }); }
-  load(); setInterval(function () { if (!document.hidden && !busy) load(); }, 60000);
+  load(); loadPend(); setInterval(function () { if (!document.hidden && !busy) { load(); loadPend(); } }, 60000);
 })();
