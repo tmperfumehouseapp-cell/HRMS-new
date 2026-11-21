@@ -531,7 +531,7 @@
   .ohn.q{color:#2563eb;} .ohn.c{color:#c2410c;} .ohn.t{color:var(--ink);}
   .ohk{display:flex; gap:6px; margin-bottom:8px;} .ohk div{flex:1; border-radius:9px; padding:5px 8px; font-size:11px; color:var(--muted); line-height:1.3;} .ohk b{display:block; font-size:14px; color:var(--ink);}
   .ohk .q{background:#eff6ff;} .ohk .c{background:#fff7ed;}
-  .ohr.now{background:#fff7ed;} .ohr.pk{background:#ffedd5;} .ohr.fu{opacity:.45;} .ohr.nt{background:#eef2ff; margin-top:4px;}
+  .ohr.now{background:#fff7ed;} .ohr.pk{background:#ffedd5;} .ohr.fu{opacity:.45;} .ohr.nt{background:#eef2ff; margin-top:4px;} .ohr.nx{background:#eef2ff;}
   .ohl{white-space:nowrap;} .ohl small{display:block; font-size:11px; color:var(--muted); font-weight:600;}
   .ohb{height:7px; background:#f1f5f9; border-radius:9px; overflow:hidden;} .ohb i{display:block; height:100%; background:linear-gradient(90deg,#fb923c,#f97316); border-radius:9px;}
   .ohr.nt .ohb i{background:#6366f1;}
@@ -1893,17 +1893,28 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
   let ohPanel = '';                       // '' = all panels
   const OH_SHORT = { tmph: 'TMPH', tmsg: 'TMSG', none: 'Other' };
   let OH_ROWS = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 'night'], OH_S = 10;      // OH_S = the hour the business day starts (10 normally, 12 for 8–15 Nov)
+  // 🕐 When the next day starts LATER than 10 AM (e.g. 1 PM), the business day runs on into the next morning: those hours (10–11, 11–12 ... up to the next day's start) get their own rows
+  // BELOW the Overnight row ('x10', 'x11' ...) — they are never added into the top 10–11 AM / 11–12 rows, which belong to the first morning.
+  const ohIsExt = (k) => typeof k === 'string' && k.charAt(0) === 'x';
+  const ohHrOf = (k) => ohIsExt(k) ? Number(String(k).slice(1)) : Number(k);
   function ohSetStart() {
     const v = document.getElementById('dateFrom').value; let h = 10;
     if (v) { const m = /^(\d{1,2}):/.exec(String(dsOn(new Date(v + 'T12:00:00')))); if (m) h = Math.min(23, Number(m[1])); }
-    if (h !== OH_S) { OH_S = h; OH_ROWS = []; for (let x = h; x < 24; x++) OH_ROWS.push(x); OH_ROWS.push('night'); }
+    OH_S = h; OH_ROWS = []; for (let x = h; x < 24; x++) OH_ROWS.push(x); OH_ROWS.push('night');
+    const dt = document.getElementById('dateTo').value;
+    if (dt) { const nx = new Date(dt + 'T12:00:00'); nx.setDate(nx.getDate() + 1); const m = /^(\d{1,2}):(\d{2})/.exec(String(dsOn(nx)));
+      if (m) { const last = Number(m[2]) > 0 ? Number(m[1]) : Number(m[1]) - 1; for (let x = h; x <= last && x < 24; x++) OH_ROWS.push('x' + x); } }
+  }
+  function ohEnsure(base) {          // any extended hour that really has orders always gets its row (e.g. a range of days)
+    base.forEach((o) => { const k = ohSlot(o); if (OH_ROWS.indexOf(k) < 0) OH_ROWS.push(k); });
+    const ext = OH_ROWS.filter(ohIsExt).sort((a, b) => ohHrOf(a) - ohHrOf(b)); OH_ROWS = OH_ROWS.filter((k) => !ohIsExt(k)).concat(ext);
   }
   const ohNightLbl = () => '12 AM – ' + ((OH_S % 12) || 12) + ' ' + (OH_S < 12 ? 'AM' : 'PM');
   const ohHr = (h) => { const f = (x) => ((x % 12) || 12), ap = (x) => (x % 24) < 12 ? 'AM' : 'PM'; return f(h) + (ap(h) === ap(h + 1) ? '' : ' ' + ap(h)) + '–' + f(h + 1) + ' ' + ap(h + 1); };
-  const ohSlot = (o) => { const h = new Date(o.created_at).getHours(); return h >= OH_S ? h : 'night'; };
+  const ohSlot = (o) => { const d = new Date(o.created_at), h = d.getHours(); if (h < OH_S) return 'night'; return ymdOf(d) !== bizDayOf(d) ? 'x' + h : h; };   // 10 AM+ of the NEXT calendar day but still this business day = an extended row
   function ohOrders(base) { return ohPanel ? base.filter(o => panelOf(o) === ohPanel) : base; }
   function ohCardHtml(base) {
-    ohSetStart();
+    ohSetStart(); ohEnsure(base);
     const panels = panelPick ? [] : PANELS.filter(p => panelAllowed(p[0]) && base.some(o => panelOf(o) === p[0]));
     if (ohPanel && !panels.some(p => p[0] === ohPanel)) ohPanel = '';
     const list = ohOrders(base), by = {};
@@ -1917,16 +1928,18 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     const max = Math.max(1, ...OH_ROWS.map(k => by[k].n));
     const df = document.getElementById('dateFrom').value, dt = document.getElementById('dateTo').value;
     const today = bizDayOf(new Date()), onlyToday = df === today && dt === today, nowH = new Date().getHours();
-    const peak = OH_ROWS.filter(k => k !== 'night').reduce((a, k) => by[k].n > (a ? by[a].n : 0) ? k : a, null);
+    const peak = OH_ROWS.filter(k => k !== 'night' && !ohIsExt(k)).reduce((a, k) => by[k].n > (a ? by[a].n : 0) ? k : a, null);
     const tot = list.reduce((a, o) => a + (Number(o.total) || 0), 0);
     const yAmt = {}; let yOn = false;
     if (ydayFor && ydayFor === df && df === dt) { yOn = true; OH_ROWS.forEach(k => { yAmt[k] = 0; });
-      ydayOrders.filter(o => (!urlSalesman || o.salesman === urlSalesman) && (!panelPick || panelOf(o) === panelPick) && (!ohPanel || panelOf(o) === ohPanel)).forEach(o => { yAmt[ohSlot(o)] += Number(o.total) || 0; }); }
+      ydayOrders.filter(o => (!urlSalesman || o.salesman === urlSalesman) && (!panelPick || panelOf(o) === panelPick) && (!ohPanel || panelOf(o) === ohPanel)).forEach(o => { const sl = ohSlot(o); if (sl in yAmt) yAmt[sl] += Number(o.total) || 0; }); }
     let yRun = 0;
     let ohRun = 0;             // running total: the hours are already in chronological order (10 AM ... 11 PM, then Overnight last)
     const rows = OH_ROWS.map(k => {
-      const b = by[k], night = k === 'night', future = onlyToday && !night && nowH >= OH_S && k > nowH, now = onlyToday && !night && k === nowH;
-      const lab = night ? '🌙 Overnight<small>' + ohNightLbl() + '</small>' : ohHr(k) + (now ? ' ●' : '');
+      const ext = ohIsExt(k), hh = ohHrOf(k), b = by[k], night = k === 'night';
+      let future = onlyToday && !night && !ext && nowH >= OH_S && k > nowH, now = onlyToday && !night && !ext && k === nowH;
+      if (ext && onlyToday) { const nx = new Date(df + 'T12:00:00'); nx.setDate(nx.getDate() + 1); nx.setHours(hh, 0, 0, 0); const t0 = nx.getTime(), n0 = Date.now(); future = t0 > n0; now = t0 <= n0 && n0 < t0 + 3600000; }
+      const lab = night ? '🌙 Overnight<small>' + ohNightLbl() + '</small>' : ext ? ohHr(hh) + (now ? ' ●' : '') + '<small>next day</small>' : ohHr(k) + (now ? ' ●' : '');
       const cell = (v, t, cls) => v ? `<a href="#" class="ohn ${cls}" data-oh="${k}" data-oht="${t}">${v}</a>` : `<span class="ohz">${future ? '—' : 0}</span>`;
       let split = `<span class="ohsp ohz">—</span>`, total = `<span class="ohtot ohz">—</span>`;
       yRun += yAmt[k] || 0; const yl = yOn ? `<small class="ohy" title="Yesterday, same hour">Y ${fmtMoney(yRun, 'INR')}</small>` : '';
@@ -1938,7 +1951,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
           : `<span class="ohsp ohz">—</span>`;
         total = `<span class="ohtot">${fmtMoney(ohRun, 'INR')}${yl}</span>`;      // running total: this hour + every hour before it (even hours with 0 orders still carry it forward)
       }
-      return `<div class="ohr${future ? ' fu' : ''}${now ? ' now' : ''}${k === peak && b.n ? ' pk' : ''}${night ? ' nt' : ''}"><span class="ohl">${lab}</span><div class="ohb"><i style="width:${b.n / max * 100}%"></i></div>${cell(b.q, 'query', 'q')}${cell(b.c, 'campaign', 'c')}${cell(b.n, '', 't')}<span class="oha">${b.n ? fmtMoney(b.amt, 'INR') : (future ? '—' : '')}</span>${split}${total}</div>`;
+      return `<div class="ohr${future ? ' fu' : ''}${now ? ' now' : ''}${k === peak && b.n ? ' pk' : ''}${night ? ' nt' : ''}${ext ? ' nx' : ''}"><span class="ohl">${lab}</span><div class="ohb"><i style="width:${b.n / max * 100}%"></i></div>${cell(b.q, 'query', 'q')}${cell(b.c, 'campaign', 'c')}${cell(b.n, '', 't')}<span class="oha">${b.n ? fmtMoney(b.amt, 'INR') : (future ? '—' : '')}</span>${split}${total}</div>`;
     }).join('');
     return `<div class="stat-card oh-card"><div class="label"><span class="lbl-full">Orders by hour</span><span class="lbl-short">Orders by hour</span></div>
       <div class="oht"><b>${list.length} orders</b> · ${fmtMoney(tot, 'INR')}</div>
@@ -1950,7 +1963,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
   function ohOpen(k, t) {
     const base = ohOrders(scopedOrders()).filter(o => String(ohSlot(o)) === String(k) && (!t || orderTagType(o.tags) === t)).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     const tm = (t) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-    document.getElementById('ohTitle').textContent = (k === 'night' ? 'Overnight · ' + ohNightLbl() : ohHr(Number(k))) + (t === 'query' ? ' · Query' : t === 'campaign' ? ' · Campaign' : '') + (ohPanel ? ' · ' + (PANEL_NAME[ohPanel] || ohPanel) : '');
+    document.getElementById('ohTitle').textContent = (k === 'night' ? 'Overnight · ' + ohNightLbl() : ohIsExt(k) ? ohHr(ohHrOf(k)) + ' · next day' : ohHr(Number(k))) + (t === 'query' ? ' · Query' : t === 'campaign' ? ' · Campaign' : '') + (ohPanel ? ' · ' + (PANEL_NAME[ohPanel] || ohPanel) : '');
     document.getElementById('ohSub').textContent = base.length + ' order' + (base.length === 1 ? '' : 's') + ' · ' + fmtMoney(base.reduce((a, o) => a + (Number(o.total) || 0), 0), 'INR') + ' · tap an order number to open it';
     document.getElementById('ohBody').innerHTML = base.length ? `<div style="overflow-x:auto;"><table class="no-stack ohtab"><thead><tr><th>Order</th><th>Time</th><th>Salesman</th><th>Code</th><th style="text-align:right;">Amount</th></tr></thead><tbody>${base.map(o => `<tr><td><a href="#" data-ohi="${o._i}" style="font-weight:800;">${esEsc(o.order_name)}</a>${AddonView.tag(o)}${ohPanel ? '' : `<div style="font-size:11px; color:var(--muted);">${esEsc(PANEL_NAME[panelOf(o)] || '')}</div>`}</td><td style="white-space:nowrap;">${tm(o.created_at)}</td><td>${esEsc(o.salesman || '—')}</td><td>${o.code ? `<span class="ocd">${esEsc(o.code)}</span>` : '<span class="ocd no">no code</span>'}</td><td style="text-align:right; font-weight:700; white-space:nowrap;">${fmtMoney(o.total, o.currency)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No orders.</p>';
     ohPush();
