@@ -848,6 +848,12 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
             $__t = ' ' . mb_strtolower(implode(' ', array_column($__q->fetchAll(), 'body'))) . ' ';
             if (!preg_match('/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)|not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|fake|duplicate|refund|paisa wapas|money back|return kar|quality)/u', $__t)) continue;
             if (preg_match('/(policy|agar|\bif\b|rahe (to|too)|hoti hai|hota hai|kya hai|kaise|how|can i|sakte|sakta)/u', $__t) && !preg_match('/(mila|aaya|aayi|hai mera|mere|my (order|parcel|bottle)|order (id|no)|#\d{4})/u', $__t)) continue;
+            if (preg_match('/(\bcodes?\b|\bog\b|coupon|promo)/u', $__t)) {   // owner 22 Nov: "Code toh nahi aaya" is the talk about our OG code process, not a complaint - the bot never raises it by itself: it asks the salesperson once (a hint in the chat + a push to the holder), the person decides
+                $__li = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__li->execute([$key]); $__mid = (int)$__li->fetchColumn();
+                if ($__mid > 0 && wag_meta_get($pdo, 'cxcode:' . $key, '') !== (string)$__mid) { wag_meta_put($pdo, 'cxcode:' . $key, (string)$__mid);
+                    wa_event($pdo, $key, '💡 The customer used the word CODE. Not raised as a complaint: is this about our OG code process (then nothing to do) or a real complaint (then raise it from More → Complaint)?');
+                    $__ho = (int)($c['assigned_emp'] ?? 0); if ($__ho > 0 && function_exists('ct_push')) { try { ct_push($pdo, [$__ho], 'Code word in a chat', 'Is this the OG code talk or a complaint? The bot did not raise a complaint - you decide.', '/my_chats.html?phone=' . $key, 'wa-cxcode-' . $key); } catch (Throwable $e) { } } }
+                continue; }
         } catch (Throwable $e) { continue; }
         try {
             $li = $pdo->prepare("SELECT id, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch(); if (!$m) continue;
