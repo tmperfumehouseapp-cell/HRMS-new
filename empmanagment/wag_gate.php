@@ -10,19 +10,24 @@ if (!function_exists('wgate_state')) {
         foreach ([date('Y-m-d', $now), date('Y-m-d', $now - 86400)] as $d) { $t = function_exists('day_start_for') ? (string)day_start_for($pdo, $d) : '10:00'; $ts = (int)strtotime($d . ' ' . $t); if ($ts > 0 && $ts <= $now) return $ts; }
         return (int)strtotime(date('Y-m-d 00:00:00'));
     }
-    /** [emp => [queries, orders]] of the current sales day (normal + campaign, community not counted) and the team's 7-day ratio; cached 20 s. */
+    /** The numbers of the Sales Live cards (what the owner sees: queries = normal + campaign, orders = query orders + campaign orders) are the ONE source (owner 22 Nov: a lock on the top seller while her card said 23% was wrong): the snapshot writes them here;
+     *  an automatic lock only works while they are fresh (15 min) and belong to the current sales day. $rows = [emp => [queries, orders]]. */
+    function wgate_snapshot_put(PDO $pdo, array $rows): void
+    {
+        try { $tq = 0; $to = 0; foreach ($rows as $v) { $tq += (int)$v[0]; $to += (int)$v[1]; }
+            setting_set($pdo, 'wgate_snap', json_encode(['t' => time(), 'day' => date('Y-m-d H:i:s', wgate_day_start($pdo)), 'rows' => $rows, 'team' => $tq > 0 ? $to / $tq : 0.0]));
+            unset($GLOBALS['__wgate_c']); } catch (Throwable $e) { }
+    }
+    /** [emp => [queries, orders]] of the current sales day from the card numbers, the reference ratio and the hand choices; nothing is blocked automatically when the numbers are stale. */
     function wgate_state(PDO $pdo): array
     {
-        static $c = null; if ($c !== null && $c['t'] > time() - 20) return $c;
-        $c = ['t' => time(), 'day' => '', 'emps' => [], 'ref' => 0.2, 'team' => 0.0, 'ovr' => []];
-        try { $f = wgate_day_start($pdo); $c['day'] = date('Y-m-d H:i:s', $f); $f7 = date('Y-m-d H:i:s', $f - 6 * 86400);
-            $sql = "SELECT q.emp_id, COUNT(*) n, SUM(CASE WHEN COALESCE(s.orders, 0) > 0 THEN 1 ELSE 0 END) o FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN ('community') GROUP BY q.emp_id";
-            $q = $pdo->prepare($sql); $q->execute([date('Y-m-d H:i:s', $f)]); foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $c['emps'][(int)$r[0]] = [(int)$r[1], (int)$r[2]];
-            $q->execute([$f7]); $tq = 0; $to = 0; foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) { $tq += (int)$r[1]; $to += (int)$r[2]; }
-            $c['team'] = $tq >= 40 && $to > 0 ? min(0.5, $to / $tq) : 0.0; $c['ref'] = max($c['team'], 0.2);
-            $j = json_decode((string)setting_get($pdo, 'wgate_ovr', ''), true); if (is_array($j)) foreach ($j as $e => $v) if (is_array($v) && ($v[1] ?? '') === $c['day']) $c['ovr'][(int)$e] = (string)$v[0];   // a hand choice counts for this sales day only
+        $c = $GLOBALS['__wgate_c'] ?? null; if (is_array($c) && $c['t'] > time() - 20) return $c;
+        $c = ['t' => time(), 'day' => '', 'emps' => [], 'ref' => 0.2, 'team' => 0.0, 'ovr' => [], 'fresh' => false];
+        try { $c['day'] = date('Y-m-d H:i:s', wgate_day_start($pdo)); $j = json_decode((string)setting_get($pdo, 'wgate_snap', ''), true);
+            if (is_array($j) && (int)($j['t'] ?? 0) > time() - 900 && ($j['day'] ?? '') === $c['day']) { $c['fresh'] = true; foreach ((array)($j['rows'] ?? []) as $e => $v) $c['emps'][(int)$e] = [(int)$v[0], (int)$v[1]]; $c['team'] = min(0.5, (float)($j['team'] ?? 0)); $c['ref'] = max($c['team'], 0.2); }
+            $o = json_decode((string)setting_get($pdo, 'wgate_ovr', ''), true); if (is_array($o)) foreach ($o as $e => $v) if (is_array($v) && ($v[1] ?? '') === $c['day']) $c['ovr'][(int)$e] = (string)$v[0];   // a hand choice counts for this sales day only
         } catch (Throwable $e) { }
-        return $c;
+        $GLOBALS['__wgate_c'] = $c; return $c;
     }
     /** The lock state of one person: ['blocked' => bool, 'mode' => auto|open|lock, 'q' => queries, 'o' => orders, 'ref' => reference ratio, 'why' => sentence]. */
     function wgate_blocked(PDO $pdo, int $emp): array
@@ -31,7 +36,7 @@ if (!function_exists('wgate_state')) {
         $r = ['blocked' => false, 'mode' => $mode, 'q' => $n, 'o' => $o, 'ref' => round($ref, 3), 'why' => ''];
         if ($mode === 'lock') { $r['blocked'] = true; $r['why'] = '🔒 Locked by the admin. New queries come back when the admin opens the lock.'; return $r; }
         if ($mode === 'open') return $r;
-        if (($n >= 10 && $o === 0) || ($n >= 12 && ($o / $n) < 0.5 * $ref)) { $r['blocked'] = true; $r['why'] = '🔒 You have ' . $n . ' queries today (normal + campaign) with ' . $o . ' order' . ($o === 1 ? '' : 's') . ' — below the team level (' . round(100 * $o / $n) . '% vs ' . round(100 * $ref) . '%). Close the chats you already have; one order opens new queries again.'; }
+        if ($s['fresh'] && (($n >= 10 && $o === 0) || ($n >= 12 && ($o / $n) < 0.5 * $ref))) { $r['blocked'] = true; $r['why'] = '🔒 You have ' . $n . ' queries today (normal + campaign) with ' . $o . ' order' . ($o === 1 ? '' : 's') . ' — below the team level (' . round(100 * $o / $n) . '% vs ' . round(100 * $ref) . '%). Close the chats you already have; one order opens new queries again.'; }
         return $r;
     }
     /** What the Sales Live card needs: [blocked, mode, q, o]. */
@@ -43,6 +48,7 @@ if (!function_exists('wgate_state')) {
         try { $s = wgate_state($pdo); $j = json_decode((string)setting_get($pdo, 'wgate_ovr', ''), true); if (!is_array($j)) $j = [];
             foreach ($j as $e => $v) if (!is_array($v) || ($v[1] ?? '') !== $s['day']) unset($j[$e]);   // yesterday's choices are dropped
             if ($mode === 'auto') unset($j[$emp]); else $j[$emp] = [$mode, $s['day']];
+            unset($GLOBALS['__wgate_c']);
             setting_set($pdo, 'wgate_ovr', json_encode($j)); return true; } catch (Throwable $e) { return false; }
     }
 }
