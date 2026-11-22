@@ -120,4 +120,28 @@ if (!function_exists('wcd_tick')) {
         $o['cost'] = round(((int)($o['sent_total'] ?? 0)) * 0.15, 2);
         return $o;
     }
+
+    /** The card (Campaigns screen, above the 30-Day Lineup): controls + today / all numbers like the Lineup card. Cached 90 s. */
+    function wcd_numbers(PDO $pdo, int $from): array
+    {
+        $f = date('Y-m-d H:i:s', $from); $o = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'orders' => 0, 'revenue' => 0, 'cost' => 0.0];
+        try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= ?"); $q->execute([$f]); $o['sent'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+        try { $r = $pdo->prepare("SELECT m.status, COUNT(*) FROM wa_cold_log l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci) WHERE l.ok = 1 AND l.at >= ? GROUP BY m.status"); $r->execute([$f]); $rc = $r->fetchAll(PDO::FETCH_KEY_PAIR); $o['read'] = (int)($rc['read'] ?? 0); $o['delivered'] = (int)($rc['delivered'] ?? 0) + $o['read']; $o['failed'] = (int)($rc['failed'] ?? 0); } catch (Throwable $e) { }
+        try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_cold_cust WHERE status = 'replied' AND left_at >= ?"); $q->execute([$f]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+        try { $ord = wcd_orders($pdo, wcd_set($pdo, 'wcd_from', '2026-11-01') . ' 00:00:00'); $q = $pdo->query("SELECT phone, entered_at FROM wa_cold_cust WHERE n_sent > 0"); foreach ($q->fetchAll(PDO::FETCH_NUM) as $c) foreach ($ord[(string)$c[0]] ?? [] as $oo) if ($oo[0] >= (int)strtotime((string)$c[1]) && $oo[0] >= $from) { $o['orders']++; $o['revenue'] += $oo[1]; break; } } catch (Throwable $e) { }
+        $o['cost'] = round(max(0, $o['sent'] - $o['failed']) * 0.15, 2);
+        return $o;
+    }
+    function wcd_card(PDO $pdo): array
+    {
+        $now = time(); $o = ['mode' => wcd_set($pdo, 'wcd_mode', 'dry'), 'cap' => (int)wcd_set($pdo, 'wcd_cap', '5000'), 'from' => wcd_set($pdo, 'wcd_from', '2026-11-01'), 'quiet' => function_exists('wa_quiet_hours') && wa_quiet_hours(), 'tick_at' => wcd_set($pdo, 'wcd_tick_at', ''), 'enrol' => json_decode(wcd_set($pdo, 'wcd_enrol_res', '{}'), true) ?: [], 'dbg' => wcd_set($pdo, 'wcd_dbg', '')];
+        if (!wcd_tables($pdo)) { $o['error'] = 'storage'; return $o; }
+        $c = json_decode(wcd_set($pdo, 'wcd_card_cache', ''), true);
+        if (!is_array($c) || (int)($c['t'] ?? 0) < $now - 90) {
+            $c = ['t' => $now, 'today' => wcd_numbers($pdo, (int)strtotime(date('Y-m-d 00:00:00'))), 'all' => wcd_numbers($pdo, (int)strtotime(wcd_set($pdo, 'wcd_from', '2026-11-01') . ' 00:00:00')), 'sum' => wcd_summary($pdo)];
+            try { $c['days'] = $pdo->query("SELECT DATE(next_due) d, COUNT(*) n FROM wa_cold_cust WHERE status = 'active' AND next_due >= '" . date('Y-m-d 00:00:00') . "' AND next_due < '" . date('Y-m-d 00:00:00', $now + 10 * 86400) . "' GROUP BY d ORDER BY d")->fetchAll(PDO::FETCH_KEY_PAIR); $c['fails'] = $pdo->query("SELECT LEFT(why, 60) w, COUNT(*) n FROM wa_cold_log WHERE ok = 0 AND at >= '" . date('Y-m-d 00:00:00') . "' GROUP BY w ORDER BY n DESC LIMIT 5")->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) { }
+            try { setting_set($pdo, 'wcd_card_cache', json_encode($c)); } catch (Throwable $e) { }
+        }
+        return $o + ['today' => $c['today'] ?? [], 'all' => $c['all'] ?? [], 'sum' => $c['sum'] ?? [], 'days' => $c['days'] ?? [], 'fails' => $c['fails'] ?? [], 'sent_today' => (int)($c['today']['sent'] ?? 0)];
+    }
 }
