@@ -893,6 +893,7 @@ function wag_botlearn_auto(PDO $pdo, int $max = 40): array
 /** Customers who wrote a complaint (leak, wrong item, not delivered, quality, refund) and nobody answered: a complaint ticket is raised for them at once (the Complaint team owns it), they are told the number. */
 function wag_complaint_sweep(PDO $pdo, int $max = 6): int
 {
+    return 0;   // owner, 22 Nov 2026: the bot never raises a complaint by itself (and never tells the customer "your complaint is noted"): the sales person reads the chat and raises it by hand
     if (!function_exists('cx_looks_like') && is_file(__DIR__ . '/boss.php')) { try { $action = 'wa.cxself'; require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { } }
     if (!function_exists('cx_looks_like') || !function_exists('cx_raise')) return 0;
     $n = 0; $now = time();

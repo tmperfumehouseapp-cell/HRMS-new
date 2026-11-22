@@ -314,6 +314,12 @@ function wa_autoreply_ctx(PDO $pdo, string $key, string $now): bool
 /** 🤖 Is this run of messages — OUR campaign message, then only what the customer's phone sent back — an automatic reply?
  *  $msgs: oldest first, each {dir, who, ts, body, mtype}. True when, after our LAST campaign message, every message is the customer's text and each one either reads like an automatic greeting / away note (and came within 3 hours),
  *  or came within 12 seconds of our message (25 seconds after the message before it, for the next ones of a burst) and is long enough — a person cannot read our message and type that fast, a business app's greeting arrives at once. */
+/** Which of these phones are another business's automatic reply (chat tagged business_autoreply): [phone => 1]. Their "answers" are not customer replies. */
+function wa_autoreply_phones(PDO $pdo, array $phones): array
+{
+    $o = []; try { foreach (array_chunk(array_values(array_unique(array_map('strval', $phones))), 800) as $ch) { if (!$ch) continue; $q = $pdo->prepare("SELECT phone FROM wa_ctags WHERE tag = 'business_autoreply' AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) $o[(string)$p] = 1; } } catch (Throwable $e) { }
+    return $o;
+}
 function wa_autoreply_run(array $msgs): bool
 {
     $last = -1; foreach ($msgs as $i => $x) if ((string)$x['dir'] === 'out') $last = $i;
@@ -962,6 +968,7 @@ function wa_tag_contact(PDO $pdo, array $c, bool $force): array
     try { [$ok, $v, $why] = convo_ai($sys, [['text' => "The chat:\n" . $txt]], $schema, false, 1200, 'claude'); } catch (Throwable $e) { return [false, 'The AI could not read this chat.']; }
     if (!$ok || !is_array($v)) return [false, (string)($why ?: 'The AI could not read this chat.')];
     $tag = isset(WA_TAGS[(string)($v['tag'] ?? '')]) ? (string)$v['tag'] : 'other'; $sum = mb_substr(trim((string)($v['summary'] ?? '')), 0, 600);
+    if ($tag === 'complaint' && (int)($c['cx_id'] ?? 0) === 0) { $tag = 'other'; $sum = trim('Possible complaint — read it. ' . $sum); }   // the AI never marks a chat as a complaint by itself: a complaint chat leaves the sales queues; only a sales person raises a complaint
     $pdo->prepare("UPDATE wa_contacts SET tag = ?, summary = ?, tagged_at = ? WHERE phone = ?")->execute([$tag, $sum, date('Y-m-d H:i:s'), $c['phone']]);
     return [true, ['tag' => $tag, 'summary' => $sum, 'fresh' => true]];
 }

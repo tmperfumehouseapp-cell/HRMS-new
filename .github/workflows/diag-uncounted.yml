@@ -1,13 +1,9 @@
-# READ-ONLY: one chat that shows on the laptop but not on top of the phone list: its status fields and where it sits in the phone list (no message text). Changes nothing.
+# READ-ONLY: which queries are counted for Shivam Vibhani and Aditya Yadav in the current sales day (the '12 queries today' lock message): time, type, who first had it, transfers. No phone numbers. Changes nothing.
 # Run it by hand: Actions -> "Uncounted orders (read-only)" -> Run workflow.
 name: Uncounted orders (read-only)
 
 on:
   workflow_dispatch:
-    inputs:
-      chat:
-        description: 'last 10 digits of the customer number'
-        required: false
 
 jobs:
   check:
@@ -28,24 +24,34 @@ jobs:
           STAGING_HOST: ${{ secrets.STAGING_HOST }}
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
-          CHAT: ${{ github.event.inputs.chat }}
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$CHAT" <<'REMOTE' || true
-          P="$1"; CH="$2"
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
           cat > /tmp/ql_check.php <<'PHP'
           <?php
           $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
-          require $f; $ch = preg_replace("/\D/", "", (string)($argv[2] ?? "")); $ch = substr($ch, -10);
+          require $f;
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
-          date_default_timezone_set("Asia/Kolkata"); $d->exec("SET time_zone = '+05:30'"); echo "now " . date("Y-m-d H:i:s") . " · number given: " . (strlen($ch) === 10 ? "10 digits" : "none") . "\n"; if (strlen($ch) !== 10) exit;
-          $emp = (int)$d->query("SELECT employee_id FROM employees WHERE full_name LIKE 'Aditya Yadav%' LIMIT 1")->fetchColumn();
-          $rows = $d->query("SELECT * FROM wa_contacts WHERE phone LIKE '%$ch'")->fetchAll(PDO::FETCH_ASSOC); echo "contact rows for this number: " . count($rows) . "\n";
-          foreach ($rows as $r) { foreach (["phone_len" => strlen($r["phone"]), "status" => $r["status"], "assigned_emp" => $r["assigned_emp"], "assigned_at" => $r["assigned_at"], "last_in_at" => $r["last_in_at"], "last_out_at" => $r["last_out_at"], "first_seen" => $r["first_seen"], "optout" => $r["optout"], "cx_id" => $r["cx_id"], "tag" => $r["tag"], "source" => $r["source"], "hot" => $r["hot"], "seen_msg_id" => $r["seen_msg_id"], "last_number_id" => $r["last_number_id"]] as $k => $v) echo "  $k = " . var_export($v, true) . "\n"; }
-          $c24 = date("Y-m-d H:i:s", time() - 86400);
-          $q = "SELECT c.phone, c.last_in_at, c.assigned_at FROM wa_contacts c WHERE c.status = 'open' AND c.assigned_emp = $emp AND ((c.last_in_at IS NOT NULL AND c.last_in_at >= '$c24') OR (c.assigned_at IS NOT NULL AND c.assigned_at >= '$c24' AND NOT EXISTS (SELECT 1 FROM wa_messages hm WHERE hm.phone = c.phone AND hm.dir = 'out' AND hm.who IN ('emp','phone') AND hm.ts >= c.assigned_at))) ORDER BY c.last_in_at DESC";
-          $all = $d->query($q)->fetchAll(PDO::FETCH_ASSOC); echo "phone list of the person (open, his, 24 h): " . count($all) . " chats\n"; $pos = 0; foreach ($all as $i => $x) if (substr($x["phone"], -10) === $ch) $pos = $i + 1; echo "this chat in that list: " . ($pos ? "yes, by time at position $pos of " . count($all) : "NO") . "\n";
-          echo "messages of this chat in the last 24 h: "; $m = $d->prepare("SELECT dir, who, COUNT(*) n, MAX(ts) t FROM wa_messages WHERE phone LIKE ? AND ts >= ? GROUP BY dir, who"); $m->execute(["%$ch", $c24]); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["dir"] . "/" . $x["who"] . "=" . $x["n"] . " (last " . $x["t"] . ") "; echo "\n";
-          echo "assignment log of this chat today: "; try { $m = $d->prepare("SELECT from_emp, to_emp, how, at FROM wa_assign_log WHERE phone LIKE ? AND at >= ? ORDER BY id"); $m->execute(["%$ch", date("Y-m-d 00:00:00")]); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $x) echo "[" . $x["from_emp"] . "->" . $x["to_emp"] . " " . $x["how"] . " " . $x["at"] . "] "; } catch (Throwable $e) { echo "n/a"; } echo "\n";
+          echo "server now: " . date("Y-m-d H:i:s") . "\n";
+          $names = [];
+          foreach ($d->query("SELECT employee_id, full_name FROM employees") as $r) $names[(int)$r["employee_id"]] = $r["full_name"];
+          $want = []; foreach ($names as $id => $n) if (preg_match("/shivam.*vibhani|aditya.*yadav/i", $n)) $want[$id] = $n;
+          echo "people: " . json_encode($want) . "\n";
+          $since = date("Y-m-d 00:00:00");
+          foreach ($want as $id => $nm) {
+            echo "\n=== $nm: queries held now, opened since $since ===\n";
+            $q = $d->prepare("SELECT q.id, q.opened_at, q.src, q.again, q.first_emp, COALESCE(t.type,'unclear') ty FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.emp_id = ? AND q.opened_at >= ? ORDER BY q.opened_at");
+            $q->execute([$id, $since]); $k = 0; $by = [];
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+              $k++; $mv = $d->prepare("SELECT from_emp, to_emp, at FROM wa_query_moves WHERE query_id = ? ORDER BY id"); $mv->execute([$r["id"]]); $ms = [];
+              foreach ($mv->fetchAll(PDO::FETCH_ASSOC) as $m) $ms[] = ($names[(int)$m["from_emp"]] ?? ("#" . $m["from_emp"])) . " -> " . ($names[(int)$m["to_emp"]] ?? ("#" . $m["to_emp"])) . " at " . $m["at"];
+              $by[$r["ty"] . ($r["again"] ? "/again" : "")] = ($by[$r["ty"] . ($r["again"] ? "/again" : "")] ?? 0) + 1;
+              echo sprintf("%2d. opened %s · type %s%s · src [%s] · first had: %s%s\n", $k, $r["opened_at"], $r["ty"], $r["again"] ? " (again)" : "", $r["src"], (int)$r["first_emp"] === $id ? "same person" : ($names[(int)$r["first_emp"]] ?? ("#" . $r["first_emp"])), $ms ? " · moves: " . implode("; ", $ms) : "");
+            }
+            echo "total held since midnight: $k · by type: " . json_encode($by) . "\n";
+            $o = $d->prepare("SELECT COUNT(*) FROM wa_queries WHERE first_emp = ? AND emp_id <> ? AND opened_at >= ?"); $o->execute([$id, $id, $since]); echo "queries he had first but now held by somebody else: " . $o->fetchColumn() . "\n";
+          }
+          echo "\nsnapshot setting: "; $v = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wgate_snap'")->fetchColumn(); $j = json_decode((string)$v, true); if ($j) { echo "t=" . date("H:i:s", (int)$j["t"]) . " day=" . $j["day"] . "\n"; foreach ($want as $id => $nm) echo "  $nm: " . json_encode($j["rows"][$id] ?? null) . "  (queries incl. campaign, orders)\n"; } else echo "(none)\n";
           PHP
-          php /tmp/ql_check.php "$P" "$CH"; rm -f /tmp/ql_check.php
+          php /tmp/ql_check.php "$P"; rm -f /tmp/ql_check.php
           REMOTE

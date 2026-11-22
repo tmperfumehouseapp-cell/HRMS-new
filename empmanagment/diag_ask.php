@@ -38,3 +38,12 @@ try { $st2 = function ($k) use ($pdo) { $x = $pdo->prepare("SELECT setting_value
         echo "ASK TOPICTPL reasons " . json_encode($one("SELECT * FROM wa_tpl_waba WHERE tpl_id IN ($in) AND UPPER(status) <> 'APPROVED' LIMIT 3")) . "\n"; }
     echo "ASK TOTAL accounts " . json_encode($one("SELECT COUNT(DISTINCT waba_id) FROM wa_tpl_waba")) . "\n";
 } catch (Throwable $e) { echo "ASK TOPICTPL ERR " . substr($e->getMessage(), 0, 90) . "\n"; }
+// 5) when and to whom the Lineup messages get a reply (owner 22 Nov): a sample (1 in 6) of the plain Lineup messages of the last 4 days; reply = the customer writes within 24 h after the message. The hour is the server clock hour (Berlin = IST - 4.5 h).
+try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 45000"); $f4 = date('Y-m-d H:i:s', time() - 4 * 86400); $cl = (string)($one("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wa_messages' AND COLUMN_NAME = 'phone'")[0][0] ?? 'utf8mb4_unicode_ci'); if (!preg_match('/^[a-z0-9_]+$/', $cl)) $cl = 'utf8mb4_unicode_ci'; $rp = "EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = CONVERT(p.phone USING utf8mb4) COLLATE " . $cl . " AND m.dir = 'in' AND m.ts > p.sent_at AND m.ts <= DATE_ADD(p.sent_at, INTERVAL 24 HOUR))";
+    $base = "FROM wa_line_plan p WHERE p.status = 'sent' AND p.sent_at >= '" . $f4 . "' AND p.id % 6 = 0 AND COALESCE(p.why, '') NOT LIKE '%rescue%'";
+    echo "ASK TIME by server hour [hour, sent, replied] " . json_encode($one("SELECT HOUR(p.sent_at) h, COUNT(*) n, SUM($rp) r " . $base . " GROUP BY h ORDER BY h")) . "\n";
+    echo "ASK STEP by day-step [step, sent, replied] " . json_encode($one("SELECT p.step, COUNT(*) n, SUM($rp) r " . $base . " GROUP BY p.step ORDER BY p.step")) . "\n";
+    echo "ASK TOPICREPLY by topic [topic, sent, replied] " . json_encode($one("SELECT p.topic, COUNT(*) n, SUM($rp) r " . $base . " GROUP BY p.topic ORDER BY n DESC LIMIT 12")) . "\n";
+    echo "ASK WEEKDAY by weekday (0=Mon) [wd, sent, replied] " . json_encode($one("SELECT WEEKDAY(p.sent_at) w, COUNT(*) n, SUM($rp) r " . $base . " GROUP BY w ORDER BY w")) . "\n";
+    echo "ASK BOUGHT before? [bought, sent, replied] " . json_encode($one("SELECT (SELECT COALESCE(MAX(c.n), 0) > 0 FROM wa_cust c WHERE c.phone = CONVERT(p.phone USING utf8mb4) COLLATE " . $cl . ") b, COUNT(*) n, SUM($rp) r " . $base . " GROUP BY b")) . "\n";
+} catch (Throwable $e) { echo "ASK TIME ERR " . substr($e->getMessage(), 0, 90) . "\n"; }
