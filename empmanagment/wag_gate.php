@@ -33,14 +33,15 @@ if (!function_exists('wgate_state')) {
     function wgate_blocked(PDO $pdo, int $emp): array
     {
         $s = wgate_state($pdo); $v = $s['emps'][$emp] ?? [0, 0]; $n = $v[0]; $o = $v[1]; $mode = $s['ovr'][$emp] ?? 'auto'; $ref = $s['ref'];
-        $r = ['blocked' => false, 'mode' => $mode, 'q' => $n, 'o' => $o, 'ref' => round($ref, 3), 'why' => ''];
+        $need = max(1, (int)ceil(0.5 * $ref * max($n, 1) - 1e-9)) - $o; if ($need < 1) $need = 1;   // orders still needed (queries stay as they are) to be above the rule
+        $r = ['blocked' => false, 'mode' => $mode, 'q' => $n, 'o' => $o, 'ref' => round($ref, 3), 'need' => 0, 'why' => ''];
         if ($mode === 'lock') { $r['blocked'] = true; $r['why'] = '🔒 Locked by the admin. New queries come back when the admin opens the lock.'; return $r; }
         if ($mode === 'open') return $r;
-        if ($s['fresh'] && (($n >= 10 && $o === 0) || ($n >= 12 && ($o / $n) < 0.5 * $ref))) { $r['blocked'] = true; $r['why'] = '🔒 You have ' . $n . ' queries today (normal + campaign) with ' . $o . ' order' . ($o === 1 ? '' : 's') . ' — below the team level (' . round(100 * $o / $n) . '% vs ' . round(100 * $ref) . '%). Close the chats you already have; one order opens new queries again.'; }
+        if ($s['fresh'] && (($n >= 10 && $o === 0) || ($n >= 12 && ($o / $n) < 0.5 * $ref))) { $r['blocked'] = true; $r['need'] = $need; $r['why'] = '🔒 You have ' . $n . ' queries today (normal + campaign) with ' . $o . ' order' . ($o === 1 ? '' : 's') . ' — below the team level (' . round(100 * $o / $n) . '% vs ' . round(100 * $ref) . '%). Close the chats you already have: ' . $need . ' more order' . ($need === 1 ? '' : 's') . ' (' . ($o + $need) . ' in total) and new queries open again.'; }
         return $r;
     }
     /** What the Sales Live card needs: [blocked, mode, q, o]. */
-    function wgate_card(PDO $pdo, int $emp): array { $g = wgate_blocked($pdo, $emp); return ['blocked' => $g['blocked'], 'mode' => $g['mode'], 'q' => $g['q'], 'o' => $g['o']]; }
+    function wgate_card(PDO $pdo, int $emp): array { $g = wgate_blocked($pdo, $emp); return ['blocked' => $g['blocked'], 'mode' => $g['mode'], 'q' => $g['q'], 'o' => $g['o'], 'need' => $g['need']]; }
     /** Admin: mode = lock (no new queries) · open (the automatic lock is lifted today) · auto (back to the rule). */
     function wgate_set(PDO $pdo, int $emp, string $mode): bool
     {
