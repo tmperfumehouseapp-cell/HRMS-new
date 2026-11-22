@@ -77,6 +77,51 @@ function st_oldpos_sales(PDO $pdo, string $from, string $to): array
     return $out;
 }
 
+/** Best sellers of the last $days days: units per perfume AND size, new POS bottles + old POS lines. Returns top-N overall and top-N inside each size. */
+function st_top_sellers(PDO $pdo, string $today, int $days = 30, int $n = 5): array
+{
+    $from = date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day'));
+    $rows = [];      // key "name|ml" => [name, ml, units]
+    $norm = function (string $t): string { $t = preg_replace('/\b\d+\s*ml\b/i', '', $t); return trim(preg_replace('/\s+/', ' ', $t), " -\t"); };
+    $put = function (string $name, int $ml, int $u) use (&$rows) {
+        if ($name === '' || $u <= 0) return;
+        $k = mb_strtolower($name) . '|' . $ml;
+        if (!isset($rows[$k])) $rows[$k] = ['name' => $name, 'ml' => $ml, 'units' => 0];
+        $rows[$k]['units'] += $u;
+    };
+    try {
+        $q = $pdo->prepare("SELECT p.title, b.ml, COUNT(*) u FROM st_bill_items i JOIN st_bills bl ON bl.bill_id = i.bill_id AND bl.status = 'ok' JOIN st_bottles b ON b.bottle_id = i.bottle_id JOIN st_products p ON p.product_id = b.product_id WHERE i.kind = 'sale' AND bl.biz_date >= ? GROUP BY p.product_id, p.title, b.ml");
+        $q->execute([$from]);
+        foreach ($q->fetchAll() as $r) $put($norm((string)$r['title']), (int)$r['ml'], (int)$r['u']);
+    } catch (Throwable $e) { error_log('st_top_sellers new: ' . $e->getMessage()); }
+    try {      // the old POS is still in use: its lines count too
+        $h = st_day_hour();
+        $q = $pdo->prepare("SELECT oi.title t, oi.variant_title vt, SUM(oi.qty) q FROM pos_order_items oi JOIN pos_orders o ON o.id = oi.order_id WHERE o.created_at >= ? GROUP BY oi.title, oi.variant_title");
+        $q->execute([$from . sprintf(' %02d:00:00', $h)]);
+        foreach ($q->fetchAll() as $r) {
+            $ml = 0; if (preg_match('/(\d+)\s*ml/i', (string)$r['vt'], $m) || preg_match('/(\d+)\s*ml/i', (string)$r['t'], $m)) $ml = (int)$m[1];
+            if ($ml > 0) $put($norm((string)$r['t']), $ml, (int)$r['q']);
+        }
+    } catch (Throwable $e) { error_log('st_top_sellers old: ' . $e->getMessage()); }
+    // overall: one row per perfume, with its sizes
+    $by = [];
+    foreach ($rows as $r) {
+        $k = mb_strtolower($r['name']);
+        if (!isset($by[$k])) $by[$k] = ['name' => $r['name'], 'units' => 0, 'sizes' => []];
+        $by[$k]['units'] += $r['units']; $by[$k]['sizes'][$r['ml']] = ($by[$k]['sizes'][$r['ml']] ?? 0) + $r['units'];
+    }
+    $cmp = fn($a, $b) => [$b['units'], $a['name']] <=> [$a['units'], $b['name']];
+    $all = array_values($by); usort($all, $cmp);
+    $total = array_sum(array_column($all, 'units'));
+    foreach ($all as &$a) { krsort($a['sizes']); $a['sizes'] = array_map(fn($ml, $u) => ['ml' => (int)$ml, 'units' => $u], array_keys($a['sizes']), $a['sizes']); } unset($a);
+    $seg = [];
+    foreach ($rows as $r) $seg[$r['ml']][] = ['name' => $r['name'], 'units' => $r['units']];
+    $segOut = [];
+    foreach ($seg as $ml => $list) { usort($list, $cmp); $segOut[] = ['ml' => (int)$ml, 'units' => array_sum(array_column($list, 'units')), 'top' => array_slice($list, 0, $n)]; }
+    usort($segOut, fn($a, $b) => $b['units'] <=> $a['units']);
+    return ['days' => $days, 'from' => $from, 'total_units' => $total, 'top' => array_slice($all, 0, $n), 'segments' => array_slice($segOut, 0, 4)];
+}
+
 function st_bottle_out(array $b): array
 {
     return [
@@ -1519,7 +1564,7 @@ try {
                 'stock' => ['bottles' => $stockBottles, 'products' => $stockProducts, 'ml' => $stockMl, 'sizes' => $sizes, 'testers' => $bc['testers_in_stock']],
                 'today' => ['old_pos_bills' => (int)$ot['bills'], 'old_pos_amount' => round((float)$ot['amt']), 'bills' => $bills, 'amount' => $amt, 'ml' => (int)$t['ml'], 'avg_ticket' => $bills ? round($amt / $bills) : 0, 'avg_ml' => $bills ? round((int)$t['ml'] / $bills) : 0, 'discount' => (float)$t['disc'], 'testers_given' => (int)$t['testers'], 'cash' => (float)$t['cash'], 'online' => (float)$t['online'],
                     'yesterday_amount' => (float)$y['amt'], 'yesterday_bills' => (int)$y['bills']],
-                'by_person' => $by, 'week' => $week,
+                'by_person' => $by, 'week' => $week, 'top30' => st_top_sellers($pdo, $today, 30, 5),
                 'remarks' => $rem, 'remarks_total' => $nrem, 'store_registered' => $storeOffice > 0, 'customers' => $cust,
             ]);
             break;
