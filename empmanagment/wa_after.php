@@ -136,14 +136,14 @@ if (!function_exists('wa_aft_days')) {
             $wm = array_values(array_filter(array_column($sent, 'wamid'))); $st = [];
             foreach (array_chunk($wm, 400) as $ch) { $x = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) $st[(string)$r['wamid']] = (string)$r['status']; }
             foreach ($sent as $r) { $x = $st[(string)$r['wamid']] ?? ''; if ($x === 'delivered' || $x === 'read') $o['delivered']++; if ($x === 'read') $o['read']++; }
-            $byP = []; foreach ($sent as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
+            $byP = []; $byK = []; foreach ($sent as $r) { $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']); $byK[wa_aft_k10($r['phone'])][] = (int)strtotime((string)$r['sent_at']); }   // orders are matched by the LAST 10 DIGITS (the shop's phone has no 91): matched by the full number they never met, so After-Order orders always showed 0 (owner 22 Nov)
             if ($byP) { $rep = [];
                 foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
                     foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; break; } } }
                 $o['replied'] = count($rep);
                 $ord = []; $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
-                foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byP[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; }
-                $buy = []; foreach ($ord as $k => $list) foreach ($list as $ot) foreach ($byP[$k] as $st0) if ($st0 < $ot[0] && $ot[0] <= $st0 + 7 * 86400) { $o['orders']++; $o['revenue'] += (int)round($ot[1]); $buy[$k] = 1; break; }
+                foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byK[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; }
+                $buy = []; foreach ($ord as $k => $list) foreach ($list as $ot) foreach ($byK[$k] as $st0) if ($st0 < $ot[0] && $ot[0] <= $st0 + 7 * 86400) { $o['orders']++; $o['revenue'] += (int)round($ot[1]); $buy[$k] = 1; break; }
                 $o['buyers'] = count($buy); }
         } catch (Throwable $e) { $o['error'] = substr($e->getMessage(), 0, 80); }
         return $o;
