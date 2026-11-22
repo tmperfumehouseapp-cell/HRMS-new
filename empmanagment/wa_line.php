@@ -909,6 +909,14 @@ function wl_new_word(PDO $pdo, array $report): string
     return 'words: new wording ' . $key . ' written for ' . $base . ' and sent to Meta for approval (' . (int)$mk['made'] . ' made): "' . mb_substr($w['body'], 0, 90) . '…"';
 }
 /** The themes the old data showed to convert well (150 days of chats, 21 Nov: everybody who wrote 5.8% ordered; gift 22%, women 20%, men 13.7%, best-selling 12.2%). The learning adds them one at a time. */
+/** Is $ts (a timestamp) inside the season [$from, $to] (month-day strings, may wrap over the new year) or at most $lead days before it starts? */
+function wl_in_season(string $from, string $to, int $ts, int $lead = 0): bool
+{
+    $md = date('m-d', $ts); $ld = date('m-d', $ts + $lead * 86400); $in = function (string $x) use ($from, $to) { return $from <= $to ? ($x >= $from && $x <= $to) : ($x >= $from || $x <= $to); };
+    return $in($md) || $in($ld);
+}
+/** The date (Y-m-d) the season that includes $ts ends. */
+function wl_season_end(string $to, int $ts): string { $y = (int)date('Y', $ts); $d = $y . '-' . $to; if ($d < date('Y-m-d', $ts)) $d = ($y + 1) . '-' . $to; return $d; }
 function wl_topic_candidates(): array
 {
     $c = function (string $label, string $brief, array $words, string $before = '') { return ['label' => $label, 'brief' => $brief, 'words' => $words, 'before' => $before]; };
@@ -927,13 +935,17 @@ function wl_topic_candidates(): array
         'collect' => $c('Collection', 'a customer who wants to see the whole COLLECTION / catalogue / list of perfumes', ['collection', 'catalogue', 'catalog', 'exclusive', 'list', 'all perfumes']),
         'wholesal' => $c('Wholesale / resell', 'a customer who wants to buy in BULK / wholesale / to resell', ['wholesale', 'bulk', 'resell', 'reseller', 'dealer', 'business']),
         'combo' => $c('Combo', 'a customer who asks for COMBO / multi-bottle packs', ['combo', 'combos', 'pack of', 'set of', 'bundle']),
+        // SEASON topics (owner 22 Nov): made by themselves a few days before the season starts (no data scan needed), live only inside the season window [from, to] (month-day); the brief forbids any invented offer / price / date
+        'wedding' => $c('Wedding season', 'a customer who is buying perfumes for a WEDDING / marriage function (himself, the groom or bride, family, return gifts). Speak of the wedding season in a warm natural way; NO invented offer, discount, price, free item or date', ['shaadi', 'shadi', 'wedding', 'marriage', 'lagan', 'lagn', 'vivah', 'baraat', 'dulha', 'dulhan', 'groom', 'bride', 'engagement', 'sagai', 'reception', 'લગ્ન', 'શાદી', 'शादी', 'विवाह', 'सगाई']) + ['season' => ['11-15', '02-28']],
+        'newyear' => $c('New Year', 'a customer who wants a perfume for NEW YEAR / New Year party or as a New Year gift. Speak of the New Year in a warm natural way; NO invented offer, discount, price, free item or date', ['new year', 'newyear', 'happy new year', '2027', 'nye', 'new years', 'नया साल', 'નવું વર્ષ']) + ['season' => ['12-05', '01-15']],
     ];
 }
 /** A new topic becomes live (its words join the classification) when its 4 messages are approved on 3+ accounts. */
 function wl_topics_refresh(PDO $pdo): int
 {
     $t = json_decode((string)setting_get($pdo, 'wl_topics_extra', ''), true); if (!is_array($t) || !$t) return 0; $ok = wln_wide_ok($pdo); $n = 0;
-    foreach ($t as &$x) { if (!empty($x['ready'])) continue; $all = true; for ($i = 1; $i <= 4; $i++) if (!in_array('ln_' . $x['key'] . '_' . $i, $ok, true)) $all = false;
+    foreach ($t as &$x) { if (!empty($x['until']) && date('Y-m-d') > (string)$x['until']) { if (!empty($x['ready'])) { $x['ready'] = false; $n++; wl_learn_log($pdo, 'topic "' . $x['label'] . '" is over (its season ended ' . $x['until'] . ')'); } continue; }   // a season topic ends with its season
+        if (!empty($x['ready'])) continue; $all = true; for ($i = 1; $i <= 4; $i++) if (!in_array('ln_' . $x['key'] . '_' . $i, $ok, true)) $all = false;
         if ($all) { $x['ready'] = true; $n++; wl_learn_log($pdo, 'topic "' . $x['label'] . '" is live: its 4 messages are approved, customers who write about it now get its ladder'); } } unset($x);
     if ($n) { setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t); }
     return $n;
@@ -961,8 +973,9 @@ function wl_new_topic(PDO $pdo): string
     if (!function_exists('wcr_ai')) return 'topics: Claude is not available on this server';
     $t = json_decode((string)setting_get($pdo, 'wl_topics_extra', ''), true); if (!is_array($t)) $t = [];
     $waiting = []; foreach ($t as $x) if (empty($x['ready']) && time() - (int)strtotime((string)($x['at'] ?? 'now')) < 4 * 86400) $waiting[] = (string)$x['label']; if (count($waiting) >= 2) return 'topics: waiting for Meta to approve the messages of ' . implode(', ', $waiting);
-    $have = array_column($t, 'key'); $st = json_decode((string)setting_get($pdo, 'wl_theme_stats', ''), true); $pick = null; $best = -1.0;
-    foreach (wl_topic_candidates() as $k => $c) { if (in_array($k, $have, true)) continue; $v = is_array($st) ? ($st['themes'][$k] ?? null) : null;
+    $have = array_column($t, 'key'); $st = json_decode((string)setting_get($pdo, 'wl_theme_stats', ''), true); $pick = null; $best = -1.0; $sea = false;
+    foreach (wl_topic_candidates() as $k => $c) { if (empty($c['season']) || in_array($k, $have, true)) continue; if (wl_in_season($c['season'][0], $c['season'][1], time(), 10)) { $pick = [$k, $c]; $sea = true; break; } }   // a season topic first (owner 22 Nov)
+    foreach (wl_topic_candidates() as $k => $c) { if ($sea || !empty($c['season']) || in_array($k, $have, true)) continue; $v = is_array($st) ? ($st['themes'][$k] ?? null) : null;
         if ($v !== null) { if ((int)$v['n'] < 250 || (float)$v['rate'] < 1.3 * (float)($st['overall']['rate'] ?? 0)) continue; if ((float)$v['rate'] > $best) { $best = (float)$v['rate']; $pick = [$k, $c]; } }
         elseif ($pick === null && !is_array($st)) { $pick = [$k, $c]; break; } }   // no scan yet: the list's own order
     if (!$pick) return 'topics: every known theme is added already';
@@ -975,7 +988,7 @@ function wl_new_topic(PDO $pdo): string
     for ($i = 0; $i < 4; $i++) { $w = ['body' => (string)($ms[$i]['body'] ?? ''), 'button' => (string)($ms[$i]['button'] ?? ''), 'free' => (string)($ms[$i]['free'] ?? '')]; [$ok, $why] = wl_check_wording($w, $pool); if (!$ok) return 'topics: message ' . ($i + 1) . ' of "' . $c['label'] . '" was refused (' . $why . ')';
         $k = 'ln_' . $key . '_' . ($i + 1); $pool[$k] = ['body' => $w['body'], 'button' => $w['button']]; $add[] = ['key' => $k, 'topic' => $key, 'step' => $i + 1, 'body' => $w['body'], 'button' => $w['button'], 'free' => $w['free'], 'newtopic' => 1, 'at' => date('Y-m-d H:i:s')]; }
     foreach ($add as $e) $extra[] = $e; setting_set($pdo, 'wl_extra', json_encode($extra, JSON_UNESCAPED_UNICODE)); wl_extra_get($extra);
-    $t[] = ['key' => $key, 'label' => $c['label'], 'words' => $c['words'], 'before' => $c['before'], 'ready' => false, 'at' => date('Y-m-d H:i:s')]; setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t);
+    $t[] = ['key' => $key, 'label' => $c['label'], 'words' => $c['words'], 'before' => $c['before'], 'ready' => false, 'at' => date('Y-m-d H:i:s')] + (!empty($c['season']) ? ['until' => wl_season_end((string)$c['season'][1], time())] : []); setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t);
     $mk = ['made' => 0]; try { $mk = wl_make_templates($pdo); } catch (Throwable $e) { }
     return 'topics: new topic "' . $c['label'] . '" (the old data: its customers order more than average): 4 messages written and sent to Meta for approval (' . (int)$mk['made'] . ' made); it goes live when approved on 3+ accounts';
 }
