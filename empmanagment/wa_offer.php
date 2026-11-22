@@ -76,7 +76,7 @@ if (!function_exists('wo_run')) {
     }
     function wo_run0(PDO $pdo, int $cap, ?array &$samples, bool $simulate): array
     {
-        $mode = (string)setting_get($pdo, 'wo_mode', 'dry'); if ($mode === 'off') return [0, 0, 0, 'off']; if (!$simulate && $mode !== 'live') return [0, 0, 0, 'not live (' . $mode . ')']; if (!$simulate) wo_tables($pdo); $now = time(); $t0 = microtime(true);
+        $mode = (string)setting_get($pdo, 'wo_mode', 'live'); /* owner 22 Nov, 19:45: switched on (the samples and the 188 were shown to him) */ if ($mode === 'off') return [0, 0, 0, 'off']; if (!$simulate && $mode !== 'live') return [0, 0, 0, 'not live (' . $mode . ')']; if (!$simulate) wo_tables($pdo); $now = time(); $t0 = microtime(true);
         $res = [0, 0, 0, '']; $h = (int)date('G', $now); if (!$simulate && ($h < 9 || $h >= 22)) { $res[3] = 'outside 09-22'; return $res; }
         if (!$simulate && function_exists('wa_lock') && !wa_lock($pdo, 'wooffer', 55)) { $res[3] = 'locked'; return $res; }
         $ch = wo_chart($pdo); if (!$ch) { $res[3] = 'no chart'; return $res; }
@@ -102,7 +102,7 @@ if (!function_exists('wo_run')) {
             $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $note('no contact'); continue; }
             $why = ''; $o = wo_make($pdo, $c, $ch, $in, $out, $asked, $why); if (!$o) { $note($why, 0, [], '', (int)$asked); continue; } $body = wo_text($o); $res[1]++; $sk = 'made ' . $o['kind'] . ($asked ? ' asked' : ' not-asked'); $GLOBALS['wo_stat'][$sk] = ($GLOBALS['wo_stat'][$sk] ?? 0) + 1; $GLOBALS['wo_stat']['sum price'] = ($GLOBALS['wo_stat']['sum price'] ?? 0) + $o['price']; if ($samples !== null && count($samples) < 6) $samples[] = $o['kind'] . ' ' . $o['pct'] . '% ' . $o['qty'] . 'x' . $o['ml'] . ' ' . ($asked ? 'asked' : 'not-asked') . ' :: ' . str_replace("\n", ' / ', $body);
             if ($simulate || $mode !== 'live') continue;
-            $s = wa_send_text($pdo, $c, $body, 'offer', 0); if (!empty($s[0])) { $res[2]++; $note('sent', 1, $o, $body, (int)$asked); if (function_exists('wa_event')) { try { wa_event($pdo, $ph, '🎯 Price offer sent (' . $o['kind'] . ', ' . $o['pct'] . '% column, ' . $o['qty'] . ' x ' . $o['ml'] . ' ml)'); } catch (Throwable $e) { } } } else $note('not sent: ' . (string)($s[1] ?? ''), 0, $o, $body, (int)$asked);
+            $s = wa_send_text($pdo, $c, $body, 'offer', 0); if (!empty($s[0])) { $res[2]++; $note('sent ' . (string)($s[1] ?? ''), 1, $o, $body, (int)$asked); if (function_exists('wa_event')) { try { wa_event($pdo, $ph, '🎯 Price offer sent (' . $o['kind'] . ', ' . $o['pct'] . '% column, ' . $o['qty'] . ' x ' . $o['ml'] . ' ml)'); } catch (Throwable $e) { } } } else $note('not sent: ' . (string)($s[1] ?? ''), 0, $o, $body, (int)$asked);
         }
         return $res;
     }
