@@ -268,6 +268,9 @@ function wa_ru_global_usable(PDO $pdo, int $limit = 12): array
 /** One-time resets that must run even while Module B is paused (they were inside the making round, which is never reached while paused: the pause could not be cleared). */
 function wa_ru_reset_once(PDO $pdo): void
 {
+    try { if ((string)setting_get($pdo, 'wa_open11b_2211', '') === '') {   /* owner 22 Nov 2026: "open number 11 if you want" - the same opening as in wa_more_tables, done here too because this runs every minute (the first one did not take effect after the deploy): campaigns on, hold off, slow start 250 a day */
+            $pdo->exec("UPDATE wa_numbers SET `hold` = 0, camp_ok = 1, tier_manual = 250 WHERE phone_id = '1561947433664883'"); setting_set($pdo, 'wa_open11b_2211', '1'); setting_set($pdo, 'wa_open11_2211', '1'); try { wa_log($pdo, 'campaign', true, 'Number 11 is opened for campaigns (owner, 22 Nov 2026): slow start of 250 a day'); } catch (Throwable $e) { }
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_ru_ladder4_1430', '') !== '1') {   // owner 19 Nov 2026 (14:30): the ladder is 4 / 8 / 12 / 24 hours; the 8-hour stop that is running now counts as step 2, so the next stop is 12 hours, then 24
             setting_set($pdo, 'wa_ru_ladder4_1430', '1'); if ((int)setting_get($pdo, 'wa_ru_spam_n', '0') < 2) setting_set($pdo, 'wa_ru_spam_n', '2');
         } } catch (Throwable $e) { }
