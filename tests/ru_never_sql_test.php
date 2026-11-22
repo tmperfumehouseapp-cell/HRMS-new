@@ -10,4 +10,5 @@ ok(strpos($src, "i.err_code <> 131049 AND i.err_code NOT IN (\$nvr)") !== false,
 ok(strpos($src, "\$nvr = implode(',', array_map('intval'") !== false, 'the never list is built before the query');
 $wf = strpos($src, 'function wa_ru_warm_tick'); $wb = substr($src, $wf, strpos($src, '/** ROUTE:', $wf) - $wf);
 ok(strpos($wb, "i.err_code <> 131049 AND i.err_code NOT IN (\$nvr)") !== false, 'the new numbers\' look leaves the never codes out too');
+ok(strpos($src, "\$gotSql = ((string)setting_get(\$pdo, 'wa_ru_got_sql', '1') === '0')") !== false && strpos($src, "i.id > ?\" . \$gotSql . \" AND NOT EXISTS (SELECT 1 FROM wa_ru_log l") !== false, 'the main look leaves people who already got a delivered template today out in SQL (switch wa_ru_got_sql=0)');
 echo "ru never sql ok\n";
