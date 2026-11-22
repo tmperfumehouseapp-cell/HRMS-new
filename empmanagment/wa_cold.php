@@ -65,13 +65,26 @@ if (!function_exists('wcd_tick')) {
         try { foreach ($pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '" . $from . "' AND phone IS NOT NULL AND phone <> '' AND financial_status NOT IN ('voided', 'refunded')")->fetchAll(PDO::FETCH_NUM) as $r) { $k = wcd_k10($r[0]); if (strlen($k) === 10) $o[$k][] = [(int)strtotime((string)$r[1]), (int)$r[2]]; } } catch (Throwable $e) { }
         return $cache[$ck] = $o;
     }
+    /** WHAT WORKS (owner 22 Nov: "change every day by what brings the best replies"): per template [sent, replied, orders]. A reply is credited to the LAST Cold message sent to him before he wrote. Cached 5 minutes. */
+    function wcd_tpl_stats(PDO $pdo): array
+    {
+        $c = json_decode(wcd_set($pdo, 'wcd_tpl_stats', ''), true); if (is_array($c) && (int)($c['t'] ?? 0) > time() - 300) return (array)($c['s'] ?? []);
+        $s = [];
+        try { foreach ($pdo->query("SELECT tpl_id, COUNT(*) FROM wa_cold_log WHERE ok = 1 GROUP BY tpl_id")->fetchAll(PDO::FETCH_NUM) as $r) $s[(int)$r[0]] = ['sent' => (int)$r[1], 'replied' => 0, 'orders' => 0];
+            $q = $pdo->prepare("SELECT tpl_id FROM wa_cold_log WHERE phone = ? AND ok = 1 AND at <= ? ORDER BY id DESC LIMIT 1"); $ord = wcd_orders($pdo, wcd_set($pdo, 'wcd_from', '2026-11-01') . ' 00:00:00');
+            foreach ($pdo->query("SELECT phone, left_at, entered_at FROM wa_cold_cust WHERE status = 'replied' AND left_at IS NOT NULL ORDER BY left_at DESC LIMIT 3000")->fetchAll(PDO::FETCH_NUM) as $r) { $q->execute([(string)$r[0], (string)$r[1]]); $t = (int)$q->fetchColumn(); if ($t > 0 && isset($s[$t])) { $s[$t]['replied']++; foreach ($ord[(string)$r[0]] ?? [] as $oo) if ($oo[0] >= (int)strtotime((string)$r[2])) { $s[$t]['orders']++; break; } } } } catch (Throwable $e) { }
+        try { setting_set($pdo, 'wcd_tpl_stats', json_encode(['t' => time(), 's' => $s])); } catch (Throwable $e) { }
+        return $s;
+    }
     /** The utility messages usable for him, never one already sent to him by this funnel. [[template id, key]]. */
     function wcd_templates(PDO $pdo, string $ph): array
     {
         if (!function_exists('wln_twins')) return [];
         try { $tw = wln_twins($pdo, $ph, 'general', 1, 0); } catch (Throwable $e) { return []; } if (!$tw) return [];
         $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_cold_log WHERE phone = ? AND ok = 1"); $q->execute([$ph]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
-        $o = []; foreach ($tw as $r) if (!isset($got[(int)$r[0]])) $o[] = $r; return $o;
+        $o = []; foreach ($tw as $r) if (!isset($got[(int)$r[0]])) $o[] = $r;
+        $st = wcd_tpl_stats($pdo); if (count($o) > 1 && $st) usort($o, function ($a, $b) use ($st) { $sa = $st[(int)$a[0]] ?? ['sent' => 0, 'replied' => 0]; $sb = $st[(int)$b[0]] ?? ['sent' => 0, 'replied' => 0]; return (($sb['replied'] + 0.5) / ($sb['sent'] + 50)) <=> (($sa['replied'] + 0.5) / ($sa['sent'] + 50)); });   /* the message with the best reply rate goes first (a new one starts at a fair guess and is judged after its first sends) */
+        return $o;
     }
     /** The minute job. [entered, sent, waiting, left]. */
     function wcd_tick(PDO $pdo, int $budget = 30): array
@@ -144,6 +157,6 @@ if (!function_exists('wcd_tick')) {
             try { $c['days'] = $pdo->query("SELECT DATE(next_due) d, COUNT(*) n FROM wa_cold_cust WHERE status = 'active' AND next_due >= '" . date('Y-m-d 00:00:00') . "' AND next_due < '" . date('Y-m-d 00:00:00', $now + 10 * 86400) . "' GROUP BY d ORDER BY d")->fetchAll(PDO::FETCH_KEY_PAIR); $c['fails'] = $pdo->query("SELECT LEFT(why, 60) w, COUNT(*) n FROM wa_cold_log WHERE ok = 0 AND at >= '" . date('Y-m-d 00:00:00') . "' GROUP BY w ORDER BY n DESC LIMIT 5")->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) { }
             try { setting_set($pdo, 'wcd_card_cache', json_encode($c)); } catch (Throwable $e) { }
         }
-        return $o + ['today' => $c['today'] ?? [], 'all' => $c['all'] ?? [], 'sum' => $c['sum'] ?? [], 'days' => $c['days'] ?? [], 'fails' => $c['fails'] ?? [], 'sent_today' => (int)($c['today']['sent'] ?? 0)];
+        return $o + ['today' => $c['today'] ?? [], 'all' => $c['all'] ?? [], 'sum' => $c['sum'] ?? [], 'days' => $c['days'] ?? [], 'fails' => $c['fails'] ?? [], 'tpl' => wcd_tpl_stats($pdo), 'sent_today' => (int)($c['today']['sent'] ?? 0)];
     }
 }
