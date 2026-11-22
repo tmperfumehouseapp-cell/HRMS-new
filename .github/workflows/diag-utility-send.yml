@@ -207,7 +207,7 @@ jobs:
           echo "  LINE-UP CHECK: sample " . count($lp) . " recent failed people (read " . $t1 . " s) · of them in a running/scheduled campaign line-up: " . count($lr) . " (query " . $t2 . " s)\n";
           foreach ($all("SELECT c.status, COUNT(*) campaigns, (SELECT COUNT(*) FROM wa_camp_items i2 WHERE i2.camp_id = c.id AND i2.status IN ('queued','sending')) AS x FROM wa_campaigns c WHERE c.status IN ('running','scheduled') GROUP BY c.status, c.id LIMIT 12") as $r) echo "  active campaign " . json_encode($r) . "\n";
           echo "\n=== PAUSED CAMPAIGNS (Meta 132015 etc.) ===\n";
-          foreach ($all("SELECT c.id, c.name, c.status, c.tpl_id, LEFT(c.extra, 420) ex FROM wa_campaigns c WHERE c.status IN ('paused') AND COALESCE(c.started_at, c.created_at) >= DATE_SUB(NOW(), INTERVAL 5 DAY) ORDER BY c.id DESC LIMIT 6") as $pc) {
+          foreach ($all("SELECT c.id, c.name, c.status, c.tpl_id, LEFT(c.note, 200) note, LEFT(c.extra, 160) ex FROM wa_campaigns c WHERE c.status IN ('paused') AND COALESCE(c.started_at, c.created_at) >= DATE_SUB(NOW(), INTERVAL 5 DAY) ORDER BY c.id DESC LIMIT 6") as $pc) {
             echo "  campaign " . json_encode($pc) . "\n";
             foreach ($all("SELECT status, COUNT(*) n FROM wa_camp_items WHERE camp_id = " . (int)$pc["id"] . " GROUP BY status") as $r) echo "    items " . json_encode($r) . "\n";
             $tr = $all("SELECT id, name, category, family_id, version, LEFT(extra, 300) ex FROM wa_templates WHERE id = " . (int)$pc["tpl_id"]); foreach ($tr as $r) { echo "    template " . json_encode($r) . "\n"; $root = (int)($r["family_id"] ?: $r["id"]);
