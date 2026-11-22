@@ -1235,6 +1235,10 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
             $lq = 0; $lo = 0; $lavg = 0.0;
             try { $d1 = wag_real_queries($pdo, 1); $lq = (int)($d1[$emp][0] ?? 0); $lo = (int)($d1[$emp][1] ?? 0); $tq = 0; $to = 0; foreach (wag_real_queries($pdo, 7) as $__r) { $tq += $__r[0]; $to += $__r[1]; } $lavg = $tq >= 40 && $to > 0 ? min(0.5, $to / $tq) : 0.0; } catch (Throwable $e) { }
             if (!$waited && $lq >= 25 && $lavg > 0 && ($lo / $lq) < 0.5 * $lavg) $msg = '🔒 You have ' . $lq . ' queries today with ' . $lo . ' order' . ($lo === 1 ? '' : 's') . ' — below the team level (' . round(100 * $lo / $lq) . '% vs ' . round(100 * $lavg) . '%). Close the chats you already have; new queries go to people who convert better.'; }
+            if ($msg === '' && !$waited) {   // owner 22 Nov (Parth: 10 queries + 12 campaign queries, 1 order): campaign queries count too - normal + campaign together; 15+ with no order, or 20+ with a ratio under half of the team's, stops NEW queries (waiting customers can always be picked, and one order lifts it)
+                try { $dc = wag_real_queries($pdo, 1, true); $cq = (int)($dc[$emp][0] ?? 0); $co = (int)($dc[$emp][1] ?? 0); $tq2 = 0; $to2 = 0; foreach (wag_real_queries($pdo, 7, true) as $__r2) { $tq2 += $__r2[0]; $to2 += $__r2[1]; } $cavg = $tq2 >= 40 && $to2 > 0 ? min(0.5, $to2 / $tq2) : 0.0;
+                    if (($cq >= 15 && $co === 0) || ($cq >= 20 && $cavg > 0 && ($co / $cq) < 0.5 * $cavg)) $msg = '🔒 You have ' . $cq . ' queries today (normal + campaign) with ' . $co . ' order' . ($co === 1 ? '' : 's') . ' — below the team level' . ($cavg > 0 ? ' (' . round(100 * $co / $cq) . '% vs ' . round(100 * $cavg) . '%)' : '') . '. Close the chats you already have; one order opens new queries again.'; } catch (Throwable $e) { } }
+
     } catch (Throwable $e) { }
     return $c[$ck] = $msg;
 }
