@@ -486,6 +486,52 @@ function wag_campaign_context(PDO $pdo, string $key): string
         return $o;
     } catch (Throwable $e) { return ''; }
 }
+/** 💰 PRICE GUARD (owner, 22 Nov): the bot used to quote "2 x 100 ml … Rs 1,810" (the price of ONE 100 ml) when the customer asked for 2 x 100 ml = 200 ml (chart: Rs 2,350). The chart price is for the TOTAL ml of the order, and the FIRST price the bot says is always the 7% chart price.
+ *  The size the customer asks for is read by CODE (2 x 100 ml, 2 100mls, 200 ml, 100 ml + 50 ml …): total ml → the chart row (a total between two rows uses the lower row). wag_ml_request: the newest request, or null. */
+function wag_ml_request(array $msgs): ?array
+{
+    for ($i = count($msgs) - 1, $seen = 0; $i >= 0 && $seen < 6; $i--) {
+        if (($msgs[$i]['who'] ?? '') !== 'customer') continue; $seen++; $t = mb_strtolower((string)($msgs[$i]['text'] ?? '')); $t = str_replace(['×', '✕'], 'x', $t);
+        if (preg_match('/(\d{1,2})\s*(?:x|\*|bottles?\s*(?:of)?|pcs\.?\s*(?:of)?|pieces?\s*(?:of)?)\s*(\d{2,3})\s*ml/u', $t, $m) || preg_match('/(?<!\d)(\d{1,2})\s+(\d{2,3})\s*mls?\b/u', $t, $m)) { $q = (int)$m[1]; $ml = (int)$m[2]; if ($q >= 1 && $q <= 20 && $ml >= 10 && $ml <= 500) return ['qty' => $q, 'ml' => $ml, 'total' => $q * $ml]; }
+        if (preg_match_all('/(\d{2,3})\s*ml\b/u', $t, $mm) && count($mm[1]) >= 1 && count($mm[1]) <= 4 && preg_match('/\d\s*ml\s*(?:\+|and|aur|&)\s*\d/u', $t)) { $sum = array_sum(array_map('intval', $mm[1])); if ($sum >= 20 && $sum <= 600) return ['qty' => 1, 'ml' => $sum, 'total' => $sum]; }
+        if (preg_match('/(?<![\d.])(\d{2,3})\s*mls?\b/u', $t, $m)) { $ml = (int)$m[1]; if ($ml >= 20 && $ml <= 600) return ['qty' => 1, 'ml' => $ml, 'total' => $ml]; }
+    }
+    return null;
+}
+/** The price chart row for a TOTAL ml: [ml of the row, [price per column…], chart price (7% column)]; a total between two rows uses the lower row; null when no chart. */
+function wag_chart_row(PDO $pdo, int $total): ?array
+{
+    if (!function_exists('ml_slab_get')) return null;
+    try { $c = ml_slab_get($pdo); } catch (Throwable $e) { return null; } $best = null;
+    foreach ((array)($c['rows'] ?? []) as $r) { $ml = (int)($r['ml'] ?? 0); $p = array_map('intval', (array)($r['p'] ?? [])); if ($ml <= 0 || !$p || (int)$p[0] <= 0) continue; if ($ml <= $total && ($best === null || $ml > $best['ml'])) $best = ['ml' => $ml, 'p' => $p, 'chart' => (int)$p[0]]; }
+    return $best;
+}
+/** One line for the bot's prompt: the exact chart price of what the customer asked for. */
+function wag_price_fact(PDO $pdo, array $msgs): string
+{
+    $rq = wag_ml_request($msgs); if (!$rq) return ''; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return '';
+    return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system — use exactly this): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total → chart price Rs ' . number_format($row['chart']) . ' (the FIRST price you say; the chart price is for the TOTAL ml, never the price of one bottle for several bottles); the lowest the shop goes to for this total is Rs ' . number_format(min($row['p'])) . '.';
+}
+/** Checks a reply: a price that belongs to ANOTHER chart row than the customer's total, or a first price that is not the chart (7%) price, is replaced by the correct chart price. Returns [reply, changed]. */
+function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
+{
+    try {
+        $rq = wag_ml_request($msgs); if (!$rq) return [$reply, false]; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return [$reply, false];
+        $c = ml_slab_get($pdo); $mine = array_flip($row['p']); $other = [];
+        foreach ((array)($c['rows'] ?? []) as $r) { if ((int)($r['ml'] ?? 0) === $row['ml']) continue; foreach ((array)($r['p'] ?? []) as $v) { $v = (int)$v; if ($v >= 500 && !isset($mine[$v])) $other[$v] = 1; } }
+        $custNums = []; foreach ($msgs as $m) if (($m['who'] ?? '') === 'customer') { preg_match_all('/\d[\d,]{2,5}/', (string)($m['text'] ?? ''), $nn); foreach ($nn[0] as $x) $custNums[(int)str_replace(',', '', $x)] = 1; }
+        $prev = ''; foreach ($msgs as $m) if (($m['who'] ?? '') !== 'customer') $prev .= ' ' . (string)($m['text'] ?? ''); $prev = str_replace(',', '', $prev);
+        $firstQuote = true; foreach ($row['p'] as $v) if (strpos($prev, (string)$v) !== false) { $firstQuote = false; break; }
+        preg_match_all('/(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $reply, $am); $bad = false;
+        foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 500 || isset($custNums[$v])) continue;
+            if (isset($other[$v])) { $bad = true; break; }                                  // the price of another size
+            if (isset($mine[$v]) && $v !== $row['chart'] && $firstQuote) { $bad = true; break; }   // the first price said is not the chart price
+        }
+        if (!$bad) return [$reply, false];
+        $fix = 'Sir, ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml' : $rq['ml'] . ' ml') . ' ka price Rs ' . number_format($row['chart']) . ' hai 😊 Kaunse perfumes lena chahoge?';
+        return [$fix, true];
+    } catch (Throwable $e) { return [$reply, false]; }
+}
 function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly = false): array
 {
     $key = (string)$c['phone'];
@@ -508,12 +554,12 @@ function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly
                 }
                 if ($g) {
                     $body = json_decode((string)$g['body'], true); $msgs = wa_learn_msgs($pdo, $key);
-                    if (is_array($body)) { $__qx = function_exists('wq_bot_context') ? wq_bot_context($pdo, $c) : ''; $__cc = wag_campaign_context($pdo, $key); if ($__cc !== '') $__qx = trim($__qx . "\n" . $__cc); if ($__qx !== '') $body['chat_context_do_not_quote'] = mb_substr($__qx, 0, 3600); }   // query type, ad headline, store info, owner decisions (max 2,000 characters)
+                    if (is_array($body)) { $__qx = function_exists('wq_bot_context') ? wq_bot_context($pdo, $c) : ''; $__cc = wag_campaign_context($pdo, $key); if ($__cc !== '') $__qx = trim($__qx . "\n" . $__cc); { $__pf = wag_price_fact($pdo, $msgs); if ($__pf !== '') $__qx = trim($__qx . "\n" . $__pf); } if ($__qx !== '') $body['chat_context_do_not_quote'] = mb_substr($__qx, 0, 3600); }   // query type, ad headline, store info, owner decisions (max 2,000 characters)
                     if (is_array($body) && $body && $msgs) {
                         if ($avoid !== '') $msgs[] = ['who' => 'bot', 'text' => mb_substr($avoid, 0, 500)];
                         [$ok, $v, $__lw] = lib_bot_reply($pdo, $body, $msgs, 0, !empty($GLOBALS['lib_fu_step'])); $GLOBALS['lib_last_why'] = (string)($__lw ?? '') . ($ok && is_array($v) ? ' (ok, reply ' . mb_strlen((string)($v['reply'] ?? '')) . ' chars)' : ' (not ok)');
                         if ($ok && is_array($v) && trim((string)($v['reply'] ?? '')) !== '') {
-                            require_once __DIR__ . '/wa_hist.php'; $v = learn_enforce_v($pdo, $v);
+                            require_once __DIR__ . '/wa_hist.php'; $v = learn_enforce_v($pdo, $v); [$__pr, $__pch] = wag_price_enforce($pdo, $msgs, (string)$v['reply']); if ($__pch) { $v['reply'] = $__pr; $v['why'] = trim((string)($v['why'] ?? '') . ' [price fixed by the system: the chart price of the total ml]'); wag_log($pdo, 'bot', true, $key . ' · price fixed (wrong size row / first price not the chart price)'); }
                             if (!empty($v['handoff'])) { $lc = ''; foreach (array_reverse($msgs) as $m) if ($m['who'] === 'customer') { $lc = $m['text']; break; } if (function_exists('learn_gap_log')) learn_gap_log($pdo, 'unsure', $lc, (string)($v['handoff_reason'] ?? '')); }
                             return ['ok' => true, 'photo' => !empty($v['price_photo']), 'text' => mb_substr(trim((string)$v['reply']), 0, 1500), 'why' => mb_substr(trim((string)($v['why'] ?? '')), 0, 300), 'handoff' => !empty($v['handoff']), 'source' => 'guide', 'ver' => (int)$g['version']];
                         }
@@ -532,7 +578,8 @@ function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly
     $sch = ['type' => 'OBJECT', 'properties' => ['suggestion' => ['type' => 'STRING'], 'why' => ['type' => 'STRING'], 'call_now' => ['type' => 'BOOLEAN']], 'required' => ['suggestion', 'why', 'call_now']];
     try { [$ok, $v, $why] = convo_ai($sys, [['text' => "CUSTOMER FACTS: " . $facts . "\n\nQUICK REPLIES:\n" . $qk . "\nTHE CHAT:\n" . $txt . ($avoid !== '' ? "\nDO NOT repeat: " . $avoid : '')]], $sch, false, 1200, 'claude'); } catch (Throwable $e) { return ['ok' => false, 'why' => 'The AI could not read this chat.']; }
     if (!$ok || !is_array($v) || trim((string)($v['suggestion'] ?? '')) === '') return ['ok' => false, 'why' => (string)($why ?: 'The AI could not write a reply.')];
-    return ['ok' => true, 'text' => mb_substr(trim((string)$v['suggestion']), 0, 1500), 'why' => mb_substr(trim((string)($v['why'] ?? '')), 0, 300), 'handoff' => !empty($v['call_now']), 'source' => 'basic', 'ver' => 0];
+    $__sg = trim((string)$v['suggestion']); try { if (function_exists('wa_learn_msgs')) { [$__sg2, $__ch2] = wag_price_enforce($pdo, wa_learn_msgs($pdo, $key), $__sg); if ($__ch2) $__sg = $__sg2; } } catch (Throwable $e) { }   // 💰 the same price guard on the basic path
+    return ['ok' => true, 'text' => mb_substr($__sg, 0, 1500), 'why' => mb_substr(trim((string)($v['why'] ?? '')), 0, 300), 'handoff' => !empty($v['call_now']), 'source' => 'basic', 'ver' => 0];
 }
 /** The stored suggestion for the customer's newest message, if one was already written (instant display). */
 function wag_sugg_get(PDO $pdo, string $key): ?array
