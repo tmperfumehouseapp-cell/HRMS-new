@@ -213,6 +213,21 @@ jobs:
             $tr = $all("SELECT id, name, category, family_id, version, LEFT(body, 320) body, LEFT(extra, 300) ex FROM wa_templates WHERE id = " . (int)$pc["tpl_id"]); foreach ($tr as $r) { echo "    template " . json_encode($r) . "\n"; $root = (int)($r["family_id"] ?: $r["id"]);
               foreach ($all("SELECT t.id, t.name, t.category, t.version, GROUP_CONCAT(CONCAT(SUBSTR(w.waba_id, -4), ':', w.status) SEPARATOR ' ') st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.id = $root OR t.family_id = $root GROUP BY t.id ORDER BY t.id LIMIT 12") as $m) echo "      family member " . json_encode($m) . "\n"; }
           }
+          echo "\n=== MODULE B REPLIES -> 30-DAY LINEUP (today IST) ===\n";
+          $rp = $all("SELECT DISTINCT m.phone FROM wa_messages m JOIN wa_ru_log r ON r.phone = m.phone AND r.ok = 1 WHERE m.dir = 'in' AND m.ts >= CURDATE() AND r.at >= CURDATE() AND m.ts > r.at");
+          $ph = array_map(fn($r) => (string)$r["phone"], $rp); echo "  people who wrote back today after a Module B message: " . count($ph) . "\n";
+          if ($ph) { $in = implode(",", array_map(fn($x) => $d->quote($x), $ph));
+            foreach ($all("SELECT status, topic, COUNT(*) n FROM wa_line_cust WHERE phone IN ($in) GROUP BY status, topic ORDER BY n DESC") as $r) echo "  on the lineup: " . json_encode($r) . "\n";
+            foreach ($all("SELECT COUNT(DISTINCT phone) n FROM wa_line_cust WHERE phone IN ($in) AND created_at >= CURDATE()") as $r) echo "  enrolled today: " . json_encode($r) . "\n";
+            foreach ($all("SELECT COUNT(DISTINCT phone) n FROM wa_line_cust WHERE phone IN ($in) AND created_at < CURDATE()") as $r) echo "  already enrolled earlier (still in their 30 days): " . json_encode($r) . "\n";
+            foreach ($all("SELECT COUNT(*) n FROM wa_contacts WHERE phone IN ($in) AND phone NOT IN (SELECT phone FROM wa_line_cust) AND (optout = 1 OR camp_optout = 1)") as $r) echo "  NOT on the lineup, opted out: " . json_encode($r) . "\n";
+            foreach ($all("SELECT COUNT(*) n FROM wa_contacts WHERE phone IN ($in) AND phone NOT IN (SELECT phone FROM wa_line_cust) AND optout = 0 AND camp_optout = 0") as $r) echo "  NOT on the lineup, not opted out: " . json_encode($r) . "\n";
+            foreach ($all("SELECT COUNT(*) n FROM wa_cust WHERE phone IN ($in) AND n > 0") as $r) echo "  of them bought before: " . json_encode($r) . "\n";
+            foreach ($all("SELECT p.status, COUNT(*) n FROM wa_line_plan p WHERE p.phone IN ($in) GROUP BY p.status") as $r) echo "  their plan rows: " . json_encode($r) . "\n";
+            foreach ($all("SELECT left_why, COUNT(*) n FROM wa_line_cust WHERE phone IN ($in) AND status <> 'active' GROUP BY left_why ORDER BY n DESC LIMIT 8") as $r) echo "  left the lineup why: " . json_encode($r) . "\n"; }
+          foreach (["wl_cfg","wl_since","wl_on","wl_mode"] as $k) echo "  $k=" . substr($s($k), 0, 300) . "\n";
+          foreach ($all("SELECT status, COUNT(*) n FROM wa_line_cust WHERE created_at >= CURDATE() GROUP BY status") as $r) echo "  all enrolled today: " . json_encode($r) . "\n";
+          foreach ($all("SELECT COUNT(DISTINCT phone) n FROM wa_messages WHERE dir = 'in' AND ts >= CURDATE()") as $r) echo "  everybody who wrote today: " . json_encode($r) . "\n";
           echo "\n=== NUMBER 11 OPENING ===\n"; foreach (["wa_open11_2211","wa_open11b_2211","wa_more_schema_err","wa_t11_at","wa_camp_auto_swap","wa_camp_tpl_bad","wa_ru_got_sql","wa_ru_tpl_pause"] as $k) echo "  $k=" . substr($s($k), 0, 200) . "\n";
           foreach ($all("SELECT * FROM wa_numbers WHERE id = 11") as $r) echo "  num11 " . json_encode($r) . "\n";
           foreach ($all("SELECT at, LEFT(info, 200) info FROM wa_log WHERE info LIKE 'Campaign #%' OR info LIKE 'Number 11%' ORDER BY id DESC LIMIT 12") as $r) echo "  log " . $r["at"] . " " . $r["info"] . "\n";
