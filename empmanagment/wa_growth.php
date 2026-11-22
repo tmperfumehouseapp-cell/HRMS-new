@@ -1425,12 +1425,11 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
 /** Follow-up step 1 without AI: one short question, four wordings, the customer's first name and the perfume the bot named last (when there is one). */
 function wag_fu1_text(PDO $pdo, array $c, array $rows): string
 {
+    // 📝 owner (22 Nov): ONE wording, English letters (Hinglish): "Hi Aryan, aapko kaun se perfume ka confusion hai, aap wo hamare saath share kar sakte ho." — with two buttons (Haan, doubt hai · Nahi, koi doubt nahi); when the bot named a perfume last: "aapko <perfume> ka confusion hai"
     $nm = ''; $n0 = trim((string)($c['name'] ?? '')); if ($n0 !== '' && preg_match('/^[\p{L}]{2,14}$/u', ($__f = preg_split('/\s+/', $n0)[0]))) $nm = $__f;
     $pf = ''; try { $bt = ''; foreach ($rows as $rw) if ((string)($rw['who'] ?? '') === 'bot') { $bt = (string)($rw['body'] ?? ''); break; } if ($bt !== '' && function_exists('wa_prod_find_named')) { $h = wa_prod_find_named($pdo, $bt, 1); if ($h) $pf = (string)($h[0]['name'] ?? ''); } } catch (Throwable $e) { }
-    $v = crc32((string)($c['phone'] ?? '')) % 4; $hi = $nm !== '' ? 'Hi ' . $nm . '! 😊 ' : 'Sir, ';
-    if ($pf !== '') { $t = [$hi . 'aapko ' . $pf . ' ke baare me koi confusion ya doubt hai? Order bana dun? 😊', 'Sir, ' . $pf . ' ke liye koi doubt ho to bataiye, main order bana deta hoon 😊', $hi . $pf . ' lena hai ya koi aur perfume dekhna hai? Bataiye, order bana dun? 🙏', 'Hello sir 🙏 ' . $pf . ' me koi confusion hai? Kaho to abhi order bana dun?'][$v]; }
-    else { $t = [$hi . 'aapko kaunse perfume me confusion ya doubt hai? Order bana dun? 😊', 'Hello sir 🙏 Koi confusion ya doubt ho to bataiye, main aapka order bana deta hoon 😊', $hi . 'kaunsa perfume pasand aaya? Bataiye, main order bana deta hoon 🙏', 'Sir, abhi order bana dun ya kuch aur dekhna hai? Bas ek message kar dijiye 😊'][$v]; }
-    return $t;
+    $hi = $nm !== '' ? 'Hi ' . $nm . ', ' : 'Hi, ';
+    return $hi . 'aapko ' . ($pf !== '' ? $pf : 'kaun se perfume') . ' ka confusion hai, aap wo hamare saath share kar sakte ho.';
 }
 function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follow-ups must be FAST — 6 per tick (was 2; only ~4 a minute went out with 347 due)
 {
@@ -1479,7 +1478,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         if (preg_match('/(stop|unsubscribe|not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|no thanks|don.?t message|remove)/iu', $lastIn)) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }
         $fl = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $fl->execute([$key]); if ((int)$fl->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now . ($__pp ? '|p|' . $refT : ''));   // claimed before the AI call: never twice
-        if ($cnt === 0 && !$__pp && (string)setting_get($pdo, 'wag_fu_tpl1', '1') !== '0') { $r = ['ok' => true, 'text' => wag_fu1_text($pdo, $c, $rows)]; }   // ⚡ step 1 (the bulk: 378 of 400) is the same short question - made in code, no AI call (2.5 s each): follow-ups go out many times faster (owner, 21 Nov: "follow-ups faster")
+        $__tpl1 = false; if ($cnt === 0 && !$__pp && (string)setting_get($pdo, 'wag_fu_tpl1', '1') !== '0') { $__tpl1 = true; $r = ['ok' => true, 'text' => wag_fu1_text($pdo, $c, $rows)]; }   // ⚡ step 1 (the bulk: 378 of 400) is the same short question - made in code, no AI call (2.5 s each): follow-ups go out many times faster (owner, 21 Nov: "follow-ups faster")
         else { $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0); $__tries++; }
         if (empty($r['ok']) || trim((string)($r['text'] ?? '')) === '') { $D['ai']++; $D['err'] = mb_substr((string)($GLOBALS['lib_last_why'] ?? '') . ' | ' . (string)($r['why'] ?? ''), 0, 160); continue; }
         if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
@@ -1487,7 +1486,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)$lastIn));
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         $__fv = (string)setting_get($pdo, 'wag_fu_var', 'AB'); $__var = ($__fv === 'A' || $__fv === 'B') ? $__fv : ((crc32($key) % 2) ? 'B' : 'A');   // 🧪 A/B (owner, 21 Nov): A = plain text, B = the same text with 3 quick-reply buttons; the winner is read from the replies (event text carries the letter)
-        if ($__var === 'B' && function_exists('wa_send_buttons')) { [$ok, $res] = wa_send_buttons($pdo, $c, $r['text'], ['✅ Order karo', '💬 Doubt hai', '⏰ Baad me'], 'bot', 0); if (!$ok) { $__var = 'A'; [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0); } }
+        if ($__var === 'B' && function_exists('wa_send_buttons')) { [$ok, $res] = wa_send_buttons($pdo, $c, $r['text'], $__tpl1 ? ['Haan, doubt hai', 'Nahi, koi doubt nahi'] : ['✅ Order karo', '💬 Doubt hai', '⏰ Baad me'], 'bot', 0); if (!$ok) { $__var = 'A'; [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0); } }
         else [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if ($ok) { $D['sent']++; if ($__pp) $D['ps'] = (int)($D['ps'] ?? 0) + 1; $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up' . ($__pp ? ' for the salesperson' : '') . ' [' . $__var . '] (step ' . ($cnt + 1) . ' of ' . count($stp) . ', ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
         else { $D['send']++; $D['err'] = mb_substr((string)$res, 0, 80); wag_log($pdo, 'bot', false, $key . ' · follow-up: ' . $res); }
