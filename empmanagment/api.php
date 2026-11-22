@@ -11686,6 +11686,7 @@ function ct_snapshot(PDO $pdo, string $day): array
             'tv' => $tv, 'code' => $m['code'], 'code_need' => $m['code_need'], 'code_left' => $m['code_left'], 'code_ok' => $m['code_ok'], 'code_rate' => $codeRate,
             'mix' => ['dg' => $dg, 'lg' => $lg, 'wh' => $wh, 'oth' => $oth, 'pct' => $mix, 'pieces' => $pieces],
             'first_order' => $first ? date('H:i', $first) : null, 'last_order_min' => $m['last_order'] ? (int)round(($now - strtotime((string)$m['last_order'])) / 60) : null, 'elapsed_h' => $m['elapsed_h'], 'arrive' => $arrMap[$id]['arrive'] ?? null, 'late_min' => $arrMap[$id]['late_min'] ?? null,
+            'gate' => (function () use ($pdo, $id) { try { if (!function_exists('wgate_card') && is_file(__DIR__ . '/wag_gate.php')) require_once __DIR__ . '/wag_gate.php'; return function_exists('wgate_card') ? wgate_card($pdo, (int)$id) : null; } catch (Throwable $e) { return null; } })(),   // the query lock of this person (owner 22 Nov)
             'exp_arr' => $expArr,
             'ladder' => $m['ladder'] ?? [], 'bonus' => $m['bonus'] ?? 0, 'com' => $m['com_today'] ?? 0,
             'pre' => ['n' => $preN, 'amt' => round($preAmt), 'q' => $preQ, 'c' => $preC, 'paid' => round($payPaid), 'all' => round($payAll), 'cod' => round(max(0, $payAll - $payPaid)), 'full' => $payFull, 'part' => $payPart], 'slab' => ['q' => $slQ, 'c' => $slC]];
