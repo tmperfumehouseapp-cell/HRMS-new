@@ -800,6 +800,7 @@ function wl_summary(PDO $pdo, int $from): array
     if ($byP) { $btn = []; foreach (wl_pack() as $k => $m) $btn[mb_strtolower(trim($m['button']))] = 1; $rep = []; $tap = [];
         foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
             foreach ($x->fetchAll() as $r) { if (wl_is_decline((string)$r['body'])) continue; $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; if (isset($btn[mb_strtolower(trim((string)$r['body']))])) $tap[(string)$r['phone'] . '|' . $st0] = 1; break; } } }
+        if ($rep) { $__ar = wa_autoreply_phones($pdo, array_keys($rep)); foreach ($__ar as $__p => $__x) { unset($rep[$__p]); foreach (array_keys($tap) as $__k) if (strpos($__k, $__p . '|') === 0) unset($tap[$__k]); } }   // another business's auto-reply is not a customer reply
         $o['replied'] = count($rep); $o['taps'] = count($tap); }
     $ord = []; try { $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
         foreach ($x->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byP[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; } } catch (Throwable $e) { }
@@ -815,6 +816,7 @@ function wl_repliers(PDO $pdo, int $from, int $limit = 600): array
         $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") ORDER BY id"); $x->execute(array_merge([$f], $ch));
         foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { if (wl_is_decline((string)$r['body'])) continue; $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $last[(string)$r['phone']] = ['t' => $t, 'b' => (string)$r['body'], 'm' => (string)$r['mtype']]; break; } }
     }
+    foreach (wa_autoreply_phones($pdo, array_keys($last)) as $__p => $__x) unset($last[$__p]);   // another business's auto-reply is not a customer reply
     $info = []; foreach (array_chunk(array_keys($last), 400) as $ch) { $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, last_out_at, status, optout FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $c->execute($ch); foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $info[(string)$r['phone']] = $r; }
     $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = [];
     foreach ($last as $ph => $l) { $c = $info[$ph] ?? []; $answered = !empty($c['last_out_at']) && (string)$c['last_out_at'] >= (string)($c['last_in_at'] ?? ''); $emp = (int)($c['assigned_emp'] ?? 0);
