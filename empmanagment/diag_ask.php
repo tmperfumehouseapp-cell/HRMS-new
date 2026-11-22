@@ -8,8 +8,8 @@ $GLOBALS['pdo'] = $pdo; $action = ''; $t0 = date('Y-m-d 00:00:00'); $t36 = date(
 $one = function (string $sql, array $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return [['ERR ' . substr($e->getMessage(), 0, 70)]]; } };
 // 1) the query gate: who is blocked right now (people with queries today)
 try { foreach (['wa.php', 'wa_growth.php', 'wq.php'] as $f) if (is_file($root . 'empmanagment/' . $f)) { try { require_once $root . 'empmanagment/' . $f; } catch (Throwable $e) { echo "ASK load " . $f . " " . substr($e->getMessage(), 0, 60) . "\n"; } }
-    $d = wag_real_queries($pdo, 1, true); $blocked = []; $names = []; foreach ($pdo->query("SELECT id, name FROM employees")->fetchAll(PDO::FETCH_NUM) as $r) $names[(int)$r[0]] = (string)$r[1];
-    foreach ($d as $emp => $v) { $m = wag_mkt_gate_msg($pdo, (int)$emp, null); if ($m !== '') $blocked[] = ($names[$emp] ?? $emp) . ' ' . $v[1] . '/' . $v[0]; }
+    $d = wag_real_queries($pdo, 1, true); $blocked = []; $nm = function ($id) use ($pdo) { try { return function_exists("wq_names") && function_exists("wq_name") ? (string)wq_name(wq_names($pdo), (int)$id) : (string)$id; } catch (Throwable $e) { return (string)$id; } };
+    foreach ($d as $emp => $v) { $m = wag_mkt_gate_msg($pdo, (int)$emp, null); if ($m !== '') $blocked[] = $nm($emp) . ' ' . $v[1] . '/' . $v[0]; }
     echo "ASK GATE people with queries today " . count($d) . " · blocked now " . count($blocked) . " · " . implode(' | ', array_slice($blocked, 0, 14)) . "\n";
 } catch (Throwable $e) { echo "ASK GATE ERR " . substr($e->getMessage(), 0, 90) . "\n"; }
 // 2) rescue: marketing failures that went again as utility (30-day Lineup and After-Order), last 36 h and today
