@@ -55,6 +55,7 @@ if (!function_exists('wo_run')) {
             for ($q = 3; $q <= 12; $q++) { $t = $q * $sz; if (isset($ch['rows'][$t]) && (int)($ch['rows'][$t][$tc] ?? 0) >= 2700) { $qty = $q; break; } }
             if ($qty < 1) { $why = 'no combo reaches 2700'; return []; } $size = $sz;
         }
+        if ($qty * $size < 100) $qty = (int)ceil(100 / $size);   // our combo minimum (5 x 20 ml = 100 ml): never an offer below 100 ml
         $total = $qty * $size; if (!isset($ch['rows'][$total]) || (int)($ch['rows'][$total][$tc] ?? 0) <= 0) { $why = 'no chart row for ' . $total . ' ml'; return []; }
         $price = (int)$ch['rows'][$total][$tc]; $online = [20 => 499, 50 => 1199, 100 => 1810][$size] ?? 0; $onl = $online > 0 ? $online * $qty : 0;
         return ['kind' => $kind, 'pct' => $pct, 'qty' => $qty, 'ml' => $size, 'price' => $price, 'online' => $onl];
