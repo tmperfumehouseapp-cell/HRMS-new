@@ -6,21 +6,21 @@
  *    - he was not quoted / did not ask            -> the 6% column, for what the chat shows he wants (else a combo that reaches Rs 2,700+ at that price).
  *  Mode (setting wo_mode): 'dry' = work out and record, send nothing (the default until the owner's samples were checked) · 'live' = send · 'off'. Never between 21:30 and 09:00 (quiet hours 03-09 are universal).
  *  Functions only (PHP 7.4 safe); called once a minute from the Lineup round (wl_round: the bookkeeping caller) and by diag_ask.php (read-only dry check). */
-if (!function_exists('wo_run')) {
-    function wo_tables(PDO $pdo): void
+if (!function_exists('wof_run')) {
+    function wof_tables(PDO $pdo): void
     {
         static $done = false; if ($done) return; $done = true;
         try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_offer (id BIGINT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(20) NOT NULL, reply_at DATETIME NULL, kind VARCHAR(8) NOT NULL DEFAULT '', pct DECIMAL(5,2) NOT NULL DEFAULT 0, qty INT NOT NULL DEFAULT 0, ml INT NOT NULL DEFAULT 0, price INT NOT NULL DEFAULT 0, asked TINYINT NOT NULL DEFAULT 0, mode VARCHAR(6) NOT NULL DEFAULT '', ok TINYINT NOT NULL DEFAULT 0, why VARCHAR(160) NOT NULL DEFAULT '', body TEXT NULL, at DATETIME NOT NULL, KEY k_phone (phone, at), KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { }
     }
     /** The chart: ['cols' => [floats], 'rows' => [ml => [prices by column]]] or null. */
-    function wo_chart(PDO $pdo): ?array
+    function wof_chart(PDO $pdo): ?array
     {
         $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return null;
         $cols = array_values(array_map('floatval', (array)$j['cols'])); $rows = []; foreach ((array)$j['rows'] as $r) { $ml = (int)($r['ml'] ?? 0); $p = array_map('intval', array_values((array)($r['p'] ?? []))); if ($ml > 0 && $p && $p[0] > 0) $rows[$ml] = $p; }
         return $rows ? ['cols' => $cols, 'rows' => $rows] : null;
     }
     /** The deepest chart column (percent) whose price OUR side already wrote in this chat (30 days); null = nothing quoted. */
-    function wo_level(PDO $pdo, string $phone, array $ch): ?float
+    function wof_level(PDO $pdo, string $phone, array $ch): ?float
     {
         try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'text' AND ts >= ? ORDER BY id DESC LIMIT 80"); $q->execute([$phone, date('Y-m-d H:i:s', time() - 30 * 86400)]); $msgs = $q->fetchAll(PDO::FETCH_COLUMN); } catch (Throwable $e) { return null; }
         $am = []; foreach ($msgs as $m) if (preg_match_all('/\d{1,3}(?:,\d{2,3})+|\d{3,6}/', (string)$m, $mm)) foreach ($mm[0] as $n) $am[(int)str_replace(',', '', $n)] = 1;
@@ -29,7 +29,7 @@ if (!function_exists('wo_run')) {
         return $deep;
     }
     /** What he wants: [qty, size] from the chat (his own "N x S ml", else our last quote, else his size word), [0, 0] when unknown. */
-    function wo_want(array $in, array $out): array
+    function wof_want(array $in, array $out): array
     {
         $cust = mb_strtolower(implode(' ', $in)); $our = mb_strtolower(implode(' ', $out));
         if (preg_match_all('/(\d{1,2})\s*[x×*]\s*(20|30|50|100)\s*ml/u', $cust, $m, PREG_SET_ORDER)) { $l = end($m); return [(int)$l[1], (int)$l[2]]; }
@@ -39,10 +39,10 @@ if (!function_exists('wo_run')) {
         return [0, 0];
     }
     /** Work out the offer of one customer; [] = no offer (with why in $why). $c = wa_contact row. */
-    function wo_make(PDO $pdo, array $c, array $ch, array $in, array $out, bool $asked, ?string &$why = null): array
+    function wof_make(PDO $pdo, array $c, array $ch, array $in, array $out, bool $asked, ?string &$why = null): array
     {
-        $why = ''; $cols = $ch['cols']; $lvl = wo_level($pdo, (string)$c['phone'], $ch);
-        [$qty, $size] = wo_want($in, $out);
+        $why = ''; $cols = $ch['cols']; $lvl = wof_level($pdo, (string)$c['phone'], $ch);
+        [$qty, $size] = wof_want($in, $out);
         if ($lvl !== null && $lvl <= 6.0 + 0.001) {   // he has seen 6% or lower: the NEXT LOWER column (only for the one who asked; an offer that goes lower for nobody who asked is not made)
             if (!$asked) { $why = 'seen 6% already, did not ask'; return []; }
             $tc = -1; $tp = -1.0; foreach ($cols as $i => $cv) if ($cv < $lvl - 0.001 && $cv > $tp) { $tp = $cv; $tc = $i; }
@@ -60,7 +60,7 @@ if (!function_exists('wo_run')) {
         $price = (int)$ch['rows'][$total][$tc]; $online = [20 => 499, 50 => 1199, 100 => 1810][$size] ?? 0; $onl = $online > 0 ? $online * $qty : 0;
         return ['kind' => $kind, 'pct' => $pct, 'qty' => $qty, 'ml' => $size, 'price' => $price, 'online' => $onl];
     }
-    function wo_text(array $o): string
+    function wof_text(array $o): string
     {
         $n = function (int $v) { return '₹' . number_format($v); }; $total = $o['qty'] * $o['ml']; $pb = (int)round($o['price'] / max(1, $o['qty']));
         $dt = (int)date('md'); $season = ($dt >= 1115 || $dt <= 228) ? 'Shaadi season special 💍' : 'Special offer 🎁'; if ($dt >= 1205 || $dt <= 115) $season = 'New Year special 🎊';
@@ -69,17 +69,17 @@ if (!function_exists('wo_run')) {
         return $season . "\n" . $line . ".\nKaunse perfumes chahiye? Bata dijiye, order bana deta hoon 😊";
     }
     /** One run (about a minute): up to $cap customers. Returns [candidates looked at, offers made, sent, notes]. */
-    function wo_run(PDO $pdo, int $cap = 30, ?array &$samples = null, bool $simulate = false): array
+    function wof_run(PDO $pdo, int $cap = 30, ?array &$samples = null, bool $simulate = false): array
     {
         $tz0 = date_default_timezone_get(); date_default_timezone_set('Asia/Kolkata');   // the shop's clock (the command-line default is Europe/Berlin)
-        try { return wo_run0($pdo, $cap, $samples, $simulate); } finally { date_default_timezone_set($tz0); }
+        try { return wof_run0($pdo, $cap, $samples, $simulate); } finally { date_default_timezone_set($tz0); }
     }
-    function wo_run0(PDO $pdo, int $cap, ?array &$samples, bool $simulate): array
+    function wof_run0(PDO $pdo, int $cap, ?array &$samples, bool $simulate): array
     {
-        $mode = (string)setting_get($pdo, 'wo_mode', 'live'); /* owner 22 Nov, 19:45: switched on (the samples and the 188 were shown to him) */ if ($mode === 'off') return [0, 0, 0, 'off']; if (!$simulate && $mode !== 'live') return [0, 0, 0, 'not live (' . $mode . ')']; if (!$simulate) { wo_tables($pdo); try { setting_set($pdo, 'wo_last', json_encode(['at' => date('Y-m-d H:i:s'), 'mode' => $mode, 'cap' => $cap])); } catch (Throwable $e) { } } $now = time(); $t0 = microtime(true);
+        $mode = (string)setting_get($pdo, 'wo_mode', 'live'); /* owner 22 Nov, 19:45: switched on (the samples and the 188 were shown to him) */ if ($mode === 'off') return [0, 0, 0, 'off']; if (!$simulate && $mode !== 'live') return [0, 0, 0, 'not live (' . $mode . ')']; if (!$simulate) { wof_tables($pdo); try { setting_set($pdo, 'wo_last', json_encode(['at' => date('Y-m-d H:i:s'), 'mode' => $mode, 'cap' => $cap])); } catch (Throwable $e) { } } $now = time(); $t0 = microtime(true);
         $res = [0, 0, 0, '']; $h = (int)date('G', $now); if (!$simulate && ($h < 9 || $h >= 22)) { $res[3] = 'outside 09-22'; return $res; }
         if (!$simulate && function_exists('wa_lock') && !wa_lock($pdo, 'wooffer', 55)) { $res[3] = 'locked'; return $res; }
-        $ch = wo_chart($pdo); if (!$ch) { $res[3] = 'no chart'; return $res; }
+        $ch = wof_chart($pdo); if (!$ch) { $res[3] = 'no chart'; return $res; }
         $backlog = $now < strtotime('2026-11-23 06:00:00'); $maxAge = $backlog ? 23 * 3600 : 90 * 60; $minAge = 20 * 60; if ($simulate && !empty($GLOBALS['wo_win'])) { $maxAge = (int)$GLOBALS['wo_win'][0]; $minAge = (int)$GLOBALS['wo_win'][1]; }   // (the dry run of the diagnostic may look at another window, e.g. yesterday's customers)   // the first day: everyone who answered in the last 23 h; afterwards the first hour (and a half)
         $st = $pdo->prepare("SELECT phone, last_in_at FROM wa_contacts WHERE last_in_at >= ? AND last_in_at <= ? AND optout = 0 AND camp_optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag <> 'complaint') ORDER BY last_in_at ASC LIMIT 1500");
         $st->execute([date('Y-m-d H:i:s', $now - $maxAge), date('Y-m-d H:i:s', $now - $minAge)]); $cont = $st->fetchAll(PDO::FETCH_ASSOC); if (!$cont) return $res;
@@ -100,7 +100,7 @@ if (!function_exists('wo_run')) {
             if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $ph)) { $note('muted (order / ticket)'); continue; }
             $asked = false; foreach ($in as $b) if (preg_match($pr, $b)) { $asked = true; break; }
             $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $note('no contact'); continue; }
-            $why = ''; $o = wo_make($pdo, $c, $ch, $in, $out, $asked, $why); if (!$o) { $note($why, 0, [], '', (int)$asked); continue; } $body = wo_text($o); $res[1]++; $sk = 'made ' . $o['kind'] . ($asked ? ' asked' : ' not-asked'); $GLOBALS['wo_stat'][$sk] = ($GLOBALS['wo_stat'][$sk] ?? 0) + 1; $GLOBALS['wo_stat']['sum price'] = ($GLOBALS['wo_stat']['sum price'] ?? 0) + $o['price']; if ($samples !== null && count($samples) < 6) $samples[] = $o['kind'] . ' ' . $o['pct'] . '% ' . $o['qty'] . 'x' . $o['ml'] . ' ' . ($asked ? 'asked' : 'not-asked') . ' :: ' . str_replace("\n", ' / ', $body);
+            $why = ''; $o = wof_make($pdo, $c, $ch, $in, $out, $asked, $why); if (!$o) { $note($why, 0, [], '', (int)$asked); continue; } $body = wof_text($o); $res[1]++; $sk = 'made ' . $o['kind'] . ($asked ? ' asked' : ' not-asked'); $GLOBALS['wo_stat'][$sk] = ($GLOBALS['wo_stat'][$sk] ?? 0) + 1; $GLOBALS['wo_stat']['sum price'] = ($GLOBALS['wo_stat']['sum price'] ?? 0) + $o['price']; if ($samples !== null && count($samples) < 6) $samples[] = $o['kind'] . ' ' . $o['pct'] . '% ' . $o['qty'] . 'x' . $o['ml'] . ' ' . ($asked ? 'asked' : 'not-asked') . ' :: ' . str_replace("\n", ' / ', $body);
             if ($simulate || $mode !== 'live') continue;
             $s = wa_send_text($pdo, $c, $body, 'offer', 0); if (!empty($s[0])) { $res[2]++; $note('sent ' . (string)($s[1] ?? ''), 1, $o, $body, (int)$asked); if (function_exists('wa_event')) { try { wa_event($pdo, $ph, '🎯 Price offer sent (' . $o['kind'] . ', ' . $o['pct'] . '% column, ' . $o['qty'] . ' x ' . $o['ml'] . ' ml)'); } catch (Throwable $e) { } } } else $note('not sent: ' . (string)($s[1] ?? ''), 0, $o, $body, (int)$asked);
         }
