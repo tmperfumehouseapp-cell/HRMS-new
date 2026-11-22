@@ -86,7 +86,7 @@ export function createHandler({ db, cfg, fetchImpl = fetch, log = console }) {
   return handler;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+export function main() {
   loadEnv();
   const cfg = getConfig();
   const db = openDb(cfg.dbPath);
@@ -99,3 +99,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     setInterval(tick, cfg.syncIntervalMin * 60000).unref();
   }
 }
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) main();
