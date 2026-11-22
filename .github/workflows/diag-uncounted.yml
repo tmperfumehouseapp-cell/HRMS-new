@@ -47,5 +47,5 @@ jobs:
             echo "=== bot events of this chat today ===\n"; try { $m = $d->prepare("SELECT ts, LEFT(body, 140) b FROM wa_messages WHERE phone LIKE ? AND ts >= ? AND dir = 'sys' ORDER BY id"); $m->execute(["%$ch", date("Y-m-d 00:00:00")]); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $x) if (preg_match("/bot|price|chart/i", $x["b"])) echo "  " . substr($x["ts"], 11, 5) . " " . $x["b"] . "\n"; } catch (Throwable $e) { echo "n/a\n"; }
           }
           PHP
-          php /tmp/ql_check.php "$P"; rm -f /tmp/ql_check.php
+          php /tmp/ql_check.php "$P" "$CH"; rm -f /tmp/ql_check.php
           REMOTE
