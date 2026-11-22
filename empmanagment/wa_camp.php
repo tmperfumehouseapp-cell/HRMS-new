@@ -293,6 +293,36 @@ function wa_camp_window(PDO $pdo): array
     return [0, 24];
 }
 function wa_camp_in_window(PDO $pdo, int $ts): bool { [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); return $h >= $o && $h < $c && !wa_quiet_hours($ts); }   // + the universal quiet hours 03:00-09:00
+/**
+ * 🔁 Owner 22 Nov 2026: "when Meta pauses a message for low quality (132015) do not wait for me: switch to another approved version and carry on, no permission needed".
+ * A campaign that Meta stopped with 132015 (note holds the code) gets the next approved sibling of its message family (marketing versions first, newest first, then the
+ * approved utility versions of that family) and runs again with the people still waiting. The old message is remembered as bad for 3 days (wa_camp_tpl_bad) so
+ * no campaign swaps back to it. At most every 2 minutes; switch off: wa_camp_auto_swap = 0. Returns how many campaigns were switched.
+ */
+function wa_camp_swap_paused(PDO $pdo): int
+{
+    if ((string)setting_get($pdo, 'wa_camp_auto_swap', '1') === '0') return 0;
+    if ((int)setting_get($pdo, 'wa_camp_swap_at', '0') > time() - 120) return 0; setting_set($pdo, 'wa_camp_swap_at', (string)time());
+    $n = 0; $now = time();
+    try {
+        $rows = $pdo->query("SELECT id, tpl_id, media_lib_id, note FROM wa_campaigns WHERE status = 'paused' AND (note LIKE '%132015%' OR note LIKE '%paused due to low quality%') ORDER BY id LIMIT 20")->fetchAll(); if (!$rows) return 0;
+        $bad = json_decode((string)setting_get($pdo, 'wa_camp_tpl_bad', ''), true); $bad = is_array($bad) ? array_filter($bad, fn($u) => (int)$u > $now) : [];
+        foreach ($rows as $c) {
+            $cur = (int)$c['tpl_id']; $bad[$cur] = $now + 3 * 86400;
+            $tr = $pdo->prepare("SELECT id, family_id FROM wa_templates WHERE id = ?"); $tr->execute([$cur]); $t0 = $tr->fetch(); if (!$t0) continue; $root = (int)($t0['family_id'] ?: $t0['id']);
+            $q = $pdo->prepare("SELECT id, name, category FROM wa_templates WHERE (id = ? OR family_id = ?) AND id <> ? ORDER BY (category = 'MARKETING') DESC, version DESC, id DESC LIMIT 60"); $q->execute([$root, $root, $cur]);
+            foreach ($q->fetchAll() as $cand) {
+                $cid = (int)$cand['id']; if (isset($bad[$cid])) continue;
+                $t = wa_camp_tpl($pdo, $cid, true, (int)$c['media_lib_id']); if (!$t || (int)($t['nvars'] ?? 0) > 1) continue;
+                $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, status = 'running', note = '' WHERE id = ? AND status = 'paused'")->execute([$cid, (int)$c['id']]); $n++;
+                wa_log($pdo, 'campaign', true, 'Campaign #' . (int)$c['id'] . ': Meta paused its message (132015); it now carries on with ' . (string)$cand['name'] . ' (' . (string)$cand['category'] . ', approved)');
+                break;
+            }
+        }
+        setting_set($pdo, 'wa_camp_tpl_bad', json_encode((object)$bad));
+    } catch (Throwable $e) { }
+    return $n;
+}
 /** The next moment inside the sending window (the same time when it is already inside). */
 function wa_camp_clamp(PDO $pdo, int $ts): int
 {
