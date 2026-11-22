@@ -305,13 +305,14 @@ function wa_camp_swap_paused(PDO $pdo): int
     if ((int)setting_get($pdo, 'wa_camp_swap_at', '0') > time() - 120) return 0; setting_set($pdo, 'wa_camp_swap_at', (string)time());
     $n = 0; $now = time();
     try {
-        $rows = $pdo->query("SELECT id, tpl_id, media_lib_id, note FROM wa_campaigns WHERE status = 'paused' AND (note LIKE '%132015%' OR note LIKE '%paused due to low quality%') ORDER BY id LIMIT 20")->fetchAll(); if (!$rows) return 0;
+        $rows = $pdo->query("SELECT id, tpl_id, media_lib_id, note FROM wa_campaigns WHERE status = 'paused' AND (note LIKE '%132015%' OR note LIKE '%paused due to low quality%' OR note LIKE 'Fill the text for%') ORDER BY id LIMIT 20")->fetchAll(); if (!$rows) return 0;   /* 'Fill the text for {{2}}': the message has a second blank nobody filled - the campaign cannot send; it carries on with another approved one-blank message too (owner 22 Nov: maximum delivery, no permission needed) */
         $bad = json_decode((string)setting_get($pdo, 'wa_camp_tpl_bad', ''), true); $bad = is_array($bad) ? array_filter($bad, fn($u) => (int)$u > $now) : [];
         foreach ($rows as $c) {
             $cur = (int)$c['tpl_id']; $bad[$cur] = $now + 3 * 86400;
-            $tr = $pdo->prepare("SELECT id, family_id FROM wa_templates WHERE id = ?"); $tr->execute([$cur]); $t0 = $tr->fetch(); if (!$t0) continue; $root = (int)($t0['family_id'] ?: $t0['id']);
-            $q = $pdo->prepare("SELECT id, name, category FROM wa_templates WHERE (id = ? OR family_id = ?) AND id <> ? ORDER BY (category = 'MARKETING') DESC, version DESC, id DESC LIMIT 60"); $q->execute([$root, $root, $cur]);
-            foreach ($q->fetchAll() as $cand) {
+            $tr = $pdo->prepare("SELECT id, family_id FROM wa_templates WHERE id = ?"); $tr->execute([$cur]); $t0 = $tr->fetch(); $root = $t0 ? (int)($t0['family_id'] ?: $t0['id']) : 0;
+            $q = $pdo->prepare("SELECT id, name, category FROM wa_templates WHERE ((id = ? OR family_id = ?) AND ? > 0) AND id <> ? ORDER BY (category = 'MARKETING') DESC, version DESC, id DESC LIMIT 60"); $q->execute([$root, $root, $root, $cur]); $cands = $q->fetchAll();
+            if (stripos((string)$c['note'], 'Fill the text for') === 0) { $fb = (int)setting_get($pdo, 'wa_camp_fallback_tpl', '396'); if ($fb > 0 && $fb !== $cur) { $fq = $pdo->prepare("SELECT id, name, category FROM wa_templates WHERE id = ?"); $fq->execute([$fb]); if ($fr = $fq->fetch()) $cands[] = $fr; } }   /* nobody to take the words of: the family's approved message, else the owner's approved fallback (perfume_sirf_400_v2) */
+            foreach ($cands as $cand) {
                 $cid = (int)$cand['id']; if (isset($bad[$cid])) continue;
                 $t = wa_camp_tpl($pdo, $cid, true, (int)$c['media_lib_id']); if (!$t || (int)($t['nvars'] ?? 0) > 1) continue;
                 $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, status = 'running', note = '' WHERE id = ? AND status = 'paused'")->execute([$cid, (int)$c['id']]); $n++;

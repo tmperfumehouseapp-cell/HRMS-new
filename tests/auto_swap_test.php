@@ -24,6 +24,10 @@ if (extension_loaded('pdo_sqlite')) {
     ok($r[3]['status'] === 'running' && $r[3]['tpl_id'] == 395, 'running campaign untouched');
     $S['wa_camp_swap_at'] = '0'; $pdo->exec("UPDATE wa_campaigns SET status='paused', note='(code 132015)' WHERE id = 1"); $n = wa_camp_swap_paused($pdo);
     $t = $pdo->query("SELECT tpl_id FROM wa_campaigns WHERE id = 1")->fetchColumn(); ok($t == 405, 'second pause: next approved version (the utility one), never back to a bad one, got ' . $t);
+    $pdo->exec("INSERT INTO wa_campaigns VALUES (5,3200,0,'paused','Fill the text for {{2}}.'),(6,500,0,'paused','Fill the text for {{2}}.')"); $S['wa_camp_swap_at'] = '0'; $S['wa_camp_tpl_bad'] = ''; wa_camp_swap_paused($pdo);
+    $f = $pdo->query("SELECT id, tpl_id, status FROM wa_campaigns WHERE id IN (5, 6) ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+    ok($f[0]['tpl_id'] == 396 && $f[0]['status'] === 'running', 'unknown template with an unfilled blank: approved fallback v2 carries on');
+    ok($f[1]['tpl_id'] == 396 && $f[1]['status'] === 'running', 'template without siblings and an unfilled blank: fallback too');
     $S['wa_camp_swap_at'] = '0'; $S['wa_camp_auto_swap'] = '0'; $pdo->exec("UPDATE wa_campaigns SET status='paused', note='(code 132015)' WHERE id = 1"); ok(wa_camp_swap_paused($pdo) === 0, 'switch-off setting works');
 }
 echo "auto swap ok\n";
