@@ -453,7 +453,14 @@ function wa_ru_send_cap(PDO $pdo, int $hourly, int $nowTs): int
         if ($n >= 30) { $rate = max(0.67, min(1.0, (int)$r['d'] / $n)); $cap = (int)ceil($hourly / $rate); } } catch (Throwable $e) { }
     return max($hourly, min($cap, 600));
 }
+/** Owner 23 Nov 2026: "Module A may rest at night, Module B's utility keeps going 24 hours". While Module B's own tick runs, the universal quiet hours (03:00-09:00) do not stop its utility messages (flag read by wa_send_tpl_one); every other module keeps its rest. Switch back: wa_ru_quiet = 1. */
 function wa_ru_tick(PDO $pdo): array
+{
+    $GLOBALS['wa_ru_noquiet'] = ((string)setting_get($pdo, 'wa_ru_quiet', '0') !== '1');
+    try { return wa_ru_tick_inner($pdo); } finally { $GLOBALS['wa_ru_noquiet'] = false; }
+}
+function wa_ru_in_window(PDO $pdo, int $ts): bool { [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); return $h >= $o && $h < $c && (!empty($GLOBALS['wa_ru_noquiet']) || !wa_quiet_hours($ts)); }
+function wa_ru_tick_inner(PDO $pdo): array
 {
     wa_ru_load_util($pdo); wa_ru_reset_once($pdo);
     if (function_exists('wa_camp_swap_paused')) { try { wa_camp_swap_paused($pdo); } catch (Throwable $e) { } }   /* owner 22 Nov 2026: campaigns Meta paused for low quality (132015) carry on with another approved version by themselves */
@@ -471,7 +478,7 @@ function wa_ru_tick(PDO $pdo): array
     try { $res['made'] = wa_ru_make_tick($pdo)['made']; } catch (Throwable $e) { }   // utility versions of today's campaign messages → Meta
     $t0 = microtime(true) - 8;   // the making / sending of templates above can take 20+ seconds: it must not eat the time of the sending loop below (it did: every round broke off at the first person and Module B never sent anything)
     try {
-        if (!wa_camp_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
+        if (!wa_ru_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
         try { $wm = wa_ru_warm_tick($pdo, $cfg, $nowTs); $res['sent'] += $wm['sent']; $res['failed'] += $wm['failed']; } catch (Throwable $ew) { }   /* owner 20 Nov 2026: the first 10 messages of each new number (counted allowance, see wa_ru_warm_tick) */
         $tpp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $tpp = is_array($tpp) ? array_filter($tpp, fn($u) => (int)$u > $nowTs) : [];   // templates Meta paused for low quality (132015): not used again for 6 hours
         $notPaused = fn(array $L) => array_values(array_filter($L, fn($t0) => !isset($tpp[(int)($t0['id'] ?? 0)])));
