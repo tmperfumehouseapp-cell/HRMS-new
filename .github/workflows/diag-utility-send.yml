@@ -213,6 +213,9 @@ jobs:
             $tr = $all("SELECT id, name, category, family_id, version, LEFT(extra, 300) ex FROM wa_templates WHERE id = " . (int)$pc["tpl_id"]); foreach ($tr as $r) { echo "    template " . json_encode($r) . "\n"; $root = (int)($r["family_id"] ?: $r["id"]);
               foreach ($all("SELECT t.id, t.name, t.category, t.version, GROUP_CONCAT(CONCAT(SUBSTR(w.waba_id, -4), ':', w.status) SEPARATOR ' ') st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.id = $root OR t.family_id = $root GROUP BY t.id ORDER BY t.id LIMIT 12") as $m) echo "      family member " . json_encode($m) . "\n"; }
           }
+          echo "\n=== NUMBER 11 OPENING ===\n"; foreach (["wa_open11_2211","wa_open11b_2211","wa_more_schema_err","wa_t11_at","wa_camp_auto_swap","wa_camp_tpl_bad","wa_ru_got_sql","wa_ru_tpl_pause"] as $k) echo "  $k=" . substr($s($k), 0, 200) . "\n";
+          foreach ($all("SELECT * FROM wa_numbers WHERE id = 11") as $r) echo "  num11 " . json_encode($r) . "\n";
+          foreach ($all("SELECT at, LEFT(info, 200) info FROM wa_log WHERE info LIKE 'Campaign #%' OR info LIKE 'Number 11%' ORDER BY id DESC LIMIT 12") as $r) echo "  log " . $r["at"] . " " . $r["info"] . "\n";
           echo "\n=== 4TH NUMBER (#6) SHIFT CHECK ===\n";
           foreach ($all("SELECT id, label, retired, camp_ok, hold FROM wa_numbers WHERE id = 6") as $r) echo "  number " . json_encode($r) . "\n";
           foreach ($all("SELECT COUNT(*) n, SUM(last_in_at >= DATE_SUB(NOW(), INTERVAL 48 HOUR)) wrote_48h, SUM(last_in_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)) wrote_24h FROM wa_contacts WHERE last_number_id = 6") as $r) echo "  contacts on #6: " . json_encode($r) . "\n";
