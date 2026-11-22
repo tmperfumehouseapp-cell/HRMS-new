@@ -776,6 +776,11 @@ function wl_snap(PDO $pdo, bool $force = false): bool
     if (mt_rand(1, 30) === 1) $pdo->prepare("DELETE FROM wa_line_snap WHERE at < ?")->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]); return true;
 }
 function wl_snaps(PDO $pdo, int $n = 36): array { $o = []; foreach ($pdo->query("SELECT at, j FROM wa_line_snap ORDER BY id DESC LIMIT " . (int)$n)->fetchAll() as $r) { $j = json_decode((string)$r['j'], true); if (is_array($j)) { $j['at'] = (string)$r['at']; $o[] = $j; } } return $o; }
+/** A customer's answer that is a "no": Stop / unsubscribe / Not now / No thanks (the whole message). It is not counted as a reply (owner, 20 Nov: "Not now is not wanted in Replies"). */
+function wl_is_decline(string $body): bool
+{
+    return (bool)preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more|not now|no thanks?|no thank you|abhi nahi|abhi nahin|nahi chahiye|nahin chahiye)\s*[.!]*\s*$/iu', $body);
+}
 /** The outside look (the card on the Campaigns page): what happened since $from — messages sent / delivered / read / failed, how many people answered (a button tap or any message), orders and revenue credited to the Lineup,
  *  how many went as Utility and how many as plain (marketing) messages, and what they cost (the shop's own rates, wa_team_cfg). */
 function wl_summary(PDO $pdo, int $from): array
@@ -794,12 +799,28 @@ function wl_summary(PDO $pdo, int $from): array
     $byP = []; foreach ($sent as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
     if ($byP) { $btn = []; foreach (wl_pack() as $k => $m) $btn[mb_strtolower(trim($m['button']))] = 1; $rep = []; $tap = [];
         foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
-            foreach ($x->fetchAll() as $r) { $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; if (isset($btn[mb_strtolower(trim((string)$r['body']))])) $tap[(string)$r['phone'] . '|' . $st0] = 1; break; } } }
+            foreach ($x->fetchAll() as $r) { if (wl_is_decline((string)$r['body'])) continue; $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; if (isset($btn[mb_strtolower(trim((string)$r['body']))])) $tap[(string)$r['phone'] . '|' . $st0] = 1; break; } } }
         $o['replied'] = count($rep); $o['taps'] = count($tap); }
     $ord = []; try { $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
         foreach ($x->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byP[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; } } catch (Throwable $e) { }
     $buy = []; foreach ($ord as $k => $list) foreach ($list as [$ot, $tot]) foreach ($byP[$k] as $st0) if ($st0 < $ot && $ot <= $st0 + 7 * 86400) { $o['orders']++; $o['revenue'] += (int)round($tot); $buy[$k] = 1; break; }
     $o['buyers'] = count($buy); return $o;
+}
+/** Who replied (the same people the Replies number counts: an answer within 2 days of a Lineup message, a "no" like Stop / Not now left out): newest-waiting first. Returns [rows, more]. */
+function wl_repliers(PDO $pdo, int $from, int $limit = 600): array
+{
+    $f = date('Y-m-d H:i:s', $from); $q = $pdo->prepare("SELECT phone, sent_at FROM wa_line_plan WHERE status = 'sent' AND COALESCE(sent_at, ?) >= ?"); $q->execute([$f, $f]); $byP = [];
+    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
+    $last = []; foreach (array_chunk(array_keys($byP), 400) as $ch) {
+        $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") ORDER BY id"); $x->execute(array_merge([$f], $ch));
+        foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { if (wl_is_decline((string)$r['body'])) continue; $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $last[(string)$r['phone']] = ['t' => $t, 'b' => (string)$r['body'], 'm' => (string)$r['mtype']]; break; } }
+    }
+    $info = []; foreach (array_chunk(array_keys($last), 400) as $ch) { $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, last_out_at, status, optout FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $c->execute($ch); foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $info[(string)$r['phone']] = $r; }
+    $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = [];
+    foreach ($last as $ph => $l) { $c = $info[$ph] ?? []; $answered = !empty($c['last_out_at']) && (string)$c['last_out_at'] >= (string)($c['last_in_at'] ?? ''); $emp = (int)($c['assigned_emp'] ?? 0);
+        $rows[] = ['phone' => $ph, 'name' => (string)($c['name'] ?? ''), 'text' => mb_substr(($l['b'] !== '' ? $l['b'] : '[' . $l['m'] . ']'), 0, 90), 'at' => date('Y-m-d H:i:s', $l['t']), 'wait' => !$answered, 'emp' => $emp, 'holder' => $emp > 0 ? (string)($nm[$emp] ?? '') : '', 'closed' => ((string)($c['status'] ?? '') === 'closed')]; }
+    usort($rows, function ($a, $b) { return [(int)$b['wait'], $b['at']] <=> [(int)$a['wait'], $a['at']]; });
+    return [array_slice($rows, 0, $limit), count($rows) > $limit, count($rows)];
 }
 /** The picture the owner looks at: customers by topic and status, how many go today / tomorrow (by hour), the templates, the old drip. */
 function wl_overview(PDO $pdo, bool $fresh = false): array
@@ -1051,6 +1072,10 @@ if (strpos($__wl, 'wa.line_') === 0) {
     switch ($__wl) {
         case 'wa.line_get': json_response(['ok' => true] + wl_overview($pdo));
         case 'wa.line_aft': { if (!function_exists('wa_aft_overview')) require_once __DIR__ . '/wa_after.php'; json_response(['ok' => true] + wa_aft_overview($pdo)); }   // the After-Order plan card under the 30-day plan
+        case 'wa.line_replies': {   // 💬 the people behind the Replies number: today or since the start
+            $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : wl_ist_at($td0, 0);
+            [$rows, $more, $n] = wl_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
+        }
         case 'wa.line_card': { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); json_response(['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60), 'tomorrow' => wl_overview($pdo)['tomorrow']]); }
         case 'wa.line_report': json_response(['ok' => true] + wl_report($pdo, max(7, min(90, (int)($_GET['days'] ?? 30)))));
         case 'wa.line_customer': json_response(['ok' => true] + wl_customer($pdo, preg_replace('/\D/', '', (string)($_GET['phone'] ?? ''))));
