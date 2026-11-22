@@ -962,6 +962,7 @@ function wa_tag_contact(PDO $pdo, array $c, bool $force): array
     try { [$ok, $v, $why] = convo_ai($sys, [['text' => "The chat:\n" . $txt]], $schema, false, 1200, 'claude'); } catch (Throwable $e) { return [false, 'The AI could not read this chat.']; }
     if (!$ok || !is_array($v)) return [false, (string)($why ?: 'The AI could not read this chat.')];
     $tag = isset(WA_TAGS[(string)($v['tag'] ?? '')]) ? (string)$v['tag'] : 'other'; $sum = mb_substr(trim((string)($v['summary'] ?? '')), 0, 600);
+    if ($tag === 'complaint' && (int)($c['cx_id'] ?? 0) === 0) { $tag = 'other'; $sum = trim('Possible complaint — read it. ' . $sum); }   // the AI never marks a chat as a complaint by itself: a complaint chat leaves the sales queues; only a sales person raises a complaint
     $pdo->prepare("UPDATE wa_contacts SET tag = ?, summary = ?, tagged_at = ? WHERE phone = ?")->execute([$tag, $sum, date('Y-m-d H:i:s'), $c['phone']]);
     return [true, ['tag' => $tag, 'summary' => $sum, 'fresh' => true]];
 }
