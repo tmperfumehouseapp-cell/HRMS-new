@@ -26,3 +26,11 @@ try { $st = function ($k) use ($pdo) { $x = $pdo->prepare("SELECT setting_value 
     $sc = json_decode($st('wl_scores'), true) ?: []; arsort($sc); echo "ASK SCORES winners " . json_encode(array_slice($sc, 0, 8), JSON_UNESCAPED_UNICODE) . "\n";
     $ll = json_decode($st('wl_learn_log'), true) ?: []; foreach (array_slice($ll, 0, 12) as $r) echo "ASK LOG " . substr(json_encode($r, JSON_UNESCAPED_UNICODE), 0, 230) . "\n";
 } catch (Throwable $e) { echo "ASK LEARN ERR " . substr($e->getMessage(), 0, 90) . "\n"; }
+// 4) why the new topics have not started: the state of their messages at Meta (per WhatsApp account)
+try { $st2 = function ($k) use ($pdo) { $x = $pdo->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $x->execute([$k]); return (string)$x->fetchColumn(); }; $ids = json_decode($st2('wl_tpls'), true) ?: []; $want = []; foreach ($ids as $k => $id) if (preg_match('/^ln_(brand|party)_/', (string)$k)) $want[(string)$k] = (int)$id;
+    echo "ASK TOPICTPL ids " . json_encode($want) . "\n"; if ($want) { $in = implode(',', array_map('intval', $want));
+        echo "ASK TOPICTPL waba " . json_encode($one("SELECT tpl_id, UPPER(status) s, COUNT(*) FROM wa_tpl_waba WHERE tpl_id IN ($in) GROUP BY tpl_id, s ORDER BY tpl_id")) . "\n";
+        echo "ASK TOPICTPL tpl " . json_encode($one("SELECT id, category, relabelled_at, LEFT(COALESCE(note, ''), 60) FROM wa_templates WHERE id IN ($in)")) . "\n";
+        echo "ASK TOPICTPL reasons " . json_encode($one("SELECT * FROM wa_tpl_waba WHERE tpl_id IN ($in) AND UPPER(status) <> 'APPROVED' LIMIT 3")) . "\n"; }
+    echo "ASK TOTAL accounts " . json_encode($one("SELECT COUNT(DISTINCT waba_id) FROM wa_tpl_waba")) . "\n";
+} catch (Throwable $e) { echo "ASK TOPICTPL ERR " . substr($e->getMessage(), 0, 90) . "\n"; }
