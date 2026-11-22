@@ -769,7 +769,7 @@ function wag_addon_scan(PDO $pdo): void
         $q->execute([date('Y-m-d H:i:s', $now - 900), date('Y-m-d H:i:s', $now - 5)]);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $key = (string)$r['phone']; if (wag_meta_get($pdo, 'addon:' . $key, '') !== '') continue;
             $cs = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ? AND status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0)"); $cs->execute([$key]); $c = $cs->fetch(PDO::FETCH_ASSOC); if (!$c) continue;
-            if ((int)($c['assigned_emp'] ?? 0) > 0 && (int)strtotime((string)$r['ts']) > $now - 90) continue;   // a person holds the chat: his pop-up (messages to choose from) comes first, the system sends by itself after 90 s
+            if ((int)($c['assigned_emp'] ?? 0) > 0 && (int)strtotime((string)$r['ts']) > $now - 150) continue;   // a person holds the chat: his pop-up (messages to choose from, now also to EDIT) comes first; owner 22 Nov: about a minute to edit and send, so the system sends by itself only after 150 s
             $lk = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND id > ? AND (body LIKE '%tmperfumehouse.com%' OR body LIKE '%payment link%' OR body LIKE '%cart link%' OR body LIKE '%pay.%' OR body LIKE '%rzp.io%' OR body LIKE '%razorpay%') LIMIT 1"); $lk->execute([$key, (int)$r['id'] - 30]); if ($lk->fetchColumn()) { wag_meta_put($pdo, 'addon:' . $key, 'skip|' . date('Y-m-d H:i:s') . '|link'); continue; }   // the link is already sent: too late
             wag_addon_offer($pdo, $c, $key); }
     } catch (Throwable $e) { }
