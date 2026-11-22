@@ -595,6 +595,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if ($cfg['mode'] === 'off') return $o;
     if (!$force && function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours 03:00-09:00'; return $o; }   // universal rule (owner, 21 Nov)
     if (!$force) { try { if (is_file(__DIR__ . '/wa_offer.php')) { require_once __DIR__ . '/wa_offer.php'; setting_set($pdo, 'wo_hook', date('Y-m-d H:i:s') . ($sendonly ? ' cli' : ' web')); $__wo = wof_run($pdo, 30); $o['offers'] = (int)$__wo[2]; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup offer: ' . $e->getMessage()); } }   // 🎯 the price offer to the customers who answered (owner 22 Nov; wo_mode dry / live)   // failed as marketing -> sent again as utility on the spot
+    if (!$force && !$sendonly) { try { if (is_file(__DIR__ . '/wa_cold.php')) { require_once __DIR__ . '/wa_cold.php'; setting_set($pdo, 'wcd_hook', date('Y-m-d H:i:s')); wcd_tick($pdo, 15); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cold funnel: ' . $e->getMessage()); } }   /* the cold funnel (owner 22 Nov): delivered, never wrote back */
     if (!$force && !$sendonly) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
     if ($sendonly && ($cfg['started'] === '' || $cfg['since'] <= 0)) return $o;
     if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
@@ -1095,6 +1096,12 @@ if (strpos($__wl, 'wa.line_') === 0) {
     if (!wln_tables($pdo)) json_response(['error' => 'Lineup storage is not available.'], 500);
     switch ($__wl) {
         case 'wa.line_get': json_response(['ok' => true] + wl_overview($pdo));
+        case 'wa.line_cold': { if (!function_exists('wcd_card')) require_once __DIR__ . '/wa_cold.php'; json_response(['ok' => true] + wcd_card($pdo)); }   /* the Cold funnel card above the 30-Day Lineup */
+        case 'wa.line_cold_save': {   /* POST {mode: off|dry|live, cap} */
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (!function_exists('wcd_card')) require_once __DIR__ . '/wa_cold.php'; $in = json_input();
+            if (isset($in['mode']) && in_array((string)$in['mode'], ['off', 'dry', 'live'], true)) setting_set($pdo, 'wcd_mode', (string)$in['mode']); if (isset($in['cap'])) setting_set($pdo, 'wcd_cap', (string)max(0, min(50000, (int)$in['cap']))); setting_set($pdo, 'wcd_card_cache', '');
+            json_response(['ok' => true] + wcd_card($pdo));
+        }
         case 'wa.line_aft': { if (!function_exists('wa_aft_overview')) require_once __DIR__ . '/wa_after.php'; json_response(['ok' => true] + wa_aft_overview($pdo)); }   // the After-Order plan card under the 30-day plan
         case 'wa.line_replies': {   // 💬 the people behind the Replies number: today or since the start
             $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : wl_ist_at($td0, 0);
