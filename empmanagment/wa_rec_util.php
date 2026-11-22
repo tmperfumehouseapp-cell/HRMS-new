@@ -499,7 +499,7 @@ function wa_ru_tick_inner(PDO $pdo): array
         $mo = implode(',', WA_RU_MARKETING_ONLY);
         $nvr = implode(',', array_map('intval', array_diff(defined('WA_REC_NEVER') ? WA_REC_NEVER : [0], WA_RU_MARKETING_ONLY))) ?: '0';   /* owner 21 Nov 2026: people Meta will never deliver to (not on WhatsApp, spam flag, ...) are left out in SQL, so the 2,000-person look is filled with people who can really get a message (1,455 of 2,000 were skipped one by one) */
         // 💸 marketing FIRST (owner, 17 Nov 2026): a person whose marketing message FAILED gets utility the same day (after the short wait / recovery); only draft / scheduled campaigns are skipped. Held people still waiting for their extra marketing try (status retry) are left alone until that try has been made
-        $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - 4 * 86400)]);
+        $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - max(4, (int)setting_get($pdo, 'wa_ru_camp_days', '8')) * 86400)]);   /* owner 23 Nov: maximum delivery - the failed people of campaigns up to 8 days old are looked at (was 4); setting wa_ru_camp_days */
         $doneIds = array_map('intval', $dn->fetchAll(PDO::FETCH_COLUMN)); if (!$doneIds) { $res['note'] = 'no campaign in the last 4 days'; return $res; }
         $doneIn = implode(',', $doneIds);
         /* owner 22 Nov 2026 (speed): people whose phone already got a delivered / read template message since the day start (the 'delivered another way today' skip: 1,866 of 2,000 in one pass) are left out in SQL, so the 2,000-person look is filled with people who can really get a message. Uses the k_pdt (phone, dir, ts) index. Switch off: wa_ru_got_sql = 0 (the PHP check below stays as the safety net). */
@@ -632,7 +632,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
     }
     if (!$targets) return $o;
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $mo = implode(',', WA_RU_MARKETING_ONLY);
-    $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - 4 * 86400)]);
+    $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - max(4, (int)setting_get($pdo, 'wa_ru_camp_days', '8')) * 86400)]);   /* owner 23 Nov: maximum delivery - the failed people of campaigns up to 8 days old are looked at (was 4); setting wa_ru_camp_days */
     $doneIds = array_map('intval', $dn->fetchAll(PDO::FETCH_COLUMN)); if (!$doneIds) return $o; $doneIn = implode(',', $doneIds);
     $nvr = implode(',', array_map('intval', array_diff(defined('WA_REC_NEVER') ? WA_REC_NEVER : [0], WA_RU_MARKETING_ONLY))) ?: '0';   /* owner 22 Nov 2026: the new numbers' look is filled with people who can really get a message (105 of 130 were 'Meta will not deliver') - same SQL filter as Module B */
     $q = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.err_code, i.status, i.sent_at FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id

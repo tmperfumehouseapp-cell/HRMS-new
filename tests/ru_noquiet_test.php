@@ -14,4 +14,5 @@ if (preg_match('/function wa_ru_in_window\(PDO \$pdo, int \$ts\): bool \{.*?\}\n
     $GLOBALS['wa_ru_noquiet'] = false; ok(!wa_ru_in_window($pdo0, $night), 'at 04:00 with the flag off: rest'); ok(wa_ru_in_window($pdo0, $day), 'noon: works');
     $GLOBALS['wa_ru_noquiet'] = true; ok(wa_ru_in_window($pdo0, $night), 'at 04:00 with the flag on: Module B works');
 } else ok(false, 'window helper present');
+ok(substr_count($ru, "'wa_ru_camp_days', '8'") === 2, "Module B and the new numbers look at campaigns up to 8 days old");
 echo "ru noquiet ok\n";
