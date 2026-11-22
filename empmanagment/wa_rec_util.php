@@ -220,22 +220,29 @@ function wa_ru_retry_tick(PDO $pdo, int $nowTs, int &$left, float $t0): array
     if ($left <= 0) return $o;
     try {
         $never = implode(',', array_diff(defined('WA_REC_NEVER') ? WA_REC_NEVER : [0], WA_RU_MARKETING_ONLY)) ?: '0';
-        $q = $pdo->prepare("SELECT l.item_id, l.camp_id, l.phone, l.number_id, l.tpl_id, l.kind, l.vars_json, l.first_code FROM wa_ru_log l LEFT JOIN wa_messages m ON m.wamid = l.wamid AND l.wamid <> ''
+        $q = $pdo->prepare("SELECT l.item_id, l.camp_id, l.phone, l.number_id, l.tpl_id, l.kind, l.vars_json, l.first_code, l.err_code AS uerr FROM wa_ru_log l LEFT JOIN wa_messages m ON m.wamid = l.wamid AND l.wamid <> ''
             WHERE l.attempt = 1 AND l.at <= ? AND l.at >= ? AND (l.ok = 0 OR m.status = 'failed') AND l.err_code NOT IN ($never) AND l.vars_json IS NOT NULL AND NOT EXISTS (SELECT 1 FROM wa_ru_log l2 WHERE l2.item_id = l.item_id AND l2.attempt = 2) ORDER BY l.id LIMIT 60");
         $q->execute([date('Y-m-d H:i:s', $nowTs - 1800), date('Y-m-d H:i:s', $nowTs - 8 * 3600)]); $rows = $q->fetchAll(); if (!$rows) return $o;
         $rest = wa_ru_numbers($pdo, $nowTs, false); $cache = [];
+        /* owner 22 Nov 2026: "if a utility message fails with a small error, make / pick another utility message and send it, no permission needed": when the failed message itself is the problem (Meta paused it, wrong blanks, not found ...) the second try goes out with ANOTHER approved utility message */
+        $tpp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $tpp = is_array($tpp) ? array_filter($tpp, fn($u) => (int)$u > $nowTs) : []; $tplErr = [132000, 132001, 132005, 132007, 132012, 132015, 132016, 131009]; $poolAlt = null; $cfgR = wa_ru_cfg($pdo); $rotR = 0;
         foreach ($rows as $r) {
             if ($left <= 0 || microtime(true) - $t0 > 40) break;
             if (wa_ru_lineup($pdo, [(string)$r['phone']])) continue;   // in a campaign line-up: the campaign goes first
             $ct = wa_contact($pdo, (string)$r['phone']); if (!$ct || (int)($ct['optout'] ?? 0) === 1) continue;
-            $tid = (int)$r['tpl_id']; if (!array_key_exists($tid, $cache)) { $tp = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $tid, true, 0) : null; $cache[$tid] = $tp ? wa_ru_tpl_ctx($pdo, $tp) : [null, null]; }
-            [$tUse, $ctx] = $cache[$tid]; if (!$tUse || !$ctx) continue; $vars = json_decode((string)$r['vars_json'], true); if (!is_array($vars)) continue;
+            $tid = (int)$r['tpl_id']; $vars = json_decode((string)$r['vars_json'], true); if (!is_array($vars)) continue; $kindR = (string)$r['kind'];
+            if (isset($tpp[$tid]) || in_array((int)$r['uerr'], $tplErr, true)) {
+                try { if ($poolAlt === null) { $poolAlt = array_values(array_filter(wa_ru_pool($pdo), fn($z) => !isset($tpp[(int)($z['id'] ?? 0)]))); }
+                    $pa = array_values(array_filter($poolAlt, fn($z) => (int)($z['id'] ?? 0) !== $tid)); $pk = $pa ? wa_util_pick($pdo, $pa, ['phone' => (string)$r['phone'], 'name' => (string)($ct['name'] ?? ''), 'optout' => 0, 'last_in_at' => $ct['last_in_at'] ?? null], $cfgR['ord_days'], $nowTs, ++$rotR, $cfgR['ask_days'], true) : null; } catch (Throwable $e) { $pk = null; }
+                if (!$pk) continue; $tid = (int)$pk['t']['id']; $vars = $pk['vars']; $kindR = (string)$pk['kind']; if (!array_key_exists($tid, $cache)) $cache[$tid] = wa_ru_tpl_ctx($pdo, $pk['t']);
+            } elseif (!array_key_exists($tid, $cache)) { $tp = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $tid, true, 0) : null; $cache[$tid] = $tp ? wa_ru_tpl_ctx($pdo, $tp) : [null, null]; }
+            [$tUse, $ctx] = $cache[$tid]; if (!$tUse || !$ctx) continue;
             $cand = array_filter($ctx['nums'], fn($x) => $x['left'] > 0 && (int)$x['id'] !== (int)$r['number_id'] && empty($rest[(int)$x['id']]['rest_until']) && in_array(($x['q'] ?? ''), ['GREEN', 'YELLOW'], true));
             if (!$cand) continue; $hi = array_filter($cand, fn($x) => ($x['q'] ?? '') === 'GREEN'); $cand = $hi ?: $cand;
             uasort($cand, fn($x, $y) => ($x['used'] / max(1, $x['cap'])) <=> ($y['used'] / max(1, $y['cap']))); $num = reset($cand); $nid = (int)$num['id']; $tSend = $num['tm'] ?? $tUse;
             [$ok, $rr, $ecs] = wa_send_tpl_one($pdo, ['phone' => (string)$r['phone'], 'wa_id' => (string)($ct['wa_id'] ?? ''), 'camp_optout' => (int)($ct['camp_optout'] ?? 0)], $tSend, $num, $vars, 'recover');
             try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at, attempt, vars_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?)")
-                ->execute([(int)$r['camp_id'], (int)$r['item_id'], (string)$r['phone'], (string)$r['kind'], $nid, (int)$tSend['id'], $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, (int)$r['first_code'], $ok ? '' : mb_substr((string)$rr, 0, 190), date('Y-m-d H:i:s', $nowTs), (string)$r['vars_json']]); } catch (Throwable $e) { }
+                ->execute([(int)$r['camp_id'], (int)$r['item_id'], (string)$r['phone'], $kindR, $nid, (int)$tSend['id'], $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, (int)$r['first_code'], $ok ? '' : mb_substr((string)$rr, 0, 190), date('Y-m-d H:i:s', $nowTs), json_encode($vars, JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
             $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $cache[$tid][1] = $ctx; $left--;
             if ($ok) $o['sent']++; else $o['failed']++;
         }
@@ -446,6 +453,7 @@ function wa_ru_send_cap(PDO $pdo, int $hourly, int $nowTs): int
 function wa_ru_tick(PDO $pdo): array
 {
     wa_ru_load_util($pdo); wa_ru_reset_once($pdo);
+    if (function_exists('wa_camp_swap_paused')) { try { wa_camp_swap_paused($pdo); } catch (Throwable $e) { } }   /* owner 22 Nov 2026: campaigns Meta paused for low quality (132015) carry on with another approved version by themselves */
     $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
     if (!wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
     $cfg = wa_ru_cfg($pdo); if (!$cfg['on']) { $res['note'] = 'off'; return $res; } if ($cfg['pause_until'] > time()) {
@@ -679,6 +687,13 @@ function wa_ru_new_ramp(PDO $pdo, int $nowTs): void
     if ((string)setting_get($pdo, 'wa_ru_new_ramp_off', '0') === '1') return;
     if ((int)setting_get($pdo, 'wa_ru_new_ramp_at', '0') > $nowTs - 1800) return;
     setting_set($pdo, 'wa_ru_new_ramp_at', (string)$nowTs);
+    try {   /* owner 22 Nov 2026: number 11 (opened with 250 messages a day, tier_manual): once a day, when the number is GREEN and used 70%+ of its day, the daily limit doubles (max 10,000) */
+        if ((int)setting_get($pdo, 'wa_t11_at', '0') < $nowTs - 22 * 3600 && (string)setting_get($pdo, 'wa_open11_2211', '') === '1') {
+            $hj = json_decode((string)setting_get($pdo, 'wa_health', ''), true); $q11 = strtoupper((string)(($hj[11]['quality'] ?? ($hj['11']['quality'] ?? '')))); $n11 = $pdo->query("SELECT * FROM wa_numbers WHERE id = 11")->fetch(); $tm = (int)($n11['tier_manual'] ?? 0);
+            if ($tm > 0 && $tm < 10000 && $q11 === 'GREEN') { $u = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE number_id = 11 AND dir = 'out' AND mtype = 'template' AND ts >= ?"); $u->execute([date('Y-m-d H:i:s', $nowTs - 86400)]);
+                if ((int)$u->fetchColumn() >= (int)ceil($tm * 0.7)) { $pdo->prepare("UPDATE wa_numbers SET tier_manual = ? WHERE id = 11")->execute([min(10000, $tm * 2)]); setting_set($pdo, 'wa_t11_at', (string)$nowTs); try { wa_log($pdo, 'campaign', true, 'Number 11: the daily limit is now ' . min(10000, $tm * 2)); } catch (Throwable $e) { } } }
+        }
+    } catch (Throwable $e) { }
     $h = json_decode((string)setting_get($pdo, 'wa_ru_new_hourly', ''), true); if (!is_array($h) || !$h) return; $ch = false;
     foreach ($h as $nid => $hv) {
         $hv = (int)$hv; if ($hv <= 0) continue;
