@@ -8,7 +8,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Store Dashboard — HRMS</title>
 <link rel="stylesheet" href="assets/css/style.css?v=260928b">
-<link rel="stylesheet" href="assets/css/store.css?v=6">
+<link rel="stylesheet" href="assets/css/store.css?v=8">
 </head>
 <body>
 <div class="app">
@@ -38,7 +38,24 @@
     return `<div class="sx-card" style="grid-column:1/-1"><h3>${sxi('user')} Customer follow-through <small>number → WhatsApp bill → contacts → community → review</small></h3>
       <div class="sx-grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr))">${panel(c.today, 'Today')}${panel(c.week, 'Last 7 days')}</div></div>`;
   }
+  let topSeg = 'all', topDays = 30, lastD = null;
+  function topCard(T) {
+    try {
+      const t = T && (T['d' + topDays] || T.d30);
+      if (!t || !Array.isArray(t.top)) return '';
+      const segs = t.segments || [];
+      if (!segs.some((z) => String(z.ml) === topSeg)) topSeg = 'all';
+      const list = topSeg === 'all' ? t.top.map((r) => ({ name: r.name, units: r.units, sub: (r.sizes || []).map((z) => z.ml + 'ml ×' + z.units).join(' · ') }))
+        : segs.find((z) => String(z.ml) === topSeg).top.map((r) => ({ name: r.name, units: r.units, sub: '' }));
+      const mx = Math.max(1, ...list.map((r) => r.units));
+      const tabs = [['all', 'All sizes']].concat(segs.map((z) => [String(z.ml), z.ml + ' ml'])).map(([k, l]) => `<button type="button" class="${topSeg === k ? 'on' : ''}" data-seg="${esc(k)}">${esc(l)}</button>`).join('');
+      return `<div class="sx-card c-top"><h3>${sxi('chart')} Top 5 sellers <small>last ${t.days} days · ${t.total_units} units · updated nightly</small></h3>
+        <div class="sx-tabs sx-tabs-s">${[7, 30].map((n) => `<button type="button" class="${topDays === n ? 'on' : ''}" data-days="${n}">${n} days</button>`).join('')}<span style="flex:0 0 8px"></span>${tabs}</div>
+        ${list.length ? `<div class="sx-bars sx-topbars">${list.map((r, i) => `<div class="col ${i === 0 ? 'now' : ''}" data-tip="${esc(r.name)} · ${r.units} units${r.sub ? ' · ' + esc(r.sub) : ''}"><span class="val">${r.units}</span><div class="bar" style="height:${Math.max(6, Math.round(r.units / mx * 100))}px"></div><span class="day nm">${esc(r.name)}</span></div>`).join('')}</div>` : '<div class="sx-mut">No sales in this period yet.</div>'}</div>`;
+    } catch (e) { return ''; }
+  }
   function render(d) {
+    lastD = d;
     const t = d.today, y = t.yesterday_amount, pct = y > 0 ? Math.round((t.amount - y) / y * 100) : null;
     const delta = pct === null ? '<span class="sx-delta">no sales yesterday</span>' : `<span class="sx-delta ${pct >= 0 ? 'up' : 'down'}">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% vs yesterday (${inr(y)})</span>`;
     const nrem = d.remarks_total, bad = Object.values(d.remarks).some((l) => l.some((r) => r.level === 'bad'));
@@ -63,6 +80,7 @@
           <table class="sx-sr"><caption>Sales in the last 7 days</caption>${d.week.map((w) => `<tr><td>${w.date}</td><td>${w.amount}</td></tr>`).join('')}</table></div>
         <div class="sx-card c-people"><h3>${sxi('user')} By salesperson today <small>${d.by_person.length || 'none'}</small></h3>
           ${d.by_person.length ? d.by_person.map((p) => `<div class="sx-hbar" data-tip="${esc(p.name)} · ${p.bills} bills · ${p.ml} ml · avg ${inr(p.avg)}"><span style="display:flex;gap:8px;align-items:center;min-width:0">${sxAv(p.name)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span></span><div class="tr"><i style="width:${Math.max(4, Math.round(p.amount / maxP * 100))}%"></i></div><b>${inr(p.amount)}</b></div>`).join('') : '<div class="sx-mut">No bills yet today.</div>'}</div>
+        ${topCard(d.top)}
         ${custCard(d.customers)}
         <div class="sx-card c-size"><h3>${sxi('box')} Stock by size <small>bottles for sale</small></h3>
           ${d.stock.sizes.length ? `<div class="sx-bars" style="height:150px">${d.stock.sizes.map((z) => `<div class="col" data-tip="${z.ml} ml · ${z.bottles} bottles"><span class="val">${z.bottles}</span><div class="bar" style="height:${Math.max(4, Math.round(z.bottles / maxSz * 96))}px;background:var(--sx-aqua)"></div><span class="day">${z.ml} ml</span></div>`).join('')}</div>` : '<div class="sx-mut">No bottles in stock yet.</div>'}</div>
@@ -78,6 +96,7 @@
     try { render(await api.get('st_dash.get')); }
     catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
+  $('root').addEventListener('click', (e) => { const b = e.target.closest('[data-seg],[data-days]'); if (b && lastD) { if (b.dataset.days) topDays = +b.dataset.days; else topSeg = b.dataset.seg; render(lastD); } });
   sxTips($('root')); load(); setInterval(() => { if (!document.hidden) load(); }, 60000);
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
