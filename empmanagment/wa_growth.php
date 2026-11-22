@@ -463,7 +463,7 @@ function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false,
             'heat' => function_exists('wa_heat') ? wa_heat($r, ($hf[$k] ?? []) + (($bdg['k'] ?? '') === 'bad' ? ['cx' => 1] : []), (int)$cfg['unans_min']) : '', 'biz' => !empty($hf[$k]['biz']),
             'read' => wag_read($r, $waiting, $win, (int)$r['hot'] === 1, (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', (int)($x['n'] ?? 0), $now), 'badge' => $bdg, 'origin' => (string)($org[$k] ?? ''), 'noresp' => ($hum[(string)$r['phone']] ?? 0) < $in, 'first_emp' => (int)($ot[$k]['first'] ?? 0), 'first_name' => $names[(int)($ot[$k]['first'] ?? 0)] ?? '', 'not_mine' => $tag && (int)$r['assigned_emp'] !== $emp, 'ut' => $utm[$k] ?? [], 'cx' => (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', 'num' => $nums[(int)$r['last_number_id']] ?? '', 'emp' => (int)$r['assigned_emp'], 'emp_name' => $names[(int)$r['assigned_emp']] ?? '', 'result' => $oc[$k]['code'] ?? '', 'tags' => array_slice($tags, 0, 3)];
         if ($tag && (int)$r['assigned_emp'] !== $emp) continue;   // someone else's now: in the list, not in my counters
-        $cnt['all']++; if ($waiting) $cnt['waiting']++; if ($overdue) $cnt['overdue']++; if ((int)$r['hot'] === 1) $cnt['hot']++;
+        $cnt['all']++; if ($waiting) $cnt['waiting']++; if ($overdue) $cnt['overdue']++; if ((int)$r['hot'] === 1 && (int)($r['cx_id'] ?? 0) === 0 && (string)$r['tag'] !== 'complaint') $cnt['hot']++;   // a complaint chat is never counted as hot
     }
     usort($out, function ($a, $b) {
         $ba = $a['overdue'] ? 0 : ($a['waiting'] && $a['window'] ? 1 : 2); $bb = $b['overdue'] ? 0 : ($b['waiting'] && $b['window'] ? 1 : 2);
@@ -516,12 +516,19 @@ function wag_chart_row(PDO $pdo, int $total): ?array
     foreach ((array)($c['rows'] ?? []) as $r) { $ml = (int)($r['ml'] ?? 0); $p = array_map('intval', (array)($r['p'] ?? [])); if ($ml <= 0 || !$p || (int)$p[0] <= 0) continue; if ($ml <= $total && ($best === null || $ml > $best['ml'])) $best = ['ml' => $ml, 'p' => $p, 'chart' => (int)$p[0]]; }
     return $best;
 }
+/** 🪜 owner (22 Nov): the bot started at the chart price and then dropped to the 3% price within minutes (2,270 → 2,050 → 1,980 for 160 ml). Rule: the first price is the 7% chart price and every later price comes down ONE price column at a time, never straight to the lowest. Index of the deepest column of this row that was already said earlier in the chat (-1 = none said yet). */
+function wag_price_depth(array $msgs, array $row): int
+{
+    $prev = ''; foreach ($msgs as $m) if (($m['who'] ?? '') !== 'customer') $prev .= ' ' . (string)($m['text'] ?? ''); $prev = str_replace(',', '', $prev); $d = -1;
+    foreach ($row['p'] as $j => $v) if (strpos($prev, (string)(int)$v) !== false) $d = max($d, (int)$j);
+    return $d;
+}
 /** One line for the bot's prompt: the exact chart price of what the customer asked for. */
 function wag_price_fact(PDO $pdo, array $msgs): string
 {
     if (wag_bottles_no_size($msgs)) return 'NO PRICE NOW (owner rule): the customer gave only a number of bottles and NOT the size in ml. Do NOT say any price, total, discount or offer in this reply. Ask in one short line which size (ml) he wants — 20 ml, 50 ml or 100 ml — and nothing else about money.';
     $rq = wag_ml_request($msgs); if (!$rq) return ''; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return '';
-    return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system — use exactly this): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total → chart price Rs ' . number_format($row['chart']) . ' (the FIRST price you say; the chart price is for the TOTAL ml, never the price of one bottle for several bottles); the lowest the shop goes to for this total is Rs ' . number_format(min($row['p'])) . '.';
+    return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system — use exactly this): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total → chart price Rs ' . number_format($row['chart']) . ' (the FIRST price you say; the chart price is for the TOTAL ml, never the price of one bottle for several bottles)' . (($__d = wag_price_depth($msgs, $row)) >= 0 ? '. You already said Rs ' . number_format((int)$row['p'][$__d]) . ' earlier in this chat: you may repeat it, and ONLY if the customer asks for less you may come down ONE step to at most Rs ' . number_format((int)$row['p'][min($__d + 1, count($row['p']) - 1)]) . ' — never lower than that in this reply, never jump to the lowest price, never mention how low the shop can go.' : '. Say only this price now; if the customer later asks for less, come down one step at a time (never straight to the lowest price, never mention how low the shop can go).');
 }
 /** Checks a reply: a price that belongs to ANOTHER chart row than the customer's total, or a first price that is not the chart (7%) price, is replaced by the correct chart price. Returns [reply, changed]. */
 function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
@@ -534,13 +541,15 @@ function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
         $custNums = []; foreach ($msgs as $m) if (($m['who'] ?? '') === 'customer') { preg_match_all('/\d[\d,]{2,5}/', (string)($m['text'] ?? ''), $nn); foreach ($nn[0] as $x) $custNums[(int)str_replace(',', '', $x)] = 1; }
         $prev = ''; foreach ($msgs as $m) if (($m['who'] ?? '') !== 'customer') $prev .= ' ' . (string)($m['text'] ?? ''); $prev = str_replace(',', '', $prev);
         $firstQuote = true; foreach ($row['p'] as $v) if (strpos($prev, (string)$v) !== false) { $firstQuote = false; break; }
+        $__dp = wag_price_depth($msgs, $row); $fixIdx = max(0, $__dp);
         preg_match_all('/(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $reply, $am); $bad = false;
         foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 500 || isset($custNums[$v])) continue;
             if (isset($other[$v])) { $bad = true; break; }                                  // the price of another size
             if (isset($mine[$v]) && $v !== $row['chart'] && $firstQuote) { $bad = true; break; }   // the first price said is not the chart price
+            if (isset($mine[$v])) { $jv = array_search($v, array_map('intval', $row['p']), true); if ($jv !== false && $jv > $__dp + 1) { $bad = true; $fixIdx = $__dp + 1; break; } }   // 🪜 a jump of more than one price column below what was said before
         }
         if (!$bad) return [$reply, false];
-        $fix = 'Sir, ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml' : $rq['ml'] . ' ml') . ' ka price Rs ' . number_format($row['chart']) . ' hai 😊 Kaunse perfumes lena chahoge?';
+        $fixP = (int)($row['p'][max(0, min((int)$fixIdx, count($row['p']) - 1))] ?? $row['chart']); $fix = 'Sir, ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml' : $rq['ml'] . ' ml') . ' ka price Rs ' . number_format($fixIdx > 0 ? $fixP : $row['chart']) . ' hai 😊 Kaunse perfumes lena chahoge?';
         return [$fix, true];
     } catch (Throwable $e) { return [$reply, false]; }
 }
@@ -1290,15 +1299,8 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
     static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)$waited . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
     $msg = '';
     try {
-        $t0 = wag_day_start_str($pdo); $w0 = wag_day_start_str($pdo, 6); $one = function (string $sql, array $a = []) use ($pdo) { $q = $pdo->prepare($sql); $q->execute($a); return (int)$q->fetchColumn(); };
-        $tk = $one("SELECT COUNT(DISTINCT phone) FROM wa_mkt WHERE emp_id = ? AND kind = 'taken' AND at >= ?", [$emp, $t0]); $dr = $one("SELECT COUNT(DISTINCT d.phone) FROM wa_mkt d WHERE d.emp_id = ? AND d.kind IN ('dropped','released') AND d.at >= ? AND EXISTS (SELECT 1 FROM wa_mkt t WHERE t.phone = d.phone AND t.emp_id = d.emp_id AND t.kind = 'taken' AND t.at >= ?)", [$emp, $t0, $t0]);   // only chats he took and left
-        $od = 0; foreach (wag_mkt_board($pdo, 1) as $__b) if ((int)$__b['emp'] === $emp) $od = (int)$__b['orders'];   // orders credited from Shopify (or recorded)
-        $un = 0; $__uq = $pdo->prepare("SELECT phone FROM wa_contacts WHERE assigned_emp = ? AND status = 'open' AND hot = 1 AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) LIMIT 40"); $__uq->execute([$emp, date('Y-m-d H:i:s', time() - 23 * 3600)]);
-        foreach ($__uq->fetchAll(PDO::FETCH_COLUMN) as $__up) { $__ml = wag_meta_get($pdo, 'mklink:' . $__up, ''); if ($__ml !== '' && strtotime($__ml) > time() - 3600) continue; if (wag_hot_is_done($pdo, (string)$__up)) continue; $un++; }   // a chat whose holder is making the payment link (8 min) is not "waiting"
-        $ttk = 0; $tod = 0; foreach (wag_mkt_board($pdo, 7) as $__b) { $ttk += (int)$__b['taken']; $tod += (int)$__b['orders']; } $avg = $ttk >= 40 && $tod > 0 ? min(0.5, $tod / $ttk) : 0;   // orders are not all tied to takes: cap the team ratio so it can never exceed 50% (person must reach 60% of it)
-        if ($un >= 3) $msg = '🔒 ' . $un . ' hot customers of yours are waiting for an answer. Answer them first — then you can take new queries.';
-        elseif ($dr >= 2 && $dr * 2 > $tk) $msg = '🔒 You left ' . $dr . ' hot chats today without answering. New queries go to people who answer: answer your open chats first.';
-        else {   // ONE source for the numbers (owner, 21 Nov: the market banner said 7 / 1, the Queries page 70, the sales strip 0/1): the query ledger — the same queries and orders the Queries page and the sales strip show (community not counted)
+        // 🗑 owner (22 Nov): the "answer your hot customers first — then you can take new queries" rules are REMOVED (3+ hot chats waiting; 2+ hot chats left unanswered): a salesperson is never stopped from taking a new query because of hot chats. Only the query lock below (queries vs orders) remains.
+        {   // ONE source for the numbers (owner, 21 Nov: the market banner said 7 / 1, the Queries page 70, the sales strip 0/1): the query ledger — the same queries and orders the Queries page and the sales strip show (community not counted)
             $__cv = (string)setting_get($pdo, 'wag_gate_conv', '1') !== '0';   // owner 22 Nov: the conversion block (queries vs orders; normal + campaign queries of the current sales day) is ON again at the owner's word; setting wag_gate_conv = 0 turns it off
             $lq = 0; $lo = 0; $lavg = 0.0;
             try { $d1 = wag_real_queries($pdo, 1); $lq = (int)($d1[$emp][0] ?? 0); $lo = (int)($d1[$emp][1] ?? 0); $tq = 0; $to = 0; foreach (wag_real_queries($pdo, 7) as $__r) { $tq += $__r[0]; $to += $__r[1]; } $lavg = $tq >= 40 && $to > 0 ? min(0.5, $to / $tq) : 0.0; } catch (Throwable $e) { }
@@ -2231,6 +2233,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $rem = []; try { $q = $pdo->prepare("SELECT phone, name, remind_at FROM wa_contacts WHERE assigned_emp = ? AND remind_at IS NOT NULL AND remind_at <= ? ORDER BY remind_at LIMIT 10"); $q->execute([$me, date('Y-m-d H:i:s')]); $rem = $q->fetchAll(); } catch (Throwable $e) { }
             if (function_exists('wq_lifecycle_map')) { try { $__lp = array_slice(array_column($rows, 'phone'), 0, 80); $__lk = 'wq_life_' . md5(implode(',', $__lp)); $lm = function_exists('apcu_fetch') ? apcu_fetch($__lk) : false; if (!is_array($lm)) { $lm = wq_lifecycle_map($pdo, $__lp); if (function_exists('apcu_store')) @apcu_store($__lk, $lm, 12); } foreach ($rows as &$rw) $rw['life'] = $lm[(string)$rw['phone']] ?? null; unset($rw); } catch (Throwable $e) { } }   // one stage per chat
             if (function_exists('ora_phone_map')) { try { $__em = ora_phone_map($pdo, array_column($rows, 'phone')); foreach ($rows as &$__ox) { if (isset($__em[(string)$__ox['phone']])) $__ox['eff'] = $__em[(string)$__ox['phone']]; } unset($__ox); } catch (Throwable $e) { } }   // ➕ add-on effort mark per chat
+            foreach ($rows as &$__cr) { if (empty($__cr['cx'])) continue; $__cr['hot'] = false; $__cr['heat'] = 'cx'; $__cr['src'] = ''; $__cr['origin'] = ''; $__cr['read'] = null; $__cr['eff'] = null; $__cr['ut'] = []; $__cr['biz'] = false; $__cr['life'] = null; $__cr['ad'] = ''; $__cr['badge'] = ['k' => 'bad', 't' => '⚠️ Complaint', 'why' => 'A complaint — the Complaint team answers it']; } unset($__cr);   // 🎫 owner (22 Nov): a complaint chat shows ONLY its Complaint tag — no hot / new query / campaign / ad / price-chart marks, and it is never hot
             json_response(['sig' => $__sig, 'chats' => $rows, 'counts' => $cnt, 'stats' => wag_stats($pdo, $me, $cfg), 'cfg' => ['unans_min' => $cfg['unans_min'], 'target' => $cfg['target'], 'sound' => $cfg['sound']], 'me' => ['emp_id' => $me, 'manager' => $mgr || $adm, 'team' => $mgr || $adm, 'can_to' => $adm || (function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth)), 'can_as' => $adm || (function_exists('wa_can_assign') && wa_can_assign($pdo, $auth)), 'name' => (employee_names_by_id($pdo)[$me] ?? ($adm ? 'Admin' : ''))],
                 'mentions' => $men, 'reminders' => $rem, 'results' => array_map(fn($k, $v) => ['k' => $k, 't' => $v[0], 'i' => $v[1], 'g' => $v[2]], array_keys(wag_outcomes()), array_values(wag_outcomes())), 'now' => date('Y-m-d H:i:s')]);
         }
