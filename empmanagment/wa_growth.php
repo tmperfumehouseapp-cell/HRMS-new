@@ -36,6 +36,16 @@ function wag_gb_add_corrections(PDO $pdo, array $add, int $cap = 60): bool
     } catch (Throwable $e) { return false; }
     finally { if ($got) { try { $pdo->query("SELECT RELEASE_LOCK('wag_gb_patch')")->fetchColumn(); } catch (Throwable $e) { } } }
 }
+/** The live guidebook never keeps the same point twice: the quality rule had been added 35 times (its marker had a slash that JSON writes as \\/, so it looked missing every 5 minutes) and pushed the goal and catalogue rules out of the 40 points. Duplicates of 'do' are removed (first one stays), the corrections are de-duplicated and capped at 60. Call it while holding the guidebook lock. Returns the number of removed points. */
+function wag_gb_dedupe(PDO $pdo): int
+{
+    try { $g = function_exists('lib_guide_row') ? lib_guide_row($pdo, 'live') : null; if (!$g) return 0; $gb = json_decode((string)$g['body'], true); if (!is_array($gb)) return 0; $rm = 0;
+        $dd = function (array $a, callable $key) use (&$rm): array { $seen = []; $o = []; foreach ($a as $x) { $k = md5(mb_strtolower(trim((string)$key($x)))); if (isset($seen[$k])) { $rm++; continue; } $seen[$k] = 1; $o[] = $x; } return $o; };
+        $gb['do'] = $dd(array_values((array)($gb['do'] ?? [])), fn($x) => is_string($x) ? $x : json_encode($x)); $corr = $dd(array_values((array)($gb['owner_corrections'] ?? [])), fn($x) => is_array($x) ? (string)($x['better'] ?? json_encode($x)) : (string)$x);
+        if (count($corr) > 60) { $rm += count($corr) - 60; $corr = array_slice($corr, 0, 60); } $gb['owner_corrections'] = $corr;
+        if ($rm > 0) $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); return $rm;
+    } catch (Throwable $e) { return 0; }
+}
 /** One request at a time may patch the live guidebook: true = this request holds the lock (release with $release = true). The lock belongs to the connection, so a crashed request frees it by itself. */
 function wag_gb_lock(PDO $pdo, bool $release = false): bool
 {
@@ -186,7 +196,7 @@ function wag_cfg(PDO $pdo): array
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // 22 Nov probe: the live guidebook v27 had LOST the price rule (7% / 6.5% / 6%), the quality rule and the sell-more rule (a new live version is made from an older base): every 5 min the live guidebook is checked and a rule that is missing is re-armed (its once-only switch is cleared, the block below it adds it again)
-    try { if (!empty($__gbl) && time() - (int)setting_get($pdo, 'wag_rules_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0) foreach ([12 => 'PRICE TALK AND THE ADD-ON', 13 => 'SELL MORE PERFUMES', 16 => 'PRICE RULE (owner)', 17 => 'QUALITY / ', 19 => 'ONLY OUR CATALOGUE'] as $__rn => $__mk) if (setting_get($pdo, 'wag_rules' . $__rn, '') === '1' && strpos((string)$g0['body'], $__mk) === false) setting_set($pdo, 'wag_rules' . $__rn, ''); } } catch (Throwable $e) { }
+    try { if (!empty($__gbl) && time() - (int)setting_get($pdo, 'wag_rules_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules_chk', (string)time()); wag_gb_dedupe($pdo); $g0 = lib_guide_row($pdo, 'live'); if ($g0) foreach ([12 => 'PRICE TALK AND THE ADD-ON', 13 => 'SELL MORE PERFUMES', 16 => 'PRICE RULE (owner)', 17 => 'only want to check the fragrance', 19 => 'ONLY OUR CATALOGUE'] as $__rn => $__mk) if (setting_get($pdo, 'wag_rules' . $__rn, '') === '1' && strpos((string)$g0['body'], $__mk) === false) setting_set($pdo, 'wag_rules' . $__rn, ''); } } catch (Throwable $e) { }
     // once (owner, 22 Nov): bigger jumps (2-3 more bottles, not 1), per-bottle value line, persistent follow-ups; re-armed when a new live guidebook version drops the rule
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules20', '') === '1' && time() - (int)setting_get($pdo, 'wag_rules20_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules20_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0 && strpos((string)$g0['body'], 'BIGGER JUMPS') === false) setting_set($pdo, 'wag_rules20', ''); } } catch (Throwable $e) { }
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules20', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules20', '1'); $g = lib_guide_row($pdo, 'live');
