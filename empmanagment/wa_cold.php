@@ -65,6 +65,49 @@ if (!function_exists('wcd_tick')) {
         try { foreach ($pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '" . $from . "' AND phone IS NOT NULL AND phone <> '' AND financial_status NOT IN ('voided', 'refunded')")->fetchAll(PDO::FETCH_NUM) as $r) { $k = wcd_k10($r[0]); if (strlen($k) === 10) $o[$k][] = [(int)strtotime((string)$r[1]), (int)$r[2]]; } } catch (Throwable $e) { }
         return $cache[$ck] = $o;
     }
+    /** THE COLD FUNNEL'S OWN MESSAGES (owner 22 Nov: "write new messages, decide marketing or utility yourself"): eight UTILITY wordings that ask ONE easy question and carry a quick-reply button, so a customer who never wrote answers with one tap
+     *  (a tap is a reply: the Lineup takes him). Utility = ₹0.15 and no marketing frequency cap (131049). They refer to the earlier message / his own requirement (Meta keeps those utility; a pure offer would be re-labelled marketing).
+     *  Made once, sent to every WhatsApp account of the shop (what Meta's weekly creation limit refuses is queued and goes later); used only while Meta keeps them UTILITY and approved. */
+    function wcd_pack(): array
+    {
+        return [
+            'cd_ask1' => ['body' => "Namaste {{1}}, TM Perfume House se pichhle message ke baad aapse baat nahi ho payi. Aapko kaunsa perfume ya kitni bottle chahiye? Bas yahin reply kijiye, hum price aur availability bata denge.", 'btn' => ['Price bhejiye']],
+            'cd_ask2' => ['body' => "Hi {{1}}, aapki perfume requirement ke liye hum yahin available hain. Aap kis size mein dekhna chahte hain - 20 ml, 50 ml ya 100 ml? Ek reply kijiye, hum details bhej denge.", 'btn' => ['50 ml dikhaiye', '100 ml dikhaiye']],
+            'cd_ask3' => ['body' => "Namaste {{1}} ji, TM Perfume House ki taraf se ek chhota sa sawal: aapko men, women ya unisex mein se kaunsi khushbu chahiye? Bata dijiye, hum aapke liye suggestions bhej denge.", 'btn' => ['Men', 'Women', 'Unisex']],
+            'cd_ask4' => ['body' => "Namaste {{1}}, kya aapko hamare pichhle message ke perfumes ya price ke baare mein koi sawal hai? Yahin reply kijiye, hum turant madad karenge.", 'btn' => ['Haan, sawal hai']],
+            'cd_ask5' => ['body' => "Hi {{1}}, agar aap kisi ke liye gift perfume dekh rahe hain to bata dijiye kiske liye aur budget kitna hai. Hum usi hisaab se options bhej denge.", 'btn' => ['Gift ke liye']],
+            'cd_ask6' => ['body' => "Namaste {{1}} ji, aapka order banane ke liye bas perfume ka naam aur bottle count chahiye. Reply karke bata dijiye, baaki hum sambhal lenge.", 'btn' => ['Order banana hai']],
+            'cd_ask7' => ['body' => "Namaste {{1}}, perfume ki quality, khushbu ya sample ke baare mein kuch janna ho to yahin poochh sakte hain. Hum details aur real customer ratings bhej denge.", 'btn' => ['Details bhejiye']],
+            'cd_ask8' => ['body' => "Hi {{1}}, aapke pichhle message ke baare mein dobara jud rahe hain. Kya aap abhi perfume lene ke baare mein soch rahe hain? Haan ya baad mein, ek reply de dijiye.", 'btn' => ['Haan, dikhaiye', 'Baad mein']],
+        ];
+    }
+    function wcd_ids(PDO $pdo): array { $j = json_decode(wcd_set($pdo, 'wcd_tpls', ''), true); return is_array($j) ? array_map('intval', $j) : []; }
+    /** Make the pack at Meta (once; the missing ones are tried again every 6 hours). [made, sent to Meta accounts, failures]. */
+    function wcd_make(PDO $pdo): array
+    {
+        $res = ['made' => 0, 'sent' => 0, 'failed' => []];
+        foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row', 'wa_wabas'] as $f) if (!function_exists($f)) { $res['failed'][] = 'template module missing'; return $res; }
+        $ids = wcd_ids($pdo); $wabas = wa_wabas($pdo); $budget = ['left' => 12, 'made' => 0];
+        foreach (wcd_pack() as $k => $m) {
+            if (!empty($ids[$k])) continue;
+            $btn = []; foreach ($m['btn'] as $b) $btn[] = ['type' => 'QUICK_REPLY', 'text' => $b];
+            [$t, $err] = wa_tpl_clean(['name' => $k, 'language' => 'en', 'category' => 'UTILITY', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => $btn, 'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => 'Cold']);
+            if ($err !== '') { $res['failed'][] = $k . ': ' . $err; continue; }
+            $id = wa_tpl_insert($pdo, $t, 0, 'Cold funnel: asks one easy question of a customer who got our message and never wrote; one tap answers.', 'Utility follow-up to a customer we messaged.');
+            $r = wa_tpl_row($pdo, $id); if (!$r) { $res['failed'][] = $k . ': could not save'; continue; }
+            $ids[$k] = (int)$id; setting_set($pdo, 'wcd_tpls', json_encode($ids)); $res['made']++;
+            foreach ($wabas as $w) { if (function_exists('wa_tpl_try_create')) [$ok, $why] = wa_tpl_try_create($pdo, $r, $w, $budget); elseif (function_exists('wa_tpl_create_at')) [$ok, $why] = wa_tpl_create_at($pdo, $r, $w); else { $ok = false; $why = 'no submit function'; } if ($ok) $res['sent']++; else $res['failed'][] = $k . ' -> ' . mb_substr((string)$why, 0, 60); }
+        }
+        return $res;
+    }
+    /** Own messages that Meta keeps as UTILITY, best first by what the ranking says. [[id, key]]. */
+    function wcd_own(PDO $pdo): array
+    {
+        $ids = wcd_ids($pdo); if (!$ids) return []; $o = [];
+        try { $q = $pdo->query("SELECT id, UPPER(COALESCE(NULLIF(category_now, ''), category)) c FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_values($ids))) . ")"); $cat = $q->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) { return []; }
+        foreach ($ids as $k => $id) if (($cat[$id] ?? '') === 'UTILITY') $o[] = [(int)$id, (string)$k];
+        return $o;
+    }
     /** WHAT WORKS (owner 22 Nov: "change every day by what brings the best replies"): per template [sent, replied, orders]. A reply is credited to the LAST Cold message sent to him before he wrote. Cached 5 minutes. */
     function wcd_tpl_stats(PDO $pdo): array
     {
@@ -79,8 +122,7 @@ if (!function_exists('wcd_tick')) {
     /** The utility messages usable for him, never one already sent to him by this funnel. [[template id, key]]. */
     function wcd_templates(PDO $pdo, string $ph): array
     {
-        if (!function_exists('wln_twins')) return [];
-        try { $tw = wln_twins($pdo, $ph, 'general', 1, 0); } catch (Throwable $e) { return []; } if (!$tw) return [];
+        $tw = wcd_own($pdo); if (function_exists('wln_twins')) { try { foreach (wln_twins($pdo, $ph, 'general', 1, 0) as $__t) $tw[] = $__t; } catch (Throwable $e) { } } if (!$tw) return [];   /* his own question messages first, the Lineup's utility pool as the back-up */
         $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_cold_log WHERE phone = ? AND ok = 1"); $q->execute([$ph]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
         $o = []; foreach ($tw as $r) if (!isset($got[(int)$r[0]])) $o[] = $r;
         $st = wcd_tpl_stats($pdo); if (count($o) > 1 && $st) usort($o, function ($a, $b) use ($st) { $sa = $st[(int)$a[0]] ?? ['sent' => 0, 'replied' => 0]; $sb = $st[(int)$b[0]] ?? ['sent' => 0, 'replied' => 0]; return (($sb['replied'] + 0.5) / ($sb['sent'] + 50)) <=> (($sa['replied'] + 0.5) / ($sa['sent'] + 50)); });   /* the message with the best reply rate goes first (a new one starts at a fair guess and is judged after its first sends) */
@@ -93,6 +135,8 @@ if (!function_exists('wcd_tick')) {
         if (!function_exists('wa_lock') || !wa_lock($pdo, 'wcdtick', 55)) return $o; $now = time(); $t0 = microtime(true); $o['mode'] = $mode;
         try { setting_set($pdo, 'wcd_tick_at', date('Y-m-d H:i:s', $now)); } catch (Throwable $e) { }
         try { $en = [0, 0]; for ($__i = 0; $__i < 8 && microtime(true) - $t0 < 10.0; $__i++) { $__e = wcd_enrol($pdo, $now, 10.0); $en[0] += $__e[0]; $en[1] += $__e[1]; if ($__e[0] === 0) break; } $o['entered'] = $en[1]; setting_set($pdo, 'wcd_enrol_res', json_encode(['at' => date('H:i:s'), 'looked' => $en[0], 'entered' => $en[1], 'ptr' => (int)wcd_set($pdo, 'wcd_ptr', '0')])); } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold enrol: ' . $e->getMessage()); }
+        /* owner 22 Nov: the Cold funnel's own messages: made once, the missing ones again every 6 hours (Meta's weekly creation limit) */
+        try { if ($now - (int)wcd_set($pdo, 'wcd_make_at', '0') >= 21600 && count(wcd_ids($pdo)) < count(wcd_pack())) { setting_set($pdo, 'wcd_make_at', (string)$now); $mk = wcd_make($pdo); setting_set($pdo, 'wcd_make_res', json_encode(['at' => date('m-d H:i'), 'made' => $mk['made'], 'sent' => $mk['sent'], 'failed' => array_slice($mk['failed'], 0, 4)])); } } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold make: ' . $e->getMessage()); }
         /* owner 22 Nov: the moment a Cold customer writes he LEAVES the Cold funnel and counts as a Lineup customer (the Lineup enrols everybody who writes); the ledger marks him at once, not at his next due date */
         try { $mv = $pdo->prepare("UPDATE wa_cold_cust c JOIN wa_contacts k ON k.phone = c.phone SET c.status = 'replied', c.why = CONCAT('wrote at ', SUBSTR(k.last_in_at, 1, 16)), c.left_at = k.last_in_at WHERE c.status = 'active' AND k.last_in_at IS NOT NULL AND k.last_in_at >= c.entered_at"); $mv->execute(); $o['moved'] = (int)$mv->rowCount(); } catch (Throwable $e) { }
         if ($mode !== 'live') return $o;
