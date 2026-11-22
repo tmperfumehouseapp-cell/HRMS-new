@@ -17,6 +17,7 @@ if ($key === '') exit(3);
 // the same call as the web job, but made here: api.php answers into the output buffer and we throw it away (a short line stays for the test)
 $_SERVER['REQUEST_METHOD'] = 'GET'; $_SERVER['HTTP_HOST'] = 'staging.fourpirates.space'; $_SERVER['REQUEST_TIME_FLOAT'] = microtime(true); $_SERVER['REMOTE_ADDR'] = '127.0.0.1'; $_SERVER['SCRIPT_NAME'] = '/empmanagment/api.php';
 $_GET = ['action' => 'wa.cron_send', 'key' => $key, 'cli' => '1']; $_REQUEST = $_GET;
+if (($argv[1] ?? '') === 'test' && ($argv[2] ?? '') === 'aft') $_GET['aft'] = '1';   // test: one After-Order tick instead of a Lineup round
 chdir(__DIR__); ob_start();
 register_shutdown_function(function () use ($argv) { $o = (string)@ob_get_clean(); if (($argv[1] ?? '') === 'test') echo date('Y-m-d H:i:s') . ' cron_line: ' . substr(preg_replace('/\s+/', ' ', $o), 0, 600) . "\n"; });
 require __DIR__ . '/api.php';

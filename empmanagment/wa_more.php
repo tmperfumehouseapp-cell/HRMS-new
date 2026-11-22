@@ -698,6 +698,7 @@ require_once __DIR__ . '/wa_planner.php';   // 🗓 Campaign Planner: files + me
 require_once __DIR__ . '/wa_plan.php';   // 🎯 Daily budget planner (wa.plan_get) - needs wa_bill.php and wa_camp.php
 require_once __DIR__ . '/wa_drip.php';   // 🔁 7-Day Drip: a pre-made message per day for new queries / campaign repliers (wa.drip_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_line.php';   // 🧵 Lineup: the 7-day follow-up by topic (replaces the 7-Day Drip when started; wa.line_*) - AFTER wa_drip.php (uses wd_send), BEFORE wa_seg.php
+require_once __DIR__ . '/wa_after.php';   // 🛍 After-Order plan: delivered customers get a 365-day ladder (care, soft offers, reorder); runs from wa.cron_send
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
 
@@ -729,13 +730,15 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         $r = ['ok' => true];
         $__cli = !empty($_GET['cli']) && PHP_SAPI === 'cli';   // cron_line.php (command line): ONLY the Lineup round - no bot workers, campaigns or recovery (they would take web-server workers from the bot)
         try { if (!$__cli && function_exists('wag_bot_spawn') && function_exists('wa_lock') && wa_lock($pdo, 'wagspawn', 15)) $r['bot_workers'] = wag_bot_spawn($pdo, 5); } catch (Throwable $e) { }   // 🤖 fast bot workers: answers within seconds, whoever calls first
+        if ($__cli && !empty($_GET['aft'])) { $r['after'] = function_exists('wa_aft_tick') ? wa_aft_tick($pdo, 40) : 'no module'; $r['aft_dbg'] = setting_get($pdo, 'wa_aft_dbg', '-'); json_response($r); }   // diag: one After-Order tick by hand (php cron_line.php test aft)
         if ($__cli && function_exists('wl_tick')) {   // a command-line copy works until ~50 s: an empty shard ends at once, so it takes the next one (shards are tried from a random start)
             $__t0 = microtime(true); $__tot = ['sent' => 0, 'rounds' => 0];
-            try { for ($__k = 0; $__k < 10 && microtime(true) - $__t0 < 45; $__k++) { $__o = wl_tick($pdo, ['sendonly' => 1]); $__tot['rounds']++; $__tot['sent'] += (int)($__o['sent'] ?? 0); if (isset($__o['cfg']) && empty($__o['sent']) && empty($__o['waiting']) && empty($__o['skipped']) && empty($__o['failed'])) { usleep(200000); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cli lineup: ' . $e->getMessage()); }
+            try { for ($__k = 0; $__k < 10 && microtime(true) - $__t0 < 45; $__k++) { $__o = wl_tick($pdo, ['sendonly' => 1]); $__tot['rounds']++; $__tot['sent'] += (int)($__o['sent'] ?? 0); if (!empty($__o['why'])) $__tot['why'] = mb_substr((string)$__o['why'], 0, 160); if (isset($__o['cfg']) && empty($__o['sent']) && empty($__o['waiting']) && empty($__o['skipped']) && empty($__o['failed'])) { usleep(200000); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cli lineup: ' . $e->getMessage()); }
             $r['lineup'] = $__tot; try { setting_set($pdo, 'wa_cli_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { } json_response($r);
         }
         try { $r['lineup'] = function_exists('wl_tick') ? wl_tick($pdo, ['sendonly' => 1]) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job lineup: ' . $e->getMessage()); }   // 🧵 the Lineup's sending round first: it works a shard of the due customers of its own (several callers at once = faster)
         if ($__cli) { try { setting_set($pdo, 'wa_cli_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { } json_response($r); }
+        try { $r['after'] = function_exists('wa_aft_tick') ? wa_aft_tick($pdo, 35) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'after-order: ' . $e->getMessage()); }   // 🛍 the After-Order plan
         try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
         try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job recovery: ' . $e->getMessage()); }
         try { setting_set($pdo, 'wa_send_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { }
