@@ -604,7 +604,8 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if ($book) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); wln_ladder30($pdo); wln_since_15($pdo); wln_since_1($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if ($book && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
-    if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }   // failed as marketing -> sent again as utility on the spot
+    if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }
+    if ($book) { try { if (is_file(__DIR__ . '/wa_offer.php')) { require_once __DIR__ . '/wa_offer.php'; $__wo = wo_run($pdo, 30); $o['offers'] = (int)$__wo[2]; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup offer: ' . $e->getMessage()); } }   // 🎯 the price offer to the customers who answered (owner 22 Nov; wo_mode dry / live)   // failed as marketing -> sent again as utility on the spot
     $N = 8; $shard = -1;   // 8 groups always (owner 21 Nov: finish the day's plan before the next day's steps are added): cron_line.php runs up to 8 sending copies on the command line
       // SHARDS (owner, 21 Nov: speed): the due customers are split into N groups by their phone; every caller (the engine and the sending job) takes the first group nobody works on, so several run at once
     if (!$force) { $shard = wln_claim_shard($pdo, $N); if ($shard < 0) return $o; }
@@ -808,7 +809,8 @@ function wl_summary(PDO $pdo, int $from): array
     $ord = []; try { $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
         foreach ($x->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byP[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; } } catch (Throwable $e) { }
     $buy = []; foreach ($ord as $k => $list) foreach ($list as [$ot, $tot]) foreach ($byP[$k] as $st0) if ($st0 < $ot && $ot <= $st0 + 7 * 86400) { $o['orders']++; $o['revenue'] += (int)round($tot); $buy[$k] = 1; break; }
-    $o['buyers'] = count($buy); return $o;
+    $o['buyers'] = count($buy); try { $oc = $pdo->prepare("SELECT COUNT(*) FROM wa_offer WHERE ok = 1 AND at >= ?"); $oc->execute([$f]); $o['offers'] = (int)$oc->fetchColumn(); } catch (Throwable $e) { $o['offers'] = 0; }   // 🎯 price offers sent (wa_offer.php)
+    return $o;
 }
 /** Who replied (the same people the Replies number counts: an answer within 2 days of a Lineup message, a "no" like Stop / Not now left out): newest-waiting first. Returns [rows, more]. */
 function wl_repliers(PDO $pdo, int $from, int $limit = 600): array
