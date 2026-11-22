@@ -1,0 +1,15 @@
+{
+  "name": "ctwa-roas",
+  "version": "1.0.0",
+  "description": "TMPerfumehouse Click-to-WhatsApp ROAS tracking (WhatsApp + Shopify webhooks, Meta CAPI business messaging, daily ad report)",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/*.test.js\"",
+    "report": "node src/cli.js report",
+    "sync-spend": "node src/cli.js sync-spend",
+    "retry-capi": "node src/cli.js retry-capi"
+  }
+}
