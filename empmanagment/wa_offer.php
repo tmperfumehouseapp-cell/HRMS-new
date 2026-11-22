@@ -76,7 +76,7 @@ if (!function_exists('wo_run')) {
     }
     function wo_run0(PDO $pdo, int $cap, ?array &$samples, bool $simulate): array
     {
-        $mode = (string)setting_get($pdo, 'wo_mode', 'live'); /* owner 22 Nov, 19:45: switched on (the samples and the 188 were shown to him) */ if ($mode === 'off') return [0, 0, 0, 'off']; if (!$simulate && $mode !== 'live') return [0, 0, 0, 'not live (' . $mode . ')']; if (!$simulate) wo_tables($pdo); $now = time(); $t0 = microtime(true);
+        $mode = (string)setting_get($pdo, 'wo_mode', 'live'); /* owner 22 Nov, 19:45: switched on (the samples and the 188 were shown to him) */ if ($mode === 'off') return [0, 0, 0, 'off']; if (!$simulate && $mode !== 'live') return [0, 0, 0, 'not live (' . $mode . ')']; if (!$simulate) { wo_tables($pdo); try { setting_set($pdo, 'wo_last', json_encode(['at' => date('Y-m-d H:i:s'), 'mode' => $mode, 'cap' => $cap])); } catch (Throwable $e) { } } $now = time(); $t0 = microtime(true);
         $res = [0, 0, 0, '']; $h = (int)date('G', $now); if (!$simulate && ($h < 9 || $h >= 22)) { $res[3] = 'outside 09-22'; return $res; }
         if (!$simulate && function_exists('wa_lock') && !wa_lock($pdo, 'wooffer', 55)) { $res[3] = 'locked'; return $res; }
         $ch = wo_chart($pdo); if (!$ch) { $res[3] = 'no chart'; return $res; }
@@ -104,6 +104,7 @@ if (!function_exists('wo_run')) {
             if ($simulate || $mode !== 'live') continue;
             $s = wa_send_text($pdo, $c, $body, 'offer', 0); if (!empty($s[0])) { $res[2]++; $note('sent ' . (string)($s[1] ?? ''), 1, $o, $body, (int)$asked); if (function_exists('wa_event')) { try { wa_event($pdo, $ph, '🎯 Price offer sent (' . $o['kind'] . ', ' . $o['pct'] . '% column, ' . $o['qty'] . ' x ' . $o['ml'] . ' ml)'); } catch (Throwable $e) { } } } else $note('not sent: ' . (string)($s[1] ?? ''), 0, $o, $body, (int)$asked);
         }
+        if (!$simulate) { try { setting_set($pdo, 'wo_last_res', json_encode(['at' => date('Y-m-d H:i:s'), 'looked' => $res[0], 'made' => $res[1], 'sent' => $res[2]])); } catch (Throwable $e) { } }
         return $res;
     }
 }
