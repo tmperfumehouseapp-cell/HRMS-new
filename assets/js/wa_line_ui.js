@@ -67,8 +67,8 @@
     const health = `<div class="wp-note" style="margin:0 0 10px;${(H.issues || []).some((x) => x.level === 'warn') ? 'border-color:#f59e0b' : ''}"><b>🩺 Self-check</b> <small style="color:#64748b">${esc(H.at || 'not run yet')} · every 10 minutes</small>${hf}${hl || (H.at ? '<div style="font-size:12.5px;color:#15803d">✓ nothing wrong found</div>' : '')}</div>`;
     const kk = Object.entries(R.keys || {}).filter(([k]) => /_1b?$/.test(k) && !k.startsWith('ln_all')).sort((a, b) => a[0] < b[0] ? -1 : 1);
     const words = kk.length ? `<h3 style="margin:12px 0 4px">✍ Which wording gets more <small style="font-weight:400;color:#64748b">(step 1 has two wordings: below ${R.min} delivered each = even split, then 80% goes to the better one, 20% keeps testing the other)</small></h3><table style="width:100%;border-collapse:collapse;font-size:12px"><tr style="color:#64748b"><th align="left">Message</th><th>Sent</th><th>Delivered</th><th>Button taps</th><th>Orders</th><th>Score</th></tr>${kk.map(([k, c]) => `<tr style="border-top:1px solid #eef0f3"><td>${esc(k)}</td><td align="center">${fmt(c.sent)}</td><td align="center">${fmt(c.delivered)}</td><td align="center">${fmt(c.taps)}${c.tap_pct != null ? ' (' + c.tap_pct + '%)' : ''}</td><td align="center">${fmt(c.orders)}</td><td align="center">${c.score}</td></tr>`).join('')}</table>` : '';
-    const SM = D.summary || {}, pc2 = (x, y) => (y > 0 && x > 0 ? ' (' + Math.round(x * 100 / y) + '%)' : ''), tl = (l, v, sub, c) => `<div style="min-width:0;flex:1 1 110px"><div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;font-weight:700">${l}</div><div style="font-size:30px;font-weight:800;line-height:1.15;${c ? 'color:' + c : ''}">${v}</div><div style="font-size:12.5px;color:#64748b">${sub || '&nbsp;'}</div></div>`;
-    const rw = (title, x) => x ? `<div style="padding:10px 0;border-top:1px solid #ede9fe"><div style="font-size:15px;font-weight:800;color:#6d28d9;margin-bottom:6px">${title}</div><div style="display:flex;gap:12px 16px;flex-wrap:wrap">${tl('Sent', fmt(x.sent), 'delivered ' + fmt(x.delivered) + pc2(x.delivered, x.sent))}${tl('Replies', fmt(x.replied), 'button taps ' + fmt(x.taps), '#15803d')}${tl('Orders', fmt(x.orders), '₹' + fmt(x.revenue) + ' · ' + fmt(x.buyers) + ' buyers', '#15803d')}${tl('Cost', '₹' + fmt(Math.round(x.cost)), 'utility ' + fmt(x.utility) + ' · plain ' + fmt(x.plain), '#7c3aed')}</div></div>` : '';
+    const SM = D.summary || {}, pc2 = (x, y) => (y > 0 && x > 0 ? ' (' + Math.round(x * 100 / y) + '%)' : ''), tl = (l, v, sub, c, rp) => `<div ${rp ? 'data-rp="' + rp + '" role="button" tabindex="0" title="Open the customers who replied"' : ''} style="min-width:0;flex:1 1 110px;${rp ? 'cursor:pointer;outline:2px solid #1a8f5a33;border-radius:10px;padding:2px 6px' : ''}"><div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;font-weight:700">${l}</div><div style="font-size:30px;font-weight:800;line-height:1.15;${c ? 'color:' + c : ''}">${v}</div><div style="font-size:12.5px;color:#64748b">${sub || '&nbsp;'}</div></div>`;
+    const rw = (title, x) => x ? `<div style="padding:10px 0;border-top:1px solid #ede9fe"><div style="font-size:15px;font-weight:800;color:#6d28d9;margin-bottom:6px">${title}</div><div style="display:flex;gap:12px 16px;flex-wrap:wrap">${tl('Sent', fmt(x.sent), 'delivered ' + fmt(x.delivered) + pc2(x.delivered, x.sent))}${tl('Replies' + (x.replied ? ' ›' : ''), fmt(x.replied), 'button taps ' + fmt(x.taps), '#15803d', x.replied ? title.indexOf('Today') > -1 ? 'today' : 'total' : '')}${tl('Orders', fmt(x.orders), '₹' + fmt(x.revenue) + ' · ' + fmt(x.buyers) + ' buyers', '#15803d')}${tl('Cost', '₹' + fmt(Math.round(x.cost)), 'utility ' + fmt(x.utility) + ' · plain ' + fmt(x.plain), '#7c3aed')}</div></div>` : '';
     const sumBox = rw('📅 Today', SM.today) + rw('📈 Since the start', SM.total);
     m.body.innerHTML = `
       ${sumBox}
@@ -103,6 +103,7 @@
       <div style="margin-top:10px"><b>🔎 One customer's lineup</b> <input id="lnPh" class="wp-in" placeholder="mobile number" style="width:170px;display:inline-block"> <button type="button" class="wp-btn s" id="lnFind">Show</button><div id="lnCu" style="margin-top:6px"></div></div>
       <div class="wp-hint" style="margin-top:8px">Every message is Utility, with one button and no offer words. The reviews / video / offer go FREE as the answer to the button (edit them in ⚡ Button replies, cards “Lineup · …”). One message per customer in 24 hours; order, opt-out, complaint, a reply, a person chatting or a campaign today = stop / wait.</div>`;
     const msg = (h) => { $(m.body, '#lnMsg').innerHTML = h; };
+    m.body.querySelectorAll('[data-rp]').forEach((el) => { el.onclick = () => replies(el.dataset.rp); el.onkeydown = (e) => { if (e.key === 'Enter') replies(el.dataset.rp); }; });   // 💬 the Replies number opens the customers who replied
     const st = $(m.body, '#lnStart'); if (st) st.onclick = () => { st.disabled = true; msg(loading);
       api.post('wa.line_start', {}).then((r) => { toast('Lineup started: ' + r.enrolled + ' customers planned'); load(m); }).catch((e) => { st.disabled = false; msg(errBox(e.message)); }); };
     const rn = $(m.body, '#lnRun'); if (rn) rn.onclick = () => { if (!confirm('Send every message that is due now? Customers with an order, a reply or a chat in progress are left out.')) return; rn.disabled = true; let n = 0;
@@ -123,5 +124,40 @@
   }
   // mount(host): the same screen inside any element (the Campaigns card); returns a function that reloads it
   function mount(host) { const m = { body: host }; host.innerHTML = loading; load(m); return () => load(m); }
-  window.WaLine = { open, mount };
+  /* 💬 Replies: the people behind the Replies number (a "Stop" / "Not now" is not a reply and is not here). The list on the left, the picked customer's full WhatsApp chat on the right (the real chat screen:
+     reply, Take over, Assign…). Refresh button, and it refreshes by itself every 30 seconds while the window is open. */
+  async function replies(scope) {
+    if (!document.getElementById('lnRpCss')) { const st = document.createElement('style'); st.id = 'lnRpCss'; st.textContent = `
+.ln-big .wp-mb{max-width:98vw;width:98vw;max-height:96vh;height:96vh;display:flex;flex-direction:column} .ln-big .wp-mb .wp-mc{flex:1;min-height:0;overflow:auto}
+.ln-rp{display:grid;grid-template-columns:minmax(240px,30%) 1fr;gap:12px;height:calc(96vh - 190px);min-height:480px} .ln-rp .l{overflow:auto;border:1px solid #e3e8ef;border-radius:12px;background:#fff} .ln-rp .r{overflow:hidden;border:1px solid #e3e8ef;border-radius:12px;background:#efeae2;padding:0;display:flex;flex-direction:column}
+.ln-rp .it{padding:9px 11px;border-bottom:1px solid #eef1f4;cursor:pointer} .ln-rp .it:hover{background:#f6f8fa} .ln-rp .it.on{background:#e3f5ec;box-shadow:inset 3px 0 #1a8f5a} .ln-rp .it b{font-size:13.5px} .ln-rp .it .ph{color:#64748b;font-weight:500;font-size:12px;margin-left:4px} .ln-rp .it small{display:block;color:#64748b;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:700px){.ln-rp{grid-template-columns:1fr;grid-template-rows:200px 1fr;height:80vh}}`; document.head.appendChild(st); }
+    const m = modal('💬 Replies — ' + (scope === 'total' ? 'since the start' : 'today')); m.el.classList.add('ln-big'); m.body.innerHTML = loading;
+    let rows = [], sel = '', n = 0, more = false, at = '', f = 'all', q = '';
+    const pretty = (p) => { const d = String(p).replace(/\D/g, '').slice(-10); return d.length === 10 ? '+91 ' + d.slice(0, 5) + ' ' + d.slice(5) : String(p); };
+    const load = async () => { try { const d = await api.get('wa.line_replies', { scope }); rows = d.rows || []; more = !!d.more; n = d.count || rows.length; at = d.at || ''; return true; } catch (e) { m.body.innerHTML = errBox(e.message); return false; } };
+    if (!(await load())) return;
+    m.body.innerHTML = `<div class="wp-hint" style="margin:0 0 6px"><b id="rpN"></b> customers replied. Tap a customer: the full chat opens on the right — reply, take over or assign right there. A "Stop" or "Not now" is not counted.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><button type="button" class="wp-btn s" data-f="all">All</button><button type="button" class="wp-btn s" data-f="wait">⏳ Waiting for an answer</button><input class="wp-in" id="rpQ" type="search" placeholder="Search name or number…" style="max-width:220px"><span style="flex:1"></span><button type="button" class="wp-btn p s" id="rpRef">🔄 Refresh</button><span class="wp-hint" id="rpNew" style="margin:0"></span></div>
+      <div class="ln-rp"><div class="l" id="rpL"></div><div class="r" id="rpR"><div class="wp-empty" style="margin:auto">Tap a customer on the left.</div></div></div>`;
+    const L = $(m.body, '#rpL'), R = $(m.body, '#rpR');
+    const drawL = () => {
+      const w = rows.filter((r) => (f === 'all' || r.wait) && (!q || (r.name + ' ' + r.phone).toLowerCase().indexOf(q) > -1));
+      $(m.body, '#rpN').textContent = fmt(n) + (more ? '+' : ''); m.body.querySelectorAll('[data-f]').forEach((b) => { b.classList.toggle('p', b.dataset.f === f); });
+      L.innerHTML = w.length ? w.map((r) => `<div class="it ${sel === r.phone ? 'on' : ''}" data-p="${esc(r.phone)}"><b>${r.wait ? '<span style="color:#c2262b">●</span> ' : ''}${esc(r.name || pretty(r.phone))}</b> <span class="ph">${esc(pretty(r.phone))}</span><small>${esc(r.text || '')}</small><small style="color:#64748b">${esc(String(r.at).slice(11, 16))} · ${r.wait ? 'waiting for an answer' : '✓ answered'}${r.holder ? ' · ' + esc(r.holder) : r.emp ? '' : ' · nobody holds it'}${r.closed ? ' · closed' : ''}</small></div>`).join('') : '<div class="wp-empty">Nobody here.</div>';
+      L.querySelectorAll('[data-p]').forEach((el) => { el.onclick = () => open(el.dataset.p); });
+    };
+    function open(ph) {   // the right side is the REAL PC chat screen (wa_one.html), the same as the campaign Replies window
+      sel = ph; drawL(); const key = String(ph).replace(/\D/g, '').slice(-10);
+      R.innerHTML = '<iframe title="WhatsApp chat" style="width:100%;height:100%;min-height:560px;border:0;display:block;background:#efeae2" allow="microphone; clipboard-write"></iframe>';
+      R.querySelector('iframe').src = 'wa_one.html?phone=' + encodeURIComponent(key);
+    }
+    const refresh = async (btn) => { const before = new Set(rows.map((r) => r.phone)); if (btn) { btn.disabled = true; btn.textContent = '🔄 Refreshing…'; } const ok = await load(); if (btn) { btn.disabled = false; btn.textContent = '🔄 Refresh'; } if (!ok) return; drawL(); const fresh = rows.filter((r) => !before.has(r.phone)).length; const nb = $(m.body, '#rpNew'); if (nb) nb.textContent = (fresh ? '+' + fresh + ' new · ' : 'Up to date · ') + (at || ''); };
+    m.body.querySelectorAll('[data-f]').forEach((b) => { b.onclick = () => { f = b.dataset.f; drawL(); }; });
+    $(m.body, '#rpQ').oninput = function () { q = this.value.trim().toLowerCase(); drawL(); };
+    $(m.body, '#rpRef').onclick = function () { refresh(this); };
+    const t = setInterval(() => { if (!m.el.isConnected) { clearInterval(t); return; } if (document.hidden) return; refresh(null); }, 30000);
+    drawL(); const nb0 = $(m.body, '#rpNew'); if (nb0) nb0.textContent = 'Up to date · ' + at;
+  }
+  window.WaLine = { open, mount, replies };
 })();

@@ -491,13 +491,22 @@ function wag_campaign_context(PDO $pdo, string $key): string
  *  The size the customer asks for is read by CODE (2 x 100 ml, 2 100mls, 200 ml, 100 ml + 50 ml …): total ml → the chart row (a total between two rows uses the lower row). wag_ml_request: the newest request, or null. */
 function wag_ml_request(array $msgs): ?array
 {
+    $__cnt = 0; for ($i = count($msgs) - 1, $__n = 0; $i >= 0 && $__n < 3; $i--) { if (($msgs[$i]['who'] ?? '') !== 'customer') continue; $__n++; $t0 = mb_strtolower((string)($msgs[$i]['text'] ?? '')); if (!preg_match('/\d\s*mls?\b/u', $t0) && preg_match('/(?<![\d.])(\d{1,2})\s*(?:bottles?|bottls?|botals?|botl|btls?|btl|pcs|pieces?|nag|nos|બોટલ|बोतल|बॉटल)/u', $t0, $m0)) { $__cnt = (int)$m0[1]; break; } }   // a number of bottles in one of his last 3 messages ("I want 5 bottle" … later "100 ml", or "50 ml" … later "5 bottle") multiplies the single size he names
     for ($i = count($msgs) - 1, $seen = 0; $i >= 0 && $seen < 6; $i--) {
         if (($msgs[$i]['who'] ?? '') !== 'customer') continue; $seen++; $t = mb_strtolower((string)($msgs[$i]['text'] ?? '')); $t = str_replace(['×', '✕'], 'x', $t);
         if (preg_match('/(\d{1,2})\s*(?:x|\*|bottles?\s*(?:of)?|pcs\.?\s*(?:of)?|pieces?\s*(?:of)?)\s*(\d{2,3})\s*ml/u', $t, $m) || preg_match('/(?<!\d)(\d{1,2})\s+(\d{2,3})\s*mls?\b/u', $t, $m)) { $q = (int)$m[1]; $ml = (int)$m[2]; if ($q >= 1 && $q <= 20 && $ml >= 10 && $ml <= 500) return ['qty' => $q, 'ml' => $ml, 'total' => $q * $ml]; }
+        if (preg_match('/(?<!\d)(\d{2,3})\s*mls?\b\D{0,14}?(?<!\d)(\d{1,2})\s*(?:bottles?|btls?|btl|pcs|pieces?|nag)\b/u', $t, $m)) { $q = (int)$m[2]; $ml = (int)$m[1]; if ($q >= 1 && $q <= 20 && $ml >= 10 && $ml <= 500) return ['qty' => $q, 'ml' => $ml, 'total' => $q * $ml]; }   // "50 ml 2 bottle"
         if (preg_match_all('/(\d{2,3})\s*ml\b/u', $t, $mm) && count($mm[1]) >= 1 && count($mm[1]) <= 4 && preg_match('/\d\s*ml\s*(?:\+|and|aur|&)\s*\d/u', $t)) { $sum = array_sum(array_map('intval', $mm[1])); if ($sum >= 20 && $sum <= 600) return ['qty' => 1, 'ml' => $sum, 'total' => $sum]; }
-        if (preg_match('/(?<![\d.])(\d{2,3})\s*mls?\b/u', $t, $m)) { $ml = (int)$m[1]; if ($ml >= 20 && $ml <= 600) return ['qty' => 1, 'ml' => $ml, 'total' => $ml]; }
+        if (preg_match('/(?<![\d.])(\d{2,3})\s*mls?\b/u', $t, $m)) { $ml = (int)$m[1]; if ($ml >= 20 && $ml <= 600) { $q = ($__cnt >= 2 && $__cnt <= 20) ? $__cnt : 1; return ['qty' => $q, 'ml' => $ml, 'total' => $q * $ml]; } }
     }
     return null;
+}
+/** 🚫 owner (22 Nov): the customer's newest message gives only a NUMBER OF BOTTLES ("I want 5 bottle, tell me the total") and no size in ml anywhere in his last messages: the bot must not say any price (it guessed one bottle's price as the total). True = no price now, ask the size. */
+function wag_bottles_no_size(array $msgs): bool
+{
+    $last = ''; for ($i = count($msgs) - 1; $i >= 0; $i--) if (($msgs[$i]['who'] ?? '') === 'customer') { $last = mb_strtolower((string)($msgs[$i]['text'] ?? '')); break; }
+    if ($last === '' || !preg_match('/(?<![\d.])(\d{1,2})\s*(?:bottles?|bottls?|botals?|botl|btls?|btl|pcs|pieces?|nag|nos|બોટલ|बोतल|बॉटल)/u', $last)) return false;
+    return wag_ml_request($msgs) === null;
 }
 /** The price chart row for a TOTAL ml: [ml of the row, [price per column…], chart price (7% column)]; a total between two rows uses the lower row; null when no chart. */
 function wag_chart_row(PDO $pdo, int $total): ?array
@@ -510,6 +519,7 @@ function wag_chart_row(PDO $pdo, int $total): ?array
 /** One line for the bot's prompt: the exact chart price of what the customer asked for. */
 function wag_price_fact(PDO $pdo, array $msgs): string
 {
+    if (wag_bottles_no_size($msgs)) return 'NO PRICE NOW (owner rule): the customer gave only a number of bottles and NOT the size in ml. Do NOT say any price, total, discount or offer in this reply. Ask in one short line which size (ml) he wants — 20 ml, 50 ml or 100 ml — and nothing else about money.';
     $rq = wag_ml_request($msgs); if (!$rq) return ''; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return '';
     return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system — use exactly this): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total → chart price Rs ' . number_format($row['chart']) . ' (the FIRST price you say; the chart price is for the TOTAL ml, never the price of one bottle for several bottles); the lowest the shop goes to for this total is Rs ' . number_format(min($row['p'])) . '.';
 }
@@ -517,6 +527,7 @@ function wag_price_fact(PDO $pdo, array $msgs): string
 function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
 {
     try {
+        if (wag_bottles_no_size($msgs)) { if (preg_match('/(?:rs\.?|₹)\s*\d|\b(?:price|total|amount|rate|cost|discount|offer|kimat)\b/iu', $reply)) return ['Sir, kitne ml ki bottles chahiye — 20 ml, 50 ml ya 100 ml? 😊', true]; return [$reply, false]; }   // 🚫 bottles but no size: no price at all, ask the size
         $rq = wag_ml_request($msgs); if (!$rq) return [$reply, false]; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return [$reply, false];
         $c = ml_slab_get($pdo); $mine = array_flip($row['p']); $other = [];
         foreach ((array)($c['rows'] ?? []) as $r) { if ((int)($r['ml'] ?? 0) === $row['ml']) continue; foreach ((array)($r['p'] ?? []) as $v) { $v = (int)$v; if ($v >= 500 && !isset($mine[$v])) $other[$v] = 1; } }
@@ -882,6 +893,7 @@ function wag_botlearn_auto(PDO $pdo, int $max = 40): array
 /** Customers who wrote a complaint (leak, wrong item, not delivered, quality, refund) and nobody answered: a complaint ticket is raised for them at once (the Complaint team owns it), they are told the number. */
 function wag_complaint_sweep(PDO $pdo, int $max = 6): int
 {
+    return 0;   // owner, 22 Nov 2026: the bot never raises a complaint by itself (and never tells the customer "your complaint is noted"): the sales person reads the chat and raises it by hand
     if (!function_exists('cx_looks_like') && is_file(__DIR__ . '/boss.php')) { try { $action = 'wa.cxself'; require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { } }
     if (!function_exists('cx_looks_like') || !function_exists('cx_raise')) return 0;
     $n = 0; $now = time();
