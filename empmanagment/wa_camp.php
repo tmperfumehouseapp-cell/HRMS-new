@@ -229,6 +229,7 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
         if ($co === 1) return [false, 'This customer asked to stop promotional messages.', 0];
     }
     if (!in_array($who, ['order', 'test'], true) && wa_quiet_hours()) return [false, 'No number has room now (quiet hours 03:00-09:00: no automatic message goes).', 0];   // 🌙 universal rule (owner, 21 Nov)
+    if (in_array($who, ['bot', 'auto', 'flow', 'followup', 'recover', 'campaign'], true) && function_exists('wa_bot_paused') && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.', 0];   // ⏸ stopped by the salesperson
     if (in_array($who, ['flow', 'followup'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off until tomorrow night.', 0];
     $to = (string)($c['wa_id'] ?: '91' . $c['phone']);
     if (!in_array(strtoupper((string)($t['header_format'] ?? '')), ['', 'TEXT'], true)) {   // a photo / video / PDF on top needs its own parts

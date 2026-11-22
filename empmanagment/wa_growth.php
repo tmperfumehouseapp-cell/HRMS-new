@@ -1307,6 +1307,7 @@ function wag_holder_busy(PDO $pdo, int $emp, int $secs = 120): bool
 /** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
 function wag_bot_off(PDO $pdo, string $key, bool $ignoreHand = false): bool
 {
+    if (function_exists('wa_bot_paused') && wa_bot_paused($pdo, $key) !== null) return true;   // ⏸ the salesperson stopped bot messages for this customer for a time (also beats the 'person is busy, bot may help' exception)
     try { if (false) return false; $t = wag_meta_get($pdo, 'botoff:' . $key, ''); if ($t !== '' && strtotime($t) > time() - 36 * 3600) return true; $h = wag_meta_get($pdo, 'bothand:' . $key, ''); return !$ignoreHand && $h !== '' && strtotime($h) > time() - 2 * 3600; } catch (Throwable $e) { return false; }   // taken by a person (36 h) or handed to a person by the bot (2 h)
 }
 /** The bot is "answering" this chat: it is on, nobody took the chat, it has not handed it over, and it spoke in the last 30 min and has not handed over, or a customer message waits for it (60 s). A salesperson cannot take over / write meanwhile — only 👎. */
@@ -1521,7 +1522,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         $__need = $stp[$cnt]; $__gap = $__pp ? 300 : 180;
         if ($cnt === 0 && !$__pp && $now - $liT >= 150) { $__rs = $pdo->prepare("SELECT status FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' ORDER BY id DESC LIMIT 1"); $__rs->execute([$key]); if ((string)$__rs->fetchColumn() === 'read') { $__need = 150; $__gap = 120; } }   // read (blue ticks) but silent = a warm customer: the first follow-up comes after 2.5 min instead of 5
         if ($now - $refT < $__need || ($lastF && $now - $lastF < 240) || $now - (int)strtotime((string)$c['last_out_at']) < $__gap) { $D['early']++; if ($__pp) $D['pearly'] = (int)($D['pearly'] ?? 0) + 1; continue; }
-        if ((!$__pp && wag_bot_off($pdo, $key)) || (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key))) { $D['off']++; continue; }
+        if ((!$__pp && wag_bot_off($pdo, $key)) || (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) || (function_exists('wa_bot_paused') && wa_bot_paused($pdo, $key) !== null)) { $D['off']++; continue; }
         if ($__pp) { $__tm = wag_meta_get($pdo, 'typing:' . $key, ''); if (function_exists('wq_ts') && wq_ts($__tm) > $now - 180) { $D['early']++; continue; } $__ml = wag_meta_get($pdo, 'mklink:' . $key, ''); if ($__ml !== '' && strtotime($__ml) > $now - 3600) { $D['early']++; continue; } }   // the holder is typing / making the link: not now
         $bh = wag_meta_get($pdo, 'bothand:' . $key, ''); if (!$__pp && $bh !== '' && strtotime($bh) >= $liT) { $D['hand']++; continue; }   // the bot handed this customer to a person
         if (!$__pp && !empty($c['hot']) && !empty($c['assigned_emp'])) { $D['hotp']++; continue; }   // a person holds a hot chat: his job

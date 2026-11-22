@@ -1255,6 +1255,7 @@ function wa_prod_img_url(string $u): string
 function wa_send_image_link(PDO $pdo, array $c, string $url, string $caption, string $who, int $empId, int $prodId = 0): array
 {
     if ((int)$c['optout'] === 1) return [false, 'This customer opted out — do not message them.'];
+    if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign', 'followup', 'recover'], true) && function_exists('wa_bot_paused') && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.'];   // ⏸ stopped by the salesperson
     if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed. Only an approved template can be sent now.'];
     if (!preg_match('#^https://#i', $url)) return [false, 'The photo link is not valid.'];
     $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)$c['last_number_id']]); $pid = (string)$q->fetchColumn();

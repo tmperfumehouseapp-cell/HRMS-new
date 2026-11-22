@@ -692,10 +692,18 @@ function wa_contact(PDO $pdo, string $key): ?array { $q = $pdo->prepare("SELECT 
 /** Sends a text from the number the customer last used. Inside the 24-hour window only (templates come with the campaign step). */
 /** 🌙 UNIVERSAL QUIET HOURS (owner, 21 Nov): NO automatic message (campaign, marketing, follow-up, Lineup, recovery, drip) goes between 03:00 and 09:00 IST; follow-ups may run until 03:00. Replies to a customer who wrote, and order messages, are not touched. */
 if (!function_exists('wa_quiet_hours')) { function wa_quiet_hours($ts = null): bool { $h = (int)date('G', $ts === null ? time() : (int)$ts); return $h >= 3 && $h < 9; } }
+/** ⏸ owner (22 Nov): a salesperson (or admin) can STOP BOT MESSAGES for one customer for a time ("I will send the address in the evening"): returns the end time (Y-m-d H:i:s) while the pause runs, else null. Stored in wq_meta 'botpause:<10 digits>'. No automatic message (bot, follow-up, flow, recovery, campaign) goes meanwhile; a person can always write. */
+function wa_bot_paused(PDO $pdo, string $key): ?string
+{
+    static $m = []; $k = substr(preg_replace('/\D+/', '', $key), -10); if (strlen($k) < 10) return null; if (array_key_exists($k, $m)) return $m[$k];
+    $r = null; try { $q = $pdo->prepare("SELECT v FROM wq_meta WHERE k = ?"); $q->execute(['botpause:' . $k]); $v = (string)$q->fetchColumn(); if ($v !== '' && strtotime($v) > time()) $r = $v; } catch (Throwable $e) { }
+    return $m[$k] = $r;
+}
 function wa_send_text(PDO $pdo, array $c, string $text, string $who, int $empId, string $replyTo = ''): array   // $replyTo: the wamid of the customer's / our message this one answers (↩ swipe to reply)
 {
     if (in_array($who, ['followup', 'campaign', 'recover'], true) && wa_quiet_hours()) return [false, 'Quiet hours 03:00-09:00: no automatic message goes.'];   // 🌙 universal rule (owner, 21 Nov)
     if ((int)$c['optout'] === 1) return [false, 'This customer opted out — do not message them.'];
+    if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign', 'followup', 'recover'], true) && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.'];   // ⏸ stopped by the salesperson
     if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off for this customer until tomorrow night.'];   // ✅ one lock for every engine
     if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed. Only an approved template can be sent now.'];
     $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)$c['last_number_id']]); $pid = (string)$q->fetchColumn();
@@ -738,6 +746,7 @@ function wa_send_buttons(PDO $pdo, array $c, string $text, array $buttons, strin
 {
     if (in_array($who, ['followup', 'campaign', 'recover'], true) && wa_quiet_hours()) return [false, 'Quiet hours 03:00-09:00: no automatic message goes.'];   // 🌙 universal rule (owner, 21 Nov)
     if ((int)$c['optout'] === 1) return [false, 'This customer opted out.'];
+    if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign', 'followup', 'recover'], true) && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.'];   // ⏸ stopped by the salesperson
     if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off.'];
     if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed.'];
     $text = mb_substr(trim($text), 0, 1000); $btn = []; foreach (array_slice(array_values($buttons), 0, 3) as $i => $t) $btn[] = ['type' => 'reply', 'reply' => ['id' => 'fu_' . ($i + 1), 'title' => mb_substr((string)$t, 0, 20)]]; if ($text === '' || !$btn) return [false, 'Nothing to send.'];
