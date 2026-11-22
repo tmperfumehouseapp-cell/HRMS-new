@@ -1105,10 +1105,17 @@ function wag_price_context(PDO $pdo, string $phone, array $msgs): string
 }
 /** 🏪 OPEN MARKET scoreboard (owner, 21 Nov: "decide how to measure the good salespeople": most orders, fast reply, add-on / ticket, and who really takes the hot chats). Per salesperson, last $days days:
  *  score (0-100) = orders 40 (4 points each) + ticket 20 (average order / Rs 2,750) + first-reply speed 20 (60 s = full, 10 min = 0) + effort 20 (taken / (taken + dropped)). */
+/** The start of the sales day (owner 22 Nov: "the new day of the sales, not midnight: overnight does not count"): the same day start the Sales page and the query ledger use (10:00 by default). $back = days before today's sales day. */
+function wag_day_start_str(PDO $pdo, int $back = 0): string
+{
+    try { if (!function_exists('wq_day_start') && is_file(__DIR__ . '/wq.php')) { try { require_once __DIR__ . '/wq.php'; } catch (Throwable $e) { } }
+        if (function_exists('wq_day_start') && function_exists('wq_day_of') && function_exists('wq_day_add') && function_exists('wq_now')) { $d = wq_day_of($pdo, wq_now()); if ($back > 0) $d = wq_day_add($d, -$back); return date('Y-m-d H:i:s', wq_day_start($pdo, $d)); } } catch (Throwable $e) { }
+    return date('Y-m-d 00:00:00', time() - $back * 86400);
+}
 function wag_mkt_board(PDO $pdo, int $days = 7): array
 {
     static $cache = []; $ck = $days . ':' . (int)(time() / 60); if (isset($cache[$ck])) return $cache[$ck];
-    $since = date('Y-m-d 00:00:00', time() - ($days - 1) * 86400); $by = []; $takes = []; $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $present = [];
+    $since = wag_day_start_str($pdo, $days - 1); $by = []; $takes = []; $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $present = [];
     if (function_exists('wa_people')) { try { foreach (wa_people($pdo) as $p) { $by[(int)$p['emp_id']] = ['emp' => (int)$p['emp_id'], 'name' => (string)($names[(int)$p['emp_id']] ?? ($p['name'] ?? '')), 'present' => !empty($p['present'])]; } } catch (Throwable $e) { } }
     $blank = ['offered' => 0, 'taken' => 0, 'dropped' => 0, 'released' => 0, 'noreply' => 0, 'waits' => [], 'replies' => [], 'orders' => 0, 'amount' => 0];
     try {
@@ -1223,7 +1230,7 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
     static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)$waited . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
     $msg = '';
     try {
-        $t0 = date('Y-m-d 00:00:00'); $w0 = date('Y-m-d 00:00:00', time() - 6 * 86400); $one = function (string $sql, array $a = []) use ($pdo) { $q = $pdo->prepare($sql); $q->execute($a); return (int)$q->fetchColumn(); };
+        $t0 = wag_day_start_str($pdo); $w0 = wag_day_start_str($pdo, 6); $one = function (string $sql, array $a = []) use ($pdo) { $q = $pdo->prepare($sql); $q->execute($a); return (int)$q->fetchColumn(); };
         $tk = $one("SELECT COUNT(DISTINCT phone) FROM wa_mkt WHERE emp_id = ? AND kind = 'taken' AND at >= ?", [$emp, $t0]); $dr = $one("SELECT COUNT(DISTINCT d.phone) FROM wa_mkt d WHERE d.emp_id = ? AND d.kind IN ('dropped','released') AND d.at >= ? AND EXISTS (SELECT 1 FROM wa_mkt t WHERE t.phone = d.phone AND t.emp_id = d.emp_id AND t.kind = 'taken' AND t.at >= ?)", [$emp, $t0, $t0]);   // only chats he took and left
         $od = 0; foreach (wag_mkt_board($pdo, 1) as $__b) if ((int)$__b['emp'] === $emp) $od = (int)$__b['orders'];   // orders credited from Shopify (or recorded)
         $un = 0; $__uq = $pdo->prepare("SELECT phone FROM wa_contacts WHERE assigned_emp = ? AND status = 'open' AND hot = 1 AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) LIMIT 40"); $__uq->execute([$emp, date('Y-m-d H:i:s', time() - 23 * 3600)]);
