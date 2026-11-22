@@ -26,6 +26,31 @@ function wag_defaults(): array
 {
     return ['unans_min' => 3, 'unans_push' => true, 'bot' => 'on', 'bot_after' => 10, 'bot_max_day' => 200, 'target' => 5, 'vip_orders' => 4, 'vip_ltv' => 10000, 'ai_tags' => true, 'sound' => true];
 }
+/** Add owner corrections to the LIVE guidebook with a FRESH read and the write under the guidebook lock: a stale read-modify-write of the whole body (read, then judge 40 items, then write) wiped the rules the patch blocks had added in between. */
+function wag_gb_add_corrections(PDO $pdo, array $add, int $cap = 60): bool
+{
+    if (!$add || !function_exists('lib_guide_row')) return false; $got = false; try { $got = (int)$pdo->query("SELECT GET_LOCK('wag_gb_patch', 8)")->fetchColumn() === 1; } catch (Throwable $e) { }
+    try { $g = lib_guide_row($pdo, 'live'); if (!$g) return false; $body = json_decode((string)$g['body'], true); if (!is_array($body)) return false;
+        $body['owner_corrections'] = array_slice(array_merge($add, array_values((array)($body['owner_corrections'] ?? []))), 0, $cap);
+        $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($body, JSON_UNESCAPED_UNICODE), (int)$g['id']]); return true;
+    } catch (Throwable $e) { return false; }
+    finally { if ($got) { try { $pdo->query("SELECT RELEASE_LOCK('wag_gb_patch')")->fetchColumn(); } catch (Throwable $e) { } } }
+}
+/** The live guidebook never keeps the same point twice: the quality rule had been added 35 times (its marker had a slash that JSON writes as \\/, so it looked missing every 5 minutes) and pushed the goal and catalogue rules out of the 40 points. Duplicates of 'do' are removed (first one stays), the corrections are de-duplicated and capped at 60. Call it while holding the guidebook lock. Returns the number of removed points. */
+function wag_gb_dedupe(PDO $pdo): int
+{
+    try { $g = function_exists('lib_guide_row') ? lib_guide_row($pdo, 'live') : null; if (!$g) return 0; $gb = json_decode((string)$g['body'], true); if (!is_array($gb)) return 0; $rm = 0;
+        $dd = function (array $a, callable $key) use (&$rm): array { $seen = []; $o = []; foreach ($a as $x) { $k = md5(mb_strtolower(trim((string)$key($x)))); if (isset($seen[$k])) { $rm++; continue; } $seen[$k] = 1; $o[] = $x; } return $o; };
+        $gb['do'] = $dd(array_values((array)($gb['do'] ?? [])), fn($x) => is_string($x) ? $x : json_encode($x)); $corr = $dd(array_values((array)($gb['owner_corrections'] ?? [])), fn($x) => is_array($x) ? (string)($x['better'] ?? json_encode($x)) : (string)$x);
+        if (count($corr) > 60) { $rm += count($corr) - 60; $corr = array_slice($corr, 0, 60); } $gb['owner_corrections'] = $corr;
+        if ($rm > 0) $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); return $rm;
+    } catch (Throwable $e) { return 0; }
+}
+/** One request at a time may patch the live guidebook: true = this request holds the lock (release with $release = true). The lock belongs to the connection, so a crashed request frees it by itself. */
+function wag_gb_lock(PDO $pdo, bool $release = false): bool
+{
+    try { if ($release) { $pdo->query("SELECT RELEASE_LOCK('wag_gb_patch')")->fetchColumn(); return true; } return (int)$pdo->query("SELECT GET_LOCK('wag_gb_patch', 0)")->fetchColumn() === 1; } catch (Throwable $e) { return false; }
+}
 function wag_cfg(PDO $pdo): array
 {
     $d = wag_defaults();
@@ -60,42 +85,44 @@ function wag_cfg(PDO $pdo): array
         foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $__p) wag_q_forget($pdo, (string)$__p, 3); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): OPEN MARKET — no chat is given to anybody: automatic assignment off (waa engine + wq auto), manual assignment on; salespeople take what they can close
     try { if (setting_get($pdo, 'wag_openmkt', '') !== '1') { setting_set($pdo, 'wag_openmkt', '1'); setting_set($pdo, 'wag_open_market', '1'); setting_set($pdo, 'waa_off', '1'); setting_set($pdo, 'waa_on_day', ''); setting_set($pdo, 'wq_auto_on', '0'); setting_set($pdo, 'wa_manual_assign', '1'); if (function_exists('hrms_settings_bump')) hrms_settings_bump(); } } catch (Throwable $e) { }
+    // 22 Nov: the guidebook patches ran in EVERY parallel request (flag set first, then read - change - write): two requests at once overwrote each other's rule (the goal / quality / sell-more rules kept vanishing). One request at a time now (MySQL named lock, no waiting).
+    $__gbl = wag_gb_lock($pdo);
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
-    try { if (setting_get($pdo, 'wag_rules4', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules4', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules4', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules4', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'Price: with nothing negotiated start at the 6.5% chart level for the quantity the customer chose; a customer who arrives with a price (ad / earlier offer) gets THAT level; go to the next level only when he objects to the price. Goal: an average order of Rs 2,700-2,800 — always try ONE add-on that lifts the order to that range (one more bottle / the next combo, said as "sirf Rs X aur mein Y ml extra"); never push after the second no.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '(price talk / order of less than Rs 2,700)', 'better' => $rule]], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): aggressive follow-up topic for the bot
-    try { if (setting_get($pdo, 'wag_rules8', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules8', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules8', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules8', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'FOLLOW-UP (aggressive but polite): never let the customer go in the first hours. When a customer goes silent after our answer, the bot follows up by itself 10 times — 5 min ("Sir aapko kaunse perfume me confusion / doubt hai? Order bana dun?"), 10 min (the one missing detail), 20 min (the exact chart price, "banau order?"), 30 min (doubt on price? the add-on to Rs 2,700-2,800), 1 h (two easy options), 2 h (true urgency), 3 h (remove the doubt: best seller for his taste / which occasion), 4 h (one-word YES / names), then slower: 8 h (a soft check-in), 18 h (last friendly nudge); afterwards the 30-day Lineup takes over. EVERY follow-up ends with ONE easy question; each message a new angle, never a copy, never an invented offer; stop at once on "no / stop / nahi chahiye".';
             $gb['do'] = array_values(array_merge([$rule], array_slice(array_values(array_filter((array)($gb['do'] ?? []), function ($x) { return strpos((string)$x, 'FOLLOW-UP (aggressive') !== 0; })), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): 10 ml is only an add-on, never part of the opening
-    try { if (setting_get($pdo, 'wag_rules3', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules3', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules3', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules3', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'Never start with or suggest 10 ml. The opening and the main offer are the 50 ml and 100 ml combos (20 ml only as 5 x 20 ml, quoted from the chart starting at the 6.5% level). A 10 ml is only a small add-on on top of a combo, and only if the customer asks for it.';
             $gb['dont'] = array_values(array_merge([$rule], array_slice((array)($gb['dont'] ?? []), 0, 20)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '(opening of any chat)', 'better' => $rule]], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): the guidebook learns to keep the sale when a customer cancels part of an order
-    try { if (setting_get($pdo, 'wag_rules2', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules2', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules2', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules2', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'When a customer cancels or cuts part of his order, do not just accept: explain that the bigger combo gives the best price per piece, suggest keeping all, replacing the dropped perfumes with others of his choice, or going up to the next combo (8 to 10); only if he insists again, accept and recalculate from the price chart. Never invent a discount.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '7 and 4 cancel kardo (part of an 8 perfume order)', 'better' => 'Sir, 8 ka combo sabse best deal hai — 7 aur 4 hatane se rate badh jayega. Aap unki jagah koi aur 2 pasand ke perfume le lo, ya 10 ka combo le lo to per perfume aur sasta padega. Kaun se naye 2 add karu?']], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): the guidebook gets the rule "perfumes only — no shower gel / wax / candle / solid perfume / 10 ml / roll-on / mini unless asked" (a standing correction survives the nightly rewrite)
-    try { if (setting_get($pdo, 'wag_rules1', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules1', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules1', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules1', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'Talk about our perfumes only (50 ml combos first). Do not suggest or mention shower gel, wax, candles, solid perfumes, 10 ml, roll-ons or minis unless the customer asks for them by name.';
             $gb['dont'] = array_values(array_merge([$rule], array_slice((array)($gb['dont'] ?? []), 0, 20)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '(any message while perfumes are discussed)', 'better' => $rule]], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): NO TM Originals / "OG" / "build your own original combo 3499" suggestions (own pricing, not needed) — everything about them leaves the guidebook and a standing rule is added; they come back only when a person suggests them by hand
-    try { if (setting_get($pdo, 'wag_rules9', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules9', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules9', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules9', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rx = '/(\bOGs?\b|originals?\b|dress to impress|compliment getter|dark side|caffeine club|build your own|\b3499\b)/iu';
             $clean = function ($v) use (&$clean, $rx) { if (is_array($v)) { $o = []; foreach ($v as $k => $x) { if (is_string($x) ? preg_match($rx, $x) : (is_array($x) && preg_match($rx, json_encode($x, JSON_UNESCAPED_UNICODE)))) continue; $o[$k] = is_array($x) ? $clean($x) : $x; } return is_list_arr($o) ? array_values($o) : $o; } return $v; };
@@ -103,87 +130,88 @@ function wag_cfg(PDO $pdo): array
             $gb['dont'] = array_values(array_merge([$rule], array_slice((array)($gb['dont'] ?? []), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): the guidebook gets the rule "price objections: never let the customer go" — maximum orders; the code-made step-downs hold him, the AI never invents a price
-    try { if (setting_get($pdo, 'wag_rules10', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules10', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules10', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules10', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'PRICE OBJECTIONS: whatever happens, never let the customer go (the owner wants the MAXIMUM number of orders). When he says "paise kam karo / varna nahi chahiye / mehanga", do not stop at "price hi rahegi" and do not say goodbye: show the value of the bigger size from the chart, then step down ONE level at a time only after each new refusal, using only the exact numbers the system gives you (we may go well below the lowest chart price at the very end, but never two levels in one message and never a number you were not given). After the last level, thank him warmly and keep the door open. Never invent a price yourself.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => 'Paise kam kro toh lunga, varna nhi chahiye (5 x 20 ml, chart low Rs 1590)', 'better' => 'Sir, 5 x 50 ml sirf Rs 2750 mein (250 ml, 2.5 guna perfume, per ml sabse sasta) - kaunsa theek rahega? [if he still refuses: the system gives the next exact price, e.g. "aapke liye Rs 1550 kar deta hoon, order confirm karein?"]']], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): the deep step is NOT routine — only when the customer holds the price very firmly
-    try { if (setting_get($pdo, 'wag_rules11', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules11', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules11', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules11', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'DEEP PRICE STEP-DOWN (about 12% below the lowest chart price) is NOT for every customer and never the first move: use it only when a customer clings to the price very firmly - he has refused the earlier steps one after the other and is about to leave. A customer who accepts the chart price, or only asks once, gets no extra reduction. Always follow the exact step the system gives you; never offer a deeper step by yourself.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $gb['dont'] = array_values(array_merge(['Never give the deepest price step (12% below the lowest chart price) to a customer who has not held the price firmly through the earlier steps.'], array_slice((array)($gb['dont'] ?? []), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): price talk is a chance for the add-on; negotiate to the end (even above the Rs 2,800 ticket) only while the customer keeps discussing price
-    try { if (setting_get($pdo, 'wag_rules12', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules12', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules12', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules12', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'PRICE TALK AND THE ADD-ON: when a customer pushes on price, before (or together with) a lower price offer him the ADD-ON instead: "Sir price me kam nahi ho sakta, lekin ek extra 20 ml sirf Rs X mein add kar sakte hain" (use only the exact add-on price the system gives you). Negotiate to the very end - even an order already above the Rs 2,800 ticket - but ONLY while the customer keeps discussing price; if he does not push on price, no reduction: go for the add-on and the order.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): a customer who asks for 1-2 bottles is shown 3 / 4 / 5 — we sell MORE perfumes
-    try { if (setting_get($pdo, 'wag_rules13', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules13', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules13', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules13', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'SELL MORE PERFUMES: when a customer asks the price of only 1 or 2 bottles ("how much for 2 50ml"), answer his price AND in the same message show the 3, 4 and 5 bottle combos of the same size with the exact chart prices ("Sir 3 lijiye, 4 lijiye ya 5 - 5 x 50 ml Better Savings"), then ask which one he prefers. Never just sell the 1-2 he asked for and never answer with a price that is not on our chart.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => 'How much for 2 50ml', 'better' => 'Sir 2 x 50 ml Rs [chart price] hai; lekin 3 x 50 ml Rs [chart], 4 x 50 ml Rs [chart], 5 x 50 ml Rs [chart] (Better Savings) - kaunsa lena pasand karenge, 3, 4 ya 5?']], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): the guidebook must not carry our internal ticket target (Rs 2,700-2,800) — the bot told a customer "minimum Rs 2,800 tak hi de sakte hain" next to the real price Rs 3,200
-    try { if (setting_get($pdo, 'wag_rules14', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules14', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules14', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules14', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $raw = (string)$g['body']; $new = preg_replace('/(Rs\.?\s*)?2[,.]?[78]00\s*[-–]\s*(Rs\.?\s*)?2[,.]?[78]00|\b2[,.]?[78]00\s*(ticket|target)|(ticket|target)[^"\\]{0,12}Rs\.?\s*2[,.]?[78]00/iu', 'a big ticket', $raw);
             $new = (string)$new; $new = preg_replace('/(?<![\d,.])(Rs\.?\s*)?2,?[78]00(?![\d,])\s*(ticket)/iu', 'a big ticket', $new);
             $gb = json_decode($new, true); if (is_array($gb)) { $gb['dont'] = array_values(array_merge(['Never tell the customer any internal target, minimum, floor or ceiling price. Quote ONLY the exact chart price given to you; a lower price appears only when the system gives it after the customer objects.'], array_slice((array)($gb['dont'] ?? []), 0, 20))); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): never confirm a perfume that is not in the catalogue
-    try { if (setting_get($pdo, 'wag_rules15', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules15', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules15', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules15', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $gb['dont'] = array_values(array_merge(['Never say a perfume is "available" / "in stock" unless its exact name is in our catalogue list. For a name you cannot find, say "Sir, ye naam ek baar confirm karke batata hoon", ask size and quantity, or offer two similar perfumes that are in the list; a person confirms the rest.'], array_slice((array)($gb['dont'] ?? []), 0, 20)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov, evening): FIRST price = the chart's 7% column; a discount only up to the 6.5% then the 6% column; nothing below — the earlier "step down below the chart" rules are taken out
-    try { if (setting_get($pdo, 'wag_rules16', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules16', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules16', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules16', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             foreach (['do', 'dont'] as $kk) if (isset($gb[$kk]) && is_array($gb[$kk])) $gb[$kk] = array_values(array_filter($gb[$kk], function ($x) { return !(is_string($x) && (strpos($x, 'DEEP PRICE STEP-DOWN') !== false || strpos($x, 'step down ONE level') !== false || strpos($x, 'we may go well below the lowest chart price') !== false)); }));
             $rule = 'PRICE RULE (owner): whenever a customer asks the price of ANY combo or a single perfume, quote ONLY the price chart\'s 7% column for that quantity. If he then asks for a discount, give at most the 6.5% and then the 6% column of the chart - NEVER more discount than that and never a number that is not on the chart. When he still refuses, show the value of the bigger size or the add-on instead of a lower price.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): a customer who wants to CHECK the fragrance / doubts the quality gets reviews and a trial invitation - never a discount
-    try { if (setting_get($pdo, 'wag_rules17', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules17', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules17', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules17', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'QUALITY / "I only want to check the fragrance": when a customer says budget is no issue, doubts our claim or quality, or wants to check the smell first, do NOT talk price or discount. Tell him our fragrance is good (30% oil, long lasting), show our real reviews (a perfume with its rating and number of reviews, only the facts the system gives you), invite him to use one perfume once - he will definitely like it - and ask which fragrance family he prefers so you can suggest one.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => 'Budget ki baat nahi h, mujhe fragrance check karni hai. Ki aap log claim krte ho, wo quality h bhi ya yuhi', 'better' => 'Sir, hamare perfume 30% oil ke hain, bahut der tikte hain aur customers ke reviews bhi achhe hain (jaise [perfume] ka rating [x]/5 [n] reviews). Ek baar use karke dekhiye, aapko definitely pasand aayega. Aapko kaisi khushbu pasand hai - fresh, sweet ya woody? Main aapke liye best suggest karta hoon.']], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // the goal rule must survive a NEW live guidebook version (a new version made by the learning dropped it at 21 Nov night): when the live one does not carry it, the once-only switch is re-armed (checked every 5 min)
-    try { if (setting_get($pdo, 'wag_rules18', '') === '1' && time() - (int)setting_get($pdo, 'wag_rules18_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules18_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0 && strpos((string)$g0['body'], 'MAXIMUM ORDERS') === false) setting_set($pdo, 'wag_rules18', ''); } } catch (Throwable $e) { }
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules18', '') === '1' && time() - (int)setting_get($pdo, 'wag_rules18_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules18_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0 && strpos((string)$g0['body'], 'MAXIMUM ORDERS') === false) setting_set($pdo, 'wag_rules18', ''); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): TARGET = maximum orders with the HIGHEST good ticket size, margin never hurt: the guidebook gets the "bigger first, discount last" rule
-    try { if (setting_get($pdo, 'wag_rules18', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules18', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules18', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules18', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'GOAL = MAXIMUM ORDERS WITH THE HIGHEST GOOD TICKET SIZE, WITHOUT HURTING OUR MARGIN. (1) Quote the start price from the chart (the 7% column) and keep it; the price only comes down by the chart steps the system gives you (never a number of your own, never a general discount, never a price below the one the system allows). (2) BIGGER FIRST, DISCOUNT LAST: before any price drop, show once the next bigger size or quantity with the exact chart numbers the system gives you ("sirf Rs X aur dene par Y ml extra") and say it is the better value per ml; always show two bigger options when the system gives them. (3) Before the payment link one add-on offer. (4) Never push so hard that the customer leaves: if he refuses the bigger size, keep his own size and close the order. (5) Never confirm or take payment yourself; never show an internal target or minimum.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $gb['owner_corrections'] = array_values(array_merge([['customer' => '150 ml ka kitna hoga?', 'better' => 'Sir, 150 ml ka Rs [chart price] hai. Aur sirf Rs [difference] aur dene par aapko 200 ml mil jayega (Rs [chart price]) - per ml bahut better value hai. Kaunsa le lun?']], (array)($gb['owner_corrections'] ?? [])));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): ONLY what is in our catalogue; no shower gel / wax / candle / solid / roll-on / 10 ml; OG / TM Originals are never promoted
-    try { if (setting_get($pdo, 'wag_rules19', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules19', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules19', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules19', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'ONLY OUR CATALOGUE: suggest, name or confirm only perfumes that are in our catalogue (the system gives you the names); if a customer asks for something that is not there, say so politely and offer the closest perfume from the catalogue. Never suggest shower gel, body wash, wax, candle, solid perfume, roll-on, mini or 10 ml bottles unless the customer himself asks. Do not promote OG / TM Originals.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // 22 Nov probe: the live guidebook v27 had LOST the price rule (7% / 6.5% / 6%), the quality rule and the sell-more rule (a new live version is made from an older base): every 5 min the live guidebook is checked and a rule that is missing is re-armed (its once-only switch is cleared, the block below it adds it again)
-    try { if (time() - (int)setting_get($pdo, 'wag_rules_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0) foreach ([12 => 'PRICE TALK AND THE ADD-ON', 13 => 'SELL MORE PERFUMES', 16 => 'PRICE RULE (owner)', 17 => 'QUALITY / ', 19 => 'ONLY OUR CATALOGUE'] as $__rn => $__mk) if (setting_get($pdo, 'wag_rules' . $__rn, '') === '1' && strpos((string)$g0['body'], $__mk) === false) setting_set($pdo, 'wag_rules' . $__rn, ''); } } catch (Throwable $e) { }
+    try { if (!empty($__gbl) && time() - (int)setting_get($pdo, 'wag_rules_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules_chk', (string)time()); wag_gb_dedupe($pdo); $g0 = lib_guide_row($pdo, 'live'); if ($g0) foreach ([12 => 'PRICE TALK AND THE ADD-ON', 13 => 'SELL MORE PERFUMES', 16 => 'PRICE RULE (owner)', 17 => 'only want to check the fragrance', 19 => 'ONLY OUR CATALOGUE'] as $__rn => $__mk) if (setting_get($pdo, 'wag_rules' . $__rn, '') === '1' && strpos((string)$g0['body'], $__mk) === false) setting_set($pdo, 'wag_rules' . $__rn, ''); } } catch (Throwable $e) { }
     // once (owner, 22 Nov): bigger jumps (2-3 more bottles, not 1), per-bottle value line, persistent follow-ups; re-armed when a new live guidebook version drops the rule
-    try { if (setting_get($pdo, 'wag_rules20', '') === '1' && time() - (int)setting_get($pdo, 'wag_rules20_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules20_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0 && strpos((string)$g0['body'], 'BIGGER JUMPS') === false) setting_set($pdo, 'wag_rules20', ''); } } catch (Throwable $e) { }
-    try { if (setting_get($pdo, 'wag_rules20', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules20', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules20', '') === '1' && time() - (int)setting_get($pdo, 'wag_rules20_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules20_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0 && strpos((string)$g0['body'], 'BIGGER JUMPS') === false) setting_set($pdo, 'wag_rules20', ''); } } catch (Throwable $e) { }
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules20', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules20', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'BIGGER JUMPS + PER-BOTTLE VALUE (owner 22 Nov): whenever you suggest more bottles, jump by TWO or THREE, never by one (he asked 1 -> show 3 and 5; 2 -> 4 and 5; 3 -> 5 and 6; 5 -> 7 and 10), and when a smaller number is not what he wants, offer the next bigger pack, not a smaller one. Every time you suggest a pack, say the single-bottle price AND the per-bottle price inside the pack, with exact chart numbers: "Sir ek bottle Rs X ki hai, par 5 bottle lene par ek bottle sirf Rs Y padegi - total Rs Z". After he accepts the pack, the add-on offer follows (2 or 3 more bottles, never 1). In follow-ups be persistent and warm: every follow-up carries the bigger pack and its per-bottle price, and a customer who went quiet gets the pack that is one step bigger than the one he last saw, never a smaller one. Never invent a price: only the chart / the numbers the system gives you.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
     // once (owner, 22 Nov): the official price is the online price; re-armed when a new live guidebook version drops it
-    try { if (setting_get($pdo, 'wag_rules21', '') === '1' && time() - (int)setting_get($pdo, 'wag_rules21_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules21_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0 && strpos((string)$g0['body'], 'OFFICIAL ONLINE PRICE') === false) setting_set($pdo, 'wag_rules21', ''); } } catch (Throwable $e) { }
-    try { if (setting_get($pdo, 'wag_rules21', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules21', '1'); $g = lib_guide_row($pdo, 'live');
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules21', '') === '1' && time() - (int)setting_get($pdo, 'wag_rules21_chk', '0') > 300 && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules21_chk', (string)time()); $g0 = lib_guide_row($pdo, 'live'); if ($g0 && strpos((string)$g0['body'], 'OFFICIAL ONLINE PRICE') === false) setting_set($pdo, 'wag_rules21', ''); } } catch (Throwable $e) { }
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules21', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules21', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
             $rule = 'OFFICIAL ONLINE PRICE (owner 22 Nov): the official price of ONE bottle is the price on our website: 20 ml Rs 499, 50 ml Rs 1,199, 100 ml Rs 1,810. Our combo deals are the discount on that. When you suggest N bottles say it like this: "Sir ek 50 ml bottle online Rs 1,199 ki hai, to 6 bottle alag-alag lene par Rs (6 x 1,199) padegi, par combo deal me sirf Rs (the chart total) me padegi" - do the multiplication yourself with the website price and use the exact chart total for the combo. Never say that a single bottle costs the chart\'s per-bottle price.';
             $gb['do'] = array_values(array_merge([$rule], array_slice((array)($gb['do'] ?? []), 0, 40)));
             $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); } } } } catch (Throwable $e) { }
+    if (!empty($__gbl)) wag_gb_lock($pdo, true);
     // once (owner, 21 Nov: "as fast as possible"): the bot starts 2 s after the message (the answer itself takes the AI 3-5 s)
     try { if (setting_get($pdo, 'wag_bot2', '') !== '1') { setting_set($pdo, 'wag_bot2', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 2; setting_set($pdo, 'wa_g_cfg', json_encode($j)); } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
@@ -635,6 +663,10 @@ function wag_standing_rules(): string
         . "- SELL MORE PERFUMES: a customer who asks the price of 1-2 bottles is shown the bigger combos of the same size with the exact chart prices.\n"
         . "- QUALITY: a customer who doubts the quality or wants to check the fragrance gets reviews and a trial invitation, no price and no discount.\n"
         . "- ONLY OUR CATALOGUE: name, suggest or confirm only perfumes in our catalogue; never solid, shower gel, OG, 10 ml.\n"
+        . "- NEGOTIATION: the first price is the chart's 7% column; if the customer or a salesperson already quoted a level in the chat, continue from THAT level (never higher); after the 6.5% and then the 6% column hold the price, no long negotiation. Talk about price or discount ONLY when the customer himself brings up the price.\n"
+        . "- COD: cash on delivery is available, but 35% of the order amount must be paid in advance for the order confirmation, the rest is paid on delivery. Say it when he asks about COD or how to pay (the bot never takes the payment; a person sends the payment link).\n"
+        . "- ORDER DETAILS FORM (the shop's own): when he is ready to order, ask for these details exactly: 1. Full Name 2. Address 3. Near By Landmark 4. City 5. State 6. Pincode 7. Email 8. Primary No 9. Alternate No.\n"
+        . "- ADDRESS CHECK (the shop's own, send it when the address has come, before the payment link): (1) Kindly recheck your delivery address before making payment, as the system may fetch your saved address. (2) If you see an old or incorrect address at the checkout link, select Change Address / Add New Address and update your correct delivery address.\n"
         . "- FOLLOW-UP: persistent but polite; every follow-up carries the bigger pack with its per-bottle price.";
 }
 function wag_addon_ensure(PDO $pdo): void { static $ok = null; if ($ok) return; $ok = true; try { $pdo->exec("CREATE TABLE IF NOT EXISTS wag_addon (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, at DATETIME NOT NULL, status VARCHAR(10) NOT NULL, n TINYINT NOT NULL DEFAULT 0, size_ml INT NOT NULL DEFAULT 0, total_before INT NOT NULL DEFAULT 0, amount INT NOT NULL DEFAULT 0, p1 INT NOT NULL DEFAULT 0, p2 INT NOT NULL DEFAULT 0, KEY k_ph (phone), KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { } }
@@ -788,7 +820,7 @@ function wag_botlearn_auto(PDO $pdo, int $max = 40): array
             if (preg_match('/^\[TEMPLATE #(\d+) ([^\]]*)\]\s*(.*)$/su', $better, $tm)) $better = $tm[3] . ' (send as the pre-made message "' . trim($tm[2]) . '" when the 24-hour window is closed)';
             $k = md5(mb_strtolower($better)); if (!isset($seen[$k])) { $seen[$k] = 1; $add[] = ['customer' => mb_substr((string)$r['customer'], 0, 240), 'better' => mb_substr($better, 0, 400)]; }
             $pdo->prepare("UPDATE wa_learn SET status = 'done' WHERE id = ?")->execute([(int)$r['id']]); $o['ok']++; }
-        if ($add && $g) { $body['owner_corrections'] = array_slice(array_merge($add, $corr), 0, 60); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($body, JSON_UNESCAPED_UNICODE), (int)$g['id']]); }
+        if ($add && $g) wag_gb_add_corrections($pdo, $add, 60);   // fresh read + write under the guidebook lock (a stale read-modify-write wiped the patched rules)
         setting_set($pdo, 'wag_bl_auto_log', date('Y-m-d H:i:s') . ' approved ' . $o['ok'] . ' removed ' . $o['removed']);
     } catch (Throwable $e) { }
     return $o;
@@ -839,8 +871,7 @@ function wag_learn_auto_apply(PDO $pdo, int $learnId): bool
         if ($bot === '' || mb_strtolower($better) === mb_strtolower($bot) || !wag_learn_safe_text($better)) return false;
         $g = lib_guide_row($pdo, 'live'); if (!$g) return false; $body = json_decode((string)$g['body'], true); if (!is_array($body)) return false;
         $corr = array_values((array)($body['owner_corrections'] ?? [])); $k = md5(mb_strtolower($better)); foreach ($corr as $o) if (md5(mb_strtolower((string)($o['better'] ?? ''))) === $k) { $pdo->prepare("UPDATE wa_learn SET status = 'done' WHERE id = ?")->execute([$learnId]); return true; }
-        array_unshift($corr, ['customer' => mb_substr((string)$r['customer'], 0, 240), 'better' => mb_substr($better, 0, 400)]);
-        $body['owner_corrections'] = array_slice($corr, 0, 60); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($body, JSON_UNESCAPED_UNICODE), (int)$g['id']]);
+        if (!wag_gb_add_corrections($pdo, [['customer' => mb_substr((string)$r['customer'], 0, 240), 'better' => mb_substr($better, 0, 400)]], 60)) return false;
         $pdo->prepare("UPDATE wa_learn SET status = 'done' WHERE id = ?")->execute([$learnId]); return true;
     } catch (Throwable $e) { return false; }
 }
@@ -1989,7 +2020,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
                 $k = md5(mb_strtolower($better)); if (!isset($seen[$k])) { $seen[$k] = 1; $add[] = ['customer' => mb_substr((string)$r['customer'], 0, 240), 'better' => mb_substr($better, 0, 400)]; }
                 $pdo->prepare("UPDATE wa_learn SET status = 'done' WHERE id = ?")->execute([$i]); $done++;
             }
-            if ($add) { $body['owner_corrections'] = array_slice(array_merge($add, $corr), 0, 60); $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($body, JSON_UNESCAPED_UNICODE), (int)$g['id']]); }
+            if ($add) wag_gb_add_corrections($pdo, $add, 60);
             json_response(['ok' => true, 'applied' => $done, 'guide_version' => (int)$g['version']]);
         }
         case 'wa.g_botpending': {   // 🙋 chats the bot handed to a person that nobody has answered yet (admin / managers): who has it, how long, what the customer wrote

@@ -11,7 +11,7 @@ try { foreach ($pdo->query("SELECT version, status, source, created_at, LEFT(cha
 // bot messages of the period (normalised) = what the bot said
 $botSet = []; try { foreach ($pdo->query("SELECT body FROM wa_messages WHERE dir = 'out' AND who = 'bot' AND mtype = 'text' AND ts >= '" . $t7 . "' ORDER BY id DESC LIMIT 60000")->fetchAll(PDO::FETCH_COLUMN) as $b) { $k = $norm((string)$b); if ($k !== '') $botSet[$k] = 1; } } catch (Throwable $e) { }
 $cat = ['bot only' => [0, 0], 'bot then a person' => [0, 0], 'person only' => [0, 0], 'no chat message' => [0, 0]]; $empPat = []; $empEx = []; $n = 0;
-try { $q = $pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '" . $t7 . "' AND phone IS NOT NULL AND phone <> '' AND total > 0 AND COALESCE(tags, '') NOT LIKE '%wa-rx%' ORDER BY id DESC LIMIT 2500")->fetchAll(PDO::FETCH_ASSOC); }
+try { $q = $pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '" . $t7 . "' AND phone IS NOT NULL AND phone <> '' AND total > 0 AND COALESCE(tags, '') NOT LIKE '%wa-rx%' ORDER BY created_at DESC LIMIT 2500")->fetchAll(PDO::FETCH_ASSOC); }
 catch (Throwable $e) { echo "WON orders ERR " . substr($e->getMessage(), 0, 80) . "\n"; $q = []; }
 $m = $pdo->prepare("SELECT who, body, mtype FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? AND ts <= ? AND who IN ('bot', 'emp') ORDER BY id LIMIT 300");
 foreach ($q as $o) { $n++; $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $ot = (int)strtotime((string)$o['created_at']); $m->execute([$k, date('Y-m-d H:i:s', $ot - 3 * 86400), date('Y-m-d H:i:s', $ot)]); $rows = $m->fetchAll(PDO::FETCH_ASSOC);
