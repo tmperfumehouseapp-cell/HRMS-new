@@ -594,6 +594,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wln_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']); $sendonly = !empty($opt['sendonly']);   // sendonly = the sending job (wa.cron_send): only the sending round, no bookkeeping
     if ($cfg['mode'] === 'off') return $o;
     if (!$force && function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours 03:00-09:00'; return $o; }   // universal rule (owner, 21 Nov)
+    if (!$force) { try { if (is_file(__DIR__ . '/wa_offer.php')) { require_once __DIR__ . '/wa_offer.php'; setting_set($pdo, 'wo_hook', date('Y-m-d H:i:s') . ($sendonly ? ' cli' : ' web')); $__wo = wof_run($pdo, 30); $o['offers'] = (int)$__wo[2]; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup offer: ' . $e->getMessage()); } }   // 🎯 the price offer to the customers who answered (owner 22 Nov; wo_mode dry / live)   // failed as marketing -> sent again as utility on the spot
     if (!$force && !$sendonly) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
     if ($sendonly && ($cfg['started'] === '' || $cfg['since'] <= 0)) return $o;
     if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
@@ -605,7 +606,6 @@ function wl_tick(PDO $pdo, array $opt = []): array
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if ($book && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
     if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }
-    if ($book) { try { if (is_file(__DIR__ . '/wa_offer.php')) { require_once __DIR__ . '/wa_offer.php'; $__wo = wo_run($pdo, 30); $o['offers'] = (int)$__wo[2]; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup offer: ' . $e->getMessage()); } }   // 🎯 the price offer to the customers who answered (owner 22 Nov; wo_mode dry / live)   // failed as marketing -> sent again as utility on the spot
     $N = 8; $shard = -1;   // 8 groups always (owner 21 Nov: finish the day's plan before the next day's steps are added): cron_line.php runs up to 8 sending copies on the command line
       // SHARDS (owner, 21 Nov: speed): the due customers are split into N groups by their phone; every caller (the engine and the sending job) takes the first group nobody works on, so several run at once
     if (!$force) { $shard = wln_claim_shard($pdo, $N); if ($shard < 0) return $o; }
