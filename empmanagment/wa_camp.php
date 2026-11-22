@@ -229,6 +229,7 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
         if ($co === 1) return [false, 'This customer asked to stop promotional messages.', 0];
     }
     if (!in_array($who, ['order', 'test'], true) && wa_quiet_hours()) return [false, 'No number has room now (quiet hours 03:00-09:00: no automatic message goes).', 0];   // 🌙 universal rule (owner, 21 Nov)
+    if (in_array($who, ['bot', 'auto', 'flow', 'followup', 'recover', 'campaign'], true) && function_exists('wa_bot_paused') && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.', 0];   // ⏸ stopped by the salesperson
     if (in_array($who, ['flow', 'followup'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off until tomorrow night.', 0];
     $to = (string)($c['wa_id'] ?: '91' . $c['phone']);
     if (!in_array(strtoupper((string)($t['header_format'] ?? '')), ['', 'TEXT'], true)) {   // a photo / video / PDF on top needs its own parts
@@ -534,7 +535,7 @@ function wa_camp_delivery(PDO $pdo, int $id): array
     if ($__tot > 0 && $__known * 2 < $__tot) { $q = $pdo->prepare("SELECT m.status AS s, COUNT(*) AS n FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid WHERE i.camp_id = ? AND i.wamid != '' GROUP BY m.status"); $q->execute([$id]); $__rows = $q->fetchAll(); }   // old campaign: last_status was not kept then
     foreach ($__rows as $r) { if ($r['s'] === 'delivered') $o['delivered'] += (int)$r['n']; if ($r['s'] === 'read') { $o['delivered'] += (int)$r['n']; $o['read'] += (int)$r['n']; } }
     // 💬 replied: customers who wrote back within 2 days of their campaign message (the same rule as the report card)
-    $o['replied'] = 0; try { $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent'"); $q->execute([$id]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    $o['replied'] = 0; try { $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent' AND NOT EXISTS (SELECT 1 FROM wa_ctags gba WHERE gba.phone = i.phone AND gba.tag = 'business_autoreply')"); $q->execute([$id]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     return $o;
 }
 function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = null): array
@@ -1154,7 +1155,7 @@ function wa_camp_result(PDO $pdo, array $c, array $cfg, bool $withMix = false): 
 {
     $id = (int)$c['id']; $cn = wa_camp_counts($pdo, $id); $d = wa_camp_delivery($pdo, $id); $t = null; if ((int)$c['tpl_id']) { try { $t = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { } }
     $end = $c['finished_at'] ?: date('Y-m-d H:i:s', wa_camp_now()); $ordTo = strtotime((string)$end) + 7 * 86400;
-    $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent'"); $q->execute([$id]); $replied = (int)$q->fetchColumn();
+    $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent' AND NOT EXISTS (SELECT 1 FROM wa_ctags gba WHERE gba.phone = i.phone AND gba.tag = 'business_autoreply')"); $q->execute([$id]); $replied = (int)$q->fetchColumn();
     $sentAt = []; $q = $pdo->prepare("SELECT phone, sent_at FROM wa_camp_items WHERE camp_id = ? AND status = 'sent'"); $q->execute([$id]); foreach ($q->fetchAll() as $r) $sentAt[(string)$r['phone']] = strtotime((string)$r['sent_at']);
     $orders = 0; $rev = 0; $cust = [];
     if ($sentAt && $c['started_at']) {
@@ -1525,7 +1526,7 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
         }
         foreach (array_chunk(array_keys($dph), 800) as $ch) {
             $iq = $pdo->prepare("SELECT phone, MAX(ts) t FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts <= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") GROUP BY phone"); $iq->execute(array_merge([$from, $now], $ch));
-            foreach ($iq->fetchAll() as $r) if ((string)$r['t'] > $dph[(string)$r['phone']]) $dr['replied']++;
+            $__ar = wa_autoreply_phones($pdo, $ch); foreach ($iq->fetchAll() as $r) if ((string)$r['t'] > $dph[(string)$r['phone']] && empty($__ar[(string)$r['phone']])) $dr['replied']++;   // another business's auto-reply is not a reply
         }
         $o['sent'] += $dr['sent']; $o['delivered'] += $dr['delivered']; $o['read'] += $dr['read']; $o['failed'] += $dr['failed']; $o['replied'] += $dr['replied']; $o['utility'] += $dr['utility']; $o['marketing'] += max(0, $dr['delivered'] - $dr['utility'] - $dr['service']);
         $o['m_amount'] = round($o['marketing'] * (float)$R['marketing'], 2); $o['u_amount'] = round($o['utility'] * (float)$R['utility'], 2); $o['amount'] = round($o['m_amount'] + $o['u_amount'], 2); $o['drip'] = $dr;
@@ -1581,7 +1582,8 @@ function wa_camp_err_label(int $code, string $err = ''): string
 /** The people of a campaign with their derived status (replied > read > delivered > sent; failed / retry / skipped / queued come from the item). */
 function wa_camp_ds_sql(): string
 {
-    $rep = "EXISTS (SELECT 1 FROM wa_messages r WHERE r.phone = i.phone AND r.dir = 'in' AND r.ts > i.sent_at AND r.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY))";
+    // an answer of another business's automatic reply ("Thanks for contacting us…", chat tagged business_autoreply) is not a customer reply (owner, 23 Nov)
+    $rep = "EXISTS (SELECT 1 FROM wa_messages r WHERE r.phone = i.phone AND r.dir = 'in' AND r.ts > i.sent_at AND r.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY)) AND NOT EXISTS (SELECT 1 FROM wa_ctags gba WHERE gba.phone = i.phone AND gba.tag = 'business_autoreply')";
     return "SELECT i.*, m.status AS ms, COALESCE(m.err, '') AS merr, COALESCE(m.err_code, 0) AS mcode, CASE WHEN i.err_code = 131049 AND i.status IN ('skipped', 'retry') THEN 'held' WHEN i.status = 'skipped' THEN 'skipped' WHEN i.status = 'retry' THEN 'retry' WHEN i.status = 'failed' OR (i.status = 'sent' AND (i.last_status = 'failed' OR m.status = 'failed')) THEN 'failed' WHEN i.status IN ('queued', 'sending') THEN 'queued'
         WHEN $rep THEN 'replied' WHEN m.status = 'read' OR i.last_status = 'read' THEN 'read' WHEN m.status = 'delivered' OR i.last_status = 'delivered' THEN 'delivered' ELSE 'sent' END AS ds
         FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id = ?";

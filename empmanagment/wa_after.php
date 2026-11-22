@@ -123,6 +123,31 @@ if (!function_exists('wa_aft_days')) {
         if (!empty($b['reorder']) && (int)($b['since'] ?? 0) > 0) return 'Pichle order ko ' . (int)$b['since'] . ' din ho gaye - perfume khatam hone wala hoga? ' . $c[0] . ' x ' . $c[1] . ' ml Rs ' . $c[2] . '. Dobara order ke liye reply kijiye.';   // 🧭 his own reorder cycle
         return $season . ': ' . $c[0] . ' x ' . $c[1] . ' ml ' . $phrase[($step + $h) % count($phrase)] . ' Rs ' . $c[2] . '. Reply kijiye, hum order bana denge.';
     }
+    /** 📊 What the After-Order messages brought since $from (owner 22 Nov: "like the 30-day plan - replies, spend, orders"): sent, delivered, read, replies (the customer wrote within 2 days after a message), orders + revenue (a shop order within 7 days after a message), cost (utility / marketing rate by the template's category). */
+    function wa_aft_summary(PDO $pdo, int $from): array
+    {
+        $o = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'orders' => 0, 'buyers' => 0, 'revenue' => 0, 'utility' => 0, 'plain' => 0, 'cost' => 0.0, 'rate_u' => 0.15, 'rate_m' => 1.09];
+        try { $tc = function_exists('wa_team_cfg') ? wa_team_cfg($pdo) : null; if (is_array($tc)) { $o['rate_u'] = (float)$tc['rate_utility']; $o['rate_m'] = (float)$tc['rate_marketing']; }
+            $f = date('Y-m-d H:i:s', $from); $q = $pdo->prepare("SELECT phone, tpl_id, sent_at, wamid, status FROM wa_aft_plan WHERE status IN ('sent','failed') AND sent_at >= ?"); $q->execute([$f]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); $sent = []; $tids = [];
+            foreach ($rows as $r) if ((int)$r['tpl_id'] > 0) $tids[(int)$r['tpl_id']] = 1; $cat = [];
+            if ($tids) foreach ($pdo->query("SELECT id, category, relabelled_at FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_keys($tids))) . ")")->fetchAll(PDO::FETCH_ASSOC) as $r) $cat[(int)$r['id']] = (strtoupper((string)$r['category']) === 'UTILITY' && empty($r['relabelled_at']));
+            foreach ($rows as $r) { if ($r['status'] === 'failed') { $o['failed']++; continue; } $o['sent']++; if (!empty($cat[(int)$r['tpl_id']])) $o['utility']++; else $o['plain']++; $sent[] = $r; }
+            $o['cost'] = round($o['utility'] * $o['rate_u'] + $o['plain'] * $o['rate_m'], 2);
+            $wm = array_values(array_filter(array_column($sent, 'wamid'))); $st = [];
+            foreach (array_chunk($wm, 400) as $ch) { $x = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) $st[(string)$r['wamid']] = (string)$r['status']; }
+            foreach ($sent as $r) { $x = $st[(string)$r['wamid']] ?? ''; if ($x === 'delivered' || $x === 'read') $o['delivered']++; if ($x === 'read') $o['read']++; }
+            $byP = []; foreach ($sent as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
+            if ($byP) { $rep = [];
+                foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
+                    foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; break; } } }
+                $o['replied'] = count($rep);
+                $ord = []; $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
+                foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byP[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; }
+                $buy = []; foreach ($ord as $k => $list) foreach ($list as $ot) foreach ($byP[$k] as $st0) if ($st0 < $ot[0] && $ot[0] <= $st0 + 7 * 86400) { $o['orders']++; $o['revenue'] += (int)round($ot[1]); $buy[$k] = 1; break; }
+                $o['buyers'] = count($buy); }
+        } catch (Throwable $e) { $o['error'] = substr($e->getMessage(), 0, 80); }
+        return $o;
+    }
     /** The screen's numbers (Campaigns -> Lineup, "After-Order plan" under the 30-day plan). */
     function wa_aft_overview(PDO $pdo): array
     {
@@ -133,6 +158,7 @@ if (!function_exists('wa_aft_days')) {
             $q = $pdo->prepare("SELECT DATE(due_at) d, COUNT(*) n FROM wa_aft_plan WHERE status = 'planned' AND due_at >= ? AND due_at < ? GROUP BY d ORDER BY d"); $q->execute([date('Y-m-d 00:00:00'), date('Y-m-d 00:00:00', $now + 15 * 86400)]); $o['days'] = $q->fetchAll(PDO::FETCH_KEY_PAIR);
             $o['learn'] = json_decode((string)setting_get($pdo, 'wa_aft_learn', ''), true) ?: []; $o['failed'] = $pdo->query("SELECT SUBSTR(why, 1, 70) w, COUNT(*) n FROM wa_aft_plan WHERE status = 'failed' GROUP BY w ORDER BY n DESC LIMIT 5")->fetchAll(PDO::FETCH_KEY_PAIR);
         } catch (Throwable $e) { $o['error'] = $e->getMessage(); }
+        try { $c = json_decode((string)setting_get($pdo, 'wa_aft_sum', ''), true); if (!is_array($c) || (int)($c['t'] ?? 0) < $now - 120) { $c = ['t' => $now, 'today' => wa_aft_summary($pdo, (int)strtotime(date('Y-m-d 00:00:00'))), 'all' => wa_aft_summary($pdo, $now - 30 * 86400)]; setting_set($pdo, 'wa_aft_sum', json_encode($c)); } $o['sum'] = $c; } catch (Throwable $e) { }   // cached 2 minutes: the screen asks often
         $st = []; foreach (wa_aft_steps(40) as $k => $v) $st[] = ['step' => $k, 'day' => $v[0], 'group' => $v[1], 'kind' => strpos($v[2], 'dyn') === 0 ? substr($v[2], 4) : 'care', 'line' => strpos($v[2], 'dyn') === 0 ? wa_aft_line_dyn($pdo, $k, '0000', $now, substr($v[2], 4)) : wa_aft_line($pdo, $v[2])]; $o['steps'] = $st;
         return $o;
     }

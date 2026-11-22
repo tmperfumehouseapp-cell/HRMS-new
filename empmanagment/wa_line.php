@@ -158,7 +158,7 @@ function wl_pack(): array
     $mv('ln_px_9b', 'ln_px_9', 9, "Hi {{1}} ji, aapke liye ek aur rate: {{2}}. Pasand ka perfume chun lein, hum aapki madad karenge.", 'Perfume chun leta hoon');
     $mv('ln_px_11b', 'ln_px_11', 11, "Hi {{1}} ji, ye aapke liye hamara sabse achha rate hai: {{2}}. Order karna ho to abhi bata dein, hum confirm kar dete hain.", 'Mujhe yahi chahiye');
     $mk('ln_pp_6', 6, "{{1}} ji, prepaid karne par cart par 2% extra chhoot milti hai. Perfume aur bottle count bata dein to total bata dete hain.", 'Total bataiye', "Zaroor 🙏 Aapko kaunse perfume aur kitni bottle chahiye, bata dein, hum prepaid ke saath total bhej dete hain.");
-    foreach (wl_extra_get() as $e) { if (!empty($e['newtopic']) && !empty($e['key']) && !isset($P[$e['key']])) { $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'auto' => 1, 'newtopic' => 1]; continue; } if (empty($e['key']) || isset($P[$e['key']]) || empty($e['of']) || !isset($P[$e['of']])) continue; $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'of' => (string)$e['of'], 'auto' => 1]; }
+    foreach (wl_extra_get() as $e) { if (!empty($e['newtopic']) && !empty($e['key']) && !isset($P[$e['key']])) { $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'auto' => 1, 'newtopic' => 1, 'cat' => 'MARKETING']; continue; } if (empty($e['key']) || isset($P[$e['key']]) || empty($e['of']) || !isset($P[$e['of']])) continue; $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'of' => (string)$e['of'], 'auto' => 1]; }
     return $P;
 }
 /** The wordings of one message: the message itself and its alternatives (key => the keys that can be sent instead). */
@@ -510,6 +510,8 @@ function wln_send_any(PDO $pdo, array $c, int $tid, string $v2 = ''): array
 function wln_twins(PDO $pdo, string $phone, string $topic, int $step, int $failedTid): array
 {
     $own = wl_tpl_ids($pdo); $cand = []; foreach (wl_variants(wl_key($topic, $step)) as $k) if (!empty($own[$k]) && empty(wl_pack()[$k]['cat'])) $cand[(int)$own[$k]] = $k;
+    $win = []; try { $__sc = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (is_array($__sc)) { uasort($__sc, function ($x, $y) { return (float)($y[1] ?? 0) <=> (float)($x[1] ?? 0); }); foreach ($__sc as $__k => $__v) { if (!is_array($__v) || count($win) >= 4) continue; if ((int)($__v[0] ?? 0) >= 400 && (float)($__v[1] ?? 0) >= 0.01 && $__k !== 'ln_util_pool' && !empty($own[$__k]) && empty(wl_pack()[$__k]['cat'])) $win[(int)$own[$__k]] = (string)$__k; } } } catch (Throwable $e) { }
+    $cand = $win + $cand;   // owner 22 Nov: the wordings with the best reply rate (reorder / price / size: ~2% vs 0.17% of the shop's old utility pool) come FIRST in a rescue; the pool is the last resort
     foreach (wln_existing_map() as $k => $id) if ((int)$id === 386) { $cand[386] = $k; break; } if (!isset($cand[386])) $cand[386] = 'ln_util_386';
     if (function_exists('wa_util_pool_usable')) { try { foreach (wa_util_pool_usable($pdo) as $t0) { $pid = (int)($t0['id'] ?? 0); if ($pid > 0 && (int)($t0['nvars'] ?? 0) <= 1 && (string)($t0['pool_kind'] ?? 'open') === 'open' && !isset($cand[$pid])) $cand[$pid] = 'ln_util_pool'; } } catch (Throwable $e) { } }   // the shop's own older utility follow-ups (name only, approved, not made marketing) when the lineup's own ones are not enough
     foreach (wl_pack() as $__rk => $__rm) if (!empty($__rm['rescue']) && !empty($own[$__rk])) $cand[(int)$own[$__rk]] = $__rk;   // the eight own rescue wordings (utility, refer to his request)
@@ -595,6 +597,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if (!$force && !$sendonly) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
     if ($sendonly && ($cfg['started'] === '' || $cfg['since'] <= 0)) return $o;
     if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
+    if ($book0 = (!$force && !$sendonly && (string)setting_get($pdo, 'wl_topic_mk', '') !== '1')) { try { $__ti = wl_tpl_ids($pdo); foreach (wl_pack() as $__k => $__m) if (!empty($__m['newtopic']) && isset($__ti[$__k])) unset($__ti[$__k]); setting_set($pdo, 'wl_tpls', json_encode($__ti)); setting_set($pdo, 'wl_topic_mk', '1'); wl_learn_log($pdo, 'topics: the Brand / Party messages are made again as MARKETING (Meta stopped the utility ones: weekly creation limit)'); } catch (Throwable $e) { } }   // once: the 8 topic messages that Meta refused as utility are made again as marketing
     if (!$force && !$sendonly && function_exists('wa_lock') && count(wl_tpl_ids($pdo)) < count(wl_pack()) && wa_lock($pdo, 'wlmake', 300)) { try { wl_make_templates($pdo); } catch (Throwable $e) { } }   // a message that did not fit Meta's limit yet: made / sent in a later minute
     $book = !$force && !$sendonly && function_exists('wa_lock') && wa_lock($pdo, 'wlbook', 50);   // the bookkeeping (enrolment, re-reads, rescue) is done by ONE caller a minute; the sending is shared by shards below
     $now = time(); [, $h] = wl_ist($now); if (!$force && ($h < $cfg['from'] || $h >= $cfg['to'])) return $o;   // only inside the sending window (none unless wl_cfg.win = 1)
@@ -681,7 +684,7 @@ function wl_make_templates(PDO $pdo, int $by = 0): array
     foreach (wl_pack() as $k => $m) {
         if (!empty($ids[$k])) { $res['already']++; continue; }
         $two = (int)($m['vars'] ?? 1) > 1;
-        [$t, $err] = wa_tpl_clean(['name' => $k, 'language' => 'en', 'category' => $m['cat'] ?? 'UTILITY', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => [['type' => 'QUICK_REPLY', 'text' => $m['button']]]] + (!empty($m['photo']) ? ['header_format' => 'IMAGE', 'header_lib_id' => (int)$m['photo']] : []) + [
+        [$t, $err] = wa_tpl_clean(['name' => $k . ((string)($m['cat'] ?? '') === 'MARKETING' && !empty($m['newtopic']) ? '_mk' : ''), 'language' => 'en', 'category' => $m['cat'] ?? 'UTILITY', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => [['type' => 'QUICK_REPLY', 'text' => $m['button']]]] + (!empty($m['photo']) ? ['header_format' => 'IMAGE', 'header_lib_id' => (int)$m['photo']] : []) + [
             'examples' => ['body' => $two ? ['Rahul', '4 x 50 ml (200 ml) combo sirf Rs 2280'] : ['Rahul'], 'labels' => $two ? ['Name', 'Rate'] : ['Name']], 'folder' => 'Lineup']);
         if ($err !== '') { $res['failed'][] = $k . ': ' . $err; continue; }
         $id = wa_tpl_insert($pdo, $t, $by, 'Lineup follow-up (' . $m['topic'] . ' step ' . $m['step'] . '): answers what the customer asked; the offer goes free after the button.', 'Utility follow-up to a customer who asked.');
@@ -773,6 +776,11 @@ function wl_snap(PDO $pdo, bool $force = false): bool
     if (mt_rand(1, 30) === 1) $pdo->prepare("DELETE FROM wa_line_snap WHERE at < ?")->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]); return true;
 }
 function wl_snaps(PDO $pdo, int $n = 36): array { $o = []; foreach ($pdo->query("SELECT at, j FROM wa_line_snap ORDER BY id DESC LIMIT " . (int)$n)->fetchAll() as $r) { $j = json_decode((string)$r['j'], true); if (is_array($j)) { $j['at'] = (string)$r['at']; $o[] = $j; } } return $o; }
+/** A customer's answer that is a "no": Stop / unsubscribe / Not now / No thanks (the whole message). It is not counted as a reply (owner, 20 Nov: "Not now is not wanted in Replies"). */
+function wl_is_decline(string $body): bool
+{
+    return (bool)preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more|not now|no thanks?|no thank you|abhi nahi|abhi nahin|nahi chahiye|nahin chahiye)\s*[.!]*\s*$/iu', $body);
+}
 /** The outside look (the card on the Campaigns page): what happened since $from — messages sent / delivered / read / failed, how many people answered (a button tap or any message), orders and revenue credited to the Lineup,
  *  how many went as Utility and how many as plain (marketing) messages, and what they cost (the shop's own rates, wa_team_cfg). */
 function wl_summary(PDO $pdo, int $from): array
@@ -791,12 +799,30 @@ function wl_summary(PDO $pdo, int $from): array
     $byP = []; foreach ($sent as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
     if ($byP) { $btn = []; foreach (wl_pack() as $k => $m) $btn[mb_strtolower(trim($m['button']))] = 1; $rep = []; $tap = [];
         foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
-            foreach ($x->fetchAll() as $r) { $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; if (isset($btn[mb_strtolower(trim((string)$r['body']))])) $tap[(string)$r['phone'] . '|' . $st0] = 1; break; } } }
+            foreach ($x->fetchAll() as $r) { if (wl_is_decline((string)$r['body'])) continue; $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; if (isset($btn[mb_strtolower(trim((string)$r['body']))])) $tap[(string)$r['phone'] . '|' . $st0] = 1; break; } } }
+        if ($rep) { $__ar = wa_autoreply_phones($pdo, array_keys($rep)); foreach ($__ar as $__p => $__x) { unset($rep[$__p]); foreach (array_keys($tap) as $__k) if (strpos($__k, $__p . '|') === 0) unset($tap[$__k]); } }   // another business's auto-reply is not a customer reply
         $o['replied'] = count($rep); $o['taps'] = count($tap); }
     $ord = []; try { $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
         foreach ($x->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byP[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; } } catch (Throwable $e) { }
     $buy = []; foreach ($ord as $k => $list) foreach ($list as [$ot, $tot]) foreach ($byP[$k] as $st0) if ($st0 < $ot && $ot <= $st0 + 7 * 86400) { $o['orders']++; $o['revenue'] += (int)round($tot); $buy[$k] = 1; break; }
     $o['buyers'] = count($buy); return $o;
+}
+/** Who replied (the same people the Replies number counts: an answer within 2 days of a Lineup message, a "no" like Stop / Not now left out): newest-waiting first. Returns [rows, more]. */
+function wl_repliers(PDO $pdo, int $from, int $limit = 600): array
+{
+    $f = date('Y-m-d H:i:s', $from); $q = $pdo->prepare("SELECT phone, sent_at FROM wa_line_plan WHERE status = 'sent' AND COALESCE(sent_at, ?) >= ?"); $q->execute([$f, $f]); $byP = [];
+    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
+    $last = []; foreach (array_chunk(array_keys($byP), 400) as $ch) {
+        $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") ORDER BY id"); $x->execute(array_merge([$f], $ch));
+        foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { if (wl_is_decline((string)$r['body'])) continue; $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $last[(string)$r['phone']] = ['t' => $t, 'b' => (string)$r['body'], 'm' => (string)$r['mtype']]; break; } }
+    }
+    foreach (wa_autoreply_phones($pdo, array_keys($last)) as $__p => $__x) unset($last[$__p]);   // another business's auto-reply is not a customer reply
+    $info = []; foreach (array_chunk(array_keys($last), 400) as $ch) { $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, last_out_at, status, optout FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $c->execute($ch); foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $info[(string)$r['phone']] = $r; }
+    $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = [];
+    foreach ($last as $ph => $l) { $c = $info[$ph] ?? []; $answered = !empty($c['last_out_at']) && (string)$c['last_out_at'] >= (string)($c['last_in_at'] ?? ''); $emp = (int)($c['assigned_emp'] ?? 0);
+        $rows[] = ['phone' => $ph, 'name' => (string)($c['name'] ?? ''), 'text' => mb_substr(($l['b'] !== '' ? $l['b'] : '[' . $l['m'] . ']'), 0, 90), 'at' => date('Y-m-d H:i:s', $l['t']), 'wait' => !$answered, 'emp' => $emp, 'holder' => $emp > 0 ? (string)($nm[$emp] ?? '') : '', 'closed' => ((string)($c['status'] ?? '') === 'closed')]; }
+    usort($rows, function ($a, $b) { return [(int)$b['wait'], $b['at']] <=> [(int)$a['wait'], $a['at']]; });
+    return [array_slice($rows, 0, $limit), count($rows) > $limit, count($rows)];
 }
 /** The picture the owner looks at: customers by topic and status, how many go today / tomorrow (by hour), the templates, the old drip. */
 function wl_overview(PDO $pdo, bool $fresh = false): array
@@ -885,6 +911,14 @@ function wl_new_word(PDO $pdo, array $report): string
     return 'words: new wording ' . $key . ' written for ' . $base . ' and sent to Meta for approval (' . (int)$mk['made'] . ' made): "' . mb_substr($w['body'], 0, 90) . '…"';
 }
 /** The themes the old data showed to convert well (150 days of chats, 21 Nov: everybody who wrote 5.8% ordered; gift 22%, women 20%, men 13.7%, best-selling 12.2%). The learning adds them one at a time. */
+/** Is $ts (a timestamp) inside the season [$from, $to] (month-day strings, may wrap over the new year) or at most $lead days before it starts? */
+function wl_in_season(string $from, string $to, int $ts, int $lead = 0): bool
+{
+    $md = date('m-d', $ts); $ld = date('m-d', $ts + $lead * 86400); $in = function (string $x) use ($from, $to) { return $from <= $to ? ($x >= $from && $x <= $to) : ($x >= $from || $x <= $to); };
+    return $in($md) || $in($ld);
+}
+/** The date (Y-m-d) the season that includes $ts ends. */
+function wl_season_end(string $to, int $ts): string { $y = (int)date('Y', $ts); $d = $y . '-' . $to; if ($d < date('Y-m-d', $ts)) $d = ($y + 1) . '-' . $to; return $d; }
 function wl_topic_candidates(): array
 {
     $c = function (string $label, string $brief, array $words, string $before = '') { return ['label' => $label, 'brief' => $brief, 'words' => $words, 'before' => $before]; };
@@ -903,13 +937,17 @@ function wl_topic_candidates(): array
         'collect' => $c('Collection', 'a customer who wants to see the whole COLLECTION / catalogue / list of perfumes', ['collection', 'catalogue', 'catalog', 'exclusive', 'list', 'all perfumes']),
         'wholesal' => $c('Wholesale / resell', 'a customer who wants to buy in BULK / wholesale / to resell', ['wholesale', 'bulk', 'resell', 'reseller', 'dealer', 'business']),
         'combo' => $c('Combo', 'a customer who asks for COMBO / multi-bottle packs', ['combo', 'combos', 'pack of', 'set of', 'bundle']),
+        // SEASON topics (owner 22 Nov): made by themselves a few days before the season starts (no data scan needed), live only inside the season window [from, to] (month-day); the brief forbids any invented offer / price / date
+        'wedding' => $c('Wedding season', 'a customer who is buying perfumes for a WEDDING / marriage function (himself, the groom or bride, family, return gifts). Speak of the wedding season in a warm natural way; NO invented offer, discount, price, free item or date', ['shaadi', 'shadi', 'wedding', 'marriage', 'lagan', 'lagn', 'vivah', 'baraat', 'dulha', 'dulhan', 'groom', 'bride', 'engagement', 'sagai', 'reception', 'લગ્ન', 'શાદી', 'शादी', 'विवाह', 'सगाई']) + ['season' => ['11-15', '02-28']],
+        'newyear' => $c('New Year', 'a customer who wants a perfume for NEW YEAR / New Year party or as a New Year gift. Speak of the New Year in a warm natural way; NO invented offer, discount, price, free item or date', ['new year', 'newyear', 'happy new year', '2027', 'nye', 'new years', 'नया साल', 'નવું વર્ષ']) + ['season' => ['12-05', '01-15']],
     ];
 }
 /** A new topic becomes live (its words join the classification) when its 4 messages are approved on 3+ accounts. */
 function wl_topics_refresh(PDO $pdo): int
 {
     $t = json_decode((string)setting_get($pdo, 'wl_topics_extra', ''), true); if (!is_array($t) || !$t) return 0; $ok = wln_wide_ok($pdo); $n = 0;
-    foreach ($t as &$x) { if (!empty($x['ready'])) continue; $all = true; for ($i = 1; $i <= 4; $i++) if (!in_array('ln_' . $x['key'] . '_' . $i, $ok, true)) $all = false;
+    foreach ($t as &$x) { if (!empty($x['until']) && date('Y-m-d') > (string)$x['until']) { if (!empty($x['ready'])) { $x['ready'] = false; $n++; wl_learn_log($pdo, 'topic "' . $x['label'] . '" is over (its season ended ' . $x['until'] . ')'); } continue; }   // a season topic ends with its season
+        if (!empty($x['ready'])) continue; $all = true; for ($i = 1; $i <= 4; $i++) if (!in_array('ln_' . $x['key'] . '_' . $i, $ok, true)) $all = false;
         if ($all) { $x['ready'] = true; $n++; wl_learn_log($pdo, 'topic "' . $x['label'] . '" is live: its 4 messages are approved, customers who write about it now get its ladder'); } } unset($x);
     if ($n) { setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t); }
     return $n;
@@ -937,8 +975,9 @@ function wl_new_topic(PDO $pdo): string
     if (!function_exists('wcr_ai')) return 'topics: Claude is not available on this server';
     $t = json_decode((string)setting_get($pdo, 'wl_topics_extra', ''), true); if (!is_array($t)) $t = [];
     $waiting = []; foreach ($t as $x) if (empty($x['ready']) && time() - (int)strtotime((string)($x['at'] ?? 'now')) < 4 * 86400) $waiting[] = (string)$x['label']; if (count($waiting) >= 2) return 'topics: waiting for Meta to approve the messages of ' . implode(', ', $waiting);
-    $have = array_column($t, 'key'); $st = json_decode((string)setting_get($pdo, 'wl_theme_stats', ''), true); $pick = null; $best = -1.0;
-    foreach (wl_topic_candidates() as $k => $c) { if (in_array($k, $have, true)) continue; $v = is_array($st) ? ($st['themes'][$k] ?? null) : null;
+    $have = array_column($t, 'key'); $st = json_decode((string)setting_get($pdo, 'wl_theme_stats', ''), true); $pick = null; $best = -1.0; $sea = false;
+    foreach (wl_topic_candidates() as $k => $c) { if (empty($c['season']) || in_array($k, $have, true)) continue; if (wl_in_season($c['season'][0], $c['season'][1], time(), 10)) { $pick = [$k, $c]; $sea = true; break; } }   // a season topic first (owner 22 Nov)
+    foreach (wl_topic_candidates() as $k => $c) { if ($sea || !empty($c['season']) || in_array($k, $have, true)) continue; $v = is_array($st) ? ($st['themes'][$k] ?? null) : null;
         if ($v !== null) { if ((int)$v['n'] < 250 || (float)$v['rate'] < 1.3 * (float)($st['overall']['rate'] ?? 0)) continue; if ((float)$v['rate'] > $best) { $best = (float)$v['rate']; $pick = [$k, $c]; } }
         elseif ($pick === null && !is_array($st)) { $pick = [$k, $c]; break; } }   // no scan yet: the list's own order
     if (!$pick) return 'topics: every known theme is added already';
@@ -951,7 +990,7 @@ function wl_new_topic(PDO $pdo): string
     for ($i = 0; $i < 4; $i++) { $w = ['body' => (string)($ms[$i]['body'] ?? ''), 'button' => (string)($ms[$i]['button'] ?? ''), 'free' => (string)($ms[$i]['free'] ?? '')]; [$ok, $why] = wl_check_wording($w, $pool); if (!$ok) return 'topics: message ' . ($i + 1) . ' of "' . $c['label'] . '" was refused (' . $why . ')';
         $k = 'ln_' . $key . '_' . ($i + 1); $pool[$k] = ['body' => $w['body'], 'button' => $w['button']]; $add[] = ['key' => $k, 'topic' => $key, 'step' => $i + 1, 'body' => $w['body'], 'button' => $w['button'], 'free' => $w['free'], 'newtopic' => 1, 'at' => date('Y-m-d H:i:s')]; }
     foreach ($add as $e) $extra[] = $e; setting_set($pdo, 'wl_extra', json_encode($extra, JSON_UNESCAPED_UNICODE)); wl_extra_get($extra);
-    $t[] = ['key' => $key, 'label' => $c['label'], 'words' => $c['words'], 'before' => $c['before'], 'ready' => false, 'at' => date('Y-m-d H:i:s')]; setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t);
+    $t[] = ['key' => $key, 'label' => $c['label'], 'words' => $c['words'], 'before' => $c['before'], 'ready' => false, 'at' => date('Y-m-d H:i:s')] + (!empty($c['season']) ? ['until' => wl_season_end((string)$c['season'][1], time())] : []); setting_set($pdo, 'wl_topics_extra', json_encode($t, JSON_UNESCAPED_UNICODE)); wl_topics_extra_get($t);
     $mk = ['made' => 0]; try { $mk = wl_make_templates($pdo); } catch (Throwable $e) { }
     return 'topics: new topic "' . $c['label'] . '" (the old data: its customers order more than average): 4 messages written and sent to Meta for approval (' . (int)$mk['made'] . ' made); it goes live when approved on 3+ accounts';
 }
@@ -1048,6 +1087,10 @@ if (strpos($__wl, 'wa.line_') === 0) {
     switch ($__wl) {
         case 'wa.line_get': json_response(['ok' => true] + wl_overview($pdo));
         case 'wa.line_aft': { if (!function_exists('wa_aft_overview')) require_once __DIR__ . '/wa_after.php'; json_response(['ok' => true] + wa_aft_overview($pdo)); }   // the After-Order plan card under the 30-day plan
+        case 'wa.line_replies': {   // 💬 the people behind the Replies number: today or since the start
+            $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : wl_ist_at($td0, 0);
+            [$rows, $more, $n] = wl_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
+        }
         case 'wa.line_card': { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); json_response(['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60), 'tomorrow' => wl_overview($pdo)['tomorrow']]); }
         case 'wa.line_report': json_response(['ok' => true] + wl_report($pdo, max(7, min(90, (int)($_GET['days'] ?? 30)))));
         case 'wa.line_customer': json_response(['ok' => true] + wl_customer($pdo, preg_replace('/\D/', '', (string)($_GET['phone'] ?? ''))));

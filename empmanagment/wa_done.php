@@ -162,3 +162,21 @@ if ($__wdn === 'wa.order_done') {
     if (!empty($in['undo'])) { $pdo->prepare("UPDATE wa_order_done SET mute_until = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s'), $key]); if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🔔 Automatic messages switched back on by ' . (string)($auth['username'] ?? 'a person')); } catch (Throwable $e) { } } json_response(['ok' => true] + wa_done_state($pdo, $key)); }
     json_response(['ok' => true] + wa_done_mark($pdo, $key, (int)($auth['employee_id'] ?? 0), 'person', trim(mb_substr((string)($in['order'] ?? ''), 0, 40))));
 }
+
+// ⏸ STOP BOT MESSAGES (owner, 22 Nov): the chat's holder (or an admin) pauses every automatic message to ONE customer for a chosen time. wa.bot_pause GET {phone} → {paused, until, mins_left, by} · POST {phone, mins} → pause (1 min – 72 h) · POST {phone, resume:1} → bot back on.
+if ($__wdn === 'wa.bot_pause') {
+    $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'Storage is not available.'], 500);
+    $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $in = $isPost ? json_input() : $_GET; $key = substr(preg_replace('/\D+/', '', (string)($in['phone'] ?? '')), -10);
+    $c = strlen($key) === 10 && function_exists('wa_contact') ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
+    if (!function_exists('wa_can_chat') || !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'Only the person who holds this chat (or an admin) can pause the bot.'], 403);
+    $state = function () use ($pdo, $key) { $u = function_exists('wa_bot_paused') ? wa_bot_paused($pdo, $key) : null; $by = ''; try { $q = $pdo->prepare("SELECT v FROM wq_meta WHERE k = ?"); $q->execute(['botpauseby:' . $key]); $by = (string)$q->fetchColumn(); } catch (Throwable $e) { } return ['paused' => $u !== null, 'until' => (string)$u, 'mins_left' => $u !== null ? max(1, (int)ceil((strtotime($u) - time()) / 60)) : 0, 'by' => $u !== null ? $by : '']; };
+    if (!$isPost) json_response(['ok' => true] + $state());
+    $put = function ($k, $v) use ($pdo) { try { $pdo->exec("CREATE TABLE IF NOT EXISTS wq_meta (k VARCHAR(40) NOT NULL PRIMARY KEY, v TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $pdo->prepare("INSERT INTO wq_meta (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")->execute([$k, $v]); } catch (Throwable $e) { } };
+    $who = (string)($auth['username'] ?? 'a person');
+    if (!empty($in['resume'])) { $put('botpause:' . $key, date('Y-m-d H:i:s', time() - 1)); if (function_exists('wa_event')) { try { wa_event($pdo, $key, '▶ Bot messages switched back on by ' . $who); } catch (Throwable $e) { } } json_response(['ok' => true, 'paused' => false, 'until' => '', 'mins_left' => 0, 'by' => '']); }
+    $mins = (int)($in['mins'] ?? 0); if ($mins < 1) json_response(['error' => 'Choose for how long.'], 422); if ($mins > 72 * 60) $mins = 72 * 60;
+    $until = date('Y-m-d H:i:s', time() + $mins * 60); $put('botpause:' . $key, $until); $put('botpauseby:' . $key, $who);
+    if (function_exists('wa_event')) { try { wa_event($pdo, $key, '⏸ Bot messages stopped by ' . $who . ' until ' . date('D g:i a', strtotime($until)) . ' (' . ($mins >= 60 ? round($mins / 60, 1) . ' h' : $mins . ' min') . ')'); } catch (Throwable $e) { } }
+    json_response(['ok' => true] + $state());
+}
+

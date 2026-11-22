@@ -150,8 +150,10 @@ function cx2_guess($text) {
 
 /** WhatsApp chats Claude tagged "Complaint" (last 3 days) that are not on the board yet → a ticket nobody owns yet (a person takes it; nothing is sent to the customer).
  *  Runs from the tick and when someone opens the board / sees the badge (at most every 2 minutes), so it works even when the background job is not running. */
+/** The system never raises a complaint by itself (owner, 22 Nov 2026: "only the sales person raises it, by hand, after reading the customer's message"). One switch for every automatic way. */
+function cx_auto_raise_allowed(): bool { return false; }
 function cx2_wa_tagged(PDO $pdo, $force = false) {
-    if (cx_cfg($pdo, 'auto_detect') !== '1') return 0;
+    if (!cx_auto_raise_allowed() || cx_cfg($pdo, 'auto_detect') !== '1') return 0;
     if (!$force && (int)cx_state_get($pdo, 'wa_tag_at', '0') > time() - 120) return 0; cx_state_put($pdo, 'wa_tag_at', (string)time());
     try { $q = $pdo->prepare("SELECT phone, name, summary, tagged_at FROM wa_contacts WHERE tag = 'complaint' AND tagged_at >= ? AND COALESCE(cx_id, 0) = 0 ORDER BY tagged_at DESC LIMIT 20"); $q->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]); $rows = $q->fetchAll(); } catch (PDOException $e) { return 0; }
     if (!$rows) return 0;
@@ -161,6 +163,7 @@ function cx2_wa_tagged(PDO $pdo, $force = false) {
         if (cx2_find_open($pdo, $key, '')) continue;
         if (!cx_orders($pdo, $key)) continue;      // a customer who has never ordered cannot have a wrong-item / delivery complaint — a sales chat (price, payment link) must not become a ticket by a guess
         $m = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND body <> '' ORDER BY id DESC LIMIT 4"); $m->execute([$key]); $said = implode(' · ', array_reverse(array_column($m->fetchAll(), 'body')));
+        if (preg_match('/(\bcodes?\b|coupon|promo|\bog\b)/u', mb_strtolower($said))) continue;   // owner 22 Nov: OG code talk is not a complaint
         $g = cx2_guess(trim((string)$r['summary']) . ' ' . $said); if ($g === '' || !isset($P[$g])) $g = 'other';
         $sum = trim((string)$r['summary']) !== '' ? (string)$r['summary'] : cx_short($said, 300); if (trim($sum) === '') $sum = 'The customer complained on WhatsApp.';
         $a = cx_raise($pdo, [], ['emp' => 0, 'admin' => false, 'mgr' => false, 'team' => true, 'desks' => []], ['problem' => $g, 'source' => 'whatsapp', 'phone' => $key, 'name' => (string)$r['name'], 'summary' => $sum, 'urgency' => 'normal', 'auto' => 1]);
@@ -760,14 +763,14 @@ function cx2_tick(PDO $pdo, $now) {
         if (function_exists('b2_ai_on') && b2_ai_on()) { $q = $pdo->prepare("SELECT id FROM cx_cases WHERE status IN ('open','reopened') AND flag_ai = 0 AND raised_at >= ? ORDER BY id DESC LIMIT 3"); $q->execute([date('Y-m-d', $now - 3 * 86400)]); foreach ($q->fetchAll() as $x) { cx2_flag($pdo, (int)$x['id'], true, true); $res['flag']++; } }
         try { $res['wa_tag'] = cx2_wa_tagged($pdo, true); } catch (Throwable $e) { }   // 6a) chats Claude tagged "Complaint" in WhatsApp
         // 6) WhatsApp messages that clearly describe a problem of a real customer → a ticket nobody owns yet (a person takes it; nothing is sent to the customer)
-        if (cx_cfg($pdo, 'auto_detect') === '1' && function_exists('wa_contact')) {
+        if (cx_auto_raise_allowed() && cx_cfg($pdo, 'auto_detect') === '1' && function_exists('wa_contact')) {
             $last = (int)cx_state_get($pdo, 'auto_last_msg', '0'); $mx = (int)$pdo->query("SELECT COALESCE(MAX(id),0) FROM wa_messages")->fetchColumn();
             if ($last === 0) { cx_state_put($pdo, 'auto_last_msg', (string)$mx); }
             elseif ($mx > $last) {
                 $by = []; $q = $pdo->prepare("SELECT phone, body FROM wa_messages WHERE id > ? AND dir = 'in' AND mtype = 'text' AND body <> '' ORDER BY id LIMIT 300"); $q->execute([$last]); foreach ($q->fetchAll() as $m) $by[$m['phone']][] = $m['body'];
                 cx_state_put($pdo, 'auto_last_msg', (string)$mx); $made = 0;
                 foreach ($by as $ph => $bodies) {
-                    if ($made >= 5) break; $txt = implode(' ', $bodies); $g = cx2_guess($txt); if (!in_array($g, ['leak', 'wrong', 'notdelivered', 'quality'], true)) continue;
+                    if ($made >= 5) break; $txt = implode(' ', $bodies); $g = cx2_guess($txt); if (!in_array($g, ['leak', 'wrong', 'notdelivered', 'quality'], true)) continue; if (preg_match('/(\bcodes?\b|coupon|promo|\bog\b)/u', mb_strtolower($txt))) continue;   // owner 22 Nov: talk about our OG code is not a complaint - never raised by itself (wa_growth asks the salesperson)
                     if (cx2_find_open($pdo, $ph, '') || cx2_find_recent($pdo, $ph, '') || !cx_orders($pdo, $ph)) continue;
                     $a = cx_raise($pdo, [], ['emp' => 0, 'admin' => false, 'mgr' => false, 'team' => true, 'desks' => []], ['problem' => $g, 'source' => 'whatsapp', 'phone' => $ph, 'summary' => cx_short($txt, 300), 'urgency' => 'normal', 'auto' => 1]);
                     if ($a[0] && empty($a[3]['existing'])) { $made++; $res['auto']++; cx_ev($pdo, (int)$a[3]['id'], 0, 'note', 'Claude noticed this on WhatsApp and opened the ticket. Take it to answer the customer (nothing was sent to them).'); cx_notify($pdo, array_merge(cx_desk_people($pdo, cx_problems()[$g][2]), $mg), '🤖 Possible complaint on WhatsApp · ' . cx_code($a[3]['id']), cx_short($txt, 100), (int)$a[3]['id']); }
