@@ -127,19 +127,24 @@
   /* 💬 Replies: the people behind the Replies number (a "Stop" / "Not now" is not a reply and is not here). The list on the left, the picked customer's full WhatsApp chat on the right (the real chat screen:
      reply, Take over, Assign…). Refresh button, and it refreshes by itself every 30 seconds while the window is open. */
   async function replies(scope) {
-    const m = modal('💬 Replies — ' + (scope === 'total' ? 'since the start' : 'today')); m.el.classList.add('cu-wide', 'cu-xl'); m.body.innerHTML = loading;
+    if (!document.getElementById('lnRpCss')) { const st = document.createElement('style'); st.id = 'lnRpCss'; st.textContent = `
+.ln-big .wp-mb{max-width:98vw;width:98vw;max-height:96vh;height:96vh;display:flex;flex-direction:column} .ln-big .wp-mb .wp-mc{flex:1;min-height:0;overflow:auto}
+.ln-rp{display:grid;grid-template-columns:minmax(240px,30%) 1fr;gap:12px;height:calc(96vh - 190px);min-height:480px} .ln-rp .l{overflow:auto;border:1px solid #e3e8ef;border-radius:12px;background:#fff} .ln-rp .r{overflow:hidden;border:1px solid #e3e8ef;border-radius:12px;background:#efeae2;padding:0;display:flex;flex-direction:column}
+.ln-rp .it{padding:9px 11px;border-bottom:1px solid #eef1f4;cursor:pointer} .ln-rp .it:hover{background:#f6f8fa} .ln-rp .it.on{background:#e3f5ec;box-shadow:inset 3px 0 #1a8f5a} .ln-rp .it b{font-size:13.5px} .ln-rp .it .ph{color:#64748b;font-weight:500;font-size:12px;margin-left:4px} .ln-rp .it small{display:block;color:#64748b;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:700px){.ln-rp{grid-template-columns:1fr;grid-template-rows:200px 1fr;height:80vh}}`; document.head.appendChild(st); }
+    const m = modal('💬 Replies — ' + (scope === 'total' ? 'since the start' : 'today')); m.el.classList.add('ln-big'); m.body.innerHTML = loading;
     let rows = [], sel = '', n = 0, more = false, at = '', f = 'all', q = '';
     const pretty = (p) => { const d = String(p).replace(/\D/g, '').slice(-10); return d.length === 10 ? '+91 ' + d.slice(0, 5) + ' ' + d.slice(5) : String(p); };
     const load = async () => { try { const d = await api.get('wa.line_replies', { scope }); rows = d.rows || []; more = !!d.more; n = d.count || rows.length; at = d.at || ''; return true; } catch (e) { m.body.innerHTML = errBox(e.message); return false; } };
     if (!(await load())) return;
     m.body.innerHTML = `<div class="wp-hint" style="margin:0 0 6px"><b id="rpN"></b> customers replied. Tap a customer: the full chat opens on the right — reply, take over or assign right there. A "Stop" or "Not now" is not counted.</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><button type="button" class="wp-btn s" data-f="all">All</button><button type="button" class="wp-btn s" data-f="wait">⏳ Waiting for an answer</button><input class="wp-in" id="rpQ" type="search" placeholder="Search name or number…" style="max-width:220px"><span style="flex:1"></span><button type="button" class="wp-btn p s" id="rpRef">🔄 Refresh</button><span class="wp-hint" id="rpNew" style="margin:0"></span></div>
-      <div class="cu-rp"><div class="l" id="rpL"></div><div class="r" id="rpR"><div class="wp-empty" style="margin:auto">Tap a customer on the left.</div></div></div>`;
+      <div class="ln-rp"><div class="l" id="rpL"></div><div class="r" id="rpR"><div class="wp-empty" style="margin:auto">Tap a customer on the left.</div></div></div>`;
     const L = $(m.body, '#rpL'), R = $(m.body, '#rpR');
     const drawL = () => {
       const w = rows.filter((r) => (f === 'all' || r.wait) && (!q || (r.name + ' ' + r.phone).toLowerCase().indexOf(q) > -1));
       $(m.body, '#rpN').textContent = fmt(n) + (more ? '+' : ''); m.body.querySelectorAll('[data-f]').forEach((b) => { b.classList.toggle('p', b.dataset.f === f); });
-      L.innerHTML = w.length ? w.map((r) => `<div class="it ${sel === r.phone ? 'on' : ''}" data-p="${esc(r.phone)}"><b>${r.wait ? '<span style="color:#c2262b">●</span> ' : ''}${esc(r.name || pretty(r.phone))}</b> <span class="cu-ph">${esc(pretty(r.phone))}</span><small>${esc(r.text || '')}</small><small style="color:#64748b">${esc(String(r.at).slice(11, 16))} · ${r.wait ? 'waiting for an answer' : '✓ answered'}${r.holder ? ' · ' + esc(r.holder) : r.emp ? '' : ' · nobody holds it'}${r.closed ? ' · closed' : ''}</small></div>`).join('') : '<div class="wp-empty">Nobody here.</div>';
+      L.innerHTML = w.length ? w.map((r) => `<div class="it ${sel === r.phone ? 'on' : ''}" data-p="${esc(r.phone)}"><b>${r.wait ? '<span style="color:#c2262b">●</span> ' : ''}${esc(r.name || pretty(r.phone))}</b> <span class="ph">${esc(pretty(r.phone))}</span><small>${esc(r.text || '')}</small><small style="color:#64748b">${esc(String(r.at).slice(11, 16))} · ${r.wait ? 'waiting for an answer' : '✓ answered'}${r.holder ? ' · ' + esc(r.holder) : r.emp ? '' : ' · nobody holds it'}${r.closed ? ' · closed' : ''}</small></div>`).join('') : '<div class="wp-empty">Nobody here.</div>';
       L.querySelectorAll('[data-p]').forEach((el) => { el.onclick = () => open(el.dataset.p); });
     };
     function open(ph) {   // the right side is the REAL PC chat screen (wa_one.html), the same as the campaign Replies window
