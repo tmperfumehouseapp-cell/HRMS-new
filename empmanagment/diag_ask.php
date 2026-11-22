@@ -4,7 +4,7 @@
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $root = $argv[1] ?? ''; require $root . 'empmanagment/config.php';
 $pdo = new PDO('mysql:host=' . (defined('DB_HOST') ? DB_HOST : '127.0.0.1') . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-$GLOBALS['pdo'] = $pdo; $action = ''; $t0 = date('Y-m-d 00:00:00'); $t36 = date('Y-m-d H:i:s', time() - 36 * 3600);
+date_default_timezone_set('Asia/Kolkata'); $GLOBALS['pdo'] = $pdo; $action = ''; $t0 = date('Y-m-d 00:00:00'); $t36 = date('Y-m-d H:i:s', time() - 36 * 3600);
 $one = function (string $sql, array $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return [['ERR ' . substr($e->getMessage(), 0, 70)]]; } };
 // 1) the query gate: who is blocked right now - counted straight from the query ledger (the gate function needs the web context): combined normal + campaign queries of the working day (10:00 -> 10:00), the same rule as wag_mkt_gate_msg
 try { $dt = []; foreach ($pdo->query("SELECT weekday, start_time FROM day_timing")->fetchAll(PDO::FETCH_NUM) as $r) $dt[(int)$r[0]] = substr((string)$r[1], 0, 5); $ovr = json_decode((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'day_timing_overrides'")[0][0] ?? ''), true) ?: [];
