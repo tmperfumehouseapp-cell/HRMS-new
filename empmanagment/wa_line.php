@@ -796,6 +796,9 @@ function wl_summary(PDO $pdo, int $from): array
     $wm = array_filter(array_column($sent, 'wamid')); $st = [];
     foreach (array_chunk($wm, 400) as $ch) { $x = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $r) $st[(string)$r['wamid']] = (string)$r['status']; }
     foreach ($sent as $r) { $x = $st[(string)$r['wamid']] ?? ''; if (in_array($x, ['delivered', 'read'], true)) $o['delivered']++; if ($x === 'read') $o['read']++; }
+    // Meta does NOT bill a message whose receipt says failed (131049 and the other blocks): the cost counts only the rest (owner 22 Nov: the card said Rs 32,700 for a day that really cost about Rs 13,500)
+    $__fu = 0; $__fp = 0; foreach ($sent as $r) { if (($st[(string)$r['wamid']] ?? '') !== 'failed') continue; $tid = (int)$r['tpl_id'] > 0 ? (int)$r['tpl_id'] : (int)($ids[(string)$r['tpl_key']] ?? 0); if (!empty($cat[$tid])) $__fu++; else $__fp++; }
+    $o['not_billed'] = $__fu + $__fp; $o['utility'] -= $__fu; $o['plain'] -= $__fp; $o['cost_utility'] = round($o['utility'] * $o['rate_u'], 2); $o['cost_plain'] = round($o['plain'] * $o['rate_m'], 2); $o['cost'] = round($o['cost_utility'] + $o['cost_plain'], 2);
     $byP = []; foreach ($sent as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
     if ($byP) { $btn = []; foreach (wl_pack() as $k => $m) $btn[mb_strtolower(trim($m['button']))] = 1; $rep = []; $tap = [];
         foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
