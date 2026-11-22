@@ -420,7 +420,7 @@
         if (t) { e.stopPropagation(); const ph = t.dataset.tk, pk = t.dataset.pk; t.disabled = true; t.textContent = 'Taking…';
           try { await api.post(pk === 'grab' ? 'wq.grab' : pk === 'rescue' ? 'wq.rescue_take' : 'wq.req_take', { phone: ph }); const x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; S.req = (S.req || []).filter((y) => y.phone !== ph); S.reqLate = (S.reqLate || []).filter((y) => y.phone !== ph); S.grab = (S.grab || []).filter((y) => y.phone !== ph); toast('The chat is yours now ✓'); loadList(true); openChat(ph, { name: x.name || '' }); }
           catch (er) { toast(er.message, true); t.disabled = false; t.textContent = '✋ Take over'; loadReq(); } return; }
-        const b = e.target.closest('[data-peek]'); if (!b) return; toast('Take the chat first ✋ — it opens after you take it. Nobody is given chats: take what you can close.'); };   // 🏪 the chat does not open before it is taken
+        const b = e.target.closest('[data-peek]'); if (!b) return; const ph = b.dataset.peek, pk = b.dataset.pk, x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; openChat(ph, { peek: pk === 'grab' ? 'grab' : pk === 'rescue' ? 'rescue' : 'req', name: x.name || '' }); };   // 🙋 owner (22 Nov): tap a request = the WHOLE chat opens, read only; the salesperson takes it by choice (the big ✋ Take over button inside, or the ✋ button on the row)
     }
     async function loadList(quiet) {
       try {
