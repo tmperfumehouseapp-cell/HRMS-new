@@ -32,25 +32,13 @@ jobs:
           $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
           require $f;
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
-          date_default_timezone_set("Asia/Kolkata");
-          echo "now (IST) " . date("Y-m-d H:i") . "\n";
-          $sql = "SELECT o.store_key sk, o.order_name nm, o.created_at ca, o.total total, o.tags tg, a.alloc_id aid, a.order_type ot
-                  FROM shop_orders o LEFT JOIN order_allocations a ON a.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
-                  WHERE o.created_at >= '2026-11-15 10:00:00' AND o.created_at < '2026-11-23 00:00:00' AND o.total > 0 ORDER BY o.created_at";
-          try { $rows = $d->query($sql)->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 200) . "\n"; exit; }
-          $addon = []; try { foreach ($d->query("SELECT LOWER(TRIM(LEADING '#' FROM TRIM(order_name))) k, SUM(price) s FROM employee_addons WHERE addon_date >= '2026-11-13' GROUP BY k")->fetchAll(PDO::FETCH_ASSOC) as $r) $addon[$r["k"]] = (float)$r["s"]; } catch (Throwable $e) { }
-          $ev = [];
-          foreach ($rows as $r) { if (stripos((string)$r["tg"], "cancel") !== false || $r["aid"] === null) continue; $k = strtolower(trim(ltrim(trim($r["nm"]), "#"))); $ev[] = [$r["ca"], (float)$r["total"] + ($addon[$k] ?? 0.0), in_array($r["ot"], ["query", "campaign"], true) ? $r["ot"] : "other"]; }
-          try { foreach ($d->query("SELECT order_date, total, order_type FROM manual_orders WHERE order_date >= '2026-11-15 10:00:00' AND order_date < '2026-11-23 00:00:00'")->fetchAll(PDO::FETCH_ASSOC) as $m) $ev[] = [$m["order_date"], (float)$m["total"], in_array($m["order_type"], ["query", "campaign"], true) ? $m["order_type"] : "other"]; } catch (Throwable $e) { }
-          $win = function ($label, $from, $to) use ($ev) { $n = 0; $s = 0.0; $t = ["query" => [0, 0.0], "campaign" => [0, 0.0], "other" => [0, 0.0]]; foreach ($ev as $e) { if ($e[0] < $from || $e[0] >= $to) continue; $n++; $s += $e[1]; $t[$e[2]][0]++; $t[$e[2]][1] += $e[1]; }
-            echo str_pad($label, 40) . " orders " . str_pad($n, 4) . " · collection Rs " . str_pad(number_format(round($s)), 9) . " · Query " . $t["query"][0] . " / Rs " . number_format(round($t["query"][1])) . " · Campaign " . $t["campaign"][0] . " / Rs " . number_format(round($t["campaign"][1])) . " · Other " . $t["other"][0] . " / Rs " . number_format(round($t["other"][1])) . "\n"; };
-          echo "\n=== TODAY 21 Nov, day started 12:25 PM (and what 10 AM would have given) ===\n";
-          $win("21 Nov 12:25 -> now", "2026-11-21 12:25:00", "2026-11-22 10:00:00");
-          echo "\n=== hour by hour, 21 Nov (clock hours) ===\n";
-          $win("12:25 - 13:00", "2026-11-21 12:25:00", "2026-11-21 13:00:00");
-          for ($h = 13; $h <= 23; $h++) $win(sprintf("%02d:00 - %02d:00", $h, $h + 1), sprintf("2026-11-21 %02d:00:00", $h), $h < 23 ? sprintf("2026-11-21 %02d:00:00", $h + 1) : "2026-11-22 00:00:00");
-          echo "\n=== earlier days, 10 AM -> next day 10 AM (20th ends 21st 12:25 PM) ===\n";
-          foreach (["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"] as $dd) { $nx = date("Y-m-d", strtotime($dd . " +1 day")); $win($dd . " 10:00 -> " . $nx . ($dd === "2026-11-20" ? " 12:25" : " 10:00"), $dd . " 10:00:00", $dd === "2026-11-20" ? "2026-11-21 12:25:00" : $nx . " 10:00:00"); }
+          function sg($d, $k) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); return (string)$q->fetchColumn(); } catch (Throwable $e) { return ""; } }
+          foreach (["ml_slab", "ml_slab_chart", "price_chart", "cm_chart"] as $k) { $v = sg($d, $k); echo "setting $k: " . ($v === "" ? "(none)" : strlen($v) . " bytes") . "\n"; }
+          // find the chart JSON among the settings: the one that has rows with ml and p
+          $found = null; try { foreach ($d->query("SELECT setting_key, setting_value FROM hrms_settings WHERE setting_value LIKE '%\"rows\"%' AND setting_value LIKE '%\"cols\"%' LIMIT 20")->fetchAll(PDO::FETCH_ASSOC) as $r) { $j = json_decode($r["setting_value"], true); if (is_array($j) && !empty($j["rows"][0]["ml"]) && isset($j["rows"][0]["p"])) { echo "chart setting key: " . $r["setting_key"] . "\n"; $found = $j; break; } } } catch (Throwable $e) { echo "n/a " . $e->getMessage() . "\n"; }
+          if ($found) { echo "cols: " . json_encode($found["cols"] ?? []) . " names: " . json_encode($found["names"] ?? []) . "\n"; foreach ($found["rows"] as $r) if ((int)$r["ml"] >= 80 && (int)$r["ml"] <= 260) echo "CHART " . (int)$r["ml"] . " ml: " . json_encode($r["p"]) . "\n"; }
+          // the bot's price list (price_list.php) lines
+          try { foreach ($d->query("SELECT setting_key, LENGTH(setting_value) n FROM hrms_settings WHERE setting_key LIKE '%price%' OR setting_key LIKE 'pl_%' LIMIT 30")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "setting " . $r["setting_key"] . " " . $r["n"] . " bytes\n"; } catch (Throwable $e) { }
           PHP
           php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
           REMOTE
