@@ -6,7 +6,7 @@
  *  What goes: only UTILITY messages (the Lineup's utility twins and the shop's approved utility pool), never the same message twice to one customer, at most one a day, 09:00-21:00 (03-09 is universal quiet).
  *  When: gaps in days after message 1..6 = 3, 4, 7, 7, 9, 9 (read but silent), the same doubled from the 3rd message for customers who never opened one; then every 7 days up to 90 days after entering, then done.
  *  Leaves: wrote (the Lineup takes him), ordered (After-Order takes him), opted out, 90 days.
- *  Mode (setting wcd_mode): 'dry' (default) = enrol and count, send nothing · 'live' = send · 'off'. Daily cap wcd_cap (default 5000).
+ *  Mode (setting wcd_mode): 'live' (default, owner 22 Nov) = send · 'dry' = enrol and count, send nothing · 'off'. Daily cap wcd_cap (default 5000).
  *  The LEDGER = wa_cold_cust (one row a customer: entered, segment, sent, last sent, status) + wa_cold_log (one row a message). The summary joins them with receipts, replies, Lineup rows and shop orders.
  *  Functions only (PHP 7.4 safe); called from the Lineup tick and by diag_ask.php. */
 if (!function_exists('wcd_tick')) {
@@ -76,7 +76,7 @@ if (!function_exists('wcd_tick')) {
     /** The minute job. [entered, sent, waiting, left]. */
     function wcd_tick(PDO $pdo, int $budget = 30): array
     {
-        $o = ['entered' => 0, 'sent' => 0, 'waiting' => 0, 'left' => 0]; $mode = wcd_set($pdo, 'wcd_mode', 'dry'); if ($mode === 'off' || !wcd_tables($pdo)) return $o;
+        $o = ['entered' => 0, 'sent' => 0, 'waiting' => 0, 'left' => 0]; $mode = wcd_set($pdo, 'wcd_mode', 'live'); if ($mode === 'off' || !wcd_tables($pdo)) return $o;
         if (!function_exists('wa_lock') || !wa_lock($pdo, 'wcdtick', 55)) return $o; $now = time(); $t0 = microtime(true); $o['mode'] = $mode;
         try { setting_set($pdo, 'wcd_tick_at', date('Y-m-d H:i:s', $now)); } catch (Throwable $e) { }
         try { $en = wcd_enrol($pdo, $now, 12.0); $o['entered'] = $en[1]; setting_set($pdo, 'wcd_enrol_res', json_encode(['at' => date('H:i:s'), 'looked' => $en[0], 'entered' => $en[1], 'ptr' => (int)wcd_set($pdo, 'wcd_ptr', '0')])); } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold enrol: ' . $e->getMessage()); }
@@ -134,7 +134,7 @@ if (!function_exists('wcd_tick')) {
     }
     function wcd_card(PDO $pdo): array
     {
-        $now = time(); $o = ['mode' => wcd_set($pdo, 'wcd_mode', 'dry'), 'cap' => (int)wcd_set($pdo, 'wcd_cap', '5000'), 'from' => wcd_set($pdo, 'wcd_from', '2026-11-01'), 'quiet' => function_exists('wa_quiet_hours') && wa_quiet_hours(), 'tick_at' => wcd_set($pdo, 'wcd_tick_at', ''), 'enrol' => json_decode(wcd_set($pdo, 'wcd_enrol_res', '{}'), true) ?: [], 'dbg' => wcd_set($pdo, 'wcd_dbg', '')];
+        $now = time(); $o = ['mode' => wcd_set($pdo, 'wcd_mode', 'live'), 'cap' => (int)wcd_set($pdo, 'wcd_cap', '5000'), 'from' => wcd_set($pdo, 'wcd_from', '2026-11-01'), 'quiet' => function_exists('wa_quiet_hours') && wa_quiet_hours(), 'tick_at' => wcd_set($pdo, 'wcd_tick_at', ''), 'enrol' => json_decode(wcd_set($pdo, 'wcd_enrol_res', '{}'), true) ?: [], 'dbg' => wcd_set($pdo, 'wcd_dbg', '')];
         if (!wcd_tables($pdo)) { $o['error'] = 'storage'; return $o; }
         $c = json_decode(wcd_set($pdo, 'wcd_card_cache', ''), true);
         if (!is_array($c) || (int)($c['t'] ?? 0) < $now - 90) {
