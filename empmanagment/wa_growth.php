@@ -20,6 +20,7 @@
  *     then chats waiting for a reply (newest first), then the rest by the customer's last message. OUR sends (campaigns too) never move a chat.
  *   - Everything defensive: a failure here is written to the WhatsApp log and never breaks the chat screens.
  */
+require_once __DIR__ . '/wag_gate.php';
 if (!function_exists('wag_tables')) {
 
 function wag_defaults(): array
@@ -486,52 +487,6 @@ function wag_campaign_context(PDO $pdo, string $key): string
         return $o;
     } catch (Throwable $e) { return ''; }
 }
-/** 💰 PRICE GUARD (owner, 22 Nov): the bot used to quote "2 x 100 ml … Rs 1,810" (the price of ONE 100 ml) when the customer asked for 2 x 100 ml = 200 ml (chart: Rs 2,350). The chart price is for the TOTAL ml of the order, and the FIRST price the bot says is always the 7% chart price.
- *  The size the customer asks for is read by CODE (2 x 100 ml, 2 100mls, 200 ml, 100 ml + 50 ml …): total ml → the chart row (a total between two rows uses the lower row). wag_ml_request: the newest request, or null. */
-function wag_ml_request(array $msgs): ?array
-{
-    for ($i = count($msgs) - 1, $seen = 0; $i >= 0 && $seen < 6; $i--) {
-        if (($msgs[$i]['who'] ?? '') !== 'customer') continue; $seen++; $t = mb_strtolower((string)($msgs[$i]['text'] ?? '')); $t = str_replace(['×', '✕'], 'x', $t);
-        if (preg_match('/(\d{1,2})\s*(?:x|\*|bottles?\s*(?:of)?|pcs\.?\s*(?:of)?|pieces?\s*(?:of)?)\s*(\d{2,3})\s*ml/u', $t, $m) || preg_match('/(?<!\d)(\d{1,2})\s+(\d{2,3})\s*mls?\b/u', $t, $m)) { $q = (int)$m[1]; $ml = (int)$m[2]; if ($q >= 1 && $q <= 20 && $ml >= 10 && $ml <= 500) return ['qty' => $q, 'ml' => $ml, 'total' => $q * $ml]; }
-        if (preg_match_all('/(\d{2,3})\s*ml\b/u', $t, $mm) && count($mm[1]) >= 1 && count($mm[1]) <= 4 && preg_match('/\d\s*ml\s*(?:\+|and|aur|&)\s*\d/u', $t)) { $sum = array_sum(array_map('intval', $mm[1])); if ($sum >= 20 && $sum <= 600) return ['qty' => 1, 'ml' => $sum, 'total' => $sum]; }
-        if (preg_match('/(?<![\d.])(\d{2,3})\s*mls?\b/u', $t, $m)) { $ml = (int)$m[1]; if ($ml >= 20 && $ml <= 600) return ['qty' => 1, 'ml' => $ml, 'total' => $ml]; }
-    }
-    return null;
-}
-/** The price chart row for a TOTAL ml: [ml of the row, [price per column…], chart price (7% column)]; a total between two rows uses the lower row; null when no chart. */
-function wag_chart_row(PDO $pdo, int $total): ?array
-{
-    if (!function_exists('ml_slab_get')) return null;
-    try { $c = ml_slab_get($pdo); } catch (Throwable $e) { return null; } $best = null;
-    foreach ((array)($c['rows'] ?? []) as $r) { $ml = (int)($r['ml'] ?? 0); $p = array_map('intval', (array)($r['p'] ?? [])); if ($ml <= 0 || !$p || (int)$p[0] <= 0) continue; if ($ml <= $total && ($best === null || $ml > $best['ml'])) $best = ['ml' => $ml, 'p' => $p, 'chart' => (int)$p[0]]; }
-    return $best;
-}
-/** One line for the bot's prompt: the exact chart price of what the customer asked for. */
-function wag_price_fact(PDO $pdo, array $msgs): string
-{
-    $rq = wag_ml_request($msgs); if (!$rq) return ''; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return '';
-    return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system — use exactly this): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total → chart price Rs ' . number_format($row['chart']) . ' (the FIRST price you say; the chart price is for the TOTAL ml, never the price of one bottle for several bottles); the lowest the shop goes to for this total is Rs ' . number_format(min($row['p'])) . '.';
-}
-/** Checks a reply: a price that belongs to ANOTHER chart row than the customer's total, or a first price that is not the chart (7%) price, is replaced by the correct chart price. Returns [reply, changed]. */
-function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
-{
-    try {
-        $rq = wag_ml_request($msgs); if (!$rq) return [$reply, false]; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return [$reply, false];
-        $c = ml_slab_get($pdo); $mine = array_flip($row['p']); $other = [];
-        foreach ((array)($c['rows'] ?? []) as $r) { if ((int)($r['ml'] ?? 0) === $row['ml']) continue; foreach ((array)($r['p'] ?? []) as $v) { $v = (int)$v; if ($v >= 500 && !isset($mine[$v])) $other[$v] = 1; } }
-        $custNums = []; foreach ($msgs as $m) if (($m['who'] ?? '') === 'customer') { preg_match_all('/\d[\d,]{2,5}/', (string)($m['text'] ?? ''), $nn); foreach ($nn[0] as $x) $custNums[(int)str_replace(',', '', $x)] = 1; }
-        $prev = ''; foreach ($msgs as $m) if (($m['who'] ?? '') !== 'customer') $prev .= ' ' . (string)($m['text'] ?? ''); $prev = str_replace(',', '', $prev);
-        $firstQuote = true; foreach ($row['p'] as $v) if (strpos($prev, (string)$v) !== false) { $firstQuote = false; break; }
-        preg_match_all('/(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $reply, $am); $bad = false;
-        foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 500 || isset($custNums[$v])) continue;
-            if (isset($other[$v])) { $bad = true; break; }                                  // the price of another size
-            if (isset($mine[$v]) && $v !== $row['chart'] && $firstQuote) { $bad = true; break; }   // the first price said is not the chart price
-        }
-        if (!$bad) return [$reply, false];
-        $fix = 'Sir, ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml' : $rq['ml'] . ' ml') . ' ka price Rs ' . number_format($row['chart']) . ' hai 😊 Kaunse perfumes lena chahoge?';
-        return [$fix, true];
-    } catch (Throwable $e) { return [$reply, false]; }
-}
 function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly = false): array
 {
     $key = (string)$c['phone'];
@@ -554,12 +509,12 @@ function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly
                 }
                 if ($g) {
                     $body = json_decode((string)$g['body'], true); $msgs = wa_learn_msgs($pdo, $key);
-                    if (is_array($body)) { $__qx = function_exists('wq_bot_context') ? wq_bot_context($pdo, $c) : ''; $__cc = wag_campaign_context($pdo, $key); if ($__cc !== '') $__qx = trim($__qx . "\n" . $__cc); { $__pf = wag_price_fact($pdo, $msgs); if ($__pf !== '') $__qx = trim($__qx . "\n" . $__pf); } if ($__qx !== '') $body['chat_context_do_not_quote'] = mb_substr($__qx, 0, 3600); }   // query type, ad headline, store info, owner decisions (max 2,000 characters)
+                    if (is_array($body)) { $__qx = function_exists('wq_bot_context') ? wq_bot_context($pdo, $c) : ''; $__cc = wag_campaign_context($pdo, $key); if ($__cc !== '') $__qx = trim($__qx . "\n" . $__cc); if ($__qx !== '') $body['chat_context_do_not_quote'] = mb_substr($__qx, 0, 3600); }   // query type, ad headline, store info, owner decisions (max 2,000 characters)
                     if (is_array($body) && $body && $msgs) {
                         if ($avoid !== '') $msgs[] = ['who' => 'bot', 'text' => mb_substr($avoid, 0, 500)];
                         [$ok, $v, $__lw] = lib_bot_reply($pdo, $body, $msgs, 0, !empty($GLOBALS['lib_fu_step'])); $GLOBALS['lib_last_why'] = (string)($__lw ?? '') . ($ok && is_array($v) ? ' (ok, reply ' . mb_strlen((string)($v['reply'] ?? '')) . ' chars)' : ' (not ok)');
                         if ($ok && is_array($v) && trim((string)($v['reply'] ?? '')) !== '') {
-                            require_once __DIR__ . '/wa_hist.php'; $v = learn_enforce_v($pdo, $v); [$__pr, $__pch] = wag_price_enforce($pdo, $msgs, (string)$v['reply']); if ($__pch) { $v['reply'] = $__pr; $v['why'] = trim((string)($v['why'] ?? '') . ' [price fixed by the system: the chart price of the total ml]'); wag_log($pdo, 'bot', true, $key . ' · price fixed (wrong size row / first price not the chart price)'); }
+                            require_once __DIR__ . '/wa_hist.php'; $v = learn_enforce_v($pdo, $v);
                             if (!empty($v['handoff'])) { $lc = ''; foreach (array_reverse($msgs) as $m) if ($m['who'] === 'customer') { $lc = $m['text']; break; } if (function_exists('learn_gap_log')) learn_gap_log($pdo, 'unsure', $lc, (string)($v['handoff_reason'] ?? '')); }
                             return ['ok' => true, 'photo' => !empty($v['price_photo']), 'text' => mb_substr(trim((string)$v['reply']), 0, 1500), 'why' => mb_substr(trim((string)($v['why'] ?? '')), 0, 300), 'handoff' => !empty($v['handoff']), 'source' => 'guide', 'ver' => (int)$g['version']];
                         }
@@ -578,8 +533,7 @@ function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly
     $sch = ['type' => 'OBJECT', 'properties' => ['suggestion' => ['type' => 'STRING'], 'why' => ['type' => 'STRING'], 'call_now' => ['type' => 'BOOLEAN']], 'required' => ['suggestion', 'why', 'call_now']];
     try { [$ok, $v, $why] = convo_ai($sys, [['text' => "CUSTOMER FACTS: " . $facts . "\n\nQUICK REPLIES:\n" . $qk . "\nTHE CHAT:\n" . $txt . ($avoid !== '' ? "\nDO NOT repeat: " . $avoid : '')]], $sch, false, 1200, 'claude'); } catch (Throwable $e) { return ['ok' => false, 'why' => 'The AI could not read this chat.']; }
     if (!$ok || !is_array($v) || trim((string)($v['suggestion'] ?? '')) === '') return ['ok' => false, 'why' => (string)($why ?: 'The AI could not write a reply.')];
-    $__sg = trim((string)$v['suggestion']); try { if (function_exists('wa_learn_msgs')) { [$__sg2, $__ch2] = wag_price_enforce($pdo, wa_learn_msgs($pdo, $key), $__sg); if ($__ch2) $__sg = $__sg2; } } catch (Throwable $e) { }   // 💰 the same price guard on the basic path
-    return ['ok' => true, 'text' => mb_substr($__sg, 0, 1500), 'why' => mb_substr(trim((string)($v['why'] ?? '')), 0, 300), 'handoff' => !empty($v['call_now']), 'source' => 'basic', 'ver' => 0];
+    return ['ok' => true, 'text' => mb_substr(trim((string)$v['suggestion']), 0, 1500), 'why' => mb_substr(trim((string)($v['why'] ?? '')), 0, 300), 'handoff' => !empty($v['call_now']), 'source' => 'basic', 'ver' => 0];
 }
 /** The stored suggestion for the customer's newest message, if one was already written (instant display). */
 function wag_sugg_get(PDO $pdo, string $key): ?array
@@ -1289,11 +1243,10 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
             $__cv = (string)setting_get($pdo, 'wag_gate_conv', '1') !== '0';   // owner 22 Nov: the conversion block (queries vs orders; normal + campaign queries of the current sales day) is ON again at the owner's word; setting wag_gate_conv = 0 turns it off
             $lq = 0; $lo = 0; $lavg = 0.0;
             try { $d1 = wag_real_queries($pdo, 1); $lq = (int)($d1[$emp][0] ?? 0); $lo = (int)($d1[$emp][1] ?? 0); $tq = 0; $to = 0; foreach (wag_real_queries($pdo, 7) as $__r) { $tq += $__r[0]; $to += $__r[1]; } $lavg = $tq >= 40 && $to > 0 ? min(0.5, $to / $tq) : 0.0; } catch (Throwable $e) { }
-            if ($__cv && !$waited && $lq >= 15 && $lavg > 0 && ($lo / $lq) < 0.5 * $lavg) $msg = '🔒 You have ' . $lq . ' queries today with ' . $lo . ' order' . ($lo === 1 ? '' : 's') . ' — below the team level (' . round(100 * $lo / $lq) . '% vs ' . round(100 * $lavg) . '%). Close the chats you already have; new queries go to people who convert better.'; }
-            if ($msg === '' && !$waited && (string)setting_get($pdo, 'wag_gate_conv', '1') !== '0') {   // owner 22 Nov (Parth: 10 queries + 12 campaign queries, 1 order): campaign queries count too - normal + campaign together; 15+ with no order, or 20+ with a ratio under half of the team's, stops NEW queries (waiting customers can always be picked, and one order lifts it)
-                try { $dc = wag_real_queries($pdo, 1, true); $cq = (int)($dc[$emp][0] ?? 0); $co = (int)($dc[$emp][1] ?? 0); $tq2 = 0; $to2 = 0; foreach (wag_real_queries($pdo, 7, true) as $__r2) { $tq2 += $__r2[0]; $to2 += $__r2[1]; } $cavg = $tq2 >= 40 && $to2 > 0 ? min(0.5, $to2 / $tq2) : 0.0;
-                    $cref = max($cavg, 0.2); if (($cq >= 10 && $co === 0) || ($cq >= 12 && ($co / $cq) < 0.5 * $cref)) $msg = '🔒 You have ' . $cq . ' queries today (normal + campaign) with ' . $co . ' order' . ($co === 1 ? '' : 's') . ' — below the team level' . ($cavg > 0 ? ' (' . round(100 * $co / $cq) . '% vs ' . round(100 * $cref) . '%)' : '') . '. Close the chats you already have; one order opens new queries again.'; } catch (Throwable $e) { } }
-
+            
+            if ($msg === '' && (string)setting_get($pdo, 'wag_gate_conv', '1') !== '0') {   // owner 22 Nov: normal + campaign queries of the current sales day (wag_gate.php); an admin can lock / unlock a person by hand on the Sales Live card
+                try { $__g = wgate_blocked($pdo, $emp); if ($__g['blocked'] && (!$waited || $__g['mode'] === 'lock')) $msg = $__g['why']; } catch (Throwable $e) { } }
+        }
     } catch (Throwable $e) { }
     return $c[$ck] = $msg;
 }
@@ -1480,11 +1433,12 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
 /** Follow-up step 1 without AI: one short question, four wordings, the customer's first name and the perfume the bot named last (when there is one). */
 function wag_fu1_text(PDO $pdo, array $c, array $rows): string
 {
-    // 📝 owner (22 Nov): ONE wording, English letters (Hinglish): "Hi Aryan, aapko kaun se perfume ka confusion hai, aap wo hamare saath share kar sakte ho." — with two buttons (Haan, doubt hai · Nahi, koi doubt nahi); when the bot named a perfume last: "aapko <perfume> ka confusion hai"
     $nm = ''; $n0 = trim((string)($c['name'] ?? '')); if ($n0 !== '' && preg_match('/^[\p{L}]{2,14}$/u', ($__f = preg_split('/\s+/', $n0)[0]))) $nm = $__f;
     $pf = ''; try { $bt = ''; foreach ($rows as $rw) if ((string)($rw['who'] ?? '') === 'bot') { $bt = (string)($rw['body'] ?? ''); break; } if ($bt !== '' && function_exists('wa_prod_find_named')) { $h = wa_prod_find_named($pdo, $bt, 1); if ($h) $pf = (string)($h[0]['name'] ?? ''); } } catch (Throwable $e) { }
-    $hi = $nm !== '' ? 'Hi ' . $nm . ', ' : 'Hi, ';
-    return $hi . 'aapko ' . ($pf !== '' ? $pf : 'kaun se perfume') . ' ka confusion hai, aap wo hamare saath share kar sakte ho.';
+    $v = crc32((string)($c['phone'] ?? '')) % 4; $hi = $nm !== '' ? 'Hi ' . $nm . '! 😊 ' : 'Sir, ';
+    if ($pf !== '') { $t = [$hi . 'aapko ' . $pf . ' ke baare me koi confusion ya doubt hai? Order bana dun? 😊', 'Sir, ' . $pf . ' ke liye koi doubt ho to bataiye, main order bana deta hoon 😊', $hi . $pf . ' lena hai ya koi aur perfume dekhna hai? Bataiye, order bana dun? 🙏', 'Hello sir 🙏 ' . $pf . ' me koi confusion hai? Kaho to abhi order bana dun?'][$v]; }
+    else { $t = [$hi . 'aapko kaunse perfume me confusion ya doubt hai? Order bana dun? 😊', 'Hello sir 🙏 Koi confusion ya doubt ho to bataiye, main aapka order bana deta hoon 😊', $hi . 'kaunsa perfume pasand aaya? Bataiye, main order bana deta hoon 🙏', 'Sir, abhi order bana dun ya kuch aur dekhna hai? Bas ek message kar dijiye 😊'][$v]; }
+    return $t;
 }
 function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follow-ups must be FAST — 6 per tick (was 2; only ~4 a minute went out with 347 due)
 {
@@ -1533,7 +1487,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         if (preg_match('/(stop|unsubscribe|not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|no thanks|don.?t message|remove)/iu', $lastIn)) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }
         $fl = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $fl->execute([$key]); if ((int)$fl->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now . ($__pp ? '|p|' . $refT : ''));   // claimed before the AI call: never twice
-        $__tpl1 = false; if ($cnt === 0 && !$__pp && (string)setting_get($pdo, 'wag_fu_tpl1', '1') !== '0') { $__tpl1 = true; $r = ['ok' => true, 'text' => wag_fu1_text($pdo, $c, $rows)]; }   // ⚡ step 1 (the bulk: 378 of 400) is the same short question - made in code, no AI call (2.5 s each): follow-ups go out many times faster (owner, 21 Nov: "follow-ups faster")
+        if ($cnt === 0 && !$__pp && (string)setting_get($pdo, 'wag_fu_tpl1', '1') !== '0') { $r = ['ok' => true, 'text' => wag_fu1_text($pdo, $c, $rows)]; }   // ⚡ step 1 (the bulk: 378 of 400) is the same short question - made in code, no AI call (2.5 s each): follow-ups go out many times faster (owner, 21 Nov: "follow-ups faster")
         else { $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0); $__tries++; }
         if (empty($r['ok']) || trim((string)($r['text'] ?? '')) === '') { $D['ai']++; $D['err'] = mb_substr((string)($GLOBALS['lib_last_why'] ?? '') . ' | ' . (string)($r['why'] ?? ''), 0, 160); continue; }
         if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
@@ -1541,7 +1495,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)$lastIn));
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         $__fv = (string)setting_get($pdo, 'wag_fu_var', 'AB'); $__var = ($__fv === 'A' || $__fv === 'B') ? $__fv : ((crc32($key) % 2) ? 'B' : 'A');   // 🧪 A/B (owner, 21 Nov): A = plain text, B = the same text with 3 quick-reply buttons; the winner is read from the replies (event text carries the letter)
-        if ($__var === 'B' && function_exists('wa_send_buttons')) { [$ok, $res] = wa_send_buttons($pdo, $c, $r['text'], $__tpl1 ? ['Haan, doubt hai', 'Nahi, koi doubt nahi'] : ['✅ Order karo', '💬 Doubt hai', '⏰ Baad me'], 'bot', 0); if (!$ok) { $__var = 'A'; [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0); } }
+        if ($__var === 'B' && function_exists('wa_send_buttons')) { [$ok, $res] = wa_send_buttons($pdo, $c, $r['text'], ['✅ Order karo', '💬 Doubt hai', '⏰ Baad me'], 'bot', 0); if (!$ok) { $__var = 'A'; [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0); } }
         else [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if ($ok) { $D['sent']++; if ($__pp) $D['ps'] = (int)($D['ps'] ?? 0) + 1; $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up' . ($__pp ? ' for the salesperson' : '') . ' [' . $__var . '] (step ' . ($cnt + 1) . ' of ' . count($stp) . ', ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
         else { $D['send']++; $D['err'] = mb_substr((string)$res, 0, 80); wag_log($pdo, 'bot', false, $key . ' · follow-up: ' . $res); }
@@ -2104,6 +2058,11 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
                 $lm->execute([$k]); $m = $lm->fetch(); $items[] = ['phone' => $k, 'name' => (string)$r['name'], 'holder' => (int)$r['assigned_emp'] > 0 ? ($names[(int)$r['assigned_emp']] ?? '#' . $r['assigned_emp']) : '', 'missed_by' => $missed[$k] ?? '', 'wait_min' => max(0, (int)round(($now - strtotime((string)$r['last_in_at'])) / 60)), 'handed_min' => isset($hand[$k]) && strtotime($hand[$k]) > 0 ? max(0, (int)round(($now - strtotime($hand[$k])) / 60)) : 0, 'hot' => $r['hot_why'] ? (string)$r['hot_why'] : ((int)$r['hot'] ? 'hot' : ''), 'last' => $m ? mb_substr((string)($m['body'] !== '' ? $m['body'] : '[' . $m['mtype'] . ']'), 0, 140) : ''];
             }
             usort($items, fn($a, $b) => $b['wait_min'] <=> $a['wait_min']); json_response(['items' => array_slice($items, 0, 60), 'total' => count($items), 'can' => true]);
+        }
+        case 'wa.g_gate_set': {   // 🔒 the lock on a person's Sales Live card (owner 22 Nov): lock = no new queries · open = the automatic lock is lifted for this sales day · auto = back to the rule
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            if (!$adm) json_response(['error' => 'Only an admin can lock or unlock a person.'], 403);
+            $__ge = (int)($in['emp'] ?? 0); $__ok = wgate_set($pdo, $__ge, (string)($in['mode'] ?? '')); json_response(['ok' => $__ok, 'gate' => wgate_card($pdo, $__ge)]);
         }
         case 'wa.g_mkt': {   // 🏪 the open-market scoreboard (admin / managers)
             if (!$adm && !(function_exists('wa_can_takeover') && wa_can_takeover($pdo, $auth))) json_response(['can' => false, 'week' => [], 'today' => []]);
