@@ -809,7 +809,11 @@ function wl_summary(PDO $pdo, int $from): array
     $ord = []; try { $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
         foreach ($x->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byP[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; } } catch (Throwable $e) { }
     $buy = []; foreach ($ord as $k => $list) foreach ($list as [$ot, $tot]) foreach ($byP[$k] as $st0) if ($st0 < $ot && $ot <= $st0 + 7 * 86400) { $o['orders']++; $o['revenue'] += (int)round($tot); $buy[$k] = 1; break; }
-    $o['buyers'] = count($buy); try { $oc = $pdo->prepare("SELECT COUNT(*) FROM wa_offer WHERE ok = 1 AND at >= ?"); $oc->execute([$f]); $o['offers'] = (int)$oc->fetchColumn(); } catch (Throwable $e) { $o['offers'] = 0; }   // 🎯 price offers sent (wa_offer.php)
+    $o['buyers'] = count($buy); $o['offers'] = 0; $o['offer_orders'] = 0; $o['offer_revenue'] = 0;
+    try { $oc = $pdo->prepare("SELECT phone, MIN(at) FROM wa_offer WHERE ok = 1 AND at >= ? GROUP BY phone"); $oc->execute([$f]); $ofr = $oc->fetchAll(PDO::FETCH_NUM); $o['offers'] = count($ofr);   // 🎯 price offers sent (wa_offer.php): customers; and the orders that came AFTER an offer (within 7 days), so they show in the Orders number too
+        if ($ofr) { $om = []; foreach ($ofr as $r) $om[substr(preg_replace('/\D+/', '', (string)$r[0]), -10)] = (int)strtotime((string)$r[1]); $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != ''"); $x->execute([$f]); $seen = [];
+            foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); $ot = (int)strtotime((string)$r['created_at']); if (isset($om[$k]) && !isset($seen[$k]) && $ot > $om[$k] && $ot <= $om[$k] + 7 * 86400) { $seen[$k] = 1; $o['offer_orders']++; $o['offer_revenue'] += (int)round((float)$r['total']); } } }
+    } catch (Throwable $e) { }
     return $o;
 }
 /** Who replied (the same people the Replies number counts: an answer within 2 days of a Lineup message, a "no" like Stop / Not now left out): newest-waiting first. Returns [rows, more]. */
