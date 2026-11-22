@@ -122,6 +122,28 @@ function st_top_sellers(PDO $pdo, string $today, int $days = 30, int $n = 5): ar
     return ['days' => $days, 'from' => $from, 'total_units' => $total, 'top' => array_slice($all, 0, $n), 'segments' => array_slice($segOut, 0, 4)];
 }
 
+/** Top sellers for 7 and 30 days, worked out once per store day (the first look after the 3 AM day change refreshes it = every night) and kept in a small table, so the dashboard stays fast. */
+function st_top_cached(PDO $pdo, string $today): array
+{
+    $out = [];
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_top_cache (period INT NOT NULL PRIMARY KEY, biz_day DATE NOT NULL, body MEDIUMTEXT NOT NULL, made_at DATETIME NOT NULL)");
+    } catch (Throwable $e) { error_log('st_top_cache create: ' . $e->getMessage()); }
+    foreach ([7, 30] as $days) {
+        $got = null;
+        try {
+            $q = $pdo->prepare("SELECT biz_day, body FROM st_top_cache WHERE period = ?"); $q->execute([$days]); $r = $q->fetch();
+            if ($r && $r['biz_day'] === $today) $got = json_decode((string)$r['body'], true);
+        } catch (Throwable $e) { $got = null; }
+        if (!is_array($got)) {
+            $got = st_top_sellers($pdo, $today, $days, 5);
+            try { $pdo->prepare("REPLACE INTO st_top_cache (period, biz_day, body, made_at) VALUES (?, ?, ?, ?)")->execute([$days, $today, json_encode($got, JSON_UNESCAPED_UNICODE), date('Y-m-d H:i:s')]); } catch (Throwable $e) { error_log('st_top_cache save: ' . $e->getMessage()); }
+        }
+        $out['d' . $days] = $got;
+    }
+    return $out;
+}
+
 function st_bottle_out(array $b): array
 {
     return [
@@ -1564,7 +1586,7 @@ try {
                 'stock' => ['bottles' => $stockBottles, 'products' => $stockProducts, 'ml' => $stockMl, 'sizes' => $sizes, 'testers' => $bc['testers_in_stock']],
                 'today' => ['old_pos_bills' => (int)$ot['bills'], 'old_pos_amount' => round((float)$ot['amt']), 'bills' => $bills, 'amount' => $amt, 'ml' => (int)$t['ml'], 'avg_ticket' => $bills ? round($amt / $bills) : 0, 'avg_ml' => $bills ? round((int)$t['ml'] / $bills) : 0, 'discount' => (float)$t['disc'], 'testers_given' => (int)$t['testers'], 'cash' => (float)$t['cash'], 'online' => (float)$t['online'],
                     'yesterday_amount' => (float)$y['amt'], 'yesterday_bills' => (int)$y['bills']],
-                'by_person' => $by, 'week' => $week, 'top30' => st_top_sellers($pdo, $today, 30, 5),
+                'by_person' => $by, 'week' => $week, 'top' => st_top_cached($pdo, $today),
                 'remarks' => $rem, 'remarks_total' => $nrem, 'store_registered' => $storeOffice > 0, 'customers' => $cust,
             ]);
             break;
