@@ -4,6 +4,10 @@ name: Uncounted orders (read-only)
 
 on:
   workflow_dispatch:
+    inputs:
+      chat:
+        description: 'last 10 digits of the customer number'
+        required: false
 
 jobs:
   check:
@@ -24,9 +28,10 @@ jobs:
           STAGING_HOST: ${{ secrets.STAGING_HOST }}
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          CHAT: ${{ github.event.inputs.chat }}
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
-          P="$1"
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$CHAT" <<'REMOTE' || true
+          P="$1"; CH="$2"
           cat > /tmp/ql_check.php <<'PHP'
           <?php
           $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
