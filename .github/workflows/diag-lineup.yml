@@ -56,7 +56,7 @@ jobs:
           <?php
           $f = $argv[1] . "empmanagment/config.php"; require $f;
           $pdo = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
-          function json_response($a, $c = 200) { throw new Exception("json_response"); } function wa_log($p, $k, $ok, $i) { }
+          function json_response($a, $c = 200) { throw new Exception("json_response"); } function wa_log($p, $k, $ok, $i) { } function wa_autoreply_phones($p, $a) { return []; }
           function setting_get($p, $k, $d = "") { $q = $p->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? $d : (string)$v; } function setting_set($p, $k, $v) { }
           function wa_key($n) { $d = preg_replace('/\D+/', '', (string)$n); return strlen($d) > 10 ? substr($d, -10) : $d; }
           $action = ""; require $argv[1] . "empmanagment/wa_line.php";
