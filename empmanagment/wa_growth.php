@@ -1382,7 +1382,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         $__cover = false;
         if (wag_bot_off($pdo, $key, $__stuck)) {   // a person holds this chat: the bot stays silent — except when that person is busy with other customers and this customer has waited 90 s (owner, 21 Nov): then the bot answers meanwhile; the chat stays with the person
             $__ho = (int)($c['assigned_emp'] ?? 0); $__bh3 = wag_meta_get($pdo, 'bothand:' . $key, '');
-            if ($__ho > 0 && $age >= 90 && !($__bh3 !== '' && strtotime($__bh3) >= strtotime((string)$c['last_in_at'])) && wag_holder_busy($pdo, $__ho)) $__cover = true; else continue;
+            if ($__ho > 0 && $age >= 45 && !($__bh3 !== '' && strtotime($__bh3) >= strtotime((string)$c['last_in_at'])) && wag_holder_busy($pdo, $__ho)) $__cover = true; else continue;
         }
         $li = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
