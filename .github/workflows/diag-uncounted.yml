@@ -33,24 +33,28 @@ jobs:
           require $f;
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
           date_default_timezone_set("Asia/Kolkata");
-          echo "now (IST) " . date("Y-m-d H:i") . "\n";
-          $sql = "SELECT o.store_key sk, o.order_name nm, o.created_at ca, o.total total, o.tags tg, a.alloc_id aid, a.order_type ot
-                  FROM shop_orders o LEFT JOIN order_allocations a ON a.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
-                  WHERE o.created_at >= '2026-11-15 10:00:00' AND o.created_at < '2026-11-23 00:00:00' AND o.total > 0 ORDER BY o.created_at";
-          try { $rows = $d->query($sql)->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 200) . "\n"; exit; }
-          $addon = []; try { foreach ($d->query("SELECT LOWER(TRIM(LEADING '#' FROM TRIM(order_name))) k, SUM(price) s FROM employee_addons WHERE addon_date >= '2026-11-13' GROUP BY k")->fetchAll(PDO::FETCH_ASSOC) as $r) $addon[$r["k"]] = (float)$r["s"]; } catch (Throwable $e) { }
-          $ev = [];
-          foreach ($rows as $r) { if (stripos((string)$r["tg"], "cancel") !== false || $r["aid"] === null) continue; $k = strtolower(trim(ltrim(trim($r["nm"]), "#"))); $ev[] = [$r["ca"], (float)$r["total"] + ($addon[$k] ?? 0.0), in_array($r["ot"], ["query", "campaign"], true) ? $r["ot"] : "other"]; }
-          try { foreach ($d->query("SELECT order_date, total, order_type FROM manual_orders WHERE order_date >= '2026-11-15 10:00:00' AND order_date < '2026-11-23 00:00:00'")->fetchAll(PDO::FETCH_ASSOC) as $m) $ev[] = [$m["order_date"], (float)$m["total"], in_array($m["order_type"], ["query", "campaign"], true) ? $m["order_type"] : "other"]; } catch (Throwable $e) { }
-          $win = function ($label, $from, $to) use ($ev) { $n = 0; $s = 0.0; $t = ["query" => [0, 0.0], "campaign" => [0, 0.0], "other" => [0, 0.0]]; foreach ($ev as $e) { if ($e[0] < $from || $e[0] >= $to) continue; $n++; $s += $e[1]; $t[$e[2]][0]++; $t[$e[2]][1] += $e[1]; }
-            echo str_pad($label, 40) . " orders " . str_pad($n, 4) . " · collection Rs " . str_pad(number_format(round($s)), 9) . " · Query " . $t["query"][0] . " / Rs " . number_format(round($t["query"][1])) . " · Campaign " . $t["campaign"][0] . " / Rs " . number_format(round($t["campaign"][1])) . " · Other " . $t["other"][0] . " / Rs " . number_format(round($t["other"][1])) . "\n"; };
-          echo "\n=== TODAY 21 Nov, day started 12:25 PM (and what 10 AM would have given) ===\n";
-          $win("21 Nov 12:25 -> now", "2026-11-21 12:25:00", "2026-11-22 10:00:00");
-          echo "\n=== hour by hour, 21 Nov (clock hours) ===\n";
-          $win("12:25 - 13:00", "2026-11-21 12:25:00", "2026-11-21 13:00:00");
-          for ($h = 13; $h <= 23; $h++) $win(sprintf("%02d:00 - %02d:00", $h, $h + 1), sprintf("2026-11-21 %02d:00:00", $h), $h < 23 ? sprintf("2026-11-21 %02d:00:00", $h + 1) : "2026-11-22 00:00:00");
-          echo "\n=== earlier days, 10 AM -> next day 10 AM (20th ends 21st 12:25 PM) ===\n";
-          foreach (["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"] as $dd) { $nx = date("Y-m-d", strtotime($dd . " +1 day")); $win($dd . " 10:00 -> " . $nx . ($dd === "2026-11-20" ? " 12:25" : " 10:00"), $dd . " 10:00:00", $dd === "2026-11-20" ? "2026-11-21 12:25:00" : $nx . " 10:00:00"); }
+          $wk = array_fill(0, 7, "10:00"); try { foreach ($d->query("SELECT weekday, start_time FROM day_timing")->fetchAll(PDO::FETCH_ASSOC) as $r) $wk[(int)$r["weekday"]] = (string)$r["start_time"]; } catch (Throwable $e) { }
+          echo "weekday starts (0=Sun): " . implode(" ", $wk) . "\n";
+          $ov = []; for ($x = strtotime("2026-11-08"); $x <= strtotime("2026-11-15"); $x += 86400) $ov[date("Y-m-d", $x)] = "12:00"; $ov["2026-11-21"] = "12:25";
+          $startOf = function ($date) use ($wk, $ov) { return $ov[$date] ?? $wk[(int)date("w", strtotime($date))]; };
+          $suns = ["2026-11-01", "2026-11-08", "2026-11-15"];
+          $emps = []; try { foreach ($d->query("SELECT e.employee_id id, e.employee_code code, e.full_name nm FROM employees e LEFT JOIN departments dp ON dp.department_id = e.department_id WHERE dp.department_name LIKE '%sales%' AND (e.status IS NULL OR e.status <> 'ex') ORDER BY e.full_name")->fetchAll(PDO::FETCH_ASSOC) as $r) $emps[(int)$r["id"]] = [$r["code"], $r["nm"]]; } catch (Throwable $e) { echo "emps n/a: " . substr($e->getMessage(), 0, 160) . "\n"; }
+          echo "sales employees: " . count($emps) . "\n";
+          $addon = []; try { foreach ($d->query("SELECT LOWER(TRIM(LEADING '#' FROM TRIM(order_name))) k, SUM(price) s FROM employee_addons WHERE addon_date >= '2026-10-28' GROUP BY k")->fetchAll(PDO::FETCH_ASSOC) as $r) $addon[$r["k"]] = (float)$r["s"]; } catch (Throwable $e) { }
+          $tot = []; $teamAll = [];
+          foreach ($suns as $si => $sd) {
+            $from = $sd . " " . $startOf($sd) . ":00"; $nx = date("Y-m-d", strtotime($sd . " +1 day")); $to = $nx . " " . $startOf($nx) . ":00";
+            echo "Sunday $sd window: $from -> $to\n";
+            $q = $d->prepare("SELECT o.order_name nm, o.total total, a.employee_id emp FROM shop_orders o JOIN order_allocations a ON a.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND a.employee_id > 0");
+            $q->execute([$from, $to]); $teamAll[$si] = 0.0;
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = strtolower(trim(ltrim(trim($r["nm"]), "#"))); $v = (float)$r["total"] + ($addon[$k] ?? 0.0); $tot[(int)$r["emp"]][$si] = ($tot[(int)$r["emp"]][$si] ?? 0.0) + $v; $teamAll[$si] += $v; }
+            try { $m = $d->prepare("SELECT employee_id emp, total FROM manual_orders WHERE order_date >= ? AND order_date < ? AND employee_id > 0"); $m->execute([$from, $to]); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) { $tot[(int)$r["emp"]][$si] = ($tot[(int)$r["emp"]][$si] ?? 0.0) + (float)$r["total"]; $teamAll[$si] += (float)$r["total"]; } } catch (Throwable $e) { }
+          }
+          foreach ($emps as $id => $e) echo "ROW|" . $id . "|" . $e[0] . "|" . $e[1] . "|" . round($tot[$id][0] ?? 0) . "|" . round($tot[$id][1] ?? 0) . "|" . round($tot[$id][2] ?? 0) . "\n";
+          $other = 0; foreach ($tot as $id => $x) if (!isset($emps[$id])) { $other++; foreach ([0, 1, 2] as $si) $teamAll[$si] += 0; }
+          echo "TEAM_TOTAL|" . round($teamAll[0]) . "|" . round($teamAll[1]) . "|" . round($teamAll[2]) . "\n";
+          $listed = [0, 0, 0]; foreach ($emps as $id => $e) foreach ([0, 1, 2] as $si) $listed[$si] += $tot[$id][$si] ?? 0; echo "LISTED_TOTAL|" . round($listed[0]) . "|" . round($listed[1]) . "|" . round($listed[2]) . "\n";
+          echo "people with sales on those Sundays who are not in the list (left the company / other department): $other\n";
           PHP
           php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
           REMOTE
