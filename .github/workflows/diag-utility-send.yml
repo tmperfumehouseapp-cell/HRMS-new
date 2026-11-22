@@ -210,7 +210,7 @@ jobs:
           foreach ($all("SELECT c.id, c.name, c.status, c.tpl_id, LEFT(c.note, 200) note, LEFT(c.extra, 160) ex FROM wa_campaigns c WHERE c.status IN ('paused') AND COALESCE(c.started_at, c.created_at) >= DATE_SUB(NOW(), INTERVAL 5 DAY) ORDER BY c.id DESC LIMIT 6") as $pc) {
             echo "  campaign " . json_encode($pc) . "\n";
             foreach ($all("SELECT status, COUNT(*) n FROM wa_camp_items WHERE camp_id = " . (int)$pc["id"] . " GROUP BY status") as $r) echo "    items " . json_encode($r) . "\n";
-            $tr = $all("SELECT id, name, category, family_id, version, LEFT(extra, 300) ex FROM wa_templates WHERE id = " . (int)$pc["tpl_id"]); foreach ($tr as $r) { echo "    template " . json_encode($r) . "\n"; $root = (int)($r["family_id"] ?: $r["id"]);
+            $tr = $all("SELECT id, name, category, family_id, version, LEFT(body, 320) body, LEFT(extra, 300) ex FROM wa_templates WHERE id = " . (int)$pc["tpl_id"]); foreach ($tr as $r) { echo "    template " . json_encode($r) . "\n"; $root = (int)($r["family_id"] ?: $r["id"]);
               foreach ($all("SELECT t.id, t.name, t.category, t.version, GROUP_CONCAT(CONCAT(SUBSTR(w.waba_id, -4), ':', w.status) SEPARATOR ' ') st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.id = $root OR t.family_id = $root GROUP BY t.id ORDER BY t.id LIMIT 12") as $m) echo "      family member " . json_encode($m) . "\n"; }
           }
           echo "\n=== NUMBER 11 OPENING ===\n"; foreach (["wa_open11_2211","wa_open11b_2211","wa_more_schema_err","wa_t11_at","wa_camp_auto_swap","wa_camp_tpl_bad","wa_ru_got_sql","wa_ru_tpl_pause"] as $k) echo "  $k=" . substr($s($k), 0, 200) . "\n";
