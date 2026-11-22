@@ -105,7 +105,8 @@ if (!function_exists('wcd_tick')) {
     {
         $ids = wcd_ids($pdo); if (!$ids) return []; $o = [];
         try { $q = $pdo->query("SELECT id, UPPER(COALESCE(NULLIF(category_now, ''), category)) c FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_values($ids))) . ")"); $cat = $q->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) { return []; }
-        foreach ($ids as $k => $id) if (($cat[$id] ?? '') === 'UTILITY') $o[] = [(int)$id, (string)$k];
+        $ap = []; try { foreach ($pdo->query("SELECT DISTINCT tpl_id FROM wa_tpl_waba WHERE UPPER(status) = 'APPROVED' AND tpl_id IN (" . implode(',', array_map('intval', array_values($ids))) . ")")->fetchAll(PDO::FETCH_COLUMN) as $t) $ap[(int)$t] = 1; } catch (Throwable $e) { }   /* Meta must have approved it on at least one account (the weekly creation limit may still hold the others back) */
+        foreach ($ids as $k => $id) if (($cat[$id] ?? '') === 'UTILITY' && isset($ap[(int)$id])) $o[] = [(int)$id, (string)$k];
         return $o;
     }
     /** WHAT WORKS (owner 22 Nov: "change every day by what brings the best replies"): per template [sent, replied, orders]. A reply is credited to the LAST Cold message sent to him before he wrote. Cached 5 minutes. */
