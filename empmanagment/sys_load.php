@@ -316,7 +316,7 @@ function sysload_view(PDO $pdo, int $mins): array
     foreach (array_slice($rows, 0, 6) as $r) $full .= "\n" . 'Function ' . $r['action'] . ': ' . $r['time_share'] . '% of request time, ' . number_format($r['calls']) . ' calls (' . $r['per_min'] . '/min), ' . $r['avg_ms'] . ' ms each, PHP ' . $r['cpu_s'] . ' s, waiting ' . $r['wait_s'] . ' s';
     $full .= "\n" . 'Work through them from the most expensive, one at a time.' . $rule;
     $out['full_prompt'] = $full;
-    $out['prompt_on'] = $busy !== null && $busy >= 50;      // the ONE prompt button is shown only while the load is high (50% or more); a quiet server needs no prompt
+    $out['prompt_on'] = ($busy !== null && $busy >= 40) || ($AW && (float)$AW['pct'] >= 40) || (!empty($out['load'][0]) && (float)$out['load'][0] >= 0.75 * $cores);      // the ONE prompt button is shown only while the load is high (CPU 40% or more now or on average, or the load number near the number of cores); a quiet server needs no prompt
     $out['advice'] = $adv;
     return $out;
 }
