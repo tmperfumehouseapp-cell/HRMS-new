@@ -1298,7 +1298,9 @@ function wag_is_camp_chat(PDO $pdo, array $c): bool
     static $m = []; $ph = (string)($c['phone'] ?? ''); if (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true)) return true; if ($ph === '') return false;
     if (isset($m[$ph]) && $m[$ph][0] > time() - 60) return $m[$ph][1]; $r = false;
     try { $q = $pdo->prepare("SELECT src FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$ph]); $r = in_array((string)$q->fetchColumn(), ['campaign', 'community'], true);
-        if (!$r) { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$ph, date('Y-m-d H:i:s', time() - 3 * 86400)]); $r = (bool)$q->fetchColumn(); } } catch (Throwable $e) { }
+        if (!$r) { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$ph, date('Y-m-d H:i:s', time() - 7 * 86400)]); $r = (bool)$q->fetchColumn(); }
+        if (!$r) { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('campaign', 'recover') AND ts >= ? LIMIT 1"); $q->execute([$ph, date('Y-m-d H:i:s', time() - 7 * 86400)]); $r = (bool)$q->fetchColumn(); } }   // a campaign or a win-back (recover) message reached him in the last 7 days
+    catch (Throwable $e) { }
     $m[$ph] = [time(), $r]; return $r;
 }
 function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
