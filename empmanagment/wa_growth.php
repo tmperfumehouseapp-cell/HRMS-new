@@ -544,7 +544,9 @@ function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
 {
     try {
         if (wag_bottles_no_size($msgs)) { if (preg_match('/(?:rs\.?|₹)\s*\d|\b(?:price|total|amount|rate|cost|discount|offer|kimat)\b/iu', $reply)) return ['Sir, kitne ml ki bottles chahiye — 20 ml, 50 ml ya 100 ml? 😊', true]; return [$reply, false]; }   // 🚫 bottles but no size: no price at all, ask the size
-        $rq = wag_ml_request($msgs); if (!$rq) return [$reply, false]; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return [$reply, false];
+        $rq = wag_ml_request($msgs);
+        if (!$rq && preg_match('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml[^₹\n]{0,40}?(?:rs\.?|₹)\s*[\d,]{3,6}/iu', $reply, $__rm) && (int)$__rm[1] >= 1 && (int)$__rm[1] <= 20 && (int)$__rm[2] >= 10 && (int)$__rm[2] <= 500) $rq = ['qty' => (int)$__rm[1], 'ml' => (int)$__rm[2], 'total' => (int)$__rm[1] * (int)$__rm[2]];   // owner, 23 Nov: the customer wrote only 'I Want Combo of 5' (no size); the bot named '5 x 100 ml' itself, and its follow-up said 'total price Rs 1700' (the price of ONE 100 ml). The size the reply itself names is now checked against the chart row of its total
+        if (!$rq) return [$reply, false]; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return [$reply, false];
         $c = ml_slab_get($pdo); $mine = array_flip($row['p']); $other = [];
         foreach ((array)($c['rows'] ?? []) as $r) { if ((int)($r['ml'] ?? 0) === $row['ml']) continue; foreach ((array)($r['p'] ?? []) as $v) { $v = (int)$v; if ($v >= 500 && !isset($mine[$v])) $other[$v] = 1; } }
         $custNums = []; foreach ($msgs as $m) if (($m['who'] ?? '') === 'customer') { preg_match_all('/\d[\d,]{2,5}/', (string)($m['text'] ?? ''), $nn); foreach ($nn[0] as $x) $custNums[(int)str_replace(',', '', $x)] = 1; }
