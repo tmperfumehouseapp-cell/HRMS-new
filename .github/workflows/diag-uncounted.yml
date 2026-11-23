@@ -34,7 +34,8 @@ jobs:
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
           foreach (["73488", "73539", "73499"] as $on) { $o = $d->query("SELECT store_key, shopify_id FROM shop_orders WHERE REPLACE(order_name, '#', '') = '$on' ORDER BY created_at DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC); if (!$o) { echo "JUDGE $on: order not found\n"; continue; }
             $q = $d->prepare("SELECT tried, worked, tries, sz_tried, sz_worked, sz_tries, sz_ok, rating FROM order_rate_auto WHERE order_key = ?"); $q->execute([$o["store_key"] . ":" . $o["shopify_id"]]); echo "JUDGE $on: " . json_encode($q->fetch(PDO::FETCH_ASSOC)) . "\n"; }
-          try { echo "PHOTOS queue: "; foreach ($d->query("SELECT COALESCE(verdict, 'waiting') v, COUNT(*) n FROM must3_photo GROUP BY v") as $r) echo $r["v"] . "=" . $r["n"] . " "; echo "\n"; } catch (Throwable $e) { echo "no table yet\n"; }
+          try { echo "PHOTOS queue: "; foreach ($d->query("SELECT COALESCE(verdict, 'waiting') v, tries, COUNT(*) n, MIN(at) a, MAX(at) b FROM must3_photo GROUP BY v, tries") as $r) echo "[" . $r["v"] . " tries " . $r["tries"] . " n " . $r["n"] . " " . $r["a"] . ".." . $r["b"] . "] "; echo "\n"; } catch (Throwable $e) { echo "no table yet\n"; }
+          foreach (["must3_photo_at", "wa_alloc_at", "wa_cron_at"] as $k) { $v = (string)$d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = '$k'")->fetchColumn(); echo "SET $k = " . (ctype_digit($v) ? date("Y-m-d H:i:s", (int)$v) : $v) . "\n"; } echo "SET now = " . date("Y-m-d H:i:s") . "\n";
           PHP
           php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
           REMOTE
