@@ -238,7 +238,7 @@
     .wi-tab{padding:9px 14px; font-size:13px;} .wi-it{padding:12px 14px;}
     /* 📐 fit the phone: smaller header buttons, ONE row of composer buttons (Lists too), less height used so the chat has room */
     .wi-head{padding:5px 8px; gap:4px;} .wi-head .wi-ib{min-width:clamp(38px,11vw,46px); min-height:clamp(34px,9vw,40px); padding:2px 4px; font-size:clamp(14px,4vw,16px); border-radius:10px;} .wi-head .wi-ib .lb{font-size:clamp(9px,2.5vw,10.5px);} .wi-head .wi-asg{min-height:30px; padding:2px 10px; font-size:13px;}
-    .wi-comp{padding:4px 6px calc(6px + env(safe-area-inset-bottom)); gap:4px; flex-wrap:wrap;} .wi .wi-comp > .wi-btn:not(#wiSend){flex:1 1 0; min-height:clamp(34px,9vw,40px); padding:2px 1px; font-size:clamp(14px,4vw,16px); border-radius:10px;} .wi .wi-comp > .wi-btn .lb{font-size:clamp(8px,2.3vw,10px);} .wi-comp textarea{min-height:40px;}
+    .wi-comp{padding:4px 6px calc(6px + env(safe-area-inset-bottom)); gap:4px; flex-wrap:wrap;} .wi .wi-comp > .wi-btn:not(#wiSend){flex:1 1 44px; min-height:clamp(34px,9vw,40px); padding:2px 1px; font-size:clamp(14px,4vw,16px); border-radius:10px;} .wi .wi-comp > .wi-btn .lb{font-size:clamp(8px,2.3vw,10px);} .wi-comp textarea{min-height:40px;}
     #wiPc .pc-row{padding:2px 8px;} #wiPc button{padding:6px 12px; font-size:13px;}
   }`;
 
@@ -378,6 +378,7 @@
     } catch (e) { o.querySelector('#wpB').textContent = e.message || 'Could not load.'; }
   };
     function pills(c) {
+      if (c.is_cx) return '<span class="wi-p" style="background:#f3e8ff;color:#6b21a8;font-weight:800" title="A complaint: the Complaint team answers it">⚠ Complaint</span>';   // 🎫 owner (22 Nov): a complaint chat shows ONLY its Complaint tag (no hot / query / campaign / price marks)
       let h = c.life ? `<span class="wi-p" style="background:${LC[c.life.key] || '#f1f5f9'};font-weight:800" title="Where this customer is right now">${esc(c.life.label)}</span>` : '';
       if (c.eff && c.eff.length) {   // both efforts of the last read order: [add-on level, stars, reason, order, bigger level]
         const E = [['🔴', '#dc2626', 'No add-on effort'], ['🟠', '#ea580c', 'Little add-on effort'], ['🟡', '#d97706', 'Tried hard, customer did not take the add-on'], ['🟢', '#16a34a', 'Tried, and the customer took the add-on']][c.eff[0]] || null, B = [['⚫', '#1f2937', 'No effort to sell bigger'], ['🟤', '#92400e', 'Little effort to sell bigger'], ['🟣', '#7c3aed', 'Tried hard to sell bigger, customer did not take'], ['🔵', '#2563eb', 'Sold bigger']][c.eff[4] == null ? 0 : c.eff[4]] || null, tt = ' · order ' + (c.eff[3] || '') + ' · ★' + c.eff[1] + ' — ' + (c.eff[2] || ''), ttB = ' · order ' + (c.eff[3] || '') + ' · ★' + c.eff[1] + ' — ' + (c.eff[5] || c.eff[2] || '');
@@ -762,10 +763,11 @@
     function drawHead() {
       const c = S.cur.contact; try { pcDraw(); } catch (e) { }
       $('wiH').innerHTML = `<button type="button" class="wi-back" id="wiBack" aria-label="Back to chats">‹<span class="lb"> Chats</span></button>${av(c)}<div class="wi-id"><b>${esc(title(c))}</b>${c.name ? `<span class="ph">${esc(pretty(c.phone))}</span>` : ''}</div>${asgHtml(c)}${pills(Object.assign({}, c, { assigned_name: '' }))}<span class="wi-fu-p" id="wiFuP"></span><span class="sp"></span>${admin && c.status !== 'closed' && c.assigned_emp !== meId() ? `<button type="button" class="wi-btn wi-ib" id="wiTo" title="Take this chat into your own panel" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;font-weight:800">🔄<span class="lb"> Take over</span></button>` : ''}<button type="button" class="wi-btn wi-ib" id="wiPrc" title="Send the price chart (made for this customer's price level)">💰<span class="lb"> Price chart</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiCartH" title="Make a cart with a chain (same as the salesperson app) — 🩺 Diagnose is inside">🛒<span class="lb"> Cart</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiMoH" title="Manual order: the customer paid by QR / UPI (or pays on delivery) — no website">🧾<span class="lb"> Manual order</span></button>
-        <button type="button" class="wi-btn wi-ib wi-pc" id="wiCx" title="Mark as complaint" style="background:#f3efff;color:#6d4fc2">🎫<span class="lb"> Complaint</span></button>${c.status === 'closed' ? '<button type="button" class="wi-btn wi-ib" id="wiRe" title="Open this chat again">↺<span class="lb"> Re-open</span></button>' : '<button type="button" class="wi-btn wi-ib" id="wiCl" title="Resolve (finish) this chat">✓<span class="lb"> Resolve</span></button>'}<button type="button" class="wi-more wi-ib wi-pc" id="wiMore" aria-label="Details">ⓘ<span class="lb"> Details</span></button><button type="button" class="wi-more wi-ib wi-ph" id="wiMo2" aria-label="More">⋯<span class="lb"> More</span></button><div id="wiCxB" style="flex-basis:100%"></div>`;
+        ${c.status !== 'closed' && (admin || c.assigned_emp === meId()) ? '<button type="button" class="wi-btn wi-ib" id="wiBp" title="Stop bot messages for this customer for some time (e.g. he will send the address in the evening)">⏸<span class="lb"> Stop bot</span></button>' : ''}<button type="button" class="wi-btn wi-ib wi-pc" id="wiCx" title="Mark as complaint" style="background:#f3efff;color:#6d4fc2">🎫<span class="lb"> Complaint</span></button>${c.status === 'closed' ? '<button type="button" class="wi-btn wi-ib" id="wiRe" title="Open this chat again">↺<span class="lb"> Re-open</span></button>' : '<button type="button" class="wi-btn wi-ib" id="wiCl" title="Resolve (finish) this chat">✓<span class="lb"> Resolve</span></button>'}<button type="button" class="wi-more wi-ib wi-pc" id="wiMore" aria-label="Details">ⓘ<span class="lb"> Details</span></button><button type="button" class="wi-more wi-ib wi-ph" id="wiMo2" aria-label="More">⋯<span class="lb"> More</span></button><div id="wiCxB" style="flex-basis:100%"></div><div id="wiBpB" style="flex-basis:100%"></div>`;
       const cx = () => { if (!window.CXR) { alert('Complaints are not installed yet. Refresh the page.'); return; } CXR.open({ phone: c.phone, name: c.name || '', source: 'whatsapp', onDone: () => cxBan(c.phone) }); };
       $('wiCx').onclick = cx; if ($('wiCartH')) $('wiCartH').onclick = () => openCart(c); if ($('wiMoH')) $('wiMoH').onclick = () => openManual(c);   // 🛒 the chain cart, one tap from the chat (also in Details)
       cxBan(c.phone); orderPill(c);
+      if ($('wiBp')) $('wiBp').onclick = () => openBotPause(c); bpBanner(c.phone);
       if ($('wiAsg')) $('wiAsg').onclick = openAssign;
       if ($('wiTo')) $('wiTo').onclick = async function () {   // 🔄 take this chat into MY panel (whoever holds it now; they get a note at the top of their WhatsApp)
         this.disabled = true; this.textContent = 'Taking over…';
@@ -1204,6 +1206,27 @@
       if (window.WaOrd) return cb(); if (OR.ld) { OR.ld.push(cb); return; } OR.ld = [cb];
       const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=13';
       sc.onload = () => { const q = OR.ld || []; OR.ld = null; q.forEach((f) => f()); }; sc.onerror = () => { OR.ld = null; }; document.head.appendChild(sc);
+    }
+    // ⏸ Stop bot messages for ONE customer for a time (owner, 22 Nov) — same as the sales app: header button → time → Done; a yellow strip with Resume. Server: wa.bot_pause (the holder of the chat or an admin).
+    async function bpBanner(ph) {
+      let st = null; try { st = await api.get('wa.bot_pause', { phone: ph }); } catch (e) { return; } if (!S.cur || S.cur.contact.phone !== ph) return;
+      const b = $('wiBpB'), tb = $('wiBp'); if (tb) tb.style.background = st && st.paused ? '#fde68a' : ''; if (!b) return;
+      if (!st || !st.paused) { b.innerHTML = ''; return; }
+      const t = new Date(String(st.until).replace(' ', 'T')), tl = isNaN(t) ? '' : t.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }), m = st.mins_left, left = m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min';
+      b.innerHTML = `<div class="wi-note" style="background:#fef3c7;color:#92400e;display:flex;gap:10px;align-items:center">⏸ <span style="flex:1"><b>Bot paused</b> · till ${esc(tl)} (${esc(left)} left)${st.by ? ' · by ' + esc(st.by) : ''} — no automatic message goes to this customer. You can still write.</span><button type="button" class="wi-btn" id="wiBpR">Resume</button></div>`;
+      $('wiBpR').onclick = async () => { if (!confirm('Switch bot messages back on for this customer?')) return; try { await api.post('wa.bot_pause', { phone: ph, resume: 1 }); } catch (e) { alert(e.message); } bpBanner(ph); };
+    }
+    function openBotPause(c) {
+      const ph = c.phone, body = sheet('⏸ Stop bot messages'); let mins = 0;
+      const ch = (m, t) => `<button type="button" class="wi-btn" data-m="${m}" style="margin:0 8px 8px 0;border:1.5px solid #d6dbe3">${t}</button>`;
+      body.innerHTML = `<div style="font-size:13px;color:#667781;margin-bottom:10px">This customer gets <b>no bot message</b> (follow-ups, replies, offers) for the time you choose. He can still write, and you can always write.</div>`
+        + ch(30, '30 min') + ch(60, '1 hr') + ch(180, '3 hr') + ch(-1, 'Tonight 9 pm') + `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 10px"><span style="font-size:13px;font-weight:700">Custom:</span><input id="wiBpN" type="number" min="1" max="72" placeholder="hours" style="width:80px;padding:8px;border:1.5px solid #d6dbe3;border-radius:10px;font:inherit"><span style="font-size:13px">hours</span></div>`
+        + `<div id="wiBpU" style="font-size:13.5px;font-weight:800;color:#166534;background:#ecfdf5;border-radius:10px;padding:8px 10px;margin-bottom:10px" hidden></div><button type="button" class="wi-btn" id="wiBpD" style="width:100%;background:#00a884;color:#fff;font-weight:800" disabled>Done</button>`;
+      const show = () => { const u = $('wiBpU'), d = $('wiBpD'); if (!mins) { u.hidden = true; d.disabled = true; return; } const t = new Date(Date.now() + mins * 60000); u.hidden = false; u.textContent = 'Bot off till ' + t.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) + (t.toDateString() === new Date().toDateString() ? '' : ' (' + t.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ')') + ' · then it switches on by itself'; d.disabled = false; };
+      const mark = (on) => body.querySelectorAll('[data-m]').forEach((x) => { x.style.background = x === on ? '#00a884' : ''; x.style.color = x === on ? '#fff' : ''; });
+      body.onclick = (e) => { const b = e.target.closest('[data-m]'); if (!b) return; let m = +b.dataset.m; if (m === -1) { const n = new Date(), t = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 21, 0, 0); if (t <= n) t.setDate(t.getDate() + 1); m = Math.max(1, Math.round((t - n) / 60000)); } mins = m; $('wiBpN').value = ''; mark(b); show(); };
+      $('wiBpN').oninput = function () { const h = parseFloat(this.value); mins = h > 0 ? Math.min(72 * 60, Math.round(h * 60)) : 0; mark(null); show(); };
+      $('wiBpD').onclick = async function () { if (!mins) return; this.disabled = true; try { await api.post('wa.bot_pause', { phone: ph, mins }); closeSheet(); } catch (e) { alert(e.message); this.disabled = false; return; } bpBanner(ph); };
     }
     // ✅ Order completed (wa_done.php): one thank-you, then no automatic messages today and tomorrow
     async function markDone() {

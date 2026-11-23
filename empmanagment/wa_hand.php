@@ -53,6 +53,7 @@ function wa_next_person(PDO $pdo, int $except = 0, int $numId = 0): ?array
 function wa_hot_flag(PDO $pdo, array $c, string $why): bool
 {
     $key = (string)$c['phone']; $now = date('Y-m-d H:i:s');
+    if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return false;   // 🎫 a complaint is never marked HOT (owner, 22 Nov): the Complaint team answers it, not a salesperson
     $u = $pdo->prepare("UPDATE wa_contacts SET hot = 1, hot_at = ?, hot_why = ? WHERE phone = ? AND hot = 0");
     $u->execute([$now, mb_substr($why, 0, 40), $key]); if ($u->rowCount() < 1) return false;
     $emp = (int)$c['assigned_emp']; $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];

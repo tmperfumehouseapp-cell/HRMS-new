@@ -56,7 +56,7 @@ ok(count($SENT) === 4, 'the other four got step 2, got ' . count($SENT));
 // report, status, overview, heal, snapshot
 $pdo->prepare("UPDATE wa_line_plan SET sent_at = ? WHERE phone = '9810000002' AND step = 1")->execute([$f($now - 3600)]);
 $rep = wl_report($pdo, 30, 1); $tr = $rep['keys']['ln_trust_2']['sent'] ?? 0; ok($tr === 2, 'report counts the trust step 2 sends (two trust customers), got ' . $tr); ok($rep['topics']['price']['buyers'] === 1, 'the order is credited to the price topic');
-$st = wl_status($pdo); ok($st['messages']['total'] === 47 && $st['messages']['approved'] === 47 && $st['customers']['identified'] === 6 && $st['sending']['sent'] >= 10, 'status ' . json_encode($st['customers']) . json_encode($st['sending']));
+$st = wl_status($pdo); ok($st['messages']['total'] === 59 && $st['messages']['approved'] === 59 && $st['customers']['identified'] === 6 && $st['sending']['sent'] >= 10, 'status ' . json_encode($st['customers']) . json_encode($st['sending']));
 $ov = wl_overview($pdo); ok(isset($ov['board']) && isset($ov['tomorrow']) && isset($ov['status']), 'overview');
 $h = wl_heal($pdo); ok(is_array($h['issues']), 'self-check runs'); ok(wl_snap($pdo, true), 'snapshot written'); ok(count(wl_snaps($pdo)) === 1, 'snapshot read back');
 $c = wl_customer($pdo, '9810000001'); ok($c['in'] && count($c['plan']) === 12, 'customer timeline');

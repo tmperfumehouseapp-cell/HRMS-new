@@ -314,6 +314,12 @@ function wa_autoreply_ctx(PDO $pdo, string $key, string $now): bool
 /** 🤖 Is this run of messages — OUR campaign message, then only what the customer's phone sent back — an automatic reply?
  *  $msgs: oldest first, each {dir, who, ts, body, mtype}. True when, after our LAST campaign message, every message is the customer's text and each one either reads like an automatic greeting / away note (and came within 3 hours),
  *  or came within 12 seconds of our message (25 seconds after the message before it, for the next ones of a burst) and is long enough — a person cannot read our message and type that fast, a business app's greeting arrives at once. */
+/** Which of these phones are another business's automatic reply (chat tagged business_autoreply): [phone => 1]. Their "answers" are not customer replies. */
+function wa_autoreply_phones(PDO $pdo, array $phones): array
+{
+    $o = []; try { foreach (array_chunk(array_values(array_unique(array_map('strval', $phones))), 800) as $ch) { if (!$ch) continue; $q = $pdo->prepare("SELECT phone FROM wa_ctags WHERE tag = 'business_autoreply' AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) $o[(string)$p] = 1; } } catch (Throwable $e) { }
+    return $o;
+}
 function wa_autoreply_run(array $msgs): bool
 {
     $last = -1; foreach ($msgs as $i => $x) if ((string)$x['dir'] === 'out') $last = $i;
@@ -690,9 +696,20 @@ function wa_cx_owner(PDO $pdo, array $auth, array $c): bool
 function wa_contact(PDO $pdo, string $key): ?array { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $r = $q->fetch(); return $r ?: null; }
 
 /** Sends a text from the number the customer last used. Inside the 24-hour window only (templates come with the campaign step). */
+/** 🌙 UNIVERSAL QUIET HOURS (owner, 21 Nov): NO automatic message (campaign, marketing, follow-up, Lineup, recovery, drip) goes between 03:00 and 09:00 IST; follow-ups may run until 03:00. Replies to a customer who wrote, and order messages, are not touched. */
+if (!function_exists('wa_quiet_hours')) { function wa_quiet_hours($ts = null): bool { $h = (int)date('G', $ts === null ? time() : (int)$ts); return $h >= 3 && $h < 9; } }
+/** ⏸ owner (22 Nov): a salesperson (or admin) can STOP BOT MESSAGES for one customer for a time ("I will send the address in the evening"): returns the end time (Y-m-d H:i:s) while the pause runs, else null. Stored in wq_meta 'botpause:<10 digits>'. No automatic message (bot, follow-up, flow, recovery, campaign) goes meanwhile; a person can always write. */
+function wa_bot_paused(PDO $pdo, string $key): ?string
+{
+    static $m = []; $k = substr(preg_replace('/\D+/', '', $key), -10); if (strlen($k) < 10) return null; if (array_key_exists($k, $m)) return $m[$k];
+    $r = null; try { $q = $pdo->prepare("SELECT v FROM wq_meta WHERE k = ?"); $q->execute(['botpause:' . $k]); $v = (string)$q->fetchColumn(); if ($v !== '' && strtotime($v) > time()) $r = $v; } catch (Throwable $e) { }
+    return $m[$k] = $r;
+}
 function wa_send_text(PDO $pdo, array $c, string $text, string $who, int $empId, string $replyTo = ''): array   // $replyTo: the wamid of the customer's / our message this one answers (↩ swipe to reply)
 {
+    if (in_array($who, ['followup', 'campaign', 'recover'], true) && wa_quiet_hours()) return [false, 'Quiet hours 03:00-09:00: no automatic message goes.'];   // 🌙 universal rule (owner, 21 Nov)
     if ((int)$c['optout'] === 1) return [false, 'This customer opted out — do not message them.'];
+    if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign', 'followup', 'recover'], true) && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.'];   // ⏸ stopped by the salesperson
     if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off for this customer until tomorrow night.'];   // ✅ one lock for every engine
     if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed. Only an approved template can be sent now.'];
     $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)$c['last_number_id']]); $pid = (string)$q->fetchColumn();
@@ -733,7 +750,9 @@ function wa_send_text(PDO $pdo, array $c, string $text, string $who, int $empId,
 /** A message with up to 3 quick-reply buttons (inside the 24-hour window, free): the customer answers with ONE tap and his tap arrives as a normal text (the button's title). Used by the bot's follow-ups (wording B). Returns [ok, wamid|error]. */
 function wa_send_buttons(PDO $pdo, array $c, string $text, array $buttons, string $who, int $empId): array
 {
+    if (in_array($who, ['followup', 'campaign', 'recover'], true) && wa_quiet_hours()) return [false, 'Quiet hours 03:00-09:00: no automatic message goes.'];   // 🌙 universal rule (owner, 21 Nov)
     if ((int)$c['optout'] === 1) return [false, 'This customer opted out.'];
+    if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign', 'followup', 'recover'], true) && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.'];   // ⏸ stopped by the salesperson
     if ($empId === 0 && in_array($who, ['bot', 'auto', 'flow', 'campaign'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off.'];
     if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed.'];
     $text = mb_substr(trim($text), 0, 1000); $btn = []; foreach (array_slice(array_values($buttons), 0, 3) as $i => $t) $btn[] = ['type' => 'reply', 'reply' => ['id' => 'fu_' . ($i + 1), 'title' => mb_substr((string)$t, 0, 20)]]; if ($text === '' || !$btn) return [false, 'Nothing to send.'];
@@ -949,6 +968,7 @@ function wa_tag_contact(PDO $pdo, array $c, bool $force): array
     try { [$ok, $v, $why] = convo_ai($sys, [['text' => "The chat:\n" . $txt]], $schema, false, 1200, 'claude'); } catch (Throwable $e) { return [false, 'The AI could not read this chat.']; }
     if (!$ok || !is_array($v)) return [false, (string)($why ?: 'The AI could not read this chat.')];
     $tag = isset(WA_TAGS[(string)($v['tag'] ?? '')]) ? (string)$v['tag'] : 'other'; $sum = mb_substr(trim((string)($v['summary'] ?? '')), 0, 600);
+    if ($tag === 'complaint' && (int)($c['cx_id'] ?? 0) === 0) { $tag = 'other'; $sum = trim('Possible complaint — read it. ' . $sum); }   // the AI never marks a chat as a complaint by itself: a complaint chat leaves the sales queues; only a sales person raises a complaint
     $pdo->prepare("UPDATE wa_contacts SET tag = ?, summary = ?, tagged_at = ? WHERE phone = ?")->execute([$tag, $sum, date('Y-m-d H:i:s'), $c['phone']]);
     return [true, ['tag' => $tag, 'summary' => $sum, 'fresh' => true]];
 }
@@ -1081,6 +1101,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if ($n && function_exists('wa_tick')) { try { wa_more_tables($pdo); wa_tick($pdo); } catch (Throwable $e) { } }   // assignment + call-now alerts react right away
             if ($n || $st) wa_log($pdo, 'webhook', true, $n . ' message' . ($n === 1 ? '' : 's') . ', ' . $st . ' status update' . ($st === 1 ? '' : 's'));
         } catch (Throwable $e) { wa_log($pdo, 'webhook', false, 'Error: ' . $e->getMessage()); }
+        try { require_once __DIR__ . '/wa_ctwa.php'; $__cf = wa_ctwa_forward($raw, (string)($_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '')); if ($__cf !== '' && $__cf !== 'ok') wa_log($pdo, 'ctwa', false, 'Ad-click copy to the CTWA service failed: ' . $__cf); } catch (Throwable $e) { }   // 📣 a customer who came from a click-to-WhatsApp ad: a copy goes to the ad tracking service (after the HRMS kept the message)
         if ($__keys && function_exists('wag_prebuild')) {   // write the reply for each waiting customer NOW, after Meta has its 200 — it is ready before the salesperson even opens the chat
             $__k = array_slice(array_keys($__keys), 0, 5);
             register_shutdown_function(function () use ($pdo, $__k) {
@@ -1309,7 +1330,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (isset($flt['waiting'])) $w[] = "(c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.optout = 0)";   // ⏳ exactly what the "Waiting for a reply" counter counts: the customer wrote last
             if (isset($flt['noreply'])) $w[] = $noRep;
             if (isset($flt['unassigned'])) $w[] = 'c.assigned_emp = 0';
-            if (isset($flt['hot'])) $w[] = "(c.hot = 1 OR c.tag = 'buy' OR EXISTS (SELECT 1 FROM wa_ctags ht WHERE ht.phone = c.phone AND ht.tag = 'hot'))";   // 🔥 every chat that shows the hot colour: the flag, the ready-to-buy tag, or hot marked by the bot
+            if (isset($flt['hot'])) $w[] = "(c.hot = 1 OR c.tag = 'buy' OR EXISTS (SELECT 1 FROM wa_ctags ht WHERE ht.phone = c.phone AND ht.tag = 'hot')) AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')";   // 🔥 every chat that shows the hot colour: the flag, the ready-to-buy tag, or hot marked by the bot
             if (isset($flt['late'])) { $w[] = $noRep; $w[] = 'c.last_in_at <= ?'; $p[] = date('Y-m-d H:i:s', time() - 60 * (function_exists('wa_team_cfg') ? max(1, (int)(wa_team_cfg($pdo)['unans_min'] ?? 5)) : 5)); }
             if (isset($flt['complaint'])) $w[] = "(c.cx_id > 0 OR c.tag = 'complaint')";
             // 📅 Today's chats / Yesterday's chats (the customer wrote that calendar day); both ticked = today AND yesterday together
@@ -1340,7 +1361,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $fl = wa_heat_flags($pdo, array_column($rows, 'phone')); $lm = function_exists('wa_team_cfg') ? max(1, (int)(wa_team_cfg($pdo)['unans_min'] ?? 5)) : 5;
             if (!empty($_GET['ids'])) json_response(['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? '')], $rows)]);   // ☑ "Select all" in the bulk bar: just the phones of the whole view
             $ot = wa_owner_tags($pdo, array_column($rows, 'phone'));
-            $out = array_map(function ($r) use ($names, $fl, $lm, $ot) { $x = wa_contact_row($r, $names); $f = (int)($ot[(string)$r['phone']]['first'] ?? 0); $x['first_emp'] = $f; $x['first_name'] = $f ? ($names[$f] ?? '') : ''; $x['preview'] = mb_substr((string)$r['last_body'], 0, 90); $x['last_msg_at'] = (string)($r['last_ts'] ?? ''); $x['fresh_agent'] = (int)($r['fresh_agent'] ?? 0) === 1; $x['heat'] = wa_heat($r, $fl[(string)$r['phone']] ?? [], $lm); $x['biz'] = !empty($fl[(string)$r['phone']]['biz']); return $x; }, $rows);
+            $out = array_map(function ($r) use ($names, $fl, $lm, $ot) { $x = wa_contact_row($r, $names); $f = (int)($ot[(string)$r['phone']]['first'] ?? 0); $x['first_emp'] = $f; $x['first_name'] = $f ? ($names[$f] ?? '') : ''; $x['preview'] = mb_substr((string)$r['last_body'], 0, 90); $x['last_msg_at'] = (string)($r['last_ts'] ?? ''); $x['fresh_agent'] = (int)($r['fresh_agent'] ?? 0) === 1; $x['heat'] = wa_heat($r, $fl[(string)$r['phone']] ?? [], $lm); $x['biz'] = !empty($fl[(string)$r['phone']]['biz']); if (!empty($x['is_cx'])) { $x['hot'] = 0; $x['heat'] = 'cx'; $x['biz'] = false; $x['source'] = ''; } return $x; }, $rows);   // 🎫 a complaint chat is never hot / query / campaign on the list
             if ($rescueFeed !== null && function_exists('wq_rescue_tier_map')) { $tm = wq_rescue_tier_map($pdo, array_column($out, 'phone')); foreach ($out as &$ox) $ox['rescue'] = $tm[(string)$ox['phone']] ?? null; unset($ox); }   // the label of each rescue chat
             if (function_exists('ora_phone_map')) { try { $em = ora_phone_map($pdo, array_column($out, 'phone')); foreach ($out as &$ox3) { if (isset($em[(string)$ox3['phone']])) $ox3['eff'] = $em[(string)$ox3['phone']]; } unset($ox3); } catch (Throwable $e) { } }   // ➕ add-on effort mark per chat (read from the chat after the order)
             if (function_exists('wq_lifecycle_map')) { $lm = wq_lifecycle_map($pdo, array_column($out, 'phone')); foreach ($out as &$ox2) $ox2['life'] = $lm[(string)$ox2['phone']] ?? null; unset($ox2); }   // one stage per chat (new · waiting · hot · bot · rescue · ordered …)
@@ -1359,7 +1380,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $key = wa_key($_GET['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null;
             if (!$c) json_response(['error' => 'Chat not found.'], 404);
             $peek = ''; if (!wa_can_watch($pdo, $auth, $c)) { $peek = wa_req_peek($pdo, $c); if ($peek === '' && function_exists('wq_rescue_may_read') && wq_rescue_may_read($pdo, $auth, $key)) $peek = 'rescue'; if ($peek === '' && wa_was_mine($pdo, $key, (int)($auth['employee_id'] ?? 0))) $peek = 'tag'; if ($peek === '') json_response(['error' => 'This chat is assigned to someone else.'], 403); }   // 🙋 a Requests chat may be READ before taking it; replying needs Take over
-            if (in_array($peek, ['req', 'rescue', 'grab'], true) && !wa_is_admin($pdo, $auth)) json_response(['error' => 'Take this chat first (✋ Take over) — it opens after you take it.', 'take_first' => 1], 403);   // 🏪 open market: the chat does not open until a salesperson takes it
+            // 🙋 owner (22 Nov): a Requests chat ('req' = nobody has it · 'grab' = nobody replied for N min) AND a Rescue chat may be READ by the salespeople who may see it first (sending still needs ✋ Take over)
             // "anything new?" — one small query: the newest message, the delivery ticks and the chat's own fields. Same as the page has → {same:1} (the 10-second
             // refresh of an open chat used to re-load 100 messages and ~11 queries every time)
             $sq = $pdo->prepare("SELECT MAX(id) mx, COUNT(*) n, SUM(status = 'read') r, SUM(status = 'delivered') dl, SUM(status = 'failed') f FROM wa_messages WHERE phone = ?"); $sq->execute([$key]); $sg = $sq->fetch() ?: [];
@@ -1525,7 +1546,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (!wa_is_admin($pdo, $auth) && ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint')) json_response(['error' => 'This is a complaint chat — it stays with its person. Ask the admin.'], 409);
             $from = (int)$c['assigned_emp']; if ($from === $me) json_response(['ok' => true, 'already' => true]);
             if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);   // 🤖 the bot is answering
-            if (!wa_is_admin($pdo, $auth) && function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);   // 🏪 performance gate
+            if (!wa_is_admin($pdo, $auth) && function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me, $c)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);   // 🏪 performance gate
             wa_assign_to($pdo, $key, $me, $me, 'takeover');
             $nm = employee_names_by_id($pdo); $who = $nm[$me] ?? 'Manager'; $was = $from > 0 ? ($nm[$from] ?? 'someone') : '';
             wa_event($pdo, $key, '🔄 ' . $who . ' took over this chat' . ($was !== '' ? ' from ' . $was : ''));
@@ -1567,7 +1588,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 if ($me <= 0 || $emp !== $me) json_response(['error' => 'Only an admin can assign a chat to someone else. Use Transfer for your own chats.'], 403);
                 if ((int)$c0['assigned_emp'] > 0) json_response(['error' => 'This chat is already with ' . (employee_names_by_id($pdo)[(int)$c0['assigned_emp']] ?? 'someone') . '.'], 409);
                 if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c0)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);
-                if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);
+                if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me, $c0)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);
                 wa_assign_to($pdo, $key, $me, $me, 'take'); json_response(['ok' => true]);
             }
             if ($emp > 0 && !isset(employee_names_by_id($pdo)[$emp])) json_response(['error' => 'That person was not found.'], 422);

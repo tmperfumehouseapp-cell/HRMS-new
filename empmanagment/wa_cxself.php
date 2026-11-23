@@ -12,7 +12,7 @@
  */
 if (!function_exists('wa_cxself_on')) {
 
-function wa_cxself_on(PDO $pdo): bool { return (string)setting_get($pdo, 'wa_cx_self', '1') === '1'; }
+function wa_cxself_on(PDO $pdo): bool { return false; }   // owner, 22 Nov 2026: no complaint is raised automatically — not even by the customer's own message; the sales person reads it and raises it by hand
 /** The issues the customer can pick: [problem key, title (max 24), description]. */
 function wa_cxself_items(): array
 {

@@ -867,7 +867,7 @@ function ofp_submit(PDO $pdo, array $auth, array $w, array $t, array $z, array $
         ->execute([(int)$z['id'], $day, (int)$t['id'], $emp ?: null, $done ? 'done' : 'partial', $answered, $required, ofp_json($summary), bd_now(), bd_now()]);
     if ($done) {
         $problems = count($needs) + count($fixes);
-        $pdo->prepare("UPDATE bd_tasks SET status = 'done', done_at = ?, proof_value = ?, proof_note = ? WHERE id = ?")->execute([bd_now(), $problems, $late ? 'done late' : 'count and refill form', (int)$t['id']]);
+        $pdo->prepare("UPDATE bd_tasks SET status = 'done', done_at = IF(status = 'done' AND done_at IS NOT NULL, done_at, ?), proof_value = ?, proof_note = ? WHERE id = ?")->execute([bd_now(), $problems, $late ? 'done late' : 'count and refill form', (int)$t['id']]);
         bd_log('done', (int)$t['id'], $t['title'] . ($late ? ' (late)' : '') . ' - ' . count($needs) . ' to buy, ' . count($fixes) . ' to fix', 'employee');
     }
     if (function_exists('dp_su_sync_items') && $needs) { try { dp_su_sync_items($pdo, $now); } catch (Throwable $e) { error_log('ofp sync_items: ' . $e->getMessage()); } }
@@ -996,8 +996,8 @@ function ofp_dispatch(PDO $pdo, $action) {
             if (!ofp_may_open_task($auth, $w, $t) && !((int)$w['emp'] && in_array((int)$w['emp'], ofp_owner_ids($pdo, $pl), true))) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '.'], 403);
             if (bd_mode() === 'shadow' && !$isAdmin) json_response(['error' => 'The Boss Engine is in test mode. Duties are not live yet.'], 409);
             if ($t['task_date'] !== bd_today()) json_response(['error' => 'Only today\'s check can be done.'], 409);
-            if ($t['status'] === 'done') json_response(['error' => 'This check is already done.'], 409);
-            if (!in_array($t['status'], ['open', 'missed'], true)) json_response(['error' => 'This check cannot be done now (' . $t['status'] . ').'], 409);
+            // a check already sent today may be changed and sent again (the page says so; the answers are saved over the old ones)
+            if (!in_array($t['status'], ['open', 'missed', 'done'], true)) json_response(['error' => 'This check cannot be done now (' . $t['status'] . ').'], 409);
             json_response(ofp_submit($pdo, $auth, $w, $t, $z, $o, $pl, $in, $by));
         }
         case 'of.pl_lang': {

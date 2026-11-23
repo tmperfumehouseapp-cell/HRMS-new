@@ -29,6 +29,7 @@ function wa_more_tables(PDO $pdo): bool
         foreach (['camp_ok' => 'TINYINT NOT NULL DEFAULT 1', 'handlers' => "VARCHAR(300) NOT NULL DEFAULT ''", 'camp_tag' => 'TINYINT NOT NULL DEFAULT 0', 'retired' => 'TINYINT NOT NULL DEFAULT 0', 'tier_manual' => 'INT NOT NULL DEFAULT 0', 'hold' => 'TINYINT NOT NULL DEFAULT 0', 'waba_name' => "VARCHAR(80) NOT NULL DEFAULT ''", 'biz_name' => "VARCHAR(80) NOT NULL DEFAULT ''", 'portfolio' => "VARCHAR(30) NOT NULL DEFAULT ''"] as $col => $def) {   // tier_manual (owner 20 Nov 2026): the daily limit the owner types for a number when Meta does not tell it yet (0 = not set) · portfolio: a short tag of the Meta business portfolio the number belongs to · retired (owner 20 Nov 2026): a number that is being closed: no campaign / follow-up / complaint message goes from it, the chats stay visible and can be answered · camp_tag: 📢 every chat on this number is a Campaign chat
             try { $pdo->query("SELECT `$col` FROM wa_numbers LIMIT 0"); } catch (PDOException $e) { try { $pdo->exec("ALTER TABLE wa_numbers ADD COLUMN `$col` $def"); } catch (PDOException $e2) { $colsOk = false; try { setting_set($pdo, 'wa_more_schema_err', mb_substr($col . ': ' . $e2->getMessage(), 0, 300)); } catch (Throwable $e3) { } } }   /* owner 20 Nov 2026: every column on its own try (a failing one never stops the next ones), names in backticks (hold is a keyword in some MySQL versions), the error is kept in wa_more_schema_err */
         }
+        try { if ((string)setting_get($pdo, 'wa_open11_2211', '') === '') { $pdo->exec("UPDATE wa_numbers SET `hold` = 0, camp_ok = 1, tier_manual = 250 WHERE phone_id = '1561947433664883'"); setting_set($pdo, 'wa_open11_2211', '1'); } } catch (Throwable $e) { }   // owner 22 Nov 2026: "open number 11 if you want" - opened for campaigns with a slow start of 250 a day (tier_manual); wa_ru_new_ramp doubles the daily limit while the number stays GREEN and uses it
         try { if ((string)setting_get($pdo, 'wa_hold_seed_1120', '') === '') { $pdo->exec("UPDATE wa_numbers SET `hold` = 1, camp_ok = 0 WHERE phone_id IN ('1503802359479664', '1489908264204455')"); setting_set($pdo, 'wa_hold_seed_1120', '1'); } } catch (Throwable $e) { }   // owner 20 Nov 2026: the 2nd and 3rd numbers (other portfolios) are locked once, now; the owner unlocks them
         foreach (['callnow' => 'TINYINT NOT NULL DEFAULT 0', 'callnow_at' => 'DATETIME NULL', 'hot' => 'TINYINT NOT NULL DEFAULT 0', 'hot_at' => 'DATETIME NULL', 'hot_why' => "VARCHAR(40) NOT NULL DEFAULT ''", 'remind_at' => 'DATETIME NULL', 'pay_at' => 'DATETIME NULL', 'accepted_at' => 'DATETIME NULL', 'reassigns' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {
             try { $pdo->query("SELECT $col FROM wa_contacts LIMIT 0"); } catch (PDOException $e) { $pdo->exec("ALTER TABLE wa_contacts ADD COLUMN $col $def"); }
@@ -698,6 +699,7 @@ require_once __DIR__ . '/wa_planner.php';   // 🗓 Campaign Planner: files + me
 require_once __DIR__ . '/wa_plan.php';   // 🎯 Daily budget planner (wa.plan_get) - needs wa_bill.php and wa_camp.php
 require_once __DIR__ . '/wa_drip.php';   // 🔁 7-Day Drip: a pre-made message per day for new queries / campaign repliers (wa.drip_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_line.php';   // 🧵 Lineup: the 7-day follow-up by topic (replaces the 7-Day Drip when started; wa.line_*) - AFTER wa_drip.php (uses wd_send), BEFORE wa_seg.php
+require_once __DIR__ . '/wa_after.php';   // 🛍 After-Order plan: delivered customers get a 365-day ladder (care, soft offers, reorder); runs from wa.cron_send
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
 
@@ -727,8 +729,17 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
         try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
         $r = ['ok' => true];
-        try { if (function_exists('wag_bot_spawn') && function_exists('wa_lock') && wa_lock($pdo, 'wagspawn', 15)) $r['bot_workers'] = wag_bot_spawn($pdo, 5); } catch (Throwable $e) { }   // 🤖 fast bot workers: answers within seconds, whoever calls first
+        $__cli = !empty($_GET['cli']) && PHP_SAPI === 'cli';   // cron_line.php (command line): ONLY the Lineup round - no bot workers, campaigns or recovery (they would take web-server workers from the bot)
+        try { if (!$__cli && function_exists('wag_bot_spawn') && function_exists('wa_lock') && wa_lock($pdo, 'wagspawn', 15)) $r['bot_workers'] = wag_bot_spawn($pdo, 5); } catch (Throwable $e) { }   // 🤖 fast bot workers: answers within seconds, whoever calls first
+        if ($__cli && !empty($_GET['aft'])) { $r['after'] = function_exists('wa_aft_tick') ? wa_aft_tick($pdo, 40) : 'no module'; $r['aft_dbg'] = setting_get($pdo, 'wa_aft_dbg', '-'); json_response($r); }   // diag: one After-Order tick by hand (php cron_line.php test aft)
+        if ($__cli && function_exists('wl_tick')) {   // a command-line copy works until ~50 s: an empty shard ends at once, so it takes the next one (shards are tried from a random start)
+            $__t0 = microtime(true); $__tot = ['sent' => 0, 'rounds' => 0];
+            try { for ($__k = 0; $__k < 10 && microtime(true) - $__t0 < 45; $__k++) { $__o = wl_tick($pdo, ['sendonly' => 1]); $__tot['rounds']++; $__tot['sent'] += (int)($__o['sent'] ?? 0); if (!empty($__o['why'])) $__tot['why'] = mb_substr((string)$__o['why'], 0, 160); if (isset($__o['cfg']) && empty($__o['sent']) && empty($__o['waiting']) && empty($__o['skipped']) && empty($__o['failed'])) { usleep(200000); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cli lineup: ' . $e->getMessage()); }
+            $r['lineup'] = $__tot; try { setting_set($pdo, 'wa_cli_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { } json_response($r);
+        }
         try { $r['lineup'] = function_exists('wl_tick') ? wl_tick($pdo, ['sendonly' => 1]) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job lineup: ' . $e->getMessage()); }   // 🧵 the Lineup's sending round first: it works a shard of the due customers of its own (several callers at once = faster)
+        if ($__cli) { try { setting_set($pdo, 'wa_cli_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { } json_response($r); }
+        try { $r['after'] = function_exists('wa_aft_tick') ? wa_aft_tick($pdo, 35) : null; } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'after-order: ' . $e->getMessage()); }   // 🛍 the After-Order plan
         try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
         try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job recovery: ' . $e->getMessage()); }
         try { setting_set($pdo, 'wa_send_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { }
@@ -745,6 +756,28 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             foreach (["ALTER TABLE wa_messages ADD INDEX k_dir_type_ts (dir, mtype, ts, phone)", "ALTER TABLE wa_contacts ADD INDEX k_callnow (callnow, assigned_emp)",
                       "ALTER TABLE wa_messages ADD INDEX k_pdt (phone, dir, ts)", "ALTER TABLE wa_camp_items ADD INDEX k_phone (phone)"] as $ix) {
                 try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { } } }
+            }
+        }
+        // ⚡ speed indexes, round 2 (23 Nov, Server load: the database was 30% of the server). Same answers, found faster; added ONCE, online:
+        //    wa_tpl_waba (waba_id, meta_id)      — "how many templates has this WhatsApp account" read the whole table (its key starts with tpl_id)
+        //    wa_messages (dir, who, ts, phone)   — "chats where the BOT spoke last" (the follow-up scan) read every outgoing message of the period to find the bot's
+        if ((string)setting_get($pdo, 'wa_idx_v2', '') !== '1') {
+            setting_set($pdo, 'wa_idx_v2', '1'); @set_time_limit(900); ignore_user_abort(true);
+            foreach (["ALTER TABLE wa_tpl_waba ADD INDEX k_waba (waba_id, meta_id)", "ALTER TABLE wa_messages ADD INDEX k_dir_who_ts (dir, who, ts, phone)"] as $ix) {
+                try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { try { wa_log($pdo, 'engine', false, 'index v2: ' . $e2->getMessage()); } catch (Throwable $e3) { } } } }
+            }
+        }
+        // ⚡ speed indexes, round 3 (23 Nov, from the 25 queries of Server load). Same answers, found faster; added ONCE, online:
+        //    wa_contacts (assigned_emp, status)            — "how many open chats has this person" and the per-person list check
+        //    wa_line_plan (wamid)                          — Lineup: plans found by their WhatsApp message id (read every plan of a status before)
+        //    wa_line_plan (status, step, topic, phone)     — Lineup counts by step / topic
+        //    wa_line_plan (status, due_at, phone)          — Lineup counts by day
+        //    wa_messages (number_id, ts, dir)              — messages in / out of ONE WhatsApp number since a time (runs of 8 s were seen)
+        if ((string)setting_get($pdo, 'wa_idx_v3', '') !== '1') {
+            setting_set($pdo, 'wa_idx_v3', '1'); @set_time_limit(1200); ignore_user_abort(true);
+            foreach (["ALTER TABLE wa_contacts ADD INDEX k_emp_status (assigned_emp, status)", "ALTER TABLE wa_line_plan ADD INDEX k_wamid (wamid)", "ALTER TABLE wa_line_plan ADD INDEX k_st_step (status, step, topic, phone)",
+                      "ALTER TABLE wa_line_plan ADD INDEX k_st_due_ph (status, due_at, phone)", "ALTER TABLE wa_messages ADD INDEX k_num_ts (number_id, ts, dir)"] as $ix) {
+                try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { try { wa_log($pdo, 'engine', false, 'index v3: ' . $e2->getMessage()); } catch (Throwable $e3) { } } } }
             }
         }
         // ⚡ one cron at a time: a slow run (Meta, Shopify) is never joined by the next minute's run — they used to pile up and slow every page

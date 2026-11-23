@@ -78,6 +78,13 @@ const api = {
   },
   _get(action, options = {}, params = {}) {
     if ((options.method || 'GET') !== 'GET') return this._request(action, options, params).then((d) => { if (!/(_tick|\.tick|callnow|dq_worker|rescue_scan|ping)$/.test(action) && !/^wa\.(send|assign|transfer|takeover|remind|hand_mark|price_photo|tpl_send|order_done|bulk_ordered|g_guide_seen|subscribe|register|suggest|read|typing|mark_read)$/.test(action)) this._swrClear(); return d; });
+    // 💤 a tab nobody is looking at (hidden for 30 s or more) asks the server nothing: the question waits and is asked the moment the tab is opened again.
+    //    The same question asked again and again while hidden (a refresh timer) is asked ONCE. Saves (POST) and the alerts below are never held back.
+    if (typeof document !== 'undefined' && document.hidden && this._hidAt && Date.now() - this._hidAt > 30000 && !/(callnow|notif|alert|punch|attendance|flags|menu_ctx|badge|ping)/.test(action)) {
+      const hk = action + '?' + JSON.stringify(params);
+      if (!this._hid[hk]) this._hid[hk] = new Promise((res) => this._hidQ.push(res)).then(() => { delete this._hid[hk]; return this._get(action, options, params); });
+      return this._hid[hk];
+    }
     const key = action + '?' + JSON.stringify(params) + '|' + String(this.token() || '').slice(-12);
     const cacheable = /(badge|count|pulse|flags|ctx)$/.test(action);   // me.flags is asked by every page: reuse it for 30 s (the server still checks the role on every real action)
     if (cacheable) {
@@ -148,6 +155,7 @@ const api = {
     return data;
   },
 
+  _hidAt: 0, _hid: {}, _hidQ: [],
   _active: 0, _waiting: [],
   _slot(prio) { if (this._active < 8) { this._active++; return Promise.resolve(); } return new Promise((r) => (prio ? this._waiting.unshift(r) : this._waiting.push(r))); },   // a Save goes to the front of the queue
   _free() { const n = this._waiting.shift(); if (n) n(); else this._active--; },
@@ -188,3 +196,14 @@ function logout() {
   localStorage.removeItem('hrms_home');
   window.location.href = 'index.html';
 }
+
+// 💤 hidden-tab pause (see api._get): remember when the tab was hidden; when it is shown again, ask everything that waited
+try {
+  if (typeof document !== 'undefined') {
+    if (document.hidden) api._hidAt = Date.now();
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { api._hidAt = Date.now(); return; }
+      api._hidAt = 0; const q = api._hidQ; api._hidQ = []; q.forEach((r) => { try { r(); } catch (e) { } });
+    });
+  }
+} catch (e) { }

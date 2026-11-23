@@ -77,6 +77,7 @@ jobs:
             chain/images/**   # the product photos are already on the server; Hostinger keeps refusing them (550 No such file) and the whole deploy stopped
             analytics/data/**
             docs/**
+            ctwa-roas/**
             DEPLOY_NOTES.md
             README_TMPH.md
             gitignore

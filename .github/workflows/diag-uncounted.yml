@@ -1,9 +1,13 @@
-# READ-ONLY: business day 2026-11-19 — all orders vs the orders that have an allocation row (what the Leaders collection counts), the orders WITHOUT one, and the HRMS-typed manual orders. No customer names or phone numbers. Changes nothing.
+# READ-ONLY: what the must-send check sees for ONE order (times and which rule matched, no message text). Changes nothing.
 # Run it by hand: Actions -> "Uncounted orders (read-only)" -> Run workflow.
 name: Uncounted orders (read-only)
 
 on:
   workflow_dispatch:
+    inputs:
+      chat:
+        description: 'last 10 digits of the customer number'
+        required: false
 
 jobs:
   check:
@@ -19,45 +23,38 @@ jobs:
           ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
 
-      - name: Uncounted orders
+      - name: Queries of two people
         env:
           STAGING_HOST: ${{ secrets.STAGING_HOST }}
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          CHAT: ${{ github.event.inputs.chat }}
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
-          P="$1"
-          cat > /tmp/un_check.php <<'PHP'
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$CHAT" <<'REMOTE' || true
+          P="$1"; CH="$2"
+          cat > /tmp/ql_check.php <<'PHP'
           <?php
           $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
-          require $f;
+          require $f; $on = preg_replace("/\D/", "", (string)($argv[2] ?? "")); if ($on === "") { echo "no order number\n"; exit; }
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
-          date_default_timezone_set("Asia/Kolkata");
-          $SPEND = 300027.0; $ROAS = 3.0; $TARGET = $SPEND * $ROAS;
-          echo "spend of 20 Nov Rs " . number_format($SPEND) . " x ROAS " . $ROAS . " = target collection Rs " . number_format($TARGET) . "\n";
-          $sql = "SELECT o.store_key sk, o.order_name nm, o.created_at ca, o.total total, o.tags tg, a.alloc_id aid, a.order_type ot
-                  FROM shop_orders o LEFT JOIN order_allocations a ON a.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci
-                  WHERE o.created_at >= '2026-11-20 10:00:00' AND o.created_at < '2026-11-22 00:00:00' AND o.total > 0 ORDER BY o.created_at";
-          try { $rows = $d->query($sql)->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "n/a: " . substr($e->getMessage(), 0, 200) . "\n"; exit; }
-          $addon = []; try { foreach ($d->query("SELECT LOWER(TRIM(LEADING '#' FROM TRIM(order_name))) k, SUM(price) s FROM employee_addons WHERE addon_date >= '2026-11-19' GROUP BY k")->fetchAll(PDO::FETCH_ASSOC) as $r) $addon[$r["k"]] = (float)$r["s"]; } catch (Throwable $e) { }
-          $ev = [];
-          foreach ($rows as $r) {
-            if (stripos((string)$r["tg"], "cancel") !== false || $r["aid"] === null) continue;
-            $k = strtolower(trim(ltrim(trim($r["nm"]), "#"))); $ev[] = [$r["ca"], (float)$r["total"] + ($addon[$k] ?? 0.0), in_array($r["ot"], ["query", "campaign"], true) ? $r["ot"] : "other", $r["nm"]];
+          date_default_timezone_set("Asia/Kolkata"); $d->exec("SET time_zone = '+05:30'"); echo "now " . date("Y-m-d H:i:s") . "\n";
+          $q = $d->prepare("SELECT o.order_name, o.store_key, o.shopify_id, o.created_at, o.phone, o.total, o.tags FROM shop_orders o WHERE REPLACE(o.order_name, '#', '') = ? ORDER BY o.created_at DESC LIMIT 3"); $q->execute([$on]);
+          foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $o) {
+            $k = substr(preg_replace("/\D+/", "", (string)$o["phone"]), -10); $t = strtotime((string)$o["created_at"]);
+            echo "ORDER " . $o["order_name"] . " store " . $o["store_key"] . " created " . $o["created_at"] . " total " . $o["total"] . " phone digits " . strlen($k) . " cancelled " . (stripos((string)$o["tags"], "cancel") !== false ? "yes" : "no") . "\n";
+            $a = $d->prepare("SELECT employee_id, order_type, allocated_by, allocated_at FROM order_allocations WHERE source = ? AND order_id = ?"); $a->execute([$o["store_key"], (string)$o["shopify_id"]]); echo "  allocation: " . json_encode($a->fetch(PDO::FETCH_ASSOC)) . "\n";
+            $c = $d->prepare("SELECT COUNT(*) FROM wa_contacts WHERE phone = ?"); $c->execute([$k]); echo "  chat with the order's number exists: " . ($c->fetchColumn() ? "yes" : "NO") . "\n";
+            $m = $d->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700"); $m->execute([$k, date("Y-m-d H:i:s", $t - 3 * 86400), date("Y-m-d H:i:s", min(time(), $t + 48 * 3600))]); $ms = $m->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms);
+            echo "  messages read in the window (" . date("Y-m-d H:i", $t - 3 * 86400) . " .. " . date("Y-m-d H:i", min(time(), $t + 48 * 3600)) . "): $nm" . ($nm >= 700 ? " (LIMIT REACHED)" : "") . " first " . ($ms[0]["ts"] ?? "-") . " last " . ($ms[$nm - 1]["ts"] ?? "-") . "\n";
+            $all = $d->prepare("SELECT COUNT(*), MIN(ts), MAX(ts) FROM wa_messages WHERE phone = ?"); $all->execute([$k]); echo "  all messages of this chat: " . implode(" / ", $all->fetch(PDO::FETCH_NUM)) . "\n";
+            $rxA = '/recheck your delivery address|change address\s*\/\s*add new address/i'; $rxC = '/chain_index|jewell?ery item from this catalogue|chain or any other jewell?ery/i';
+            $rxChainWord = '/\b(chains?|necklaces?|pendants?|bracelets?|lockets?|jewell?ery|jewelry|mala|kada)\b/iu';
+            $rxP = '/((?<![\d.])2|\bdo|\btwo)\s*(%|percent|per\s*cent|pratishat)|extra discount|(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)[^.\n]{0,80}(discount|off|less|kam|chhut|chut|cashback)|(discount|off|less|kam|chhut|chut|cashback)[^.\n]{0,80}(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)/iu';
+            foreach ($ms as $mi => $x) { if ($x["dir"] !== "out") continue; $body = (string)$x["body"]; $hit = [];
+              if (preg_match($rxA, $body)) $hit[] = "ADDRESS"; if ($body !== "" && preg_match($rxP, $body)) $hit[] = "PREPAID"; if (preg_match($rxC, $body) || preg_match($rxChainWord, $body)) $hit[] = "CHAIN";
+              if ($hit) echo "  hit " . $x["ts"] . " " . $x["who"] . "/" . $x["mtype"] . ": " . implode(",", $hit) . "\n"; }
+            $ad = $d->prepare("SELECT COUNT(*), COALESCE(SUM(price),0) FROM employee_addons WHERE REPLACE(LOWER(order_name), '#', '') = ?"); $ad->execute([$on]); echo "  add-on rows / amount: " . implode(" / ", $ad->fetch(PDO::FETCH_NUM)) . "\n";
           }
-          try { foreach ($d->query("SELECT order_date, total, order_type, order_no FROM manual_orders WHERE order_date >= '2026-11-20 10:00:00' AND order_date < '2026-11-22 00:00:00'")->fetchAll(PDO::FETCH_ASSOC) as $m) $ev[] = [$m["order_date"], (float)$m["total"], in_array($m["order_type"], ["query", "campaign"], true) ? $m["order_type"] : "other", "manual " . $m["order_no"]]; } catch (Throwable $e) { }
-          usort($ev, function ($x, $y) { return strcmp($x[0], $y[0]); });
-          $cum = 0.0; $cross = null; $n = 0; $q = [0, 0.0]; $c = [0, 0.0]; $o = [0, 0.0]; $before = 0.0;
-          foreach ($ev as $e) { $before = $cum; $cum += $e[1]; $n++; $t = $e[2] === "query" ? "q" : ($e[2] === "campaign" ? "c" : "o"); if ($t === "q") { $q[0]++; $q[1] += $e[1]; } elseif ($t === "c") { $c[0]++; $c[1] += $e[1]; } else { $o[0]++; $o[1] += $e[1]; } if ($cross === null && $cum >= $TARGET) { $cross = $e; $crossCum = $cum; $crossBefore = $before; $crossN = $n; $snap = [$q, $c, $o]; } }
-          if ($cross === null) { echo "target not reached yet: collection so far Rs " . number_format(round($cum)) . " in $n orders\n"; exit; }
-          echo "TARGET REACHED at order time " . $cross[0] . " (order " . $cross[3] . ", Rs " . round($cross[1]) . ") -> cumulative before it Rs " . number_format(round($crossBefore)) . ", with it Rs " . number_format(round($crossCum)) . " = ROAS " . round($crossCum / $SPEND, 3) . " · orders so far $crossN\n";
-          echo "  split at that moment: Query " . $snap[0][0] . " / Rs " . number_format(round($snap[0][1])) . " · Campaign " . $snap[1][0] . " / Rs " . number_format(round($snap[1][1])) . " · Other " . $snap[2][0] . " / Rs " . number_format(round($snap[2][1])) . "\n";
-          echo "\ncumulative around the crossing (time · order amount · running collection · ROAS):\n";
-          $i0 = 0; foreach ($ev as $i => $e) if ($e[0] === $cross[0] && $e[3] === $cross[3]) $i0 = $i;
-          $run = 0.0; foreach ($ev as $i => $e) { $run += $e[1]; if ($i >= $i0 - 4 && $i <= $i0 + 4) echo "  " . $e[0] . " · Rs " . str_pad(round($e[1]), 6) . " · Rs " . str_pad(number_format(round($run)), 9) . " · ROAS " . round($run / $SPEND, 3) . ($i === $i0 ? "   <== 3 ROAS complete" : "") . "\n"; }
-          $after = [0, 0.0, 0, 0.0, 0, 0.0, 0]; foreach ($ev as $i => $e) if ($i > $i0) { $after[6]++; if ($e[2] === "query") { $after[0]++; $after[1] += $e[1]; } elseif ($e[2] === "campaign") { $after[2]++; $after[3] += $e[1]; } else { $after[4]++; $after[5] += $e[1]; } }
-          echo "\nAFTER that order (new day 21 Nov would start here) up to now: orders " . $after[6] . " · collection Rs " . number_format(round($after[1] + $after[3] + $after[5])) . " · Query " . $after[0] . " / Rs " . number_format(round($after[1])) . " · Campaign " . $after[2] . " / Rs " . number_format(round($after[3])) . " · Other " . $after[4] . " / Rs " . number_format(round($after[5])) . "\n";
-          echo "now " . date("Y-m-d H:i") . "\n";
           PHP
-          php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
+          php /tmp/ql_check.php "$P" "$CH"; rm -f /tmp/ql_check.php
           REMOTE

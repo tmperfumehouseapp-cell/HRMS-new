@@ -287,7 +287,9 @@ function pc_photo_url(PDO $pdo, ?float $pct = null, bool $force = false): string
 
 // ------------------------------------------------------------------ the customer price photo: drawn by the server from the Price chart, always at the 6.5% column
 /** The ONE column customers see (the 6.5% price). Never a % on the picture. */
-function pc_photo_pct(): float { return 6.5; }
+function pc_photo_pct(): float {   // owner, 21 Nov: the FIRST price shown to a customer is the chart's 7% column (6.5% only when the chart has no 7% column)
+    static $v = null; if ($v === null) { $v = 6.5; try { global $pdo; if (isset($pdo) && $pdo instanceof PDO) { $q = $pdo->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = 'ml_slab_chart'"); $q->execute(); $j = json_decode((string)$q->fetchColumn(), true); foreach ((array)($j['cols'] ?? []) as $c) if (abs((float)$c - 7.0) < 0.001) $v = 7.0; } } catch (Throwable $e) { } }
+    return $v; }
 /** The perfume sizes on the photo: 50 ml to 500 ml only. */
 function pc_photo_ml_range(): array { return [50.0, 500.0]; }
 /** Index of the 6.5% column of a chart, or null when the chart has no such column. */

@@ -169,7 +169,8 @@ function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
     $rt = fn(array $n) => $n['used'] / max(1, $n['cap']); $minR = min(array_map($rt, $el)); $tol = (float)($ctx['sticky'] ?? 0.05);   // "stay on the number they wrote to" is soft: that number may be at most 5% of its day ahead of the freest one, so no number sits idle while another fills up
     if ($last && isset($el[$last]) && $c['last_in_at'] && strtotime((string)$c['last_in_at']) > time() - 30 * 86400 && ($ign[$last] ?? 0) < $ctx['switch']) return [$last, ''];   // they wrote to this one: ALWAYS stay on it while it has room today (owner's rule) — the other number only after they ignored it, or when it is full / Low quality
     $cand = array_filter($el, fn($n) => ($ign[$n['id']] ?? 0) < $ctx['switch']); if (!$cand) return [0, 'ignored every number'];
-    uasort($cand, fn($a, $b) => ($a['used'] / max(1, $a['cap'])) <=> ($b['used'] / max(1, $b['cap'])));
+    // owner 23 Nov 2026: a number with a SMALL daily limit (a new number on its slow start, cap under 10,000) that still has room is filled FIRST - by the used/cap ratio it always looked 'fuller' than the big numbers, so number 11 got almost nothing (341 in a day) while it was GREEN
+    uasort($cand, fn($a, $b) => ((int)$a['cap'] < 10000 && (int)$a['left'] > 0 ? 0 : 1) <=> ((int)$b['cap'] < 10000 && (int)$b['left'] > 0 ? 0 : 1) ?: ($a['used'] / max(1, $a['cap'])) <=> ($b['used'] / max(1, $b['cap'])));
     return [(int)reset($cand)['id'], ''];
 }
 function wa_first_name(string $name): string
@@ -228,6 +229,8 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
         $co = (int)($c['camp_optout'] ?? -1); if ($co < 0) { try { $qq = $pdo->prepare("SELECT camp_optout FROM wa_contacts WHERE phone = ?"); $qq->execute([(string)$c['phone']]); $co = (int)$qq->fetchColumn(); } catch (Throwable $e0) { $co = 0; } }
         if ($co === 1) return [false, 'This customer asked to stop promotional messages.', 0];
     }
+    if (!in_array($who, ['order', 'test'], true) && wa_quiet_hours() && empty($GLOBALS['wa_ru_noquiet'])) return [false, 'No number has room now (quiet hours 03:00-09:00: no automatic message goes).', 0];   // 🌙 universal rule (owner, 21 Nov) - except Module B's utility follow-up (owner 23 Nov: Module B never rests; $GLOBALS['wa_ru_noquiet'] is set only while its own tick runs)
+    if (in_array($who, ['bot', 'auto', 'flow', 'followup', 'recover', 'campaign'], true) && function_exists('wa_bot_paused') && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.', 0];   // ⏸ stopped by the salesperson
     if (in_array($who, ['flow', 'followup'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off until tomorrow night.', 0];
     $to = (string)($c['wa_id'] ?: '91' . $c['phone']);
     if (!in_array(strtoupper((string)($t['header_format'] ?? '')), ['', 'TEXT'], true)) {   // a photo / video / PDF on top needs its own parts
@@ -280,6 +283,8 @@ function wa_fu_scan(PDO $pdo): array
 }
 
 // ---------------------------------------------------------------------------------------------------------------- campaigns: time rules
+/** 🌙 UNIVERSAL QUIET HOURS (owner, 21 Nov): NO automatic message (campaign, marketing, follow-up, Lineup, recovery, drip) goes between 03:00 and 09:00 IST; follow-ups may run until 03:00. Replies to a customer who wrote, and order messages, are not touched. */
+if (!function_exists('wa_quiet_hours')) { function wa_quiet_hours($ts = null): bool { $h = (int)date('G', $ts === null ? time() : (int)$ts); return $h >= 3 && $h < 9; } }
 /** "Now" for the campaign engine (the real clock; a test may define WA_CAMP_NOW). */
 function wa_camp_now(): int { return defined('WA_CAMP_NOW') ? (int)WA_CAMP_NOW : time(); }
 /** The hours in which campaigns may send: [first hour, hour when it stops] — default 0 → 24: any hour, the owner sends whenever they want. Setting wa_camp_window = "8-21" would bring quiet hours back. */
@@ -288,10 +293,42 @@ function wa_camp_window(PDO $pdo): array
     // no time-slot restriction at all (owner, 12 Nov): campaigns may send at any hour of the day or night, so a scheduled 7 am campaign is never held back. The old wa_camp_window setting is ignored.
     return [0, 24];
 }
-function wa_camp_in_window(PDO $pdo, int $ts): bool { [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); return $h >= $o && $h < $c; }
+function wa_camp_in_window(PDO $pdo, int $ts): bool { [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); return $h >= $o && $h < $c && !wa_quiet_hours($ts); }   // + the universal quiet hours 03:00-09:00
+/**
+ * 🔁 Owner 22 Nov 2026: "when Meta pauses a message for low quality (132015) do not wait for me: switch to another approved version and carry on, no permission needed".
+ * A campaign that Meta stopped with 132015 (note holds the code) gets the next approved sibling of its message family (marketing versions first, newest first, then the
+ * approved utility versions of that family) and runs again with the people still waiting. The old message is remembered as bad for 3 days (wa_camp_tpl_bad) so
+ * no campaign swaps back to it. At most every 2 minutes; switch off: wa_camp_auto_swap = 0. Returns how many campaigns were switched.
+ */
+function wa_camp_swap_paused(PDO $pdo): int
+{
+    if ((string)setting_get($pdo, 'wa_camp_auto_swap', '1') === '0') return 0;
+    if ((int)setting_get($pdo, 'wa_camp_swap_at', '0') > time() - 120) return 0; setting_set($pdo, 'wa_camp_swap_at', (string)time());
+    $n = 0; $now = time();
+    try {
+        $rows = $pdo->query("SELECT id, tpl_id, media_lib_id, note FROM wa_campaigns WHERE status = 'paused' AND (note LIKE '%132015%' OR note LIKE '%paused due to low quality%' OR note LIKE 'Fill the text for%') ORDER BY id LIMIT 20")->fetchAll(); if (!$rows) return 0;   /* 'Fill the text for {{2}}': the message has a second blank nobody filled - the campaign cannot send; it carries on with another approved one-blank message too (owner 22 Nov: maximum delivery, no permission needed) */
+        $bad = json_decode((string)setting_get($pdo, 'wa_camp_tpl_bad', ''), true); $bad = is_array($bad) ? array_filter($bad, fn($u) => (int)$u > $now) : [];
+        foreach ($rows as $c) {
+            $cur = (int)$c['tpl_id']; $bad[$cur] = $now + 3 * 86400;
+            $tr = $pdo->prepare("SELECT id, family_id FROM wa_templates WHERE id = ?"); $tr->execute([$cur]); $t0 = $tr->fetch(); $root = $t0 ? (int)($t0['family_id'] ?: $t0['id']) : 0;
+            $q = $pdo->prepare("SELECT id, name, category FROM wa_templates WHERE ((id = ? OR family_id = ?) AND ? > 0) AND id <> ? ORDER BY (category = 'MARKETING') DESC, version DESC, id DESC LIMIT 60"); $q->execute([$root, $root, $root, $cur]); $cands = $q->fetchAll();
+            if (stripos((string)$c['note'], 'Fill the text for') === 0) { $fb = (int)setting_get($pdo, 'wa_camp_fallback_tpl', '396'); if ($fb > 0 && $fb !== $cur) { $fq = $pdo->prepare("SELECT id, name, category FROM wa_templates WHERE id = ?"); $fq->execute([$fb]); if ($fr = $fq->fetch()) $cands[] = $fr; } }   /* nobody to take the words of: the family's approved message, else the owner's approved fallback (perfume_sirf_400_v2) */
+            foreach ($cands as $cand) {
+                $cid = (int)$cand['id']; if (isset($bad[$cid])) continue;
+                $t = wa_camp_tpl($pdo, $cid, true, (int)$c['media_lib_id']); if (!$t || (int)($t['nvars'] ?? 0) > 1) continue;
+                $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, status = 'running', note = '' WHERE id = ? AND status = 'paused'")->execute([$cid, (int)$c['id']]); $n++;
+                wa_log($pdo, 'campaign', true, 'Campaign #' . (int)$c['id'] . ': Meta paused its message (132015); it now carries on with ' . (string)$cand['name'] . ' (' . (string)$cand['category'] . ', approved)');
+                break;
+            }
+        }
+        setting_set($pdo, 'wa_camp_tpl_bad', json_encode((object)$bad));
+    } catch (Throwable $e) { }
+    return $n;
+}
 /** The next moment inside the sending window (the same time when it is already inside). */
 function wa_camp_clamp(PDO $pdo, int $ts): int
 {
+    if (wa_quiet_hours($ts)) return mktime(9, 0, 0, (int)date('n', $ts), (int)date('j', $ts), (int)date('Y', $ts));   // 03:00-09:00: the same morning at 09:00
     [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); if ($h >= $o && $h < $c) return $ts;
     return $h < $o ? mktime($o, 0, 0, (int)date('n', $ts), (int)date('j', $ts), (int)date('Y', $ts)) : mktime($o, 0, 0, (int)date('n', $ts), (int)date('j', $ts) + 1, (int)date('Y', $ts));
 }
@@ -530,7 +567,7 @@ function wa_camp_delivery(PDO $pdo, int $id): array
     if ($__tot > 0 && $__known * 2 < $__tot) { $q = $pdo->prepare("SELECT m.status AS s, COUNT(*) AS n FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid WHERE i.camp_id = ? AND i.wamid != '' GROUP BY m.status"); $q->execute([$id]); $__rows = $q->fetchAll(); }   // old campaign: last_status was not kept then
     foreach ($__rows as $r) { if ($r['s'] === 'delivered') $o['delivered'] += (int)$r['n']; if ($r['s'] === 'read') { $o['delivered'] += (int)$r['n']; $o['read'] += (int)$r['n']; } }
     // 💬 replied: customers who wrote back within 2 days of their campaign message (the same rule as the report card)
-    $o['replied'] = 0; try { $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent'"); $q->execute([$id]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    $o['replied'] = 0; try { $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent' AND NOT EXISTS (SELECT 1 FROM wa_ctags gba WHERE gba.phone = i.phone AND gba.tag = 'business_autoreply')"); $q->execute([$id]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     return $o;
 }
 function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = null): array
@@ -1150,7 +1187,7 @@ function wa_camp_result(PDO $pdo, array $c, array $cfg, bool $withMix = false): 
 {
     $id = (int)$c['id']; $cn = wa_camp_counts($pdo, $id); $d = wa_camp_delivery($pdo, $id); $t = null; if ((int)$c['tpl_id']) { try { $t = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { } }
     $end = $c['finished_at'] ?: date('Y-m-d H:i:s', wa_camp_now()); $ordTo = strtotime((string)$end) + 7 * 86400;
-    $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent'"); $q->execute([$id]); $replied = (int)$q->fetchColumn();
+    $q = $pdo->prepare("SELECT COUNT(DISTINCT i.phone) FROM wa_camp_items i JOIN wa_messages m ON m.phone = i.phone AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY) WHERE i.camp_id = ? AND i.status = 'sent' AND NOT EXISTS (SELECT 1 FROM wa_ctags gba WHERE gba.phone = i.phone AND gba.tag = 'business_autoreply')"); $q->execute([$id]); $replied = (int)$q->fetchColumn();
     $sentAt = []; $q = $pdo->prepare("SELECT phone, sent_at FROM wa_camp_items WHERE camp_id = ? AND status = 'sent'"); $q->execute([$id]); foreach ($q->fetchAll() as $r) $sentAt[(string)$r['phone']] = strtotime((string)$r['sent_at']);
     $orders = 0; $rev = 0; $cust = [];
     if ($sentAt && $c['started_at']) {
@@ -1521,7 +1558,7 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
         }
         foreach (array_chunk(array_keys($dph), 800) as $ch) {
             $iq = $pdo->prepare("SELECT phone, MAX(ts) t FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts <= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") GROUP BY phone"); $iq->execute(array_merge([$from, $now], $ch));
-            foreach ($iq->fetchAll() as $r) if ((string)$r['t'] > $dph[(string)$r['phone']]) $dr['replied']++;
+            $__ar = wa_autoreply_phones($pdo, $ch); foreach ($iq->fetchAll() as $r) if ((string)$r['t'] > $dph[(string)$r['phone']] && empty($__ar[(string)$r['phone']])) $dr['replied']++;   // another business's auto-reply is not a reply
         }
         $o['sent'] += $dr['sent']; $o['delivered'] += $dr['delivered']; $o['read'] += $dr['read']; $o['failed'] += $dr['failed']; $o['replied'] += $dr['replied']; $o['utility'] += $dr['utility']; $o['marketing'] += max(0, $dr['delivered'] - $dr['utility'] - $dr['service']);
         $o['m_amount'] = round($o['marketing'] * (float)$R['marketing'], 2); $o['u_amount'] = round($o['utility'] * (float)$R['utility'], 2); $o['amount'] = round($o['m_amount'] + $o['u_amount'], 2); $o['drip'] = $dr;
@@ -1577,7 +1614,8 @@ function wa_camp_err_label(int $code, string $err = ''): string
 /** The people of a campaign with their derived status (replied > read > delivered > sent; failed / retry / skipped / queued come from the item). */
 function wa_camp_ds_sql(): string
 {
-    $rep = "EXISTS (SELECT 1 FROM wa_messages r WHERE r.phone = i.phone AND r.dir = 'in' AND r.ts > i.sent_at AND r.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY))";
+    // an answer of another business's automatic reply ("Thanks for contacting us…", chat tagged business_autoreply) is not a customer reply (owner, 23 Nov)
+    $rep = "EXISTS (SELECT 1 FROM wa_messages r WHERE r.phone = i.phone AND r.dir = 'in' AND r.ts > i.sent_at AND r.ts <= DATE_ADD(i.sent_at, INTERVAL 2 DAY)) AND NOT EXISTS (SELECT 1 FROM wa_ctags gba WHERE gba.phone = i.phone AND gba.tag = 'business_autoreply')";
     return "SELECT i.*, m.status AS ms, COALESCE(m.err, '') AS merr, COALESCE(m.err_code, 0) AS mcode, CASE WHEN i.err_code = 131049 AND i.status IN ('skipped', 'retry') THEN 'held' WHEN i.status = 'skipped' THEN 'skipped' WHEN i.status = 'retry' THEN 'retry' WHEN i.status = 'failed' OR (i.status = 'sent' AND (i.last_status = 'failed' OR m.status = 'failed')) THEN 'failed' WHEN i.status IN ('queued', 'sending') THEN 'queued'
         WHEN $rep THEN 'replied' WHEN m.status = 'read' OR i.last_status = 'read' THEN 'read' WHEN m.status = 'delivered' OR i.last_status = 'delivered' THEN 'delivered' ELSE 'sent' END AS ds
         FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id = ?";

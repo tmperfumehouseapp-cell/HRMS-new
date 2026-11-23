@@ -172,3 +172,11 @@ details.sx-d>summary::after{content:'▾';margin-left:auto;color:var(--sx-mut)}
 @media (max-width:760px){.ord-row{grid-template-columns:1fr auto}.ord-row .sug-qty{grid-column:1}.ord-add{grid-template-columns:1fr 1fr}}
 .lab-grp input[type=checkbox]{width:18px;height:18px;accent-color:var(--sx-accent)}
 .x{border:0;background:none;color:var(--sx-bad);font-weight:800;cursor:pointer;font-size:12px;padding:4px 6px;border-radius:8px}.x:hover{background:var(--sx-bad-t)}
+
+/* Top sellers card (store dashboard): vertical bars, perfume name under each bar */
+.sx-card.c-top{grid-column:1/-1}
+.sx-tabs.sx-tabs-s{padding:0 0 6px}.sx-tabs.sx-tabs-s button{padding:6px 13px;font-size:12px}
+.sx-bars.sx-topbars{height:auto;min-height:150px;align-items:flex-end;padding-top:20px}
+.sx-topbars .col{height:auto;justify-content:flex-end}
+.sx-topbars .bar{max-width:56px}
+.sx-topbars .nm{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:center;line-height:1.25;color:var(--sx-ink);font-size:11.5px;width:100%;min-height:29px;word-break:break-word}
