@@ -1469,6 +1469,17 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         }
         // owner, 23 Nov (screenshot: the salesperson quoted 5x50 ml 1999/2499, then the bot quoted Rs 2,250 chart price 22 s and 2 s after the customer's next message): a person who wrote to this customer in the last 10 minutes is working the chat - the bot gives him 3 minutes to answer the customer's next message before it may cover (never contradict a price a person just gave)
         if (!$__stuck) { try { $__pw = $pdo->prepare("SELECT ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') ORDER BY id DESC LIMIT 1"); $__pw->execute([$key]); $__pt = (string)$__pw->fetchColumn(); if ($__pt !== '' && strtotime($__pt) > $now - 600 && $age < 180) continue; } catch (Throwable $e) { } }
+        // owner, 23 Nov (screenshot: a customer with a delivered order wrote honest negative feedback - harsh / synthetic smell, low-quality gift - and the bot answered with a combo pitch twice): after-sales feedback about quality is never a sales chat. The bot stays silent, leaves one hint in the chat and pushes the holder; a person answers (the bot never raises a complaint by itself)
+        try {
+            $__fq = $pdo->prepare("SELECT id, body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND ts > ? ORDER BY id DESC LIMIT 4"); $__fq->execute([$key, !empty($c['last_out_at']) ? (string)$c['last_out_at'] : '2000-01-01 00:00:00']); $__fr = $__fq->fetchAll();
+            $__ft = ' ' . mb_strtolower(implode(' ', array_column($__fr, 'body'))) . ' ';
+            if ($__fr && preg_match('/(quality|synthetic|harsh|smell|fragrance|khushbu|fake|duplicate|original nahi|damage|leak|feedback|complaint|shikayat|disappoint|bekar|kharab|refund|return kar)/u', $__ft) && !preg_match('/(new order|another order|order karna|order karo|order dena|\bbuy\b|lena hai|lunga|\bprice\b|\brate\b|combo|add.?on|chahiye|offer|discount|\d+\s?ml)/u', $__ft) && wag_after_delivery($pdo, $key, 'x')) {
+                $__fid = (int)$__fr[0]['id'];
+                if (wag_meta_get($pdo, 'cxfb:' . $key, '') !== (string)$__fid) { wag_meta_put($pdo, 'cxfb:' . $key, (string)$__fid);
+                    wa_event($pdo, $key, '💬 The customer has a delivered order and wrote feedback / a quality remark. The bot stays silent: please read the chat and answer (raise it from More → Complaint if it is a complaint).');
+                    $__ho = (int)($c['assigned_emp'] ?? 0); if ($__ho > 0 && function_exists('ct_push')) { try { ct_push($pdo, [$__ho], 'Customer feedback after delivery', 'The bot did not answer: a delivered-order customer wrote feedback. Please reply.', '/my_chats.html?phone=' . $key, 'wa-cxfb-' . $key); } catch (Throwable $e) { } } }
+                continue; }
+        } catch (Throwable $e) { }
         $li = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
         // wants to order / pay (hot): the bot takes the ORDER DETAILS and the ADDRESS — never the payment — and then a person finishes (ORDER MODE)
@@ -1576,6 +1587,9 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         if (empty($r['ok']) || trim((string)($r['text'] ?? '')) === '') { $D['ai']++; $D['err'] = mb_substr((string)($GLOBALS['lib_last_why'] ?? '') . ' | ' . (string)($r['why'] ?? ''), 0, 160); continue; }
         if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
         $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) { $D['same']++; continue; } }   // never the same text again
+        // owner, 23 Nov (screenshot: steps 2 and 3 sent "Sir, 2 x 100 ml ka combo Rs 2,130 hai. Kaunse perfume lena chahenge?" twice): a message sent with buttons is stored with the button lines too, so the percentage fell under 80 and the same text went again. Now: the new text must not already appear (first 50 letters) in ANY of the bot's last 4 messages
+        $__nt = mb_strtolower(trim((string)preg_replace('/\s+/u', ' ', mb_substr((string)$r['text'], 0, 50)))); $__bn = 0;
+        if ($__nt !== '') foreach ($rows as $rw) { if ((string)$rw['who'] !== 'bot') continue; if (++$__bn > 4) break; if (mb_strpos(mb_strtolower((string)preg_replace('/\s+/u', ' ', (string)$rw['body'])), $__nt) !== false) { $D['same']++; continue 2; } }
         $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)$lastIn));
         if (!$__tpl1 && preg_match('/confusion ya doubt|order bana dun/iu', (string)$r['text'])) { $__tpl1 = true; $r['text'] = wag_fu1_text($pdo, $c, $rows); }   // owner (22 Nov): the OLD 'confusion ya doubt hai? Order bana dun?' wording must never reach a customer, whatever step or path made it
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
