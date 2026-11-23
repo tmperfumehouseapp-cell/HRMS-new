@@ -8315,16 +8315,20 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
     // so the Commission page / tower / target % showed fewer orders and less sales than the Orders page for the same day (18 orders ₹39,964 there, 14 orders ₹36,068 here).
     // Their products are not known (no ML), so they add to the SALES and the target, and the commission chart pays nothing for them.
     try {
-        try { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch, channel FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }
+        try { try { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch, channel, ml, mp_no FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }   // 'ml' exists once a website order was given (store_orders.php)
+              catch (Throwable $e9) { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch, channel FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); } }
         catch (Throwable $e0) { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }   // 'channel' exists once a Myntra / Amazon / Flipkart order was added
         foreach ($mq->fetchAll() as $m) {
             $mk2 = 'manual|' . (string)$m['manual_order_id']; if (isset($cancel[$mk2])) continue;
             $a = $allocMap[$mk2] ?? null; if ($a && !empty($a['direct'])) continue;
             $who = ($a && !empty($a['emp'])) ? (int)$a['emp'] : (int)$m['employee_id']; if (!$who || !isset($emps[$who])) continue;
             $ts = strtotime((string)$m['order_date']); $fs = strtolower((string)$m['payment_status']);
-            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => null, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false,
-                'xnote' => (string)($m['channel'] ?? '') === 'TM Store' ? 'Website order: it counts in the sales and the target. No commission rule is set for website orders yet.' : ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
-                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
+            // 🛍 a WEBSITE order (the new shop, given on Sales → Orders → Website orders): its perfumes and ML are known, so the ML chart pays it like a Shopify order.
+            //    A website order cannot carry a code, so the no-code half does not apply to it ('web' => true). Setting tms_commission = '0' switches this off (sales and target only).
+            $isWeb = (string)($m['channel'] ?? '') === 'TM Store'; $webMl = ($isWeb && (int)($m['ml'] ?? 0) > 0 && (string)setting_get($pdo, 'tms_commission', '1') !== '0') ? (int)$m['ml'] : null;
+            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => $webMl, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false, 'web' => $webMl !== null,
+                'xnote' => $isWeb ? ($webMl !== null ? 'Website order ' . (string)($m['mp_no'] ?? '') . ': paid by the ML chart, no code needed.' : 'Website order: it counts in the sales and the target. Its ML is not known, so the chart cannot pay it.') : ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
+                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => $isWeb && (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
                 'mp' => in_array((string)($m['channel'] ?? ''), ['Myntra', 'Amazon', 'Flipkart'], true) ? (string)$m['channel'] : ''];   // 🛍 marketplace order: a flat % without a code (mp_flat_pct)
         }
     } catch (Throwable $e) { error_log('coach_sales_load manual orders: ' . $e->getMessage()); }
@@ -8564,7 +8568,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
                 $v = $o['amt'] * mp_flat_pct($pdo) / 100; $comAmt += $v; $comBase += $o['amt']; $com += $v; $comFlash += $v; $ordCom[$o['key']] = $v; $flashKeys[$o['key']] = true;
                 if (!$o['pre']) $nCod++; $h = date('G', $o['ts']); $byHour[$h] = ($byHour[$h] ?? 0) + 1; continue;
             }
-            if ($o['code'] !== '') $nCode++; else { $nNo++; $noCodeNames[] = $o['name']; }
+            if ($o['code'] !== '') $nCode++; elseif (empty($o['web'])) { $nNo++; $noCodeNames[] = $o['name']; }   // a website order cannot carry a code: it is not a "missing code"
             if (!$o['pre']) $nCod++;
             $h = date('G', $o['ts']); $byHour[$h] = ($byHour[$h] ?? 0) + 1;
             $flash = $flashList ? flash_offer_pct_for($flashList, $o['ml'], $o['amt'], $o['ts']) : null;
@@ -8573,16 +8577,16 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
                 // (no cap / bonus / floor — those are chart-only concepts); without one, this OFFER's own nocode% of it (its own
                 // number, set per-offer — e.g. 6% with a code, 3% without, independent of the main ML slab chart's nocode%).
                 $flashNocodeF = (float)$flash['nocode'] / 100;
-                $v = $o['amt'] * $flash['pct'] * (($o['code'] !== '' || $codeOk) ? 1 : $flashNocodeF) / 100;
-                if ($o['code'] === '' && !$codeOk) $lost += $o['amt'] * $flash['pct'] / 100 - $v;      // what the missing code cost on this order
+                $v = $o['amt'] * $flash['pct'] * (($o['code'] !== '' || $codeOk || !empty($o['web'])) ? 1 : $flashNocodeF) / 100;
+                if ($o['code'] === '' && !$codeOk && empty($o['web'])) $lost += $o['amt'] * $flash['pct'] / 100 - $v;      // what the missing code cost on this order
                 $comAmt += $v; $comBase += $o['amt']; $com += $v; $comFlash += $v; $ordCom[$o['key']] = $v; $flashKeys[$o['key']] = true;
                 continue;
             }
             $pc = !empty($chart['on']) && $o['ml'] ? coach_slab_pct($chart, $o['ml'], $o['amt'], $o['pre']) : null;
             if ($pc !== null) {
                 if ((float)($chart['floor'] ?? 0) > 0 && $pc <= (float)$chart['floor'] + 1e-9) $nFloor++;
-                $v = $o['amt'] * $pc * (($o['code'] !== '' || $codeOk) ? 1 : $nocodeF) / 100;
-                if ($o['code'] === '' && !$codeOk) $lost += $o['amt'] * $pc / 100 - $v;         // what the missing codes cost today
+                $v = $o['amt'] * $pc * (($o['code'] !== '' || $codeOk || !empty($o['web'])) ? 1 : $nocodeF) / 100;
+                if ($o['code'] === '' && !$codeOk && empty($o['web'])) $lost += $o['amt'] * $pc / 100 - $v;         // what the missing codes cost today
                 $comAmt += $v; $comBase += $o['amt']; $com += $v; $ordCom[$o['key']] = $v;
             }
         }
