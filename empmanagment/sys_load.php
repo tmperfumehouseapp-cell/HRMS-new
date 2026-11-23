@@ -267,7 +267,7 @@ function sysload_view(PDO $pdo, int $mins): array
         $dbSpan = $firstM === null ? 0 : max(60, ($nowM - $firstM + 1) * 60); $out['db_mode'] = 'looks'; $out['db_looks'] = $looks; $out['db_busy_cores'] = $looks ? round($tot / $looks, 2) : null;
     }
     $dbAll = array_slice($recent, 0, 25);      // the prompt carries 25 queries (the page shows 12): the load is usually spread over many small ones
-    $out['db_recent'] = array_slice($recent, 0, 12); $out['db_span_min'] = (int)round($dbSpan / 60);
+    $out['db_recent'] = array_slice($recent, 0, 25);      // the page lists 25 too (was 12): the Database tile opens this list $out['db_span_min'] = (int)round($dbSpan / 60);
 
     // the WhatsApp engine: how long each of its parts took on its last run
     $eng = [];
