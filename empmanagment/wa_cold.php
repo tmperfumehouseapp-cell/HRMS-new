@@ -146,6 +146,27 @@ if (!function_exists('wcd_tick')) {
         $st = wcd_tpl_stats($pdo); if (count($o) > 1 && $st) usort($o, function ($a, $b) use ($st) { $sa = $st[(int)$a[0]] ?? ['sent' => 0, 'replied' => 0]; $sb = $st[(int)$b[0]] ?? ['sent' => 0, 'replied' => 0]; return (($sb['replied'] + 0.5) / ($sb['sent'] + 50)) <=> (($sa['replied'] + 0.5) / ($sa['sent'] + 50)); });   /* the message with the best reply rate goes first (a new one starts at a fair guess and is judged after its first sends) */
         return $o;
     }
+    /** WHO WROTE AFTER A COLD MESSAGE (owner, 23 Nov: the card said 2-3 replies while 109 customers had written: 62 tapped "Not now", 9 "Very good", 5 "I need help", 4 STOP ...). Looks at the customers who wrote in the last 3 hours (9 days on the first run: backfill) and, for the ones still 'active' in the Cold ledger whose newest message came after they entered, marks them: a "Not now / stop / no" answer ends the Cold funnel for him ('done'), every other answer is a reply ('replied': the Lineup takes him). Phones are compared as literals, so no collation problem and no scan of the whole ledger. Returns the number of customers moved. */
+    function wcd_mark_replies(PDO $pdo, int $now): int
+    {
+        $moved = 0;
+        try {
+            $back = (string)setting_get($pdo, 'wcd_rep_v', '') !== '1'; $since = date('Y-m-d H:i:s', $now - ($back ? 9 * 86400 : 3 * 3600));
+            $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'in' AND ts >= ? LIMIT 40000"); $q->execute([$since]); $phones = $q->fetchAll(PDO::FETCH_COLUMN);
+            $last = $pdo->prepare("SELECT ts, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1");
+            $up = $pdo->prepare("UPDATE wa_cold_cust SET status = ?, why = ?, left_at = ? WHERE phone = ? AND status = 'active'");
+            foreach (array_chunk($phones, 400) as $ch) {
+                $in = implode(',', array_map(function ($x) use ($pdo) { return $pdo->quote((string)$x); }, $ch));
+                foreach ($pdo->query("SELECT phone, entered_at FROM wa_cold_cust WHERE status = 'active' AND phone IN (" . $in . ")")->fetchAll(PDO::FETCH_NUM) as [$ph, $ent]) {
+                    $last->execute([(string)$ph]); $m = $last->fetch(); if (!$m || (string)$m['ts'] < (string)$ent) continue;
+                    $b = mb_strtolower(trim((string)$m['body'])); $neg = (bool)preg_match('/^(not now|no thanks?|no\b|stop\b|unsubscribe|band kar|nahi\b|nhi\b|baad mein|later\b)/u', $b);
+                    $up->execute([$neg ? 'done' : 'replied', ($neg ? 'said: ' : 'wrote at ') . ($neg ? mb_substr($b, 0, 30) : substr((string)$m['ts'], 0, 16)), (string)$m['ts'], (string)$ph]); $moved += (int)$up->rowCount();
+                }
+            }
+            if ($back) setting_set($pdo, 'wcd_rep_v', '1');
+        } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold replies: ' . $e->getMessage()); }
+        return $moved;
+    }
     /** The minute job. [entered, sent, waiting, left]. */
     function wcd_tick(PDO $pdo, int $budget = 30): array
     {
@@ -157,7 +178,7 @@ if (!function_exists('wcd_tick')) {
         try { if ((string)setting_get($pdo, 'wcd_mkt_fb', '1') === '1' && $now - (int)wcd_set($pdo, 'wcd_make_at_m', '0') >= 3600 && count(wcd_ids($pdo, true)) < count(wcd_pack())) { setting_set($pdo, 'wcd_make_at_m', (string)$now); $mk2 = wcd_make($pdo, 'MARKETING'); setting_set($pdo, 'wcd_make_res_m', json_encode(['at' => date('m-d H:i'), 'made' => $mk2['made'], 'sent' => $mk2['sent'], 'failed' => array_slice($mk2['failed'], 0, 4)])); } } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold make marketing: ' . $e->getMessage()); }   /* owner, 23 Nov: Meta's weekly limit stops NEW utility messages; the same eight questions are made as MARKETING (no such limit) for the customers to whom no utility message can go */
         try { if ($now - (int)wcd_set($pdo, 'wcd_make_at', '0') >= 21600 && count(wcd_ids($pdo)) < count(wcd_pack())) { setting_set($pdo, 'wcd_make_at', (string)$now); $mk = wcd_make($pdo); setting_set($pdo, 'wcd_make_res', json_encode(['at' => date('m-d H:i'), 'made' => $mk['made'], 'sent' => $mk['sent'], 'failed' => array_slice($mk['failed'], 0, 4)])); } } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold make: ' . $e->getMessage()); }
         /* owner 22 Nov: the moment a Cold customer writes he LEAVES the Cold funnel and counts as a Lineup customer (the Lineup enrols everybody who writes); the ledger marks him at once, not at his next due date */
-        try { $mv = $pdo->prepare("UPDATE wa_cold_cust c JOIN wa_contacts k ON k.phone = c.phone SET c.status = 'replied', c.why = CONCAT('wrote at ', SUBSTR(k.last_in_at, 1, 16)), c.left_at = k.last_in_at WHERE c.status = 'active' AND k.last_in_at IS NOT NULL AND k.last_in_at >= c.entered_at"); $mv->execute(); $o['moved'] = (int)$mv->rowCount(); } catch (Throwable $e) { }
+        $o['moved'] = wcd_mark_replies($pdo, $now);   /* owner, 23 Nov: the old one-statement JOIN failed silently (mixed collations of the two phone columns): 109 customers had written after a Cold message and only 3 were counted */
         if ($mode !== 'live') return $o;
         if (function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours'; return $o; } $h = (int)date('G', $now); if ($h < 9 || $h >= 21) { $o['why'] = 'outside 09-21'; return $o; }
         if (setting_get($pdo, 'wcd_cap_v', '') !== '2') { setting_set($pdo, 'wcd_cap', '15000'); setting_set($pdo, 'wcd_cap_v', '2'); }   // owner, 23 Nov: the daily cap goes from 5,000 to 15,000 (utility only, Rs 0.15 each); later changes on the card stay
@@ -197,6 +218,7 @@ if (!function_exists('wcd_tick')) {
         try { $o['sent'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= '" . $f . "'")->fetchColumn(); $o['sent_total'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1")->fetchColumn(); } catch (Throwable $e) { }
         try { $r = $pdo->prepare("SELECT m.status, COUNT(*) FROM wa_cold_log l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci) WHERE l.ok = 1 AND l.at >= ? GROUP BY m.status"); $r->execute([$f]); $o['receipts'] = $r->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) { }
         try { $o['replied'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cold_cust WHERE status = 'replied'")->fetchColumn(); $o['in_lineup'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cold_cust c JOIN wa_line_cust l ON l.phone = c.phone WHERE c.status = 'replied'")->fetchColumn(); $o['lost'] = $o['replied'] - $o['in_lineup']; } catch (Throwable $e) { }
+        try { $__ls = 0; $__ph = $pdo->query("SELECT phone FROM wa_cold_cust WHERE status = 'replied' LIMIT 4000")->fetchAll(PDO::FETCH_COLUMN); foreach (array_chunk($__ph, 400) as $__ch) { $__in = implode(',', array_map(function ($x) use ($pdo) { return $pdo->quote((string)$x); }, $__ch)); $__ls += (int)$pdo->query("SELECT COUNT(*) FROM wa_line_plan WHERE status = 'sent' AND phone IN (" . $__in . ")")->fetchColumn(); } $o['lineup_sent'] = $__ls; $o['said_no'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cold_cust WHERE status = 'done' AND why LIKE 'said:%'")->fetchColumn(); } catch (Throwable $e) { }   /* what the Cold repliers got from the Lineup, and the ones who said not now / stop */
         try { $ord = wcd_orders($pdo, wcd_set($pdo, 'wcd_from', '2026-11-01') . ' 00:00:00'); $n = 0; $rev = 0; foreach ($pdo->query("SELECT phone, entered_at FROM wa_cold_cust WHERE n_sent > 0")->fetchAll(PDO::FETCH_NUM) as $c) foreach ($ord[(string)$c[0]] ?? [] as $oo) if ($oo[0] >= (int)strtotime((string)$c[1])) { $n++; $rev += $oo[1]; break; } $o['orders'] = $n; $o['revenue'] = $rev; } catch (Throwable $e) { }
         $o['cost'] = round(((int)($o['sent_total'] ?? 0) - wcd_mk_count($pdo, 0)) * 0.15 + wcd_mk_count($pdo, 0) * 1.09, 2); $o['marketing_sent'] = wcd_mk_count($pdo, 0);
         return $o;
