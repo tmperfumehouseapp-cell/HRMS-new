@@ -178,22 +178,41 @@ function fup_seed_amazon_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_amazon_topics: ' . $e->getMessage()); }
 }
 
-/** The fields of the TM4U "Today's numbers" topic (from the owner's Uploadings sheet): fixed keys so values already written stay attached. Profit and the 15% are typed (the sheet's own columns). */
+/** The fields of the TM4U "Today's numbers" topic: queries, orders, collection and the story / broadcast. (The sheet's other columns are their own topic, fup_tm4u_upload_topic.) */
 function fup_tm4u_numbers_fields(): array
 {
     $f = function ($k, $l, $t, $r) { return ['k' => $k, 'label' => $l, 'type' => $t, 'req' => $r]; };
-    return [$f('f1', 'Queries today', 'num', 1), $f('f2', 'How many orders came (ketla order paida)', 'num', 1), $f('f5', 'Order IDs (for example 1019, 1020)', 'text', 0), $f('f3', 'Total collection (₹)', 'num', 1), $f('f6', 'Prepaid (₹)', 'num', 0), $f('f7', 'COD (₹)', 'num', 0), $f('f8', 'Buying (₹)', 'num', 0), $f('f9', 'Courier charges (₹)', 'num', 0), $f('f10', 'Total profit (₹)', 'num', 0), $f('f11', 'Asti 15% (₹)', 'num', 0), $f('f4', 'Story / Broadcast: what went out today', 'text', 1)];
+    return [$f('f1', 'Queries today', 'num', 1), $f('f2', 'Orders today', 'num', 1), $f('f3', 'Collection today (₹)', 'num', 1), $f('f4', 'Story / Broadcast: what went out today', 'text', 1)];
 }
-/** Once more (the owner's sheet): the TM4U "Today's numbers" topic takes the sheet's columns. The earlier fields that the sheet also has (orders, collection) stay once. */
+/** The owner's correction: Today's numbers goes back to its four fields (orders and collection stay there once); the rest of the sheet's columns are the new topic below. */
 function fup_tm4u_numbers_update(PDO $pdo): void
 {
     try {
-        if ((string)setting_get($pdo, 'fup_tm4u_numbers_v2', '') === '1') return;
+        if ((string)setting_get($pdo, 'fup_tm4u_numbers_v3', '') === '1') return;
         if ((string)setting_get($pdo, 'fup_tm4u_topics_v1', '') !== '1') return;      // the topic is made first
         $q = $pdo->query("SELECT id, `fields` FROM fu_topics WHERE title LIKE 'Today\\'s numbers: queries%' AND active = 1"); $rows = $q->fetchAll(); $q->closeCursor();
         foreach ($rows as $r) { $json = json_encode(fup_fields_clean(fup_tm4u_numbers_fields(), fup_fields($r)), JSON_UNESCAPED_UNICODE); $pdo->prepare("UPDATE fu_topics SET `fields` = ? WHERE id = ?")->execute([$json, (int)$r['id']]); }
-        setting_set($pdo, 'fup_tm4u_numbers_v2', '1');
+        setting_set($pdo, 'fup_tm4u_numbers_v3', '1');
     } catch (Throwable $e) { error_log('fup_tm4u_numbers_update: ' . $e->getMessage()); }
+}
+/** Once: a NEW TM4U topic with the rest of the owner's Uploadings sheet (order IDs, prepaid, COD, buying, courier charges, total profit, Asti 15%); orders and collection are in Today's numbers. Hand-written. */
+function fup_tm4u_upload_topic(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_tm4u_upload_v1', '') === '1') return;
+        if ((string)setting_get($pdo, 'fup_tm4u_topics_v1', '') !== '1') return;      // the TM4U section and its topics are made first
+        $q = $pdo->query("SELECT section_id FROM fu_topics WHERE title LIKE 'Today\\'s numbers: queries%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); if ($sid <= 0) return;
+        $title = 'Uploadings: order IDs, prepaid, COD, buying, courier, profit';
+        $x = $pdo->prepare("SELECT id FROM fu_topics WHERE section_id = ? AND title = ? AND active = 1"); $x->execute([$sid, $title]); $had = (int)$x->fetchColumn(); $x->closeCursor();
+        if (!$had) {
+            $f = function ($l, $t, $r) { return ['label' => $l, 'type' => $t, 'req' => $r]; };
+            $fields = fup_fields_clean([$f('Order IDs (for example 1019, 1020)', 'text', 1), $f('Prepaid (₹)', 'num', 0), $f('COD (₹)', 'num', 0), $f('Buying (₹)', 'num', 0), $f('Courier charges (₹)', 'num', 0), $f('Total profit (₹)', 'num', 0), $f('Asti 15% (₹)', 'num', 0)]);
+            $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+            $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', 0, ?, 'open', ?, 1, 0, ?)")
+                ->execute([$sid, $title, 'Fill this in the evening from the Uploadings sheet: the order IDs of the day, prepaid, COD, buying, courier charges, total profit and Asti 15%.', json_encode($fields, JSON_UNESCAPED_UNICODE), $n + 1, fup_now()]);
+        }
+        setting_set($pdo, 'fup_tm4u_upload_v1', '1');
+    } catch (Throwable $e) { error_log('fup_tm4u_upload_topic: ' . $e->getMessage()); }
 }
 
 /** Once: the owner's five hand-written topics of the TM4U section (the section is made by the owner; this waits for it). Nothing is read from the website. A topic with the same title is not made twice. Nobody is assigned. */
@@ -711,6 +730,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_amazon_topics($pdo);
     fup_seed_tm4u_topics($pdo);
     fup_tm4u_numbers_update($pdo);
+    fup_tm4u_upload_topic($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
