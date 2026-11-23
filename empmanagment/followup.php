@@ -288,10 +288,21 @@ function fup_names(PDO $pdo, array $ids): array
 /** Who to call: [employee_id => [name, title, phone (digits only, '' when not recorded)]]. */
 function fup_contacts(PDO $pdo, array $ids): array
 {
-    $ids = array_values(array_unique(array_filter(array_map('intval', $ids)))); if (!$ids) return []; $out = [];
-    try { foreach ($pdo->query("SELECT employee_id, full_name, designation, phone FROM employees WHERE employee_id IN (" . implode(',', $ids) . ")")->fetchAll() as $r) $out[(int)$r['employee_id']] = ['name' => (string)$r['full_name'], 'title' => trim((string)($r['designation'] ?? '')), 'phone' => preg_replace('/\D+/', '', (string)($r['phone'] ?? ''))]; }
-    catch (Throwable $e) { foreach (fup_names($pdo, $ids) as $i => $n) $out[$i] = ['name' => $n, 'title' => '', 'phone' => '']; }   // an install without those columns still shows the names
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids)))); if (!$ids) return []; $out = []; $in = implode(',', $ids);
+    // the number is the one already on the employee (Employees page → Mobile); nothing is typed again here. Installs name that column differently, so the known names are tried in turn.
+    foreach (['mobile', 'phone', 'contact_number'] as $col) {
+        try { foreach ($pdo->query("SELECT employee_id, full_name, designation, `$col` AS ph FROM employees WHERE employee_id IN ($in)")->fetchAll() as $r) $out[(int)$r['employee_id']] = ['name' => (string)$r['full_name'], 'title' => trim((string)($r['designation'] ?? '')), 'phone' => fup_phone((string)($r['ph'] ?? ''))]; return $out; }
+        catch (Throwable $e) { $out = []; }
+    }
+    foreach (fup_names($pdo, $ids) as $i => $n) $out[$i] = ['name' => $n, 'title' => '', 'phone' => ''];   // no such column at all: the names still show
     return $out;
+}
+/** A typed mobile number as digits ready to dial from India: "+91 98765-43210", "098765 43210", "9876543210 / 9123…" → 919876543210. '' when it is not a usable number. */
+function fup_phone(string $raw): string
+{
+    $first = preg_split('#[/,;]|\s{2,}| or #i', trim($raw))[0] ?? ''; $d = preg_replace('/\D+/', '', (string)$first); $d = ltrim($d, '0');
+    if (strlen($d) === 10) return '91' . $d;
+    return (strlen($d) >= 11 && strlen($d) <= 13) ? $d : '';
 }
 function fup_dept_names(PDO $pdo): array
 {
