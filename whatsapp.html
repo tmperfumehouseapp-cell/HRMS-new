@@ -499,7 +499,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/api.js?v=14"></script>
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx9"></script>
-<script src="assets/js/wa_inbox.js?v=wa91"></script>
+<script src="assets/js/wa_inbox.js?v=wa92"></script>
 <script src="assets/js/wa_unans_ui.js?v=2"></script>
 <script src="assets/js/wa_panels.js?v=wa51"></script>
 <script src="assets/js/wa_cust_ui.js?v=k32"></script>
@@ -515,6 +515,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wa_lists_ui.js?v=l12"></script>
 <script src="assets/js/wa_camp_rep_ui.js?v=r4"></script>
 <script src="assets/js/wa_growth.js?v=g8"></script>
+<script src="assets/js/wa_adleads.js?v=1"></script>
 <script src="assets/js/wa_prod_ui.js?v=pr4"></script>
 <script src="assets/js/wa_tpl_ui.js?v=t11"></script>
 <script src="assets/js/wa_camp_ui.js?v=c314"></script>
@@ -572,6 +573,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'autotags', t: 'Auto tags', ic: 'tag', mode: 'native', sub: 'Every tag: what it means, who sets it, when it goes — the patterns learned from your tags and the tags Claude made' },
     { k: 'tags', t: 'Tags & audience', ic: 'tag', mode: 'native', sub: 'Who is who — and how many you can reach in 30 / 60 / 90 days' },
     { k: 'ads', t: 'Ads', ic: 'chart', mode: 'native', sub: 'Which Meta ads bring chats and orders' },
+    { k: 'adleads', t: 'Ad leads', ic: 'chart', mode: 'native', sub: 'One day: every customer who came from a click-to-WhatsApp ad, the number they wrote to and their first message' },
     { g: 'SEND' }, { k: 'campaigns', t: 'Campaigns', ic: 'send', mode: 'native', sub: 'Send to many customers — the best number is chosen for each' },
     { k: 'insights', t: 'Campaign insights', ic: 'chart', mode: 'native', sub: 'Compare days, weekdays, customer types, messages and hours — what works and what does not' },
     { k: 'kflows', t: 'Key flows', ic: 'key', mode: 'native', sub: 'Fixed answers for fixed messages — website texts, ads, campaign buttons. Built on a canvas · admin only' },
@@ -607,7 +609,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   // (#sgive, #premade, #team… open their tab), nothing was removed.
   const GROUPS = [
     { k: 'waiting', t: 'Waiting', ic: 'flame', badge2: 'unassigned', sub: 'Customers nobody has taken · waiting too long · the answering bot', tabs: [['sgive', 'Not taken'], ['unans', '🚨 Not replied'], ['grab', 'Late replies'], ['handoffs', 'Bot handoffs'], ['signals', 'Signals & bot']] },
-    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, what WhatsApp costs and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['billing', 'Billing & spend'], ['history', 'History']] },
+    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, what WhatsApp costs and past chats', tabs: [['queries', 'Queries'], ['adleads', '📣 Ad leads'], ['reports', 'Reports'], ['billing', 'Billing & spend'], ['history', 'History']] },
     { k: 'customers', t: 'Customers', ic: 'users', sub: 'Every customer, tags and audiences, and the ads that bring them', tabs: [['contacts', 'Contacts'], ['tags', 'Tags & audience'], ['autotags', 'Auto tags'], ['ads', 'Ads']] },
     { k: 'templates', t: 'Messages', ic: 'tpl', sub: 'The message library: Meta-approved messages, the builder, one per situation, every automatic message in one list, and the complaint messages', tabs: [['mymsgs', 'Plan messages'], ['premade', 'Pre-made'], ['fixedb', 'Fixed & builder'], ['allmsgs', 'Where each message lives'], ['cxmsgs', 'Complaint messages']] },
     { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists']] },

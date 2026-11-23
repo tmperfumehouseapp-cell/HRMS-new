@@ -80,6 +80,10 @@ function wag_cfg(PDO $pdo): array
     // once (owner, 21 Nov): complaint chats are removed from the query counts
     try { if (setting_get($pdo, 'wag_cxq1', '') !== '1') { setting_set($pdo, 'wag_cxq1', '1');
         $ph = $pdo->query("SELECT phone FROM wa_contacts WHERE (cx_id IS NOT NULL AND cx_id > 0) OR tag = 'complaint' LIMIT 5000")->fetchAll(PDO::FETCH_COLUMN); foreach ($ph as $__p) wag_q_forget($pdo, (string)$__p); } } catch (Throwable $e) { }
+    // once (owner, 23 Nov): every chat with an OPEN complaint is marked as a complaint chat and carries only that mark (the sales marks go; a ticket raised outside the chat left the chat unmarked)
+    try { if (setting_get($pdo, 'wag_cxtags1', '') !== '1' && function_exists('cx_clean_tags')) { setting_set($pdo, 'wag_cxtags1', '1');
+        { $cs = $pdo->query("SELECT id, phone FROM cx_cases WHERE status IN ('open', 'reopened') AND phone <> '' LIMIT 3000")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($cs as $__c) { $pdo->prepare("UPDATE wa_contacts SET cx_id = ? WHERE phone = ? AND (cx_id IS NULL OR cx_id = 0)")->execute([(int)$__c['id'], (string)$__c['phone']]); cx_clean_tags($pdo, (string)$__c['phone']); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): order-status / tracking / refund chats are removed from the query counts (last 3 days)
     try { if (setting_get($pdo, 'wag_cxq2', '') !== '1') { setting_set($pdo, 'wag_cxq2', '1');
         $st = $pdo->prepare("SELECT DISTINCT q.phone FROM wa_queries q JOIN wa_messages m ON m.phone = q.phone AND m.dir = 'in' AND m.ts >= q.opened_at AND m.ts <= DATE_ADD(q.opened_at, INTERVAL 10 MINUTE) WHERE q.opened_at >= ? AND m.body REGEXP 'tracking|track my|track order|where is my order|order status|order id|order no|kab aayega|kab tak aayega|kab milega|nahi mila|not received|refund|return|replace|damaged|leak|wrong item|wrong product|cancel my order|order kaha|parcel' LIMIT 4000"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
@@ -2567,6 +2571,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $rows = array_values($ads); usort($rows, fn($a, $b) => $b['chats'] <=> $a['chats']); foreach ($rows as &$x) $x['rate'] = $x['chats'] ? round(100 * $x['orders'] / $x['chats'], 1) : 0; unset($x);
             json_response(['ads' => $rows, 'days' => $days, 'purchase_event' => 'not_built']);
         }
+        case 'wa.g_adleads': { require_once __DIR__ . '/wa_adleads.php'; json_response(wag_adleads($pdo, (string)($_GET['date'] ?? ''), (int)($_GET['number'] ?? 0))); }   // 📣 Ad leads of one day (Queries & reports → Ad leads): who came from a click-to-WhatsApp ad, on which number, and their first message
         case 'wa.g_export': {   // chats or messages as CSV; every download is written to the log
             $kind = ($_GET['kind'] ?? 'chats') === 'messages' ? 'messages' : 'chats'; $from = trim((string)($_GET['from'] ?? '')); $to = trim((string)($_GET['to'] ?? '')); $tag = trim((string)($_GET['tag'] ?? '')); $numId = (int)($_GET['number'] ?? 0); $emp = (int)($_GET['emp'] ?? 0); $res = trim((string)($_GET['result'] ?? ''));
             $nums = wag_nums($pdo); $names = employee_names_by_id($pdo); $oc = wag_outcome_map($pdo); $defs = wag_outcomes();
