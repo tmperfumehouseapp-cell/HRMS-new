@@ -13,6 +13,14 @@ function ml_slab_get($p) { return ['cols' => [7, 6.5, 6, 5, 4, 3.5, 3], 'rows' =
 $pdo = new PDO('sqlite::memory:'); $pdo->exec("CREATE TABLE wa_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, dir TEXT, who TEXT, body TEXT, mtype TEXT)");
 function chat($pdo, $rows) { $pdo->exec("DELETE FROM wa_messages"); $st = $pdo->prepare("INSERT INTO wa_messages (phone, dir, who, body, mtype) VALUES ('p', ?, ?, ?, 'text')"); foreach ($rows as $r) $st->execute($r); }
 $fail = 0; $chk = function ($name, $cond) use (&$fail) { if (!$cond) { echo "FAIL $name\n"; $fail++; } };
+// (0) chart word / price-list promise
+chat($pdo, [['in', '', 'price list bhejo']]);
+[$t, $b] = wag_final_gate($pdo, 'p', 'Sir, price list ki chart abhi bhej raha hun 😊 Aap kitni bottle aur kaunsi size lena chahenge?'); $chk('price list promise removed', !$b && stripos($t, 'chart') === false && strpos($t, 'kaunsi size') !== false);
+[$t, $b] = wag_final_gate($pdo, 'p', 'Sir, price list bhej raha hun.'); $chk('only the promise -> a question instead', !$b && stripos($t, 'price list') === false && strpos($t, 'combo price') !== false);
+[$t, $b] = wag_final_gate($pdo, 'p', 'Sir, 100 ml Rs 1,700 hai 😊'); $chk('6% column price is fine', !$b && strpos($t, '1,700') !== false);
+[$t, $b] = wag_final_gate($pdo, 'p', 'Ek 100 ml bottle Rs 1,810 hai. Bulk mein ye Rs 1,650 tak aa sakti hai. Kaunse perfumes?'); $chk('below-floor price sentence removed', !$b && strpos($t, '1,650') === false && strpos($t, '1,810') !== false);
+[$t, $b] = wag_final_gate($pdo, 'p', 'Sir, 100 ml ka price Rs 1,650 hai.'); $chk('only a below-floor price -> blocked', $b === true);
+chat($pdo, [['in', '', 'mujhe 1650 mein chahiye']]); [$t, $b] = wag_final_gate($pdo, 'p', 'Sir, 100 ml ka price Rs 1,650 hai.'); $chk('his own number is left alone', !$b);
 // (1) own FINAL offer
 chat($pdo, [['in', '', 'price of 100 ml']]);
 [$t, $b] = wag_final_gate($pdo, 'p', 'Sir, 100 ml Rs 1,810 hai. Ye FINAL offer hai, valid till 10 PM.'); $chk('final offer sentence removed', !$b && stripos($t, 'final offer') === false && strpos($t, '1,810') !== false);

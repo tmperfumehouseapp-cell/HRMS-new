@@ -1545,6 +1545,10 @@ function wag_final_gate(PDO $pdo, string $key, string $text, array $o = []): arr
     try {
         if (!empty($o['final']) || trim($text) === '') return [$text, false];
         $msgs = wag_fg_msgs($pdo, $key);
+        // (0) the bot never says "chart" and never promises to send a price list / chart (owner: a price list is answered in words; "price list ki chart abhi bhej raha hun" went out at 21:14)
+        $__pl = '/\bchart\b|(?:price|rate)\s*list[^.!?\n]{0,60}(?:bhej|send|share|de raha|de rahi|deta hun|dunga|dungi)/iu';
+        if (preg_match($__pl, $text)) { $parts = preg_split('/(?<=[.!?])\s+/u', $text) ?: [$text]; $keep = []; foreach ($parts as $p) if (!preg_match($__pl, $p)) $keep[] = $p; $nt = trim(implode(' ', $keep));
+            $text = $nt !== '' ? $nt : 'Sir, aap kitni bottle aur kaunsi size (20 ml, 50 ml ya 100 ml) lena chahenge? Main usi ka combo price abhi bata deta hun 😊'; wag_fg_count($pdo, 'chart_or_pricelist_promise', 'fixed'); }
         // (1) own FINAL offer / extra discount / deadline
         $fo = (int)wag_meta_get($pdo, 'finaloffer:' . $key, '0');
         if ($fo <= time() && preg_match('/final offer|(?:rs\.?|₹)\s*200\s*off|free\s+20\s*ml|last chance|offer (?:is )?valid|valid (?:till|until|for|only)|next \d+ (?:hours?|hrs?|minutes?|mins?)|deadline/iu', $text)) {
@@ -1568,6 +1572,12 @@ function wag_final_gate(PDO $pdo, string $key, string $text, array $o = []): arr
             foreach ((array)($c['rows'] ?? []) as $r) foreach ((array)($r['p'] ?? []) as $v) { $v = (int)$v; if ($v <= 0) continue; $ok[$v] = 1; $ok[(int)round($v * 0.35)] = 1; $ok[(int)round($v * 0.65)] = 1; for ($n = 2; $n <= 20; $n++) { $ok[(int)round($v / $n)] = 1; } }
             foreach ($one as $v) for ($n = 1; $n <= 20; $n++) $ok[$v * $n] = 1;
             $chat = ''; foreach ($msgs as $m) $chat .= ' ' . (string)$m['text']; $chat = str_replace(',', '', $chat);
+            // a price of a column BELOW the 6% floor (3% / 3.5% / 4% / 5% of a pack) is never told (owner: the 6% column is the lowest): the sentence with it is removed (or the reply is blocked when nothing is left)
+            $fl = 2; if (function_exists('wag_chart_cols') && !empty($c['cols'])) { try { [$__i0, $__fl] = wag_chart_cols(array_values(array_map('floatval', (array)$c['cols']))); $fl = (int)$__fl; } catch (Throwable $e) { } }
+            $okHi = []; $deep = []; foreach ((array)($c['rows'] ?? []) as $r) foreach ((array)($r['p'] ?? []) as $ci => $v) { $v = (int)$v; if ($v <= 0) continue; if ((int)$ci <= $fl) $okHi[$v] = 1; else $deep[$v] = 1; }
+            foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v >= 1000 && isset($deep[$v]) && !isset($okHi[$v]) && strpos($chat, (string)$v) === false) {
+                    $parts = preg_split('/(?<=[.!?])\s+/u', $text) ?: [$text]; $keep = []; foreach ($parts as $p) if (!preg_match('/(?:rs\.?|₹)\s*' . preg_quote(number_format($v), '/') . '\b|(?:rs\.?|₹)\s*' . $v . '\b/iu', $p)) $keep[] = $p; $nt = trim(implode(' ', $keep));
+                    wag_fg_count($pdo, 'below_floor_price', $nt === '' ? 'blocked' : 'fixed'); if ($nt === '') return [$text, true]; $text = $nt; break; } }
             foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 1000 || isset($ok[$v]) || isset($ok[$v - 1]) || isset($ok[$v + 1]) || strpos($chat, (string)$v) !== false) continue;
                 $blk = (string)setting_get($pdo, 'wag_fg_unk', '0') === '1'; wag_fg_count($pdo, 'unknown_amount', $blk ? 'blocked' : 'seen'); wag_log($pdo, 'bot', !$blk, $key . ' · unknown amount Rs ' . $v . ' in a bot message' . ($blk ? ' (blocked)' : ' (counted only)')); if ($blk) return [$text, true]; break; }
         }
