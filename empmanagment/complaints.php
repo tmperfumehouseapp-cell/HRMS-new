@@ -593,6 +593,21 @@ function cx_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
         $pdo->prepare("UPDATE cx_cases SET " . implode(', ', $f) . ", updated_at = ? WHERE id = ?")->execute($a); if (function_exists('cx2_flag')) cx2_flag($pdo, (int)$r['id'], false, true); json_response(['ok' => true, 'message' => 'Saved.']);
     }
 
+    case 'bd.cx_chat_edit': {   // owner, 23 Nov: a complaint the BOT raised can be corrected from the chat by the person who holds the chat (or the team): problem, note, order, urgency
+        $post(); $key = function_exists('wa_key') ? wa_key($in['phone'] ?? '') : ''; $c = $key !== '' && function_exists('wa_contact') ? wa_contact($pdo, $key) : null;
+        if (!$c) json_response(['error' => 'Chat not found.'], 404); if (!($role['team'] || $role['mgr'] || wa_can_chat($pdo, $auth, $c))) json_response(['error' => 'This chat is not yours.'], 403);
+        $st = $pdo->prepare("SELECT * FROM cx_cases WHERE phone = ? AND status IN ('open','reopened') ORDER BY id DESC LIMIT 1"); $st->execute([$key]); $r = $st->fetch(); if (!$r) json_response(['error' => 'No open complaint on this chat.'], 404);
+        $f = []; $a = []; $log = [];
+        if (isset($in['problem']) && (string)$in['problem'] !== (string)$r['problem'] && isset(cx_problems()[(string)$in['problem']])) { $pk = (string)$in['problem']; $f[] = 'problem = ?'; $a[] = $pk; $f[] = 'desk = ?'; $a[] = (string)(cx_problems()[$pk][2] ?? $r['desk']); $log[] = 'problem ' . $r['problem'] . ' > ' . $pk; }
+        if (array_key_exists('summary', $in)) { $f[] = 'summary = ?'; $a[] = trim(mb_substr((string)$in['summary'], 0, 1000)); $log[] = 'note'; }
+        if (array_key_exists('order_name', $in)) { $f[] = 'order_name = ?'; $a[] = trim(mb_substr((string)$in['order_name'], 0, 40)); $log[] = 'order'; }
+        if (isset($in['urgency']) && isset(cx_urgencies()[$in['urgency']]) && (string)$in['urgency'] !== (string)$r['urgency']) { $u = (string)$in['urgency']; $f[] = 'urgency = ?'; $a[] = $u; $f[] = 'reply_due = ?'; $a[] = date('Y-m-d H:i:s', strtotime($r['raised_at']) + (int)cx_cfg($pdo, 'reply_' . $u) * 60); $f[] = 'due_at = ?'; $a[] = date('Y-m-d H:i:s', strtotime($r['raised_at']) + (int)cx_cfg($pdo, 'fix_' . $u) * 3600); $f[] = 'late_alert = 0'; $f[] = 'reply_alert = 0'; $log[] = 'urgency ' . $u; }
+        if (!$f) json_response(['error' => 'Nothing to change.'], 422); $a[] = bd_now(); $a[] = (int)$r['id'];
+        $pdo->prepare("UPDATE cx_cases SET " . implode(', ', $f) . ", updated_at = ? WHERE id = ?")->execute($a);
+        try { cx_ev($pdo, (int)$r['id'], (int)$me, 'note', 'Edited from the chat: ' . implode(', ', $log)); } catch (Throwable $e) { }
+        json_response(['ok' => true, 'message' => 'Saved.']);
+    }
+
     case 'bd.cx_refund': {
         $post(); $r = $load(true); $amt = max(0, min(1000000, (float)($in['amount'] ?? 0))); if ($amt <= 0) json_response(['error' => 'Write the refund amount.'], 422);
         $limit = (float)cx_cfg($pdo, 'refund_limit'); $ok = ($amt <= $limit || $role['mgr']) ? 1 : 0; $id = (int)$r['id'];
