@@ -562,6 +562,16 @@ function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
         return [$fix, true];
     } catch (Throwable $e) { return [$reply, false]; }
 }
+/** owner, 23 Nov: "when the salesperson already talks to the customer (take 4 bottles ...), the bot must not start again from one bottle - study what our salesperson said, also in the follow-ups". The salesperson's last messages of the last 3 hours (the chat's own people, not the bot, not campaigns) go to the AI as binding context. '' when no person wrote. */
+function wag_person_context(PDO $pdo, string $key): string
+{
+    try {
+        $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND mtype = 'text' AND ts >= ? ORDER BY id DESC LIMIT 3"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 3600)]);
+        $t = array_reverse(array_map(function ($b) { return mb_substr(trim((string)preg_replace('/\s+/u', ' ', (string)$b)), 0, 300); }, $q->fetchAll(PDO::FETCH_COLUMN))); $t = array_values(array_filter($t, function ($x) { return $x !== ''; }));
+        if (!$t) return '';
+        return 'OUR SALESPERSON ALREADY TALKED TO THIS CUSTOMER (last words, newest last): "' . implode('" / "', $t) . '". Continue from THEIR offer: if they suggested a number of bottles or a price, talk about THAT quantity and never fall back to the price of one bottle; never quote a higher price than they did; never contradict them; do not repeat what they already said.';
+    } catch (Throwable $e) { return ''; }
+}
 function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly = false): array
 {
     $key = (string)$c['phone'];
@@ -584,7 +594,7 @@ function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly
                 }
                 if ($g) {
                     $body = json_decode((string)$g['body'], true); $msgs = wa_learn_msgs($pdo, $key);
-                    if (is_array($body)) { $__qx = function_exists('wq_bot_context') ? wq_bot_context($pdo, $c) : ''; $__cc = wag_campaign_context($pdo, $key); if ($__cc !== '') $__qx = trim($__qx . "\n" . $__cc); { $__pf = wag_price_fact($pdo, $msgs); if ($__pf !== '') $__qx = trim($__qx . "\n" . $__pf); } if ($__qx !== '') $body['chat_context_do_not_quote'] = mb_substr($__qx, 0, 3600); }   // query type, ad headline, store info, owner decisions (max 2,000 characters)
+                    if (is_array($body)) { $__qx = function_exists('wq_bot_context') ? wq_bot_context($pdo, $c) : ''; $__cc = wag_campaign_context($pdo, $key); if ($__cc !== '') $__qx = trim($__qx . "\n" . $__cc); { $__pc = wag_person_context($pdo, $key); if ($__pc !== '') $__qx = trim($__qx . "\n" . $__pc); } { $__pf = wag_price_fact($pdo, $msgs); if ($__pf !== '') $__qx = trim($__qx . "\n" . $__pf); } if ($__qx !== '') $body['chat_context_do_not_quote'] = mb_substr($__qx, 0, 3600); }   // query type, ad headline, store info, owner decisions (max 2,000 characters)
                     if (is_array($body) && $body && $msgs) {
                         if ($avoid !== '') $msgs[] = ['who' => 'bot', 'text' => mb_substr($avoid, 0, 500)];
                         [$ok, $v, $__lw] = lib_bot_reply($pdo, $body, $msgs, 0, !empty($GLOBALS['lib_fu_step'])); $GLOBALS['lib_last_why'] = (string)($__lw ?? '') . ($ok && is_array($v) ? ' (ok, reply ' . mb_strlen((string)($v['reply'] ?? '')) . ' chars)' : ' (not ok)');
@@ -1505,6 +1515,23 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         } catch (Throwable $e) { }
         $li = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
+        // owner, 23 Nov (screenshot: our 'How was your experience with us? Tap a button' message, the customer tapped 'Very good', and the bot answered 2 s later with a price pitch '8 x 20 ml ... Rs 2,270'): an answer to our experience / feedback message is not a sales question. Positive -> a fixed thank-you (no price, no offer); anything else -> silent, a hint + push to the holder
+        try {
+            $__eq = $pdo->prepare("SELECT body, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? ORDER BY id DESC LIMIT 1"); $__eq->execute([$key, date('Y-m-d H:i:s', time() - 36 * 3600)]); $__ex = $__eq->fetch();
+            $__mb = mb_strtolower(trim((string)$m['body']));
+            if ($__ex && preg_match('/(how was your experience|your experience with us|share your feedback|rate your|how did you like|feedback)/iu', (string)$__ex['body']) && mb_strlen($__mb) <= 60 && !preg_match('/(price|rate|combo|offer|discount|order|buy|lena|chahiye|\d+\s?ml|kitna|kitne)/u', $__mb)) {
+                if (!(function_exists('wq_guard') ? wq_guard($pdo, $key, (int)$m['id'], 'reply', 'bot') : true)) continue;
+                if (preg_match('/(very good|good|great|excellent|awesome|amazing|nice|best|superb|perfect|love|loved|badhiya|bahut accha|bahut achha|accha|achha|mast|sahi|thanks|thank you|shukriya|happy|satisfied|5 ?star)/u', $__mb) && !preg_match('/(not good|not so|bad|poor|worst|average|ok ok|okay okay|nahi|nhi|kharab|bekar|disappoint|\bno\b)/u', $__mb)) {
+                    [$__ok2] = wa_send_text($pdo, $c, 'Thank you so much 🙏 Aapko pasand aaya, ye jaankar bahut khushi hui. Jab bhi dobara perfume chahiye ho, bas yahin message kar dijiye 😊', 'bot', 0);
+                    if ($__ok2) { $o['sent']++; wa_event($pdo, $key, '🤖 The bot thanked the customer for his experience feedback (no offer, no price)'); } elseif (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply');
+                } else {
+                    if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply');
+                    if (wag_meta_get($pdo, 'cxfb:' . $key, '') !== (string)$m['id']) { wag_meta_put($pdo, 'cxfb:' . $key, (string)$m['id']); wa_event($pdo, $key, '💬 The customer answered our experience message with a not-clearly-positive reply. The bot stays silent: please read the chat and answer.');
+                        $__ho = (int)($c['assigned_emp'] ?? 0); if ($__ho > 0 && function_exists('ct_push')) { try { ct_push($pdo, [$__ho], 'Customer feedback', 'The bot did not answer an experience reply. Please reply.', '/my_chats.html?phone=' . $key, 'wa-cxfb-' . $key); } catch (Throwable $e) { } } }
+                }
+                continue;
+            }
+        } catch (Throwable $e) { }
         // wants to order / pay (hot): the bot takes the ORDER DETAILS and the ADDRESS — never the payment — and then a person finishes (ORDER MODE)
         $__order = $__stuck || (function_exists('wa_hot_intent') && wa_hot_intent((string)$m['body']) !== '') || (!empty($c['hot']) && !empty($c['hot_at']) && strtotime((string)$c['hot_at']) > time() - 2 * 3600 && !preg_match('/(address|change|badal|edit|cancel|refund|return|tracking|status)/iu', (string)$m['body']));   // order mode only while the customer is really ordering (not for "change my address" in an old hot chat)
         // a Flow is running for this customer (sending, waiting for a time or for this answer): the flow answers, never the bot as well — order answers included
