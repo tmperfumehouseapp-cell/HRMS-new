@@ -93,6 +93,22 @@ function fup_online_day(PDO $pdo, string $day): ?array
     } catch (Throwable $e) { error_log('fup_online_day: ' . $e->getMessage()); return $memo[$day] = null; }
 }
 
+/** Once: the four numbers the owner follows for the Surat Store (collection, flyers, community adds, numbers saved) are made as topics that take their number by themselves. Deleting them later never brings them back. Nobody is assigned: the owner gives them to people. */
+function fup_seed_store_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_store_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) = 'surat store' ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); if ($sid <= 0) return;
+        setting_set($pdo, 'fup_store_topics_v1', '1');
+        $have = []; foreach ($pdo->query("SELECT source FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $src) $have[(string)$src] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, ?, '', 'open', ?, 1, 0, ?)");
+        foreach ([['Store collection (sales of the day)', 'store_sales'], ['Flyer drops done', 'store_flyers'], ['Customers added to the community', 'store_community'], ['Customer numbers saved', 'store_numbers']] as $t) {
+            if (isset($have[$t[1]])) continue; $ins->execute([$sid, $t[0], $t[1], ++$n, fup_now()]);
+        }
+    } catch (Throwable $e) { error_log('fup_seed_store_topics: ' . $e->getMessage()); }
+}
+
 /** The numbers a topic can take by itself. key => [label, unit, fn(pdo, day) → number|null]. Every one is read-only and safe when its table is missing. */
 function fup_sources(): array
 {
@@ -483,6 +499,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     $auth = require_auth();
     if (!fup_tables($pdo)) json_response(['error' => 'Could not prepare the Follow-up tables.'], 500);
     fup_seed($pdo);
+    fup_seed_store_topics($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
