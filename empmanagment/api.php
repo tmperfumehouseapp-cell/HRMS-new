@@ -11640,13 +11640,13 @@ function must3_photo_tick(PDO $pdo, int $max = 6): int
 }
 /** ✅ The 3 must-send check of ONE business day (+ the add-on column, owner 23 Nov): per salesperson, per order — address re-check · chain selection · prepaid 2% (plain text match, no AI) and whether an add-on was put on the order (employee_addons) with the reason when not (order_rate_auto).
  *  $onlyEmp > 0 → only that salesperson's orders (the "my check" card of the sales app). Used by ct.must3 (Admin / HR) and ct.must3_me. */
-function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
+function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
 {
     $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0], 'people' => []];
     try {
         if (!ensure_order_allocations_table($pdo)) return $res;
         $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
-        $cc = 'COLLATE utf8mb4_unicode_ci'; $from = $day . ' ' . day_start_for($pdo, $day) . ':00'; $to = date('Y-m-d H:i:s', strtotime($from) + 86400);
+        $cc = 'COLLATE utf8mb4_unicode_ci'; $from = $day . ' ' . day_start_for($pdo, $day) . ':00'; $to = date('Y-m-d H:i:s', strtotime($from) + 86400); if (count($win) === 2) { $from = date('Y-m-d H:i:s', (int)$win[0]); $to = date('Y-m-d H:i:s', (int)$win[1]); }   // $win = [from ts, to ts]: only the orders created in that window (the reminder tick)
         $st = $pdo->prepare("SELECT o.order_name, o.store_key, o.shopify_id, o.created_at, o.phone, o.customer, o.total, a.employee_id FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
             WHERE o.created_at >= ? AND o.created_at < ? AND a.employee_id > 0 " . ($onlyEmp > 0 ? 'AND a.employee_id = ' . (int)$onlyEmp . ' ' : '') . "AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') ORDER BY o.created_at DESC LIMIT 400");
         $st->execute([$from, $to]); $P = []; $rows = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -11712,6 +11712,25 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
         $res['people'] = $L;
     } catch (Throwable $e) { error_log('ct.must3: ' . $e->getMessage()); }
     return $res;
+}
+/** 📲 MUST-SEND REMINDER (owner, 23 Nov): 20 minutes after an order was made, its salesperson gets ONE phone notification naming what is still missing in that order (address re-check · chain · prepaid 2% · add-on offer). Orders whose chat was not found are skipped. Every 5 minutes from the WhatsApp engine; table must3_push keeps "already told". Switch: setting must3_push_on = 0. */
+function must3_push_tick(PDO $pdo): int
+{
+    try { if ((string)setting_get($pdo, 'must3_push_on', '1') === '0' || (int)setting_get($pdo, 'must3_push_at', '0') > time() - 290) return 0; setting_set($pdo, 'must3_push_at', (string)time()); } catch (Throwable $e) { return 0; }
+    if (!function_exists('ct_push')) return 0; $n = 0;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS must3_push (order_name VARCHAR(60) NOT NULL PRIMARY KEY, employee_id INT NOT NULL DEFAULT 0, missing VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $now = time(); $r = must3_compute($pdo, biz_today($pdo), 0, [$now - 50 * 60, $now - 20 * 60]);
+        $seen = $pdo->prepare("SELECT 1 FROM must3_push WHERE order_name = ?"); $ins = $pdo->prepare("INSERT IGNORE INTO must3_push (order_name, employee_id, missing, at) VALUES (?, ?, ?, ?)");
+        foreach ((array)($r['people'] ?? []) as $p) foreach ((array)($p['orders'] ?? []) as $o) {
+            if (!empty($o['nochat'])) continue; $miss = [];
+            if (empty($o['a'])) $miss[] = 'Address re-check'; if (empty($o['c'])) $miss[] = 'Chain'; if (empty($o['p'])) $miss[] = 'Prepaid 2%'; if (($o['d'] ?? null) === null) $miss[] = 'Add-on offer';
+            if (!$miss) continue; $seen->execute([(string)$o['order']]); if ($seen->fetchColumn()) continue;
+            $ins->execute([(string)$o['order'], (int)$p['id'], mb_substr(implode(', ', $miss), 0, 80), date('Y-m-d H:i:s')]); if ($ins->rowCount() < 1) continue;
+            ct_push($pdo, [(int)$p['id']], '⚠ ' . (string)$o['order'] . ': ' . count($miss) . ' thing' . (count($miss) === 1 ? '' : 's') . ' not done', trim((string)$o['customer']) . ' — ' . implode(', ', $miss) . '. Open the chat and send now.', '/my_app.html', 'must3-' . preg_replace('/\D+/', '', (string)$o['order'])); $n++;
+        }
+    } catch (Throwable $e) { error_log('must3_push_tick: ' . $e->getMessage()); }
+    return $n;
 }
 function ct_snapshot(PDO $pdo, string $day): array
 {
