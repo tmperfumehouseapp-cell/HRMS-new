@@ -9733,7 +9733,7 @@ function lib_guide_write(PDO $pdo): array
         . "NEVER write an outcome or the customer's behaviour as a rule ('customer stopped replying', 'order was not placed', 'customer left', 'said will get back'), never a one-off, never a guess. "
         . "If nothing meets this bar leave 'dont' EMPTY: an empty list is the right answer. "
         . "openers and replies must be real lines taken or adapted from the WON chats, in the customer's language (Gujarati / Hinglish / English as written). Never write phone numbers, addresses or prices that are not in the chats. "
-        . "Max: do 8, dont 4, openers 5, objection_replies 6, offers 5, followups 4. confidence = low (<40 chats), medium or high (150+ chats). summary = 2–3 plain English sentences. "
+        . "Points of 'do' that start with a CAPITAL LABEL (PRICE LADDER, OFFICIAL ONLINE PRICE, BIGGER JUMPS, PAYMENT AND ORDER ...) are the owner's rules: keep each exactly as worded, one point per topic, never write the same topic twice, and put the newest decisions first. Max: do 12, dont 4, openers 5, objection_replies 6, offers 5, followups 4. confidence = low (<40 chats), medium or high (150+ chats). summary = 2–3 plain English sentences. "
         . ($live ? "A previous guidebook is given: keep every point that still holds exactly as worded, change only what the numbers now contradict, and say in change_note in one or two sentences what changed." : "This is the first guidebook: change_note = 'First guidebook'.");
     $schema = ['type' => 'OBJECT', 'properties' => [
         'summary' => ['type' => 'STRING'], 'confidence' => ['type' => 'STRING', 'enum' => ['low', 'medium', 'high']], 'change_note' => ['type' => 'STRING'],
@@ -9760,7 +9760,7 @@ function lib_guide_write(PDO $pdo): array
     [$ok, $v, $why] = convo_ai($sys, [['text' => $text]], $schema, false, 16000, 'claude');
     if ($ok) {
         $body = ['summary' => mb_substr((string)($v['summary'] ?? ''), 0, 600), 'confidence' => in_array($v['confidence'] ?? '', ['low', 'medium', 'high'], true) ? $v['confidence'] : 'low',
-            'do' => $strs($v['do'] ?? [], 12, 420), 'dont' => [], 'openers' => $strs($v['openers'] ?? [], 5, 240), 'followups' => $strs($v['followups'] ?? [], 4, 240), 'objection_replies' => [], 'offers' => []];
+            'do' => $strs($v['do'] ?? [], 12, 1500), 'dont' => [], 'openers' => $strs($v['openers'] ?? [], 5, 240), 'followups' => $strs($v['followups'] ?? [], 4, 240), 'objection_replies' => [], 'offers' => []];
         foreach ((array)($v['objection_replies'] ?? []) as $o) if (is_array($o) && trim((string)($o['reply'] ?? '')) !== '' && count($body['objection_replies']) < 6) $body['objection_replies'][] = ['objection' => lib_clip((string)($o['objection'] ?? ''), 200), 'reply' => lib_clip((string)$o['reply'], 320)];
         foreach ((array)($v['offers'] ?? []) as $o) if (is_array($o) && trim((string)($o['offer'] ?? '')) !== '' && count($body['offers']) < 5) $body['offers'][] = ['offer' => lib_clip((string)$o['offer'], 160), 'when' => lib_clip((string)($o['when'] ?? ''), 240)];
         // a "do not" must be proven: 3+ different LOST chats shown above, and almost none of the WON ones — otherwise it is dropped
