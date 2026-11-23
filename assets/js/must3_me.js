@@ -10,8 +10,8 @@
   const col = (v, t) => !t ? '#9ca3af' : (v / t >= .8 ? '#16a34a' : v / t >= .5 ? '#d97706' : '#dc2626');
   const ok = (o, k) => k === 'd' ? o.d != null : !!o[k];
   function paint() {
-    const d = S.d; if (!d) { box.innerHTML = ''; return; }
-    if (!d.sales) { box.innerHTML = ''; return; }
+    const slot = document.getElementById('m3Slot'), host = slot || box; if (slot) box.innerHTML = '';   // under "Your next step" when the home page has the slot, else in the box above it
+    const d = S.d; if (!d || !d.sales) { host.innerHTML = ''; return; }
     const t = d.team || {}, n = t.n || 0, orders = d.orders || [];
     const pills = R.map((x) => `<span data-r="${x[0]}" style="cursor:pointer;font-size:12px;font-weight:800;border:1.5px solid ${S.range === x[0] ? '#111827' : '#e5e7eb'};border-radius:99px;padding:4px 11px;background:${S.range === x[0] ? '#111827' : '#fff'};color:${S.range === x[0] ? '#fff' : '#111827'}">${x[1]}</span>`).join('');
     const tiles = K.map((k) => { const v = t[k[0]] || 0, on = S.sel === k[0]; return `<div data-t="${k[0]}" style="cursor:pointer;border:${on ? '2.5px solid #111827' : '1.5px solid #e5e7eb'};border-radius:14px;padding:9px 10px;background:#fff"><div style="font-size:12px;color:#667781;min-height:30px;line-height:1.25">${k[1]} ${k[2]}</div><div style="font-size:24px;font-weight:900;color:${col(v, n)}">${v}<small style="font-size:12px;color:#667781;font-weight:500"> / ${n}</small></div><div style="height:6px;border-radius:4px;background:#eef0f4;margin-top:5px"><div style="height:6px;border-radius:4px;width:${n ? Math.round(v / n * 100) : 0}%;background:${col(v, n)}"></div></div></div>`; }).join('');
@@ -24,17 +24,19 @@
     }).join('');
     const body = n === 0 ? '<div style="padding:12px 4px;color:#667781;font-size:13px">No orders in this period yet.</div>'
       : (list.length ? `<div style="font-size:12.5px;font-weight:800;color:#92400e;margin:10px 0 2px">${head}</div>${rows}` : `<div style="text-align:center;padding:16px 6px"><div style="font-size:34px">🎉</div><b>${S.sel ? 'Done in every order' : 'All 3 messages sent and an add-on done in every order'}</b></div>`);
-    box.innerHTML = `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:15px">✅ Must-send check</div><div style="display:flex;gap:6px">${pills}</div></div><div style="font-size:12px;color:#667781;margin:2px 0 8px">Your orders: the 3 messages every order needs, and the add-on. Tap a box to see which customers.</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${tiles}</div>${body}</div>`;
+    host.innerHTML = `<div class="card" style="margin-bottom:12px;border:2.5px solid #f59e0b;box-shadow:0 2px 12px rgba(245,158,11,.3)"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:15px">✅ Must-send check</div><div style="display:flex;gap:6px">${pills}</div></div><div style="font-size:12px;color:#667781;margin:2px 0 8px">Your orders: the 3 messages every order needs, and the add-on. Tap a box to see which customers.</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${tiles}</div>${body}</div>`;
   }
   async function load() {
     if (S.busy) return; S.busy = true;
     try { const d = await api.get('ct.must3_me', { range: S.range }); S.d = d; } catch (e) { S.d = null; }
     S.busy = false; paint();
   }
-  box.addEventListener('click', (e) => {
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#m3Slot, #m3Box')) return;
     const r = e.target.closest('[data-r]'); if (r) { S.range = r.dataset.r; S.sel = ''; S.d = null; load(); return; }
     const t = e.target.closest('[data-t]'); if (t) { S.sel = S.sel === t.dataset.t ? '' : t.dataset.t; paint(); }
   });
+  window.Must3Me = { repaint: paint };
   load(); setInterval(() => { if (!document.hidden) load(); }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 })();
