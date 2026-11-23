@@ -23065,8 +23065,8 @@ switch ($action) {
                 foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
                     $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $t = strtotime((string)$o['created_at']); $f = ['a' => null, 'c' => null, 'p' => null];
                     if (strlen($k) === 10) {
-                        $q = $pdo->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 300");
-                        $q->execute([$k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 30 * 60)]);
+                        $q = $pdo->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700");
+                        $q->execute([$k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', min(time(), $t + 48 * 3600))]);   // owner (23 Nov): a message sent LATER (up to 48 h after the order, until now) also counts — it used to stop 30 minutes after the order, so a chain message sent later never moved the order to Done
                         $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms);
                         foreach ($ms as $mi => $m) {
                             if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; $mark = [substr((string)$m['ts'], 11, 5), $by];
