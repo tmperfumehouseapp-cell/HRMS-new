@@ -400,8 +400,8 @@ function cx_suggest(PDO $pdo, array $r, $meName) {
 function cx_looks_like(PDO $pdo, $key) {
     try {
         $m = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' ORDER BY id DESC LIMIT 4"); $m->execute([$key]); $t = ' ' . mb_strtolower(implode(' ', array_column($m->fetchAll(), 'body'))) . ' ';
-        $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|bottle.{0,12}(crack|toot))/u', 'wrong' => '/(wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived))/u', 'notdelivered' => '/(not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|marked delivered)/u',
-                'quality' => '/(fake|smell.{0,14}(different|bad|weak|not same)|khushbu.{0,14}(alag|nahi|kam)|quality (is )?(bad|poor)|duplicate)/u', 'refund' => '/(refund|paisa wapas|money back|return kar)/u'];
+        $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|bottle.{0,12}(crack|toot))/u', 'wrong' => '/(wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)|exchange|replace(ment)?|badalna|badalni|badalne)/u', 'notdelivered' => '/(not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|marked delivered)/u',
+                'quality' => '/(fake|smell.{0,14}(different|bad|weak|not same)|khushbu.{0,14}(alag|nahi|kam)|quality (is )?(bad|poor)|duplicate)/u', 'refund' => '/(refund|paisa wapas|money back|return kar)/u', 'missing' => '/(missing|incomplete|kam aaya|(nhi|nahi) (ayi|aayi|aya|aaya) (h|hai)\b)/u'];
         foreach ($map as $k => $re) if (preg_match($re, $t)) return ['problem' => $k, 'label' => cx_problems()[$k][0]];
     } catch (Throwable $e) {}
     return null;
