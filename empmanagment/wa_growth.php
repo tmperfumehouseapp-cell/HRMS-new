@@ -669,7 +669,7 @@ function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly
                         if ($avoid !== '') $msgs[] = ['who' => 'bot', 'text' => mb_substr($avoid, 0, 500)];
                         [$ok, $v, $__lw] = lib_bot_reply($pdo, $body, $msgs, 0, !empty($GLOBALS['lib_fu_step'])); $GLOBALS['lib_last_why'] = (string)($__lw ?? '') . ($ok && is_array($v) ? ' (ok, reply ' . mb_strlen((string)($v['reply'] ?? '')) . ' chars)' : ' (not ok)');
                         if ($ok && is_array($v) && trim((string)($v['reply'] ?? '')) !== '') {
-                            require_once __DIR__ . '/wa_hist.php'; $v = learn_enforce_v($pdo, $v); [$__pr, $__pch] = wag_price_enforce($pdo, $msgs, (string)$v['reply']); $__pg = wag_person_price_guard($msgs, $__pch ? $__pr : (string)$v['reply']); if ($__pg !== ($__pch ? $__pr : (string)$v['reply'])) { $__pr = $__pg; $__pch = true; } if ($__pch) { $v['reply'] = $__pr; $v['why'] = trim((string)($v['why'] ?? '') . ' [price fixed by the system: the chart price of the total ml]'); wag_log($pdo, 'bot', true, $key . ' · price fixed (wrong size row / first price not the chart price)'); }
+                            require_once __DIR__ . '/wa_hist.php'; $v = learn_enforce_v($pdo, $v); [$__pr, $__pch] = wag_price_enforce($pdo, $msgs, (string)$v['reply']); $__pg = wag_person_price_guard($msgs, $__pch ? $__pr : (string)$v['reply']); if ($__pg !== ($__pch ? $__pr : (string)$v['reply'])) { $__pr = $__pg; $__pch = true; wag_fg_count($pdo, 'salesperson_price', 'fixed'); } if ($__pch) { $v['reply'] = $__pr; $v['why'] = trim((string)($v['why'] ?? '') . ' [price fixed by the system: the chart price of the total ml]'); wag_log($pdo, 'bot', true, $key . ' · price fixed (wrong size row / first price not the chart price)'); wag_fg_count($pdo, 'price_ladder', 'fixed'); }
                             if (!empty($v['handoff'])) { $lc = ''; foreach (array_reverse($msgs) as $m) if ($m['who'] === 'customer') { $lc = $m['text']; break; } if (function_exists('learn_gap_log')) learn_gap_log($pdo, 'unsure', $lc, (string)($v['handoff_reason'] ?? '')); }
                             return ['ok' => true, 'photo' => !empty($v['price_photo']), 'text' => mb_substr(trim((string)$v['reply']), 0, 1500), 'why' => mb_substr(trim((string)($v['why'] ?? '')), 0, 300), 'handoff' => !empty($v['handoff']), 'source' => 'guide', 'ver' => (int)$g['version']];
                         }
@@ -1728,10 +1728,10 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if (!empty($r['handoff']) && true) wag_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s'));   // the bot hands this customer to a person: the lock opens
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)($m['body'] ?? '')));
-        $r['text'] = wag_combo_dump_fix($pdo, $key, (string)$r['text']);
-        $r['text'] = wag_min_pack_fix($pdo, $key, (string)$r['text']);
-        $r['text'] = wag_cod_fix((string)$r['text']);
-        $r['text'] = wag_praise_fix($pdo, $key, (string)$r['text']);
+        $__t0x = (string)$r['text']; $r['text'] = wag_combo_dump_fix($pdo, $key, $__t0x); if ($r['text'] !== $__t0x) wag_fg_count($pdo, 'one_bottle_not_list', 'fixed');
+        $__t0x = (string)$r['text']; $r['text'] = wag_min_pack_fix($pdo, $key, $__t0x); if ($r['text'] !== $__t0x) wag_fg_count($pdo, 'min_pack', 'fixed');
+        $__t0x = (string)$r['text']; $r['text'] = wag_cod_fix($__t0x); if ($r['text'] !== $__t0x) wag_fg_count($pdo, 'cod_35', 'fixed');
+        $__t0x = (string)$r['text']; $r['text'] = wag_praise_fix($pdo, $key, $__t0x); if ($r['text'] !== $__t0x) wag_fg_count($pdo, 'praise_thanks', 'fixed');
         [$r['text'], $__fgb] = wag_final_gate($pdo, $key, (string)$r['text'], []);
         if ($__fgb) { wag_log($pdo, 'bot', false, $key . ' · the final gate stopped this reply - a person takes over'); wag_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s')); wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
