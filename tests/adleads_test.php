@@ -24,24 +24,32 @@ $c->execute(['9000000004', 'Yesterday', 'AD1', 'Oud offer', '']); $q->execute(['
 $c->execute(['9000000005', 'Twice', 'AD2', 'Combo', '']);         $q->execute(['9000000005', "$D 08:00:00", 'query', 0]); $q->execute(['9000000005', "$D 20:00:00", 'query', 1]);
 $m->execute(['9000000005', 1, 'in', 'text', 'First of the day', "$D 08:00:00"]); $m->execute(['9000000005', 1, 'in', 'text', 'Evening', "$D 20:00:00"]);
 
-$r = wag_adleads($pdo, $D, 0);
-ok($r['total'] === 3, 'three ad leads that day, got ' . $r['total']);
+$c->execute(['9000000006', 'Pre', '', '', 'Meta ad']);            $q->execute(['9000000006', "$D 09:00:00", 'query', 0]);   // no Meta tag, but the ad's ready-made first message
+$m->execute(['9000000006', 1, 'in', 'text', 'Hello! Can I get more info on this?', "$D 09:00:00"]);
+ok(wag_adleads_pre('hello! can i get MORE INFO on this?') && wag_adleads_pre('Can I get more information about this') && !wag_adleads_pre('Price kya hai'), 'the ready-made first message');
+
+$r = wag_adleads($pdo, $D, 0, 1500, 'all');
+ok($r['total'] === 4, 'four HRMS ad queries that day, got ' . $r['total']);
 $by = []; foreach ($r['rows'] as $x) $by[$x['phone']] = $x;
 ok(!isset($by['9000000003']) && !isset($by['9000000004']), 'a campaign query and another day are left out');
 ok($by['9000000001']['first'] === 'Price kya hai?', 'the first INCOMING message of that day');
-ok($by['9000000001']['number'] === 'Main' && $by['9000000001']['ad'] === 'Oud offer' && $by['9000000001']['new'] === true, 'number, ad and new');
+ok($by['9000000001']['number'] === 'Main' && $by['9000000001']['ad'] === 'Oud offer' && $by['9000000001']['new'] === true && $by['9000000001']['tag'] === true && $by['9000000001']['pre'] === false, 'number, ad, new, Meta tag');
 ok($by['9000000002']['first'] === '[image]' && $by['9000000002']['number'] === '+91 99999 00002' && $by['9000000002']['ad'] === 'Meta ad' && $by['9000000002']['new'] === false, 'a photo, the number without a label, returning');
 ok($by['9000000005']['first'] === 'First of the day', 'one line per customer, with the first message');
-ok($r['new'] === 2 && $by['9000000005']['new'] === true, 'new leads: a customer with two queries that day is new when the FIRST one was, got ' . $r['new']);
-$n = []; foreach ($r['numbers'] as $x) $n[$x['id']] = $x['n']; ok($n[1] === 2 && $n[2] === 1, 'leads per number');
-$r1 = wag_adleads($pdo, $D, 1); ok($r1['total'] === 2 && $r1['all'] === 3, 'the number filter');
-$n1 = []; foreach ($r1['numbers'] as $x) $n1[$x['id']] = $x['n']; ok($n1[2] === 1, 'the chips still count every number');
+ok($by['9000000006']['pre'] === true && $by['9000000006']['tag'] === false, 'the ready-made message without a Meta tag');
+ok($r['kinds'] == ['rule' => 3, 'pre' => 1, 'tag' => 2, 'other' => 1, 'all' => 4], 'the kinds: ' . json_encode($r['kinds']));
+$n = []; foreach ($r['numbers'] as $x) $n[$x['id']] = $x['n']; ok($n[1] === 3 && $n[2] === 1, 'leads per number');
+$rr = wag_adleads($pdo, $D, 0); $pr = array_column($rr['rows'], 'phone'); sort($pr);
+ok($rr['kind'] === 'rule' && $pr === ['9000000001', '9000000005', '9000000006'] && $rr['new'] === 3, 'the default list: ready-made message OR Meta tag');
+ok(array_column(wag_adleads($pdo, $D, 0, 1500, 'pre')['rows'], 'phone') === ['9000000006'] && array_column(wag_adleads($pdo, $D, 0, 1500, 'other')['rows'], 'phone') === ['9000000002'], 'only the ready-made message / only the HRMS guesses');
+$r1 = wag_adleads($pdo, $D, 1, 1500, 'all'); ok($r1['total'] === 3 && $r1['all'] === 4 && $r1['kinds']['other'] === 0, 'the number filter (kind chips count the chosen number)');
+$n1 = []; foreach ($r1['numbers'] as $x) $n1[$x['id']] = $x['n']; ok($n1[2] === 1, 'the number chips still count every number');
 ok(wag_adleads($pdo, 'nonsense', 0)['date'] === date('Y-m-d'), 'a bad date means today');
 ok(wag_adleads($pdo, $D, 0, 2)['more'] === true, 'more than the limit is said');
 // 🩺 Diagnose: both sides of one day, and one customer (the tracking service's answer is given by the test)
 $svc = [['ads' => [['ad_id' => 'AD1', 'clicks' => 1]], 'orders' => []], ''];
 $d = wag_adcheck($pdo, $D, $svc); $ba = []; foreach ($d['hrms']['by_ad'] as $x) $ba[$x['ad_id']] = $x['n'];
-ok($d['hrms']['total'] === 3 && $ba['AD1'] === 1 && $ba['AD2'] === 1 && $ba[''] === 1 && $d['svc']['ads'][0]['clicks'] === 1 && $d['svc_error'] === '', 'diagnose: HRMS leads per ad beside the service answer');
+ok($d['hrms']['total'] === 3 && $d['hrms']['pre'] === 1 && $d['hrms']['tag'] === 2 && $d['hrms']['other'] === 1 && $d['hrms']['new'] === 3 && $ba == ['AD1' => 1, 'AD2' => 1] && $d['svc']['ads'][0]['clicks'] === 1 && $d['svc_error'] === '', 'diagnose: HRMS leads by the rule, per ad only with a Meta tag: ' . json_encode($d['hrms']));
 $d0 = wag_adcheck($pdo, $D, [null, 'down']); ok($d0['svc'] === null && $d0['svc_error'] === 'down' && $d0['hrms']['total'] === 3, 'diagnose: the HRMS side still answers when the service is down');
 $o = wag_adcheck_one($pdo, '+91 90000-00001', [['clicks' => [], 'orders' => []], '']);
 ok($o['phone'] === '9000000001' && $o['name'] === 'Asha' && $o['ad'] === 'Oud offer' && count($o['queries']) === 1, 'diagnose one customer');

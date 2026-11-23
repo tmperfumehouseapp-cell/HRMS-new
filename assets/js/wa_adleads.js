@@ -38,24 +38,26 @@
   `;
   WaPanels.add('adleads', (el, ctx) => {
     if (!document.getElementById('alCss')) { const s = document.createElement('style'); s.id = 'alCss'; s.textContent = CSS; document.head.appendChild(s); }
-    let day = today(), number = 0, dgOpen = false, DG = null, dgText = '';
+    let day = today(), number = 0, kind = 'rule', dgOpen = false, DG = null, dgText = '';
+    const KINDS = [['rule', '✅ Ad leads', 'the ad’s ready-made first message, or Meta’s ad tag'], ['pre', '💬 Ready-made message', '“Can I get more info on this?”'], ['tag', '🏷 Meta ad tag', 'Meta sent the ad with the message'], ['other', '❔ Other', 'the HRMS guessed an ad from other words'], ['all', 'All', '']];
     el.innerHTML = loading;
     async function load() {
-      let D; try { D = await api.get('wa.g_adleads', { date: day, number }); } catch (e) { el.innerHTML = errBox(e.message); return; }
+      let D; try { D = await api.get('wa.g_adleads', { date: day, number, kind }); } catch (e) { el.innerHTML = errBox(e.message); return; }
       const allN = (D.numbers || []).reduce((s, n) => s + (n.n || 0), 0);
       const chips = [['0', 'All numbers', D.all != null ? D.all : allN]].concat((D.numbers || []).filter((n) => n.n > 0 || n.id === number).map((n) => [String(n.id), n.label || 'Number', n.n]));
       el.innerHTML = `<div class="wp"><div class="wp-top"><div style="flex:1;min-width:200px"><h2>📣 Ad leads</h2><p>Customers who came from a Meta click-to-WhatsApp ad on the chosen day, with the first message they wrote. One line per customer.</p></div></div>
       <div class="al-bar"><button type="button" class="al-btn" id="alPrev">‹</button><input type="date" id="alDay" value="${esc(D.date)}" max="${today()}"><button type="button" class="al-btn" id="alNext" ${D.date >= today() ? 'disabled' : ''}>›</button><button type="button" class="al-btn" id="alToday">Today</button><button type="button" class="al-btn" id="alRef">Refresh</button><button type="button" class="al-btn" id="alDg" style="border-color:#cfd8ff;color:#3346a8">🩺 Diagnose</button></div>
       <div id="alDgBox"></div>
+      <div class="al-chips">${KINDS.map(([k, l, tip]) => `<button type="button" class="al-chip ${kind === k ? 'on' : ''}" data-kind="${k}" title="${esc(tip)}">${l}<i>${(D.kinds || {})[k] != null ? D.kinds[k] : ''}</i></button>`).join('')}</div>
       <div class="al-chips">${chips.map(([k, l, n]) => `<button type="button" class="al-chip ${String(number) === k ? 'on' : ''}" data-n="${k}">📱 ${esc(l)}<i>${n}</i></button>`).join('')}</div>
       <div class="al-sum"><span><b>${D.total}</b>ad leads</span><span><b>${D.new}</b>new customers</span><span><b>${D.total - D.new}</b>came before</span></div>
       <div class="wp-cd">${D.rows.length ? `<table class="wp-tb al-tb"><thead><tr><th>Time</th><th>Customer</th><th>First message that day</th><th>Ad</th><th>Number</th></tr></thead><tbody>${D.rows.map((r, i) => `<tr class="al-row" data-i="${i}" title="Open the chat">
         <td style="white-space:nowrap">${esc(time(r.at))}</td>
-        <td class="who"><b>${esc(r.name || r.phone)}</b><span>${esc(r.phone)}</span> <span class="al-new ${r.new ? '' : 'r'}">${r.new ? 'New' : 'Came before'}</span><br><button type="button" class="al-chk" data-chk="${i}">🩺 Check order</button><div class="al-onebox" data-one="${i}"></div></td>
+        <td class="who"><b>${esc(r.name || r.phone)}</b><span>${esc(r.phone)}</span> <span class="al-new ${r.new ? '' : 'r'}">${r.new ? 'New' : 'Came before'}</span>${r.pre ? ' <span class="al-st ok">Ready-made message</span>' : ''}${r.tag ? ' <span class="al-st">Meta ad tag</span>' : ''}<br><button type="button" class="al-chk" data-chk="${i}">🩺 Check order</button><div class="al-onebox" data-one="${i}"></div></td>
         <td><div class="al-msg">${esc(r.first || '—')}</div></td>
         <td><div class="al-ad">${esc(r.ad || 'Meta ad')}</div></td>
         <td style="white-space:nowrap">${esc(r.number || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="wp-empty">No ad leads on this day' + (number ? ' for this number' : '') + '.</div>'}
-      <div class="wp-hint" style="margin-top:8px">${D.more ? '<b>Only the newest 1,500 queries of the day are shown.</b> ' : ''}An ad lead is a query the HRMS opened from a Meta ad: the message carried the ad, or the customer first came from an ad. “New” = no earlier query or order. The ad shown is the first ad that brought the customer. The day runs midnight to midnight.</div></div></div>`;
+      <div class="wp-hint" style="margin-top:8px">${D.more ? '<b>Only the newest 1,500 queries of the day are shown.</b> ' : ''}<b>✅ Ad leads</b> = the first message is the ad’s ready-made text (“Can I get more info on this?”) or the customer carries Meta’s ad tag. <b>❔ Other</b> = the HRMS guessed an ad from other words (for example a website or profile WhatsApp button). “New” = no earlier query or order. The ad shown is the first ad that brought the customer. The day runs midnight to midnight.</div></div></div>`;
       $(el, '#alDay').onchange = (e) => { if (e.target.value) { day = e.target.value; load(); } };
       $(el, '#alPrev').onclick = () => { day = shift(day, -1); load(); };
       $(el, '#alNext').onclick = () => { if (day < today()) { day = shift(day, 1); load(); } };
@@ -64,7 +66,8 @@
       $(el, '#alDg').onclick = () => { dgOpen = !dgOpen; if (dgOpen) diagnose(); else $(el, '#alDgBox').innerHTML = ''; };
       if (dgOpen) diagnose();
       el.querySelectorAll('[data-chk]').forEach((b) => { b.onclick = (ev) => { ev.stopPropagation(); checkOne(+b.dataset.chk, D.rows[+b.dataset.chk]); }; });
-      el.querySelectorAll('.al-chip').forEach((b) => { b.onclick = () => { number = +b.dataset.n; load(); }; });
+      el.querySelectorAll('.al-chip[data-n]').forEach((b) => { b.onclick = () => { number = +b.dataset.n; load(); }; });
+      el.querySelectorAll('.al-chip[data-kind]').forEach((b) => { b.onclick = () => { kind = b.dataset.kind; load(); }; });
       el.querySelectorAll('.al-row').forEach((tr) => { tr.onclick = () => { const r = D.rows[+tr.dataset.i]; if (r && ctx && ctx.openChat) ctx.openChat(r.phone); }; });
     }
     // 🩺 one customer: did the tracking service get the ad click, is there a Shopify order for this number, was it matched and told to Meta
@@ -95,13 +98,13 @@
         if (startedToday) line('ℹ️', `The service started counting on this day at ${esc(unix(S.health.first_click_at))}; earlier clicks of the day are not in its numbers.`);
         const mc = t.meta_conversations || 0, cl = t.queries || 0;
         if (mc > 0 && cl < mc * 0.5 && !startedToday) line('⚠️', `<b>Messages may not be reaching the service:</b> Meta counts ${mc} conversations, the service received ${cl} ad clicks.`);
-        else line(cl > 0 ? '✅' : '⚠️', `<b>Ad clicks:</b> Meta counts ${mc} conversations · the service received ${cl} · the HRMS lists ${H.total} ad leads (${H.new} new).`);
+        else line(cl > 0 ? '✅' : '⚠️', `<b>Ad clicks:</b> Meta counts ${mc} conversations · the service received ${cl} · the HRMS lists ${H.total} ad leads (${H.pre} with the ready-made message, ${H.tag} with Meta’s ad tag; ${H.new} new) and ${H.other} more it guessed from other words.`);
         line(S.health.orders_received_day > 0 ? '✅' : '⚠️', `<b>Shopify orders reaching the service:</b> ${S.health.orders_received_day} on this day.`);
         line(t.orders > 0 ? '✅' : 'ℹ️', `<b>Orders matched to an ad click:</b> ${t.orders || 0} (${t.confirmed_orders || 0} paid) · revenue ${inr(t.revenue)} · spend ${inr(t.spend)} · ROAS ${t.roas != null ? t.roas.toFixed(2) : '—'}.`);
         line(failed ? '❌' : sent ? '✅' : 'ℹ️', `<b>Purchases told to Meta:</b> ${sent} accepted · ${failed} refused · ${pend} waiting.` + (failed ? ' See the reason on the orders below.' : !sent ? ' Nothing to send yet (no matched paid order).' : ''));
         const ads = S.ads || []; const seen = {};
         const rows = ads.map((a) => { seen[a.ad_id] = 1; const c = a.capi || {}; return [a.ad_name || a.ad_id, inr(a.spend), a.meta_conversations || 0, a.clicks || 0, hb[a.ad_id] || 0, a.orders || 0, a.confirmed_orders || 0, inr(a.revenue), a.roas != null ? a.roas.toFixed(2) : '—', (c.sent || 0) + ' / ' + (c.failed || 0) + ' / ' + (c.pending || 0)]; });
-        (H.by_ad || []).forEach((a) => { if (!seen[a.ad_id]) rows.push([(a.title || 'Meta ad') + ' (HRMS only)', '—', '—', 0, a.n, 0, 0, '—', '—', '—']); });
+        (H.by_ad || []).forEach((a) => { if (!seen[a.ad_id]) rows.push([(a.title || 'Meta ad') + ' (ad tag in the HRMS only)', '—', '—', 0, a.n, 0, 0, '—', '—', '—']); });
         const HEAD = ['Ad', 'Spend', 'Meta conv.', 'Clicks (service)', 'Ad leads (HRMS)', 'Orders', 'Paid', 'Revenue', 'ROAS', 'Meta: ok / refused / waiting'];
         table = rows.length ? `<div class="al-dgx"><table><thead><tr>${HEAD.map((x) => '<th>' + x + '</th>').join('')}</tr></thead><tbody>${rows.map((r) => '<tr>' + r.map((c) => '<td>' + esc(String(c)) + '</td>').join('') + '</tr>').join('')}</tbody></table></div>` : '';
         T.push('', HEAD.join(' | ')); rows.forEach((r) => T.push(r.join(' | ')));
@@ -110,7 +113,7 @@
           T.push('', 'Matched orders:'); os.forEach((o) => T.push([o.name, o.ad_name || o.ad_id, inr(o.total), o.financial_status, o.capi_status, o.capi_error || ''].join(' | '))); }
       }
       dgText = 'Diagnose ' + DG.date + ' (checked ' + DG.now + ')\n' + T.join('\n');
-      box.innerHTML = `<div class="al-dg"><h3>🩺 Diagnose · ${esc(DG.date)}</h3>${L.join('')}${table}${ord}<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="al-btn" id="alCopy">Copy report</button><span class="wp-hint">The report has no customer names or numbers. HRMS ad leads are counted under the FIRST ad that brought the customer, so per-ad numbers can differ from the service.</span></div></div>`;
+      box.innerHTML = `<div class="al-dg"><h3>🩺 Diagnose · ${esc(DG.date)}</h3>${L.join('')}${table}${ord}<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="al-btn" id="alCopy">Copy report</button><span class="wp-hint">The report has no customer names or numbers. The per-ad HRMS column counts only customers with Meta’s ad tag, under the FIRST ad that brought them, so it can differ from the service.</span></div></div>`;
       $(el, '#alCopy').onclick = async () => { try { await navigator.clipboard.writeText(dgText); toast('Report copied'); } catch (e) { const ta = document.createElement('textarea'); ta.value = dgText; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Report copied'); } catch (e2) { toast('Could not copy'); } ta.remove(); } };
     }
     load(); return load;

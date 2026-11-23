@@ -9,8 +9,13 @@
  * ⚡ Light on the server: wa_queries is read through its opened_at index for one day only, and the first messages come in a few grouped reads
  * through the (phone, id) index. It never scans all chats, writes nothing, and runs only when the page is opened or refreshed.
  */
-function wag_adleads(PDO $pdo, string $day, int $numId, int $cap = 1500): array
+/** The ad's ready-made first message ("Hello! Can I get more info on this?") — the owner's rule for a click-to-WhatsApp ad lead. */
+function wag_adleads_pre(string $t): bool { return (bool)preg_match('/more\s+info(rmation)?\s+(on|about)\s+this/iu', $t); }
+
+/** $kind: 'rule' = the ad's ready-made first message OR Meta's ad tag (default) · 'pre' · 'tag' · 'other' = the HRMS guessed an ad from other words · 'all'. */
+function wag_adleads(PDO $pdo, string $day, int $numId, int $cap = 1500, string $kind = 'rule'): array
 {
+    if (!in_array($kind, ['rule', 'pre', 'tag', 'other', 'all'], true)) $kind = 'rule';
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) || strtotime($day) === false) $day = date('Y-m-d');
     $from = $day . ' 00:00:00'; $to = date('Y-m-d', strtotime($day . ' 12:00:00') + 86400) . ' 00:00:00';
     $st = $pdo->prepare("SELECT q.phone, q.opened_at, q.again, c.name, c.ad_id, c.ad_head, c.ref_text FROM wa_queries q JOIN wa_contacts c ON c.phone = q.phone
@@ -23,17 +28,23 @@ function wag_adleads(PDO $pdo, string $day, int $numId, int $cap = 1500): array
         $m->execute(array_merge($ch, [$from, $to])); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) $first[(string)$r['phone']] = $r;
     }
     $nums = []; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers ORDER BY id")->fetchAll(PDO::FETCH_ASSOC) as $n) $nums[(int)$n['id']] = ['id' => (int)$n['id'], 'label' => trim((string)$n['label']) !== '' ? (string)$n['label'] : (string)$n['display'], 'n' => 0];
+    $kinds = ['rule' => 0, 'pre' => 0, 'tag' => 0, 'other' => 0, 'all' => 0];
     $rows = []; $seen = []; $new = 0; $firstQ = []; foreach ($qs as $r) $firstQ[(string)$r['phone']] = (int)$r['again'];   // newest first, so what stays is the FIRST query of the day: new that day = new
     foreach ($qs as $r) {
         $ph = (string)$r['phone']; if (isset($seen[$ph])) continue; $seen[$ph] = 1;   // one line per customer (the newest query of the day)
-        $f = $first[$ph] ?? null; $nid = $f ? (int)$f['number_id'] : 0; if (isset($nums[$nid])) $nums[$nid]['n']++;   // the chips count every number, whatever number is picked
+        $f = $first[$ph] ?? null; $nid = $f ? (int)$f['number_id'] : 0;
+        $txt = $f ? trim((string)$f['body']) : ''; $pre = wag_adleads_pre($txt); $tag = (string)$r['ad_id'] !== '';
+        if ($f && $txt === '' && (string)$f['mtype'] !== 'text') $txt = '[' . (string)$f['mtype'] . ']';
+        $is = ['all' => true, 'pre' => $pre, 'tag' => $tag, 'rule' => $pre || $tag, 'other' => !$pre && !$tag];
+        if ($numId <= 0 || $nid === $numId) foreach ($is as $k => $v) if ($v) $kinds[$k]++;   // the kind chips count the chosen number
+        if (!$is[$kind]) continue;
+        if (isset($nums[$nid])) $nums[$nid]['n']++;   // the number chips count the chosen kind, whatever number is picked
         if ($numId > 0 && $nid !== $numId) continue;
-        $txt = $f ? trim((string)$f['body']) : ''; if ($f && $txt === '' && (string)$f['mtype'] !== 'text') $txt = '[' . (string)$f['mtype'] . ']';
         $isNew = ($firstQ[$ph] ?? 1) === 0; if ($isNew) $new++;
-        $rows[] = ['phone' => $ph, 'name' => (string)$r['name'], 'at' => (string)($f['ts'] ?? $r['opened_at']), 'number' => isset($nums[$nid]) ? $nums[$nid]['label'] : '', 'new' => $isNew,
+        $rows[] = ['phone' => $ph, 'name' => (string)$r['name'], 'at' => (string)($f['ts'] ?? $r['opened_at']), 'number' => isset($nums[$nid]) ? $nums[$nid]['label'] : '', 'new' => $isNew, 'pre' => $pre, 'tag' => $tag,
             'ad' => mb_substr((string)((string)$r['ad_head'] !== '' ? $r['ad_head'] : $r['ref_text']), 0, 90), 'ad_id' => (string)$r['ad_id'], 'first' => mb_substr($txt, 0, 300)];
     }
-    return ['date' => $day, 'number' => $numId, 'rows' => $rows, 'total' => count($rows), 'new' => $new, 'all' => count($seen), 'numbers' => array_values($nums), 'more' => $more];
+    return ['date' => $day, 'number' => $numId, 'rows' => $rows, 'total' => count($rows), 'new' => $new, 'all' => array_sum(array_column($nums, 'n')), 'kind' => $kind, 'kinds' => $kinds, 'numbers' => array_values($nums), 'more' => $more];
 }
 
 /**
@@ -60,10 +71,10 @@ function wag_ctwa_get(string $path, string $argName, string $arg, ?string $base 
 /** One day, both sides: the HRMS ad leads (also per ad) and what the tracking service saw (clicks, matched orders, purchases sent to Meta). */
 function wag_adcheck(PDO $pdo, string $day, ?array $svcTest = null): array
 {
-    $h = wag_adleads($pdo, $day, 0); $by = [];
-    foreach ($h['rows'] as $r) { $k = $r['ad_id'] !== '' ? $r['ad_id'] : ''; if (!isset($by[$k])) $by[$k] = ['ad_id' => $k, 'title' => $r['ad'], 'n' => 0]; $by[$k]['n']++; }
+    $h = wag_adleads($pdo, $day, 0, 1500, 'all'); $by = []; $newRule = 0;
+    foreach ($h['rows'] as $r) { if ($r['new'] && ($r['pre'] || $r['tag'])) $newRule++; if (!$r['tag']) continue; $k = $r['ad_id']; if (!isset($by[$k])) $by[$k] = ['ad_id' => $k, 'title' => $r['ad'], 'n' => 0]; $by[$k]['n']++; }   // per ad: only customers who carry Meta's ad tag
     [$svc, $err] = $svcTest ?? wag_ctwa_get('/diag', 'date', $h['date']);
-    return ['date' => $h['date'], 'hrms' => ['total' => $h['total'], 'new' => $h['new'], 'by_ad' => array_values($by), 'more' => $h['more']], 'svc' => $svc, 'svc_error' => $err, 'now' => date('Y-m-d H:i:s')];
+    return ['date' => $h['date'], 'hrms' => ['total' => $h['kinds']['rule'], 'new' => $newRule, 'pre' => $h['kinds']['pre'], 'tag' => $h['kinds']['tag'], 'other' => $h['kinds']['other'], 'by_ad' => array_values($by), 'more' => $h['more']], 'svc' => $svc, 'svc_error' => $err, 'now' => date('Y-m-d H:i:s')];
 }
 
 /** One customer: the HRMS queries of this chat and, from the tracking service, the ad clicks and the Shopify orders of this number (matched? told to Meta?). */
