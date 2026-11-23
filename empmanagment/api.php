@@ -11616,23 +11616,40 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
         foreach ($rows as $o) {
             $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $t = strtotime((string)$o['created_at']); $f = ['a' => null, 'c' => null, 'p' => null]; $nochat = false;
             // 📱 owner (23 Nov, order #73485): the customer ordered with ANOTHER number than the one he chats from — the check found no chat and said "nothing sent". The order's "Extra mobile no." (Order Allocation) is used when the order's own number has no chat; with no chat at all the order is marked "chat not found" (not "not sent")
-            try { $hasMsg->execute([$k]); if (strlen($k) !== 10 || !$hasMsg->fetchColumn()) { $k2 = ''; if ($xq) { $xq->execute([(string)$o['store_key'], (string)$o['shopify_id']]); $k2 = substr(preg_replace('/\D+/', '', (string)$xq->fetchColumn()), -10); } $found = ''; if (strlen($k2) === 10) { $hasMsg->execute([$k2]); if ($hasMsg->fetchColumn()) $found = $k2; }
-                if ($found === '' && strlen($k) === 10) { $fq = $pdo->prepare("SELECT phone, COUNT(*) n FROM wa_messages WHERE ts >= ? AND ts <= ? AND body LIKE ? GROUP BY phone ORDER BY n DESC LIMIT 2"); $fq->execute([date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 2 * 3600), '%' . $k . '%']); $fr = $fq->fetchAll(PDO::FETCH_ASSOC); if (count($fr) === 1) $found = (string)$fr[0]['phone']; }   // 🔎 found by itself: the order's number was written in exactly ONE chat around the order (the customer typed his number / address there)
-                if ($found !== '') $k = $found; else $nochat = true; } } catch (Throwable $e) { }
-            if (strlen($k) === 10) {
+            // 🔎 owner (23 Nov, orders #73485 / #7349x): the number on the order is often NOT the number the customer chats from — it has no chat, or only an old / automatic one. So: read the order number's chat; when it holds NO message of a person and none of the three messages, look for the real chat — the order's "Extra mobile no.", else the ONE chat of the order's salesperson where the order's number was written (3 days before .. 2 hours after the order; searched only inside that person's chats, kept 15 min / 6 h) — and read that one. Nothing found = "chat not found" (its own box, not "not sent").
+            $scan = function (string $kk) use ($pdo, $t, $rxA, $rxC, $rxP, $rxChainWord) {
+                $ff = ['a' => null, 'c' => null, 'p' => null]; $person = false; if (strlen($kk) !== 10) return [$ff, $person];
                 $q = $pdo->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700");
-                $q->execute([$k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', min(time(), $t + 48 * 3600))]);   // owner (23 Nov): a message sent LATER (up to 48 h after the order, until now) also counts — it used to stop 30 minutes after the order, so a chain message sent later never moved the order to Done
+                $q->execute([$kk, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', min(time(), $t + 48 * 3600))]);   // a message sent LATER (up to 48 h after the order, until now) also counts
                 $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms);
                 foreach ($ms as $mi => $m) {
-                    if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; $mark = [substr((string)$m['ts'], 11, 5), $by];
-                    if ($f['a'] === null && preg_match($rxA, $body)) $f['a'] = $mark;
-                    if ($f['p'] === null && $body !== '' && preg_match($rxP, $body)) $f['p'] = $mark;
-                    if ($f['c'] === null) {
-                        if (preg_match($rxC, $body) || preg_match($rxChainWord, $body)) $f['c'] = $mark;
-                        elseif ((string)$m['mtype'] === 'image') { for ($z = max(0, $mi - 6); $z <= min($nm - 1, $mi + 6); $z++) if ($z !== $mi && preg_match($rxChainWord, (string)$ms[$z]['body'])) { $f['c'] = $mark; break; } }
+                    if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; if ($by === 'S') $person = true; $mark = [substr((string)$m['ts'], 11, 5), $by];
+                    if ($ff['a'] === null && preg_match($rxA, $body)) $ff['a'] = $mark;
+                    if ($ff['p'] === null && $body !== '' && preg_match($rxP, $body)) $ff['p'] = $mark;
+                    if ($ff['c'] === null) {
+                        if (preg_match($rxC, $body) || preg_match($rxChainWord, $body)) $ff['c'] = $mark;
+                        elseif ((string)$m['mtype'] === 'image') { for ($z = max(0, $mi - 6); $z <= min($nm - 1, $mi + 6); $z++) if ($z !== $mi && preg_match($rxChainWord, (string)$ms[$z]['body'])) { $ff['c'] = $mark; break; } }
                     }
                 }
-            }
+                return [$ff, $person];
+            };
+            try {
+                [$f, $person] = $scan($k); $hits = function ($x) { return ($x['a'] ? 1 : 0) + ($x['c'] ? 1 : 0) + ($x['p'] ? 1 : 0); };
+                if ($hits($f) < 3) {   // owner (23 Nov, #73496): the order number's chat may hold a few LATER messages of a person (a template sent to that number after the order) while the selling was done in ANOTHER chat — so whenever something is missing, the other chats of this order are read too and the one with the MOST of the three messages counts
+                    $cand = []; $k2 = ''; if ($xq) { $xq->execute([(string)$o['store_key'], (string)$o['shopify_id']]); $k2 = substr(preg_replace('/\D+/', '', (string)$xq->fetchColumn()), -10); }
+                    if (strlen($k2) === 10 && $k2 !== $k) $cand[$k2] = 1;
+                    if (strlen($k) === 10 && (int)$o['employee_id'] > 0) {
+                        $eo = (int)$o['employee_id'];
+                        $fnd = (string)hrms_memo('must3_find:' . $k . ':' . $t . ':' . $eo, 900, function () use ($pdo, $k, $t, $eo) {
+                            $fq = $pdo->prepare("SELECT m.phone, COUNT(*) n FROM wa_contacts c JOIN wa_messages m ON m.phone = c.phone WHERE c.assigned_emp = ? AND c.last_in_at >= ? AND c.phone <> ? AND m.ts >= ? AND m.ts <= ? AND m.body LIKE ? GROUP BY m.phone ORDER BY n DESC LIMIT 2");
+                            $fq->execute([$eo, date('Y-m-d H:i:s', $t - 3 * 86400), $k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 2 * 3600), '%' . $k . '%']); $fr = $fq->fetchAll(PDO::FETCH_ASSOC); return count($fr) === 1 ? (string)$fr[0]['phone'] : ''; });
+                        if (strlen($fnd) === 10 && $fnd !== $k) $cand[$fnd] = 1;
+                    }
+                    $any = $person;
+                    foreach (array_keys($cand) as $kc) { [$f2, $p2] = $scan((string)$kc); if ($p2 || $hits($f2)) $any = true; if ($hits($f2) > $hits($f) || ($hits($f2) === $hits($f) && $p2 && !$person)) { $f = $f2; $person = $p2; $k = (string)$kc; } }
+                    if (!$any && !$hits($f)) $nochat = true;
+                }
+            } catch (Throwable $e) { }
             $e = (int)$o['employee_id'];
             if (!isset($P[$e])) $P[$e] = ['id' => $e, 'name' => $names[$e] ?? ('#' . $e), 'n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0, 'orders' => []];
             $nk = strtolower(ltrim(trim((string)$o['order_name']), '#')); $dn = isset($ad[$nk]) && (float)$ad[$nk]['amt'] > 0; $wr = $why[(string)$o['store_key'] . ':' . (string)$o['shopify_id']] ?? null; $wt = '';

@@ -675,7 +675,7 @@
     function lightbox(src) { photoOpen(src); }
     document.addEventListener('click', (e) => { const im = e.target.closest('#wiM .wi-b img'); if (im && !e.target.closest('.wi-qt,a')) { e.preventDefault(); photoOpen(im.currentSrc || im.src); } });
 
-    async function cxBan(ph) { if (!window.CXR) return; const st = await CXR.state(ph); if (!S.cur || S.cur.contact.phone !== ph) return; const el = $('wiCxB'); if (el) el.innerHTML = CXR.bannerHtml(st); }
+    async function cxBan(ph) { if (!window.CXR) return; const st = await CXR.state(ph); if (!S.cur || S.cur.contact.phone !== ph) return; const el = $('wiCxB'); if (el) el.innerHTML = CXR.bannerHtml(st); if (st && st.case && !S.cur.contact.is_cx) { S.cur.contact.is_cx = true; drawHead(); } }   // a chat with an open complaint shows ONLY the complaint mark (no New query / Wants to buy)
     const meId = () => { try { return +((api.currentUser && api.currentUser()) || {}).employee_id || 0; } catch (e) { return 0; } };
     // 👤 who has this chat — next to the customer's name. Admin: assign to anyone (search every employee). Salesperson: transfer their own chat, or take an unassigned one.
     function asgHtml(c) {

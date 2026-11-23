@@ -80,6 +80,10 @@ function wag_cfg(PDO $pdo): array
     // once (owner, 21 Nov): complaint chats are removed from the query counts
     try { if (setting_get($pdo, 'wag_cxq1', '') !== '1') { setting_set($pdo, 'wag_cxq1', '1');
         $ph = $pdo->query("SELECT phone FROM wa_contacts WHERE (cx_id IS NOT NULL AND cx_id > 0) OR tag = 'complaint' LIMIT 5000")->fetchAll(PDO::FETCH_COLUMN); foreach ($ph as $__p) wag_q_forget($pdo, (string)$__p); } } catch (Throwable $e) { }
+    // once (owner, 23 Nov): every chat with an OPEN complaint is marked as a complaint chat and carries only that mark (the sales marks go; a ticket raised outside the chat left the chat unmarked)
+    try { if (setting_get($pdo, 'wag_cxtags1', '') !== '1' && function_exists('cx_clean_tags')) { setting_set($pdo, 'wag_cxtags1', '1');
+        { $cs = $pdo->query("SELECT id, phone FROM cx_cases WHERE status IN ('open', 'reopened') AND phone <> '' LIMIT 3000")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($cs as $__c) { $pdo->prepare("UPDATE wa_contacts SET cx_id = ? WHERE phone = ? AND (cx_id IS NULL OR cx_id = 0)")->execute([(int)$__c['id'], (string)$__c['phone']]); cx_clean_tags($pdo, (string)$__c['phone']); } } } } catch (Throwable $e) { }
     // once (owner, 21 Nov): order-status / tracking / refund chats are removed from the query counts (last 3 days)
     try { if (setting_get($pdo, 'wag_cxq2', '') !== '1') { setting_set($pdo, 'wag_cxq2', '1');
         $st = $pdo->prepare("SELECT DISTINCT q.phone FROM wa_queries q JOIN wa_messages m ON m.phone = q.phone AND m.dir = 'in' AND m.ts >= q.opened_at AND m.ts <= DATE_ADD(q.opened_at, INTERVAL 10 MINUTE) WHERE q.opened_at >= ? AND m.body REGEXP 'tracking|track my|track order|where is my order|order status|order id|order no|kab aayega|kab tak aayega|kab milega|nahi mila|not received|refund|return|replace|damaged|leak|wrong item|wrong product|cancel my order|order kaha|parcel' LIMIT 4000"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
@@ -1047,7 +1051,8 @@ function wag_fair_state(PDO $pdo, int $emp): array
     try { if ($emp <= 0 || (string)setting_get($pdo, 'wag_fair_on', '1') === '0') return $c[$ck] = $r; $r['window'] = max(10, min(180, (int)setting_get($pdo, 'wag_fair_window', '45')));
         static $pk = null, $pkAt = 0, $pres = [], $stars = null, $sAt = 0;
         if ($pk === null || time() - $pkAt > 10) { $pkAt = time();
-            $__fn = function () use ($pdo) { $pk = []; $q = $pdo->query("SELECT emp_id, COUNT(DISTINCT phone) FROM wa_mkt WHERE kind = 'taken' AND emp_id > 0 AND at >= '" . date('Y-m-d 00:00:00') . "' GROUP BY emp_id"); foreach ($q->fetchAll(PDO::FETCH_NUM) as $x) $pk[(int)$x[0]] = (int)$x[1];
+            $__fn = function () use ($pdo) { $pk = []; $q = $pdo->query("SELECT m.emp_id, COUNT(DISTINCT m.phone) FROM wa_mkt m LEFT JOIN wa_queries lq ON lq.id = (SELECT MAX(x.id) FROM wa_queries x WHERE x.phone = m.phone) LEFT JOIN wq_qtype lt ON lt.query_id = lq.id WHERE m.kind = 'taken' AND m.emp_id > 0 AND m.at >= '" . date('Y-m-d 00:00:00') . "' AND COALESCE(lt.type, '') NOT IN ('campaign', 'community') GROUP BY m.emp_id");   // owner 23 Nov: only FRESH queries count for the equal share - campaign / community chats a person took are not counted
+                foreach ($q->fetchAll(PDO::FETCH_NUM) as $x) $pk[(int)$x[0]] = (int)$x[1];
                 $pres = []; $q = $pdo->query("SELECT DISTINCT emp_id FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date('Y-m-d H:i:s', time() - 1800) . "'"); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $e2) $pres[(int)$e2] = 1; return ['pk' => $pk, 'pres' => $pres]; };   // people who are working: wrote to a customer in the last 30 minutes
             $__r = function_exists('hrms_memo') ? hrms_memo('wag_fair_pk', 15, $__fn) : $__fn(); $pk = (array)$__r['pk']; $pres = (array)$__r['pres']; }   // read once per 15 s for everybody (every web process read it on its own)
         if ($stars === null || time() - $sAt > 120) { $sAt = time(); $stars = []; $d7 = function_exists('wag_real_queries') ? wag_real_queries($pdo, 7, true) : []; $tq = 0; $to = 0; foreach ($d7 as $v) { $tq += $v[0]; $to += $v[1]; } $avg = $tq >= 40 && $to > 0 ? $to / $tq : 0; if ($avg > 0) foreach ($d7 as $e2 => $v) if ($v[0] >= 8 && $v[1] >= 1 && $v[1] / $v[0] >= 1.1 * $avg) $stars[(int)$e2] = 1; }   // the ratio counts queries AND campaign chats (community not), and "best" is only 10% above the team (not extraordinary)
@@ -2581,6 +2586,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $rows = array_values($ads); usort($rows, fn($a, $b) => $b['chats'] <=> $a['chats']); foreach ($rows as &$x) $x['rate'] = $x['chats'] ? round(100 * $x['orders'] / $x['chats'], 1) : 0; unset($x);
             json_response(['ads' => $rows, 'days' => $days, 'purchase_event' => 'not_built']);
         }
+        case 'wa.g_adleads': { require_once __DIR__ . '/wa_adleads.php'; json_response(wag_adleads($pdo, (string)($_GET['date'] ?? ''), (int)($_GET['number'] ?? 0))); }   // 📣 Ad leads of one day (Queries & reports → Ad leads): who came from a click-to-WhatsApp ad, on which number, and their first message
         case 'wa.g_export': {   // chats or messages as CSV; every download is written to the log
             $kind = ($_GET['kind'] ?? 'chats') === 'messages' ? 'messages' : 'chats'; $from = trim((string)($_GET['from'] ?? '')); $to = trim((string)($_GET['to'] ?? '')); $tag = trim((string)($_GET['tag'] ?? '')); $numId = (int)($_GET['number'] ?? 0); $emp = (int)($_GET['emp'] ?? 0); $res = trim((string)($_GET['result'] ?? ''));
             $nums = wag_nums($pdo); $names = employee_names_by_id($pdo); $oc = wag_outcome_map($pdo); $defs = wag_outcomes();
