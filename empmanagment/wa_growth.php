@@ -2567,6 +2567,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $rows = array_values($ads); usort($rows, fn($a, $b) => $b['chats'] <=> $a['chats']); foreach ($rows as &$x) $x['rate'] = $x['chats'] ? round(100 * $x['orders'] / $x['chats'], 1) : 0; unset($x);
             json_response(['ads' => $rows, 'days' => $days, 'purchase_event' => 'not_built']);
         }
+        case 'wa.g_adleads': { require_once __DIR__ . '/wa_adleads.php'; json_response(wag_adleads($pdo, (string)($_GET['date'] ?? ''), (int)($_GET['number'] ?? 0))); }   // 📣 Ad leads of one day (Queries & reports → Ad leads): who came from a click-to-WhatsApp ad, on which number, and their first message
         case 'wa.g_export': {   // chats or messages as CSV; every download is written to the log
             $kind = ($_GET['kind'] ?? 'chats') === 'messages' ? 'messages' : 'chats'; $from = trim((string)($_GET['from'] ?? '')); $to = trim((string)($_GET['to'] ?? '')); $tag = trim((string)($_GET['tag'] ?? '')); $numId = (int)($_GET['number'] ?? 0); $emp = (int)($_GET['emp'] ?? 0); $res = trim((string)($_GET['result'] ?? ''));
             $nums = wag_nums($pdo); $names = employee_names_by_id($pdo); $oc = wag_outcome_map($pdo); $defs = wag_outcomes();
