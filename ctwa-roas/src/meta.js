@@ -71,14 +71,15 @@ export async function syncSpend(db, cfg, days = 3, fetchImpl = fetch, today = ne
   if (!cfg.adsToken || !cfg.adAccountIds.length) throw new Error('META_ADS_ACCESS_TOKEN (or META_ACCESS_TOKEN) / META_AD_ACCOUNT_IDS not set');
   const day = (d) => d.toISOString().slice(0, 10);
   const since = day(new Date(today.getTime() - (days - 1) * 86400000));
-  const up = db.prepare(`INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations)
-    VALUES (?,?,?,?,?,?,?) ON CONFLICT(day,ad_id) DO UPDATE SET ad_name=excluded.ad_name, spend=excluded.spend,
-    impressions=excluded.impressions, link_clicks=excluded.link_clicks, conversations=excluded.conversations`);
+  const up = db.prepare(`INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations,campaign_name,account_id)
+    VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(day,ad_id) DO UPDATE SET ad_name=excluded.ad_name, spend=excluded.spend,
+    impressions=excluded.impressions, link_clicks=excluded.link_clicks, conversations=excluded.conversations,
+    campaign_name=excluded.campaign_name, account_id=excluded.account_id`);
   let n = 0;
   for (const acct of cfg.adAccountIds) {
     const qs = new URLSearchParams({
       level: 'ad', time_increment: '1', limit: '500',
-      fields: 'ad_id,ad_name,spend,impressions,clicks,actions',
+      fields: 'ad_id,ad_name,campaign_name,spend,impressions,clicks,actions',
       time_range: JSON.stringify({ since, until: day(today) }),
     });
     let url = `${GRAPH}/${cfg.graphVersion}/act_${acct}/insights?${qs}`;
@@ -90,12 +91,13 @@ export async function syncSpend(db, cfg, days = 3, fetchImpl = fetch, today = ne
       for (const r of j.data ?? []) {
         const conv = (r.actions ?? []).find((a) => a.action_type === cfg.conversationAction);
         up.run(r.date_start, String(r.ad_id), r.ad_name ?? null, Number(r.spend) || 0,
-          Number(r.impressions) || 0, Number(r.clicks) || 0, Number(conv?.value) || 0);
+          Number(r.impressions) || 0, Number(r.clicks) || 0, Number(conv?.value) || 0, r.campaign_name ?? null, acct);
         n++;
       }
       url = j.paging?.next ?? null;
     }
   }
+  db.prepare("INSERT INTO kv(k,v) VALUES ('spend_sync_at',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").run(String(Math.floor(Date.now() / 1000)));
   return n;
 }
 

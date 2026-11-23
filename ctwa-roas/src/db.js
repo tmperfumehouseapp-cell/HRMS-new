@@ -42,5 +42,8 @@ export function openDb(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
   db.exec(SCHEMA);
+  // added later: which campaign / ad account an ad belongs to, and small remembered values (when Meta was last read)
+  for (const col of ['campaign_name TEXT', 'account_id TEXT']) { try { db.exec(`ALTER TABLE ad_spend ADD COLUMN ${col}`); } catch { /* already there */ } }
+  db.exec('CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)');
   return db;
 }
