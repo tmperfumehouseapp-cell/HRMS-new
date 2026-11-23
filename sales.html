@@ -158,7 +158,7 @@
   /* nothing in a person block may be wider than the block (phones): rows shrink / wrap instead of pushing the page wider */
   .bk-grid{grid-template-columns:repeat(auto-fill,minmax(min(150px,100%),1fr))}
   .bk-grid .b{min-width:0;max-width:100%}
-  .bk-grid .b .nm .nn{max-width:calc(100% - 14px)}.bk-grid .b .pn{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+  .bk-grid .b .nm .nn{max-width:calc(100% - 14px);display:flex;align-items:center;min-width:0}.bk-grid .b .nm .rk{flex:none}.bk-grid .b .pn{display:block;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}   /* owner (24 Nov): a long first name did not fit beside the rank chip and the WHOLE name became "…" (cards #17, #18): the name now shortens itself instead of vanishing */
   .bk-grid .b .c{min-width:0;max-width:100%}.bk-grid .b .c b{flex:none}.bk-grid .b .c i{min-width:0;overflow:hidden;text-overflow:ellipsis}
   .bk-grid .b .kv{white-space:normal;word-break:break-word}
   .bk-grid .b .rp,.bk-grid .b .ef4{max-width:100%;min-width:0}
