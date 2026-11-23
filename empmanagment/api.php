@@ -8328,7 +8328,7 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             $isWeb = (string)($m['channel'] ?? '') === 'TM Store'; $webMl = ($isWeb && (int)($m['ml'] ?? 0) > 0 && (string)setting_get($pdo, 'tms_commission', '1') !== '0') ? (int)$m['ml'] : null;
             $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => $webMl, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false, 'web' => $webMl !== null,
                 'xnote' => $isWeb ? ($webMl !== null ? 'Website order ' . (string)($m['mp_no'] ?? '') . ': paid by the ML chart, no code needed.' : 'Website order: it counts in the sales and the target. Its ML is not known, so the chart cannot pay it.') : ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
-                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => $isWeb && (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
+                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => $isWeb ? order_code_for($pdo, 'manual', (string)$m['manual_order_id']) : '', 'name' => $isWeb && (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
                 'mp' => in_array((string)($m['channel'] ?? ''), ['Myntra', 'Amazon', 'Flipkart'], true) ? (string)$m['channel'] : ''];   // 🛍 marketplace order: a flat % without a code (mp_flat_pct)
         }
     } catch (Throwable $e) { error_log('coach_sales_load manual orders: ' . $e->getMessage()); }
@@ -31510,7 +31510,7 @@ switch ($action) {
             $mq = $pdo->prepare("SELECT * FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND batch <> '' ORDER BY order_date DESC LIMIT 1500"); $mq->execute(biz_window($pdo, $dateFrom, $dateTo)); $mmap = []; $mnames = employee_names_by_id($pdo); $hl0 = house_labels();
             foreach ($mq->fetchAll() as $m) {
                 $mid = (string)$m['manual_order_id']; $ch = (string)($m['channel'] ?? ''); $eid = (int)($m['employee_id'] ?? 0); $hs = (string)($m['house'] ?? '');
-                $o = ['id' => $mid, 'order_name' => ($ch === 'TM Store' && (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . $m['order_no']), 'created_at' => str_replace(' ', 'T', (string)$m['order_date']) . '+05:30', 'customer' => ($ch === 'TM Store' && trim((string)($m['customer_name'] ?? '')) !== '' ? (string)$m['customer_name'] : ($ch !== '' ? $ch : 'Quick entry')), 'phone' => ($ch === 'TM Store' ? (string)($m['phone'] ?? '') : ''), 'ml' => ($ch === 'TM Store' && (int)($m['ml'] ?? 0) > 0 ? (int)$m['ml'] : null), 'ml10' => 0, 'web' => ($ch === 'TM Store' ? 1 : 0),   /* 🛍 a website order shows its own number (TM10020), customer and mobile, not "#M0093 · TM Store" */ 'items' => (int)$m['items'], 'total' => $m['total'], 'currency' => 'INR',
+                $o = ['id' => $mid, 'order_name' => ($ch === 'TM Store' && (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . $m['order_no']), 'created_at' => str_replace(' ', 'T', (string)$m['order_date']) . '+05:30', 'customer' => ($ch === 'TM Store' && trim((string)($m['customer_name'] ?? '')) !== '' ? (string)$m['customer_name'] : ($ch !== '' ? $ch : 'Quick entry')), 'phone' => ($ch === 'TM Store' ? (string)($m['phone'] ?? '') : ''), 'ml' => ($ch === 'TM Store' && (int)($m['ml'] ?? 0) > 0 ? (int)$m['ml'] : null), 'ml10' => 0, 'web' => ($ch === 'TM Store' ? 1 : 0), 'code' => ($ch === 'TM Store' ? order_code_for($pdo, 'manual', $mid) : ''),   /* 🛍 a website order shows its own number (TM10020), customer and mobile, not "#M0093 · TM Store" */ 'items' => (int)$m['items'], 'total' => $m['total'], 'currency' => 'INR',
                     'financial_status' => $m['payment_status'], 'fulfillment_status' => $m['fulfillment_status'], 'tags' => (string)($m['order_type'] ?? ''), 'store_key' => 'manual', 'source_label' => ($ch !== '' ? $ch : 'Quick entry'), 'store' => ($ch !== '' ? $ch : 'Quick entry'), 'house' => $hs,
                     'biz_date' => biz_day_of($pdo, strtotime((string)$m['order_date'])), 'salesman' => $eid ? (string)($mnames[$eid] ?? '') : '', 'employee_id' => $eid, 'employee_from' => $eid ? 'quick entry' : '', 'tag_type' => (string)($m['order_type'] ?? ''), 'custom_store' => 1,
                     'outstanding' => ($m['outstanding'] !== null ? (float)$m['outstanding'] : null), 'channel' => $ch];
@@ -32090,12 +32090,15 @@ switch ($action) {
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
         $code = code_norm((string)($in['code'] ?? ''));
-        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
-        if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);
+        if ($source === 'manual') {   // 🛍 only a WEBSITE order (channel TM Store) can carry a code among the hand-entered orders; it is kept in HRMS only (there is no Shopify order to tag)
+            if (!ctype_digit($orderId)) json_response(['error' => 'Bad order id.'], 422);
+            $wq = $pdo->prepare("SELECT channel FROM manual_orders WHERE manual_order_id = ?"); $wq->execute([(int)$orderId]); if ((string)$wq->fetchColumn() !== 'TM Store') json_response(['error' => 'A quick-entry order has no code. Only a website order can have one.'], 422);
+        }
+        elseif (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);
         if ($code !== '' && !preg_match('/^[A-Z0-9_-]{2,40}$/', $code)) json_response(['error' => 'Code can only have letters, numbers, - and _ (e.g. AG00123).'], 422);
         $o = [
             'source' => $source, 'id' => $orderId, 'order_name' => trim((string)($in['order_name'] ?? '')),
-            'can_tag' => $source !== 'mysales' ? 1 : 0, 'code' => code_norm((string)($in['old_code'] ?? '')),
+            'can_tag' => ($source !== 'mysales' && $source !== 'manual') ? 1 : 0, 'code' => code_norm((string)($in['old_code'] ?? '')),
         ];
         $lockErr = code_lock_error($pdo, $auth, $source, $orderId);
         if ($lockErr !== '') json_response(['error' => $lockErr, 'code_locked' => 1], 403);
