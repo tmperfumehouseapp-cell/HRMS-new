@@ -1386,14 +1386,15 @@ function wag_bot_block_msg(PDO $pdo, array $c): string
 }
 /** A bot reply that would invent an offer or claim a payment: never sent — a person answers (the replay test found exactly these). */
 /** The bot must never tell the customer our internal target / minimum / floor price ("minimum Rs 2,800 tak hi de sakte hain", owner 21 Nov: the customer asked 6 x 50 ml, the bot said Rs 3,200 and then "minimum Rs 2,800"): such sentences are cut out of a reply. */
-/** owner, 23 Nov (screenshot: the customer asked "Blue chanel ka copy 50 ml" - ONE bottle - and the bot pasted the whole list 3 x 50 ml ... 10 x 50 ml): when the customer asked for only 1 or 2 bottles and the answer is a pasted combo list (4+ lines "N x ml ... Rs"), it is replaced by the manual-style message: one bottle is expensive (official online price), better take N more (asked 1 -> 3, asked 2 -> 4), with the combo price of that one pack from the price chart only. Anything else is returned unchanged. */
-function wag_combo_dump_fix(PDO $pdo, string $key, string $text): string
+/** owner, 23 Nov (screenshot: the customer asked "Blue chanel ka copy 50 ml" - ONE bottle - and the bot pasted the whole list 3 x 50 ml ... 10 x 50 ml): when the customer asked for only 1 or 2 bottles and the answer is a pasted combo list (4+ lines "N x ml ... Rs"; also from the button-reply cards, see wa_kw.php), it is replaced by the manual-style message: one bottle is expensive (official online price), better take N more (asked 1 -> 3, asked 2 -> 4), with the combo price of that one pack from the price chart only. Anything else is returned unchanged. */
+function wag_combo_dump_fix(PDO $pdo, string $key, string $text, bool $kw = false): string
 {
     try {
         if (preg_match_all('/^.*\d+\s*[x×*]\s*\d{2,3}\s*ml.*(?:₹|rs\.?)\s*[\d,]{4,6}.*$/imu', $text) < 4) return $text;
         $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' ORDER BY id DESC LIMIT 6"); $q->execute([$key]);
         $msgs = []; foreach (array_reverse($q->fetchAll(PDO::FETCH_COLUMN)) as $b) $msgs[] = ['who' => 'customer', 'text' => (string)$b];
         $rq = wag_ml_request($msgs); if (!$rq || $rq['qty'] > 2) return $text;
+        if ($kw) { $__lt = ''; foreach (array_reverse($msgs) as $__mm) { $__lt = mb_strtolower((string)$__mm['text']); break; } if (preg_match('/(combo|offer|list|rate list|price list|sab|all)/u', $__lt) || trim((string)preg_replace('/[^\p{L}]+/u', '', preg_replace('/\d+\s*ml/u', '', $__lt))) === '') return $text; }   // a button-reply card (words '50 ml'): a real button tap or 'combo / offer' keeps the full list; only a customer who names a perfume + one size ('Blue chanel ka copy 50 ml') gets the one-bottle message (owner, 23 Nov)
         $n = $rq['qty'] === 1 ? 3 : 4; $ml = (int)$rq['ml']; $one = wag_official_price($pdo, $ml); if ($one <= 0) return $text;
         $row = wag_chart_row($pdo, $n * $ml); if (!$row || (int)$row['ml'] !== $n * $ml || (int)$row['chart'] <= 0) return $text;
         $f = function ($v) { return number_format((int)$v); }; $chart = (int)$row['chart'];
