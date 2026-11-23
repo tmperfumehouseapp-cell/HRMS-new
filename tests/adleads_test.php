@@ -38,4 +38,13 @@ $r1 = wag_adleads($pdo, $D, 1); ok($r1['total'] === 2 && $r1['all'] === 3, 'the 
 $n1 = []; foreach ($r1['numbers'] as $x) $n1[$x['id']] = $x['n']; ok($n1[2] === 1, 'the chips still count every number');
 ok(wag_adleads($pdo, 'nonsense', 0)['date'] === date('Y-m-d'), 'a bad date means today');
 ok(wag_adleads($pdo, $D, 0, 2)['more'] === true, 'more than the limit is said');
+// 🩺 Diagnose: both sides of one day, and one customer (the tracking service's answer is given by the test)
+$svc = [['ads' => [['ad_id' => 'AD1', 'clicks' => 1]], 'orders' => []], ''];
+$d = wag_adcheck($pdo, $D, $svc); $ba = []; foreach ($d['hrms']['by_ad'] as $x) $ba[$x['ad_id']] = $x['n'];
+ok($d['hrms']['total'] === 3 && $ba['AD1'] === 1 && $ba['AD2'] === 1 && $ba[''] === 1 && $d['svc']['ads'][0]['clicks'] === 1 && $d['svc_error'] === '', 'diagnose: HRMS leads per ad beside the service answer');
+$d0 = wag_adcheck($pdo, $D, [null, 'down']); ok($d0['svc'] === null && $d0['svc_error'] === 'down' && $d0['hrms']['total'] === 3, 'diagnose: the HRMS side still answers when the service is down');
+$o = wag_adcheck_one($pdo, '+91 90000-00001', [['clicks' => [], 'orders' => []], '']);
+ok($o['phone'] === '9000000001' && $o['name'] === 'Asha' && $o['ad'] === 'Oud offer' && count($o['queries']) === 1, 'diagnose one customer');
+ok(isset(wag_adcheck_one($pdo, '123', [null, ''])['error']), 'a short number is refused');
+[$none, $why] = wag_ctwa_get('/diag', 'date', $D, '', 'x'); ok($none === null && $why !== '', 'switched off: no call, a clear reason');
 echo "adleads_test ok\n";

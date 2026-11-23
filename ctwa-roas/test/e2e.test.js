@@ -180,3 +180,25 @@ test('report lists only ads that brought a WhatsApp click', () => {
   assert.deepEqual(rep.rows.map((r) => r.ad_id), ['WA1']);
   assert.equal(rep.total.spend, 100);
 });
+
+test('diagnose: signed day funnel and one customer', async () => {
+  const { db, handler, server, base } = await setup(async () => new Response(JSON.stringify({ events_received: 1 })));
+  const sign = (path, arg, ts = Math.floor(Date.now() / 1000)) => ({ ts, h: { 'x-ctwa-sign': crypto.createHmac('sha256', 'wasecret').update(`${ts}|${path}|${arg}`).digest('hex') } });
+  try {
+    await waPost(base, waBody('919876543210', 'CL', 'AD9', NOW - 3600));
+    await shPost(base, order({ financial_status: 'paid' })); await handler.idle();
+    await shPost(base, order({ id: 2002, name: '#2002', phone: '+91 90000 00000' }), 'orders/create', 'x2');   // another customer, no click
+    const day = new Date(NOW * 1000).toISOString().slice(0, 10);
+    assert.equal((await fetch(`${base}/diag?date=${day}&ts=1`)).status, 401);
+    let s = sign('/diag', day, NOW - 4000); assert.equal((await fetch(`${base}/diag?date=${day}&ts=${s.ts}`, { headers: s.h })).status, 401);   // too old
+    s = sign('/diag', day); const d = await (await fetch(`${base}/diag?date=${day}&ts=${s.ts}`, { headers: s.h })).json();
+    const ad = d.ads.find((a) => a.ad_id === 'AD9');
+    assert.equal(ad.clicks, 1); assert.equal(ad.orders, 1); assert.equal(ad.capi.sent, 1);
+    assert.equal(d.orders.length, 1); assert.equal(d.orders[0].name, '#1001'); assert.equal(d.orders[0].capi_status, 'sent');
+    assert.equal(d.health.orders_received_day, 2); assert.ok(!JSON.stringify(d).includes('9876543210'));
+    s = sign('/diag/phone', '9876543210'); const p = await (await fetch(`${base}/diag/phone?phone=9876543210&ts=${s.ts}`, { headers: s.h })).json();
+    assert.equal(p.clicks.length, 1); assert.equal(p.clicks[0].ad_id, 'AD9'); assert.equal(p.orders[0].matched_ad_id, 'AD9'); assert.equal(p.orders[0].capi_status, 'sent');
+    s = sign('/diag/phone', '9000000000'); const q = await (await fetch(`${base}/diag/phone?phone=9000000000&ts=${s.ts}`, { headers: s.h })).json();
+    assert.equal(q.clicks.length, 0); assert.equal(q.orders[0].matched_ad_id, null);
+  } finally { server.close(); }
+});

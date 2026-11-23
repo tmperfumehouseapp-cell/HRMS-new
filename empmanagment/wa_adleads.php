@@ -35,3 +35,44 @@ function wag_adleads(PDO $pdo, string $day, int $numId, int $cap = 1500): array
     }
     return ['date' => $day, 'number' => $numId, 'rows' => $rows, 'total' => count($rows), 'new' => $new, 'all' => count($seen), 'numbers' => array_values($nums), 'more' => $more];
 }
+
+/**
+ * 🩺 Diagnose — asks the separate click-to-WhatsApp tracking service (ctwa-roas) what IT saw, so the HRMS numbers can be checked against it.
+ * The call is signed with WA_APP_SECRET (both sides already hold it; valid 5 minutes), has a 5 s limit and only reads.
+ * Returns [data|null, error text].
+ */
+function wag_ctwa_get(string $path, string $argName, string $arg, ?string $base = null, ?string $secret = null): array
+{
+    if ($base === null) { require_once __DIR__ . '/wa_ctwa.php'; $u = wa_ctwa_url(); $base = $u === '' ? '' : preg_replace('~/webhooks/whatsapp/?$~', '', $u); }
+    if ($secret === null) $secret = function_exists('wa_cfg_val') ? wa_cfg_val('WA_APP_SECRET') : '';
+    if ($base === '' || $secret === '') return [null, 'The tracking service is switched off or WA_APP_SECRET is not set.'];
+    if (!function_exists('curl_init')) return [null, 'This server cannot make the call (curl is missing).'];
+    $ts = time(); $sig = hash_hmac('sha256', $ts . '|' . $path . '|' . $arg, $secret);
+    $ch = curl_init($base . $path . '?' . http_build_query([$argName => $arg, 'ts' => $ts]));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => ['X-Ctwa-Sign: ' . $sig], CURLOPT_CONNECTTIMEOUT => 2, CURLOPT_TIMEOUT => 5]);
+    $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = curl_error($ch); curl_close($ch);
+    if ($code === 404) return [null, 'The tracking service is running an older version (no Diagnose yet). Update it on the server: git pull, then pm2 restart ctwa.'];
+    if ($code === 401) return [null, 'The tracking service refused the call: its WA_APP_SECRET is not the same as the HRMS one.'];
+    if ($code < 200 || $code >= 300) return [null, 'The tracking service did not answer (HTTP ' . $code . ($err !== '' ? ', ' . $err : '') . ').'];
+    $j = json_decode((string)$body, true); return is_array($j) ? [$j, ''] : [null, 'The tracking service sent an answer that could not be read.'];
+}
+
+/** One day, both sides: the HRMS ad leads (also per ad) and what the tracking service saw (clicks, matched orders, purchases sent to Meta). */
+function wag_adcheck(PDO $pdo, string $day, ?array $svcTest = null): array
+{
+    $h = wag_adleads($pdo, $day, 0); $by = [];
+    foreach ($h['rows'] as $r) { $k = $r['ad_id'] !== '' ? $r['ad_id'] : ''; if (!isset($by[$k])) $by[$k] = ['ad_id' => $k, 'title' => $r['ad'], 'n' => 0]; $by[$k]['n']++; }
+    [$svc, $err] = $svcTest ?? wag_ctwa_get('/diag', 'date', $h['date']);
+    return ['date' => $h['date'], 'hrms' => ['total' => $h['total'], 'new' => $h['new'], 'by_ad' => array_values($by), 'more' => $h['more']], 'svc' => $svc, 'svc_error' => $err, 'now' => date('Y-m-d H:i:s')];
+}
+
+/** One customer: the HRMS queries of this chat and, from the tracking service, the ad clicks and the Shopify orders of this number (matched? told to Meta?). */
+function wag_adcheck_one(PDO $pdo, string $phone, ?array $svcTest = null): array
+{
+    $ph = preg_replace('/\D+/', '', $phone); if (strlen($ph) > 10) $ph = substr($ph, -10); if (strlen($ph) < 10) return ['error' => 'Not a phone number.'];
+    $q = $pdo->prepare("SELECT opened_at, src, again FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 5"); $q->execute([$ph]);
+    $c = $pdo->prepare("SELECT name, ad_id, ad_head, ref_text FROM wa_contacts WHERE phone = ?"); $c->execute([$ph]); $cr = $c->fetch(PDO::FETCH_ASSOC) ?: [];
+    [$svc, $err] = $svcTest ?? wag_ctwa_get('/diag/phone', 'phone', $ph);
+    return ['phone' => $ph, 'name' => (string)($cr['name'] ?? ''), 'ad' => (string)(($cr['ad_head'] ?? '') !== '' ? $cr['ad_head'] : ($cr['ref_text'] ?? '')), 'ad_id' => (string)($cr['ad_id'] ?? ''),
+        'queries' => $q->fetchAll(PDO::FETCH_ASSOC), 'svc' => $svc, 'svc_error' => $err];
+}
