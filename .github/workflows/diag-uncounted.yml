@@ -1,4 +1,4 @@
-# READ-ONLY: why one order was typed Query (contact source, earlier orders, campaign messages, query rows — fields only). Changes nothing.
+# READ-ONLY: price chart rows near 160 ml and the rupee amounts the bot / people quoted in one chat today (numbers only). Changes nothing.
 # Run it by hand: Actions -> "Uncounted orders (read-only)" -> Run workflow.
 name: Uncounted orders (read-only)
 
@@ -37,13 +37,15 @@ jobs:
           $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
           require $f; $ch = substr(preg_replace("/\D/", "", (string)($argv[2] ?? "")), -10);
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
-          date_default_timezone_set("Asia/Kolkata"); $d->exec("SET time_zone = '+05:30'"); if (strlen($ch) !== 10) { echo "no number\n"; exit; }
-          echo "=== types and tags of this customer (fields only) ===\n";
-          foreach ($d->query("SELECT q.id, q.opened_at, q.again, t.type, t.reason, t.rule_id FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.phone LIKE '%$ch' ORDER BY q.opened_at") as $r) echo "query " . $r["id"] . " opened " . $r["opened_at"] . " again=" . $r["again"] . " type=" . $r["type"] . " rule=" . $r["rule_id"] . " reason: " . $r["reason"] . "\n";
-          echo "ctags: "; foreach ($d->query("SELECT tag, src, at FROM wa_ctags WHERE phone LIKE '%$ch' ORDER BY at") as $r) echo "[" . $r["tag"] . "/" . $r["src"] . " " . $r["at"] . "] "; echo "\n";
-          echo "customer messages (times only), last 8: "; foreach ($d->query("SELECT ts FROM wa_messages WHERE phone LIKE '%$ch' AND dir = 'in' ORDER BY id DESC LIMIT 8") as $r) echo substr($r["ts"], 5, 11) . " | "; echo "\n";
-          echo "ad fields on the contact: "; $c = $d->query("SELECT ad_id <> '' a, ad_head <> '' b, ref_text <> '' r, last_number_id n FROM wa_contacts WHERE phone LIKE '%$ch'")->fetch(PDO::FETCH_ASSOC); echo json_encode($c) . "\n";
-          echo "newest order created_at: "; echo $d->query("SELECT MAX(created_at) FROM shop_orders WHERE phone LIKE '%$ch'")->fetchColumn() . "\n";
+          date_default_timezone_set("Asia/Kolkata"); $d->exec("SET time_zone = '+05:30'");
+          echo "=== price chart rows 100..260 ml ===\n";
+          foreach ($d->query("SELECT setting_key, setting_value FROM hrms_settings WHERE setting_value LIKE '%\"rows\"%' AND setting_value LIKE '%\"cols\"%' LIMIT 20")->fetchAll(PDO::FETCH_ASSOC) as $r) { $j = json_decode($r["setting_value"], true); if (is_array($j) && !empty($j["rows"][0]["ml"]) && isset($j["rows"][0]["p"])) { echo "chart key " . $r["setting_key"] . " cols " . json_encode($j["cols"] ?? []) . " mode " . json_encode($j["mode"] ?? "") . "\n"; foreach ($j["rows"] as $x) if ((int)$x["ml"] >= 100 && (int)$x["ml"] <= 260) echo "  " . (int)$x["ml"] . " ml: " . json_encode($x["p"]) . "\n"; break; } }
+          if (strlen($ch) === 10) {
+            echo "=== rupee amounts in the messages of this chat today (numbers only, no text) ===\n";
+            $m = $d->prepare("SELECT dir, who, mtype, ts, body FROM wa_messages WHERE phone LIKE ? AND ts >= ? ORDER BY id"); $m->execute(["%$ch", date("Y-m-d 00:00:00")]);
+            foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $x) { preg_match_all("/(?:rs\.?|₹)\s*([\d,]{3,6})/iu", (string)$x["body"], $am); $n = preg_match_all("/(\d{2,3})\s*ml/iu", (string)$x["body"], $mm); if (!$am[1] && !$n) continue; echo "  " . substr($x["ts"], 11, 5) . " " . $x["dir"] . "/" . $x["who"] . " amounts " . json_encode($am[1]) . " ml " . json_encode($mm[1] ?? []) . "\n"; }
+            echo "=== bot events of this chat today ===\n"; try { $m = $d->prepare("SELECT ts, LEFT(body, 140) b FROM wa_messages WHERE phone LIKE ? AND ts >= ? AND dir = 'sys' ORDER BY id"); $m->execute(["%$ch", date("Y-m-d 00:00:00")]); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $x) if (preg_match("/bot|price|chart/i", $x["b"])) echo "  " . substr($x["ts"], 11, 5) . " " . $x["b"] . "\n"; } catch (Throwable $e) { echo "n/a\n"; }
+          }
           PHP
           php /tmp/ql_check.php "$P" "$CH"; rm -f /tmp/ql_check.php
           REMOTE
