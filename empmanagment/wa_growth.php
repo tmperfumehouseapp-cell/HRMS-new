@@ -1524,6 +1524,55 @@ function wag_cod_fix(string $text): string
     $out = []; $done = false; foreach ($parts as $p) { if (preg_match('/\bcod\b|cash on delivery/iu', $p)) { if (!$done) { $out[] = $off; $done = true; } continue; } $out[] = $p; }
     return trim(implode(' ', $out));
 }
+/** FINAL GATE (owner, 23 Nov: "put the rules that can be measured into code, so a mistake of the guidebook is corrected"): every counted fix / block of the gate, per day and rule, in setting wag_fg_log (shown by diag ASK FGATE and the hourly report). */
+function wag_fg_count(PDO $pdo, string $rule, string $act): void
+{
+    try { $d = date('Y-m-d'); $j = json_decode((string)setting_get($pdo, 'wag_fg_log', ''), true); if (!is_array($j) || ($j['d'] ?? '') !== $d) $j = ['d' => $d, 'c' => []]; $k = $rule . ':' . $act; $j['c'][$k] = (int)($j['c'][$k] ?? 0) + 1; setting_set($pdo, 'wag_fg_log', json_encode($j)); } catch (Throwable $e) { }
+}
+/** The messages of a chat as the rules see them: who = customer / bot / salesperson. */
+function wag_fg_msgs(PDO $pdo, string $key): array
+{
+    try { $st = $pdo->prepare("SELECT dir, who, body FROM wa_messages WHERE phone = ? AND dir != 'sys' AND mtype = 'text' ORDER BY id DESC LIMIT 14"); $st->execute([$key]); $o = [];
+        foreach (array_reverse($st->fetchAll()) as $r) $o[] = ['who' => $r['dir'] === 'in' ? 'customer' : (((string)$r['who'] === 'bot') ? 'bot' : 'salesperson'), 'text' => (string)$r['body']];
+        return $o; } catch (Throwable $e) { return []; }
+}
+/** Bigger jumps (owner, 22 Nov): asked 1 -> 3, 2 -> 4, 3 -> 5, 4 -> 6, 5 -> 7 bottles. */
+function wag_jump_to(int $q): int { return [1 => 3, 2 => 4, 3 => 5, 4 => 6, 5 => 7][$q] ?? 0; }
+/** The last gate before the customer sees a bot message (replies and follow-ups). Returns [text, block]. block = true: nothing is sent, a person takes the chat. Rules that can be measured: (1) the bot never writes a FINAL offer / Rs 200 OFF / free 20 ml / deadline of its own (only the system's step 5 does; $o['final'] skips the gate); (2) bigger jumps: a single pack of exactly asked+1 bottles becomes the jump pack (asked 1 -> 3 ...) with its price from the price table; (3) an amount that is in no price row, no per-bottle / online / 35% figure and nowhere in the chat is counted (and blocks only when setting wag_fg_unk = 1). Every action is counted in wag_fg_log. */
+function wag_final_gate(PDO $pdo, string $key, string $text, array $o = []): array
+{
+    try {
+        if (!empty($o['final']) || trim($text) === '') return [$text, false];
+        $msgs = wag_fg_msgs($pdo, $key);
+        // (1) own FINAL offer / extra discount / deadline
+        $fo = (int)wag_meta_get($pdo, 'finaloffer:' . $key, '0');
+        if ($fo <= time() && preg_match('/final offer|(?:rs\.?|₹)\s*200\s*off|free\s+20\s*ml|last chance|offer (?:is )?valid|valid (?:till|until|for|only)|next \d+ (?:hours?|hrs?|minutes?|mins?)|deadline/iu', $text)) {
+            $parts = preg_split('/(?<=[.!?])\s+/u', $text) ?: [$text]; $keep = [];
+            foreach ($parts as $p) if (!preg_match('/final offer|(?:rs\.?|₹)\s*200\s*off|free\s+20\s*ml|last chance|offer (?:is )?valid|valid (?:till|until|for|only)|next \d+ (?:hours?|hrs?|minutes?|mins?)|deadline/iu', $p)) $keep[] = $p;
+            $nt = trim(implode(' ', $keep)); wag_fg_count($pdo, 'own_final_offer', $nt === '' ? 'blocked' : 'fixed');
+            if ($nt === '') return [$text, true]; $text = $nt;
+        }
+        // (2) bigger jumps
+        if (preg_match_all('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/iu', $text, $pm, PREG_SET_ORDER) === 1) {
+            $rq = wag_ml_request($msgs); $n = (int)$pm[0][1]; $ml = (int)$pm[0][2];
+            if ($rq && (int)$rq['ml'] === $ml && (int)$rq['qty'] >= 1 && (int)$rq['qty'] <= 5 && $n === (int)$rq['qty'] + 1 && wag_jump_to((int)$rq['qty']) > $n && ($ml !== 20 || wag_jump_to((int)$rq['qty']) >= 5)) {
+                $jn = wag_jump_to((int)$rq['qty']); $row = wag_chart_row($pdo, $jn * $ml);
+                if ($row && (int)$row['ml'] === $jn * $ml) { $idx = max(0, wag_arrival_idx($row, $msgs)); $p = (int)$row['p'][min($idx, count($row['p']) - 1)]; $f = function ($v) { return number_format((int)$v); };
+                    $text = 'Sir, ' . $jn . ' x ' . $ml . ' ml ka combo lijiye - combo deal mein sirf Rs ' . $f($p) . ' (ek bottle Rs ' . $f(round($p / $jn)) . ') 😊 Kaunse ' . $jn . ' perfumes lena chahenge?'; wag_fg_count($pdo, 'bigger_jump', 'fixed'); }
+            }
+        }
+        // (3) an amount nobody can explain
+        if (preg_match_all('/(?:rs\.?|₹)\s*([\d,]{4,6})/iu', $text, $am)) {
+            $ok = []; $c = function_exists('ml_slab_get') ? ml_slab_get($pdo) : []; $one = [499, 1199, 1810];
+            foreach ((array)($c['rows'] ?? []) as $r) foreach ((array)($r['p'] ?? []) as $v) { $v = (int)$v; if ($v <= 0) continue; $ok[$v] = 1; $ok[(int)round($v * 0.35)] = 1; $ok[(int)round($v * 0.65)] = 1; for ($n = 2; $n <= 20; $n++) { $ok[(int)round($v / $n)] = 1; } }
+            foreach ($one as $v) for ($n = 1; $n <= 20; $n++) $ok[$v * $n] = 1;
+            $chat = ''; foreach ($msgs as $m) $chat .= ' ' . (string)$m['text']; $chat = str_replace(',', '', $chat);
+            foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 1000 || isset($ok[$v]) || isset($ok[$v - 1]) || isset($ok[$v + 1]) || strpos($chat, (string)$v) !== false) continue;
+                $blk = (string)setting_get($pdo, 'wag_fg_unk', '0') === '1'; wag_fg_count($pdo, 'unknown_amount', $blk ? 'blocked' : 'seen'); wag_log($pdo, 'bot', !$blk, $key . ' · unknown amount Rs ' . $v . ' in a bot message' . ($blk ? ' (blocked)' : ' (counted only)')); if ($blk) return [$text, true]; break; }
+        }
+        return [$text, false];
+    } catch (Throwable $e) { return [$text, false]; }
+}
 function wag_strip_internal(string $t): string
 {
     if (preg_match('/^\s*\{\s*"reply"\s*:/u', $t)) { $__j = json_decode(trim($t), true); if (is_array($__j) && trim((string)($__j['reply'] ?? '')) !== '') $t = (string)$__j['reply']; }   // 23 Nov: a follow-up went out as the raw text {"reply": "..."}
@@ -1683,6 +1732,8 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         $r['text'] = wag_min_pack_fix($pdo, $key, (string)$r['text']);
         $r['text'] = wag_cod_fix((string)$r['text']);
         $r['text'] = wag_praise_fix($pdo, $key, (string)$r['text']);
+        [$r['text'], $__fgb] = wag_final_gate($pdo, $key, (string)$r['text'], []);
+        if ($__fgb) { wag_log($pdo, 'bot', false, $key . ' · the final gate stopped this reply - a person takes over'); wag_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s')); wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
         if ($ok && $__order) wag_order_done_check($pdo, $c, $key);
@@ -1763,6 +1814,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         $r['text'] = wag_min_pack_fix($pdo, $key, (string)$r['text']);
         $r['text'] = wag_cod_fix((string)$r['text']);
         if (!$__tpl1 && preg_match('/confusion ya doubt|order bana dun/iu', (string)$r['text'])) { $__tpl1 = true; $r['text'] = wag_fu1_text($pdo, $c, $rows); }   // owner (22 Nov): the OLD 'confusion ya doubt hai? Order bana dun?' wording must never reach a customer, whatever step or path made it
+        if (!$__final) { [$r['text'], $__fgb] = wag_final_gate($pdo, $key, (string)$r['text'], []); if ($__fgb) { $D['gate'] = (int)($D['gate'] ?? 0) + 1; continue; } }   // the final gate (owner, 23 Nov): a follow-up that breaks a measurable rule is not sent
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         $__fv = (string)setting_get($pdo, 'wag_fu_var', 'AB'); $__var = ($__fv === 'A' || $__fv === 'B') ? $__fv : ((crc32($key) % 2) ? 'B' : 'A');   // 🧪 A/B (owner, 21 Nov): A = plain text, B = the same text with 3 quick-reply buttons; the winner is read from the replies (event text carries the letter)
         if ($__final) $__var = 'A';   // the final offer goes as the plain text in the owner's format (no buttons)
