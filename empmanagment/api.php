@@ -11616,6 +11616,7 @@ function must3_photo_tick(PDO $pdo, int $max = 6): int
     $why = !must3_photo_table($pdo) ? 'no table' : (!function_exists('wa_mcache_get') ? 'no wa_mcache_get' : (!function_exists('convo_ai') ? 'no convo_ai' : ''));
     if ($why !== '') { try { setting_set($pdo, 'must3_photo_why', date('Y-m-d H:i:s') . ' ' . $why); } catch (Throwable $e) { } return 0; }   // why a round did nothing (read by the diag)
     $n = 0; $last = '';
+    try { $pdo->exec("UPDATE must3_photo SET verdict = 0 WHERE verdict IS NULL AND media_id NOT REGEXP '^[0-9]+$'"); } catch (Throwable $e) { }   // a product photo / a photo sent by link ('prod:…', 'link:…') is a perfume card, never the chain catalogue, and cannot be fetched from Meta (113 such rows failed twice on 23 Nov): only photos uploaded from the phone are read
     try {
         $rows = $pdo->query("SELECT msg_id, media_id FROM must3_photo WHERE verdict IS NULL AND tries < 2 AND at >= '" . date('Y-m-d H:i:s', time() - 3 * 86400) . "' ORDER BY msg_id DESC LIMIT " . max(1, min(12, $max)))->fetchAll(PDO::FETCH_ASSOC);
         $sys = 'You look at ONE photo a perfume shop salesperson sent to a customer on WhatsApp. The shop gives a free CHAIN / jewellery item with an order and shows the customer its chain catalogue: a photo or screenshot of one or several chains, necklaces, bracelets, pendants or other jewellery (often on a black background, sometimes a grid titled CHAIN, or a screenshot of the chain web page). Return JSON: chain = true when the photo shows such a chain / jewellery item or catalogue; false for anything else (perfume bottles, price charts, payment screens, addresses, people, text).';
@@ -11667,7 +11668,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
                 $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms); $pics = [];
                 foreach ($ms as $mi => $m) {
                     if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; if ($by === 'S') $person = true; $mark = [substr((string)$m['ts'], 11, 5), $by];
-                    if ($by === 'S' && (string)$m['mtype'] === 'image' && (string)$m['media_id'] !== '') $pics[(int)$m['id']] = [(string)$m['media_id'], $mark];   // 📷 a photo a person sent: it may be the chain catalogue with no words (read by must3_photo_tick)
+                    if ($by === 'S' && (string)$m['mtype'] === 'image' && ctype_digit((string)$m['media_id'])) $pics[(int)$m['id']] = [(string)$m['media_id'], $mark];   // 📷 a photo a person sent: it may be the chain catalogue with no words (read by must3_photo_tick)
                     if ($ff['a'] === null && preg_match($rxA, $body)) $ff['a'] = $mark;
                     if ($ff['p'] === null && $body !== '' && preg_match($rxP, $body)) $ff['p'] = $mark;
                     if ($ff['c'] === null) {
