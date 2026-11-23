@@ -940,7 +940,7 @@ function wag_botlearn_auto(PDO $pdo, int $max = 40): array
 /** Customers who wrote a complaint (leak, wrong item, not delivered, quality, refund) and nobody answered: a complaint ticket is raised for them at once (the Complaint team owns it), they are told the number. */
 function wag_complaint_sweep(PDO $pdo, int $max = 6): int
 {
-    return 0;   // owner, 22 Nov 2026: the bot never raises a complaint by itself (and never tells the customer "your complaint is noted"): the sales person reads the chat and raises it by hand
+    if ((string)setting_get($pdo, 'wag_cx_auto', '1') !== '1') return 0;   // owner, 23 Nov 2026: complaints are raised by the bot again (the 22 Nov stop is lifted); setting wag_cx_auto = 0 stops it, wag_cx_ack = 0 also stops the 'complaint noted' line to the customer
     if (!function_exists('cx_looks_like') && is_file(__DIR__ . '/boss.php')) { try { $action = 'wa.cxself'; require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { } }
     if (!function_exists('cx_looks_like') || !function_exists('cx_raise')) return 0;
     $n = 0; $now = time();
@@ -953,7 +953,7 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
         try {
             $__lo = (string)($c['last_out_at'] ?? ''); $__q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND ts > ? ORDER BY id DESC LIMIT 4"); $__q->execute([$key, $__lo !== '' ? $__lo : '2000-01-01 00:00:00']);
             $__t = ' ' . mb_strtolower(implode(' ', array_column($__q->fetchAll(), 'body'))) . ' ';
-            if (!preg_match('/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)|not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|fake|duplicate|refund|paisa wapas|money back|return kar|quality)/u', $__t)) continue;
+            if (!preg_match('/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)|not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|fake|duplicate|refund|paisa wapas|money back|return kar|quality|exchange|replace|badalna|badalni|missing|incomplete)/u', $__t)) continue;
             if (preg_match('/(policy|agar|\bif\b|rahe (to|too)|hoti hai|hota hai|kya hai|kaise|how|can i|sakte|sakta)/u', $__t) && !preg_match('/(mila|aaya|aayi|hai mera|mere|my (order|parcel|bottle)|order (id|no)|#\d{4})/u', $__t)) continue;
             if (preg_match('/(\bcodes?\b|\bog\b|coupon|promo)/u', $__t)) {   // owner 22 Nov: "Code toh nahi aaya" is the talk about our OG code process, not a complaint - the bot never raises it by itself: it asks the salesperson once (a hint in the chat + a push to the holder), the person decides
                 $__li = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__li->execute([$key]); $__mid = (int)$__li->fetchColumn();
@@ -968,7 +968,7 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
             if (function_exists('cx_ensure')) cx_ensure($pdo); if (function_exists('cx2_ensure')) cx2_ensure($pdo);
             $a = cx_raise($pdo, [], ['emp' => 0, 'admin' => false, 'mgr' => false, 'team' => true, 'desks' => []], ['problem' => $h['problem'], 'source' => 'whatsapp', 'phone' => $key, 'name' => (string)($c['name'] ?? ''), 'summary' => 'WhatsApp (raised by the bot): ' . mb_substr((string)$m['body'], 0, 600), 'urgency' => 'normal', 'auto' => 1]);
             if (empty($a[0]) || empty($a[3]['code'])) { if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); continue; }
-            [$ok] = wa_send_text($pdo, $c, 'Aapki complaint note kar li gayi hai (ticket ' . $a[3]['code'] . ') 🙏 Hamari team jaldi aapse is chat me sampark karegi.', 'bot', 0);
+            $ok = true; if ((string)setting_get($pdo, 'wag_cx_ack', '1') === '1') [$ok] = wa_send_text($pdo, $c, 'Aapki complaint note kar li gayi hai (ticket ' . $a[3]['code'] . ') 🙏 Hamari team jaldi aapse is chat me sampark karegi.', 'bot', 0);
             wa_event($pdo, $key, '🎫 The bot raised complaint ' . $a[3]['code'] . ' (' . $h['label'] . ')'); $n++;
         } catch (Throwable $e) { wag_log($pdo, 'bot', false, 'complaint sweep: ' . $e->getMessage()); }
     }
