@@ -1101,6 +1101,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if ($n && function_exists('wa_tick')) { try { wa_more_tables($pdo); wa_tick($pdo); } catch (Throwable $e) { } }   // assignment + call-now alerts react right away
             if ($n || $st) wa_log($pdo, 'webhook', true, $n . ' message' . ($n === 1 ? '' : 's') . ', ' . $st . ' status update' . ($st === 1 ? '' : 's'));
         } catch (Throwable $e) { wa_log($pdo, 'webhook', false, 'Error: ' . $e->getMessage()); }
+        try { require_once __DIR__ . '/wa_ctwa.php'; $__cf = wa_ctwa_forward($raw, (string)($_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '')); if ($__cf !== '' && $__cf !== 'ok') wa_log($pdo, 'ctwa', false, 'Ad-click copy to the CTWA service failed: ' . $__cf); } catch (Throwable $e) { }   // 📣 a customer who came from a click-to-WhatsApp ad: a copy goes to the ad tracking service (after the HRMS kept the message)
         if ($__keys && function_exists('wag_prebuild')) {   // write the reply for each waiting customer NOW, after Meta has its 200 — it is ready before the salesperson even opens the chat
             $__k = array_slice(array_keys($__keys), 0, 5);
             register_shutdown_function(function () use ($pdo, $__k) {

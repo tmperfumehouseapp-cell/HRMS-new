@@ -24,6 +24,7 @@ define('API_KEY', 'optional-dev-api-key');
 // define('WA_WABA_ID', '...');
 // define('WA_APP_SECRET', '...');
 // define('WA_VERIFY_TOKEN', '...');
+// define('CTWA_FORWARD_URL', 'off');   // click-to-WhatsApp ad tracking copy (wa_ctwa.php): 'off' stops it, an https URL changes where it goes
 
 // define('SHOPIFY_DOMAIN', 'your-store.myshopify.com');
 // define('SHOPIFY_CLIENT_ID', 'your-client-id');

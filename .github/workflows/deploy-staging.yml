@@ -73,7 +73,7 @@ jobs:
           rsync -rlcz --no-perms --no-owner --no-group --omit-dir-times --itemize-changes \
                         --exclude='.git*' --exclude='.github/' --exclude='config.php' --exclude='config.js' --exclude='uploads/' \
             --exclude='help_data/' --exclude='learn_backups/' --exclude='backups/' --exclude='analytics/data/' \
-            --exclude='docs/' --exclude='DEPLOY_NOTES.md' --exclude='README_TMPH.md' --exclude='gitignore' \
+            --exclude='docs/' --exclude='ctwa-roas/' --exclude='DEPLOY_NOTES.md' --exclude='README_TMPH.md' --exclude='gitignore' \
             ./ "$STAGING_USER@$STAGING_HOST:$STAGING_PATH" | tee /tmp/rsync.log
           echo "files sent: $(grep -c '^>f' /tmp/rsync.log || true)"
 
