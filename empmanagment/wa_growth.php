@@ -555,10 +555,11 @@ function wag_pack_price_clamp(PDO $pdo, array $msgs, string $reply): string
         $c = ml_slab_get($pdo); $rows = []; foreach ((array)($c['rows'] ?? []) as $r) $rows[(int)($r['ml'] ?? 0)] = array_map('intval', (array)($r['p'] ?? []));
         $floor = 2; if (function_exists('wag_chart_cols') && !empty($c['cols'])) { try { [$__i0, $__fl] = wag_chart_cols(array_values(array_map('floatval', (array)$c['cols']))); $floor = (int)$__fl; } catch (Throwable $e) { } }
         $fu = (int)($GLOBALS['lib_fu_step'] ?? 0); $changed = false;
-        $out = preg_replace_callback('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu', function ($m) use ($rows, $msgs, $floor, $fu, &$changed, $pdo) {
+        $__lc = ''; foreach (array_reverse($msgs) as $__mm) if (($__mm['who'] ?? '') === 'customer') { $__lc = mb_strtolower((string)($__mm['text'] ?? '')); break; } $__obj = (bool)preg_match('/(mehang|mahang|costly|expensive|too much|zyada|jyada|kam kar|kam do|thoda kam|discount|best price|final price|last price|budget|sasta|cheaper|reduce|negotiat|bargain|rate kam|price kam|kitna kam|offer)/u', $__lc);   // owner, 23 Nov: a lower column only when the customer talks about the price (a perfume name or 'yes' is no reason to drop 2,350 to 2,050)
+        $out = preg_replace_callback('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu', function ($m) use ($rows, $msgs, $floor, $fu, $__obj, &$changed, $pdo) {
             $total = (int)$m[1] * (int)$m[2]; if (!isset($rows[$total])) return $m[0]; $p = $rows[$total]; $v = (int)str_replace(',', '', $m[5]); $j = array_search($v, $p, true); if ($j === false) return $m[0];
             $row = ['ml' => $total, 'p' => $p, 'chart' => (int)$p[0]]; $dp = wag_price_depth($msgs, $row); $arr = wag_arrival_idx($row, $msgs); $lo = max($dp, $arr); $maxIdx = min($floor, count($p) - 1);
-            if ($lo < 0) { $lo = 0; $hi = 0; } else { $hi = ($fu > 0 && $fu < 9) ? $lo : $lo + 1; }
+            if ($lo < 0) { $lo = 0; $hi = 0; } else { $hi = (($fu > 0 && $fu < 9) || ($fu === 0 && !$__obj)) ? $lo : $lo + 1; }
             $hi = max($lo, min($hi, $maxIdx)); $want = max($lo, min((int)$j, $hi)); if ($want === (int)$j) return $m[0];
             $changed = true; $new = $p[$want]; $txt = strpos($m[5], ',') !== false ? number_format($new) : (string)$new; return $m[1] . ' x ' . $m[2] . ' ml' . $m[3] . $m[4] . $txt; }, $reply);
         return ($changed && is_string($out)) ? $out : $reply;
