@@ -25,6 +25,15 @@
   .fu-arow:hover{background:#f7f8fa;} .fu-arow .t{font-weight:800;font-size:13.5px;} .fu-arow .m{grid-column:1;font-size:12px;color:#6b7280;} .fu-arow .d{grid-column:2;grid-row:1 / span 2;align-self:center;font-size:12px;font-weight:800;white-space:nowrap;}
   .fu-acol.red .fu-arow .d{color:#d9423b;} .fu-acol.amb .fu-arow .d{color:#b45309;}
   @media (max-width:820px){ .fu-agrid{grid-template-columns:1fr;} .fu-ticks{grid-template-columns:1fr;} }
+  .fu-call{display:inline-flex;align-items:center;font-size:11.5px;font-weight:800;border-radius:999px;padding:3px 10px;margin-left:6px;background:#e9f7ef;color:#0f7a4d;text-decoration:none;white-space:nowrap;} .fu-call.wa{background:#e7f6ec;color:#128c4a;} .fu-call.off{background:#f3f4f6;color:#9aa1ac;font-weight:600;}
+  .fu-boss{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#f6f7f9;border-radius:14px;padding:10px 12px;margin-top:10px;font-size:13.5px;} .fu-boss .av{width:34px;height:34px;border-radius:50%;background:#111827;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;flex:none;}
+  .fu-who{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 2px;border-top:1px solid #f0f1f3;font-size:13.5px;} .fu-who .n{font-weight:800;} .fu-who .c{font-size:12px;color:#6b7280;} .fu-who .sp{flex:1;}
+  .fu-bossline{font-size:13.5px;color:#4a505c;} .fu-sec .fu-m .fu-mday:first-child{border-top:0;}
+  .fu-pill[data-sec]{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:7px 16px;text-align:left;} .fu-pill[data-sec] small{font-size:10.5px;font-weight:600;opacity:.75;} .fu-pill[data-sec] .pn{display:flex;align-items:center;}
+  .fu-tags{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:6px;} .fu-tags .fu-tag{margin:0;}
+  .fu-callg{display:inline-flex;gap:5px;align-items:center;white-space:nowrap;} .fu-call{margin-left:0;} a.fu-tag{white-space:normal;}
+  .fu-chk{align-items:flex-start;} .fu-chk .tx{flex:1;min-width:0;} .fu-chk > .fu-callg,.fu-chk > .fu-call{flex:none;margin-top:1px;}
+  .fu-who{gap:6px 8px;} .fu-bossline + .fu-callg,.fu-bossline + .fu-call{margin-left:6px;}
   .fu-pill.add{border-style:dashed;color:#0f7a4d;}
   .fu-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin-bottom:12px;}
   .fu-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
@@ -77,6 +86,22 @@
   .fu-mday{border-top:1px solid #f0f1f3;padding:8px 0;font-size:13px;}
   .fu-mday .d{font-size:11.5px;font-weight:800;color:#6b7280;}
   .fu-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  @media (max-width:820px){
+    /* one tidy grid for every card head: the name (and the boss) across, the controls in two equal columns under it */
+    .fu-head{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;} .fu-head > div:first-child{grid-column:1 / -1;min-width:0;} .fu-head .sp{display:none;}
+    .fu-head > select,.fu-head > button{width:100% !important;min-height:40px;justify-content:center;} .fu-head > .fu-tag{justify-self:start;align-self:center;margin:0;}
+    .fu-head > .fu-lb{grid-column:auto;align-self:center;}
+    .fu-head h2{font-size:17px;} .fu-card{border-radius:16px;margin-bottom:10px;} .fu-stats{gap:6px;} .fu-stat{flex:1;min-width:0;padding:8px 10px;}
+    .fu-pills{padding-bottom:8px;gap:6px;} .fu-pill{padding:8px 14px;font-size:12.5px;}
+    .fu-chk{flex-wrap:wrap;gap:4px 8px;padding:7px 0;border-top:1px solid #f3f4f6;} .fu-chk:first-child{border-top:0;} .fu-chk .tx{flex:1 1 calc(100% - 20px);} .fu-chk > .fu-callg,.fu-chk > .fu-call{margin-left:17px;}
+    .fu-who{padding:10px 2px;} .fu-who .sp{display:none;} .fu-who > .fu-callg{flex-basis:100%;display:flex;gap:8px;} .fu-who > .fu-callg .fu-call{flex:1;justify-content:center;padding:8px 10px;font-size:12.5px;} .fu-who > .fu-call.off{margin-top:2px;}
+    #askAi{grid-column:1 / -1;}
+    .fu-mc{padding:14px;border-radius:16px;} .fu-sec .fu-m .fu-mday{padding:12px 0;}
+    .fu-dig{font-size:13px;padding:10px 12px;} .fu-arow{padding:9px 2px;}
+    html.fu-framed .bd-ov{padding-bottom:76px;}   /* the app's bottom menu covers the lower edge of the frame: Save / Cancel stay above it */
+    .bd-modal .acts{position:sticky;bottom:-24px;background:#fff;padding:10px 0 4px;margin-top:8px;z-index:2;}
+    .fu-ticks{max-height:260px;} .fu-tk input{flex:none;}
+  }
   @media (max-width:820px){ .fu-wrap,.fu-sw{display:none !important;} .fu-m{display:block;} .fu-card{padding:14px;} .fu-row2{grid-template-columns:1fr;} }
 </style>
 </head>
@@ -96,7 +121,9 @@
 guardPage(); renderSidebar('followup');
 (function () {
   const { esc, $, toast, inr } = BD;
+  try { if (window.parent !== window) document.documentElement.classList.add('fu-framed'); } catch (e) { document.documentElement.classList.add('fu-framed'); }
   try { api.swrAdd('fup.board', 0); } catch (e) { /* older api.js */ }   // the sheet is always asked fresh: an update somebody else just wrote must show at once, never a remembered copy
+  let ALL = true, OPEN_D = '', OWN_NOW = false; try { ALL = localStorage.getItem('fup_all') !== '0' && !new URLSearchParams(location.search).get('s'); } catch (e) { ALL = true; }
   let OPEN_U = 0; try { OPEN_U = Number(new URLSearchParams(location.search).get('u')) || 0; } catch (e) { OPEN_U = 0; }
   let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true;
   try { SIDE = localStorage.getItem('fup_side') !== '0'; } catch (e) { SIDE = true; }
@@ -121,15 +148,19 @@ guardPage(); renderSidebar('followup');
   const fvals = (t, d, u) => { if (!t.fields.length || !u) return ''; const rows = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null; if (!fset(v)) return f.req ? '<span>' + esc(f.label) + '</span><b style="color:#b45309">not filled</b>' : '';
       const show = f.type === 'file' ? '<a href="' + esc(fileUrl(t, d, f.k)) + '" target="_blank" rel="noopener" data-stop="1">📎 ' + esc(v.n || 'file') + '</a>' : f.type === 'link' ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer" data-stop="1">🔗 open</a>' : f.type === 'yesno' ? '<b style="color:' + (v === 'yes' ? '#16945a' : '#d9423b') + '">' + (v === 'yes' ? 'Yes' : 'No') + '</b>' : f.type === 'num' ? '<b>' + Number(v).toLocaleString('en-IN') + '</b>' : '<b style="font-weight:600;white-space:normal">' + esc(v) + '</b>';
       return '<span>' + esc(f.label) + '</span>' + show; }).join(''); return rows ? '<div class="fu-vals fu-fv">' + rows + '</div>' : ''; };
+  // who to call: name (+ title) with a Call and a WhatsApp button when the phone is recorded on the employee
+  const person = (id) => (D.people && D.people[id]) || null;
+  const telOf = (p) => (p && p.phone ? String(p.phone) : '');
+  const callBtns = (id) => { const p = person(id), n = telOf(p); if (!p) return ''; return n ? '<span class="fu-callg"><a class="fu-call" href="tel:+' + n + '" data-stop="1" title="Call ' + esc(p.name) + '">📞 Call</a><a class="fu-call wa" href="https://wa.me/' + n + '" target="_blank" rel="noopener" data-stop="1" title="WhatsApp ' + esc(p.name) + '">WhatsApp</a></span>' : '<span class="fu-call off" title="This person has no mobile number on the Employees page">no mobile on the employee</span>'; };
   const sec = () => D.sections.find((s) => s.id === D.section) || null;
 
   async function load(keep) {
     try {
       if (!keep) $('root').style.opacity = D ? '.6' : '1';
-      D = await api.get('fup.board', { section: SID || '', days: DAYS });
+      D = await api.get('fup.board', { section: SID || '', days: DAYS, all: ALL ? 1 : '' }); if (!D.all || D.sections.length < 2) ALL = false;
       SID = D.section || 0; try { if (SID) localStorage.setItem('fup_sec', String(SID)); } catch (e) { /* private mode */ }
       render();
-      if (OPEN_U) { const tu = D.topics.find((x) => x.id === OPEN_U); OPEN_U = 0; if (tu && tu.can_write && tu.status !== 'done') writeUp(tu.id, tu.due_day); }
+      if (OPEN_U) { const tu = D.topics.find((x) => x.id === OPEN_U); OPEN_U = 0; const od = OPEN_D; OPEN_D = ''; if (tu && tu.can_write && tu.status !== 'done') writeUp(tu.id, od || tu.due_day); }
     } catch (e) { $('root').innerHTML = '<div class="bd-empty"><b>Could not open Follow-up</b>' + esc(e.message || '') + '</div>'; }
     $('root').style.opacity = '1';
   }
@@ -140,11 +171,11 @@ guardPage(); renderSidebar('followup');
     if (t.status === 'done') h += '<span class="fu-tag grn">Finished</span>';
     else if (t.kind === 'deadline') { const dl = t.days_left; h += '<span class="fu-tag ' + (dl < 0 ? 'red' : dl <= 2 ? 'amb' : '') + '">Deadline ' + esc(new Date(t.due_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })) + ' · ' + (dl < 0 ? -dl + 'd late' : dl === 0 ? 'today' : dl + 'd left') + '</span>'; }
     else h += '<span class="fu-tag">' + (t.lag ? 'Every day · filled next day' : 'Every day') + '</span>';
-    h += '<span class="fu-tag ' + (t.assignee ? '' : 'amb') + '">' + (t.assignee ? '👤 ' + esc(t.assignee) : 'Not given to anyone') + '</span>';
+    h += '<span class="fu-tag ' + (t.assignee ? '' : 'amb') + '">' + (t.assignee ? '👤 ' + esc(t.assignee) : 'Not given to anyone') + '</span>' + (t.assignee_emp && OWN_NOW ? callBtns(t.assignee_emp) : '');
     const so = t.source && D.sources.find((x) => x.key === t.source);
     if (so && t.metrics.length > 1) h += '<a class="fu-tag pur" href="' + esc(so.page) + '" target="_top" style="text-decoration:none">🔗 Auto · ' + t.metrics.length + ' numbers from the HRMS</a>' + (t.need_text ? '<span class="fu-tag">+ summary by the person</span>' : '');
     else if (so) h += '<a class="fu-tag pur" href="' + esc(so.page) + '" target="_top" style="text-decoration:none" title="Open ' + esc(so.group) + '">🔗 Auto · ' + esc(so.group) + ' · ' + esc(so.label) + '</a>';
-    return h;
+    return '<div class="fu-tags">' + h + '</div>';
   }
   // Claude's check of this one update: a question that is still open, a remark, or a small tick
   function aiLine(u) {
@@ -167,17 +198,20 @@ guardPage(); renderSidebar('followup');
   }
 
   function render() {
-    const s = sec(), OV = D.overview || { late: [], empty: [], by_section: {} }; let h = attention(OV) + '<div class="fu-pills">' + D.sections.map((x) => '<button class="fu-pill' + (x.id === D.section ? ' on' : '') + '" data-sec="' + x.id + '">' + esc(x.name) + (OV.by_section[x.id] ? '<em class="fu-n">' + OV.by_section[x.id] + '</em>' : '') + '</button>').join('') + (D.manager ? '<button class="fu-pill add" id="secAdd">＋ New section</button>' : '') + '</div>';
+    const s = sec(), OV = D.overview || { late: [], empty: [], by_section: {} }; OWN_NOW = !!(s && s.own);
+    let h = attention(OV) + '<div class="fu-pills">' + (D.sections.length > 1 ? '<button class="fu-pill' + (ALL ? ' on' : '') + '" id="allPill">All sections</button>' : '') + D.sections.map((x) => '<button class="fu-pill' + (!ALL && x.id === D.section ? ' on' : '') + '" data-sec="' + x.id + '"><span class="pn">' + esc(x.name) + (OV.by_section[x.id] ? '<em class="fu-n">' + OV.by_section[x.id] + '</em>' : '') + '</span><small>' + (x.owner ? 'Boss: ' + esc(x.owner) : 'Boss: not set') + '</small></button>').join('') + (D.manager ? '<button class="fu-pill add" id="secAdd">＋ New section</button>' : '') + '</div>';
+    if (ALL && s) { $('root').innerHTML = h + allView(); bind(); return; }
     if (!s) { $('root').innerHTML = h + '<div class="bd-empty"><b>Nothing here for you yet</b>' + (D.manager ? 'Make the first section with “＋ New section”.' : 'When a topic or a section is given to you, it shows here and on My Day.') + '</div>'; bind(); return; }
     const open = D.topics.filter((t) => t.status !== 'done'), got = open.filter((t) => covered(t, t.due_day) || t.due_day < t.created).length, red = D.checks.filter((c) => c.level === 'red').length;
-    h += '<div class="fu-card"><div class="fu-head"><div><h2>' + esc(s.name) + '</h2><div class="fu-sub">' + (s.owner ? 'Whole section given to: <b>' + esc(s.owner) + '</b>' : 'The whole section is not given to one person: each topic has its own person.') + '</div></div><span class="sp"></span>'
+    h += '<div class="fu-card"><div class="fu-head"><div><h2>' + esc(s.name) + '</h2><div style="margin-top:4px;display:flex;align-items:center;flex-wrap:wrap;gap:4px">' + (s.owner_emp && person(s.owner_emp) ? '<span class="fu-bossline">Boss: <b>' + esc(person(s.owner_emp).name) + '</b>' + (person(s.owner_emp).title ? ' · ' + esc(person(s.owner_emp).title) : '') + '</span>' + callBtns(s.owner_emp)
+      : (s.owner ? '<span class="fu-bossline">' + (s.owner_dept ? 'Given to: ' : 'Boss: ') + '<b>' + esc(s.owner) + '</b></span>' : '<span class="fu-bossline" style="color:#b45309">⚠ Boss: not set</span>' + (D.manager ? '<button class="bd-btn sm" id="secBoss" style="margin-left:8px">Choose the boss</button>' : ''))) + '</div></div><span class="sp"></span>'
       + '<select class="bd-in" id="daysSel" style="width:auto;padding:7px 10px;font-size:13px">' + [7, 14, 31].map((n) => '<option value="' + n + '"' + (n === DAYS ? ' selected' : '') + '>Last ' + n + ' days</option>').join('') + '</select>'
       + (D.topics.some((t) => t.can_write && t.status !== 'done') ? '<button class="bd-btn sm" id="addAny">＋ Add update / number</button>' : '') + (D.manager ? '<button class="bd-btn sm" id="secEdit">Section settings</button><button class="bd-btn sm pri" id="topAdd">＋ Topic</button>' : '') + '</div>'
       + '<div class="fu-stats"><div class="fu-stat"><b>' + open.length + '</b>open topics</div><div class="fu-stat ' + (got === open.length && open.length ? 'g' : '') + '"><b>' + got + ' / ' + open.length + '</b>up to date</div><div class="fu-stat ' + (red ? 'r' : 'g') + '"><b>' + red + '</b>need attention</div></div></div>';
 
     if (s.own && D.topics.length) {
       h += '<div class="fu-card"><div class="fu-head"><div class="fu-lb" style="margin:0">Claude’s check</div><span class="sp"></span><button class="bd-btn sm" id="askAi"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ ' + (D.digest ? 'Ask Claude again' : 'Ask Claude to read this section') + '</button></div>'
-        + (D.checks.length ? '<div style="margin-top:8px">' + D.checks.map((c) => '<div class="fu-chk"><span class="fu-dot ' + (c.level === 'red' ? 'red' : '') + '"></span><span>' + esc(c.text) + '</span></div>').join('') + '</div>' : '<div class="fu-sub" style="margin-top:8px">Every open topic has today’s update. Nothing is late.</div>')
+        + (D.checks.length ? '<div style="margin-top:8px">' + D.checks.map((c) => '<div class="fu-chk"><span class="fu-dot ' + (c.level === 'red' ? 'red' : '') + '"></span><span class="tx">' + esc(c.text) + '</span>' + ((tp) => (tp && tp.assignee_emp ? callBtns(tp.assignee_emp) : ''))(D.topics.find((x) => x.id === c.topic_id)) + '</div>').join('') + '</div>' : '<div class="fu-sub" style="margin-top:8px">Every open topic has today’s update. Nothing is late.</div>')
         + (D.digest ? '<div class="fu-dig">' + esc(D.digest.text) + '</div><div class="fu-by">Claude read it on ' + esc(dayName(D.digest.day, D.today)) + (D.digest.day !== D.today ? ' — ask again for today' : '') + '</div>' : (D.ai ? '' : '<div class="fu-sub" style="margin-top:8px">The checks above work without Claude. Claude’s written note needs the Anthropic key on the server.</div>')) + '</div>';
     }
 
@@ -210,20 +244,57 @@ guardPage(); renderSidebar('followup');
     if (!D.sections.some((x) => x.own)) return '';
     if (!OV.late.length && !OV.empty.length) return '<div class="fu-card fu-att ok"><b>✓ All clear.</b> No deadline is missed and every topic has today’s update, in every section.</div>';
     const many = D.sections.length > 1;
-    const row = (r, txt) => '<button type="button" class="fu-arow" data-go="' + r.section_id + '"><span class="t">' + esc(r.topic) + '</span><span class="m">' + (many ? esc(r.section) + ' · ' : '') + (r.who ? esc(r.who) : 'not given to anyone') + '</span><span class="d">' + txt + '</span></button>';
+    const row = (r, txt) => '<button type="button" class="fu-arow" data-go="' + r.section_id + '"><span class="t">' + esc(r.topic) + '</span><span class="m">' + (many ? esc(r.section) + ' · ' : '') + (r.who ? esc(r.who) : (person(r.emp) ? 'no person · boss: ' + esc(person(r.emp).name) : 'not given to anyone')) + '</span><span class="d">' + txt + '</span></button>';
     const col = (cls, title, rows, f, none) => '<div class="fu-acol ' + cls + '"><div class="fu-ah"><b>' + rows.length + '</b> ' + title + '</div>' + (rows.length ? rows.slice(0, 8).map((r) => row(r, f(r))).join('') + (rows.length > 8 ? '<div class="fu-sub" style="padding:6px 2px">+ ' + (rows.length - 8) + ' more — open the section</div>' : '') : '<div class="fu-sub" style="padding:6px 2px">' + none + '</div>') + '</div>';
-    return '<div class="fu-card fu-att"><div class="fu-agrid">'
+    // by person: who has how much open, with the buttons to call (a topic given to nobody counts for the boss of its section)
+    const by = {}; [['late', OV.late], ['empty', OV.empty]].forEach(([k, rows]) => rows.forEach((r) => { const e = r.emp || 0; if (!by[e]) by[e] = { emp: e, late: 0, empty: 0, secs: {} }; by[e][k]++; by[e].secs[r.section] = 1; }));
+    const ppl = Object.values(by).sort((a, b) => (b.late * 100 + b.empty) - (a.late * 100 + a.empty));
+    const who = ppl.length ? '<div class="fu-lb" style="margin:14px 0 2px">Who to call</div>' + ppl.map((x) => { const p = person(x.emp); return '<div class="fu-who"><span class="n">' + (p ? esc(p.name) : 'Nobody — no person and no section boss') + '</span>' + (p && p.title ? '<span class="c">' + esc(p.title) + '</span>' : '') + ((bo) => (bo.length ? '<span class="fu-tag" style="margin:0">Boss of ' + esc(bo.join(', ')) + '</span>' : ''))(D.sections.filter((z) => z.owner_emp && z.owner_emp === x.emp).map((z) => z.name))
+      + '<span class="c">' + (x.late ? '<b style="color:#d9423b">' + x.late + ' deadline' + (x.late === 1 ? '' : 's') + ' missed</b>' + (x.empty ? ' · ' : '') : '') + (x.empty ? '<b style="color:#b45309">' + x.empty + ' not filled</b>' : '') + ' · ' + esc(Object.keys(x.secs).join(', ')) + '</span><span class="sp"></span>' + (p ? callBtns(x.emp) : '') + '</div>'; }).join('') : '';
+    const grid = '<div class="fu-agrid">'
       + col('red', 'deadline' + (OV.late.length === 1 ? '' : 's') + ' missed', OV.late, (r) => r.days + ' day' + (r.days === 1 ? '' : 's') + ' late', 'No deadline is missed.')
-      + col('amb', 'not filled today', OV.empty, (r) => (r.days >= 2 ? 'nothing for ' + r.days + ' days' : 'today'), 'Every topic has today’s update.') + '</div></div>';
+      + col('amb', 'not filled today', OV.empty, (r) => (r.days >= 2 ? 'nothing for ' + r.days + ' days' : 'today'), 'Every topic has today’s update.') + '</div>';
+    // "All sections" keeps the top short: the counts and who to call; the long lists open on a tap (each section below shows its own state anyway)
+    if (ALL) return '<div class="fu-card fu-att"><details><summary style="cursor:pointer;font-size:14px;font-weight:700"><b style="color:#d9423b;font-size:18px">' + OV.late.length + '</b> deadline' + (OV.late.length === 1 ? '' : 's') + ' missed · <b style="color:#b45309;font-size:18px">' + OV.empty.length + '</b> not filled today <span class="fu-sub" style="font-weight:600">— tap to see the list</span></summary><div style="margin-top:10px">' + grid + '</div></details>' + who + '</div>';
+    return '<div class="fu-card fu-att">' + grid + who + '</div>';
+  }
+
+  /* ---------------- "All sections": every section one under the other — its name, its boss (with Call / WhatsApp), and its sheet. Nothing has to be opened. ---------------- */
+  function allView() {
+    let h = '<div style="display:flex;justify-content:flex-end;margin:0 0 8px"><select class="bd-in" id="daysAll" style="width:auto;padding:7px 10px;font-size:13px">' + [3, 7, 14].map((n) => '<option value="' + n + '"' + (n === DAYS ? ' selected' : '') + '>Last ' + n + ' days</option>').join('') + (DAYS !== 3 && DAYS !== 7 && DAYS !== 14 ? '<option selected value="' + DAYS + '">Last ' + DAYS + ' days</option>' : '') + '</select></div>';
+    D.all.forEach((a) => {
+      const sc = D.sections.find((x) => x.id === a.id); if (!sc) return; OWN_NOW = !!sc.own;
+      const open = a.topics.filter((t) => t.status !== 'done'), left = open.filter((t) => !(covered(t, t.due_day) || t.due_day < t.created)).length, bp = sc.owner_emp ? person(sc.owner_emp) : null;
+      const boss = bp ? '<span class="fu-bossline">Boss: <b>' + esc(bp.name) + '</b>' + (bp.title ? ' · ' + esc(bp.title) : '') + '</span>' + callBtns(sc.owner_emp)
+        : (sc.owner_dept ? '<span class="fu-bossline">Given to: <b>' + esc(sc.owner) + '</b></span>' : '<span class="fu-bossline" style="color:#b45309">⚠ Boss: not set</span>');
+      h += '<div class="fu-card fu-sec"><div class="fu-head"><div><h2><a href="#" data-jump="' + a.id + '||" style="color:inherit;text-decoration:none">' + esc(sc.name) + '</a></h2><div style="margin-top:4px;display:flex;align-items:center;flex-wrap:wrap;gap:4px">' + boss + '</div></div><span class="sp"></span>'
+        + '<span class="fu-tag ' + (left ? 'amb' : 'grn') + '" style="margin:0">' + (open.length ? (left ? left + ' of ' + open.length + ' not filled' : 'all ' + open.length + ' filled') : 'no topics') + '</span><button class="bd-btn sm" data-jump="' + a.id + '||">Open section →</button></div>';
+      if (!a.topics.length) h += '<div class="fu-sub" style="margin-top:10px">No topics in this section yet.</div>';
+      else {
+        const jump = (t, d) => (canDay(t, d) ? ' w" data-jump="' + a.id + '|' + t.id + '|' + d : '');
+        h += '<div class="fu-wrap" style="margin-top:12px;border-radius:14px"><table class="fu-t side"><thead><tr><th>Day</th>' + a.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '</th>').join('') + '</tr></thead><tbody>'
+          + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + a.topics.map((t) => '<td class="c' + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + jump(t, d) + '">' + cell(t, d) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+        // phones: one line a topic with the row that is due
+        h += '<div class="fu-m" style="margin-top:10px">' + a.topics.map((t) => '<div class="fu-mday' + (canDay(t, t.due_day) ? '" data-jump="' + a.id + '|' + t.id + '|' + t.due_day : '') + '" style="cursor:pointer"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '<div class="d" style="margin-top:6px">' + esc(dayName(t.due_day, D.today)) + '</div>' + cell(t, t.due_day) + '</div>').join('') + '</div>';
+      }
+      h += '</div>';
+    });
+    return h;
   }
 
   function bind() {
-    document.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => { SID = Number(b.dataset.go); load(); }; });
-    document.querySelectorAll('[data-sec]').forEach((b) => { b.onclick = () => { SID = Number(b.dataset.sec); load(); }; });
+    document.querySelectorAll('[data-go]').forEach((b) => { b.onclick = (e) => { if (e.target.closest('[data-stop]')) return; SID = Number(b.dataset.go); ALL = false; try { localStorage.setItem('fup_all', '0'); } catch (x) { /* private mode */ } load(); }; });
+    const setAll = (v) => { ALL = v; try { localStorage.setItem('fup_all', v ? '1' : '0'); } catch (e) { /* private mode */ } };
+    document.querySelectorAll('[data-sec]').forEach((b) => { b.onclick = () => { SID = Number(b.dataset.sec); setAll(false); load(); }; });
+    if ($('allPill')) $('allPill').onclick = () => { setAll(true); load(); };
+    // "All sections": a cell or a section's name opens that section (and the update window of that topic and day)
+    document.querySelectorAll('[data-jump]').forEach((b) => { b.onclick = (e) => { if (e.target.closest('[data-stop]')) return; const p = b.dataset.jump.split('|'); SID = Number(p[0]); OPEN_U = Number(p[1]) || 0; OPEN_D = p[2] || ''; setAll(false); load(); }; });
+    if ($('daysAll')) $('daysAll').onchange = () => { DAYS = Number($('daysAll').value) || 7; load(); };
     document.querySelectorAll('[data-up]').forEach((b) => { b.onclick = (e) => { if (e.target.closest('[data-stop]')) return; e.stopPropagation(); writeUp(Number(b.dataset.up), b.dataset.day); }; });
     document.querySelectorAll('[data-edit]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); topicForm(D.topics.find((t) => t.id === Number(b.dataset.edit))); }; });
     if ($('secAdd')) $('secAdd').onclick = () => sectionForm(null);
     if ($('secEdit')) $('secEdit').onclick = () => sectionForm(sec());
+    if ($('secBoss')) $('secBoss').onclick = () => sectionForm(sec());
     if ($('topAdd')) $('topAdd').onclick = () => topicForm(null);
     if ($('daysSel')) $('daysSel').onchange = () => { DAYS = Number($('daysSel').value) || 7; load(); };
     if ($('askAi')) $('askAi').onclick = askClaude;
@@ -256,7 +327,7 @@ guardPage(); renderSidebar('followup');
       q('#uNote').textContent = t.note || ''; q('#uVl').textContent = 'Number' + (t.unit ? ' (' + t.unit + ')' : '');
       q('#uV').placeholder = t.source ? 'Comes by itself' + (u.val != null ? ': ' + u.val : '') : 'Type the number of this day'; q('#uV').value = u.val != null && !u.auto ? u.val : '';
       const many = t.metrics.length > 1; q('#uNums').innerHTML = many && (u.val != null || (u.vals && Object.keys(u.vals).length)) ? '<div class="fu-lb" style="margin-bottom:2px">Numbers of this day · from the HRMS</div>' + numTxt(t, u) + '<div style="height:10px"></div>' : (many ? '<div class="fu-sub" style="margin-bottom:10px">The numbers of this day are not in the HRMS yet.</div>' : '');
-      q('#uV').closest('.fu-row2').style.display = many ? 'none' : ''; q('#uTl').textContent = t.need_text ? 'Summary: why the numbers moved, what was changed' : 'Update'; q('#uT').placeholder = t.need_text ? 'Example: sales up because the campaign went to 12,000 people; ad spend kept the same; 2 big orders from Surat.' : 'What happened on this topic?';
+      q('#uV').closest('.fu-row2').style.display = (many || t.fields.length) ? 'none' : ''; q('#uTl').textContent = t.need_text ? 'Summary: why the numbers moved, what was changed' : 'Update'; q('#uT').placeholder = t.need_text ? 'Example: sales up because the campaign went to 12,000 people; ad spend kept the same; 2 big orders from Surat.' : 'What happened on this topic?';
       q('#uVh').textContent = t.source ? 'Leave empty to keep the number from the system. Type a number only to correct it.' : ''; q('#uP').value = u.pct != null ? u.pct : ''; q('#uT').value = u.text || '';
     };
     fill(); q('#uTop').onchange = fill; q('#uD').onchange = fill;
@@ -313,7 +384,7 @@ guardPage(); renderSidebar('followup');
       + '<div class="bd-f"><label>Who writes the update every day</label><select class="bd-in" id="tE"><option value="0">Nobody yet (the section owner writes it)</option>' + P.people.map((p) => '<option value="' + p.id + '"' + (t && t.assignee_emp === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></div>'
       + '<div class="bd-f"><label>Numbers that come by themselves from the HRMS — tick every one this topic needs</label><div class="fu-ticks" id="tM">' + srcGroups().map((g) => '<div class="fu-tg">' + esc(g) + '</div>' + D.sources.filter((s) => s.group === g).map((s) => '<label class="fu-tk"><input type="checkbox" value="' + s.key + '"' + (t && t.metrics.indexOf(s.key) > -1 ? ' checked' : '') + '> ' + esc(s.label) + '</label>').join('')).join('') + '</div>'
       + '<div class="hint" id="tSh">Ticked numbers are read from the HRMS every day: nobody types them, so they cannot be wrong. Nothing ticked = the person types the number.</div>'
-      + '<div id="tUw" style="margin-top:8px"><input class="bd-in" id="tU" maxlength="12" placeholder="Unit of the typed number: ₹, pcs, shops … (optional)" value="' + esc(t ? (t.own_unit || '') : '') + '"></div>'
+      + '<div id="tUw" style="margin-top:8px"><input class="bd-in" id="tU" maxlength="12" placeholder="Unit: ₹, pcs, shops … (optional)" value="' + esc(t ? (t.own_unit || '') : '') + '"></div>'
       + '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-top:10px;cursor:pointer"><input type="checkbox" id="tNt"' + (t && t.need_text ? ' checked' : '') + ' style="margin-top:3px"><span><b>The person must also write a summary every day</b>: why the numbers moved and what was changed. (Not ticked = when the numbers arrive, the day is complete by itself.)</span></label></div>'
       + '<div class="bd-f" style="margin-top:12px"><label>Fields the person fills every day</label><div id="tF"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bd-btn sm" id="tFadd" type="button">＋ Add a field</button><button class="bd-btn sm" id="tSug" type="button"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ Let Claude set this topic up</button></div>'
       + '<div class="hint" id="tFh">A post link, a yes / no, a count from Instagram or Google, a reason, a screenshot … A field marked “must” has to be filled before the day counts as done.</div></div>'
