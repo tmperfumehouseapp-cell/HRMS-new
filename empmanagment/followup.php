@@ -178,6 +178,31 @@ function fup_seed_amazon_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_amazon_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's five hand-written topics of the TM4U section (the section is made by the owner; this waits for it). Nothing is read from the website. A topic with the same title is not made twice. Nobody is assigned. */
+function fup_seed_tm4u_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_tm4u_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(REPLACE(name, ' ', '')) LIKE 'tm4u%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); if ($sid <= 0) return;
+        setting_set($pdo, 'fup_tm4u_topics_v1', '1');
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $num = function ($l) { return ['label' => $l, 'type' => 'num', 'req' => 1]; };
+        $list = [
+            ['Today\'s numbers: queries, orders, collection, story / broadcast', 'Fill this in the evening: today\'s queries, orders and collection, and what went out on the Story / Broadcast.', 0, [$num('Queries today'), $num('Orders today'), $num('Collection today (₹)'), ['label' => 'Story / Broadcast: what went out today', 'type' => 'text', 'req' => 1]]],
+            ['New creative: what was made today', 'Write which new creative was made or launched today (reel, post, banner).', 1, []],
+            ['Website: what changes can we make', 'Write what changes can be made on the website (or were made today).', 1, []],
+            ['Ads: how much is running', 'Write today\'s ad spend and how many campaigns are running.', 0, [$num('Ad spend today (₹)'), $num('Campaigns running'), ['label' => 'Note', 'type' => 'text', 'req' => 0]]],
+            ['Sales issues: what the sales team faces', 'Write the issues the sales team faces today (for example wrong addresses, customer doubts).', 1, []],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3] ? json_encode(fup_fields_clean($t[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+    } catch (Throwable $e) { error_log('fup_seed_tm4u_topics: ' . $e->getMessage()); }
+}
+
 /** The numbers a topic can take by itself. key => [label, unit, fn(pdo, day) → number|null]. Every one is read-only and safe when its table is missing. */
 function fup_sources(): array
 {
@@ -662,6 +687,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_store_topics3($pdo);
     fup_seed_store_topics4($pdo);
     fup_seed_amazon_topics($pdo);
+    fup_seed_tm4u_topics($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
