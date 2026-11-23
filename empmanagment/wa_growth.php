@@ -532,11 +532,20 @@ function wag_price_depth(array $msgs, array $row): int
     foreach ($row['p'] as $j => $v) if (strpos($prev, (string)(int)$v) !== false) $d = max($d, (int)$j);
     return $d;
 }
+/** owner, 23 Nov (screenshot: the customer arrived with "10 x 20ml combo for Rs 2200" from the website button and the bot answered "Rs 2,350"; "if he comes with 2200, the negotiation starts from 2200"): the chart column whose price is nearest to a price the CUSTOMER himself named for this pack (within 1.5%), or -1. */
+function wag_arrival_idx(array $row, array $msgs): int
+{
+    $cust = ''; foreach (array_slice($msgs, -10) as $m) if (($m['who'] ?? '') === 'customer') $cust .= ' ' . (string)($m['text'] ?? '');
+    $best = -1; $bd = 1e9;
+    if (preg_match_all('/(?<![\d,.])(\d{1,2},\d{3}|\d{4,5})(?![\d,])/u', $cust, $am)) foreach ($am[1] as $a) { $amt = (int)str_replace(',', '', $a); if ($amt < 500) continue; foreach ((array)$row['p'] as $j => $pv) { $pv = (int)$pv; if ($pv <= 0) continue; $d = abs($pv - $amt); if ($d / $amt <= 0.015 && $d < $bd) { $bd = $d; $best = (int)$j; } } }
+    return $best;
+}
 /** One line for the bot's prompt: the exact chart price of what the customer asked for. */
 function wag_price_fact(PDO $pdo, array $msgs): string
 {
     if (wag_bottles_no_size($msgs)) return 'NO PRICE NOW (owner rule): the customer gave only a number of bottles and NOT the size in ml. Do NOT say any price, total, discount or offer in this reply. Ask in one short line which size (ml) he wants — 20 ml, 50 ml or 100 ml — and nothing else about money.';
     $rq = wag_ml_request($msgs); if (!$rq) return ''; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return '';
+    $__ai = wag_arrival_idx($row, $msgs); if ($__ai >= 0) return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total. HE ARRIVED WITH HIS OWN PRICE: Rs ' . number_format((int)$row['p'][$__ai]) . ' (a column of our chart). Start from THAT price: confirm it back to him ("Sir, ' . $rq['total'] . ' ml Rs ' . number_format((int)$row['p'][$__ai]) . ' mein ho jayega") and go to the order details; NEVER quote the higher chart price Rs ' . number_format((int)$row['chart']) . ' and never go lower on your own.';
     return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system — use exactly this): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total → chart price Rs ' . number_format($row['chart']) . ' (the FIRST price you say; the chart price is for the TOTAL ml, never the price of one bottle for several bottles)' . (($__d = wag_price_depth($msgs, $row)) >= 0 ? '. You already said Rs ' . number_format((int)$row['p'][$__d]) . ' earlier in this chat: you may repeat it, and ONLY if the customer asks for less you may come down ONE step to at most Rs ' . number_format((int)$row['p'][min($__d + 1, count($row['p']) - 1)]) . ' — never lower than that in this reply, never jump to the lowest price, never mention how low the shop can go.' : '. Say only this price now; if the customer later asks for less, come down one step at a time (never straight to the lowest price, never mention how low the shop can go).');
 }
 /** Checks a reply: a price that belongs to ANOTHER chart row than the customer's total, or a first price that is not the chart (7%) price, is replaced by the correct chart price. Returns [reply, changed]. */
@@ -552,12 +561,12 @@ function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
         $custNums = []; foreach ($msgs as $m) if (($m['who'] ?? '') === 'customer') { preg_match_all('/\d[\d,]{2,5}/', (string)($m['text'] ?? ''), $nn); foreach ($nn[0] as $x) $custNums[(int)str_replace(',', '', $x)] = 1; }
         $prev = ''; foreach ($msgs as $m) if (($m['who'] ?? '') !== 'customer') $prev .= ' ' . (string)($m['text'] ?? ''); $prev = str_replace(',', '', $prev);
         $firstQuote = true; foreach ($row['p'] as $v) if (strpos($prev, (string)$v) !== false) { $firstQuote = false; break; }
-        $__dp = wag_price_depth($msgs, $row); $fixIdx = max(0, $__dp);   // owner, 23 Nov (a 1000 ml customer got 8,530 > 8,270 > 8,000 > 7,470 in four follow-ups within 100 minutes, then 12 x 100 ml at the lowest column): a FOLLOW-UP before step 9 never goes lower than the price already said; the night steps 9 / 10 may go one column down
+        $__dp = wag_price_depth($msgs, $row); $fixIdx = max(0, $__dp); $__arr = wag_arrival_idx($row, $msgs); if ($__arr >= 0) { $__dp = max($__dp, $__arr); $firstQuote = false; $fixIdx = $__dp; }   // the customer's own price is the level already on the table   // owner, 23 Nov (a 1000 ml customer got 8,530 > 8,270 > 8,000 > 7,470 in four follow-ups within 100 minutes, then 12 x 100 ml at the lowest column): a FOLLOW-UP before step 9 never goes lower than the price already said; the night steps 9 / 10 may go one column down
         preg_match_all('/(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $reply, $am); $bad = false;
         foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 500 || isset($custNums[$v])) continue;
             if (isset($other[$v])) { $bad = true; break; }                                  // the price of another size
             if (isset($mine[$v]) && $v !== $row['chart'] && $firstQuote) { $bad = true; break; }   // the first price said is not the chart price
-            if (isset($mine[$v])) { $jv = array_search($v, array_map('intval', $row['p']), true); $__allow = $__dp + 1; if (!empty($GLOBALS['lib_fu_step']) && (int)$GLOBALS['lib_fu_step'] < 9) $__allow = max(0, $__dp); if ($jv !== false && $jv > $__allow) { $bad = true; $fixIdx = $__allow; break; } }   // 🪜 a jump of more than one price column below what was said before
+            if (isset($mine[$v])) { $jv = array_search($v, array_map('intval', $row['p']), true); $__allow = $__dp + 1; if (!empty($GLOBALS['lib_fu_step']) && (int)$GLOBALS['lib_fu_step'] < 9) $__allow = max(0, $__dp); if ($jv !== false && $jv > $__allow) { $bad = true; $fixIdx = $__allow; break; } if ($jv !== false && $__arr >= 0 && $jv < $__arr) { $bad = true; $fixIdx = $__arr; break; } /* a quote HIGHER than the price he arrived with */ }   // 🪜 a jump of more than one price column below what was said before
         }
         if (!$bad) return [$reply, false];
         $__ob = $__dp < 0 ? wag_one_bottle_msg($pdo, (int)$rq['qty'], (int)$rq['ml']) : ''; if ($__ob !== '') return [$__ob, true];   // nothing quoted yet and he asked 1-2 bottles: the one-bottle-is-expensive message instead of a single bottle's price (owner, 23 Nov: '50 ml ka price Rs 900' after the Instagram answer)
@@ -1549,7 +1558,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         try {
             $__fq = $pdo->prepare("SELECT id, body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND ts > ? ORDER BY id DESC LIMIT 4"); $__fq->execute([$key, !empty($c['last_out_at']) ? (string)$c['last_out_at'] : '2000-01-01 00:00:00']); $__fr = $__fq->fetchAll();
             $__ft = ' ' . mb_strtolower(implode(' ', array_column($__fr, 'body'))) . ' ';
-            if ($__fr && preg_match('/(quality|synthetic|harsh|smell|fragrance|khushbu|fake|duplicate|original nahi|damage|leak|feedback|complaint|shikayat|disappoint|bekar|kharab|refund|return kar)/u', $__ft) && !preg_match('/(new order|another order|order karna|order karo|order dena|\bbuy\b|lena hai|lunga|\bprice\b|\brate\b|combo|add.?on|chahiye|offer|discount|\d+\s?ml)/u', $__ft) && wag_after_delivery($pdo, $key, 'x')) {
+            if ($__fr && preg_match('/(quality|synthetic|harsh|smell|fragrance|khushbu|fake|duplicate|original nahi|damage|leak|feedback|complaint|shikayat|disappoint|bekar|kharab|refund|return kar|need help|\bhelp\b|madad|exchange|replace|badal|wrong|galat|missing|nahi (?:aaya|aayi|ayi|mila)|nhi (?:aaya|aayi|ayi|mila)|defect|problem|issue|dikkat)/u', $__ft) && !preg_match('/(new order|another order|order karna|order karo|order dena|\bbuy\b|lena hai|lunga|\bprice\b|\brate\b|combo|add.?on|chahiye|offer|discount|\d+\s?ml)/u', $__ft) && wag_after_delivery($pdo, $key, 'x')) {
                 $__fid = (int)$__fr[0]['id'];
                 if (wag_meta_get($pdo, 'cxfb:' . $key, '') !== (string)$__fid) { wag_meta_put($pdo, 'cxfb:' . $key, (string)$__fid);
                     wa_event($pdo, $key, '💬 The customer has a delivered order and wrote feedback / a quality remark. The bot stays silent: please read the chat and answer (raise it from More → Complaint if it is a complaint).');
@@ -2281,7 +2290,9 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         }
         case 'wa.g_mkt_top': {   // 🏪 for every salesperson: who are the best right now (shown above the OPEN list) and my own rank
             $w = wag_mkt_board($pdo, 7); $top = []; foreach ($w as $r) if ($r['present'] && count($top) < 3 && $r['score'] > 0) $top[] = $r['name']; $my = null; foreach ($w as $i => $r) if ($r['emp'] === $me) $my = ['rank' => $i + 1, 'of' => count($w), 'score' => $r['score'], 'taken' => $r['taken'], 'dropped' => $r['dropped'] + $r['released'], 'q' => 0, 'o' => 0];
-            try { if ($my) { $__d = wag_real_queries($pdo, 1); $my['q'] = (int)($__d[$me][0] ?? 0); $my['o'] = (int)($__d[$me][1] ?? 0); } } catch (Throwable $e) { }   // the owner's definition: no campaign, no community — same as the sales strip
+            try { if ($my) { $__d = wag_real_queries($pdo, 1); $my['q'] = (int)($__d[$me][0] ?? 0); $my['o'] = (int)($__d[$me][1] ?? 0);
+                if (!function_exists('wgate_state') && is_file(__DIR__ . '/wag_gate.php')) require_once __DIR__ . '/wag_gate.php';
+                if (function_exists('wgate_state')) { $__gs = wgate_state($pdo); if (!empty($__gs['fresh']) && isset($__gs['emps'][$me])) { $my['q'] = max(0, (int)$__gs['emps'][$me][0] - (int)($__gs['emps'][$me][2] ?? 0)); $my['o'] = (int)$__gs['emps'][$me][1]; } } } } catch (Throwable $e) { }   // owner, 23 Nov: the chat list said 'queries 11 - orders 1' while the Query-order board said '2 query orders out of 11': the Sales Live cards are the ONE source (22 Nov), so this line now reads the same snapshot as the board, the lock and the cards (the old count is only the fallback when the snapshot is older than 15 minutes)   // the owner's definition: no campaign, no community — same as the sales strip
             json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me), 'fair' => wag_fair_state($pdo, $me)]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
