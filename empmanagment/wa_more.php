@@ -758,6 +758,15 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { } } }
             }
         }
+        // ⚡ speed indexes, round 2 (23 Nov, Server load: the database was 30% of the server). Same answers, found faster; added ONCE, online:
+        //    wa_tpl_waba (waba_id, meta_id)      — "how many templates has this WhatsApp account" read the whole table (its key starts with tpl_id)
+        //    wa_messages (dir, who, ts, phone)   — "chats where the BOT spoke last" (the follow-up scan) read every outgoing message of the period to find the bot's
+        if ((string)setting_get($pdo, 'wa_idx_v2', '') !== '1') {
+            setting_set($pdo, 'wa_idx_v2', '1'); @set_time_limit(900); ignore_user_abort(true);
+            foreach (["ALTER TABLE wa_tpl_waba ADD INDEX k_waba (waba_id, meta_id)", "ALTER TABLE wa_messages ADD INDEX k_dir_who_ts (dir, who, ts, phone)"] as $ix) {
+                try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { try { wa_log($pdo, 'engine', false, 'index v2: ' . $e2->getMessage()); } catch (Throwable $e3) { } } } }
+            }
+        }
         // ⚡ one cron at a time: a slow run (Meta, Shopify) is never joined by the next minute's run — they used to pile up and slow every page
         try { if (!(int)$pdo->query("SELECT GET_LOCK('hrms_wa_cron', 0)")->fetchColumn()) {
             // 🛟 watchdog: a run that has not finished for 15+ minutes is stuck (a hung call to Meta / AI never ends by itself and blocked every later run) — its database connection is closed, the lock is free for the next minute
