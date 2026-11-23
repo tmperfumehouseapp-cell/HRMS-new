@@ -73,6 +73,7 @@
   .wabtn.sent{background:#e6f4ec;color:#157a3c}
   .lnk{border:1.5px solid var(--sx-line);background:#fff;border-radius:12px;padding:8px 10px;font:700 12px inherit;cursor:pointer}
   .ppl{grid-column:1/-1;display:flex;gap:6px 14px;flex-wrap:wrap;padding:2px 0 4px 52px}
+  .prf2{grid-column:1/-1;display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center;padding:2px 0 6px 52px;border-left:3px solid #c9b8f2;margin-left:40px}.prf2>b{font-size:12.5px;color:#5b3fb0}
   .prf{grid-column:1/-1;display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center;padding:2px 0 6px 52px}.pbox{display:inline-flex;gap:6px;align-items:center;padding:7px 12px;border:2px dashed var(--sx-blue,#2a62c9);border-radius:12px;font-size:12.5px;font-weight:700;color:var(--sx-blue,#2a62c9);background:#fff;cursor:text;outline:0}.pbox:focus,.pbox.over{background:#eaf1ff;box-shadow:0 0 0 3px rgba(42,98,201,.25)}.plink{text-decoration:underline;cursor:pointer}@media (max-width:640px){.prf{padding-left:50px}}
   .pp{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:11.5px}
   .pp>b{font-size:12px}
@@ -522,8 +523,14 @@
       ? `<span class="st y">✅ ${label} · ${esc(P[k].by || '')} ${esc(String(P[k].at || '').slice(11, 16))}</span>${isManager ? `<button class="minibtn" data-pview="${b.bill_id}|${k}">View</button><button class="minibtn" data-pclr="${b.bill_id}|${k}" style="color:#b3261e">✕</button>` : ''}`
       : `<span class="pbox" tabindex="0" data-pb="${b.bill_id}|${k}" title="Click here, then press Ctrl+V to paste the screenshot (Windows: Win+Shift+S to take it). You can also drop a picture here.">📋 ${label}: click · Ctrl+V · <label class="plink">📎 file<input type="file" accept="image/*" data-pf="${b.bill_id}|${k}" style="display:none"></label></span>`;
     const state = done ? '<span class="st y" style="font-weight:800">Counted in commission ✓</span>' : (on ? '<span class="st n" style="font-weight:800;background:#fde8e8;color:#b3261e">Not counted yet — both screenshots needed</span>' : '');
-    return `<div class="prf">${one('contact', '📇 Number saved')}${one('community', '👥 Added to community')}${state}</div>`;
+    // friends who came with him: Customer 2..6 (kinds contact2 / community2 …). The first pair is what the commission needs; the others are counted in Follow-up.
+    let top = 1; for (let n = 2; n <= 6; n++) if (P['contact' + n] || P['community' + n]) top = n;
+    const want = Math.min(6, Math.max(top, moreOpen[b.bill_id] || 1)); let extra = '';
+    for (let n = 2; n <= want; n++) extra += `<div class="prf2"><b>👤 Customer ${n}</b>${one('contact' + n, '📇 Number saved')}${one('community' + n, '👥 Added to community')}</div>`;
+    const add = done && want < 6 ? `<button class="minibtn" data-pmore="${b.bill_id}" title="Another person came with this customer: save his number and add him to the community too">➕ Another customer</button>` : '';
+    return `<div class="prf">${one('contact', '📇 Number saved')}${one('community', '👥 Added to community')}${state}${add}</div>${extra}`;
   };
+  const moreOpen = {};
   const stp = (at, label) => `<span class="st ${at ? 'y' : 'n'}">${label}</span>`;
   const peopleRow = (b) => !(b.people && b.people.length) || b.status !== 'ok' ? '' : `<div class="ppl">${b.people.map((p) => p.declined ? `<span class="pp"><b>${esc(p.name || 'Customer')}</b><span class="st">no number${p.reason ? ' · ' + esc(p.reason) : ''}</span></span>`
     : `<span class="pp"><b>${esc(p.name || '+' + p.phone.slice(-10))}</b>${p.returning ? '<span class="st y" style="background:var(--sx-violet-t);color:var(--sx-violet)">↺ returning</span>' : ''}${p.sent_at ? stp(1, 'Sent') : `<button class="minibtn" data-wa="${p.person_id}" data-ret="${p.returning ? 1 : 0}" data-u="${esc(p.wa_url || '')}">Send on WhatsApp</button>${p.wa_url2 ? `<button class="minibtn" data-wa2="1" data-u="${esc(p.wa_url2)}" style="background:#6d4fc2">📞 Numbers</button>` : ''}`}${stp(p.opened_at, 'Opened')}${p.returning ? '' : stp(p.contact_at, 'Contacts') + stp(p.community_at, 'Community') + stp(p.review_at, 'Review')}</span>`).join('')}</div>`;
@@ -613,6 +620,7 @@
     if (pg) { pg.disabled = true; try { const r = await api.post('st_bill.set_pay', { bill_id: +pg.dataset.pgo, pay_mode: payD.mode, cash_amt: payD.cash, online_amt: payD.online }); payOpen = 0; payD = null; toast(r.message); loadBills(); } catch (err) { $('payMsg').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(err.message)}</span></div>`; pg.disabled = false; } }
   });
   $('dayPick').addEventListener('change', () => { listDate = $('dayPick').value; loadBills(); });
+  $('bills').addEventListener('click', (e) => { const pm2 = e.target.closest('[data-pmore]'); if (!pm2) return; const id = +pm2.dataset.pmore; const b = lastBills.find((x) => x.bill_id === id); let top = 1; for (let n = 2; n <= 6; n++) if (b && b.proof && (b.proof['contact' + n] || b.proof['community' + n])) top = n; moreOpen[id] = Math.min(6, Math.max(top, moreOpen[id] || 1) + 1); loadBills(); });
   $('bills').addEventListener('click', async (e) => {
     const pv = e.target.closest('[data-pview]');
     if (pv) { const [bid, kind] = pv.dataset.pview.split('|'); try { const r = await api.get('st_bill.proof_img', { bill_id: bid, kind }); const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out'; ov.innerHTML = '<img src="' + r.image + '" style="max-width:100%;max-height:100%;border-radius:12px">'; ov.onclick = () => ov.remove(); document.body.appendChild(ov); } catch (err) { toast((err && err.message) || 'Could not open it.', true); } return; }

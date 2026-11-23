@@ -1441,7 +1441,7 @@ try {
         case 'st_bill.proof_save': {      // a screenshot for one bill: kind 'contact' (customer's number saved) or 'community' (added to the community). Pasted (Ctrl+V), picked or dropped on the page.
             $auth = require_auth(); if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $id = (int)($in['bill_id'] ?? 0); $kind = (string)($in['kind'] ?? '');
-            if (!in_array($kind, ['contact', 'community'], true)) json_response(['error' => 'Wrong kind.'], 422);
+            if (!preg_match('/^(contact|community)[2-6]?$/', $kind)) json_response(['error' => 'Wrong kind.'], 422);   // contact / community = the first customer; contact2..6 / community2..6 = friends who came with him
             $q = $pdo->prepare("SELECT bill_no, biz_date, status FROM st_bills WHERE bill_id = ?"); $q->execute([$id]); $b = $q->fetch();
             if (!$b) json_response(['error' => 'Bill not found.'], 404);
             if ($b['status'] !== 'ok') json_response(['error' => 'This bill is cancelled.'], 409);

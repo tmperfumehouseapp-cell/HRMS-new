@@ -944,7 +944,7 @@ function st_proof_map(PDO $pdo, array $ids): array
 /** bills that have BOTH screenshots (read-only: never creates the table) */
 function st_proof_done_ids(PDO $pdo): array
 {
-    try { if (!$pdo->query("SHOW TABLES LIKE 'st_bill_proofs'")->fetch()) return []; return array_map('intval', $pdo->query("SELECT bill_id FROM st_bill_proofs GROUP BY bill_id HAVING COUNT(DISTINCT kind) >= 2")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { return []; }
+    try { if (!$pdo->query("SHOW TABLES LIKE 'st_bill_proofs'")->fetch()) return []; return array_map('intval', $pdo->query("SELECT bill_id FROM st_bill_proofs GROUP BY bill_id HAVING SUM(kind = 'contact') > 0 AND SUM(kind = 'community') > 0")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { return []; }
 }
 function st_vcf_esc(string $t): string { return str_replace(["\\", ",", ";", "\r", "\n"], ["\\\\", "\\,", "\\;", '', "\\n"], $t); }
 
