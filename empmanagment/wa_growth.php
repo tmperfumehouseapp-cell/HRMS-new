@@ -94,7 +94,8 @@ function wag_cfg(PDO $pdo): array
     $__gbl = wag_gb_lock($pdo);
     // once (owner, 23 Nov): the whole guidebook is rewritten as ONE clean version (newest rules first, one rule per topic); see wa_guide_clean.php
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_clean_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_clean_run($pdo); } } catch (Throwable $e) { }
-    try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_purge_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_purge_old($pdo); } } catch (Throwable $e) { }   // the old guidebook versions are removed once (owner, 23 Nov)
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_purge_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_purge_old($pdo); } } catch (Throwable $e) { }
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_card_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_card($pdo); } } catch (Throwable $e) { }   // the OUR OWN CARD sentence goes into the live guidebook once (owner, 23 Nov)   // the old guidebook versions are removed once (owner, 23 Nov)
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules4', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules4', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
@@ -519,6 +520,8 @@ function wag_ml_request(array $msgs): ?array
     }
     return null;
 }
+/** Does the customer's message talk about the price (mehenga, discount, kam karo, best price ...)? A lower price column is allowed only then (owner, 23 Nov). */
+function wag_price_talk(string $t): bool { return (bool)preg_match('/(mehang|mahang|mehenga|mahenga|mehnga|mahnga|mehengi|महंग|महँग|મોંઘ|costly|expensive|too much|zyada|jyada|kam kar|kam do|thoda kam|discount|best price|final price|last price|budget|sasta|cheaper|reduce|negotiat|bargain|rate kam|price kam|kitna kam|offer)/u', mb_strtolower($t)); }
 /** 🚫 owner (22 Nov): the customer's newest message gives only a NUMBER OF BOTTLES ("I want 5 bottle, tell me the total") and no size in ml anywhere in his last messages: the bot must not say any price (it guessed one bottle's price as the total). True = no price now, ask the size. */
 function wag_bottles_no_size(array $msgs): bool
 {
@@ -535,10 +538,12 @@ function wag_chart_row(PDO $pdo, int $total): ?array
     return $best;
 }
 /** 🪜 owner (22 Nov): the bot started at the chart price and then dropped to the 3% price within minutes (2,270 → 2,050 → 1,980 for 160 ml). Rule: the first price is the 7% chart price and every later price comes down ONE price column at a time, never straight to the lowest. Index of the deepest column of this row that was already said earlier in the chat (-1 = none said yet). */
+/** owner, 23 Nov 22:46 (the bot said "6 x 50 ml Rs 2,799" after its own card said 3,199; the chart row of 300 ml is 3,200 ... 2,800): our cards and the AI write prices one rupee under the chart (x99). A price within Rs 3 of a chart column IS that column: index of the column of $p near $v, or -1. */
+function wag_near_idx(array $p, int $v, int $tol = 3): int { foreach ($p as $j => $x) if (abs((int)$x - $v) <= $tol) return (int)$j; return -1; }
 function wag_price_depth(array $msgs, array $row): int
 {
     $prev = ''; foreach ($msgs as $m) if (($m['who'] ?? '') !== 'customer') $prev .= ' ' . (string)($m['text'] ?? ''); $prev = str_replace(',', '', $prev); $d = -1;
-    foreach ($row['p'] as $j => $v) if (strpos($prev, (string)(int)$v) !== false) $d = max($d, (int)$j);
+    if (preg_match_all('/(?<!\d)(\d{3,6})(?!\d)/', $prev, $__nn)) foreach ($__nn[1] as $__n) { $__j = wag_near_idx((array)$row['p'], (int)$__n); if ($__j > $d) $d = $__j; }   // a column price said earlier, also as a x99 price
     return $d;
 }
 /** owner, 23 Nov (screenshot: the customer arrived with "10 x 20ml combo for Rs 2200" from the website button and the bot answered "Rs 2,350"; "if he comes with 2200, the negotiation starts from 2200"): the chart column whose price is nearest to a price the CUSTOMER himself named for this pack (within 1.5%), or -1. */
@@ -566,7 +571,7 @@ function wag_pack_price_clamp(PDO $pdo, array $msgs, string $reply): string
         $fu = (int)($GLOBALS['lib_fu_step'] ?? 0); $changed = false;
         $__lc = ''; foreach (array_reverse($msgs) as $__mm) if (($__mm['who'] ?? '') === 'customer') { $__lc = mb_strtolower((string)($__mm['text'] ?? '')); break; } $__obj = (bool)preg_match('/(mehang|mahang|mehenga|mahenga|mehnga|mahnga|mehengi|महंग|महँग|મોંઘ|costly|expensive|too much|zyada|jyada|kam kar|kam do|thoda kam|discount|best price|final price|last price|budget|sasta|cheaper|reduce|negotiat|bargain|rate kam|price kam|kitna kam|offer)/u', $__lc);   // owner, 23 Nov: a lower column only when the customer talks about the price (a perfume name or 'yes' is no reason to drop 2,350 to 2,050)
         $out = preg_replace_callback('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu', function ($m) use ($rows, $msgs, $floor, $fu, $__obj, &$changed, $pdo) {
-            $total = (int)$m[1] * (int)$m[2]; if (!isset($rows[$total])) return $m[0]; $p = $rows[$total]; $v = (int)str_replace(',', '', $m[5]); $j = array_search($v, $p, true); if ($j === false) return $m[0];
+            $total = (int)$m[1] * (int)$m[2]; if (!isset($rows[$total])) return $m[0]; $p = $rows[$total]; $v = (int)str_replace(',', '', $m[5]); $j = wag_near_idx($p, $v); if ($j < 0) return $m[0];
             $row = ['ml' => $total, 'p' => $p, 'chart' => (int)$p[0]]; $dp = wag_price_depth($msgs, $row); $arr = wag_arrival_idx($row, $msgs); $lo = max($dp, $arr); $maxIdx = min($floor, count($p) - 1);
             if ($lo < 0) { $lo = 0; $hi = 0; } else { $hi = (($fu > 0 && $fu < 9) || ($fu === 0 && !$__obj)) ? $lo : $lo + 1; }
             $hi = max($lo, min($hi, $maxIdx)); $want = max($lo, min((int)$j, $hi)); if ($want === (int)$j) return $m[0];
@@ -591,13 +596,15 @@ function wag_price_enforce0(PDO $pdo, array $msgs, string $reply): array
         foreach ((array)($c['rows'] ?? []) as $r) { if ((int)($r['ml'] ?? 0) === $row['ml']) continue; foreach ((array)($r['p'] ?? []) as $v) { $v = (int)$v; if ($v >= 500 && !isset($mine[$v])) $other[$v] = 1; } }
         $custNums = []; foreach ($msgs as $m) if (($m['who'] ?? '') === 'customer') { preg_match_all('/\d[\d,]{2,5}/', (string)($m['text'] ?? ''), $nn); foreach ($nn[0] as $x) $custNums[(int)str_replace(',', '', $x)] = 1; }
         $prev = ''; foreach ($msgs as $m) if (($m['who'] ?? '') !== 'customer') $prev .= ' ' . (string)($m['text'] ?? ''); $prev = str_replace(',', '', $prev);
-        $firstQuote = true; foreach ($row['p'] as $v) if (strpos($prev, (string)$v) !== false) { $firstQuote = false; break; }
+        $firstQuote = (wag_price_depth($msgs, $row) < 0);   // (a price said before counts also as a x99 price)
+        $__lcE = ''; foreach (array_reverse($msgs) as $__mm) if (($__mm['who'] ?? '') === 'customer') { $__lcE = (string)($__mm['text'] ?? ''); break; } $__objE = wag_price_talk($__lcE);
         $__dp = wag_price_depth($msgs, $row); $fixIdx = max(0, $__dp); $__arr = wag_arrival_idx($row, $msgs); if ($__arr >= 0) { $__dp = max($__dp, $__arr); $firstQuote = false; $fixIdx = $__dp; }   // the customer's own price is the level already on the table   // owner, 23 Nov (a 1000 ml customer got 8,530 > 8,270 > 8,000 > 7,470 in four follow-ups within 100 minutes, then 12 x 100 ml at the lowest column): a FOLLOW-UP before step 9 never goes lower than the price already said; the night steps 9 / 10 may go one column down
         preg_match_all('/(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $reply, $am); $bad = false;
         foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 500 || isset($custNums[$v])) continue;
+            $__jn = wag_near_idx((array)$row['p'], $v); if ($__jn >= 0) $v = (int)$row['p'][$__jn]; else { $__oth = false; foreach ((array)($c['rows'] ?? []) as $__r2) if ((int)($__r2['ml'] ?? 0) !== $row['ml'] && wag_near_idx((array)($__r2['p'] ?? []), $v) >= 0) { $__oth = true; break; } if ($__oth) { $bad = true; break; } }   // a x99 price is its column; a x99 price of another size is the other size's
             if (isset($other[$v])) { $bad = true; break; }                                  // the price of another size
             if (isset($mine[$v]) && $v !== $row['chart'] && $firstQuote) { $bad = true; break; }   // the first price said is not the chart price
-            if (isset($mine[$v])) { $jv = array_search($v, array_map('intval', $row['p']), true); $__allow = $__dp + 1; if (!empty($GLOBALS['lib_fu_step']) && (int)$GLOBALS['lib_fu_step'] < 9) $__allow = max(0, $__dp); if ($jv !== false && $jv > $__allow) { $bad = true; $fixIdx = $__allow; break; } if ($jv !== false && $__arr >= 0 && $jv < $__arr) { $bad = true; $fixIdx = $__arr; break; } /* a quote HIGHER than the price he arrived with */ }   // 🪜 a jump of more than one price column below what was said before
+            if (isset($mine[$v])) { $jv = array_search($v, array_map('intval', $row['p']), true); $__allow = $__objE ? $__dp + 1 : max(0, $__dp); if (!empty($GLOBALS['lib_fu_step']) && (int)$GLOBALS['lib_fu_step'] < 9) $__allow = max(0, $__dp);   /* a lower column only when he talks about the price */ if ($jv !== false && $jv > $__allow) { $bad = true; $fixIdx = $__allow; break; } if ($jv !== false && $__arr >= 0 && $jv < $__arr) { $bad = true; $fixIdx = $__arr; break; } /* a quote HIGHER than the price he arrived with */ }   // 🪜 a jump of more than one price column below what was said before
         }
         if (!$bad) return [$reply, false];
         $__ob = $__dp < 0 ? wag_one_bottle_msg($pdo, (int)$rq['qty'], (int)$rq['ml']) : ''; if ($__ob !== '') return [$__ob, true];   // nothing quoted yet and he asked 1-2 bottles: the one-bottle-is-expensive message instead of a single bottle's price (owner, 23 Nov: '50 ml ka price Rs 900' after the Instagram answer)
@@ -821,7 +828,7 @@ function wag_standing_rules(): string
         . "- SELL MORE PERFUMES: a customer who asks the price of 1-2 bottles is shown the bigger combos of the same size with the exact chart prices.\n"
         . "- QUALITY: a customer who doubts the quality or wants to check the fragrance gets reviews and a trial invitation, no price and no discount.\n"
         . "- ONLY OUR CATALOGUE: name, suggest or confirm only perfumes in our catalogue; never solid, shower gel, OG, 10 ml.\n"
-        . "- PRICE LADDER: first price = chart 7% column (or the column of a price he arrived with); a price already said is never raised, and lowered by ONE column (never below 6%) only when the customer talks about the price; follow-ups never lower it; the price is for the total ml; asked 1-2 bottles -> one bottle is expensive, show 3 (or 4); 20 ml only as 5+ bottles; 'Combo of N' = N bottles, size from the chat else ask; never the word chart.\n"
+        . "- PRICE LADDER: first price = chart 7% column (or the column of a price he arrived with); a price already said is never raised, and lowered by ONE column (never below 6%) only when the customer talks about the price; a pack our own card already priced is quoted at the card price (never one rupee under a lower column); follow-ups never lower it; the price is for the total ml; asked 1-2 bottles -> one bottle is expensive, show 3 (or 4); 20 ml only as 5+ bottles; 'Combo of N' = N bottles, size from the chat else ask; never the word chart.\n"
         . "- NEGOTIATION: the first price is the chart's 7% column; if the customer or a salesperson already quoted a level in the chat, continue from THAT level (never higher); after the 6.5% and then the 6% column hold the price, no long negotiation. Talk about price or discount ONLY when the customer himself brings up the price.\n"
         . "- COD: cash on delivery is available, but 35% of the order amount must be paid in advance for the order confirmation, the rest is paid on delivery. Say it when he asks about COD or how to pay (the bot never takes the payment; a person sends the payment link).\n"
         . "- ORDER DETAILS FORM (the shop's own): when he is ready to order, ask for these details exactly: 1. Full Name 2. Address 3. Near By Landmark 4. City 5. State 6. Pincode 7. Email 8. Primary No 9. Alternate No.\n"
@@ -1574,8 +1581,9 @@ function wag_final_gate(PDO $pdo, string $key, string $text, array $o = []): arr
             $chat = ''; foreach ($msgs as $m) $chat .= ' ' . (string)$m['text']; $chat = str_replace(',', '', $chat);
             // a price of a column BELOW the 6% floor (3% / 3.5% / 4% / 5% of a pack) is never told (owner: the 6% column is the lowest): the sentence with it is removed (or the reply is blocked when nothing is left)
             $fl = 2; if (function_exists('wag_chart_cols') && !empty($c['cols'])) { try { [$__i0, $__fl] = wag_chart_cols(array_values(array_map('floatval', (array)$c['cols']))); $fl = (int)$__fl; } catch (Throwable $e) { } }
-            $okHi = []; $deep = []; foreach ((array)($c['rows'] ?? []) as $r) foreach ((array)($r['p'] ?? []) as $ci => $v) { $v = (int)$v; if ($v <= 0) continue; if ((int)$ci <= $fl) $okHi[$v] = 1; else $deep[$v] = 1; }
-            foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v >= 1000 && isset($deep[$v]) && !isset($okHi[$v]) && strpos($chat, (string)$v) === false) {
+            $okHi = []; $deep = []; $crow = (array)($c['rows'] ?? []);
+            foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); $hiHit = false; $deepHit = false; if ($v >= 1000) foreach ($crow as $__r) { $ni = wag_near_idx((array)($__r['p'] ?? []), $v); if ($ni >= 0) { if ($ni <= $fl) $hiHit = true; else $deepHit = true; } }   // a price within Rs 3 of a column below the 6% floor (3,199 style prices included)
+                if ($v >= 1000 && $deepHit && !$hiHit && strpos($chat, (string)$v) === false) {
                     $parts = preg_split('/(?<=[.!?])\s+/u', $text) ?: [$text]; $keep = []; foreach ($parts as $p) if (!preg_match('/(?:rs\.?|₹)\s*' . preg_quote(number_format($v), '/') . '\b|(?:rs\.?|₹)\s*' . $v . '\b/iu', $p)) $keep[] = $p; $nt = trim(implode(' ', $keep));
                     wag_fg_count($pdo, 'below_floor_price', $nt === '' ? 'blocked' : 'fixed'); if ($nt === '') return [$text, true]; $text = $nt; break; } }
             foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 1000 || isset($ok[$v]) || isset($ok[$v - 1]) || isset($ok[$v + 1]) || strpos($chat, (string)$v) !== false) continue;

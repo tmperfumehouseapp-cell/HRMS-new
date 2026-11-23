@@ -1,7 +1,7 @@
 <?php
 // The final gate (owner, 23 Nov): own FINAL offer words, bigger jumps, unknown amounts, salesperson's price. In-memory database, stubs for the shop functions.
 $src = file_get_contents(__DIR__ . '/../empmanagment/wa_growth.php');
-preg_match('/\nfunction wag_jump_to\([^\n]*\n/', $src, $mj); eval($mj[0]);
+preg_match('/\nfunction wag_jump_to\([^\n]*\n/', $src, $mj); eval($mj[0]); preg_match('/\nfunction wag_near_idx\([^\n]*\n/', $src, $mn); eval($mn[0]);
 foreach (['wag_fg_count', 'wag_fg_msgs', 'wag_final_gate', 'wag_ml_request', 'wag_chart_row', 'wag_arrival_idx', 'wag_person_price_guard'] as $f) {
     if (!preg_match('/\nfunction ' . $f . '\(.*?\n\}\n/s', $src, $m)) { echo "FAIL cannot find $f\n"; exit(1); } eval($m[0]);
 }
