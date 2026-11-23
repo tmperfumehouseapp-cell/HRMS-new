@@ -33,7 +33,9 @@ export function getConfig(env = process.env) {
     graphVersion: env.META_GRAPH_VERSION || 'v21.0',
     datasetId: env.META_DATASET_ID || '',
     wabaId: env.META_WABA_ID || '',
-    adAccountId: String(env.META_AD_ACCOUNT_ID || '').replace(/^act_/, ''),
+    // one or more ad accounts, comma separated (META_AD_ACCOUNT_IDS, or the old single META_AD_ACCOUNT_ID)
+    adAccountIds: String(env.META_AD_ACCOUNT_IDS || env.META_AD_ACCOUNT_ID || '').split(',')
+      .map((x) => x.trim().replace(/^act_/, '')).filter(Boolean),
     partnerAgent: env.META_PARTNER_AGENT || 'TMPerfumehouse-CTWA',
     testEventCode: env.META_TEST_EVENT_CODE || '',
     conversationAction: env.META_CONVERSATION_ACTION_TYPE || 'onsite_conversion.messaging_conversation_started_7d',

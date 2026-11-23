@@ -1,7 +1,7 @@
 import { loadEnv, getConfig } from './config.js';
 import { openDb } from './db.js';
 import { dailyReport, toCsv, toText, todayIn, shiftDay } from './report.js';
-import { syncSpend, retryPending } from './meta.js';
+import { syncSpend, retryPending, getWabaDataset } from './meta.js';
 
 loadEnv();
 const cfg = getConfig();
@@ -18,9 +18,11 @@ if (cmd === 'report') {
   process.stdout.write(flag('csv', false) ? toCsv(rep) : toText(rep));
 } else if (cmd === 'sync-spend') {
   console.log(`synced ${await syncSpend(db, cfg, Number(flag('days', 3)))} ad-day rows`);
+} else if (cmd === 'dataset') {
+  console.log('dataset id:', await getWabaDataset(cfg));
 } else if (cmd === 'retry-capi') {
   console.log(JSON.stringify(await retryPending(db, cfg)));
 } else {
-  console.log('usage: node src/cli.js report [--date YYYY-MM-DD] [--days N] [--csv] [--sync] | sync-spend [--days N] | retry-capi');
+  console.log('usage: node src/cli.js report [--date YYYY-MM-DD] [--days N] [--csv] [--sync] | sync-spend [--days N] | retry-capi | dataset');
   process.exit(1);
 }

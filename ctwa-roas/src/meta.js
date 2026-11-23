@@ -66,33 +66,49 @@ export async function retryPending(db, cfg, fetchImpl = fetch, now) {
   return out;
 }
 
-/** Ad-level daily spend from the Marketing API Insights endpoint, then upsert into ad_spend. */
+/** Ad-level daily spend from the Marketing API Insights endpoint (every configured ad account), upserted into ad_spend. */
 export async function syncSpend(db, cfg, days = 3, fetchImpl = fetch, today = new Date()) {
-  if (!cfg.metaToken || !cfg.adAccountId) throw new Error('META_ACCESS_TOKEN / META_AD_ACCOUNT_ID not set');
+  if (!cfg.metaToken || !cfg.adAccountIds.length) throw new Error('META_ACCESS_TOKEN / META_AD_ACCOUNT_IDS not set');
   const day = (d) => d.toISOString().slice(0, 10);
   const since = day(new Date(today.getTime() - (days - 1) * 86400000));
-  const qs = new URLSearchParams({
-    level: 'ad', time_increment: '1', limit: '500',
-    fields: 'ad_id,ad_name,spend,impressions,clicks,actions',
-    time_range: JSON.stringify({ since, until: day(today) }),
-  });
-  let url = `${GRAPH}/${cfg.graphVersion}/act_${cfg.adAccountId}/insights?${qs}`;
   const up = db.prepare(`INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations)
     VALUES (?,?,?,?,?,?,?) ON CONFLICT(day,ad_id) DO UPDATE SET ad_name=excluded.ad_name, spend=excluded.spend,
     impressions=excluded.impressions, link_clicks=excluded.link_clicks, conversations=excluded.conversations`);
   let n = 0;
-  while (url) {
-    if (new URL(url).origin !== GRAPH) throw new Error('refusing to follow paging URL off graph.facebook.com');
-    const res = await fetchImpl(url, { headers: { authorization: `Bearer ${cfg.metaToken}` } });
-    const j = await res.json();
-    if (!res.ok || j.error) throw new Error(`Insights: ${j.error?.message || res.status}`);
-    for (const r of j.data ?? []) {
-      const conv = (r.actions ?? []).find((a) => a.action_type === cfg.conversationAction);
-      up.run(r.date_start, String(r.ad_id), r.ad_name ?? null, Number(r.spend) || 0,
-        Number(r.impressions) || 0, Number(r.clicks) || 0, Number(conv?.value) || 0);
-      n++;
+  for (const acct of cfg.adAccountIds) {
+    const qs = new URLSearchParams({
+      level: 'ad', time_increment: '1', limit: '500',
+      fields: 'ad_id,ad_name,spend,impressions,clicks,actions',
+      time_range: JSON.stringify({ since, until: day(today) }),
+    });
+    let url = `${GRAPH}/${cfg.graphVersion}/act_${acct}/insights?${qs}`;
+    while (url) {
+      if (new URL(url).origin !== GRAPH) throw new Error('refusing to follow paging URL off graph.facebook.com');
+      const res = await fetchImpl(url, { headers: { authorization: `Bearer ${cfg.metaToken}` } });
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(`Insights act_${acct}: ${j.error?.message || res.status}`);
+      for (const r of j.data ?? []) {
+        const conv = (r.actions ?? []).find((a) => a.action_type === cfg.conversationAction);
+        up.run(r.date_start, String(r.ad_id), r.ad_name ?? null, Number(r.spend) || 0,
+          Number(r.impressions) || 0, Number(r.clicks) || 0, Number(conv?.value) || 0);
+        n++;
+      }
+      url = j.paging?.next ?? null;
     }
-    url = j.paging?.next ?? null;
   }
   return n;
+}
+
+/**
+ * Asks Meta for the dataset tied to the WhatsApp Business Account (returns the existing one, or creates it).
+ * UNVERIFIED for WhatsApp: the Meta page that documents it was cut off; the Messenger flow is POST /{page_id}/dataset.
+ */
+export async function getWabaDataset(cfg, fetchImpl = fetch) {
+  if (!cfg.metaToken || !cfg.wabaId) throw new Error('META_ACCESS_TOKEN / META_WABA_ID not set');
+  const res = await fetchImpl(`${GRAPH}/${cfg.graphVersion}/${cfg.wabaId}/dataset`, {
+    method: 'POST', headers: { authorization: `Bearer ${cfg.metaToken}` },
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(j.error?.message || `HTTP ${res.status}`);
+  return j.id;
 }

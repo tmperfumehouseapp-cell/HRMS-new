@@ -154,3 +154,12 @@ test('shopify bad HMAC rejected; syncSpend parses insights + pages', async () =>
   assert.equal(db2.prepare("SELECT conversations c FROM ad_spend WHERE day='2026-11-21'").get().c, 4);
   await assert.rejects(syncSpend(db2, cfg, 1, async () => new Response(JSON.stringify({ data: [], paging: { next: 'https://evil.example/x' } })), new Date()));
 });
+
+test('syncSpend loops every ad account', async () => {
+  const c2 = getConfig({ META_ACCESS_TOKEN: 'T', META_AD_ACCOUNT_IDS: 'act_1, 2' });
+  assert.deepEqual(c2.adAccountIds, ['1', '2']);
+  const seen = [];
+  const db = openDb(':memory:');
+  await syncSpend(db, c2, 1, async (u) => { seen.push(String(u).match(/act_(\d+)/)[1]); return new Response(JSON.stringify({ data: [] })); });
+  assert.deepEqual(seen, ['1', '2']);
+});
