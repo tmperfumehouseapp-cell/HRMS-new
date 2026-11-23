@@ -74,7 +74,7 @@ export function createHandler({ db, cfg, fetchImpl = fetch, log = console }) {
         if (!cfg.reportToken || req.headers.authorization !== `Bearer ${cfg.reportToken}`) return send(res, 401, 'unauthorized');
         const to = url.searchParams.get('date') || shiftDay(todayIn(cfg.tzOffsetMin), -1);
         const days = Math.max(1, Math.min(90, Number(url.searchParams.get('days') || 1)));
-        const rep = dailyReport(db, { from: shiftDay(to, -(days - 1)), to }, cfg.tzOffsetMin);
+        const rep = dailyReport(db, { from: shiftDay(to, -(days - 1)), to }, cfg.tzOffsetMin, cfg.adNameMatch || undefined);
         return url.searchParams.get('format') === 'csv'
           ? send(res, 200, toCsv(rep), 'text/csv') : send(res, 200, JSON.stringify(rep), 'application/json');
       }
@@ -87,7 +87,7 @@ export function createHandler({ db, cfg, fetchImpl = fetch, log = console }) {
           return send(res, 401, 'unauthorized');
         if (url.pathname === '/diag') {
           const day = /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : todayIn(cfg.tzOffsetMin);
-          const d = diagDay(db, day, cfg.tzOffsetMin);
+          const d = diagDay(db, day, cfg.tzOffsetMin, cfg.adNameMatch || undefined);
           // Meta's numbers older than 5 minutes: read them again behind this answer (the next Diagnose shows them); never two reads at once
           const stale = !d.health.spend_sync_at || Date.now() / 1000 - d.health.spend_sync_at > 300;
           d.health.refreshing = false;

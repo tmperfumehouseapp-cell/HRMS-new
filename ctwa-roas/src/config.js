@@ -41,6 +41,7 @@ export function getConfig(env = process.env) {
     partnerAgent: env.META_PARTNER_AGENT || 'TMPerfumehouse-CTWA',
     testEventCode: env.META_TEST_EVENT_CODE || '',
     conversationAction: env.META_CONVERSATION_ACTION_TYPE || 'onsite_conversion.messaging_conversation_started_7d',
+    adNameMatch: env.CTWA_AD_NAME_MATCH || '',   // optional: a pattern for the names of click-to-WhatsApp campaigns / ads (default: starts with WhatsApp or CTWA)
     windowDays: Number(env.ATTRIBUTION_WINDOW_DAYS || 7),
     syncIntervalMin: Number(env.SYNC_INTERVAL_MIN ?? 60),
   };

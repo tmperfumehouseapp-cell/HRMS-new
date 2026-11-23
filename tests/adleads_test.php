@@ -67,6 +67,8 @@ $d = wag_adcheck($pdo, $D, $svc); $ba = []; foreach ($d['hrms']['by_ad'] as $x) 
 ok($d['hrms']['total'] === 3 && $d['hrms']['pre'] === 1 && $d['hrms']['tag'] === 2 && $d['hrms']['other'] === 1 && $d['hrms']['new'] === 3 && $ba == ['AD1' => 1, 'AD2' => 1] && $d['svc']['ads'][0]['clicks'] === 1 && $d['svc_error'] === '', 'diagnose: HRMS leads by the rule, per ad only with a Meta tag: ' . json_encode($d['hrms']));
 ok($d['sum']['leads'] === 3 && $d['sum']['shopify'] === 1 && $d['sum']['manual'] === 1 && $d['sum']['photo_no_order'] === 1 && $d['sum']['manual_amt'] == 2000 && isset($d['chat']['9000000006']) && !isset($d['chat']['9000000002']), 'diagnose: what happened to the leads: ' . json_encode($d['sum']));
 ok($d['staff'][0]['name'] === 'Jay' && $d['staff'][0]['manual'] === 1 && $d['staff'][0]['no_proof'] === 1 && $d['staff'][1]['name'] === 'Kiran' && $d['staff'][1]['shopify'] === 1, 'diagnose: per salesperson, manual first: ' . json_encode($d['staff']));
+$pa = []; foreach ($d['hrms']['by_ad'] as $x) $pa[$x['ad_id']] = [$x['orders'], $x['amt']];
+ok($pa['AD1'] == [1, 1500] && $pa['AD2'] == [0, 0] && $d['hrms']['no_tag'] == ['n' => 1, 'orders' => 1, 'amt' => 2000], 'orders per ad, and the leads without an ad tag: ' . json_encode([$pa, $d['hrms']['no_tag']]));
 ok(wag_adcheck($pdo, $D, $svc, 2)['sum']['leads'] === 0 && wag_adcheck($pdo, $D, $svc, 1)['sum']['leads'] === 3, 'diagnose for one number');
 $d0 = wag_adcheck($pdo, $D, [null, 'down']); ok($d0['svc'] === null && $d0['svc_error'] === 'down' && $d0['hrms']['total'] === 3, 'diagnose: the HRMS side still answers when the service is down');
 $o = wag_adcheck_one($pdo, '+91 90000-00001', [['clicks' => [], 'orders' => []], '']);

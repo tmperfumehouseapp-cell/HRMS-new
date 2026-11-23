@@ -73,6 +73,7 @@
   .wabtn.sent{background:#e6f4ec;color:#157a3c}
   .lnk{border:1.5px solid var(--sx-line);background:#fff;border-radius:12px;padding:8px 10px;font:700 12px inherit;cursor:pointer}
   .ppl{grid-column:1/-1;display:flex;gap:6px 14px;flex-wrap:wrap;padding:2px 0 4px 52px}
+  .prf{grid-column:1/-1;display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center;padding:2px 0 6px 52px}.pbox{display:inline-flex;gap:6px;align-items:center;padding:7px 12px;border:2px dashed var(--sx-blue,#2a62c9);border-radius:12px;font-size:12.5px;font-weight:700;color:var(--sx-blue,#2a62c9);background:#fff;cursor:text;outline:0}.pbox:focus,.pbox.over{background:#eaf1ff;box-shadow:0 0 0 3px rgba(42,98,201,.25)}.plink{text-decoration:underline;cursor:pointer}@media (max-width:640px){.prf{padding-left:50px}}
   .pp{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:11.5px}
   .pp>b{font-size:12px}
   .st{display:inline-flex;gap:3px;align-items:center;padding:1px 7px;border-radius:999px;font-weight:800;font-size:11px;background:#eef0f3;color:#6b7280}
@@ -512,6 +513,17 @@
     const c = e.target.closest('[data-copy]'); if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); c.textContent = 'Copied ✓'; } catch (err) { prompt('Copy this link', c.dataset.copy); } return; }
     if (e.target.id === 'doneX') $('doneBox').innerHTML = '';
   });
+  let followFrom = '', followDate = '';
+  /* the two screenshots of a bill: the customer's number saved + added to the community. Paste (Win+Shift+S, then Ctrl+V), pick a file or drop one on the box. */
+  const proofRow = (b) => {
+    if (b.status !== 'ok') return '';
+    const P = b.proof || {}, done = !!(P.contact && P.community), on = !!followFrom && followDate >= followFrom;
+    const one = (k, label) => P[k]
+      ? `<span class="st y">✅ ${label} · ${esc(P[k].by || '')} ${esc(String(P[k].at || '').slice(11, 16))}</span>${isManager ? `<button class="minibtn" data-pview="${b.bill_id}|${k}">View</button><button class="minibtn" data-pclr="${b.bill_id}|${k}" style="color:#b3261e">✕</button>` : ''}`
+      : `<span class="pbox" tabindex="0" data-pb="${b.bill_id}|${k}" title="Click here, then press Ctrl+V to paste the screenshot (Windows: Win+Shift+S to take it). You can also drop a picture here.">📋 ${label}: click · Ctrl+V · <label class="plink">📎 file<input type="file" accept="image/*" data-pf="${b.bill_id}|${k}" style="display:none"></label></span>`;
+    const state = done ? '<span class="st y" style="font-weight:800">Counted in commission ✓</span>' : (on ? '<span class="st n" style="font-weight:800;background:#fde8e8;color:#b3261e">Not counted yet — both screenshots needed</span>' : '');
+    return `<div class="prf">${one('contact', '📇 Number saved')}${one('community', '👥 Added to community')}${state}</div>`;
+  };
   const stp = (at, label) => `<span class="st ${at ? 'y' : 'n'}">${label}</span>`;
   const peopleRow = (b) => !(b.people && b.people.length) || b.status !== 'ok' ? '' : `<div class="ppl">${b.people.map((p) => p.declined ? `<span class="pp"><b>${esc(p.name || 'Customer')}</b><span class="st">no number${p.reason ? ' · ' + esc(p.reason) : ''}</span></span>`
     : `<span class="pp"><b>${esc(p.name || '+' + p.phone.slice(-10))}</b>${p.returning ? '<span class="st y" style="background:var(--sx-violet-t);color:var(--sx-violet)">↺ returning</span>' : ''}${p.sent_at ? stp(1, 'Sent') : `<button class="minibtn" data-wa="${p.person_id}" data-ret="${p.returning ? 1 : 0}" data-u="${esc(p.wa_url || '')}">Send on WhatsApp</button>${p.wa_url2 ? `<button class="minibtn" data-wa2="1" data-u="${esc(p.wa_url2)}" style="background:#6d4fc2">📞 Numbers</button>` : ''}`}${stp(p.opened_at, 'Opened')}${p.returning ? '' : stp(p.contact_at, 'Contacts') + stp(p.community_at, 'Community') + stp(p.review_at, 'Review')}</span>`).join('')}</div>`;
@@ -549,14 +561,14 @@
       const d = await api.get('st_bill.list', listDate ? { date: listDate } : {}), ok = d.bills.filter((b) => b.status === 'ok');
       if (!listDate || listDate === d.today) { $('hTotal').textContent = inr(d.total); $('hBills').textContent = ok.length; $('hMl').textContent = d.total_ml; $('hAvg').textContent = inr(ok.length ? d.total / ok.length : 0); }
       $('hDay').textContent = '· ' + new Date(d.today + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · a new day starts at ' + d.day_start + ' AM';
-      lastBills = d.bills; $('dayPick').value = d.date; $('dayPick').max = d.today; setBizDay(d.today);
+      lastBills = d.bills; followFrom = d.follow_from || ''; followDate = d.date; $('dayPick').value = d.date; $('dayPick').max = d.today; setBizDay(d.today);
       $('dayTot').textContent = `${ok.length} bill${ok.length === 1 ? '' : 's'} · ${inr(d.total)} · ${d.total_ml} ml`;
       renderPayF(d.bills); const shown = d.bills.filter(passPay);
       $('bills').innerHTML = shown.length ? shown.map((b) => `<div class="brow ${b.status === 'void' ? 'void' : ''}"><span class="av">${sxAv(b.emp_name)}</span>
         <span class="nm"><b>${esc(b.bill_no)}</b><small>${esc(b.emp_name)}${b.helper_emp_name ? ' + ' + esc(b.helper_emp_name) : ''}${b.customer_name ? ' · ' + esc(b.customer_name) : ''}${b.pay_mode === 'split' ? ' · <b style="color:var(--sx-ink)">' + inr(+b.cash_amt) + ' cash + ' + inr(+b.online_amt) + ' online</b>' : ''}</small></span>
         <span class="meta"><span class="h" style="font-weight:700">${b.total_ml}</span><span class="sx-pill m" style="background:var(--sx-blue-t);color:var(--sx-blue)">${b.total_ml} ml</span><span class="h sx-mut">${esc(b.created_at.slice(11, 16))}</span><span class="sx-pill">${esc(PAY[b.pay_mode] || b.pay_mode)}</span>${b.chain_name ? (b.inv_no ? `<span class="sx-pill good" title="Chain ${esc(b.chain_name)}">⛓ ${b.inv_url ? `<a href="${esc(b.inv_url)}" target="_blank" rel="noopener" style="color:inherit">${esc(b.inv_no)}</a>` : esc(b.inv_no)}</span>` : (b.status === 'ok' ? `<button class="minibtn" data-inv="${b.bill_id}" title="${esc(b.inv_err || '')}">⛓ Make GST invoice</button>` : '')) : ''}${b.order_code ? `<span class="sx-pill good">${esc(b.order_code)}</span>` : (b.status === 'ok' ? `<span class="sx-pill warn">${sxi('alert')} no code</span>` : '')}</span>
         <b class="tot" style="text-align:right;background:none;color:inherit;padding:0;margin:0;display:block;font-size:14px">${inr(b.total)}</b>
-        ${b.status === 'ok' && (isManager || d.date === d.today) ? `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="x" data-p="${b.bill_id}" style="color:var(--sx-blue,#2a62c9)">Payment</button>${isManager ? `<button class="x" data-d="${b.bill_id}" title="Count this bill on another day">Change day</button><button class="x" data-ea="${b.bill_id}" data-eat="${b.total}" title="Correct a wrong bill amount">Edit amount</button><button class="x" data-v="${b.bill_id}">Cancel</button>` : ''}</span>` : '<span></span>'}${payOpen === b.bill_id && payD ? payEditor(b) : ''}${dayOpen === b.bill_id ? `<div style="grid-column:1/-1;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:8px 0"><label class="sx-f">This bill counts on<input class="sx-in" type="date" id="dayNew" min="${shiftDay(d.today, -45)}" max="${d.today}" value="${d.date}"></label><button class="sx-btn" data-dgo="${b.bill_id}">Move</button><button class="sx-btn ghost" data-dx="1">Cancel</button></div>` : ''}${peopleRow(b)}</div>`).join('') : `<div class="sx-mut" style="padding:10px 4px">${d.bills.length ? 'No ' + (payFilter === 'online' ? 'online / UPI' : payFilter === 'cash' ? 'cash' : 'split') + ' bills on this day.' : 'No bills on this day. Press <b>New bill</b> or just scan a bottle.'}</div>`;
+        ${b.status === 'ok' && (isManager || d.date === d.today) ? `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="x" data-p="${b.bill_id}" style="color:var(--sx-blue,#2a62c9)">Payment</button>${isManager ? `<button class="x" data-d="${b.bill_id}" title="Count this bill on another day">Change day</button><button class="x" data-ea="${b.bill_id}" data-eat="${b.total}" title="Correct a wrong bill amount">Edit amount</button><button class="x" data-v="${b.bill_id}">Cancel</button>` : ''}</span>` : '<span></span>'}${payOpen === b.bill_id && payD ? payEditor(b) : ''}${dayOpen === b.bill_id ? `<div style="grid-column:1/-1;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:8px 0"><label class="sx-f">This bill counts on<input class="sx-in" type="date" id="dayNew" min="${shiftDay(d.today, -45)}" max="${d.today}" value="${d.date}"></label><button class="sx-btn" data-dgo="${b.bill_id}">Move</button><button class="sx-btn ghost" data-dx="1">Cancel</button></div>` : ''}${peopleRow(b)}${proofRow(b)}</div>`).join('') : `<div class="sx-mut" style="padding:10px 4px">${d.bills.length ? 'No ' + (payFilter === 'online' ? 'online / UPI' : payFilter === 'cash' ? 'cash' : 'split') + ' bills on this day.' : 'No bills on this day. Press <b>New bill</b> or just scan a bottle.'}</div>`;
     } catch (e) { $('bills').textContent = e.message; }
   }
   // ---------- change the payment of a bill (Cash / Online / Cash + online); buttons redraw the list, typing only updates the message in place
@@ -575,6 +587,24 @@
     if (e.target.id === 'pCash') { payD.cash = +e.target.value || 0; payD.online = Math.max(0, b.total - payD.cash); $('pOnl').value = payD.online; } else { payD.online = +e.target.value || 0; payD.cash = Math.max(0, b.total - payD.online); $('pCash').value = payD.cash; }
     payCheck();
   });
+  /* ---- screenshots: Ctrl+V on a box, a picked file, or a dropped picture ---- */
+  const sendProof = (key, blob) => {
+    const [bid, kind] = String(key).split('|');
+    if (!blob || !/^image\//.test(blob.type || '')) { toast('That is not a picture.', true); return; }
+    const fr = new FileReader();
+    fr.onload = async () => { try { toast('Saving the screenshot…'); await api.post('st_bill.proof_save', { bill_id: +bid, kind, image: fr.result }); toast('Screenshot saved ✓'); loadBills(); } catch (err) { toast((err && err.message) || 'Could not save the screenshot.', true); } };
+    fr.readAsDataURL(blob);
+  };
+  $('bills').addEventListener('paste', (e) => {
+    const bx = e.target.closest && e.target.closest('[data-pb]'); if (!bx) return;
+    const it = [...((e.clipboardData && e.clipboardData.items) || [])].find((x) => x.kind === 'file' && /^image\//.test(x.type));
+    if (!it) { toast('No picture in the clipboard. Take a screenshot first (Win+Shift+S), then press Ctrl+V.', true); return; }
+    e.preventDefault(); sendProof(bx.dataset.pb, it.getAsFile());
+  });
+  $('bills').addEventListener('change', (e) => { const f = e.target; if (f.dataset && f.dataset.pf && f.files && f.files[0]) sendProof(f.dataset.pf, f.files[0]); });
+  $('bills').addEventListener('dragover', (e) => { const bx = e.target.closest && e.target.closest('[data-pb]'); if (bx) { e.preventDefault(); bx.classList.add('over'); } });
+  $('bills').addEventListener('dragleave', (e) => { const bx = e.target.closest && e.target.closest('[data-pb]'); if (bx) bx.classList.remove('over'); });
+  $('bills').addEventListener('drop', (e) => { const bx = e.target.closest && e.target.closest('[data-pb]'); if (!bx) return; e.preventDefault(); bx.classList.remove('over'); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) sendProof(bx.dataset.pb, f); });
   $('bills').addEventListener('click', async (e) => {
     const pb = e.target.closest('[data-p]'), pm = e.target.closest('[data-pm]'), pg = e.target.closest('[data-pgo]');
     if (pb) { const id = +pb.dataset.p; if (payOpen === id) { payOpen = 0; payD = null; } else { const b = lastBills.find((x) => x.bill_id === id); payOpen = id; payD = { mode: b.pay_mode, cash: b.cash_amt, online: b.online_amt }; } dayOpen = 0; await loadBills(); payCheck(); return; }
@@ -584,6 +614,10 @@
   });
   $('dayPick').addEventListener('change', () => { listDate = $('dayPick').value; loadBills(); });
   $('bills').addEventListener('click', async (e) => {
+    const pv = e.target.closest('[data-pview]');
+    if (pv) { const [bid, kind] = pv.dataset.pview.split('|'); try { const r = await api.get('st_bill.proof_img', { bill_id: bid, kind }); const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out'; ov.innerHTML = '<img src="' + r.image + '" style="max-width:100%;max-height:100%;border-radius:12px">'; ov.onclick = () => ov.remove(); document.body.appendChild(ov); } catch (err) { toast((err && err.message) || 'Could not open it.', true); } return; }
+    const pc = e.target.closest('[data-pclr]');
+    if (pc) { const [bid, kind] = pc.dataset.pclr.split('|'); if (!confirm('Reject this screenshot? The bill will wait for a new one.')) return; try { await api.post('st_bill.proof_clear', { bill_id: +bid, kind }); loadBills(); } catch (err) { toast((err && err.message) || 'Could not do it.', true); } return; }
     const ea = e.target.closest('[data-ea]');
     if (ea) {
       const was = +ea.dataset.eat, v = prompt('Correct amount of this bill (now ₹' + was + '):', was); if (v === null) return;

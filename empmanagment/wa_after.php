@@ -123,6 +123,23 @@ if (!function_exists('wa_aft_days')) {
         if (!empty($b['reorder']) && (int)($b['since'] ?? 0) > 0) return 'Pichle order ko ' . (int)$b['since'] . ' din ho gaye - perfume khatam hone wala hoga? ' . $c[0] . ' x ' . $c[1] . ' ml Rs ' . $c[2] . '. Dobara order ke liye reply kijiye.';   // 🧭 his own reorder cycle
         return $season . ': ' . $c[0] . ' x ' . $c[1] . ' ml ' . $phrase[($step + $h) % count($phrase)] . ' Rs ' . $c[2] . '. Reply kijiye, hum order bana denge.';
     }
+    /** 💬 The customers behind the After-Order Replies number (same row shape as wl_repliers): they wrote within 2 days after an After-Order message sent since $from; "Stop" / "Not now" and business auto-replies are left out. [rows, more, count] */
+    function wa_aft_repliers(PDO $pdo, int $from, int $limit = 600): array
+    {
+        $f = date('Y-m-d H:i:s', $from); $q = $pdo->prepare("SELECT phone, sent_at FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([$f]); $byP = [];
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
+        $last = []; foreach (array_chunk(array_keys($byP), 400) as $ch) {
+            $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") ORDER BY id"); $x->execute(array_merge([$f], $ch));
+            foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { if (function_exists('wl_is_decline') && wl_is_decline((string)$r['body'])) continue; $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $last[(string)$r['phone']] = ['t' => $t, 'b' => (string)$r['body'], 'm' => (string)$r['mtype']]; break; } }
+        }
+        if (function_exists('wa_autoreply_phones') && $last) { try { foreach (wa_autoreply_phones($pdo, array_keys($last)) as $__p => $__x) unset($last[$__p]); } catch (Throwable $e) { } }
+        $info = []; foreach (array_chunk(array_keys($last), 400) as $ch) { $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, last_out_at, status FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $c->execute($ch); foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $info[(string)$r['phone']] = $r; }
+        $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = [];
+        foreach ($last as $ph => $l) { $c = $info[$ph] ?? []; $answered = !empty($c['last_out_at']) && (string)$c['last_out_at'] >= (string)($c['last_in_at'] ?? ''); $emp = (int)($c['assigned_emp'] ?? 0);
+            $rows[] = ['phone' => $ph, 'name' => (string)($c['name'] ?? ''), 'text' => mb_substr(($l['b'] !== '' ? $l['b'] : '[' . $l['m'] . ']'), 0, 90), 'at' => date('Y-m-d H:i:s', $l['t']), 'wait' => !$answered, 'emp' => $emp, 'holder' => $emp > 0 ? (string)($nm[$emp] ?? '') : '', 'closed' => ((string)($c['status'] ?? '') === 'closed')]; }
+        usort($rows, function ($a, $b) { return [(int)$b['wait'], $b['at']] <=> [(int)$a['wait'], $a['at']]; });
+        return [array_slice($rows, 0, $limit), count($rows) > $limit, count($rows)];
+    }
     /** 📊 What the After-Order messages brought since $from (owner 22 Nov: "like the 30-day plan - replies, spend, orders"): sent, delivered, read, replies (the customer wrote within 2 days after a message), orders + revenue (a shop order within 7 days after a message), cost (utility / marketing rate by the template's category). */
     function wa_aft_summary(PDO $pdo, int $from): array
     {
@@ -138,8 +155,9 @@ if (!function_exists('wa_aft_days')) {
             foreach ($sent as $r) { $x = $st[(string)$r['wamid']] ?? ''; if ($x === 'delivered' || $x === 'read') $o['delivered']++; if ($x === 'read') $o['read']++; }
             $byP = []; $byK = []; foreach ($sent as $r) { $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']); $byK[wa_aft_k10($r['phone'])][] = (int)strtotime((string)$r['sent_at']); }   // orders are matched by the LAST 10 DIGITS (the shop's phone has no 91): matched by the full number they never met, so After-Order orders always showed 0 (owner 22 Nov)
             if ($byP) { $rep = [];
-                foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
-                    foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; break; } } }
+                foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, ts, body FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
+                    foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { if (function_exists('wl_is_decline') && wl_is_decline((string)$r['body'])) continue; $t = (int)strtotime((string)$r['ts']); foreach ($byP[(string)$r['phone']] ?? [] as $st0) if ($t > $st0 && $t <= $st0 + 2 * 86400) { $rep[(string)$r['phone']] = 1; break; } } }
+                if ($rep && function_exists('wa_autoreply_phones')) { try { foreach (wa_autoreply_phones($pdo, array_keys($rep)) as $__p => $__x) unset($rep[$__p]); } catch (Throwable $e) { } }   // "Stop" / "Not now" and another business's auto-reply are not replies
                 $o['replied'] = count($rep);
                 $ord = []; $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
                 foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byK[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; }
