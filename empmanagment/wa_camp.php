@@ -1430,7 +1430,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
     $hrsLeft = max(0.1, ($t1 - $nowT) / 3600); $need = ['replies' => (int)ceil(max(0, $cfg['replies'] - $act['replies']) / $hrsLeft), 'orders' => (int)ceil(max(0, $cfg['orders'] - $act['orders']) / $hrsLeft)];
     // 🔎 plain words
     $hb = null; $hw = null; foreach ($H as $h => $x) { if ($x['spend'] >= 1000 && $x['replies'] >= 3) { $c = $x['spend'] / $x['replies']; if ($hb === null || $c < $hb['c']) $hb = ['h' => $h, 'c' => round($c, 1), 'spend' => round($x['spend']), 'replies' => $x['replies']]; if ($hw === null || $c > $hw['c']) $hw = ['h' => $h, 'c' => round($c, 1), 'spend' => round($x['spend']), 'replies' => $x['replies']]; } }
-    $hl = function (int $h) { $f = function ($x) { $z = $x % 12; return ($z ?: 12) . ($x < 12 ? ' AM' : ' PM'); }; return $f($h) . '–' . $f(($h + 1) % 24); };
+    $hl = function ($h) { $h = (int)$h; $f = function ($x) { $z = $x % 12; return ($z ?: 12) . ($x < 12 ? ' AM' : ' PM'); }; return $f($h) . '–' . $f(($h + 1) % 24); };
     $an = []; $d = $dev;
     if ($now >= $t0 + 1800) {
         if ($d['spend'] !== null && $d['replies'] !== null && $d['spend'] >= -10 && $d['replies'] < -10) $an[] = ['k' => 'warn', 'text' => 'Spend is ' . ($d['spend'] >= 5 ? 'ahead' : 'on plan') . ' (₹' . number_format($act['spend']) . ' of ₹' . number_format($so['spend']) . ') but replies are ' . abs($d['replies']) . '% short (' . number_format($act['replies']) . ' of ' . number_format($so['replies']) . '). The money goes out, but fewer customers answer — the message or the audience is weak. Try the message / hour that brought the cheapest replies.'];
