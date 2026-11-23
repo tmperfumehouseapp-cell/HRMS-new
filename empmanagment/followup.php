@@ -109,6 +109,22 @@ function fup_seed_store_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_store_topics: ' . $e->getMessage()); }
 }
 
+/** Once more: the review-link and the Cleaning & Pantry numbers of the Surat Store (the owner's second pick). Same rules as fup_seed_store_topics. */
+function fup_seed_store_topics2(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_store_topics_v2', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) = 'surat store' ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); if ($sid <= 0) return;
+        setting_set($pdo, 'fup_store_topics_v2', '1');
+        $have = []; foreach ($pdo->query("SELECT source FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $src) $have[(string)$src] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, ?, '', 'open', ?, 1, 0, ?)");
+        foreach ([['Customers who opened the review link', 'store_review_link'], ['Cleaning & Pantry checks done', 'store_clean']] as $t) {
+            if (isset($have[$t[1]])) continue; $ins->execute([$sid, $t[0], $t[1], ++$n, fup_now()]);
+        }
+    } catch (Throwable $e) { error_log('fup_seed_store_topics2: ' . $e->getMessage()); }
+}
+
 /** The numbers a topic can take by itself. key => [label, unit, fn(pdo, day) → number|null]. Every one is read-only and safe when its table is missing. */
 function fup_sources(): array
 {
@@ -167,6 +183,8 @@ function fup_sources(): array
         'store_numbers'    => ['Customer numbers saved (screenshot on the bill)', 'numbers', $one("SELECT COUNT(*) FROM st_bill_proofs WHERE kind = 'contact' AND DATE(created_at) = ?"), $S, 'store_billing.html', 'number numbers save saved contact contacts નંબર સેવ'],
         'store_comm_link'  => ['Customers who joined the community from their bill link', 'customers', $one("SELECT COUNT(DISTINCT person_id) FROM st_bill_events WHERE kind = 'community' AND DATE(at) = ?"), $S, 'store_billing.html', ''],
         'store_contact_link' => ['Customers who saved our number from their bill link', 'customers', $one("SELECT COUNT(DISTINCT person_id) FROM st_bill_events WHERE kind = 'contact' AND DATE(at) = ?"), $S, 'store_billing.html', ''],
+        'store_review_link' => ['Customers who opened the review link on their bill', 'customers', $one("SELECT COUNT(DISTINCT person_id) FROM st_bill_events WHERE kind = 'review' AND DATE(at) = ?"), $S, 'store_billing.html', 'review reviews rating રિવ્યૂ'],
+        'store_clean'      => ['Cleaning & Pantry checks done', 'checks', $one("SELECT COUNT(*) FROM of_pl_checks WHERE day = ? AND status = 'done'"), $S, 'store_cleaning.html', 'clean cleaning pantry check checks cafeteria ક્લિનિંગ પેન્ટ્રી'],
         'store_discount'   => ['Discount given (₹)', '₹', $one("SELECT SUM(discount) FROM st_bills WHERE biz_date = ? AND status = 'ok'"), $S, $sp, 'discount'],
     ];
 }
@@ -566,6 +584,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     if (!fup_tables($pdo)) json_response(['error' => 'Could not prepare the Follow-up tables.'], 500);
     fup_seed($pdo);
     fup_seed_store_topics($pdo);
+    fup_seed_store_topics2($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
