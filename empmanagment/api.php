@@ -413,6 +413,7 @@ function all_permissions(): array
         'server_load' => 'Server load (CPU, what the database and each function cost): technical, give with care',
         'finance' => 'Finance (bank and card statements, settlements, bills, reports): money data, give with care',
         'analytics' => 'Analytics (the store analytics report: sales, SEO, clicks)',
+        'store_orders' => 'Website orders (orders of the new TM Perfume House shop: give each one to a salesperson so it counts in their target)',
         'inventory' => 'Inventory (oils, perfumes, orders, dealers, alerts, reports): stock and purchase data, give with care',
     ];
 }
@@ -489,6 +490,7 @@ function action_permission(string $action): ?string
         'retail.visit_plan_approve' => 'visit_approval',   // Approve / Reject a shop visit: only roles ticked for it (before the 'retail.' line)
         'retail.' => 'retail',
         'manual_orders.save' => null,              // a salesperson makes their own manual order (the handler checks the role)
+        'tms.' => null,                            // 🛍 Website orders (store_orders.php): the handler checks Admin / HR / Sales Head / the "Website orders" tick
         'manual_orders.mp_' => null,               // a sales person adds / lists their own marketplace orders (the handler checks the login)
         'manual_orders.shot' => null, 'manual_orders.reassign' => null,   // the handlers check who
         'manual_orders.quick_' => null,            // the quick entries card on the Sales Head's home (the handler checks who)
@@ -610,7 +612,7 @@ function role_permissions(PDO $pdo, string $roleName): array
                 // saving there records the module as known, so the untick
                 // sticks. The Employee role stays portal-only unless ticked.
                 // 'order_code_lock' goes to HR automatically, to every other role only when Admin ticks it.
-                $noAuto = ['approvals', 'users', 'leave', 'detailed_report', 'visit_approval', 'finance', 'analytics', 'inventory', 'retail_store', 'rs_counter', 'rs_tasks', 'rs_manage'];   // 'detailed_report' (ad spend, ROAS, collection) and 'visit_approval' are ticked by Admin per role, never automatic
+                $noAuto = ['approvals', 'users', 'leave', 'detailed_report', 'visit_approval', 'finance', 'analytics', 'store_orders', 'inventory', 'retail_store', 'rs_counter', 'rs_tasks', 'rs_manage'];   // 'detailed_report' (ad spend, ROAS, collection) and 'visit_approval' are ticked by Admin per role, never automatic
                 if (strcasecmp(trim($roleName), 'HR') !== 0) $noAuto[] = 'order_code_lock';
                 foreach (role_new_modules($row['known_modules'] ?? null) as $m) {
                     if (!in_array($m, $noAuto, true) && !in_array($m, $perms, true)) $perms[] = $m;   // 'leave' (My Leave) is handed out by Admin per role, never automatically
@@ -8321,7 +8323,7 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             $who = ($a && !empty($a['emp'])) ? (int)$a['emp'] : (int)$m['employee_id']; if (!$who || !isset($emps[$who])) continue;
             $ts = strtotime((string)$m['order_date']); $fs = strtolower((string)$m['payment_status']);
             $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => null, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false,
-                'xnote' => ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
+                'xnote' => (string)($m['channel'] ?? '') === 'TM Store' ? 'Website order: it counts in the sales and the target. No commission rule is set for website orders yet.' : ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
                 'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
                 'mp' => in_array((string)($m['channel'] ?? ''), ['Myntra', 'Amazon', 'Flipkart'], true) ? (string)$m['channel'] : ''];   // 🛍 marketplace order: a flat % without a code (mp_flat_pct)
         }
@@ -19421,7 +19423,8 @@ function retail_display_pending(PDO $pdo, string $city): array
 $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
-if (is_file(__DIR__ . '/chain_prices.php')) { require_once __DIR__ . '/chain_prices.php'; }   // 💰 public price feed of the chain page (chain/chain_index.html): chain.prices
+if (is_file(__DIR__ . '/chain_prices.php')) { require_once __DIR__ . '/chain_prices.php'; }
+if (strpos((string)$action, 'tms.') === 0 && is_file(__DIR__ . '/store_orders.php')) { require __DIR__ . '/store_orders.php'; }   // 🛍 Website orders → a salesperson (answers tms.* itself)   // 💰 public price feed of the chain page (chain/chain_index.html): chain.prices
 if (is_file(__DIR__ . '/wa_collage.php')) { require_once __DIR__ . '/wa_collage.php'; }   // one picture for 2–5 suggested perfumes (public view: wa.collage_view)
 if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   // streaks + the Wins feed on the salesperson home; answers play.* itself
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
