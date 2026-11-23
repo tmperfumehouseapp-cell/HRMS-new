@@ -22,6 +22,9 @@ window.StoreRules = (function () {
         <div><b>💰 Price → %</b> — the price the customer paid goes to the nearest price column of that size (table below); below the last column it pays <b>${f(d.floor || 0)}%</b>.</div>
         <div><b>🎁 Offers</b> — a bill with exactly the offer’s total size and a price within ±₹${f(win)} of the offer price pays the <b>offer’s %</b> instead of the chart. The same offers the online sales get, on the day they ran.</div>
         <div><b>🏬 Store</b> — same rules as online, but no over-target extra and no boost.</div></div>
+      <h4 style="margin:12px 0 4px">📸 Screenshot rule</h4>
+      <div class="sx-mut" style="font-size:12.5px;margin-bottom:6px">After a bill, the salesperson attaches 2 screenshots: the customer's number saved and the customer added to the community. When this rule is ON, a bill pays commission only after BOTH are attached. Bills still get made. Only bills from the day it is switched on are affected.</div>
+      ${d.can_edit ? `<label style="display:inline-flex;gap:8px;align-items:center;font-weight:700;cursor:pointer"><input type="checkbox" id="srFollow" ${d.follow_from ? 'checked' : ''}> ${d.follow_from ? 'ON since ' + esc(d.follow_from) : 'OFF - tick to switch ON from today'}</label>` : `<b>${d.follow_from ? 'ON since ' + esc(d.follow_from) : 'OFF'}</b>`}
       <h4 style="margin:12px 0 4px">Offers running now</h4>
       ${offers ? `<div style="overflow:auto"><table style="border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left;padding:4px 8px">Size</th><th style="text-align:left;padding:4px 8px">Price</th><th style="text-align:left;padding:4px 8px">Pays</th><th style="text-align:left;padding:4px 8px">Runs</th><th style="text-align:left;padding:4px 8px">Note</th></tr></thead><tbody>${offers}</tbody></table></div>` : '<div class="sx-mut" style="font-size:12.5px">No offer is running now — the normal price chart applies.</div>'}${flash}
       <h4 style="margin:12px 0 4px">Fixed-price perfumes <small class="sx-mut" style="font-weight:600">(for example the OG perfumes: this size always sells at this price)</small></h4>
@@ -33,6 +36,7 @@ window.StoreRules = (function () {
     try {
       const d = await api.get('st_price.card'); el.innerHTML = draw(d);
       el.addEventListener('click', async (e) => {
+        if (e.target.id === 'srFollow') { const cb = e.target; cb.disabled = true; try { await api.post('st_fix.follow', { on: cb.checked }); el.innerHTML = draw(await api.get('st_price.card')); } catch (er) { cb.disabled = false; cb.checked = !cb.checked; alert((er && er.message) || 'Could not save.'); } return; }
         const box = el.querySelector('#srFix'); if (!box) return;
         if (e.target.id === 'srAdd') { const f0 = box.firstElementChild; if (f0 && !f0.classList.contains('srf') && f0.classList.contains('sx-mut')) f0.remove(); const row = document.createElement('div'); row.innerHTML = fixRow({}, true); box.insertBefore(row.firstChild, e.target.closest('div')); }
         else if (e.target.dataset && e.target.dataset.x) { e.target.closest('.srf').remove(); }
