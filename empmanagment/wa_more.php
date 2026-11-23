@@ -767,6 +767,19 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { try { wa_log($pdo, 'engine', false, 'index v2: ' . $e2->getMessage()); } catch (Throwable $e3) { } } } }
             }
         }
+        // ⚡ speed indexes, round 3 (23 Nov, from the 25 queries of Server load). Same answers, found faster; added ONCE, online:
+        //    wa_contacts (assigned_emp, status)            — "how many open chats has this person" and the per-person list check
+        //    wa_line_plan (wamid)                          — Lineup: plans found by their WhatsApp message id (read every plan of a status before)
+        //    wa_line_plan (status, step, topic, phone)     — Lineup counts by step / topic
+        //    wa_line_plan (status, due_at, phone)          — Lineup counts by day
+        //    wa_messages (number_id, ts, dir)              — messages in / out of ONE WhatsApp number since a time (runs of 8 s were seen)
+        if ((string)setting_get($pdo, 'wa_idx_v3', '') !== '1') {
+            setting_set($pdo, 'wa_idx_v3', '1'); @set_time_limit(1200); ignore_user_abort(true);
+            foreach (["ALTER TABLE wa_contacts ADD INDEX k_emp_status (assigned_emp, status)", "ALTER TABLE wa_line_plan ADD INDEX k_wamid (wamid)", "ALTER TABLE wa_line_plan ADD INDEX k_st_step (status, step, topic, phone)",
+                      "ALTER TABLE wa_line_plan ADD INDEX k_st_due_ph (status, due_at, phone)", "ALTER TABLE wa_messages ADD INDEX k_num_ts (number_id, ts, dir)"] as $ix) {
+                try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { try { wa_log($pdo, 'engine', false, 'index v3: ' . $e2->getMessage()); } catch (Throwable $e3) { } } } }
+            }
+        }
         // ⚡ one cron at a time: a slow run (Meta, Shopify) is never joined by the next minute's run — they used to pile up and slow every page
         try { if (!(int)$pdo->query("SELECT GET_LOCK('hrms_wa_cron', 0)")->fetchColumn()) {
             // 🛟 watchdog: a run that has not finished for 15+ minutes is stuck (a hung call to Meta / AI never ends by itself and blocked every later run) — its database connection is closed, the lock is free for the next minute
