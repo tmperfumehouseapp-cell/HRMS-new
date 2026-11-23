@@ -436,6 +436,10 @@ function dp_po_left(PDO $pdo, $emp, $day) {
     if (function_exists('b2_po_left')) { foreach (b2_po_left($pdo, $emp, $day) as $r) $o[] = $r; }   // Boss Engine 2 tasks
     return $o;
 }
+/** 📌 Follow-up: the topics given to this person that have no update today. They hold the Punch Out in EVERY mode (also when the Boss Engine is only watching). */
+function dp_po_followup(PDO $pdo, $emp) {
+    try { if (!function_exists('fup_po_left') && is_file(__DIR__ . '/followup.php')) require_once __DIR__ . '/followup.php'; return function_exists('fup_po_left') ? fup_po_left($pdo, (int)$emp) : []; } catch (Throwable $e) { return []; }
+}
 function dp_po_hr(PDO $pdo) {
     static $c = null; if ($c !== null) return $c;
     $c = ['id' => 0, 'name' => ''];
@@ -448,8 +452,10 @@ function dp_po_hr(PDO $pdo) {
 function dp_po_state(PDO $pdo, $emp) {
     $day = dp_po_day($pdo, $emp); $hr = dp_po_hr($pdo);
     $o = ['mode' => bd_mode(), 'day' => $day, 'in' => $day !== '', 'left' => [], 'locked' => false, 'req' => null, 'approved' => null, 'hr' => $hr['name']];
-    if ($day === '' || bd_mode() === 'shadow') return $o;
-    $o['left'] = dp_po_left($pdo, $emp, $day);
+    if ($day === '') return $o;
+    $fu = dp_po_followup($pdo, $emp);
+    if (bd_mode() === 'shadow' && !$fu) return $o;
+    $o['left'] = array_merge(bd_mode() === 'shadow' ? [] : dp_po_left($pdo, $emp, $day), $fu);
     $ok = dp_get('po_ok:' . $emp . ':' . $day, '');
     if ($ok !== '') { $p = explode('|', $ok); $o['approved'] = ['by' => $p[0], 'at' => $p[1] ?? '']; }
     $rq = json_decode(dp_get('po_req:' . $emp . ':' . $day, ''), true);
