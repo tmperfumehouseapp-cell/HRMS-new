@@ -545,7 +545,7 @@ function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
     try {
         if (wag_bottles_no_size($msgs)) { if (preg_match('/(?:rs\.?|₹)\s*\d|\b(?:price|total|amount|rate|cost|discount|offer|kimat)\b/iu', $reply)) return ['Sir, kitne ml ki bottles chahiye — 20 ml, 50 ml ya 100 ml? 😊', true]; return [$reply, false]; }   // 🚫 bottles but no size: no price at all, ask the size
         $rq = wag_ml_request($msgs);
-        if (!$rq && preg_match('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml[^₹\n]{0,40}?(?:rs\.?|₹)\s*[\d,]{3,6}/iu', $reply, $__rm) && (int)$__rm[1] >= 1 && (int)$__rm[1] <= 20 && (int)$__rm[2] >= 10 && (int)$__rm[2] <= 500) $rq = ['qty' => (int)$__rm[1], 'ml' => (int)$__rm[2], 'total' => (int)$__rm[1] * (int)$__rm[2]];   // owner, 23 Nov: the customer wrote only 'I Want Combo of 5' (no size); the bot named '5 x 100 ml' itself, and its follow-up said 'total price Rs 1700' (the price of ONE 100 ml). The size the reply itself names is now checked against the chart row of its total
+        if (preg_match_all('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml[^₹\n]{0,40}?(?:rs\.?|₹)\s*[\d,]{3,6}/iu', $reply, $__rm, PREG_SET_ORDER) === 1 && (int)$__rm[0][1] >= 2 && (int)$__rm[0][1] <= 20 && (int)$__rm[0][2] >= 10 && (int)$__rm[0][2] <= 500 && (!$rq || (int)$rq['total'] !== (int)$__rm[0][1] * (int)$__rm[0][2])) $rq = ['qty' => (int)$__rm[0][1], 'ml' => (int)$__rm[0][2], 'total' => (int)$__rm[0][1] * (int)$__rm[0][2]];   // owner, 23 Nov: the reply names ONE pack ('5 x 20 ml ... Rs 600'): its price is checked against the chart row of ITS total (100 ml), also when the customer's own size is another one (20 ml = Rs 600 is the price of one bottle)   // owner, 23 Nov: the customer wrote only 'I Want Combo of 5' (no size); the bot named '5 x 100 ml' itself, and its follow-up said 'total price Rs 1700' (the price of ONE 100 ml). The size the reply itself names is now checked against the chart row of its total
         if (!$rq) return [$reply, false]; $row = wag_chart_row($pdo, $rq['total']); if (!$row) return [$reply, false];
         $c = ml_slab_get($pdo); $mine = array_flip($row['p']); $other = [];
         foreach ((array)($c['rows'] ?? []) as $r) { if ((int)($r['ml'] ?? 0) === $row['ml']) continue; foreach ((array)($r['p'] ?? []) as $v) { $v = (int)$v; if ($v >= 500 && !isset($mine[$v])) $other[$v] = 1; } }
@@ -560,6 +560,7 @@ function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
             if (isset($mine[$v])) { $jv = array_search($v, array_map('intval', $row['p']), true); if ($jv !== false && $jv > $__dp + 1) { $bad = true; $fixIdx = $__dp + 1; break; } }   // 🪜 a jump of more than one price column below what was said before
         }
         if (!$bad) return [$reply, false];
+        $__ob = $__dp < 0 ? wag_one_bottle_msg($pdo, (int)$rq['qty'], (int)$rq['ml']) : ''; if ($__ob !== '') return [$__ob, true];   // nothing quoted yet and he asked 1-2 bottles: the one-bottle-is-expensive message instead of a single bottle's price (owner, 23 Nov: '50 ml ka price Rs 900' after the Instagram answer)
         $fixP = (int)($row['p'][max(0, min((int)$fixIdx, count($row['p']) - 1))] ?? $row['chart']); $fix = 'Sir, ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml' : $rq['ml'] . ' ml') . ' ka price Rs ' . number_format($fixIdx > 0 ? $fixP : $row['chart']) . ' hai 😊 Kaunse perfumes lena chahoge?';
         return [$fix, true];
     } catch (Throwable $e) { return [$reply, false]; }
@@ -1398,6 +1399,16 @@ function wag_bot_block_msg(PDO $pdo, array $c): string
 }
 /** A bot reply that would invent an offer or claim a payment: never sent — a person answers (the replay test found exactly these). */
 /** The bot must never tell the customer our internal target / minimum / floor price ("minimum Rs 2,800 tak hi de sakte hain", owner 21 Nov: the customer asked 6 x 50 ml, the bot said Rs 3,200 and then "minimum Rs 2,800"): such sentences are cut out of a reply. */
+/** owner, 23 Nov: asked 1 or 2 bottles -> never the price of one bottle alone: "one bottle is expensive" (official online price), better take 3 (asked 1) or 4 (asked 2) with the combo price of that pack from the chart. '' when the size has no official price or the chart has no such row. */
+function wag_one_bottle_msg(PDO $pdo, int $qty, int $ml): string
+{
+    if ($qty < 1 || $qty > 2) return '';
+    $n = $qty === 1 ? 3 : 4; $one = wag_official_price($pdo, $ml); if ($one <= 0) return '';
+    $row = wag_chart_row($pdo, $n * $ml); if (!$row || (int)$row['ml'] !== $n * $ml || (int)$row['chart'] <= 0) return '';
+    $f = function ($v) { return number_format((int)$v); }; $chart = (int)$row['chart'];
+    $first = $qty === 1 ? ('Sir, sirf ek ' . $ml . ' ml (Rs ' . $f($one) . ') bahut mehenga padega') : ('Sir, sirf ' . $qty . ' x ' . $ml . ' ml (Rs ' . $f($one * $qty) . ') bahut mehenga padega');
+    return $first . ' 😊 Isse behtar ' . $n . ' x ' . $ml . ' ml lijiye: alag-alag lene par Rs ' . $f($one * $n) . ' hote hain, combo deal mein sirf Rs ' . $f($chart) . ' (ek bottle Rs ' . $f(round($chart / $n)) . '). Kaunse ' . $n . ' perfumes lena chahenge?';
+}
 /** owner, 23 Nov (screenshot: the customer asked "Blue chanel ka copy 50 ml" - ONE bottle - and the bot pasted the whole list 3 x 50 ml ... 10 x 50 ml): when the customer asked for only 1 or 2 bottles and the answer is a pasted combo list (4+ lines "N x ml ... Rs"; also from the button-reply cards, see wa_kw.php), it is replaced by the manual-style message: one bottle is expensive (official online price), better take N more (asked 1 -> 3, asked 2 -> 4), with the combo price of that one pack from the price chart only. Anything else is returned unchanged. */
 function wag_combo_dump_fix(PDO $pdo, string $key, string $text, bool $kw = false): string
 {
@@ -1407,11 +1418,7 @@ function wag_combo_dump_fix(PDO $pdo, string $key, string $text, bool $kw = fals
         $msgs = []; foreach (array_reverse($q->fetchAll(PDO::FETCH_COLUMN)) as $b) $msgs[] = ['who' => 'customer', 'text' => (string)$b];
         $rq = wag_ml_request($msgs); if (!$rq || $rq['qty'] > 2) return $text;
         if ($kw) { $__lt = ''; foreach (array_reverse($msgs) as $__mm) { $__lt = mb_strtolower((string)$__mm['text']); break; } if (preg_match('/(combo|offer|list|rate list|price list|sab|all)/u', $__lt) || trim((string)preg_replace('/[^\p{L}]+/u', '', preg_replace('/\d+\s*ml/u', '', $__lt))) === '') return $text; }   // a button-reply card (words '50 ml'): a real button tap or 'combo / offer' keeps the full list; only a customer who names a perfume + one size ('Blue chanel ka copy 50 ml') gets the one-bottle message (owner, 23 Nov)
-        $n = $rq['qty'] === 1 ? 3 : 4; $ml = (int)$rq['ml']; $one = wag_official_price($pdo, $ml); if ($one <= 0) return $text;
-        $row = wag_chart_row($pdo, $n * $ml); if (!$row || (int)$row['ml'] !== $n * $ml || (int)$row['chart'] <= 0) return $text;
-        $f = function ($v) { return number_format((int)$v); }; $chart = (int)$row['chart'];
-        $first = $rq['qty'] === 1 ? ('Sir, sirf ek ' . $ml . ' ml (Rs ' . $f($one) . ') bahut mehenga padega') : ('Sir, sirf ' . $rq['qty'] . ' x ' . $ml . ' ml (Rs ' . $f($one * $rq['qty']) . ') bahut mehenga padega');
-        return $first . ' 😊 Isse behtar ' . $n . ' x ' . $ml . ' ml lijiye: alag-alag lene par Rs ' . $f($one * $n) . ' hote hain, combo deal mein sirf Rs ' . $f($chart) . ' (ek bottle Rs ' . $f(round($chart / $n)) . '). Kaunse ' . $n . ' perfumes lena chahenge?';
+        $__om = wag_one_bottle_msg($pdo, (int)$rq['qty'], (int)$rq['ml']); return $__om !== '' ? $__om : $text;
     } catch (Throwable $e) { return $text; }
 }
 /** owner, 23 Nov (screenshot: the customer wrote "EM5 jyada acha hai" - a compliment for another perfume - and the bot answered "EM5 ka naam hamare catalogue mein confirm karke batata hoon"): the "ye naam ek baar confirm karke batata hoon" line is only for a customer who ASKS for / orders a perfume that is not in our list. A compliment or comparison is answered with a short thank-you, no catalogue talk. Returns the text unchanged otherwise. */
@@ -1533,6 +1540,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         try {
             $__eq = $pdo->prepare("SELECT body, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? ORDER BY id DESC LIMIT 1"); $__eq->execute([$key, date('Y-m-d H:i:s', time() - 36 * 3600)]); $__ex = $__eq->fetch();
             $__mb = mb_strtolower(trim((string)$m['body']));
+            if ($__ex && preg_match('/(where did you find us|how did you hear about us|where did you hear)/iu', (string)$__ex['body']) && mb_strlen($__mb) <= 40 && !preg_match('/(price|rate|combo|offer|discount|order|buy|lena|chahiye|\d+\s?ml|kitna|kitne)/u', $__mb)) continue;   // owner, 23 Nov: the customer only answered our 'where did you find us?' button (Instagram ...): the system already notes the source; the bot says no price now
             if ($__ex && preg_match('/(how was your experience|your experience with us|share your feedback|rate your|how did you like|feedback)/iu', (string)$__ex['body']) && mb_strlen($__mb) <= 60 && !preg_match('/(price|rate|combo|offer|discount|order|buy|lena|chahiye|\d+\s?ml|kitna|kitne)/u', $__mb)) {
                 if (!(function_exists('wq_guard') ? wq_guard($pdo, $key, (int)$m['id'], 'reply', 'bot') : true)) continue;
                 if (preg_match('/(very good|good|great|excellent|awesome|amazing|nice|best|superb|perfect|love|loved|badhiya|bahut accha|bahut achha|accha|achha|mast|sahi|thanks|thank you|shukriya|happy|satisfied|5 ?star)/u', $__mb) && !preg_match('/(not good|not so|bad|poor|worst|average|ok ok|okay okay|nahi|nhi|kharab|bekar|disappoint|\bno\b)/u', $__mb)) {
