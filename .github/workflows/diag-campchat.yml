@@ -1,0 +1,45 @@
+# READ-ONLY: for the newest unassigned open chats: contact source, latest query source, campaign items and who wrote to them (no phone numbers, no names).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Campaign chat check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Campaign chats
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/cc_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          echo "server " . date("Y-m-d H:i:s") . "\n";
+          $q = $d->query("SELECT phone, source, last_in_at, assigned_emp FROM wa_contacts WHERE last_in_at >= '" . date("Y-m-d H:i:s", time() - 5 * 3600) . "' ORDER BY last_in_at DESC LIMIT 40");
+          foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $p = $r["phone"];
+            $a = $d->prepare("SELECT src FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $a->execute([$p]); $qs = $a->fetchColumn();
+            $b = $d->prepare("SELECT status, COUNT(*) FROM wa_camp_items WHERE phone = ? AND sent_at >= ? GROUP BY status"); $b->execute([$p, date("Y-m-d H:i:s", time() - 7 * 86400)]); $ci = []; foreach ($b->fetchAll(PDO::FETCH_NUM) as $x) $ci[] = $x[0] . "=" . $x[1];
+            $w = $d->prepare("SELECT who, COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? GROUP BY who"); $w->execute([$p, date("Y-m-d H:i:s", time() - 7 * 86400)]); $wh = []; foreach ($w->fetchAll(PDO::FETCH_NUM) as $x) $wh[] = $x[0] . "=" . $x[1];
+            echo "in " . round((time() - strtotime($r["last_in_at"])) / 60) . "m ago · assigned " . ((int)$r["assigned_emp"] > 0 ? "yes" : "no") . " · phone len " . strlen($p) . " · source [" . $r["source"] . "] · last query src [" . $qs . "] · camp items [" . implode(",", $ci) . "] · out who [" . implode(",", $wh) . "]\n";
+          }
+          PHP
+          php /tmp/cc_check.php "$P"; rm -f /tmp/cc_check.php
+          REMOTE
