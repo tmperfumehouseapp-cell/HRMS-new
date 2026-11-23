@@ -1467,6 +1467,8 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
             $__ho = (int)($c['assigned_emp'] ?? 0); $__bh3 = wag_meta_get($pdo, 'bothand:' . $key, '');
             if ($__ho > 0 && $age >= 45 && !($__bh3 !== '' && strtotime($__bh3) >= strtotime((string)$c['last_in_at'])) && wag_holder_busy($pdo, $__ho)) $__cover = true; else continue;
         }
+        // owner, 23 Nov (screenshot: the salesperson quoted 5x50 ml 1999/2499, then the bot quoted Rs 2,250 chart price 22 s and 2 s after the customer's next message): a person who wrote to this customer in the last 10 minutes is working the chat - the bot gives him 3 minutes to answer the customer's next message before it may cover (never contradict a price a person just gave)
+        if (!$__stuck) { try { $__pw = $pdo->prepare("SELECT ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') ORDER BY id DESC LIMIT 1"); $__pw->execute([$key]); $__pt = (string)$__pw->fetchColumn(); if ($__pt !== '' && strtotime($__pt) > $now - 600 && $age < 180) continue; } catch (Throwable $e) { } }
         $li = $pdo->prepare("SELECT id, mtype, body, wamid FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
         // wants to order / pay (hot): the bot takes the ORDER DETAILS and the ADDRESS — never the payment — and then a person finishes (ORDER MODE)
