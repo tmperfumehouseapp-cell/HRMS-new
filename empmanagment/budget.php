@@ -107,6 +107,12 @@ if ($__bg === 'budget.get') {
     if (!preg_match('/^\d{4}-\d{2}$/', $month)) json_response(['error' => 'month must be YYYY-MM.'], 422);
     if (convo_is_admin($auth) && function_exists('price_unify_once')) price_unify_once($pdo);   // the one Price Chart: runs once, the first time an Admin opens Total Budgeting, Commission or Pricing after the update
     $c = budget_cfg($pdo); $m = $c['months'][$month] ?? [];
+    // once, the owner's start: goals for November 2026 (Sales team 14 L, Leaders 2.1 L, Leaders Helper 45 K) when no goal is set yet; he changes them on the page. Retail, Store and Other are left empty.
+    if ($month === '2026-11' && (string)setting_get($pdo, 'budget_goals_seed_v1', '') === '') {
+        setting_set($pdo, 'budget_goals_seed_v1', date('Y-m-d H:i:s'));
+        $have = 0; foreach ((array)($m['goals'] ?? []) as $gv) $have += (float)$gv;
+        if ($have <= 0) { $c['months'][$month]['goals'] = ['sales' => 1400000.0, 'leader' => 210000.0, 'helper' => 45000.0]; setting_set($pdo, 'budget_cfg', json_encode($c)); $m = $c['months'][$month]; budget_audit($pdo, $auth, 'Started the November 2026 goals: Sales team 14,00,000, Leaders 2,10,000, Leaders Helper 45,000 (change them on Total Budgeting)'); }
+    }
     $duty = []; try { if (function_exists('ensure_st_tables')) ensure_st_tables($pdo); $duty = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) {}
     $gl = []; foreach (['sales', 'leader', 'helper', 'retail', 'store', 'other'] as $gk) $gl[$gk] = (float)(($m['goals'] ?? [])[$gk] ?? 0);
     json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'settled' => (object)$c['settled'], 'days' => (object)$c['days'], 'closed' => (object)$c['closed'], 'engine_live' => function_exists('cm_is_live') ? cm_is_live($pdo) : false, 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
@@ -153,7 +159,7 @@ if ($__bg === 'budget.store_comm') {
     if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
     $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
-    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('budget.store_comm boss: ' . $e->getMessage()); }
+    try { if (is_file(__DIR__ . '/budget_cm.php')) require_once __DIR__ . '/budget_cm.php'; } catch (Throwable $e) { error_log('budget.store_comm boss: ' . $e->getMessage()); }
     if (!function_exists('cm_chart') || !function_exists('cm_pct') || !function_exists('cm_offers') || !function_exists('cm_offer_match') || !function_exists('cm_code_need')) json_response(['error' => 'The commission engine is not available on this server.'], 500);
     try { $r = budget_store_calc($pdo, $from, $to); } catch (Throwable $e) { error_log('budget.store_comm: ' . $e->getMessage()); json_response(['from' => $from, 'to' => $to, 'people' => [], 'note' => 'The store tables are not there yet.']); }
     $by = []; $pool = ['sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'code_bills' => 0, 'ids' => st_pool_ids($pdo)]; $old = ['bills' => 0, 'sales' => 0.0, 'unmatched' => 0]; $days = [];
@@ -201,7 +207,7 @@ if ($__bg === 'budget.store_bills') {
     if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
     $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
-    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) {}
+    try { if (is_file(__DIR__ . '/budget_cm.php')) require_once __DIR__ . '/budget_cm.php'; } catch (Throwable $e) {}
     $engine = function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
     $rows = [];
     try {
@@ -213,7 +219,7 @@ if ($__bg === 'budget.store_bills') {
             foreach ($q->fetchAll() as $b) $rows[] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => (string)$b['biz_date'], 'time' => substr((string)$b['created_at'], 11, 5), 'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => trim((string)$b['order_code']) !== '', 'total' => (float)$b['total'], 'ml' => (int)$b['total_ml'], 'pct' => null, 'rule' => '', 'reduced' => false, 'com' => null];
         }
     } catch (Throwable $e) { error_log('budget.store_bills: ' . $e->getMessage()); }
-    $out = []; foreach (array_slice($rows, 0, 3000) as $b) $out[] = ['bill_id' => $b['bill_id'], 'bill_no' => $b['bill_no'], 'day' => $b['day'], 'time' => $b['time'], 'employee_id' => $b['employee_id'], 'name' => $b['name'], 'code' => $b['code'], 'total' => $b['total'], 'ml' => $b['ml'], 'pct' => $b['pct'], 'rule' => $b['rule'], 'reduced' => $b['reduced'], 'com' => $b['com'], 'src' => $b['src'] ?? 'new_pos'];
+    $out = []; foreach (array_slice($rows, 0, 3000) as $b) $out[] = ['follow' => (string)($b['follow'] ?? ''), 'com_wait' => (float)($b['com_wait'] ?? 0), 'bill_id' => $b['bill_id'], 'bill_no' => $b['bill_no'], 'day' => $b['day'], 'time' => $b['time'], 'employee_id' => $b['employee_id'], 'name' => $b['name'], 'code' => $b['code'], 'total' => $b['total'], 'ml' => $b['ml'], 'pct' => $b['pct'], 'rule' => $b['rule'], 'reduced' => $b['reduced'], 'com' => $b['com'], 'src' => $b['src'] ?? 'new_pos'];
     json_response(['from' => $from, 'to' => $to, 'bills' => $out, 'engine' => $engine]);
 }
 if ($__bg === 'budget.bill_assign') {

@@ -5,7 +5,9 @@ import { openDb } from './db.js';
 import { verifyChallenge, verifySignature, extractClicks, saveClicks } from './whatsapp.js';
 import { verifyHmac, processOrder, tagOrder } from './shopify.js';
 import { sendPurchase, retryPending, syncSpend } from './meta.js';
-import { dailyReport, toCsv, todayIn, shiftDay } from './report.js';
+import crypto from 'node:crypto';
+import { dailyReport, toCsv, todayIn, shiftDay, diagDay, diagPhone } from './report.js';
+import { last10 } from './phone.js';
 
 const MAX_BODY = 2 * 1024 * 1024;
 
@@ -72,9 +74,31 @@ export function createHandler({ db, cfg, fetchImpl = fetch, log = console }) {
         if (!cfg.reportToken || req.headers.authorization !== `Bearer ${cfg.reportToken}`) return send(res, 401, 'unauthorized');
         const to = url.searchParams.get('date') || shiftDay(todayIn(cfg.tzOffsetMin), -1);
         const days = Math.max(1, Math.min(90, Number(url.searchParams.get('days') || 1)));
-        const rep = dailyReport(db, { from: shiftDay(to, -(days - 1)), to }, cfg.tzOffsetMin);
+        const rep = dailyReport(db, { from: shiftDay(to, -(days - 1)), to }, cfg.tzOffsetMin, cfg.adNameMatch || undefined);
         return url.searchParams.get('format') === 'csv'
           ? send(res, 200, toCsv(rep), 'text/csv') : send(res, 200, JSON.stringify(rep), 'application/json');
+      }
+      // ---- Diagnose (called by the HRMS; signed with the WhatsApp app secret both sides already hold, valid 5 minutes) ----
+      if ((url.pathname === '/diag' || url.pathname === '/diag/phone') && req.method === 'GET') {
+        const ts = Number(url.searchParams.get('ts')); const arg = url.searchParams.get(url.pathname === '/diag' ? 'date' : 'phone') || '';
+        const want = cfg.waAppSecret ? crypto.createHmac('sha256', cfg.waAppSecret).update(`${ts}|${url.pathname}|${arg}`).digest('hex') : '';
+        const got = String(req.headers['x-ctwa-sign'] || '');
+        if (!want || got.length !== want.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want)) || Math.abs(Date.now() / 1000 - ts) > 300)
+          return send(res, 401, 'unauthorized');
+        if (url.pathname === '/diag') {
+          const day = /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : todayIn(cfg.tzOffsetMin);
+          const d = diagDay(db, day, cfg.tzOffsetMin, cfg.adNameMatch || undefined);
+          // Meta's numbers older than 5 minutes: read them again behind this answer (the next Diagnose shows them); never two reads at once
+          const stale = !d.health.spend_sync_at || Date.now() / 1000 - d.health.spend_sync_at > 300;
+          d.health.refreshing = false;
+          if (stale && cfg.adsToken && cfg.adAccountIds.length && !handler.syncing) {
+            handler.syncing = true; d.health.refreshing = true;
+            track(syncSpend(db, cfg, 2, fetchImpl).finally(() => { handler.syncing = false; }));
+          }
+          return send(res, 200, JSON.stringify(d), 'application/json');
+        }
+        const p10 = last10(arg); if (!p10) return send(res, 400, 'bad phone');
+        return send(res, 200, JSON.stringify(diagPhone(db, p10)), 'application/json');
       }
       send(res, 404, 'not found');
     } catch (e) {
@@ -83,6 +107,7 @@ export function createHandler({ db, cfg, fetchImpl = fetch, log = console }) {
     }
   };
   handler.idle = () => Promise.allSettled([...inflight]);
+  handler.syncing = false;
   return handler;
 }
 
@@ -97,6 +122,7 @@ export function main() {
       try { if (cfg.adsToken && cfg.adAccountIds.length) await syncSpend(db, cfg, 3); } catch (e) { console.error('[sync]', e.message); }
     };
     setInterval(tick, cfg.syncIntervalMin * 60000).unref();
+    setTimeout(tick, 5000).unref();   // also once right after a start
   }
 }
 

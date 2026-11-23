@@ -265,7 +265,7 @@ body.emb .tabs{display:none;}
     if (firstLoad) $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
     const R = await Promise.allSettled([
       api.get('lr.get', { date_from: from, date_to: last < clientToday ? last : clientToday }),
-      api.get('bd.b2_cm_recount', { days: daysBack, end: shownDay }),
+      api.get('budget.cm_recount', { days: daysBack, end: shownDay }),
       api.get('employees.list'),
       api.get('penalties.list', { month, status: 'applied' }),
       api.get('penalties.list', { month: prev, status: 'applied' }),
@@ -581,7 +581,7 @@ body.emb .tabs{display:none;}
     const sum = (k) => list.reduce((a, b) => a + (Number(b[k]) || 0), 0), shown = list.slice(0, S.bn);
     const storeIds = new Set(M.people.filter(p => M.duty.has(p.id) || (M.rowBy[p.id] || {}).grp === 'store').map(p => p.id));
     const opts = (sel, day) => '<option value="">Not assigned</option>' + M.people.filter(p => S.bAll || storeIds.has(p.id) || p.id === sel || ((M.dayMoves[day] || {})[p.id] === 'store')).map(p => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
-    const rule = (b) => b.com == null ? '–' : b.rule === 'chart' || b.rule === 'offer' || b.rule === 'flat' ? (b.pct != null ? b.pct + '%' : '') + ' <small style="display:inline;color:var(--muted)">' + b.rule + (b.reduced ? ' · no code, reduced' : '') + '</small>' : '<small class="ov" style="display:inline">' + esc(b.rule) + '</small>';
+    const rule = (b) => b.follow === 'waiting' ? '<small class="ov" style="display:inline;background:#fde8e8;color:#b3261e" title="The salesperson has not attached both screenshots (number saved + community) yet, so this bill pays nothing for now">⏳ waiting for screenshots (' + rs(b.com_wait || 0) + ' not counted)</small>' : b.com == null ? '–' : b.rule === 'chart' || b.rule === 'offer' || b.rule === 'flat' ? (b.pct != null ? b.pct + '%' : '') + ' <small style="display:inline;color:var(--muted)">' + b.rule + (b.reduced ? ' · no code, reduced' : '') + '</small>' : '<small class="ov" style="display:inline">' + esc(b.rule) + '</small>';
     const rows = shown.map(b => '<tr class="' + (b.employee_id ? '' : 'bad') + '"><td style="text-align:left">' + esc(b.bill_no) + '</td><td style="text-align:left">' + dnice(b.day) + ' ' + esc(b.time) + '</td><td>' + b.ml + ' ml</td><td>' + rs(b.total) + '</td><td>' + (b.code ? 'yes' : '–') + '</td><td>' + rule(b) + '</td><td><b>' + (b.com == null ? '–' : rs(b.com)) + '</b></td><td style="text-align:left"><select data-bill="' + b.bill_id + '" ' + (ed ? '' : 'disabled ') + 'style="font:inherit;font-size:12px;padding:2px 4px;max-width:210px">' + opts(b.employee_id, b.day) + '</select>' + (b.src === 'old_pos' ? ' <span class="ov" title="Billed in the old POS. You can still change who it pays.">old POS</span>' : '') + (b.employee_id ? '' : ' <span class="ov">written: ' + esc(b.name || '—') + '</span>') + '</td></tr>').join('')
       || '<tr><td colspan="8" style="text-align:left;padding:12px">No bills match.</td></tr>';
     return '<div class="sheet plain" style="max-height:min(70vh,720px);overflow:auto"><table><thead><tr><th style="text-align:left">Bill</th><th style="text-align:left">When</th><th>Size</th><th>Amount</th><th>Code</th><th>Rule</th><th>Commission</th><th style="text-align:left">Billed by</th></tr></thead><tbody>' + rows + '</tbody><tfoot><tr class="sum"><td style="text-align:left">' + list.length + ' bills</td><td></td><td>' + f(sum('ml')) + ' ml</td><td>' + rs(sum('total')) + '</td><td></td><td></td><td>' + rs(sum('com')) + '</td><td></td></tr></tfoot></table></div>'
@@ -617,8 +617,7 @@ body.emb .tabs{display:none;}
     if (pend) n.push(['warn', rs(pend) + ' of penalties logged today will be cut tomorrow.']);
     if (!F.exp) n.push(['warn', 'No fixed expenses are entered, so electricity, rent and the like are not in the budget.']);
     GK.forEach(k => { const x = F.L[k]; if (x.goal && x.proj > x.goal) n.push(['bad', GN[k] + ' is heading for ' + lakh(x.proj) + ' against a goal of ' + lakh(x.goal) + ': ' + lakh(x.proj - x.goal) + ' over. ' + (x.pen ? 'Penalties of ' + rs(x.pen) + ' are already taken off.' : '')]); });
-    const rSales = M.all.reduce((a, r) => a + Object.values(r.rs || {}).reduce((b, x) => b + (x.billed || 0), 0), 0);
-    if (rSales > 0 && !(Number(E.retail.pct) > 0)) n.push(['warn', 'Retail wholesale sold ' + rs(rSales) + ' this month, but the retail commission % is not set, so it earns no commission. Set it in the box on the right and Save.']);
+    // (Retail wholesale is paid a fixed salary only, no commission: no warning about a missing retail commission %.)
     if (!GK.some(k => F.L[k].goal)) n.push(['warn', 'No goal is set for the sales team, leaders, store or other salaries. Type them in "Budget by line" and Save to see who runs over.']);
     S.warn.forEach(w => n.push(['bad', w]));
     return n;
@@ -1062,6 +1061,7 @@ body.emb .tabs{display:none;}
     const M = S.M, all = exRows(), open = all.filter(r => r.recent && !r.settled), tot = open.reduce((a, r) => a + r.total, 0);
     const kp = (l, v, n, bad) => '<div class="kpi' + (bad ? ' bad' : '') + '"><span>' + l + '</span><b>' + v + '</b><em>' + n + '</em></div>';
     return '<div class="kpis te-k">' + kp('Ex-employees', all.length, 'moved out of every list') + kp('Pending salary now', rs(tot), open.length + (open.length === 1 ? ' person' : ' people') + ' still to be paid', open.length > 0) + kp('Not in the day-to-day budget', 'kept apart', 'they are not in the daily tables or the budget lines') + kp('Settled', all.filter(r => r.recent && r.settled).length, 'paid and closed') + '</div>'
+      + (M.bud.can_edit && open.length ? '<div style="margin:6px 0 10px"><button type="button" class="tbtn" id="settleAll">Mark all ' + open.length + ' as settled (paid)</button> <span class="hint">Use this only if all of them have already been paid. Each person can still be put back to pending.</span></div>' : '')
       + '<div class="te-bar"><input id="xq" type="search" placeholder="Find an ex-employee…" value="' + esc(S.xq) + '" autocomplete="off"><span class="hint">Click a name for the full card. Whoever you press “Make ex-employee…” on lands here: their login stops, and they leave every list. <b>Fixed</b> = salary ÷ 30 × days worked in the month they left. Store / retail commission shows for the month you are looking at; online commission is not included. Mark <b>settled</b> once paid. <b>Rejoin</b> brings someone back.</span></div>'
       + '<div id="exBox">' + exBody() + '</div>';
   }
@@ -1102,6 +1102,13 @@ body.emb .tabs{display:none;}
     if (e.target.closest('button[data-do="showlog"]')) { api.get('budget.audit').then(r => { S.log = r.log || []; render(); }).catch(err => say((err && err.message) || 'Could not read the log.', true)); return; }
     if (e.target.closest('button[data-do="csv"]')) { exportCsv(); return; }
     const rj = e.target.closest('button[data-rejoin]'); if (rj) { if (!confirm('Rejoin ' + rj.dataset.nm + '?\n\nThey come back to every list and the budget. Their login works again. You will need to set their pay rules again.')) return; rj.disabled = true; api.post('employees.rejoin', { employee_id: Number(rj.dataset.rejoin) }).then(() => { S.msg = rj.dataset.nm + ' has rejoined.'; S.msgBad = false; return load(); }).catch(err => { rj.disabled = false; S.msg = (err && err.message) || 'Could not rejoin.'; S.msgBad = true; render(); }); return; }
+    if (e.target.id === 'settleAll') {
+      const todo = pendRows().filter(x => !x.settled); if (!todo.length) return;
+      if (!confirm('Mark ALL ' + todo.length + ' ex-employees as settled (paid), total ' + rs(todo.reduce((a, r) => a + r.total, 0)) + '?\n\nDo this only if they have all been paid already. You can still put each person back to pending.')) return;
+      const b = e.target; b.disabled = true; let n = 0, bad = '';
+      (async () => { for (const r of todo) { try { await api.post('budget.settle', { employee_id: r.id, settled: true, amount: Math.round(r.total * 100) / 100 }); n++; b.textContent = 'Saving… ' + n + ' / ' + todo.length; } catch (err) { bad = (err && err.message) || 'Could not save.'; break; } } S.msg = bad ? n + ' settled, then it stopped: ' + bad : 'All ' + n + ' marked settled.'; S.msgBad = !!bad; await load(); })();
+      return;
+    }
     const stl = e.target.closest('button[data-settle]'); if (stl) { stl.disabled = true; api.post('budget.settle', { employee_id: Number(stl.dataset.settle), settled: stl.dataset.v === '1', amount: Number(stl.dataset.amt) || 0 }).then(() => { S.msg = stl.dataset.v === '1' ? 'Marked settled.' : 'Back to pending.'; S.msgBad = false; return load(); }).catch(err => { stl.disabled = false; S.msg = (err && err.message) || 'Could not save.'; S.msgBad = true; render(); }); return; }
     const dx = e.target.closest('[data-dayx]'); if (dx) { const x = dx.dataset.dayx.split('|'); api.post('budget.day_assign', { employee_id: Number(x[0]), day: x[1], grp: '' }).then(() => { S.msg = 'Taken back: that day counts as normal again.'; S.msgBad = false; return load(); }).catch(err => say((err && err.message) || 'Could not undo.', true)); return; }
     const dz = e.target.closest('.dz[data-dept], .dz[data-pg], .dz[data-pgday]'); if (dz) { if (S.sel.size) { if (dz.dataset.pgday) dayAssign([...S.sel]); else if (dz.dataset.pg) regroup([...S.sel], dz.dataset.pg); else moveMany([...S.sel], Number(dz.dataset.dept)); } else if (dz.dataset.dept !== undefined && !dz.dataset.pg && !dz.dataset.pgday) { const id = Number(dz.dataset.dept); S.dOnly = S.dOnly === id ? null : id; render(); const g0 = $('teGroups'); if (g0) g0.scrollIntoView({ block: 'start', behavior: 'smooth' }); } else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }

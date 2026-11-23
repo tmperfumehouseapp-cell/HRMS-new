@@ -1108,6 +1108,11 @@ if (strpos($__wl, 'wa.line_') === 0) {
             $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : wl_ist_at($td0, 0);
             [$rows, $more, $n] = wl_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
+        case 'wa.line_aft_replies': {   // 💬 the people behind the After-Order Replies number: today or the last 30 days
+            if (!function_exists('wa_aft_repliers')) require_once __DIR__ . '/wa_after.php';
+            $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
+            [$rows, $more, $n] = wa_aft_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
+        }
         case 'wa.line_card': {      // ⚡ the card's numbers are counted ONCE a minute and shared by every open screen (it took ~17 s a load and was 96 loads an hour: every load re-read all sent Lineup messages and their status). Only this report is up to 1 minute old; nothing that is sent changes.
             $calc = function () use ($pdo) { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); return ['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => hrms_memo('wl_card_total_v1:' . (string)$c['started'], 300, function () use ($pdo, $c) { return wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60); }), 'tomorrow' => wl_overview($pdo)['tomorrow']]; };      // ⚡ "total since start" re-reads EVERY Lineup message ever sent and its status (the biggest query of the database, 6.8%): counted once in 5 minutes; "today" stays at 1 minute
             json_response(function_exists('hrms_memo') ? hrms_memo('wl_card_v1', 60, $calc) : $calc()); }

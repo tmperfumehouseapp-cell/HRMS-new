@@ -38,7 +38,9 @@ jobs:
       - name: Ticket goal rules
         run: php tests/tk_test.php
       - name: Numbers table columns (a column added by a later deploy is never named in a SELECT)
-        run: php tests/schema_cols_test.php && php tests/newnum_test.php && php tests/retired_test.php && php tests/warm_test.php && php tests/night_pause_test.php && php tests/no_redeclare_test.php && php tests/unreach_10d_test.php && php tests/closed_num_tag_test.php && php tests/ru_never_sql_test.php && php tests/ru_lineup_test.php && php tests/tpl_weekly_block_test.php && php tests/ru_new_ramp_test.php && php tests/auto_swap_test.php && php tests/ru_noquiet_test.php && php tests/pick_small_first_test.php
+        run: php tests/schema_cols_test.php && php tests/newnum_test.php && php tests/retired_test.php && php tests/warm_test.php && php tests/night_pause_test.php && php tests/no_redeclare_test.php && php tests/unreach_10d_test.php && php tests/closed_num_tag_test.php && php tests/ru_never_sql_test.php && php tests/ru_lineup_test.php && php tests/tpl_weekly_block_test.php && php tests/ru_new_ramp_test.php && php tests/auto_swap_test.php && php tests/ru_noquiet_test.php && php tests/pick_small_first_test.php && php tests/n11_noramp_test.php
+      - name: Ad leads of one day (first message, number filter)
+        run: php tests/adleads_test.php
       - name: Comment guard (no code swallowed by a comment)
         run: php tests/comment_guard_test.php
       - name: Lineup replies (Stop / Not now are not replies)

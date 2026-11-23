@@ -1235,7 +1235,9 @@ try {
                 unset($x);
             }
             unset($r);
-            json_response(['date' => $d, 'today' => st_day(), 'day_start' => ST_DAY_START_HOUR, 'bills' => $rows, 'total' => round($sum, 2), 'total_ml' => $ml]);
+            $pf = st_proof_map($pdo, array_map(fn($r) => $r['bill_id'], $rows)); foreach ($rows as &$r) $r['proof'] = $pf[$r['bill_id']] ?? (object)[]; unset($r);
+            $ff = st_follow_from($pdo);
+            json_response(['date' => $d, 'today' => st_day(), 'day_start' => ST_DAY_START_HOUR, 'follow_from' => $ff, 'bills' => $rows, 'total' => round($sum, 2), 'total_ml' => $ml]);
             break;
         }
 
@@ -1360,7 +1362,7 @@ try {
                 try { $out['live'] = cm_is_live($pdo); if (!$out['live']) foreach (flash_offer_running(flash_offer_list_get($pdo)) as $x) $out['flash'][] = ['pct' => (float)$x['pct'], 'ends_at' => (string)$x['ends_at'], 'sizes' => array_values(array_map(fn($i) => (int)($i['ml'] ?? 0), (array)($x['items'] ?? [])))]; } catch (Throwable $e) { }
             }
             try { $ids = st_pool_ids($pdo); if ($ids) { $in = implode(',', array_map('intval', $ids)); $out['team'] = array_map(fn($r) => (string)$r['full_name'], $pdo->query("SELECT full_name FROM employees WHERE employee_id IN ($in) AND status != 'ex' ORDER BY full_name")->fetchAll()); } } catch (Throwable $e) { }
-            $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission'); $out['fixed'] = st_fixed_rules($pdo);
+            $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission'); $out['fixed'] = st_fixed_rules($pdo); $out['follow_from'] = st_follow_from($pdo); $out['today'] = st_day();
             json_response($out);
             break;
         }
@@ -1433,6 +1435,74 @@ try {
             $pdo->prepare("UPDATE st_bills SET total = ?, cash_amt = ?, online_amt = ? WHERE bill_id = ? AND status = 'ok'")->execute([$new, $cash, $online, $id]);
             if (function_exists('bd_log')) { try { bd_log('store', $id, 'Bill ' . $b['bill_no'] . ' amount changed: ₹' . number_format($old) . ' -> ₹' . number_format($new), (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
             json_response(['ok' => true, 'message' => $b['bill_no'] . ': ₹' . number_format($old) . ' → ₹' . number_format($new) . '.']);
+            break;
+        }
+
+        case 'st_bill.proof_save': {      // a screenshot for one bill: kind 'contact' (customer's number saved) or 'community' (added to the community). Pasted (Ctrl+V), picked or dropped on the page.
+            $auth = require_auth(); if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); $id = (int)($in['bill_id'] ?? 0); $kind = (string)($in['kind'] ?? '');
+            if (!in_array($kind, ['contact', 'community'], true)) json_response(['error' => 'Wrong kind.'], 422);
+            $q = $pdo->prepare("SELECT bill_no, biz_date, status FROM st_bills WHERE bill_id = ?"); $q->execute([$id]); $b = $q->fetch();
+            if (!$b) json_response(['error' => 'Bill not found.'], 404);
+            if ($b['status'] !== 'ok') json_response(['error' => 'This bill is cancelled.'], 409);
+            $isMgr = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage');
+            if (!$isMgr && $b['biz_date'] !== st_day()) json_response(['error' => 'Only a manager can add a screenshot to an earlier day. Today’s bills you can do yourself.'], 403);
+            $raw = (string)($in['image'] ?? ''); if (preg_match('/^data:image\/[a-z0-9.+-]+;base64,/i', $raw)) $raw = substr($raw, strpos($raw, ',') + 1);
+            $bin = base64_decode($raw, true); if ($bin === false || $bin === '') json_response(['error' => 'The picture could not be read. Try again.'], 422);
+            if (strlen($bin) > 6 * 1024 * 1024) json_response(['error' => 'The picture is too big (6 MB at most).'], 413);
+            $info = @getimagesizefromstring($bin); $ext = $info ? [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp', IMAGETYPE_GIF => 'gif'][$info[2]] ?? '' : '';
+            if ($ext === '') json_response(['error' => 'That is not a picture (JPG, PNG or WEBP).'], 422);
+            if (!st_proof_ready($pdo)) json_response(['error' => 'Could not prepare the screenshot store.'], 500);
+            $hash = hash('sha256', $bin);
+            $d = $pdo->prepare("SELECT p.bill_id, b.bill_no FROM st_bill_proofs p LEFT JOIN st_bills b ON b.bill_id = p.bill_id WHERE p.file_hash = ? AND NOT (p.bill_id = ? AND p.kind = ?) LIMIT 1"); $d->execute([$hash, $id, $kind]); $dup = $d->fetch();
+            if ($dup) json_response(['error' => 'This screenshot was already used for bill ' . ($dup['bill_no'] ?: ('#' . $dup['bill_id'])) . '. Take a new screenshot.'], 409);
+            $dir = __DIR__ . '/uploads/store_proofs/'; if (!is_dir($dir)) @mkdir($dir, 0755, true);
+            $name = 'sp_' . $id . '_' . $kind . '_' . date('YmdHis') . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
+            if (@file_put_contents($dir . $name, $bin) === false) json_response(['error' => 'The screenshot could not be saved.'], 500);
+            $who = (string)($auth['full_name'] ?? $auth['username'] ?? '');
+            $old = $pdo->prepare("SELECT file FROM st_bill_proofs WHERE bill_id = ? AND kind = ?"); $old->execute([$id, $kind]); $of = (string)$old->fetchColumn();
+            $pdo->prepare("INSERT INTO st_bill_proofs (bill_id, kind, file, file_hash, by_name, created_at) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE file = VALUES(file), file_hash = VALUES(file_hash), by_name = VALUES(by_name), created_at = VALUES(created_at)")->execute([$id, $kind, $name, $hash, mb_substr($who, 0, 100), date('Y-m-d H:i:s')]);
+            if ($of !== '' && is_file($dir . $of)) @unlink($dir . $of);
+            $m = st_proof_map($pdo, [$id])[$id] ?? [];
+            json_response(['ok' => true, 'proof' => $m, 'complete' => isset($m['contact'], $m['community'])]);
+            break;
+        }
+
+        case 'st_bill.proof_img': {       // one screenshot back as a data URL (Admin / HR / manager)
+            $auth = require_auth(); $id = (int)($_GET['bill_id'] ?? 0); $kind = (string)($_GET['kind'] ?? '');
+            if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) && !user_can($auth, 'rs_manage')) json_response(['error' => 'Only a manager can open the screenshots.'], 403);
+            if (!st_proof_ready($pdo)) json_response(['error' => 'No screenshots yet.'], 404);
+            $q = $pdo->prepare("SELECT file FROM st_bill_proofs WHERE bill_id = ? AND kind = ?"); $q->execute([$id, $kind]); $f = (string)$q->fetchColumn();
+            $path = __DIR__ . '/uploads/store_proofs/' . basename($f);
+            if ($f === '' || !is_file($path)) json_response(['error' => 'Screenshot not found.'], 404);
+            $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif'][strtolower(pathinfo($f, PATHINFO_EXTENSION))] ?? 'image/jpeg';
+            json_response(['image' => 'data:' . $mime . ';base64,' . base64_encode((string)file_get_contents($path))]);
+            break;
+        }
+
+        case 'st_bill.proof_clear': {     // a wrong screenshot is rejected: the bill waits again
+            $auth = require_auth(); require_role(['Admin', 'HR'], $auth); $in = json_input(); $id = (int)($in['bill_id'] ?? 0); $kind = (string)($in['kind'] ?? '');
+            if (!st_proof_ready($pdo)) json_response(['error' => 'No screenshots yet.'], 404);
+            $q = $pdo->prepare("SELECT file FROM st_bill_proofs WHERE bill_id = ? AND kind = ?"); $q->execute([$id, $kind]); $f = (string)$q->fetchColumn();
+            $pdo->prepare("DELETE FROM st_bill_proofs WHERE bill_id = ? AND kind = ?")->execute([$id, $kind]);
+            if ($f !== '' && is_file(__DIR__ . '/uploads/store_proofs/' . basename($f))) @unlink(__DIR__ . '/uploads/store_proofs/' . basename($f));
+            if (function_exists('bd_log')) { try { bd_log('store', $id, 'Bill #' . $id . ': ' . $kind . ' screenshot rejected', (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
+            json_response(['ok' => true]);
+            break;
+        }
+
+        case 'st_fix.follow': {           // switch the rule ON (from today) or OFF: a bill pays commission only after both screenshots
+            $auth = require_auth(); if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+            if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) && !user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
+            $in = json_input(); $on = !empty($in['on']); $from = '';
+            if ($on) {
+                $from = (string)($in['from'] ?? ''); if ($from === '') $from = st_day();
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || strtotime($from) === false) json_response(['error' => 'Pick a valid day.'], 422);
+                if ($from < st_day()) json_response(['error' => 'The rule cannot start on a day that has already begun (' . st_day() . ' or later). Bills of earlier days never change.'], 422);
+            }
+            setting_set($pdo, 'st_follow_req_from', $from);
+            if (function_exists('bd_log')) { try { bd_log('store', 0, 'Screenshot rule ' . ($on ? 'ON from ' . $from : 'OFF'), (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'from' => $from, 'message' => $on ? 'ON from ' . $from . ': only the bills of that day and later count in commission after both screenshots. Earlier bills do not change.' : 'OFF: every bill counts as before.']);
             break;
         }
 
