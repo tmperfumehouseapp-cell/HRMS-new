@@ -1108,7 +1108,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
             $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : wl_ist_at($td0, 0);
             [$rows, $more, $n] = wl_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
-        case 'wa.aft_replies': {   // 💬 the people behind the After-Order Replies number: today or the last 30 days
+        case 'wa.line_aft_replies': {   // 💬 the people behind the After-Order Replies number: today or the last 30 days
             if (!function_exists('wa_aft_repliers')) require_once __DIR__ . '/wa_after.php';
             $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wa_aft_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);

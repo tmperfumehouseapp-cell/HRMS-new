@@ -180,11 +180,17 @@ test('report lists the click-to-WhatsApp ads only', () => {
   const rep = dailyReport(db, { from: '2026-11-23', to: '2026-11-23' }, 0);
   assert.deepEqual(rep.rows.map((r) => r.ad_id), ['WA1']);
   assert.equal(rep.total.spend, 100);
-  // a WhatsApp ad Meta counted conversations for is listed even when none of its clicks reached us yet
-  db.prepare('INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations,campaign_name,account_id) VALUES (?,?,?,?,?,?,?,?,?)').run('2026-11-23', 'WA2', 'Quiet WhatsApp ad', 50, 1, 1, 5, 'CTWA 3', '42');
+  // by name: a WhatsApp campaign / CTWA ad is listed with no click and even no conversation yet; a website ad with a few conversations is not
+  const ins = db.prepare('INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations,campaign_name,account_id) VALUES (?,?,?,?,?,?,?,?,?)');
+  ins.run('2026-11-23', 'WA2', 'CTWA | quiet video', 50, 900, 10, 5, 'WhatsApp | CTWA 3 | combo offer', '42');
+  ins.run('2026-11-23', 'WA3', 'brand new', 0, 0, 0, 0, 'whatsapp | new', '42');
+  ins.run('2026-11-23', 'WEB2', 'website | catalogue | pur+con custom', 0, 5, 1, 3, 'website | catalogue | pur+con custom', '42');
+  ins.run('2026-11-23', 'WEB3', 'some ad', 70, 5, 1, 0, 'website | 2 ads | whatsappclicks type', '42');
   const rep2 = dailyReport(db, { from: '2026-11-23', to: '2026-11-23' }, 0);
-  assert.deepEqual(rep2.rows.map((r) => r.ad_id).sort(), ['WA1', 'WA2']);
-  assert.equal(rep2.rows.find((r) => r.ad_id === 'WA2').campaign_name, 'CTWA 3'); assert.equal(rep2.total.meta_conversations, 7);
+  assert.deepEqual(rep2.rows.map((r) => r.ad_id).sort(), ['WA1', 'WA2', 'WA3']);
+  const w2 = rep2.rows.find((r) => r.ad_id === 'WA2'); assert.equal(w2.campaign_name, 'WhatsApp | CTWA 3 | combo offer'); assert.equal(w2.meta_clicks, 10);
+  assert.equal(rep2.total.meta_conversations, 7); assert.equal(rep2.total.meta_clicks, 11);
+  assert.deepEqual(dailyReport(db, { from: '2026-11-23', to: '2026-11-23' }, 0, '^website \\| catalogue').rows.map((r) => r.ad_id).sort(), ['WA1', 'WEB2']);
 });
 
 test('diagnose: signed day funnel and one customer', async () => {
