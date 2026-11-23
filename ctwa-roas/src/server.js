@@ -87,7 +87,15 @@ export function createHandler({ db, cfg, fetchImpl = fetch, log = console }) {
           return send(res, 401, 'unauthorized');
         if (url.pathname === '/diag') {
           const day = /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : todayIn(cfg.tzOffsetMin);
-          return send(res, 200, JSON.stringify(diagDay(db, day, cfg.tzOffsetMin)), 'application/json');
+          const d = diagDay(db, day, cfg.tzOffsetMin);
+          // Meta's numbers older than 5 minutes: read them again behind this answer (the next Diagnose shows them); never two reads at once
+          const stale = !d.health.spend_sync_at || Date.now() / 1000 - d.health.spend_sync_at > 300;
+          d.health.refreshing = false;
+          if (stale && cfg.adsToken && cfg.adAccountIds.length && !handler.syncing) {
+            handler.syncing = true; d.health.refreshing = true;
+            track(syncSpend(db, cfg, 2, fetchImpl).finally(() => { handler.syncing = false; }));
+          }
+          return send(res, 200, JSON.stringify(d), 'application/json');
         }
         const p10 = last10(arg); if (!p10) return send(res, 400, 'bad phone');
         return send(res, 200, JSON.stringify(diagPhone(db, p10)), 'application/json');
@@ -99,6 +107,7 @@ export function createHandler({ db, cfg, fetchImpl = fetch, log = console }) {
     }
   };
   handler.idle = () => Promise.allSettled([...inflight]);
+  handler.syncing = false;
   return handler;
 }
 
@@ -113,6 +122,7 @@ export function main() {
       try { if (cfg.adsToken && cfg.adAccountIds.length) await syncSpend(db, cfg, 3); } catch (e) { console.error('[sync]', e.message); }
     };
     setInterval(tick, cfg.syncIntervalMin * 60000).unref();
+    setTimeout(tick, 5000).unref();   // also once right after a start
   }
 }
 
