@@ -71,7 +71,7 @@
   const diffTd = (d) => d == null ? '<td>—</td>' : '<td class="' + (d > 0 ? 'pos' : d < 0 ? 'neg' : '') + '">' + (d > 0 ? '+' : '') + money(d) + '</td>';
 
   async function load(day) {
-    try { D = await B2.get('bd.b2_cm_view', { day: day || (D && D.day) || '' }); } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Commission</b>' + esc(e.message || '') + '</div></div>'; return; }
+    try { D = await B2.get('budget.cm_view', { day: day || (D && D.day) || '' }); } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Commission</b>' + esc(e.message || '') + '</div></div>'; return; }
     render();
   }
   function tabs() {
@@ -117,7 +117,7 @@
   }
   // 📅 one row per salesperson: name · today's target · then yesterday, the day before … (sales on top, commission below); the head shows the team's sales that day
   function ddHtml() {
-    if (!DD) { if (!DDL) { DDL = true; B2.get('bd.b2_cm_recount', { days: DDN + 1 }).then((r) => { DD = r; DDL = false; if (TAB === 'result') render(); }).catch((e) => { DD = { error: e.message || 'Could not count.', people: [] }; DDL = false; if (TAB === 'result') render(); }); } return '<div class="bd-empty" style="padding:14px">Counting ' + (DDM ? 'this month' : DDN + ' days') + '…</div>'; }
+    if (!DD) { if (!DDL) { DDL = true; B2.get('budget.cm_recount', { days: DDN + 1 }).then((r) => { DD = r; DDL = false; if (TAB === 'result') render(); }).catch((e) => { DD = { error: e.message || 'Could not count.', people: [] }; DDL = false; if (TAB === 'result') render(); }); } return '<div class="bd-empty" style="padding:14px">Counting ' + (DDM ? 'this month' : DDN + ' days') + '…</div>'; }
     if (DD.error) return '<div class="cm-need bad">' + esc(DD.error) + '</div>';
     const td = today(), days = []; for (let i = DDM ? 0 : 1; i <= DDN; i++) days.push(new Date(Date.parse(td + 'T12:00:00Z') - i * 864e5).toISOString().slice(0, 10));
     const tgtToday = {}; ((D && D.day === td && D.result && D.result.rows) || []).forEach((r) => { tgtToday[r.id] = r.target; });
@@ -136,7 +136,7 @@
   const DAYC = {};
   async function openDay(day, pid) {
     const m = BD.modal('<h3>' + esc(day) + '</h3><div class="bd-empty">Loading the orders…</div>');
-    let v = DAYC[day]; if (!v) { try { v = DAYC[day] = await B2.get('bd.b2_cm_view', { day }); } catch (e) { m.innerHTML = '<h3>' + esc(day) + '</h3><div class="cm-need bad">' + esc(e.message || 'Could not load.') + '</div>'; return; } }
+    let v = DAYC[day]; if (!v) { try { v = DAYC[day] = await B2.get('budget.cm_view', { day }); } catch (e) { m.innerHTML = '<h3>' + esc(day) + '</h3><div class="cm-need bad">' + esc(e.message || 'Could not load.') + '</div>'; return; } }
     const rows = ((v.result && v.result.rows) || []).filter((r) => pid ? r.id === pid : (r.orders > 0)); const dl = new Date(day + 'T12:00:00Z').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
     const one = (r) => '<div class="cm-dd-p"><div class="cm-dd-ph"><b>' + esc(r.name) + '</b><span>Target ' + money(r.target) + ' · Sales <b>' + money(r.sales) + '</b>' + (r.pct == null ? '' : ' (' + r.pct + '%)') + ' · ' + r.orders + ' order' + (r.orders === 1 ? '' : 's') + '</span></div>'
       + '<div class="cm-dd-sum">' + (r.manual_orders ? '<b style="color:#1d4fa3">' + r.manual_orders + ' manual / quick-entry order' + (r.manual_orders === 1 ? '' : 's') + ' counted in the sales and target</b> (no products known: the chart pays nothing for them, and they need no code).<br>' : '') + 'Codes: <b>' + r.codes + ' of ' + (r.code_orders != null ? r.code_orders : r.orders) + '</b>' + (r.code_need ? ' (needed ' + r.code_need + ')' : '') + ' → ' + (r.orders ? (r.code_ok ? '✓ code limit reached: every order pays full' : '<b style="color:#b91c1c">below the code limit: orders WITHOUT a code pay half</b>') : '—')
@@ -156,7 +156,7 @@
       if (v === null) return; const t = v.trim().replace(/[₹,\s]/g, '');
       if (t !== '' && (isNaN(Number(t)) || Number(t) < 0)) { alert('Type a number, for example 150.'); return; }
       b.disabled = true;
-      try { await B2.post('bd.b2_cm_fix', t === '' ? { key: b.dataset.ek, remove: 1 } : { key: b.dataset.ek, amount: Number(t), calc: Number(calc) || 0, day, emp_id: Number(b.dataset.ee) || 0 }); delete DAYC[day]; DD = null; openDay(day, pid); render(); }
+      try { await B2.post('budget.cm_fix', t === '' ? { key: b.dataset.ek, remove: 1 } : { key: b.dataset.ek, amount: Number(t), calc: Number(calc) || 0, day, emp_id: Number(b.dataset.ee) || 0 }); delete DAYC[day]; DD = null; openDay(day, pid); render(); }
       catch (e) { alert(e.message || 'Could not save.'); b.disabled = false; }
     }; });
     // 🔎 click an order number: its details open right under the row (products, discount, total, tags, how it was counted); click again to close
@@ -255,7 +255,7 @@
     document.querySelectorAll('[data-ddn]').forEach((b) => b.onclick = () => { DDM = false; DDN = Number(b.dataset.ddn); DD = null; render(); });
     { const q = document.getElementById('cmDdQ'); if (q) q.oninput = () => { DDQ = q.value.trim(); const w = DDQ.toLowerCase(); let n = 0; document.querySelectorAll('.cm-dd tr[data-nm]').forEach((tr) => { const ok = !w || tr.dataset.nm.indexOf(w) > -1; tr.hidden = !ok; if (ok) n++; }); q.title = n + ' employee' + (n === 1 ? '' : 's') + ' shown'; }; }   // 🔍 type a name: only the matching people stay (the Team line keeps everyone's total)
     document.querySelectorAll('[data-ddm]').forEach((b) => b.onclick = () => { DDM = true; DDN = Math.max(0, Number(today().slice(8, 10)) - 1); DD = null; render(); });   // 📆 14 Nov → today + the 13 days back to 1 Nov
-    if ($('cmRc')) $('cmRc').onclick = async () => { $('cmRc').disabled = true; $('cmRc').textContent = 'Counting…'; try { RC = await B2.get('bd.b2_cm_recount', { days: 10 }); } catch (e) { RC = { error: e.message || 'Could not recount.', people: [] }; } render(); };
+    if ($('cmRc')) $('cmRc').onclick = async () => { $('cmRc').disabled = true; $('cmRc').textContent = 'Counting…'; try { RC = await B2.get('budget.cm_recount', { days: 10 }); } catch (e) { RC = { error: e.message || 'Could not recount.', people: [] }; } render(); };
     document.querySelectorAll('tr[data-p]').forEach((r) => r.onclick = () => { OPEN[r.dataset.p] = !OPEN[r.dataset.p]; render(); });
     if ($('cmTbl')) {   // the 5% column: every empty cell gets the middle of the 6% and the 4% price (yellow until saved)
       const fill5 = () => { let n = 0; document.querySelectorAll('#cmTbl tbody tr').forEach((tr) => { const g = (j) => parseFloat(String(tr.querySelector('[data-j="' + j + '"]').value).replace(',', '.')) || 0, c5 = tr.querySelector('[data-j="3"]'), a = g(2), b = g(4);
@@ -265,14 +265,14 @@
     }
     if ($('cmAddRow')) $('cmAddRow').onclick = () => { D.chart.rows = readRows(); D.chart.rows.push({ ml: 0, p: [0, 0, 0, 0, 0, 0] }); render(); };
     document.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { D.chart.rows = readRows(); D.chart.rows.splice(Number(b.dataset.del), 1); render(); });
-    if ($('cmSave')) $('cmSave').onclick = () => act('bd.b2_cm_chart_save', { rows: readRows(), floor: val('cmFloor'), codepct: val('cmCode'), nocode: val('cmNo'), prepaid: val('cmPre'), bonus_max: val('cmMax'), tiers: tiersFrom('#cmTiers'), reviewed: $('cmRev').checked ? 1 : 0 }, 'Pricing saved.');
-    if ($('oAdd')) $('oAdd').onclick = () => act('bd.b2_cm_offer_add', { ml: val('oMl'), price: val('oPrice'), pct: val('oPct'), from_date: val('oFrom'), to_date: val('oTo'), });
-    if ($('bdSave')) $('bdSave').onclick = () => act('bd.b2_cm_bday_save', { on: val('bdOn') === '1', pct: val('bdPct') });
-    if ($('gAdSave')) $('gAdSave').onclick = () => act('bd.b2_cm_addons_set', { addons: val('gAd') || '' });
-    document.querySelectorAll('[data-os]').forEach((b) => b.onclick = () => act('bd.b2_cm_offer_stop', { id: Number(b.dataset.os) }));
+    if ($('cmSave')) $('cmSave').onclick = () => act('budget.cm_chart_save', { rows: readRows(), floor: val('cmFloor'), codepct: val('cmCode'), nocode: val('cmNo'), prepaid: val('cmPre'), bonus_max: val('cmMax'), tiers: tiersFrom('#cmTiers'), reviewed: $('cmRev').checked ? 1 : 0 }, 'Pricing saved.');
+    if ($('oAdd')) $('oAdd').onclick = () => act('budget.cm_offer_add', { ml: val('oMl'), price: val('oPrice'), pct: val('oPct'), from_date: val('oFrom'), to_date: val('oTo'), });
+    if ($('bdSave')) $('bdSave').onclick = () => act('budget.cm_bday_save', { on: val('bdOn') === '1', pct: val('bdPct') });
+    if ($('gAdSave')) $('gAdSave').onclick = () => act('budget.cm_addons_set', { addons: val('gAd') || '' });
+    document.querySelectorAll('[data-os]').forEach((b) => b.onclick = () => act('budget.cm_offer_stop', { id: Number(b.dataset.os) }));
     if ($('bScope')) $('bScope').onchange = () => { $('bPpl').style.display = val('bScope') === 'people' ? 'flex' : 'none'; };
-    if ($('bAdd2')) $('bAdd2').onclick = () => act('bd.b2_cm_boost_add', { name: val('bName'), from_date: val('bFrom'), to_date: val('bTo'), scope: val('bScope'), emp_ids: [].map.call(document.querySelectorAll('#bPpl input:checked'), (i) => Number(i.value)), tiers: tiersFrom('#bTiers') });
-    document.querySelectorAll('[data-bs]').forEach((b) => b.onclick = () => act('bd.b2_cm_boost_stop', { id: Number(b.dataset.bs) }));
+    if ($('bAdd2')) $('bAdd2').onclick = () => act('budget.cm_boost_add', { name: val('bName'), from_date: val('bFrom'), to_date: val('bTo'), scope: val('bScope'), emp_ids: [].map.call(document.querySelectorAll('#bPpl input:checked'), (i) => Number(i.value)), tiers: tiersFrom('#bTiers') });
+    document.querySelectorAll('[data-bs]').forEach((b) => b.onclick = () => act('budget.cm_boost_stop', { id: Number(b.dataset.bs) }));
   }
   function readRows() {
     const out = []; document.querySelectorAll('#cmTbl tbody tr').forEach((tr) => { const ml = parseInt(tr.querySelector('[data-k=ml]').value, 10) || 0; const p = [0, 0, 0, 0, 0, 0]; tr.querySelectorAll('[data-j]').forEach((i) => p[Number(i.dataset.j)] = parseFloat(i.value) || 0); out.push({ ml, p }); });

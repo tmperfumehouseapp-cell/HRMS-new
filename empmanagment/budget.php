@@ -153,7 +153,7 @@ if ($__bg === 'budget.store_comm') {
     if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
     $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
-    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('budget.store_comm boss: ' . $e->getMessage()); }
+    try { if (is_file(__DIR__ . '/budget_cm.php')) require_once __DIR__ . '/budget_cm.php'; } catch (Throwable $e) { error_log('budget.store_comm boss: ' . $e->getMessage()); }
     if (!function_exists('cm_chart') || !function_exists('cm_pct') || !function_exists('cm_offers') || !function_exists('cm_offer_match') || !function_exists('cm_code_need')) json_response(['error' => 'The commission engine is not available on this server.'], 500);
     try { $r = budget_store_calc($pdo, $from, $to); } catch (Throwable $e) { error_log('budget.store_comm: ' . $e->getMessage()); json_response(['from' => $from, 'to' => $to, 'people' => [], 'note' => 'The store tables are not there yet.']); }
     $by = []; $pool = ['sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'code_bills' => 0, 'ids' => st_pool_ids($pdo)]; $old = ['bills' => 0, 'sales' => 0.0, 'unmatched' => 0]; $days = [];
@@ -201,7 +201,7 @@ if ($__bg === 'budget.store_bills') {
     if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
     $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
-    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) {}
+    try { if (is_file(__DIR__ . '/budget_cm.php')) require_once __DIR__ . '/budget_cm.php'; } catch (Throwable $e) {}
     $engine = function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
     $rows = [];
     try {

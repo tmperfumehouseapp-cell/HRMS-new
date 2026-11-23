@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Follow-up — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=2">
+<style>
+  .fu{max-width:1500px;margin:0 auto;padding-bottom:40px;}
+  .fu *{box-sizing:border-box;}
+  .fu-pills{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none;}
+  .fu-pills::-webkit-scrollbar{display:none;}
+  .fu-pill{flex:none;white-space:nowrap;font:inherit;font-size:13px;font-weight:800;padding:9px 17px;border-radius:999px;background:#fff;border:1px solid var(--line);color:#4a4f5c;cursor:pointer;}
+  .fu-pill.on{background:#111827;color:#fff;border-color:#111827;}
+  .fu-pill.add{border-style:dashed;color:#0f7a4d;}
+  .fu-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin-bottom:12px;}
+  .fu-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .fu-head h2{margin:0;font-size:19px;font-weight:800;}
+  .fu-head .sp{flex:1;}
+  .fu-sub{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .fu-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+  .fu-stat{background:#f6f7f9;border-radius:12px;padding:8px 12px;font-size:12px;color:#4a505c;}
+  .fu-stat b{display:block;font-size:17px;color:#14161a;}
+  .fu-stat.r b{color:#d9423b;} .fu-stat.g b{color:#16945a;}
+  .fu-lb{font-size:11.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#6b7280;margin-bottom:8px;}
+  .fu-chk{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;padding:5px 0;line-height:1.4;}
+  .fu-dot{flex:none;width:9px;height:9px;border-radius:50%;margin-top:5px;background:#f59e0b;}
+  .fu-dot.red{background:#d9423b;}
+  .fu-dig{white-space:pre-wrap;font-size:13.5px;line-height:1.55;background:#f7f5ff;border:1px solid #e4defc;border-radius:14px;padding:12px 14px;margin-top:10px;}
+  .fu{min-width:0;} .fu-wrap{width:100%;max-width:calc(100vw - 48px);}
+  .fu-t.side th.tp{text-transform:none;letter-spacing:0;} .fu-t a.fu-tag{white-space:normal;}
+  .fu-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:18px;background:#fff;}
+  table.fu-t{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;}
+  .fu-t th,.fu-t td{border-bottom:1px solid #eef0f3;border-right:1px solid #eef0f3;padding:9px 10px;vertical-align:top;text-align:left;}
+  .fu-t th{background:#f6f7f9;font-size:12px;font-weight:800;white-space:nowrap;position:sticky;top:0;z-index:2;}
+  .fu-t th.td,.fu-t td.td{background:#fffbea;}
+  .fu-t th:first-child,.fu-t td:first-child{position:sticky;left:0;z-index:3;background:#fff;min-width:220px;max-width:260px;box-shadow:1px 0 0 #e5e7eb;}
+  .fu-t th:first-child{background:#f6f7f9;z-index:4;}
+  .fu-t td.c{min-width:210px;max-width:300px;}
+  .fu-t td.c.w{cursor:pointer;} .fu-t td.c.w:hover{background:#f3faf6;}
+  .fu-t tr.done td,.fu-t .dn{opacity:.55;}
+  .fu-t.side th:first-child,.fu-t.side td:first-child{min-width:130px;max-width:150px;white-space:nowrap;font-weight:800;font-size:12px;}
+  .fu-t.side th.tp{white-space:normal;min-width:230px;max-width:300px;vertical-align:top;font-weight:400;}
+  .fu-t.side td.dy.td{background:#fffbea;}
+  .fu-tt{font-weight:800;font-size:13.5px;line-height:1.3;}
+  .fu-tag{display:inline-block;font-size:10.5px;font-weight:800;border-radius:999px;padding:2px 8px;margin:4px 4px 0 0;background:#eef2f6;color:#475467;white-space:nowrap;}
+  .fu-tag.red{background:#fde8e6;color:#b42318;} .fu-tag.amb{background:#fff3d6;color:#8a5a00;} .fu-tag.grn{background:#e3f6ec;color:#0f7a4d;} .fu-tag.pur{background:#efeafe;color:#5b3fd1;}
+  .fu-num{font-weight:800;font-size:14px;}
+  .fu-num small{font-weight:600;color:#6b7280;font-size:10.5px;}
+  .fu-txt{white-space:pre-wrap;word-break:break-word;line-height:1.4;margin-top:2px;}
+  .fu-by{font-size:10.5px;color:#9aa1ac;margin-top:3px;}
+  .fu-miss{color:#b45309;font-weight:700;font-size:12px;}
+  .fu-none{color:#c0c5cd;}
+  .fu-bar{height:5px;border-radius:9px;background:#eef0f3;margin-top:5px;overflow:hidden;} .fu-bar i{display:block;height:100%;background:#16945a;}
+  .fu-m{display:none;}
+  .fu-mc{background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px;}
+  .fu-mc.done{opacity:.6;}
+  .fu-mday{border-top:1px solid #f0f1f3;padding:8px 0;font-size:13px;}
+  .fu-mday .d{font-size:11.5px;font-weight:800;color:#6b7280;}
+  .fu-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  @media (max-width:820px){ .fu-wrap,.fu-sw{display:none !important;} .fu-m{display:block;} .fu-card{padding:14px;} .fu-row2{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Follow-up</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Every section, its topics, and one update a day on each — checked by Claude.</div></div></div>
+    <div class="content"><div class="fu" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=14"></script>
+<script src="assets/js/layout.js?v=33"></script>
+<script src="assets/js/boss_common.js?v=4"></script>
+<script>
+guardPage(); renderSidebar('followup');
+(function () {
+  const { esc, $, toast, inr } = BD;
+  let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true;
+  try { SIDE = localStorage.getItem('fup_side') !== '0'; } catch (e) { SIDE = true; }
+  try { SID = Number(new URLSearchParams(location.search).get('s')) || Number(localStorage.getItem('fup_sec')) || 0; } catch (e) { SID = 0; }
+
+  const dayName = (d, today) => { const dt = new Date(d + 'T12:00:00'); const diff = Math.round((new Date(today + 'T12:00:00') - dt) / 86400000); return (diff === 0 ? 'Today · ' : diff === 1 ? 'Yesterday · ' : '') + dt.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }); };
+  const numTxt = (t, u) => (u && u.val != null ? '<div class="fu-num">' + (t.unit === '₹' ? inr(u.val) : Number(u.val).toLocaleString('en-IN') + (t.unit ? ' ' + esc(t.unit) : '')) + (u.auto ? ' <small>from the system</small>' : '') + '</div>' : '');
+  const canDay = (t, d) => t.can_write && t.status !== 'done' && (D.manager || d >= D.days[1] || d === D.today);
+  const covered = (t, d) => { const u = t.updates[d]; return !!(u && (u.text || (t.source && u.val != null))); };
+  const sec = () => D.sections.find((s) => s.id === D.section) || null;
+
+  async function load(keep) {
+    try {
+      if (!keep) $('root').style.opacity = D ? '.6' : '1';
+      D = await api.get('fup.board', { section: SID || '', days: DAYS });
+      SID = D.section || 0; try { if (SID) localStorage.setItem('fup_sec', String(SID)); } catch (e) { /* private mode */ }
+      render();
+    } catch (e) { $('root').innerHTML = '<div class="bd-empty"><b>Could not open Follow-up</b>' + esc(e.message || '') + '</div>'; }
+    $('root').style.opacity = '1';
+  }
+  async function people() { if (!PPL) PPL = await api.get('fup.people'); return PPL; }
+
+  function tags(t) {
+    let h = '';
+    if (t.status === 'done') h += '<span class="fu-tag grn">Finished</span>';
+    else if (t.kind === 'deadline') { const dl = t.days_left; h += '<span class="fu-tag ' + (dl < 0 ? 'red' : dl <= 2 ? 'amb' : '') + '">Deadline ' + esc(new Date(t.due_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })) + ' · ' + (dl < 0 ? -dl + 'd late' : dl === 0 ? 'today' : dl + 'd left') + '</span>'; }
+    else h += '<span class="fu-tag">Every day</span>';
+    h += '<span class="fu-tag ' + (t.assignee ? '' : 'amb') + '">' + (t.assignee ? '👤 ' + esc(t.assignee) : 'Not given to anyone') + '</span>';
+    const so = t.source && D.sources.find((x) => x.key === t.source);
+    if (so) h += '<a class="fu-tag pur" href="' + esc(so.page) + '" target="_top" style="text-decoration:none" title="Open ' + esc(so.group) + '">🔗 Auto · ' + esc(so.group) + ' · ' + esc(so.label) + '</a>';
+    return h;
+  }
+  function cell(t, d) {
+    const u = t.updates[d], w = canDay(t, d);
+    let h = numTxt(t, u);
+    if (u && u.pct != null) h += '<div class="fu-bar"><i style="width:' + u.pct + '%"></i></div><div class="fu-by">' + u.pct + '% done</div>';
+    if (u && u.text) h += '<div class="fu-txt">' + esc(u.text) + '</div><div class="fu-by">' + esc(u.by || '') + '</div>';
+    else if (d === D.today && t.status !== 'done' && !covered(t, d)) h += '<div class="fu-miss">' + (w ? '+ Write today’s update' : 'No update yet') + '</div>';
+    else if (w && d === D.today && t.status !== 'done') h += '<div class="fu-by">+ add a note</div>';
+    else if (!h) h = '<span class="fu-none">—</span>';
+    return h;
+  }
+
+  function render() {
+    const s = sec(); let h = '<div class="fu-pills">' + D.sections.map((x) => '<button class="fu-pill' + (x.id === D.section ? ' on' : '') + '" data-sec="' + x.id + '">' + esc(x.name) + '</button>').join('') + (D.manager ? '<button class="fu-pill add" id="secAdd">＋ New section</button>' : '') + '</div>';
+    if (!s) { $('root').innerHTML = h + '<div class="bd-empty"><b>Nothing here for you yet</b>' + (D.manager ? 'Make the first section with “＋ New section”.' : 'When a topic or a section is given to you, it shows here and on My Day.') + '</div>'; bind(); return; }
+    const open = D.topics.filter((t) => t.status !== 'done'), got = open.filter((t) => covered(t, D.today)).length, red = D.checks.filter((c) => c.level === 'red').length;
+    h += '<div class="fu-card"><div class="fu-head"><div><h2>' + esc(s.name) + '</h2><div class="fu-sub">' + (s.owner ? 'Whole section given to: <b>' + esc(s.owner) + '</b>' : 'The whole section is not given to one person: each topic has its own person.') + '</div></div><span class="sp"></span>'
+      + '<select class="bd-in" id="daysSel" style="width:auto;padding:7px 10px;font-size:13px">' + [7, 14, 31].map((n) => '<option value="' + n + '"' + (n === DAYS ? ' selected' : '') + '>Last ' + n + ' days</option>').join('') + '</select>'
+      + (D.manager ? '<button class="bd-btn sm" id="secEdit">Section settings</button><button class="bd-btn sm pri" id="topAdd">＋ Topic</button>' : '') + '</div>'
+      + '<div class="fu-stats"><div class="fu-stat"><b>' + open.length + '</b>open topics</div><div class="fu-stat ' + (got === open.length && open.length ? 'g' : '') + '"><b>' + got + ' / ' + open.length + '</b>updated today</div><div class="fu-stat ' + (red ? 'r' : 'g') + '"><b>' + red + '</b>need attention</div></div></div>';
+
+    if (s.own && D.topics.length) {
+      h += '<div class="fu-card"><div class="fu-head"><div class="fu-lb" style="margin:0">Claude’s check</div><span class="sp"></span><button class="bd-btn sm" id="askAi"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ ' + (D.digest ? 'Ask Claude again' : 'Ask Claude to read this section') + '</button></div>'
+        + (D.checks.length ? '<div style="margin-top:8px">' + D.checks.map((c) => '<div class="fu-chk"><span class="fu-dot ' + (c.level === 'red' ? 'red' : '') + '"></span><span>' + esc(c.text) + '</span></div>').join('') + '</div>' : '<div class="fu-sub" style="margin-top:8px">Every open topic has today’s update. Nothing is late.</div>')
+        + (D.digest ? '<div class="fu-dig">' + esc(D.digest.text) + '</div><div class="fu-by">Claude read it on ' + esc(dayName(D.digest.day, D.today)) + (D.digest.day !== D.today ? ' — ask again for today' : '') + '</div>' : (D.ai ? '' : '<div class="fu-sub" style="margin-top:8px">The checks above work without Claude. Claude’s written note needs the Anthropic key on the server.</div>')) + '</div>';
+    }
+
+    if (!D.topics.length) h += '<div class="bd-empty"><b>No topics yet</b>' + (D.manager ? 'Add the points you follow every day: Sales, New displays reached, New perfumes added …' : 'No topic of this section is given to you.') + '</div>';
+    else {
+      // big screens: the Excel sheet. Default = topics side by side (one column a topic), one row a day; the switch turns it (topics down, days across).
+      const th = (t) => '<div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t) + (D.manager ? '<div style="margin-top:6px"><button class="bd-btn sm" data-edit="' + t.id + '">Edit</button></div>' : '');
+      const td = (t, d) => '<td class="c' + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + (canDay(t, d) ? ' w" data-up="' + t.id + '" data-day="' + d : '') + '">' + cell(t, d) + '</td>';
+      h += '<div style="display:flex;justify-content:flex-end;margin:0 0 8px" class="fu-sw"><button class="bd-btn sm" id="flip">⇄ ' + (SIDE ? 'Show topics down, days across' : 'Show topics side by side') + '</button></div>';
+      if (SIDE) h += '<div class="fu-wrap"><table class="fu-t side"><thead><tr><th>Day</th>' + D.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '">' + th(t) + '</th>').join('') + '</tr></thead><tbody>'
+        + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + D.topics.map((t) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
+      else h += '<div class="fu-wrap"><table class="fu-t"><thead><tr><th>Topic</th>' + D.days.map((d) => '<th class="' + (d === D.today ? 'td' : '') + '">' + esc(dayName(d, D.today)) + '</th>').join('') + '</tr></thead><tbody>'
+        + D.topics.map((t) => '<tr class="' + (t.status === 'done' ? 'done' : '') + '"><td>' + th(t) + '</td>' + D.days.map((d) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
+      // phones: one card a topic, today on top, the earlier days under it
+      h += '<div class="fu-m">' + D.topics.map((t) => {
+        const w = canDay(t, D.today), past = D.days.slice(1).filter((d) => t.updates[d] && (t.updates[d].text || t.updates[d].val != null));
+        return '<div class="fu-mc' + (t.status === 'done' ? ' done' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t)
+          + '<div class="fu-mday" style="margin-top:10px"><div class="d">' + esc(dayName(D.today, D.today)) + '</div>' + cell(t, D.today) + '</div>'
+          + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">' + (w ? '<button class="bd-btn sm ' + (t.updates[D.today] && t.updates[D.today].text ? '' : 'pri') + '" data-up="' + t.id + '" data-day="' + D.today + '">' + (t.updates[D.today] && t.updates[D.today].text ? 'Change today’s update' : 'Write today’s update') + '</button>' : '')
+          + (canDay(t, D.days[1]) && !(t.updates[D.days[1]] && t.updates[D.days[1]].text) ? '<button class="bd-btn sm" data-up="' + t.id + '" data-day="' + D.days[1] + '">Write yesterday’s</button>' : '') + (D.manager ? '<button class="bd-btn sm" data-edit="' + t.id + '">Edit topic</button>' : '') + '</div>'
+          + (past.length ? '<details style="margin-top:8px"><summary class="fu-sub" style="cursor:pointer;font-weight:700">Earlier days (' + past.length + ')</summary>' + past.map((d) => '<div class="fu-mday"><div class="d">' + esc(dayName(d, D.today)) + '</div>' + cell(t, d) + '</div>').join('') + '</details>' : '') + '</div>';
+      }).join('') + '</div>';
+    }
+    $('root').innerHTML = h; bind();
+  }
+
+  function bind() {
+    document.querySelectorAll('[data-sec]').forEach((b) => { b.onclick = () => { SID = Number(b.dataset.sec); load(); }; });
+    document.querySelectorAll('[data-up]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); writeUp(Number(b.dataset.up), b.dataset.day); }; });
+    document.querySelectorAll('[data-edit]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); topicForm(D.topics.find((t) => t.id === Number(b.dataset.edit))); }; });
+    if ($('secAdd')) $('secAdd').onclick = () => sectionForm(null);
+    if ($('secEdit')) $('secEdit').onclick = () => sectionForm(sec());
+    if ($('topAdd')) $('topAdd').onclick = () => topicForm(null);
+    if ($('daysSel')) $('daysSel').onchange = () => { DAYS = Number($('daysSel').value) || 7; load(); };
+    if ($('askAi')) $('askAi').onclick = askClaude;
+    if ($('flip')) $('flip').onclick = () => { SIDE = !SIDE; try { localStorage.setItem('fup_side', SIDE ? '1' : '0'); } catch (e) { /* private mode */ } render(); };
+  }
+  const run = async (btn, fn) => { if (busy) return; busy = true; if (btn) btn.disabled = true; try { await fn(); } catch (e) { toast(e.message || 'Could not save.'); } busy = false; if (btn) btn.disabled = false; };
+
+  /* ---------------- one day's update of one topic ---------------- */
+  function writeUp(id, day) {
+    const t = D.topics.find((x) => x.id === id); if (!t) return; const u = t.updates[day] || {};
+    const m = BD.modal('<h3>' + esc(t.title) + '</h3><div class="bd-sub" style="margin-bottom:10px">' + esc(dayName(day, D.today)) + (t.note ? ' · ' + esc(t.note) : '') + '</div>'
+      + '<div class="bd-f"><label>Update</label><textarea class="bd-in" id="uT" maxlength="2000" rows="5" placeholder="What happened on this topic?">' + esc(u.text || '') + '</textarea></div>'
+      + '<div class="fu-row2"><div class="bd-f"><label>Number' + (t.unit ? ' (' + esc(t.unit) + ')' : '') + '</label><input class="bd-in" id="uV" inputmode="decimal" placeholder="' + (t.source ? 'Comes by itself' + (u.val != null ? ': ' + u.val : '') : 'If this topic has a number') + '" value="' + (u.val != null && !u.auto ? u.val : '') + '">' + (t.source ? '<div class="hint">Leave empty to keep the number from the system. Type a number only to correct it.</div>' : '') + '</div>'
+      + '<div class="bd-f"><label>% done</label><input class="bd-in" id="uP" inputmode="numeric" placeholder="0 – 100, if it fits" value="' + (u.pct != null ? u.pct : '') + '"></div></div>'
+      + '<div class="acts"><button class="bd-btn" id="uX">Cancel</button><button class="bd-btn go" id="uOk">Save update</button></div>', { sticky: true });
+    m.querySelector('#uX').onclick = () => BD.close();
+    m.querySelector('#uOk').onclick = () => run(m.querySelector('#uOk'), async () => {
+      const text = m.querySelector('#uT').value.trim(), v = m.querySelector('#uV').value.trim(), p = m.querySelector('#uP').value.trim();
+      if (!text) { toast('Write the update first.'); return; }
+      const body = { topic_id: id, day: day, text: text, pct: p }; if (v !== '' || !t.source) body.value = v;
+      await api.post('fup.update_save', body); BD.close(); toast('Update saved.'); await load(true);
+    });
+    setTimeout(() => { try { m.querySelector('#uT').focus(); } catch (e) { /* fine */ } }, 50);
+  }
+
+  // the section's own part of the HRMS first (Shop Wholesale section → Shop wholesale numbers on top)
+  const allGroups = () => [...new Set(D.sources.map((s) => s.group))];
+  const secGroup = () => { const n = (sec() ? sec().name : '').toLowerCase(); return allGroups().find((g) => g.toLowerCase().split(' ').some((w) => w.length > 3 && n.indexOf(w) > -1)) || ''; };
+  const srcGroups = () => { const g = secGroup(); return g ? [g].concat(allGroups().filter((x) => x !== g)) : allGroups(); };
+  function guessSource(title) {
+    const g = secGroup(); if (!g) return ''; const words = title.toLowerCase().split(/[^\p{L}\p{N}\p{M}]+/u).filter(Boolean); let best = '', bs = 0;
+    D.sources.filter((s) => s.group === g).forEach((s) => { const kw = s.kw.split(' '); const sc = words.filter((w) => kw.indexOf(w) > -1).length; if (sc > bs) { bs = sc; best = s.key; } });
+    return best;
+  }
+
+  /* ---------------- a topic: what, which kind, who, where the number comes from ---------------- */
+  async function topicForm(t) {
+    let P; try { P = await people(); } catch (e) { toast(e.message || 'Could not load the people.'); return; }
+    const k = t ? t.kind : 'progress';
+    const m = BD.modal('<h3>' + (t ? 'Edit topic' : 'New topic · ' + esc(sec().name)) + '</h3>'
+      + '<div class="bd-f"><label>Topic</label><input class="bd-in" id="tT" maxlength="160" placeholder="Sales · New displays reached · New perfumes added …" value="' + esc(t ? t.title : '') + '"></div>'
+      + '<div class="bd-f"><label>What do you want to see in the daily update?</label><input class="bd-in" id="tN" maxlength="255" placeholder="Optional. Example: how many shops, which perfumes" value="' + esc(t ? t.note : '') + '"></div>'
+      + '<div class="fu-row2"><div class="bd-f"><label>Kind</label><select class="bd-in" id="tK"><option value="progress"' + (k === 'progress' ? ' selected' : '') + '>Runs every day (progress)</option><option value="deadline"' + (k === 'deadline' ? ' selected' : '') + '>Has a last date (deadline)</option></select></div>'
+      + '<div class="bd-f" id="tDw"><label>Last date</label><input class="bd-in" id="tD" type="date" value="' + esc(t && t.due_date ? t.due_date : '') + '"></div></div>'
+      + '<div class="bd-f"><label>Who writes the update every day</label><select class="bd-in" id="tE"><option value="0">Nobody yet (the section owner writes it)</option>' + P.people.map((p) => '<option value="' + p.id + '"' + (t && t.assignee_emp === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></div>'
+      + '<div class="bd-f"><label>Number of the day</label><select class="bd-in" id="tS"><option value="">The person types it (or no number)</option>' + srcGroups().map((g) => '<optgroup label="Auto from ' + esc(g) + '">' + D.sources.filter((s) => s.group === g).map((s) => '<option value="' + s.key + '"' + (t && t.source === s.key ? ' selected' : '') + '>' + esc(s.label) + '</option>').join('') + '</optgroup>').join('') + '</select><div class="hint" id="tSh">A connected topic takes its number from the HRMS by itself every day. Nobody has to type it; words are optional.</div></div>'
+      + (t ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="bd-btn sm" id="tUp">↑ Move up</button><button class="bd-btn sm" id="tDn">↓ Move down</button><button class="bd-btn sm" id="tFin">' + (t.status === 'done' ? 'Open again' : '✓ Mark finished') + '</button><button class="bd-btn sm bad" id="tDel">Remove topic</button></div>' : '')
+      + '<div class="acts"><button class="bd-btn" id="tX">Cancel</button><button class="bd-btn go" id="tOk">Save topic</button></div>', { sticky: true });
+    const q = (i) => m.querySelector(i), dueVis = () => { q('#tDw').style.display = q('#tK').value === 'deadline' ? '' : 'none'; }; dueVis(); q('#tK').onchange = dueVis;
+    // auto-connect: a new topic whose name says what it is (Sales, Visits, Displays, Payment …) is connected to this section's own part of the HRMS; the choice can be changed
+    if (!t) q('#tT').addEventListener('input', () => { if (q('#tS').dataset.touched) return; const k = guessSource(q('#tT').value); q('#tS').value = k; const so = D.sources.find((x) => x.key === k); q('#tSh').textContent = so ? 'Connected by itself to ' + so.group + ' · ' + so.label + '. Change it if it is not right.' : 'A connected topic takes its number from the HRMS by itself every day. Nobody has to type it; words are optional.'; });
+    q('#tS').onchange = () => { q('#tS').dataset.touched = '1'; };
+    q('#tX').onclick = () => BD.close();
+    q('#tOk').onclick = () => run(q('#tOk'), async () => {
+      await api.post('fup.topic_save', { id: t ? t.id : 0, section_id: D.section, title: q('#tT').value, note: q('#tN').value, kind: q('#tK').value, due_date: q('#tD').value, assignee_emp: Number(q('#tE').value), source: q('#tS').value });
+      BD.close(); toast('Topic saved.'); await load(true);
+    });
+    if (t) {
+      const act = (a, body, msg) => run(null, async () => { await api.post(a, body); BD.close(); if (msg) toast(msg); await load(true); });
+      q('#tUp').onclick = () => act('fup.topic_move', { id: t.id, dir: -1 });
+      q('#tDn').onclick = () => act('fup.topic_move', { id: t.id, dir: 1 });
+      q('#tFin').onclick = () => act('fup.topic_done', { id: t.id, done: t.status === 'done' ? 0 : 1 }, t.status === 'done' ? 'Topic is open again.' : 'Topic marked finished.');
+      q('#tDel').onclick = async () => { if (await BD.confirm('Remove this topic?', '“' + t.title + '” leaves the sheet and My Day. Its old updates are kept in the system, not deleted.', 'Remove', true)) act('fup.topic_del', { id: t.id }, 'Topic removed.'); };
+    }
+  }
+
+  /* ---------------- a section: its name, and (if wanted) the ONE person or department that writes everything in it ---------------- */
+  async function sectionForm(s) {
+    let P; try { P = await people(); } catch (e) { toast(e.message || 'Could not load the people.'); return; }
+    const mode = s && s.owner_emp ? 'emp' : s && s.owner_dept ? 'dept' : 'none';
+    const m = BD.modal('<h3>' + (s ? 'Section settings' : 'New section') + '</h3>'
+      + '<div class="bd-f"><label>Name of the section</label><input class="bd-in" id="sN" maxlength="80" placeholder="Shop Wholesale · Surat Store · Dispatch …" value="' + esc(s ? s.name : '') + '"></div>'
+      + '<div class="bd-f"><label>Give the WHOLE section to</label><select class="bd-in" id="sM"><option value="none"' + (mode === 'none' ? ' selected' : '') + '>Nobody: each topic has its own person</option><option value="emp"' + (mode === 'emp' ? ' selected' : '') + '>One person</option><option value="dept"' + (mode === 'dept' ? ' selected' : '') + '>A department (everybody in it)</option></select>'
+      + '<div class="hint">The owner sees every topic of this section and can write every update. A topic can still have its own person.</div></div>'
+      + '<div class="bd-f" id="sEw"><label>Person</label><select class="bd-in" id="sE"><option value="0">Choose…</option>' + P.people.map((p) => '<option value="' + p.id + '"' + (s && s.owner_emp === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></div>'
+      + '<div class="bd-f" id="sDw"><label>Department</label><select class="bd-in" id="sD"><option value="0">Choose…</option>' + P.depts.map((d) => '<option value="' + d.id + '"' + (s && s.owner_dept === d.id ? ' selected' : '') + '>' + esc(d.name) + '</option>').join('') + '</select></div>'
+      + (s ? '<div style="margin-bottom:6px"><button class="bd-btn sm bad" id="sDel">Remove this section</button></div>' : '')
+      + '<div class="acts"><button class="bd-btn" id="sX">Cancel</button><button class="bd-btn go" id="sOk">Save</button></div>', { sticky: true });
+    const q = (i) => m.querySelector(i), vis = () => { q('#sEw').style.display = q('#sM').value === 'emp' ? '' : 'none'; q('#sDw').style.display = q('#sM').value === 'dept' ? '' : 'none'; }; vis(); q('#sM').onchange = vis;
+    q('#sX').onclick = () => BD.close();
+    q('#sOk').onclick = () => run(q('#sOk'), async () => {
+      const md = q('#sM').value, oe = md === 'emp' ? Number(q('#sE').value) : 0, od = md === 'dept' ? Number(q('#sD').value) : 0;
+      if ((md === 'emp' && !oe) || (md === 'dept' && !od)) { toast(md === 'emp' ? 'Choose the person.' : 'Choose the department.'); return; }
+      const r = await api.post('fup.section_save', { id: s ? s.id : 0, name: q('#sN').value, owner_emp: oe, owner_dept: od });
+      BD.close(); toast('Section saved.'); if (!s && r && r.id) SID = r.id; await load(true);
+    });
+    if (s) q('#sDel').onclick = async () => { if (await BD.confirm('Remove this section?', '“' + s.name + '” and its topics leave the screen for everybody. The old updates are kept in the system, not deleted.', 'Remove', true)) run(null, async () => { await api.post('fup.section_del', { id: s.id }); BD.close(); SID = 0; toast('Section removed.'); await load(true); }); };
+  }
+
+  function askClaude() {
+    const b = $('askAi'); const old = b.textContent; b.textContent = 'Claude is reading…';
+    run(b, async () => { try { const r = await api.post('fup.claude', { section_id: D.section }); if (r && r.digest) { D.digest = r.digest; render(); } } finally { if ($('askAi') && $('askAi').textContent === 'Claude is reading…') $('askAi').textContent = old; } });
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>
