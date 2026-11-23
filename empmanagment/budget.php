@@ -213,7 +213,7 @@ if ($__bg === 'budget.store_bills') {
             foreach ($q->fetchAll() as $b) $rows[] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => (string)$b['biz_date'], 'time' => substr((string)$b['created_at'], 11, 5), 'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => trim((string)$b['order_code']) !== '', 'total' => (float)$b['total'], 'ml' => (int)$b['total_ml'], 'pct' => null, 'rule' => '', 'reduced' => false, 'com' => null];
         }
     } catch (Throwable $e) { error_log('budget.store_bills: ' . $e->getMessage()); }
-    $out = []; foreach (array_slice($rows, 0, 3000) as $b) $out[] = ['bill_id' => $b['bill_id'], 'bill_no' => $b['bill_no'], 'day' => $b['day'], 'time' => $b['time'], 'employee_id' => $b['employee_id'], 'name' => $b['name'], 'code' => $b['code'], 'total' => $b['total'], 'ml' => $b['ml'], 'pct' => $b['pct'], 'rule' => $b['rule'], 'reduced' => $b['reduced'], 'com' => $b['com'], 'src' => $b['src'] ?? 'new_pos'];
+    $out = []; foreach (array_slice($rows, 0, 3000) as $b) $out[] = ['follow' => (string)($b['follow'] ?? ''), 'com_wait' => (float)($b['com_wait'] ?? 0), 'bill_id' => $b['bill_id'], 'bill_no' => $b['bill_no'], 'day' => $b['day'], 'time' => $b['time'], 'employee_id' => $b['employee_id'], 'name' => $b['name'], 'code' => $b['code'], 'total' => $b['total'], 'ml' => $b['ml'], 'pct' => $b['pct'], 'rule' => $b['rule'], 'reduced' => $b['reduced'], 'com' => $b['com'], 'src' => $b['src'] ?? 'new_pos'];
     json_response(['from' => $from, 'to' => $to, 'bills' => $out, 'engine' => $engine]);
 }
 if ($__bg === 'budget.bill_assign') {

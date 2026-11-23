@@ -258,6 +258,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('cfun_fast') && !defined('WA_IN_WEBHOOK')) $o['cfun_fast'] = cfun_fast($pdo, 2000, 8, 20); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'funnel fast: ' . $e->getMessage()); }   // ⚡ customers whose status changed are recounted every run
     try { if (function_exists('waa_tick') && !defined('WA_IN_WEBHOOK')) $o['auto'] = waa_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto assign (new): ' . $e->getMessage()); } $__mk('waa_tick');   // 🏪 new queries → salespeople by the rules
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); } $__mk('wa_auto_alloc');   // 🤖 orders → the salesperson of the chat
+    try { if (function_exists('must3_photo_tick') && !defined('WA_IN_WEBHOOK')) $o['m3p'] = must3_photo_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain photos: ' . $e->getMessage()); }   // 📷 chain photos sent without words are looked at for the must-send check — its OWN engine step (inside wa_auto_alloc it was never reached: 8 photos waited, none read)
     if (!$__late()) try { if (function_exists('ora_catchup') && !defined('WA_IN_WEBHOOK')) $o['ora'] = ora_catchup($pdo); } catch (Throwable $e) { } $__mk('ora_catchup');   // 📈 today's unread orders are read by themselves (growth effort): nobody has to press Read chats now
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); } $__mk('wa_callnow_scan');
     if (!$__late()) try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); } $__mk('wq_urgent_push');   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
@@ -757,6 +758,28 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             foreach (["ALTER TABLE wa_messages ADD INDEX k_dir_type_ts (dir, mtype, ts, phone)", "ALTER TABLE wa_contacts ADD INDEX k_callnow (callnow, assigned_emp)",
                       "ALTER TABLE wa_messages ADD INDEX k_pdt (phone, dir, ts)", "ALTER TABLE wa_camp_items ADD INDEX k_phone (phone)"] as $ix) {
                 try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { } } }
+            }
+        }
+        // ⚡ speed indexes, round 2 (23 Nov, Server load: the database was 30% of the server). Same answers, found faster; added ONCE, online:
+        //    wa_tpl_waba (waba_id, meta_id)      — "how many templates has this WhatsApp account" read the whole table (its key starts with tpl_id)
+        //    wa_messages (dir, who, ts, phone)   — "chats where the BOT spoke last" (the follow-up scan) read every outgoing message of the period to find the bot's
+        if ((string)setting_get($pdo, 'wa_idx_v2', '') !== '1') {
+            setting_set($pdo, 'wa_idx_v2', '1'); @set_time_limit(900); ignore_user_abort(true);
+            foreach (["ALTER TABLE wa_tpl_waba ADD INDEX k_waba (waba_id, meta_id)", "ALTER TABLE wa_messages ADD INDEX k_dir_who_ts (dir, who, ts, phone)"] as $ix) {
+                try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { try { wa_log($pdo, 'engine', false, 'index v2: ' . $e2->getMessage()); } catch (Throwable $e3) { } } } }
+            }
+        }
+        // ⚡ speed indexes, round 3 (23 Nov, from the 25 queries of Server load). Same answers, found faster; added ONCE, online:
+        //    wa_contacts (assigned_emp, status)            — "how many open chats has this person" and the per-person list check
+        //    wa_line_plan (wamid)                          — Lineup: plans found by their WhatsApp message id (read every plan of a status before)
+        //    wa_line_plan (status, step, topic, phone)     — Lineup counts by step / topic
+        //    wa_line_plan (status, due_at, phone)          — Lineup counts by day
+        //    wa_messages (number_id, ts, dir)              — messages in / out of ONE WhatsApp number since a time (runs of 8 s were seen)
+        if ((string)setting_get($pdo, 'wa_idx_v3', '') !== '1') {
+            setting_set($pdo, 'wa_idx_v3', '1'); @set_time_limit(1200); ignore_user_abort(true);
+            foreach (["ALTER TABLE wa_contacts ADD INDEX k_emp_status (assigned_emp, status)", "ALTER TABLE wa_line_plan ADD INDEX k_wamid (wamid)", "ALTER TABLE wa_line_plan ADD INDEX k_st_step (status, step, topic, phone)",
+                      "ALTER TABLE wa_line_plan ADD INDEX k_st_due_ph (status, due_at, phone)", "ALTER TABLE wa_messages ADD INDEX k_num_ts (number_id, ts, dir)"] as $ix) {
+                try { $pdo->exec($ix . ", ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { if (stripos($e->getMessage(), 'Duplicate key name') === false) { try { $pdo->exec($ix); } catch (Throwable $e2) { try { wa_log($pdo, 'engine', false, 'index v3: ' . $e2->getMessage()); } catch (Throwable $e3) { } } } }
             }
         }
         // ⚡ one cron at a time: a slow run (Meta, Shopify) is never joined by the next minute's run — they used to pile up and slow every page

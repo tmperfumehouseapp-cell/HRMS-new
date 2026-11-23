@@ -913,6 +913,39 @@ function st_people_status(PDO $pdo, array $billIds): array
 
 /* ============================== the customer's BILL PAGE (public, opened from the WhatsApp link) ============================== */
 
+/* ---------- bill follow-up proofs: a screenshot that the customer's number was saved and one that he was added to the community ---------- */
+/** the first day the rule applies ('' = switched off: proofs can be attached but nothing waits for them). Setting st_follow_req_from. */
+function st_follow_from(PDO $pdo): string
+{
+    $v = ''; try { if (function_exists('setting_get')) $v = (string)setting_get($pdo, 'st_follow_req_from', ''); } catch (Throwable $e) { }
+    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : '';
+}
+/** makes the proof table once. Not inside a transaction (DDL commits it). */
+function st_proof_ready(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    $flag = sys_get_temp_dir() . '/hrms_st_proofs_v1'; if (is_file($flag)) return $ok = true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_bill_proofs (
+            proof_id INT AUTO_INCREMENT PRIMARY KEY, bill_id INT NOT NULL, kind VARCHAR(10) NOT NULL, file VARCHAR(255) NOT NULL, file_hash CHAR(64) NOT NULL,
+            by_name VARCHAR(100) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, UNIQUE KEY uq_st_proof (bill_id, kind), KEY idx_st_proof_hash (file_hash)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        @file_put_contents($flag, '1'); return $ok = true;
+    } catch (Throwable $e) { error_log('st_proof_ready: ' . $e->getMessage()); return $ok = false; }
+}
+/** bill_id => ['contact' => ['by' =>, 'at' =>], 'community' => [...]] */
+function st_proof_map(PDO $pdo, array $ids): array
+{
+    $ids = array_values(array_filter(array_map('intval', $ids))); if (!$ids || !st_proof_ready($pdo)) return [];
+    $out = [];
+    try { $q = $pdo->query("SELECT bill_id, kind, by_name, created_at FROM st_bill_proofs WHERE bill_id IN (" . implode(',', $ids) . ")"); foreach ($q->fetchAll() as $r) $out[(int)$r['bill_id']][(string)$r['kind']] = ['by' => (string)$r['by_name'], 'at' => (string)$r['created_at']]; } catch (Throwable $e) { }
+    return $out;
+}
+/** bills that have BOTH screenshots (read-only: never creates the table) */
+function st_proof_done_ids(PDO $pdo): array
+{
+    try { if (!$pdo->query("SHOW TABLES LIKE 'st_bill_proofs'")->fetch()) return []; return array_map('intval', $pdo->query("SELECT bill_id FROM st_bill_proofs GROUP BY bill_id HAVING COUNT(DISTINCT kind) >= 2")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { return []; }
+}
 function st_vcf_esc(string $t): string { return str_replace(["\\", ",", ";", "\r", "\n"], ["\\\\", "\\,", "\\;", '', "\\n"], $t); }
 
 /** One .vcf with every store contact (the store number + each salesperson): opening it on a phone offers "Add contacts". */
@@ -1366,7 +1399,7 @@ function st_bday_start(PDO $pdo): string
     $s = (string)setting_get($pdo, 'st_bday_start', ''); if ($s === '') { $s = '2026-11-08 00:00:00'; setting_set($pdo, 'st_bday_start', $s); }   // the day the owner started it (fixed, so a late first request cannot move it)
     return $v = $s;
 }
-function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 1, 'valid_after' => 14, 'auto_wa' => 1]; }   // the gift goes out the day BEFORE the birthday and stays valid about 15 days in all
+function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 1, 'valid_after' => 7, 'auto_wa' => 1]; }   // the gift goes out the day BEFORE the birthday and stays valid about 15 days in all
 function st_bday_cfg(PDO $pdo): array
 {
     $d = st_bday_defaults();
@@ -1410,6 +1443,9 @@ function st_bday_run(PDO $pdo, bool $send = true, ?int $now = null): array
     }
     if ((string)setting_get($pdo, 'st_bday_v3', '') === '') {   // once more: the owner wants the message the day BEFORE the birthday (valid until 14 days after it)
         setting_set($pdo, 'st_bday_v3', date('Y-m-d H:i:s')); $o1 = st_bday_cfg($pdo); st_bday_cfg_save($pdo, ['enabled' => $o1['enabled'], 'auto_wa' => 1, 'send_before' => 1, 'valid_after' => 14]);
+    }
+    if ((string)setting_get($pdo, 'st_bday_v4', '') === '') {   // once more: the owner wants the code valid for one week after the birthday at most
+        setting_set($pdo, 'st_bday_v4', date('Y-m-d H:i:s')); $o2 = st_bday_cfg($pdo); st_bday_cfg_save($pdo, ['enabled' => $o2['enabled'], 'auto_wa' => $o2['auto_wa'], 'send_before' => $o2['send_before'], 'valid_after' => 7]);
     }
     $cfg = st_bday_cfg($pdo); $out = ['made' => 0, 'sent' => 0, 'failed' => 0, 'waiting' => 0, 'off' => !$cfg['enabled']];
     if (!$cfg['enabled']) return $out;
@@ -1603,6 +1639,12 @@ if (!function_exists('budget_store_calc')) {
         return is_numeric($v) && (float)$v >= 0 && (float)$v <= 30 ? (float)$v : 6.0;
     }
     function st_name_key(string $n): string { return strtolower(trim(preg_replace('/\s+/', ' ', $n))); }
+    /** the first day the NEW store billing was used for real (setting st_newpos_from, default 2026-11-05). Before it, a day counts the old POS bills AND the new-billing bills of that day; from it, a day that has a new-billing bill counts only those. */
+    function st_newpos_from(PDO $pdo): string
+    {
+        $v = null; try { if (function_exists('setting_get')) $v = setting_get($pdo, 'st_newpos_from', null); } catch (Throwable $e) { }
+        return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : '2026-11-05';
+    }
     /** old POS bills the owner pointed at an employee by hand: POS order id => employee id */
     function st_oldpos_assign_get(PDO $pdo): array
     {
@@ -1647,8 +1689,11 @@ if (!function_exists('budget_store_calc')) {
         $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
             FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
         $q->execute([$from, $to]);
-        $all = $q->fetchAll(); $newDays = []; foreach ($all as $b) $newDays[(string)$b['biz_date']] = 1;
+        $all = $q->fetchAll(); $newFrom = st_newpos_from($pdo);
+        $newDays = []; foreach ($all as $b) if ((string)$b['biz_date'] >= $newFrom) $newDays[(string)$b['biz_date']] = 1;      // before the new billing really started, a day takes the bills of BOTH: the old POS and whatever was already made in the new billing; from that day on, a day with a new bill is read from the new billing only
         foreach (budget_oldpos_rows($pdo, $from, $to, $newDays) as $b) $all[] = $b;     // days with no bill in the new POS come from the old POS
+        $fFrom = st_follow_from($pdo);      // the owner's rule: a bill pays the salesperson only after BOTH screenshots (number saved + community) are attached; only bills of the new billing from that day on
+        if ($fFrom !== '') { $fDone = array_flip(st_proof_done_ids($pdo)); foreach ($all as $i => $b) if ((string)($b['src'] ?? 'new_pos') !== 'old_pos' && (int)$b['bill_id'] > 0 && (string)$b['biz_date'] >= $fFrom && !isset($fDone[(int)$b['bill_id']])) $all[$i]['follow_wait'] = 1; }
         foreach ($all as $i => $b) { $rows[$i] = $b; $eid = (int)$b['emp_id']; $gk = isset($pool[$eid]) ? 'pool' : ($eid > 0 ? (string)$eid : 'n:' . $b['emp_name']); $groups[$gk . '|' . $b['biz_date']][] = $i; }
         $out = [];
         foreach ($groups as $k => $idx) {
@@ -1671,9 +1716,10 @@ if (!function_exists('budget_store_calc')) {
                         else { $unpriced++; $rule = 'ML not priced'; }
                     } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; }
                 }
+                $fw = !empty($b['follow_wait']); $cw = 0.0; if ($fw) { $cw = round($com, 2); $com = 0.0; }
                 $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
                     'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => $hasCode, 'total' => $gross, 'ml' => $ml,
-                    'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2), 'pooled' => isset($pool[(int)$b['emp_id']]), 'src' => (string)($b['src'] ?? 'new_pos')];
+                    'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2), 'follow' => $fw ? 'waiting' : '', 'com_wait' => $cw, 'pooled' => isset($pool[(int)$b['emp_id']]), 'src' => (string)($b['src'] ?? 'new_pos')];
             }
         }
         ksort($out);

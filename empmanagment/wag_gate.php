@@ -13,7 +13,7 @@ if (!function_exists('wgate_state')) {
     /** [emp => number of 'back again' queries opened in the current sales day, held now] — they are left out of the lock count. */
     function wgate_again_map(PDO $pdo): array
     {
-        $o = []; try { $t0 = wgate_day_start($pdo); $q = $pdo->prepare("SELECT emp_id e, COUNT(*) n FROM wa_queries WHERE again = 1 AND emp_id > 0 AND opened_at >= ? AND opened_at < ? GROUP BY emp_id"); $q->execute([date('Y-m-d H:i:s', $t0), date('Y-m-d H:i:s', $t0 + 86400)]); foreach ($q->fetchAll() as $r) $o[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }
+        $o = []; try { $t0 = wgate_day_start($pdo); $q = $pdo->prepare("SELECT emp_id e, COUNT(*) n FROM wa_queries WHERE again = 1 AND src NOT IN ('campaign', 'community') AND emp_id > 0 AND opened_at >= ? AND opened_at < ? GROUP BY emp_id"); $q->execute([date('Y-m-d H:i:s', $t0), date('Y-m-d H:i:s', $t0 + 86400)]); foreach ($q->fetchAll() as $r) $o[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }
         return $o;
     }
     /** The numbers of the Sales Live cards (what the owner sees: queries = normal + campaign, orders = query orders + campaign orders) are the ONE source (owner 22 Nov: a lock on the top seller while her card said 23% was wrong): the snapshot writes them here;
@@ -43,7 +43,7 @@ if (!function_exists('wgate_state')) {
         $r = ['blocked' => false, 'mode' => $mode, 'q' => $n, 'o' => $o, 'again' => $ag, 'ref' => round($ref, 3), 'need' => 0, 'why' => ''];
         if ($mode === 'lock') { $r['blocked'] = true; $r['why'] = '🔒 Locked by the admin. New queries come back when the admin opens the lock.'; return $r; }
         if ($mode === 'open') return $r;
-        if ($s['fresh'] && (($n >= 10 && $o === 0) || ($n >= 12 && ($o / $n) < 0.5 * $ref))) { $r['blocked'] = true; $r['need'] = $need; $r['why'] = '🔒 You have ' . $n . ' queries today (normal + campaign' . ($ag > 0 ? ', ' . $ag . ' returning customer' . ($ag === 1 ? '' : 's') . ' not counted' : '') . ') with ' . $o . ' order' . ($o === 1 ? '' : 's') . ' — below the team level (' . round(100 * $o / $n) . '% vs ' . round(100 * $ref) . '%). Close the chats you already have: ' . $need . ' more order' . ($need === 1 ? '' : 's') . ' (' . ($o + $need) . ' in total) and new queries open again.'; }
+        if ($s['fresh'] && (($n >= 10 && $o === 0) || ($n >= 12 && ($o / $n) < 0.5 * $ref))) { $r['blocked'] = true; $r['need'] = $need; $r['why'] = '🔒 You have ' . $n . ' fresh queries today (' . ($ag > 0 ? ', ' . $ag . ' returning customer' . ($ag === 1 ? '' : 's') . ' not counted' : '') . ') with ' . $o . ' order' . ($o === 1 ? '' : 's') . ' — below the team level (' . round(100 * $o / $n) . '% vs ' . round(100 * $ref) . '%). Close the chats you already have: ' . $need . ' more order' . ($need === 1 ? '' : 's') . ' (' . ($o + $need) . ' in total) and new queries open again.'; }
         return $r;
     }
     /** What the Sales Live card needs: [blocked, mode, q, o]. */

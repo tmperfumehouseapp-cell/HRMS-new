@@ -1101,6 +1101,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if ($n && function_exists('wa_tick')) { try { wa_more_tables($pdo); wa_tick($pdo); } catch (Throwable $e) { } }   // assignment + call-now alerts react right away
             if ($n || $st) wa_log($pdo, 'webhook', true, $n . ' message' . ($n === 1 ? '' : 's') . ', ' . $st . ' status update' . ($st === 1 ? '' : 's'));
         } catch (Throwable $e) { wa_log($pdo, 'webhook', false, 'Error: ' . $e->getMessage()); }
+        try { require_once __DIR__ . '/wa_ctwa.php'; $__cf = wa_ctwa_forward($raw, (string)($_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '')); if ($__cf !== '' && $__cf !== 'ok') wa_log($pdo, 'ctwa', false, 'Ad-click copy to the CTWA service failed: ' . $__cf); } catch (Throwable $e) { }   // 📣 a customer who came from a click-to-WhatsApp ad: a copy goes to the ad tracking service (after the HRMS kept the message)
         if ($__keys && function_exists('wag_prebuild')) {   // write the reply for each waiting customer NOW, after Meta has its 200 — it is ready before the salesperson even opens the chat
             $__k = array_slice(array_keys($__keys), 0, 5);
             register_shutdown_function(function () use ($pdo, $__k) {
@@ -1545,7 +1546,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (!wa_is_admin($pdo, $auth) && ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint')) json_response(['error' => 'This is a complaint chat — it stays with its person. Ask the admin.'], 409);
             $from = (int)$c['assigned_emp']; if ($from === $me) json_response(['ok' => true, 'already' => true]);
             if (function_exists('wag_bot_block_msg') && ($__bm = wag_bot_block_msg($pdo, $c)) !== '') json_response(['error' => $__bm, 'bot_lock' => 1], 423);   // 🤖 the bot is answering
-            if (!wa_is_admin($pdo, $auth) && function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);   // 🏪 performance gate
+            if (!wa_is_admin($pdo, $auth) && function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me, $c)) !== '') json_response(['error' => $__gm, 'gate' => 1], 423);   // 🏪 performance gate
             wa_assign_to($pdo, $key, $me, $me, 'takeover');
             $nm = employee_names_by_id($pdo); $who = $nm[$me] ?? 'Manager'; $was = $from > 0 ? ($nm[$from] ?? 'someone') : '';
             wa_event($pdo, $key, '🔄 ' . $who . ' took over this chat' . ($was !== '' ? ' from ' . $was : ''));
