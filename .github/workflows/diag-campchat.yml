@@ -32,13 +32,13 @@ jobs:
           require $argv[1] . "empmanagment/config.php";
           $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
           echo "server " . date("Y-m-d H:i:s") . "\n";
-          $q = $d->query("SELECT phone, source, last_in_at FROM wa_contacts WHERE assigned_emp = 0 AND status = 'open' AND optout = 0 AND last_in_at >= '" . date("Y-m-d H:i:s", time() - 6 * 3600) . "' ORDER BY last_in_at DESC LIMIT 25");
+          $q = $d->query("SELECT phone, source, last_in_at, assigned_emp FROM wa_contacts WHERE last_in_at >= '" . date("Y-m-d H:i:s", time() - 5 * 3600) . "' ORDER BY last_in_at DESC LIMIT 40");
           foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $p = $r["phone"];
             $a = $d->prepare("SELECT src FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $a->execute([$p]); $qs = $a->fetchColumn();
             $b = $d->prepare("SELECT status, COUNT(*) FROM wa_camp_items WHERE phone = ? AND sent_at >= ? GROUP BY status"); $b->execute([$p, date("Y-m-d H:i:s", time() - 7 * 86400)]); $ci = []; foreach ($b->fetchAll(PDO::FETCH_NUM) as $x) $ci[] = $x[0] . "=" . $x[1];
             $w = $d->prepare("SELECT who, COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? GROUP BY who"); $w->execute([$p, date("Y-m-d H:i:s", time() - 7 * 86400)]); $wh = []; foreach ($w->fetchAll(PDO::FETCH_NUM) as $x) $wh[] = $x[0] . "=" . $x[1];
-            echo "in " . round((time() - strtotime($r["last_in_at"])) / 60) . "m ago · phone len " . strlen($p) . " · source [" . $r["source"] . "] · last query src [" . $qs . "] · camp items [" . implode(",", $ci) . "] · out who [" . implode(",", $wh) . "]\n";
+            echo "in " . round((time() - strtotime($r["last_in_at"])) / 60) . "m ago · assigned " . ((int)$r["assigned_emp"] > 0 ? "yes" : "no") . " · phone len " . strlen($p) . " · source [" . $r["source"] . "] · last query src [" . $qs . "] · camp items [" . implode(",", $ci) . "] · out who [" . implode(",", $wh) . "]\n";
           }
           PHP
           php /tmp/cc_check.php "$P"; rm -f /tmp/cc_check.php
