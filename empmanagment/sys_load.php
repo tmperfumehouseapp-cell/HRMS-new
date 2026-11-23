@@ -285,7 +285,7 @@ function sysload_view(PDO $pdo, int $mins): array
     if ($AW && $AW['db'] !== null && $AW['pct'] > 0) {
         $rest = max(0, round($AW['pct'] - $AW['db'] - (float)($out['php_of_server'] ?? 0), 1));
         $adv[] = ['lvl' => $AW['db'] >= 0.5 * $AW['pct'] ? 'bad' : 'info', 't' => 'Where the CPU goes: database ' . $AW['db'] . '% · HRMS code ' . ($out['php_of_server'] ?? '?') . '% · everything else ' . $rest . '% (of the whole server).',
-            'd' => $AW['db'] >= 0.5 * $AW['pct'] ? 'Most of the load is the DATABASE answering queries, not the pages themselves. The queries under "The database · this period" are where to save: each has its own prompt.' : 'The load is spread; start with the first rows of the two tables below.'];
+            'd' => $AW['db'] >= 0.5 * $AW['pct'] ? 'Most of the load is the DATABASE answering queries, not the pages themselves. The queries under "The database · this period" are where to save: the one "📋 Claude prompt" button at the top carries them all.' : 'The load is spread; start with the first rows of the two tables below.'];
     }
     foreach (array_slice($out['db_recent'], 0, 4) as $i => $q) {
         if ($q['share'] < 6) continue;
@@ -316,6 +316,7 @@ function sysload_view(PDO $pdo, int $mins): array
     foreach (array_slice($rows, 0, 6) as $r) $full .= "\n" . 'Function ' . $r['action'] . ': ' . $r['time_share'] . '% of request time, ' . number_format($r['calls']) . ' calls (' . $r['per_min'] . '/min), ' . $r['avg_ms'] . ' ms each, PHP ' . $r['cpu_s'] . ' s, waiting ' . $r['wait_s'] . ' s';
     $full .= "\n" . 'Work through them from the most expensive, one at a time.' . $rule;
     $out['full_prompt'] = $full;
+    $out['prompt_on'] = $busy !== null && $busy >= 50;      // the ONE prompt button is shown only while the load is high (50% or more); a quiet server needs no prompt
     $out['advice'] = $adv;
     return $out;
 }
