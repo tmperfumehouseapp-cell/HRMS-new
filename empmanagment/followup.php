@@ -788,6 +788,27 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     $secRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_sections WHERE id = ? AND active = 1"); $q->execute([$id]); $s = $q->fetch(); if (!$s) json_response(['error' => 'This section is not there any more.'], 404); return $s; };
 
     switch ($action) {
+        case 'fup.pantry_photos': case 'fup.pantry_photo': {      // the Cleaning & Pantry photos of the store places, shown inside the Pantry photos topic (read-only). Admin / HR, or the boss of a section that holds that topic.
+            $okSee = $w['manager'];
+            if (!$okSee) { foreach (fup_my_sections($pdo, $w) as $sx) { if (empty($sx['own'])) continue; $c0 = $pdo->prepare("SELECT 1 FROM fu_topics WHERE section_id = ? AND source = 'store_pantry_photos' AND active = 1 LIMIT 1"); $c0->execute([(int)$sx['id']]); if ($c0->fetchColumn()) { $okSee = true; break; } } }
+            if (!$okSee) json_response(['error' => 'Not allowed.'], 403);
+            $base = "FROM bd_tasks t JOIN bd_duties d ON d.id = t.duty_id
+                JOIN of_zones z ON z.id = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(d.lib_key, ':', 2), ':', -1) AS UNSIGNED)
+                JOIN of_offices o ON o.id = z.office_id LEFT JOIN employees e ON e.employee_id = t.owner_emp
+                LEFT JOIN of_points pt ON pt.id = CAST(SUBSTRING_INDEX(d.lib_key, ':p', -1) AS UNSIGNED)
+                WHERE t.status = 'done' AND t.proof_path IS NOT NULL AND t.proof_path <> '' AND d.lib_key LIKE 'of:%:p%' AND o.name LIKE '%store%'";
+            if ($action === 'fup.pantry_photos') {
+                $day = (string)($_GET['day'] ?? ''); if (!fup_is_day($day)) json_response(['error' => 'Bad day.'], 422);
+                $q = $pdo->prepare("SELECT t.id AS task_id, z.name AS zone, pt.text AS label, e.full_name AS who, t.done_at " . $base . " AND t.task_date = ? ORDER BY z.name, t.id"); $q->execute([$day]); $out = [];
+                foreach ($q->fetchAll() as $r) $out[] = ['task_id' => (int)$r['task_id'], 'zone' => (string)$r['zone'], 'label' => (string)($r['label'] ?? ''), 'by' => (string)($r['who'] ?? ''), 'at' => !empty($r['done_at']) ? date('H:i', strtotime((string)$r['done_at'])) : ''];
+                json_response(['day' => $day, 'photos' => $out]);
+            }
+            $tid = (int)($_GET['task_id'] ?? 0);
+            $q = $pdo->prepare("SELECT t.proof_path " . $base . " AND t.id = ?"); $q->execute([$tid]); $pp = basename((string)$q->fetchColumn());
+            $file = __DIR__ . '/uploads/boss/' . $pp; if ($pp === '' || !is_file($file)) json_response(['error' => 'No photo.'], 404);
+            header('Content-Type: image/jpeg'); header('Cache-Control: private, max-age=86400'); header('Content-Length: ' . filesize($file)); readfile($file); exit;
+        }
+
         case 'fup.badge': json_response(fup_badge_data($pdo, $auth));
         case 'fup.mine': json_response(fup_mine($pdo, $w));
 
