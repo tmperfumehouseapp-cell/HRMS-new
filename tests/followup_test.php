@@ -22,7 +22,7 @@ $pdo->exec("CREATE TABLE fu_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name
 $pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', lag INT DEFAULT 0, metrics TEXT DEFAULT '', need_text INT DEFAULT 0, fields TEXT, status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, topic_id INT, day TEXT, txt TEXT, val REAL, pct INT, auto INT DEFAULT 0, emp_id INT DEFAULT 0, emp_name TEXT DEFAULT '', updated_at TEXT, ai_verdict TEXT DEFAULT '', ai_note TEXT DEFAULT '', ai_q TEXT DEFAULT '', vals TEXT, fvals TEXT, UNIQUE (topic_id, day))");
 $pdo->exec("CREATE TABLE fu_digest (section_id INT, day TEXT, txt TEXT, made_at TEXT, PRIMARY KEY (section_id, day))");
-$pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT, designation TEXT, phone TEXT)");
+$pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT, designation TEXT, mobile TEXT)");
 $pdo->exec("CREATE TABLE departments (department_id INTEGER PRIMARY KEY, department_name TEXT)");
 $pdo->exec("CREATE TABLE st_bills (bill_id INTEGER PRIMARY KEY, biz_date TEXT, total REAL, status TEXT)");
 $pdo->exec("INSERT INTO departments VALUES (1, 'Store'), (2, 'Wholesale')");
@@ -140,6 +140,7 @@ ok(!$noOne || $noOne[0]['emp'] === 10, 'a topic given to nobody points to the bo
 [$c, $b] = call('fup.board', $ADMIN, null, ['all' => 1]); ok(count($b['all']) === count($b['sections']) && $b['all'][0]['id'] === $b['sections'][0]['id'] && count($b['all'][1]['topics']) > 0 && isset($b['all'][1]['topics'][0]['updates']), 'all sections come with their topics and updates');
 [$c, $b] = call('fup.board', $E(11), null, ['all' => 1]); $ids = array_column($b['all'], 'id'); ok($ids === array_column($b['sections'], 'id') && !in_array($ws, $ids, true), 'a person gets only the sections (and topics) he may see');
 [$c, $b] = call('fup.board', $ADMIN); ok(!isset($b['all']), 'the single-section answer stays as it was');
+ok(fup_phone('098765 43210') === '919876543210' && fup_phone('9876543210 / 9123456780') === '919876543210' && fup_phone('+91-98765-43210') === '919876543210' && fup_phone('12345') === '' && fup_phone('') === '', 'a typed mobile number is made ready to dial');
 // ---- punch-out lock
 $l = fup_po_left($pdo, 12); ok(count($l) >= 1 && strpos(implode('|', array_column($l, 'title')), 'Follow-up update: Board fitting (Shop Wholesale)') !== false, 'punch out: the topics not filled today are listed for the lock');
 [$c] = call('fup.update_save', $E(12), ['topic_id' => $tAd, 'text' => 'ok']); ok(strpos(implode('|', array_column(fup_po_left($pdo, 12), 'title')), "Ad spend (Shop Wholesale) — answer Claude's question") !== false, 'punch out: an unanswered question also holds it');
