@@ -338,10 +338,14 @@ function wag_ctag_map(PDO $pdo)   // lazy: $map[$phone] → [tag => src] (stored
 }
 function wag_cod_map(PDO $pdo): array   // customers with an unpaid COD / pending order in the last 12 days
 {
-    static $m = null; if ($m !== null) return $m; $m = [];
-    try {
-        foreach ($pdo->query("SELECT SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10) k FROM shop_orders WHERE created_at >= '" . date('Y-m-d H:i:s', time() - 12 * 86400) . "' AND financial_status IN ('pending', 'partially_paid') AND (outstanding IS NULL OR outstanding > 0) AND phone <> ''")->fetchAll() as $r) $m[(string)$r['k']] = true;
-    } catch (Throwable $e) { }
+    static $m = null; if ($m !== null) return $m;
+    // ⚡ read on every refresh of every chat list (about 186 times a minute, 2% of the database work): now counted ONCE a minute and shared. The "unpaid COD order" mark is at most 1 minute old.
+    $calc = function () use ($pdo) { $o = [];
+        try {
+            foreach ($pdo->query("SELECT SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10) k FROM shop_orders WHERE created_at >= '" . date('Y-m-d H:i:s', time() - 12 * 86400) . "' AND financial_status IN ('pending', 'partially_paid') AND (outstanding IS NULL OR outstanding > 0) AND phone <> ''")->fetchAll() as $r) $o[(string)$r['k']] = true;
+        } catch (Throwable $e) { }
+        return $o; };
+    $m = function_exists('hrms_memo') ? hrms_memo('wag_cod_map_v1', 60, $calc) : $calc(); if (!is_array($m)) $m = [];
     return $m;
 }
 /** Tags worked out live from the customer row used by Contacts / Campaigns (keys: phone, orders, days, ignored, last_in_at, source, tag, optout). Always fresh, nothing to sync. */
