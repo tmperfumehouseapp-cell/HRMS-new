@@ -729,7 +729,10 @@ function sxl_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
         if (sx_state_get($pdo, 'sxl_drafts_v2', '') === '') { sxl_drop_drafts($pdo); sx_state_put($pdo, 'sxl_drafts_v2', '1'); }   // once: drafts written before the length rule are written again
         $n = in_array((int)($in['n'] ?? $_GET['n'] ?? 10), [10, 15, 20, 50, 100], true) ? (int)($in['n'] ?? $_GET['n']) : 10; @set_time_limit(240); $chs = sxl_family_channels((string)($in['family'] ?? $_GET['family'] ?? 'comments'));
         $ph = implode(',', array_fill(0, count($chs), '?'));
-        $st = $pdo->prepare("SELECT * FROM sx_items WHERE status = 'new' AND hidden = 0 AND sentiment <> 'neg' AND flag_cx = 0 AND cx_id = 0 AND NOT " . SXL_OPEN_NEEDS . " AND channel IN ($ph) ORDER BY last_in_at DESC LIMIT " . $n); $st->execute($chs); $rows = $st->fetchAll();
+        $st = $pdo->prepare("SELECT * FROM sx_items WHERE status = 'new' AND hidden = 0 AND sentiment <> 'neg' AND flag_cx = 0 AND cx_id = 0 AND NOT " . SXL_OPEN_NEEDS . " AND channel IN ($ph) ORDER BY last_in_at DESC LIMIT 600"); $st->execute($chs); $pool = $st->fetchAll();
+        // messages that cannot be sent from here (the reply window is closed, or the channel is not connected) used to fill the top of every batch, so only a few of the 100 could be answered: take the first N that CAN be sent; the rest are counted and can be marked as read in one tap
+        $rows = []; $blockedIds = [];
+        foreach ($pool as $r) { if (sxl_mode_for($pdo, $r) !== '') { if (count($rows) < $n) $rows[] = $r; } else $blockedIds[] = (int)$r['id']; }
         $need = array_values(array_filter($rows, function ($r) { return trim((string)$r['ai_sugg']) === ''; }));
         $gen = $need ? sxl_batch_replies($pdo, $need) : [];
         $cards = []; $moved = 0; foreach ($rows as $r) {
@@ -739,7 +742,7 @@ function sxl_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
             $cards[] = sxl_item_card($pdo, $r, $t);
         }
         $cnt = []; foreach (['comments', 'reviews', 'dms', 'mail'] as $f) { $c2 = sxl_family_channels($f); $q = $pdo->prepare("SELECT COUNT(*) FROM sx_items WHERE status = 'new' AND hidden = 0 AND sentiment <> 'neg' AND flag_cx = 0 AND cx_id = 0 AND NOT " . SXL_OPEN_NEEDS . " AND channel IN (" . implode(',', array_fill(0, count($c2), '?')) . ")"); $q->execute($c2); $cnt[$f] = (int)$q->fetchColumn(); }
-        json_response(['ok' => true, 'items' => $cards, 'counts' => $cnt, 'ai' => $ai, 'moved' => $moved]);
+        json_response(['ok' => true, 'items' => $cards, 'counts' => $cnt, 'ai' => $ai, 'moved' => $moved, 'blocked' => count($blockedIds), 'blocked_ids' => array_slice($blockedIds, 0, 600)]);
     }
     case 'apply_like': {   // a reply (or a wording) is used ONLY for messages it fits; every other message keeps its own reply
         $post(); $sample = mb_substr(trim((string)($in['sample'] ?? '')), 0, 800); $cust = mb_substr(trim((string)($in['cust'] ?? '')), 0, 500); $ids = array_slice(array_map('intval', (array)($in['ids'] ?? [])), 0, 20);

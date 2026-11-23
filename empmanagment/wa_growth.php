@@ -1011,7 +1011,12 @@ function wag_order_settled(PDO $pdo, string $phone): bool
 function wag_after_delivery(PDO $pdo, string $phone, string $lastIn = ''): bool
 {
     try { $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) !== 10) return false;
-        $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? AND fulfillment_status IN ('fulfilled', 'partial', 'delivered') LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 14 * 86400)]); if (!$q->fetchColumn()) return false;
+        // ⚡ was one "phone LIKE '%…'" search of 14 days of orders for EVERY chat looked at (4.5% of the database work): now the phones with a shipped / delivered order of the last 14 days are read ONCE and kept for 5 minutes, and each chat is a look-up in that list. Same answer; a new shipment counts at most 5 minutes later.
+        $set = function_exists('hrms_memo') ? hrms_memo('wag_deliv_phones14', 300, function () use ($pdo) {
+            $o = []; $x = $pdo->prepare("SELECT DISTINCT RIGHT(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), 10) FROM shop_orders WHERE created_at >= ? AND fulfillment_status IN ('fulfilled', 'partial', 'delivered') AND phone <> ''"); $x->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]);
+            foreach ($x->fetchAll(PDO::FETCH_COLUMN) as $p) { $p = substr(preg_replace('/\D/', '', (string)$p), -10); if (strlen($p) === 10) $o[$p] = 1; } return $o; }) : null;
+        if (is_array($set)) { if (!isset($set[$k10])) return false; }
+        else { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? AND fulfillment_status IN ('fulfilled', 'partial', 'delivered') LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 14 * 86400)]); if (!$q->fetchColumn()) return false; }
         if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
         return !preg_match('/(new order|another order|order karna|order karo|order dena|order chahiye|\bbuy\b|lena hai|lunga|price|rate|combo|add on|add-on|chahiye|offer|discount|\d+\s?ml)/iu', mb_strtolower($lastIn));   // a new purchase wish keeps it a sales chat
     } catch (Throwable $e) { return false; }
@@ -1298,7 +1303,9 @@ function wag_is_camp_chat(PDO $pdo, array $c): bool
     static $m = []; $ph = (string)($c['phone'] ?? ''); if (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true)) return true; if ($ph === '') return false;
     if (isset($m[$ph]) && $m[$ph][0] > time() - 60) return $m[$ph][1]; $r = false;
     try { $q = $pdo->prepare("SELECT src FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$ph]); $r = in_array((string)$q->fetchColumn(), ['campaign', 'community'], true);
-        if (!$r) { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$ph, date('Y-m-d H:i:s', time() - 3 * 86400)]); $r = (bool)$q->fetchColumn(); } } catch (Throwable $e) { }
+        if (!$r) { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$ph, date('Y-m-d H:i:s', time() - 7 * 86400)]); $r = (bool)$q->fetchColumn(); }
+        if (!$r) { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('campaign', 'recover') AND ts >= ? LIMIT 1"); $q->execute([$ph, date('Y-m-d H:i:s', time() - 7 * 86400)]); $r = (bool)$q->fetchColumn(); } }   // a campaign or a win-back (recover) message reached him in the last 7 days
+    catch (Throwable $e) { }
     $m[$ph] = [time(), $r]; return $r;
 }
 function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string

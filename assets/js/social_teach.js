@@ -704,6 +704,13 @@
     chips.appendChild(el('span', { class: 'sxl-sub', style: 'margin:0' }, 'At once'));
     chips.appendChild(el('div', { class: 'sxl-seg' }, [10, 20, 50, 100].map(function (n) { return el('button', { type: 'button', class: Q.n === n ? 'on' : '', onclick: function () { Q.n = n; Q.items = null; renderPanel(); } }, String(n)); })));
     if (Q.items === null) { if (!Q.loading) loadBatch(); box.appendChild(el('div', { class: 'sxl-load' }, o.ai ? 'Claude is writing the replies…' : 'Loading…')); return; }
+    if (Q.blocked && Q.blocked.length) {
+      var bb = el('button', { type: 'button', class: 'sxl-mini', onclick: function () {
+        if (!bb.dataset.arm) { bb.dataset.arm = '1'; bb.textContent = 'Sure? Mark ' + Q.blocked.length + ' as read'; setTimeout(function () { delete bb.dataset.arm; bb.textContent = 'Mark these ' + Q.blocked.length + ' as read'; }, 4000); return; }
+        busy(bb, true, '…'); postChunks('mark_read', Q.blocked, function (part) { return { ids: part }; }, 50).then(function (r) { toast(r.message); Q.items = null; Q.blocked = []; renderPanel(); loadOv(); }).catch(function (e) { busy(bb, false); toast(errText(e), true); });
+      } }, 'Mark these ' + Q.blocked.length + ' as read');
+      box.appendChild(el('div', { class: 'sxl-sub', style: 'margin:6px 0' }, Q.blocked.length + ' message' + (Q.blocked.length === 1 ? '' : 's') + ' here cannot be sent from this page (the reply window is closed or the channel is not connected), so they are left out of this list. ', bb));
+    }
     if (!Q.items.length) { box.appendChild(el('div', { class: 'sxl-empty' }, 'Nothing waiting in this group. 🎉')); return; }
     var selIds = function () { return Q.items.filter(function (i) { return Q.sel[i.id] && i.can_send; }).map(function (i) { return i.id; }); };
     function useLike(r) { var m = {}; (r.replies || []).forEach(function (x) { m[x.id] = x.text; }); Q.hit = {}; Q.items.forEach(function (i) { if (m[i.id]) { i.reply = m[i.id].replace(/\{name\}/gi, firstName(i.who)); Q.hit[i.id] = 1; } }); renderPanel(); }
@@ -751,7 +758,7 @@
   function loadBatch() {
     var Q = S.q; Q.loading = true;
     post('batch', { n: Q.n, family: Q.family }).then(function (r) {
-      Q.loading = false; Q.items = r.items || []; Q.counts = r.counts; Q.sel = {}; Q.orig = {}; Q.hit = {};
+      Q.loading = false; Q.items = r.items || []; Q.blocked = r.blocked_ids || []; Q.counts = r.counts; Q.sel = {}; Q.orig = {}; Q.hit = {};
       Q.items.forEach(function (i) { Q.sel[i.id] = i.can_send; Q.orig[i.id] = i.reply; }); if (r.moved) toast(r.moved + ' message' + (r.moved === 1 ? '' : 's') + ' moved to Needs you: Claude does not have the fact to answer.');
       if (S.tab === 'quick') renderPanel(); loadOv();
     }).catch(function (e) { Q.loading = false; Q.items = []; toast(errText(e), true); if (S.tab === 'quick') renderPanel(); });

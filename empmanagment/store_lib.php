@@ -1366,7 +1366,7 @@ function st_bday_start(PDO $pdo): string
     $s = (string)setting_get($pdo, 'st_bday_start', ''); if ($s === '') { $s = '2026-11-08 00:00:00'; setting_set($pdo, 'st_bday_start', $s); }   // the day the owner started it (fixed, so a late first request cannot move it)
     return $v = $s;
 }
-function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 1, 'valid_after' => 14, 'auto_wa' => 1]; }   // the gift goes out the day BEFORE the birthday and stays valid about 15 days in all
+function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 1, 'valid_after' => 7, 'auto_wa' => 1]; }   // the gift goes out the day BEFORE the birthday and stays valid about 15 days in all
 function st_bday_cfg(PDO $pdo): array
 {
     $d = st_bday_defaults();
@@ -1410,6 +1410,9 @@ function st_bday_run(PDO $pdo, bool $send = true, ?int $now = null): array
     }
     if ((string)setting_get($pdo, 'st_bday_v3', '') === '') {   // once more: the owner wants the message the day BEFORE the birthday (valid until 14 days after it)
         setting_set($pdo, 'st_bday_v3', date('Y-m-d H:i:s')); $o1 = st_bday_cfg($pdo); st_bday_cfg_save($pdo, ['enabled' => $o1['enabled'], 'auto_wa' => 1, 'send_before' => 1, 'valid_after' => 14]);
+    }
+    if ((string)setting_get($pdo, 'st_bday_v4', '') === '') {   // once more: the owner wants the code valid for one week after the birthday at most
+        setting_set($pdo, 'st_bday_v4', date('Y-m-d H:i:s')); $o2 = st_bday_cfg($pdo); st_bday_cfg_save($pdo, ['enabled' => $o2['enabled'], 'auto_wa' => $o2['auto_wa'], 'send_before' => $o2['send_before'], 'valid_after' => 7]);
     }
     $cfg = st_bday_cfg($pdo); $out = ['made' => 0, 'sent' => 0, 'failed' => 0, 'waiting' => 0, 'off' => !$cfg['enabled']];
     if (!$cfg['enabled']) return $out;
