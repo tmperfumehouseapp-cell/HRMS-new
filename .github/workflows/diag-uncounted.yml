@@ -1,13 +1,9 @@
-# READ-ONLY: what the must-send check sees for ONE order (times and which rule matched, no message text). Changes nothing.
+# READ-ONLY: per salesperson collection of the business days 19, 20, 21 Nov (same counting as the Sunday sheet). Changes nothing.
 # Run it by hand: Actions -> "Uncounted orders (read-only)" -> Run workflow.
 name: Uncounted orders (read-only)
 
 on:
   workflow_dispatch:
-    inputs:
-      chat:
-        description: 'last 10 digits of the customer number'
-        required: false
 
 jobs:
   check:
@@ -23,48 +19,42 @@ jobs:
           ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
 
-      - name: Queries of two people
+      - name: Uncounted orders
         env:
           STAGING_HOST: ${{ secrets.STAGING_HOST }}
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
-          CHAT: ${{ github.event.inputs.chat }}
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$CHAT" <<'REMOTE' || true
-          P="$1"; CH="$2"
-          cat > /tmp/ql_check.php <<'PHP'
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/un_check.php <<'PHP'
           <?php
           $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
-          require $f; $on = preg_replace("/\D/", "", (string)($argv[2] ?? "")); if ($on === "") { echo "no order number\n"; exit; }
+          require $f;
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
-          date_default_timezone_set("Asia/Kolkata"); $d->exec("SET time_zone = '+05:30'"); echo "now " . date("Y-m-d H:i:s") . "\n";
-          $q = $d->prepare("SELECT o.order_name, o.store_key, o.shopify_id, o.created_at, o.phone, o.total, o.tags FROM shop_orders o WHERE REPLACE(o.order_name, '#', '') LIKE ? AND o.created_at >= ? ORDER BY o.created_at DESC LIMIT 2"); $q->execute([$on . '%', date('Y-m-d H:i:s', time() - 3 * 86400)]);
-          foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $o) {
-            $k = substr(preg_replace("/\D+/", "", (string)$o["phone"]), -10); $t = strtotime((string)$o["created_at"]);
-            echo "ORDER " . $o["order_name"] . " store " . $o["store_key"] . " created " . $o["created_at"] . " total " . $o["total"] . " phone digits " . strlen($k) . " cancelled " . (stripos((string)$o["tags"], "cancel") !== false ? "yes" : "no") . "\n";
-            $a = $d->prepare("SELECT employee_id, order_type, allocated_by, allocated_at FROM order_allocations WHERE source = ? AND order_id = ?"); $a->execute([$o["store_key"], (string)$o["shopify_id"]]); echo "  allocation: " . json_encode($a->fetch(PDO::FETCH_ASSOC)) . "\n";
-            $c = $d->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ?"); $c->execute([$k]); $has = (int)$c->fetchColumn(); echo "  messages under the order's number: $has\n";
-            { $x = $d->prepare("SELECT phone FROM order_extra_phones WHERE source = ? AND order_id = ? LIMIT 1"); $x->execute([$o["store_key"], (string)$o["shopify_id"]]); $k2 = substr(preg_replace("/\D+/", "", (string)$x->fetchColumn()), -10); echo "  extra mobile no. on the order: " . (strlen($k2) === 10 ? "yes" : "none") . "\n";
-              $fq = $d->prepare("SELECT phone, COUNT(*) n FROM wa_messages WHERE ts >= ? AND ts <= ? AND body LIKE ? GROUP BY phone ORDER BY n DESC LIMIT 5"); $t0 = microtime(true); $fq->execute([date("Y-m-d H:i:s", $t - 3 * 86400), date("Y-m-d H:i:s", $t + 2 * 3600), "%" . $k . "%"]); $fr = $fq->fetchAll(PDO::FETCH_ASSOC); echo "  chats where the order's number is written (3 d before .. 2 h after): " . count($fr) . " (search took " . round(microtime(true) - $t0, 2) . " s)\n";
-              $fq->execute([date("Y-m-d H:i:s", $t - 10 * 86400), date("Y-m-d H:i:s", min(time(), $t + 48 * 3600)), "%" . $k . "%"]); $fr2 = $fq->fetchAll(PDO::FETCH_ASSOC); echo "  ... in a wider window (10 d before .. 48 h after): " . count($fr2) . "\n";
-              $e0 = (int)$d->query("SELECT employee_id FROM order_allocations WHERE source = " . $d->quote($o["store_key"]) . " AND order_id = " . $d->quote((string)$o["shopify_id"]) . " LIMIT 1")->fetchColumn(); $t0 = microtime(true);
-              $sq = $d->prepare("SELECT m.phone, COUNT(*) n FROM wa_contacts c JOIN wa_messages m ON m.phone = c.phone WHERE c.assigned_emp = ? AND c.last_in_at >= ? AND c.phone <> ? AND m.ts >= ? AND m.ts <= ? AND m.body LIKE ? GROUP BY m.phone ORDER BY n DESC LIMIT 3"); $sq->execute([$e0, date("Y-m-d H:i:s", $t - 3 * 86400), $k, date("Y-m-d H:i:s", $t - 3 * 86400), date("Y-m-d H:i:s", $t + 2 * 3600), "%" . $k . "%"]); $sr = $sq->fetchAll(PDO::FETCH_ASSOC);
-              echo "  NEW scoped search (only that salesperson's chats): " . count($sr) . " chat(s), took " . round(microtime(true) - $t0, 2) . " s\n";
-              $wm = $d->prepare("SELECT dir, who, mtype, ts FROM wa_messages WHERE phone = ? AND ts >= ? ORDER BY id"); $wm->execute([$k, date("Y-m-d H:i:s", $t - 3 * 86400)]); foreach ($wm->fetchAll(PDO::FETCH_ASSOC) as $w) echo "  order-number chat msg: " . $w["ts"] . " " . $w["dir"] . "/" . $w["who"] . "/" . $w["mtype"] . "\n";
-              if (count($sr) === 1) { $k = (string)$sr[0]["phone"]; echo "  -> reading the found chat instead\n"; }
-              $cn = $d->prepare("SELECT COUNT(*) FROM wa_contacts c WHERE c.assigned_emp = (SELECT employee_id FROM order_allocations WHERE source = ? AND order_id = ? LIMIT 1) AND c.last_in_at >= ?"); $cn->execute([$o["store_key"], (string)$o["shopify_id"], date("Y-m-d H:i:s", $t - 3 * 86400)]); echo "  chats of that salesperson active in the 3 days before: " . $cn->fetchColumn() . "\n";
-            }
-            $m = $d->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700"); $m->execute([$k, date("Y-m-d H:i:s", $t - 3 * 86400), date("Y-m-d H:i:s", min(time(), $t + 48 * 3600))]); $ms = $m->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms);
-            echo "  messages read in the window (" . date("Y-m-d H:i", $t - 3 * 86400) . " .. " . date("Y-m-d H:i", min(time(), $t + 48 * 3600)) . "): $nm" . ($nm >= 700 ? " (LIMIT REACHED)" : "") . " first " . ($ms[0]["ts"] ?? "-") . " last " . ($ms[$nm - 1]["ts"] ?? "-") . "\n";
-            $all = $d->prepare("SELECT COUNT(*), MIN(ts), MAX(ts) FROM wa_messages WHERE phone = ?"); $all->execute([$k]); echo "  all messages of this chat: " . implode(" / ", $all->fetch(PDO::FETCH_NUM)) . "\n";
-            $rxA = '/recheck your delivery address|change address\s*\/\s*add new address/i'; $rxC = '/chain_index|jewell?ery item from this catalogue|chain or any other jewell?ery/i';
-            $rxChainWord = '/\b(chains?|necklaces?|pendants?|bracelets?|lockets?|jewell?ery|jewelry|mala|kada)\b/iu';
-            $rxP = '/((?<![\d.])2|\bdo|\btwo)\s*(%|percent|per\s*cent|pratishat)|extra discount|(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)[^.\n]{0,80}(discount|off|less|kam|chhut|chut|cashback)|(discount|off|less|kam|chhut|chut|cashback)[^.\n]{0,80}(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)/iu';
-            foreach ($ms as $mi => $x) { if ($x["dir"] !== "out") continue; $body = (string)$x["body"]; $hit = [];
-              if (preg_match($rxA, $body)) $hit[] = "ADDRESS"; if ($body !== "" && preg_match($rxP, $body)) $hit[] = "PREPAID"; if (preg_match($rxC, $body) || preg_match($rxChainWord, $body)) $hit[] = "CHAIN";
-              if ($hit) echo "  hit " . $x["ts"] . " " . $x["who"] . "/" . $x["mtype"] . ": " . implode(",", $hit) . "\n"; }
-            $ad = $d->prepare("SELECT COUNT(*), COALESCE(SUM(price),0) FROM employee_addons WHERE REPLACE(LOWER(order_name), '#', '') = ?"); $ad->execute([$on]); echo "  add-on rows / amount: " . implode(" / ", $ad->fetch(PDO::FETCH_NUM)) . "\n";
+          date_default_timezone_set("Asia/Kolkata");
+          $wk = array_fill(0, 7, "10:00"); try { foreach ($d->query("SELECT weekday, start_time FROM day_timing")->fetchAll(PDO::FETCH_ASSOC) as $r) $wk[(int)$r["weekday"]] = (string)$r["start_time"]; } catch (Throwable $e) { }
+          echo "weekday starts (0=Sun): " . implode(" ", $wk) . "\n";
+          $ov = []; for ($x = strtotime("2026-11-08"); $x <= strtotime("2026-11-15"); $x += 86400) $ov[date("Y-m-d", $x)] = "12:00"; try { $raw = (string)$d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'day_timing_overrides'")->fetchColumn(); $j = json_decode($raw, true); if (is_array($j)) { $ov = []; foreach ($j as $k => $v) $ov[(string)$k] = (string)$v; } } catch (Throwable $e) { } $ov["2026-11-21"] = "12:25"; /* the Sunday weekday start was 10:00 until 20 Nov, so 1 Nov really ran 10 AM -> 10 AM */
+          $startOf = function ($date) use ($wk, $ov) { return $ov[$date] ?? $wk[(int)date("w", strtotime($date))]; };
+          $suns = ["2026-11-19", "2026-11-20", "2026-11-21"];
+          $emps = []; try { foreach ($d->query("SELECT e.employee_id id, e.employee_code code, e.full_name nm FROM employees e LEFT JOIN departments dp ON dp.department_id = e.department_id WHERE dp.department_name LIKE '%sales%' AND (e.status IS NULL OR e.status <> 'ex') ORDER BY e.full_name")->fetchAll(PDO::FETCH_ASSOC) as $r) $emps[(int)$r["id"]] = [$r["code"], $r["nm"]]; } catch (Throwable $e) { echo "emps n/a: " . substr($e->getMessage(), 0, 160) . "\n"; }
+          echo "sales employees: " . count($emps) . "\n";
+          $addon = []; try { foreach ($d->query("SELECT LOWER(TRIM(LEADING '#' FROM TRIM(order_name))) k, SUM(price) s FROM employee_addons WHERE addon_date >= '2026-11-15' GROUP BY k")->fetchAll(PDO::FETCH_ASSOC) as $r) $addon[$r["k"]] = (float)$r["s"]; } catch (Throwable $e) { }
+          $tot = []; $teamAll = [];
+          foreach ($suns as $si => $sd) {
+            $from = $sd . " " . $startOf($sd) . ":00"; $nx = date("Y-m-d", strtotime($sd . " +1 day")); $to = $nx . " " . $startOf($nx) . ":00";
+            echo "DAY $sd window: $from -> $to\n";
+            $q = $d->prepare("SELECT o.order_name nm, o.total total, a.employee_id emp FROM shop_orders o JOIN order_allocations a ON a.source COLLATE utf8mb4_unicode_ci = o.store_key COLLATE utf8mb4_unicode_ci AND a.order_id COLLATE utf8mb4_unicode_ci = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND a.employee_id > 0");
+            $q->execute([$from, $to]); $teamAll[$si] = 0.0;
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = strtolower(trim(ltrim(trim($r["nm"]), "#"))); $v = (float)$r["total"] + ($addon[$k] ?? 0.0); $tot[(int)$r["emp"]][$si] = ($tot[(int)$r["emp"]][$si] ?? 0.0) + $v; $teamAll[$si] += $v; }
+            try { $m = $d->prepare("SELECT employee_id emp, total FROM manual_orders WHERE order_date >= ? AND order_date < ? AND employee_id > 0"); $m->execute([$from, $to]); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) { $tot[(int)$r["emp"]][$si] = ($tot[(int)$r["emp"]][$si] ?? 0.0) + (float)$r["total"]; $teamAll[$si] += (float)$r["total"]; } } catch (Throwable $e) { }
           }
+          foreach ($emps as $id => $e) echo "ROW|" . $id . "|" . $e[0] . "|" . $e[1] . "|" . round($tot[$id][0] ?? 0) . "|" . round($tot[$id][1] ?? 0) . "|" . round($tot[$id][2] ?? 0) . "\n";
+          $other = 0; foreach ($tot as $id => $x) if (!isset($emps[$id])) { $other++; foreach ([0, 1, 2] as $si) $teamAll[$si] += 0; }
+          echo "TEAM_TOTAL|" . round($teamAll[0]) . "|" . round($teamAll[1]) . "|" . round($teamAll[2]) . "\n";
+          $listed = [0, 0, 0]; foreach ($emps as $id => $e) foreach ([0, 1, 2] as $si) $listed[$si] += $tot[$id][$si] ?? 0; echo "LISTED_TOTAL|" . round($listed[0]) . "|" . round($listed[1]) . "|" . round($listed[2]) . "\n";
+          echo "people with sales on those Sundays who are not in the list (left the company / other department): $other\n";
           PHP
-          php /tmp/ql_check.php "$P" "$CH"; rm -f /tmp/ql_check.php
+          php /tmp/un_check.php "$P"; rm -f /tmp/un_check.php
           REMOTE
