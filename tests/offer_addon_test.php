@@ -1,6 +1,6 @@
 <?php
-// Offer + add-on: 8x50ml 3299 (400 ml) with an add-on 80 ml / 750 = 480 ml at about 4049 earns the offer's %, like the offer itself. Pulls the two pure functions out of boss2.php.
-$src = file_get_contents(__DIR__ . '/../empmanagment/boss2.php'); $bad = 0;
+// Offer + add-on: 8x50ml 3299 (400 ml) with an add-on 80 ml / 750 = 480 ml at about 4049 earns the offer's %, like the offer itself. Pulls the two pure functions out of budget_cm.php (Total Budgeting's commission engine; it was inside boss2.php before).
+$src = file_get_contents(__DIR__ . '/../empmanagment/budget_cm.php'); $bad = 0;
 function setting_get($pdo, $k, $d = '') { return $GLOBALS['__S'][$k] ?? $d; }
 $pdo = new PDO('sqlite::memory:'); $GLOBALS['pdo'] = $pdo;
 foreach (['cm_row_prices', 'cm_pct', 'cm_offer_match', 'cm_offer_addon_list', 'cm_global_addons', 'cm_offer_addons_all', 'cm_addon_chart'] as $fn) { $i = strpos($src, 'function ' . $fn . '('); $j = strpos($src, "\n}\n", $i); if ($i === false || $j === false) { echo "missing $fn\n"; exit(1); } eval(substr($src, $i, $j - $i + 3)); }

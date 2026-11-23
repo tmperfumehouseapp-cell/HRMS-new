@@ -1596,14 +1596,15 @@ function st_bday_voucher_for(PDO $pdo, string $phone, int $year): ?array
 /** Every store bill of a range with the commission the ONLINE engine's rules pay for it (price chart, a matching offer, the order-code rule), no over-target extra.
  *  The code rule works per person per day, so changing who billed one bill recounts the other bills of both people. Returns [] rows + counters. */
 if (!function_exists('budget_store_calc')) {
-    /** the online commission engine (boss.php → boss2.php cm_*) is loaded and ready */
+    /** the online commission engine (budget_cm.php, Total Budgeting's own file) is loaded and ready */
     function budget_engine_ready(): bool
     {
         // boss.php only loads when $pdo and $action are in scope (it returns at once otherwise - and a plain require from inside a function left the engine missing for the whole request,
         // so the Store commission card showed no offers / no price chart / 0%). Put both in scope here, like cm_engine_load() in api.php does.
         if (!function_exists('cm_chart')) {
             $pdo = $GLOBALS['pdo'] ?? null; $action = (string)($GLOBALS['action'] ?? '');
-            try { if ($pdo && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; if (!function_exists('cm_chart') && is_file(__DIR__ . '/boss2.php')) require_once __DIR__ . '/boss2.php'; } catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
+            $GLOBALS['cm_funcs_only'] = true; try { if (is_file(__DIR__ . '/budget_cm.php')) require_once __DIR__ . '/budget_cm.php'; }   /* Total Budgeting's own commission file: the Boss Engine is not needed */ catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
+            unset($GLOBALS['cm_funcs_only']);
         }
         return function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
     }

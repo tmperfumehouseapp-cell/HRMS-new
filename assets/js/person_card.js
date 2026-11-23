@@ -215,7 +215,7 @@ window.PersonCard = (function () {
         for (const k of [0, 1, 2]) {
           const d = new Date(c.today + 'T12:00:00'); d.setDate(1); d.setMonth(d.getMonth() - k); const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
           const end = k === 0 ? c.today : ym + '-' + String(dim).padStart(2, '0'), days = k === 0 ? Number(c.today.slice(8)) : dim;
-          try { const r = await api.get('bd.b2_cm_recount', { days, end }); const me = (r.people || []).find((q) => String(q.name).toLowerCase().replace(/\s+/g, ' ').trim() === String(c.employee.name).toLowerCase().replace(/\s+/g, ' ').trim());
+          try { const r = await api.get('budget.cm_recount', { days, end }); const me = (r.people || []).find((q) => String(q.name).toLowerCase().replace(/\s+/g, ' ').trim() === String(c.employee.name).toLowerCase().replace(/\s+/g, ' ').trim());
             out += '<tr><td>' + monthName(ym) + (k === 0 ? ' (so far)' : '') + '</td><td>' + (me ? '<b>' + inr(me.new) + '</b>' : '–') + '</td><td>' + (me ? me.days : 0) + '</td></tr>'; } catch (x2) { out += '<tr><td>' + monthName(ym) + '</td><td colspan="2" style="text-align:left">could not read</td></tr>'; }
         }
         box.innerHTML = out + '</table><div class="sub">From Commission → Result &amp; rules (worked out again for those days).</div>'; return;
