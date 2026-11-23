@@ -16,7 +16,7 @@ $g['young'] = <<<'X'
 $young = $ownT < 10000 && $age < 42;
 X;
 $g['ramp'] = <<<'X'
-$ramp = ($cfg['ramp'] && $ownT < 10000) || $young;
+$ramp = !$own11 && (($cfg['ramp'] && $ownT < 10000) || $young);
 X;
 ok(strpos($f, $g['status']) !== false, 'a number without a readable status gets cap 0');
 ok(strpos($f, $g['conn']) !== false, 'a not-connected number still gets cap 0');

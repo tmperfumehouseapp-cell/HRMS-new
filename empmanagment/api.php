@@ -413,6 +413,7 @@ function all_permissions(): array
         'server_load' => 'Server load (CPU, what the database and each function cost): technical, give with care',
         'finance' => 'Finance (bank and card statements, settlements, bills, reports): money data, give with care',
         'analytics' => 'Analytics (the store analytics report: sales, SEO, clicks)',
+        'store_orders' => 'Website orders (orders of the new TM Perfume House shop: give each one to a salesperson so it counts in their target)',
         'inventory' => 'Inventory (oils, perfumes, orders, dealers, alerts, reports): stock and purchase data, give with care',
     ];
 }
@@ -489,6 +490,7 @@ function action_permission(string $action): ?string
         'retail.visit_plan_approve' => 'visit_approval',   // Approve / Reject a shop visit: only roles ticked for it (before the 'retail.' line)
         'retail.' => 'retail',
         'manual_orders.save' => null,              // a salesperson makes their own manual order (the handler checks the role)
+        'tms.' => null,                            // 🛍 Website orders (store_orders.php): the handler checks Admin / HR / Sales Head / the "Website orders" tick
         'manual_orders.mp_' => null,               // a sales person adds / lists their own marketplace orders (the handler checks the login)
         'manual_orders.shot' => null, 'manual_orders.reassign' => null,   // the handlers check who
         'manual_orders.quick_' => null,            // the quick entries card on the Sales Head's home (the handler checks who)
@@ -610,7 +612,7 @@ function role_permissions(PDO $pdo, string $roleName): array
                 // saving there records the module as known, so the untick
                 // sticks. The Employee role stays portal-only unless ticked.
                 // 'order_code_lock' goes to HR automatically, to every other role only when Admin ticks it.
-                $noAuto = ['approvals', 'users', 'leave', 'detailed_report', 'visit_approval', 'finance', 'analytics', 'inventory', 'retail_store', 'rs_counter', 'rs_tasks', 'rs_manage'];   // 'detailed_report' (ad spend, ROAS, collection) and 'visit_approval' are ticked by Admin per role, never automatic
+                $noAuto = ['approvals', 'users', 'leave', 'detailed_report', 'visit_approval', 'finance', 'analytics', 'store_orders', 'inventory', 'retail_store', 'rs_counter', 'rs_tasks', 'rs_manage'];   // 'detailed_report' (ad spend, ROAS, collection) and 'visit_approval' are ticked by Admin per role, never automatic
                 if (strcasecmp(trim($roleName), 'HR') !== 0) $noAuto[] = 'order_code_lock';
                 foreach (role_new_modules($row['known_modules'] ?? null) as $m) {
                     if (!in_array($m, $noAuto, true) && !in_array($m, $perms, true)) $perms[] = $m;   // 'leave' (My Leave) is handed out by Admin per role, never automatically
@@ -2660,7 +2662,8 @@ function hrms_settings_load(PDO $pdo): array
  *  hrms_settings" query of the Server load list) many times a minute. Reads were already direct for the lock keys; now the same rule covers the others, so a write needs no new copy. */
 function hrms_setting_volatile(string $key): bool
 {
-    return strpos($key, 'lock') !== false || substr($key, -3) === '_lk' || substr($key, -3) === '_at' || $key === 'wq_needs' || strpos($key, 'wa_lim_') === 0 || $key === 'wa_tag_cache' || strpos($key, 'wq_pace_') === 0;
+    return strpos($key, 'lock') !== false || substr($key, -3) === '_lk' || substr($key, -3) === '_at' || $key === 'wq_needs' || strpos($key, 'wa_lim_') === 0 || $key === 'wa_tag_cache' || strpos($key, 'wq_pace_') === 0
+        || strpos($key, 'wag_bfu_') === 0 || substr($key, -4) === '_dbg' || $key === 'wa_cron_start';   // follow-up counters / debug notes and the engine start stamp are written many times a minute: each write made every web process reload the whole settings table (query 1)
 }
 function setting_get(PDO $pdo, string $key, $default = null)
 {
@@ -8320,7 +8323,7 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             $who = ($a && !empty($a['emp'])) ? (int)$a['emp'] : (int)$m['employee_id']; if (!$who || !isset($emps[$who])) continue;
             $ts = strtotime((string)$m['order_date']); $fs = strtolower((string)$m['payment_status']);
             $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => null, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false,
-                'xnote' => ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
+                'xnote' => (string)($m['channel'] ?? '') === 'TM Store' ? 'Website order: it counts in the sales and the target. No commission rule is set for website orders yet.' : ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
                 'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
                 'mp' => in_array((string)($m['channel'] ?? ''), ['Myntra', 'Amazon', 'Flipkart'], true) ? (string)$m['channel'] : ''];   // 🛍 marketplace order: a flat % without a code (mp_flat_pct)
         }
@@ -8472,14 +8475,15 @@ function cm_is_live(PDO $pdo): bool
 {
     static $v = null; if ($v === null) { try { $v = (string)setting_get($pdo, 'cm_live', '1') !== '0'; } catch (Throwable $e) { $v = false; } } return $v;
 }
-/** Loads the commission engine (cm_day, cm_paid_day … in boss2.php, through boss.php). boss.php only loads when $pdo and $action are in scope, so a plain require from inside
- *  a function returned at once and left the engine missing for that whole request (the live figure then showed on about 1 request in 20). Returns true when the engine is there. */
+/** Loads the commission engine (cm_day, cm_paid_day … in budget_cm.php, Total Budgeting's own file; it was inside the Boss Engine before). Returns true when the engine is there. */
 function cm_engine_load(PDO $pdo): bool
 {
     if (function_exists('cm_paid_day')) return true;
     $action = (string)($GLOBALS['action'] ?? '');
-    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; if (!function_exists('cm_paid_day') && is_file(__DIR__ . '/boss2.php')) require_once __DIR__ . '/boss2.php'; }
+    $GLOBALS['cm_funcs_only'] = true;   // only the calculation is wanted here, never the screen actions
+    try { if (is_file(__DIR__ . '/budget_cm.php')) require_once __DIR__ . '/budget_cm.php'; }   // Total Budgeting's own file: the Boss Engine is not needed for commission
     catch (Throwable $e) { error_log('cm_engine_load: ' . $e->getMessage()); }
+    finally { unset($GLOBALS['cm_funcs_only']); }
     return function_exists('cm_paid_day');
 }
 /** One person's commission for one day when the new engine is live. No row (retail / store people, or moved to the store that day) = 0, they are paid by their own rule;
@@ -11615,6 +11619,7 @@ function must3_photo_tick(PDO $pdo, int $max = 6): int
     $why = !must3_photo_table($pdo) ? 'no table' : (!function_exists('wa_mcache_get') ? 'no wa_mcache_get' : (!function_exists('convo_ai') ? 'no convo_ai' : ''));
     if ($why !== '') { try { setting_set($pdo, 'must3_photo_why', date('Y-m-d H:i:s') . ' ' . $why); } catch (Throwable $e) { } return 0; }   // why a round did nothing (read by the diag)
     $n = 0; $last = '';
+    try { $pdo->exec("UPDATE must3_photo SET verdict = 0 WHERE verdict IS NULL AND media_id NOT REGEXP '^[0-9]+$'"); } catch (Throwable $e) { }   // a product photo / a photo sent by link ('prod:…', 'link:…') is a perfume card, never the chain catalogue, and cannot be fetched from Meta (113 such rows failed twice on 23 Nov): only photos uploaded from the phone are read
     try {
         $rows = $pdo->query("SELECT msg_id, media_id FROM must3_photo WHERE verdict IS NULL AND tries < 2 AND at >= '" . date('Y-m-d H:i:s', time() - 3 * 86400) . "' ORDER BY msg_id DESC LIMIT " . max(1, min(12, $max)))->fetchAll(PDO::FETCH_ASSOC);
         $sys = 'You look at ONE photo a perfume shop salesperson sent to a customer on WhatsApp. The shop gives a free CHAIN / jewellery item with an order and shows the customer its chain catalogue: a photo or screenshot of one or several chains, necklaces, bracelets, pendants or other jewellery (often on a black background, sometimes a grid titled CHAIN, or a screenshot of the chain web page). Return JSON: chain = true when the photo shows such a chain / jewellery item or catalogue; false for anything else (perfume bottles, price charts, payment screens, addresses, people, text).';
@@ -11648,6 +11653,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
         // ➕ add-on of each order: put on the order (employee_addons) or not, and why not (order_rate_auto: tried / offered / the judge's reason)
         $ad = []; try { $ad = addon_sum_by_order($pdo, array_column($rows, 'order_name')); } catch (Throwable $e) { }
         $why = []; try { if (function_exists('ora_tables') && ora_tables($pdo) && $rows) { $ks = array_map(function ($x) { return (string)$x['store_key'] . ':' . (string)$x['shopify_id']; }, $rows); $wq = $pdo->prepare("SELECT order_key, tried, worked, tries, reason, offered, sz_tried, sz_worked, sz_reason FROM order_rate_auto WHERE order_key IN (" . implode(',', array_fill(0, count($ks), '?')) . ")"); $wq->execute($ks); foreach ($wq->fetchAll(PDO::FETCH_ASSOC) as $w) $why[(string)$w['order_key']] = $w; } } catch (Throwable $e) { }
+        $ovr = []; try { if ($rows) { ora_up_ovr($pdo, $day); $ks2 = array_map(function ($x) { return (string)$x['store_key'] . ':' . (string)$x['shopify_id']; }, $rows); $oq = $pdo->prepare("SELECT order_key, bucket FROM order_up_override WHERE order_key IN (" . implode(',', array_fill(0, count($ks2), '?')) . ")"); $oq->execute($ks2); foreach ($oq->fetchAll(PDO::FETCH_ASSOC) as $w2) $ovr[(string)$w2['order_key']] = (int)$w2['bucket']; } } catch (Throwable $e) { }   // 📞 owner (23 Nov, #73558): an order the owner moved from 'none' to Tried / Done on the Live page (Growth effort) is add-on done here too
         // 📌 Owner (21 Nov): the discount on full prepaid payment is ALWAYS 2%, so ANY message of the salesperson / bot that says "2%" (any words, any language) or talks about a discount for full / prepaid / online payment counts as "told". A chain photo counts for the chain message too:
         //    an outgoing text / caption that mentions a chain, OR an outgoing photo with a chain talked about around it (the customer or the salesperson says chain / necklace / pendant … within 6 messages).
         $rxA = '/recheck your delivery address|change address\s*\/\s*add new address/i'; $rxC = '/chain_index|jewell?ery item from this catalogue|chain or any other jewell?ery/i';
@@ -11666,7 +11672,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
                 $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms); $pics = [];
                 foreach ($ms as $mi => $m) {
                     if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; if ($by === 'S') $person = true; $mark = [substr((string)$m['ts'], 11, 5), $by];
-                    if ($by === 'S' && (string)$m['mtype'] === 'image' && (string)$m['media_id'] !== '') $pics[(int)$m['id']] = [(string)$m['media_id'], $mark];   // 📷 a photo a person sent: it may be the chain catalogue with no words (read by must3_photo_tick)
+                    if ($by === 'S' && (string)$m['mtype'] === 'image' && ctype_digit((string)$m['media_id'])) $pics[(int)$m['id']] = [(string)$m['media_id'], $mark];   // 📷 a photo a person sent: it may be the chain catalogue with no words (read by must3_photo_tick)
                     if ($ff['a'] === null && preg_match($rxA, $body)) $ff['a'] = $mark;
                     if ($ff['p'] === null && $body !== '' && preg_match($rxP, $body)) $ff['p'] = $mark;
                     if ($ff['c'] === null) {
@@ -11696,7 +11702,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
             } catch (Throwable $e) { }
             $e = (int)$o['employee_id'];
             if (!isset($P[$e])) $P[$e] = ['id' => $e, 'name' => $names[$e] ?? ('#' . $e), 'n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0, 'orders' => []];
-            $nk = strtolower(ltrim(trim((string)$o['order_name']), '#')); $wr = $why[(string)$o['store_key'] . ':' . (string)$o['shopify_id']] ?? null; $wt = ''; $dn = (isset($ad[$nk]) && (float)$ad[$nk]['amt'] > 0) || ($wr && ((int)$wr['worked'] === 1 || (int)$wr['sz_worked'] === 1 || (int)$wr['tried'] === 1 || (int)$wr['sz_tried'] === 1 || (int)$wr['tries'] > 0));   /* owner (23 Nov, #73488): the must-do is OFFERING more ("10 le lijiye 10*50ml 4000/-") — an offer the customer refused is done too; pending = the salesperson never offered */   // owner (23 Nov, #73539): the salesperson made the customer take MORE inside the same order ("6 x 50 ml lelo 3000 me") — no separate add-on row, but the chat judge marked it sold bigger / add-on taken: that is done too
+            $nk = strtolower(ltrim(trim((string)$o['order_name']), '#')); $wr = $why[(string)$o['store_key'] . ':' . (string)$o['shopify_id']] ?? null; $wt = ''; $dn = (isset($ad[$nk]) && (float)$ad[$nk]['amt'] > 0) || ($wr && ((int)$wr['worked'] === 1 || (int)$wr['sz_worked'] === 1 || (int)$wr['tried'] === 1 || (int)$wr['sz_tried'] === 1 || (int)$wr['tries'] > 0)) || (($ovr[(string)$o['store_key'] . ':' . (string)$o['shopify_id']] ?? 0) >= 1);   /* owner (23 Nov, #73488): the must-do is OFFERING more ("10 le lijiye 10*50ml 4000/-") — an offer the customer refused is done too; pending = the salesperson never offered */   // owner (23 Nov, #73539): the salesperson made the customer take MORE inside the same order ("6 x 50 ml lelo 3000 me") — no separate add-on row, but the chat judge marked it sold bigger / add-on taken: that is done too
             if (!$dn) { if ($wr) $wt = trim((string)$wr['reason']) !== '' ? mb_substr(trim((string)$wr['reason']), 0, 160) : (((int)$wr['tried'] || (int)$wr['tries'] > 0) ? 'Offered — the customer did not take it' : 'Not offered'); }
             if ($nochat) { $P[$e]['x']++; $res['team']['x']++; }   // 📱 chat not found: its own count — NOT in the orders the three messages are measured on (owner, 23 Nov: it made the numbers look worse than they are)
             else { $P[$e]['n']++; $res['team']['n']++; foreach (['a', 'c', 'p'] as $key) if ($f[$key]) { $P[$e][$key]++; $res['team'][$key]++; } if ($dn) { $P[$e]['d']++; $res['team']['d']++; } }
@@ -19417,11 +19423,13 @@ function retail_display_pending(PDO $pdo, string $city): array
 $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
-if (is_file(__DIR__ . '/chain_prices.php')) { require_once __DIR__ . '/chain_prices.php'; }   // 💰 public price feed of the chain page (chain/chain_index.html): chain.prices
+if (is_file(__DIR__ . '/chain_prices.php')) { require_once __DIR__ . '/chain_prices.php'; }
+if (strpos((string)$action, 'tms.') === 0 && is_file(__DIR__ . '/store_orders.php')) { require __DIR__ . '/store_orders.php'; }   // 🛍 Website orders → a salesperson (answers tms.* itself)   // 💰 public price feed of the chain page (chain/chain_index.html): chain.prices
 if (is_file(__DIR__ . '/wa_collage.php')) { require_once __DIR__ . '/wa_collage.php'; }   // one picture for 2–5 suggested perfumes (public view: wa.collage_view)
 if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   // streaks + the Wins feed on the salesperson home; answers play.* itself
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
 if (strpos((string)$action, 'lh.') === 0) { require __DIR__ . '/leader_helper.php'; }   // 👥 Leaders Helper: fixed salary, daily checklist, daily payout
+if (strpos((string)$action, 'fup.') === 0 && is_file(__DIR__ . '/followup.php')) { require __DIR__ . '/followup.php'; }   // 📌 Follow-up: sections → topics → one update a day, checked by Claude
        if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\.|^team\.(board|person)$/', (string)$action)) { require __DIR__ . '/wa.php'; }   // team.board / team.person live in team_board.php (loaded by wa.php); the other team.* actions (team.sheet = Orders → Employee sheet, team.check, team.me …) belong to api.php itself and must NOT go to wa.php (it answered them 'Unknown WhatsApp action')          // wq. = WhatsApp Sales (wq.php, loaded by wa.php → wa_more.php)
 
 // Phone reminders need no cron: once a minute, whichever request comes in
@@ -19436,6 +19444,13 @@ if ($action !== 'login' && $action !== '') { try { penalties_auto_pass($pdo); } 
 // Shop payment due-date reminders (Retail Shops): a phone notification from 10 AM for payments due tomorrow / today / overdue,
 // checked at most every 5 minutes from whichever request comes in and sent after the response is out.
 if ($action !== 'login' && $action !== '') { try { retail_due_pass($pdo); } catch (Throwable $e) {} }
+
+// 📌 Follow-up: every evening (default 8 pm) Claude writes the note of every section and the Admin / HR get one phone notification with the day's count.
+// Once a day, from whichever request comes in after the hour; the work runs after the answer is out. The file is only loaded when it is due.
+if ($action !== 'login' && $action !== '' && (int)date('G') >= (int)setting_get($pdo, 'fup_digest_hour', 20) && (string)setting_get($pdo, 'fup_digest_day', '') !== date('Y-m-d') && is_file(__DIR__ . '/followup.php')) {
+    $fupTail = function () use ($pdo) { try { require_once __DIR__ . '/followup.php'; if (function_exists('fup_daily_pass')) fup_daily_pass($pdo); } catch (Throwable $e) { error_log('fup_daily_pass: ' . $e->getMessage()); } };
+    register_shutdown_function($fupTail);
+}
 
 // Store perfumes from Shopify, once a day by itself (first request after 5 AM; syncs after the answer is out; retries every 30 min if it failed).
 if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); st_bday_daily($pdo); } catch (Throwable $e) {} }
@@ -19478,6 +19493,7 @@ if (strpos((string)$action, 'fn.') === 0) { require_once __DIR__ . '/finance_new
 if (strpos((string)$action, 'st_') === 0) { require __DIR__ . '/store_pos.php'; }      // Store inventory + billing (short per-bottle barcodes, total-ml price, commission like online)
 if (strpos((string)$action, 'cp.') === 0) { require __DIR__ . '/ct_people.php'; }
 if (strpos((string)$action, 'lr.') === 0) { require __DIR__ . '/leader_roas.php'; }
+if (strpos((string)$action, 'budget.cm_') === 0 && is_file(__DIR__ . '/budget_cm.php')) { require __DIR__ . '/budget_cm.php'; }   // 💰 the commission engine and its screens: Total Budgeting's own (was inside the Boss Engine)
 if (strpos((string)$action, 'budget.') === 0) { require __DIR__ . '/budget.php'; }
 if (strpos((string)$action, 'person.') === 0) { require __DIR__ . '/person.php'; }   // the one person card (timing, penalties, Claude summary), shared by Total Budgeting and the Boss Engine   // Sales → Total Budgeting: target, lump sum, fixed expenses
 if (strpos((string)$action, 'ph.') === 0) { require __DIR__ . '/wa_photos.php'; }
