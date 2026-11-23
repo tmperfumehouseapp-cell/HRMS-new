@@ -93,6 +93,7 @@
       + '<div class="card" style="padding:12px 14px"><div class="ring"><svg width="68" height="68" viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#e6e9ee" stroke-width="11"/><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#16a34a" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + CIRC.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 52 52)"/><text x="52" y="60" text-anchor="middle" font-size="26" font-weight="800" fill="currentColor">' + (m.target > 0 ? Math.round(pct) + '%' : '—') + '</text></svg>'
       + '<div class="t"><b>' + rs(m.sales) + (bet ? ' <span class="up">▲ vs yesterday</span>' : '') + '</b><span class="mut">' + (m.target > 0 ? 'Target ' + rs(m.target) : 'No target today') + '</span><div class="bar"><i style="width:' + pct + '%"></i></div></div></div></div>'
       + '<div class="card next" style="padding:12px 14px"><div style="flex:1;min-width:0"><small>YOUR NEXT STEP</small><b>' + esc(next) + '</b></div><a class="btn w" href="my_chats.html">Chats ▸</a></div>'
+      + '<div id="m3Slot"></div>'   // ✅ the must-send check (must3_me.js) sits right under "Your next step" (owner, 23 Nov)
       + '<button type="button" class="btn w" data-ofv style="width:100%;margin:0 0 10px;min-height:46px;text-align:left">🏷 Running offers <span class="mut" style="font-weight:600">— view only</span> ›</button>'
       + '<div class="tiles">'
       + T1('t-g', 'e', '💰', rs(comNow), 'Earned today', comUp ? '<span class="up">+' + rs(comUp) + ' just now</span>' : 'tap: whole month ›')
@@ -106,6 +107,7 @@
       + (C.tips && C.tips[0] ? '<div class="say">🧭 ' + esc(C.tips[0].title || '') + '</div>' : '')
       + '<details class="card" id="playBox" style="padding:12px 14px"><summary style="font-weight:800;font-size:15px;cursor:pointer;min-height:32px">🎮 Level · wins · games</summary><div id="playHost" style="margin-top:8px"></div></details>';
     const pb = $('playBox'); if (pb) pb.addEventListener('toggle', () => { if (pb.open) mountPlay(); });
+    try { if (window.Must3Me) Must3Me.repaint(); } catch (e) { }   // the home page was redrawn: put the must-send card back into its slot
   }
   // the level / gift / week / team-wins / break-game card (play_card.js, moved over unchanged from the old page)
   let playLoaded = false;
