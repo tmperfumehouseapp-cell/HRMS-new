@@ -1288,15 +1288,15 @@
   }
   // 🏅 Query or Campaign — who is better at what (last 7 days, against the team). Not a remark: information for deciding who gets which queries.
   let BA = null, BAF = 'all';
-  const BA_LAB = { both: 'બંનેમાં સારો', query: '🆕 Query માં સારો', campaign: '📣 Campaign માં સારો', avg: 'સરેરાશ', weak: 'બંનેમાં નબળો', low: 'ડેટા ઓછો' }, BA_ST = { good: 'સારો', avg: 'સરેરાશ', weak: 'નબળો', low: 'ડેટા ઓછો' };
+  const BA_LAB = { both: 'બંનેમાં સારો', query: '🆕 Query માં સારો', campaign: '📣 Campaign માં સારો', avg: 'સરેરાશ', weak: 'બંનેમાં નબળો' }, BA_ST = { good: 'સારો', avg: 'સરેરાશ', weak: 'નબળો', low: 'ક્વેરી નથી લીધી' };
   async function baLoad() { const had = !!BA; try { BA = await api.get('ct.better_at'); } catch (e) { BA = null; } if (!had && BA) { try { renderToday(); } catch (e) { } } }   // the first load redraws the cards so the small Q / C mark shows
   // small mark beside the name on the Live card: Q = better at Query · C = better at Campaign · Q+C = both. Nothing for average / weak / low data.
   function baChip(e) { const x = BA && BA.emps ? (BA.emps[e.id] || BA.emps[String(e.id)]) : null, m = x ? { query: ['Q', 'Query માં સારો'], campaign: ['C', 'Campaign માં સારો'], both: ['Q+C', 'બંનેમાં સારો'] }[x.label] : null; return m ? `<i class="ba-c ${x.label}" title="${m[1]} (છેલ્લા ${BA.days} દિવસ)">${m[0]}</i>` : ''; }
   function baBox(e) {
     if (!BA || !BA.emps) return '';
     const x = BA.emps[e.id] || BA.emps[String(e.id)], tm = BA.team || {};
-    if (!x) return `<div class="ba"><h5>🏅 કઈ ક્વેરીમાં સારો · છેલ્લા ${BA.days} દિવસ</h5><span class="ba-w low">ડેટા ઓછો</span></div>`;
-    const tip = { query: '👉 આને Query વધારે આપો.', campaign: '👉 આને Campaign વધારે આપો.', both: '👉 બંને પ્રકારની ક્વેરી આપી શકાય.', weak: '👉 બંનેમાં ટીમથી પાછળ છે — ક્વેરી ઓછી આપો, તાલીમ જોઈએ.', avg: '', low: '15 થી ઓછી ક્વેરી — હજી નક્કી ન થાય.' }[x.label] || '';
+    if (!x) return '';
+    const tip = { query: '👉 આને Query વધારે આપો.', campaign: '👉 આને Campaign વધારે આપો.', both: '👉 બંને પ્રકારની ક્વેરી આપી શકાય.', weak: '👉 બંનેમાં ટીમથી પાછળ છે — ક્વેરી ઓછી આપો, તાલીમ જોઈએ.', avg: '' }[x.label] || '';
     return `<div class="ba"><h5>🏅 કઈ ક્વેરીમાં સારો · છેલ્લા ${BA.days} દિવસ</h5><span class="ba-w ${x.label}">${BA_LAB[x.label] || ''}</span>
       <div class="ba-vs"><div class="ba-sd"><small>🆕 Query</small><b style="color:#2563eb">${x.q_ratio != null ? x.q_ratio + '%' : '—'}</b> <i>${x.qo} / ${x.qq}</i><small>ટીમ ${tm.q_ratio != null ? tm.q_ratio + '%' : '—'} · <span class="ba-st ${x.q_step}">${BA_ST[x.q_step]}</span></small></div>
       <div class="ba-sd"><small>📣 Campaign ઓર્ડર</small><b style="color:#ea580c">${x.co}</b><small>ટીમ સરેરાશ ${tm.c_avg != null ? tm.c_avg : '—'} · <span class="ba-st ${x.c_step}">${BA_ST[x.c_step]}</span></small></div></div>${tip ? `<div class="ba-tip">${tip}</div>` : ''}</div>`;
@@ -1304,11 +1304,11 @@
   function baListHtml() {
     const all = Object.values((BA && BA.emps) || {}), tm = (BA && BA.team) || {}, n = k => all.filter(x => x.label === k).length;
     const rows = all.filter(x => BAF === 'all' || x.label === BAF).sort((a, b) => (b.q_ratio || 0) - (a.q_ratio || 0));
-    const fl = [['all', 'બધા ' + all.length], ['query', '🆕 Query માં સારા ' + n('query')], ['campaign', '📣 Campaign માં સારા ' + n('campaign')], ['both', 'બંનેમાં સારા ' + n('both')], ['avg', 'સરેરાશ ' + n('avg')], ['weak', 'બંનેમાં નબળા ' + n('weak')], ['low', 'ડેટા ઓછો ' + n('low')]];
+    const fl = [['all', 'બધા ' + all.length], ['query', '🆕 Query માં સારા ' + n('query')], ['campaign', '📣 Campaign માં સારા ' + n('campaign')], ['both', 'બંનેમાં સારા ' + n('both')], ['avg', 'સરેરાશ ' + n('avg')], ['weak', 'બંનેમાં નબળા ' + n('weak')]];
     return `<button type="button" class="x" onclick="bkClose()" aria-label="Close">✕</button><h4>🏅 કઈ ક્વેરીમાં સારો <small>છેલ્લા ${BA.days} દિવસ · ટીમ: Query ${tm.q_ratio != null ? tm.q_ratio + '%' : '—'} · Campaign સરેરાશ ${tm.c_avg != null ? tm.c_avg : '—'} ઓર્ડર / માણસ</small></h4>
       <div class="ba-fl">${fl.map(f => `<button type="button" class="${BAF === f[0] ? 'on' : ''}" onclick="baFilter('${f[0]}')">${f[1]}</button>`).join('')}</div>
       <table class="ba-tb"><tr><th>સેલ્સ પર્સન</th><th>Query</th><th>Campaign ઓર્ડર</th><th>પરિણામ</th></tr>${rows.map(x => `<tr><td><b>${esc(x.name)}</b></td><td>${x.q_ratio != null ? x.q_ratio + '%' : '—'} <small style="color:#667781">${x.qo}/${x.qq}</small> <span class="ba-st ${x.q_step}">${BA_ST[x.q_step]}</span></td><td>${x.co} <span class="ba-st ${x.c_step}">${BA_ST[x.c_step]}</span></td><td><span class="ba-w ${x.label}">${BA_LAB[x.label] || ''}</span></td></tr>`).join('') || '<tr><td colspan="4">કોઈ નથી.</td></tr>'}</table>
-      <div style="font-size:11.5px;color:#667781;margin-top:8px;">સારો = ટીમથી 20% કે વધુ ઉપર · નબળો = 20% કે વધુ નીચે · વચ્ચે = સરેરાશ. Query = ક્વેરી ઓર્ડર ÷ લીધેલી ક્વેરી (15+ ક્વેરી જોઈએ). Campaign = ઓર્ડરની સંખ્યા, ટીમની સરેરાશ સામે.</div>`;
+      <div style="font-size:11.5px;color:#667781;margin-top:8px;">સારો = ટીમથી 20% કે વધુ ઉપર · નબળો = 20% કે વધુ નીચે · વચ્ચે = સરેરાશ. Query = ક્વેરી ઓર્ડર ÷ લીધેલી ક્વેરી. Campaign = ઓર્ડરની સંખ્યા, ટીમની સરેરાશ સામે.</div>`;
   }
   window.baFilter = (k) => { BAF = k; const p = document.querySelector('.bk-bd .bk-pop'); if (p) p.innerHTML = baListHtml(); };
   window.baOpen = async () => {

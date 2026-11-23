@@ -11643,29 +11643,26 @@ function must3_photo_tick(PDO $pdo, int $max = 6): int
     return $n;
 }
 /** 🏅 WHO IS BETTER AT WHAT (owner, 24 Nov): per salesperson over the last $days business days — the QUERY ratio (query orders ÷ fresh queries taken) and the number of CAMPAIGN orders — each set against the TEAM in three steps:
- *  good = 20% or more above the team · avg = between · weak = 20% or more below. Query needs 15+ queries, else 'low' (too little data). Campaign is measured in ORDERS (campaign query counts hold "ok / not now" replies).
- *  label: both | query | campaign | avg | weak | low. Returns ['days', 'from', 'to', 'team' => [q_ratio, c_avg, people], 'emps' => [id => [...]]]. Not a remark: shown on the person's card and in the list. */
+ *  good = 20% or more above the team · avg = between · weak = 20% or more below. No minimum number of queries (owner): the ratio alone decides. Campaign is measured in ORDERS (campaign query counts hold "ok / not now" replies).
+ *  label: both | query | campaign | avg | weak. Returns ['days', 'from', 'to', 'team' => [q_ratio, c_avg, people], 'emps' => [id => [...]]]. Not a remark: shown on the person's card and in the list. */
 function ct_better_at(PDO $pdo, int $days = 7): array
 {
     $today = biz_today($pdo); $fromDay = date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')); $out = ['days' => $days, 'from' => $fromDay, 'to' => $today, 'team' => ['q_ratio' => null, 'c_avg' => null, 'people' => 0], 'emps' => []];
     try {
-        $from = $fromDay . ' ' . day_start_for($pdo, $fromDay) . ':00'; $E = []; $z = function () { return ['qq' => 0, 'qo' => 0, 'co' => 0]; };
-        if (ensure_order_allocations_table($pdo)) {
-            $cc = 'COLLATE utf8mb4_unicode_ci';
-            $st = $pdo->prepare("SELECT a.employee_id e, a.order_type t, COUNT(*) n FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc WHERE o.created_at >= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND a.order_type IN ('query', 'campaign') GROUP BY a.employee_id, a.order_type");
-            $st->execute([$from]); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) { $e = (int)$r['e']; if (!isset($E[$e])) $E[$e] = $z(); $E[$e][$r['t'] === 'query' ? 'qo' : 'co'] += (int)$r['n']; }
-        }
-        try { $m = $pdo->prepare("SELECT employee_id e, order_type t, COUNT(*) n FROM manual_orders WHERE order_date >= ? AND employee_id > 0 AND order_type IN ('query', 'campaign') GROUP BY employee_id, order_type"); $m->execute([$from]);
-            foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) { $e = (int)$r['e']; if (!isset($E[$e])) $E[$e] = $z(); $E[$e][$r['t'] === 'query' ? 'qo' : 'co'] += (int)$r['n']; } } catch (Throwable $e9) { }
-        try { foreach ((array)qa_new_days($pdo, $fromDay, $today) as $list) foreach ((array)$list as $e => $n) { $e = (int)$e; if (!isset($E[$e])) $E[$e] = $z(); $E[$e]['qq'] += (int)$n; } } catch (Throwable $e9) { }
-        $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e9) { }
+        $E = []; $z = function () { return ['qq' => 0, 'qo' => 0, 'co' => 0]; }; $emps = rating_emps($pdo); $names = [];
+        foreach ($emps as $id => $x) $names[(int)$id] = trim((string)$x['full_name']);
+        // the SAME sources as the "Last 7 days" line of the Leaders ranking, so both always show one number
+        foreach ((array)qa_emp_total($pdo, $fromDay, $today) as $e => $n) { $e = (int)$e; if (!isset($E[$e])) $E[$e] = $z(); $E[$e]['qq'] += (int)$n; }
+        $commSet = []; if (ensure_order_community_table($pdo)) { try { foreach ($pdo->query("SELECT source, order_id FROM order_community")->fetchAll() as $r) $commSet[$r['source'] . '|' . $r['order_id']] = 1; } catch (Throwable $e2) { } }
+        foreach ((array)coach_sales_load($pdo, $emps, $fromDay, $today) as $k => $l) { $e = (int)substr($k, strpos($k, '|') + 1); if (!isset($E[$e])) $E[$e] = $z();
+            foreach ($l as $x) { if (isset($commSet[$x['key']]) || ($x['type'] ?? '') === 'campaign') $E[$e]['co']++; else $E[$e]['qo']++; } }
         $tq = 0; $to = 0; $tc = 0; $np = 0;
-        foreach ($E as $e => $x) { if (!isset($names[$e])) { unset($E[$e]); continue; } if ($x['qq'] >= 15) { $tq += $x['qq']; $to += $x['qo']; } if ($x['qq'] > 0 || $x['qo'] + $x['co'] > 0) { $tc += $x['co']; $np++; } }
+        foreach ($E as $e => $x) { if (!isset($names[$e]) || ($x['qq'] === 0 && $x['qo'] + $x['co'] === 0)) { unset($E[$e]); continue; } $tq += $x['qq']; $to += $x['qo']; $tc += $x['co']; $np++; }
         $tr = $tq > 0 ? $to / $tq * 100 : null; $ca = $np > 0 ? $tc / $np : null; $out['team'] = ['q_ratio' => $tr !== null ? round($tr, 1) : null, 'c_avg' => $ca !== null ? round($ca, 1) : null, 'people' => $np];
         $step = function ($v, $t) { if ($v === null || $t === null || $t <= 0) return 'low'; return $v >= $t * 1.2 ? 'good' : ($v <= $t * 0.8 ? 'weak' : 'avg'); };
         foreach ($E as $e => $x) {
-            $qr = $x['qq'] > 0 ? $x['qo'] / $x['qq'] * 100 : null; $qs = $x['qq'] >= 15 ? $step($qr, $tr) : 'low'; $cs = $step((float)$x['co'], $ca);
-            $lab = $qs === 'low' ? 'low' : (($qs === 'good' && $cs === 'good') ? 'both' : (($qs === 'good') ? 'query' : (($cs === 'good') ? 'campaign' : (($qs === 'weak' && $cs === 'weak') ? 'weak' : 'avg'))));
+            $qr = $x['qq'] > 0 ? $x['qo'] / $x['qq'] * 100 : null; $qs = $step($qr, $tr); $cs = $step((float)$x['co'], $ca);   // owner (24 Nov): no minimum number of queries — the ratio alone decides ('low' only when he took no query at all)
+            $lab = ($qs === 'good' && $cs === 'good') ? 'both' : ($qs === 'good' ? 'query' : ($cs === 'good' ? 'campaign' : (($qs === 'weak' && $cs === 'weak') ? 'weak' : 'avg')));
             $out['emps'][$e] = ['id' => $e, 'name' => $names[$e], 'qq' => $x['qq'], 'qo' => $x['qo'], 'q_ratio' => $qr !== null ? round($qr, 1) : null, 'q_step' => $qs, 'co' => $x['co'], 'c_step' => $cs, 'label' => $lab];
         }
     } catch (Throwable $e) { error_log('ct_better_at: ' . $e->getMessage()); }
@@ -23246,7 +23243,7 @@ switch ($action) {
         // 🏅 Query or Campaign: who is better at what, against the team (last 7 business days). Admin / HR. Kept 5 minutes.
         $auth = require_auth();
         if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
-        json_response(['ok' => true] + hrms_memo('better_at:' . biz_today($pdo), 300, function () use ($pdo) { return ct_better_at($pdo, 7); }));
+        json_response(['ok' => true] + hrms_memo('better_at2:' . biz_today($pdo), 300, function () use ($pdo) { return ct_better_at($pdo, 7); }));
         break;
     }
     case 'ct.must3_me': {
