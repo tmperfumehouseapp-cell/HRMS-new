@@ -119,7 +119,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
 {
     if ($qty <= 0) return;
     $full = trim($title . ' ' . $variant);
-    if (preg_match('/(?<![a-z0-9])chain+s?(?![a-z0-9])|necklace|bracelet|pendant|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone)(?![a-z0-9])/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
+    if (preg_match('/(?<![a-z0-9])chain+s?(?![a-z0-9])|necklace|bracelet|pendant|signet|earring|anklet|bangle|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone|vanta ?crest|apex ?monolith)(?![a-z0-9])/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
     if (preg_match('/^\s*(tmperfumehouse|tm perfume house)\s*x\s*\d+\s*\(\s*inside:\s*build your own/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'build-your-own pack: the perfumes are not named on the order', 'kind' => 'left']; return; }
     $put = function (string $sku, int $col, int $q) use (&$grid, $order) { if (!isset($grid[$sku])) $grid[$sku] = array_fill(0, 10, 0); $grid[$sku][$col] += $q; $GLOBALS['__sku_ord'][$sku][$col][$order] = ($GLOBALS['__sku_ord'][$sku][$col][$order] ?? 0) + $q; };      // which orders make each number of the sheet
     if (preg_match('/^\s*no[ -]?name\b/i', $full) || preg_match('/^NONAME-\d+/i', $shopSku)) {      // 🏷 "No name 50 ml" (a perfume sold without a name, from the manual orders): counted on its own row "No Name", in its size column
