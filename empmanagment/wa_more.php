@@ -267,7 +267,8 @@ function wa_tick(PDO $pdo, bool $force = false): array
     if (!$__late()) try { if (function_exists('wag_tick')) $o['growth'] = wag_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'growth: ' . $e->getMessage()); } $__mk('wag_tick');
     if (!$__late()) try { if (function_exists('wq_tick')) $o['wq'] = wq_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'whatsapp sales: ' . $e->getMessage()); } $__mk('wq_tick');   // no-answer flow + typing of new queries
     if (!$__late()) try { if (function_exists('wch_tick')) $o['wch'] = wch_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain cart: ' . $e->getMessage()); } $__mk('wch_tick');   // chain cart: reminders
-    if (!$__late()) try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); } $__mk('wa_ord_tick');   // order-update messages (and the one-time template setup)
+    if (!$__late()) try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); } $__mk('wa_ord_tick');
+    if (!$__late()) try { if (function_exists('wa_site_conf_tick') && !defined('WA_IN_WEBHOOK')) $o['site_conf'] = wa_site_conf_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'website orders: ' . $e->getMessage()); } $__mk('wa_site_conf_tick');   // 🛍 confirmation for direct website orders   // order-update messages (and the one-time template setup)
     if (!$__late()) try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); } $__mk('jt_tick');
     if (!$__late()) try { if (function_exists('wa_numq_refresh') && $force && !defined('WA_IN_WEBHOOK')) { $nq = json_decode((string)setting_get($pdo, 'wa_numq_cache', ''), true); if (!is_array($nq) || (int)($nq['t'] ?? 0) < time() - 600) wa_numq_refresh($pdo); } } catch (Throwable $e) { } $__mk('wa_numq_refresh');   // ⚡ the per-number chip counts are renewed here, not while the chat list loads
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && (int)setting_get($pdo, 'wa_ar_at', '0') < time() - 300) { setting_set($pdo, 'wa_ar_at', (string)time()); $o['autoreply'] = wa_autoreply_sweep($pdo); } } catch (Throwable $e) { } $__mk('wa_autoreply_sweep');   // 🤖 customers' automatic replies leave Requests
@@ -673,6 +674,7 @@ if (is_file(__DIR__ . '/wa_review.php')) require_once __DIR__ . '/wa_review.php'
 require_once __DIR__ . '/wa_smart.php';    // Smart campaigns (Claude plans a campaign from one line) + the Normal-campaign upgrade (wa.smart_*, wa.camp_suggest POST, wa.camp_speed)
 require_once __DIR__ . '/wa_util.php';
 require_once __DIR__ . '/wa_done.php';
+require_once __DIR__ . '/wa_site_conf.php';   // owner 23 Nov 2026: confirmation message for DIRECT website orders (never chatted with us), from the main number only; OFF until Admin sets a start time
 require_once __DIR__ . '/wa_cxself.php';   // 🎫 a customer raises a complaint ticket themselves on WhatsApp    // ✅ order completed: one thank-you, then no automatic messages today and tomorrow (wa.order_done)    // ✨ utility versions of a campaign message (wa.tpl_make_utility, wa.tpl_utility_list)
 require_once __DIR__ . '/wa_diag.php';    // 🩺 Diagnose a campaign: why it failed, from the database + Meta live (wa.camp_diagnose)
 require_once __DIR__ . '/wa_origin.php';  // 📍 "Where did you find us?" asked when a new enquiry starts; the answer tags the chat (wa.origin_save)
@@ -709,7 +711,7 @@ require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value fi
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wm = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.cron_send', 'wa.bot_run', 'wa.bot_tick', 'wa.alloc_why', 'wa.alloc_run'], true)) {
+if (in_array($__wm, ['wa.numbers', 'wa.sc_get', 'wa.sc_set', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.cron_send', 'wa.bot_run', 'wa.bot_tick', 'wa.alloc_why', 'wa.alloc_run'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if ($__wm === 'wa.bot_tick') {   // 🤖 ONE short bot tick (cron_bot.php fires five a second): returns at once when all five slots are busy
         ignore_user_abort(true); @set_time_limit(((string)($_GET['role'] ?? '') === 'fuw') ? 75 : 40);
@@ -928,6 +930,18 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                     'camp_ok' => (int)$r['camp_ok'] === 1, 'retired' => !empty($r['retired']), 'camp_tag' => (int)($r['camp_tag'] ?? 0) === 1, 'tier_manual' => (int)($r['tier_manual'] ?? 0), 'portfolio' => (string)($r['portfolio'] ?? ''), 'portfolio_auto' => (string)(($r['biz_name'] ?? '') !== '' ? $r['biz_name'] : ($r['waba_name'] ?? '')), 'hold' => (int)($r['hold'] ?? 0) === 1, 'handlers' => $hid, 'handler_names' => array_values(array_filter(array_map(fn($x) => $names[$x] ?? '', $hid))), 'in_7d' => (int)$m['i'], 'out_7d' => (int)$m['o'], 'cap' => $c, 'is_main' => (string)$r['phone_id'] === wa_cfg_val('WA_PHONE_ID')];
             }
             json_response(['numbers' => $out, 'portfolio' => $caps['_port'] ?? null, 'people' => array_map(fn($p) => ['emp_id' => $p['emp_id'], 'name' => $p['name']], wa_people($pdo))]);
+        }
+        case 'wa.sc_get': { json_response(wsc_status($pdo)); }
+        case 'wa.sc_set': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); $on = !empty($in['on']); $from = trim((string)($in['from'] ?? '')); $num = preg_replace('/\D+/', '', (string)($in['num'] ?? '')); $skip = mb_substr(trim((string)($in['skip_src'] ?? '')), 0, 120);
+            if ($from !== '' && !strtotime($from)) json_response(['error' => 'The start time is not a valid date and time.'], 422);
+            if ($num === '' || strlen($num) !== 4) json_response(['error' => 'Type the LAST 4 digits of the main number (for example 0275).'], 422);
+            if ($on && $from === '') json_response(['error' => 'Set the start time first: only orders placed from that time get a message.'], 422);
+            if ($on && wsc_main_number($pdo, $num) <= 0) json_response(['error' => 'No single number ends with ' . $num . '. Check the last 4 digits (a retired number does not count).'], 422);
+            setting_set($pdo, 'wa_sc_on', $on ? '1' : '0'); setting_set($pdo, 'wa_sc_from', $from !== '' ? date('Y-m-d H:i:s', strtotime($from)) : ''); setting_set($pdo, 'wa_sc_num', $num); setting_set($pdo, 'wa_sc_skip_src', $skip);
+            wa_log($pdo, 'orders', true, 'Website order confirmation ' . ($on ? 'switched ON from ' . date('j M H:i', strtotime($from)) . ' (main number ending ' . $num . ')' : 'switched OFF'));
+            json_response(['ok' => true] + wsc_status($pdo));
         }
         case 'wa.num_profile': {
             $n = wa_number_row($pdo, (int)($_GET['id'] ?? 0)); if (!$n) json_response(['error' => 'Number not found.'], 404);
