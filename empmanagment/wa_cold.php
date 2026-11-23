@@ -81,21 +81,21 @@ if (!function_exists('wcd_tick')) {
             'cd_ask8' => ['body' => "Hi {{1}}, aapke pichhle message ke baare mein dobara jud rahe hain. Kya aap abhi perfume lene ke baare mein soch rahe hain? Haan ya baad mein, ek reply de dijiye.", 'btn' => ['Haan, dikhaiye', 'Baad mein']],
         ];
     }
-    function wcd_ids(PDO $pdo): array { $j = json_decode(wcd_set($pdo, 'wcd_tpls', ''), true); return is_array($j) ? array_map('intval', $j) : []; }
+    function wcd_ids(PDO $pdo, bool $mk = false): array { $j = json_decode(wcd_set($pdo, $mk ? 'wcd_tpls_m' : 'wcd_tpls', ''), true); return is_array($j) ? array_map('intval', $j) : []; }   /* $mk = the MARKETING copies of the same eight questions (owner 23 Nov: the fallback for a customer to whom no utility message can go) */
     /** Make the pack at Meta (once; the missing ones are tried again every 6 hours). [made, sent to Meta accounts, failures]. */
-    function wcd_make(PDO $pdo): array
+    function wcd_make(PDO $pdo, string $cat = 'UTILITY'): array
     {
         $res = ['made' => 0, 'sent' => 0, 'failed' => []];
         foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row', 'wa_wabas'] as $f) if (!function_exists($f)) { $res['failed'][] = 'template module missing'; return $res; }
-        $ids = wcd_ids($pdo); $wabas = wa_wabas($pdo); $budget = ['left' => 12, 'made' => 0];
-        foreach (wcd_pack() as $k => $m) {
+        $mkc = $cat !== 'UTILITY'; $ids = wcd_ids($pdo, $mkc); $wabas = wa_wabas($pdo); $budget = ['left' => 12, 'made' => 0];
+        foreach (wcd_pack() as $k0 => $m) { $k = $mkc ? str_replace('cd_ask', 'cd_askm', $k0) : $k0;
             if (!empty($ids[$k])) continue;
             $btn = []; foreach ($m['btn'] as $b) $btn[] = ['type' => 'QUICK_REPLY', 'text' => $b];
-            [$t, $err] = wa_tpl_clean(['name' => $k, 'language' => 'en', 'category' => 'UTILITY', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => $btn, 'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => 'Cold']);
+            [$t, $err] = wa_tpl_clean(['name' => $k, 'language' => 'en', 'category' => $mkc ? 'MARKETING' : 'UTILITY', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => $btn, 'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => 'Cold']);
             if ($err !== '') { $res['failed'][] = $k . ': ' . $err; continue; }
             $id = wa_tpl_insert($pdo, $t, 0, 'Cold funnel: asks one easy question of a customer who got our message and never wrote; one tap answers.', 'Utility follow-up to a customer we messaged.');
             $r = wa_tpl_row($pdo, $id); if (!$r) { $res['failed'][] = $k . ': could not save'; continue; }
-            $ids[$k] = (int)$id; setting_set($pdo, 'wcd_tpls', json_encode($ids)); $res['made']++;
+            $ids[$k] = (int)$id; setting_set($pdo, $mkc ? 'wcd_tpls_m' : 'wcd_tpls', json_encode($ids)); $res['made']++;
             foreach ($wabas as $w) { if (function_exists('wa_tpl_try_create')) [$ok, $why] = wa_tpl_try_create($pdo, $r, $w, $budget); elseif (function_exists('wa_tpl_create_at')) [$ok, $why] = wa_tpl_create_at($pdo, $r, $w); else { $ok = false; $why = 'no submit function'; } if ($ok) $res['sent']++; else $res['failed'][] = $k . ' -> ' . mb_substr((string)$why, 0, 60); }
         }
         return $res;
@@ -107,6 +107,23 @@ if (!function_exists('wcd_tick')) {
         try { $q = $pdo->query("SELECT id, UPPER(COALESCE(NULLIF(category_now, ''), category)) c FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_values($ids))) . ")"); $cat = $q->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) { return []; }
         $ap = []; try { foreach ($pdo->query("SELECT DISTINCT tpl_id FROM wa_tpl_waba WHERE UPPER(status) = 'APPROVED' AND tpl_id IN (" . implode(',', array_map('intval', array_values($ids))) . ")")->fetchAll(PDO::FETCH_COLUMN) as $t) $ap[(int)$t] = 1; } catch (Throwable $e) { }   /* Meta must have approved it on at least one account (the weekly creation limit may still hold the others back) */
         foreach ($ids as $k => $id) if (($cat[$id] ?? '') === 'UTILITY' && isset($ap[(int)$id])) $o[] = [(int)$id, (string)$k];
+        return $o;
+    }
+    /** The MARKETING copies of the eight questions that Meta approved on at least one account (fallback only, Rs 1.09 each). [[id, key]]. */
+    function wcd_own_m(PDO $pdo): array
+    {
+        $ids = wcd_ids($pdo, true); if (!$ids) return []; $o = [];
+        $ap = []; try { foreach ($pdo->query("SELECT DISTINCT tpl_id FROM wa_tpl_waba WHERE UPPER(status) = 'APPROVED' AND tpl_id IN (" . implode(',', array_map('intval', array_values($ids))) . ")")->fetchAll(PDO::FETCH_COLUMN) as $t) $ap[(int)$t] = 1; } catch (Throwable $e) { }
+        foreach ($ids as $k => $id) if (isset($ap[(int)$id])) $o[] = [(int)$id, (string)$k];
+        return $o;
+    }
+    /** The marketing fallback for one customer: the approved marketing copies he did not get yet, best reply rate first. */
+    function wcd_templates_m(PDO $pdo, string $ph): array
+    {
+        $tw = wcd_own_m($pdo); if (!$tw) return [];
+        $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_cold_log WHERE phone = ? AND ok = 1"); $q->execute([$ph]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
+        $o = []; foreach ($tw as $r) if (!isset($got[(int)$r[0]])) $o[] = $r;
+        $st = wcd_tpl_stats($pdo); if (count($o) > 1 && $st) usort($o, function ($a, $b) use ($st) { $sa = $st[(int)$a[0]] ?? ['sent' => 0, 'replied' => 0]; $sb = $st[(int)$b[0]] ?? ['sent' => 0, 'replied' => 0]; return (($sb['replied'] + 0.5) / ($sb['sent'] + 50)) <=> (($sa['replied'] + 0.5) / ($sa['sent'] + 50)); });
         return $o;
     }
     /** WHAT WORKS (owner 22 Nov: "change every day by what brings the best replies"): per template [sent, replied, orders]. A reply is credited to the LAST Cold message sent to him before he wrote. Cached 5 minutes. */
@@ -137,6 +154,7 @@ if (!function_exists('wcd_tick')) {
         try { setting_set($pdo, 'wcd_tick_at', date('Y-m-d H:i:s', $now)); } catch (Throwable $e) { }
         try { $en = [0, 0]; for ($__i = 0; $__i < 8 && microtime(true) - $t0 < 10.0; $__i++) { $__e = wcd_enrol($pdo, $now, 10.0); $en[0] += $__e[0]; $en[1] += $__e[1]; if ($__e[0] === 0) break; } $o['entered'] = $en[1]; setting_set($pdo, 'wcd_enrol_res', json_encode(['at' => date('H:i:s'), 'looked' => $en[0], 'entered' => $en[1], 'ptr' => (int)wcd_set($pdo, 'wcd_ptr', '0')])); } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold enrol: ' . $e->getMessage()); }
         /* owner 22 Nov: the Cold funnel's own messages: made once, the missing ones again every 6 hours (Meta's weekly creation limit) */
+        try { if ((string)setting_get($pdo, 'wcd_mkt_fb', '1') === '1' && $now - (int)wcd_set($pdo, 'wcd_make_at_m', '0') >= 3600 && count(wcd_ids($pdo, true)) < count(wcd_pack())) { setting_set($pdo, 'wcd_make_at_m', (string)$now); $mk2 = wcd_make($pdo, 'MARKETING'); setting_set($pdo, 'wcd_make_res_m', json_encode(['at' => date('m-d H:i'), 'made' => $mk2['made'], 'sent' => $mk2['sent'], 'failed' => array_slice($mk2['failed'], 0, 4)])); } } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold make marketing: ' . $e->getMessage()); }   /* owner, 23 Nov: Meta's weekly limit stops NEW utility messages; the same eight questions are made as MARKETING (no such limit) for the customers to whom no utility message can go */
         try { if ($now - (int)wcd_set($pdo, 'wcd_make_at', '0') >= 21600 && count(wcd_ids($pdo)) < count(wcd_pack())) { setting_set($pdo, 'wcd_make_at', (string)$now); $mk = wcd_make($pdo); setting_set($pdo, 'wcd_make_res', json_encode(['at' => date('m-d H:i'), 'made' => $mk['made'], 'sent' => $mk['sent'], 'failed' => array_slice($mk['failed'], 0, 4)])); } } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'engine', false, 'cold make: ' . $e->getMessage()); }
         /* owner 22 Nov: the moment a Cold customer writes he LEAVES the Cold funnel and counts as a Lineup customer (the Lineup enrols everybody who writes); the ledger marks him at once, not at his next due date */
         try { $mv = $pdo->prepare("UPDATE wa_cold_cust c JOIN wa_contacts k ON k.phone = c.phone SET c.status = 'replied', c.why = CONCAT('wrote at ', SUBSTR(k.last_in_at, 1, 16)), c.left_at = k.last_in_at WHERE c.status = 'active' AND k.last_in_at IS NOT NULL AND k.last_in_at >= c.entered_at"); $mv->execute(); $o['moved'] = (int)$mv->rowCount(); } catch (Throwable $e) { }
@@ -158,9 +176,9 @@ if (!function_exists('wcd_tick')) {
             try { $x = $pdo->prepare("SELECT 1 FROM wa_line_cust WHERE phone = ? AND status = 'active' UNION SELECT 1 FROM wa_aft_cust WHERE phone = ? AND status = 'active' LIMIT 1"); $x->execute([$ph, $ph]); if ($x->fetchColumn()) { $push->execute([date('Y-m-d H:i:s', $now + 2 * 86400), $ph]); $o['waiting']++; continue; } } catch (Throwable $e) { }   /* he is in another funnel now: wait */
             if (!empty($r['last_sent_at']) && (int)strtotime((string)$r['last_sent_at']) > $now - 20 * 3600) { $push->execute([date('Y-m-d H:i:s', (int)strtotime((string)$r['last_sent_at']) + 20 * 3600), $ph]); $o['waiting']++; continue; }
             if ((!empty($c['last_out_at']) && (int)strtotime((string)$c['last_out_at']) > $now - 20 * 3600) || (int)($c['cx_id'] ?? 0) > 0) { $push->execute([date('Y-m-d H:i:s', $now + 20 * 3600 + (int)substr($ph, -3)), $ph]); $o['waiting']++; continue; }   /* we wrote to him today (any funnel): one message a day at most */
-            $tw = wcd_templates($pdo, $ph); if (!$tw) { $push->execute([date('Y-m-d H:i:s', $now + 86400), $ph]); $lg->execute([$ph, date('Y-m-d H:i:s'), 0, 0, 'no utility message left', '', $n + 1]); $o['waiting']++; continue; }
+            $tw = wcd_templates($pdo, $ph); $__mk = (string)setting_get($pdo, 'wcd_mkt_fb', '1') === '1' ? wcd_templates_m($pdo, $ph) : []; if (!$tw && !$__mk) { $push->execute([date('Y-m-d H:i:s', $now + 86400), $ph]); $lg->execute([$ph, date('Y-m-d H:i:s'), 0, 0, 'no utility message left', '', $n + 1]); $o['waiting']++; continue; }
             $sent = false; $why = ''; $tid = 0; $wm = '';
-            $__bad = &$badc; $__tried = 0; foreach ($tw as $t) { $tid = (int)$t[0]; $__bk = $tid . '|' . (int)($c['last_number_id'] ?? 0); if (isset($__bad[$__bk]) && $__bad[$__bk] > $now - 600) continue; if (++$__tried > 12) break; $res = function_exists('wln_send_any') ? wln_send_any($pdo, $c, $tid) : [false, 'no sender']; if (!empty($res[0])) { $sent = true; $wm = (string)($res[3] ?? ''); break; } $why = (string)($res[1] ?? ''); $__bad[$__bk] = $now; }   /* bad = this message on THIS customer's number (another customer's number may have it approved) */   /* a message that no number of his account has approved is skipped for 10 minutes: the next utility message goes instead */
+            $__bad = &$badc; $__tried = 0; foreach (array_merge($tw, $__mk) as $t) {   /* utility first; the marketing copies only when no utility message of his goes (owner 23 Nov) */ $tid = (int)$t[0]; $__bk = $tid . '|' . (int)($c['last_number_id'] ?? 0); if (isset($__bad[$__bk]) && $__bad[$__bk] > $now - 600) continue; if (++$__tried > 12) break; $res = function_exists('wln_send_any') ? wln_send_any($pdo, $c, $tid) : [false, 'no sender']; if (!empty($res[0])) { $sent = true; $wm = (string)($res[3] ?? ''); break; } $why = (string)($res[1] ?? ''); $__bad[$__bk] = $now; }   /* bad = this message on THIS customer's number (another customer's number may have it approved) */   /* a message that no number of his account has approved is skipped for 10 minutes: the next utility message goes instead */
             if ($sent) { $ts = date('Y-m-d H:i:s'); $lg->execute([$ph, $ts, $tid, 1, '', $wm, $n + 1]); $done->execute([$ts, date('Y-m-d H:i:s', $now + wcd_gap($n + 1, (string)$r['seg']) * 86400 + (int)substr($ph, -3) * 20), $ph]); $o['sent']++; if (function_exists('wa_log') && $o['sent'] === 1) { /* one line a round is enough */ } }
             else { $lg->execute([$ph, date('Y-m-d H:i:s'), $tid, 0, mb_substr($why, 0, 150), '', $n + 1]); $push->execute([date('Y-m-d H:i:s', $now + 1800), $ph]); $o['waiting']++; try { setting_set($pdo, 'wcd_dbg', json_encode(['at' => date('H:i:s'), 'tid' => $tid, 'tried' => $__tried, 'why' => mb_substr($why, 0, 160)])); } catch (Throwable $e) { } if ($__tried >= 12) break; }
         }
@@ -180,10 +198,15 @@ if (!function_exists('wcd_tick')) {
         try { $r = $pdo->prepare("SELECT m.status, COUNT(*) FROM wa_cold_log l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci) WHERE l.ok = 1 AND l.at >= ? GROUP BY m.status"); $r->execute([$f]); $o['receipts'] = $r->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) { }
         try { $o['replied'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cold_cust WHERE status = 'replied'")->fetchColumn(); $o['in_lineup'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cold_cust c JOIN wa_line_cust l ON l.phone = c.phone WHERE c.status = 'replied'")->fetchColumn(); $o['lost'] = $o['replied'] - $o['in_lineup']; } catch (Throwable $e) { }
         try { $ord = wcd_orders($pdo, wcd_set($pdo, 'wcd_from', '2026-11-01') . ' 00:00:00'); $n = 0; $rev = 0; foreach ($pdo->query("SELECT phone, entered_at FROM wa_cold_cust WHERE n_sent > 0")->fetchAll(PDO::FETCH_NUM) as $c) foreach ($ord[(string)$c[0]] ?? [] as $oo) if ($oo[0] >= (int)strtotime((string)$c[1])) { $n++; $rev += $oo[1]; break; } $o['orders'] = $n; $o['revenue'] = $rev; } catch (Throwable $e) { }
-        $o['cost'] = round(((int)($o['sent_total'] ?? 0)) * 0.15, 2);
+        $o['cost'] = round(((int)($o['sent_total'] ?? 0) - wcd_mk_count($pdo, 0)) * 0.15 + wcd_mk_count($pdo, 0) * 1.09, 2); $o['marketing_sent'] = wcd_mk_count($pdo, 0);
         return $o;
     }
 
+    /** How many Cold messages since $from went as the MARKETING copies (Rs 1.09 each instead of Rs 0.15). */
+    function wcd_mk_count(PDO $pdo, int $from): int
+    {
+        try { $ids = array_values(wcd_ids($pdo, true)); if (!$ids) return 0; $q = $pdo->prepare("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= ? AND tpl_id IN (" . implode(',', array_map('intval', $ids)) . ")"); $q->execute([$from > 0 ? date('Y-m-d H:i:s', $from) : '2000-01-01 00:00:00']); return (int)$q->fetchColumn(); } catch (Throwable $e) { return 0; }
+    }
     /** The card (Campaigns screen, above the 30-Day Lineup): controls + today / all numbers like the Lineup card. Cached 90 s. */
     function wcd_numbers(PDO $pdo, int $from): array
     {
@@ -192,7 +215,7 @@ if (!function_exists('wcd_tick')) {
         try { $r = $pdo->prepare("SELECT m.status, COUNT(*) FROM wa_cold_log l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci) WHERE l.ok = 1 AND l.at >= ? GROUP BY m.status"); $r->execute([$f]); $rc = $r->fetchAll(PDO::FETCH_KEY_PAIR); $o['read'] = (int)($rc['read'] ?? 0); $o['delivered'] = (int)($rc['delivered'] ?? 0) + $o['read']; $o['failed'] = (int)($rc['failed'] ?? 0); } catch (Throwable $e) { }
         try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_cold_cust WHERE status = 'replied' AND left_at >= ?"); $q->execute([$f]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
         try { $ord = wcd_orders($pdo, wcd_set($pdo, 'wcd_from', '2026-11-01') . ' 00:00:00'); $q = $pdo->query("SELECT phone, entered_at FROM wa_cold_cust WHERE n_sent > 0"); foreach ($q->fetchAll(PDO::FETCH_NUM) as $c) foreach ($ord[(string)$c[0]] ?? [] as $oo) if ($oo[0] >= (int)strtotime((string)$c[1]) && $oo[0] >= $from) { $o['orders']++; $o['revenue'] += $oo[1]; break; } } catch (Throwable $e) { }
-        $o['cost'] = round(max(0, $o['sent'] - $o['failed']) * 0.15, 2);
+        $__mkn = wcd_mk_count($pdo, $from); $o['marketing_sent'] = $__mkn; $o['cost'] = round(max(0, $o['sent'] - $o['failed'] - $__mkn) * 0.15 + $__mkn * 1.09, 2);
         return $o;
     }
     function wcd_card(PDO $pdo): array
