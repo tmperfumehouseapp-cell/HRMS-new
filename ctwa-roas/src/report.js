@@ -1,21 +1,27 @@
 const dayExpr = (col, off) => `date(${col} + ${Math.trunc(off) * 60}, 'unixepoch')`;
 
+/** Which ads are click-to-WhatsApp ads by their NAME: the campaign or the ad starts with "WhatsApp" or "CTWA" (the owner's naming). */
+export const AD_NAME_MATCH = '^\\s*(whatsapp|ctwa)\\b';
+
 /** Per-day, per-ad report. Day boundaries use cfg.tzOffsetMin (IST = 330). */
-export function dailyReport(db, { from, to }, tzOffsetMin = 330) {
+export function dailyReport(db, { from, to }, tzOffsetMin = 330, nameMatch = AD_NAME_MATCH) {
+  let re; try { re = new RegExp(nameMatch || AD_NAME_MATCH, 'i'); } catch { re = new RegExp(AD_NAME_MATCH, 'i'); }
+  const clicked = new Set(db.prepare('SELECT DISTINCT source_id s FROM clicks WHERE source_id IS NOT NULL').all().map((r) => r.s));
   const rows = new Map();
   const row = (day, ad) => {
     const k = `${day}|${ad}`;
-    if (!rows.has(k)) rows.set(k, { date: day, ad_id: ad, ad_name: null, campaign_name: null, account_id: null, spend: 0, impressions: 0,
+    if (!rows.has(k)) rows.set(k, { date: day, ad_id: ad, ad_name: null, campaign_name: null, account_id: null, spend: 0, impressions: 0, meta_clicks: 0,
       meta_conversations: 0, queries: 0, orders: 0, confirmed_orders: 0, revenue: 0 });
     return rows.get(k);
   };
 
-  // every click-to-WhatsApp ad: Meta counted a messaging conversation for it that day, or a click from it reached us (the account's website ads stay out)
-  for (const r of db.prepare(`SELECT day, ad_id, ad_name, campaign_name, account_id, spend, impressions, conversations FROM ad_spend
-    WHERE day BETWEEN ? AND ?
-      AND (conversations > 0 OR ad_id IN (SELECT source_id FROM clicks WHERE source_id IS NOT NULL))`).all(from, to)) {
+  // the click-to-WhatsApp ads: named as one (campaign or ad starts with WhatsApp / CTWA), or a click carrying the ad's tag reached us.
+  // A website ad stays out even when Meta counts a few conversations for it.
+  for (const r of db.prepare(`SELECT day, ad_id, ad_name, campaign_name, account_id, spend, impressions, link_clicks, conversations FROM ad_spend
+    WHERE day BETWEEN ? AND ?`).all(from, to)) {
+    if (!(clicked.has(r.ad_id) || re.test(r.campaign_name || '') || re.test(r.ad_name || ''))) continue;
     Object.assign(row(r.day, r.ad_id), { ad_name: r.ad_name, campaign_name: r.campaign_name ?? null, account_id: r.account_id ?? null,
-      spend: r.spend, impressions: r.impressions, meta_conversations: r.conversations });
+      spend: r.spend, impressions: r.impressions, meta_clicks: r.link_clicks, meta_conversations: r.conversations });
   }
   for (const r of db.prepare(`SELECT ${dayExpr('clicked_at', tzOffsetMin)} AS day, COALESCE(source_id,'unknown') AS ad,
       COUNT(DISTINCT ctwa_clid) AS q, MAX(headline) AS headline FROM clicks
@@ -39,7 +45,7 @@ export function dailyReport(db, { from, to }, tzOffsetMin = 330) {
 
   const sum = (k) => list.reduce((s, x) => s + x[k], 0);
   const total = {
-    spend: sum('spend'), impressions: sum('impressions'), meta_conversations: sum('meta_conversations'),
+    spend: sum('spend'), impressions: sum('impressions'), meta_clicks: sum('meta_clicks'), meta_conversations: sum('meta_conversations'),
     queries: sum('queries'), orders: sum('orders'), confirmed_orders: sum('confirmed_orders'), revenue: sum('revenue'),
   };
   total.roas = div(total.revenue, total.spend);
@@ -84,15 +90,15 @@ export function shiftDay(day, delta) {
  * Diagnose one day: the per-ad funnel (Meta spend + Meta's own conversation count, clicks this service received,
  * orders matched, revenue, what was sent to Meta) and the matched orders with Meta's answer. No phone numbers.
  */
-export function diagDay(db, day, tzOffsetMin = 330) {
-  const rep = dailyReport(db, { from: day, to: day }, tzOffsetMin);
+export function diagDay(db, day, tzOffsetMin = 330, nameMatch = AD_NAME_MATCH) {
+  const rep = dailyReport(db, { from: day, to: day }, tzOffsetMin, nameMatch);
   const od = dayExpr('order_created_at', tzOffsetMin);
   const capi = new Map();
   for (const r of db.prepare(`SELECT ad_id, capi_status s, COUNT(*) c FROM orders WHERE ad_id IS NOT NULL AND ${od} = ? GROUP BY ad_id, capi_status`).all(day)) {
     if (!capi.has(r.ad_id)) capi.set(r.ad_id, {});
     capi.get(r.ad_id)[r.s] = r.c;
   }
-  const ads = rep.rows.map((r) => ({ ad_id: r.ad_id, ad_name: r.ad_name, campaign_name: r.campaign_name, account_id: r.account_id, spend: r.spend, meta_conversations: r.meta_conversations, clicks: r.queries,
+  const ads = rep.rows.map((r) => ({ ad_id: r.ad_id, ad_name: r.ad_name, campaign_name: r.campaign_name, account_id: r.account_id, spend: r.spend, impressions: r.impressions, meta_clicks: r.meta_clicks, meta_conversations: r.meta_conversations, clicks: r.queries,
     orders: r.orders, confirmed_orders: r.confirmed_orders, revenue: r.revenue, roas: r.roas, capi: capi.get(r.ad_id) ?? {} }));
   const names = new Map(ads.map((a) => [a.ad_id, a.ad_name]));
   const orders = db.prepare(`SELECT name, ad_id, total, financial_status, cancelled, confirmed_at, capi_status, capi_error, order_created_at

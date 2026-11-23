@@ -14,7 +14,7 @@ if (cmd === 'report') {
   const to = flag('date', shiftDay(todayIn(cfg.tzOffsetMin), -1));
   const days = Number(flag('days', 1));
   if (flag('sync', false)) await syncSpend(db, cfg, days + 1);
-  const rep = dailyReport(db, { from: shiftDay(to, -(days - 1)), to }, cfg.tzOffsetMin);
+  const rep = dailyReport(db, { from: shiftDay(to, -(days - 1)), to }, cfg.tzOffsetMin, cfg.adNameMatch || undefined);
   process.stdout.write(flag('csv', false) ? toCsv(rep) : toText(rep));
 } else if (cmd === 'sync-spend') {
   console.log(`synced ${await syncSpend(db, cfg, Number(flag('days', 3)))} ad-day rows`);
