@@ -154,6 +154,30 @@ function fup_seed_store_topics4(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_store_topics4: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's four plain topics of the Amazon section, all written by hand (nothing is read from Amazon): yesterday's four numbers, the front look of the listing, the Ads, and the 1-star reviews with the product name. Nobody is assigned. */
+function fup_seed_amazon_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_amazon_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE 'amazon%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); if ($sid <= 0) return;      // the section is made by the owner; this waits for it
+        setting_set($pdo, 'fup_amazon_topics_v1', '1');
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', ?, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $num = function ($l) { return ['label' => $l, 'type' => 'num', 'req' => 1]; };
+        $list = [
+            ['Yesterday\'s numbers: ad spent, orders, collection, orders from ads', 'Fill this in the morning for YESTERDAY: the ad spend (₹), all orders, the collection (₹) and how many orders came from the ads.', 1, 0, [$num('Ad spent yesterday (₹)'), $num('Orders yesterday'), $num('Collection yesterday (₹)'), $num('Orders from ads yesterday')]],
+            ['Front UI: how the listing looks', 'Write how the Amazon listing looks from the front today (images, title, price, stock).', 0, 1, []],
+            ['Ads: what is running', 'Write what is running in the Amazon ads today (campaigns on / paused, anything odd).', 0, 1, []],
+            ['1-star reviews: which product', 'Write the product name and what the 1-star review says. If there is none, write "none".', 0, 1, [['label' => 'Product name', 'type' => 'text', 'req' => 0]]],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3], $t[4] ? json_encode(fup_fields_clean($t[4]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+    } catch (Throwable $e) { error_log('fup_seed_amazon_topics: ' . $e->getMessage()); }
+}
+
 /** The numbers a topic can take by itself. key => [label, unit, fn(pdo, day) → number|null]. Every one is read-only and safe when its table is missing. */
 function fup_sources(): array
 {
@@ -260,6 +284,25 @@ function fup_names(PDO $pdo, array $ids): array
     $ids = array_values(array_unique(array_filter(array_map('intval', $ids)))); if (!$ids) return [];
     $out = []; try { foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE employee_id IN (" . implode(',', $ids) . ")")->fetchAll() as $r) $out[(int)$r['employee_id']] = (string)$r['full_name']; } catch (Throwable $e) { }
     return $out;
+}
+/** Who to call: [employee_id => [name, title, phone (digits only, '' when not recorded)]]. */
+function fup_contacts(PDO $pdo, array $ids): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids)))); if (!$ids) return []; $out = []; $in = implode(',', $ids);
+    // the number is the one already on the employee (Employees page → Mobile); nothing is typed again here. Installs name that column differently, so the known names are tried in turn.
+    foreach (['mobile', 'phone', 'contact_number'] as $col) {
+        try { foreach ($pdo->query("SELECT employee_id, full_name, designation, `$col` AS ph FROM employees WHERE employee_id IN ($in)")->fetchAll() as $r) $out[(int)$r['employee_id']] = ['name' => (string)$r['full_name'], 'title' => trim((string)($r['designation'] ?? '')), 'phone' => fup_phone((string)($r['ph'] ?? ''))]; return $out; }
+        catch (Throwable $e) { $out = []; }
+    }
+    foreach (fup_names($pdo, $ids) as $i => $n) $out[$i] = ['name' => $n, 'title' => '', 'phone' => ''];   // no such column at all: the names still show
+    return $out;
+}
+/** A typed mobile number as digits ready to dial from India: "+91 98765-43210", "098765 43210", "9876543210 / 9123…" → 919876543210. '' when it is not a usable number. */
+function fup_phone(string $raw): string
+{
+    $first = preg_split('#[/,;]|\s{2,}| or #i', trim($raw))[0] ?? ''; $d = preg_replace('/\D+/', '', (string)$first); $d = ltrim($d, '0');
+    if (strlen($d) === 10) return '91' . $d;
+    return (strlen($d) >= 11 && strlen($d) <= 13) ? $d : '';
 }
 function fup_dept_names(PDO $pdo): array
 {
@@ -425,10 +468,10 @@ function fup_overview(PDO $pdo, array $secs, array $w, string $today): array
         if (empty($sec['own'])) continue;
         $topics = array_values(array_filter(fup_topics($pdo, $sec, $w), function ($t) { return (string)$t['status'] !== 'done'; })); if (!$topics) continue;
         fup_autofetch($pdo, $topics, $today);
-        $ups = fup_updates($pdo, array_column($topics, 'id'), $from, $today); $names = fup_names($pdo, array_column($topics, 'assignee_emp')); $title = []; foreach ($topics as $t) $title[(int)$t['id']] = (string)$t['title'];
+        $ups = fup_updates($pdo, array_column($topics, 'id'), $from, $today); $names = fup_names($pdo, array_column($topics, 'assignee_emp')); $title = []; $empOf = []; foreach ($topics as $t) { $title[(int)$t['id']] = (string)$t['title']; $empOf[(int)$t['id']] = (int)$t['assignee_emp'] > 0 ? (int)$t['assignee_emp'] : (int)$sec['owner_emp']; }
         foreach (fup_checks($topics, $ups, $names, $today) as $c) {
             $k = $c[3] === 'late' ? 'late' : (($c[3] === 'empty' || $c[3] === 'nobody') ? 'empty' : ''); if ($k === '') continue;
-            $out[$k][] = ['section_id' => (int)$sid, 'section' => (string)$sec['name'], 'topic_id' => (int)$c[1], 'topic' => $title[(int)$c[1]] ?? '', 'who' => $c[3] === 'nobody' ? '' : (string)$c[4], 'days' => (int)$c[5]];
+            $out[$k][] = ['section_id' => (int)$sid, 'section' => (string)$sec['name'], 'topic_id' => (int)$c[1], 'topic' => $title[(int)$c[1]] ?? '', 'who' => $c[3] === 'nobody' ? '' : (string)$c[4], 'days' => (int)$c[5], 'emp' => $empOf[(int)$c[1]] ?? 0];
             $out['by_section'][(int)$sid] = ($out['by_section'][(int)$sid] ?? 0) + 1;
         }
     }
@@ -618,6 +661,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_store_topics2($pdo);
     fup_seed_store_topics3($pdo);
     fup_seed_store_topics4($pdo);
+    fup_seed_amazon_topics($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
@@ -641,20 +685,32 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $dn = fup_dept_names($pdo); $ownerNames = fup_names($pdo, array_column($secs, 'owner_emp'));
             $list = []; foreach ($secs as $s) $list[] = ['id' => (int)$s['id'], 'name' => (string)$s['name'], 'owner_emp' => (int)$s['owner_emp'], 'owner_dept' => (int)$s['owner_dept'], 'own' => !empty($s['own']),
                 'owner' => (int)$s['owner_emp'] > 0 ? ($ownerNames[(int)$s['owner_emp']] ?? '') : ((int)$s['owner_dept'] > 0 ? (($dn[(int)$s['owner_dept']] ?? 'Department') . ' department') : '')];
-            $out = ['today' => $today, 'manager' => $w['manager'], 'me' => $w['emp'], 'sections' => $list, 'sources' => $srcList, 'section' => null, 'topics' => [], 'days' => fup_days($today, $n), 'checks' => [], 'overview' => ['late' => [], 'empty' => [], 'by_section' => (object)[]], 'digest' => null, 'ai' => function_exists('brain_ai_on') ? (bool)brain_ai_on() : false];
+            $out = ['today' => $today, 'manager' => $w['manager'], 'me' => $w['emp'], 'sections' => $list, 'sources' => $srcList, 'section' => null, 'topics' => [], 'days' => fup_days($today, $n), 'checks' => [], 'people' => (object)[], 'overview' => ['late' => [], 'empty' => [], 'by_section' => (object)[]], 'digest' => null, 'ai' => function_exists('brain_ai_on') ? (bool)brain_ai_on() : false];
+            if (!empty($_GET['all'])) $out['all'] = [];
             if (!$secs) json_response($out);
             $out['overview'] = fup_overview($pdo, $secs, $w, $today);
+            // who to call: the boss of every section this person sees; the people of the topics too for the Admin / HR and for a section's own boss
+            $cid = array_column($secs, 'owner_emp'); $seesAll = $w['manager'] || count(array_filter($secs, function ($x) { return !empty($x['own']); })) > 0;
+            if ($seesAll) { foreach (['late', 'empty'] as $k) foreach ($out['overview'][$k] as $r) $cid[] = (int)$r['emp']; try { $ids = array_map('intval', array_keys($secs)); if ($ids) foreach ($pdo->query("SELECT DISTINCT assignee_emp FROM fu_topics WHERE active = 1 AND assignee_emp > 0 AND section_id IN (" . implode(',', $ids) . ")")->fetchAll() as $r) $cid[] = (int)$r['assignee_emp']; } catch (Throwable $e) { } }
+            $out['people'] = (object)fup_contacts($pdo, $cid);
             $sid = (int)($_GET['section'] ?? 0); if (!isset($secs[$sid])) $sid = (int)array_key_first($secs); $sec = $secs[$sid]; $out['section'] = $sid;
-            $topics = fup_topics($pdo, $sec, $w); fup_autofetch($pdo, $topics, $today);
-            $days = $out['days']; $ups = fup_updates($pdo, array_column($topics, 'id'), end($days), $today); $names = fup_names($pdo, array_column($topics, 'assignee_emp')); $src = fup_sources();
-            foreach ($topics as $t) {
-                $id = (int)$t['id']; $can = !empty($sec['own']) || (int)$t['assignee_emp'] === $w['emp'];
-                $out['topics'][] = ['id' => $id, 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
-                    'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
-                    'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''), 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'fields' => fup_fields($t), 'metrics' => fup_topic_metrics($t), 'due_day' => fup_due_day($t, $today), 'created' => fup_start_day($t),
-                    'note' => (string)$t['note'], 'status' => (string)$t['status'], 'can_write' => $can, 'updates' => (object)($ups[$id] ?? [])];
-            }
-            $ch = fup_checks($topics, $ups, $names, $today); foreach ($ch as $c) $out['checks'][] = ['level' => $c[0], 'topic_id' => $c[1], 'text' => $c[2]];
+            // one section's sheet: its topics with the updates of the chosen days, and its checks (used for the open section and for the "All sections" view)
+            $sheet = function (array $sec) use ($pdo, $w, $today, $out) {
+                $tOut = []; $cOut = [];
+                $topics = fup_topics($pdo, $sec, $w); fup_autofetch($pdo, $topics, $today);
+                $days = $out['days']; $ups = fup_updates($pdo, array_column($topics, 'id'), end($days), $today); $names = fup_names($pdo, array_column($topics, 'assignee_emp')); $src = fup_sources();
+                foreach ($topics as $t) {
+                    $id = (int)$t['id']; $can = !empty($sec['own']) || (int)$t['assignee_emp'] === $w['emp'];
+                    $tOut[] = ['id' => $id, 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
+                        'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
+                        'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''), 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'fields' => fup_fields($t), 'metrics' => fup_topic_metrics($t), 'due_day' => fup_due_day($t, $today), 'created' => fup_start_day($t),
+                        'note' => (string)$t['note'], 'status' => (string)$t['status'], 'can_write' => $can, 'updates' => (object)($ups[$id] ?? [])];
+                }
+                $ch = fup_checks($topics, $ups, $names, $today); foreach ($ch as $c) $cOut[] = ['level' => $c[0], 'topic_id' => $c[1], 'text' => $c[2]];
+                return [$tOut, $cOut];
+            };
+            [$out['topics'], $out['checks']] = $sheet($sec);
+            if (!empty($_GET['all'])) { foreach ($secs as $s2) { [$tt, $cc] = (int)$s2['id'] === $sid ? [$out['topics'], $out['checks']] : $sheet($s2); $out['all'][] = ['id' => (int)$s2['id'], 'topics' => $tt, 'checks' => $cc]; } }
             if (!empty($sec['own'])) { $q = $pdo->prepare("SELECT day, txt, made_at FROM fu_digest WHERE section_id = ? ORDER BY day DESC LIMIT 1"); $q->execute([$sid]); $d = $q->fetch(); if ($d) $out['digest'] = ['day' => (string)$d['day'], 'text' => (string)$d['txt'], 'at' => (string)$d['made_at']]; }
             json_response($out);
         }

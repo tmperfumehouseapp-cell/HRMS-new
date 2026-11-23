@@ -22,11 +22,11 @@ $pdo->exec("CREATE TABLE fu_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name
 $pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', lag INT DEFAULT 0, metrics TEXT DEFAULT '', need_text INT DEFAULT 0, fields TEXT, status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, topic_id INT, day TEXT, txt TEXT, val REAL, pct INT, auto INT DEFAULT 0, emp_id INT DEFAULT 0, emp_name TEXT DEFAULT '', updated_at TEXT, ai_verdict TEXT DEFAULT '', ai_note TEXT DEFAULT '', ai_q TEXT DEFAULT '', vals TEXT, fvals TEXT, UNIQUE (topic_id, day))");
 $pdo->exec("CREATE TABLE fu_digest (section_id INT, day TEXT, txt TEXT, made_at TEXT, PRIMARY KEY (section_id, day))");
-$pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT)");
+$pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT, designation TEXT, mobile TEXT)");
 $pdo->exec("CREATE TABLE departments (department_id INTEGER PRIMARY KEY, department_name TEXT)");
 $pdo->exec("CREATE TABLE st_bills (bill_id INTEGER PRIMARY KEY, biz_date TEXT, total REAL, status TEXT)");
 $pdo->exec("INSERT INTO departments VALUES (1, 'Store'), (2, 'Wholesale')");
-$pdo->exec("INSERT INTO employees VALUES (10, 'Asha', 1, 'approved'), (11, 'Bharat', 1, 'approved'), (12, 'Chirag', 2, 'approved'), (13, 'Old', 2, 'ex')");
+$pdo->exec("INSERT INTO employees VALUES (10, 'Asha', 1, 'approved', 'Store Manager', '+91 98765-43210'), (11, 'Bharat', 1, 'approved', '', ''), (12, 'Chirag', 2, 'approved', 'Wholesale Head', '9123456780'), (13, 'Old', 2, 'ex', '', '')");
 $pdo->exec("INSERT INTO st_bills VALUES (1, '2026-11-23', 1500, 'ok'), (2, '2026-11-23', 500, 'ok'), (3, '2026-11-23', 900, 'void')");
 $ADMIN = ['user_id' => 1, 'employee_id' => null, 'username' => 'boss', 'role' => 'Admin']; $E = function ($id) { return ['user_id' => $id, 'employee_id' => $id, 'username' => 'u' . $id, 'role' => 'Employee']; };
 function call($act, $auth, $in = null, $get = []) { global $pdo; $GLOBALS['AUTH'] = $auth; $GLOBALS['IN'] = $in ?? []; $_GET = $get; $_SERVER['REQUEST_METHOD'] = $in === null ? 'GET' : 'POST'; $action = $act;
@@ -128,6 +128,19 @@ ok(strpos($GLOBALS['AI_CHK'], 'FIELDS FILLED WITH THIS UPDATE: Post link: https:
 ok($row['done_today'] === true && $row['today']['f']['f1'] === 'https://reddit.com/r/x/1' && $row['today']['f']['f2'] === 'yes' && $row['today']['f']['f3'] === '41', 'all required fields filled: the day is complete, earlier fields are kept');
 [$c, $r] = call('fup.topic_save', $ADMIN, ['id' => $tRd, 'section_id' => $st, 'title' => 'Daily Reddit post', 'assignee_emp' => 11, 'fields' => [['k' => 'f1', 'label' => 'Link of the post', 'type' => 'link', 'req' => 1], ['label' => 'Comments', 'type' => 'num']]]);
 [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); $tp = array_values(array_filter($b['topics'], function ($x) use ($tRd) { return $x['id'] === $tRd; }))[0]; ok($tp['fields'][0]['k'] === 'f1' && $tp['fields'][1]['k'] === 'f7', 'renaming a field keeps its key; a new field never takes the key of a removed one');
+// ---- who to call: the boss of a section and the person behind every open line
+[$c] = call('fup.section_save', $ADMIN, ['id' => $st, 'name' => 'Surat Store', 'owner_emp' => 10]);
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); $pp = $b['people'];
+ok($pp[10]['name'] === 'Asha' && $pp[10]['phone'] === '919876543210' && $pp[10]['title'] === 'Store Manager' && isset($pp[11]) && isset($pp[12]), 'the Admin gets the name, title and phone of every boss and every topic person');
+$noOne = array_values(array_filter(array_merge($b['overview']['late'], $b['overview']['empty']), function ($x) { return $x['section'] === 'Surat Store' && $x['who'] === ''; }));
+ok(!$noOne || $noOne[0]['emp'] === 10, 'a topic given to nobody points to the boss of its section');
+[$c, $b] = call('fup.board', $E(11)); ok(isset($b['people'][10]) && !isset($b['people'][12]), 'a person with only his own topic sees his section boss, not everybody\'s number');
+[$c] = call('fup.section_save', $ADMIN, ['id' => $st, 'name' => 'Surat Store', 'owner_emp' => 0]);
+// ---- every section's sheet in one answer (the "All sections" view)
+[$c, $b] = call('fup.board', $ADMIN, null, ['all' => 1]); ok(count($b['all']) === count($b['sections']) && $b['all'][0]['id'] === $b['sections'][0]['id'] && count($b['all'][1]['topics']) > 0 && isset($b['all'][1]['topics'][0]['updates']), 'all sections come with their topics and updates');
+[$c, $b] = call('fup.board', $E(11), null, ['all' => 1]); $ids = array_column($b['all'], 'id'); ok($ids === array_column($b['sections'], 'id') && !in_array($ws, $ids, true), 'a person gets only the sections (and topics) he may see');
+[$c, $b] = call('fup.board', $ADMIN); ok(!isset($b['all']), 'the single-section answer stays as it was');
+ok(fup_phone('098765 43210') === '919876543210' && fup_phone('9876543210 / 9123456780') === '919876543210' && fup_phone('+91-98765-43210') === '919876543210' && fup_phone('12345') === '' && fup_phone('') === '', 'a typed mobile number is made ready to dial');
 // ---- punch-out lock
 $l = fup_po_left($pdo, 12); ok(count($l) >= 1 && strpos(implode('|', array_column($l, 'title')), 'Follow-up update: Board fitting (Shop Wholesale)') !== false, 'punch out: the topics not filled today are listed for the lock');
 [$c] = call('fup.update_save', $E(12), ['topic_id' => $tAd, 'text' => 'ok']); ok(strpos(implode('|', array_column(fup_po_left($pdo, 12), 'title')), "Ad spend (Shop Wholesale) — answer Claude's question") !== false, 'punch out: an unanswered question also holds it');
