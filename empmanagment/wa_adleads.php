@@ -131,11 +131,14 @@ function wag_adleads_chat(PDO $pdo, array $phones, string $from): array
 function wag_adcheck(PDO $pdo, string $day, ?array $svcTest = null, int $numId = 0): array
 {
     $h = wag_adleads($pdo, $day, $numId, 1500, 'all'); $by = []; $newRule = 0; $rule = [];
-    foreach ($h['rows'] as $r) { if (!($r['pre'] || $r['tag'])) continue; $rule[] = $r; if ($r['new']) $newRule++; if (!$r['tag']) continue; $k = $r['ad_id']; if (!isset($by[$k])) $by[$k] = ['ad_id' => $k, 'title' => $r['ad'], 'n' => 0]; $by[$k]['n']++; }   // per ad: only customers who carry Meta's ad tag
+    foreach ($h['rows'] as $r) { if (!($r['pre'] || $r['tag'])) continue; $rule[] = $r; if ($r['new']) $newRule++; if (!$r['tag']) continue; $k = $r['ad_id']; if (!isset($by[$k])) $by[$k] = ['ad_id' => $k, 'title' => $r['ad'], 'n' => 0, 'orders' => 0, 'amt' => 0.0]; $by[$k]['n']++; }   // per ad: only customers who carry Meta's ad tag
     $chat = wag_adleads_chat($pdo, array_column($rule, 'phone'), $h['date'] . ' 00:00:00');
+    $noTag = ['n' => 0, 'orders' => 0, 'amt' => 0.0];
     $sum = ['leads' => count($rule), 'shopify' => 0, 'manual' => 0, 'photo_no_order' => 0, 'paid_no_order' => 0, 'no_order' => 0, 'shopify_amt' => 0.0, 'manual_amt' => 0.0]; $staff = [];
     foreach ($rule as $r) {
         $c = $chat[$r['phone']] ?? null; if (!$c) continue; $sum[$c['flag']]++;
+        $ak = $r['tag'] ? $r['ad_id'] : ''; if ($ak === '') { $noTag['n']++; }   // orders per ad (customers with Meta's tag), the rest under 'no ad tag'
+        foreach ($c['orders'] as $o) { if ($ak !== '' && isset($by[$ak])) { $by[$ak]['orders']++; $by[$ak]['amt'] += $o['total']; } else { $noTag['orders']++; $noTag['amt'] += $o['total']; } }
         foreach ($c['orders'] as $o) {
             $sum[$o['where'] . '_amt'] += $o['total']; $who = $o['where'] === 'manual' && $o['placed_by'] !== '' ? $o['placed_by'] : ($o['given_to'] !== '' ? $o['given_to'] : ($r['holder'] !== '' ? $r['holder'] : 'Nobody'));
             if (!isset($staff[$who])) $staff[$who] = ['name' => $who, 'shopify' => 0, 'manual' => 0, 'shopify_amt' => 0.0, 'manual_amt' => 0.0, 'no_proof' => 0];
@@ -144,7 +147,7 @@ function wag_adcheck(PDO $pdo, string $day, ?array $svcTest = null, int $numId =
     }
     $staff = array_values($staff); usort($staff, fn($a, $b) => ($b['manual'] <=> $a['manual']) ?: ($b['shopify'] <=> $a['shopify']));
     [$svc, $err] = $svcTest ?? wag_ctwa_get('/diag', 'date', $h['date']);
-    return ['date' => $h['date'], 'hrms' => ['total' => $h['kinds']['rule'], 'new' => $newRule, 'pre' => $h['kinds']['pre'], 'tag' => $h['kinds']['tag'], 'other' => $h['kinds']['other'], 'by_ad' => array_values($by), 'more' => $h['more']], 'number' => $numId, 'chat' => $chat, 'sum' => $sum, 'staff' => $staff, 'svc' => $svc, 'svc_error' => $err, 'now' => date('Y-m-d H:i:s')];
+    return ['date' => $h['date'], 'hrms' => ['total' => $h['kinds']['rule'], 'new' => $newRule, 'pre' => $h['kinds']['pre'], 'tag' => $h['kinds']['tag'], 'other' => $h['kinds']['other'], 'by_ad' => array_values($by), 'no_tag' => $noTag, 'more' => $h['more']], 'number' => $numId, 'chat' => $chat, 'sum' => $sum, 'staff' => $staff, 'svc' => $svc, 'svc_error' => $err, 'now' => date('Y-m-d H:i:s')];
 }
 
 /** One customer: the HRMS queries of this chat and, from the tracking service, the ad clicks and the Shopify orders of this number (matched? told to Meta?). */
