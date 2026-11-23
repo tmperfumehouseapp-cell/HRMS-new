@@ -1386,6 +1386,21 @@ function wag_bot_block_msg(PDO $pdo, array $c): string
 }
 /** A bot reply that would invent an offer or claim a payment: never sent — a person answers (the replay test found exactly these). */
 /** The bot must never tell the customer our internal target / minimum / floor price ("minimum Rs 2,800 tak hi de sakte hain", owner 21 Nov: the customer asked 6 x 50 ml, the bot said Rs 3,200 and then "minimum Rs 2,800"): such sentences are cut out of a reply. */
+/** owner, 23 Nov (screenshot: the customer asked "Blue chanel ka copy 50 ml" - ONE bottle - and the bot pasted the whole list 3 x 50 ml ... 10 x 50 ml): when the customer asked for only 1 or 2 bottles and the answer is a pasted combo list (4+ lines "N x ml ... Rs"), it is replaced by the manual-style message: one bottle is expensive (official online price), better take N more (asked 1 -> 3, asked 2 -> 4), with the combo price of that one pack from the price chart only. Anything else is returned unchanged. */
+function wag_combo_dump_fix(PDO $pdo, string $key, string $text): string
+{
+    try {
+        if (preg_match_all('/^.*\d+\s*[x×*]\s*\d{2,3}\s*ml.*(?:₹|rs\.?)\s*[\d,]{4,6}.*$/imu', $text) < 4) return $text;
+        $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' ORDER BY id DESC LIMIT 6"); $q->execute([$key]);
+        $msgs = []; foreach (array_reverse($q->fetchAll(PDO::FETCH_COLUMN)) as $b) $msgs[] = ['who' => 'customer', 'text' => (string)$b];
+        $rq = wag_ml_request($msgs); if (!$rq || $rq['qty'] > 2) return $text;
+        $n = $rq['qty'] === 1 ? 3 : 4; $ml = (int)$rq['ml']; $one = wag_official_price($pdo, $ml); if ($one <= 0) return $text;
+        $row = wag_chart_row($pdo, $n * $ml); if (!$row || (int)$row['ml'] !== $n * $ml || (int)$row['chart'] <= 0) return $text;
+        $f = function ($v) { return number_format((int)$v); }; $chart = (int)$row['chart'];
+        $first = $rq['qty'] === 1 ? ('Sir, sirf ek ' . $ml . ' ml (Rs ' . $f($one) . ') bahut mehenga padega') : ('Sir, sirf ' . $rq['qty'] . ' x ' . $ml . ' ml (Rs ' . $f($one * $rq['qty']) . ') bahut mehenga padega');
+        return $first . ' 😊 Isse behtar ' . $n . ' x ' . $ml . ' ml lijiye: alag-alag lene par Rs ' . $f($one * $n) . ' hote hain, combo deal mein sirf Rs ' . $f($chart) . ' (ek bottle Rs ' . $f(round($chart / $n)) . '). Kaunse ' . $n . ' perfumes lena chahenge?';
+    } catch (Throwable $e) { return $text; }
+}
 function wag_strip_internal(string $t): string
 {
     $t = preg_replace(['/\bchart\s+(?:ka\s+)?(price|rate)\b/iu', '/\b(price|rate)\s+chart\b/iu'], ['$1', '$1'], $t) ?? $t;   // owner, 23 Nov: the customer never hears the word "chart" ("total ka chart price Rs 1,810" -> "total ka price Rs 1,810")
@@ -1522,6 +1537,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if (!empty($r['handoff']) && true) wag_meta_put($pdo, 'bothand:' . $key, date('Y-m-d H:i:s'));   // the bot hands this customer to a person: the lock opens
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)($m['body'] ?? '')));
+        $r['text'] = wag_combo_dump_fix($pdo, $key, (string)$r['text']);
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
         if ($ok && $__order) wag_order_done_check($pdo, $c, $key);
