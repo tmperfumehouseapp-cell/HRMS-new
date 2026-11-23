@@ -1092,6 +1092,7 @@ function wl_customer(PDO $pdo, string $phone): array
 $__wl = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wl, 'wa.line_') === 0) {
     $auth = require_auth(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
+    if ($isPost && function_exists('hrms_memo_drop')) hrms_memo_drop('wl_card_v1');      // a change made on the Lineup pages (start, stop, settings) shows on the card at once
     if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only the owner / admin can set up the Lineup.'], 403);
     if (!wln_tables($pdo)) json_response(['error' => 'Lineup storage is not available.'], 500);
     switch ($__wl) {
@@ -1107,7 +1108,9 @@ if (strpos($__wl, 'wa.line_') === 0) {
             $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : wl_ist_at($td0, 0);
             [$rows, $more, $n] = wl_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
-        case 'wa.line_card': { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); json_response(['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60), 'tomorrow' => wl_overview($pdo)['tomorrow']]); }
+        case 'wa.line_card': {      // ⚡ the card's numbers are counted ONCE a minute and shared by every open screen (it took ~17 s a load and was 96 loads an hour: every load re-read all sent Lineup messages and their status). Only this report is up to 1 minute old; nothing that is sent changes.
+            $calc = function () use ($pdo) { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); return ['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => hrms_memo('wl_card_total_v1:' . (string)$c['started'], 300, function () use ($pdo, $c) { return wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60); }), 'tomorrow' => wl_overview($pdo)['tomorrow']]; };      // ⚡ "total since start" re-reads EVERY Lineup message ever sent and its status (the biggest query of the database, 6.8%): counted once in 5 minutes; "today" stays at 1 minute
+            json_response(function_exists('hrms_memo') ? hrms_memo('wl_card_v1', 60, $calc) : $calc()); }
         case 'wa.line_report': json_response(['ok' => true] + wl_report($pdo, max(7, min(90, (int)($_GET['days'] ?? 30)))));
         case 'wa.line_customer': json_response(['ok' => true] + wl_customer($pdo, preg_replace('/\D/', '', (string)($_GET['phone'] ?? ''))));
         case 'wa.line_save': {   // POST {mode, cap, offer}

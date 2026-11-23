@@ -5,7 +5,7 @@
 set -euo pipefail
 prev="${1:-}"
 [ -n "$prev" ] && git cat-file -e "$prev^{commit}" 2>/dev/null || { echo "no usable previous deploy — full upload needed"; exit 2; }
-EXCL='(^|/)\.git|^\.github/|(^|/)config\.php$|(^|/)config\.js$|(^|/)uploads/|(^|/)help_data/|(^|/)learn_backups/|(^|/)backups/|^analytics/data/|^docs/|^DEPLOY_NOTES\.md$|^README_TMPH\.md$|^gitignore$'
+EXCL='(^|/)\.git|^\.github/|(^|/)config\.php$|(^|/)config\.js$|(^|/)uploads/|(^|/)help_data/|(^|/)learn_backups/|(^|/)backups/|^analytics/data/|^docs/|^ctwa-roas/|^DEPLOY_NOTES\.md$|^README_TMPH\.md$|^gitignore$'
 files=()
 while IFS= read -r -d '' f; do
   printf '%s' "$f" | grep -Eq "$EXCL" && continue

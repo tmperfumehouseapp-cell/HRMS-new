@@ -338,10 +338,14 @@ function wag_ctag_map(PDO $pdo)   // lazy: $map[$phone] → [tag => src] (stored
 }
 function wag_cod_map(PDO $pdo): array   // customers with an unpaid COD / pending order in the last 12 days
 {
-    static $m = null; if ($m !== null) return $m; $m = [];
-    try {
-        foreach ($pdo->query("SELECT SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10) k FROM shop_orders WHERE created_at >= '" . date('Y-m-d H:i:s', time() - 12 * 86400) . "' AND financial_status IN ('pending', 'partially_paid') AND (outstanding IS NULL OR outstanding > 0) AND phone <> ''")->fetchAll() as $r) $m[(string)$r['k']] = true;
-    } catch (Throwable $e) { }
+    static $m = null; if ($m !== null) return $m;
+    // ⚡ read on every refresh of every chat list (about 186 times a minute, 2% of the database work): now counted ONCE a minute and shared. The "unpaid COD order" mark is at most 1 minute old.
+    $calc = function () use ($pdo) { $o = [];
+        try {
+            foreach ($pdo->query("SELECT SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10) k FROM shop_orders WHERE created_at >= '" . date('Y-m-d H:i:s', time() - 12 * 86400) . "' AND financial_status IN ('pending', 'partially_paid') AND (outstanding IS NULL OR outstanding > 0) AND phone <> ''")->fetchAll() as $r) $o[(string)$r['k']] = true;
+        } catch (Throwable $e) { }
+        return $o; };
+    $m = function_exists('hrms_memo') ? hrms_memo('wag_cod_map_v1', 60, $calc) : $calc(); if (!is_array($m)) $m = [];
     return $m;
 }
 /** Tags worked out live from the customer row used by Contacts / Campaigns (keys: phone, orders, days, ignored, last_in_at, source, tag, optout). Always fresh, nothing to sync. */
@@ -1011,7 +1015,12 @@ function wag_order_settled(PDO $pdo, string $phone): bool
 function wag_after_delivery(PDO $pdo, string $phone, string $lastIn = ''): bool
 {
     try { $k10 = substr(preg_replace('/\D/', '', $phone), -10); if (strlen($k10) !== 10) return false;
-        $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? AND fulfillment_status IN ('fulfilled', 'partial', 'delivered') LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 14 * 86400)]); if (!$q->fetchColumn()) return false;
+        // ⚡ was one "phone LIKE '%…'" search of 14 days of orders for EVERY chat looked at (4.5% of the database work): now the phones with a shipped / delivered order of the last 14 days are read ONCE and kept for 5 minutes, and each chat is a look-up in that list. Same answer; a new shipment counts at most 5 minutes later.
+        $set = function_exists('hrms_memo') ? hrms_memo('wag_deliv_phones14', 300, function () use ($pdo) {
+            $o = []; $x = $pdo->prepare("SELECT DISTINCT RIGHT(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), 10) FROM shop_orders WHERE created_at >= ? AND fulfillment_status IN ('fulfilled', 'partial', 'delivered') AND phone <> ''"); $x->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]);
+            foreach ($x->fetchAll(PDO::FETCH_COLUMN) as $p) { $p = substr(preg_replace('/\D/', '', (string)$p), -10); if (strlen($p) === 10) $o[$p] = 1; } return $o; }) : null;
+        if (is_array($set)) { if (!isset($set[$k10])) return false; }
+        else { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at >= ? AND fulfillment_status IN ('fulfilled', 'partial', 'delivered') LIMIT 1"); $q->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 14 * 86400)]); if (!$q->fetchColumn()) return false; }
         if ($lastIn === '') { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $lastIn = (string)$q->fetchColumn(); }
         return !preg_match('/(new order|another order|order karna|order karo|order dena|order chahiye|\bbuy\b|lena hai|lunga|price|rate|combo|add on|add-on|chahiye|offer|discount|\d+\s?ml)/iu', mb_strtolower($lastIn));   // a new purchase wish keeps it a sales chat
     } catch (Throwable $e) { return false; }
@@ -1292,10 +1301,22 @@ function wag_bot_ticket(PDO $pdo, int $days = 7): ?array
 }
 /** 🏪 PERFORMANCE GATE (owner, 21 Nov): a person who picks many queries but converts BELOW the team average gets no more — "no point giving him queries". '' = may take, else the sentence shown.
  *  Blocks when (a) he took 4+ queries today and his orders / taken is under 60% of the team's last-7-days ratio (only when the team has orders recorded), (b) he left 2+ hot chats today, or (c) 3+ hot chats of his wait unanswered. Switch: wag_mkt_gate = 0. */
+/** A campaign / community chat? By the contact's source, by the source of its latest query, or because a campaign message reached it in the last 3 days (a customer who was first a direct contact and answers a campaign is still a campaign query). Cached 60 s per phone. */
+function wag_is_camp_chat(PDO $pdo, array $c): bool
+{
+    static $m = []; $ph = (string)($c['phone'] ?? ''); if (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true)) return true; if ($ph === '') return false;
+    if (isset($m[$ph]) && $m[$ph][0] > time() - 60) return $m[$ph][1]; $r = false;
+    try { $q = $pdo->prepare("SELECT src FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$ph]); $r = in_array((string)$q->fetchColumn(), ['campaign', 'community'], true);
+        if (!$r) { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$ph, date('Y-m-d H:i:s', time() - 7 * 86400)]); $r = (bool)$q->fetchColumn(); }
+        if (!$r) { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('campaign', 'recover') AND ts >= ? LIMIT 1"); $q->execute([$ph, date('Y-m-d H:i:s', time() - 7 * 86400)]); $r = (bool)$q->fetchColumn(); } }   // a campaign or a win-back (recover) message reached him in the last 7 days
+    catch (Throwable $e) { }
+    $m[$ph] = [time(), $r]; return $r;
+}
 function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
 {
     // owner 22 Nov: the conversion part of the gate never blocks a customer who waited 4 minutes with no reply (unassigned or held by somebody who did not answer) (a person must always be able to pick waiting queries); it needs 25+ queries and a ratio under half of the team's
     $waited = $chat !== null && ($__li = (int)strtotime((string)($chat['last_in_at'] ?? ''))) > 0 && $__li < time() - 240 && (int)strtotime((string)($chat['last_out_at'] ?? '')) < $__li;   // waiting 4+ min with no reply from anyone: unassigned OR held by a person who did not answer
+    if ($chat !== null && wag_is_camp_chat($pdo, $chat)) return '';   // owner 23 Nov: a CAMPAIGN query has no limit at all - any salesperson may take as many as he wants (the lock / hot-waiting / left-chats rules are for fresh queries only)
     static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)$waited . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
     $msg = '';
     try {

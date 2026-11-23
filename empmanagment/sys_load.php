@@ -266,7 +266,8 @@ function sysload_view(PDO $pdo, int $mins): array
         usort($recent, fn($x, $y) => $y['seen'] <=> $x['seen']);
         $dbSpan = $firstM === null ? 0 : max(60, ($nowM - $firstM + 1) * 60); $out['db_mode'] = 'looks'; $out['db_looks'] = $looks; $out['db_busy_cores'] = $looks ? round($tot / $looks, 2) : null;
     }
-    $out['db_recent'] = array_slice($recent, 0, 12); $out['db_span_min'] = (int)round($dbSpan / 60);
+    $dbAll = array_slice($recent, 0, 25);      // the prompt carries 25 queries (the page shows 12): the load is usually spread over many small ones
+    $out['db_recent'] = array_slice($recent, 0, 25);      // the page lists 25 too (was 12): the Database tile opens this list $out['db_span_min'] = (int)round($dbSpan / 60);
 
     // the WhatsApp engine: how long each of its parts took on its last run
     $eng = [];
@@ -285,7 +286,7 @@ function sysload_view(PDO $pdo, int $mins): array
     if ($AW && $AW['db'] !== null && $AW['pct'] > 0) {
         $rest = max(0, round($AW['pct'] - $AW['db'] - (float)($out['php_of_server'] ?? 0), 1));
         $adv[] = ['lvl' => $AW['db'] >= 0.5 * $AW['pct'] ? 'bad' : 'info', 't' => 'Where the CPU goes: database ' . $AW['db'] . '% · HRMS code ' . ($out['php_of_server'] ?? '?') . '% · everything else ' . $rest . '% (of the whole server).',
-            'd' => $AW['db'] >= 0.5 * $AW['pct'] ? 'Most of the load is the DATABASE answering queries, not the pages themselves. The queries under "The database · this period" are where to save: each has its own prompt.' : 'The load is spread; start with the first rows of the two tables below.'];
+            'd' => $AW['db'] >= 0.5 * $AW['pct'] ? 'Most of the load is the DATABASE answering queries, not the pages themselves. The queries under "The database · this period" are where to save: the one "📋 Claude prompt" button at the top carries them all.' : 'The load is spread; start with the first rows of the two tables below.'];
     }
     foreach (array_slice($out['db_recent'], 0, 4) as $i => $q) {
         if ($q['share'] < 6) continue;
@@ -311,11 +312,12 @@ function sysload_view(PDO $pdo, int $mins): array
         'prompt' => $ctx . ' This database query has been running for ' . $out['db_running'][0]['secs'] . ' seconds on the live server and keeps one CPU core busy. Find where the HRMS runs it and make it fast (index, smaller range, limit).' . $rule . ' The query: ' . $out['db_running'][0]['q']];
     // one prompt with the whole picture
     $full = $ctx . ' Bring the CPU down. The biggest costs right now:';
-    foreach (array_slice($out['db_recent'], 0, 5) as $i => $q) $full .= "\n" . 'Database query ' . ($i + 1) . ': ' . $q['share'] . '% of database work, about ' . $q['cores'] . ' CPU core busy' . (($out['db_mode'] ?? '') === 'looks' ? ($q['max_s'] >= 2 ? ', longest run seen ' . $q['max_s'] . ' s' : '') : ', ' . number_format($q['calls']) . ' runs, ' . $q['avg_ms'] . ' ms each, ' . number_format($q['rows_each']) . ' rows per run') . ' — ' . mb_substr($q['q'], 0, 260);
+    foreach (($dbAll ?? $out['db_recent']) as $i => $q) $full .= "\n" . 'Database query ' . ($i + 1) . ': ' . $q['share'] . '% of database work, about ' . $q['cores'] . ' CPU core busy' . (($out['db_mode'] ?? '') === 'looks' ? ($q['max_s'] >= 2 ? ', longest run seen ' . $q['max_s'] . ' s' : '') : ', ' . number_format($q['calls']) . ' runs, ' . $q['avg_ms'] . ' ms each, ' . number_format($q['rows_each']) . ' rows per run') . ' — ' . mb_substr($q['q'], 0, 420);
     foreach ($out['engine'] as $e) foreach (array_slice($e['steps'], 0, 4) as $st) if ($st['secs'] >= 5) $full .= "\n" . 'WhatsApp engine part "' . $st['step'] . '" took ' . $st['secs'] . ' s on its last run (the engine runs every minute)';
-    foreach (array_slice($rows, 0, 6) as $r) $full .= "\n" . 'Function ' . $r['action'] . ': ' . $r['time_share'] . '% of request time, ' . number_format($r['calls']) . ' calls (' . $r['per_min'] . '/min), ' . $r['avg_ms'] . ' ms each, PHP ' . $r['cpu_s'] . ' s, waiting ' . $r['wait_s'] . ' s';
+    foreach (array_slice($rows, 0, 12) as $r) $full .= "\n" . 'Function ' . $r['action'] . ': ' . $r['time_share'] . '% of request time, ' . number_format($r['calls']) . ' calls (' . $r['per_min'] . '/min), ' . $r['avg_ms'] . ' ms each, PHP ' . $r['cpu_s'] . ' s, waiting ' . $r['wait_s'] . ' s';
     $full .= "\n" . 'Work through them from the most expensive, one at a time.' . $rule;
     $out['full_prompt'] = $full;
+    $out['prompt_on'] = ($busy !== null && $busy >= 40) || ($AW && (float)$AW['pct'] >= 40) || (!empty($out['load'][0]) && (float)$out['load'][0] >= 0.75 * $cores);      // the ONE prompt button is shown only while the load is high (CPU 40% or more now or on average, or the load number near the number of cores); a quiet server needs no prompt
     $out['advice'] = $adv;
     return $out;
 }
