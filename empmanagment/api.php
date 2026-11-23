@@ -31938,6 +31938,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $phone = preg_replace('/[\s().-]+/', '', trim((string)($in['phone'] ?? '')));
         if ($phone === '') {
@@ -31965,6 +31966,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $chain = strtolower(trim((string)($in['chain'] ?? '')));
         if ($chain !== 'yes' && $chain !== 'no') json_response(['error' => 'Chain must be Yes or No.'], 422);
@@ -31991,6 +31993,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $addr = strtolower(trim((string)($in['address'] ?? '')));
         if ($addr !== 'yes' && $addr !== 'no') json_response(['error' => 'Address must be Yes or No.'], 422);
@@ -32016,6 +32019,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $pt = strtolower(trim((string)($in['price_type'] ?? '')));
         if (!in_array($pt, ['old', 'new'], true)) json_response(['error' => 'Price must be Old or New.'], 422);
@@ -32037,6 +32041,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $comm = strtolower(trim((string)($in['community'] ?? '')));
         if ($comm !== 'yes' && $comm !== 'no') json_response(['error' => 'Community must be Yes or No.'], 422);
@@ -32061,6 +32066,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $skip = !empty($in['skip']) ? 1 : 0;
         if (!$skip) {
@@ -32084,6 +32090,7 @@ switch ($action) {
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
         $code = code_norm((string)($in['code'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);
         if ($code !== '' && !preg_match('/^[A-Z0-9_-]{2,40}$/', $code)) json_response(['error' => 'Code can only have letters, numbers, - and _ (e.g. AG00123).'], 422);
         $o = [

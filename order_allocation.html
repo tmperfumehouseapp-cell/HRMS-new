@@ -610,6 +610,7 @@
 
   // Extra mobile number of the customer — type it here; saved on Enter / when you leave the box.
   function phoneBox(o) {
+    if (o.store_key === 'manual') return '';   // a quick-entry / website order: its mobile is already on the order, there is nothing to save here (the box gave "source and order_id are required")
     if (o.cancelled) return o.extra_phone ? `<div class="sub">+ ${esc(o.extra_phone)}</div>` : '';
     return `<input type="tel" inputmode="tel" class="ph-in" data-k="${key(o)}" maxlength="16" value="${esc(o.extra_phone || '')}" placeholder="Extra mobile no." autocomplete="off" spellcheck="false" title="Customer's extra mobile number"><input type="text" class="bd-in" data-k="${key(o)}" maxlength="5" placeholder="🎂 DD/MM" autocomplete="off" spellcheck="false" title="Customer's birthday (day/month). We send a free 50 ml gift on the birthday.">`;
   }
@@ -649,6 +650,7 @@
 
   // Chain: Yes / No per order (saved straight away; only "Yes" is stored, no row means No). Employee logins only see it.
   function chainCell(o, canEdit) {
+    if (o.store_key === 'manual') canEdit = false;   // a quick-entry / website order: shown only, nothing to save here
     const yes = o.chain === 'yes';
     if (!canEdit) return `<span class="sub" style="${yes ? 'color:#0f7a41; font-weight:700;' : ''}">${yes ? 'Yes' : 'No'}</span>`;
     return `<select class="sel chain-sel ${yes ? 'yes' : ''}" data-k="${key(o)}" title="Chain order">` +
@@ -673,6 +675,7 @@
 
   // Address: Yes / No per order (saved straight away; only "Yes" is stored, no row means No). Employee logins only see it.
   function addressCell(o, canEdit) {
+    if (o.store_key === 'manual') canEdit = false;   // a quick-entry / website order: shown only, nothing to save here
     const yes = o.address === 'yes';
     if (!canEdit) return `<span class="sub" style="${yes ? 'color:#0f7a41; font-weight:700;' : ''}">${yes ? 'Yes' : 'No'}</span>`;
     return `<select class="sel addr-sel ${yes ? 'yes' : ''}" data-k="${key(o)}" title="Address">` +
@@ -699,6 +702,7 @@
   const PT_TXT = { old: 'Old', new: 'New' };
   const ptOf = (o) => o.price_type === 'old' ? 'old' : 'new';
   function priceCell(o, canEdit) {
+    if (o.store_key === 'manual') canEdit = false;   // a quick-entry / website order: shown only, nothing to save here
     const v = ptOf(o);
     if (!canEdit) return `<span class="sub" style="${v === 'old' ? 'color:#8a5a00;' : 'color:#1d4ed8;'} font-weight:700;">${PT_TXT[v]}</span>`;
     return `<select class="sel price-sel ${v}" data-k="${key(o)}" title="Old or New price">` +
@@ -770,7 +774,7 @@
       : `<button type="button" class="cx-btn" onclick="cancelOrder('${k}', true, this)">✕ Cancel</button>`);
     return `<tr class="${o.cancelled ? 'row-cx' : (o.allocated ? 'row-done' : '')}" data-k="${k}">
       <td><a href="#" class="ord-link" onclick="openDetail('${k}'); return false;" title="Open order details"><b>${esc(o.order_name)}</b></a>${/^#?WM-\d+/i.test(String(o.order_name || '')) ? `<button type="button" class="wm-upd" onclick="wmUpdate('${esc(String(o.order_name).replace(/^#/, ''))}')" title="Remove or add perfumes in this manual order (until a tracking ID is given)">✏️ Update</button>` : ''}<div class="sub">${fmtT(o.created_at)} <span class="src">${esc(o.source_label || o.store_src || o.store)}</span></div></td>
-      <td>${o.cancelled ? (o.code ? `<span class="code-tag">${esc(o.code)}</span>` : '<span class="sub">—</span>') : o.code_locked ? `<input type="text" class="code-in locked" data-k="${k}" value="${esc(o.code || '')}" placeholder="Locked" disabled title="Locked — the time allowed for adding a code after allocation has passed. Ask Admin / HR."><span class="code-lk" title="Locked — ask Admin / HR">🔒</span>` : `<input type="text" class="code-in" data-k="${k}" maxlength="40" value="${esc(o.code || '')}" placeholder="Ex:-Og12345" autocomplete="off" spellcheck="false">`}</td>
+      <td>${o.store_key === 'manual' ? '<span class="sub" title="A quick-entry or website order needs no code">no code needed</span>' : o.cancelled ? (o.code ? `<span class="code-tag">${esc(o.code)}</span>` : '<span class="sub">—</span>') : o.code_locked ? `<input type="text" class="code-in locked" data-k="${k}" value="${esc(o.code || '')}" placeholder="Locked" disabled title="Locked — the time allowed for adding a code after allocation has passed. Ask Admin / HR."><span class="code-lk" title="Locked — ask Admin / HR">🔒</span>` : `<input type="text" class="code-in" data-k="${k}" maxlength="40" value="${esc(o.code || '')}" placeholder="Ex:-Og12345" autocomplete="off" spellcheck="false">`}</td>
       <td>${empCell}${botWhy(o)}</td>
       <td>${esc(o.customer || 'Guest')}<div class="sub">${o.phone ? `<a href="#" title="Open this customer's chat beside the list" onclick="SideChat.open('${String(o.phone).replace(/\D/g, '').slice(-10)}'); return false;" style="color:inherit;text-decoration:underline dotted">${esc(o.phone)} 💬</a>` : ''}</div>${phoneBox(o)}</td>
       <td>${o.items}${clrLine(o)}${addonItemsLine(o)}</td>
