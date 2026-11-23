@@ -88,8 +88,9 @@ function wa_origin_apply(PDO $pdo, string $key, string $ans, string $how): void
     if (!in_array($ans, wa_origin_keys(), true)) return; $now = date('Y-m-d H:i:s');
     $pdo->prepare("INSERT INTO wa_origin (phone, answer, answered_at, how) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE answer = VALUES(answer), answered_at = VALUES(answered_at), how = VALUES(how)")->execute([$key, $ans, $now, $how]);
     $tag = function (string $t) use ($pdo, $key, $now) { try { $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, ?, 'auto', ?)")->execute([$key, $t, $now]); $pdo->prepare("INSERT IGNORE INTO wa_tagidx (phone, tag) VALUES (?, ?)")->execute([$key, $t]); } catch (Throwable $e) { } };
-    $wq = '';
-    if ($ans === 'campaign') { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ? AND source <> 'community'")->execute([$key]); $wq = 'new'; }   // "came from our offer message" = a NEW QUERY (the customer wrote first), never a Campaign reply
+    $wq = ''; $__ret = false; try { $rq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'campaign' AND src = 'wq' LIMIT 1"); $rq->execute([$key]); $__ret = (bool)$rq->fetchColumn(); } catch (Throwable $e) { }   // owner (23 Nov): a customer who was quiet for 30 hours is a Campaign customer for ever — "our offer message" / "an ad" must not turn him into a New / Meta query again
+    if ($__ret && in_array($ans, ['campaign', 'ad'], true)) { /* answer kept, nothing re-typed */ }
+    elseif ($ans === 'campaign') { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ? AND source <> 'community'")->execute([$key]); $wq = 'new'; }   // "came from our offer message" = a NEW QUERY (the customer wrote first), never a Campaign reply
     elseif ($ans === 'community') { $pdo->prepare("UPDATE wa_contacts SET source = 'community' WHERE phone = ?")->execute([$key]); $tag('community'); $wq = 'community'; }
     elseif ($ans === 'ad') { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ? AND source NOT IN ('campaign', 'community')")->execute([$key]); $tag('meta_ad'); $wq = 'meta'; }
     else $tag($ans);   // instagram / friend
