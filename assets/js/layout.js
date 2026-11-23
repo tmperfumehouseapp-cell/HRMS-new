@@ -403,7 +403,7 @@ window.WS = (function () {
       }
     } catch (e) { got = false; }
     if (!got) [flags, bd, fl, cxb, sxb] = await Promise.all([get('me.flags'), get('bd.badge'), get('fl.badge'), get('bd.cx_badge'), get('bd.sx_badge')]);
-    if (!fu) fu = await get('fup.badge');   // 📌 Follow-up: in the menu for Admin / HR and for anyone who was given a topic or a section
+    if (!fu || !fu.show) fu = await get('fup.badge') || fu;   // a missing or stale 'no' from the batch is checked once more, fresh   // 📌 Follow-up: in the menu for Admin / HR and for anyone who was given a topic or a section
     const f = flags || {};
     return {
       fu: fu && fu.show ? fu : null,
@@ -428,7 +428,7 @@ window.WS = (function () {
     if (need === 'rsd') return ctx.isAdmin || ctx.perms.indexOf('dispatch_restock') > -1;   // Dispatch → Store orders: Admin and the Dispatch role
     if (need === 'wa') return ctx.isAdmin || ctx.role === 'HR' || ctx.perms.indexOf('control_tower') > -1;   // the WhatsApp console: the same people wa.php lets in
     if (need === 'boss') return ctx.boss;
-    if (need === 'fup') return !!(ctx.isAdmin || ctx.role === 'HR' || ctx.fu);   // Follow-up: Admin, HR, and the people who were given a topic or a section
+    if (need === 'fup') return !!(ctx.isAdmin || ['admin', 'hr'].indexOf(String(ctx.role || '').trim().toLowerCase()) > -1 || ctx.fu);   // Follow-up: Admin, HR, and the people who were given a topic or a section
     if (need === 'pp') return !!(ctx.isAdmin || ctx.role === 'HR');   // People (Boss → People): Admin and HR
     if (need === 'cx') return !!(ctx.isAdmin || (ctx.cx && ctx.cx.team));   // the Complaint team (people on a desk seat), Admin and the complaints boss
     if (need === 'cxr') return !!(ctx.isAdmin || (ctx.cx && ctx.cx.mgr));   // Staff progress: Admin, the complaints boss, the top boss / deputy (the same people bd.staff_report lets in)
