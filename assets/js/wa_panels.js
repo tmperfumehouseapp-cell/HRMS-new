@@ -98,12 +98,22 @@
     el.innerHTML = loading; let D = null;
     async function load(live) {
       try { D = await api.get('wa.numbers', live ? { live: 1 } : {}); } catch (e) { el.innerHTML = errBox(e.message); return; }
+      try { D.sc = await api.get('wa.sc_get'); } catch (e) { D.sc = null; }   // 🛍 website-order confirmation card
       draw();
     }
     function draw() {
       const pf = D.portfolio, nums = D.numbers;
       let h = `<div class="wp"><div class="wp-top"><div style="flex:1;min-width:200px"><h2>Our WhatsApp numbers</h2><p>Photo, bio and who handles each number — and how healthy it is.</p></div><button type="button" class="wp-btn" id="nLive">Check with Meta now</button><button type="button" class="wp-btn p" id="nAdd">＋ Add a number</button></div>`;
       if (pf) h += `<div class="wp-cd"><div class="wp-kv"><span>Daily limit (shared by every number)</span><b>${pf.assumed ? 'not told by Meta' : fmt(pf.tier) + ' customers'}</b></div><div class="wp-kv"><span>Started in the last 24 h</span><b>${fmt(pf.used)}</b></div><div class="wp-hint">Meta gives the limit to the whole business account, not to each number — adding numbers does not add room. A new number also starts slowly on purpose (see “Room today”).</div></div>`;
+      if (D.sc) { const s = D.sc, c = s.counts || {}, rows = s.rows || [];
+        h += `<div class="wp-cd"><div class="wp-kv"><span><b>🛍 Website orders → confirmation message</b></span>${sw('scOn', s.on)}</div>
+          <div class="wp-hint" style="margin:4px 0 8px">For a customer who orders on the website by himself (no chat with us): the order-received message goes from the main number right after the order, and he is added to the customer list. Customers who came through WhatsApp and the checkout link are confirmed by the normal flow, as before. Off until you set a start time and switch it on.</div>
+          <div class="wp-2"><div><label class="wp-fl">Start time <small>(only orders from then on)</small></label><input class="wp-in" id="scFrom" type="datetime-local" value="${esc((s.from || '').replace(' ', 'T').slice(0, 16))}"></div>
+          <div><label class="wp-fl">Main number: last 4 digits</label><input class="wp-in" id="scNum" maxlength="4" inputmode="numeric" value="${esc(s.num || '0275')}"></div></div>
+          <label class="wp-fl">Shop “source” of chat-link orders to skip <small>(comma separated, optional)</small></label><input class="wp-in" id="scSkip" value="${esc(s.skip_src || '')}" placeholder="e.g. whatsapp">
+          <div class="wp-hint">Main number found: <b>${s.main_id ? esc(s.main_label) : 'none — check the 4 digits'}</b> · Today: ${c.sent || 0} sent · ${c.skipped || 0} skipped · ${c.retry || 0} waiting · ${c.failed || 0} failed</div>
+          <div id="scErr"></div><div class="wp-row" style="margin-top:8px"><button type="button" class="wp-btn p" id="scSave">Save</button></div>
+          ${rows.length ? `<details style="margin-top:8px"><summary class="wp-hint">Last orders</summary>${rows.map((r) => `<div class="wp-kv"><span>#${esc(r.order_no)} · ${esc(r.phone)} · ${esc(r.state)}</span><b class="wp-hint">${esc(r.why || '')}</b></div>`).join('')}</details>` : ''}</div>`; }
       if (!nums.length) h += '<div class="wp-empty">No number yet. Press “Add a number”.</div>';
       h += '<div class="wp-grid">' + nums.map((n, i) => {
         const q = QL[n.quality] || QL.UNKNOWN, ok = n.status === 'CONNECTED', bar = n.cap.cap > 0 ? Math.min(100, Math.round(n.cap.used * 100 / n.cap.cap)) : 100;
@@ -118,6 +128,7 @@
       el.innerHTML = h;
       $(el, '#nLive').onclick = function () { this.disabled = true; this.textContent = 'Asking Meta…'; load(true); };
       $(el, '#nAdd').onclick = addNumber;
+      const scs = $(el, '#scSave'); if (scs) scs.onclick = async function () { this.disabled = true; try { const r = await api.post('wa.sc_set', { on: $(el, '#scOn').checked, from: $(el, '#scFrom').value, num: $(el, '#scNum').value, skip_src: $(el, '#scSkip').value }); D.sc = r; toast('Saved ✓'); draw(); } catch (e) { $(el, '#scErr').innerHTML = errBox(e.message); this.disabled = false; } };
       el.querySelectorAll('[data-o]').forEach((b) => { b.onclick = async () => {
         const n = D.numbers[+b.dataset.i];
         if (b.dataset.o === 'unlock') {
