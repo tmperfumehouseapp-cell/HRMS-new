@@ -15,7 +15,7 @@ function push_send_many($pdo, $ids, $payload) { $GLOBALS['PUSH'] = [$ids, $paylo
 function brain_ai_text($s, $a, $sys, $user, $max = 700, $o = []) { $GLOBALS['AI_SAW'] = $user; return "MOVING\nSales went up."; }
 $pdo = new PDO('sqlite::memory:'); $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION); $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 $pdo->exec("CREATE TABLE fu_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_emp INT DEFAULT 0, owner_dept INT DEFAULT 0, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_at TEXT)");
-$pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
+$pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', lag INT DEFAULT 0, status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, topic_id INT, day TEXT, txt TEXT, val REAL, pct INT, auto INT DEFAULT 0, emp_id INT DEFAULT 0, emp_name TEXT DEFAULT '', updated_at TEXT, ai_verdict TEXT DEFAULT '', ai_note TEXT DEFAULT '', ai_q TEXT DEFAULT '', UNIQUE (topic_id, day))");
 $pdo->exec("CREATE TABLE fu_digest (section_id INT, day TEXT, txt TEXT, made_at TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT)");
@@ -57,9 +57,9 @@ ok(abs((float)$pdo->query("SELECT val FROM fu_updates WHERE topic_id = $tSales A
 [$c] = call('fup.update_save', $E(12), ['topic_id' => $tSales, 'text' => 'x']); ok($c === 403, 'the owner of one section cannot write in another');
 
 [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); $txt = implode(' | ', array_column($b['checks'], 'text'));
-ok(strpos($txt, 'New display: deadline in 1 day') !== false && strpos($txt, 'New display: no update today yet (Bharat)') !== false && strpos($txt, 'Sales:') === false, 'checks: deadline close + no update today; the updated topic is clean');
+ok(strpos($txt, 'New display: deadline in 1 day') !== false && strpos($txt, 'New display: no update for today yet (Bharat)') !== false && strpos($txt, 'Sales:') === false, 'checks: deadline close + no update today; the updated topic is clean');
 $pdo->exec("INSERT INTO fu_updates (topic_id, day, txt) VALUES ($tSales, '2026-11-22', 'good day, 3 big  bills')");
-[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok(strpos(implode(' | ', array_column($b['checks'], 'text')), 'same words as yesterday') !== false, 'checks: copied update is flagged');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok(strpos(implode(' | ', array_column($b['checks'], 'text')), 'same words as the day before') !== false, 'checks: copied update is flagged');
 [$c] = call('fup.claude', $E(10), ['section_id' => $st]); ok($c === 403, 'a topic person cannot ask Claude for the whole section');
 [$c, $r] = call('fup.claude', $ADMIN, ['section_id' => $st]); ok($c === 200 && strpos($r['digest']['text'], 'MOVING') === 0 && strpos($GLOBALS['AI_SAW'], 'TOPIC: Sales') !== false && strpos($GLOBALS['AI_SAW'], '2000 ₹ (from the system)') !== false, 'Claude gets the sheet and the note is saved');
 [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok($b['digest'] && $b['digest']['day'] === '2026-11-23', 'the note is shown again');
@@ -87,6 +87,16 @@ ok(strpos($GLOBALS['AI_CHK'], 'WHAT THE OWNER WANTS IN THIS UPDATE: Type the Met
 $n0 = $GLOBALS['AI_N']; [$c, $r] = call('fup.update_save', $E(12), ['topic_id' => $tAd, 'text' => "ok\n3 shops: A, B, C", 'pct' => 50]); ok($GLOBALS['AI_N'] === $n0 && $r['ai'] === null, 'the same words are not sent to Claude again');
 [$c, $r] = call('fup.update_save', $ADMIN, ['topic_id' => $tAd, 'text' => 'ok', 'day' => '2026-11-10', 'value' => 3900]); ok($c === 200 && $r['ai']['question'] === '', 'the Admin can fill any earlier date, and is never asked a question');
 [$c, $r] = call('fup.update_save', $E(12), ['topic_id' => $tAd, 'text' => 'same']); [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); ok(strpos(implode(' | ', array_column($b['checks'], 'text')), 'Ad spend: Claude — Nothing new since yesterday.') !== false, 'Claude\'s remark shows in the checks');
+// ---- a topic about the day before ("yesterday's sale"), filled the next day
+[$c, $r] = call('fup.topic_save', $ADMIN, ['section_id' => $st, 'title' => 'Kal no sale', 'assignee_emp' => 11, 'lag' => 1, 'note' => 'sales, query, ads spend']); $tKal = $r['id'];
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok(strpos(implode(' | ', array_column($b['checks'], 'text')), 'Kal no sale') === false, 'a new next-day topic is not flagged: its due day is before it existed');
+$pdo->exec("UPDATE fu_topics SET created_at = '2026-11-15 10:00:00' WHERE id = $tKal");
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok(strpos(implode(' | ', array_column($b['checks'], 'text')), 'Kal no sale: no update for 7 days') !== false, 'an older next-day topic is checked on YESTERDAY\'s row');
+[$c] = call('fup.update_save', $E(11), ['topic_id' => $tKal, 'text' => 'Sales 9,41,000. Query 941. Ads spend 61,000.', 'day' => '2026-11-22', 'value' => 941000]);
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok(strpos(implode(' | ', array_column($b['checks'], 'text')), 'Kal no sale') === false, 'filled for yesterday: nothing is flagged although today\'s row is empty');
+[$c, $m] = call('fup.mine', $E(11)); $row = array_values(array_filter($m['topics'], function ($x) use ($tKal) { return $x['id'] === $tKal; }))[0]; ok($row['done_today'] && $row['day'] === '2026-11-22' && $row['lag'], 'My Day asks for yesterday\'s row of a next-day topic');
+[$c] = call('fup.claude', $ADMIN, ['section_id' => $st]); ok(strpos($GLOBALS['AI_SAW'], 'filled the next day: the newest row that is due is 2026-11-22') !== false && strpos($GLOBALS['AI_SAW'], '2026-11-23: (not due yet)') !== false && strpos($GLOBALS['AI_SAW'], 'started on: 2026-11-15') !== false, 'Claude is told when the topic started and that today is not due yet');
+$pdo->exec("UPDATE fu_topics SET created_at = '2026-11-22 10:00:00' WHERE id = $tKal"); [$c] = call('fup.claude', $ADMIN, ['section_id' => $st]); ok(strpos($GLOBALS['AI_SAW'], '2026-11-21: (the topic did not exist yet)') !== false, 'days before the topic started are not shown to Claude as missing');
 // ---- punch-out lock
 $l = fup_po_left($pdo, 12); ok(count($l) >= 1 && strpos(implode('|', array_column($l, 'title')), 'Follow-up update: Board fitting (Shop Wholesale)') !== false, 'punch out: the topics not filled today are listed for the lock');
 [$c] = call('fup.update_save', $E(12), ['topic_id' => $tAd, 'text' => 'ok']); ok(strpos(implode('|', array_column(fup_po_left($pdo, 12), 'title')), "Ad spend (Shop Wholesale) — answer Claude's question") !== false, 'punch out: an unanswered question also holds it');

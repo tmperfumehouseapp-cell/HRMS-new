@@ -40,11 +40,11 @@ function fup_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_updates (id INT AUTO_INCREMENT PRIMARY KEY, topic_id INT NOT NULL, day DATE NOT NULL, txt TEXT NULL, val DECIMAL(14,2) NULL, pct SMALLINT NULL, auto TINYINT NOT NULL DEFAULT 0, emp_id INT NOT NULL DEFAULT 0, emp_name VARCHAR(120) NOT NULL DEFAULT '', updated_at DATETIME NULL,
             UNIQUE KEY u_td (topic_id, day), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_digest (section_id INT NOT NULL, day DATE NOT NULL, txt MEDIUMTEXT NULL, made_at DATETIME NULL, PRIMARY KEY (section_id, day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        if ((string)setting_get($pdo, 'fup_schema', '') !== '2') {   // added later: Claude's check of each update, a unit for typed numbers, a longer note for Claude
+        if ((string)setting_get($pdo, 'fup_schema', '') !== '3') {   // added later: Claude's check of each update, a unit for typed numbers, a longer note for Claude
             foreach (["ALTER TABLE fu_updates ADD COLUMN ai_verdict VARCHAR(12) NOT NULL DEFAULT ''", "ALTER TABLE fu_updates ADD COLUMN ai_note VARCHAR(300) NOT NULL DEFAULT ''", "ALTER TABLE fu_updates ADD COLUMN ai_q VARCHAR(300) NOT NULL DEFAULT ''",
-                "ALTER TABLE fu_topics ADD COLUMN unit VARCHAR(12) NOT NULL DEFAULT ''", "ALTER TABLE fu_topics MODIFY note VARCHAR(1000) NOT NULL DEFAULT ''"] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { } }
-            $pdo->query("SELECT ai_verdict, ai_note, ai_q FROM fu_updates LIMIT 1"); $pdo->query("SELECT unit FROM fu_topics LIMIT 1");   // really there? (else the flag is not set and it is tried again)
-            setting_set($pdo, 'fup_schema', '2');
+                "ALTER TABLE fu_topics ADD COLUMN unit VARCHAR(12) NOT NULL DEFAULT ''", "ALTER TABLE fu_topics ADD COLUMN lag TINYINT NOT NULL DEFAULT 0", "ALTER TABLE fu_topics MODIFY note VARCHAR(1000) NOT NULL DEFAULT ''"] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { } }
+            $pdo->query("SELECT ai_verdict, ai_note, ai_q FROM fu_updates LIMIT 1"); $pdo->query("SELECT unit, lag FROM fu_topics LIMIT 1");   // really there? (else the flag is not set and it is tried again)
+            setting_set($pdo, 'fup_schema', '3');
         }
         return $ok = true;
     } catch (Throwable $e) { error_log('fup_tables: ' . $e->getMessage()); return $ok = false; }
@@ -171,6 +171,8 @@ function fup_updates(PDO $pdo, array $topicIds, string $from, string $to): array
     foreach ($q->fetchAll() as $r) $out[(int)$r['topic_id']][(string)$r['day']] = ['text' => (string)$r['txt'], 'val' => $r['val'] === null ? null : (float)$r['val'], 'pct' => $r['pct'] === null ? null : (int)$r['pct'], 'auto' => (int)$r['auto'] === 1, 'by' => (string)$r['emp_name'], 'at' => (string)$r['updated_at'], 'ai' => (string)($r['ai_verdict'] ?? ''), 'ai_note' => (string)($r['ai_note'] ?? ''), 'q' => (string)($r['ai_q'] ?? '')];
     return $out;
 }
+/** The day whose update is DUE for this topic right now: today, or (a topic "about the day before", like yesterday's sale, filled the next morning) yesterday. */
+function fup_due_day(array $t, string $today): string { return !empty($t['lag']) ? date('Y-m-d', strtotime($today . ' -1 day')) : $today; }
 function fup_has_text(?array $u): bool { return $u !== null && trim((string)$u['text']) !== ''; }
 /** Is the day covered? Words written, or (a connected topic) the number came from the HRMS by itself: nobody has to type what the system already knows. */
 function fup_covered(?array $u, array $t): bool { return (fup_has_text($u) && ($u['q'] ?? '') === '') || ((string)$t['source'] !== '' && $u !== null && $u['val'] !== null); }
@@ -192,17 +194,19 @@ function fup_checks(array $topics, array $ups, array $names, string $today): arr
             elseif ($left <= 2) $out[] = ['amber', $id, $t['title'] . ': deadline ' . ($left === 0 ? 'is today' : 'in ' . $left . ' day' . ($left === 1 ? '' : 's')), 'due', $who, $left];
         }
         if ((int)$t['assignee_emp'] <= 0 && (string)$t['source'] === '') { $out[] = ['amber', $id, $t['title'] . ': not given to anyone yet', 'nobody', '', 0]; continue; }
-        $ut = $u[$today] ?? null;
+        $dd = fup_due_day($t, $today); $dn = $dd === $today ? 'today' : 'yesterday'; $created = substr((string)$t['created_at'], 0, 10);
+        if ($created !== '' && $dd < $created) continue;   // the topic did not exist on the day that is due: nothing can be missing yet
+        $ut = $u[$dd] ?? null;
         if (fup_has_text($ut) && ($ut['q'] ?? '') !== '' && !fup_covered($ut, $t)) { $out[] = ['amber', $id, $t['title'] . ': the update is not clear and Claude\'s question is not answered (' . $who . ')', 'empty', $who, 1]; continue; }
         if (fup_has_text($ut) && in_array((string)($ut['ai'] ?? ''), ['vague', 'no_progress', 'mismatch'], true) && (string)($ut['ai_note'] ?? '') !== '') $out[] = [(string)$ut['ai'] === 'mismatch' ? 'red' : 'amber', $id, $t['title'] . ': Claude — ' . $ut['ai_note'] . ' (' . $who . ')', 'ai', $who, 0];
         if (!fup_covered($ut, $t)) {
-            $created = substr((string)$t['created_at'], 0, 10); $since = $last !== '' ? $last : ($created !== '' ? $created : $today);
-            $gap = (int)round((strtotime($today) - strtotime($since)) / 86400);
+            $since = $last !== '' ? $last : ($created !== '' ? $created : $dd);
+            $gap = (int)round((strtotime($dd) - strtotime($since)) / 86400);
             if ($gap >= 2) $out[] = ['red', $id, $t['title'] . ': no update for ' . $gap . ' days (' . $who . ')', 'empty', $who, $gap];
-            else $out[] = ['amber', $id, $t['title'] . ': no update today yet (' . $who . ')', 'empty', $who, max(1, $gap)];
+            else $out[] = ['amber', $id, $t['title'] . ': no update for ' . $dn . ' yet (' . $who . ')', 'empty', $who, max(1, $gap)];
         } else {
-            $y = date('Y-m-d', strtotime($today . ' -1 day')); $a = mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string)$u[$today]['text'])));
-            if (fup_has_text($u[$y] ?? null) && $a === mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string)$u[$y]['text']))) && mb_strlen($a) > 3) $out[] = ['amber', $id, $t['title'] . ': today\'s update is the same words as yesterday (' . $who . ')', 'copy', $who, 0];
+            $y = date('Y-m-d', strtotime($dd . ' -1 day')); $a = mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string)($u[$dd]['text'] ?? ''))));
+            if (fup_has_text($u[$y] ?? null) && $a === mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string)$u[$y]['text']))) && mb_strlen($a) > 3) $out[] = ['amber', $id, $t['title'] . ': the newest update is the same words as the day before (' . $who . ')', 'copy', $who, 0];
         }
     }
     usort($out, function ($a, $b) { return ($a[0] === 'red' ? 0 : 1) <=> ($b[0] === 'red' ? 0 : 1); });
@@ -242,12 +246,13 @@ function fup_mine(PDO $pdo, array $w): array
         $rows = array_values(array_filter($q->fetchAll(), function ($t) use ($w, $own) { return (int)$t['assignee_emp'] === $w['emp'] || ($own && (int)$t['assignee_emp'] <= 0); }));
         if (!$rows) continue;
         fup_autofetch($pdo, $rows, $today);
-        $ups = fup_updates($pdo, array_column($rows, 'id'), date('Y-m-d', strtotime($today . ' -1 day')), $today); $src = fup_sources();
+        $ups = fup_updates($pdo, array_column($rows, 'id'), date('Y-m-d', strtotime($today . ' -2 day')), $today); $src = fup_sources();
         foreach ($rows as $t) {
-            $u = $ups[(int)$t['id']][$today] ?? null; $y = $ups[(int)$t['id']][date('Y-m-d', strtotime($today . ' -1 day'))] ?? null; $done = fup_covered($u, $t); if (!$done) $due++;
+            $dd = fup_due_day($t, $today); $created = substr((string)$t['created_at'], 0, 10);
+            $u = $ups[(int)$t['id']][$dd] ?? null; $y = $ups[(int)$t['id']][date('Y-m-d', strtotime($dd . ' -1 day'))] ?? null; $done = fup_covered($u, $t) || ($created !== '' && $dd < $created); if (!$done) $due++;
             $out[] = ['id' => (int)$t['id'], 'section_id' => (int)$s['id'], 'section' => (string)$s['name'], 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
                 'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
-                'note' => (string)$t['note'], 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'today' => $u, 'yesterday' => $y, 'done_today' => $done];
+                'note' => (string)$t['note'], 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'today' => $u, 'yesterday' => $y, 'done_today' => $done, 'day' => $dd, 'lag' => !empty($t['lag'])];
         }
     }
     return ['today' => $today, 'topics' => $out, 'due' => $due];
@@ -280,13 +285,14 @@ function fup_claude_material(array $sec, array $topics, array $ups, array $names
     $src = fup_sources(); $L = ['SECTION: ' . $sec['name'], 'TODAY: ' . $days[0], ''];
     foreach ($topics as $t) {
         $id = (int)$t['id']; $unit = fup_unit($t);
-        $L[] = 'TOPIC: ' . $t['title'] . ' | type: ' . ((string)$t['kind'] === 'deadline' ? 'deadline ' . ($t['due_date'] ?: 'no date') : 'runs every day') . ' | given to: ' . ((int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? 'someone') : 'nobody') . ((string)$t['status'] === 'done' ? ' | FINISHED' : '') . ((string)$t['note'] !== '' ? ' | what is wanted: ' . $t['note'] : '');
+        $created = substr((string)$t['created_at'], 0, 10); $dd = fup_due_day($t, $days[0]);
+        $L[] = 'TOPIC: ' . $t['title'] . ($created !== '' ? ' | started on: ' . $created : '') . (!empty($t['lag']) ? ' | this topic is about the day BEFORE and is filled the next day: the newest row that is due is ' . $dd : '') . ' | type: ' . ((string)$t['kind'] === 'deadline' ? 'deadline ' . ($t['due_date'] ?: 'no date') : 'runs every day') . ' | given to: ' . ((int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? 'someone') : 'nobody') . ((string)$t['status'] === 'done' ? ' | FINISHED' : '') . ((string)$t['note'] !== '' ? ' | what is wanted: ' . $t['note'] : '');
         foreach (array_reverse($days) as $d) {
             $u = $ups[$id][$d] ?? null; $bits = [];
             if ($u && $u['val'] !== null) $bits[] = 'number ' . rtrim(rtrim(number_format($u['val'], 2, '.', ''), '0'), '.') . ($unit !== '' ? ' ' . $unit : '') . ($u['auto'] ? ' (from the system)' : '');
             if ($u && $u['pct'] !== null) $bits[] = $u['pct'] . '% done';
             if (fup_has_text($u)) $bits[] = '"' . mb_substr(trim(preg_replace('/\s+/u', ' ', $u['text'])), 0, 400) . '"';
-            $L[] = '  ' . $d . ': ' . ($bits ? implode(' · ', $bits) : '(nothing written)');
+            $L[] = '  ' . $d . ': ' . ($bits ? implode(' · ', $bits) : (($created !== '' && $d < $created) ? '(the topic did not exist yet)' : ($d > $dd ? '(not due yet)' : '(nothing written)')));
         }
         $L[] = '';
     }
@@ -333,9 +339,10 @@ function fup_digest_make(PDO $pdo, array $sec, array $w, string $today): array
     $mat = fup_claude_material($sec, $topics, $ups, $names, $days, fup_checks($topics, $ups, $names, $today));
     $sys = "You check the daily follow-up sheet of a perfume company (TM Perfume House) for the owner. He reads on a phone. Use plain, short, simple English; keep names and numbers exactly as written. "
         . "The updates may be written in Gujarati, Hindi or English: understand them, do not translate names. Use ONLY what is in the sheet: never invent a number, a person or a reason. If something is not written, say it is not written. "
-        . "Write these parts, each with a heading line and short lines under it (leave a part out when it has nothing): "
+        . "A day marked '(the topic did not exist yet)' or '(not due yet)' is NOT a missing update: never count it, never mention it, never ask about it. If a topic has only one day of data, say so in one line and do not call it stuck. "
+        . "Write these parts, each with a heading line and short lines under it (leave a part out completely when it has nothing real to say; never write a heading just to say there is nothing): "
         . "MOVING (what really went forward, with the numbers and the change against the earlier days) · STUCK (same words repeated, no real progress, numbers falling) · NO UPDATE (who wrote nothing today, and for how many days) · "
-        . "DEADLINES (close or passed) · ASK TODAY (at most 5 exact questions the owner should ask, each with the person's name). No greeting, no closing line, no markdown symbols like ** or #.";
+        . "DEADLINES (close or passed) · ASK TODAY (at most 5 exact questions the owner should ask, each with the person's name; ask only what the sheet really leaves open, and if the owner's own description of the topic names something that the update did not give, ask for exactly that). No greeting, no closing line, no markdown symbols like ** or #.";
     $old = function_exists('ai_feat') ? ai_feat('followup') : '';
     $txt = (string)brain_ai_text('internal', 'followup', $sys, $mat, 900, ['ctx' => false]);
     if (function_exists('ai_feat')) ai_feat((string)$old);
@@ -418,7 +425,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                 $id = (int)$t['id']; $can = !empty($sec['own']) || (int)$t['assignee_emp'] === $w['emp'];
                 $out['topics'][] = ['id' => $id, 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
                     'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
-                    'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''),
+                    'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''), 'lag' => !empty($t['lag']), 'due_day' => fup_due_day($t, $today), 'created' => substr((string)$t['created_at'], 0, 10),
                     'note' => (string)$t['note'], 'status' => (string)$t['status'], 'can_write' => $can, 'updates' => (object)($ups[$id] ?? [])];
             }
             $ch = fup_checks($topics, $ups, $names, $today); foreach ($ch as $c) $out['checks'][] = ['level' => $c[0], 'topic_id' => $c[1], 'text' => $c[2]];
@@ -441,12 +448,12 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $needMgr(); $in = json_input(); $id = (int)($in['id'] ?? 0); $title = trim(mb_substr((string)($in['title'] ?? ''), 0, 160)); if ($title === '') json_response(['error' => 'Write the topic.'], 422);
             $kind = ($in['kind'] ?? '') === 'deadline' ? 'deadline' : 'progress'; $due = (string)($in['due_date'] ?? ''); $due = ($kind === 'deadline' && fup_is_day($due)) ? $due : null;
             if ($kind === 'deadline' && $due === null) json_response(['error' => 'Choose the last date of this topic.'], 422);
-            $emp = max(0, (int)($in['assignee_emp'] ?? 0)); $source = (string)($in['source'] ?? ''); if (!isset(fup_sources()[$source])) $source = ''; $note = trim(mb_substr((string)($in['note'] ?? ''), 0, 1000)); $unit = $source !== '' ? '' : trim(mb_substr((string)($in['unit'] ?? ''), 0, 12));
+            $emp = max(0, (int)($in['assignee_emp'] ?? 0)); $source = (string)($in['source'] ?? ''); if (!isset(fup_sources()[$source])) $source = ''; $note = trim(mb_substr((string)($in['note'] ?? ''), 0, 1000)); $unit = $source !== '' ? '' : trim(mb_substr((string)($in['unit'] ?? ''), 0, 12)); $lag = !empty($in['lag']) ? 1 : 0;
             $was = 0;
-            if ($id > 0) { $t = $topicRow($id); $was = (int)$t['assignee_emp']; $pdo->prepare("UPDATE fu_topics SET title = ?, kind = ?, due_date = ?, assignee_emp = ?, source = ?, note = ?, unit = ? WHERE id = ?")->execute([$title, $kind, $due, $emp, $source, $note, $unit, $id]); $sid = (int)$t['section_id']; }
+            if ($id > 0) { $t = $topicRow($id); $was = (int)$t['assignee_emp']; $pdo->prepare("UPDATE fu_topics SET title = ?, kind = ?, due_date = ?, assignee_emp = ?, source = ?, note = ?, unit = ?, lag = ? WHERE id = ?")->execute([$title, $kind, $due, $emp, $source, $note, $unit, $lag, $id]); $sid = (int)$t['section_id']; }
             else {
                 $sid = (int)($in['section_id'] ?? 0); $secRow($sid); $q = $pdo->prepare("SELECT COALESCE(MAX(sort_no), 0) + 1 FROM fu_topics WHERE section_id = ?"); $q->execute([$sid]); $sn = (int)$q->fetchColumn();
-                $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, status, sort_no, active, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 1, ?, ?)")->execute([$sid, $title, $kind, $due, $emp, $source, $note, $unit, $sn, $w['emp'], fup_now()]); $id = (int)$pdo->lastInsertId();
+                $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, lag, status, sort_no, active, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 1, ?, ?)")->execute([$sid, $title, $kind, $due, $emp, $source, $note, $unit, $lag, $sn, $w['emp'], fup_now()]); $id = (int)$pdo->lastInsertId();
             }
             if ($emp > 0 && $emp !== $was && $emp !== $w['emp'] && function_exists('push_send_employee')) {   // the person hears about it on the phone
                 try { $s = $secRow($sid); push_send_employee($pdo, $emp, ['title' => 'New follow-up topic for you', 'body' => $s['name'] . ' · ' . $title . ' — write one update every day.', 'url' => 'followup.html?s=' . $sid, 'tag' => 'fup-' . $id]); } catch (Throwable $e) { }
@@ -474,7 +481,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             if (!fup_owns($sec, $w) && !($w['emp'] > 0 && (int)$t['assignee_emp'] === $w['emp'])) json_response(['error' => 'This topic is not given to you.'], 403);
             $today = fup_today($pdo); $day = (string)($in['day'] ?? $today); if (!fup_is_day($day)) $day = $today;
             if ($day > $today) json_response(['error' => 'You cannot write an update for a day that has not come yet.'], 422);
-            if (!$w['manager'] && $day < date('Y-m-d', strtotime($today . ' -1 day'))) json_response(['error' => 'Only today and yesterday can be written. Ask the Admin to change an older day.'], 422);
+            if (!$w['manager'] && $day < date('Y-m-d', strtotime($today . (!empty($t['lag']) ? ' -2 day' : ' -1 day')))) json_response(['error' => 'Only today and yesterday can be written. Ask the Admin to change an older day.'], 422);
             $text = trim(mb_substr((string)($in['text'] ?? ''), 0, 2000)); $f = ['txt' => $text, 'emp_id' => $w['emp'], 'emp_name' => mb_substr($w['name'], 0, 120), 'updated_at' => fup_now()];
             if (array_key_exists('value', $in)) { $v = $in['value']; if ($v === '' || $v === null) { if ((string)$t['source'] === '') { $f['val'] = null; $f['auto'] = 0; } } elseif (!is_numeric($v)) json_response(['error' => 'The number must be a number.'], 422); else { $f['val'] = round((float)$v, 2); $f['auto'] = 0; } }
             if (array_key_exists('pct', $in)) { $p = $in['pct']; $f['pct'] = ($p === '' || $p === null) ? null : max(0, min(100, (int)$p)); }

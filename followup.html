@@ -97,7 +97,7 @@ guardPage(); renderSidebar('followup');
 
   const dayName = (d, today) => { const dt = new Date(d + 'T12:00:00'); const diff = Math.round((new Date(today + 'T12:00:00') - dt) / 86400000); return (diff === 0 ? 'Today · ' : diff === 1 ? 'Yesterday · ' : '') + dt.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }); };
   const numTxt = (t, u) => (u && u.val != null ? '<div class="fu-num">' + (t.unit === '₹' ? inr(u.val) : Number(u.val).toLocaleString('en-IN') + (t.unit ? ' ' + esc(t.unit) : '')) + (u.auto ? ' <small>from the system</small>' : '') + '</div>' : '');
-  const canDay = (t, d) => t.can_write && t.status !== 'done' && (D.manager || d >= D.days[1] || d === D.today);
+  const canDay = (t, d) => t.can_write && t.status !== 'done' && (D.manager || d >= D.days[t.lag ? 2 : 1] || d === D.today);
   const covered = (t, d) => { const u = t.updates[d]; return !!(u && ((u.text && !u.q) || (t.source && u.val != null))); };
   const sec = () => D.sections.find((s) => s.id === D.section) || null;
 
@@ -116,7 +116,7 @@ guardPage(); renderSidebar('followup');
     let h = '';
     if (t.status === 'done') h += '<span class="fu-tag grn">Finished</span>';
     else if (t.kind === 'deadline') { const dl = t.days_left; h += '<span class="fu-tag ' + (dl < 0 ? 'red' : dl <= 2 ? 'amb' : '') + '">Deadline ' + esc(new Date(t.due_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })) + ' · ' + (dl < 0 ? -dl + 'd late' : dl === 0 ? 'today' : dl + 'd left') + '</span>'; }
-    else h += '<span class="fu-tag">Every day</span>';
+    else h += '<span class="fu-tag">' + (t.lag ? 'Every day · filled next day' : 'Every day') + '</span>';
     h += '<span class="fu-tag ' + (t.assignee ? '' : 'amb') + '">' + (t.assignee ? '👤 ' + esc(t.assignee) : 'Not given to anyone') + '</span>';
     const so = t.source && D.sources.find((x) => x.key === t.source);
     if (so) h += '<a class="fu-tag pur" href="' + esc(so.page) + '" target="_top" style="text-decoration:none" title="Open ' + esc(so.group) + '">🔗 Auto · ' + esc(so.group) + ' · ' + esc(so.label) + '</a>';
@@ -134,8 +134,8 @@ guardPage(); renderSidebar('followup');
     let h = numTxt(t, u);
     if (u && u.pct != null) h += '<div class="fu-bar"><i style="width:' + u.pct + '%"></i></div><div class="fu-by">' + u.pct + '% done</div>';
     if (u && u.text) h += '<div class="fu-txt">' + esc(u.text) + '</div><div class="fu-by">' + esc(u.by || '') + '</div>' + aiLine(u);
-    else if (d === D.today && t.status !== 'done' && !covered(t, d)) h += '<div class="fu-miss">' + (w ? '+ Write today’s update' : 'No update yet') + '</div>';
-    else if (w && d === D.today && t.status !== 'done') h += '<div class="fu-by">+ add a note</div>';
+    else if (d === t.due_day && d >= t.created && t.status !== 'done' && !covered(t, d)) h += '<div class="fu-miss">' + (w ? '+ Write ' + (d === D.today ? 'today' : 'yesterday') + '’s update' : 'No update yet') + '</div>';
+    else if (w && d === t.due_day && t.status !== 'done') h += '<div class="fu-by">+ add a note</div>';
     else if (!h) h = '<span class="fu-none">—</span>';
     return h;
   }
@@ -143,11 +143,11 @@ guardPage(); renderSidebar('followup');
   function render() {
     const s = sec(), OV = D.overview || { late: [], empty: [], by_section: {} }; let h = attention(OV) + '<div class="fu-pills">' + D.sections.map((x) => '<button class="fu-pill' + (x.id === D.section ? ' on' : '') + '" data-sec="' + x.id + '">' + esc(x.name) + (OV.by_section[x.id] ? '<em class="fu-n">' + OV.by_section[x.id] + '</em>' : '') + '</button>').join('') + (D.manager ? '<button class="fu-pill add" id="secAdd">＋ New section</button>' : '') + '</div>';
     if (!s) { $('root').innerHTML = h + '<div class="bd-empty"><b>Nothing here for you yet</b>' + (D.manager ? 'Make the first section with “＋ New section”.' : 'When a topic or a section is given to you, it shows here and on My Day.') + '</div>'; bind(); return; }
-    const open = D.topics.filter((t) => t.status !== 'done'), got = open.filter((t) => covered(t, D.today)).length, red = D.checks.filter((c) => c.level === 'red').length;
+    const open = D.topics.filter((t) => t.status !== 'done'), got = open.filter((t) => covered(t, t.due_day) || t.due_day < t.created).length, red = D.checks.filter((c) => c.level === 'red').length;
     h += '<div class="fu-card"><div class="fu-head"><div><h2>' + esc(s.name) + '</h2><div class="fu-sub">' + (s.owner ? 'Whole section given to: <b>' + esc(s.owner) + '</b>' : 'The whole section is not given to one person: each topic has its own person.') + '</div></div><span class="sp"></span>'
       + '<select class="bd-in" id="daysSel" style="width:auto;padding:7px 10px;font-size:13px">' + [7, 14, 31].map((n) => '<option value="' + n + '"' + (n === DAYS ? ' selected' : '') + '>Last ' + n + ' days</option>').join('') + '</select>'
       + (D.topics.some((t) => t.can_write && t.status !== 'done') ? '<button class="bd-btn sm" id="addAny">＋ Add update / number</button>' : '') + (D.manager ? '<button class="bd-btn sm" id="secEdit">Section settings</button><button class="bd-btn sm pri" id="topAdd">＋ Topic</button>' : '') + '</div>'
-      + '<div class="fu-stats"><div class="fu-stat"><b>' + open.length + '</b>open topics</div><div class="fu-stat ' + (got === open.length && open.length ? 'g' : '') + '"><b>' + got + ' / ' + open.length + '</b>updated today</div><div class="fu-stat ' + (red ? 'r' : 'g') + '"><b>' + red + '</b>need attention</div></div></div>';
+      + '<div class="fu-stats"><div class="fu-stat"><b>' + open.length + '</b>open topics</div><div class="fu-stat ' + (got === open.length && open.length ? 'g' : '') + '"><b>' + got + ' / ' + open.length + '</b>up to date</div><div class="fu-stat ' + (red ? 'r' : 'g') + '"><b>' + red + '</b>need attention</div></div></div>';
 
     if (s.own && D.topics.length) {
       h += '<div class="fu-card"><div class="fu-head"><div class="fu-lb" style="margin:0">Claude’s check</div><span class="sp"></span><button class="bd-btn sm" id="askAi"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ ' + (D.digest ? 'Ask Claude again' : 'Ask Claude to read this section') + '</button></div>'
@@ -167,11 +167,12 @@ guardPage(); renderSidebar('followup');
         + D.topics.map((t) => '<tr class="' + (t.status === 'done' ? 'done' : '') + '"><td>' + th(t) + '</td>' + D.days.map((d) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
       // phones: one card a topic, today on top, the earlier days under it
       h += '<div class="fu-m">' + D.topics.map((t) => {
-        const w = canDay(t, D.today), past = D.days.slice(1).filter((d) => t.updates[d] && (t.updates[d].text || t.updates[d].val != null));
+        const dd = t.due_day, dn = dd === D.today ? 'today' : 'yesterday', w = canDay(t, dd), has = t.updates[dd] && t.updates[dd].text, prev = D.days[D.days.indexOf(dd) + 1];
+        const past = D.days.filter((d) => d !== dd && t.updates[d] && (t.updates[d].text || t.updates[d].val != null));
         return '<div class="fu-mc' + (t.status === 'done' ? ' done' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t)
-          + '<div class="fu-mday" style="margin-top:10px"><div class="d">' + esc(dayName(D.today, D.today)) + '</div>' + cell(t, D.today) + '</div>'
-          + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">' + (w ? '<button class="bd-btn sm ' + (t.updates[D.today] && t.updates[D.today].text ? '' : 'pri') + '" data-up="' + t.id + '" data-day="' + D.today + '">' + (t.updates[D.today] && t.updates[D.today].text ? 'Change today’s update' : 'Write today’s update') + '</button>' : '')
-          + (canDay(t, D.days[1]) && !(t.updates[D.days[1]] && t.updates[D.days[1]].text) ? '<button class="bd-btn sm" data-up="' + t.id + '" data-day="' + D.days[1] + '">Write yesterday’s</button>' : '') + (D.manager ? '<button class="bd-btn sm" data-edit="' + t.id + '">Edit topic</button>' : '') + '</div>'
+          + '<div class="fu-mday" style="margin-top:10px"><div class="d">' + esc(dayName(dd, D.today)) + '</div>' + cell(t, dd) + '</div>'
+          + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">' + (w ? '<button class="bd-btn sm ' + (has ? '' : 'pri') + '" data-up="' + t.id + '" data-day="' + dd + '">' + (has ? 'Change ' + dn + '’s update' : 'Write ' + dn + '’s update') + '</button>' : '')
+          + (prev && canDay(t, prev) && !(t.updates[prev] && t.updates[prev].text) ? '<button class="bd-btn sm" data-up="' + t.id + '" data-day="' + prev + '">Write the day before</button>' : '') + (D.manager ? '<button class="bd-btn sm" data-edit="' + t.id + '">Edit topic</button>' : '') + '</div>'
           + (past.length ? '<details style="margin-top:8px"><summary class="fu-sub" style="cursor:pointer;font-weight:700">Earlier days (' + past.length + ')</summary>' + past.map((d) => '<div class="fu-mday"><div class="d">' + esc(dayName(d, D.today)) + '</div>' + cell(t, d) + '</div>').join('') + '</details>' : '') + '</div>';
       }).join('') + '</div>';
     }
@@ -200,7 +201,7 @@ guardPage(); renderSidebar('followup');
     if ($('topAdd')) $('topAdd').onclick = () => topicForm(null);
     if ($('daysSel')) $('daysSel').onchange = () => { DAYS = Number($('daysSel').value) || 7; load(); };
     if ($('askAi')) $('askAi').onclick = askClaude;
-    if ($('addAny')) $('addAny').onclick = () => writeUp(0, D.today);
+    if ($('addAny')) $('addAny').onclick = () => writeUp(0, '');
     if ($('flip')) $('flip').onclick = () => { SIDE = !SIDE; try { localStorage.setItem('fup_side', SIDE ? '1' : '0'); } catch (e) { /* private mode */ } render(); };
   }
   const run = async (btn, fn) => { if (busy) return; busy = true; if (btn) btn.disabled = true; try { await fn(); } catch (e) { toast(e.message || 'Could not save.'); } busy = false; if (btn) btn.disabled = false; };
@@ -208,11 +209,11 @@ guardPage(); renderSidebar('followup');
   /* ---------------- one day's update of one topic. id = 0: choose the topic too (the "＋ Add update / number" button). The date can be chosen:
      the Admin / HR any earlier date, everybody else today or yesterday. ---------------- */
   function writeUp(id, day) {
-    const list = D.topics.filter((x) => x.can_write && x.status !== 'done'); let t = D.topics.find((x) => x.id === id) || list[0]; if (!t) return;
+    const list = D.topics.filter((x) => x.can_write && x.status !== 'done'); let t = D.topics.find((x) => x.id === id) || list[0]; if (!t) return; if (!day) day = t.due_day;
     const u0 = id ? t.updates[day] : null; if (u0 && u0.q && u0.text) { askBack(t, day, { topic_id: t.id, day: day, text: u0.text, pct: u0.pct != null ? u0.pct : '' }, u0.q); return; }   // an open question from Claude is answered first
     const m = BD.modal('<h3>Update</h3>'
       + '<div class="fu-row2"><div class="bd-f"><label>Topic</label><select class="bd-in" id="uTop">' + list.map((x) => '<option value="' + x.id + '"' + (x.id === t.id ? ' selected' : '') + '>' + esc(x.title) + '</option>').join('') + '</select></div>'
-      + '<div class="bd-f"><label>Date</label>' + (D.manager ? '<input class="bd-in" id="uD" type="date" max="' + D.today + '" value="' + day + '">' : '<select class="bd-in" id="uD"><option value="' + D.today + '"' + (day === D.today ? ' selected' : '') + '>' + esc(dayName(D.today, D.today)) + '</option><option value="' + D.days[1] + '"' + (day === D.days[1] ? ' selected' : '') + '>' + esc(dayName(D.days[1], D.today)) + '</option></select>') + '</div></div>'
+      + '<div class="bd-f"><label>Date</label>' + (D.manager ? '<input class="bd-in" id="uD" type="date" max="' + D.today + '" value="' + day + '">' : '<select class="bd-in" id="uD">' + D.days.slice(0, 3).map((x) => '<option value="' + x + '"' + (day === x ? ' selected' : '') + '>' + esc(dayName(x, D.today)) + '</option>').join('') + '</select>') + '</div></div>'
       + '<div class="bd-sub" id="uNote" style="margin:-4px 0 10px"></div>'
       + '<div class="fu-row2"><div class="bd-f"><label id="uVl">Number</label><input class="bd-in" id="uV" inputmode="decimal"><div class="hint" id="uVh"></div></div>'
       + '<div class="bd-f"><label>% done</label><input class="bd-in" id="uP" inputmode="numeric" placeholder="0 – 100, if it fits"></div></div>'
@@ -271,6 +272,7 @@ guardPage(); renderSidebar('followup');
       + '<div class="bd-f"><label>Explain this topic to Claude</label><textarea class="bd-in" id="tN" maxlength="1000" rows="3" placeholder="What is this topic, and what must a good daily update say? Example: how many shops got the new display, which shops, and why any is left.">' + esc(t ? t.note : '') + '</textarea><div class="hint">Optional, but it helps: Claude checks every update against this, and the person sees it while writing.</div></div>'
       + '<div class="fu-row2"><div class="bd-f"><label>Kind</label><select class="bd-in" id="tK"><option value="progress"' + (k === 'progress' ? ' selected' : '') + '>Runs every day (progress)</option><option value="deadline"' + (k === 'deadline' ? ' selected' : '') + '>Has a last date (deadline)</option></select></div>'
       + '<div class="bd-f" id="tDw"><label>Last date</label><input class="bd-in" id="tD" type="date" value="' + esc(t && t.due_date ? t.due_date : '') + '"></div></div>'
+      + '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:-4px 0 12px;cursor:pointer"><input type="checkbox" id="tL"' + (t && t.lag ? ' checked' : '') + ' style="margin-top:3px"><span><b>This topic is about the day before</b> (like yesterday’s sale): it is filled the next day, so today’s row is never asked for.</span></label>'
       + '<div class="bd-f"><label>Who writes the update every day</label><select class="bd-in" id="tE"><option value="0">Nobody yet (the section owner writes it)</option>' + P.people.map((p) => '<option value="' + p.id + '"' + (t && t.assignee_emp === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></div>'
       + '<div class="bd-f"><label>Number of the day</label><select class="bd-in" id="tS"><option value="">The person types it (or no number)</option>' + srcGroups().map((g) => '<optgroup label="Auto from ' + esc(g) + '">' + D.sources.filter((s) => s.group === g).map((s) => '<option value="' + s.key + '"' + (t && t.source === s.key ? ' selected' : '') + '>' + esc(s.label) + '</option>').join('') + '</optgroup>').join('') + '</select><div id="tUw" style="margin-top:8px"><input class="bd-in" id="tU" maxlength="12" placeholder="Unit of the typed number: ₹, pcs, shops … (optional)" value="' + esc(t ? (t.own_unit || '') : '') + '"></div><div class="hint" id="tSh">A connected topic takes its number from the HRMS by itself every day. Nobody has to type it; words are optional.</div></div>'
       + (t ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="bd-btn sm" id="tUp">↑ Move up</button><button class="bd-btn sm" id="tDn">↓ Move down</button><button class="bd-btn sm" id="tFin">' + (t.status === 'done' ? 'Open again' : '✓ Mark finished') + '</button><button class="bd-btn sm bad" id="tDel">Remove topic</button></div>' : '')
@@ -282,7 +284,7 @@ guardPage(); renderSidebar('followup');
     q('#tS').onchange = () => { q('#tS').dataset.touched = '1'; unitVis(); };
     q('#tX').onclick = () => BD.close();
     q('#tOk').onclick = () => run(q('#tOk'), async () => {
-      await api.post('fup.topic_save', { id: t ? t.id : 0, section_id: D.section, title: q('#tT').value, note: q('#tN').value, kind: q('#tK').value, due_date: q('#tD').value, assignee_emp: Number(q('#tE').value), source: q('#tS').value, unit: q('#tU').value });
+      await api.post('fup.topic_save', { id: t ? t.id : 0, section_id: D.section, title: q('#tT').value, note: q('#tN').value, kind: q('#tK').value, due_date: q('#tD').value, assignee_emp: Number(q('#tE').value), source: q('#tS').value, unit: q('#tU').value, lag: q('#tL').checked ? 1 : 0 });
       BD.close(); toast('Topic saved.'); await load(true);
     });
     if (t) {
