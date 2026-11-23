@@ -11595,7 +11595,7 @@ function qa_emp_total(PDO $pdo, string $from, string $to): array
  *  $onlyEmp > 0 → only that salesperson's orders (the "my check" card of the sales app). Used by ct.must3 (Admin / HR) and ct.must3_me. */
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
 {
-    $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0], 'people' => []];
+    $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0], 'people' => []];
     try {
         if (!ensure_order_allocations_table($pdo)) return $res;
         $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
@@ -11611,8 +11611,14 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
         $rxA = '/recheck your delivery address|change address\s*\/\s*add new address/i'; $rxC = '/chain_index|jewell?ery item from this catalogue|chain or any other jewell?ery/i';
         $rxChainWord = '/\b(chains?|necklaces?|pendants?|bracelets?|lockets?|jewell?ery|jewelry|mala|kada)\b/iu';
         $rxP = '/((?<![\d.])2|\bdo|\btwo)\s*(%|percent|per\s*cent|pratishat)|extra discount|(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)[^.\n]{0,80}(discount|off|less|kam|chhut|chut|cashback)|(discount|off|less|kam|chhut|chut|cashback)[^.\n]{0,80}(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)/iu';
+        $xq = null; try { $xq = $pdo->prepare("SELECT phone FROM order_extra_phones WHERE source = ? AND order_id = ? LIMIT 1"); } catch (Throwable $e) { $xq = null; }
+        $hasMsg = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? LIMIT 1");
         foreach ($rows as $o) {
-            $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $t = strtotime((string)$o['created_at']); $f = ['a' => null, 'c' => null, 'p' => null];
+            $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $t = strtotime((string)$o['created_at']); $f = ['a' => null, 'c' => null, 'p' => null]; $nochat = false;
+            // 📱 owner (23 Nov, order #73485): the customer ordered with ANOTHER number than the one he chats from — the check found no chat and said "nothing sent". The order's "Extra mobile no." (Order Allocation) is used when the order's own number has no chat; with no chat at all the order is marked "chat not found" (not "not sent")
+            try { $hasMsg->execute([$k]); if (strlen($k) !== 10 || !$hasMsg->fetchColumn()) { $k2 = ''; if ($xq) { $xq->execute([(string)$o['store_key'], (string)$o['shopify_id']]); $k2 = substr(preg_replace('/\D+/', '', (string)$xq->fetchColumn()), -10); } $found = ''; if (strlen($k2) === 10) { $hasMsg->execute([$k2]); if ($hasMsg->fetchColumn()) $found = $k2; }
+                if ($found === '' && strlen($k) === 10) { $found = (string)hrms_memo('must3_like:' . $k . ':' . $t, 900, function () use ($pdo, $k, $t) { $fq = $pdo->prepare("SELECT phone, COUNT(*) n FROM wa_messages WHERE ts >= ? AND ts <= ? AND body LIKE ? GROUP BY phone ORDER BY n DESC LIMIT 2"); $fq->execute([date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 2 * 3600), '%' . $k . '%']); $fr = $fq->fetchAll(PDO::FETCH_ASSOC); return count($fr) === 1 ? (string)$fr[0]['phone'] : ''; }); }   // the whole-table text search for ONE order's number (up to 17 s) is kept 15 minutes per order: it was repeated on every refresh of the check   // 🔎 found by itself: the order's number was written in exactly ONE chat around the order (the customer typed his number / address there)
+                if ($found !== '') $k = $found; else $nochat = true; } } catch (Throwable $e) { }
             if (strlen($k) === 10) {
                 $q = $pdo->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700");
                 $q->execute([$k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', min(time(), $t + 48 * 3600))]);   // owner (23 Nov): a message sent LATER (up to 48 h after the order, until now) also counts — it used to stop 30 minutes after the order, so a chain message sent later never moved the order to Done
@@ -11628,11 +11634,12 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
                 }
             }
             $e = (int)$o['employee_id'];
-            if (!isset($P[$e])) $P[$e] = ['id' => $e, 'name' => $names[$e] ?? ('#' . $e), 'n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'orders' => []];
+            if (!isset($P[$e])) $P[$e] = ['id' => $e, 'name' => $names[$e] ?? ('#' . $e), 'n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0, 'orders' => []];
             $nk = strtolower(ltrim(trim((string)$o['order_name']), '#')); $dn = isset($ad[$nk]) && (float)$ad[$nk]['amt'] > 0; $wr = $why[(string)$o['store_key'] . ':' . (string)$o['shopify_id']] ?? null; $wt = '';
             if (!$dn) { if ($wr) $wt = trim((string)$wr['reason']) !== '' ? mb_substr(trim((string)$wr['reason']), 0, 160) : (((int)$wr['tried'] || (int)$wr['tries'] > 0) ? 'Offered — the customer did not take it' : 'Not offered'); }
-            $P[$e]['n']++; $res['team']['n']++; foreach (['a', 'c', 'p'] as $key) if ($f[$key]) { $P[$e][$key]++; $res['team'][$key]++; } if ($dn) { $P[$e]['d']++; $res['team']['d']++; }
-            $P[$e]['orders'][] = ['order' => (string)$o['order_name'], 'customer' => mb_substr((string)$o['customer'], 0, 40), 'total' => round((float)$o['total']), 'phone' => $k, 'at' => substr((string)$o['created_at'], 11, 5), 'a' => $f['a'], 'c' => $f['c'], 'p' => $f['p'], 'd' => $dn ? round((float)$ad[$nk]['amt']) : null, 'dwhy' => $wt, 'day' => $day];
+            if ($nochat) { $P[$e]['x']++; $res['team']['x']++; }   // 📱 chat not found: its own count — NOT in the orders the three messages are measured on (owner, 23 Nov: it made the numbers look worse than they are)
+            else { $P[$e]['n']++; $res['team']['n']++; foreach (['a', 'c', 'p'] as $key) if ($f[$key]) { $P[$e][$key]++; $res['team'][$key]++; } if ($dn) { $P[$e]['d']++; $res['team']['d']++; } }
+            $P[$e]['orders'][] = ['order' => (string)$o['order_name'], 'customer' => mb_substr((string)$o['customer'], 0, 40), 'total' => round((float)$o['total']), 'phone' => $k, 'at' => substr((string)$o['created_at'], 11, 5), 'a' => $f['a'], 'c' => $f['c'], 'p' => $f['p'], 'd' => $dn ? round((float)$ad[$nk]['amt']) : null, 'dwhy' => $wt, 'day' => $day, 'nochat' => $nochat];
         }
         $L = array_values($P); usort($L, fn($x, $y) => (($y['n'] * 3 - $y['a'] - $y['c'] - $y['p']) <=> ($x['n'] * 3 - $x['a'] - $x['c'] - $x['p'])));
         $res['people'] = $L;
@@ -19349,6 +19356,7 @@ function retail_display_pending(PDO $pdo, string $city): array
 $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
+if (is_file(__DIR__ . '/chain_prices.php')) { require_once __DIR__ . '/chain_prices.php'; }   // 💰 public price feed of the chain page (chain/chain_index.html): chain.prices
 if (is_file(__DIR__ . '/wa_collage.php')) { require_once __DIR__ . '/wa_collage.php'; }   // one picture for 2–5 suggested perfumes (public view: wa.collage_view)
 if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   // streaks + the Wins feed on the salesperson home; answers play.* itself
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
@@ -23106,13 +23114,13 @@ switch ($action) {
         $auth = require_auth(); $emp = (int)($auth['employee_id'] ?? 0);
         $range = in_array((string)($_GET['range'] ?? ''), ['yday', '7d'], true) ? (string)$_GET['range'] : 'today'; $today = biz_today($pdo);
         $days = $range === 'today' ? [$today] : ($range === 'yday' ? [date('Y-m-d', strtotime($today . ' -1 day'))] : array_map(function ($i) use ($today) { return date('Y-m-d', strtotime($today . ' -' . $i . ' day')); }, range(0, 6)));
-        $out = ['ok' => true, 'range' => $range, 'days' => $days, 'sales' => false, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0], 'orders' => []];
+        $out = ['ok' => true, 'range' => $range, 'days' => $days, 'sales' => false, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0], 'orders' => []];
         if ($emp <= 0) json_response($out);
         try { if (ensure_order_allocations_table($pdo)) { $q = $pdo->prepare("SELECT 1 FROM order_allocations WHERE employee_id = ? AND allocated_at >= ? LIMIT 1"); $q->execute([$emp, date('Y-m-d H:i:s', time() - 30 * 86400)]); $out['sales'] = (bool)$q->fetchColumn(); } } catch (Throwable $e) { }
         if (!$out['sales']) json_response($out);
         foreach ($days as $dd) {
             $r = hrms_memo('must3me:' . $emp . ':' . $dd, 60, function () use ($pdo, $dd, $emp) { return must3_compute($pdo, $dd, $emp); });
-            foreach (['n', 'a', 'c', 'p', 'd'] as $k) $out['team'][$k] += (int)($r['team'][$k] ?? 0);
+            foreach (['n', 'a', 'c', 'p', 'd', 'x'] as $k) $out['team'][$k] += (int)($r['team'][$k] ?? 0);
             foreach ((array)($r['people'] ?? []) as $pp) foreach ((array)($pp['orders'] ?? []) as $oo) $out['orders'][] = $oo;
         }
         json_response($out);

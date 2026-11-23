@@ -114,6 +114,10 @@
     text-align: left; line-height: 1.2;
   }
   .tile .label i { font-style: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tile .label .pr { display: block; margin-top: 3px; font-family: 'DM Sans', system-ui, sans-serif; font-weight: 600; font-size: 14px; color: #ffd9b8; letter-spacing: .2px; }
+  .tile .label .pr:empty { display: none; }
+  .price { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 22px; color: var(--orange); margin-top: 2px; }
+  .price:empty { display: none; }
   .tile .cnt {
     position: absolute; right: 10px; bottom: 10px;
     height: 22px; padding: 0 8px; border-radius: 11px;
@@ -226,6 +230,7 @@
     .tile .num { top: 6px; left: 6px; height: 20px; padding: 0 7px; font-size: 11px; }
     .tile .tag { top: 6px; right: 6px; height: 20px; padding: 0 7px; font-size: 9px; }
     .tile .label { font-size: 11px; padding: 20px 40px 6px 7px; }
+    .tile .label .pr { font-size: 11.5px; margin-top: 2px; }
     .tile .cnt { right: 6px; bottom: 6px; height: 18px; padding: 0 6px; font-size: 10px; }
     .tile .cnt svg { width: 10px; height: 10px; }
   }
@@ -259,6 +264,7 @@
   <div class="row">
     <div>
       <div class="name" id="shName"></div>
+      <div class="price" id="shPrice"></div>
       <div class="sub" id="shSub"></div>
     </div>
     <span class="pill" id="shTag"></span>
@@ -276,24 +282,29 @@
 <script>
   // ===== SETTINGS =====
   var IMG_DIR = 'images/';   // folder where the product images live
+  var PRICE_URL = '../empmanagment/api.php?action=chain.prices';   // live prices from Shopify (through HRMS). '' = show only the prices written below
+  function inr(n) { n = Math.round(+n || 0); return n > 0 ? '\u20B9' + n.toLocaleString('en-IN') : ''; }
+  function keyOf(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
 
   // ===== SECTIONS =====
   // Each section: title (heading), short (text on the top filter button), tag (shown on tiles, "" for none), products (name + image files).
   // To add a product: put its photos in the images/ folder and add one line like
-  //   {"name": "Combo 1", "images": ["combo-1-1.jpg", "combo-1-2.jpg", "combo-1-3.jpg"]}
+  //   {"name": "Combo 1", "shop": "The exact product title in Shopify", "price": 4500, "images": ["combo-1-1.jpg", "combo-1-2.jpg", "combo-1-3.jpg"]}
+  // PRICE: "shop" = the product's title in Shopify. The page asks HRMS for the price Shopify has NOW and shows that.
+  //        "price" = the price on the day this line was written; it is shown only until the live price arrives (or if it cannot be fetched).
   var SECTIONS = [
     { title: "Chain", tag: "", products: [
-      {"name": "Lunelle Chain", "images": ["01-lunelle-chain-1.jpg", "01-lunelle-chain-2.jpg", "01-lunelle-chain-3.jpg"]},
-      {"name": "Lunara Weave", "images": ["02-lunara-weave-1.jpg", "02-lunara-weave-2.jpg", "02-lunara-weave-3.jpg"]},
-      {"name": "Lunelle Veil", "images": ["03-lunelle-veil-1.jpg", "03-lunelle-veil-2.jpg", "03-lunelle-veil-3.jpg"]},
-      {"name": "Velora Chain", "images": ["04-velora-chain-1.jpg", "04-velora-chain-2.jpg", "04-velora-chain-3.jpg"]},
-      {"name": "Vela Chain", "images": ["05-vela-chain-1.jpg", "05-vela-chain-2.jpg", "05-vela-chain-3.jpg"]},
-      {"name": "Elysian Weave", "images": ["06-elysian-weave-1.jpg", "06-elysian-weave-2.jpg"]},
-      {"name": "Solenne Gold", "images": ["07-solenne-gold-1.jpg", "07-solenne-gold-2.jpg", "07-solenne-gold-3.jpg"]},
-      {"name": "Aurora Chain", "images": ["08-aurora-chain-1.jpg", "08-aurora-chain-2.jpg", "08-aurora-chain-3.jpg"]},
-      {"name": "Lumière Weave", "images": ["09-lumiere-weave-1.jpg", "09-lumiere-weave-2.jpg", "09-lumiere-weave-3.jpg"]},
-      {"name": "Velora Chain", "images": ["10-velora-chain-1.jpg", "10-velora-chain-2.jpg", "10-velora-chain-3.jpg"]},
-      {"name": "Veyra Royale", "images": ["11-veyra-royale-1.jpg", "11-veyra-royale-2.jpg", "11-veyra-royale-3.jpg"]}
+      {"name": "Lunelle Chain", "shop": "Lunelle Chain", "price": 1500, "images": ["01-lunelle-chain-1.jpg", "01-lunelle-chain-2.jpg", "01-lunelle-chain-3.jpg"]},
+      {"name": "Lunara Weave", "shop": "Lunara Weave", "price": 3500, "images": ["02-lunara-weave-1.jpg", "02-lunara-weave-2.jpg", "02-lunara-weave-3.jpg"]},
+      {"name": "Lunelle Veil", "shop": "Lunelle Veil", "price": 2000, "images": ["03-lunelle-veil-1.jpg", "03-lunelle-veil-2.jpg", "03-lunelle-veil-3.jpg"]},
+      {"name": "Velora Chain", "shop": "Velora Chain", "price": 2500, "images": ["04-velora-chain-1.jpg", "04-velora-chain-2.jpg", "04-velora-chain-3.jpg"]},
+      {"name": "Vela Chain", "shop": "Vela Chain", "price": 4000, "images": ["05-vela-chain-1.jpg", "05-vela-chain-2.jpg", "05-vela-chain-3.jpg"]},
+      {"name": "Elysian Weave", "shop": "Elysian Weave", "price": 4500, "images": ["06-elysian-weave-1.jpg", "06-elysian-weave-2.jpg"]},
+      {"name": "Solenne Gold", "shop": "Solenne Gold", "price": 2500, "images": ["07-solenne-gold-1.jpg", "07-solenne-gold-2.jpg", "07-solenne-gold-3.jpg"]},
+      {"name": "Aurora Chain", "shop": "Aurora Chain", "price": 3000, "images": ["08-aurora-chain-1.jpg", "08-aurora-chain-2.jpg", "08-aurora-chain-3.jpg"]},
+      {"name": "Lumière Weave", "shop": "Lumière Weave", "price": 2500, "images": ["09-lumiere-weave-1.jpg", "09-lumiere-weave-2.jpg", "09-lumiere-weave-3.jpg"]},
+      {"name": "Velora Chain", "shop": "Velora chainn", "price": 3000, "images": ["10-velora-chain-1.jpg", "10-velora-chain-2.jpg", "10-velora-chain-3.jpg"]},
+      {"name": "Veyra Royale", "shop": "Veyra Royale", "price": 3000, "images": ["11-veyra-royale-1.jpg", "11-veyra-royale-2.jpg", "11-veyra-royale-3.jpg"]}
     ] },
     // { title: "Bracelet", tag: "Bracelet", products: [
     //   {"name": "Lumière Weave", "images": ["12-lumiere-weave-1.jpg", "12-lumiere-weave-2.jpg", "12-lumiere-weave-3.jpg"]},
@@ -304,21 +315,21 @@
     //   {"name": "Seraphine Chain", "images": ["17-seraphine-chain-1.jpg", "17-seraphine-chain-2.jpg", "17-seraphine-chain-3.jpg"]}
     // ] },
     { title: "Chain + Bracelet Combo", short: "Chain + Bracelet", tag: "Combo", products: [
-      {"name": "Lumière Weave Chain + Bracelet", "images": ["ring-cgain4.jpeg", "09-lumiere-weave-1.jpg", "12-lumiere-weave-1.jpg"]},
-      {"name": "Aurora Chain + Celeste Weave", "images": ["ring-cgain3.jpeg", "08-aurora-chain-1.jpg", "15-celeste-weave-2.jpg"]},
-      {"name": "Solenne Gold + Veyra Gold", "images": ["ring-cgain2.jpeg", "07-solenne-gold-1.jpg", "16-veyra-gold-1.jpg"]},
-      {"name": "Veyra Royale + Seraphine Chain", "images": ["ring-chain1.jpeg", "11-veyra-royale-1.jpg", "17-seraphine-chain-1.jpg"]}
+      {"name": "Lumière Weave Chain + Bracelet", "shop": "The Lumière Signature Set (Necklace + Bracelet Combo)", "price": 6000, "images": ["ring-cgain4.jpeg", "09-lumiere-weave-1.jpg", "12-lumiere-weave-1.jpg"]},
+      {"name": "Aurora Chain + Celeste Weave", "shop": "Aurora Chain + Celeste Weave", "price": 5500, "images": ["ring-cgain3.jpeg", "08-aurora-chain-1.jpg", "15-celeste-weave-2.jpg"]},
+      {"name": "Solenne Gold + Veyra Gold", "shop": "The Solenne & Veyra Gold Set (Necklace + Bracelet Combo)", "price": 5000, "images": ["ring-cgain2.jpeg", "07-solenne-gold-1.jpg", "16-veyra-gold-1.jpg"]},
+      {"name": "Veyra Royale + Seraphine Chain", "shop": "The Royale & Seraphine Silver Set (Necklace + Bracelet Combo)", "price": 6500, "images": ["ring-chain1.jpeg", "11-veyra-royale-1.jpg", "17-seraphine-chain-1.jpg"]}
     ] },
     { title: "Chain + Bracelet + Ring Combo", short: "Chain + Bracelet + Ring", tag: "Combo", products: [
-      {"name": "Eclipse Mate Combo",    "images": ["ring-chain-brceletr-1.jpeg", "25-eclipse-mate-2.jpg",   "07-solenne-gold-1.jpg",  "16-veyra-gold-1.jpg"]},
-      {"name": "Eclipse Core Combo",    "images": ["ring-chain-brceletr-2.jpeg", "23-eclipse-core-1.jpg",   "10-velora-chain-1.jpg",  "12-lumiere-weave-1.jpg"]},
-      {"name": "Vanta Crest Combo",     "images": ["ring-chain-brceletr-3.jpeg", "22-vanta-crest-1.jpg",    "04-velora-chain-1.jpg",  "17-seraphine-chain-1.jpg"]},
-      {"name": "Eclipse Crest Combo",   "images": ["ring-chain-brceletr-4.jpeg", "21-eclipse-crest-1.jpg",  "06-elysian-weave-1.jpg", "14-elysian-serpent-3.jpg"]},
-      {"name": "Eclipse Royale Combo",  "images": ["ring-chain-brceletr-5.jpeg", "20-eclipse-royale-1.jpg", "11-veyra-royale-1.jpg",  "15-celeste-weave-2.jpg"]},
-      {"name": "Eclipse Signet Combo",  "images": ["ring-chain-brceletr-6.jpeg", "19-eclipse-signet-4.jpg", "10-velora-chain-1.jpg",  "12-lumiere-weave-1.jpg"]},
-      {"name": "Eclipse Signet Oval Combo", "images": ["ring-chain-brceletr-7.jpeg", "19-eclipse-signet-2.jpg", "09-lumiere-weave-1.jpg", "15-celeste-weave-2.jpg"]},
-      {"name": "Eclipse Black Combo",   "images": ["ring-chain-brceletr-8.jpeg", "24-eclipse-black-1.jpg",  "10-velora-chain-1.jpg",  "14-elysian-serpent-1.jpg"]},
-      {"name": "Seraphine Ring Combo",  "images": ["ring-chain-brceletr-9.jpeg", "18-seraphine-ring-1.jpg", "09-lumiere-weave-1.jpg", "15-celeste-weave-2.jpg"]}
+      {"name": "Eclipse Mate Combo",    "shop": "The Aureus Shadow Set: Solenne Gold, Veyra Gold & Eclipse Mate Trio", "price": 7000, "images": ["ring-chain-brceletr-1.jpeg", "25-eclipse-mate-2.jpg",   "07-solenne-gold-1.jpg",  "16-veyra-gold-1.jpg"]},
+      {"name": "Eclipse Core Combo",    "shop": "The Eclipse Core Set: Lunara Weave, Lumière Weave & Eclipse Core Trio", "price": 7000, "images": ["ring-chain-brceletr-2.jpeg", "23-eclipse-core-1.jpg",   "10-velora-chain-1.jpg",  "12-lumiere-weave-1.jpg"]},
+      {"name": "Vanta Crest Combo",     "shop": "Vanta Crest Combo", "price": 4500, "images": ["ring-chain-brceletr-3.jpeg", "22-vanta-crest-1.jpg",    "04-velora-chain-1.jpg",  "17-seraphine-chain-1.jpg"]},
+      {"name": "Eclipse Crest Combo",   "shop": "The Obsidian Dynasty Set: Elysian Weave, Elysian Serpent & Eclipse Crest Trio", "price": 7000, "images": ["ring-chain-brceletr-4.jpeg", "21-eclipse-crest-1.jpg",  "06-elysian-weave-1.jpg", "14-elysian-serpent-3.jpg"]},
+      {"name": "Eclipse Royale Combo",  "shop": "The Imperial Onyx Set: Veyra Royale, celeste weave & Eclipse Royale Trio", "price": 7000, "images": ["ring-chain-brceletr-5.jpeg", "20-eclipse-royale-1.jpg", "11-veyra-royale-1.jpg",  "15-celeste-weave-2.jpg"]},
+      {"name": "Eclipse Signet Combo",  "shop": "The Onyx Vanguard Set (Lunara Weave, Lumière Weave & Eclipse Signet)", "price": 7000, "images": ["ring-chain-brceletr-6.jpeg", "19-eclipse-signet-4.jpg", "10-velora-chain-1.jpg",  "12-lumiere-weave-1.jpg"]},
+      {"name": "Eclipse Signet Oval Combo", "shop": "The Nocturne Set: Lumière, Celeste & Eclipse Trio", "price": 7000, "images": ["ring-chain-brceletr-7.jpeg", "19-eclipse-signet-2.jpg", "09-lumiere-weave-1.jpg", "15-celeste-weave-2.jpg"]},
+      {"name": "Eclipse Black Combo",   "shop": "The Shadow Vanguard Set: Lunara Weave, Elysian Serpent & Eclipse Black Trio", "price": 4500, "images": ["ring-chain-brceletr-8.jpeg", "24-eclipse-black-1.jpg",  "10-velora-chain-1.jpg",  "14-elysian-serpent-1.jpg"]},
+      {"name": "Seraphine Ring Combo",  "shop": "The Royal Trio: Lumière, Celeste & Seraphine Set", "price": 7000, "images": ["ring-chain-brceletr-9.jpeg", "18-seraphine-ring-1.jpg", "09-lumiere-weave-1.jpg", "15-celeste-weave-2.jpg"]}
     ] },
     
   ];
@@ -337,7 +348,7 @@
         '<img src="' + IMG_DIR + p.images[0] + '" alt="' + p.name + '" loading="' + (s === 0 && i < 3 ? 'eager' : 'lazy') + '">' +
         '<span class="num">' + String(i + 1).padStart(2, '0') + '</span>' +
         (sec.tag ? '<span class="tag">' + sec.tag + '</span>' : '') +
-        '<span class="label"><i>' + p.name + '</i></span>' +
+        '<span class="label"><i>' + p.name + '</i><b class="pr" data-pr="' + s + '-' + i + '">' + inr(p.price) + '</b></span>' +
         '<span class="cnt">' + camera + p.images.length + '</span>' +
       '</button>';
     }).join('');
@@ -348,6 +359,20 @@
     root.appendChild(el);
   });
   document.getElementById('count').textContent = total + ' designs';
+
+  // ===== LIVE PRICES (same name, same price as Shopify) =====
+  // The tiles already show the written prices; this replaces them with what Shopify has now. If it cannot be reached, nothing changes.
+  if (PRICE_URL && window.fetch) {
+    fetch(PRICE_URL, { credentials: 'omit' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d || !d.items) return; var live = {};
+      d.items.forEach(function (it) { if (+it.price > 0) live[keyOf(it.title)] = +it.price; });
+      SECTIONS.forEach(function (sec, s) { sec.products.forEach(function (p, i) {
+        var v = live[keyOf(p.shop || p.name)]; if (!v) return; p.price = v;
+        var el = root.querySelector('[data-pr="' + s + '-' + i + '"]'); if (el) el.textContent = inr(v);
+        if (cur === p && typeof shPrice !== 'undefined') shPrice.textContent = inr(v);
+      }); });
+    }).catch(function () {});
+  }
 
   // ===== TYPE FILTER (top buttons) =====
   // One section is always selected. DEFAULT_FILTER = which one opens first (0 = Chain, 1 = Chain + Bracelet, 2 = Chain + Bracelet + Ring).
@@ -381,7 +406,7 @@
   // ===== PRODUCT SHEET =====
   var dim = document.getElementById('dim'), sheet = document.getElementById('sheet');
   var bigImg = document.getElementById('bigImg'), dots = document.getElementById('dots'), thumbs = document.getElementById('thumbs');
-  var shName = document.getElementById('shName'), shSub = document.getElementById('shSub'), shTag = document.getElementById('shTag');
+  var shName = document.getElementById('shName'), shSub = document.getElementById('shSub'), shTag = document.getElementById('shTag'), shPrice = document.getElementById('shPrice');
   var cur = null, k = 0;
 
   function setPhoto(n) {
@@ -395,6 +420,7 @@
     var sec = SECTIONS[s];
     cur = sec.products[p];
     shName.textContent = String(p + 1).padStart(2, '0') + ' · ' + cur.name;
+    shPrice.textContent = inr(cur.price);
     shSub.textContent = cur.images.length > 1 ? cur.images.length + ' photos · swipe or tap a thumbnail' : '1 photo · tap to zoom';
     shTag.textContent = sec.tag;
     dots.innerHTML = cur.images.length > 1 ? cur.images.map(function () { return '<i></i>'; }).join('') : '';
