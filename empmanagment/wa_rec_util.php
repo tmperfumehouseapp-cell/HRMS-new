@@ -628,7 +628,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
         if (!in_array($ql[$hn] ?? '', ['GREEN', 'YELLOW'], true)) continue;   /* only a number with good rating takes part every hour */
         $q6 = $pdo->prepare("SELECT SUM(at >= ?) h1, SUM(at >= ?) m10 FROM wa_ru_log WHERE number_id = ? AND at >= ?"); $q6->execute([date('Y-m-d H:i:s', $nowTs - 3600), date('Y-m-d H:i:s', $nowTs - 600), $hn, date('Y-m-d H:i:s', $nowTs - 3600)]); $r6 = $q6->fetch();
         $q7 = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE number_id = ? AND dir = 'out' AND mtype = 'template' AND ts >= ?"); $q7->execute([$hn, date('Y-m-d H:i:s', $nowTs - 86400)]); $d24 = (int)$q7->fetchColumn();
-        $tr = $tier[$hn] ?? 0; $dcap = $tr > 0 ? (int)floor($tr * 0.9) : 5000;   /* 90% of Meta's own 24-hour tier of that number (250 -> 225; a higher tier gives more room); unknown / unlimited = 5000 */
+        $tr = $tier[$hn] ?? 0; $dcap = $tr > 0 ? (int)floor($tr * 0.45) : 2500;   /* 90% of Meta's own 24-hour tier of that number (250 -> 225; a higher tier gives more room); unknown / unlimited = 5000 */
         $room = min($hv - (int)($r6['h1'] ?? 0), max(1, (int)ceil($hv / 6)) - (int)($r6['m10'] ?? 0), $dcap - $d24);
         if ($room > 0) { $targets[$hn] = max((int)($targets[$hn] ?? 0), $room); $hr[$hn] = 1; }
     }
