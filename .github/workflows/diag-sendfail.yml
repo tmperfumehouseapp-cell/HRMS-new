@@ -1,0 +1,43 @@
+# READ-ONLY: the last failed sends from a chat (pre-made / text) with the reason; phone numbers are masked.
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Chat send failures (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Send failures
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/sf_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          echo "server " . date("Y-m-d H:i:s") . "\n";
+          $mask = function ($s) { return preg_replace('/\d{6,}/', '##########', (string)$s); };
+          echo "--- last failed sends\n";
+          foreach ($d->query("SELECT at, kind, info FROM wa_log WHERE ok = 0 AND kind = 'send' ORDER BY id DESC LIMIT 25")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . $r["at"] . " " . $mask(substr($r["info"], 0, 260)) . "\n";
+          echo "--- log range\n"; $x = $d->query("SELECT MIN(at) a, MAX(at) b, COUNT(*) n FROM wa_log")->fetch(PDO::FETCH_ASSOC); echo "  " . $x["a"] . " .. " . $x["b"] . " (" . $x["n"] . " lines)\n";
+          echo "--- template sends by people, last 3 h\n";
+          foreach ($d->query("SELECT status, COUNT(*) n FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'emp' AND ts >= '" . date("Y-m-d H:i:s", time() - 3 * 3600) . "' GROUP BY status")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . $r["status"] . " = " . $r["n"] . "\n";
+          PHP
+          php /tmp/sf_check.php "$P"; rm -f /tmp/sf_check.php
+          REMOTE

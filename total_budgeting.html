@@ -265,7 +265,7 @@ body.emb .tabs{display:none;}
     if (firstLoad) $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
     const R = await Promise.allSettled([
       api.get('lr.get', { date_from: from, date_to: last < clientToday ? last : clientToday }),
-      api.get('bd.b2_cm_recount', { days: daysBack, end: shownDay }),
+      api.get('budget.cm_recount', { days: daysBack, end: shownDay }),
       api.get('employees.list'),
       api.get('penalties.list', { month, status: 'applied' }),
       api.get('penalties.list', { month: prev, status: 'applied' }),
