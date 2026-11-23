@@ -11642,6 +11642,35 @@ function must3_photo_tick(PDO $pdo, int $max = 6): int
     try { setting_set($pdo, 'must3_photo_why', date('Y-m-d H:i:s') . ' read ' . $n . ($last !== '' ? ' · ' . $last : '')); } catch (Throwable $e) { }
     return $n;
 }
+/** 🏅 WHO IS BETTER AT WHAT (owner, 24 Nov): per salesperson over the last $days business days — the QUERY ratio (query orders ÷ fresh queries taken) and the number of CAMPAIGN orders — each set against the TEAM in three steps:
+ *  good = 20% or more above the team · avg = between · weak = 20% or more below. Query needs 15+ queries, else 'low' (too little data). Campaign is measured in ORDERS (campaign query counts hold "ok / not now" replies).
+ *  label: both | query | campaign | avg | weak | low. Returns ['days', 'from', 'to', 'team' => [q_ratio, c_avg, people], 'emps' => [id => [...]]]. Not a remark: shown on the person's card and in the list. */
+function ct_better_at(PDO $pdo, int $days = 7): array
+{
+    $today = biz_today($pdo); $fromDay = date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')); $out = ['days' => $days, 'from' => $fromDay, 'to' => $today, 'team' => ['q_ratio' => null, 'c_avg' => null, 'people' => 0], 'emps' => []];
+    try {
+        $from = $fromDay . ' ' . day_start_for($pdo, $fromDay) . ':00'; $E = []; $z = function () { return ['qq' => 0, 'qo' => 0, 'co' => 0]; };
+        if (ensure_order_allocations_table($pdo)) {
+            $cc = 'COLLATE utf8mb4_unicode_ci';
+            $st = $pdo->prepare("SELECT a.employee_id e, a.order_type t, COUNT(*) n FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc WHERE o.created_at >= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND a.order_type IN ('query', 'campaign') GROUP BY a.employee_id, a.order_type");
+            $st->execute([$from]); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) { $e = (int)$r['e']; if (!isset($E[$e])) $E[$e] = $z(); $E[$e][$r['t'] === 'query' ? 'qo' : 'co'] += (int)$r['n']; }
+        }
+        try { $m = $pdo->prepare("SELECT employee_id e, order_type t, COUNT(*) n FROM manual_orders WHERE order_date >= ? AND employee_id > 0 AND order_type IN ('query', 'campaign') GROUP BY employee_id, order_type"); $m->execute([$from]);
+            foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) { $e = (int)$r['e']; if (!isset($E[$e])) $E[$e] = $z(); $E[$e][$r['t'] === 'query' ? 'qo' : 'co'] += (int)$r['n']; } } catch (Throwable $e9) { }
+        try { foreach ((array)qa_new_days($pdo, $fromDay, $today) as $list) foreach ((array)$list as $e => $n) { $e = (int)$e; if (!isset($E[$e])) $E[$e] = $z(); $E[$e]['qq'] += (int)$n; } } catch (Throwable $e9) { }
+        $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e9) { }
+        $tq = 0; $to = 0; $tc = 0; $np = 0;
+        foreach ($E as $e => $x) { if (!isset($names[$e])) { unset($E[$e]); continue; } if ($x['qq'] >= 15) { $tq += $x['qq']; $to += $x['qo']; } if ($x['qq'] > 0 || $x['qo'] + $x['co'] > 0) { $tc += $x['co']; $np++; } }
+        $tr = $tq > 0 ? $to / $tq * 100 : null; $ca = $np > 0 ? $tc / $np : null; $out['team'] = ['q_ratio' => $tr !== null ? round($tr, 1) : null, 'c_avg' => $ca !== null ? round($ca, 1) : null, 'people' => $np];
+        $step = function ($v, $t) { if ($v === null || $t === null || $t <= 0) return 'low'; return $v >= $t * 1.2 ? 'good' : ($v <= $t * 0.8 ? 'weak' : 'avg'); };
+        foreach ($E as $e => $x) {
+            $qr = $x['qq'] > 0 ? $x['qo'] / $x['qq'] * 100 : null; $qs = $x['qq'] >= 15 ? $step($qr, $tr) : 'low'; $cs = $step((float)$x['co'], $ca);
+            $lab = $qs === 'low' ? 'low' : (($qs === 'good' && $cs === 'good') ? 'both' : (($qs === 'good') ? 'query' : (($cs === 'good') ? 'campaign' : (($qs === 'weak' && $cs === 'weak') ? 'weak' : 'avg'))));
+            $out['emps'][$e] = ['id' => $e, 'name' => $names[$e], 'qq' => $x['qq'], 'qo' => $x['qo'], 'q_ratio' => $qr !== null ? round($qr, 1) : null, 'q_step' => $qs, 'co' => $x['co'], 'c_step' => $cs, 'label' => $lab];
+        }
+    } catch (Throwable $e) { error_log('ct_better_at: ' . $e->getMessage()); }
+    return $out;
+}
 /** ✅ The 3 must-send check of ONE business day (+ the add-on column, owner 23 Nov): per salesperson, per order — address re-check · chain selection · prepaid 2% (plain text match, no AI) and whether an add-on was put on the order (employee_addons) with the reason when not (order_rate_auto).
  *  $onlyEmp > 0 → only that salesperson's orders (the "my check" card of the sales app). Used by ct.must3 (Admin / HR) and ct.must3_me. */
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
@@ -11952,7 +11981,7 @@ function ct_eval(PDO $pdo, string $day): array
                 'title' => "$nm has " . ct_money($e['sales']) . ' sales (' . $e['orders'] . ' order' . ($e['orders'] === 1 ? '' : 's') . ') but has not punched in' . ($pc !== null && $pc >= 100 ? ' — target already achieved' : ($pc !== null ? " — $pc% of target" : '')),
                 'body' => 'Selling without a punch-in. Ask why he did not punch in, and ask him to punch in now (or fix his attendance) so the day is counted properly.']);
         }
-        if (!empty($e['camp_weak'])) $add("camp_weak|$id|$day", ['kind' => 'camp_weak', 'sev' => 'warn', 'emp' => $id, 'meet' => 0,
+        if (false && !empty($e['camp_weak'])) $add("camp_weak|$id|$day",   /* owner (24 Nov): the 'query strong but campaign weak' remark is switched off */ ['kind' => 'camp_weak', 'sev' => 'warn', 'emp' => $id, 'meet' => 0,
             'title' => "$nm: query ratio " . round((float)$e['conv']) . '% (strong) but campaign ratio ' . round((float)$e['cq_conv']) . '% (team ' . round((float)($T['cq_conv'] ?? 0)) . '%) over ' . $e['cq'] . ' campaign queries',
             'body' => 'Good with fresh queries, weak with campaign customers. Check how he follows up campaign replies (already-assigned and newly assigned chats).']);
         if (!($e['target'] > 0) && $e['orders'] === 0) continue;          // on leave / not working today
@@ -11985,7 +12014,11 @@ function ct_eval(PDO $pdo, string $day): array
         if ($on('order_pace') && $e['target'] > 0 && $e['should_pct'] > 0 && $e['elapsed_h'] >= (float)$meet['order_pace']['v2'] && $e['orders'] > 0 && ($e['pct'] ?? 0) < $e['should_pct'] * (float)$meet['order_pace']['v1'] / 100)
             $hit('order_pace', "$nm is far behind the pace", ($e['pct'] ?? 0) . '% of target when ' . $e['should_pct'] . '% is expected.');
         if ($on('ticket') && $e['orders'] >= (int)$meet['ticket']['v2'] && $e['ticket'] < (float)$meet['ticket']['v1']) $hit('ticket', "$nm: ticket size very low", 'Average ' . ct_money($e['ticket']) . ' over ' . $e['orders'] . ' orders.');
-        if ($on('community') && $e['co'] === 0 && $clockH >= (int)$meet['community']['v1'] && $e['orders'] > 0) $hit('community', "$nm: no community order", 'Zero community orders at ' . date('g A', strtotime((string)$S['now'])) . '.');
+        // owner (24 Nov): 'no community order' is gone — it is 'no CAMPAIGN order' now (same switch and hour on the Settings): campaign queries taken today and not one campaign order
+        if ($on('community') && $e['co'] === 0 && (int)($e['cq'] ?? 0) > 0 && $clockH >= (int)$meet['community']['v1']) $hit('community', "$nm: no campaign order", (int)$e['cq'] . ' campaign quer' . ((int)$e['cq'] === 1 ? 'y' : 'ies') . ' taken, 0 campaign orders at ' . date('g A', strtotime((string)$S['now'])) . '.');
+        // owner (24 Nov): many queries taken, few query orders — 10+ queries today and the query ratio under the goal
+        { $qN = (int)($e['queries'] ?? 0); $qO = (int)($e['qo'] ?? 0); $qG = max(1.0, (float)($cfg['q_conv_goal'] ?? 23)); if ($qN >= 10 && $qO / $qN * 100 < $qG) { $needQ = max(1, (int)ceil($qN * $qG / 100) - $qO);
+            $add("q_low|$id|$day", ['kind' => 'q_low', 'sev' => 'red', 'emp' => $id, 'meet' => 1, 'title' => "$nm: $qN queries taken, $qO query order" . ($qO === 1 ? '' : 's') . ' = ' . round($qO / $qN * 100) . '% (goal ' . round($qG) . '%)', 'body' => $needQ . ' more query order' . ($needQ === 1 ? '' : 's') . ' needed to reach the goal. Close the queries already taken before taking new ones.']); } }
         if ($on('code') && $e['orders'] >= (int)$meet['code']['v2'] && $e['code_rate'] !== null && $e['code_rate'] < (float)$meet['code']['v1'] && !$e['code_ok']) $hit('code', "$nm: not giving order codes", $e['code'] . '/' . $e['orders'] . ' orders have a code.');
         if ($on('mix') && $e['mix']['pieces'] >= (int)$meet['mix']['v2'] && $e['mix']['pct'] !== null && $e['mix']['pct'] < (float)$meet['mix']['v1']) $hit('mix', "$nm: colour mix far below goal", 'Only ' . $e['mix']['pct'] . '% DG / LG / WH.');
     }
@@ -23207,6 +23240,13 @@ switch ($action) {
         $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? (string)$_GET['date'] : biz_today($pdo);
         $out = hrms_memo('must3:' . $day, 60, function () use ($pdo, $day) { return must3_compute($pdo, $day, 0); });
         json_response($out);
+        break;
+    }
+    case 'ct.better_at': {
+        // 🏅 Query or Campaign: who is better at what, against the team (last 7 business days). Admin / HR. Kept 5 minutes.
+        $auth = require_auth();
+        if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
+        json_response(['ok' => true] + hrms_memo('better_at:' . biz_today($pdo), 300, function () use ($pdo) { return ct_better_at($pdo, 7); }));
         break;
     }
     case 'ct.must3_me': {
