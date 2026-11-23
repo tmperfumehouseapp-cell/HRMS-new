@@ -1603,6 +1603,12 @@ if (!function_exists('budget_store_calc')) {
         return is_numeric($v) && (float)$v >= 0 && (float)$v <= 30 ? (float)$v : 6.0;
     }
     function st_name_key(string $n): string { return strtolower(trim(preg_replace('/\s+/', ' ', $n))); }
+    /** the first day the NEW store billing was used for real (setting st_newpos_from, default 2026-11-05). Before it, every bill comes from the old POS; the few test bills made in the new billing before that day do not count. */
+    function st_newpos_from(PDO $pdo): string
+    {
+        $v = null; try { if (function_exists('setting_get')) $v = setting_get($pdo, 'st_newpos_from', null); } catch (Throwable $e) { }
+        return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : '2026-11-05';
+    }
     /** old POS bills the owner pointed at an employee by hand: POS order id => employee id */
     function st_oldpos_assign_get(PDO $pdo): array
     {
@@ -1647,7 +1653,9 @@ if (!function_exists('budget_store_calc')) {
         $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
             FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
         $q->execute([$from, $to]);
-        $all = $q->fetchAll(); $newDays = []; foreach ($all as $b) $newDays[(string)$b['biz_date']] = 1;
+        $all = $q->fetchAll(); $newFrom = st_newpos_from($pdo);
+        $all = array_values(array_filter($all, fn($b) => (string)$b['biz_date'] >= $newFrom));      // test bills of the new billing before it really started do not count: that day is read from the old POS
+        $newDays = []; foreach ($all as $b) $newDays[(string)$b['biz_date']] = 1;
         foreach (budget_oldpos_rows($pdo, $from, $to, $newDays) as $b) $all[] = $b;     // days with no bill in the new POS come from the old POS
         foreach ($all as $i => $b) { $rows[$i] = $b; $eid = (int)$b['emp_id']; $gk = isset($pool[$eid]) ? 'pool' : ($eid > 0 ? (string)$eid : 'n:' . $b['emp_name']); $groups[$gk . '|' . $b['biz_date']][] = $i; }
         $out = [];
