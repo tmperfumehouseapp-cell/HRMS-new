@@ -499,7 +499,7 @@ function wag_campaign_context(PDO $pdo, string $key): string
  *  The size the customer asks for is read by CODE (2 x 100 ml, 2 100mls, 200 ml, 100 ml + 50 ml …): total ml → the chart row (a total between two rows uses the lower row). wag_ml_request: the newest request, or null. */
 function wag_ml_request(array $msgs): ?array
 {
-    $__cnt = 0; for ($i = count($msgs) - 1, $__n = 0; $i >= 0 && $__n < 3; $i--) { if (($msgs[$i]['who'] ?? '') !== 'customer') continue; $__n++; $t0 = mb_strtolower((string)($msgs[$i]['text'] ?? '')); if (!preg_match('/\d\s*mls?\b/u', $t0) && preg_match('/(?<![\d.])(\d{1,2})\s*(?:bottles?|bottls?|botals?|botl|btls?|btl|pcs|pieces?|nag|nos|બોટલ|बोतल|बॉटल)/u', $t0, $m0)) { $__cnt = (int)$m0[1]; break; } }   // a number of bottles in one of his last 3 messages ("I want 5 bottle" … later "100 ml", or "50 ml" … later "5 bottle") multiplies the single size he names
+    $__cnt = 0; for ($i = count($msgs) - 1, $__n = 0; $i >= 0 && $__n < 3; $i--) { if (($msgs[$i]['who'] ?? '') !== 'customer') continue; $__n++; $t0 = mb_strtolower((string)($msgs[$i]['text'] ?? '')); if (!preg_match('/\d\s*mls?\b/u', $t0) && (preg_match('/(?<![\d.])(\d{1,2})\s*(?:bottles?|bottls?|botals?|botl|btls?|btl|pcs|pieces?|nag|nos|બોટલ|बोतल|बॉटल)/u', $t0, $m0) || preg_match('/combo\s*(?:of|x|:|-)?\s*(\d{1,2})(?![\d.])/u', $t0, $m0))) { $__cnt = (int)$m0[1]; break; } }   // a number of bottles in one of his last 3 messages ("I want 5 bottle" … later "100 ml", or "50 ml" … later "5 bottle") multiplies the single size he names
     if ($__cnt === 0) { for ($i = count($msgs) - 1, $__n = 0; $i >= 0 && $__n < 3; $i--) { if (($msgs[$i]['who'] ?? '') !== 'customer') continue; $__n++; if (preg_match('/(?<![a-z])(both|dono|donon|dono ko|dou|two|બંને|બન્ને|दोनों|दोनो)(?![a-z])/u', mb_strtolower((string)($msgs[$i]['text'] ?? '')))) { $__cnt = 2; break; } } }   // owner, 23 Nov ("Both 100 ml", "dono 100 ml": two bottles of 100 ml = 200 ml, not the price of one 100 ml)
     for ($i = count($msgs) - 1, $seen = 0; $i >= 0 && $seen < 6; $i--) {
         if (($msgs[$i]['who'] ?? '') !== 'customer') continue; $seen++; $t = mb_strtolower((string)($msgs[$i]['text'] ?? '')); $t = str_replace(['×', '✕'], 'x', $t);
@@ -514,7 +514,7 @@ function wag_ml_request(array $msgs): ?array
 function wag_bottles_no_size(array $msgs): bool
 {
     $last = ''; for ($i = count($msgs) - 1; $i >= 0; $i--) if (($msgs[$i]['who'] ?? '') === 'customer') { $last = mb_strtolower((string)($msgs[$i]['text'] ?? '')); break; }
-    if ($last === '' || !preg_match('/(?<![\d.])(\d{1,2})\s*(?:bottles?|bottls?|botals?|botl|btls?|btl|pcs|pieces?|nag|nos|બોટલ|बोतल|बॉटल)/u', $last)) return false;
+    if ($last === '' || (!preg_match('/(?<![\d.])(\d{1,2})\s*(?:bottles?|bottls?|botals?|botl|btls?|btl|pcs|pieces?|nag|nos|બોટલ|बोतल|बॉटल)/u', $last) && !preg_match('/combo\s*(?:of|x|:|-)?\s*(\d{1,2})(?![\d.])/u', $last))) return false;
     return wag_ml_request($msgs) === null;
 }
 /** The price chart row for a TOTAL ml: [ml of the row, [price per column…], chart price (7% column)]; a total between two rows uses the lower row; null when no chart. */
