@@ -5,7 +5,9 @@ import { openDb } from './db.js';
 import { verifyChallenge, verifySignature, extractClicks, saveClicks } from './whatsapp.js';
 import { verifyHmac, processOrder, tagOrder } from './shopify.js';
 import { sendPurchase, retryPending, syncSpend } from './meta.js';
-import { dailyReport, toCsv, todayIn, shiftDay } from './report.js';
+import crypto from 'node:crypto';
+import { dailyReport, toCsv, todayIn, shiftDay, diagDay, diagPhone } from './report.js';
+import { last10 } from './phone.js';
 
 const MAX_BODY = 2 * 1024 * 1024;
 
@@ -75,6 +77,20 @@ export function createHandler({ db, cfg, fetchImpl = fetch, log = console }) {
         const rep = dailyReport(db, { from: shiftDay(to, -(days - 1)), to }, cfg.tzOffsetMin);
         return url.searchParams.get('format') === 'csv'
           ? send(res, 200, toCsv(rep), 'text/csv') : send(res, 200, JSON.stringify(rep), 'application/json');
+      }
+      // ---- Diagnose (called by the HRMS; signed with the WhatsApp app secret both sides already hold, valid 5 minutes) ----
+      if ((url.pathname === '/diag' || url.pathname === '/diag/phone') && req.method === 'GET') {
+        const ts = Number(url.searchParams.get('ts')); const arg = url.searchParams.get(url.pathname === '/diag' ? 'date' : 'phone') || '';
+        const want = cfg.waAppSecret ? crypto.createHmac('sha256', cfg.waAppSecret).update(`${ts}|${url.pathname}|${arg}`).digest('hex') : '';
+        const got = String(req.headers['x-ctwa-sign'] || '');
+        if (!want || got.length !== want.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want)) || Math.abs(Date.now() / 1000 - ts) > 300)
+          return send(res, 401, 'unauthorized');
+        if (url.pathname === '/diag') {
+          const day = /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : todayIn(cfg.tzOffsetMin);
+          return send(res, 200, JSON.stringify(diagDay(db, day, cfg.tzOffsetMin)), 'application/json');
+        }
+        const p10 = last10(arg); if (!p10) return send(res, 400, 'bad phone');
+        return send(res, 200, JSON.stringify(diagPhone(db, p10)), 'application/json');
       }
       send(res, 404, 'not found');
     } catch (e) {
