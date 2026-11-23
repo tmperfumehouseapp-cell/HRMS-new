@@ -57,15 +57,27 @@ function fup_seed(PDO $pdo): void
 function fup_sources(): array
 {
     $one = function (string $sql) { return function (PDO $pdo, string $day) use ($sql) { try { $st = $pdo->prepare($sql); $st->execute(array_fill(0, substr_count($sql, '?'), $day)); $v = $st->fetchColumn(); return $v === false || $v === null ? 0.0 : (float)$v; } catch (Throwable $e) { return null; } }; };
+    $W = 'Shop wholesale'; $S = 'Surat store'; $wp = 'sales.html#retail/shops'; $sp = 'store_dashboard.html'; $live = "status NOT IN ('cancelled', 'canceled')";
+    // key => [label, unit, reader, group (which part of the HRMS it is connected to), page to open, words in a topic's name that point to it]
     return [
-        'store_sales'   => ['Surat store · sales of the day (₹)', '₹', $one("SELECT SUM(total) FROM st_bills WHERE biz_date = ? AND status = 'ok'")],
-        'store_bills'   => ['Surat store · bills of the day', 'bills', $one("SELECT COUNT(*) FROM st_bills WHERE biz_date = ? AND status = 'ok'")],
-        'ws_sales'      => ['Wholesale · orders of the day (₹)', '₹', $one("SELECT SUM(total) FROM retail_orders WHERE order_date = ? AND status NOT IN ('cancelled', 'canceled')")],
-        'ws_orders'     => ['Wholesale · number of orders', 'orders', $one("SELECT COUNT(*) FROM retail_orders WHERE order_date = ? AND status NOT IN ('cancelled', 'canceled')")],
-        'ws_collection' => ['Wholesale · payment collected (₹)', '₹', $one("SELECT SUM(amount) FROM retail_payments WHERE pay_date = ?")],
-        'ws_visits'     => ['Wholesale · shop visits', 'visits', $one("SELECT COUNT(*) FROM retail_visits WHERE DATE(visit_at) = ?")],
-        'ws_new_shops'  => ['Wholesale · new shops added', 'shops', $one("SELECT COUNT(*) FROM retail_shops WHERE DATE(created_at) = ?")],
-        'ws_displays'   => ['Wholesale · new displays placed', 'displays', $one("SELECT COUNT(*) FROM retail_demo_display WHERE disp_date = ?")],
+        'ws_sales'         => ['Orders of the day (₹)', '₹', $one("SELECT SUM(total) FROM retail_orders WHERE order_date = ? AND $live"), $W, $wp, 'sale sales sell order amount વેચાણ સેલ'],
+        'ws_orders'        => ['Number of orders', 'orders', $one("SELECT COUNT(*) FROM retail_orders WHERE order_date = ? AND $live"), $W, $wp, 'orders count'],
+        'ws_qty'           => ['Bottles ordered', 'bottles', $one("SELECT SUM(qty) FROM retail_orders WHERE order_date = ? AND $live"), $W, $wp, 'bottle bottles qty quantity pieces'],
+        'ws_month_sales'   => ['Orders this month so far (₹)', '₹', $one("SELECT SUM(total) FROM retail_orders WHERE order_date BETWEEN DATE_FORMAT(?, '%Y-%m-01') AND ? AND $live"), $W, $wp, 'month monthly target'],
+        'ws_collection'    => ['Payment collected (₹)', '₹', $one("SELECT SUM(amount) FROM retail_payments WHERE pay_date = ?"), $W, $wp, 'payment collection collected recovery પેમેન્ટ'],
+        'ws_month_collect' => ['Payment collected this month so far (₹)', '₹', $one("SELECT SUM(amount) FROM retail_payments WHERE pay_date BETWEEN DATE_FORMAT(?, '%Y-%m-01') AND ?"), $W, $wp, ''],
+        'ws_unpaid_orders' => ['Orders of the day still unpaid', 'orders', $one("SELECT COUNT(*) FROM retail_orders WHERE order_date = ? AND payment = 'pending' AND $live"), $W, $wp, 'unpaid pending due outstanding'],
+        'ws_visits'        => ['Shop visits done', 'visits', $one("SELECT COUNT(*) FROM retail_visits WHERE DATE(visit_at) = ?"), $W, $wp, 'visit visits field'],
+        'ws_visits_plan'   => ['Shop visits planned', 'visits', $one("SELECT COUNT(*) FROM retail_visit_plan WHERE plan_date = ?"), $W, $wp, 'plan planned'],
+        'ws_visits_left'   => ['Planned visits not done', 'visits', $one("SELECT COUNT(*) FROM retail_visit_plan WHERE plan_date = ? AND status = 'pending'"), $W, $wp, 'missed left'],
+        'ws_new_shops'     => ['New shops added', 'shops', $one("SELECT COUNT(*) FROM retail_shops WHERE DATE(created_at) = ?"), $W, $wp, 'shop shops દુકાન'],
+        'ws_displays'      => ['New displays placed', 'displays', $one("SELECT COUNT(*) FROM retail_demo_display WHERE disp_date = ?"), $W, $wp, 'display displays ડિસ્પ્લે'],
+        'ws_display_value' => ['Value of displays placed (₹)', '₹', $one("SELECT SUM(total) FROM retail_demo_display WHERE disp_date = ?"), $W, $wp, ''],
+        'ws_stock_alerts'  => ['Stock alerts (low or out)', 'alerts', $one("SELECT COUNT(*) FROM retail_stock_alerts WHERE DATE(created_at) = ?"), $W, 'sales.html#retail/stock', 'stock low inventory'],
+        'store_sales'      => ['Sales of the day (₹)', '₹', $one("SELECT SUM(total) FROM st_bills WHERE biz_date = ? AND status = 'ok'"), $S, $sp, 'sale sales sell વેચાણ સેલ'],
+        'store_bills'      => ['Bills of the day', 'bills', $one("SELECT COUNT(*) FROM st_bills WHERE biz_date = ? AND status = 'ok'"), $S, $sp, 'bill bills customers'],
+        'store_bottles'    => ['Bottles sold', 'bottles', $one("SELECT SUM(bottles) FROM st_bills WHERE biz_date = ? AND status = 'ok'"), $S, $sp, 'bottle bottles qty'],
+        'store_discount'   => ['Discount given (₹)', '₹', $one("SELECT SUM(discount) FROM st_bills WHERE biz_date = ? AND status = 'ok'"), $S, $sp, 'discount'],
     ];
 }
 function fup_source_val(PDO $pdo, string $key, string $day): ?float
@@ -152,6 +164,8 @@ function fup_updates(PDO $pdo, array $topicIds, string $from, string $to): array
     return $out;
 }
 function fup_has_text(?array $u): bool { return $u !== null && trim((string)$u['text']) !== ''; }
+/** Is the day covered? Words written, or (a connected topic) the number came from the HRMS by itself: nobody has to type what the system already knows. */
+function fup_covered(?array $u, array $t): bool { return fup_has_text($u) || ((string)$t['source'] !== '' && $u !== null && $u['val'] !== null); }
 
 /**
  * The checks that need no AI (always shown): no update today, silent for days, deadline close / late, the same words copied again.
@@ -162,15 +176,15 @@ function fup_checks(array $topics, array $ups, array $names, string $today): arr
     $out = [];
     foreach ($topics as $t) {
         if ((string)$t['status'] === 'done') continue;
-        $id = (int)$t['id']; $u = $ups[$id] ?? []; $who = (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? 'the person') : 'nobody (not given to anyone)';
-        $last = ''; foreach ($u as $d => $x) if (fup_has_text($x) && $d > $last) $last = $d;
+        $id = (int)$t['id']; $u = $ups[$id] ?? []; $who = (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? 'the person') : 'not given to anyone';
+        $last = ''; foreach ($u as $d => $x) if (fup_covered($x, $t) && $d > $last) $last = $d;
         if ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) {
             $left = (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400);
             if ($left < 0) $out[] = ['red', $id, $t['title'] . ': deadline passed ' . (-$left) . ' day' . ($left === -1 ? '' : 's') . ' ago'];
             elseif ($left <= 2) $out[] = ['amber', $id, $t['title'] . ': deadline ' . ($left === 0 ? 'is today' : 'in ' . $left . ' day' . ($left === 1 ? '' : 's'))];
         }
-        if ((int)$t['assignee_emp'] <= 0) { $out[] = ['amber', $id, $t['title'] . ': not given to anyone yet']; continue; }
-        if (!fup_has_text($u[$today] ?? null)) {
+        if ((int)$t['assignee_emp'] <= 0 && (string)$t['source'] === '') { $out[] = ['amber', $id, $t['title'] . ': not given to anyone yet']; continue; }
+        if (!fup_covered($u[$today] ?? null, $t)) {
             $created = substr((string)$t['created_at'], 0, 10); $since = $last !== '' ? $last : ($created !== '' ? $created : $today);
             $gap = (int)round((strtotime($today) - strtotime($since)) / 86400);
             if ($gap >= 2) $out[] = ['red', $id, $t['title'] . ': no update for ' . $gap . ' days (' . $who . ')'];
@@ -197,7 +211,7 @@ function fup_mine(PDO $pdo, array $w): array
         fup_autofetch($pdo, $rows, $today);
         $ups = fup_updates($pdo, array_column($rows, 'id'), date('Y-m-d', strtotime($today . ' -1 day')), $today); $src = fup_sources();
         foreach ($rows as $t) {
-            $u = $ups[(int)$t['id']][$today] ?? null; $y = $ups[(int)$t['id']][date('Y-m-d', strtotime($today . ' -1 day'))] ?? null; $done = fup_has_text($u); if (!$done) $due++;
+            $u = $ups[(int)$t['id']][$today] ?? null; $y = $ups[(int)$t['id']][date('Y-m-d', strtotime($today . ' -1 day'))] ?? null; $done = fup_covered($u, $t); if (!$done) $due++;
             $out[] = ['id' => (int)$t['id'], 'section_id' => (int)$s['id'], 'section' => (string)$s['name'], 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
                 'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
                 'note' => (string)$t['note'], 'source' => (string)$t['source'], 'unit' => isset($src[(string)$t['source']]) ? $src[(string)$t['source']][1] : '', 'today' => $u, 'yesterday' => $y, 'done_today' => $done];
@@ -262,7 +276,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
 
         case 'fup.board': {
             $secs = fup_my_sections($pdo, $w); $today = fup_today($pdo); $n = max(3, min(31, (int)($_GET['days'] ?? 7)));
-            $srcList = []; foreach (fup_sources() as $k => $s) $srcList[] = ['key' => $k, 'label' => $s[0], 'unit' => $s[1]];
+            $srcList = []; foreach (fup_sources() as $k => $s) $srcList[] = ['key' => $k, 'label' => $s[0], 'unit' => $s[1], 'group' => $s[3], 'page' => $s[4], 'kw' => $s[5]];
             $dn = fup_dept_names($pdo); $ownerNames = fup_names($pdo, array_column($secs, 'owner_emp'));
             $list = []; foreach ($secs as $s) $list[] = ['id' => (int)$s['id'], 'name' => (string)$s['name'], 'owner_emp' => (int)$s['owner_emp'], 'owner_dept' => (int)$s['owner_dept'], 'own' => !empty($s['own']),
                 'owner' => (int)$s['owner_emp'] > 0 ? ($ownerNames[(int)$s['owner_emp']] ?? '') : ((int)$s['owner_dept'] > 0 ? (($dn[(int)$s['owner_dept']] ?? 'Department') . ' department') : '')];

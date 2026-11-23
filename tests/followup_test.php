@@ -62,4 +62,8 @@ $pdo->exec("INSERT INTO fu_updates (topic_id, day, txt) VALUES ($tSales, '2026-1
 [$c] = call('fup.topic_done', $ADMIN, ['id' => $tDisp, 'done' => 1]); [$c, $m] = call('fup.mine', $E(11)); ok(count($m['topics']) === 0, 'a finished topic leaves My Day');
 [$c] = call('fup.topic_del', $ADMIN, ['id' => $tSales]); ok((int)$pdo->query("SELECT COUNT(*) FROM fu_updates WHERE topic_id = $tSales")->fetchColumn() === 2, 'removing a topic keeps its updates');
 [$c, $p] = call('fup.people', $ADMIN); ok(count($p['people']) === 3 && count($p['depts']) === 2, 'people list leaves out ex-employees');
+[$c, $b] = call('fup.board', $ADMIN); $g = array_count_values(array_column($b['sources'], 'group')); ok(($g['Shop wholesale'] ?? 0) >= 10 && ($g['Surat store'] ?? 0) >= 3 && $b['sources'][0]['page'] !== '', 'numbers are grouped by the part of the HRMS they connect to');
+foreach (fup_sources() as $k => $s) ok(count($s) === 6 && is_callable($s[2]), "source $k is complete");
+[$c, $r] = call('fup.topic_save', $ADMIN, ['section_id' => $st, 'title' => 'Bills', 'source' => 'store_bills']); [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]);
+ok(strpos(implode(' | ', array_column($b['checks'], 'text')), 'Bills:') === false, 'a connected topic whose number came by itself needs no typing and no person');
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);
