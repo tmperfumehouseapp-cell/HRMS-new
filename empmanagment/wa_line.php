@@ -594,6 +594,8 @@ function wl_tick(PDO $pdo, array $opt = []): array
     $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wln_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']); $sendonly = !empty($opt['sendonly']);   // sendonly = the sending job (wa.cron_send): only the sending round, no bookkeeping
     if ($cfg['mode'] === 'off') return $o;
     if (!$force && function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours 03:00-09:00'; return $o; }   // universal rule (owner, 21 Nov)
+    if (!$force) { try { if (is_file(__DIR__ . '/wa_offer.php')) { require_once __DIR__ . '/wa_offer.php'; setting_set($pdo, 'wo_hook', date('Y-m-d H:i:s') . ($sendonly ? ' cli' : ' web')); $__wo = wof_run($pdo, 30); $o['offers'] = (int)$__wo[2]; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup offer: ' . $e->getMessage()); } }   // 🎯 the price offer to the customers who answered (owner 22 Nov; wo_mode dry / live)   // failed as marketing -> sent again as utility on the spot
+    if (!$force && ($sendonly || (string)setting_get($pdo, 'wcd_web', '0') === '1')) { try { if (is_file(__DIR__ . '/wa_cold.php')) { require_once __DIR__ . '/wa_cold.php'; setting_set($pdo, 'wcd_hook', date('Y-m-d H:i:s')); wcd_tick($pdo, 25); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cold funnel: ' . $e->getMessage()); } }   /* the cold funnel (owner 22 Nov): delivered, never wrote back */
     if (!$force && !$sendonly) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
     if ($sendonly && ($cfg['started'] === '' || $cfg['since'] <= 0)) return $o;
     if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
@@ -604,7 +606,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if ($book) { try { wln_unwindow($pdo); wln_since_back($pdo); wln_requeue_failed($pdo); wln_ladder30($pdo); wln_since_15($pdo); wln_since_1($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup unwindow: ' . $e->getMessage()); } }
     $cfg = wl_cfg($pdo);   // (since may just have moved)
     if ($book && function_exists('wa_lock') && wa_lock($pdo, 'wlenrol', 300)) { try { $o['entered'] = wl_enroll($pdo, $cfg['since']); $o['entered_camp'] = wln_enroll_camp($pdo, $cfg['since']); wln_camp_cleanup($pdo); wl_recheck($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup enrol: ' . $e->getMessage()); } }
-    if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }   // failed as marketing -> sent again as utility on the spot
+    if ($book) { try { $o['rescued'] = wln_rescue($pdo, $now); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue: ' . $e->getMessage()); } }
     $N = 8; $shard = -1;   // 8 groups always (owner 21 Nov: finish the day's plan before the next day's steps are added): cron_line.php runs up to 8 sending copies on the command line
       // SHARDS (owner, 21 Nov: speed): the due customers are split into N groups by their phone; every caller (the engine and the sending job) takes the first group nobody works on, so several run at once
     if (!$force) { $shard = wln_claim_shard($pdo, $N); if ($shard < 0) return $o; }
@@ -796,6 +798,9 @@ function wl_summary(PDO $pdo, int $from): array
     $wm = array_filter(array_column($sent, 'wamid')); $st = [];
     foreach (array_chunk($wm, 400) as $ch) { $x = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll() as $r) $st[(string)$r['wamid']] = (string)$r['status']; }
     foreach ($sent as $r) { $x = $st[(string)$r['wamid']] ?? ''; if (in_array($x, ['delivered', 'read'], true)) $o['delivered']++; if ($x === 'read') $o['read']++; }
+    // Meta does NOT bill a message whose receipt says failed (131049 and the other blocks): the cost counts only the rest (owner 22 Nov: the card said Rs 32,700 for a day that really cost about Rs 13,500)
+    $__fu = 0; $__fp = 0; foreach ($sent as $r) { if (($st[(string)$r['wamid']] ?? '') !== 'failed') continue; $tid = (int)$r['tpl_id'] > 0 ? (int)$r['tpl_id'] : (int)($ids[(string)$r['tpl_key']] ?? 0); if (!empty($cat[$tid])) $__fu++; else $__fp++; }
+    $o['not_billed'] = $__fu + $__fp; $o['utility'] -= $__fu; $o['plain'] -= $__fp; $o['cost_utility'] = round($o['utility'] * $o['rate_u'], 2); $o['cost_plain'] = round($o['plain'] * $o['rate_m'], 2); $o['cost'] = round($o['cost_utility'] + $o['cost_plain'], 2);
     $byP = []; foreach ($sent as $r) $byP[(string)$r['phone']][] = (int)strtotime((string)$r['sent_at']);
     if ($byP) { $btn = []; foreach (wl_pack() as $k => $m) $btn[mb_strtolower(trim($m['button']))] = 1; $rep = []; $tap = [];
         foreach (array_chunk(array_keys($byP), 400) as $ch) { $x = $pdo->prepare("SELECT phone, body, mtype, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute(array_merge([$f], $ch));
@@ -805,7 +810,12 @@ function wl_summary(PDO $pdo, int $from): array
     $ord = []; try { $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $x->execute([$f]);
         foreach ($x->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '' && isset($byP[$k])) $ord[$k][] = [(int)strtotime((string)$r['created_at']), (float)$r['total']]; } } catch (Throwable $e) { }
     $buy = []; foreach ($ord as $k => $list) foreach ($list as [$ot, $tot]) foreach ($byP[$k] as $st0) if ($st0 < $ot && $ot <= $st0 + 7 * 86400) { $o['orders']++; $o['revenue'] += (int)round($tot); $buy[$k] = 1; break; }
-    $o['buyers'] = count($buy); return $o;
+    $o['buyers'] = count($buy); $o['offers'] = 0; $o['offer_orders'] = 0; $o['offer_revenue'] = 0;
+    try { $oc = $pdo->prepare("SELECT phone, MIN(at) FROM wa_offer WHERE ok = 1 AND at >= ? GROUP BY phone"); $oc->execute([$f]); $ofr = $oc->fetchAll(PDO::FETCH_NUM); $o['offers'] = count($ofr);   // 🎯 price offers sent (wa_offer.php): customers; and the orders that came AFTER an offer (within 7 days), so they show in the Orders number too
+        if ($ofr) { $om = []; foreach ($ofr as $r) $om[substr(preg_replace('/\D+/', '', (string)$r[0]), -10)] = (int)strtotime((string)$r[1]); $x = $pdo->prepare("SELECT phone, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != ''"); $x->execute([$f]); $seen = [];
+            foreach ($x->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); $ot = (int)strtotime((string)$r['created_at']); if (isset($om[$k]) && !isset($seen[$k]) && $ot > $om[$k] && $ot <= $om[$k] + 7 * 86400) { $seen[$k] = 1; $o['offer_orders']++; $o['offer_revenue'] += (int)round((float)$r['total']); } } }
+    } catch (Throwable $e) { }
+    return $o;
 }
 /** Who replied (the same people the Replies number counts: an answer within 2 days of a Lineup message, a "no" like Stop / Not now left out): newest-waiting first. Returns [rows, more]. */
 function wl_repliers(PDO $pdo, int $from, int $limit = 600): array
@@ -1086,6 +1096,12 @@ if (strpos($__wl, 'wa.line_') === 0) {
     if (!wln_tables($pdo)) json_response(['error' => 'Lineup storage is not available.'], 500);
     switch ($__wl) {
         case 'wa.line_get': json_response(['ok' => true] + wl_overview($pdo));
+        case 'wa.line_cold': { if (!function_exists('wcd_card')) require_once __DIR__ . '/wa_cold.php'; json_response(['ok' => true] + wcd_card($pdo)); }   /* the Cold funnel card above the 30-Day Lineup */
+        case 'wa.line_cold_save': {   /* POST {mode: off|dry|live, cap} */
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (!function_exists('wcd_card')) require_once __DIR__ . '/wa_cold.php'; $in = json_input();
+            if (isset($in['mode']) && in_array((string)$in['mode'], ['off', 'dry', 'live'], true)) setting_set($pdo, 'wcd_mode', (string)$in['mode']); if (isset($in['cap'])) setting_set($pdo, 'wcd_cap', (string)max(0, min(50000, (int)$in['cap']))); setting_set($pdo, 'wcd_card_cache', '');
+            json_response(['ok' => true] + wcd_card($pdo));
+        }
         case 'wa.line_aft': { if (!function_exists('wa_aft_overview')) require_once __DIR__ . '/wa_after.php'; json_response(['ok' => true] + wa_aft_overview($pdo)); }   // the After-Order plan card under the 30-day plan
         case 'wa.line_replies': {   // 💬 the people behind the Replies number: today or since the start
             $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : wl_ist_at($td0, 0);

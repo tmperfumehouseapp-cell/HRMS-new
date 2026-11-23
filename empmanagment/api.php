@@ -1219,6 +1219,7 @@ function order_retype_robot(PDO $pdo, int $days = 30): int
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
     if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
+    try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '' && ($t ?: time()) >= (int)strtotime((string)setting_get($pdo, 'camp_tag_from', '2026-11-23 00:00:00'))) { $tq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'campaign' AND src = 'wq' AND at <= ? LIMIT 1"); $tq->execute([$ph, date('Y-m-d H:i:s', ($t ?: time()) + 60)]); if ($tq->fetchColumn()) return 'campaign'; } } catch (Throwable $e) { }   // owner (23 Nov): a customer who went quiet for 30 hours carries the Campaign tag FOR EVER (wq_window_tag) — an order 10 days or 5 months later is a Campaign order. Only for orders made FROM TODAY (setting camp_tag_from, default 23 Nov 00:00): older orders keep the type they have
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || order_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30)) ? 'campaign' : 'query';
 }
@@ -23064,8 +23065,8 @@ switch ($action) {
                 foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
                     $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $t = strtotime((string)$o['created_at']); $f = ['a' => null, 'c' => null, 'p' => null];
                     if (strlen($k) === 10) {
-                        $q = $pdo->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 300");
-                        $q->execute([$k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 30 * 60)]);
+                        $q = $pdo->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700");
+                        $q->execute([$k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', min(time(), $t + 48 * 3600))]);   // owner (23 Nov): a message sent LATER (up to 48 h after the order, until now) also counts — it used to stop 30 minutes after the order, so a chain message sent later never moved the order to Done
                         $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms);
                         foreach ($ms as $mi => $m) {
                             if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; $mark = [substr((string)$m['ts'], 11, 5), $by];

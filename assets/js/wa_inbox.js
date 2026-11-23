@@ -378,6 +378,7 @@
     } catch (e) { o.querySelector('#wpB').textContent = e.message || 'Could not load.'; }
   };
     function pills(c) {
+      if (c.is_cx) return '<span class="wi-p" style="background:#f3e8ff;color:#6b21a8;font-weight:800" title="A complaint: the Complaint team answers it">⚠ Complaint</span>';   // 🎫 owner (22 Nov): a complaint chat shows ONLY its Complaint tag (no hot / query / campaign / price marks)
       let h = c.life ? `<span class="wi-p" style="background:${LC[c.life.key] || '#f1f5f9'};font-weight:800" title="Where this customer is right now">${esc(c.life.label)}</span>` : '';
       if (c.eff && c.eff.length) {   // both efforts of the last read order: [add-on level, stars, reason, order, bigger level]
         const E = [['🔴', '#dc2626', 'No add-on effort'], ['🟠', '#ea580c', 'Little add-on effort'], ['🟡', '#d97706', 'Tried hard, customer did not take the add-on'], ['🟢', '#16a34a', 'Tried, and the customer took the add-on']][c.eff[0]] || null, B = [['⚫', '#1f2937', 'No effort to sell bigger'], ['🟤', '#92400e', 'Little effort to sell bigger'], ['🟣', '#7c3aed', 'Tried hard to sell bigger, customer did not take'], ['🔵', '#2563eb', 'Sold bigger']][c.eff[4] == null ? 0 : c.eff[4]] || null, tt = ' · order ' + (c.eff[3] || '') + ' · ★' + c.eff[1] + ' — ' + (c.eff[2] || ''), ttB = ' · order ' + (c.eff[3] || '') + ' · ★' + c.eff[1] + ' — ' + (c.eff[5] || c.eff[2] || '');
