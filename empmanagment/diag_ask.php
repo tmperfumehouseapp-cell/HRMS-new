@@ -294,3 +294,14 @@ try {
     foreach ($one("SELECT k, LEFT(v, 200) FROM wq_meta WHERE k LIKE ? ", ['%:8840809544']) as $x) echo "CHAT37 meta " . implode(' = ', $x) . "\n";
     $cj4 = json_decode((string)$one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'ml_slab_chart'")[0][0], true); foreach ((array)($cj4['rows'] ?? []) as $cr) if (in_array((int)($cr['ml'] ?? 0), [50, 250, 300, 350], true)) echo "CHAT37 chart row " . (int)$cr['ml'] . " " . json_encode($cr['p'] ?? []) . " cols " . json_encode($cj4['cols'] ?? []) . "\n";
 } catch (Throwable $e) { echo "CHAT37 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 38) why only some of the failed Lineup sends were rescued as utility (owner 23 Nov: 48,000 sent, ~25,000 not delivered, only 5,785 rescued)
+try {
+    $mk = implode(',', array_map('intval', function_exists('wln_mkt_codes') ? wln_mkt_codes() : [131049, 131050, 130472]));
+    echo "RESC marketing-only failure codes " . $mk . "\n";
+    echo "RESC Lineup rows sent today whose receipt failed, by rescue state (why, n) " . json_encode($one("SELECT LEFT(p.why, 34), COUNT(*) FROM wa_line_plan p JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (p.wamid COLLATE utf8mb4_unicode_ci) WHERE p.status = 'sent' AND p.sent_at >= ? AND m.status = 'failed' GROUP BY LEFT(p.why, 34) ORDER BY 2 DESC LIMIT 12", [$t0])) . "\n";
+    echo "RESC failed receipts today by code, Lineup rows only (code, n) " . json_encode($one("SELECT m.err_code, COUNT(*) FROM wa_line_plan p JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (p.wamid COLLATE utf8mb4_unicode_ci) WHERE p.status = 'sent' AND p.sent_at >= ? AND m.status = 'failed' GROUP BY m.err_code ORDER BY 2 DESC LIMIT 8", [$t0])) . "\n";
+    echo "RESC rescue sends per hour today (h, n) " . json_encode($one("SELECT HOUR(sent_at), COUNT(*) FROM wa_line_plan WHERE status = 'sent' AND why LIKE 'utility rescue%' AND sent_at >= ? GROUP BY 1 ORDER BY 1", [$t0])) . "\n";
+    echo "RESC all failed receipts today by sender (who, n) " . json_encode($one("SELECT who, COUNT(*) FROM wa_messages WHERE dir = 'out' AND status = 'failed' AND ts >= ? GROUP BY who ORDER BY 2 DESC LIMIT 8", [$t0])) . "\n";
+    echo "RESC failed receipts still waiting in the last 36 h (Lineup rows with why empty) " . json_encode($one("SELECT COUNT(*) FROM wa_line_plan p JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (p.wamid COLLATE utf8mb4_unicode_ci) WHERE p.status = 'sent' AND p.why = '' AND p.sent_at >= ? AND m.status = 'failed' AND m.err_code IN ($mk)", [date('Y-m-d H:i:s', time() - 36 * 3600)])) . "\n";
+    echo "RESC last rescue settings reopen " . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wl_rescue_reopen'")[0][0] . "\n";
+} catch (Throwable $e) { echo "RESC ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
