@@ -2790,6 +2790,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
       if (byStore[label] || (ES_ALLOWED && panelAllowed(k) && (!panelPick || panelPick === k))) boxes.push([label, byStore[label] || { count: 0, total: 0, currency: 'INR', pre: 0, cod: 0 }]);
     });
     Object.entries(byStore).forEach(([label, s]) => { if (!PANELS.some(p => p[0] !== 'none' && p[1] === label)) boxes.push([label, s]); });
+    boxes.length = 0;   // owner (24 Nov): ONE platform now (TM Perfume House) — no card per panel any more (TM Perfume / TM Shower Gel); everything is in the one Orders & Revenue card above
 
     const grid = document.getElementById('summaryGrid');
     // Each card carries both a full label/amount and a short one; CSS shows
