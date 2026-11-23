@@ -1412,6 +1412,18 @@ function wag_combo_dump_fix(PDO $pdo, string $key, string $text, bool $kw = fals
         return $first . ' 😊 Isse behtar ' . $n . ' x ' . $ml . ' ml lijiye: alag-alag lene par Rs ' . $f($one * $n) . ' hote hain, combo deal mein sirf Rs ' . $f($chart) . ' (ek bottle Rs ' . $f(round($chart / $n)) . '). Kaunse ' . $n . ' perfumes lena chahenge?';
     } catch (Throwable $e) { return $text; }
 }
+/** owner, 23 Nov (screenshot: the customer wrote "EM5 jyada acha hai" - a compliment for another perfume - and the bot answered "EM5 ka naam hamare catalogue mein confirm karke batata hoon"): the "ye naam ek baar confirm karke batata hoon" line is only for a customer who ASKS for / orders a perfume that is not in our list. A compliment or comparison is answered with a short thank-you, no catalogue talk. Returns the text unchanged otherwise. */
+function wag_praise_fix(PDO $pdo, string $key, string $text): string
+{
+    try {
+        if (!preg_match('/(confirm karke|catalogue mein|catalog mein|check karke bata)/iu', $text)) return $text;
+        $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $t = mb_strtolower(trim((string)$q->fetchColumn()));
+        if ($t === '' || mb_strlen($t) > 80) return $text;
+        if (!preg_match('/(acha|accha|achha|badhiya|badiya|mast|best|better|behtar|jyada|zyada|love|loved|pasand|nice|good|great|awesome|superb|waah|wah|zabardast|amazing)/u', $t)) return $text;
+        if (preg_match('/(\?|kya |available|milega|milta|milti|chahiye|price|rate|kitna|kitne|order|bhej|send|link|\d+\s?ml|dikha|show)/u', $t)) return $text;
+        return 'Shukriya sir 🙏 Aapko pasand aaya, ye sunkar bahut achha laga. Jab bhi aap koi perfume lena chahein, bas bata dijiye - main aapke liye best combo bana dunga 😊';
+    } catch (Throwable $e) { return $text; }
+}
 function wag_strip_internal(string $t): string
 {
     $t = preg_replace(['/\bchart\s+(?:ka\s+)?(price|rate)\b/iu', '/\b(price|rate)\s+chart\b/iu'], ['$1', '$1'], $t) ?? $t;   // owner, 23 Nov: the customer never hears the word "chart" ("total ka chart price Rs 1,810" -> "total ka price Rs 1,810")
@@ -1566,6 +1578,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)($m['body'] ?? '')));
         $r['text'] = wag_combo_dump_fix($pdo, $key, (string)$r['text']);
+        $r['text'] = wag_praise_fix($pdo, $key, (string)$r['text']);
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
         if ($ok && $__order) wag_order_done_check($pdo, $c, $key);
