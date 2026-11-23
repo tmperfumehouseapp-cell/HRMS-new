@@ -125,6 +125,20 @@ function fup_seed_store_topics2(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_store_topics2: ' . $e->getMessage()); }
 }
 
+/** Once more (the owner's correction): the review topic counts the reviews that came in, and the Cleaning topic counts the pantry PHOTOS uploaded. The two topics made by fup_seed_store_topics2 are changed to these. */
+function fup_seed_store_topics3(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_store_topics_v3', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) = 'surat store' ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); if ($sid <= 0) return;
+        if ((string)setting_get($pdo, 'fup_store_topics_v2', '') !== '1') return;      // the earlier two are made first (same request)
+        setting_set($pdo, 'fup_store_topics_v3', '1');
+        $u = $pdo->prepare("UPDATE fu_topics SET title = ?, source = ? WHERE section_id = ? AND source = ?");
+        $u->execute(['Reviews received (daily)', 'store_reviews', $sid, 'store_review_link']);
+        $u->execute(['Pantry photos uploaded (daily)', 'store_pantry_photos', $sid, 'store_clean']);
+    } catch (Throwable $e) { error_log('fup_seed_store_topics3: ' . $e->getMessage()); }
+}
+
 /** The numbers a topic can take by itself. key => [label, unit, fn(pdo, day) → number|null]. Every one is read-only and safe when its table is missing. */
 function fup_sources(): array
 {
@@ -185,6 +199,8 @@ function fup_sources(): array
         'store_contact_link' => ['Customers who saved our number from their bill link', 'customers', $one("SELECT COUNT(DISTINCT person_id) FROM st_bill_events WHERE kind = 'contact' AND DATE(at) = ?"), $S, 'store_billing.html', ''],
         'store_review_link' => ['Customers who opened the review link on their bill', 'customers', $one("SELECT COUNT(DISTINCT person_id) FROM st_bill_events WHERE kind = 'review' AND DATE(at) = ?"), $S, 'store_billing.html', 'review reviews rating રિવ્યૂ'],
         'store_clean'      => ['Cleaning & Pantry checks done', 'checks', $one("SELECT COUNT(*) FROM of_pl_checks WHERE day = ? AND status = 'done'"), $S, 'store_cleaning.html', 'clean cleaning pantry check checks cafeteria ક્લિનિંગ પેન્ટ્રી'],
+        'store_reviews'    => ['Google reviews received', 'reviews', $one("SELECT COUNT(*) FROM sx_items WHERE channel = 'review_google' AND DATE(first_in_at) = ?"), $S, 'social_inbox.html', 'review reviews rating રિવ્યૂ'],
+        'store_pantry_photos' => ['Cleaning & Pantry photos uploaded (store places)', 'photos', $one("SELECT COUNT(*) FROM bd_tasks t JOIN bd_duties d ON d.id = t.duty_id JOIN of_zones z ON z.id = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(d.lib_key, ':', 2), ':', -1) AS UNSIGNED) JOIN of_offices o ON o.id = z.office_id WHERE t.task_date = ? AND t.status = 'done' AND d.lib_key LIKE 'of:%:p%' AND o.name LIKE '%store%'"), $S, 'store_cleaning.html', 'pantry photo photos cleaning cafeteria ફોટો પેન્ટ્રી ક્લિનિંગ'],
         'store_discount'   => ['Discount given (₹)', '₹', $one("SELECT SUM(discount) FROM st_bills WHERE biz_date = ? AND status = 'ok'"), $S, $sp, 'discount'],
     ];
 }
@@ -585,6 +601,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed($pdo);
     fup_seed_store_topics($pdo);
     fup_seed_store_topics2($pdo);
+    fup_seed_store_topics3($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
