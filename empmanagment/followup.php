@@ -154,6 +154,30 @@ function fup_seed_store_topics4(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_store_topics4: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's four plain topics of the Amazon section, all written by hand (nothing is read from Amazon): yesterday's four numbers, the front look of the listing, the Ads, and the 1-star reviews with the product name. Nobody is assigned. */
+function fup_seed_amazon_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_amazon_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE 'amazon%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); if ($sid <= 0) return;      // the section is made by the owner; this waits for it
+        setting_set($pdo, 'fup_amazon_topics_v1', '1');
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', ?, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $num = function ($l) { return ['label' => $l, 'type' => 'num', 'req' => 1]; };
+        $list = [
+            ['Yesterday\'s numbers: ad spent, orders, collection, orders from ads', 'Fill this in the morning for YESTERDAY: the ad spend (₹), all orders, the collection (₹) and how many orders came from the ads.', 1, 0, [$num('Ad spent yesterday (₹)'), $num('Orders yesterday'), $num('Collection yesterday (₹)'), $num('Orders from ads yesterday')]],
+            ['Front UI: how the listing looks', 'Write how the Amazon listing looks from the front today (images, title, price, stock).', 0, 1, []],
+            ['Ads: what is running', 'Write what is running in the Amazon ads today (campaigns on / paused, anything odd).', 0, 1, []],
+            ['1-star reviews: which product', 'Write the product name and what the 1-star review says. If there is none, write "none".', 0, 1, [['label' => 'Product name', 'type' => 'text', 'req' => 0]]],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3], $t[4] ? json_encode(fup_fields_clean($t[4]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+    } catch (Throwable $e) { error_log('fup_seed_amazon_topics: ' . $e->getMessage()); }
+}
+
 /** The numbers a topic can take by itself. key => [label, unit, fn(pdo, day) → number|null]. Every one is read-only and safe when its table is missing. */
 function fup_sources(): array
 {
@@ -626,6 +650,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_store_topics2($pdo);
     fup_seed_store_topics3($pdo);
     fup_seed_store_topics4($pdo);
+    fup_seed_amazon_topics($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
