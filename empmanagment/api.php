@@ -19440,6 +19440,13 @@ if ($action !== 'login' && $action !== '') { try { penalties_auto_pass($pdo); } 
 // checked at most every 5 minutes from whichever request comes in and sent after the response is out.
 if ($action !== 'login' && $action !== '') { try { retail_due_pass($pdo); } catch (Throwable $e) {} }
 
+// 📌 Follow-up: every evening (default 8 pm) Claude writes the note of every section and the Admin / HR get one phone notification with the day's count.
+// Once a day, from whichever request comes in after the hour; the work runs after the answer is out. The file is only loaded when it is due.
+if ($action !== 'login' && $action !== '' && (int)date('G') >= (int)setting_get($pdo, 'fup_digest_hour', 20) && (string)setting_get($pdo, 'fup_digest_day', '') !== date('Y-m-d') && is_file(__DIR__ . '/followup.php')) {
+    $fupTail = function () use ($pdo) { try { require_once __DIR__ . '/followup.php'; if (function_exists('fup_daily_pass')) fup_daily_pass($pdo); } catch (Throwable $e) { error_log('fup_daily_pass: ' . $e->getMessage()); } };
+    register_shutdown_function($fupTail);
+}
+
 // Store perfumes from Shopify, once a day by itself (first request after 5 AM; syncs after the answer is out; retries every 30 min if it failed).
 if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); st_bday_daily($pdo); } catch (Throwable $e) {} }
 
