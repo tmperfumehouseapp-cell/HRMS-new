@@ -11,6 +11,7 @@ window.StoreRules = (function () {
       + (ed ? '<div style="margin-top:6px"><button type="button" class="lnk" id="srAdd">＋ Add a fixed price</button> <button type="button" class="sx-btn" id="srSave" style="padding:7px 14px;margin-left:6px">Save</button> <span id="srMsg" class="sx-mut"></span></div><div class="sx-mut" style="font-size:11.5px;margin-top:4px">One scan of that perfume (that ml) shows its fixed price in Billing. A 🎁 Deal (for example 3 for ₹2,700) is charged for every full group of that many bottles; the rest are charged one by one. The commission % is the price chart’s % for that price (a price above the top column pays the top %).</div>' : '');
   }
   function draw(d) {
+    const nd = (iso, n) => { const x = new Date(String(iso || new Date().toISOString().slice(0, 10)) + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
     const R = d.rules || {}, win = d.window || 20, team = (d.team || []);
     const offers = (d.offers || []).map((o) => `<tr style="border-top:1px solid var(--sx-line)"><td style="padding:5px 8px"><b>${o.ml} ml</b></td><td style="padding:5px 8px">${inr(o.price)} (±₹${f(win)})</td><td style="padding:5px 8px"><b>${f(o.pct)}%</b></td><td style="padding:5px 8px">${dd(o.from)}${o.to ? ' – ' + dd(o.to) : ' → keeps going'}</td><td style="padding:5px 8px">${esc(o.note || '')}</td></tr>`).join('');
     const flash = (d.flash || []).map((x) => `<div class="sx-mut" style="font-size:12.5px">⚡ Flash offer: ${(x.sizes || []).join(' / ')} ml → <b>${f(x.pct)}%</b> till ${esc(String(x.ends_at).slice(11, 16))}</div>`).join('');
@@ -24,7 +25,7 @@ window.StoreRules = (function () {
         <div><b>🏬 Store</b> — same rules as online, but no over-target extra and no boost.</div></div>
       <h4 style="margin:12px 0 4px">📸 Screenshot rule</h4>
       <div class="sx-mut" style="font-size:12.5px;margin-bottom:6px">After a bill, the salesperson attaches 2 screenshots: the customer's number saved and the customer added to the community. When this rule is ON, a bill pays commission only after BOTH are attached. Bills still get made. Only bills from the day it is switched on are affected.</div>
-      ${d.can_edit ? `<label style="display:inline-flex;gap:8px;align-items:center;font-weight:700;cursor:pointer"><input type="checkbox" id="srFollow" ${d.follow_from ? 'checked' : ''}> ${d.follow_from ? 'ON since ' + esc(d.follow_from) : 'OFF - tick to switch ON from today'}</label>` : `<b>${d.follow_from ? 'ON since ' + esc(d.follow_from) : 'OFF'}</b>`}
+      ${d.can_edit ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${d.follow_from ? 'ON from ' + esc(d.follow_from) : 'OFF'}</b><span class="sx-mut">Apply from</span><input type="date" class="sx-in" id="srFollowDate" value="${esc(nd(d.today, 1))}" min="${esc(d.today)}" style="max-width:170px"><button type="button" class="sx-btn" id="srFollowOn" style="padding:7px 14px">Switch ON from this day</button>${d.follow_from ? '<button type="button" class="sx-btn ghost" id="srFollowOff" style="padding:7px 14px">Switch OFF</button>' : ''}</div><div class="sx-mut" style="font-size:12px;margin-top:4px">Bills of earlier days never change.</div>` : `<b>${d.follow_from ? 'ON from ' + esc(d.follow_from) : 'OFF'}</b>`}
       <h4 style="margin:12px 0 4px">Offers running now</h4>
       ${offers ? `<div style="overflow:auto"><table style="border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left;padding:4px 8px">Size</th><th style="text-align:left;padding:4px 8px">Price</th><th style="text-align:left;padding:4px 8px">Pays</th><th style="text-align:left;padding:4px 8px">Runs</th><th style="text-align:left;padding:4px 8px">Note</th></tr></thead><tbody>${offers}</tbody></table></div>` : '<div class="sx-mut" style="font-size:12.5px">No offer is running now — the normal price chart applies.</div>'}${flash}
       <h4 style="margin:12px 0 4px">Fixed-price perfumes <small class="sx-mut" style="font-weight:600">(for example the OG perfumes: this size always sells at this price)</small></h4>
@@ -36,7 +37,11 @@ window.StoreRules = (function () {
     try {
       const d = await api.get('st_price.card'); el.innerHTML = draw(d);
       el.addEventListener('click', async (e) => {
-        if (e.target.id === 'srFollow') { const cb = e.target; cb.disabled = true; try { await api.post('st_fix.follow', { on: cb.checked }); el.innerHTML = draw(await api.get('st_price.card')); } catch (er) { cb.disabled = false; cb.checked = !cb.checked; alert((er && er.message) || 'Could not save.'); } return; }
+        if (e.target.id === 'srFollowOn' || e.target.id === 'srFollowOff') {
+          const on = e.target.id === 'srFollowOn', dt = (el.querySelector('#srFollowDate') || {}).value || '';
+          if (on && !confirm('Switch the screenshot rule ON from ' + dt + '? Only the bills of that day and later will need both screenshots. Earlier bills do not change.')) return;
+          e.target.disabled = true; try { await api.post('st_fix.follow', { on, from: dt }); el.innerHTML = draw(await api.get('st_price.card')); } catch (er) { e.target.disabled = false; alert((er && er.message) || 'Could not save.'); } return;
+        }
         const box = el.querySelector('#srFix'); if (!box) return;
         if (e.target.id === 'srAdd') { const f0 = box.firstElementChild; if (f0 && !f0.classList.contains('srf') && f0.classList.contains('sx-mut')) f0.remove(); const row = document.createElement('div'); row.innerHTML = fixRow({}, true); box.insertBefore(row.firstChild, e.target.closest('div')); }
         else if (e.target.dataset && e.target.dataset.x) { e.target.closest('.srf').remove(); }

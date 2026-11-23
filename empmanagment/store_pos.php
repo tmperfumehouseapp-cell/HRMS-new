@@ -1362,7 +1362,7 @@ try {
                 try { $out['live'] = cm_is_live($pdo); if (!$out['live']) foreach (flash_offer_running(flash_offer_list_get($pdo)) as $x) $out['flash'][] = ['pct' => (float)$x['pct'], 'ends_at' => (string)$x['ends_at'], 'sizes' => array_values(array_map(fn($i) => (int)($i['ml'] ?? 0), (array)($x['items'] ?? [])))]; } catch (Throwable $e) { }
             }
             try { $ids = st_pool_ids($pdo); if ($ids) { $in = implode(',', array_map('intval', $ids)); $out['team'] = array_map(fn($r) => (string)$r['full_name'], $pdo->query("SELECT full_name FROM employees WHERE employee_id IN ($in) AND status != 'ex' ORDER BY full_name")->fetchAll()); } } catch (Throwable $e) { }
-            $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission'); $out['fixed'] = st_fixed_rules($pdo); $out['follow_from'] = st_follow_from($pdo);
+            $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission'); $out['fixed'] = st_fixed_rules($pdo); $out['follow_from'] = st_follow_from($pdo); $out['today'] = st_day();
             json_response($out);
             break;
         }
@@ -1494,9 +1494,15 @@ try {
         case 'st_fix.follow': {           // switch the rule ON (from today) or OFF: a bill pays commission only after both screenshots
             $auth = require_auth(); if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
             if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) && !user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
-            $on = !empty(json_input()['on']); setting_set($pdo, 'st_follow_req_from', $on ? st_day() : '');
-            if (function_exists('bd_log')) { try { bd_log('store', 0, 'Screenshot rule ' . ($on ? 'ON from ' . st_day() : 'OFF'), (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
-            json_response(['ok' => true, 'from' => $on ? st_day() : '', 'message' => $on ? 'ON: bills from today count in commission only after both screenshots.' : 'OFF: every bill counts as before.']);
+            $in = json_input(); $on = !empty($in['on']); $from = '';
+            if ($on) {
+                $from = (string)($in['from'] ?? ''); if ($from === '') $from = st_day();
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || strtotime($from) === false) json_response(['error' => 'Pick a valid day.'], 422);
+                if ($from < st_day()) json_response(['error' => 'The rule cannot start on a day that has already begun (' . st_day() . ' or later). Bills of earlier days never change.'], 422);
+            }
+            setting_set($pdo, 'st_follow_req_from', $from);
+            if (function_exists('bd_log')) { try { bd_log('store', 0, 'Screenshot rule ' . ($on ? 'ON from ' . $from : 'OFF'), (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'from' => $from, 'message' => $on ? 'ON from ' . $from . ': only the bills of that day and later count in commission after both screenshots. Earlier bills do not change.' : 'OFF: every bill counts as before.']);
             break;
         }
 
