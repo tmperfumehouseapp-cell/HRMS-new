@@ -569,11 +569,18 @@ function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
 function wag_person_context(PDO $pdo, string $key): string
 {
     try {
+        $fo = ''; $__fv = (int)wag_meta_get($pdo, 'finaloffer:' . $key, '0');
+        if ($__fv > 0) $fo = $__fv > time() ? 'THE FINAL OFFER IS ACTIVE until ' . date('H:i', $__fv) . ': Rs 200 OFF + 1 FREE 20 ml Perfume if he confirms the order now. Do not extend it and do not add any other discount.' : 'THE FINAL OFFER (Rs 200 OFF + 1 FREE 20 ml) HAS EXPIRED: never mention it again, never offer Rs 200 OFF, a free perfume or any other discount; the chart price only.';
         $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND mtype = 'text' AND ts >= ? ORDER BY id DESC LIMIT 3"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 3600)]);
         $t = array_reverse(array_map(function ($b) { return mb_substr(trim((string)preg_replace('/\s+/u', ' ', (string)$b)), 0, 300); }, $q->fetchAll(PDO::FETCH_COLUMN))); $t = array_values(array_filter($t, function ($x) { return $x !== ''; }));
-        if (!$t) return '';
-        return 'OUR SALESPERSON ALREADY TALKED TO THIS CUSTOMER (last words, newest last): "' . implode('" / "', $t) . '". Continue from THEIR offer: if they suggested a number of bottles or a price, talk about THAT quantity and never fall back to the price of one bottle; never quote a higher price than they did; never contradict them; do not repeat what they already said. If they told the customer a RULE or refused something ("minimum 5 bottle", "no sir", "offer is closed"), repeat THAT rule and never offer what they refused or any price below what they quoted.';
+        if (!$t) return $fo;
+        return 'OUR SALESPERSON ALREADY TALKED TO THIS CUSTOMER (last words, newest last): "' . implode('" / "', $t) . '". Continue from THEIR offer: if they suggested a number of bottles or a price, talk about THAT quantity and never fall back to the price of one bottle; never quote a higher price than they did; never contradict them; do not repeat what they already said. If they told the customer a RULE or refused something ("minimum 5 bottle", "no sir", "offer is closed"), repeat THAT rule and never offer what they refused or any price below what they quoted.' . ($fo !== '' ? ' ' . $fo : '');
     } catch (Throwable $e) { return ''; }
+}
+/** The owner's FINAL-offer message (23 Nov, his own wording), sent once per customer at follow-up step 5; valid for a real 2 hours. */
+function wag_final_offer_text(): string
+{
+    return "Sir, ye FINAL offer sirf next 2 hours ke liye hai. ⏰🔥\n\nAgar aap abhi order confirm karte ho, to main aapko:\n₹200 OFF + 1 FREE 20ml Perfume 🎁\n\nBas apni final perfume list bhej dijiye, 2 hours ke andar order confirm kar dete hain. Uske baad ye offer available nahi rahega.";
 }
 function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly = false): array
 {
@@ -1672,21 +1679,24 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         if (preg_match('/(stop|unsubscribe|not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|no thanks|don.?t message|remove)/iu', $lastIn)) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }
         $fl = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $fl->execute([$key]); if ((int)$fl->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now . ($__pp ? '|p|' . $refT : ''));   // claimed before the AI call: never twice
-        $__tpl1 = false; if ($cnt === 0) { $__tpl1 = true; $r = ['ok' => true, 'text' => wag_fu1_text($pdo, $c, $rows)]; }   // ⚡ step 1 (the bulk: 378 of 400) is the same short question - made in code, no AI call (2.5 s each): follow-ups go out many times faster (owner, 21 Nov: "follow-ups faster")
+        $__tpl1 = false; $__final = false; if ($cnt === 4 && (string)setting_get($pdo, 'wag_final_offer', '1') === '1' && wag_meta_get($pdo, 'finaloffer:' . $key, '') === '') { $__final = true; $r = ['ok' => true, 'text' => wag_final_offer_text()]; }   // owner, 23 Nov: step 5 (about 1 hour) is the FINAL offer message in the owner's own words - Rs 200 OFF + 1 free 20 ml, valid for a real 2 hours, once per customer (setting wag_final_offer = 0 switches it off)
+        elseif ($cnt === 0) { $__tpl1 = true; $r = ['ok' => true, 'text' => wag_fu1_text($pdo, $c, $rows)]; }   // ⚡ step 1 (the bulk: 378 of 400) is the same short question - made in code, no AI call (2.5 s each): follow-ups go out many times faster (owner, 21 Nov: "follow-ups faster")
         else { $GLOBALS['lib_fu_step'] = $cnt + 1; $GLOBALS['lib_phone'] = $key; $GLOBALS['lib_fast'] = 1; $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); unset($GLOBALS['lib_fu_step'], $GLOBALS['lib_fast'], $GLOBALS['lib_phone']); ai_feat($f0); $__tries++; }
         if (empty($r['ok']) || trim((string)($r['text'] ?? '')) === '') { $D['ai']++; $D['err'] = mb_substr((string)($GLOBALS['lib_last_why'] ?? '') . ' | ' . (string)($r['why'] ?? ''), 0, 160); continue; }
-        if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
+        if (!empty($r['handoff'])) { $D['handoff']++; continue; } if (!$__final && wag_bot_unsafe((string)$r['text'])) { $D['unsafe']++; continue; }
         $pt = ''; foreach ($rows as $rw) if ((string)$rw['who'] === 'bot') { $pt = (string)$rw['body']; break; } if ($pt !== '') { similar_text(mb_strtolower(mb_substr($pt, 0, 200)), mb_strtolower(mb_substr((string)$r['text'], 0, 200)), $pc); if ($pc >= 80) { $D['same']++; continue; } }   // never the same text again
         // owner, 23 Nov (screenshot: steps 2 and 3 sent "Sir, 2 x 100 ml ka combo Rs 2,130 hai. Kaunse perfume lena chahenge?" twice): a message sent with buttons is stored with the button lines too, so the percentage fell under 80 and the same text went again. Now: the new text must not already appear (first 50 letters) in ANY of the bot's last 4 messages
         $__nt = mb_strtolower(trim((string)preg_replace('/\s+/u', ' ', mb_substr((string)$r['text'], 0, 50)))); $__bn = 0;
         if ($__nt !== '') foreach ($rows as $rw) { if ((string)$rw['who'] !== 'bot') continue; if (++$__bn > 4) break; if (mb_strpos(mb_strtolower((string)preg_replace('/\s+/u', ' ', (string)$rw['body'])), $__nt) !== false) { $D['same']++; continue 2; } }
-        $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)$lastIn));
+        $r['text'] = $__final ? (string)$r['text'] : wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)$lastIn));
         $r['text'] = wag_min_pack_fix($pdo, $key, (string)$r['text']);
         if (!$__tpl1 && preg_match('/confusion ya doubt|order bana dun/iu', (string)$r['text'])) { $__tpl1 = true; $r['text'] = wag_fu1_text($pdo, $c, $rows); }   // owner (22 Nov): the OLD 'confusion ya doubt hai? Order bana dun?' wording must never reach a customer, whatever step or path made it
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         $__fv = (string)setting_get($pdo, 'wag_fu_var', 'AB'); $__var = ($__fv === 'A' || $__fv === 'B') ? $__fv : ((crc32($key) % 2) ? 'B' : 'A');   // 🧪 A/B (owner, 21 Nov): A = plain text, B = the same text with 3 quick-reply buttons; the winner is read from the replies (event text carries the letter)
+        if ($__final) $__var = 'A';   // the final offer goes as the plain text in the owner's format (no buttons)
         if ($__var === 'B' && function_exists('wa_send_buttons')) { [$ok, $res] = wa_send_buttons($pdo, $c, $r['text'], $__tpl1 ? ['Haan, doubt hai', 'Nahi, koi doubt nahi'] : ['✅ Order karo', '💬 Doubt hai'], 'bot', 0); if (!$ok) { $__var = 'A'; [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0); } }
         else [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
+        if ($ok && $__final) { wag_meta_put($pdo, 'finaloffer:' . $key, (string)(time() + 7200)); wa_event($pdo, $key, '🎁 FINAL offer sent: Rs 200 OFF + 1 FREE 20 ml Perfume, valid until ' . date('H:i', time() + 7200) . ' (2 hours). The salesperson who closes this order gives it; after that time it is closed.'); }
         if ($ok) { $D['sent']++; if ($__pp) $D['ps'] = (int)($D['ps'] ?? 0) + 1; $n++; setting_set($pdo, 'wag_bfu_n', (string)((int)setting_get($pdo, 'wag_bfu_n', '0') + 1)); wa_event($pdo, $key, '🔔 The bot followed up' . ($__pp ? ' for the salesperson' : '') . ' [' . $__var . '] (step ' . ($cnt + 1) . ' of ' . count($stp) . ', ' . round(($now - $liT) / 60) . ' min after the customer\'s last message)'); }
         else { $D['send']++; $D['err'] = mb_substr((string)$res, 0, 80); wag_log($pdo, 'bot', false, $key . ' · follow-up: ' . $res); }
         } catch (Throwable $__ex) { $D['err'] = 'EX ' . mb_substr($__ex->getMessage(), 0, 110); } finally { $D['t'] = round(microtime(true) - $__t0, 1); if ($__tries > 0 || (++$__i % 15) === 0) setting_set($pdo, 'wag_bfu_dbg', json_encode($D)); }
