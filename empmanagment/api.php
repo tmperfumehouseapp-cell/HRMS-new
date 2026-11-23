@@ -8472,14 +8472,15 @@ function cm_is_live(PDO $pdo): bool
 {
     static $v = null; if ($v === null) { try { $v = (string)setting_get($pdo, 'cm_live', '1') !== '0'; } catch (Throwable $e) { $v = false; } } return $v;
 }
-/** Loads the commission engine (cm_day, cm_paid_day … in boss2.php, through boss.php). boss.php only loads when $pdo and $action are in scope, so a plain require from inside
- *  a function returned at once and left the engine missing for that whole request (the live figure then showed on about 1 request in 20). Returns true when the engine is there. */
+/** Loads the commission engine (cm_day, cm_paid_day … in budget_cm.php, Total Budgeting's own file; it was inside the Boss Engine before). Returns true when the engine is there. */
 function cm_engine_load(PDO $pdo): bool
 {
     if (function_exists('cm_paid_day')) return true;
     $action = (string)($GLOBALS['action'] ?? '');
-    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; if (!function_exists('cm_paid_day') && is_file(__DIR__ . '/boss2.php')) require_once __DIR__ . '/boss2.php'; }
+    $GLOBALS['cm_funcs_only'] = true;   // only the calculation is wanted here, never the screen actions
+    try { if (is_file(__DIR__ . '/budget_cm.php')) require_once __DIR__ . '/budget_cm.php'; }   // Total Budgeting's own file: the Boss Engine is not needed for commission
     catch (Throwable $e) { error_log('cm_engine_load: ' . $e->getMessage()); }
+    finally { unset($GLOBALS['cm_funcs_only']); }
     return function_exists('cm_paid_day');
 }
 /** One person's commission for one day when the new engine is live. No row (retail / store people, or moved to the store that day) = 0, they are paid by their own rule;
@@ -19477,6 +19478,7 @@ if (strpos((string)$action, 'fn.') === 0) { require_once __DIR__ . '/finance_new
 if (strpos((string)$action, 'st_') === 0) { require __DIR__ . '/store_pos.php'; }      // Store inventory + billing (short per-bottle barcodes, total-ml price, commission like online)
 if (strpos((string)$action, 'cp.') === 0) { require __DIR__ . '/ct_people.php'; }
 if (strpos((string)$action, 'lr.') === 0) { require __DIR__ . '/leader_roas.php'; }
+if (strpos((string)$action, 'budget.cm_') === 0 && is_file(__DIR__ . '/budget_cm.php')) { require __DIR__ . '/budget_cm.php'; }   // 💰 the commission engine and its screens: Total Budgeting's own (was inside the Boss Engine)
 if (strpos((string)$action, 'budget.') === 0) { require __DIR__ . '/budget.php'; }
 if (strpos((string)$action, 'person.') === 0) { require __DIR__ . '/person.php'; }   // the one person card (timing, penalties, Claude summary), shared by Total Budgeting and the Boss Engine   // Sales → Total Budgeting: target, lump sum, fixed expenses
 if (strpos((string)$action, 'ph.') === 0) { require __DIR__ . '/wa_photos.php'; }
