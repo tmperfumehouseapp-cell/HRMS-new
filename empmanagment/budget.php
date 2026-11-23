@@ -107,6 +107,12 @@ if ($__bg === 'budget.get') {
     if (!preg_match('/^\d{4}-\d{2}$/', $month)) json_response(['error' => 'month must be YYYY-MM.'], 422);
     if (convo_is_admin($auth) && function_exists('price_unify_once')) price_unify_once($pdo);   // the one Price Chart: runs once, the first time an Admin opens Total Budgeting, Commission or Pricing after the update
     $c = budget_cfg($pdo); $m = $c['months'][$month] ?? [];
+    // once, the owner's start: goals for November 2026 (Sales team 14 L, Leaders 2.1 L, Leaders Helper 45 K) when no goal is set yet; he changes them on the page. Retail, Store and Other are left empty.
+    if ($month === '2026-11' && (string)setting_get($pdo, 'budget_goals_seed_v1', '') === '') {
+        setting_set($pdo, 'budget_goals_seed_v1', date('Y-m-d H:i:s'));
+        $have = 0; foreach ((array)($m['goals'] ?? []) as $gv) $have += (float)$gv;
+        if ($have <= 0) { $c['months'][$month]['goals'] = ['sales' => 1400000.0, 'leader' => 210000.0, 'helper' => 45000.0]; setting_set($pdo, 'budget_cfg', json_encode($c)); $m = $c['months'][$month]; budget_audit($pdo, $auth, 'Started the November 2026 goals: Sales team 14,00,000, Leaders 2,10,000, Leaders Helper 45,000 (change them on Total Budgeting)'); }
+    }
     $duty = []; try { if (function_exists('ensure_st_tables')) ensure_st_tables($pdo); $duty = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) {}
     $gl = []; foreach (['sales', 'leader', 'helper', 'retail', 'store', 'other'] as $gk) $gl[$gk] = (float)(($m['goals'] ?? [])[$gk] ?? 0);
     json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'settled' => (object)$c['settled'], 'days' => (object)$c['days'], 'closed' => (object)$c['closed'], 'engine_live' => function_exists('cm_is_live') ? cm_is_live($pdo) : false, 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
