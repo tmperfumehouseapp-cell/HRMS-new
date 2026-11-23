@@ -11,7 +11,8 @@ export function dailyReport(db, { from, to }, tzOffsetMin = 330) {
   };
 
   for (const r of db.prepare(`SELECT day, ad_id, ad_name, spend, impressions, conversations FROM ad_spend
-    WHERE day BETWEEN ? AND ?`).all(from, to)) {
+    WHERE day BETWEEN ? AND ?
+      AND ad_id IN (SELECT source_id FROM clicks WHERE source_id IS NOT NULL)`).all(from, to)) {   // only click-to-WhatsApp ads (the account's website ads would show spend with no orders)
     Object.assign(row(r.day, r.ad_id), { ad_name: r.ad_name, spend: r.spend, impressions: r.impressions,
       meta_conversations: r.conversations });
   }

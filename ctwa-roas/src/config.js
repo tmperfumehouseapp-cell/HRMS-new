@@ -30,6 +30,8 @@ export function getConfig(env = process.env) {
     confirmStatuses: list(env.CONFIRM_FINANCIAL_STATUSES || 'paid,partially_paid'),
     confirmTag: (env.CONFIRM_TAG || '').trim(),
     metaToken: env.META_ACCESS_TOKEN || '',
+    // token for ad spend (Insights); set it when the ad accounts sit in another business portfolio than the WhatsApp account
+    adsToken: env.META_ADS_ACCESS_TOKEN || env.META_ACCESS_TOKEN || '',
     graphVersion: env.META_GRAPH_VERSION || 'v21.0',
     datasetId: env.META_DATASET_ID || '',
     wabaId: env.META_WABA_ID || '',
