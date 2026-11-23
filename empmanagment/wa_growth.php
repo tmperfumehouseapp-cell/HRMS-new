@@ -1484,6 +1484,15 @@ function wag_min_pack_fix(PDO $pdo, string $key, string $text): string
         return $text;
     } catch (Throwable $e) { return $text; }
 }
+/** owner, 23 Nov (screenshot: "Full cod available" - the bot answered "Sir, full COD available hai"): COD is available ONLY with 35% of the order amount paid in advance for the confirmation, the rest on delivery. A reply that talks about COD without saying the advance has its COD sentence replaced by the official one (code, whatever the guidebook says). */
+function wag_cod_fix(string $text): string
+{
+    if (!preg_match('/\bcod\b|cash on delivery/iu', $text) || preg_match('/35\s*%|advance/iu', $text)) return $text;
+    $parts = preg_split('/(?<=[.!?])\s+/u', $text); if (!$parts) return $text;
+    $off = 'Sir, COD available hai, par order confirm karne ke liye order amount ka 35% advance dena hota hai, baaki amount delivery par 🙏';
+    $out = []; $done = false; foreach ($parts as $p) { if (preg_match('/\bcod\b|cash on delivery/iu', $p)) { if (!$done) { $out[] = $off; $done = true; } continue; } $out[] = $p; }
+    return trim(implode(' ', $out));
+}
 function wag_strip_internal(string $t): string
 {
     if (preg_match('/^\s*\{\s*"reply"\s*:/u', $t)) { $__j = json_decode(trim($t), true); if (is_array($__j) && trim((string)($__j['reply'] ?? '')) !== '') $t = (string)$__j['reply']; }   // 23 Nov: a follow-up went out as the raw text {"reply": "..."}
@@ -1641,6 +1650,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         $r['text'] = wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)($m['body'] ?? '')));
         $r['text'] = wag_combo_dump_fix($pdo, $key, (string)$r['text']);
         $r['text'] = wag_min_pack_fix($pdo, $key, (string)$r['text']);
+        $r['text'] = wag_cod_fix((string)$r['text']);
         $r['text'] = wag_praise_fix($pdo, $key, (string)$r['text']);
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if (false /* 🔒 the price chart is never sent to a customer (owner's rule) */ && $ok && (!empty($r['photo']) || (function_exists('pc_price_intent') && pc_price_intent((string)$m['body']))) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5]; $u = pc_photo_url($pdo, (float)$lv['pct']); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
@@ -1720,6 +1730,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         if ($__nt !== '') foreach ($rows as $rw) { if ((string)$rw['who'] !== 'bot') continue; if (++$__bn > 4) break; if (mb_strpos(mb_strtolower((string)preg_replace('/\s+/u', ' ', (string)$rw['body'])), $__nt) !== false) { $D['same']++; continue 2; } }
         $r['text'] = $__final ? (string)$r['text'] : wag_strip_internal(wag_strip_unasked_discount((string)$r['text'], (string)$lastIn));
         $r['text'] = wag_min_pack_fix($pdo, $key, (string)$r['text']);
+        $r['text'] = wag_cod_fix((string)$r['text']);
         if (!$__tpl1 && preg_match('/confusion ya doubt|order bana dun/iu', (string)$r['text'])) { $__tpl1 = true; $r['text'] = wag_fu1_text($pdo, $c, $rows); }   // owner (22 Nov): the OLD 'confusion ya doubt hai? Order bana dun?' wording must never reach a customer, whatever step or path made it
         wag_meta_put($pdo, 'bgfat:' . $key, (string)(time() + 0));
         $__fv = (string)setting_get($pdo, 'wag_fu_var', 'AB'); $__var = ($__fv === 'A' || $__fv === 'B') ? $__fv : ((crc32($key) % 2) ? 'B' : 'A');   // 🧪 A/B (owner, 21 Nov): A = plain text, B = the same text with 3 quick-reply buttons; the winner is read from the replies (event text carries the letter)

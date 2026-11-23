@@ -2660,7 +2660,8 @@ function hrms_settings_load(PDO $pdo): array
  *  hrms_settings" query of the Server load list) many times a minute. Reads were already direct for the lock keys; now the same rule covers the others, so a write needs no new copy. */
 function hrms_setting_volatile(string $key): bool
 {
-    return strpos($key, 'lock') !== false || substr($key, -3) === '_lk' || substr($key, -3) === '_at' || $key === 'wq_needs' || strpos($key, 'wa_lim_') === 0 || $key === 'wa_tag_cache' || strpos($key, 'wq_pace_') === 0;
+    return strpos($key, 'lock') !== false || substr($key, -3) === '_lk' || substr($key, -3) === '_at' || $key === 'wq_needs' || strpos($key, 'wa_lim_') === 0 || $key === 'wa_tag_cache' || strpos($key, 'wq_pace_') === 0
+        || strpos($key, 'wag_bfu_') === 0 || substr($key, -4) === '_dbg' || $key === 'wa_cron_start';   // follow-up counters / debug notes and the engine start stamp are written many times a minute: each write made every web process reload the whole settings table (query 1)
 }
 function setting_get(PDO $pdo, string $key, $default = null)
 {
