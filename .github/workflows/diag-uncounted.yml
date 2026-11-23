@@ -46,6 +46,12 @@ jobs:
             $sum += (float)$r["total"];
             echo "U " . $r["order_name"] . " · " . substr($r["created_at"], 11, 5) . " · Rs " . round($r["total"]) . " · store " . $r["store_key"] . " · " . ($r["alloc_id"] === null ? "no allocation row" : "row: house " . $r["house"] . ", nobody, by " . $r["allocated_by"]) . " · chat: " . ($c["n"] ? $c["n"] . " msgs in 3 days, holder " . ($c["emp"] ?: "nobody") : (strlen($k) === 10 ? "none for this number" : "no phone on the order")) . (stripos((string)$r["xparts"], "gel") !== false ? " · shower gel" : "") . "\n"; }
           echo "U total of these: Rs " . round($sum) . "\n";
+          try { echo "U manual_orders columns: " . implode(",", $d->query("SHOW COLUMNS FROM manual_orders")->fetchAll(PDO::FETCH_COLUMN)) . "\n";
+            $m = $d->prepare("SELECT * FROM manual_orders WHERE order_date >= ? ORDER BY order_date"); $m->execute([date("Y-m-d H:i:s", $t0)]); $mr = $m->fetchAll(PDO::FETCH_ASSOC); $ms = 0; echo "U HRMS-typed / quick-entry orders today: " . count($mr) . "\n";
+            foreach ($mr as $x) { $ms += (float)($x["total"] ?? 0); echo "U  M " . ($x["order_no"] ?? ("id " . $x["manual_order_id"])) . " · " . substr((string)$x["order_date"], 11, 5) . " · Rs " . round((float)($x["total"] ?? 0)) . " · emp " . (int)($x["employee_id"] ?? 0) . " · type " . ($x["order_type"] ?? "") . " · batch " . ($x["quick_batch"] ?? ($x["batch"] ?? "")) . "\n"; }
+            echo "U  manual total Rs " . round($ms) . "\n"; } catch (Throwable $e) { echo "U manual: " . $e->getMessage() . "\n"; }
+          $all = $d->prepare("SELECT COUNT(*) n, COALESCE(SUM(total),0) s FROM shop_orders o WHERE o.created_at >= ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')"); $all->execute([date("Y-m-d H:i:s", $t0)]); $r = $all->fetch(PDO::FETCH_ASSOC); echo "U website orders today (not cancelled): " . $r["n"] . " Rs " . round($r["s"]) . "\n";
+          $cn = $d->prepare("SELECT COUNT(*) n, COALESCE(SUM(total),0) s FROM shop_orders o WHERE o.created_at >= ? AND o.tags LIKE '%cancel%'"); $cn->execute([date("Y-m-d H:i:s", $t0)]); $r = $cn->fetch(PDO::FETCH_ASSOC); echo "U cancelled today: " . $r["n"] . " Rs " . round($r["s"]) . "\n";
           PHP
           php /tmp/ql_check.php "$P" "$CH"; rm -f /tmp/ql_check.php
           REMOTE
