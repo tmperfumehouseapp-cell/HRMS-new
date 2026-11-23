@@ -78,3 +78,47 @@ export function todayIn(tzOffsetMin, now = new Date()) {
 export function shiftDay(day, delta) {
   return new Date(Date.parse(day + 'T00:00:00Z') + delta * 86400000).toISOString().slice(0, 10);
 }
+
+/**
+ * Diagnose one day: the per-ad funnel (Meta spend + Meta's own conversation count, clicks this service received,
+ * orders matched, revenue, what was sent to Meta) and the matched orders with Meta's answer. No phone numbers.
+ */
+export function diagDay(db, day, tzOffsetMin = 330) {
+  const rep = dailyReport(db, { from: day, to: day }, tzOffsetMin);
+  const od = dayExpr('order_created_at', tzOffsetMin);
+  const capi = new Map();
+  for (const r of db.prepare(`SELECT ad_id, capi_status s, COUNT(*) c FROM orders WHERE ad_id IS NOT NULL AND ${od} = ? GROUP BY ad_id, capi_status`).all(day)) {
+    if (!capi.has(r.ad_id)) capi.set(r.ad_id, {});
+    capi.get(r.ad_id)[r.s] = r.c;
+  }
+  const ads = rep.rows.map((r) => ({ ad_id: r.ad_id, ad_name: r.ad_name, spend: r.spend, meta_conversations: r.meta_conversations, clicks: r.queries,
+    orders: r.orders, confirmed_orders: r.confirmed_orders, revenue: r.revenue, roas: r.roas, capi: capi.get(r.ad_id) ?? {} }));
+  const names = new Map(ads.map((a) => [a.ad_id, a.ad_name]));
+  const orders = db.prepare(`SELECT name, ad_id, total, financial_status, cancelled, confirmed_at, capi_status, capi_error, order_created_at
+    FROM orders WHERE ad_id IS NOT NULL AND ${od} = ? ORDER BY order_created_at DESC LIMIT 200`).all(day)
+    .map((o) => ({ name: o.name, ad_id: o.ad_id, ad_name: names.get(o.ad_id) ?? null, total: o.total, financial_status: o.financial_status,
+      cancelled: !!o.cancelled, confirmed: !!o.confirmed_at, capi_status: o.capi_status, capi_error: o.capi_error, at: o.order_created_at }));
+  const one = (sql, ...a) => db.prepare(sql).get(...a);
+  return {
+    date: day, ads, total: rep.total, orders,
+    health: {
+      first_click_at: one('SELECT MIN(clicked_at) v FROM clicks').v ?? null,
+      last_click_at: one('SELECT MAX(clicked_at) v FROM clicks').v ?? null,
+      last_order_at: one('SELECT MAX(updated_at) v FROM orders').v ?? null,
+      orders_received_day: one(`SELECT COUNT(*) v FROM orders WHERE ${od} = ?`, day).v,
+      capi_failed_all: one("SELECT COUNT(*) v FROM orders WHERE capi_status = 'failed'").v,
+      last_spend_day: one('SELECT MAX(day) v FROM ad_spend').v ?? null,
+    },
+  };
+}
+
+/** Diagnose one customer (last 10 digits): the ad clicks received from that number and the Shopify orders seen for it. */
+export function diagPhone(db, phone10) {
+  const clicks = db.prepare('SELECT clicked_at, source_id, headline FROM clicks WHERE phone10 = ? ORDER BY clicked_at DESC LIMIT 10').all(phone10)
+    .map((c) => ({ at: c.clicked_at, ad_id: c.source_id, headline: c.headline }));
+  const orders = db.prepare(`SELECT name, total, financial_status, cancelled, confirmed_at, ad_id, capi_status, capi_error, order_created_at
+    FROM orders WHERE phone10 = ? ORDER BY order_created_at DESC LIMIT 10`).all(phone10)
+    .map((o) => ({ name: o.name, total: o.total, financial_status: o.financial_status, cancelled: !!o.cancelled, confirmed: !!o.confirmed_at,
+      matched_ad_id: o.ad_id, capi_status: o.capi_status, capi_error: o.capi_error, at: o.order_created_at }));
+  return { clicks, orders };
+}

@@ -2,11 +2,17 @@
  * wa_adleads.js — WhatsApp → Queries & reports → 📣 Ad leads (whatsapp.html, Admin / HR).
  * One day, one line per customer who came from a Meta click-to-WhatsApp ad: time, the number they wrote to, the ad,
  * new or returning, and the first message they wrote that day. Pick a day and a number; nothing has to be opened to read it.
+ * 🩺 Diagnose (wa.g_adcheck): the day per ad — Meta, the tracking service (ctwa-roas) and the HRMS side by side, with a report to copy.
+ * 🩺 Check order (wa.g_adcheck_one): one customer — ad click received, Shopify order, matched, told to Meta.
  * Needs api.js and wa_panels.js (loaded first). Reads wa.g_adleads (wa_adleads.php); it loads only when opened or refreshed.
  */
 (function () {
   if (!window.WaPanels) return;
-  const { esc, $, when, errBox, loading } = WaPanels.util;
+  const { esc, $, when, errBox, loading, toast } = WaPanels.util;
+  const inr = (n) => '₹' + Math.round(+n || 0).toLocaleString('en-IN');
+  const unix = (t) => (t ? new Date(t * 1000).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
+  const CAPI = { sent: ['Told to Meta', 'ok'], failed: ['Meta refused', 'bad'], pending: ['Waiting to send', 'warn'], expired: ['Too old to send', 'bad'], none: ['Not confirmed yet', ''] };
+  const capiTag = (st) => { const c = CAPI[st] || [st || '—', '']; return `<span class="al-st ${c[1]}">${esc(c[0])}</span>`; };
   const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   const shift = (day, n) => { const d = new Date(day + 'T12:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   const time = (s) => { const w = when(s); const i = w.indexOf(', '); return i >= 0 ? w.slice(i + 2) : w; };
@@ -22,23 +28,30 @@
   .al-msg{max-width:46ch;white-space:pre-wrap;word-break:break-word}.al-ad{max-width:28ch;color:#4a5a52;font-size:12.5px}
   .al-new{display:inline-block;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;background:#dcf7e6;color:#12794a}.al-new.r{background:#eef1ef;color:#4a5a52}
   .al-row{cursor:pointer}.al-row:hover{background:#f6faf7}
+  .al-dg{border:1px solid #cfd8ff;background:#f5f7ff;border-radius:14px;padding:12px 14px;margin:0 0 12px}.al-dg h3{margin:0 0 6px;font-size:15px}
+  .al-ck{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.45;padding:3px 0}.al-ck i{font-style:normal;flex:none}
+  .al-st{display:inline-block;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;background:#eef1ef;color:#4a5a52;white-space:nowrap}.al-st.ok{background:#dcf7e6;color:#12794a}.al-st.bad{background:#fde6e6;color:#b42318}.al-st.warn{background:#fff3cd;color:#8a6a00}
+  .al-dg table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;background:#fff;border-radius:10px;overflow:hidden}.al-dg th,.al-dg td{padding:6px 8px;border-top:1px solid #edf0f7;text-align:right;white-space:nowrap}.al-dg th:first-child,.al-dg td:first-child{text-align:left;white-space:normal}.al-dg th{font-size:11px;text-transform:uppercase;color:#6b7a73;border-top:0}
+  .al-dgx{overflow-x:auto}.al-one{background:#f8faff;border:1px solid #dfe5fb;border-radius:10px;padding:8px 10px;font-size:12.5px;line-height:1.5}.al-tb .who .al-one b{display:inline;font-size:12.5px}.al-tb .who .al-one span{font-size:11px}
+  .al-chk{border:1px solid #cfd8ff;background:#fff;border-radius:8px;padding:3px 9px;font:700 11.5px inherit;cursor:pointer;color:#3346a8;margin-top:4px}
   @media (max-width:820px){.al-tb,.al-tb tbody{display:block;width:100%}.al-tb thead{display:none}.al-tb tr{display:block;padding:8px 0;border-top:1px solid #edf1ee}.al-tb td{display:block;border:0;padding:2px 0}.al-msg,.al-ad{max-width:none}}
   `;
   WaPanels.add('adleads', (el, ctx) => {
     if (!document.getElementById('alCss')) { const s = document.createElement('style'); s.id = 'alCss'; s.textContent = CSS; document.head.appendChild(s); }
-    let day = today(), number = 0;
+    let day = today(), number = 0, dgOpen = false, DG = null, dgText = '';
     el.innerHTML = loading;
     async function load() {
       let D; try { D = await api.get('wa.g_adleads', { date: day, number }); } catch (e) { el.innerHTML = errBox(e.message); return; }
       const allN = (D.numbers || []).reduce((s, n) => s + (n.n || 0), 0);
       const chips = [['0', 'All numbers', D.all != null ? D.all : allN]].concat((D.numbers || []).filter((n) => n.n > 0 || n.id === number).map((n) => [String(n.id), n.label || 'Number', n.n]));
       el.innerHTML = `<div class="wp"><div class="wp-top"><div style="flex:1;min-width:200px"><h2>📣 Ad leads</h2><p>Customers who came from a Meta click-to-WhatsApp ad on the chosen day, with the first message they wrote. One line per customer.</p></div></div>
-      <div class="al-bar"><button type="button" class="al-btn" id="alPrev">‹</button><input type="date" id="alDay" value="${esc(D.date)}" max="${today()}"><button type="button" class="al-btn" id="alNext" ${D.date >= today() ? 'disabled' : ''}>›</button><button type="button" class="al-btn" id="alToday">Today</button><button type="button" class="al-btn" id="alRef">Refresh</button></div>
+      <div class="al-bar"><button type="button" class="al-btn" id="alPrev">‹</button><input type="date" id="alDay" value="${esc(D.date)}" max="${today()}"><button type="button" class="al-btn" id="alNext" ${D.date >= today() ? 'disabled' : ''}>›</button><button type="button" class="al-btn" id="alToday">Today</button><button type="button" class="al-btn" id="alRef">Refresh</button><button type="button" class="al-btn" id="alDg" style="border-color:#cfd8ff;color:#3346a8">🩺 Diagnose</button></div>
+      <div id="alDgBox"></div>
       <div class="al-chips">${chips.map(([k, l, n]) => `<button type="button" class="al-chip ${String(number) === k ? 'on' : ''}" data-n="${k}">📱 ${esc(l)}<i>${n}</i></button>`).join('')}</div>
       <div class="al-sum"><span><b>${D.total}</b>ad leads</span><span><b>${D.new}</b>new customers</span><span><b>${D.total - D.new}</b>came before</span></div>
       <div class="wp-cd">${D.rows.length ? `<table class="wp-tb al-tb"><thead><tr><th>Time</th><th>Customer</th><th>First message that day</th><th>Ad</th><th>Number</th></tr></thead><tbody>${D.rows.map((r, i) => `<tr class="al-row" data-i="${i}" title="Open the chat">
         <td style="white-space:nowrap">${esc(time(r.at))}</td>
-        <td class="who"><b>${esc(r.name || r.phone)}</b><span>${esc(r.phone)}</span> <span class="al-new ${r.new ? '' : 'r'}">${r.new ? 'New' : 'Came before'}</span></td>
+        <td class="who"><b>${esc(r.name || r.phone)}</b><span>${esc(r.phone)}</span> <span class="al-new ${r.new ? '' : 'r'}">${r.new ? 'New' : 'Came before'}</span><br><button type="button" class="al-chk" data-chk="${i}">🩺 Check order</button><div class="al-onebox" data-one="${i}"></div></td>
         <td><div class="al-msg">${esc(r.first || '—')}</div></td>
         <td><div class="al-ad">${esc(r.ad || 'Meta ad')}</div></td>
         <td style="white-space:nowrap">${esc(r.number || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="wp-empty">No ad leads on this day' + (number ? ' for this number' : '') + '.</div>'}
@@ -48,8 +61,57 @@
       $(el, '#alNext').onclick = () => { if (day < today()) { day = shift(day, 1); load(); } };
       $(el, '#alToday').onclick = () => { day = today(); load(); };
       $(el, '#alRef').onclick = load;
+      $(el, '#alDg').onclick = () => { dgOpen = !dgOpen; if (dgOpen) diagnose(); else $(el, '#alDgBox').innerHTML = ''; };
+      if (dgOpen) diagnose();
+      el.querySelectorAll('[data-chk]').forEach((b) => { b.onclick = (ev) => { ev.stopPropagation(); checkOne(+b.dataset.chk, D.rows[+b.dataset.chk]); }; });
       el.querySelectorAll('.al-chip').forEach((b) => { b.onclick = () => { number = +b.dataset.n; load(); }; });
       el.querySelectorAll('.al-row').forEach((tr) => { tr.onclick = () => { const r = D.rows[+tr.dataset.i]; if (r && ctx && ctx.openChat) ctx.openChat(r.phone); }; });
+    }
+    // 🩺 one customer: did the tracking service get the ad click, is there a Shopify order for this number, was it matched and told to Meta
+    async function checkOne(i, r) {
+      const box = el.querySelector('[data-one="' + i + '"]'); if (!box || !r) return; if (box.innerHTML) { box.innerHTML = ''; return; }
+      box.innerHTML = '<div class="al-one">Checking…</div>'; box.onclick = (ev) => ev.stopPropagation();
+      let O; try { O = await api.get('wa.g_adcheck_one', { phone: r.phone }); } catch (e) { box.innerHTML = '<div class="al-one">' + esc(e.message) + '</div>'; return; }
+      if (!O.svc) { box.innerHTML = '<div class="al-one">❌ ' + esc(O.svc_error || 'The tracking service did not answer.') + '</div>'; return; }
+      const ck = O.svc.clicks || [], od = O.svc.orders || [];
+      let h = ck.length ? `✅ Ad click received: <b>${esc(ck[0].headline || ck[0].ad_id || 'Meta ad')}</b>, ${esc(unix(ck[0].at))}${ck.length > 1 ? ' (+' + (ck.length - 1) + ' earlier)' : ''}`
+        : '⚠️ No ad click from this number reached the tracking service (it only knows clicks since it was switched on, or this customer wrote without clicking an ad).';
+      h += '<br>' + (od.length ? od.map((o) => `🧾 Order <b>${esc(o.name || '')}</b> · ${inr(o.total)} · ${esc(o.financial_status || '')}${o.cancelled ? ' · cancelled' : ''} · ${esc(unix(o.at))}<br>&nbsp;&nbsp;&nbsp;${o.matched_ad_id ? '✅ matched to the ad' : '— not matched to an ad click (no click in the 7 days before it)'} ${o.matched_ad_id ? capiTag(o.capi_status) : ''}${o.capi_error ? ' <span style="color:#b42318">' + esc(o.capi_error) + '</span>' : ''}`).join('<br>')
+        : '— No Shopify order seen for this number yet (the service only knows orders made or changed since it was switched on).');
+      box.innerHTML = '<div class="al-one">' + h + '</div>';
+    }
+    // 🩺 the whole day: Meta, the tracking service and the HRMS side by side, per ad
+    async function diagnose() {
+      const box = $(el, '#alDgBox'); if (!box) return; box.innerHTML = '<div class="al-dg">Checking…</div>';
+      try { DG = await api.get('wa.g_adcheck', { date: day }); } catch (e) { box.innerHTML = '<div class="al-dg">' + esc(e.message) + '</div>'; return; }
+      const S = DG.svc, H = DG.hrms, L = [], T = [], line = (ic, tx, plain) => { L.push(`<div class="al-ck"><i>${ic}</i><span>${tx}</span></div>`); T.push(ic + ' ' + (plain || tx.replace(/<[^>]+>/g, ''))); };
+      let table = '', ord = '';
+      if (!S) line('❌', '<b>Tracking service:</b> ' + esc(DG.svc_error || 'no answer'));
+      else {
+        const hb = {}; (H.by_ad || []).forEach((a) => { hb[a.ad_id] = a.n; });
+        const t = S.total || {}, sum = (k) => (S.ads || []).reduce((s, a) => s + ((a.capi || {})[k] || 0), 0), sent = sum('sent'), failed = sum('failed'), pend = sum('pending');
+        const dayStart = Date.parse(DG.date + 'T00:00:00') / 1000, startedToday = S.health && S.health.first_click_at && S.health.first_click_at >= dayStart;
+        line('✅', `<b>Tracking service is answering.</b> Last ad click ${esc(unix(S.health.last_click_at))}, last Shopify order ${esc(unix(S.health.last_order_at))}, spend read up to ${esc(S.health.last_spend_day || '—')}.`);
+        if (startedToday) line('ℹ️', `The service started counting on this day at ${esc(unix(S.health.first_click_at))}; earlier clicks of the day are not in its numbers.`);
+        const mc = t.meta_conversations || 0, cl = t.queries || 0;
+        if (mc > 0 && cl < mc * 0.5 && !startedToday) line('⚠️', `<b>Messages may not be reaching the service:</b> Meta counts ${mc} conversations, the service received ${cl} ad clicks.`);
+        else line(cl > 0 ? '✅' : '⚠️', `<b>Ad clicks:</b> Meta counts ${mc} conversations · the service received ${cl} · the HRMS lists ${H.total} ad leads (${H.new} new).`);
+        line(S.health.orders_received_day > 0 ? '✅' : '⚠️', `<b>Shopify orders reaching the service:</b> ${S.health.orders_received_day} on this day.`);
+        line(t.orders > 0 ? '✅' : 'ℹ️', `<b>Orders matched to an ad click:</b> ${t.orders || 0} (${t.confirmed_orders || 0} paid) · revenue ${inr(t.revenue)} · spend ${inr(t.spend)} · ROAS ${t.roas != null ? t.roas.toFixed(2) : '—'}.`);
+        line(failed ? '❌' : sent ? '✅' : 'ℹ️', `<b>Purchases told to Meta:</b> ${sent} accepted · ${failed} refused · ${pend} waiting.` + (failed ? ' See the reason on the orders below.' : !sent ? ' Nothing to send yet (no matched paid order).' : ''));
+        const ads = S.ads || []; const seen = {};
+        const rows = ads.map((a) => { seen[a.ad_id] = 1; const c = a.capi || {}; return [a.ad_name || a.ad_id, inr(a.spend), a.meta_conversations || 0, a.clicks || 0, hb[a.ad_id] || 0, a.orders || 0, a.confirmed_orders || 0, inr(a.revenue), a.roas != null ? a.roas.toFixed(2) : '—', (c.sent || 0) + ' / ' + (c.failed || 0) + ' / ' + (c.pending || 0)]; });
+        (H.by_ad || []).forEach((a) => { if (!seen[a.ad_id]) rows.push([(a.title || 'Meta ad') + ' (HRMS only)', '—', '—', 0, a.n, 0, 0, '—', '—', '—']); });
+        const HEAD = ['Ad', 'Spend', 'Meta conv.', 'Clicks (service)', 'Ad leads (HRMS)', 'Orders', 'Paid', 'Revenue', 'ROAS', 'Meta: ok / refused / waiting'];
+        table = rows.length ? `<div class="al-dgx"><table><thead><tr>${HEAD.map((x) => '<th>' + x + '</th>').join('')}</tr></thead><tbody>${rows.map((r) => '<tr>' + r.map((c) => '<td>' + esc(String(c)) + '</td>').join('') + '</tr>').join('')}</tbody></table></div>` : '';
+        T.push('', HEAD.join(' | ')); rows.forEach((r) => T.push(r.join(' | ')));
+        const os = S.orders || [];
+        if (os.length) { ord = `<div class="al-dgx"><table><thead><tr><th>Matched order</th><th>Ad</th><th>Amount</th><th>Payment</th><th>Meta</th></tr></thead><tbody>${os.map((o) => `<tr><td>${esc(o.name || '')}${o.cancelled ? ' (cancelled)' : ''}</td><td>${esc(o.ad_name || o.ad_id || '')}</td><td>${inr(o.total)}</td><td>${esc(o.financial_status || '')}</td><td>${capiTag(o.capi_status)}${o.capi_error ? '<div style="color:#b42318;white-space:normal;text-align:left">' + esc(o.capi_error) + '</div>' : ''}</td></tr>`).join('')}</tbody></table></div>`;
+          T.push('', 'Matched orders:'); os.forEach((o) => T.push([o.name, o.ad_name || o.ad_id, inr(o.total), o.financial_status, o.capi_status, o.capi_error || ''].join(' | '))); }
+      }
+      dgText = 'Diagnose ' + DG.date + ' (checked ' + DG.now + ')\n' + T.join('\n');
+      box.innerHTML = `<div class="al-dg"><h3>🩺 Diagnose · ${esc(DG.date)}</h3>${L.join('')}${table}${ord}<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="al-btn" id="alCopy">Copy report</button><span class="wp-hint">The report has no customer names or numbers. HRMS ad leads are counted under the FIRST ad that brought the customer, so per-ad numbers can differ from the service.</span></div></div>`;
+      $(el, '#alCopy').onclick = async () => { try { await navigator.clipboard.writeText(dgText); toast('Report copied'); } catch (e) { const ta = document.createElement('textarea'); ta.value = dgText; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Report copied'); } catch (e2) { toast('Could not copy'); } ta.remove(); } };
     }
     load(); return load;
   });
