@@ -215,6 +215,30 @@ function fup_tm4u_upload_topic(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_tm4u_upload_topic: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's four plain hand-written topics of the Myntra section (the section is made by the owner; this waits for it): yesterday's four numbers, how the products look in front, the reviews with the product name, and the Ads. Nothing is read from Myntra. Nobody is assigned. */
+function fup_seed_myntra_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_myntra_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%myntra%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', ?, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $num = function ($l) { return ['label' => $l, 'type' => 'num', 'req' => 1]; };
+        $list = [
+            ['Yesterday\'s numbers: ad spent, orders, collection, orders from ads', 'Fill this in the morning for YESTERDAY: the ad spend (₹), all orders, the collection (₹) and how many orders came from the ads.', 1, 0, [$num('Ad spent yesterday (₹)'), $num('Orders yesterday'), $num('Collection yesterday (₹)'), $num('Orders from ads yesterday')]],
+            ['Front UI: do all products look neat', 'Write how the products look on Myntra today: is everything neat, and what is wrong (blurred photo, missing price tag).', 0, 1, []],
+            ['Reviews: how are they and what can be done', 'Write how the reviews are and what can be done. Put the product name of a bad review in the Product name box.', 0, 1, [['label' => 'Product name (bad review)', 'type' => 'text', 'req' => 0]]],
+            ['Ads: what is running and what can be done next', 'Write what is running in the Myntra ads today and what can be done next.', 0, 1, []],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3], $t[4] ? json_encode(fup_fields_clean($t[4]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_myntra_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_myntra_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's five hand-written topics of the TM4U section (the section is made by the owner; this waits for it). Nothing is read from the website. A topic with the same title is not made twice. Nobody is assigned. */
 function fup_seed_tm4u_topics(PDO $pdo): void
 {
@@ -728,6 +752,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_store_topics3($pdo);
     fup_seed_store_topics4($pdo);
     fup_seed_amazon_topics($pdo);
+    fup_seed_myntra_topics($pdo);
     fup_seed_tm4u_topics($pdo);
     fup_tm4u_numbers_update($pdo);
     fup_tm4u_upload_topic($pdo);
