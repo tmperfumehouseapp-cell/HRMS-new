@@ -139,6 +139,21 @@ function fup_seed_store_topics3(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_store_topics3: ' . $e->getMessage()); }
 }
 
+/** Once more: a topic with no number of its own: what was uploaded today in the Story and in the Community (the person writes it; nothing in the HRMS knows it). */
+function fup_seed_store_topics4(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_store_topics_v4', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) = 'surat store' ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); if ($sid <= 0) return;
+        setting_set($pdo, 'fup_store_topics_v4', '1');
+        $title = 'Story & Community: what was uploaded today';
+        $x = $pdo->prepare("SELECT id FROM fu_topics WHERE section_id = ? AND title = ? AND active = 1"); $x->execute([$sid, $title]); if ($x->fetchColumn()) return;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, need_text, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, 1, 'open', ?, 1, 0, ?)")
+            ->execute([$sid, $title, 'Write what you put on the Story today and what you uploaded in the Community (for example: 2 stories - new arrivals, 1 community post - offer).', $n + 1, fup_now()]);
+    } catch (Throwable $e) { error_log('fup_seed_store_topics4: ' . $e->getMessage()); }
+}
+
 /** The numbers a topic can take by itself. key => [label, unit, fn(pdo, day) → number|null]. Every one is read-only and safe when its table is missing. */
 function fup_sources(): array
 {
@@ -602,6 +617,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_store_topics($pdo);
     fup_seed_store_topics2($pdo);
     fup_seed_store_topics3($pdo);
+    fup_seed_store_topics4($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
