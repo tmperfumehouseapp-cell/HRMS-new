@@ -49,6 +49,8 @@ jobs:
         run: php tests/offer_addon_test.php && node tests/offer_addon_js_test.js
       - name: Bot final gate (own final offer, bigger jumps, unknown amounts)
         run: php tests/final_gate_test.php
+      - name: Lineup re-entry after an order
+        run: php tests/line_reenter_test.php
   staging:
     needs: check
     runs-on: ubuntu-latest
