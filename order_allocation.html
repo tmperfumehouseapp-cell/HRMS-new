@@ -436,7 +436,9 @@
   const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };
   function todayStr() { return bizDayOf(new Date()); }
 
-  let HOUSES = { tmph: 'TM Perfume House', tmsg: 'TM Shower Gel' };
+  // owner (24 Nov): ONE platform now — TM Perfume House. No panel is chosen any more; an order stored under the old 'tmsg' panel (kept in the data for the commission) is shown as TM Perfume House
+  let HOUSES = { tmph: 'TM Perfume House' };
+  const HN = (h) => HOUSES[h] || (h === 'tmsg' ? 'TM Perfume House' : h);
   let TYPES = { query: 'Query', campaign: 'Campaign' };
   let SOURCES = {};
   let EMPS = [];          // [{id, code, name, groups:[...]}]
@@ -456,7 +458,7 @@
   const DIRECT = -1;
   const isDirect = (o, p) => (p.emp !== undefined ? p.emp === DIRECT : !!o.allocated_direct);
   const noEmpMsg = (o, p) => (isDirect(o, p) ? 'Direct order has no employee' : 'Choose the employee first');
-  const effHouse = (o, p) => (p.house !== undefined ? p.house : (o.house || ''));
+  const effHouse = (o, p) => (p.house !== undefined ? p.house : (o.house || 'tmph'));
   const effType = (o, p) => (p.type !== undefined ? p.type : (o.order_type || ''));
 
   function matches(o) {
@@ -758,9 +760,9 @@
       ? (shownType ? `<span class="otype ${shownType}">${esc(TYPES[shownType] || shownType)}</span>` : '<span class="sub">—</span>')
       : `<select class="sel ${p.type ? 'changed' : ''}" onchange="pickType('${k}', this.value)">${options(TYPES, effType(o, p), '— Type —')}</select>`;
     const panelCell = lock
-      ? (o.allocated ? `<span class="house ${o.allocated_house}">${esc(HOUSES[o.allocated_house] || o.allocated_house)}</span>
-         <div class="sub">by ${/^auto/.test(o.allocated_by || '') ? '🤖 ' : ''}${esc(o.allocated_by || '—')}${o.allocated_at ? ' · ' + fmtDT(o.allocated_at) : ''}</div>` : (houseSel ? `<span class="house ${houseSel}">${esc(HOUSES[houseSel] || houseSel)}</span>` : '<span class="sub">—</span>'))
-      : `<select class="sel ${p.house ? 'changed' : ''}" onchange="pickHouse('${k}', this.value)">${options(HOUSES, houseSel, '— Panel —')}</select>`;
+      ? (o.allocated ? `<span class="house tmph">${esc(HN(o.allocated_house))}</span>
+         <div class="sub">by ${/^auto/.test(o.allocated_by || '') ? '🤖 ' : ''}${esc(o.allocated_by || '—')}${o.allocated_at ? ' · ' + fmtDT(o.allocated_at) : ''}</div>` : (houseSel ? `<span class="house tmph">${esc(HN(houseSel))}</span>` : '<span class="sub">—</span>'))
+      : `<span class="house tmph">${esc(HN(houseSel || 'tmph'))}</span>`;
     // Employee role: the Type (Query / Campaign) must be picked too before the ✓ works.
     const needType = IS_EMP && !effType(o, p);
     const ready = !o.allocated && houseSel && (empSel > 0 || direct) && !needType;
@@ -825,7 +827,7 @@
     (fs === 'partially_paid' && paid != null ? ` &nbsp;<b style="color:#0f7a41;">Paid ${inr(paid)}</b>${outstanding != null ? ' · ' + inr(outstanding) + ' to pay' : ''}` : '');
   function countedUnder(o) {
     if (o.cancelled) return 'Cancelled — not counted anywhere';
-    if (o.allocated) return `<b>${esc(HOUSES[o.allocated_house] || o.allocated_house)}</b> — allocated${o.allocated_by ? ' by ' + esc(o.allocated_by) : ''}${o.allocated_at ? ' · ' + esc(fmtDT(o.allocated_at)) : ''}`;
+    if (o.allocated) return `<b>${esc(HN(o.allocated_house))}</b> — allocated${o.allocated_by ? ' by ' + esc(o.allocated_by) : ''}${o.allocated_at ? ' · ' + esc(fmtDT(o.allocated_at)) : ''}`;
     return 'Not allocated yet — it is not counted on the Orders page until it is allocated';
   }
   // What the list already knows about the order — used for MySales orders (no Shopify record) and when the full details cannot be opened.
@@ -1045,7 +1047,7 @@
     const e = empById(emp), h = adHouse(o);
     addonKey = k;
     document.getElementById('addonTitle').textContent = 'Add-on for ' + (e ? e.name : 'employee');
-    document.getElementById('addonSub').textContent = new Date(adDate(o) + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }) + (h ? ' · ' + (HOUSES[h] || h) : '');
+    document.getElementById('addonSub').textContent = new Date(adDate(o) + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }) + (h ? ' · ' + (HN(h)) : '');
     document.getElementById('addonOrder').value = o.order_name || '';
     document.getElementById('addonItems').innerHTML = addonItemRow() + addonItemRow();
     document.getElementById('addonPrice').value = ''; document.getElementById('addonPre').value = ''; document.getElementById('addonCod').value = '';
@@ -1384,7 +1386,7 @@
       o.allocated_direct = dir ? 1 : 0;
       o.allocated_emp = dir ? 0 : emp; o.employee_id = dir ? 0 : emp; o.salesman = dir ? '' : (d.employee_name || (e ? e.name : o.salesman)); o.employee_code = e ? e.code : (dir ? '' : o.employee_code);
       o.allocated_by = d.allocated_by; o.allocated_at = d.allocated_at;
-      o.store_src = o.store_src || o.store; o.store = HOUSES[house];
+      o.store_src = o.store_src || o.store; o.store = HN(house);
       delete pending[k];
       showAlert(d.message, 'success');
       render();
@@ -1456,7 +1458,7 @@
         catch (e2) { throw new Error(/fetch|network|load failed/i.test(e2.message || '') ? 'The server took too long for this date range. Pick fewer days (e.g. one month) and try again.' : e2.message); }
       }
       orders = d.orders || [];
-      if (d.houses) HOUSES = d.houses;
+      if (d.houses && d.houses.tmph) HOUSES = { tmph: d.houses.tmph };
       if (d.types) TYPES = d.types;
       if (d.sources) SOURCES = d.sources;
       if (d.employees) EMPS = d.employees;
@@ -1486,7 +1488,7 @@
   function custOrderRow(o) {
     const k = key(o);
     const who = o.allocated_direct ? '<span class="dtag">Direct order</span>' : (o.salesman ? `<b>${esc(o.salesman)}</b>` : '<span class="sub">No employee</span>');
-    const panel = o.house ? `<span class="house ${esc(o.house)}">${esc(o.house_label || HOUSES[o.house] || o.house)}</span>` : '';
+    const panel = o.house ? `<span class="house tmph">${esc(HN(o.house))}</span>` : '';
     const state = o.cancelled ? '<span class="badge inactive">Cancelled</span>' : (o.allocated ? '<span class="badge">Allocated</span>' : '<span class="badge inactive">Not allocated</span>');
     return `<div class="co ${o.cancelled ? 'cx' : ''}">
       <div class="co-a"><a href="#" class="ord-link" onclick="openDetail('${k}'); return false;" title="Open order details"><b>${esc(o.order_name)}</b></a> <span class="src">${esc(o.source_label || o.store)}</span>
