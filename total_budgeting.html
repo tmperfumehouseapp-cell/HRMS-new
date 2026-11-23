@@ -617,8 +617,7 @@ body.emb .tabs{display:none;}
     if (pend) n.push(['warn', rs(pend) + ' of penalties logged today will be cut tomorrow.']);
     if (!F.exp) n.push(['warn', 'No fixed expenses are entered, so electricity, rent and the like are not in the budget.']);
     GK.forEach(k => { const x = F.L[k]; if (x.goal && x.proj > x.goal) n.push(['bad', GN[k] + ' is heading for ' + lakh(x.proj) + ' against a goal of ' + lakh(x.goal) + ': ' + lakh(x.proj - x.goal) + ' over. ' + (x.pen ? 'Penalties of ' + rs(x.pen) + ' are already taken off.' : '')]); });
-    const rSales = M.all.reduce((a, r) => a + Object.values(r.rs || {}).reduce((b, x) => b + (x.billed || 0), 0), 0);
-    if (rSales > 0 && !(Number(E.retail.pct) > 0)) n.push(['warn', 'Retail wholesale sold ' + rs(rSales) + ' this month, but the retail commission % is not set, so it earns no commission. Set it in the box on the right and Save.']);
+    // (Retail wholesale is paid a fixed salary only, no commission: no warning about a missing retail commission %.)
     if (!GK.some(k => F.L[k].goal)) n.push(['warn', 'No goal is set for the sales team, leaders, store or other salaries. Type them in "Budget by line" and Save to see who runs over.']);
     S.warn.forEach(w => n.push(['bad', w]));
     return n;
