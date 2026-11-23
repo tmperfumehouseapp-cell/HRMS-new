@@ -40,7 +40,7 @@
   .wo-ov{position:fixed; inset:0; z-index:9999; background:rgba(15,23,42,.55); display:flex; align-items:center; justify-content:center; padding:16px;}
   .wo-md{background:#fff; width:min(520px,100%); border-radius:18px; padding:16px; max-height:90vh; overflow:auto;} .wo-md h3{margin:0 0 4px; font-size:16px;} .wo-md label{display:block; font-size:12px; font-weight:700; margin:10px 0 4px;} .wo-md .wo-in{width:100%;}
   .wo-r .k{display:none;}
-  @media (max-width:900px){
+  @media (max-width:1180px){   /* the page sits inside the Sales frame, so even a laptop is narrow here: the table became unreadable (items cut to "1 × Jp…") */
     .wo-kpi{grid-template-columns:repeat(2, minmax(0,1fr));}
     .wo-card .wo-row.sc{flex-wrap:nowrap; overflow-x:auto; padding-bottom:3px; scrollbar-width:none;} .wo-card .wo-row.sc::-webkit-scrollbar{display:none;} .wo-chip{flex:0 0 auto; min-height:38px;}
     .wo-th{display:none;}

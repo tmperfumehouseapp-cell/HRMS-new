@@ -417,6 +417,31 @@ function fup_put(PDO $pdo, int $topic, string $day, array $f): void
     foreach (['txt', 'val', 'pct', 'auto', 'emp_id', 'emp_name', 'updated_at', 'ai_verdict', 'ai_note', 'ai_q', 'vals', 'fvals'] as $k) if (array_key_exists($k, $f)) { $set[] = $k . ' = ?'; $arg[] = $f[$k]; }
     if ($set) { $arg[] = $id; $pdo->prepare("UPDATE fu_updates SET " . implode(', ', $set) . " WHERE id = ?")->execute($arg); }
 }
+/** The Cleaning & Pantry photos of the store places for one day, as one line: "Cafeteria 5/5 (Anil 10:12) · Store floor 3/5 (Anil 11:40)". '' when there are no photo tasks. */
+function fup_pantry_summary(PDO $pdo, string $day): string
+{
+    try {
+        $q = $pdo->prepare("SELECT z.name AS zone, COUNT(*) AS total, SUM(t.status = 'done') AS done, MAX(t.done_at) AS last_at, MAX(e.full_name) AS who
+            FROM bd_tasks t JOIN bd_duties d ON d.id = t.duty_id
+            JOIN of_zones z ON z.id = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(d.lib_key, ':', 2), ':', -1) AS UNSIGNED)
+            JOIN of_offices o ON o.id = z.office_id LEFT JOIN employees e ON e.employee_id = t.owner_emp
+            WHERE t.task_date = ? AND t.status <> 'excused' AND d.lib_key LIKE 'of:%:p%' AND o.name LIKE '%store%' GROUP BY z.id, z.name ORDER BY z.name");
+        $q->execute([$day]); $parts = [];
+        foreach ($q->fetchAll() as $r) {
+            $done = (int)$r['done']; $tot = (int)$r['total']; $who = trim((string)$r['who']); $at = $done > 0 && !empty($r['last_at']) ? date('H:i', strtotime((string)$r['last_at'])) : '';
+            $parts[] = $r['zone'] . ' ' . $done . '/' . $tot . ($done > 0 ? ' (' . trim($who . ' ' . $at) . ')' : ' (not uploaded yet)');
+        }
+        return implode(' · ', $parts);
+    } catch (Throwable $e) { return ''; }
+}
+/** Keeps that line on the day's row of a Pantry photos topic. A line a person wrote is never replaced; the automatic one (starts with the robot) is refreshed. */
+function fup_pantry_text(PDO $pdo, int $topicId, string $day): void
+{
+    $sum = fup_pantry_summary($pdo, $day); if ($sum === '') return; $line = "\u{1F916} " . $sum;
+    $q = $pdo->prepare("SELECT txt FROM fu_updates WHERE topic_id = ? AND day = ?"); $q->execute([$topicId, $day]); $r = $q->fetch(); $q->closeCursor();
+    if ($r) { $old = (string)$r['txt']; if ($old === $line) return; if ($old !== '' && strpos($old, "\u{1F916} ") !== 0) return; }
+    fup_put($pdo, $topicId, $day, ['txt' => $line, 'updated_at' => fup_now()]);
+}
 /** Topics with a data source: today's (and yesterday's) number is read from the HRMS and kept on the day's row. */
 function fup_autofetch(PDO $pdo, array $topics, string $today): void
 {
@@ -424,6 +449,7 @@ function fup_autofetch(PDO $pdo, array $topics, string $today): void
     foreach ($topics as $t) {
         if ((string)$t['source'] === '' || (string)$t['status'] === 'done') continue;
         foreach ([$today, $yest] as $d) {
+            if ((string)$t['source'] === 'store_pantry_photos') { try { fup_pantry_text($pdo, (int)$t['id'], $d); } catch (Throwable $e) { } }
             $v = fup_source_val($pdo, (string)$t['source'], $d); if ($v === null) continue;
             try {
                 $q = $pdo->prepare("SELECT val, auto FROM fu_updates WHERE topic_id = ? AND day = ?"); $q->execute([(int)$t['id'], $d]); $r = $q->fetch();
@@ -762,6 +788,27 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     $secRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_sections WHERE id = ? AND active = 1"); $q->execute([$id]); $s = $q->fetch(); if (!$s) json_response(['error' => 'This section is not there any more.'], 404); return $s; };
 
     switch ($action) {
+        case 'fup.pantry_photos': case 'fup.pantry_photo': {      // the Cleaning & Pantry photos of the store places, shown inside the Pantry photos topic (read-only). Admin / HR, or the boss of a section that holds that topic.
+            $okSee = $w['manager'];
+            if (!$okSee) { foreach (fup_my_sections($pdo, $w) as $sx) { if (empty($sx['own'])) continue; $c0 = $pdo->prepare("SELECT 1 FROM fu_topics WHERE section_id = ? AND source = 'store_pantry_photos' AND active = 1 LIMIT 1"); $c0->execute([(int)$sx['id']]); if ($c0->fetchColumn()) { $okSee = true; break; } } }
+            if (!$okSee) json_response(['error' => 'Not allowed.'], 403);
+            $base = "FROM bd_tasks t JOIN bd_duties d ON d.id = t.duty_id
+                JOIN of_zones z ON z.id = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(d.lib_key, ':', 2), ':', -1) AS UNSIGNED)
+                JOIN of_offices o ON o.id = z.office_id LEFT JOIN employees e ON e.employee_id = t.owner_emp
+                LEFT JOIN of_points pt ON pt.id = CAST(SUBSTRING_INDEX(d.lib_key, ':p', -1) AS UNSIGNED)
+                WHERE t.status = 'done' AND t.proof_path IS NOT NULL AND t.proof_path <> '' AND d.lib_key LIKE 'of:%:p%' AND o.name LIKE '%store%'";
+            if ($action === 'fup.pantry_photos') {
+                $day = (string)($_GET['day'] ?? ''); if (!fup_is_day($day)) json_response(['error' => 'Bad day.'], 422);
+                $q = $pdo->prepare("SELECT t.id AS task_id, z.name AS zone, pt.text AS label, e.full_name AS who, t.done_at " . $base . " AND t.task_date = ? ORDER BY z.name, t.id"); $q->execute([$day]); $out = [];
+                foreach ($q->fetchAll() as $r) $out[] = ['task_id' => (int)$r['task_id'], 'zone' => (string)$r['zone'], 'label' => (string)($r['label'] ?? ''), 'by' => (string)($r['who'] ?? ''), 'at' => !empty($r['done_at']) ? date('H:i', strtotime((string)$r['done_at'])) : ''];
+                json_response(['day' => $day, 'photos' => $out]);
+            }
+            $tid = (int)($_GET['task_id'] ?? 0);
+            $q = $pdo->prepare("SELECT t.proof_path " . $base . " AND t.id = ?"); $q->execute([$tid]); $pp = basename((string)$q->fetchColumn());
+            $file = __DIR__ . '/uploads/boss/' . $pp; if ($pp === '' || !is_file($file)) json_response(['error' => 'No photo.'], 404);
+            header('Content-Type: image/jpeg'); header('Cache-Control: private, max-age=86400'); header('Content-Length: ' . filesize($file)); readfile($file); exit;
+        }
+
         case 'fup.badge': json_response(fup_badge_data($pdo, $auth));
         case 'fup.mine': json_response(fup_mine($pdo, $w));
 

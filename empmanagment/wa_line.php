@@ -277,14 +277,19 @@ function wl_ordered_after(array $orders, string $phone, int $t): bool { foreach 
 function wl_enroll(PDO $pdo, int $since): int
 {
     if ($since <= 0) return 0; $n = 0; $orders = wl_orders_since($pdo, $since);
-    $have = []; $h = $pdo->prepare("SELECT phone FROM wa_line_cust WHERE created_at >= ?"); $h->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p) $have[(string)$p] = 1;
-    $q = $pdo->prepare("SELECT c.phone FROM wa_contacts c WHERE c.last_in_at >= ? AND c.optout = 0 AND c.camp_optout = 0 LIMIT 60000"); $q->execute([date('Y-m-d H:i:s', $since)]);
+    $have = []; $h = $pdo->prepare("SELECT phone FROM wa_line_cust WHERE created_at >= ? AND NOT (status = 'done' AND left_why = 'ordered')"); $h->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p) $have[(string)$p] = 1;
+    // owner, 23 Nov ("an order, then 15-20 days later he asks again: he goes into the Lineup again"): a customer who LEFT the Lineup because he ordered is not blocked for 30 days; he comes back as a new Day 0 when he writes again at least wl_reenter_days (10) after his last order (his first message after that); a message in those first days (tracking, thanks, feedback) does not count
+    $reDays = max(3, (int)setting_get($pdo, 'wl_reenter_days', '10')); $reen = []; try { $r0 = $pdo->prepare("SELECT phone FROM wa_line_cust WHERE status = 'done' AND left_why = 'ordered' AND created_at >= ?"); $r0->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]); foreach ($r0->fetchAll(PDO::FETCH_COLUMN) as $p) $reen[(string)$p] = 1; } catch (Throwable $e) { }
+    $q = $pdo->prepare("SELECT c.phone FROM wa_contacts c WHERE c.last_in_at >= ? AND c.optout = 0 AND c.camp_optout = 0 ORDER BY c.last_in_at DESC LIMIT 60000"); $q->execute([date('Y-m-d H:i:s', $since)]);   // newest first: the rounds take 3,000 at a time, and customers who can never be enrolled (ordered since he wrote) must not keep the newest repliers waiting
     $cand = []; foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) if (!isset($have[(string)$p])) $cand[] = (string)$p;
     $cand = array_slice($cand, 0, 3000);   // the rest comes in the next rounds
     foreach (array_chunk($cand, 400) as $ch) {
         $in = implode(',', array_fill(0, count($ch), '?'));
         $f = $pdo->prepare("SELECT phone, MIN(ts) t FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN ($in) GROUP BY phone"); $f->execute(array_merge([date('Y-m-d H:i:s', $since)], $ch)); $first = [];
         foreach ($f->fetchAll() as $r) { $t = (int)strtotime((string)$r['t']); if ($t >= $since) $first[(string)$r['phone']] = $t; }
+        foreach ($ch as $__rp) { if (!isset($reen[$__rp])) continue; $__ot = 0; foreach ($orders[substr(preg_replace('/\D+/', '', $__rp), -10)] ?? [] as $__ox) $__ot = max($__ot, (int)$__ox);   // came back after an order
+            unset($first[$__rp]); if ($__ot <= 0) continue;
+            $__f2 = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE dir = 'in' AND phone = ? AND ts >= ?"); $__f2->execute([$__rp, date('Y-m-d H:i:s', $__ot + $reDays * 86400)]); $__t2 = (int)strtotime((string)$__f2->fetchColumn()); if ($__t2 > 0 && $__t2 >= $since) $first[$__rp] = $__t2; }
         if (!$first) continue; $ph = array_keys($first); $in2 = implode(',', array_fill(0, count($ph), '?'));
         $b = $pdo->prepare("SELECT phone, n FROM wa_cust WHERE phone IN ($in2)"); $b->execute($ph); $buy = []; foreach ($b->fetchAll() as $r) $buy[(string)$r['phone']] = (int)$r['n'] > 0;
         $m = $pdo->prepare("SELECT phone, body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone IN ($in2) AND ts >= ? ORDER BY id"); $m->execute(array_merge($ph, [date('Y-m-d H:i:s', $since)])); $txt = [];
