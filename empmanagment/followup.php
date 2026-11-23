@@ -178,6 +178,24 @@ function fup_seed_amazon_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_amazon_topics: ' . $e->getMessage()); }
 }
 
+/** The fields of the TM4U "Today's numbers" topic (from the owner's Uploadings sheet): fixed keys so values already written stay attached. Profit and the 15% are typed (the sheet's own columns). */
+function fup_tm4u_numbers_fields(): array
+{
+    $f = function ($k, $l, $t, $r) { return ['k' => $k, 'label' => $l, 'type' => $t, 'req' => $r]; };
+    return [$f('f1', 'Queries today', 'num', 1), $f('f2', 'How many orders came (ketla order paida)', 'num', 1), $f('f5', 'Order IDs (for example 1019, 1020)', 'text', 0), $f('f3', 'Total collection (₹)', 'num', 1), $f('f6', 'Prepaid (₹)', 'num', 0), $f('f7', 'COD (₹)', 'num', 0), $f('f8', 'Buying (₹)', 'num', 0), $f('f9', 'Courier charges (₹)', 'num', 0), $f('f10', 'Total profit (₹)', 'num', 0), $f('f11', 'Asti 15% (₹)', 'num', 0), $f('f4', 'Story / Broadcast: what went out today', 'text', 1)];
+}
+/** Once more (the owner's sheet): the TM4U "Today's numbers" topic takes the sheet's columns. The earlier fields that the sheet also has (orders, collection) stay once. */
+function fup_tm4u_numbers_update(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_tm4u_numbers_v2', '') === '1') return;
+        if ((string)setting_get($pdo, 'fup_tm4u_topics_v1', '') !== '1') return;      // the topic is made first
+        $q = $pdo->query("SELECT id, `fields` FROM fu_topics WHERE title LIKE 'Today\\'s numbers: queries%' AND active = 1"); $rows = $q->fetchAll(); $q->closeCursor();
+        foreach ($rows as $r) { $json = json_encode(fup_fields_clean(fup_tm4u_numbers_fields(), fup_fields($r)), JSON_UNESCAPED_UNICODE); $pdo->prepare("UPDATE fu_topics SET `fields` = ? WHERE id = ?")->execute([$json, (int)$r['id']]); }
+        setting_set($pdo, 'fup_tm4u_numbers_v2', '1');
+    } catch (Throwable $e) { error_log('fup_tm4u_numbers_update: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's five hand-written topics of the TM4U section (the section is made by the owner; this waits for it). Nothing is read from the website. A topic with the same title is not made twice. Nobody is assigned. */
 function fup_seed_tm4u_topics(PDO $pdo): void
 {
@@ -193,7 +211,7 @@ function fup_seed_tm4u_topics(PDO $pdo): void
         $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
         $num = function ($l) { return ['label' => $l, 'type' => 'num', 'req' => 1]; };
         $list = [
-            ['Today\'s numbers: queries, orders, collection, story / broadcast', 'Fill this in the evening: today\'s queries, orders and collection, and what went out on the Story / Broadcast.', 0, [$num('Queries today'), $num('Orders today'), $num('Collection today (₹)'), ['label' => 'Story / Broadcast: what went out today', 'type' => 'text', 'req' => 1]]],
+            ['Today\'s numbers: queries, orders, collection, story / broadcast', 'Fill this in the evening: today\'s queries, orders and collection, and what went out on the Story / Broadcast.', 0, fup_tm4u_numbers_fields()],
             ['New creative: what was made today', 'Write which new creative was made or launched today (reel, post, banner).', 1, []],
             ['Website: what changes can we make', 'Write what changes can be made on the website (or were made today).', 1, []],
             ['Ads: how much is running', 'Write today\'s ad spend and how many campaigns are running.', 0, [$num('Ad spend today (₹)'), $num('Campaigns running'), ['label' => 'Note', 'type' => 'text', 'req' => 0]]],
@@ -692,6 +710,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_store_topics4($pdo);
     fup_seed_amazon_topics($pdo);
     fup_seed_tm4u_topics($pdo);
+    fup_tm4u_numbers_update($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
