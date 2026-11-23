@@ -533,11 +533,18 @@ function wln_engagement(PDO $pdo, string $phone): array
 }
 /** Marketing-only blocks (Meta: too many marketing messages to this customer / he stopped marketing / marketing holdback). Utility is not held by them. */
 function wln_mkt_codes(): array { return [131049, 131050, 130472]; }
+require_once __DIR__ . '/wa_rate.php';   // the hourly speed limit with a ladder (owner, 23 Nov night)
+function wln_resc_ladder(): array { return [1000, 1500, 2000, 2500, 3000, 3500, 4000]; }
+/** Failure share of the latest 400 rescue sends: [delivered or read, failed]. */
+function wln_resc_stats(PDO $pdo): array { try { $r = $pdo->query("SELECT SUM(m.status IN ('delivered','read')), SUM(m.status = 'failed') FROM (SELECT wamid FROM wa_line_plan WHERE status = 'sent' AND why LIKE 'utility rescue%' AND wamid <> '' ORDER BY id DESC LIMIT 400) l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci)")->fetch(PDO::FETCH_NUM); return [(int)($r[0] ?? 0), (int)($r[1] ?? 0)]; } catch (Throwable $e) { return [0, 0]; } }
 /** THE RESCUE: a Lineup message whose delivery receipt says FAILED for a marketing-only reason is sent again at once as its utility twin (one rescue per message; not if he wrote since, ordered or opted out).
  *  The rescue is a row of its own (status sent, why 'utility rescue'), so it is counted — and its receipt counts as delivered — like any other message. 40 a round, receipts of the last 3 hours. Returns the number of rescues sent. */
 function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150, int $budget = 20, int $k = 0): int   // owner 23 Nov (night): several rescuers at the same time (a row is claimed with one UPDATE before it is sent), a bigger budget; owner 22 Nov: 40 a round / 3 hours rescued only 3,960 of 13,790 failed sends: now 150 a round, receipts of the last 24 hours, 20 s budget
 {
     $now = $now ?: time(); $in = implode(',', wln_mkt_codes()); $n = 0; $__t0 = microtime(true);
+    // owner, 23 Nov night: not faster than the hourly limit (ladder 1,000 ... 4,000, starts at 1,000); once an hour the failure share of the latest rescues moves it one step
+    try { if (wrt_due($pdo, 'resc')) { [$__ok, $__fl] = wln_resc_stats($pdo); wrt_adapt($pdo, 'resc', wln_resc_ladder(), 0, $__ok, $__fl, 8.0, 15.0); } $__room = wrt_room($pdo, 'resc', wln_resc_ladder(), 0, 3); } catch (Throwable $e) { $__room = $cap; }
+    if ($__room <= 0) return 0; $cap = min($cap, $__room);
     // once a day: the sends that were marked 'no utility message left / could go' (the pool had 4 wordings) get another try now that the pool is bigger (owner 22 Nov: every blocked message must go out as utility)
     try { if (setting_get($pdo, 'wl_rescue_reopen', '') !== date('Y-m-d', $now)) { setting_set($pdo, 'wl_rescue_reopen', date('Y-m-d', $now)); $pdo->prepare("UPDATE wa_line_plan SET why = '' WHERE status = 'sent' AND (why LIKE 'rescue: no utility message%' OR why = 'rescue: working') AND sent_at >= ?")->execute([date('Y-m-d H:i:s', $now - 36 * 3600)]); } } catch (Throwable $e) { }
     // (no JOIN on the wamids: the two tables have different collations — that threw an error and nothing was rescued; the receipts are read with a bound list instead)
@@ -564,6 +571,7 @@ function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150, int $budget = 20, in
         $mark->execute(['rescue: no utility message could go (' . ($why1 ?? '') . ')', $r['id']]);   // marked, so the next rounds go on with OTHER failed messages (before, the oldest unsendable 40 were tried again every minute and blocked all the others)
         unset($why1);
     }
+    try { wrt_add($pdo, 'resc', $n); } catch (Throwable $e) { }   // the hour's meter
     return $n;
 }
 /** A customer who has to wait: his planned steps move to the time the wait ends (the same gap between them), so the engine does not look at him again every minute (2,800 waiting customers used the whole 40 seconds of a round and only 21 messages went). */

@@ -305,3 +305,9 @@ try {
     echo "RESC failed receipts still waiting in the last 36 h (Lineup rows with why empty) " . json_encode($one("SELECT COUNT(*) FROM wa_line_plan p JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (p.wamid COLLATE utf8mb4_unicode_ci) WHERE p.status = 'sent' AND p.why = '' AND p.sent_at >= ? AND m.status = 'failed' AND m.err_code IN ($mk)", [date('Y-m-d H:i:s', time() - 36 * 3600)])) . "\n";
     echo "RESC last rescue settings reopen " . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wl_rescue_reopen'")[0][0] . "\n";
 } catch (Throwable $e) { echo "RESC ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 39) the hourly speed limits with their ladder (owner 23 Nov night)
+try {
+    $sgr = function ($k) use ($pdo) { $x = $pdo->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $x->execute([$k]); return (string)$x->fetchColumn(); };
+    echo "ASK RATE cold idx '" . $sgr('wrt_idx_cold') . "' (ladder 1500/2000/2500/3000, start idx 2) last " . $sgr('wrt_last_cold') . " · rescue idx '" . $sgr('wrt_idx_resc') . "' (ladder 1000..4000 by 500, start idx 0) last " . $sgr('wrt_last_resc') . " · cold cap " . $sgr('wcd_cap') . " · shards '" . $sgr('wcd_shards') . "' · copies wl_cli_n '" . $sgr('wl_cli_n') . "'\n";
+    echo "ASK RATE meters by clock hour, last 8 (k, hour, n) " . json_encode($one("SELECT k, hr, n FROM wa_rate ORDER BY hr DESC, k LIMIT 8")) . " · now hour " . intdiv(time(), 3600) . "\n";
+} catch (Throwable $e) { echo "ASK RATE ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
