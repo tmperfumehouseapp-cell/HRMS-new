@@ -533,13 +533,20 @@ function wln_engagement(PDO $pdo, string $phone): array
 }
 /** Marketing-only blocks (Meta: too many marketing messages to this customer / he stopped marketing / marketing holdback). Utility is not held by them. */
 function wln_mkt_codes(): array { return [131049, 131050, 130472]; }
+require_once __DIR__ . '/wa_rate.php';   // the hourly speed limit with a ladder (owner, 23 Nov night)
+function wln_resc_ladder(): array { return [1000, 1500, 2000, 2500, 3000, 3500, 4000]; }
+/** Failure share of the latest 400 rescue sends: [delivered or read, failed]. */
+function wln_resc_stats(PDO $pdo): array { try { $r = $pdo->query("SELECT SUM(m.status IN ('delivered','read')), SUM(m.status = 'failed') FROM (SELECT wamid FROM wa_line_plan WHERE status = 'sent' AND why LIKE 'utility rescue%' AND wamid <> '' ORDER BY id DESC LIMIT 400) l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci)")->fetch(PDO::FETCH_NUM); return [(int)($r[0] ?? 0), (int)($r[1] ?? 0)]; } catch (Throwable $e) { return [0, 0]; } }
 /** THE RESCUE: a Lineup message whose delivery receipt says FAILED for a marketing-only reason is sent again at once as its utility twin (one rescue per message; not if he wrote since, ordered or opted out).
  *  The rescue is a row of its own (status sent, why 'utility rescue'), so it is counted — and its receipt counts as delivered — like any other message. 40 a round, receipts of the last 3 hours. Returns the number of rescues sent. */
-function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150): int   // owner 22 Nov: 40 a round / 3 hours rescued only 3,960 of 13,790 failed sends: now 150 a round, receipts of the last 24 hours, 20 s budget
+function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150, int $budget = 20, int $k = 0): int   // owner 23 Nov (night): several rescuers at the same time (a row is claimed with one UPDATE before it is sent), a bigger budget; owner 22 Nov: 40 a round / 3 hours rescued only 3,960 of 13,790 failed sends: now 150 a round, receipts of the last 24 hours, 20 s budget
 {
     $now = $now ?: time(); $in = implode(',', wln_mkt_codes()); $n = 0; $__t0 = microtime(true);
+    // owner, 23 Nov night: not faster than the hourly limit (ladder 1,000 ... 4,000, starts at 1,000); once an hour the failure share of the latest rescues moves it one step
+    try { if (wrt_due($pdo, 'resc')) { [$__ok, $__fl] = wln_resc_stats($pdo); wrt_adapt($pdo, 'resc', wln_resc_ladder(), 0, $__ok, $__fl, 8.0, 15.0); } $__room = wrt_room($pdo, 'resc', wln_resc_ladder(), 0, 3); } catch (Throwable $e) { $__room = $cap; }
+    if ($__room <= 0) return 0; $cap = min($cap, $__room);
     // once a day: the sends that were marked 'no utility message left / could go' (the pool had 4 wordings) get another try now that the pool is bigger (owner 22 Nov: every blocked message must go out as utility)
-    try { if (setting_get($pdo, 'wl_rescue_reopen', '') !== date('Y-m-d', $now)) { setting_set($pdo, 'wl_rescue_reopen', date('Y-m-d', $now)); $pdo->prepare("UPDATE wa_line_plan SET why = '' WHERE status = 'sent' AND why LIKE 'rescue: no utility message%' AND sent_at >= ?")->execute([date('Y-m-d H:i:s', $now - 36 * 3600)]); } } catch (Throwable $e) { }
+    try { if (setting_get($pdo, 'wl_rescue_reopen', '') !== date('Y-m-d', $now)) { setting_set($pdo, 'wl_rescue_reopen', date('Y-m-d', $now)); $pdo->prepare("UPDATE wa_line_plan SET why = '' WHERE status = 'sent' AND (why LIKE 'rescue: no utility message%' OR why = 'rescue: working') AND sent_at >= ?")->execute([date('Y-m-d H:i:s', $now - 36 * 3600)]); } } catch (Throwable $e) { }
     // (no JOIN on the wamids: the two tables have different collations — that threw an error and nothing was rescued; the receipts are read with a bound list instead)
     // (the FAILED receipts are read first, newest first, then their plan rows by a bound wamid list — before, the 4,000 oldest sent rows of the last 3 hours were read and the newer failures were never seen once more than 4,000 had gone)
     $rows = []; try { $f = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND status = 'failed' AND err_code IN ($in) ORDER BY id DESC LIMIT 1500"); $f->execute([date('Y-m-d H:i:s', $now - 36 * 3600)]); $bad = [];
@@ -547,8 +554,11 @@ function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150): int   // owner 22 N
         foreach (array_chunk(array_keys($bad), 400) as $ch) { $x = $pdo->prepare("SELECT id, phone, topic, step, tpl_id, sent_at, wamid FROM wa_line_plan WHERE status = 'sent' AND why = '' AND wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch);
             foreach ($x->fetchAll() as $r) { $r['err_code'] = $bad[(string)$r['wamid']]; $rows[] = $r; if (count($rows) >= $cap) break 2; } } } catch (Throwable $e) { return 0; }
     $mark = $pdo->prepare("UPDATE wa_line_plan SET why = ? WHERE id = ?"); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, why, sent_at, wamid) VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)");
+    if ($k % 2 === 1) $rows = array_reverse($rows);   // the second rescuer starts from the other end
+    $claim = $pdo->prepare("UPDATE wa_line_plan SET why = 'rescue: working' WHERE id = ? AND why = ''");
     foreach ($rows as $r) {
-        if (microtime(true) - $__t0 > 20) break;
+        if (microtime(true) - $__t0 > $budget) break;
+        $claim->execute([$r['id']]); if ($claim->rowCount() !== 1) continue;   // another rescuer has this one
         $ph = (string)$r['phone']; $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $mark->execute(['rescue: no contact', $r['id']]); continue; }
         if (!empty($c['optout']) || !empty($c['camp_optout'])) { $mark->execute(['rescue: opted out', $r['id']]); continue; }
         if (!empty($c['last_in_at']) && (int)strtotime((string)$c['last_in_at']) > (int)strtotime((string)$r['sent_at'])) { $mark->execute(['rescue not needed: he wrote', $r['id']]); continue; }
@@ -561,6 +571,7 @@ function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150): int   // owner 22 N
         $mark->execute(['rescue: no utility message could go (' . ($why1 ?? '') . ')', $r['id']]);   // marked, so the next rounds go on with OTHER failed messages (before, the oldest unsendable 40 were tried again every minute and blocked all the others)
         unset($why1);
     }
+    try { wrt_add($pdo, 'resc', $n); } catch (Throwable $e) { }   // the hour's meter
     return $n;
 }
 /** A customer who has to wait: his planned steps move to the time the wait ends (the same gap between them), so the engine does not look at him again every minute (2,800 waiting customers used the whole 40 seconds of a round and only 21 messages went). */
@@ -600,7 +611,9 @@ function wl_tick(PDO $pdo, array $opt = []): array
     if ($cfg['mode'] === 'off') return $o;
     if (!$force && function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours 03:00-09:00'; return $o; }   // universal rule (owner, 21 Nov)
     if (!$force) { try { if (is_file(__DIR__ . '/wa_offer.php')) { require_once __DIR__ . '/wa_offer.php'; setting_set($pdo, 'wo_hook', date('Y-m-d H:i:s') . ($sendonly ? ' cli' : ' web')); $__wo = wof_run($pdo, 30); $o['offers'] = (int)$__wo[2]; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup offer: ' . $e->getMessage()); } }   // 🎯 the price offer to the customers who answered (owner 22 Nov; wo_mode dry / live)   // failed as marketing -> sent again as utility on the spot
-    if (!$force && ($sendonly || (string)setting_get($pdo, 'wcd_web', '0') === '1')) { try { if (is_file(__DIR__ . '/wa_cold.php')) { require_once __DIR__ . '/wa_cold.php'; setting_set($pdo, 'wcd_hook', date('Y-m-d H:i:s')); wcd_tick($pdo, 38); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cold funnel: ' . $e->getMessage()); } }   /* the cold funnel (owner 22 Nov): delivered, never wrote back */
+    if (!$force && ($sendonly || (string)setting_get($pdo, 'wcd_web', '0') === '1')) { try { if (is_file(__DIR__ . '/wa_cold.php')) { require_once __DIR__ . '/wa_cold.php'; setting_set($pdo, 'wcd_hook', date('Y-m-d H:i:s')); $__cr = wcd_tick($pdo, 46); $__coldbusy = isset($__cr['mode']) && isset($__cr['shard']); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cold funnel: ' . $e->getMessage()); } }   /* the cold funnel (owner 22 Nov): delivered, never wrote back */
+    // owner, 23 Nov (night): "send the utility messages faster so the 25,000 failed ones are finished": a sending copy that did not run the Cold funnel is a RESCUER (two at a time, 45 s, up to 400 rows), the same rescue as the bookkeeping caller's
+    if (!$force && $sendonly && empty($__coldbusy) && function_exists('wa_lock')) { try { foreach ([0, 1] as $__rk) if (wa_lock($pdo, 'wlresc' . $__rk, 55)) { $o['rescued'] = (int)($o['rescued'] ?? 0) + wln_rescue($pdo, time(), 400, 45, $__rk); $__resc = true; break; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue copy: ' . $e->getMessage()); } }
     if (!$force && !$sendonly) { setting_set($pdo, 'wl_tick_at', date('Y-m-d H:i:s')); try { wl_snap($pdo); } catch (Throwable $e) { } }   // the 20-minute status line
     if ($sendonly && ($cfg['started'] === '' || $cfg['since'] <= 0)) return $o;
     if ($cfg['started'] === '' || $cfg['since'] <= 0) { if (function_exists('wa_lock') && wa_lock($pdo, 'wlboot', 120)) { try { wl_start_all($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup start: ' . $e->getMessage()); } } return $o; }   // first round after the upload: start by itself
