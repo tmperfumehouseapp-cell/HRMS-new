@@ -552,12 +552,12 @@ function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
         $custNums = []; foreach ($msgs as $m) if (($m['who'] ?? '') === 'customer') { preg_match_all('/\d[\d,]{2,5}/', (string)($m['text'] ?? ''), $nn); foreach ($nn[0] as $x) $custNums[(int)str_replace(',', '', $x)] = 1; }
         $prev = ''; foreach ($msgs as $m) if (($m['who'] ?? '') !== 'customer') $prev .= ' ' . (string)($m['text'] ?? ''); $prev = str_replace(',', '', $prev);
         $firstQuote = true; foreach ($row['p'] as $v) if (strpos($prev, (string)$v) !== false) { $firstQuote = false; break; }
-        $__dp = wag_price_depth($msgs, $row); $fixIdx = max(0, $__dp);
+        $__dp = wag_price_depth($msgs, $row); $fixIdx = max(0, $__dp);   // owner, 23 Nov (a 1000 ml customer got 8,530 > 8,270 > 8,000 > 7,470 in four follow-ups within 100 minutes, then 12 x 100 ml at the lowest column): a FOLLOW-UP before step 9 never goes lower than the price already said; the night steps 9 / 10 may go one column down
         preg_match_all('/(?:rs\.?|₹)\s*([\d,]{3,6})/iu', $reply, $am); $bad = false;
         foreach ($am[1] as $a) { $v = (int)str_replace(',', '', $a); if ($v < 500 || isset($custNums[$v])) continue;
             if (isset($other[$v])) { $bad = true; break; }                                  // the price of another size
             if (isset($mine[$v]) && $v !== $row['chart'] && $firstQuote) { $bad = true; break; }   // the first price said is not the chart price
-            if (isset($mine[$v])) { $jv = array_search($v, array_map('intval', $row['p']), true); if ($jv !== false && $jv > $__dp + 1) { $bad = true; $fixIdx = $__dp + 1; break; } }   // 🪜 a jump of more than one price column below what was said before
+            if (isset($mine[$v])) { $jv = array_search($v, array_map('intval', $row['p']), true); $__allow = $__dp + 1; if (!empty($GLOBALS['lib_fu_step']) && (int)$GLOBALS['lib_fu_step'] < 9) $__allow = max(0, $__dp); if ($jv !== false && $jv > $__allow) { $bad = true; $fixIdx = $__allow; break; } }   // 🪜 a jump of more than one price column below what was said before
         }
         if (!$bad) return [$reply, false];
         $__ob = $__dp < 0 ? wag_one_bottle_msg($pdo, (int)$rq['qty'], (int)$rq['ml']) : ''; if ($__ob !== '') return [$__ob, true];   // nothing quoted yet and he asked 1-2 bottles: the one-bottle-is-expensive message instead of a single bottle's price (owner, 23 Nov: '50 ml ka price Rs 900' after the Instagram answer)
@@ -1449,6 +1449,7 @@ function wag_min_pack_fix(PDO $pdo, string $key, string $text): string
 }
 function wag_strip_internal(string $t): string
 {
+    if (preg_match('/^\s*\{\s*"reply"\s*:/u', $t)) { $__j = json_decode(trim($t), true); if (is_array($__j) && trim((string)($__j['reply'] ?? '')) !== '') $t = (string)$__j['reply']; }   // 23 Nov: a follow-up went out as the raw text {"reply": "..."}
     $t = preg_replace(['/\bchart\s+(?:ka\s+)?(price|rate)\b/iu', '/\b(price|rate)\s+chart\b/iu'], ['$1', '$1'], $t) ?? $t;   // owner, 23 Nov: the customer never hears the word "chart" ("total ka chart price Rs 1,810" -> "total ka price Rs 1,810")
     $t = preg_replace('/((?:rs\.?|₹)\s*\d{1,2}), (\d{3})\b/iu', '$1,$2', $t) ?? $t;   // 22 Nov: the model wrote "Rs 2, 460" / "Rs 1, 199" (a space after the thousands comma)
     $o = preg_replace('/[^.!?\n]*\b(minimum|min\.?|kam se kam|floor|target|lowest price)\b[^.!?\n]*(rs\.?|₹)\s*[\d,]{4,6}[^.!?\n]*[.!?]?\s*/iu', '', $t); $o = trim((string)$o);
