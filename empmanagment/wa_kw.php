@@ -59,6 +59,7 @@ function wkw_send(PDO $pdo, array $c, string $text, int $libId, string $replyTo 
     $ok = false; $key = (string)$c['phone'];
     $nm = trim((string)($c['name'] ?? '')); $fn = preg_split('/\s+/u', $nm)[0] ?? ''; if ($fn === '' || !preg_match('/^\p{L}[\p{L}\p{M}.\'-]*$/u', $fn)) $fn = '';
     $text = $fn !== '' ? str_ireplace('{name}', $fn, $text) : preg_replace('/[ ]*\{name\}/i', '', $text);
+    if (function_exists('wag_combo_dump_fix')) { try { $text = wag_combo_dump_fix($pdo, $key, $text, true); } catch (Throwable $e) { } }   // owner, 23 Nov: 'Blue chanel ka copy 50 ml' (one bottle) got the whole combo list from the 50 ml card
     if ($libId > 0 && function_exists('wa_lib_row') && function_exists('wa_lib_media_id') && function_exists('wa_send_media')) {   // 📷 the photo (the message is its caption)
         $row = wa_lib_row($pdo, $libId);
         if ($row) { $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)$c['last_number_id']]); $pid = (string)$q->fetchColumn(); if ($pid === '') $pid = wa_cfg_val('WA_PHONE_ID');
