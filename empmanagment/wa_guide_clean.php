@@ -92,3 +92,13 @@ function wag_gb_clean_run(PDO $pdo): bool
         return true;
     } catch (Throwable $e) { error_log('wag_gb_clean_run: ' . $e->getMessage()); return false; }
 }
+/** Once (owner, 23 Nov: "the new guidebook is live: replace all the old ones"): every older guidebook version (old / rejected / waiting draft) is removed; only the live clean version stays. Runs only while the live guidebook is the clean one (it has the PRICE LADDER rule). Later automatic versions keep the one they replace for a roll-back, as the system always did. Call while holding the guidebook lock. Returns the number of removed versions. */
+function wag_gb_purge_old(PDO $pdo): int
+{
+    if (setting_get($pdo, 'wag_gb_purge_v', '') === '1' || !function_exists('lib_guide_row')) return 0;
+    try {
+        $g = lib_guide_row($pdo, 'live'); if (!$g || strpos((string)$g['body'], 'PRICE LADDER') === false) return 0;
+        $st = $pdo->prepare("DELETE FROM lib_guide WHERE status IN ('old', 'rejected', 'draft') AND version < ?"); $st->execute([(int)$g['version']]); $n = (int)$st->rowCount();
+        setting_set($pdo, 'wag_gb_purge_v', '1'); return $n;
+    } catch (Throwable $e) { return 0; }
+}
