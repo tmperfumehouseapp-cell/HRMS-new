@@ -68,7 +68,7 @@ export async function retryPending(db, cfg, fetchImpl = fetch, now) {
 
 /** Ad-level daily spend from the Marketing API Insights endpoint (every configured ad account), upserted into ad_spend. */
 export async function syncSpend(db, cfg, days = 3, fetchImpl = fetch, today = new Date()) {
-  if (!cfg.metaToken || !cfg.adAccountIds.length) throw new Error('META_ACCESS_TOKEN / META_AD_ACCOUNT_IDS not set');
+  if (!cfg.adsToken || !cfg.adAccountIds.length) throw new Error('META_ADS_ACCESS_TOKEN (or META_ACCESS_TOKEN) / META_AD_ACCOUNT_IDS not set');
   const day = (d) => d.toISOString().slice(0, 10);
   const since = day(new Date(today.getTime() - (days - 1) * 86400000));
   const up = db.prepare(`INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations)
@@ -84,7 +84,7 @@ export async function syncSpend(db, cfg, days = 3, fetchImpl = fetch, today = ne
     let url = `${GRAPH}/${cfg.graphVersion}/act_${acct}/insights?${qs}`;
     while (url) {
       if (new URL(url).origin !== GRAPH) throw new Error('refusing to follow paging URL off graph.facebook.com');
-      const res = await fetchImpl(url, { headers: { authorization: `Bearer ${cfg.metaToken}` } });
+      const res = await fetchImpl(url, { headers: { authorization: `Bearer ${cfg.adsToken}` } });
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(`Insights act_${acct}: ${j.error?.message || res.status}`);
       for (const r of j.data ?? []) {

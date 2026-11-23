@@ -94,7 +94,7 @@ export function main() {
   if (cfg.syncIntervalMin > 0) {
     const tick = async () => {
       try { await retryPending(db, cfg); } catch (e) { console.error('[retry]', e.message); }
-      try { if (cfg.metaToken && cfg.adAccountIds.length) await syncSpend(db, cfg, 3); } catch (e) { console.error('[sync]', e.message); }
+      try { if (cfg.adsToken && cfg.adAccountIds.length) await syncSpend(db, cfg, 3); } catch (e) { console.error('[sync]', e.message); }
     };
     setInterval(tick, cfg.syncIntervalMin * 60000).unref();
   }

@@ -163,3 +163,20 @@ test('syncSpend loops every ad account', async () => {
   await syncSpend(db, c2, 1, async (u) => { seen.push(String(u).match(/act_(\d+)/)[1]); return new Response(JSON.stringify({ data: [] })); });
   assert.deepEqual(seen, ['1', '2']);
 });
+
+test('ad spend uses META_ADS_ACCESS_TOKEN when set', async () => {
+  const c = getConfig({ META_ACCESS_TOKEN: 'WA', META_ADS_ACCESS_TOKEN: 'ADS', META_AD_ACCOUNT_IDS: '1' });
+  let auth; await syncSpend(openDb(':memory:'), c, 1, async (u, i) => { auth = i.headers.authorization; return new Response(JSON.stringify({ data: [] })); });
+  assert.equal(auth, 'Bearer ADS');
+  assert.equal(getConfig({ META_ACCESS_TOKEN: 'WA' }).adsToken, 'WA');
+});
+
+test('report lists only ads that brought a WhatsApp click', () => {
+  const db = openDb(':memory:');
+  db.prepare('INSERT INTO ad_spend VALUES (?,?,?,?,?,?,?)').run('2026-11-23', 'WEB1', 'Website ad', 900, 1, 1, 0);
+  db.prepare('INSERT INTO ad_spend VALUES (?,?,?,?,?,?,?)').run('2026-11-23', 'WA1', 'WhatsApp ad', 100, 1, 1, 2);
+  db.prepare("INSERT INTO clicks(wa_message_id,ctwa_clid,source_id,phone10,clicked_at,created_at) VALUES ('m','c','WA1','9999999999',?,?)").run(Date.parse('2026-11-23T05:00:00Z') / 1000, 1);
+  const rep = dailyReport(db, { from: '2026-11-23', to: '2026-11-23' }, 0);
+  assert.deepEqual(rep.rows.map((r) => r.ad_id), ['WA1']);
+  assert.equal(rep.total.spend, 100);
+});
