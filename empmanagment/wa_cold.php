@@ -9,7 +9,11 @@
  *  Mode (setting wcd_mode): 'live' (default, owner 22 Nov) = send · 'dry' = enrol and count, send nothing · 'off'. Daily cap wcd_cap (default 15000 since 23 Nov).
  *  The LEDGER = wa_cold_cust (one row a customer: entered, segment, sent, last sent, status) + wa_cold_log (one row a message). The summary joins them with receipts, replies, Lineup rows and shop orders.
  *  Functions only (PHP 7.4 safe); called from the Lineup tick and by diag_ask.php. */
+require_once __DIR__ . '/wa_rate.php';   // the hourly speed limit with a ladder (owner, 23 Nov night)
 if (!function_exists('wcd_tick')) {
+    /** Failure share of the latest 600 Cold sends: [delivered or read, failed]. */
+    function wcd_fail_stats(PDO $pdo): array { try { $r = $pdo->query("SELECT SUM(m.status IN ('delivered','read')), SUM(m.status = 'failed') FROM (SELECT wamid FROM wa_cold_log WHERE ok = 1 AND wamid <> '' ORDER BY id DESC LIMIT 600) l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci)")->fetch(PDO::FETCH_NUM); return [(int)($r[0] ?? 0), (int)($r[1] ?? 0)]; } catch (Throwable $e) { return [0, 0]; } }
+    function wcd_ladder(): array { return [1500, 2000, 2500, 3000]; }
     function wcd_tables(PDO $pdo): bool
     {
         static $ok = null; if ($ok !== null) return $ok;
@@ -187,12 +191,14 @@ if (!function_exists('wcd_tick')) {
         if (function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours'; return $o; } $h = (int)date('G', $now); if ($h < 9 || $h >= 21) { $o['why'] = 'outside 09-21'; return $o; }
         if (setting_get($pdo, 'wcd_cap_v', '') !== '3') { setting_set($pdo, 'wcd_cap', '20000'); setting_set($pdo, 'wcd_cap_v', '3'); }   // owner, 23 Nov (night): the daily cap is 20,000 from tomorrow   // owner, 23 Nov: the daily cap goes from 5,000 to 15,000 (utility only, Rs 0.15 each); later changes on the card stay
         $cap = max(0, (int)wcd_set($pdo, 'wcd_cap', '15000')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= ?"); $q->execute([date('Y-m-d 00:00:00', $now)]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
+        if ($__main && wrt_due($pdo, 'cold')) { try { [$__ok, $__fl] = wcd_fail_stats($pdo); wrt_adapt($pdo, 'cold', wcd_ladder(), 2, $__ok, $__fl, 3.0, 8.0); } catch (Throwable $e) { } }   // once an hour: the failure share of the latest sends moves the hourly limit one step (1,500 / 2,000 / 2,500 / 3,000)
+        $__room = wrt_room($pdo, 'cold', wcd_ladder(), 2, $__ns); $o['limit'] = wrt_limit($pdo, 'cold', wcd_ladder(), 2); if ($__room <= 0) { $o['why'] = 'hourly limit'; return $o; }
         $ord = wcd_orders($pdo, wcd_set($pdo, 'wcd_from', '2026-11-01') . ' 00:00:00');
         $badc = json_decode(wcd_set($pdo, 'wcd_bad', '{}'), true); if (!is_array($badc)) $badc = []; foreach ($badc as $__k => $__v) if ((int)$__v < $now - 900) unset($badc[$__k]);   /* messages that failed 'not approved / paused' are skipped for 10 minutes, remembered between the minute runs */
         $rows = $pdo->prepare("SELECT phone, entered_at, seg, n_sent, last_sent_at FROM wa_cold_cust WHERE status = 'active' AND next_due <= ?" . ($__ns > 1 ? " AND MOD(CAST(RIGHT(phone, 3) AS UNSIGNED), " . (int)$__ns . ") = " . (int)$__sh : '') . " ORDER BY (seg = 'read') DESC, next_due LIMIT 80"); $rows->execute([date('Y-m-d H:i:s', $now)]);
         $lv = $pdo->prepare("UPDATE wa_cold_cust SET status = ?, why = ?, left_at = ? WHERE phone = ?"); $push = $pdo->prepare("UPDATE wa_cold_cust SET next_due = ? WHERE phone = ?"); $done = $pdo->prepare("UPDATE wa_cold_cust SET n_sent = n_sent + 1, last_sent_at = ?, next_due = ? WHERE phone = ?"); $lg = $pdo->prepare("INSERT INTO wa_cold_log (phone, at, tpl_id, ok, why, wamid, step) VALUES (?, ?, ?, ?, ?, ?, ?)");
         foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            if ($o['sent'] >= 60 || $today + $o['sent'] >= $cap || microtime(true) - $t0 > $budget) break; $ph = (string)$r['phone']; $ent = (int)strtotime((string)$r['entered_at']); $n = (int)$r['n_sent'];
+            if ($o['sent'] >= min(60, $__room) || $today + $o['sent'] >= $cap || microtime(true) - $t0 > $budget) break; $ph = (string)$r['phone']; $ent = (int)strtotime((string)$r['entered_at']); $n = (int)$r['n_sent'];
             $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $lv->execute(['cancelled', 'no contact', date('Y-m-d H:i:s'), $ph]); $o['left']++; continue; }
             if (!empty($c['optout']) || !empty($c['camp_optout'])) { $lv->execute(['optout', 'opted out', date('Y-m-d H:i:s'), $ph]); $o['left']++; continue; }
             if (!empty($c['last_in_at'])) { $lv->execute(['replied', 'wrote at ' . substr((string)$c['last_in_at'], 0, 16), date('Y-m-d H:i:s'), $ph]); $o['left']++; continue; }   /* the Lineup takes him by itself (it enrols on his message) */
@@ -208,6 +214,7 @@ if (!function_exists('wcd_tick')) {
             else { $lg->execute([$ph, date('Y-m-d H:i:s'), $tid, 0, mb_substr($why, 0, 150), '', $n + 1]); $push->execute([date('Y-m-d H:i:s', $now + 1800), $ph]); $o['waiting']++; try { setting_set($pdo, 'wcd_dbg', json_encode(['at' => date('H:i:s'), 'tid' => $tid, 'tried' => $__tried, 'why' => mb_substr($why, 0, 160)])); } catch (Throwable $e) { } if ($__tried >= 12) break; }
         }
         try { setting_set($pdo, 'wcd_bad', json_encode($badc)); } catch (Throwable $e) { }
+        try { wrt_add($pdo, 'cold', (int)$o['sent']); } catch (Throwable $e) { }   // the hour's meter
         try { setting_set($pdo, 'wcd_last_res', json_encode(['at' => date('H:i:s'), 'sent' => $o['sent'], 'waiting' => $o['waiting'], 'left' => $o['left'], 'today' => $today + $o['sent']])); } catch (Throwable $e) { }
         return $o;
     }
