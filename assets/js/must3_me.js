@@ -4,7 +4,7 @@
   const box = document.getElementById('m3Box'); if (!box || typeof api === 'undefined') return;
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const inr = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
-  const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain selection'], ['p', '💳', 'Prepaid 2%'], ['d', '➕', 'Add-on / sold bigger']];
+  const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain selection'], ['p', '💳', 'Prepaid 2%'], ['d', '➕', 'Add-on / bigger offered']];
   const R = [['today', 'Today'], ['yday', 'Yesterday'], ['7d', '7 days']];
   const S = { range: 'today', sel: '', d: null, busy: false };
   const col = (v, t) => !t ? '#9ca3af' : (v / t >= .8 ? '#16a34a' : v / t >= .5 ? '#d97706' : '#dc2626');
