@@ -11611,9 +11611,10 @@ function must3_photo_seen(PDO $pdo, array $pics): ?array
 }
 function must3_photo_tick(PDO $pdo, int $max = 6): int
 {
-    if (!must3_photo_table($pdo) || !function_exists('wa_mcache_get') || !function_exists('convo_ai')) return 0;
     try { if ((int)setting_get($pdo, 'must3_photo_at', '0') > time() - 50) return 0; setting_set($pdo, 'must3_photo_at', (string)time()); } catch (Throwable $e) { return 0; }
-    $n = 0;
+    $why = !must3_photo_table($pdo) ? 'no table' : (!function_exists('wa_mcache_get') ? 'no wa_mcache_get' : (!function_exists('convo_ai') ? 'no convo_ai' : ''));
+    if ($why !== '') { try { setting_set($pdo, 'must3_photo_why', date('Y-m-d H:i:s') . ' ' . $why); } catch (Throwable $e) { } return 0; }   // why a round did nothing (read by the diag)
+    $n = 0; $last = '';
     try {
         $rows = $pdo->query("SELECT msg_id, media_id FROM must3_photo WHERE verdict IS NULL AND tries < 2 AND at >= '" . date('Y-m-d H:i:s', time() - 3 * 86400) . "' ORDER BY msg_id DESC LIMIT " . max(1, min(12, $max)))->fetchAll(PDO::FETCH_ASSOC);
         $sys = 'You look at ONE photo a perfume shop salesperson sent to a customer on WhatsApp. The shop gives a free CHAIN / jewellery item with an order and shows the customer its chain catalogue: a photo or screenshot of one or several chains, necklaces, bracelets, pendants or other jewellery (often on a black background, sometimes a grid titled CHAIN, or a screenshot of the chain web page). Return JSON: chain = true when the photo shows such a chain / jewellery item or catalogue; false for anything else (perfume bottles, price charts, payment screens, addresses, people, text).';
@@ -11621,14 +11622,15 @@ function must3_photo_tick(PDO $pdo, int $max = 6): int
         $up = $pdo->prepare("UPDATE must3_photo SET verdict = ?, tries = tries + 1 WHERE msg_id = ?"); $miss = $pdo->prepare("UPDATE must3_photo SET tries = tries + 1 WHERE msg_id = ?");
         foreach ($rows as $r) {
             [$path, $mime, $err] = wa_mcache_get($pdo, (string)$r['media_id']);
-            if ((string)$path === '' || !is_file((string)$path) || filesize((string)$path) > 5 * 1024 * 1024 || strpos((string)$mime, 'image/') !== 0) { $miss->execute([(int)$r['msg_id']]); continue; }
+            if ((string)$path === '' || !is_file((string)$path) || filesize((string)$path) > 5 * 1024 * 1024 || strpos((string)$mime, 'image/') !== 0) { $miss->execute([(int)$r['msg_id']]); $last = 'photo not readable: ' . mb_substr((string)$err, 0, 80) . ' mime ' . (string)$mime; continue; }
             $f0 = function_exists('ai_feat') ? ai_feat('must3_photo') : null;
             [$ok, $v] = convo_ai($sys, [['text' => 'Is this a chain / jewellery photo?'], ['inlineData' => ['mimeType' => (string)$mime, 'data' => base64_encode((string)file_get_contents((string)$path))]]], $sch, false, 60, 'claude');
             if ($f0 !== null) ai_feat($f0);
-            if (!$ok || !is_array($v)) { $miss->execute([(int)$r['msg_id']]); continue; }
+            if (!$ok || !is_array($v)) { $miss->execute([(int)$r['msg_id']]); $last = 'Claude did not answer'; continue; }
             $up->execute([!empty($v['chain']) ? 1 : 0, (int)$r['msg_id']]); $n++;
         }
-    } catch (Throwable $e) { error_log('must3_photo_tick: ' . $e->getMessage()); }
+    } catch (Throwable $e) { error_log('must3_photo_tick: ' . $e->getMessage()); $last = 'error: ' . mb_substr($e->getMessage(), 0, 120); }
+    try { setting_set($pdo, 'must3_photo_why', date('Y-m-d H:i:s') . ' read ' . $n . ($last !== '' ? ' · ' . $last : '')); } catch (Throwable $e) { }
     return $n;
 }
 /** ✅ The 3 must-send check of ONE business day (+ the add-on column, owner 23 Nov): per salesperson, per order — address re-check · chain selection · prepaid 2% (plain text match, no AI) and whether an add-on was put on the order (employee_addons) with the reason when not (order_rate_auto).
