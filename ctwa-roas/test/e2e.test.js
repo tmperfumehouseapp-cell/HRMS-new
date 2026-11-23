@@ -95,7 +95,7 @@ test('full flow: click → order match → tag → CAPI purchase → dedupe → 
 
     // report
     const day = new Date(NOW * 1000).toISOString().slice(0, 10);
-    db.prepare('INSERT INTO ad_spend VALUES (?,?,?,?,?,?,?)').run(day, 'AD9', 'Oud Sale', 500, 1000, 40, 3);
+    db.prepare('INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations) VALUES (?,?,?,?,?,?,?)').run(day, 'AD9', 'Oud Sale', 500, 1000, 40, 3);
     const rep = dailyReport(db, { from: day, to: day }, 0);
     const row = rep.rows.find((x) => x.ad_id === 'AD9');
     assert.equal(row.orders, 1); assert.equal(row.revenue, 1499); assert.equal(row.roas, 1499 / 500);
@@ -152,6 +152,7 @@ test('shopify bad HMAC rejected; syncSpend parses insights + pages', async () =>
   }, new Date('2026-11-22T10:00:00Z'));
   assert.equal(n, 2);
   assert.equal(db2.prepare("SELECT conversations c FROM ad_spend WHERE day='2026-11-21'").get().c, 4);
+  assert.ok(Number(db2.prepare("SELECT v FROM kv WHERE k='spend_sync_at'").get().v) > 0);
   await assert.rejects(syncSpend(db2, cfg, 1, async () => new Response(JSON.stringify({ data: [], paging: { next: 'https://evil.example/x' } })), new Date()));
 });
 
@@ -171,14 +172,19 @@ test('ad spend uses META_ADS_ACCESS_TOKEN when set', async () => {
   assert.equal(getConfig({ META_ACCESS_TOKEN: 'WA' }).adsToken, 'WA');
 });
 
-test('report lists only ads that brought a WhatsApp click', () => {
+test('report lists the click-to-WhatsApp ads only', () => {
   const db = openDb(':memory:');
-  db.prepare('INSERT INTO ad_spend VALUES (?,?,?,?,?,?,?)').run('2026-11-23', 'WEB1', 'Website ad', 900, 1, 1, 0);
-  db.prepare('INSERT INTO ad_spend VALUES (?,?,?,?,?,?,?)').run('2026-11-23', 'WA1', 'WhatsApp ad', 100, 1, 1, 2);
+  db.prepare('INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations) VALUES (?,?,?,?,?,?,?)').run('2026-11-23', 'WEB1', 'Website ad', 900, 1, 1, 0);
+  db.prepare('INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations) VALUES (?,?,?,?,?,?,?)').run('2026-11-23', 'WA1', 'WhatsApp ad', 100, 1, 1, 2);
   db.prepare("INSERT INTO clicks(wa_message_id,ctwa_clid,source_id,phone10,clicked_at,created_at) VALUES ('m','c','WA1','9999999999',?,?)").run(Date.parse('2026-11-23T05:00:00Z') / 1000, 1);
   const rep = dailyReport(db, { from: '2026-11-23', to: '2026-11-23' }, 0);
   assert.deepEqual(rep.rows.map((r) => r.ad_id), ['WA1']);
   assert.equal(rep.total.spend, 100);
+  // a WhatsApp ad Meta counted conversations for is listed even when none of its clicks reached us yet
+  db.prepare('INSERT INTO ad_spend(day,ad_id,ad_name,spend,impressions,link_clicks,conversations,campaign_name,account_id) VALUES (?,?,?,?,?,?,?,?,?)').run('2026-11-23', 'WA2', 'Quiet WhatsApp ad', 50, 1, 1, 5, 'CTWA 3', '42');
+  const rep2 = dailyReport(db, { from: '2026-11-23', to: '2026-11-23' }, 0);
+  assert.deepEqual(rep2.rows.map((r) => r.ad_id).sort(), ['WA1', 'WA2']);
+  assert.equal(rep2.rows.find((r) => r.ad_id === 'WA2').campaign_name, 'CTWA 3'); assert.equal(rep2.total.meta_conversations, 7);
 });
 
 test('diagnose: signed day funnel and one customer', async () => {
