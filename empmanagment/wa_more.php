@@ -192,7 +192,6 @@ function wa_auto_alloc(PDO $pdo): int
     try { wa_camp_requery($pdo, 30); } catch (Throwable $e) { }
     try { if (function_exists('order_gel_fix')) $n += order_gel_fix($pdo); } catch (Throwable $e) { }
     try { if (function_exists('order_type_fill')) $n += order_type_fill($pdo); } catch (Throwable $e) { }   // a hand-allocated order with no Query / Campaign type is typed from the chat
-    try { if (function_exists('must3_photo_tick')) must3_photo_tick($pdo); } catch (Throwable $e) { }   // 📷 chain photos sent without words are looked at for the must-send check
     try { if (function_exists('ora_tick')) ora_tick($pdo); } catch (Throwable $e) { }
     try { if (function_exists('grow_learn_tick')) grow_learn_tick($pdo); } catch (Throwable $e) { }   // 📚 15-minute learning pulse + hourly digest for the guidebook   // ⭐ the stars of new orders are worked out from the chat   // 🧴 shower-gel orders of the month belong to TM Shower Gel
     return $n;
@@ -259,6 +258,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('cfun_fast') && !defined('WA_IN_WEBHOOK')) $o['cfun_fast'] = cfun_fast($pdo, 2000, 8, 20); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'funnel fast: ' . $e->getMessage()); }   // ⚡ customers whose status changed are recounted every run
     try { if (function_exists('waa_tick') && !defined('WA_IN_WEBHOOK')) $o['auto'] = waa_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto assign (new): ' . $e->getMessage()); } $__mk('waa_tick');   // 🏪 new queries → salespeople by the rules
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); } $__mk('wa_auto_alloc');   // 🤖 orders → the salesperson of the chat
+    try { if (function_exists('must3_photo_tick') && !defined('WA_IN_WEBHOOK')) $o['m3p'] = must3_photo_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain photos: ' . $e->getMessage()); }   // 📷 chain photos sent without words are looked at for the must-send check — its OWN engine step (inside wa_auto_alloc it was never reached: 8 photos waited, none read)
     if (!$__late()) try { if (function_exists('ora_catchup') && !defined('WA_IN_WEBHOOK')) $o['ora'] = ora_catchup($pdo); } catch (Throwable $e) { } $__mk('ora_catchup');   // 📈 today's unread orders are read by themselves (growth effort): nobody has to press Read chats now
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); } $__mk('wa_callnow_scan');
     if (!$__late()) try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); } $__mk('wq_urgent_push');   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
