@@ -202,6 +202,14 @@ function cx_case_numbers(PDO $pdo, $phone) {
     return $out;
 }
 /* ============================== chat hand-over ============================== */
+/** A complaint chat carries ONLY the complaint mark (owner, 22-23 Nov): the sales marks (query type, arrival time, premium, hot, "wants to buy" …) go. */
+function cx_clean_tags(PDO $pdo, string $key): void
+{
+    if ($key === '') return;
+    try { $pdo->prepare("UPDATE wa_contacts SET tag = 'complaint', hot = 0 WHERE phone = ?")->execute([$key]); } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT tag FROM wa_ctags WHERE phone = ? AND tag <> 'complaint' AND (src = 'wq' OR tag IN ('hot', 'orange', 'buy', 'price', 'order_status'))"); $q->execute([$key]);
+        foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = ?")->execute([$key, $t]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = ?")->execute([$key, $t]); } } catch (Throwable $e) { }
+}
 function cx_link_chat(PDO $pdo, array $case, $ownerEmp, $byEmp) {
     // The chat STAYS with the salesperson who has it (where the complaint was raised) — it is only marked as a complaint (cx_id) and shows in the
     // Complaint section too. The case owner reads and replies from the complaint board (bd.cx_thread / bd.cx_send, by case owner — not by chat holder).
@@ -210,6 +218,7 @@ function cx_link_chat(PDO $pdo, array $case, $ownerEmp, $byEmp) {
     $c = wa_contact($pdo, $key); if (!$c) return;
     $pdo->prepare("UPDATE wa_contacts SET cx_id = ?, state = 'human', status = 'open', closed_at = NULL WHERE phone = ?")->execute([(int)$case['id'], $key]);
     if (function_exists('wag_q_forget')) { try { wag_q_forget($pdo, $key); } catch (Throwable $e) { } }   // a complaint is not a sales query: it leaves the query counts
+    cx_clean_tags($pdo, $key);   // ... and the sales marks (query type, hot, wants to buy) leave the chat
 }
 function cx_chat_event(PDO $pdo, $key, $text) { if ($key !== '' && function_exists('wa_event')) wa_event($pdo, $key, $text); }
 function cx_unlink_chat(PDO $pdo, array $case) {
