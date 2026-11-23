@@ -6,7 +6,7 @@
  *  What goes: only UTILITY messages (the Lineup's utility twins and the shop's approved utility pool), never the same message twice to one customer, at most one a day, 09:00-21:00 (03-09 is universal quiet).
  *  When: gaps in days after message 1..6 = 3, 4, 7, 7, 9, 9 (read but silent), the same doubled from the 3rd message for customers who never opened one; then every 7 days up to 90 days after entering, then done.
  *  Leaves: wrote (the Lineup takes him), ordered (After-Order takes him), opted out, 90 days.
- *  Mode (setting wcd_mode): 'live' (default, owner 22 Nov) = send · 'dry' = enrol and count, send nothing · 'off'. Daily cap wcd_cap (default 5000).
+ *  Mode (setting wcd_mode): 'live' (default, owner 22 Nov) = send · 'dry' = enrol and count, send nothing · 'off'. Daily cap wcd_cap (default 15000 since 23 Nov).
  *  The LEDGER = wa_cold_cust (one row a customer: entered, segment, sent, last sent, status) + wa_cold_log (one row a message). The summary joins them with receipts, replies, Lineup rows and shop orders.
  *  Functions only (PHP 7.4 safe); called from the Lineup tick and by diag_ask.php. */
 if (!function_exists('wcd_tick')) {
@@ -142,7 +142,8 @@ if (!function_exists('wcd_tick')) {
         try { $mv = $pdo->prepare("UPDATE wa_cold_cust c JOIN wa_contacts k ON k.phone = c.phone SET c.status = 'replied', c.why = CONCAT('wrote at ', SUBSTR(k.last_in_at, 1, 16)), c.left_at = k.last_in_at WHERE c.status = 'active' AND k.last_in_at IS NOT NULL AND k.last_in_at >= c.entered_at"); $mv->execute(); $o['moved'] = (int)$mv->rowCount(); } catch (Throwable $e) { }
         if ($mode !== 'live') return $o;
         if (function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours'; return $o; } $h = (int)date('G', $now); if ($h < 9 || $h >= 21) { $o['why'] = 'outside 09-21'; return $o; }
-        $cap = max(0, (int)wcd_set($pdo, 'wcd_cap', '5000')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= ?"); $q->execute([date('Y-m-d 00:00:00', $now)]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
+        if (setting_get($pdo, 'wcd_cap_v', '') !== '2') { setting_set($pdo, 'wcd_cap', '15000'); setting_set($pdo, 'wcd_cap_v', '2'); }   // owner, 23 Nov: the daily cap goes from 5,000 to 15,000 (utility only, Rs 0.15 each); later changes on the card stay
+        $cap = max(0, (int)wcd_set($pdo, 'wcd_cap', '15000')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= ?"); $q->execute([date('Y-m-d 00:00:00', $now)]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
         $ord = wcd_orders($pdo, wcd_set($pdo, 'wcd_from', '2026-11-01') . ' 00:00:00');
         $badc = json_decode(wcd_set($pdo, 'wcd_bad', '{}'), true); if (!is_array($badc)) $badc = []; foreach ($badc as $__k => $__v) if ((int)$__v < $now - 900) unset($badc[$__k]);   /* messages that failed 'not approved / paused' are skipped for 10 minutes, remembered between the minute runs */
         $rows = $pdo->prepare("SELECT phone, entered_at, seg, n_sent, last_sent_at FROM wa_cold_cust WHERE status = 'active' AND next_due <= ? ORDER BY (seg = 'read') DESC, next_due LIMIT 80"); $rows->execute([date('Y-m-d H:i:s', $now)]);
@@ -196,7 +197,7 @@ if (!function_exists('wcd_tick')) {
     }
     function wcd_card(PDO $pdo): array
     {
-        $now = time(); $o = ['mode' => wcd_set($pdo, 'wcd_mode', 'live'), 'cap' => (int)wcd_set($pdo, 'wcd_cap', '5000'), 'from' => wcd_set($pdo, 'wcd_from', '2026-11-01'), 'quiet' => function_exists('wa_quiet_hours') && wa_quiet_hours(), 'tick_at' => wcd_set($pdo, 'wcd_tick_at', ''), 'enrol' => json_decode(wcd_set($pdo, 'wcd_enrol_res', '{}'), true) ?: [], 'dbg' => wcd_set($pdo, 'wcd_dbg', '')];
+        $now = time(); $o = ['mode' => wcd_set($pdo, 'wcd_mode', 'live'), 'cap' => (int)wcd_set($pdo, 'wcd_cap', '15000'), 'from' => wcd_set($pdo, 'wcd_from', '2026-11-01'), 'quiet' => function_exists('wa_quiet_hours') && wa_quiet_hours(), 'tick_at' => wcd_set($pdo, 'wcd_tick_at', ''), 'enrol' => json_decode(wcd_set($pdo, 'wcd_enrol_res', '{}'), true) ?: [], 'dbg' => wcd_set($pdo, 'wcd_dbg', '')];
         if (!wcd_tables($pdo)) { $o['error'] = 'storage'; return $o; }
         $c = json_decode(wcd_set($pdo, 'wcd_card_cache', ''), true);
         if (!is_array($c) || (int)($c['t'] ?? 0) < $now - 90) {
