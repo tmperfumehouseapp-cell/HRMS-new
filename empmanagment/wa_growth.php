@@ -548,8 +548,29 @@ function wag_price_fact(PDO $pdo, array $msgs): string
     $__ai = wag_arrival_idx($row, $msgs); if ($__ai >= 0) return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total. HE ARRIVED WITH HIS OWN PRICE: Rs ' . number_format((int)$row['p'][$__ai]) . ' (a column of our chart). Start from THAT price: confirm it back to him ("Sir, ' . $rq['total'] . ' ml Rs ' . number_format((int)$row['p'][$__ai]) . ' mein ho jayega") and go to the order details; NEVER quote the higher chart price Rs ' . number_format((int)$row['chart']) . ' and never go lower on your own.';
     return 'PRICE FOR WHAT THE CUSTOMER ASKED (worked out by the system — use exactly this): ' . ($rq['qty'] > 1 ? $rq['qty'] . ' x ' . $rq['ml'] . ' ml = ' : '') . $rq['total'] . ' ml in total → chart price Rs ' . number_format($row['chart']) . ' (the FIRST price you say; the chart price is for the TOTAL ml, never the price of one bottle for several bottles)' . (($__d = wag_price_depth($msgs, $row)) >= 0 ? '. You already said Rs ' . number_format((int)$row['p'][$__d]) . ' earlier in this chat: you may repeat it, and ONLY if the customer asks for less you may come down ONE step to at most Rs ' . number_format((int)$row['p'][min($__d + 1, count($row['p']) - 1)]) . ' — never lower than that in this reply, never jump to the lowest price, never mention how low the shop can go.' : '. Say only this price now; if the customer later asks for less, come down one step at a time (never straight to the lowest price, never mention how low the shop can go).');
 }
+/** owner, 23 Nov (a follow-up chat: step 4 said 8 x 100 ml Rs 6,720 (the 3% column), step 5 said Rs 7,680 (7%) and offered 10 x 100 ml at Rs 7,470 (3%): "so many ups and downs in the follow-up pricing"): EVERY pack "N x M ml ... Rs X" of a reply (one or several) is held between the price already said for that pack size (never HIGHER than what he heard, never more than one column LOWER; a follow-up before step 9 not lower at all) and the chart floor (the 6% column). A price outside is rewritten in place with the allowed column of that row; a pack not yet quoted starts at the chart price. Prices that belong to no row of that pack are left alone. */
+function wag_pack_price_clamp(PDO $pdo, array $msgs, string $reply): string
+{
+    try {
+        $c = ml_slab_get($pdo); $rows = []; foreach ((array)($c['rows'] ?? []) as $r) $rows[(int)($r['ml'] ?? 0)] = array_map('intval', (array)($r['p'] ?? []));
+        $floor = 2; if (function_exists('wag_chart_cols') && !empty($c['cols'])) { try { [$__i0, $__fl] = wag_chart_cols(array_values(array_map('floatval', (array)$c['cols']))); $floor = (int)$__fl; } catch (Throwable $e) { } }
+        $fu = (int)($GLOBALS['lib_fu_step'] ?? 0); $changed = false;
+        $out = preg_replace_callback('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu', function ($m) use ($rows, $msgs, $floor, $fu, &$changed, $pdo) {
+            $total = (int)$m[1] * (int)$m[2]; if (!isset($rows[$total])) return $m[0]; $p = $rows[$total]; $v = (int)str_replace(',', '', $m[5]); $j = array_search($v, $p, true); if ($j === false) return $m[0];
+            $row = ['ml' => $total, 'p' => $p, 'chart' => (int)$p[0]]; $dp = wag_price_depth($msgs, $row); $arr = wag_arrival_idx($row, $msgs); $lo = max($dp, $arr); $maxIdx = min($floor, count($p) - 1);
+            if ($lo < 0) { $lo = 0; $hi = 0; } else { $hi = ($fu > 0 && $fu < 9) ? $lo : $lo + 1; }
+            $hi = max($lo, min($hi, $maxIdx)); $want = max($lo, min((int)$j, $hi)); if ($want === (int)$j) return $m[0];
+            $changed = true; $new = $p[$want]; $txt = strpos($m[5], ',') !== false ? number_format($new) : (string)$new; return $m[1] . ' x ' . $m[2] . ' ml' . $m[3] . $m[4] . $txt; }, $reply);
+        return ($changed && is_string($out)) ? $out : $reply;
+    } catch (Throwable $e) { return $reply; }
+}
 /** Checks a reply: a price that belongs to ANOTHER chart row than the customer's total, or a first price that is not the chart (7%) price, is replaced by the correct chart price. Returns [reply, changed]. */
 function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
+{
+    [$__r1, $__c1] = wag_price_enforce0($pdo, $msgs, $reply); if ($__c1) return [$__r1, true];
+    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); return [$__r2, $__r2 !== $reply];
+}
+function wag_price_enforce0(PDO $pdo, array $msgs, string $reply): array
 {
     try {
         if (wag_bottles_no_size($msgs)) { if (preg_match('/(?:rs\.?|₹)\s*\d|\b(?:price|total|amount|rate|cost|discount|offer|kimat)\b/iu', $reply)) return ['Sir, kitne ml ki bottles chahiye — 20 ml, 50 ml ya 100 ml? 😊', true]; return [$reply, false]; }   // 🚫 bottles but no size: no price at all, ask the size
