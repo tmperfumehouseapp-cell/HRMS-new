@@ -160,7 +160,6 @@ function fup_seed_amazon_topics(PDO $pdo): void
     try {
         if ((string)setting_get($pdo, 'fup_amazon_topics_v1', '') === '1') return;
         $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE 'amazon%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); if ($sid <= 0) return;      // the section is made by the owner; this waits for it
-        setting_set($pdo, 'fup_amazon_topics_v1', '1');
         $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
         $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
         $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', ?, '', ?, ?, 'open', ?, 1, 0, ?)");
@@ -175,6 +174,7 @@ function fup_seed_amazon_topics(PDO $pdo): void
             if (isset($have[mb_strtolower($t[0])])) continue;
             $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3], $t[4] ? json_encode(fup_fields_clean($t[4]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
         }
+        setting_set($pdo, 'fup_amazon_topics_v1', '1');      // only after everything went in
     } catch (Throwable $e) { error_log('fup_seed_amazon_topics: ' . $e->getMessage()); }
 }
 
@@ -186,7 +186,6 @@ function fup_seed_tm4u_topics(PDO $pdo): void
         $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(REPLACE(name, ' ', '')) LIKE '%tm4u%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
         if ($sid <= 0) { $q = $pdo->query("SELECT t.section_id FROM fu_topics t JOIN fu_sections s ON s.id = t.section_id AND s.active = 1 WHERE t.active = 1 AND LOWER(t.title) IN ('baddie product find', 'day to day sales', 'ads ma aaje shu new learn karyu') ORDER BY t.id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }   // the owner's TM4U section by the topics he already put there
         if ($sid <= 0) return;
-        setting_set($pdo, 'fup_tm4u_topics_v1', '1');
         // the owner's order: "day to day sales" and "ads ma aaje shu new learn karyu" go away (hidden, the old updates stay); "baddie product find" stays
         $pdo->prepare("UPDATE fu_topics SET active = 0 WHERE section_id = ? AND LOWER(title) IN ('day to day sales', 'ads ma aaje shu new learn karyu')")->execute([$sid]);
         $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
@@ -204,6 +203,7 @@ function fup_seed_tm4u_topics(PDO $pdo): void
             if (isset($have[mb_strtolower($t[0])])) continue;
             $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3] ? json_encode(fup_fields_clean($t[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
         }
+        setting_set($pdo, 'fup_tm4u_topics_v1', '1');      // only after everything went in: a failure is tried again on the next request
     } catch (Throwable $e) { error_log('fup_seed_tm4u_topics: ' . $e->getMessage()); }
 }
 
