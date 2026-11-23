@@ -192,6 +192,7 @@ function wa_auto_alloc(PDO $pdo): int
     try { wa_camp_requery($pdo, 30); } catch (Throwable $e) { }
     try { if (function_exists('order_gel_fix')) $n += order_gel_fix($pdo); } catch (Throwable $e) { }
     try { if (function_exists('order_type_fill')) $n += order_type_fill($pdo); } catch (Throwable $e) { }   // a hand-allocated order with no Query / Campaign type is typed from the chat
+    try { if (function_exists('must3_photo_tick')) must3_photo_tick($pdo); } catch (Throwable $e) { }   // 📷 chain photos sent without words are looked at for the must-send check
     try { if (function_exists('ora_tick')) ora_tick($pdo); } catch (Throwable $e) { }
     try { if (function_exists('grow_learn_tick')) grow_learn_tick($pdo); } catch (Throwable $e) { }   // 📚 15-minute learning pulse + hourly digest for the guidebook   // ⭐ the stars of new orders are worked out from the chat   // 🧴 shower-gel orders of the month belong to TM Shower Gel
     return $n;

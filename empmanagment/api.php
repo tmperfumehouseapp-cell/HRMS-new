@@ -11591,6 +11591,46 @@ function qa_emp_total(PDO $pdo, string $from, string $to): array
     foreach (qa_rows($pdo, $from, $to) as $r) $o[$r['employee_id']] = ($o[$r['employee_id']] ?? 0) + $r['n'];
     return $o;
 }
+/** 📷 CHAIN PHOTOS (owner, 23 Nov): a salesperson often sends the chain catalogue as a PHOTO with no words, so the text rules cannot see it. Table must3_photo: one row per outgoing photo that was looked at — verdict 1 = a chain / jewellery photo, 0 = not, NULL = waiting.
+ *  must3_photo_seen(): [msg id => [media id, mark]] → the mark of the first photo already judged a chain photo (or null); photos not known yet are queued. must3_photo_tick(): the WhatsApp engine lets Claude look at a few waiting photos each round (the photo comes from our own media cache). */
+function must3_photo_table(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS must3_photo (msg_id BIGINT NOT NULL PRIMARY KEY, media_id VARCHAR(80) NOT NULL DEFAULT '', verdict TINYINT NULL, tries TINYINT NOT NULL DEFAULT 0, at DATETIME NOT NULL, KEY k_wait (verdict, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; } catch (Throwable $e) { return $ok = false; }
+}
+function must3_photo_seen(PDO $pdo, array $pics): ?array
+{
+    if (!$pics || !must3_photo_table($pdo)) return null;
+    try {
+        $ids = array_keys($pics); $q = $pdo->prepare("SELECT msg_id, verdict FROM must3_photo WHERE msg_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")"); $q->execute($ids); $known = [];
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $known[(int)$r['msg_id']] = $r['verdict'];
+        $ins = $pdo->prepare("INSERT IGNORE INTO must3_photo (msg_id, media_id, verdict, tries, at) VALUES (?, ?, NULL, 0, ?)");
+        foreach ($pics as $id => $p) { if (array_key_exists((int)$id, $known)) { if ((string)$known[(int)$id] === '1') return $p[1]; continue; } $ins->execute([(int)$id, mb_substr((string)$p[0], 0, 80), date('Y-m-d H:i:s')]); }
+    } catch (Throwable $e) { }
+    return null;
+}
+function must3_photo_tick(PDO $pdo, int $max = 6): int
+{
+    if (!must3_photo_table($pdo) || !function_exists('wa_mcache_get') || !function_exists('convo_ai')) return 0;
+    try { if ((int)setting_get($pdo, 'must3_photo_at', '0') > time() - 50) return 0; setting_set($pdo, 'must3_photo_at', (string)time()); } catch (Throwable $e) { return 0; }
+    $n = 0;
+    try {
+        $rows = $pdo->query("SELECT msg_id, media_id FROM must3_photo WHERE verdict IS NULL AND tries < 2 AND at >= '" . date('Y-m-d H:i:s', time() - 3 * 86400) . "' ORDER BY msg_id DESC LIMIT " . max(1, min(12, $max)))->fetchAll(PDO::FETCH_ASSOC);
+        $sys = 'You look at ONE photo a perfume shop salesperson sent to a customer on WhatsApp. The shop gives a free CHAIN / jewellery item with an order and shows the customer its chain catalogue: a photo or screenshot of one or several chains, necklaces, bracelets, pendants or other jewellery (often on a black background, sometimes a grid titled CHAIN, or a screenshot of the chain web page). Return JSON: chain = true when the photo shows such a chain / jewellery item or catalogue; false for anything else (perfume bottles, price charts, payment screens, addresses, people, text).';
+        $sch = ['type' => 'OBJECT', 'properties' => ['chain' => ['type' => 'BOOLEAN']], 'required' => ['chain']];
+        $up = $pdo->prepare("UPDATE must3_photo SET verdict = ?, tries = tries + 1 WHERE msg_id = ?"); $miss = $pdo->prepare("UPDATE must3_photo SET tries = tries + 1 WHERE msg_id = ?");
+        foreach ($rows as $r) {
+            [$path, $mime, $err] = wa_mcache_get($pdo, (string)$r['media_id']);
+            if ((string)$path === '' || !is_file((string)$path) || filesize((string)$path) > 5 * 1024 * 1024 || strpos((string)$mime, 'image/') !== 0) { $miss->execute([(int)$r['msg_id']]); continue; }
+            $f0 = function_exists('ai_feat') ? ai_feat('must3_photo') : null;
+            [$ok, $v] = convo_ai($sys, [['text' => 'Is this a chain / jewellery photo?'], ['inlineData' => ['mimeType' => (string)$mime, 'data' => base64_encode((string)file_get_contents((string)$path))]]], $sch, false, 60, 'claude');
+            if ($f0 !== null) ai_feat($f0);
+            if (!$ok || !is_array($v)) { $miss->execute([(int)$r['msg_id']]); continue; }
+            $up->execute([!empty($v['chain']) ? 1 : 0, (int)$r['msg_id']]); $n++;
+        }
+    } catch (Throwable $e) { error_log('must3_photo_tick: ' . $e->getMessage()); }
+    return $n;
+}
 /** ✅ The 3 must-send check of ONE business day (+ the add-on column, owner 23 Nov): per salesperson, per order — address re-check · chain selection · prepaid 2% (plain text match, no AI) and whether an add-on was put on the order (employee_addons) with the reason when not (order_rate_auto).
  *  $onlyEmp > 0 → only that salesperson's orders (the "my check" card of the sales app). Used by ct.must3 (Admin / HR) and ct.must3_me. */
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
@@ -11619,11 +11659,12 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
             // 🔎 owner (23 Nov, orders #73485 / #7349x): the number on the order is often NOT the number the customer chats from — it has no chat, or only an old / automatic one. So: read the order number's chat; when it holds NO message of a person and none of the three messages, look for the real chat — the order's "Extra mobile no.", else the ONE chat of the order's salesperson where the order's number was written (3 days before .. 2 hours after the order; searched only inside that person's chats, kept 15 min / 6 h) — and read that one. Nothing found = "chat not found" (its own box, not "not sent").
             $scan = function (string $kk) use ($pdo, $t, $rxA, $rxC, $rxP, $rxChainWord) {
                 $ff = ['a' => null, 'c' => null, 'p' => null]; $person = false; if (strlen($kk) !== 10) return [$ff, $person];
-                $q = $pdo->prepare("SELECT dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700");
+                $q = $pdo->prepare("SELECT id, media_id, dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700");
                 $q->execute([$kk, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', min(time(), $t + 48 * 3600))]);   // a message sent LATER (up to 48 h after the order, until now) also counts
-                $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms);
+                $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms); $pics = [];
                 foreach ($ms as $mi => $m) {
                     if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; if ($by === 'S') $person = true; $mark = [substr((string)$m['ts'], 11, 5), $by];
+                    if ($by === 'S' && (string)$m['mtype'] === 'image' && (string)$m['media_id'] !== '') $pics[(int)$m['id']] = [(string)$m['media_id'], $mark];   // 📷 a photo a person sent: it may be the chain catalogue with no words (read by must3_photo_tick)
                     if ($ff['a'] === null && preg_match($rxA, $body)) $ff['a'] = $mark;
                     if ($ff['p'] === null && $body !== '' && preg_match($rxP, $body)) $ff['p'] = $mark;
                     if ($ff['c'] === null) {
@@ -11631,6 +11672,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
                         elseif ((string)$m['mtype'] === 'image') { for ($z = max(0, $mi - 6); $z <= min($nm - 1, $mi + 6); $z++) if ($z !== $mi && preg_match($rxChainWord, (string)$ms[$z]['body'])) { $ff['c'] = $mark; break; } }
                     }
                 }
+                if ($ff['c'] === null && $pics) { $hit = must3_photo_seen($pdo, array_slice($pics, -8, null, true)); if ($hit) $ff['c'] = $hit; }   // owner (23 Nov, #73499): a chain PHOTO sent without any words counts too — the last 8 photos of the salesperson are looked at once by Claude (in the background), the answer is kept
                 return [$ff, $person];
             };
             try {
