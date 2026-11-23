@@ -314,6 +314,7 @@ function cx_raise(PDO $pdo, array $auth, array $role, array $in) {
     $id = (int)$pdo->lastInsertId();
     if (!empty($in['quiet']) || $src === 'oldphone') { try { $pdo->prepare("UPDATE cx_cases SET quiet = 1 WHERE id = ?")->execute([$id]); } catch (Throwable $e) { } }   // 📱 the customer talks on our OLD phone (migration): HRMS sends them nothing, the team answers on that phone
     $code = cx_code($id); $case = cx_row($pdo, $id);
+    try { $hold = $contact ? (int)$contact['assigned_emp'] : 0; if ($hold > 0 && $hold !== $emp && function_exists('ct_push')) ct_push($pdo, [$hold], '⚠ Complaint from your customer', ($name !== '' ? $name : '+91 ' . $key) . ': ' . $P[$problem][0] . ' (' . $code . '). Complaint Care answers it.', '/my_chats.html?phone=' . $key, 'cx-raised-' . $id); } catch (Throwable $e) { }   // 📲 owner (23 Nov): the salesperson who holds the customer's chat is told when a complaint is raised on that customer
     cx_ev($pdo, $id, $emp, 'raised', cx_name($pdo, $emp) . ' raised the complaint (' . $P[$problem][0] . ', ' . $U[$urg] . ') from ' . $S[$src]);
     if ($summary !== '' && $summary !== $P[$problem][0] && empty($in['quiet_note'])) cx_ev($pdo, $id, $emp, 'note', $summary);
     if ($key !== '') { $n = $pdo->prepare("SELECT COUNT(*) FROM cx_cases WHERE phone = ? AND id <> ? AND raised_at >= ?"); $n->execute([$key, $id, date('Y-m-d', strtotime('-90 days'))]); if ((int)$n->fetchColumn() > 0) cx_ev($pdo, $id, 0, 'alert', 'Repeat complainer: this customer has complained before in the last 90 days.'); }

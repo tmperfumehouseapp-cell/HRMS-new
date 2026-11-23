@@ -194,6 +194,7 @@ guardPage(); renderSidebar('followup');
     else if (!h) h = '<span class="fu-none">—</span>';
     if (d === t.due_day && d >= t.created && t.status !== 'done' && h.indexOf('fu-miss') < 0 && !t.fields.some((f) => f.req) && false) h += '';
     if (d === t.due_day && d >= t.created && t.status !== 'done' && t.need_text && !(u && u.text) && h.indexOf('fu-miss') < 0) h += '<div class="fu-miss">' + (w ? '+ Write the summary' : 'No summary yet') + '</div>';
+    if (t.source === 'store_pantry_photos') h += '<div class="fu-ph" data-phday="' + d + '"></div>';
     return h;
   }
 
@@ -282,7 +283,29 @@ guardPage(); renderSidebar('followup');
     return h;
   }
 
+  /* Pantry photos topic: the photos Anil uploaded in Store > Cleaning & Pantry, shown here read-only (thumbnails; tap one to see it big) */
+  const PH_URL = {};
+  async function phUrl(taskId) {
+    if (PH_URL[taskId]) return PH_URL[taskId];
+    const r = await fetch(api.buildUrl('fup.pantry_photo', { task_id: taskId }), { headers: { Authorization: 'Bearer ' + api.token() } });
+    if (!r.ok) throw new Error('photo'); return (PH_URL[taskId] = URL.createObjectURL(await r.blob()));
+  }
+  async function loadPantry() {
+    const boxes = [...document.querySelectorAll('.fu-ph[data-phday]')]; if (!boxes.length) return;
+    const byDay = {}; boxes.forEach((b) => { (byDay[b.dataset.phday] = byDay[b.dataset.phday] || []).push(b); });
+    for (const day of Object.keys(byDay)) {
+      let list = []; try { list = (await api.get('fup.pantry_photos', { day })).photos || []; } catch (e) { continue; }
+      byDay[day].forEach((box) => {
+        if (!list.length) { box.innerHTML = ''; return; }
+        const zones = {}; list.forEach((x) => { (zones[x.zone] = zones[x.zone] || []).push(x); });
+        box.setAttribute('data-stop', '1');
+        box.innerHTML = Object.keys(zones).map((z) => '<div class="fu-by" style="margin-top:6px"><b>' + esc(z) + '</b> · ' + zones[z].length + ' photo' + (zones[z].length === 1 ? '' : 's') + (zones[z][0].by ? ' · ' + esc(zones[z][0].by) : '') + '</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">' + zones[z].map((x) => '<img data-pt="' + x.task_id + '" title="' + esc(x.label || z) + (x.at ? ' · ' + x.at : '') + '" style="width:46px;height:46px;object-fit:cover;border-radius:8px;background:#e8ebf0;cursor:zoom-in">').join('') + '</div>').join('');
+        box.querySelectorAll('img[data-pt]').forEach(async (im) => { try { im.src = await phUrl(im.dataset.pt); } catch (e) { im.style.opacity = '.3'; } im.onclick = async (ev) => { ev.stopPropagation(); try { const u = await phUrl(im.dataset.pt); const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out'; ov.innerHTML = '<img src="' + u + '" style="max-width:100%;max-height:100%;border-radius:12px">'; ov.onclick = () => ov.remove(); document.body.appendChild(ov); } catch (e) { /* ignore */ } }; });
+      });
+    }
+  }
   function bind() {
+    loadPantry();
     document.querySelectorAll('[data-go]').forEach((b) => { b.onclick = (e) => { if (e.target.closest('[data-stop]')) return; SID = Number(b.dataset.go); ALL = false; try { localStorage.setItem('fup_all', '0'); } catch (x) { /* private mode */ } load(); }; });
     const setAll = (v) => { ALL = v; try { localStorage.setItem('fup_all', v ? '1' : '0'); } catch (e) { /* private mode */ } };
     document.querySelectorAll('[data-sec]').forEach((b) => { b.onclick = () => { SID = Number(b.dataset.sec); setAll(false); load(); }; });

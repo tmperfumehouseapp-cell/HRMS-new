@@ -322,7 +322,7 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
             $ok = preg_replace('/\|/', ':', (string)($o['key'] ?? ''), 1);      // the same order key the pages use: store:id
             $amt = (float)$o['amt']; $sales += $amt;
             $gross = (!empty($o['pre']) && $pre > 0) ? $amt / (1 - $pre / 100) : $amt;           // the prepaid discount is the company's cost
-            $f = ($o['code'] !== '' || $codeOk) ? 1.0 : $nocodeF; $ml = $o['ml'] ?? null;
+            $f = ($o['code'] !== '' || $codeOk || !empty($o['web'])) ? 1.0 : $nocodeF; $ml = $o['ml'] ?? null;   // 🛍 a website order cannot carry a code: the no-code half does not apply to it
             // shower gel / attar / others / combos are priced on their own price charts (Learn & Setup → Pricing, shared): a combo prices the WHOLE order (its price already includes the perfume),
             // otherwise that part is paid on top of the perfume commission. The code rule applies to it like to every order.
             if ($isB) { $v = $gross * (float)$bdc['pct'] / 100; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)($ml ?: 0), 'price' => round($gross), 'rule' => 'birthday', 'pct' => (float)$bdc['pct'], 'code' => $o['code'] !== '', 'com' => round($v, 2), 'key' => $ok, 'x' => 0]; continue; }      // 🎂 flat birthday % (no code rule, no chart, no offers, the whole order amount)
@@ -383,7 +383,7 @@ function cm_paid_day(PDO $pdo, $day) {
     static $mem = [], $ver = null; if (isset($mem[$day])) return $mem[$day];      // 'v2' below: the day's extra is one amount on the total (not inside each order)
     $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     if ($ver === null) {
-        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', ''), 'ad:' . md5((string)setting_get($pdo, 'cm_addons', '')) . 'mp:' . (string)setting_get($pdo, 'mp_flat_pct', '6') . 'tk:' . (string)setting_get($pdo, 'tk_pay', '') . (string)setting_get($pdo, 'tk_goal', '') . (string)setting_get($pdo, 'tk_bonus_pct', '') . (string)setting_get($pdo, 'tk_min_orders', '')];   // a change of the ticket-bonus settings is seen at once
+        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', ''), 'ad:' . md5((string)setting_get($pdo, 'cm_addons', '')) . 'mp:' . (string)setting_get($pdo, 'mp_flat_pct', '6') . 'web2:' . (string)setting_get($pdo, 'tms_commission', '1') . 'tk:' . (string)setting_get($pdo, 'tk_pay', '') . (string)setting_get($pdo, 'tk_goal', '') . (string)setting_get($pdo, 'tk_bonus_pct', '') . (string)setting_get($pdo, 'tk_min_orders', '')];   // a change of the ticket-bonus settings is seen at once
         foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0), COALESCE(SUM(CRC32(COALESCE(addons, ''))), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }
