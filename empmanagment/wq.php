@@ -1616,7 +1616,7 @@ function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
     $phs = array_values(array_map(fn($r) => (string)$r['phone'], $rows)); $lastIn = [];
     if ($phs) { try { foreach (wq_last_in_rows($pdo, $phs) as $t) $lastIn[(string)$t['phone']] = trim((string)$t['body']) !== '' ? (string)$t['body'] : '[' . (string)$t['mtype'] . ']'; } catch (Throwable $e) { } }
     $o = []; foreach ($rows as $r) { $ph = (string)$r['phone']; $in = wq_ts($r['last_in_at']); $o[] = ['phone' => $ph, 'name' => (string)$r['name'], 'mins' => max(0, (int)floor(($now - $in) / 60)), 'answered' => wq_ts($r['last_out_at'] ?? '') >= $in, 'last_in' => mb_substr((string)($lastIn[$ph] ?? ''), 0, 120), 'src' => (string)($r['source'] ?? ''), 'sec' => max(0, $now - $in), 'kind' => wq_req_kind((string)($r['source'] ?? ''), (string)($lastIn[$ph] ?? ''))]; }
-    if ($me > 0 && function_exists('wag_fair_state')) { try { $__fs = wag_fair_state($pdo, $me); if (!empty($__fs['hidden'])) { $__w = (int)$__fs['window']; $o = array_values(array_filter($o, fn($x) => (int)($x['sec'] ?? 9999) >= $__w)); } } catch (Throwable $e) { } }   // fair share: a person who took queries lately sees the NEW ones only after the first-chance window
+    if ($me > 0 && function_exists('wag_fair_state')) { try { $__fs = wag_fair_state($pdo, $me); if (!empty($__fs['hidden'])) { $__w = (int)$__fs['window']; $o = array_values(array_filter($o, fn($x) => (string)($x['src'] ?? '') === 'campaign' || (int)($x['sec'] ?? 9999) >= $__w)); } } catch (Throwable $e) { } }   // fair share: a person who took queries lately sees the NEW ones only after the first-chance window
     // ⏱ pinned on top: customers waiting wq_grab_min (4) min+ with no reply from anyone — unassigned ones AND ones with a person who did not answer (taken with wq.grab)
     $late = []; try { $g = wq_grab_list($pdo, $me); foreach ($g['items'] as $x) if (empty($x['mine'])) $late[] = $x; } catch (Throwable $e) { }
     $lp = array_flip(array_column($late, 'phone')); $o = array_values(array_filter($o, fn($x) => !isset($lp[$x['phone']])));
@@ -1663,14 +1663,15 @@ function wq_req_take(PDO $pdo, string $phone, int $me): array
     if ($me <= 0) return ['error' => 'Only a logged-in employee can take a chat.'];
     $c = wq_contact($pdo, $phone); if (!$c) return ['error' => 'Chat not found.'];
     if ((int)$c['assigned_emp'] === $me) return ['ok' => true, 'already' => true];
-    if ((int)$c['assigned_emp'] === 0 && function_exists('wag_fair_state')) { try { $__fs = wag_fair_state($pdo, $me); $__age = $c['last_in_at'] ? wq_now() - wq_ts($c['last_in_at']) : 9999; if (!empty($__fs['hidden']) && $__age < (int)$__fs['window']) return ['error' => '🎯 Fair share: a colleague who took fewer queries gets the first chance. This chat opens for you in ' . max(1, (int)$__fs['window'] - $__age) . ' s.']; } catch (Throwable $e) { } }
+    $__campQ = (string)($c['source'] ?? '') === 'campaign';   // owner 23 Nov: campaign queries have no limit (no fair-share wait, no overnight cap, no lock)
+    if (!$__campQ && (int)$c['assigned_emp'] === 0 && function_exists('wag_fair_state')) { try { $__fs = wag_fair_state($pdo, $me); $__age = $c['last_in_at'] ? wq_now() - wq_ts($c['last_in_at']) : 9999; if (!empty($__fs['hidden']) && $__age < (int)$__fs['window']) return ['error' => '🎯 Fair share: a colleague who took fewer queries gets the first chance. This chat opens for you in ' . max(1, (int)$__fs['window'] - $__age) . ' s.']; } catch (Throwable $e) { } }
     // everyone who opens the chat app (every sales agent, managers and admin too) may take a request — owner's rule
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — the complaint team handles it.'];
     // 🤖 22 Nov (owner): a person may always take a query, even while the bot is writing - taking it switches the bot off for this chat (wa_assign_to sets botoff), so it stops talking over the person
     if (function_exists('wag_mkt_gate_msg') && ($__gm = wag_mkt_gate_msg($pdo, $me, $c)) !== '') return ['error' => $__gm];   // 🏪 performance gate: no more queries for a person who is not closing
     if ((int)$c['assigned_emp'] > 0) return ['error' => (wq_name(wq_names($pdo), (int)$c['assigned_emp']) ?: 'Somebody') . ' already has this chat.'];
-    if (function_exists('waa_pick_block')) { $wb = waa_pick_block($pdo, $me); if ($wb !== '') return ['error' => $wb]; }   // 🏪 overnight: a person below the ratio band takes at most 5 from Requests
+    if (!$__campQ && function_exists('waa_pick_block')) { $wb = waa_pick_block($pdo, $me); if ($wb !== '') return ['error' => $wb]; }   // 🏪 overnight: a person below the ratio band takes at most 5 from Requests
     $u = $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ? AND (assigned_emp IS NULL OR assigned_emp = 0)"); $u->execute([$me, $phone]);
     if ($u->rowCount() === 0) return ['error' => 'Somebody else just took this chat.'];
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0 WHERE phone = ?")->execute([$phone]);   // back for one line: wa_assign_to writes the log, the event and the query owner
