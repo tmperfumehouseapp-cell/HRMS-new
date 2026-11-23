@@ -11634,17 +11634,20 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
                 return [$ff, $person];
             };
             try {
-                [$f, $person] = $scan($k);
-                if (!$person && !$f['a'] && !$f['c'] && !$f['p']) {
-                    $found = ''; $k2 = ''; if ($xq) { $xq->execute([(string)$o['store_key'], (string)$o['shopify_id']]); $k2 = substr(preg_replace('/\D+/', '', (string)$xq->fetchColumn()), -10); }
-                    if (strlen($k2) === 10 && $k2 !== $k) { $hasMsg->execute([$k2]); if ($hasMsg->fetchColumn()) $found = $k2; }
-                    if ($found === '' && strlen($k) === 10 && (int)$o['employee_id'] > 0) {
+                [$f, $person] = $scan($k); $hits = function ($x) { return ($x['a'] ? 1 : 0) + ($x['c'] ? 1 : 0) + ($x['p'] ? 1 : 0); };
+                if ($hits($f) < 3) {   // owner (23 Nov, #73496): the order number's chat may hold a few LATER messages of a person (a template sent to that number after the order) while the selling was done in ANOTHER chat — so whenever something is missing, the other chats of this order are read too and the one with the MOST of the three messages counts
+                    $cand = []; $k2 = ''; if ($xq) { $xq->execute([(string)$o['store_key'], (string)$o['shopify_id']]); $k2 = substr(preg_replace('/\D+/', '', (string)$xq->fetchColumn()), -10); }
+                    if (strlen($k2) === 10 && $k2 !== $k) $cand[$k2] = 1;
+                    if (strlen($k) === 10 && (int)$o['employee_id'] > 0) {
                         $eo = (int)$o['employee_id'];
-                        $found = (string)hrms_memo('must3_find:' . $k . ':' . $t . ':' . $eo, 900, function () use ($pdo, $k, $t, $eo) {
+                        $fnd = (string)hrms_memo('must3_find:' . $k . ':' . $t . ':' . $eo, 900, function () use ($pdo, $k, $t, $eo) {
                             $fq = $pdo->prepare("SELECT m.phone, COUNT(*) n FROM wa_contacts c JOIN wa_messages m ON m.phone = c.phone WHERE c.assigned_emp = ? AND c.last_in_at >= ? AND c.phone <> ? AND m.ts >= ? AND m.ts <= ? AND m.body LIKE ? GROUP BY m.phone ORDER BY n DESC LIMIT 2");
                             $fq->execute([$eo, date('Y-m-d H:i:s', $t - 3 * 86400), $k, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', $t + 2 * 3600), '%' . $k . '%']); $fr = $fq->fetchAll(PDO::FETCH_ASSOC); return count($fr) === 1 ? (string)$fr[0]['phone'] : ''; });
+                        if (strlen($fnd) === 10 && $fnd !== $k) $cand[$fnd] = 1;
                     }
-                    if ($found !== '') { $k = $found; [$f, $person] = $scan($k); } else $nochat = true;
+                    $any = $person;
+                    foreach (array_keys($cand) as $kc) { [$f2, $p2] = $scan((string)$kc); if ($p2 || $hits($f2)) $any = true; if ($hits($f2) > $hits($f) || ($hits($f2) === $hits($f) && $p2 && !$person)) { $f = $f2; $person = $p2; $k = (string)$kc; } }
+                    if (!$any && !$hits($f)) $nochat = true;
                 }
             } catch (Throwable $e) { }
             $e = (int)$o['employee_id'];
