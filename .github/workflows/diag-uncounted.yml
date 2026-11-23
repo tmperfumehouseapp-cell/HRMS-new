@@ -38,6 +38,8 @@ jobs:
           require $f; $on = preg_replace("/\D/", "", (string)($argv[2] ?? "")); if ($on === "") { echo "no order number\n"; exit; }
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
           date_default_timezone_set("Asia/Kolkata"); $d->exec("SET time_zone = '+05:30'"); echo "now " . date("Y-m-d H:i:s") . "\n";
+          try { echo "PHOTOS queue: "; foreach ($d->query("SELECT COALESCE(verdict, 'waiting') v, tries, COUNT(*) n FROM must3_photo GROUP BY v, tries") as $r) echo "[" . $r["v"] . " tries " . $r["tries"] . " n " . $r["n"] . "] "; echo "\n"; } catch (Throwable $e) { echo "PHOTOS no table\n"; }
+          foreach (["must3_photo_at", "must3_photo_why"] as $k0) { $v0 = (string)$d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = '$k0'")->fetchColumn(); echo "SET $k0 = " . (ctype_digit($v0) ? date("Y-m-d H:i:s", (int)$v0) : $v0) . "\n"; }
           $q = $d->prepare("SELECT o.order_name, o.store_key, o.shopify_id, o.created_at, o.phone, o.total, o.tags FROM shop_orders o WHERE REPLACE(o.order_name, '#', '') LIKE ? AND o.created_at >= ? ORDER BY o.created_at DESC LIMIT 1"); $q->execute([$on . '%', date('Y-m-d H:i:s', time() - 3 * 86400)]);
           foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $o) {
             $k = substr(preg_replace("/\D+/", "", (string)$o["phone"]), -10); $t = strtotime((string)$o["created_at"]);
