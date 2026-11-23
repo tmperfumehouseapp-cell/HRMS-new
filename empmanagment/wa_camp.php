@@ -169,7 +169,8 @@ function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
     $rt = fn(array $n) => $n['used'] / max(1, $n['cap']); $minR = min(array_map($rt, $el)); $tol = (float)($ctx['sticky'] ?? 0.05);   // "stay on the number they wrote to" is soft: that number may be at most 5% of its day ahead of the freest one, so no number sits idle while another fills up
     if ($last && isset($el[$last]) && $c['last_in_at'] && strtotime((string)$c['last_in_at']) > time() - 30 * 86400 && ($ign[$last] ?? 0) < $ctx['switch']) return [$last, ''];   // they wrote to this one: ALWAYS stay on it while it has room today (owner's rule) — the other number only after they ignored it, or when it is full / Low quality
     $cand = array_filter($el, fn($n) => ($ign[$n['id']] ?? 0) < $ctx['switch']); if (!$cand) return [0, 'ignored every number'];
-    uasort($cand, fn($a, $b) => ($a['used'] / max(1, $a['cap'])) <=> ($b['used'] / max(1, $b['cap'])));
+    // owner 23 Nov 2026: a number with a SMALL daily limit (a new number on its slow start, cap under 10,000) that still has room is filled FIRST - by the used/cap ratio it always looked 'fuller' than the big numbers, so number 11 got almost nothing (341 in a day) while it was GREEN
+    uasort($cand, fn($a, $b) => ((int)$a['cap'] < 10000 && (int)$a['left'] > 0 ? 0 : 1) <=> ((int)$b['cap'] < 10000 && (int)$b['left'] > 0 ? 0 : 1) ?: ($a['used'] / max(1, $a['cap'])) <=> ($b['used'] / max(1, $b['cap'])));
     return [(int)reset($cand)['id'], ''];
 }
 function wa_first_name(string $name): string
