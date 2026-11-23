@@ -1,0 +1,49 @@
+# READ-ONLY: how one salesperson's query numbers are made (taken today, queries by type, returning). No phone numbers, no names of customers.
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Query numbers of one person (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Numbers
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/qn_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          echo "server " . date("Y-m-d H:i:s") . "\n";
+          $e = $d->query("SELECT employee_id FROM employees WHERE full_name LIKE 'Parth Patel%' LIMIT 1")->fetchColumn(); echo "emp " . $e . "\n";
+          $t0 = date("Y-m-d 00:00:00"); $s0 = date("Y-m-d 10:00:00", time() - (date("G") < 10 ? 86400 : 0)); echo "midnight $t0 · sales day start $s0\n";
+          $q = $d->prepare("SELECT q.id, q.src, q.again, q.opened_at, COALESCE(t.type,'unclear') ty FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.emp_id = ? AND q.opened_at >= ? ORDER BY q.opened_at");
+          $q->execute([$e, $s0]); $by = []; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = "type=" . $r["ty"] . " src=[" . $r["src"] . "] again=" . $r["again"]; $by[$k] = ($by[$k] ?? 0) + 1; }
+          echo "--- his queries (owner emp) since the sales day start, by type/src/again\n"; ksort($by); foreach ($by as $k => $n) echo "  $n x $k\n";
+          $m = $d->prepare("SELECT kind, phone, at FROM wa_mkt WHERE emp_id = ? AND at >= ? AND kind IN ('taken','dropped','released') ORDER BY at"); $m->execute([$e, $t0]); $rows = $m->fetchAll(PDO::FETCH_ASSOC); $c = []; $seen = [];
+          foreach ($rows as $r) { if ($r["kind"] !== "taken") { $c["kind=" . $r["kind"]] = ($c["kind=" . $r["kind"]] ?? 0) + 1; continue; } if (isset($seen[$r["phone"]])) continue; $seen[$r["phone"]] = 1;
+            $a = $d->prepare("SELECT q.src, q.again, q.emp_id, COALESCE(t.type,'unclear') ty FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.phone = ? ORDER BY q.id DESC LIMIT 1"); $a->execute([$r["phone"]]); $x = $a->fetch(PDO::FETCH_ASSOC);
+            $cs = $d->prepare("SELECT source FROM wa_contacts WHERE phone = ?"); $cs->execute([$r["phone"]]); $src = $cs->fetchColumn();
+            $own = $x && (int)$x["emp_id"] === (int)$e ? "his" : "NOT his";
+            $k = "taken " . ($r["at"] >= $s0 ? "after" : "BEFORE") . " 10am · latest query type=" . ($x["ty"] ?? "none") . " again=" . ($x["again"] ?? "-") . " · " . $own . " · contact source [" . $src . "]"; $c[$k] = ($c[$k] ?? 0) + 1; }
+          echo "--- what he took since midnight (distinct chats: " . count($seen) . ")\n"; ksort($c); foreach ($c as $k => $n) echo "  $n x $k\n";
+          PHP
+          php /tmp/qn_check.php "$P"; rm -f /tmp/qn_check.php
+          REMOTE
