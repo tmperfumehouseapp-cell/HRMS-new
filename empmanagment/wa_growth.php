@@ -1296,6 +1296,7 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
 {
     // owner 22 Nov: the conversion part of the gate never blocks a customer who waited 4 minutes with no reply (unassigned or held by somebody who did not answer) (a person must always be able to pick waiting queries); it needs 25+ queries and a ratio under half of the team's
     $waited = $chat !== null && ($__li = (int)strtotime((string)($chat['last_in_at'] ?? ''))) > 0 && $__li < time() - 240 && (int)strtotime((string)($chat['last_out_at'] ?? '')) < $__li;   // waiting 4+ min with no reply from anyone: unassigned OR held by a person who did not answer
+    if ($chat !== null && in_array((string)($chat['source'] ?? ''), ['campaign', 'community'], true)) return '';   // owner 23 Nov: a CAMPAIGN query has no limit at all - any salesperson may take as many as he wants (the lock / hot-waiting / left-chats rules are for fresh queries only)
     static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)$waited . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
     $msg = '';
     try {
