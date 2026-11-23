@@ -118,7 +118,9 @@
         const hb = {}; (H.by_ad || []).forEach((a) => { hb[a.ad_id] = a.n; });
         const t = S.total || {}, sum = (k) => (S.ads || []).reduce((s, a) => s + ((a.capi || {})[k] || 0), 0), sent = sum('sent'), failed = sum('failed'), pend = sum('pending');
         const dayStart = Date.parse(DG.date + 'T00:00:00') / 1000, startedToday = S.health && S.health.first_click_at && S.health.first_click_at >= dayStart;
-        line('✅', `<b>Tracking service is answering.</b> Last ad click ${esc(unix(S.health.last_click_at))}, last Shopify order ${esc(unix(S.health.last_order_at))}, spend read up to ${esc(S.health.last_spend_day || '—')}.`);
+        line('✅', `<b>Tracking service is answering.</b> Last ad click ${esc(unix(S.health.last_click_at))}, last Shopify order ${esc(unix(S.health.last_order_at))}.`);
+        const age = S.health.spend_sync_at ? Math.round((Date.now() / 1000 - S.health.spend_sync_at) / 60) : null;
+        line(S.health.refreshing ? '🔄' : (age != null && age <= 10 ? '✅' : '⚠️'), `<b>Meta’s numbers were read ${age == null ? 'never' : esc(unix(S.health.spend_sync_at)) + ' (' + age + ' min ago)'}.</b>` + (S.health.refreshing ? ' Reading them again now: press Diagnose once more in a few seconds for the fresh numbers.' : ''));
         if (startedToday) line('ℹ️', `The service started counting on this day at ${esc(unix(S.health.first_click_at))}; earlier clicks of the day are not in its numbers.`);
         const mc = t.meta_conversations || 0, cl = t.queries || 0;
         if (mc > 0 && cl < mc * 0.5 && !startedToday) line('⚠️', `<b>Messages may not be reaching the service:</b> Meta counts ${mc} conversations, the service received ${cl} ad clicks.`);
@@ -127,9 +129,10 @@
         line(t.orders > 0 ? '✅' : 'ℹ️', `<b>Orders matched to an ad click:</b> ${t.orders || 0} (${t.confirmed_orders || 0} paid) · revenue ${inr(t.revenue)} · spend ${inr(t.spend)} · ROAS ${t.roas != null ? t.roas.toFixed(2) : '—'}.`);
         line(failed ? '❌' : sent ? '✅' : 'ℹ️', `<b>Purchases told to Meta:</b> ${sent} accepted · ${failed} refused · ${pend} waiting.` + (failed ? ' See the reason on the orders below.' : !sent ? ' Nothing to send yet (no matched paid order).' : ''));
         const ads = S.ads || []; const seen = {};
-        const rows = ads.map((a) => { seen[a.ad_id] = 1; const c = a.capi || {}; return [a.ad_name || a.ad_id, inr(a.spend), a.meta_conversations || 0, a.clicks || 0, hb[a.ad_id] || 0, a.orders || 0, a.confirmed_orders || 0, inr(a.revenue), a.roas != null ? a.roas.toFixed(2) : '—', (c.sent || 0) + ' / ' + (c.failed || 0) + ' / ' + (c.pending || 0)]; });
+        const rows = ads.map((a) => { seen[a.ad_id] = 1; const c = a.capi || {}; return [(a.ad_name || a.ad_id) + (a.campaign_name ? '  ·  ' + a.campaign_name : ''), inr(a.spend), a.meta_conversations || 0, a.clicks || 0, hb[a.ad_id] || 0, a.orders || 0, a.confirmed_orders || 0, inr(a.revenue), a.roas != null ? a.roas.toFixed(2) : '—', (c.sent || 0) + ' / ' + (c.failed || 0) + ' / ' + (c.pending || 0)]; });
         (H.by_ad || []).forEach((a) => { if (!seen[a.ad_id]) rows.push([(a.title || 'Meta ad') + ' (ad tag in the HRMS only)', '—', '—', 0, a.n, 0, 0, '—', '—', '—']); });
-        const HEAD = ['Ad', 'Spend', 'Meta conv.', 'Clicks (service)', 'Ad leads (HRMS)', 'Orders', 'Paid', 'Revenue', 'ROAS', 'Meta: ok / refused / waiting'];
+        rows.push(['TOTAL', inr(t.spend), t.meta_conversations || 0, t.queries || 0, H.tag, t.orders || 0, t.confirmed_orders || 0, inr(t.revenue), t.roas != null ? t.roas.toFixed(2) : '—', sent + ' / ' + failed + ' / ' + pend]);
+        const HEAD = ['Ad · campaign', 'Spend', 'Meta conv.', 'Clicks (service)', 'Ad leads (HRMS)', 'Orders', 'Paid', 'Revenue', 'ROAS', 'Meta: ok / refused / waiting'];
         table = rows.length ? `<div class="al-dgx"><table><thead><tr>${HEAD.map((x) => '<th>' + x + '</th>').join('')}</tr></thead><tbody>${rows.map((r) => '<tr>' + r.map((c) => '<td>' + esc(String(c)) + '</td>').join('') + '</tr>').join('')}</tbody></table></div>` : '';
         T.push('', HEAD.join(' | ')); rows.forEach((r) => T.push(r.join(' | ')));
         const os = S.orders || [];
@@ -137,7 +140,7 @@
           T.push('', 'Matched orders:'); os.forEach((o) => T.push([o.name, o.ad_name || o.ad_id, inr(o.total), o.financial_status, o.capi_status, o.capi_error || ''].join(' | '))); }
       }
       dgText = 'Diagnose ' + DG.date + ' (checked ' + DG.now + ')\n' + T.join('\n');
-      box.innerHTML = `<div class="al-dg"><h3>🩺 Diagnose · ${esc(DG.date)}</h3>${tiles}${L.join('')}${staff}${table}${ord}<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="al-btn" id="alCopy">Copy report</button><span class="wp-hint">Tap a tile to see only those customers in the list below. A photo is counted, not read: open the chat to see whether it is a payment screenshot. The report has no customer names or numbers. The per-ad HRMS column counts only customers with Meta’s ad tag, under the FIRST ad that brought them, so it can differ from the service.</span></div></div>`;
+      box.innerHTML = `<div class="al-dg"><h3>🩺 Diagnose · ${esc(DG.date)}</h3>${tiles}${L.join('')}${staff}${table}${ord}<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="al-btn" id="alCopy">Copy report</button><span class="wp-hint">Tap a tile to see only those customers in the list below. A photo is counted, not read: open the chat to see whether it is a payment screenshot. The report has no customer names or numbers. The per-ad HRMS column counts only customers with Meta’s ad tag, under the FIRST ad that brought them, so it can differ from the service. Every WhatsApp ad Meta counted a conversation for is listed, also when none of its clicks reached the service yet.</span></div></div>`;
       box.querySelectorAll('[data-of]').forEach((b) => { b.onclick = () => { outF = outF === b.dataset.of ? '' : b.dataset.of; box.querySelectorAll('[data-of]').forEach((x) => x.classList.toggle('on', x.dataset.of === outF && outF !== '')); paintOutcomes(); }; });
       paintOutcomes();
       $(el, '#alCopy').onclick = async () => { try { await navigator.clipboard.writeText(dgText); toast('Report copied'); } catch (e) { const ta = document.createElement('textarea'); ta.value = dgText; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Report copied'); } catch (e2) { toast('Could not copy'); } ta.remove(); } };
