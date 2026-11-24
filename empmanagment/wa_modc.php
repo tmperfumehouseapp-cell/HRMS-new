@@ -38,7 +38,7 @@ if (!function_exists('wa_rc_tick')) {
             $pool = array_values(array_filter($pool, function ($t) use ($tpp, $nowTs) { return (int)($tpp[(int)($t['id'] ?? 0)] ?? 0) <= $nowTs; }));
             if (!$pool) { $res['note'] = 'no approved plain utility message yet (waiting for Meta)'; return $res; }
             $from = (string)setting_get($pdo, 'wa_rc_from', '2026-11-14 00:00:00'); $cursor = (int)setting_get($pdo, 'wa_rc_cursor', '0'); $lim = 400; $mo = implode(',', WA_RU_MARKETING_ONLY);
-            $q4 = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.err_code FROM wa_camp_items i WHERE i.sent_at >= ? AND i.sent_at <= ? AND ((i.status = 'failed' AND i.err_code IN ($mo)) OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo))) AND COALESCE(i.variant, 'M') <> 'U' AND i.id > ?
+            $q4 = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.err_code, i.sent_at FROM wa_camp_items i WHERE i.sent_at >= ? AND i.sent_at <= ? AND ((i.status = 'failed' AND i.err_code IN ($mo)) OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo))) AND COALESCE(i.variant, 'M') <> 'U' AND i.id > ?
                 AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.item_id = i.id) ORDER BY i.id LIMIT " . $lim);
             $q4->execute([$from, date('Y-m-d H:i:s', $nowTs - 3600), $cursor]); $items = $q4->fetchAll();
             if (!$items) { if ($cursor > 0) setting_set($pdo, 'wa_rc_cursor', '0'); $res['note'] = 'nothing new'; return $res; }
@@ -59,7 +59,8 @@ if (!function_exists('wa_rc_tick')) {
                 if (isset($ever[$ph]) || isset($seen[$ph])) { $sk('already got a utility message'); continue; }
                 if (isset($lineup[$ph])) { $sk('in the line-up of a campaign'); continue; }
                 $rcr = $rec[(int)$it['id']] ?? null; $rcn = $rcr ? (int)$rcr['n'] : 0;   // Module A's recovery (another number) goes first, like for Module B
-                if ($recOn && $rcn < $recTries) { $sk('recovery from another number goes first'); continue; }
+                $oldFail = !empty($it['sent_at']) && strtotime((string)$it['sent_at']) < $nowTs - max(1, (int)setting_get($pdo, 'wa_rc_rec_wait_h', '6')) * 3600;   // owner 24 Nov: a failure older than 6 hours does not wait for Module A's recovery any more (287 of 400 people in a round were held by it and Module C sent ~50 an hour)
+                if ($recOn && $rcn < $recTries && !$oldFail) { $sk('recovery from another number goes first'); continue; }
                 if ($rcr && strtotime((string)$rcr['last']) > $nowTs - 3600) { $sk('recovery tried in the last hour'); continue; }
                 if (isset($got[$ph])) { $sk('delivered another way today'); continue; }
                 $rot++; $ctm = ['phone' => $ph, 'name' => (string)($c['name'] ?? $it['name'] ?? ''), 'optout' => 0, 'last_in_at' => null];
