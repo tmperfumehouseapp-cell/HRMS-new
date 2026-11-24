@@ -239,6 +239,40 @@ function fup_seed_myntra_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_myntra_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's twelve hand-written topics of his "Website" section (the section is made by the owner; this waits for it). Manual updates only. A topic with the same title is not made twice. Nobody is assigned: the owner gives each topic to a person himself. */
+function fup_seed_website_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_website_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'website' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%website%' AND LOWER(REPLACE(name, ' ', '')) NOT LIKE '%tm4u%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $f = function ($l, $t, $r = 1) { return ['label' => $l, 'type' => $t, 'req' => $r]; };
+        $list = [
+            ['Code and ticket size', 'Write today\'s code and the ticket size.', 0, [$f('Code', 'num'), $f('Ticket size', 'num')]],
+            ['Community: which are running and how many numbers saved', 'Write which communities are running and how many numbers were saved today.', 0, [$f('Which communities are running', 'text'), $f('Numbers saved', 'num')]],
+            ['Website: what new was changed today', 'Write what was changed on the website today.', 1, []],
+            ['Delivery ratio', 'Write today\'s delivery ratio in percent.', 0, [$f('Delivery ratio (%)', 'num')]],
+            ['All maintenance flow', 'Write what happened in the maintenance flow today.', 1, []],
+            ['Divya nu kaam check', 'Write what you saw when you checked Divya\'s work.', 1, []],
+            ['Flipkart update', 'Write what was updated on Flipkart today.', 1, []],
+            ['Domain ranking', 'Write the domain ranking today and a note if it moved.', 0, [$f('Ranking', 'num'), $f('Note', 'text', 0)]],
+            ['Product shuffling', 'Write what product shuffling was done today.', 1, []],
+            ['Myntra update', 'Write what was updated on Myntra today.', 1, []],
+            ['Reddit comment delete (every day)', 'Write which Reddit comments were deleted today.', 1, []],
+            ['BOB balance', 'Write the BOB balance.', 0, [$f('BOB balance (₹)', 'num')]],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3] ? json_encode(fup_fields_clean($t[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_website_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_website_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the nine hand-written topics of the owner's "Third party" section (from the yellow columns of his Uploadings sheet). The section is made by the owner; this waits for it. A topic with the same title is not made twice. Nobody is assigned. */
 function fup_seed_third_party_topics(PDO $pdo): void
 {
@@ -812,6 +846,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_tm4u_numbers_update($pdo);
     fup_tm4u_upload_topic($pdo);
     fup_seed_third_party_topics($pdo);
+    fup_seed_website_topics($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
