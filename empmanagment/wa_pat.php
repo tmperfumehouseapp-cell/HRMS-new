@@ -36,7 +36,7 @@ if (!function_exists('wa_pat_topic')) {
     /** The data of one module: rows [tpl_id, sent, replied] */
     function wa_pat_rows(PDO $pdo, string $mod, string $from, int $mult): array
     {
-        $rep = function ($ph, $at) { return "EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = $ph COLLATE utf8mb4_unicode_ci AND i.dir = 'in' AND i.ts > $at AND i.ts <= DATE_ADD($at, INTERVAL 48 HOUR))"; };
+        $rep = function ($ph, $at) { return "EXISTS (SELECT 1 FROM wa_messages rm WHERE rm.phone = $ph COLLATE utf8mb4_unicode_ci AND rm.dir = 'in' AND rm.ts > $at AND rm.ts <= DATE_ADD($at, INTERVAL 48 HOUR))"; };   /* inner alias rm: with the outer alias i (Module A) the old inner i hid it and every row counted as replied */
         $m = max(1, $mult); $smp = function ($c) use ($m) { return $m > 1 ? " AND $c % $m = 0" : ''; };
         switch ($mod) {
             case 'cold': $sql = "SELECT l.tpl_id, COUNT(*), SUM(" . $rep('l.phone', 'l.at') . ") FROM wa_cold_log l WHERE l.ok = 1 AND l.tpl_id > 0 AND l.at >= ?" . $smp('l.id') . " GROUP BY l.tpl_id"; break;
@@ -44,7 +44,7 @@ if (!function_exists('wa_pat_topic')) {
             case 'modc': $sql = "SELECT l.tpl_id, COUNT(*), SUM(" . $rep('l.phone', 'l.at') . ") FROM wa_ru_log l WHERE l.ok = 1 AND l.kind = 'cnev' AND l.tpl_id > 0 AND l.at >= ?" . $smp('l.id') . " GROUP BY l.tpl_id"; break;
             case 'after': $sql = "SELECT l.tpl_id, COUNT(*), SUM(" . $rep('l.phone', 'l.sent_at') . ") FROM wa_aft_plan l WHERE l.status = 'sent' AND l.tpl_id > 0 AND l.sent_at >= ? GROUP BY l.tpl_id"; $m = 1; break;
             case 'line': $sql = "SELECT l.tpl_id, COUNT(*), SUM(" . $rep('l.phone', 'l.sent_at') . ") FROM wa_line_plan l WHERE l.status = 'sent' AND l.tpl_id > 0 AND l.sent_at >= ? GROUP BY l.tpl_id"; $m = 1; break;
-            case 'moda': $m = max($m, 12); $sql = "SELECT c.tpl_id, COUNT(*), SUM(" . $rep('i.phone', 'i.sent_at') . ") FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.id > (SELECT MAX(id) - 200000 FROM wa_camp_items) AND i.sent_at >= ? AND c.tpl_id > 0 AND (i.status IN ('sent','delivered','read') OR i.last_status IN ('delivered','read'))" . " AND i.id % 12 = 0 GROUP BY c.tpl_id"; break;
+            case 'moda': $m = max($m, 24); $sql = "SELECT c.tpl_id, COUNT(*), SUM(" . $rep('i.phone', 'i.sent_at') . ") FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.id > (SELECT MAX(id) - 200000 FROM wa_camp_items) AND i.sent_at >= ? AND c.tpl_id > 0 AND (i.status IN ('sent','delivered','read') OR i.last_status IN ('delivered','read'))" . " AND i.id % 24 = 0 GROUP BY c.tpl_id"; break;
             default: return [];
         }
         $q = $pdo->prepare($sql); $q->execute([$from]); $o = [];
