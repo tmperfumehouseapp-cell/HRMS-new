@@ -480,7 +480,7 @@ try {
 // 60) Message patterns report (owner 24 Nov): run it once for real and print totals / errors per module
 try {
     require_once __DIR__ . '/wa_pat.php'; $t60 = microtime(true); $r60 = wa_pat_report($pdo, 'today', true); $o60 = [];
-    foreach ($r60['modules'] as $m60) $o60[] = [$m60['key'], $m60['sent'], $m60['replied'], count($m60['topics']), $m60['err'], array_map(function ($t) { return [$t['label'], $t['sent'], $t['replied']]; }, array_slice($m60['topics'], 0, 4))];
+    foreach ($r60['modules'] as $m60) $o60[] = [$m60['key'], $m60['sent'], $m60['replied'], 'new ' . ($m60['new']['sent'] ?? '?') . '/' . ($m60['new']['replied'] ?? '?'), count($m60['topics']), $m60['err'], array_map(function ($t) { return [$t['label'], $t['sent'], $t['replied']]; }, array_slice($m60['topics'], 0, 4))];
     echo "ASK PATTERNS (module, sent, replied, topics, error, top topics) " . json_encode($o60, JSON_UNESCAPED_UNICODE) . " · seconds " . round(microtime(true) - $t60, 1) . "\n";
 } catch (Throwable $e) { echo "ASK PATTERNS ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 // 61) The module lines at the top of the Campaigns page: run the report once and print it with the time it takes
