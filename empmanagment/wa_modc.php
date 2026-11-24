@@ -1,0 +1,79 @@
+<?php
+/**
+ * wa_modc.php — MODULE C (owner, 24 Nov 2026): people whose marketing message FAILED (Meta's per-customer marketing limit 131049 / 131050 / 130472) and who NEVER wrote to us
+ * (Module B takes only those who asked within 90 days or ordered within 180). They get ONE plain UTILITY message (the "open" kind of the standard pool: name only, no offer, no price,
+ * no claim of an enquiry or an order), 200 an hour (setting wa_rc_hourly), from the failed items of campaigns since 14 Nov (setting wa_rc_from).
+ *  · UTILITY templates only; a message Meta moved to marketing is never used here.
+ *  · Own counter (wa_ru_log kind 'cnev'), own switch (wa_rc_on = 0 stops it), own pause (wa_rc_pause_until). A person is messaged once ever (any row in wa_ru_log blocks).
+ *  · Stops itself: Module B's pause, the marketing hold, quiet hours, 5 or more Meta spam flags (131048) in 4 hours = 6 hours' pause, 60% failed of the last 40+ = 1 hour's pause.
+ * Called from the minute job after Module B (wa_rec.php). PHP 7.4 safe.
+ */
+if (!function_exists('wa_rc_tick')) {
+    function wa_rc_tick(PDO $pdo): array
+    {
+        $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
+        try {
+            if ((string)setting_get($pdo, 'wa_rc_on', '1') === '0') { $res['note'] = 'off'; return $res; }
+            if (!function_exists('wa_ru_tables') || !wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
+            $nowTs = function_exists('wa_camp_now') ? wa_camp_now() : time(); $now = date('Y-m-d H:i:s', $nowTs);
+            if ((int)setting_get($pdo, 'wa_rc_pause_until', '0') > $nowTs) { $res['note'] = 'paused'; return $res; }
+            if ((int)setting_get($pdo, 'wa_ru_pause_until', '0') > $nowTs) { $res['note'] = 'Module B is paused after a Meta warning: Module C waits too'; return $res; }
+            if ((int)setting_get($pdo, 'wa_dq_hold_until', '0') > $nowTs) { $res['note'] = 'marketing hold (131048) running'; return $res; }
+            if (!wa_ru_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
+            if (!function_exists('wa_lock') || !wa_lock($pdo, 'rcnev', 50)) { $res['note'] = 'busy'; return $res; }
+            $t0 = microtime(true); $hourly = max(0, min(3000, (int)setting_get($pdo, 'wa_rc_hourly', '200')));
+            $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE kind = 'cnev' AND at >= ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 3600)]); $left = $hourly - (int)$q->fetchColumn();
+            $q->execute([date('Y-m-d H:i:s', $nowTs - 300)]); $left = min($left, (int)ceil($hourly / 12) + 1 - (int)$q->fetchColumn());   // spread: a twelfth of the hour in any 5 minutes
+            if ($left <= 0) { $res['note'] = 'this hour\'s 200 are used'; return $res; }
+            // brakes
+            try { $q2 = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? AND m.status = 'failed' AND m.err_code = 131048"); $q2->execute([date('Y-m-d H:i:s', $nowTs - 4 * 3600)]);
+                if ((int)$q2->fetchColumn() >= 5) { setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 6 * 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C stopped for 6 hours: Meta flagged 5 or more of its messages as spam (131048)'); $res['note'] = 'paused: spam flag'; return $res; } } catch (Throwable $e) { }
+            try { $q3 = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? AND r.at <= ?"); $q3->execute([date('Y-m-d H:i:s', $nowTs - 7200), date('Y-m-d H:i:s', $nowTs - 600)]); $hr = $q3->fetch();
+                if ((int)$hr['n'] >= 40 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' failed'); $res['note'] = 'paused: too many failures'; return $res; } } catch (Throwable $e) { }
+            // the utility messages that fit people who never wrote: the plain "open" kind, no claim of an enquiry / an order, approved as UTILITY (never one Meta moved to marketing)
+            $pool = function_exists('wa_ru_pool') ? wa_ru_pool($pdo) : [];
+            $pool = array_values(array_filter($pool, function ($t) { return ($t['pool_kind'] ?? '') === 'open' && empty($t['claims']) && empty($t['as_marketing']) && strtolower((string)($t['category'] ?? 'utility')) === 'utility'; }));
+            $tpp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $tpp = is_array($tpp) ? $tpp : [];
+            $pool = array_values(array_filter($pool, function ($t) use ($tpp, $nowTs) { return (int)($tpp[(int)($t['id'] ?? 0)] ?? 0) <= $nowTs; }));
+            if (!$pool) { $res['note'] = 'no approved plain utility message yet (waiting for Meta)'; return $res; }
+            $from = (string)setting_get($pdo, 'wa_rc_from', '2026-11-14 00:00:00'); $cursor = (int)setting_get($pdo, 'wa_rc_cursor', '0'); $lim = 400; $mo = implode(',', WA_RU_MARKETING_ONLY);
+            $q4 = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.err_code FROM wa_camp_items i WHERE i.sent_at >= ? AND i.sent_at <= ? AND ((i.status = 'failed' AND i.err_code IN ($mo)) OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo))) AND COALESCE(i.variant, 'M') <> 'U' AND i.id > ?
+                AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.item_id = i.id) ORDER BY i.id LIMIT " . $lim);
+            $q4->execute([$from, date('Y-m-d H:i:s', $nowTs - 3600), $cursor]); $items = $q4->fetchAll();
+            if (!$items) { if ($cursor > 0) setting_set($pdo, 'wa_rc_cursor', '0'); $res['note'] = 'nothing new'; return $res; }
+            $res['looked'] = count($items); $phones = array_values(array_unique(array_map(function ($x) { return (string)$x['phone']; }, $items))); $pin = implode(',', array_map(function ($p) use ($pdo) { return $pdo->quote($p); }, $phones));
+            $ct = []; foreach ($pdo->query("SELECT phone, wa_id, name, optout, camp_optout, last_in_at, last_number_id FROM wa_contacts WHERE phone IN ($pin)")->fetchAll() as $r) $ct[(string)$r['phone']] = $r;
+            $ever = []; foreach ($pdo->query("SELECT DISTINCT phone FROM wa_ru_log WHERE phone IN ($pin)")->fetchAll(PDO::FETCH_COLUMN) as $p) $ever[(string)$p] = 1;
+            $got = []; $q5 = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE phone IN ($pin) AND dir = 'out' AND mtype = 'template' AND status IN ('delivered', 'read') AND ts >= ?"); $q5->execute([date('Y-m-d H:i:s', $nowTs - 86400)]); foreach ($q5->fetchAll(PDO::FETCH_COLUMN) as $p) $got[(string)$p] = 1;
+            $lineup = function_exists('wa_ru_lineup') ? wa_ru_lineup($pdo, $phones) : []; $numSt = function_exists('wa_ru_numbers') ? wa_ru_numbers($pdo, $nowTs, false) : [];
+            $why = []; $sk = function ($k) use (&$res, &$why) { $res['skipped']++; $why[$k] = ($why[$k] ?? 0) + 1; }; $cache = []; $seen = []; $rot = (int)setting_get($pdo, 'wa_rc_rot', '0'); $lastId = $cursor; $broke = false;
+            foreach ($items as $it) {
+                if (microtime(true) - $t0 > 35 || $left <= 0) { $broke = true; break; }
+                $ph = (string)$it['phone']; $lastId = max($lastId, (int)$it['id']);
+                $c = $ct[$ph] ?? null; if (!$c) { $sk('no contact record'); continue; }
+                if ((int)$c['optout'] === 1 || (int)$c['camp_optout'] === 1) { $sk('opted out'); continue; }
+                if (!empty($c['last_in_at'])) { $sk('wrote to us (Module B\'s people)'); continue; }
+                if (isset($ever[$ph]) || isset($seen[$ph])) { $sk('already got a utility message'); continue; }
+                if (isset($lineup[$ph])) { $sk('in the line-up of a campaign'); continue; }
+                if (isset($got[$ph])) { $sk('delivered another way today'); continue; }
+                $rot++; $ctm = ['phone' => $ph, 'name' => (string)($c['name'] ?? $it['name'] ?? ''), 'optout' => 0, 'last_in_at' => null];
+                $pk = wa_util_pick($pdo, $pool, $ctm, 0, $nowTs, $rot, 1, true); if (!$pk) { $sk('no message fits'); continue; }
+                $tid = (int)$pk['t']['id']; if (!array_key_exists($tid, $cache)) $cache[$tid] = wa_ru_tpl_ctx($pdo, $pk['t']);
+                [$tUse, $ctx] = $cache[$tid]; if (!$tUse || !$ctx) { $sk('message not approved on a number with room'); continue; }
+                $cand = array_filter($ctx['nums'], function ($x) use ($numSt) { return $x['left'] > 0 && empty($numSt[(int)$x['id']]['rest_until']); }); if (!$cand || $ctx['port_left'] <= 0) { $sk('no number with room'); continue; }
+                $hi = array_filter($cand, function ($x) { return ($x['q'] ?? '') === 'GREEN'; }); $md = array_filter($cand, function ($x) { return ($x['q'] ?? '') === 'YELLOW'; }); $cand = $hi ?: $md; if (!$cand) { $sk('no High / Medium quality number with room'); continue; }
+                uasort($cand, function ($x, $y) { return ($x['used'] / max(1, $x['cap'])) <=> ($y['used'] / max(1, $y['cap'])); }); $num = reset($cand); $nid = (int)$num['id']; $tSend = $num['tm'] ?? $tUse;
+                $seen[$ph] = 1; $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $cache[$tid][1] = $ctx; $left--;
+                [$ok, $rr, $ecs] = wa_send_tpl_one($pdo, ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => 0], $tSend, $num, $pk['vars'], 'recover');
+                try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at, attempt, vars_json) VALUES (?, ?, ?, 'cnev', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
+                    ->execute([(int)$it['camp_id'], (int)$it['id'], $ph, $nid, $tid, $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, (int)$it['err_code'], $ok ? '' : mb_substr((string)$rr, 0, 190), $now, json_encode($pk['vars'], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
+                if ($ok) $res['sent']++; else { $res['failed']++; if ((int)$ecs === 131048) { setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 6 * 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C stopped for 6 hours: Meta flagged a message as spam (131048)'); $broke = true; break; } if (in_array((int)$ecs, [130429, 131056], true)) { $broke = true; break; } }
+            }
+            setting_set($pdo, 'wa_rc_rot', (string)($rot % 1000)); setting_set($pdo, 'wa_rc_cursor', (string)(count($items) >= $lim || $broke ? $lastId : 0));
+            arsort($why); $res['why'] = array_slice($why, 0, 6, true);
+            if ($res['sent'] > 0 && function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Module C (utility to people who never wrote): ' . $res['sent'] . ' sent, ' . $res['failed'] . ' failed, ' . $res['skipped'] . ' left out');
+        } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C error: ' . $e->getMessage()); $res['note'] = 'error: ' . mb_substr($e->getMessage(), 0, 140); }
+        try { setting_set($pdo, 'wa_rc_last', json_encode(['at' => time(), 'note' => $res['note'], 'sent' => $res['sent'], 'failed' => $res['failed'], 'skipped' => $res['skipped'], 'looked' => $res['looked'], 'why' => $res['why']])); } catch (Throwable $e) { }
+        return $res;
+    }
+}

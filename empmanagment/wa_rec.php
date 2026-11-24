@@ -107,6 +107,7 @@ function wa_rec_tick(PDO $pdo): array
 {
     $t0r = microtime(true); $r = wa_rec_tick_run($pdo); wa_dq_precompute($pdo);
     if (function_exists('wa_ru_tick') && microtime(true) - $t0r < 25) { try { $r['util'] = wa_ru_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'Utility follow-up: ' . $e->getMessage()); } }   // 💸 Module B: a failed marketing message gets a utility follow-up (wa_rec_util.php)   // the heavy counts of the hour grid and the message ranking are prepared in the background
+    if (microtime(true) - $t0r < 40) { try { if (!function_exists('wa_rc_tick') && is_file(__DIR__ . '/wa_modc.php')) require_once __DIR__ . '/wa_modc.php'; if (function_exists('wa_rc_tick')) $r['modc'] = wa_rc_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'Module C: ' . $e->getMessage()); } }   // 🧾 Module C (owner 24 Nov 2026): utility only, 200 an hour, to failed people who never wrote (wa_modc.php)
     if (($r['note'] ?? '') !== 'busy') {
         try { $last = json_decode((string)setting_get($pdo, 'wa_rec_last', ''), true); $last = is_array($last) ? $last : []; $diag = $last['diag'] ?? null; $dAt = (int)($last['diag_at'] ?? 0);
             if (!$diag || $dAt < time() - 120) { $diag = wa_rec_diag($pdo); $dAt = time(); }
