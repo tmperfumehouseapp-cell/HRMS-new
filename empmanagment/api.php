@@ -2413,6 +2413,26 @@ function code_orders_range(PDO $pdo, string $dateFrom, string $dateTo, array &$e
             $orders[] = $o;
         }
     }
+    // 🛍 WEBSITE orders (the new TM Perfume House shop, store_orders.php): every one that is in the HRMS (given to a salesperson, or waiting on the Allocation page) is listed here too.
+    //    Its code is kept in the HRMS only (source 'manual': there is no Shopify order to tag) — the same rule order_codes.set already follows.
+    try {
+        [$ws, $we] = biz_window($pdo, $dateFrom, $dateTo);
+        $wq = $pdo->prepare("SELECT manual_order_id, order_no, mp_no, customer_name, items, total, payment_status, fulfillment_status, order_date FROM manual_orders WHERE channel = 'TM Store' AND order_date >= ? AND order_date <= ? ORDER BY order_date DESC LIMIT 5000");
+        $wq->execute([$ws, $we]);
+        foreach ($wq->fetchAll() as $m) {
+            $nm = (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . (string)$m['order_no'];
+            $its = (string)($m['items'] ?? ''); $ni = ctype_digit($its) ? (int)$its : ($its === '' ? 0 : count(array_filter(array_map('trim', explode(',', $its)))));
+            $o = [
+                'source' => 'manual', 'source_label' => 'Website (TM Store)', 'id' => (string)$m['manual_order_id'], 'order_name' => $nm,
+                'created_at' => str_replace(' ', 'T', (string)$m['order_date']) . '+05:30', 'biz_date' => biz_day_of($pdo, strtotime((string)$m['order_date'])),
+                'customer' => (string)($m['customer_name'] ?? '') !== '' ? (string)$m['customer_name'] : 'Guest', 'items' => $ni, 'total' => (float)$m['total'],
+                'financial_status' => (string)($m['payment_status'] ?? ''), 'fulfillment_status' => (string)($m['fulfillment_status'] ?? ''),
+                'house' => 'tmph', 'store' => 'Website (TM Store)', 'tags' => '', 'code' => '', 'can_tag' => 0,
+            ];
+            $stamp($o);
+            $orders[] = $o;
+        }
+    } catch (Throwable $e) { $errors[] = 'Website orders: ' . $e->getMessage(); }
     usort($orders, fn($a, $b) => strcmp((string)$b['created_at'], (string)$a['created_at']));
     return $orders;
 }
