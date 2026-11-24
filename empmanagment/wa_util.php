@@ -169,6 +169,14 @@ function wa_util_auto(PDO $pdo): int
  *  (inside the window the owner picks). No offers, no prices — each states true facts about THAT customer. Any reply opens the free 24-hour chat. */
 function wa_util_pool_defs(): array
 {
+    $d = wa_util_pool_defs_raw();
+    // owner 24 Nov 2026: a SPACED twin (a blank line between the thoughts) of every warm Hinglish message that was made line by line (the first version stays in rotation; they are compared by reply rate)
+    if (!function_exists('wa_space_body') && is_file(__DIR__ . '/wa_space.php')) { try { require_once __DIR__ . '/wa_space.php'; } catch (Throwable $e) { } }
+    if (function_exists('wa_space_body')) { foreach ($d as $k => $x) { if (strpos($k, '_hi_') === false || substr($k, -2) === '_s') continue; $sb = wa_space_body((string)$x['body']); if ($sb !== (string)$x['body']) { $x['body'] = $sb; $d[$k . '_s'] = $x; } } }
+    return $d;
+}
+function wa_util_pool_defs_raw(): array
+{
     $qr = fn(array $l) => array_map(fn($t) => ['type' => 'QUICK_REPLY', 'text' => $t], $l);
     return [
         'ask_followup' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Yes, I need it', 'Not now']),
@@ -241,6 +249,15 @@ function wa_util_pool_defs(): array
             'body' => "Hello {{1}} 🌸 order {{2}} ({{3}}) ka perfume aapko kaisa laga ? Apna experience button se batayein 👇"],
         'open_hi_4' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Perfume help', 'Order status']),
             'body' => "Hi {{1}} 👋\n\nTM Perfume House se aapke liye ek khaas update 👀\n\nPerfume ya order me kuch bhi poochna ho to niche tap kijiye, hum turant madad karenge 🙏"],
+        // 📦 owner, 24 Nov 2026: ORDER-CENTRIC utility: each one is about the customer's OWN enquiry or order and ends with an order step (a button); the offer goes free after the reply (wa_util_offer_reply). No price, no offer, no urgency word.
+        'ask_ord_complete' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Order banana he', 'Abhi nahi']),
+            'body' => "Hi {{1}} 😊\n\n{{3}} ko aapne {{2}} ke bare me poocha tha.\n\nOrder complete karna he ? Size aur address bata dijiye, hum order bana denge 📦"],
+        'ask_ord_address' => ['kind' => 'ask', 'labels' => ['name', 'perfume'], 'ex' => ['Rahul', 'Dior Sauvage'], 'buttons' => $qr(['Address bhejta hoon', 'Abhi nahi']),
+            'body' => "Hello {{1}} 📦\n\nAapki {{2}} ki request ke liye delivery address aur pincode bhej dijiye, hum order process kar denge 🙏"],
+        'order_ord_reorder' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Dobara order', 'Sab badhiya']),
+            'body' => "Hi {{1}} 😊\n\nAapka order {{2}} ({{3}}) kaisa raha ?\n\nDobara order karna ho to neeche tap kijiye, hum turant order bana denge 📦"],
+        'order_ord_more' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Aur chahiye', 'Abhi nahi']),
+            'body' => "Hello {{1}} ✨\n\nOrder {{2}} ({{3}}) ke baad aur koi perfume chahiye to bataiye, hum aapka naya order bana denge 📦"],
         'order_exp_how' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['It was great', 'I had an issue']),
             'body' => "Hi {{1}}, your order {{2}} placed on {{3}} should have reached you by now. How was your experience with it? Tap a button to share."],
         'order_exp_share' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Share experience', 'All good']),
