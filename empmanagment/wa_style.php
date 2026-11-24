@@ -57,4 +57,52 @@ if (!function_exists('wa_style_pack')) {
         if (function_exists('wa_log')) wa_log($pdo, 'template', !$res['failed'], 'Style messages (owner, 24 Nov 2026): ' . $res['made'] . ' made' . ($res['failed'] ? ' — ' . $res['failed'][0] : ''));
         return $res;
     }
+
+    /** DAILY: Claude writes NEW messages in the owner's style (owner 24 Nov 2026: "from now on make new messages yourself every day"): up to 4 MARKETING and 3 UTILITY a day, one per round, sent to Meta.
+     *  Marketing: excitement, surprise, one choice by button, the season; no price, no date, no quantity (only 20 / 50 / 100 ML). Utility: warm curiosity, an order step by button, NO deal words, no claim of an enquiry or an order (kind "open": it joins the standard pool).
+     *  Each is checked (variable rules, length, an emoji, no number, no deal word in utility), spaced with blank lines, and made once; names tmph_new_YYMMDD_n. State: setting wa_style_daily {day, m, u, last}. */
+    function wa_style_daily_tick(PDO $pdo): array
+    {
+        $o = ['made' => 0, 'note' => ''];
+        try {
+            if ((string)setting_get($pdo, 'wa_style_daily_on', '1') === '0') { $o['note'] = 'off'; return $o; }
+            foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row', 'brain_prepare_system', 'brain_claude_call'] as $f) if (!function_exists($f)) { $o['note'] = 'module not loaded'; return $o; }
+            $st = json_decode((string)setting_get($pdo, 'wa_style_daily', ''), true); $st = is_array($st) ? $st : []; $today = date('Y-m-d'); if (($st['day'] ?? '') !== $today) $st = ['day' => $today, 'm' => 0, 'u' => 0, 'last' => 0];
+            $nm = (int)setting_get($pdo, 'wa_style_daily_m', '4'); $nu = (int)setting_get($pdo, 'wa_style_daily_u', '3');
+            if ((int)$st['m'] >= $nm && (int)$st['u'] >= $nu) { $o['note'] = 'done today'; return $o; }
+            if ((int)$st['last'] > time() - 600) { $o['note'] = 'waiting'; return $o; }   // one in 10 minutes
+            $cat = ((int)$st['m'] <= (int)$st['u'] && (int)$st['m'] < $nm) || (int)$st['u'] >= $nu ? 'MARKETING' : 'UTILITY';
+            $st['last'] = time(); setting_set($pdo, 'wa_style_daily', json_encode($st));
+            if (!function_exists('wa_space_body') && is_file(__DIR__ . '/wa_space.php')) { try { require_once __DIR__ . '/wa_space.php'; } catch (Throwable $e) { } }
+            if (!function_exists('wa_rs_style_text') && is_file(__DIR__ . '/wa_restyle.php')) { try { require_once __DIR__ . '/wa_restyle.php'; } catch (Throwable $e) { } }
+            $have = []; try { foreach ($pdo->query("SELECT body FROM wa_templates WHERE name LIKE 'tmph_new_%' OR name LIKE 'tmph_style_%' ORDER BY id DESC LIMIT 14")->fetchAll(PDO::FETCH_COLUMN) as $b) $have[] = mb_substr(str_replace("\n", ' / ', (string)$b), 0, 140); } catch (Throwable $e) { }
+            $sys = "You write ONE new WhatsApp message for TM Perfume House (perfume shop, Surat, India), a brand-new idea in the owner's style, not a copy of the earlier ones. " . (function_exists('wa_rs_style_text') ? wa_rs_style_text() : '')
+                . "Category " . $cat . ". Use exactly one variable {{1}} (the customer's first name), in the first line but never as the very first or the very last word. 2-5 short paragraphs with ONE blank line between them, 2-4 emoji, EXCITEMENT and a small SURPRISE or mystery. NO price, NO rupee sign, NO date, NO quantity and no promise of a specific discount; the only numbers allowed are the sizes 20 / 50 / 100 ML. "
+                . ($cat === 'MARKETING' ? "MARKETING: you may use words like surprise, unlock, exclusive, new perfumes, season, gift, add-on, dhamakedaar. Season now: " . (function_exists('wa_style_season') ? wa_style_season() : '') . " " : "UTILITY: warm and curious but NO offer, discount, sale, free, deal, limited, hurry, launch, add-on, dhamaka, coupon; no claim that the customer asked about or ordered anything; one friendly question about how we can help, ending in an order or help step by button. ")
+                . "Give 1-3 quick-reply button texts (max 20 characters each; for marketing for example '20ML', '50ML', '100ML' or 'Show my surprise'). Do not repeat an idea from these recent messages:\n" . implode("\n", $have) . "\nAnswer only JSON: {\"body\":\"...\",\"buttons\":[\"...\"],\"name\":\"short_snake_case_idea\"}.";
+            $sys2 = brain_prepare_system('internal', 'whatsapp', $sys . ' Reply with JSON only, no other text.', ['ctx' => false, 'purpose' => 'internal:whatsapp']);
+            $rc = brain_claude_call($sys2, "Write today's new " . strtolower($cat) . " message.", 1500, ['ctx' => false, 'purpose' => 'internal:whatsapp']); $j = null;
+            if (!($rc[0] ?? false)) { $st['last'] = time() - 480; setting_set($pdo, 'wa_style_daily', json_encode($st)); $o['note'] = 'Claude: ' . mb_substr((string)($rc[2] ?? ''), 0, 80); return $o; }   // busy with live chats: try again in 2 minutes
+            if (preg_match('/\{.*\}/s', (string)($rc[1] ?? ''), $mm)) $j = json_decode($mm[0], true); if (!is_array($j)) { $o['note'] = 'no JSON'; return $o; }
+            $body = function_exists('wa_space_body') ? wa_space_body(trim((string)($j['body'] ?? ''))) : trim((string)($j['body'] ?? '')); $why = '';
+            preg_match_all('/\{\{(\d+)\}\}/', $body, $vm); if (array_values(array_unique(array_map('intval', $vm[1]))) !== [1]) $why = 'variables';
+            elseif (preg_match('/^\s*\{\{1\}\}/u', $body) || preg_match('/\{\{1\}\}\s*$/u', $body)) $why = 'variable at the start or end';
+            elseif (mb_strlen($body) < 40 || mb_strlen($body) > 700) $why = 'length';
+            elseif (!preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u', $body)) $why = 'no emoji';
+            elseif (preg_match('/₹|\brs\.?\s*\d|\d{4}/iu', $body)) $why = 'a price / date / number';
+            elseif ($cat === 'UTILITY') { $low = mb_strtolower($body); foreach (array_merge(function_exists('wa_util_bad_words') ? wa_util_bad_words() : [], ['launch', 'add-on', 'addon', 'dhamaka', 'dhamake', 'unlock', 'exclusive', 'surprise deal']) as $w) if ($w !== '' && mb_strpos($low, $w) !== false) { $why = 'deal word: ' . trim($w); break; } }
+            if ($why !== '') { $o['note'] = 'rejected: ' . $why; return $o; }
+            $btn = []; foreach (array_slice((array)($j['buttons'] ?? []), 0, 3) as $b) { $t = mb_substr(trim((string)$b), 0, 20); if ($t !== '') $btn[] = ['type' => 'QUICK_REPLY', 'text' => $t]; } if (!$btn) { $o['note'] = 'no button'; return $o; }
+            $n = (int)$st[$cat === 'MARKETING' ? 'm' : 'u'] + 1; $slug = preg_replace('/[^a-z0-9]+/', '_', strtolower((string)($j['name'] ?? 'idea'))); $name = 'tmph_new_' . date('ymd') . '_' . ($cat === 'MARKETING' ? 'm' : 'u') . $n . '_' . substr(trim($slug, '_'), 0, 14);
+            [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => $cat, 'body' => $body, 'footer' => 'TM Perfume House', 'buttons' => $btn, 'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => $cat === 'MARKETING' ? 'Offers' : 'utility']);
+            if ($err !== '') { $o['note'] = 'template check: ' . mb_substr($err, 0, 80); return $o; }
+            $t['extra'] = $cat === 'UTILITY' ? ['util_pool' => 'open_new_' . date('ymd') . '_' . $n, 'util_kind' => 'open'] : ['daily_new' => date('Y-m-d')];
+            $id = wa_tpl_insert($pdo, $t, 0, 'New message written by Claude for the day (owner, 24 Nov 2026): excitement, surprise, one choice by button.', 'Daily new message'); $row = wa_tpl_row($pdo, $id); if (!$row) { $o['note'] = 'could not save'; return $o; }
+            $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 8, 'made' => 0]; foreach ($wabas as $w) { if (function_exists('wa_tpl_try_create')) { try { wa_tpl_try_create($pdo, $row, $w, $budget); } catch (Throwable $e) { } } }
+            $st[$cat === 'MARKETING' ? 'm' : 'u'] = $n; setting_set($pdo, 'wa_style_daily', json_encode($st)); $o['made'] = 1; $o['note'] = $cat . ' ' . $name;
+            if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Daily new message made (' . strtolower($cat) . '): ' . $name);
+        } catch (Throwable $e) { $o['note'] = 'error: ' . mb_substr($e->getMessage(), 0, 100); }
+        return $o;
+    }
 }
+
