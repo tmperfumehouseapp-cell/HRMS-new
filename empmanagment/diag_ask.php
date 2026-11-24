@@ -495,3 +495,16 @@ try { require_once __DIR__ . '/wa_pat.php'; $o64 = []; foreach (['moda', 'modb',
 try { $t65 = date('Y-m-d H:i:s', time() - 7200); $q65 = function ($sql) use ($pdo, $t65) { try { $q = $pdo->prepare($sql); $q->execute([$t65]); return $q->fetch(PDO::FETCH_NUM); } catch (Throwable $e) { return ['ERR ' . substr($e->getMessage(), 0, 80)]; } };
     echo "ASK OFFERREACH wrote in the last 2 h (contacts) " . json_encode($q65("SELECT COUNT(*) FROM wa_contacts WHERE last_in_at >= ? AND optout = 0 AND camp_optout = 0")) . " · offers made in the last 2 h " . json_encode($q65("SELECT COUNT(*), SUM(ok = 1) FROM wa_offer WHERE at >= ?")) . " · of the writers, after a Module B/C message " . json_encode($q65("SELECT COUNT(DISTINCT c.phone) FROM wa_contacts c JOIN wa_ru_log r ON r.phone = c.phone WHERE c.last_in_at >= ? AND r.ok = 1 AND r.at >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY) AND r.at < c.last_in_at")) . "\n";
 } catch (Throwable $e) { echo "ASK OFFERREACH ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
+// 66) The message inventory (owner 25 Nov): how many templates, how many offer-centric / basic, how many twins and replacements - counts only
+try {
+    require_once __DIR__ . '/wa_style.php'; if (is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php';
+    $rows66 = $pdo->query("SELECT t.id, UPPER(t.category), t.body, t.extra, EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED') FROM wa_templates t")->fetchAll(PDO::FETCH_NUM);
+    $offer66 = '/₹|\brs\.?\s*\d|offer|discount|% ?off|combo|deal|flat|deadline|sirf|aaj hi|jaldi|abhi order|ઓફર/iu'; $c66 = ['all' => 0, 'approved' => 0, 'marketing' => 0, 'utility' => 0, 'offer' => 0, 'offer_appr' => 0, 'basic' => 0, 'basic_appr' => 0, 'twins' => 0, 'twins_appr' => 0, 'twins_offer' => 0, 'twins_basic' => 0];
+    foreach ($rows66 as $r) { $c66['all']++; $ap = (int)$r[4] === 1; $b = (string)$r[2]; if ($ap) $c66['approved']++; if ($r[1] === 'MARKETING') $c66['marketing']++; if ($r[1] === 'UTILITY') $c66['utility']++; $of = (bool)preg_match($offer66, $b); $bs = function_exists('wa_rs_dull') ? wa_rs_dull($b) : (wa_style_dull($b) !== '');
+        if ($of) { $c66['offer']++; if ($ap) $c66['offer_appr']++; } if ($bs) { $c66['basic']++; if ($ap) $c66['basic_appr']++; }
+        if (strpos((string)$r[3], 'restyle_of') !== false) { $c66['twins']++; if ($ap) $c66['twins_appr']++; if ($of) $c66['twins_offer']++; if ($bs) $c66['twins_basic']++; } }
+    echo "ASK INVENTORY templates " . json_encode($c66) . "\n";
+    $st66 = json_decode((string)$pdo->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rs_state'")->fetchColumn(), true); $pr66 = ['made' => 0, 'replaced' => 0, 'fail' => 0, 'v2' => 0, 'v2done' => 0, 'pairs' => 0];
+    foreach (($st66['pairs'] ?? []) as $p) { $pr66['pairs']++; $s = (string)($p['st'] ?? ''); if (isset($pr66[$s])) $pr66[$s]++; if (!empty($p['v2'])) $pr66['v2']++; if (!empty($p['v2done'])) $pr66['v2done']++; }
+    echo "ASK INVENTORY replacement state " . json_encode($pr66) . " · attempts n " . json_encode($st66['n'] ?? null) . "\n";
+} catch (Throwable $e) { echo "ASK INVENTORY ERR " . substr($e->getMessage(), 0, 200) . "\n"; }

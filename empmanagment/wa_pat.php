@@ -16,7 +16,7 @@ if (!function_exists('wa_pat_topic')) {
             ['gift', 'Gift / wedding / festival / season', '/gift|wedding|shaadi|diwali|new year|festival|winter|christmas|valentine|ગિફ્ટ|લગ્ન|દિવાળી|શિયાળ/u'],
             ['reorder', 'Refill / reorder / finished', '/refill|re-?order|reorder|finish|khatam|repeat|again|ફરી|પૂરું|ખતમ/u'],
             ['size', 'Size / ML choice', '/\b\d+ ?ml\b|\bml\b|size|bottle|સાઇઝ|બોટલ/u'],
-            ['price', 'Price / offer / discount', '/₹|\brs\.?\b|offer|discount|price|% ?off|sale|deal|ઓફર|કિંમત|ડિસ્કાઉન્ટ/u'],
+            ['price', 'Order push (offer · price · combo · deadline)', '/₹|\brs\.?\b|offer|discount|price|% ?off|sale|deal|combo|flat|deadline|sirf|jaldi|aaj hi|abhi order|order (now|kar)|ઓફર|કિંમત|ડિસ્કાઉન્ટ/u'],
             ['order', 'Order / parcel / address', '/order|parcel|delivery|dispatch|shipped|address|tracking|ઓર્ડર|પાર્સલ|ડિલિવરી|સરનામ/u'],
             ['feedback', 'Feedback / check-in', '/feedback|review|how was|how is|liked|hope you|check[- ]in|કેવી|કેવું|ગમ/u'],
         ];
