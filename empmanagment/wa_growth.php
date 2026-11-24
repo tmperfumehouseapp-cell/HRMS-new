@@ -603,10 +603,21 @@ function wag_pack_rows_guard(PDO $pdo, array $msgs, string $reply): string
         return $reply;
     } catch (Throwable $e) { return $reply; }
 }
+/** One bottle of 20 / 50 ml is never quoted below its official price (owner, 24 Nov: a follow-up said 'Sir, 50 ml ka price Rs 600 hai' - 600 is a per-bottle price INSIDE a combo; one 50 ml bottle is Rs 1,199): such a sentence becomes the one-bottle message (one bottle is expensive, take 3). Only a bare '20 ml / 50 ml ka price Rs X' (no count in front) with X below the official price. */
+function wag_single_price_guard(PDO $pdo, string $reply): string
+{
+    try {
+        if (!preg_match('/(?<![\d.x×*])(?<!\d )(20|50)\s*ml\s*(?:ka|ki|ke)?\s*(?:price|rate|kimat)[^₹\n]{0,12}?(?:rs\.?|₹)\s*([\d,]{3,5})/iu', $reply, $m)) return $reply;
+        $ml = (int)$m[1]; $v = (int)str_replace(',', '', $m[2]); $one = wag_official_price($pdo, $ml); if ($one <= 0 || $v >= $one) return $reply;
+        $ob = wag_one_bottle_msg($pdo, 1, $ml); if ($ob === '') return $reply;
+        try { if (function_exists('wag_fg_count')) wag_fg_count($pdo, 'single_price', 'fix'); } catch (Throwable $e) { }
+        return $ob;
+    } catch (Throwable $e) { return $reply; }
+}
 function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
 {
     [$__r1, $__c1] = wag_price_enforce0($pdo, $msgs, $reply); if ($__c1) return [$__r1, true];
-    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); $__r3 = wag_pack_rows_guard($pdo, $msgs, $__r2); return [$__r3, $__r3 !== $reply];
+    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); $__r3 = wag_pack_rows_guard($pdo, $msgs, $__r2); $__r4 = wag_single_price_guard($pdo, $__r3); return [$__r4, $__r4 !== $reply];
 }
 function wag_price_enforce0(PDO $pdo, array $msgs, string $reply): array
 {
