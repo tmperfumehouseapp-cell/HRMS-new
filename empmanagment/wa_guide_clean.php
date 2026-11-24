@@ -105,21 +105,23 @@ function wag_gb_purge_old(PDO $pdo): int
 /** Once (owner, 23 Nov 22:46, "put the lesson in the guidebook database"): the live guidebook's PRICE LADDER point gets the OUR OWN CARD sentence (a pack the card already priced is quoted at the card price, never one rupee under a lower column). Data in the database, not only code. Call while holding the guidebook lock. */
 function wag_gb_patch_card(PDO $pdo): bool
 {
-    if (setting_get($pdo, 'wag_gb_card_v', '') === '1' || !function_exists('lib_guide_row')) return false;
+    if (!function_exists('lib_guide_row')) return false;
     try {
-        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; $gb = json_decode((string)$g['body'], true); if (!is_array($gb) || empty($gb['do'])) return false;
+        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; if (setting_get($pdo, 'wag_gb_card_v', '') === 'v' . (int)$g['id']) return false;   // 24 Nov: checked again for every new live version (the 14:00 AI rewrite made v34: a rule that was added once to v33 could be lost)
+        $gb = json_decode((string)$g['body'], true); if (!is_array($gb) || empty($gb['do'])) return false;
         $add = ' (6) OUR OWN CARD: when our combo card (the button list) already showed the price of a pack (e.g. 6 x 50 ml = Rs 3,199), quote exactly that price again and never a lower one unless he talks about the price; never write a price one rupee under a lower column (2,799 is the 3% price, not allowed).';
         $hit = false; foreach ($gb['do'] as $i => $t) if (is_string($t) && strpos($t, 'PRICE LADDER') === 0) { if (strpos($t, 'OUR OWN CARD') === false) $gb['do'][$i] = rtrim($t) . $add; $hit = true; break; }
         if (!$hit) return false;
-        $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_card_v', '1'); return true;
+        $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_card_v', 'v' . (int)$g['id']); return true;
     } catch (Throwable $e) { return false; }
 }
 /** Once (owner, 24 Nov, "8 x 20 ml for Rs 600" and a Happy Orange photo for a combo-ad customer): two sentences go INTO existing points of the live guidebook (no new point): PRICE LADDER gets (7) PACK = TOTAL ML, ONLY OUR CATALOGUE gets the no-photo-without-a-named-perfume sentence. Call while holding the guidebook lock. */
 function wag_gb_patch_rows(PDO $pdo): bool
 {
-    if (setting_get($pdo, 'wag_gb_rows_v', '') === '1' || !function_exists('lib_guide_row')) return false;
+    if (!function_exists('lib_guide_row')) return false;
     try {
-        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; $gb = json_decode((string)$g['body'], true); if (!is_array($gb) || empty($gb['do'])) return false;
+        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; if (setting_get($pdo, 'wag_gb_rows_v', '') === 'v' . (int)$g['id']) return false;   // checked again for every new live version
+        $gb = json_decode((string)$g['body'], true); if (!is_array($gb) || empty($gb['do'])) return false;
         $a1 = ' (7) PACK = TOTAL ML: the price of a pack is the price table row of its TOTAL ml (bottles x ml: 8 x 20 ml = 160 ml, 5 x 20 ml = 100 ml); never use the price of another row, and never work out a price or an extra-bottle amount yourself: the extra amount is the difference of the two table rows (the system fixes any other number).';
         $a2 = ' NO PHOTO WITHOUT A NAME: when the customer has not named a perfume (a combo-ad customer: "5 x 50 ml combo for Rs 2750"), no perfume picture is sent; ask which perfumes he wants.';
         $h1 = false; $h2 = false;
@@ -127,6 +129,6 @@ function wag_gb_patch_rows(PDO $pdo): bool
             if (!$h1 && strpos($t, 'PRICE LADDER') === 0) { if (strpos($t, 'PACK = TOTAL ML') === false) $gb['do'][$i] = rtrim($t) . $a1; $h1 = true; }
             elseif (!$h2 && strpos($t, 'ONLY OUR CATALOGUE') === 0) { if (strpos($t, 'NO PHOTO WITHOUT A NAME') === false) $gb['do'][$i] = rtrim($t) . $a2; $h2 = true; } }
         if (!$h1 && !$h2) return false;
-        $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_rows_v', '1'); return true;
+        $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_rows_v', 'v' . (int)$g['id']); return true;
     } catch (Throwable $e) { return false; }
 }

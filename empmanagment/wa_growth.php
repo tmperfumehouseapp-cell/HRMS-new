@@ -95,8 +95,8 @@ function wag_cfg(PDO $pdo): array
     // once (owner, 23 Nov): the whole guidebook is rewritten as ONE clean version (newest rules first, one rule per topic); see wa_guide_clean.php
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_clean_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_clean_run($pdo); } } catch (Throwable $e) { }
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_purge_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_purge_old($pdo); } } catch (Throwable $e) { }
-    try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_rows_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_rows($pdo); } } catch (Throwable $e) { }   // PACK = TOTAL ML + no photo without a named perfume go into the live guidebook once (owner, 24 Nov)
-    try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_card_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_card($pdo); } } catch (Throwable $e) { }   // the OUR OWN CARD sentence goes into the live guidebook once (owner, 23 Nov)   // the old guidebook versions are removed once (owner, 23 Nov)
+    try { if (!empty($__gbl)) { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_rows($pdo); } } catch (Throwable $e) { }   // PACK = TOTAL ML + no photo without a named perfume go into the live guidebook once (owner, 24 Nov)
+    try { if (!empty($__gbl)) { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_card($pdo); } } catch (Throwable $e) { }   // the OUR OWN CARD sentence goes into the live guidebook once (owner, 23 Nov)   // the old guidebook versions are removed once (owner, 23 Nov)
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules4', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules4', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
