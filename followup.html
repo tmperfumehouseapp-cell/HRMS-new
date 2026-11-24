@@ -125,7 +125,7 @@ guardPage(); renderSidebar('followup');
   try { api.swrAdd('fup.board', 0); } catch (e) { /* older api.js */ }   // the sheet is always asked fresh: an update somebody else just wrote must show at once, never a remembered copy
   let ALL = true, OPEN_D = '', OWN_NOW = false; try { ALL = localStorage.getItem('fup_all') !== '0' && !new URLSearchParams(location.search).get('s'); } catch (e) { ALL = true; }
   let OPEN_U = 0; try { OPEN_U = Number(new URLSearchParams(location.search).get('u')) || 0; } catch (e) { OPEN_U = 0; }
-  let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true;
+  let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true, PERS = '', LASTSEC = -1;
   let PREF = null; try { PREF = localStorage.getItem('fup_side'); } catch (e) { PREF = null; }   // nothing chosen yet: a section with many topics (like a Dispatch sheet) opens as topics down, days across
   SIDE = PREF === null ? true : PREF !== '0';
   try { SID = Number(new URLSearchParams(location.search).get('s')) || Number(localStorage.getItem('fup_sec')) || 0; } catch (e) { SID = 0; }
@@ -160,6 +160,7 @@ guardPage(); renderSidebar('followup');
       if (!keep) $('root').style.opacity = D ? '.6' : '1';
       D = await api.get('fup.board', { section: SID || '', days: DAYS, all: ALL ? 1 : '' }); if (!D.all || D.sections.length < 2) ALL = false;
       SID = D.section || 0; try { if (SID) localStorage.setItem('fup_sec', String(SID)); } catch (e) { /* private mode */ }
+      D.allTopics = D.topics; if (D.section !== LASTSEC) { PERS = ''; LASTSEC = D.section; }
       render();
       if (OPEN_U) { const tu = D.topics.find((x) => x.id === OPEN_U); OPEN_U = 0; const od = OPEN_D; OPEN_D = ''; if (tu && tu.can_write && tu.status !== 'done') writeUp(tu.id, od || tu.due_day); }
     } catch (e) { $('root').innerHTML = '<div class="bd-empty"><b>Could not open Follow-up</b>' + esc(e.message || '') + '</div>'; }
@@ -199,7 +200,15 @@ guardPage(); renderSidebar('followup');
     return h;
   }
 
+  // one section, one chip a person: only that person's topics (the topics are grouped by who they are given to)
+  function persChips() {
+    const all = D.allTopics || D.topics, g = {}; all.forEach((t) => { const k = t.assignee_emp > 0 ? String(t.assignee_emp) : 'none'; if (!g[k]) g[k] = { n: k === 'none' ? 'Not given to anyone' : (t.assignee || 'Person'), c: 0 }; g[k].c++; });
+    const keys = Object.keys(g); if (keys.length < 2 && all.length < 6) return '';
+    keys.sort((a, b) => (a === 'none') - (b === 'none') || g[a].n.localeCompare(g[b].n));
+    return '<div class="fu-pills" style="margin:10px 0 2px"><button class="fu-pill' + (PERS === '' ? ' on' : '') + '" data-pers="">Everyone <small style="opacity:.7">' + all.length + '</small></button>' + keys.map((k) => '<button class="fu-pill' + (PERS === k ? ' on' : '') + '" data-pers="' + k + '">👤 ' + esc(g[k].n) + ' <small style="opacity:.7">' + g[k].c + '</small></button>').join('') + '</div>';
+  }
   function render() {
+    if (D.allTopics) D.topics = PERS === '' ? D.allTopics : D.allTopics.filter((t) => (t.assignee_emp > 0 ? String(t.assignee_emp) : 'none') === PERS);   // the chips of people inside one section
     const s = sec(), OV = D.overview || { late: [], empty: [], by_section: {} }; OWN_NOW = !!(s && s.own);
     let h = attention(OV) + '<div class="fu-pills">' + (D.sections.length > 1 ? '<button class="fu-pill' + (ALL ? ' on' : '') + '" id="allPill">All sections</button>' : '') + D.sections.map((x) => '<button class="fu-pill' + (!ALL && x.id === D.section ? ' on' : '') + '" data-sec="' + x.id + '"><span class="pn">' + esc(x.name) + (OV.by_section[x.id] ? '<em class="fu-n">' + OV.by_section[x.id] + '</em>' : '') + '</span><small>' + (x.owner ? 'Boss: ' + esc(x.owner) : 'Boss: not set') + '</small></button>').join('') + (D.manager ? '<button class="fu-pill add" id="secAdd">＋ New section</button>' : '') + '</div>';
     if (ALL && s) { $('root').innerHTML = h + allView(); bind(); return; }
@@ -209,7 +218,7 @@ guardPage(); renderSidebar('followup');
       : (s.owner ? '<span class="fu-bossline">' + (s.owner_dept ? 'Given to: ' : 'Boss: ') + '<b>' + esc(s.owner) + '</b></span>' : '<span class="fu-bossline" style="color:#b45309">⚠ Boss: not set</span>' + (D.manager ? '<button class="bd-btn sm" id="secBoss" style="margin-left:8px">Choose the boss</button>' : ''))) + '</div></div><span class="sp"></span>'
       + '<select class="bd-in" id="daysSel" style="width:auto;padding:7px 10px;font-size:13px">' + [7, 14, 31].map((n) => '<option value="' + n + '"' + (n === DAYS ? ' selected' : '') + '>Last ' + n + ' days</option>').join('') + '</select>'
       + (D.topics.some((t) => t.can_write && t.status !== 'done') ? '<button class="bd-btn sm" id="addAny">＋ Add update / number</button>' : '') + (D.manager ? '<button class="bd-btn sm" id="secEdit">Section settings</button><button class="bd-btn sm pri" id="topAdd">＋ Topic</button>' : '') + '</div>'
-      + '<div class="fu-stats"><div class="fu-stat"><b>' + open.length + '</b>open topics</div><div class="fu-stat ' + (got === open.length && open.length ? 'g' : '') + '"><b>' + got + ' / ' + open.length + '</b>up to date</div><div class="fu-stat ' + (red ? 'r' : 'g') + '"><b>' + red + '</b>need attention</div></div></div>';
+      + persChips() + '<div class="fu-stats"><div class="fu-stat"><b>' + open.length + '</b>open topics</div><div class="fu-stat ' + (got === open.length && open.length ? 'g' : '') + '"><b>' + got + ' / ' + open.length + '</b>up to date</div><div class="fu-stat ' + (red ? 'r' : 'g') + '"><b>' + red + '</b>need attention</div></div></div>';
 
     if (s.own && D.topics.length) {
       h += '<div class="fu-card"><div class="fu-head"><div class="fu-lb" style="margin:0">Claude’s check</div><span class="sp"></span><button class="bd-btn sm" id="askAi"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ ' + (D.digest ? 'Ask Claude again' : 'Ask Claude to read this section') + '</button></div>'
@@ -222,7 +231,7 @@ guardPage(); renderSidebar('followup');
       // big screens: the Excel sheet. Default = topics side by side (one column a topic), one row a day; the switch turns it (topics down, days across).
       const th = (t) => '<div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t) + (D.manager ? '<div style="margin-top:6px"><button class="bd-btn sm" data-edit="' + t.id + '">Edit</button></div>' : '');
       const td = (t, d) => '<td class="c' + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + (canDay(t, d) ? ' w" data-up="' + t.id + '" data-day="' + d : '') + '">' + cell(t, d) + '</td>';
-      if (PREF === null) SIDE = D.topics.length <= 8;
+      if (PREF === null) SIDE = (D.allTopics || D.topics).length <= 8;
       h += '<div style="display:flex;justify-content:flex-end;margin:0 0 8px" class="fu-sw"><button class="bd-btn sm" id="flip">⇄ ' + (SIDE ? 'Show topics down, days across' : 'Show topics side by side') + '</button></div>';
       if (SIDE) h += '<div class="fu-wrap"><table class="fu-t side"><thead><tr><th>Day</th>' + D.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '">' + th(t) + '</th>').join('') + '</tr></thead><tbody>'
         + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + D.topics.map((t) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
@@ -310,6 +319,7 @@ guardPage(); renderSidebar('followup');
     loadPantry();
     document.querySelectorAll('[data-go]').forEach((b) => { b.onclick = (e) => { if (e.target.closest('[data-stop]')) return; SID = Number(b.dataset.go); ALL = false; try { localStorage.setItem('fup_all', '0'); } catch (x) { /* private mode */ } load(); }; });
     const setAll = (v) => { ALL = v; try { localStorage.setItem('fup_all', v ? '1' : '0'); } catch (e) { /* private mode */ } };
+    document.querySelectorAll('[data-pers]').forEach((b) => { b.onclick = () => { PERS = b.dataset.pers; render(); }; });
     document.querySelectorAll('[data-sec]').forEach((b) => { b.onclick = () => { SID = Number(b.dataset.sec); setAll(false); load(); }; });
     if ($('allPill')) $('allPill').onclick = () => { setAll(true); load(); };
     // "All sections": a cell or a section's name opens that section (and the update window of that topic and day)
