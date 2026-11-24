@@ -509,6 +509,11 @@ try {
         }
 
         // ---- suggested order: what to make next, from what REALLY sold (per perfume AND size), not from guesses
+        case 'st_rm.list': case 'st_rm.done': case 'st_rm.skip': case 'st_rm.stop': {          // Store → Messages → Customer reminders (sent by hand, nothing goes out by itself)
+            require_once __DIR__ . '/store_remind.php'; sr_handle($pdo, $action); break;
+        }
+        case 'st_rm.cfg': { require_once __DIR__ . '/store_remind.php'; sr_handle_cfg($pdo, $action); break; }
+
         case 'st_inv.plan': {          // Order planner: "I want to order N bottles of X ml" -> the list (retail store only: old POS + new POS)
             require_auth();
             $sz = [];       // sizes=20:50,50:200  (ml:how many)
