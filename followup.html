@@ -339,7 +339,7 @@ guardPage(); renderSidebar('followup');
       + '<div class="bd-f"><label>% done</label><input class="bd-in" id="uP" inputmode="numeric" placeholder="0 – 100, if it fits"></div></div>'
       + '<div id="uNums"></div><div id="uF"></div><div class="bd-f"><label id="uTl">Update</label><textarea class="bd-in" id="uT" maxlength="2000" rows="4" placeholder="What happened on this topic?"></textarea></div>'
       + '<div class="acts"><button class="bd-btn" id="uX">Cancel</button><button class="bd-btn go" id="uOk">Save</button></div>', { sticky: true });
-    const q = (i) => m.querySelector(i);
+    const q = (i) => m.querySelector(i); let SUMONLY = false;
     const fill = () => {   // show what is already saved for this topic and date
       t = D.topics.find((x) => x.id === Number(q('#uTop').value)) || t; const u = t.updates[q('#uD').value] || {};
       q('#uF').innerHTML = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null, id = 'uf_' + f.k, lab = '<label>' + esc(f.label) + (f.req ? ' <span style="color:#d9423b">*</span>' : '') + '</label>';
@@ -350,7 +350,9 @@ guardPage(); renderSidebar('followup');
       q('#uNote').textContent = t.note || ''; q('#uVl').textContent = 'Number' + (t.unit ? ' (' + t.unit + ')' : '');
       q('#uV').placeholder = t.source ? 'Comes by itself' + (u.val != null ? ': ' + u.val : '') : 'Type the number of this day'; q('#uV').value = u.val != null && !u.auto ? u.val : '';
       const many = t.metrics.length > 1; q('#uNums').innerHTML = many && (u.val != null || (u.vals && Object.keys(u.vals).length)) ? '<div class="fu-lb" style="margin-bottom:2px">Numbers of this day · from the HRMS</div>' + numTxt(t, u) + '<div style="height:10px"></div>' : (many ? '<div class="fu-sub" style="margin-bottom:10px">The numbers of this day are not in the HRMS yet.</div>' : '');
-      q('#uV').closest('.fu-row2').style.display = (many || t.fields.length) ? 'none' : ''; q('#uTl').textContent = t.need_text ? 'Summary: why the numbers moved, what was changed' : 'Update'; q('#uT').placeholder = t.need_text ? 'Example: sales up because the campaign went to 12,000 people; ad spend kept the same; 2 big orders from Surat.' : 'What happened on this topic?';
+      // a summary-only topic (no fields, no number from the HRMS, no unit, "must write a summary"): just the summary box, no Number and no % done
+      SUMONLY = !!(t.need_text && t.kind === 'progress' && !t.fields.length && !t.source && !(t.metrics || []).length && !t.unit && !t.own_unit);
+      q('#uV').closest('.fu-row2').style.display = (many || t.fields.length || SUMONLY) ? 'none' : ''; q('#uTl').textContent = SUMONLY ? 'Summary' : (t.need_text ? 'Summary: why the numbers moved, what was changed' : 'Update'); q('#uT').placeholder = SUMONLY ? 'Write what was done today.' : (t.need_text ? 'Example: sales up because the campaign went to 12,000 people; ad spend kept the same; 2 big orders from Surat.' : 'What happened on this topic?');
       q('#uVh').textContent = t.source ? 'Leave empty to keep the number from the system. Type a number only to correct it.' : ''; q('#uP').value = u.pct != null ? u.pct : ''; q('#uT').value = u.text || '';
     };
     fill(); q('#uTop').onchange = fill; q('#uD').onchange = fill;
@@ -360,7 +362,7 @@ guardPage(); renderSidebar('followup');
       if (!d) { toast('Choose the date.'); return; }
       const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (f.type === 'file') { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.value.trim(); });
       const anyF = files.length || Object.keys(fv).some((k) => fv[k] !== '');
-      if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : 'Type the number or write the update.'); return; }
+      if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
       for (const [k, file] of files) { q('#uOk').textContent = 'Sending the file…'; const fd = new FormData(); fd.append('topic_id', t.id); fd.append('day', d); fd.append('key', k); fd.append('file', file); await api.upload('fup.file_put', fd); }
@@ -368,7 +370,7 @@ guardPage(); renderSidebar('followup');
       if (r && r.ai && r.ai.question) askBack(t, d, body, r.ai.question);
       else if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
     });
-    setTimeout(() => { try { (t.source || q('#uV').value ? q('#uT') : q('#uV')).focus(); } catch (e) { /* fine */ } }, 50);
+    setTimeout(() => { try { (t.source || SUMONLY || q('#uV').value ? q('#uT') : q('#uV')).focus(); } catch (e) { /* fine */ } }, 50);
   }
   /* the update was not clear: Claude's ONE question. The answer is added under the update; until then the day is not counted as filled. */
   function askBack(t, day, body, question) {
