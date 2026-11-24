@@ -412,4 +412,10 @@ try {
     echo "ASK STYLE messages (name, category, status per account) " . json_encode($one("SELECT t.name, t.category, GROUP_CONCAT(w.status) FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph_style_%' OR t.name LIKE 'tmph_fu_open_hi_%' GROUP BY t.id, t.name, t.category LIMIT 12")) . "\n";
     echo "ASK LINEUP silent: active customers whose first message is older than 31 days / the same in status done by left_why " . json_encode($one("SELECT SUM(status = 'active' AND anchor_at < ?), COUNT(*) FROM wa_line_cust", [date('Y-m-d H:i:s', time() - 31 * 86400)])) . " · done by why " . json_encode($one("SELECT left_why, COUNT(*) FROM wa_line_cust WHERE status = 'done' GROUP BY left_why ORDER BY 2 DESC LIMIT 8")) . "\n";
 } catch (Throwable $e) { echo "ASK MODC2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 51) New-style messages (owner 24 Nov): made / replaced counts and Module C speed level (counts only)
+try {
+    if (!function_exists('wa_rs_report')) require_once $root . 'empmanagment/wa_restyle.php';
+    echo "ASK RESTYLE " . json_encode(wa_rs_report($pdo)) . " · Module C level " . ($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_level'")[0][0] ?? '-') . " · last ladder " . ($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_lad_last'")[0][0] ?? '-') . "\n";
+    echo "ASK RESTYLE twins at Meta (old id, new id, name, status per account) " . json_encode($one("SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(t.extra, 'restyle_of\":', -1), '}', 1) AS old_id, t.id, t.name, GROUP_CONCAT(w.status) FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.extra LIKE '%restyle_of%' GROUP BY t.id, t.name, t.extra ORDER BY t.id DESC LIMIT 10")) . "\n";
+} catch (Throwable $e) { echo "ASK RESTYLE ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 

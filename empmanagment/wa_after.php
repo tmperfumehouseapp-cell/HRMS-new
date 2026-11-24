@@ -23,11 +23,13 @@ if (!function_exists('wa_aft_days')) {
     function wa_aft_steps(int $n = 200): array { $s = []; for ($k = 1; $k <= $n; $k++) $s[$k] = wa_aft_step($k); return $s; }
     function wa_aft_days(): array { $o = []; foreach (wa_aft_steps() as $k => $v) $o[$k] = $v[0]; return $o; }
     /** group => the shop's approved templates ({{1}} name, {{2}}, {{3}}) */
-    function wa_aft_groups(): array
+    function wa_aft_groups(?PDO $pdo = null): array
     {
-        return ['enjoy' => [178, 180, 183], 'doubt' => [207, 208, 209], 'checkin' => [204, 205, 206], 'also' => [179, 182, 185, 196], 'newsim' => [237, 238, 239], 'reorder' => [181, 184, 186, 197],
+        $__g = ['enjoy' => [178, 180, 183], 'doubt' => [207, 208, 209], 'checkin' => [204, 205, 206], 'also' => [179, 182, 185, 196], 'newsim' => [237, 238, 239], 'reorder' => [181, 184, 186, 197],
             'combo' => [219, 220, 221], 'best' => [210, 211], 'small' => [229, 230, 231], 'valued' => [187, 188, 189, 190, 191, 192, 193, 194, 195, 198], 'liked' => [168, 170, 172], 'gift' => [232, 233, 234],
             'loved' => [225, 226, 227], 'long' => [212, 213, 214]];
+        if ($pdo !== null && function_exists('wa_rs_map_groups')) { try { return wa_rs_map_groups($pdo, $__g); } catch (Throwable $e) { } }   // owner 24 Nov: the messages replaced by their new-style twins (wa_restyle.php)
+        return $__g;
     }
     function wa_aft_tables(PDO $pdo): bool
     {
@@ -294,7 +296,7 @@ if (!function_exists('wa_aft_days')) {
         if (wa_aft_set($pdo, 'wa_aft_cap_v', '') !== '3') { setting_set($pdo, 'wa_aft_cap', '10000'); setting_set($pdo, 'wa_aft_cap_v', '3'); }   /* owner, 24 Nov 2026: After-Order daily cap 10,000 */
         $cap = max(0, (int)wa_aft_set($pdo, 'wa_aft_cap', '3000')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
         $rows = $pdo->prepare("SELECT p.id, p.phone, p.step, c.order_at, c.anchor_at FROM wa_aft_plan p JOIN wa_aft_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active' ORDER BY p.due_at LIMIT 150")   /* owner 24 Nov 2026: 150 looked at per round (60 sent at most): many due rows are only moved on (live chat, 30 h gap), so 60 looked-at gave ~450 messages an hour */; $rows->execute([date('Y-m-d H:i:s', $now)]);
-        $upd = $pdo->prepare("UPDATE wa_aft_plan SET status = ?, why = ?, sent_at = ?, tpl_id = ?, wamid = ? WHERE id = ?"); $push = $pdo->prepare("UPDATE wa_aft_plan SET due_at = ? WHERE id = ?"); $grp = wa_aft_groups();
+        $upd = $pdo->prepare("UPDATE wa_aft_plan SET status = ?, why = ?, sent_at = ?, tpl_id = ?, wamid = ? WHERE id = ?"); $push = $pdo->prepare("UPDATE wa_aft_plan SET due_at = ? WHERE id = ?"); if (!function_exists('wa_rs_map_groups') && is_file(__DIR__ . '/wa_restyle.php')) { try { require_once __DIR__ . '/wa_restyle.php'; } catch (Throwable $e) { } } $grp = wa_aft_groups($pdo);
         foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $r) {
             if ($o['sent'] >= max(25, min(80, (int)wa_aft_set($pdo, 'wa_aft_tick_n', '60'))) || $today + $o['sent'] >= $cap || microtime(true) - $t0 > $budget) break; $ph = (string)$r['phone']; $id = (int)$r['id'];
             $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c || (int)($c['optout'] ?? 0) === 1 || (int)($c['camp_optout'] ?? 0) === 1) { $upd->execute(['cancelled', 'opted out / no contact', null, 0, '', $id]); continue; }
