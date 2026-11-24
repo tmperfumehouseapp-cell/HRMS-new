@@ -31842,6 +31842,7 @@ switch ($action) {
             if (!ctype_digit($orderId)) json_response(['error' => 'Bad order id.'], 422);
             try { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE 'is_direct'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN is_direct TINYINT NOT NULL DEFAULT 0"); } catch (Throwable $e) { }
             if ($house === '') { $pdo->prepare("UPDATE manual_orders SET employee_id = 0, is_direct = 0 WHERE manual_order_id = ?")->execute([(int)$orderId]); json_response(['message' => 'Quick-entry order allocation removed.']); }
+            if (strcasecmp(trim((string)($auth['role'] ?? '')), 'Employee') === 0) { $mx = $pdo->prepare("SELECT employee_id, is_direct FROM manual_orders WHERE manual_order_id = ?"); $mx->execute([(int)$orderId]); $mr = $mx->fetch(); if ($mr && ((int)$mr['employee_id'] > 0 || (int)$mr['is_direct'] === 1)) json_response(['error' => 'This order is already allocated — only Admin or Sales Head can change it.'], 403); }
             if (!$direct && $empId <= 0) json_response(['error' => 'Choose an employee.'], 422);
             $en = ''; if (!$direct) { $chk = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $chk->execute([$empId]); $en = (string)$chk->fetchColumn(); if ($en === '') json_response(['error' => 'Unknown employee.'], 422); }
             $pdo->prepare("UPDATE manual_orders SET employee_id = ?, house = ?, order_type = ?, is_direct = ? WHERE manual_order_id = ?")->execute([$empId, $house, $type, $direct ? 1 : 0, (int)$orderId]);
