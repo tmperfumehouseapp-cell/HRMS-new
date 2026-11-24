@@ -91,7 +91,7 @@ function sr_queue(PDO $pdo, string $today): array
         if ($r['status'] === 'sent') { if ($d >= date('Y-m-d', strtotime('-6 day', $t0))) $recent[$ph] = 1; if ($r['kind'] === 'hello') $helloAt[$ph] = max($helloAt[$ph] ?? '', $d); if ($d === $today) $sentToday[$ph] = ['kind' => (string)$r['kind'], 'name' => (string)$r['name'], 'text' => (string)$r['text']]; }
         elseif ($d === $today) $skipToday[$ph] = 1;
     }
-    $prio = ['finished' => 1, 'running' => 2, 'thank' => 3, 'missing' => 4, 'hello' => 5]; $cand = [];
+    $prio = ['thank' => 1, 'finished' => 2, 'running' => 3, 'missing' => 4, 'hello' => 5];   // the thank-you lasts one day only, so it goes first; the others have days to spare $cand = [];
     foreach ($last as $ph => $c) {
         if (isset($stop[$ph]) || isset($recent[$ph]) || isset($skipToday[$ph]) || isset($sentToday[$ph])) continue;
         $days = (int)floor(($t0 - strtotime($c['day'])) / 86400); if ($days < 0) continue;
@@ -110,11 +110,11 @@ function sr_queue(PDO $pdo, string $today): array
         $cand[] = ['phone' => $ph, 'name' => $c['name'], 'kind' => $kind, 'why' => $why, 'text' => $text, 'url' => 'https://web.whatsapp.com/send?phone=' . $ph . '&text=' . rawurlencode($text), 'status' => 'pending', 'p' => $prio[$kind], 'days' => $days];
     }
     usort($cand, fn($a, $b) => [$a['p'], $b['days']] <=> [$b['p'], $a['days']]);
-    $doneN = count($sentToday); $room = max(0, $cfg['limit'] - $doneN); $more = max(0, count($cand) - $room); $cand = array_slice($cand, 0, $room);
+    $doneN = count($sentToday); $room = max(0, $cfg['limit'] - $doneN); $more = max(0, count($cand) - $room); $eligible = count($cand); $byKind = []; foreach ($cand as $c0) $byKind[$c0['kind']] = ($byKind[$c0['kind']] ?? 0) + 1; $cand = array_slice($cand, 0, $room);
     foreach ($cand as &$c) unset($c['p'], $c['days']); unset($c);
     $done = []; foreach ($sentToday as $ph => $s) $done[] = ['phone' => $ph, 'name' => $s['name'], 'kind' => $s['kind'], 'why' => '', 'text' => $s['text'], 'url' => '', 'status' => 'sent'];
     $m = $pdo->prepare("SELECT COUNT(*) FROM st_rm_log WHERE status = 'sent' AND day >= ?"); $m->execute([date('Y-m-01', $t0)]); $month = (int)$m->fetchColumn();
-    return ['rows' => array_merge($cand, $done), 'more' => $more, 'counts' => ['pending' => count($cand), 'sent_today' => $doneN, 'month' => $month, 'stopped' => count($stop), 'customers' => count($last)], 'cfg' => $cfg];
+    return ['rows' => array_merge($cand, $done), 'more' => $more, 'counts' => ['pending' => count($cand), 'eligible' => $eligible, 'by_kind' => $byKind, 'sent_today' => $doneN, 'month' => $month, 'stopped' => count($stop), 'customers' => count($last)], 'cfg' => $cfg];
 }
 
 /** The st_rm.* actions. */
