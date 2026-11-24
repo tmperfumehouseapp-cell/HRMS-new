@@ -23190,6 +23190,9 @@ switch ($action) {
         try { foreach ($pdo->query("SELECT u.username, e.full_name FROM users u JOIN employees e ON e.employee_id = u.employee_id")->fetchAll() as $ur) $unm[strtolower((string)$ur['username'])] = trim((string)$ur['full_name']); } catch (Throwable $e) {}
         $alerts = array_map(fn($r) => ['id' => (int)$r['id'], 'kind' => $r['kind'], 'sev' => $r['severity'], 'emp' => (int)$r['employee_id'], 'day' => $r['day'], 'title' => $r['title'], 'body' => $r['body'],
             'meet' => (int)$r['meet_admin'] === 1, 'status' => $r['status'], 'created_at' => $r['created_at'], 'resolved_by' => ($unm[strtolower((string)$r['resolved_by'])] ?? '') !== '' ? $unm[strtolower((string)$r['resolved_by'])] : $r['resolved_by'], 'resolved_at' => $r['resolved_at'], 'note' => $r['note']], $q->fetchAll());
+        // owner (24 Nov, screenshot: the same "queries taken, query orders" remark twice on one person — today's and an older day's still open): a day shows ONLY its own remarks. A remark of a past day
+        // is not shown on another day (it stays in the table and closes by itself); remarks with no day (not tied to a day) are kept.
+        $alerts = array_values(array_filter($alerts, function ($__a) use ($day) { $__d = (string)($__a['day'] ?? ''); return $__d === '' || $__d === '0000-00-00' || $__d === $day; }));
         $emps = array_values($S['emps']);
         usort($emps, fn($a, $b) => ($b['orders'] <=> $a['orders']) ?: strcmp((string)$a['name'], (string)$b['name']));
         $S['team'] = array_merge($S['team'], ct_roas_block($pdo, $day, $day === $today, get_bearer_token(), (float)$S['team']['sales'], (float)($S['cfg']['roas_goal'] ?? 3)));
