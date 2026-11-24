@@ -112,15 +112,15 @@ if (!function_exists('wa_rc_tick')) {
             $q = $pdo->prepare("SELECT m.status, COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? GROUP BY 1"); $q->execute([$t0]); $o['receipts'] = $q->fetchAll(PDO::FETCH_KEY_PAIR);
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? AND m.dir = 'out' AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.dir = 'in' AND i.phone = r.phone AND i.ts > r.at)"); $q->execute([$t0]); $o['replied_today'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
         try { $pc = json_decode((string)setting_get($pdo, 'wa_rc_pending', ''), true);
-            if (!is_array($pc) || (int)($pc['at'] ?? 0) < time() - 1800) { $pc = wa_rc_pending($pdo); setting_set($pdo, 'wa_rc_pending', json_encode($pc)); }
-            $o['pending'] = (int)($pc['people'] ?? 0); $o['pending_at'] = (int)($pc['at'] ?? 0); $o['pending_partial'] = !empty($pc['partial']); $o['pending_failed_people'] = (int)($pc['failed_people'] ?? 0); } catch (Throwable $e) { }
+            if (!is_array($pc) || (int)($pc['at'] ?? 0) < time() - 1800) { $prev = is_array($pc) ? $pc : []; try { $pc = wa_rc_pending($pdo); } catch (Throwable $ep) { $pc = ['at' => time() - 1500, 'people' => $prev['people'] ?? null, 'failed_people' => $prev['failed_people'] ?? null, 'partial' => true, 'err' => mb_substr($ep->getMessage(), 0, 100)]; } setting_set($pdo, 'wa_rc_pending', json_encode($pc)); }   // a failed count keeps the last good number and tries again in 5 minutes
+            $o['pending'] = isset($pc['people']) ? (int)$pc['people'] : null; $o['pending_err'] = (string)($pc['err'] ?? ''); $o['pending_at'] = (int)($pc['at'] ?? 0); $o['pending_partial'] = !empty($pc['partial']); $o['pending_failed_people'] = (int)($pc['failed_people'] ?? 0); } catch (Throwable $e) { }
         return $o;
     }
     /** People waiting for Module C: failed marketing-only people (since wa_rc_from) with no Module B / C message yet and no WhatsApp message from them (ever). Counted in chunks, at most 12 seconds. */
     function wa_rc_pending(PDO $pdo): array
     {
         $t0 = microtime(true); $mo = implode(',', WA_RU_MARKETING_ONLY); $from = (string)setting_get($pdo, 'wa_rc_from', '2026-11-14 00:00:00');
-        $q = $pdo->prepare("SELECT DISTINCT i.phone FROM wa_camp_items i WHERE i.sent_at >= ? AND ((i.status = 'failed' AND i.err_code IN ($mo)) OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo))) AND COALESCE(i.variant, 'M') <> 'U' AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.phone = i.phone) LIMIT 80000");
+        $q = $pdo->prepare("SELECT DISTINCT i.phone FROM wa_camp_items i WHERE i.sent_at >= ? AND ((i.status = 'failed' AND i.err_code IN ($mo)) OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo))) AND COALESCE(i.variant, 'M') <> 'U' AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.phone = i.phone) LIMIT 40000");
         $q->execute([$from]); $phones = $q->fetchAll(PDO::FETCH_COLUMN); $never = 0; $partial = false;
         foreach (array_chunk($phones, 1500) as $ch) { if (microtime(true) - $t0 > 12) { $partial = true; break; }
             $in = implode(',', array_map(function ($p) use ($pdo) { return $pdo->quote((string)$p); }, $ch)); $never += (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE phone IN ($in) AND last_in_at IS NULL AND optout = 0 AND COALESCE(camp_optout, 0) = 0")->fetchColumn(); }
