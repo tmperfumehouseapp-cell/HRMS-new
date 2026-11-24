@@ -1414,6 +1414,20 @@ function ora_apply(PDO $pdo, string $key, array $r): bool
     } catch (Throwable $e) { error_log('ora_apply: ' . $e->getMessage()); return false; }
 }
 /** Engine step (every ~3 min): rates up to 8 new allocated orders of the current business day (from its start) (newest first, so today is always read before the older ones); in 'apply' mode also applies waiting suggestions. Returns how many orders were rated. */
+/** 🛍 Website (TM Store) and HRMS-typed orders live in manual_orders, not shop_orders — the chat judge read only Shopify orders, so on a day of 154 orders it had read 14 and 138 were "still waiting" for ever
+ *  (owner, 24 Nov). The orders of [$from, $to] that have a salesperson and a mobile number and are not judged yet, in the shape ora_rate_one / ora_store expect (key 'manual:<id>'). $count: only how many. */
+function ora_manual_cands(PDO $pdo, string $from, string $to, int $limit, bool $count = false)
+{
+    $cc = 'COLLATE utf8mb4_unicode_ci';
+    $w = "FROM manual_orders m WHERE m.order_date >= ? AND m.order_date <= ? AND m.employee_id > 0 AND m.total > 0 AND m.phone <> '' AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT('manual:', m.manual_order_id) $cc AND r.sz_ok = 7)";
+    try {
+        if ($count) { $c = $pdo->prepare("SELECT COUNT(*) $w"); $c->execute([$from, $to]); return (int)$c->fetchColumn(); }
+        $q = $pdo->prepare("SELECT m.* $w ORDER BY m.order_date DESC LIMIT " . max(1, $limit)); $q->execute([$from, $to]); $out = [];
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $m) $out[] = ['store_key' => 'manual', 'shopify_id' => (string)$m['manual_order_id'], 'order_name' => ((string)($m['channel'] ?? '') === 'TM Store' && (string)($m['mp_no'] ?? '') !== '') ? (string)$m['mp_no'] : '#' . (string)$m['order_no'],
+            'created_at' => (string)$m['order_date'], 'phone' => (string)$m['phone'], 'total' => $m['total'], 'ml_total' => (int)($m['ml'] ?? 0), 'employee_id' => (int)$m['employee_id'], 'house' => (string)($m['house'] ?? '') ?: 'tmph'];
+        return $out;
+    } catch (Throwable $e) { error_log('ora_manual_cands: ' . $e->getMessage()); return $count ? 0 : []; }
+}
 function ora_tick(PDO $pdo): int
 {
     $mode = ora_mode($pdo); if ($mode === 'off' || !function_exists('convo_ai')) return 0;
@@ -1426,6 +1440,7 @@ function ora_tick(PDO $pdo): int
             ORDER BY o.created_at DESC LIMIT 8");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
         $bd = biz_today($pdo); $st->execute([$bd . ' ' . day_start_for($pdo, $bd) . ':00', date('Y-m-d H:i:s', time() - 600)]);   // only the orders of the current business day (from its 10:00 start) are read
         $t0 = time(); $cands = $st->fetchAll(PDO::FETCH_ASSOC); $fails = 0; $lastWhy = '';
+        $cands = array_merge($cands, ora_manual_cands($pdo, $bd . ' ' . day_start_for($pdo, $bd) . ':00', date('Y-m-d H:i:s', time() - 600), 8)); usort($cands, function ($x, $y) { return strcmp((string)$y['created_at'], (string)$x['created_at']); });   // 🛍 website / HRMS-typed orders are read too
         foreach ($cands as $o) {
             if (time() - $t0 > 28) break;   // the engine step must stay short
             $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) { $fails++; $lastWhy = $key . ' · ' . mb_substr((string)($r['why'] ?? ''), 0, 200); continue; }   // an AI hiccup: try again next time
@@ -1542,7 +1557,8 @@ function ora_fill_day(PDO $pdo, string $day, int $secs = 22): array
               AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 7)";
     $n = 0; $t0 = time();
     $st = $pdo->prepare("SELECT o.store_key, o.shopify_id, o.order_name, o.created_at, o.phone, o.total, o.ml_total, a.employee_id, a.house $sel ORDER BY o.created_at DESC LIMIT 40"); $st->execute([$from, $to]);
-    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
+    $all = array_merge($st->fetchAll(PDO::FETCH_ASSOC), ora_manual_cands($pdo, $from, $to, 40)); usort($all, function ($x, $y) { return strcmp((string)$y['created_at'], (string)$x['created_at']); });   // 🛍 website / HRMS-typed orders are read too
+    foreach ($all as $o) {
         if (time() - $t0 > $secs) break;
         $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;
         $d = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
@@ -1551,7 +1567,7 @@ function ora_fill_day(PDO $pdo, string $day, int $secs = 22): array
         $n++;
     }
     $c = $pdo->prepare("SELECT COUNT(*) $sel"); $c->execute([$from, $to]);
-    return [$n, (int)$c->fetchColumn()];
+    return [$n, (int)$c->fetchColumn() + (int)ora_manual_cands($pdo, $from, $to, 1, true)];
 }
 /** 🧴 Is there at least one shower gel in this order? Reads the order's own gel/attar/other parts (xparts); an order read from the saved copy has no 'xparts' key, so it is looked up in shop_orders. */
 function order_has_gel(PDO $pdo, string $sk, array $o): bool
@@ -23230,7 +23246,7 @@ switch ($action) {
         }
         foreach ($missSz as &$m0) { unset($m0['key']); } unset($m0);
         foreach ($miss as &$m) {        // customer, amount and number of the orders to follow up
-            try { [$sk, $sid] = array_pad(explode(':', $m['key'], 2), 2, ''); $oq = $pdo->prepare("SELECT customer, phone, total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $oq->execute([$sk, $sid]); $o = $oq->fetch(PDO::FETCH_ASSOC) ?: [];
+            try { [$sk, $sid] = array_pad(explode(':', $m['key'], 2), 2, ''); if ($sk === 'manual') { $oq = $pdo->prepare("SELECT customer_name AS customer, phone, total FROM manual_orders WHERE manual_order_id = ? LIMIT 1"); $oq->execute([(int)$sid]); } else { $oq = $pdo->prepare("SELECT customer, phone, total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $oq->execute([$sk, $sid]); } $o = $oq->fetch(PDO::FETCH_ASSOC) ?: [];
                 $m['customer'] = (string)($o['customer'] ?? ''); $m['phone'] = substr(preg_replace('/\D+/', '', (string)($o['phone'] ?? '')), -10); $m['total'] = (float)($o['total'] ?? 0); } catch (Throwable $e) { $m['customer'] = ''; $m['phone'] = ''; $m['total'] = 0; }
             unset($m['key']);
         } unset($m);
