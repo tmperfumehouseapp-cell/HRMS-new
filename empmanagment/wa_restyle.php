@@ -48,7 +48,15 @@ if (!function_exists('wa_rs_tick')) {
             . "More of the owner's words for MARKETING offers (use them where the old message is an offer or a new-arrival message; the owner says they are true): \"naye perfumes launch hue hain\", \"naya offer launch hua hai\", \"ek dhamakedaar cheez aayi hai, aapko bahut maza aane wala hai\", \"order par kuch na kuch add-on zaroor milega\", \"extra discount bhi karwa denge\". "
             . "For UTILITY use the same warmth and curiosity WITHOUT those words (no offer, launch, discount, add-on, dhamaka, free): for example \"aapke liye ek khaas update he 👀\", \"ek chhoti si madad\", \"aapka sawal humein yaad he\". "
             . "In MARKETING messages an urgency line (only today / limited stock) is part of the owner's style, but keep it only when the old message already is an offer; never invent a price, a quantity or a date. "
+            . "THE MAIN GOAL (owner, 25 Nov 2026): the customer must WANT TO ORDER, in any way. Every message pushes toward an order: a season hook (winter / wedding / gift), curiosity or a reveal (\"tap to see\"), a clear choice by button, and - in MARKETING - the offer, the combo, the price or the deadline when the old message already has one. Replies alone are worthless; a message that only gets a reply and no order is a failure. For UTILITY (no deal words allowed by Meta) the desire comes from the season, the next perfume, the size choice and the reveal after the tap. "
             . "Examples (utility, no deal words): \"Hi {{1}} 😊 aapne {{3}} ko {{2}} ke bare me poocha tha... abhi bhi chahiye ? Neeche button dabaiye 👇\" and \"Hello {{1}} 🌸 TM Perfume House team yahan he. Koi sawal ho ya perfume chunne me help chahiye to bas ek button dabaiye 🙏\". ";
+    }
+    /** Too basic / not exciting (owner 25 Nov 2026): the customer-care wording, or no hook word at all (season, gift, surprise, offer, combo, curiosity, a new perfume). */
+    function wa_rs_dull(string $b): bool
+    {
+        if (!function_exists('wa_style_dull') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
+        if (function_exists('wa_style_dull') && wa_style_dull($b) !== '') return true;
+        return !preg_match('/(naya|nayi|naye|nai |khaas|special|season|shaadi|wedding|winter|gift|surprise|dhamaka|intezaar|dekhna|dekhiye|dekhiyega|dekho|dikhao|pick|combo|offer|deal|launch|sirf|flat|deadline|aaj hi|abhi order|jaldi|reveal|maza)/iu', $b);
     }
     /** Makes the twin of one old message; returns ['new' => id] or ['why' => text]. */
     function wa_rs_make_one(PDO $pdo, int $oldId): array
@@ -76,7 +84,8 @@ if (!function_exists('wa_rs_tick')) {
         if ($nv !== $vars) return ['why' => 'variables differ'];
         if (mb_strlen($nb) > 900 || mb_strlen($nb) < 15) return ['why' => 'length'];
         if (!function_exists('wa_style_dull') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
-        if (function_exists('wa_style_dull') && ($__dl = wa_style_dull($nb)) !== '') return ['why' => $__dl];   /* owner 25 Nov 2026: a twin must not be a basic customer-care message */
+        if (function_exists('wa_style_dull') && ($__dl = wa_style_dull($nb)) !== '') return ['why' => $__dl];
+        if (wa_rs_dull($nb)) return ['why' => 'not exciting enough (no season / surprise / offer / curiosity hook)'];   /* owner 25 Nov 2026: the customer must want to order */   /* owner 25 Nov 2026: a twin must not be a basic customer-care message */
         if (preg_match('/^\s*\{\{\d+\}\}/u', $nb) || preg_match('/\{\{\d+\}\}\s*$/u', $nb) || preg_match('/\{\{\d+\}\}\s*\{\{\d+\}\}/u', $nb)) return ['why' => 'variable at the start / end / next to another'];
         if ($cat === 'UTILITY') { $low = mb_strtolower($nb); foreach (wa_util_bad_words() as $w) if ($w !== '' && mb_strpos($low, $w) !== false) return ['why' => 'deal word: ' . trim($w)]; }
         $buttons = $btn; if ($btn && $qrOnly) { $tx = array_values(array_filter(array_map(function ($x) { return mb_substr(trim((string)$x), 0, 20); }, (array)($j['buttons'] ?? [])))); if (count($tx) !== count($btn)) return ['why' => 'buttons differ']; $buttons = array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, $tx); }
@@ -129,7 +138,7 @@ if (!function_exists('wa_rs_tick')) {
             }
             // 2) make: two old messages without a twin
             foreach ($tg as $old => $src) {
-                if ($o['made'] >= 2 || (int)$st['n'] >= 400) break; if (isset($st['pairs'][$old])) continue; if ((int)($st['next'][$old] ?? 0) > time()) continue;
+                if ($o['made'] >= 2 || (int)$st['n'] >= 900) break; if (isset($st['pairs'][$old])) continue; if ((int)($st['next'][$old] ?? 0) > time()) continue;
                 try { $to = wa_camp_tpl($pdo, (int)$old, true, 0); } catch (Throwable $e) { $to = null; } if (!$to || empty($to['ok_wabas'])) { $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => 'old message not approved', 'at' => time()]; continue; }
                 $st['pairs'][$old] = ['src' => $src, 'st' => 'making', 'at' => time()]; wa_rs_save($pdo, $st);   // saved BEFORE the work: two overlapping rounds made two twins of the same message (the second one was refused by Meta: the name existed)
                 $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
@@ -138,9 +147,12 @@ if (!function_exists('wa_rs_tick')) {
                     $f = (int)($st['fails'][$old] ?? 0) + 1; $st['fails'][$old] = $f; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600);
                     if ($f >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => (string)($r['why'] ?? '?'), 'at' => time()]; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; }   // a Claude error (not the message's fault): retry in 10 minutes, up to 30 times; a round stops at the first one
             }
-            if ($o['made'] < 2 && $o['note'] === '' && (int)$st['n'] < 400) {   // 🔁 second pass: the twins made before the excitement / surprise rule (13:47 UTC, 24 Nov) get a second version, two a round
+            $__nb = []; try { $__ids = array_values(array_filter(array_map(function ($pp) { return (int)($pp['new'] ?? 0); }, $st['pairs']))); if ($__ids) foreach ($pdo->query("SELECT id, body FROM wa_templates WHERE id IN (" . implode(',', $__ids) . ")")->fetchAll(PDO::FETCH_NUM) as $__r) $__nb[(int)$__r[0]] = (string)$__r[1]; } catch (Throwable $e) { }
+            if ($o['made'] < 2 && $o['note'] === '' && (int)$st['n'] < 900) {   // 🔁 second pass: the twins made before the excitement / surprise rule (13:47 UTC, 24 Nov) get a second version, two a round
                 foreach ($st['pairs'] as $old => $p0) { if ($o['made'] >= 2 || (int)$st['n'] >= 400) break;
-                    if (empty($p0['new']) || !in_array((string)($p0['st'] ?? ''), ['made', 'replaced'], true) || (int)($p0['at'] ?? 0) >= 1795528020 || !empty($p0['v2']) || !empty($p0['v2fail']) || !empty($p0['v2done'])) continue;
+                    if (empty($p0['new']) || !in_array((string)($p0['st'] ?? ''), ['made', 'replaced'], true) || !empty($p0['v2']) || !empty($p0['v2fail'])) continue;
+                    $__early = (int)($p0['at'] ?? 0) < 1795528020 && empty($p0['v2done']); $__dull = isset($__nb[(int)$p0['new']]) && wa_rs_dull((string)$__nb[(int)$p0['new']]);   /* a twin whose own wording is basic gets another version too (owner 25 Nov 2026: the customer must want to order) */
+                    if (!$__early && !$__dull) continue;
                     if ((int)($st['next'][$old] ?? 0) > time()) continue;
                     $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
                     if (!empty($r['new'])) { $st['pairs'][$old]['v2'] = (int)$r['new']; $o['made']++; wa_rs_save($pdo, $st); }
