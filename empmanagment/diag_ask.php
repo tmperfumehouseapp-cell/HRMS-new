@@ -418,4 +418,12 @@ try {
     echo "ASK RESTYLE " . json_encode(wa_rs_report($pdo)) . " · Module C level " . ($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_level'")[0][0] ?? '-') . " · last ladder " . ($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_lad_last'")[0][0] ?? '-') . "\n";
     echo "ASK RESTYLE twins at Meta (old id, new id, name, status per account) " . json_encode($one("SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(t.extra, 'restyle_of\":', -1), '}', 1) AS old_id, t.id, t.name, GROUP_CONCAT(w.status) FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.extra LIKE '%restyle_of%' GROUP BY t.id, t.name, t.extra ORDER BY t.id DESC LIMIT 10")) . "\n";
 } catch (Throwable $e) { echo "ASK RESTYLE ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 52) New-style twins: old body vs new body, offers (marketing) first (template texts only, no customer data)
+try {
+    if (!function_exists('wa_rs_state')) require_once $root . 'empmanagment/wa_restyle.php';
+    $st52 = wa_rs_state($pdo); $n52 = 0; $cats52 = [];
+    foreach ($st52['pairs'] as $old52 => $p52) { if (empty($p52['new'])) continue; $a52 = $one("SELECT category, body FROM wa_templates WHERE id = ?", [(int)$old52])[0] ?? null; $b52 = $one("SELECT body FROM wa_templates WHERE id = ?", [(int)$p52['new']])[0][0] ?? null; if (!$a52) continue; $cats52[$a52[0]] = ($cats52[$a52[0]] ?? 0) + 1;
+        if ($n52 < 6 && ($n52 < 3 ? $a52[0] === 'MARKETING' : true)) { $n52++; echo "ASK RESTYLE sample " . $a52[0] . " #" . $old52 . " (" . ($p52['st'] ?? '') . ") OLD: " . str_replace("\n", ' / ', mb_substr((string)$a52[1], 0, 260)) . " || NEW: " . str_replace("\n", ' / ', mb_substr((string)$b52, 0, 300)) . "\n"; } }
+    echo "ASK RESTYLE twins by category of the old message " . json_encode($cats52) . "\n";
+} catch (Throwable $e) { echo "ASK RESTYLE2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 
