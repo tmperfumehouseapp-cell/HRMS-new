@@ -73,6 +73,8 @@
           <div class="wo-row" id="woDates" style="margin-top:8px" hidden><input type="date" class="wo-in" id="woFrom"> to <input type="date" class="wo-in" id="woTo"><button type="button" class="wo-b pri" id="woGo">Show</button></div>
           <div class="wo-lb">Show</div>
           <div class="wo-row sc" id="woShow"></div>
+          <div class="wo-lb">Payment</div>
+          <div class="wo-row sc" id="woPay"></div>
           <div class="wo-row" style="margin-top:8px"><input type="search" class="wo-in" id="woQ" placeholder="Search order number, customer or mobile" style="flex:1; min-width:180px"></div>
         </div>
         <div class="wo-bulk" id="woBulk"><b id="woBn"></b><select class="wo-in" id="woBe"></select><select class="wo-in" id="woBt" style="min-width:110px"><option value="query">Query</option><option value="campaign">Campaign</option></select><button type="button" class="wo-b g" id="woBg">Give selected</button><span class="sp"></span><button type="button" class="wo-b" id="woBx">Clear</button></div>
@@ -98,7 +100,8 @@
   const when = (s) => { const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? s : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); };
   const payChip = (r) => r.pay_status === 'paid' ? '<span class="wo-p ok">Paid ' + inr(r.paid || r.total) + '</span>' : r.pay_status === 'partially_paid' ? '<span class="wo-p pt">Paid ' + inr(r.paid) + ' · due ' + inr(r.due) + '</span>' : (r.pay_method === 'cod' ? '<span class="wo-p pt">COD ' + inr(r.total) + '</span>' : '<span class="wo-p no">Not paid yet</span>');
   const opts = (sel) => '<option value="0">Choose salesperson…</option>' + S.people.map((p) => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
-  const view = () => { const q = S.q.trim().toLowerCase(); return S.rows.filter((r) => (S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)) && (!q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1)); };
+  const isPaid = (r) => r.pay_status !== 'pending';   // a payment received, full or part
+  const view = () => { const q = S.q.trim().toLowerCase(); return S.rows.filter((r) => (S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)) && (!S.pay || S.pay === 'all' || (S.pay === 'paid') === isPaid(r)) && (!q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1)); };
 
   function drawBars() {
     $('woDays').innerHTML = DAYS.map((d) => '<button type="button" class="wo-chip' + (S.d === d[0] ? ' on' : '') + '" data-d="' + d[0] + '">' + d[1] + '</button>').join('') + '<button type="button" class="wo-chip' + (S.d === 'dates' ? ' on' : '') + '" data-d="dates">📅 Pick dates…</button>';
@@ -106,6 +109,9 @@
     const n = S.rows.length, g = S.rows.filter((r) => r.emp).length;
     $('woShow').innerHTML = [['open', 'Not given yet', n - g], ['done', 'Given', g], ['all', 'All', n]].map((x) => '<button type="button" class="wo-chip' + (S.show === x[0] ? ' on' : '') + '" data-s="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
     $('woDays').querySelectorAll('[data-d]').forEach((b) => { b.onclick = () => { S.d = b.dataset.d; const d = DAYS.find((x) => x[0] === S.d); if (d) { S.from = ago(d[2]); S.to = ago(d[3]); load(); } else drawBars(); }; });
+    { const inShow = S.rows.filter((r) => S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)), pd = inShow.filter(isPaid).length;   // 💰 Paid / Not paid yet — counted inside the Show filter chosen above
+      $('woPay').innerHTML = [['all', 'All', inShow.length], ['paid', 'Paid', pd], ['unpaid', 'Not paid yet', inShow.length - pd]].map((x) => '<button type="button" class="wo-chip' + ((S.pay || 'all') === x[0] ? ' on' : '') + '" data-p="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
+      $('woPay').querySelectorAll('[data-p]').forEach((b) => { b.onclick = () => { S.pay = b.dataset.p; S.sel.clear(); drawBars(); drawList(); }; }); }
     $('woShow').querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { S.show = b.dataset.s; S.sel.clear(); drawBars(); drawList(); }; });
     const s = S.sum || { orders: 0, amount: 0, given: 0, given_amount: 0 };
     $('woKpi').innerHTML = '<div><small>Orders</small><b>' + s.orders + '</b></div><div><small>Order value</small><b>' + inr(s.amount) + '</b></div><div class="w"><small>Not given yet</small><b>' + (s.orders - s.given) + ' · ' + inr(s.amount - s.given_amount) + '</b></div><div class="ok"><small>Given to salespeople</small><b>' + s.given + ' · ' + inr(s.given_amount) + '</b></div>';
