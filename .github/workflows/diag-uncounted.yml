@@ -41,10 +41,11 @@ jobs:
           $base = rtrim($g("tms_api_base") ?: "https://test.tmperfumehouse.store/api/v1", "/"); $key = $g("tms_api_key"); if ($key === "") { echo "U no shop key\n"; exit; }
           $ch = curl_init($base . "/orders?page=1&limit=40&since=" . date("Y-m-d", time() - 86400)); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ["Authorization: Bearer " . $key, "Accept: application/json"]]);
           $j = json_decode((string)curl_exec($ch), true); curl_close($ch); $items = (array)($j["data"]["items"] ?? []); echo "U shop orders read: " . count($items) . "\n";
-          $keys = []; $walk = function ($a, $pre) use (&$walk, &$keys) { foreach ((array)$a as $k => $v) { if (is_int($k)) { if (is_array($v)) $walk($v, $pre . "[]"); continue; } $p = $pre === "" ? $k : $pre . "." . $k; $keys[$p] = is_array($v) ? "array" : gettype($v); if (is_array($v)) $walk($v, $p); } };
-          foreach ($items as $o) $walk($o, ""); foreach ($keys as $k => $t) echo "U key " . $k . " (" . $t . ")\n";
-          $rx = "/staff|creat|agent|user|sales|source|channel|link|ref|utm|tag|by$|owner|assign|employee|admin|origin|draft|type$/i";
-          foreach ($items as $o) { $out = []; foreach ($o as $k => $v) if (preg_match($rx, (string)$k) && !preg_match("/customer|address|phone|email|name$/i", (string)$k)) $out[] = $k . "=" . (is_array($v) ? json_encode($v) : var_export($v, true)); echo "U " . ($o["number"] ?? "?") . " · pay " . ($o["payment_status"] ?? "") . " · " . mb_substr(implode(" · ", $out), 0, 400) . "\n"; }
+          $all = $items; for ($p = 2; $p <= 6 && !empty($j["data"]["has_more"]); $p++) { $ch = curl_init($base . "/orders?page=" . $p . "&limit=40&since=" . date("Y-m-d", time() - 86400)); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ["Authorization: Bearer " . $key, "Accept: application/json"]]); $j = json_decode((string)curl_exec($ch), true); curl_close($ch); foreach ((array)($j["data"]["items"] ?? []) as $o) $all[] = $o; }
+          echo "U server now " . date("Y-m-d H:i:s") . " · all orders " . count($all) . "\n";
+          $mq = $d->prepare("SELECT order_no, order_date, employee_id, created_by FROM manual_orders WHERE channel = 'TM Store' AND mp_no = ?");
+          foreach ($all as $o) { $mq->execute([(string)($o["number"] ?? "")]); $m = $mq->fetch(PDO::FETCH_ASSOC);
+            echo "U " . ($o["number"] ?? "?") . " · " . ($o["source"] ?? "") . " · placed " . substr((string)($o["placed_at"] ?? ""), 5, 11) . " · updated " . substr((string)($o["updated_at"] ?? ""), 5, 11) . " · " . ($o["payment_status"] ?? "") . " " . ($o["payment_method"] ?? "") . " paid " . round((float)($o["amount_paid"] ?? 0)) . "/" . round((float)($o["total"] ?? 0)) . " · ship " . ($o["fulfillment_status"] ?? "") . (($o["awb"] ?? "") !== "" ? " awb" : "") . " · HRMS " . ($m ? $m["order_no"] . " emp " . $m["employee_id"] . " date " . substr($m["order_date"], 5, 11) . " by " . $m["created_by"] : "no row") . "\n"; }
           PHP
           php /tmp/ql_check.php "$P" "$CH"; rm -f /tmp/ql_check.php
           REMOTE
