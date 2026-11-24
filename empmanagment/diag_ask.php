@@ -470,3 +470,10 @@ try {
     echo "ASK NEWSENT new-style templates in the library " . count($ids58) . " · Module A campaigns today (items sent, delivered/read) " . json_encode($one("SELECT COUNT(*), SUM(i.status IN ('sent','delivered','read') OR i.last_status IN ('delivered','read')) FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.tpl_id IN ($in58) AND i.sent_at >= ?", [$t58])) . " · Module B/C by kind today (kind, sent) " . json_encode($one("SELECT kind, COUNT(*) FROM wa_ru_log WHERE tpl_id IN ($in58) AND ok = 1 AND at >= ? GROUP BY kind ORDER BY 2 DESC LIMIT 8", [$t58])) . " · Cold today " . json_encode($one("SELECT COUNT(*) FROM wa_cold_log WHERE tpl_id IN ($in58) AND ok = 1 AND at >= ?", [$t58])) . " · After-Order today " . json_encode($one("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND tpl_id IN ($in58) AND sent_at >= ?", [$t58])) . " · all of Module B/C today " . json_encode($one("SELECT COUNT(*) FROM wa_ru_log WHERE ok = 1 AND at >= ?", [$t58])) . " · all Cold today " . json_encode($one("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= ?", [$t58])) . "\n";
 } catch (Throwable $e) { echo "ASK NEWSENT ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 
+// 59) Why the new utility messages never reach Meta (owner 24 Nov): settings + submission state, read-only
+try {
+    $wk59 = $pdo->query("SELECT setting_key, setting_value FROM hrms_settings WHERE setting_key LIKE 'wa\\_tpl\\_wk\\_block\\_%' OR setting_key IN ('wa_tpl_util_off_wabas','wa_tpl_auto','wa_tpl_tick_max','wa_tpl_hour_cap','wa_tpl_day_cap')")->fetchAll(PDO::FETCH_NUM);
+    echo "ASK UTILSET settings (now " . time() . ") " . json_encode($wk59) . "\n";
+    $u59 = $pdo->query("SELECT t.name, t.category, t.extra, (SELECT GROUP_CONCAT(CONCAT(RIGHT(r.waba_id,4),':',r.status) SEPARATOR ',') FROM wa_tpl_waba r WHERE r.tpl_id = t.id) FROM wa_templates t WHERE t.name LIKE 'tmph\\_fu\\_open\\_hi\\_%' LIMIT 6")->fetchAll(PDO::FETCH_NUM);
+    echo "ASK UTILSET open_hi templates (name, category, extra, per-account status) " . json_encode($u59) . "\n";
+} catch (Throwable $e) { echo "ASK UTILSET ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
