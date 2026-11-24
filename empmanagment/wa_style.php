@@ -7,6 +7,17 @@
  * Called once from the Module C round (wa_modc.php). PHP 7.4 safe.
  */
 if (!function_exists('wa_style_pack')) {
+    /** The season the messages should fit (owner 24 Nov 2026: "consider the new season: gift orders, season add-ons"). Used in the text Claude gets; it never creates a price, a date or a promise. */
+    function wa_style_season(?int $ts = null): string
+    {
+        $m = (int)date('n', $ts ?? time()); $d = (int)date('j', $ts ?? time());
+        if ($m === 11 || ($m === 12 && $d <= 20)) return 'Winter is starting and it is the wedding (shaadi) season in India; Christmas / New Year gifting is coming: warm, deep, long-lasting fragrances (oud, musk, amber, woody) suit the cold; perfumes make a good gift for weddings, family and friends; a gift order or a gift add-on fits now.';
+        if ($m === 12 || $m === 1) return 'It is winter, the Christmas / New Year / wedding-season gifting time; warm, deep fragrances suit the cold; gift orders and a gift add-on fit now.';
+        if ($m === 2) return 'Winter is ending; Valentine\'s Day gifting; fresh-floral and sweet fragrances for gifts for a partner.';
+        if ($m >= 3 && $m <= 6) return 'Summer: light, fresh, citrus, aqua and floral fragrances that last in the heat; sprays and small sizes for daily wear; gifts for the wedding season.';
+        if ($m >= 7 && $m <= 9) return 'Monsoon: fresh, earthy and light fragrances; festival gifting (Raksha Bandhan, Ganesh Chaturthi) is near.';
+        return 'Festival season (Navratri, Diwali): gift orders and gift add-ons fit now; rich, festive fragrances.';
+    }
     function wa_style_pack(): array
     {
         $qr = function (array $l) { return array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, $l); };
@@ -18,6 +29,8 @@ if (!function_exists('wa_style_pack')) {
             'tmph_style_launch' => ['body' => "Hello {{1}} 🎉\n\nNaye perfumes launch hue hain aur ek *dhamakedaar offer* bhi aaya hai! 🔥\n\nOrder par aapko milega *add-on* aur extra discount bhi 🎁\n\nDekhne ke liye button dabaiye 👇", 'buttons' => $qr(['Naye Perfumes', 'Offer Dikhao'])],
             'tmph_style_fun' => ['body' => "Hi {{1}}! 👋 Hamne naye perfumes launch kiye hain 🌸\n\nEk dhamakedaar cheez aayi hai, aapko bahut maza aane wala hai 😍\n\nOrder par add-on ke saath extra discount bhi karwa denge 🎁\n\nNiche tap kijiye 👇", 'buttons' => $qr(['Dekhein', 'Abhi nahi'])],
             'tmph_style_addon' => ['body' => "Hello {{1}} ✨\n\nAaj order par kuch na kuch *add-on* zaroor milega 🎁 Aur extra discount bhi karwa denge!\n\nNaya offer aur naye perfumes dekhne ke liye button dabaiye 👇", 'buttons' => $qr(['Naya Offer Dekhein', 'Abhi nahi'])],
+            'tmph_style_winter' => ['body' => "Hello {{1}} ❄️\n\nSardi shuru ho gayi he aur naye *winter perfumes* aa gaye hain 🔥\n\nGehri, lambi chalne wali khushboo — oud, musk, amber 😍\n\nOrder par kuch na kuch add-on zaroor milega 🎁 Dekhne ke liye button dabaiye 👇", 'buttons' => $qr(['Winter Perfumes', 'Abhi nahi'])],
+            'tmph_style_gift' => ['body' => "Hi {{1}}! 🎁\n\nShaadi aur New Year ka season he — perfume sabse achha gift hota he ✨\n\nGift order par special add-on aur extra discount bhi karwa denge 🔥\n\nGift ke liye perfume dekhne ke liye tap kijiye 👇", 'buttons' => $qr(['Gift Perfumes', 'Abhi nahi'])],
             'tmph_style_asked' => ['body' => "Hello {{1}} 👋 aapne perfume ke bare me poocha tha na ?\n\nAaj ek *exclusive deal* mili he 🎁🔥 Apni ML size choose kijiye 👇", 'buttons' => $qr(['20ML', '50ML', '100ML'])],
         ];
     }
