@@ -273,15 +273,15 @@ function wa_util_pool_defs_raw(): array
     ];
 }
 /** The pool rows that exist: key => template row (+ kind). */
-function wa_util_pool_rows(PDO $pdo): array
+function wa_util_pool_rows(PDO $pdo, bool $withRetired = false): array
 {
-    $o = []; foreach ($pdo->query("SELECT * FROM wa_templates WHERE extra LIKE '%util_pool%' ORDER BY id")->fetchAll() as $r) { $x = json_decode((string)($r['extra'] ?? ''), true); $k = is_array($x) ? (string)($x['util_pool'] ?? '') : ''; if ($k !== '' && !isset($o[$k])) { $r['pool_kind'] = (string)($x['util_kind'] ?? 'ask'); $o[$k] = $r; } }
+    $o = []; foreach ($pdo->query("SELECT * FROM wa_templates WHERE extra LIKE '%util_pool%' ORDER BY id")->fetchAll() as $r) { $x = json_decode((string)($r['extra'] ?? ''), true); if (!$withRetired && is_array($x) && !empty($x['retired'])) continue;   /* replaced by an approved, more exciting twin (owner 25 Nov 2026) */ $k = is_array($x) ? (string)($x['util_pool'] ?? '') : ''; if ($k !== '' && !isset($o[$k])) { $r['pool_kind'] = (string)($x['util_kind'] ?? 'ask'); $o[$k] = $r; } }
     return $o;
 }
 /** Creates the missing pool messages and sends them to Meta on every WhatsApp account. */
 function wa_util_pool_make(PDO $pdo, int $by): array
 {
-    $have = wa_util_pool_rows($pdo); $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 6 * max(1, count($wabas))]; $made = []; $err = [];
+    $have = wa_util_pool_rows($pdo, true); $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 6 * max(1, count($wabas))]; $made = []; $err = [];
     foreach (wa_util_pool_defs() as $k => $d) {
         if (isset($have[$k])) continue;
         [$t, $e] = wa_tpl_clean(['name' => 'tmph_fu_' . $k, 'language' => 'en', 'category' => 'UTILITY', 'body' => $d['body'], 'footer' => '', 'buttons' => $d['buttons'], 'examples' => ['body' => $d['ex'], 'labels' => $d['labels']], 'folder' => 'utility']);

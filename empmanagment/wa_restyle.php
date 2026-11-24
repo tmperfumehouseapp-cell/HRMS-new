@@ -29,7 +29,10 @@ if (!function_exists('wa_rs_tick')) {
         try { foreach (array_unique(array_values(wa_rs_line_map($pdo))) as $id) if ((int)$id > 0) $lmap[(int)$id] = 'lmap:' . (int)$id; } catch (Throwable $e) { }
         try { $q = $pdo->query("SELECT DISTINCT c.tpl_id FROM wa_campaigns c JOIN wa_templates t ON t.id = c.tpl_id WHERE c.created_at >= '" . date('Y-m-d H:i:s', time() - 14 * 86400) . "' AND t.category = 'MARKETING' AND (t.extra IS NULL OR t.extra NOT LIKE '%restyle_of%') AND t.name NOT LIKE 'tmph_style_%' ORDER BY c.id DESC LIMIT 40"); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $id) if ((int)$id > 0) $camp[(int)$id] = 'camp:' . (int)$id; } catch (Throwable $e) { }
         try { $lt = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); if (is_array($lt)) foreach ($lt as $k => $id) if ((int)$id > 0) $line[(int)$id] = 'line:' . $k; } catch (Throwable $e) { }
-        $o = []; $lists = [array_keys($aft), array_keys($lmap), array_keys($camp), array_keys($line)]; $srcs = [$aft, $lmap, $camp, $line]; $max = max(array_map('count', $lists));
+        $cold = []; $pool = [];   /* owner 25 Nov 2026: the Cold funnel's own questions and the utility pool of Module B / C get exciting twins too */
+        try { if (!function_exists('wcd_ids') && is_file(__DIR__ . '/wa_cold.php')) require_once __DIR__ . '/wa_cold.php'; if (function_exists('wcd_ids')) foreach (wcd_ids($pdo) as $k => $id) if ((int)$id > 0) $cold[(int)$id] = 'cold:' . $k; } catch (Throwable $e) { }
+        try { if (!function_exists('wa_util_pool_rows') && is_file(__DIR__ . '/wa_util.php')) require_once __DIR__ . '/wa_util.php'; if (function_exists('wa_util_pool_rows')) foreach (wa_util_pool_rows($pdo) as $k => $r) { if (strpos((string)$k, '_tw') !== false || (int)($r['id'] ?? 0) <= 0) continue; if (wa_rs_dull((string)($r['body'] ?? ''))) $pool[(int)$r['id']] = 'pool:' . $k; } } catch (Throwable $e) { }
+        $o = []; $lists = [array_keys($aft), array_keys($lmap), array_keys($camp), array_keys($line), array_keys($pool), array_keys($cold)]; $srcs = [$aft, $lmap, $camp, $line, $pool, $cold]; $max = max(array_map('count', $lists));
         for ($i = 0; $i < $max; $i++) foreach ($lists as $n => $L) if (isset($L[$i]) && !isset($o[$L[$i]])) $o[$L[$i]] = $srcs[$n][$L[$i]];
         return $o;
     }
@@ -57,6 +60,12 @@ if (!function_exists('wa_rs_tick')) {
         if (!function_exists('wa_style_dull') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
         if (function_exists('wa_style_dull') && wa_style_dull($b) !== '') return true;
         return !preg_match('/(naya|nayi|naye|nai |khaas|special|season|shaadi|wedding|winter|gift|surprise|dhamaka|intezaar|dekhna|dekhiye|dekhiyega|dekho|dikhao|pick|combo|offer|deal|launch|sirf|flat|deadline|aaj hi|abhi order|jaldi|reveal|maza)/iu', $b);
+    }
+    /** What "replaced" means for the Cold funnel's own messages and the utility pool: the Cold mapping points to the twin / the old pool message is retired (it is no longer picked). */
+    function wa_rs_swap_pool(PDO $pdo, string $src, int $old, int $new): void
+    {
+        if (strpos($src, 'cold:') === 0) { $key = substr($src, 5); $j = json_decode((string)setting_get($pdo, 'wcd_tpls', ''), true); if (is_array($j) && isset($j[$key]) && (int)$j[$key] === $old) { $j[$key] = $new; setting_set($pdo, 'wcd_tpls', json_encode($j)); } }
+        elseif (strpos($src, 'pool:') === 0 && function_exists('wa_mix_extra_set')) { wa_mix_extra_set($pdo, $old, ['retired' => 1]); }
     }
     /** Makes the twin of one old message; returns ['new' => id] or ['why' => text]. */
     function wa_rs_make_one(PDO $pdo, int $oldId): array
@@ -93,7 +102,7 @@ if (!function_exists('wa_rs_tick')) {
             'examples' => is_array($o['examples'] ?? null) ? $o['examples'] : [], 'folder' => (string)($o['folder'] ?? '')];
         if (!empty($o['header_format'])) { $d['header_format'] = (string)$o['header_format']; $d['header_text'] = (string)($o['header_text'] ?? ''); $d['header_lib_id'] = (int)($o['header_lib_id'] ?? 0); }
         [$t, $err] = wa_tpl_clean($d); if ($err !== '') return ['why' => 'template check: ' . mb_substr($err, 0, 80)];
-        $t['extra'] = ['restyle_of' => $oldId]; if (!empty($o['family_id'])) $t['family_id'] = (int)$o['family_id'];
+        $t['extra'] = ['restyle_of' => $oldId]; try { $__ox = function_exists('wa_mix_extra') ? wa_mix_extra($o) : []; if (!empty($__ox['util_pool'])) { $t['extra']['util_pool'] = preg_replace('/_tw.*$/', '', (string)$__ox['util_pool']) . '_tw' . substr(md5($oldId . microtime(true)), 0, 4); $t['extra']['util_kind'] = (string)($__ox['util_kind'] ?? 'open'); } } catch (Throwable $e) { }   /* a twin of a pool message joins the pool under its own key (Module B / C pick it once it is approved) */ if (!empty($o['family_id'])) $t['family_id'] = (int)$o['family_id'];
         $id = wa_tpl_insert($pdo, $t, 0, 'New style (owner, 24 Nov 2026) of message #' . $oldId . ': warm Hinglish, one choice by button.', 'Restyled twin'); $row = wa_tpl_row($pdo, $id); if (!$row) return ['why' => 'could not save'];
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 8, 'made' => 0];
         foreach ($wabas as $w) { if (function_exists('wa_tpl_try_create')) { try { wa_tpl_try_create($pdo, $row, $w, $budget); } catch (Throwable $e) { } } }
@@ -121,6 +130,7 @@ if (!function_exists('wa_rs_tick')) {
                     if (strpos($src, 'camp:') === 0) continue;   // campaign messages: the twin is only made and approved; the owner chooses it for a campaign
                     if (strpos($src, 'lmap:') === 0) { $wm = wa_rs_line_map($pdo); foreach ($wm as $k2 => $id2) if ((int)$id2 === (int)$old) $wm[$k2] = $new; setting_set($pdo, 'wl_map', json_encode($wm)); }   // the Lineup's shop messages (one id can serve several steps)
                     if (strpos($src, 'line:') === 0) { $key = substr($src, 5); $ids = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); if (is_array($ids) && isset($ids[$key]) && (int)$ids[$key] === (int)$old) { $ids[$key] = $new; setting_set($pdo, 'wl_tpls', json_encode($ids)); } }
+                    wa_rs_swap_pool($pdo, $src, (int)$old, $new);
                     $p['st'] = 'replaced'; $p['rep_at'] = time(); $o['replaced']++;
                 } unset($p);
                 // 1b) the SECOND version (owner 24 Nov: the first 31 twins were made before the excitement / surprise rule): when it is approved wherever the old message is, it takes the place of the first twin
@@ -133,6 +143,7 @@ if (!function_exists('wa_rs_tick')) {
                     $src = (string)($p['src'] ?? '');
                     if (strpos($src, 'lmap:') === 0) { $wm = wa_rs_line_map($pdo); foreach ($wm as $k2 => $id2) if ((int)$id2 === $prev) $wm[$k2] = $v2; setting_set($pdo, 'wl_map', json_encode($wm)); }
                     if (strpos($src, 'line:') === 0) { $key = substr($src, 5); $ids = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); if (is_array($ids) && isset($ids[$key]) && (int)$ids[$key] === $prev) { $ids[$key] = $v2; setting_set($pdo, 'wl_tpls', json_encode($ids)); } }
+                    if (strpos($src, 'cold:') === 0) { $j = json_decode((string)setting_get($pdo, 'wcd_tpls', ''), true); $key = substr($src, 5); if (is_array($j) && isset($j[$key]) && (int)$j[$key] === $prev) { $j[$key] = $v2; setting_set($pdo, 'wcd_tpls', json_encode($j)); } } elseif (strpos($src, 'pool:') === 0 && function_exists('wa_mix_extra_set')) { wa_mix_extra_set($pdo, $prev, ['retired' => 1]); }
                     $p['new'] = $v2; $p['v1'] = $prev; unset($p['v2']); $p['v2done'] = time(); $o['replaced']++;
                 } unset($p);
             }
