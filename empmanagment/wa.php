@@ -1066,7 +1066,7 @@ function wa_contact_row(array $r, array $names): array
 
 // ------------------------------------------------------------------------------------------------------------------------ router
 $__wa = (string)($action ?? ($_GET['action'] ?? ''));
-if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
+if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     require_once __DIR__ . '/wa_tpl.php';   // pre-made messages (templates): defines its helpers and answers the wa.tpl_* actions
     require_once __DIR__ . '/wa_console.php';   // the WhatsApp console: wa.overview (counters + number health) and wa.send_media (photo / video / document from a chat)
