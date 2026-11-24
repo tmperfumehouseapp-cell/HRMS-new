@@ -254,6 +254,23 @@ function fup_feedback_owner(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_feedback_owner: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's order for the topic "Office Pickup Parcel Update": no number from the HRMS, only the written update. The system number (it was connected by its name) is taken off the topic, the numbers the system had filled in by itself are removed from its days (a number a person typed, and every written update, stay), and the form asks only for the summary. */
+function fup_office_pickup_clean(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_office_pickup_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id, source, metrics FROM fu_topics WHERE LOWER(TRIM(title)) = 'office pickup parcel update' AND active = 1"); $rows = $q->fetchAll(); $q->closeCursor();
+        if (!$rows) return;      // the owner has not made it yet: tried again later
+        foreach ($rows as $r) {
+            $id = (int)$r['id'];
+            $pdo->prepare("UPDATE fu_topics SET source = '', metrics = '', unit = '', need_text = 1 WHERE id = ?")->execute([$id]);
+            $pdo->prepare("DELETE FROM fu_updates WHERE topic_id = ? AND auto = 1 AND TRIM(COALESCE(txt, '')) = '' AND (fvals IS NULL OR fvals = '')")->execute([$id]);
+            $pdo->prepare("UPDATE fu_updates SET val = NULL, vals = NULL, auto = 0 WHERE topic_id = ? AND auto = 1")->execute([$id]);
+        }
+        setting_set($pdo, 'fup_office_pickup_v1', '1');
+    } catch (Throwable $e) { error_log('fup_office_pickup_clean: ' . $e->getMessage()); }
+}
+
 /** Once: four hand-written topics of the owner's "Dispatch" section (the section is made by the owner; this waits for it). Only the task names; nobody is assigned (the owner gives each to a person). A number box only where a number is needed. Same title is not made twice. */
 function fup_seed_dispatch_topics(PDO $pdo): void
 {
@@ -1017,6 +1034,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_photography_topics($pdo);
     fup_seed_feedback_topics($pdo);
     fup_seed_dispatch_topics($pdo);
+    fup_office_pickup_clean($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
