@@ -100,6 +100,24 @@ if (!function_exists('wa_rc_tick')) {
         return $res;
     }
 
+    /** 💬 The people behind Module C's Replied number (owner, 24 Nov: every Replies number opens the WhatsApp chats): customers who wrote after a Module C message sent since $from. Same rows as the Lineup / Cold replies. [rows, more, count] */
+    function wa_rc_repliers(PDO $pdo, int $from, int $limit = 600): array
+    {
+        if (!function_exists('wa_ru_tables') || !wa_ru_tables($pdo)) return [[], false, 0];
+        $q = $pdo->prepare("SELECT r.phone, MAX(r.at) at FROM wa_ru_log r WHERE r.kind = 'cnev' AND r.at >= ? AND r.wamid <> '' AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.dir = 'in' AND i.phone = r.phone AND i.ts > r.at) GROUP BY r.phone ORDER BY at DESC LIMIT 3000"); $q->execute([date('Y-m-d H:i:s', $from)]); $left = [];
+        foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $left[(string)$r[0]] = (string)$r[1];
+        if (!$left) return [[], false, 0];
+        $info = []; $last = [];
+        foreach (array_chunk(array_keys($left), 400) as $ch) { $in = implode(',', array_fill(0, count($ch), '?'));
+            $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, last_out_at, status FROM wa_contacts WHERE phone IN ($in)"); $c->execute($ch); foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $info[(string)$r['phone']] = $r;
+            $m = $pdo->prepare("SELECT m.phone, m.body, m.mtype, m.ts FROM wa_messages m JOIN (SELECT phone, MAX(id) id FROM wa_messages WHERE dir = 'in' AND phone IN ($in) GROUP BY phone) x ON x.id = m.id"); $m->execute($ch); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) $last[(string)$r['phone']] = $r; }
+        $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = [];
+        foreach ($left as $ph => $at) { $c = $info[$ph] ?? []; $l = $last[$ph] ?? null; $answered = !empty($c['last_out_at']) && (string)$c['last_out_at'] >= (string)($c['last_in_at'] ?? ''); $emp = (int)($c['assigned_emp'] ?? 0);
+            $rows[] = ['phone' => $ph, 'name' => (string)($c['name'] ?? ''), 'text' => $l ? mb_substr(((string)$l['body'] !== '' ? (string)$l['body'] : '[' . (string)$l['mtype'] . ']'), 0, 90) : '', 'at' => $l ? (string)$l['ts'] : $at, 'wait' => !$answered, 'emp' => $emp, 'holder' => $emp > 0 ? (string)($nm[$emp] ?? '') : '', 'closed' => ((string)($c['status'] ?? '') === 'closed')]; }
+        usort($rows, function ($a, $b) { return [(int)$b['wait'], $b['at']] <=> [(int)$a['wait'], $a['at']]; });
+        return [array_slice($rows, 0, $limit), count($rows) > $limit, count($rows)];
+    }
+
     /** Module C status for the card under After-Order (and the diag): switch, speed, sent this hour / today, receipts, waiting people (counted at most once in 30 minutes). */
     function wa_rc_overview(PDO $pdo): array
     {
