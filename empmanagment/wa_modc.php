@@ -2,7 +2,7 @@
 /**
  * wa_modc.php — MODULE C (owner, 24 Nov 2026): people whose marketing message FAILED (Meta's per-customer marketing limit 131049 / 131050 / 130472) and who NEVER wrote to us
  * (Module B takes only those who asked within 90 days or ordered within 180). They get ONE plain UTILITY message (the "open" kind of the standard pool: name only, no offer, no price,
- * no claim of an enquiry or an order), 200 an hour (setting wa_rc_hourly), from the failed items of campaigns since 14 Nov (setting wa_rc_from).
+ * no claim of an enquiry or an order), 200 an hour (setting wa_rc_hourly), from the failed items of campaigns since 1 Nov (setting wa_rc_from).
  *  · UTILITY templates only; a message Meta moved to marketing is never used here.
  *  · Own counter (wa_ru_log kind 'cnev'), own switch (wa_rc_on = 0 stops it), own pause (wa_rc_pause_until). A person is messaged once ever (any row in wa_ru_log blocks).
  *  · Stops itself: Module B's pause, the marketing hold, quiet hours, 5 or more Meta spam flags (131048) in 4 hours = 6 hours' pause, 60% failed of the last 40+ = 1 hour's pause.
@@ -12,6 +12,7 @@ if (!function_exists('wa_rc_tick')) {
     function wa_rc_tick(PDO $pdo): array
     {
         $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
+        try { if ((string)setting_get($pdo, 'wa_rc_from_0111', '') !== '1') { setting_set($pdo, 'wa_rc_from_0111', '1'); setting_set($pdo, 'wa_rc_from', '2026-11-01 00:00:00'); setting_set($pdo, 'wa_rc_cursor', '0'); setting_set($pdo, 'wa_rc_pending', ''); } } catch (Throwable $e) { }   // owner 24 Nov 2026: everybody pending since 1 Nov, not only since 14 Nov
         try { if ((string)setting_get($pdo, 'wa_style_v1', '') !== '1') { setting_set($pdo, 'wa_style_v1', '1'); if (!function_exists('wa_style_make') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php'; if (function_exists('wa_style_make')) wa_style_make($pdo); } } catch (Throwable $e) { }   // the five style messages of the owner (once)
         try {
             if ((string)setting_get($pdo, 'wa_rc_on', '1') === '0') { $res['note'] = 'off'; return $res; }
