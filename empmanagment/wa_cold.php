@@ -13,7 +13,7 @@ require_once __DIR__ . '/wa_rate.php';   // the hourly speed limit with a ladder
 if (!function_exists('wcd_tick')) {
     /** Failure share of the latest 600 Cold sends: [delivered or read, failed]. */
     function wcd_fail_stats(PDO $pdo): array { try { $r = $pdo->query("SELECT SUM(m.status IN ('delivered','read')), SUM(m.status = 'failed') FROM (SELECT wamid FROM wa_cold_log WHERE ok = 1 AND wamid <> '' ORDER BY id DESC LIMIT 600) l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci)")->fetch(PDO::FETCH_NUM); return [(int)($r[0] ?? 0), (int)($r[1] ?? 0)]; } catch (Throwable $e) { return [0, 0]; } }
-    function wcd_ladder(): array { return [1500, 2000, 2500, 3000, 3500, 4000, 4500]; }   // owner, 24 Nov: 40,000 a day needs ~3,400 an hour all day: the ladder goes up to 4,500
+    function wcd_ladder(): array { return [1500, 2000, 2500, 3000, 3500]; }   // owner, 24 Nov: 40,000 a day needs ~3,400 an hour all day; the server load went to 12.6 at 4,000 an hour, so the top is 3,500 (12 hours x 3,500 = 42,000)
     function wcd_tables(PDO $pdo): bool
     {
         static $ok = null; if ($ok !== null) return $ok;
