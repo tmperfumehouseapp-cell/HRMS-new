@@ -207,6 +207,9 @@ function brain_claude_call($system, $user, $max, array $o = []) {
         if ($__old === null) unset($GLOBALS['tmph_force_gemini']); else $GLOBALS['tmph_force_gemini'] = $__old;
         if ($__txt !== '') return [true, $__txt, '']; $GLOBALS['brain_last_error'] = $__why; return [false, '', $__why];
     }
+    if ($__fb !== '' && strpos($__fb, 'sk-ant-') === 0 && empty($o['__fbm']) && function_exists('tmph_chat_models')) {   // a second Claude key (the owner's backup from another Anthropic organization): the same call with the chat models (the main one, then haiku), like the other door
+        $__last = [false, '', 'The backup Claude key gave no answer.']; foreach (tmph_chat_models() as $__cm) { $__r = brain_claude_call($system, $user, $max, ['model' => (string)$__cm, '__fbm' => 1] + $o); if ($__r[0]) return $__r; $__last = $__r; } return $__last;
+    }
     $key = brain_key(); if ($__fb !== '' && strpos($__fb, 'sk-ant-') === 0) $key = $__fb;   // a second Claude key: the same call, paid from that key
     if ($key === '') { $GLOBALS['brain_last_error'] = 'Claude is switched off: no Anthropic key in config.php (ANTHROPIC_API_KEY).'; return [false, '', $GLOBALS['brain_last_error']]; }
     if ($__fb === '' && !empty($GLOBALS['ai_feature']) && function_exists('ai_feature_cap_hit') && ai_feature_cap_hit((string)$GLOBALS['ai_feature'])) { $GLOBALS['brain_last_error'] = 'Daily limit of this feature is reached — it continues tomorrow.'; return [false, '', $GLOBALS['brain_last_error']]; }
