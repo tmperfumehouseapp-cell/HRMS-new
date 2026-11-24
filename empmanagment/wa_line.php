@@ -1133,6 +1133,11 @@ if (strpos($__wl, 'wa.line_') === 0) {
             $from = ((string)($_GET['scope'] ?? 'today')) === 'all' ? time() - 120 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wcd_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
+        case 'wa.line_modc_replies': {   // 💬 the people behind Module C's Replied number: today or the last 30 days
+            if (!function_exists('wa_rc_repliers')) require_once __DIR__ . '/wa_modc.php';
+            $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
+            [$rows, $more, $n] = wa_rc_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
+        }
         case 'wa.line_modc': { if (!function_exists('wa_rc_overview')) require_once __DIR__ . '/wa_modc.php'; json_response(['ok' => true] + wa_rc_overview($pdo)); }   // Module C card under the After-Order card
         case 'wa.line_aft_replies': {   // 💬 the people behind the After-Order Replies number: today or the last 30 days
             if (!function_exists('wa_aft_repliers')) require_once __DIR__ . '/wa_after.php';
