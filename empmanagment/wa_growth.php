@@ -1173,7 +1173,7 @@ function wag_fair_state(PDO $pdo, int $emp): array
 {
     static $c = []; $ck = $emp . ':' . (int)(time() / 10); if (isset($c[$ck])) return $c[$ck];
     $r = ['hidden' => false, 'left' => 0, 'star' => false, 'picks' => 0, 'min' => 0, 'window' => 45];
-    try { if ($emp <= 0 || (string)setting_get($pdo, 'wag_fair_on', '1') === '0') return $c[$ck] = $r; $r['window'] = max(10, min(180, (int)setting_get($pdo, 'wag_fair_window', '45')));
+    try { if ($emp <= 0 || (string)setting_get($pdo, 'wag_fair_on', '1') === '0' || (function_exists('wa_query_mode') && wa_query_mode($pdo) !== 'om')) return $c[$ck] = $r; $r['window'] = max(10, min(180, (int)setting_get($pdo, 'wag_fair_window', '45')));
         static $pk = null, $pkAt = 0, $pres = [], $stars = null, $sAt = 0;
         if ($pk === null || time() - $pkAt > 10) { $pkAt = time();
             $__fn = function () use ($pdo) { $pk = []; $q = $pdo->query("SELECT m.emp_id, COUNT(DISTINCT m.phone) FROM wa_mkt m LEFT JOIN wa_queries lq ON lq.id = (SELECT MAX(x.id) FROM wa_queries x WHERE x.phone = m.phone) LEFT JOIN wq_qtype lt ON lt.query_id = lq.id WHERE m.kind = 'taken' AND m.emp_id > 0 AND m.at >= '" . date('Y-m-d 00:00:00') . "' AND COALESCE(lt.type, '') NOT IN ('campaign', 'community') GROUP BY m.emp_id");   // owner 23 Nov: only FRESH queries count for the equal share - campaign / community chats a person took are not counted
@@ -1447,6 +1447,7 @@ function wag_mkt_gate_msg(PDO $pdo, int $emp, ?array $chat = null): string
     // owner 22 Nov: the conversion part of the gate never blocks a customer who waited 4 minutes with no reply (unassigned or held by somebody who did not answer) (a person must always be able to pick waiting queries); it needs 25+ queries and a ratio under half of the team's
     $waited = $chat !== null && ($__li = (int)strtotime((string)($chat['last_in_at'] ?? ''))) > 0 && $__li < time() - 240 && (int)strtotime((string)($chat['last_out_at'] ?? '')) < $__li;   // waiting 4+ min with no reply from anyone: unassigned OR held by a person who did not answer
     if ($chat !== null && wag_is_camp_chat($pdo, $chat)) return '';   // owner 23 Nov: a CAMPAIGN query has no limit at all - any salesperson may take as many as he wants (the lock / hot-waiting / left-chats rules are for fresh queries only)
+    if (function_exists('wa_query_mode') && wa_query_mode($pdo) !== 'om') return '';   // 🔀 the query lock is an Open market rule: not used while Auto assign is on, or while both are off (no rules)
     static $c = []; if ($emp <= 0 || (string)setting_get($pdo, 'wag_mkt_gate', '1') === '0') return ''; $ck = $emp . ':' . (int)$waited . ':' . (int)(time() / 30); if (isset($c[$ck])) return $c[$ck];
     $msg = '';
     try {
@@ -2521,7 +2522,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             try { if ($my) { $__d = wag_real_queries($pdo, 1); $my['q'] = (int)($__d[$me][0] ?? 0); $my['o'] = (int)($__d[$me][1] ?? 0);
                 if (!function_exists('wgate_state') && is_file(__DIR__ . '/wag_gate.php')) require_once __DIR__ . '/wag_gate.php';
                 if (function_exists('wgate_state') && function_exists('wgate_day_start')) { $__sj = json_decode((string)setting_get($pdo, 'wgate_snap', ''), true); if (is_array($__sj) && (string)($__sj['day'] ?? '') === date('Y-m-d H:i:s', wgate_day_start($pdo)) && isset($__sj['rows'][$me])) { $my['q'] = max(0, (int)$__sj['rows'][$me][0] - (int)($__sj['rows'][$me][2] ?? 0)); $my['o'] = (int)$__sj['rows'][$me][1]; } } } } catch (Throwable $e) { }   // owner, 23 Nov: the chat list said 'queries 11 - orders 1' while the Query-order board said '2 query orders out of 11': the Sales Live cards are the ONE source (22 Nov), so this line now reads the same snapshot as the board, the lock and the cards (the old count is only the fallback when the snapshot is older than 15 minutes)   // the owner's definition: no campaign, no community — same as the sales strip
-            json_response(['top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me), 'fair' => wag_fair_state($pdo, $me)]);
+            json_response(['mode' => (function_exists('wa_query_mode') ? wa_query_mode($pdo) : 'om'), 'top' => $top, 'my' => $my, 'gate' => wag_mkt_gate_msg($pdo, $me), 'fair' => wag_fair_state($pdo, $me)]);
         }
         case 'wa.g_botstate': {   // 🤖 is the bot answering this chat (the banner, the locked Take over, the 👎 button)
             $c = $chatOf((string)($_GET['phone'] ?? '')); $l = wag_bot_lock($pdo, $c); json_response(['on' => $l['on'], 'why' => $l['why'], 'engaged' => $l['engaged'], 'bot_text' => $l['bot_text'], 'bot_at' => $l['bot_at'], 'bot_enabled' => $cfg['bot'] === 'on', 'can_mk' => ((int)($c['assigned_emp'] ?? 0) > 0 && (int)($c['assigned_emp'] ?? 0) === (int)($auth['employee_id'] ?? 0) && (string)($c['status'] ?? '') === 'open' && wag_address_seen($pdo, (string)$c['phone'])), 'mk_left' => (function () use ($pdo, $c) { $v = wag_meta_get($pdo, 'mklink:' . (string)$c['phone'], ''); return $v === '' ? 0 : max(0, 3600 - (time() - (int)strtotime($v))); })()]);
