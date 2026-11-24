@@ -7078,6 +7078,19 @@ function sales_db_problem(string $label): string
     return $label . ': the sales database did not answer right now' . ($e !== '' ? ' (' . mb_substr($e, 0, 90) . ')' : '') . ' — refresh in a moment.';
 }
 
+/**
+ * 💵 owner (24 Nov): on a COD order the panel takes ₹100 more from the customer (the customer is shown it in the order total), but the panel's
+ * totalAmount / finalPrice leave it out. Add it back so ticket size, sales and commission count what the customer really pays — for old orders too.
+ * $amount = the panel amount, $prepaid / $cod = the panel's prepaid and COD columns. Returns [amount, cod part].
+ */
+const PANEL_COD_FEE = 100;
+function panel_cod_amount(float $amount, float $prepaid, float $cod): array
+{
+    if ($cod <= 0 || $amount <= 0) return [$amount, $cod];
+    $amt = round($amount + PANEL_COD_FEE, 2);
+    return [$amt, round(max($cod, $amt - $prepaid), 2)];      // the COD part to collect also carries the ₹100 (unless the panel's COD column already had it)
+}
+
 function fetch_custom_store(array $cs, string $dateFrom, string $dateTo): array
 {
     $db = sales_db();
@@ -7127,6 +7140,7 @@ function fetch_custom_store(array $cs, string $dateFrom, string $dateTo): array
 
         $prepaid = (float)($r['prepaid'] ?? 0);
         $cod = (float)($r['COD'] ?? 0);
+        [$amt, $cod] = panel_cod_amount((float)($r['amount'] ?? 0), $prepaid, $cod); $r['amount'] = $amt;   // + ₹100 COD fee
         if ($cod > 0 && $prepaid > 0) $payment = 'partially_paid';
         elseif ($cod > 0) $payment = 'cod';
         else $payment = 'paid';
@@ -31759,6 +31773,7 @@ switch ($action) {
                     $ts = strtotime(trim($r['date'] . ' ' . (string)$r['time']));
                     if ($ts === false) $ts = strtotime($r['date'] . ' 12:00');
                     $prepaid = (float)($r['prepaid'] ?? 0); $cod = (float)($r['COD'] ?? 0);
+                    [$amt, $cod] = panel_cod_amount((float)($r['amount'] ?? 0), $prepaid, $cod); $r['amount'] = $amt;   // + ₹100 COD fee
                     $payment = ($cod > 0 && $prepaid > 0) ? 'partially_paid' : ($cod > 0 ? 'cod' : 'paid');
                     if ((int)($r['isRTO'] ?? 0) === 1) $fulfillment = 'RTO';
                     elseif (!empty($r['delivered'])) $fulfillment = 'fulfilled';
