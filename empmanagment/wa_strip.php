@@ -102,7 +102,9 @@ if (!function_exists('wa_strip_replies')) {
         if (!function_exists('wa_pat_rows')) require_once __DIR__ . '/wa_pat.php';
         try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 12000"); } catch (Throwable $e) { }
         $rep = null; $sent = 0;
-        try { $mult = in_array($mod, ['cold', 'modb', 'modc'], true) ? 3 : 1; $sent = 0; $rep = 0; foreach (wa_pat_rows($pdo, $mod, date('Y-m-d 00:00:00'), $mult) as $r) { $sent += $r[1]; $rep += $r[2]; } } catch (Throwable $e) { $rep = null; }
+        try {
+            if ($mod === 'moda') { $q = $pdo->prepare("SELECT COUNT(*), SUM(EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = i.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 48 HOUR))) FROM wa_camp_items i WHERE i.id > (SELECT MAX(id) - 120000 FROM wa_camp_items) AND i.id % 12 = 0 AND i.sent_at >= ? AND i.status = 'sent'"); $q->execute([date('Y-m-d 00:00:00')]); $r = $q->fetch(PDO::FETCH_NUM); $sent = (int)$r[0] * 12; $rep = (int)$r[1] * 12; }   // a sample of the newest campaign rows (x12): the full count takes too long
+            else { $mult = in_array($mod, ['cold', 'modb', 'modc'], true) ? 3 : 1; $sent = 0; $rep = 0; foreach (wa_pat_rows($pdo, $mod, date('Y-m-d 00:00:00'), $mult) as $r) { $sent += $r[1]; $rep += $r[2]; } } } catch (Throwable $e) { $rep = null; }
         $out = ['t' => time(), 'modules' => [['key' => $mod, 'replies' => $rep, 'replies_sent' => $sent]]];
         if ($rep !== null) { try { setting_set($pdo, $key, json_encode($out)); } catch (Throwable $e) { } }
         return $out;
