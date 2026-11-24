@@ -86,6 +86,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/side_chat.js?v=2"></script>
 <script>
   guardPage();
   renderSidebar('sales');
@@ -115,9 +116,9 @@
       + '<div style="margin:10px 0 4px;font-size:11.5px;font-weight:800;color:#667781;letter-spacing:.05em;">PRODUCTS · ' + r.pieces + ' pcs' + (r.ml ? ' · ' + r.ml + ' ml' : '') + '</div>'
       + '<table style="width:100%;border-collapse:collapse;font-size:13px;">' + (L.length ? L.map((x) => '<tr><td style="border-top:1px solid #e5e9f0;padding:6px 4px;"><b>' + esc(x.title) + '</b>' + (x.size ? '<br><small style="color:#667781;">' + esc(x.size) + (x.sku ? ' · ' + esc(x.sku) : '') + '</small>' : '') + '</td><td style="border-top:1px solid #e5e9f0;padding:6px 4px;white-space:nowrap;">× ' + x.qty + '</td><td style="border-top:1px solid #e5e9f0;padding:6px 4px;text-align:right;white-space:nowrap;">' + inr(x.price * x.qty) + (x.discount > 0 ? '<br><small style="color:#16a34a;">− ' + inr(x.discount) + '</small>' : '') + '</td></tr>').join('') : '<tr><td>' + esc(r.items || '—') + '</td></tr>') + '</table>'
       + '<div style="margin-top:8px;">' + (m.subtotal ? ln('Subtotal', inr(m.subtotal)) : '') + (m.discount > 0 ? ln('Discount' + (m.code ? ' (' + esc(m.code) + ')' : ''), '− ' + inr(m.discount)) : '') + (m.shipping > 0 ? ln('Shipping', inr(m.shipping)) : '') + (m.cod_fee > 0 ? ln('COD fee', inr(m.cod_fee)) : '') + ln('Total', inr(r.total)) + ln('Payment', payChip(r) + (r.pay_method ? ' <small style="color:#667781;">' + esc(r.pay_method.toUpperCase()) + '</small>' : '')) + (r.awb ? ln('AWB', esc(r.awb) + (r.courier ? ' · ' + esc(r.courier) : '')) : '') + (r.emp ? ln('Salesperson', esc(r.emp_name) + ' · ' + (r.type === 'campaign' ? 'Campaign' : 'Query')) : ln('Salesperson', '<span style="color:#b91c1c;">not given yet</span>')) + '</div>'
-      + '<div style="margin:12px 0 4px;font-size:11.5px;font-weight:800;color:#667781;letter-spacing:.05em;">CUSTOMER &amp; ADDRESS</div><div style="font-size:13.5px;line-height:1.5;"><b>' + esc(r.customer || '—') + '</b>' + (r.phone ? ' · +91 ' + esc(r.phone) : '') + (adr ? '<div style="margin-top:4px;">' + adr + '</div>' : '<div style="color:#667781;">No address on the order.</div>') + '</div>'
+      + '<div style="margin:12px 0 4px;font-size:11.5px;font-weight:800;color:#667781;letter-spacing:.05em;">CUSTOMER &amp; ADDRESS</div><div style="font-size:13.5px;line-height:1.5;"><b>' + esc(r.customer || '—') + '</b>' + (r.phone ? ' · +91 ' + esc(r.phone) + ' <button type="button" class="wo-b" id="woInfoC">💬 Chat</button>' : '') + (adr ? '<div style="margin-top:4px;">' + adr + '</div>' : '<div style="color:#667781;">No address on the order.</div>') + '</div>'
       + (r.note ? '<div style="margin-top:10px;background:#fffbeb;border-radius:10px;padding:8px 10px;font-size:13px;"><b>Note:</b> ' + esc(r.note) + '</div>' : '') + '</div>';
-    bd.addEventListener('click', (ev) => { if (ev.target === bd || ev.target.id === 'woInfoX') bd.remove(); }); document.body.appendChild(bd);
+    bd.addEventListener('click', (ev) => { if (ev.target.id === 'woInfoC') { bd.remove(); if (window.SideChat) SideChat.open(r.phone); return; } if (ev.target === bd || ev.target.id === 'woInfoX') bd.remove(); }); document.body.appendChild(bd);
   }
   function drawBars() {
     $('woDays').innerHTML = DAYS.map((d) => '<button type="button" class="wo-chip' + (S.d === d[0] ? ' on' : '') + '" data-d="' + d[0] + '">' + d[1] + '</button>').join('') + '<button type="button" class="wo-chip' + (S.d === 'dates' ? ' on' : '') + '" data-d="dates">📅 Pick dates…</button>';
@@ -139,7 +140,7 @@
     L.innerHTML = '<div class="wo-th"><span></span><span>Order</span><span>Customer</span><span>Items</span><span>Amount</span><span>Payment</span><span>Salesperson</span></div>' + R.map((r) => '<div class="wo-r' + (r.emp ? ' done' : '') + '" data-n="' + esc(r.number) + '">'
       + '<div class="ck">' + (r.emp ? '' : '<input type="checkbox" data-ck="1"' + (S.sel.has(r.number) ? ' checked' : '') + ' aria-label="Select">') + '</div>'
       + '<div class="no"><b><a href="#" data-a="info" style="color:inherit;text-decoration:underline dotted;" title="See the products and the address">' + esc(r.number) + '</a></b><small>' + esc(when(r.placed_at)) + '</small></div>'
-      + '<div class="cu"><b>' + esc(r.customer || '—') + '</b><small>' + (r.phone ? '+91 ' + esc(r.phone) : '') + (r.city ? ' · ' + esc(r.city) : '') + '</small></div>'
+      + '<div class="cu"><b>' + esc(r.customer || '—') + '</b><small>' + (r.phone ? '<a href="#" data-a="chat" title="Open this customer\'s WhatsApp chat beside the list" style="color:inherit;text-decoration:underline dotted;">+91 ' + esc(r.phone) + ' 💬</a>' : '') + (r.city ? ' · ' + esc(r.city) : '') + '</small></div>'
       + '<div class="it">' + esc(r.items || '—') + (r.ml ? ' <small>· ' + r.ml + ' ml</small>' : '') + '</div>'
       + '<div class="am"><b>' + inr(r.total) + '</b></div>'
       + '<div class="py">' + payChip(r) + (r.ship_status && r.ship_status !== 'unfulfilled' ? ' <span class="wo-p gy">' + esc(r.ship_status) + '</span>' : '') + '</div>'
@@ -158,6 +159,7 @@
   $('woL').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return; const row = b.closest('.wo-r'), no = row.dataset.n, x = S.rows.find((o) => o.number === no); if (!x) return;
     if (b.dataset.a === 'info') { e.preventDefault(); openInfo(no); return; }
+    if (b.dataset.a === 'chat') { e.preventDefault(); if (window.SideChat && String(x.phone || '').length === 10) SideChat.open(x.phone); else msg('The chat could not be opened. Refresh the page.', 'bad'); return; }   // 💬 the customer's chat beside the list (same as the Allocation page)
     if (b.dataset.a === 'give') { const emp = +row.querySelector('[data-e]').value, ty = row.querySelector('[data-t]').value; if (!emp) { msg('Choose the salesperson for ' + esc(no) + ' first.', 'bad'); return; }
       b.disabled = true; b.textContent = 'Giving…'; try { await give(no, emp, ty); S.sel.delete(no); resum(); drawBars(); drawList(); } catch (er) { b.disabled = false; b.textContent = 'Give'; msg(esc(er.message), 'bad'); } }
     else if (b.dataset.a === 'back') { if (!confirm('Take ' + no + ' back from ' + (x.emp_name || 'the salesperson') + '? It will count for nobody.')) return; b.disabled = true;
