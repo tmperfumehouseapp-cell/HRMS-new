@@ -8,10 +8,10 @@
  *
  * Settings: tms_api_base (the API address) · tms_api_key (the key; typed on the page by Admin, never sent back to the browser).
  * Who: Admin, HR, the Sales Head (qe_viewer_ok) and every role ticked "Website orders" on the Roles page.
+ * 🤖 Automatic (owner, 24 Nov): tms_auto_tick() gives a new shop order to the salesperson who holds the customer's WhatsApp chat — the SAME rules as a Shopify order
+ *   (order_auto_alloc in api.php): chat given to a salesperson, the customer wrote in the last 7 days, Query / Campaign from order_chat_type(). Run by the engine and when the page opens.
  * Actions: tms.cfg_get · tms.cfg_save · tms.test · tms.people · tms.list · tms.assign · tms.unassign          PHP 7.4 safe. */
 if (!isset($pdo) || !function_exists('json_response')) { return; }
-if (strpos((string)($action ?? ($_GET['action'] ?? '')), 'tms.') !== 0) { return; }
-
 if (!function_exists('tms_cfg')) {
     function tms_cfg(PDO $pdo): array
     {
@@ -73,7 +73,69 @@ if (!function_exists('tms_cfg')) {
         $r = hrms_memo('tms_orders:' . $from . ':' . $to, 45, $run); if (is_array($r) && ($r[1] ?? '') !== '' && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders:' . $from . ':' . $to);   // an error is not kept
         return is_array($r) ? $r : [[], 'Could not read the shop.'];
     }
+    /** save ONE shop order as a manual_orders row for $emp (a new row; the caller checked there is none). Returns the HRMS order number (M0123). */
+    function tms_give(PDO $pdo, array $r, int $emp, string $ot, string $by): string
+    {
+        tms_cols($pdo); $dt = preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $r['placed_at']) ? $r['placed_at'] : date('Y-m-d H:i:s');
+        $rem = mb_substr('Website order ' . $r['number'] . ' · ' . $r['items'] . ($r['pay_method'] !== '' ? ' · ' . strtoupper($r['pay_method']) : ''), 0, 200);
+        $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding, channel, mp_no, ml) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'tmph', ?, ?, 'TM Store', ?, ?)")
+            ->execute([mb_substr($r['customer'] ?: 'Website order ' . $r['number'], 0, 120), $r['phone'], max(1, $r['pieces']), $r['total'], $r['pay_status'], $r['ship_status'] === 'delivered' ? 'fulfilled' : 'unfulfilled', $dt, $rem, $by, $emp, $ot, substr(bin2hex(random_bytes(8)), 0, 12), $r['due'], $r['number'], $r['ml'] ?: null]);
+        $id = (int)$pdo->lastInsertId(); $no = 'M' . str_pad((string)$id, 4, '0', STR_PAD_LEFT); $pdo->prepare("UPDATE manual_orders SET order_no = ? WHERE manual_order_id = ?")->execute([$no, $id]);
+        return $no;
+    }
+    function tms_auto_table(PDO $pdo): bool
+    {
+        static $ok = null; if ($ok !== null) return $ok;
+        try { $pdo->exec("CREATE TABLE IF NOT EXISTS tms_auto (number VARCHAR(60) NOT NULL PRIMARY KEY, done TINYINT NOT NULL DEFAULT 0, why VARCHAR(160) NOT NULL DEFAULT '', at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $ok = true; }
+        catch (Throwable $e) { error_log('tms_auto_table: ' . $e->getMessage()); $ok = false; }
+        return $ok;
+    }
+    /** 🤖 Give the new shop orders (last 2 days) to the salesperson who holds the customer's WhatsApp chat. The rules are those of order_auto_alloc() (Shopify orders), nothing new:
+     *  an order with an amount and a mobile number · that number has a WhatsApp chat GIVEN to a salesperson · the customer wrote, and not longer than 7 days ago · Query / Campaign from order_chat_type().
+     *  The robot gives an order ONCE: an order a person took back is not given again. An order it could not give keeps the reason (shown on the page) and is tried again on the next run.
+     *  $minGap = seconds between two runs. Returns how many orders were given. */
+    function tms_auto_tick(PDO $pdo, int $minGap = 180): int
+    {
+        if (tms_cfg($pdo)['key'] === '' || !function_exists('order_chat_type') || !tms_auto_table($pdo)) return 0;
+        if ((int)setting_get($pdo, 'tms_auto_at', '0') > time() - $minGap) return 0; setting_set($pdo, 'tms_auto_at', (string)time());
+        $to = date('Y-m-d'); $from = date('Y-m-d', time() - 2 * 86400);
+        [$rows, $err] = tms_orders($pdo, $from, $to); if ($err !== '' || !$rows) return 0;
+        tms_cols($pdo); $nos = array_column($rows, 'number'); $given = []; $done = [];
+        foreach (array_chunk($nos, 400) as $part) { $in = implode(',', array_fill(0, count($part), '?'));
+            $q = $pdo->prepare("SELECT mp_no FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $given[(string)$x] = 1;
+            $q = $pdo->prepare("SELECT number FROM tms_auto WHERE done = 1 AND number IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; }
+        try { $qc = $pdo->prepare("SELECT c.phone, c.assigned_emp, c.source, c.last_in_at, COALESCE(n.camp_tag, 0) AS camp_tag FROM wa_contacts c LEFT JOIN wa_numbers n ON n.id = c.last_number_id WHERE c.phone = ?"); $qc->execute(['0']); }
+        catch (Throwable $e) { try { $qc = $pdo->prepare("SELECT phone, assigned_emp, source, last_in_at, 0 AS camp_tag FROM wa_contacts WHERE phone = ?"); $qc->execute(['0']); } catch (Throwable $e2) { return 0; } }   // no WhatsApp tables here: nothing to do
+        $mark = $pdo->prepare("INSERT INTO tms_auto (number, done, why, at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE done = VALUES(done), why = VALUES(why), at = VALUES(at)");
+        $live = []; try { foreach ($pdo->query("SELECT employee_id FROM employees WHERE status != 'ex'")->fetchAll(PDO::FETCH_COLUMN) as $x) $live[(int)$x] = 1; } catch (Throwable $e) { return 0; }
+        $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $n = 0; $now = date('Y-m-d H:i:s');
+        foreach ($rows as $r) {
+            $no = (string)$r['number']; if (isset($given[$no]) || isset($done[$no])) continue;
+            try {
+                $t = strtotime((string)$r['placed_at']) ?: time(); $why = '';
+                if ((float)$r['total'] <= 0) $why = 'order has no amount';
+                elseif (strlen((string)$r['phone']) !== 10) $why = 'no mobile number on the order';
+                else {
+                    $qc->execute([$r['phone']]); $c = $qc->fetch(PDO::FETCH_ASSOC);
+                    if (!$c) $why = 'no WhatsApp chat with this number';
+                    elseif ((int)$c['assigned_emp'] <= 0) $why = 'the WhatsApp chat is not given to any salesperson';
+                    elseif (!isset($live[(int)$c['assigned_emp']])) $why = 'the chat is with a person who left';
+                    elseif (empty($c['last_in_at'])) $why = 'the customer never wrote to us on WhatsApp';
+                    else { $li = strtotime((string)$c['last_in_at']); if ($li < $t - 7 * 86400 && $li < time() - 7 * 86400) $why = 'last WhatsApp message ' . date('j M', $li) . ' — older than 7 days'; }
+                }
+                if ($why !== '') { $mark->execute([$no, 0, $why, $now]); continue; }
+                $emp = (int)$c['assigned_emp']; $type = order_chat_type($pdo, $c, $t); if (!in_array($type, ['query', 'campaign'], true)) $type = 'query';
+                $mark->execute([$no, 1, '', $now]);          // marked first: whatever happens next, the robot never gives the same order twice
+                tms_give($pdo, $r, $emp, $type, 'auto (WhatsApp)'); $n++;
+                if (function_exists('wa_event')) { try { wa_event($pdo, (string)$c['phone'], '🧾 Website order ' . $no . ' allocated to ' . ($names[$emp] ?? 'the salesperson') . ' · ' . ucfirst($type) . ' (automatic)'); } catch (Throwable $e) { } }
+            } catch (Throwable $e) { error_log('tms_auto_tick ' . $no . ': ' . $e->getMessage()); }
+        }
+        if ($n && function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_orders:' . $from . ':' . $to); } catch (Throwable $e) { } }
+        return $n;
+    }
 }
+
+if (strpos((string)($action ?? ($_GET['action'] ?? '')), 'tms.') !== 0) { return; }
 
 $auth = require_auth(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $in = $isPost ? json_input() : $_GET;
 if (!tms_can($pdo, $auth)) json_response(['error' => 'Your role does not have "Website orders". Ask Admin to tick it on the Roles page.'], 403);
@@ -101,11 +163,13 @@ switch ((string)$action) {
         $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['to'] ?? '')) ? (string)$in['to'] : date('Y-m-d'); $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['from'] ?? '')) ? (string)$in['from'] : date('Y-m-d', time() - 6 * 86400);
         if ($from > $to) { $x = $from; $from = $to; $to = $x; } if ($from < date('Y-m-d', time() - 120 * 86400)) $from = date('Y-m-d', time() - 120 * 86400);
         if (!empty($in['fresh']) && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders:' . $from . ':' . $to);
+        try { tms_auto_tick($pdo, 60); } catch (Throwable $e) { error_log('tms auto: ' . $e->getMessage()); }   // 🤖 new orders go to the chat's salesperson before the list is drawn
         [$rows, $err] = tms_orders($pdo, $from, $to); if ($err !== '') json_response(['error' => $err, 'code' => tms_cfg($pdo)['key'] === '' ? 'no_key' : 'shop'], 422);
         tms_cols($pdo); $given = []; $names = employee_names_by_id($pdo);
         if ($rows) { $nos = array_column($rows, 'number'); foreach (array_chunk($nos, 400) as $part) { $q = $pdo->prepare("SELECT manual_order_id, order_no, mp_no, employee_id, order_type, created_by FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN (" . implode(',', array_fill(0, count($part), '?')) . ")"); $q->execute($part); foreach ($q->fetchAll() as $g) $given[(string)$g['mp_no']] = $g; } }
+        $whyMap = []; if ($rows && tms_auto_table($pdo)) { try { foreach (array_chunk(array_column($rows, 'number'), 400) as $part) { $q = $pdo->prepare("SELECT number, why FROM tms_auto WHERE done = 0 AND number IN (" . implode(',', array_fill(0, count($part), '?')) . ")"); $q->execute($part); foreach ($q->fetchAll() as $g) $whyMap[(string)$g['number']] = (string)$g['why']; } } catch (Throwable $e) { } }
         $sum = ['orders' => count($rows), 'amount' => 0.0, 'given' => 0, 'given_amount' => 0.0];
-        foreach ($rows as &$r) { $g = $given[$r['number']] ?? null; $r['emp'] = $g ? (int)$g['employee_id'] : 0; $r['emp_name'] = $g ? (string)($names[(int)$g['employee_id']] ?? '') : ''; $r['type'] = $g ? (string)$g['order_type'] : ''; $r['hrms_no'] = $g ? (string)$g['order_no'] : ''; $r['by'] = $g ? (string)$g['created_by'] : '';
+        foreach ($rows as &$r) { $g = $given[$r['number']] ?? null; $r['emp'] = $g ? (int)$g['employee_id'] : 0; $r['emp_name'] = $g ? (string)($names[(int)$g['employee_id']] ?? '') : ''; $r['type'] = $g ? (string)$g['order_type'] : ''; $r['hrms_no'] = $g ? (string)$g['order_no'] : ''; $r['by'] = $g ? (string)$g['created_by'] : ''; $r['auto'] = $g && strpos((string)$g['created_by'], 'auto') === 0; $r['auto_why'] = $g ? '' : (string)($whyMap[$r['number']] ?? '');
             $sum['amount'] += $r['total']; if ($r['emp'] > 0) { $sum['given']++; $sum['given_amount'] += $r['total']; } } unset($r);
         json_response(['from' => $from, 'to' => $to, 'rows' => $rows, 'sum' => $sum, 'admin' => $isAdm]);
     }
