@@ -379,3 +379,15 @@ try {
     echo "ASK CAMPS running campaigns note / last tick (id, note, last_tick) " . json_encode($one("SELECT id, LEFT(note, 90), last_tick FROM wa_campaigns WHERE status = 'running' ORDER BY id LIMIT 12")) . "\n";
     try { if (!function_exists('wa_camp_wait_reason')) require_once $root . 'empmanagment/wa_camp.php'; foreach ($pdo->query("SELECT * FROM wa_campaigns WHERE status = 'running' ORDER BY id LIMIT 4")->fetchAll(PDO::FETCH_ASSOC) as $cr) echo "ASK CAMPS wait reason of #" . $cr['id'] . ": " . substr((string)wa_camp_wait_reason($pdo, $cr), 0, 420) . "\n"; } catch (Throwable $e) { echo "ASK CAMPS wait reason ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
 } catch (Throwable $e) { echo "ASK CAMPS2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 47) After-Order by step (owner 24 Nov): what each kind of message brings, last 24 h and last 7 days (read-only, counts only)
+try {
+    foreach ([['24 h', 1], ['7 days', 7]] as [$lab47, $dd47]) {
+        $r47 = $one("SELECT IF(p.step <= 4, CONCAT('care', p.step), IF((p.step - 5) % 2 = 0, 'offer', 'content')) AS k, COUNT(*) n, SUM(m.status IN ('delivered', 'read')) d, SUM(m.status = 'failed') f,
+            SUM(EXISTS (SELECT 1 FROM wa_messages i WHERE i.dir = 'in' AND (i.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) AND i.ts > p.sent_at AND i.ts < DATE_ADD(p.sent_at, INTERVAL 2 DAY))) rep,
+            SUM(EXISTS (SELECT 1 FROM shop_orders o WHERE o.phone LIKE CONCAT('%', p.phone) AND o.created_at > p.sent_at AND o.created_at < DATE_ADD(p.sent_at, INTERVAL 7 DAY))) ord
+            FROM wa_aft_plan p LEFT JOIN wa_messages m ON m.wamid = p.wamid WHERE p.status = 'sent' AND p.sent_at >= ? GROUP BY k ORDER BY k", [date('Y-m-d H:i:s', time() - $dd47 * 86400)]);
+        echo "ASK AFT by kind last $lab47 (kind, sent, delivered, failed, replied in 2 days, ordered in 7 days) " . json_encode($r47) . "\n";
+    }
+    echo "ASK AFT sent per customer last 30 days (messages, customers) " . json_encode($one("SELECT c, COUNT(*) FROM (SELECT phone, COUNT(*) c FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ? GROUP BY phone) t GROUP BY c ORDER BY c LIMIT 12", [date('Y-m-d H:i:s', time() - 30 * 86400)])) . "\n";
+    echo "ASK AFT customers by days since delivery (active, due now) " . json_encode($one("SELECT COUNT(*), SUM(EXISTS (SELECT 1 FROM wa_aft_plan p WHERE p.phone = c.phone AND p.status = 'planned' AND p.due_at <= NOW())) FROM wa_aft_cust c WHERE c.status = 'active'")) . "\n";
+} catch (Throwable $e) { echo "ASK AFT ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
