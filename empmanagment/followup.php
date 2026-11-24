@@ -254,6 +254,32 @@ function fup_feedback_owner(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_feedback_owner: ' . $e->getMessage()); }
 }
 
+/** Once: four hand-written topics of the owner's "Dispatch" section (the section is made by the owner; this waits for it). Only the task names; nobody is assigned (the owner gives each to a person). A number box only where a number is needed. Same title is not made twice. */
+function fup_seed_dispatch_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_dispatch_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'dispatch' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%dispatch%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $num = function ($l) { return [['label' => $l, 'type' => 'num', 'req' => 1], ['label' => 'Note', 'type' => 'text', 'req' => 0]]; };
+        $list = [
+            ['Recharge entry', 'Write today\'s recharge entries.', 0, $num('Recharge entries')],
+            ['Rebook parcel', 'Write how many parcels were rebooked today.', 0, $num('Parcels rebooked')],
+            ['Front area clean (shoe rack)', 'Shoe rack and the front area: write what was cleaned today.', 1, []],
+            ['All manifest, batch code, slip filing', 'Write what was done today: all manifests, batch code and slip filing.', 1, []],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3] ? json_encode(fup_fields_clean($t[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_dispatch_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_dispatch_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's hand-written topics of his "Feedback" section (the section is made by the owner; this waits for it). Manual updates; a number box only where the owner needs a number. A topic with the same title is not made twice. Nobody is assigned. */
 function fup_seed_feedback_topics(PDO $pdo): void
 {
@@ -990,6 +1016,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_website_topics3($pdo);
     fup_seed_photography_topics($pdo);
     fup_seed_feedback_topics($pdo);
+    fup_seed_dispatch_topics($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
