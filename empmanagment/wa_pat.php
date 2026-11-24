@@ -66,24 +66,25 @@ if (!function_exists('wa_pat_topic')) {
         $names = ['cold' => 'Cold', 'line' => '30-day Lineup', 'after' => 'After-Order', 'moda' => 'Module A (campaigns)', 'modb' => 'Module B', 'modc' => 'Module C', 'follow' => 'Bot follow-ups'];
         $tpl = []; $out = ['t' => time(), 'scope' => $scope, 'from' => $from, 'sampled' => $mult > 1, 'modules' => []];
         foreach ($names as $mod => $label) {
-            $M = ['key' => $mod, 'label' => $label, 'sent' => 0, 'replied' => 0, 'topics' => [], 'styles' => [], 'err' => ''];
+            $M = ['key' => $mod, 'label' => $label, 'sent' => 0, 'replied' => 0, 'topics' => [], 'styles' => [], 'err' => '', 'new' => ['sent' => 0, 'replied' => 0, 'types' => []]];
             try {
                 $items = [];   // [text, name, sent, replied]
                 if ($mod === 'follow') { $g = []; foreach (wa_pat_followups($pdo, $from) as $r) { $k = md5(mb_substr(preg_replace('/\d+/', '#', (string)$r[0]), 0, 60)); if (!isset($g[$k])) $g[$k] = [(string)$r[0], '', 0, 0]; $g[$k][2]++; $g[$k][3] += (int)$r[1]; } $items = array_values($g); }
                 else {
                     $rows = wa_pat_rows($pdo, $mod, $from, $mult); $need = [];
                     foreach ($rows as $r) if (!isset($tpl[$r[0]])) $need[] = $r[0];
-                    if ($need) { $q = $pdo->query("SELECT id, name, body FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', $need)) . ")"); foreach ($q->fetchAll(PDO::FETCH_NUM) as $t) $tpl[(int)$t[0]] = [(string)$t[1], (string)$t[2]]; }
-                    foreach ($rows as $r) { $t = $tpl[$r[0]] ?? ['#' . $r[0], '']; $items[] = [$t[1], $t[0], $r[1], $r[2]]; }
+                    if ($need) { $q = $pdo->query("SELECT id, name, body, extra FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', $need)) . ")"); foreach ($q->fetchAll(PDO::FETCH_NUM) as $t) $tpl[(int)$t[0]] = [(string)$t[1], (string)$t[2], (bool)(preg_match('/^(tmph_style_|tmph_new_|tmph_fu_(open|ask|order)_(hi|ord|new)_)/', (string)$t[1]) || strpos((string)$t[3], 'restyle_of') !== false)]; }
+                    foreach ($rows as $r) { $t = $tpl[$r[0]] ?? ['#' . $r[0], '', false]; $items[] = [$t[1], $t[0], $r[1], $r[2], !empty($t[2])]; }
                 }
                 foreach ($items as $it) {
                     [$tk, $tl] = wa_pat_topic((string)$it[1], (string)$it[0]); $st = wa_pat_style((string)$it[0]);
-                    $M['sent'] += $it[2]; $M['replied'] += $it[3];
+                    $M['sent'] += $it[2]; $M['replied'] += $it[3]; if (!empty($it[4])) { $M['new']['sent'] += $it[2]; $M['new']['replied'] += $it[3]; $M['new']['types'][] = ['text' => mb_substr((string)$it[0], 0, 420), 'name' => (string)$it[1], 'topic' => $tl, 'sent' => (int)$it[2], 'replied' => (int)$it[3]]; }
                     if (!isset($M['topics'][$tk])) $M['topics'][$tk] = ['label' => $tl, 'sent' => 0, 'replied' => 0, 'msgs' => 0, 'samples' => []];
                     $T = &$M['topics'][$tk]; $T['sent'] += $it[2]; $T['replied'] += $it[3]; $T['msgs']++; $T['samples'][] = ['text' => mb_substr((string)$it[0], 0, 420), 'name' => (string)$it[1], 'sent' => (int)$it[2], 'replied' => (int)$it[3]]; unset($T);
                     foreach ($st as $s) { if (!isset($M['styles'][$s])) $M['styles'][$s] = ['label' => $s, 'sent' => 0, 'replied' => 0]; $M['styles'][$s]['sent'] += $it[2]; $M['styles'][$s]['replied'] += $it[3]; }
                 }
                 foreach ($M['topics'] as &$T) { usort($T['samples'], function ($a, $b) { return $b['sent'] <=> $a['sent']; }); $T['samples'] = array_slice($T['samples'], 0, 5); $T['standard'] = $T['samples'] ? preg_replace(['/₹ ?\d[\d,]*/u', '/\b\d+ ?ml\b/iu'], ['₹X', 'N ml'], (string)$T['samples'][0]['text']) : ''; foreach ($T['samples'] as &$S) $S['best'] = false; unset($S); $bi = -1; $br = -1; foreach ($T['samples'] as $i => $S) if ($S['sent'] >= 30 && $S['replied'] / $S['sent'] > $br) { $br = $S['replied'] / $S['sent']; $bi = $i; } if ($bi >= 0) $T['samples'][$bi]['best'] = true; } unset($T);
+                usort($M['new']['types'], function ($a, $b) { return $b['sent'] <=> $a['sent']; }); $M['new']['types'] = array_slice($M['new']['types'], 0, 8);
                 $M['topics'] = array_values($M['topics']); usort($M['topics'], function ($a, $b) { return $b['sent'] <=> $a['sent']; });
                 $M['styles'] = array_values($M['styles']); usort($M['styles'], function ($a, $b) { return strcmp($a['label'], $b['label']); });
             } catch (Throwable $e) { $M['err'] = substr($e->getMessage(), 0, 120); }
