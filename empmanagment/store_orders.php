@@ -91,7 +91,7 @@ if (!function_exists('tms_cfg')) {
         return $ok;
     }
     /** 🤖 Give the new shop orders (last 2 days) to the salesperson who holds the customer's WhatsApp chat. The rules are those of order_auto_alloc() (Shopify orders), nothing new:
-     *  an order with an amount and a mobile number · that number has a WhatsApp chat GIVEN to a salesperson · the customer wrote, and not longer than 7 days ago · Query / Campaign from order_chat_type().
+     *  an order with an amount, a payment received (full or part) and a mobile number · that number has a WhatsApp chat GIVEN to a salesperson · the customer wrote, and not longer than 7 days ago · Query / Campaign from order_chat_type().
      *  The robot gives an order ONCE: an order a person took back is not given again. An order it could not give keeps the reason (shown on the page) and is tried again on the next run.
      *  $minGap = seconds between two runs. Returns how many orders were given. */
     function tms_auto_tick(PDO $pdo, int $minGap = 180): int
@@ -102,7 +102,7 @@ if (!function_exists('tms_cfg')) {
         [$rows, $err] = tms_orders($pdo, $from, $to); if ($err !== '' || !$rows) return 0;
         tms_cols($pdo); $nos = array_column($rows, 'number'); $given = []; $done = [];
         foreach (array_chunk($nos, 400) as $part) { $in = implode(',', array_fill(0, count($part), '?'));
-            $q = $pdo->prepare("SELECT mp_no FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $given[(string)$x] = 1;
+            $q = $pdo->prepare("SELECT mp_no, created_by FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN ($in)"); $q->execute($part); foreach ($q->fetchAll() as $x) $given[(string)$x['mp_no']] = (string)$x['created_by'];
             $q = $pdo->prepare("SELECT number FROM tms_auto WHERE done = 1 AND number IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; }
         try { $qc = $pdo->prepare("SELECT c.phone, c.assigned_emp, c.source, c.last_in_at, COALESCE(n.camp_tag, 0) AS camp_tag FROM wa_contacts c LEFT JOIN wa_numbers n ON n.id = c.last_number_id WHERE c.phone = ?"); $qc->execute(['0']); }
         catch (Throwable $e) { try { $qc = $pdo->prepare("SELECT phone, assigned_emp, source, last_in_at, 0 AS camp_tag FROM wa_contacts WHERE phone = ?"); $qc->execute(['0']); } catch (Throwable $e2) { return 0; } }   // no WhatsApp tables here: nothing to do
@@ -110,10 +110,14 @@ if (!function_exists('tms_cfg')) {
         $live = []; try { foreach ($pdo->query("SELECT employee_id FROM employees WHERE status != 'ex'")->fetchAll(PDO::FETCH_COLUMN) as $x) $live[(int)$x] = 1; } catch (Throwable $e) { return 0; }
         $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $n = 0; $now = date('Y-m-d H:i:s');
         foreach ($rows as $r) {
-            $no = (string)$r['number']; if (isset($given[$no]) || isset($done[$no])) continue;
+            $no = (string)$r['number'];
+            // owner (24 Nov): an order with NO payment received (a payment link the customer has not paid yet) is not given to anybody. One the robot already gave is taken back; it is given when the payment comes.
+            if ((float)$r['paid'] <= 0 && isset($given[$no]) && strpos($given[$no], 'auto') === 0) { try { $pdo->prepare("DELETE FROM manual_orders WHERE channel = 'TM Store' AND mp_no = ? AND created_by LIKE 'auto%'")->execute([$no]); $mark->execute([$no, 0, 'payment not received yet', $now]); } catch (Throwable $e) { } continue; }
+            if (isset($given[$no]) || isset($done[$no])) continue;
             try {
                 $t = strtotime((string)$r['placed_at']) ?: time(); $why = '';
                 if ((float)$r['total'] <= 0) $why = 'order has no amount';
+                elseif ((float)$r['paid'] <= 0) $why = 'payment not received yet';
                 elseif (strlen((string)$r['phone']) !== 10) $why = 'no mobile number on the order';
                 else {
                     $qc->execute([$r['phone']]); $c = $qc->fetch(PDO::FETCH_ASSOC);
