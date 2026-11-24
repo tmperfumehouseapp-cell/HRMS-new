@@ -112,6 +112,18 @@ if (!function_exists('wa_rs_tick')) {
                     if (strpos($src, 'line:') === 0) { $key = substr($src, 5); $ids = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); if (is_array($ids) && isset($ids[$key]) && (int)$ids[$key] === (int)$old) { $ids[$key] = $new; setting_set($pdo, 'wl_tpls', json_encode($ids)); } }
                     $p['st'] = 'replaced'; $p['rep_at'] = time(); $o['replaced']++;
                 } unset($p);
+                // 1b) the SECOND version (owner 24 Nov: the first 31 twins were made before the excitement / surprise rule): when it is approved wherever the old message is, it takes the place of the first twin
+                foreach ($st['pairs'] as $old => &$p) {
+                    $v2 = (int)($p['v2'] ?? 0); if ($v2 <= 0 || empty($p['new'])) continue; $prev = (int)$p['new'];
+                    try { $tn = wa_camp_tpl($pdo, $v2, true, 0); $to = wa_camp_tpl($pdo, (int)$old, true, 0); } catch (Throwable $e) { continue; }
+                    $okN = $tn ? array_map('strval', (array)($tn['ok_wabas'] ?? [])) : []; $okO = $to ? array_map('strval', (array)($to['ok_wabas'] ?? [])) : [];
+                    $row = wa_tpl_row($pdo, $v2); if ($row && (!empty($row['relabelled_at']) || strtoupper((string)($row['category_now'] ?? '')) === 'MARKETING') && strtoupper((string)($row['category'] ?? '')) === 'UTILITY') { unset($p['v2']); $p['v2fail'] = 1; continue; }
+                    if (!$okN || count(array_diff($okO, $okN)) > 0) continue;
+                    $src = (string)($p['src'] ?? '');
+                    if (strpos($src, 'lmap:') === 0) { $wm = wa_rs_line_map($pdo); foreach ($wm as $k2 => $id2) if ((int)$id2 === $prev) $wm[$k2] = $v2; setting_set($pdo, 'wl_map', json_encode($wm)); }
+                    if (strpos($src, 'line:') === 0) { $key = substr($src, 5); $ids = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); if (is_array($ids) && isset($ids[$key]) && (int)$ids[$key] === $prev) { $ids[$key] = $v2; setting_set($pdo, 'wl_tpls', json_encode($ids)); } }
+                    $p['new'] = $v2; $p['v1'] = $prev; unset($p['v2']); $p['v2done'] = time(); $o['replaced']++;
+                } unset($p);
             }
             // 2) make: two old messages without a twin
             foreach ($tg as $old => $src) {
@@ -124,6 +136,14 @@ if (!function_exists('wa_rs_tick')) {
                     $f = (int)($st['fails'][$old] ?? 0) + 1; $st['fails'][$old] = $f; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600);
                     if ($f >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => (string)($r['why'] ?? '?'), 'at' => time()]; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; }   // a Claude error (not the message's fault): retry in 10 minutes, up to 30 times; a round stops at the first one
             }
+            if ($o['made'] < 2 && $o['note'] === '' && (int)$st['n'] < 400) {   // 🔁 second pass: the twins made before the excitement / surprise rule (13:47 UTC, 24 Nov) get a second version, two a round
+                foreach ($st['pairs'] as $old => $p0) { if ($o['made'] >= 2 || (int)$st['n'] >= 400) break;
+                    if (empty($p0['new']) || !in_array((string)($p0['st'] ?? ''), ['made', 'replaced'], true) || (int)($p0['at'] ?? 0) >= 1795528020 || !empty($p0['v2']) || !empty($p0['v2fail']) || !empty($p0['v2done'])) continue;
+                    if ((int)($st['next'][$old] ?? 0) > time()) continue;
+                    $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
+                    if (!empty($r['new'])) { $st['pairs'][$old]['v2'] = (int)$r['new']; $o['made']++; wa_rs_save($pdo, $st); }
+                    else { if (!empty($r['busy'])) { $st['next'][$old] = time() + 120; $o['note'] = (string)$r['why']; break; } $f2 = (int)($st['fails2'][$old] ?? 0) + 1; $st['fails2'][$old] = $f2; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600); if ($f2 >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old]['v2fail'] = 1; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; } }
+            }
             wa_rs_save($pdo, $st);
             if ($o['note'] !== '') { $st['why_last'] = $o['note']; $st['why_n'][$o['note']] = (int)($st['why_n'][$o['note']] ?? 0) + 1; wa_rs_save($pdo, $st); }
             if (($o['made'] || $o['replaced']) && function_exists('wa_log')) wa_log($pdo, 'template', true, 'New-style messages: ' . $o['made'] . ' made, ' . $o['replaced'] . ' replaced');
@@ -134,7 +154,7 @@ if (!function_exists('wa_rs_tick')) {
     function wa_rs_report(PDO $pdo): array
     {
         $st = wa_rs_state($pdo); $tg = wa_rs_targets($pdo); $c = ['targets' => count($tg), 'made' => 0, 'replaced' => 0, 'fail' => 0, 'waiting' => 0, 'by_src' => []];
-        foreach ($st['pairs'] as $old => $p) { $s = (string)($p['st'] ?? ''); if ($s === 'replaced') { $c['replaced']++; $c['made']++; } elseif ($s === 'made') $c['made']++; elseif ($s === 'fail') $c['fail']++;
+        foreach ($st['pairs'] as $old => $p) { $s = (string)($p['st'] ?? ''); if (!empty($p['v2'])) $c['v2_made'] = (int)($c['v2_made'] ?? 0) + 1; if (!empty($p['v2done'])) $c['v2_done'] = (int)($c['v2_done'] ?? 0) + 1; if ($s === 'replaced') { $c['replaced']++; $c['made']++; } elseif ($s === 'made') $c['made']++; elseif ($s === 'fail') $c['fail']++;
             $k = explode(':', (string)($p['src'] ?? '?'))[0]; if (!isset($c['by_src'][$k])) $c['by_src'][$k] = ['made' => 0, 'replaced' => 0]; if ($s === 'replaced') { $c['by_src'][$k]['replaced']++; } if ($s === 'replaced' || $s === 'made') $c['by_src'][$k]['made']++; }
         $c['waiting'] = max(0, $c['targets'] - count(array_intersect_key($st['pairs'], $tg))); $c['made_today'] = (int)($st['n'] ?? 0); return $c;
     }
