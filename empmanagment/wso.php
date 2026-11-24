@@ -9,7 +9,7 @@
  * given to the chat's salesperson). A link works 72 hours and gives one order.
  *
  * The website key (Website orders > Connection, setting tms_api_key) needs the scopes read_products and create_orders (and read_orders, already used).
- * Actions: wso.products GET {q} · wso.preview POST {phone, lines, discount} · wso.create POST {phone, name, lines, discount, send, nonce}
+ * Actions: wso.products GET {q} · wso.preview POST {phone, lines, discount} · wso.create POST {phone, name, lines, discount, send, nonce} · wso.links GET {phone}
  * Since 24 Nov (owner): it sends a CHECKOUT link (POST /api/v1/checkout-links): the customer opens a ready cart and places the order on the website's checkout
  * (address, prepaid or COD, the gift perfume offer). No order exists until then.
  * PHP 7.4 safe. Own table: wso_order (what was made from which chat).
@@ -90,6 +90,21 @@ if ($__wso === 'wso.products') {   // the website catalogue: perfumes matching t
         $vs = []; foreach ((array)($p['variants'] ?? []) as $v) { if ((float)($v['price'] ?? 0) <= 0) continue; $vs[] = ['id' => (int)$v['id'], 'title' => (string)($v['option1'] ?: $v['title']), 'price' => (float)$v['price'], 'mrp' => (float)($v['compare_at_price'] ?? 0),
             'out' => !empty($v['track_inventory']) && ($v['inventory_policy'] ?? '') === 'deny' && (int)($v['inventory_qty'] ?? 0) < 1]; }
         if ($vs) $out[] = ['id' => (int)$p['id'], 'title' => (string)$p['title'], 'image' => (string)($p['image'] ?? ''), 'variants' => $vs];
+    }
+    json_response(['ok' => true, 'items' => $out]);
+}
+if ($__wso === 'wso.links') {   // the checkout links sent to this chat and what happened (opened / ordered / expired), asked from the website (60 s cache per link)
+    $c = $chat(); $phone = substr(preg_replace('/\D+/', '', (string)$c['phone']), -10); $out = [];
+    if (wso_table($pdo)) {
+        $q = $pdo->prepare("SELECT number, total, created_at FROM wso_order WHERE phone = ? ORDER BY id DESC LIMIT 6"); $q->execute([$phone]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $tok = (string)$r['number']; if (!preg_match('/^[a-z0-9]{6,20}$/', $tok)) continue;      // older rows (before checkout links) kept an order number
+            $run = function () use ($pdo, $tok) { [$d, $e] = tms_get($pdo, '/checkout-links/' . $tok); return $e !== '' ? ['error' => $e] : (array)$d; };
+            $d = function_exists('hrms_memo') ? hrms_memo('wso_l:' . $tok, 60, $run) : $run();
+            $st = (string)($d['state'] ?? ''); $ordered = (string)($d['order_number'] ?? '');
+            $out[] = ['total' => (float)$r['total'], 'made' => date('j M, g:i a', strtotime((string)$r['created_at']) ?: time()), 'state' => $st === '' ? 'unknown' : $st,
+                'opened' => !empty($d['opened_at']), 'order' => $ordered, 'url' => (string)($d['url'] ?? '')];
+        }
     }
     json_response(['ok' => true, 'items' => $out]);
 }

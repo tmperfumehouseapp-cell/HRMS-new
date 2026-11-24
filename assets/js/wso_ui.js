@@ -37,6 +37,8 @@
   .wso-ft{padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid #eef0f3;display:flex;gap:8px}
   .wso-go{flex:1;min-height:48px;border:0;border-radius:24px;background:#00a884;color:#fff;font-weight:800;font-size:16px;cursor:pointer}.wso-go:disabled{background:#b8c2c9;cursor:not-allowed}
   .wso-sec{min-height:48px;padding:0 16px;border:1.5px solid #d1d7db;border-radius:24px;background:#fff;font-weight:800;cursor:pointer}
+  .wso-lk{display:grid;gap:4px}.wso-lr{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12.5px;padding:6px 8px;background:#f7f8fa;border-radius:10px}
+  .wso-st{font-weight:800;font-size:11.5px;color:#667781;white-space:nowrap}.wso-st.ok{color:#12794a}.wso-st.op{color:#b45309}
   .wso-empty{color:#667781;font-size:13px;padding:8px 0}
   .wso-done{text-align:center;padding:18px 6px}.wso-done .ic{font-size:42px}.wso-done b{display:block;font-size:18px;margin:6px 0}.wso-done a{word-break:break-all;color:#0b5cad}
   `;
@@ -97,7 +99,7 @@
       }
       const lines = S.lines.length ? S.lines.map((l, i) => `<div class="wso-ln"><div class="t"><b>${esc(l.n)}</b><small>${esc(l.s)} · ${rs(l.pr)} each</small></div><div class="wso-q"><button type="button" data-dq="${i}" aria-label="One less">−</button><span>${l.q}</span><button type="button" data-iq="${i}" aria-label="One more">+</button></div><div class="wso-pr">${rs(l.pr * l.q)}</div></div>`).join('') : '<div class="wso-empty">No perfume yet. Search above and tap a size.</div>';
       const keepQ = $('#wsoQ') ? $('#wsoQ').value : S.q;
-      bd.innerHTML = `<div class="wso-h">Perfumes</div><div class="wso-sb"><input id="wsoQ" type="search" placeholder="Search a perfume (2+ letters)" autocomplete="off" value="${esc(keepQ)}"></div><div class="wso-res" id="wsoRes"></div>
+      bd.innerHTML = `${linksHtml()}<div class="wso-h">Perfumes</div><div class="wso-sb"><input id="wsoQ" type="search" placeholder="Search a perfume (2+ letters)" autocomplete="off" value="${esc(keepQ)}"></div><div class="wso-res" id="wsoRes"></div>
         <div class="wso-h">In the order</div>${lines}
         <div class="wso-h">Discount (optional)</div><div class="wso-dc"><input id="wsoD" inputmode="decimal" placeholder="${S.dType === 'rs' ? 'Rupees off' : 'Percent off'}" value="${esc(S.dVal)}"><button type="button" data-dt="rs" class="${S.dType === 'rs' ? 'on' : ''}">₹</button><button type="button" data-dt="pc" class="${S.dType === 'pc' ? 'on' : ''}">%</button></div>
         <div id="wsoTot"></div>`;
@@ -111,6 +113,13 @@
       ft.innerHTML = `<button type="button" class="wso-go" id="wsoGo"${can ? '' : ' disabled'}>${S.busy ? 'Making the link…' : '🔗 Send checkout link' + (S.prev ? ' · ' + rs(S.prev.total) : '')}</button>`;
       $('#wsoGo').onclick = create;
     }
+    // the links already sent to this customer and what happened
+    function linksHtml() {
+      if (!S.links || !S.links.length) return '';
+      const chip = (x) => x.order ? `<span class="wso-st ok">✅ Ordered ${esc(x.order)}</span>` : x.state === 'expired' ? '<span class="wso-st">⌛ Expired</span>' : x.opened ? '<span class="wso-st op">👀 Opened, not ordered yet</span>' : x.state === 'active' ? '<span class="wso-st">⏳ Not opened yet</span>' : '<span class="wso-st">—</span>';
+      return `<div class="wso-h">Links sent to this customer</div><div class="wso-lk">${S.links.map((x) => `<div class="wso-lr"><span>${rs(x.total)} · ${esc(x.made)}</span>${chip(x)}</div>`).join('')}</div>`;
+    }
+    function loadLinks() { api.get('wso.links', { phone }).then((r) => { S.links = r.items || []; if (!S.done) { const q = $('#wsoQ'), v = q ? q.value : ''; const had = document.activeElement && document.activeElement.id; draw(); const q2 = $('#wsoQ'); if (q2 && v) { q2.value = v; } if (had === 'wsoQ' && q2) { q2.focus(); } } }, () => { }); }
     function create() {
       if (S.busy) return; S.busy = true; drawTot();
       api.post('wso.create', Object.assign(body(), { send: 1, nonce: S.nonce })).then((r) => { S.busy = false; S.done = r; S.nonce = Math.random().toString(36).slice(2) + Date.now().toString(36); draw(); try { o.onDone && o.onDone(r); } catch (e) { } },
@@ -122,7 +131,7 @@
       const iq = e.target.closest('[data-iq]'); if (iq) { const l = S.lines[+iq.dataset.iq]; if (l) l.q = Math.min(99, l.q + 1); draw(); preview(); return; }
       const dt = e.target.closest('[data-dt]'); if (dt) { S.dType = dt.dataset.dt; draw(); preview(); }
     });
-    draw(); setTimeout(() => { const q = $('#wsoQ'); if (q) q.focus(); }, 50);
+    draw(); loadLinks(); setTimeout(() => { const q = $('#wsoQ'); if (q) q.focus(); }, 50);
   }
   window.WaWebOrder = { open };
 })();
