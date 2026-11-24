@@ -680,11 +680,13 @@ try {
                 $pid = (int)($l['product_id'] ?? 0); $ml = (int)($l['ml'] ?? 0); $q = (int)($l['qty'] ?? 0);
                 if ($pid > 0 && $q > 0 && in_array($ml, ST_SIZES, true)) { $k = $pid . '|' . $ml; if (!isset($lines[$k])) $lines[$k] = ['pid' => $pid, 'ml' => $ml, 'qty' => 0, 'src' => ($l['manual'] ?? false) ? 'manual' : 'suggest']; $lines[$k]['qty'] = min(100000, $lines[$k]['qty'] + $q); }
             }
-            if (!$lines) json_response(['error' => 'The order is empty. Add at least one perfume.'], 400);
+            $extra = []; foreach (array_slice((array)($in['extra'] ?? []), 0, 12) as $x) { $nm = trim(mb_substr((string)($x['name'] ?? ''), 0, 60)); $q = (int)($x['qty'] ?? 0); if ($nm !== '' && $q > 0) $extra[] = ['name' => $nm, 'qty' => min(100000, $q)]; }   // shower gel, solid perfume ... by the piece
+            if (!$lines && !$extra) json_response(['error' => 'The order is empty. Add at least one perfume.'], 400);
             if (count($lines) > 600) json_response(['error' => 'Too many lines in one order (' . count($lines) . '). Keep it under 600.'], 400);
             $ids = array_values(array_unique(array_map(fn($x) => $x['pid'], $lines)));
-            $chk = $pdo->prepare("SELECT COUNT(*) FROM st_products WHERE active = 1 AND product_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")"); $chk->execute($ids);
-            if ((int)$chk->fetchColumn() !== count($ids)) json_response(['error' => 'One of the perfumes is not on the list any more (press Sync from Shopify).'], 400);
+            if ($ids) { $chk = $pdo->prepare("SELECT COUNT(*) FROM st_products WHERE active = 1 AND product_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")"); $chk->execute($ids);
+            if ((int)$chk->fetchColumn() !== count($ids)) json_response(['error' => 'One of the perfumes is not on the list any more (press Sync from Shopify).'], 400); }
+            if ($extra) { try { $pdo->exec("CREATE TABLE IF NOT EXISTS st_order_extra (id INT AUTO_INCREMENT PRIMARY KEY, order_id INT NOT NULL, name VARCHAR(60) NOT NULL, qty INT NOT NULL, KEY idx_oe_order (order_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { json_response(['error' => 'Could not prepare the other-items store. Nothing was placed.'], 500); } }
             $now = date('Y-m-d H:i:s'); $closed = 0; $bottles = 0;
             $pdo->beginTransaction();
             try {
@@ -692,6 +694,7 @@ try {
                 $oid = (int)$pdo->lastInsertId();
                 $ins = $pdo->prepare("INSERT INTO st_order_items (order_id, product_id, ml, qty, sug_qty, source, added_at) VALUES (?,?,?,?,NULL,?,?)");
                 foreach ($lines as $l) { $ins->execute([$oid, $l['pid'], $l['ml'], $l['qty'], $l['src'], $now]); $bottles += $l['qty']; }
+                if ($extra) { $ie = $pdo->prepare("INSERT INTO st_order_extra (order_id, name, qty) VALUES (?,?,?)"); foreach ($extra as $x) $ie->execute([$oid, $x['name'], $x['qty']]); }
                 st_order_log($pdo, $oid, $who, 'ordered');
                 foreach ((array)($in['carry_order_ids'] ?? []) as $cid) {
                     $u = $pdo->prepare("UPDATE st_orders SET status = 'cancelled' WHERE order_id = ? AND status = 'ordered' AND order_id <> ?"); $u->execute([(int)$cid, $oid]);
@@ -700,7 +703,7 @@ try {
                 $pdo->commit();
             } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('st_inv.order_create: ' . $e->getMessage()); json_response(['error' => 'The order could not be saved. Nothing was placed. Try again.'], 500); }
             json_response(['ok' => true, 'order_id' => $oid, 'lines' => count($lines), 'bottles' => $bottles, 'closed' => $closed, 'ordered_by' => $who, 'ordered_at' => $now,
-                'message' => 'Order #' . $oid . ' placed: ' . $bottles . ' bottles, ' . count($lines) . ' lines.' . ($closed ? ' Pending items of ' . $closed . ' earlier order(s) moved into it.' : '')]);
+                'message' => 'Order #' . $oid . ' placed: ' . $bottles . ' bottles, ' . count($lines) . ' lines.' . ($extra ? ' Other items: ' . implode(', ', array_map(fn($x) => $x['name'] . ' × ' . $x['qty'], $extra)) . '.' : '') . ($closed ? ' ' . $closed . ' earlier order(s) cleared.' : '')]);
             break;
         }
 
