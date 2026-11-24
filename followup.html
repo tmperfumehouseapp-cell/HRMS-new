@@ -126,7 +126,8 @@ guardPage(); renderSidebar('followup');
   let ALL = true, OPEN_D = '', OWN_NOW = false; try { ALL = localStorage.getItem('fup_all') !== '0' && !new URLSearchParams(location.search).get('s'); } catch (e) { ALL = true; }
   let OPEN_U = 0; try { OPEN_U = Number(new URLSearchParams(location.search).get('u')) || 0; } catch (e) { OPEN_U = 0; }
   let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true;
-  try { SIDE = localStorage.getItem('fup_side') !== '0'; } catch (e) { SIDE = true; }
+  let PREF = null; try { PREF = localStorage.getItem('fup_side'); } catch (e) { PREF = null; }   // nothing chosen yet: a section with many topics (like a Dispatch sheet) opens as topics down, days across
+  SIDE = PREF === null ? true : PREF !== '0';
   try { SID = Number(new URLSearchParams(location.search).get('s')) || Number(localStorage.getItem('fup_sec')) || 0; } catch (e) { SID = 0; }
 
   const dayName = (d, today) => { const dt = new Date(d + 'T12:00:00'); const diff = Math.round((new Date(today + 'T12:00:00') - dt) / 86400000); return (diff === 0 ? 'Today · ' : diff === 1 ? 'Yesterday · ' : '') + dt.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }); };
@@ -221,6 +222,7 @@ guardPage(); renderSidebar('followup');
       // big screens: the Excel sheet. Default = topics side by side (one column a topic), one row a day; the switch turns it (topics down, days across).
       const th = (t) => '<div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t) + (D.manager ? '<div style="margin-top:6px"><button class="bd-btn sm" data-edit="' + t.id + '">Edit</button></div>' : '');
       const td = (t, d) => '<td class="c' + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + (canDay(t, d) ? ' w" data-up="' + t.id + '" data-day="' + d : '') + '">' + cell(t, d) + '</td>';
+      if (PREF === null) SIDE = D.topics.length <= 8;
       h += '<div style="display:flex;justify-content:flex-end;margin:0 0 8px" class="fu-sw"><button class="bd-btn sm" id="flip">⇄ ' + (SIDE ? 'Show topics down, days across' : 'Show topics side by side') + '</button></div>';
       if (SIDE) h += '<div class="fu-wrap"><table class="fu-t side"><thead><tr><th>Day</th>' + D.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '">' + th(t) + '</th>').join('') + '</tr></thead><tbody>'
         + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + D.topics.map((t) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
@@ -322,7 +324,7 @@ guardPage(); renderSidebar('followup');
     if ($('daysSel')) $('daysSel').onchange = () => { DAYS = Number($('daysSel').value) || 7; load(); };
     if ($('askAi')) $('askAi').onclick = askClaude;
     if ($('addAny')) $('addAny').onclick = () => writeUp(0, '');
-    if ($('flip')) $('flip').onclick = () => { SIDE = !SIDE; try { localStorage.setItem('fup_side', SIDE ? '1' : '0'); } catch (e) { /* private mode */ } render(); };
+    if ($('flip')) $('flip').onclick = () => { SIDE = !SIDE; PREF = SIDE ? '1' : '0'; try { localStorage.setItem('fup_side', PREF); } catch (e) { /* private mode */ } render(); };
   }
   const run = async (btn, fn) => { if (busy) return; busy = true; if (btn) btn.disabled = true; try { await fn(); } catch (e) { toast(e.message || 'Could not save.'); } busy = false; if (btn) btn.disabled = false; };
 
