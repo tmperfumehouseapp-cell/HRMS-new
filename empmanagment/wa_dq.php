@@ -96,6 +96,10 @@ function wa_dq_cfg(PDO $pdo): array
             foreach (['wa_dq_hourly' => '15000', 'wa_dq_base' => '15000', 'wa_dq_floor' => '10000', 'wa_dq_push_mult' => '1', 'wa_dq_smart' => '0', 'wa_dq_hard' => '1', 'wa_dq_step_on' => '1', 'wa_dq_freeze_n' => '0', 'wa_dq_good_n' => '0', 'wa_dq_stat' => ''] as $k1 => $v1) setting_set($pdo, $k1, $v1);
             setting_set($pdo, 'wa_dq_step_last', (string)time());
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing speed set to 15,000 an hour (owner, 24 Nov 2026): the daily plan no longer holds the campaigns at about 3,000; the floor is 10,000 an hour even when many messages fail. Meta\'s own limits and the 131048 spam hold still apply.'); } } catch (Throwable $e0) { }
+    try { if (setting_get($pdo, 'wa_dq_7k_2411', '') !== '1') { setting_set($pdo, 'wa_dq_7k_2411', '1');   /* owner 24 Nov 2026 (15:45 IST): "jump from 3,000 to 7,000 now": the speed starts at 7,000 an hour (floor 7,000) and the auto ladder climbs +1,000 on good checks up to 15,000 */
+            foreach (['wa_dq_hourly' => '7000', 'wa_dq_base' => '7000', 'wa_dq_floor' => '7000', 'wa_dq_top' => '15000', 'wa_dq_freeze_n' => '0', 'wa_dq_good_n' => '0', 'wa_dq_stat' => ''] as $k2 => $v2) setting_set($pdo, $k2, $v2);
+            setting_set($pdo, 'wa_dq_step_last', (string)time());
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Marketing speed 3,000 → 7,000 an hour (owner, 24 Nov 2026); floor 7,000, the ladder climbs +1,000 on good checks up to 15,000.'); } } catch (Throwable $e0) { }
     wa_dq_auto_hold($pdo); wa_dq_auto_step($pdo);
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
     $base = max(1000, min(1000000, (int)$g('wa_dq_daily', '75000'))); $auto = $g('wa_dq_auto', '1') !== '0'; $dmin = max(1000, (int)$g('wa_dq_daily_min', '40000')); $dmax = max($dmin, $base, (int)$g('wa_dq_daily_max', '90000')); $daily = $base;   // the number the owner saved is never cut down by the automatic ceiling
