@@ -1,0 +1,49 @@
+# READ-ONLY: the last checkout links made from chats: the total HRMS was told vs what the website says about the link now (no phone numbers, names or addresses).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Checkout links check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Checkout links
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/cl_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          echo "server " . date("Y-m-d H:i:s") . "\n";
+          $set = function ($k) use ($d) { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); return trim((string)$q->fetchColumn()); };
+          $base = rtrim($set("tms_api_base") ?: "https://test.tmperfumehouse.store/api/v1", "/"); $key = $set("tms_api_key"); echo "base host " . parse_url($base, PHP_URL_HOST) . "\n";
+          $get = function ($path) use ($base, $key) { $ch = curl_init($base . $path); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ["Authorization: Bearer " . $key, "Accept: application/json"]]); $o = curl_exec($ch); $c = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch); return [$c, json_decode((string)$o, true)]; };
+          $hide = ["phone", "name", "email", "address1", "address2", "customer", "shipping_address", "billing_address", "whatsapp", "text", "pincode", "city", "state"];
+          $show = function ($v, $depth = 0) use (&$show, $hide) { if (!is_array($v)) return is_string($v) ? mb_substr($v, 0, 70) : $v; $o = []; foreach ($v as $k => $x) { if (is_string($k) && in_array($k, $hide, true)) { $o[$k] = "(hidden)"; continue; } $o[$k] = $depth >= 3 ? "..." : $show($x, $depth + 1); } return $o; };
+          $rows = $d->query("SELECT id, number, total, sent, created_at FROM wso_order ORDER BY id DESC LIMIT 12")->fetchAll(PDO::FETCH_ASSOC); $n = 0;
+          foreach ($rows as $r) { echo "--- link #" . $r["id"] . " made " . $r["created_at"] . " · HRMS was told total " . $r["total"] . " · sent " . $r["sent"] . "\n";
+            if (!preg_match('/^[a-z0-9]{6,20}$/', (string)$r["number"])) { echo "    (older row, an order number)\n"; continue; }
+            [$c, $j] = $get("/checkout-links/" . $r["number"]); $x = is_array($j) ? ($j["data"] ?? $j) : null;
+            if (!is_array($x)) { echo "    website HTTP $c\n"; continue; }
+            $flat = []; foreach ($x as $k => $v) if (!is_array($v) && !in_array($k, $hide, true) && !in_array($k, ["url", "token"], true)) $flat[] = $k . "=" . (is_string($v) ? mb_substr($v, 0, 40) : json_encode($v)); echo "    website: " . implode(" · ", $flat) . "\n";
+            if ($n++ < 3) echo "    full: " . mb_substr(json_encode($show(array_diff_key($x, ["url" => 1, "token" => 1])), JSON_UNESCAPED_UNICODE), 0, 1800) . "\n"; }
+          PHP
+          php /tmp/cl_check.php "$P"; rm -f /tmp/cl_check.php
+          REMOTE
