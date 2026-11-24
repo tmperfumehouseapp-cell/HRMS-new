@@ -19544,7 +19544,7 @@ if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   //
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
 if (strpos((string)$action, 'lh.') === 0) { require __DIR__ . '/leader_helper.php'; }   // 👥 Leaders Helper: fixed salary, daily checklist, daily payout
 if (strpos((string)$action, 'fup.') === 0 && is_file(__DIR__ . '/followup.php')) { require __DIR__ . '/followup.php'; }   // 📌 Follow-up: sections → topics → one update a day, checked by Claude
-       if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\.|^team\.(board|person)$/', (string)$action)) { require __DIR__ . '/wa.php'; }   // team.board / team.person live in team_board.php (loaded by wa.php); the other team.* actions (team.sheet = Orders → Employee sheet, team.check, team.me …) belong to api.php itself and must NOT go to wa.php (it answered them 'Unknown WhatsApp action')          // wq. = WhatsApp Sales (wq.php, loaded by wa.php → wa_more.php)
+       if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso)\.|^team\.(board|person)$/', (string)$action)) { require __DIR__ . '/wa.php'; }   // team.board / team.person live in team_board.php (loaded by wa.php); the other team.* actions (team.sheet = Orders → Employee sheet, team.check, team.me …) belong to api.php itself and must NOT go to wa.php (it answered them 'Unknown WhatsApp action')          // wq. = WhatsApp Sales (wq.php, loaded by wa.php → wa_more.php)
 
 // Phone reminders need no cron: once a minute, whichever request comes in
 // fires a detached reminders.tick call and carries on (never waits for it).
