@@ -2,13 +2,28 @@
 /**
  * wa_modc.php — MODULE C (owner, 24 Nov 2026): people whose marketing message FAILED (Meta's per-customer marketing limit 131049 / 131050 / 130472) and who NEVER wrote to us
  * (Module B takes only those who asked within 90 days or ordered within 180). They get ONE plain UTILITY message (the "open" kind of the standard pool: name only, no offer, no price,
- * no claim of an enquiry or an order), 200 an hour (setting wa_rc_hourly), from the failed items of campaigns since 1 Nov (setting wa_rc_from).
+ * no claim of an enquiry or an order), 200 an hour to start, then 300 / 400 / 500 / 600 / 1000 while delivery is clean (setting wa_rc_level), from the failed items of campaigns since 1 Nov (setting wa_rc_from).
  *  · UTILITY templates only; a message Meta moved to marketing is never used here.
  *  · Own counter (wa_ru_log kind 'cnev'), own switch (wa_rc_on = 0 stops it), own pause (wa_rc_pause_until). A person is messaged once ever (any row in wa_ru_log blocks).
  *  · Stops itself: Module B's pause, the marketing hold, quiet hours, 5 or more Meta spam flags (131048) in 4 hours = 6 hours' pause, 60% failed of the last 40+ = 1 hour's pause.
  * Called from the minute job after Module B (wa_rec.php). PHP 7.4 safe.
  */
 if (!function_exists('wa_rc_tick')) {
+    /** Module C's hourly speed (owner 24 Nov 2026): starts at 200, goes 300, 400, 500, 600, 1000 while delivery is clean (checked every 30 minutes on the messages of the window 2 hours to 30 minutes ago: at least 60% of the speed was used and under 10% failed), back to 200 when 25% or more failed, when Meta flags spam (131048) or when it paused. Setting wa_rc_level. */
+    function wa_rc_ladder(): array { return [200, 300, 400, 500, 600, 1000]; }
+    function wa_rc_level(PDO $pdo, int $nowTs): int
+    {
+        $lad = wa_rc_ladder(); $lvl = (int)setting_get($pdo, 'wa_rc_level', '0'); if (!in_array($lvl, $lad, true)) { $lvl = 200; setting_set($pdo, 'wa_rc_level', '200'); }
+        try { if ((int)setting_get($pdo, 'wa_rc_lad_at', '0') > $nowTs - 1800) return $lvl; if (!wa_ru_in_window($pdo, $nowTs - 7200)) return $lvl;   // the window must have been open the whole time
+            setting_set($pdo, 'wa_rc_lad_at', (string)$nowTs);
+            $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? AND r.at < ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 7200), date('Y-m-d H:i:s', $nowTs - 1800)]); $r = $q->fetch(); $n = (int)$r['n']; $f = (int)$r['f'];
+            $why = ''; $new = $lvl; $idx = array_search($lvl, $lad, true);
+            if ($n >= 30 && $f / max(1, $n) >= 0.25) { $new = 200; $why = $f . ' of ' . $n . ' failed'; }
+            elseif ($n >= (int)round($lvl * 1.5 * 0.6) && $f / max(1, $n) < 0.10) { if ($idx !== false && $idx < count($lad) - 1) { $new = $lad[$idx + 1]; $why = 'clean: ' . $n . ' sent, ' . $f . ' failed'; } }
+            if ($new !== $lvl) { setting_set($pdo, 'wa_rc_level', (string)$new); $lvl = $new; if (function_exists('wa_log')) wa_log($pdo, 'campaign', $new > 200, 'Module C speed ' . ($new > 200 ? 'up' : 'back') . ' to ' . $new . ' an hour (' . $why . ')'); }
+            setting_set($pdo, 'wa_rc_lad_last', json_encode(['at' => $nowTs, 'n' => $n, 'f' => $f, 'level' => $lvl, 'why' => $why])); } catch (Throwable $e) { }
+        return $lvl;
+    }
     function wa_rc_tick(PDO $pdo): array
     {
         $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
@@ -23,15 +38,15 @@ if (!function_exists('wa_rc_tick')) {
             if ((int)setting_get($pdo, 'wa_dq_hold_until', '0') > $nowTs) { $res['note'] = 'marketing hold (131048) running'; return $res; }
             if (!wa_ru_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
             if (!function_exists('wa_lock') || !wa_lock($pdo, 'rcnev', 50)) { $res['note'] = 'busy'; return $res; }
-            $t0 = microtime(true); $hourly = max(0, min(3000, (int)setting_get($pdo, 'wa_rc_hourly', '200')));
+            $t0 = microtime(true); $hourly = wa_rc_level($pdo, $nowTs);
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE kind = 'cnev' AND at >= ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 3600)]); $left = $hourly - (int)$q->fetchColumn();
             $q->execute([date('Y-m-d H:i:s', $nowTs - 300)]); $left = min($left, (int)ceil($hourly / 12) + 1 - (int)$q->fetchColumn());   // spread: a twelfth of the hour in any 5 minutes
-            if ($left <= 0) { $res['note'] = 'this hour\'s 200 are used'; return $res; }
+            if ($left <= 0) { $res['note'] = 'this hour\'s ' . $hourly . ' are used'; return $res; }
             // brakes
             try { $q2 = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? AND m.status = 'failed' AND m.err_code = 131048"); $q2->execute([date('Y-m-d H:i:s', $nowTs - 4 * 3600)]);
-                if ((int)$q2->fetchColumn() >= 5) { setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 6 * 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C stopped for 6 hours: Meta flagged 5 or more of its messages as spam (131048)'); $res['note'] = 'paused: spam flag'; return $res; } } catch (Throwable $e) { }
+                if ((int)$q2->fetchColumn() >= 5) { setting_set($pdo, 'wa_rc_level', '200'); setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 6 * 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C stopped for 6 hours: Meta flagged 5 or more of its messages as spam (131048)'); $res['note'] = 'paused: spam flag'; return $res; } } catch (Throwable $e) { }
             try { $q3 = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? AND r.at <= ?"); $q3->execute([date('Y-m-d H:i:s', $nowTs - 7200), date('Y-m-d H:i:s', $nowTs - 600)]); $hr = $q3->fetch();
-                if ((int)$hr['n'] >= 40 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' failed'); $res['note'] = 'paused: too many failures'; return $res; } } catch (Throwable $e) { }
+                if ((int)$hr['n'] >= 40 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_rc_level', '200'); setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' failed'); $res['note'] = 'paused: too many failures'; return $res; } } catch (Throwable $e) { }
             // the utility messages that fit people who never wrote: the plain "open" kind, no claim of an enquiry / an order, approved as UTILITY (never one Meta moved to marketing)
             $pool = function_exists('wa_ru_pool') ? wa_ru_pool($pdo) : [];
             $pool = array_values(array_filter($pool, function ($t) { return ($t['pool_kind'] ?? '') === 'open' && empty($t['claims']) && empty($t['as_marketing']) && strtolower((string)($t['category'] ?? 'utility')) === 'utility'; }));
@@ -75,7 +90,7 @@ if (!function_exists('wa_rc_tick')) {
                 [$ok, $rr, $ecs] = wa_send_tpl_one($pdo, ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => 0], $tSend, $num, $pk['vars'], 'recover');
                 try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at, attempt, vars_json) VALUES (?, ?, ?, 'cnev', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
                     ->execute([(int)$it['camp_id'], (int)$it['id'], $ph, $nid, $tid, $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, (int)$it['err_code'], $ok ? '' : mb_substr((string)$rr, 0, 190), $now, json_encode($pk['vars'], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
-                if ($ok) $res['sent']++; else { $res['failed']++; if ((int)$ecs === 131048) { setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 6 * 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C stopped for 6 hours: Meta flagged a message as spam (131048)'); $broke = true; break; } if (in_array((int)$ecs, [130429, 131056], true)) { $broke = true; break; } }
+                if ($ok) $res['sent']++; else { $res['failed']++; if ((int)$ecs === 131048) { setting_set($pdo, 'wa_rc_level', '200'); setting_set($pdo, 'wa_rc_pause_until', (string)($nowTs + 6 * 3600)); if (function_exists('wa_log')) wa_log($pdo, 'campaign', false, 'Module C stopped for 6 hours: Meta flagged a message as spam (131048)'); $broke = true; break; } if (in_array((int)$ecs, [130429, 131056], true)) { $broke = true; break; } }
             }
             setting_set($pdo, 'wa_rc_rot', (string)($rot % 1000)); setting_set($pdo, 'wa_rc_cursor', (string)(count($items) >= $lim || $broke ? $lastId : 0));
             arsort($why); $res['why'] = array_slice($why, 0, 6, true);
@@ -88,7 +103,7 @@ if (!function_exists('wa_rc_tick')) {
     /** Module C status for the card under After-Order (and the diag): switch, speed, sent this hour / today, receipts, waiting people (counted at most once in 30 minutes). */
     function wa_rc_overview(PDO $pdo): array
     {
-        $o = ['on' => (string)setting_get($pdo, 'wa_rc_on', '1') !== '0', 'hourly' => (int)setting_get($pdo, 'wa_rc_hourly', '200'), 'from' => (string)setting_get($pdo, 'wa_rc_from', '2026-11-14 00:00:00'), 'pause_until' => (int)setting_get($pdo, 'wa_rc_pause_until', '0'), 'now' => time(),
+        $o = ['on' => (string)setting_get($pdo, 'wa_rc_on', '1') !== '0', 'hourly' => wa_rc_level($pdo, time()), 'ladder' => wa_rc_ladder(), 'lad_last' => json_decode((string)setting_get($pdo, 'wa_rc_lad_last', ''), true), 'from' => (string)setting_get($pdo, 'wa_rc_from', '2026-11-14 00:00:00'), 'pause_until' => (int)setting_get($pdo, 'wa_rc_pause_until', '0'), 'now' => time(),
             'last' => json_decode((string)setting_get($pdo, 'wa_rc_last', ''), true), 'sent_hour' => 0, 'sent_today' => 0, 'failed_today' => 0, 'receipts' => [], 'by_hour' => [], 'pending' => null, 'pending_at' => 0, 'pending_partial' => false];
         try { if (!function_exists('wa_ru_tables') || !wa_ru_tables($pdo)) return $o; } catch (Throwable $e) { return $o; }
         try { $t0 = date('Y-m-d 00:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE kind = 'cnev' AND at >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 3600)]); $o['sent_hour'] = (int)$q->fetchColumn();
