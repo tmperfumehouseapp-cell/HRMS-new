@@ -12,7 +12,7 @@
 <style>
   .fu{max-width:1500px;margin:0 auto;padding-bottom:40px;}
   .fu *{box-sizing:border-box;}
-  .fu-pills{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none;}
+  .fu-pills{display:flex;flex-wrap:wrap;gap:7px;padding:2px 0 10px;}   /* every section is shown: the row wraps instead of hiding the rest behind a scroll with no bar */
   .fu-pills::-webkit-scrollbar{display:none;}
   .fu-pill{flex:none;white-space:nowrap;font:inherit;font-size:13px;font-weight:800;padding:9px 17px;border-radius:999px;background:#fff;border:1px solid var(--line);color:#4a4f5c;cursor:pointer;}
   .fu-pill.on{background:#111827;color:#fff;border-color:#111827;}
