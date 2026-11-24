@@ -239,6 +239,29 @@ function fup_seed_myntra_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_myntra_topics: ' . $e->getMessage()); }
 }
 
+/** Once: two more manual topics for the owner's "Website" section (what was learned in editing today, which community was made today). Nobody assigned. Same title is not made twice. */
+function fup_seed_website_topics2(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_website_topics_v2', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'website' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%website%' AND LOWER(REPLACE(name, ' ', '')) NOT LIKE '%tm4u%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', 1, '', 'open', ?, 1, 0, ?)");
+        $list = [
+            ['Editing: what new was learned today', 'Write what new thing was learned in editing today.'],
+            ['Community made today', 'Write which community was made today.'],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_website_topics_v2', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_website_topics2: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's twelve hand-written topics of his "Website" section (the section is made by the owner; this waits for it). Manual updates only. A topic with the same title is not made twice. Nobody is assigned: the owner gives each topic to a person himself. */
 function fup_seed_website_topics(PDO $pdo): void
 {
@@ -847,6 +870,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_tm4u_upload_topic($pdo);
     fup_seed_third_party_topics($pdo);
     fup_seed_website_topics($pdo);
+    fup_seed_website_topics2($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
