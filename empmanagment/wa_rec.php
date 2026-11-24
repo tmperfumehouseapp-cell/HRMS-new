@@ -3,7 +3,7 @@
  * wa_rec.php — 🔁 Recover failed campaign messages (owner, 11 Nov 2026).
  *
  * THE IDEA IN PLAIN WORDS
- *  - A person whose campaign message FAILED for a reason another number can fix gets the same message again from a DIFFERENT number, slowly (up to wa_rec_hourly = 5,000 an hour,
+ *  - A person whose campaign message FAILED for a reason another number can fix gets the same message again from a DIFFERENT number, slowly (up to wa_rec_hourly = 25,000 an hour (owner, 24 Nov; was 5,000),
  *    one by one, never inside the running campaign pool and never inside ⚡ Send fast). Three attempts per person in all (the first send is attempt 1), at least an hour apart.
  *  - Attempt 3 (or attempt 2 when Meta says the message itself has a problem) uses an approved ALTERNATIVE wording of the same message (same variables, same offer).
  *  - Alternatives (max 2 per message: versions 2 and 3 of its family) are written by Claude and sent to Meta for approval by themselves for every message that has failures today;
@@ -13,7 +13,7 @@
  *  - Never to people who were delivered another way, wrote back, opted out, or already have an attempt in the last hour.
  *  - Every attempt is written to wa_rec_log (who, which number, which message version, when). Delivery comes from the same Meta receipts as every message (wa_messages.status by wamid),
  *    so "recovered" only ever means Meta said delivered / read.
- * Settings: wa_rec_on 1 · wa_rec_hourly 5000 · wa_rec_alts 1 · wa_rec_pause_until (set by itself)
+ * Settings: wa_rec_on 1 · wa_rec_hourly 25000 · wa_rec_alts 1 · wa_rec_pause_until (set by itself)
  * Routes (in wa_camp.php): wa.rec_report GET {id} · wa.rec_set POST {on}
  */
 if (!function_exists('wa_rec_tables')) {
@@ -35,7 +35,8 @@ function wa_rec_tables(PDO $pdo): bool
 function wa_rec_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
-    return ['on' => $g('wa_rec_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_rec_hourly', '5000'))), 'alts' => $g('wa_rec_alts', '1') !== '0', 'pause_until' => (int)$g('wa_rec_pause_until', '0'), 'max_attempts' => 3, 'gap_min' => 60, 'held_on' => $g('wa_rec_held', '1') !== '0', 'held_off_until' => (int)$g('wa_rec_held_off_until', '0')];
+    try { if ($g('wa_rec_h25_v', '') !== '1') { setting_set($pdo, 'wa_rec_hourly', '25000'); setting_set($pdo, 'wa_rec_h25_v', '1'); } } catch (Throwable $e) { }   // owner, 24 Nov: Module A's recovery speed limit 5,000 -> 25,000 an hour (one time; later changes stay)
+    return ['on' => $g('wa_rec_on', '1') !== '0', 'hourly' => max(10, min(30000, (int)$g('wa_rec_hourly', '5000'))), 'alts' => $g('wa_rec_alts', '1') !== '0', 'pause_until' => (int)$g('wa_rec_pause_until', '0'), 'max_attempts' => 3, 'gap_min' => 60, 'held_on' => $g('wa_rec_held', '1') !== '0', 'held_off_until' => (int)$g('wa_rec_held_off_until', '0')];
 }
 /** 'never' | 'held' | 'tpl' (the message itself has a problem → use an alternative) | 'now' (another number can fix it). */
 function wa_rec_class(int $ec): string
