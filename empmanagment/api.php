@@ -1147,9 +1147,10 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
     $n = 0;
     foreach ($orders as $o) {
         $created = date('Y-m-d H:i:s', strtotime($o['created_at']));
+        try {      // one order that cannot be saved (a value too long for its column …) must never stop the orders after it from being copied
         $stmt->execute([
-            $o['id'], $storeKey, $o['order_name'], $created,
-            $o['customer'] ?? '', $o['phone'] ?? '', (int)($o['items'] ?? 0),
+            $o['id'], $storeKey, mb_substr((string)$o['order_name'], 0, 40), $created,
+            mb_substr((string)($o['customer'] ?? ''), 0, 120), mb_substr((string)($o['phone'] ?? ''), 0, 40), (int)($o['items'] ?? 0),
             (float)$o['total'], $o['currency'] ?? 'INR',
             $o['financial_status'] ?? '', $o['fulfillment_status'] ?? 'unfulfilled',
             (string)($o['tags'] ?? ''),
@@ -1160,6 +1161,7 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
             array_key_exists('xparts', $o) && $o['xparts'] !== null ? json_encode($o['xparts'], JSON_UNESCAPED_UNICODE) : null,
             isset($o['pay_ref']) ? mb_substr((string)$o['pay_ref'], 0, 200) : null,
         ]);
+        } catch (PDOException $e) { error_log('orders_upsert ' . $storeKey . ' ' . ($o['order_name'] ?? '') . ': ' . $e->getMessage()); $GLOBALS['__orders_upsert_err'] = ($o['order_name'] ?? '') . ': ' . $e->getMessage(); continue; }
         $n++;
         try { order_auto_alloc($pdo, $storeKey, $o); } catch (Throwable $e) { }   // 🤖 a new order is allocated to the chat's salesperson at once
     }
@@ -31946,6 +31948,19 @@ switch ($action) {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) json_response(['error' => 'Dates must be YYYY-MM-DD.'], 422);
         @set_time_limit(300);
         $errors = [];
+        // The Codes page reads the saved copy of the Shopify orders. When the range reaches today, today's (and yesterday's) orders are copied from Shopify NOW, in full
+        // (the background copy takes only a few pages and can fall behind on a busy day: new website orders were on the Orders page but not here) — at most once in 45 s.
+        try {
+            $__bt = biz_today($pdo);
+            if ($dateTo >= $__bt && ensure_shop_orders_table($pdo)) {
+                $__sf = sys_get_temp_dir() . '/hrms_codes_sync.txt';
+                if (time() - (int)@file_get_contents($__sf) > 45) {
+                    @file_put_contents($__sf, (string)time());
+                    orders_sync_range($pdo, max($dateFrom, date('Y-m-d', strtotime($__bt . ' -1 day'))), $dateTo, 40, $errors);
+                    if (!empty($GLOBALS['__orders_upsert_err'])) $errors[] = 'An order could not be saved in the order copy: ' . $GLOBALS['__orders_upsert_err'];
+                }
+            }
+        } catch (Throwable $e) { $errors[] = 'Copying today\'s orders from Shopify failed: ' . $e->getMessage(); }
         $orders = code_orders_range($pdo, $dateFrom, $dateTo, $errors);
         $sources = [];
         foreach (shopify_stores() as $k => $st) $sources[$k] = $st['label'];
