@@ -1247,7 +1247,7 @@ function st_plan_calc(PDO $pdo, int $total, int $targetMl, int $days, string $mo
     foreach ($pdo->query("SELECT product_id, ml, COUNT(*) c FROM st_bottles WHERE status = 'stock' AND kind = 'sale' GROUP BY product_id, ml")->fetchAll() as $r) {
         $pid = (int)$r['product_id']; if (!isset($P[$pid])) continue; $P[$pid]['stock_ml'] += (int)$r['c'] * (int)$r['ml']; if (isset($P[$pid]['stock_by'][(int)$r['ml']])) $P[$pid]['stock_by'][(int)$r['ml']] += (int)$r['c'];
     }
-    foreach (st_on_order_map($pdo) as $k => $qty) { [$pid, $ml] = array_map('intval', explode('|', $k)); if (isset($P[$pid])) { $P[$pid]['oo_ml'] += (int)$qty * $ml; if (isset($P[$pid]['oo_by'][$ml])) $P[$pid]['oo_by'][$ml] += (int)$qty * $ml; } }
+    // orders already placed are NOT counted as stock: a new order starts from zero (the earlier order is cleared when the new one is created)
     if ($mode === 'same') {       // only the size being ordered: its own sales, its own stock, its own placed orders
         foreach ($P as $pid => &$p) { $p['ml7'] = $p['m7'][$targetMl] ?? 0; $p['ml30'] = $p['m30'][$targetMl] ?? 0; $p['b30'] = (int)round($p['ml30'] / $targetMl); $p['stock_ml'] = ($p['stock_by'][$targetMl] ?? 0) * $targetMl; $p['oo_ml'] = $p['oo_by'][$targetMl] ?? 0; }
         unset($p);

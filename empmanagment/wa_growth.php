@@ -95,7 +95,8 @@ function wag_cfg(PDO $pdo): array
     // once (owner, 23 Nov): the whole guidebook is rewritten as ONE clean version (newest rules first, one rule per topic); see wa_guide_clean.php
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_clean_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_clean_run($pdo); } } catch (Throwable $e) { }
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_purge_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_purge_old($pdo); } } catch (Throwable $e) { }
-    try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_card_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_card($pdo); } } catch (Throwable $e) { }   // the OUR OWN CARD sentence goes into the live guidebook once (owner, 23 Nov)   // the old guidebook versions are removed once (owner, 23 Nov)
+    try { if (!empty($__gbl)) { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_rows($pdo); } } catch (Throwable $e) { }   // PACK = TOTAL ML + no photo without a named perfume go into the live guidebook once (owner, 24 Nov)
+    try { if (!empty($__gbl)) { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_card($pdo); } } catch (Throwable $e) { }   // the OUR OWN CARD sentence goes into the live guidebook once (owner, 23 Nov)   // the old guidebook versions are removed once (owner, 23 Nov)
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules4', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules4', '1'); $g = lib_guide_row($pdo, 'live');
         if ($g) { $gb = json_decode((string)$g['body'], true); if (is_array($gb)) {
@@ -580,10 +581,43 @@ function wag_pack_price_clamp(PDO $pdo, array $msgs, string $reply): string
     } catch (Throwable $e) { return $reply; }
 }
 /** Checks a reply: a price that belongs to ANOTHER chart row than the customer's total, or a first price that is not the chart (7%) price, is replaced by the correct chart price. Returns [reply, changed]. */
+/** A pack named in ANY word order ('8 x 20 ml', '20 ml ke 8 bottle', '8 bottle 20 ml') followed by a rupee amount: when the amount is not on the price table row of the pack's TOTAL ml (owner, 24 Nov: 'Rs 600' said for 8 x 20 ml = 160 ml, 600 is the 100 ml price) it is replaced by that row's price at the level already said (the chart price when nothing was said). Then 'Rs X aur dekar N bottle extra ... M bottle' gets X = the difference of the two table rows. */
+function wag_pack_rows_guard(PDO $pdo, array $msgs, string $reply): string
+{
+    try {
+        $c = ml_slab_get($pdo); $rows = []; foreach ((array)($c['rows'] ?? []) as $r) $rows[(int)($r['ml'] ?? 0)] = array_map('intval', (array)($r['p'] ?? [])); if (!$rows) return $reply;
+        $res = ['/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu' => [1, 2], '/(?<![\d.])(\d{2,3})\s*ml\s*(?:ke|ki|ka|ko|x)?\s*(\d{1,2})\s*(?:bottles?|btl|pcs|pieces?)([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu' => [2, 1], '/(?<![\d.])(\d{1,2})\s*(?:bottles?|btl|pcs|pieces?)\s*(?:of\s*)?(\d{2,3})\s*ml([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu' => [1, 2]];
+        $fixed = 0; $last = [0, 0];
+        foreach ($res as $re => $ix) {
+            $reply = preg_replace_callback($re, function ($m) use ($rows, $msgs, $ix, &$fixed, &$last) {
+                $n = (int)$m[$ix[0]]; $ml = (int)$m[$ix[1]]; if ($n < 2 || $n > 30 || $ml < 10 || $ml > 500) return $m[0]; $total = $n * $ml; if (!isset($rows[$total])) return $m[0];
+                $p = $rows[$total]; $v = (int)str_replace(',', '', $m[5]); if (wag_near_idx($p, $v) >= 0) { $last = [$total, $v]; return $m[0]; }
+                $row = ['ml' => $total, 'p' => $p, 'chart' => (int)$p[0]]; $lo = max(wag_price_depth($msgs, $row), wag_arrival_idx($row, $msgs)); $new = (int)$p[max(0, min($lo, count($p) - 1))]; $fixed++; $last = [$total, $new];
+                $txt = strpos($m[5], ',') !== false ? number_format($new) : (string)$new; return str_replace($m[5], $txt, $m[0]); }, $reply);
+            if (!is_string($reply)) return $reply ?? '';
+        }
+        if ($fixed > 0 && $last[0] > 0 && preg_match('/(rs\.?|₹)\s*([\d,]{2,5})(\s*(?:aur|more|extra|dekar|de kar)[^.\n]{0,30}?)(\d{1,2})\s*(?:bottles?|btl)([^.\n]{0,40}?)(\d{1,2})\s*bottles?/iu', $reply, $q)) {
+            $per = 0; foreach ([20, 50, 100, 10] as $mlx) if ($last[0] % $mlx === 0 && $last[0] / $mlx >= 2) { $per = $mlx; break; } $t2 = $per > 0 ? $last[0] + (int)$q[4] * $per : 0;
+            if ($t2 > 0 && isset($rows[$t2])) { $pi = array_search($last[1], $rows[$last[0]], true); $d = (int)$rows[$t2][$pi === false ? 0 : $pi] - $last[1]; if ($d > 0) { $txt = strpos($q[2], ',') !== false ? number_format($d) : (string)$d; $reply = str_replace($q[0], $q[1] . ' ' . $txt . $q[3] . $q[4] . ' bottle' . $q[5] . $q[6] . ' bottles', $reply); } } }
+        if ($fixed > 0) { try { if (function_exists('wag_fg_count')) wag_fg_count($pdo, 'pack_rows', 'fix'); } catch (Throwable $e) { } }
+        return $reply;
+    } catch (Throwable $e) { return $reply; }
+}
+/** One bottle of 20 / 50 ml is never quoted below its official price (owner, 24 Nov: a follow-up said 'Sir, 50 ml ka price Rs 600 hai' - 600 is a per-bottle price INSIDE a combo; one 50 ml bottle is Rs 1,199): such a sentence becomes the one-bottle message (one bottle is expensive, take 3). Only a bare '20 ml / 50 ml ka price Rs X' (no count in front) with X below the official price. */
+function wag_single_price_guard(PDO $pdo, string $reply): string
+{
+    try {
+        if (!preg_match('/(?<![\d.x×*])(?<!\d )(20|50)\s*ml\s*(?:ka|ki|ke)?\s*(?:price|rate|kimat)[^₹\n]{0,12}?(?:rs\.?|₹)\s*([\d,]{3,5})/iu', $reply, $m)) return $reply;
+        $ml = (int)$m[1]; $v = (int)str_replace(',', '', $m[2]); $one = wag_official_price($pdo, $ml); if ($one <= 0 || $v >= $one) return $reply;
+        $ob = wag_one_bottle_msg($pdo, 1, $ml); if ($ob === '') return $reply;
+        try { if (function_exists('wag_fg_count')) wag_fg_count($pdo, 'single_price', 'fix'); } catch (Throwable $e) { }
+        return $ob;
+    } catch (Throwable $e) { return $reply; }
+}
 function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
 {
     [$__r1, $__c1] = wag_price_enforce0($pdo, $msgs, $reply); if ($__c1) return [$__r1, true];
-    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); return [$__r2, $__r2 !== $reply];
+    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); $__r3 = wag_pack_rows_guard($pdo, $msgs, $__r2); $__r4 = wag_single_price_guard($pdo, $__r3); return [$__r4, $__r4 !== $reply];
 }
 function wag_price_enforce0(PDO $pdo, array $msgs, string $reply): array
 {
@@ -1773,6 +1807,38 @@ function wag_fu1_text(PDO $pdo, array $c, array $rows): string
     $hi = $nm !== '' ? 'Hi ' . $nm . ', ' : 'Hi, ';
     return $hi . 'aapko ' . ($pf !== '' ? $pf : 'kaun se perfume') . ' ka confusion hai, aap wo hamare saath share kar sakte ho.';
 }
+/** True when the follow-up ladder must NOT start / go on for this chat (owner, 24 Nov: a customer who shopped, answered our 'how was your experience' message and got thanked, then got 'step 1 of 10 ... Doubt hai' three minutes later; same after a plain 'Thanks' to our customer-care message):
+ *  (a) the bot has just thanked his experience feedback (the thank-you answered his last message), (b) his last message is only thanks / ok / very good and the message before it was one of our care / experience / order-check messages, (c) he ever bought from us (our customer table, or a shop order in the last year) and his last message asks nothing (no price / size / perfume word), (d) in the last 20 days of the chat: an automatic order message, a not-now / not-interested or a complaint word, and his last message asks nothing, (h) 20 bot follow-ups already in 20 days. */
+function wag_fu_context_stop(PDO $pdo, string $phone, string $lastIn): bool
+{
+    try {
+        $li = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'in'"); $li->execute([$phone]); $lt = (string)$li->fetchColumn();
+        $t = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'sys' AND body LIKE ? AND ts >= ?"); $t->execute([$phone, '%thanked the customer for his experience feedback%', date('Y-m-d H:i:s', time() - 3 * 86400)]); $tt = (string)$t->fetchColumn();
+        if ($tt !== '' && $lt !== '' && $tt >= $lt) return true;   // (a)
+        $triv = '/^\W*(thanks?|thank you|thanku|thx|ty|ok+|okay|k|done|got it|noted|fine|nice|good|very good|great|cool|awesome|excellent|superb|welcome|shukriya|dhanyawad|धन्यवाद|शुक्रिया|ठीक( है)?|जी|हाँ|हां|ओके|theek( hai)?|thik( hai)?|bahut accha|bahut badhiya|mast)\W*$/iu';
+        if (preg_match($triv, trim($lastIn))) {   // (b)
+            $p = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND ts < ? ORDER BY id DESC LIMIT 1"); $p->execute([$phone, $lt !== '' ? $lt : date('Y-m-d H:i:s')]); $pb = (string)$p->fetchColumn();
+            if ($pb !== '' && preg_match('/customer care team|thank you for being|thank you for shopping|how was your experience|did your order|your contact is saved|welcome back to TM|registered customer|this is about your order|experience with TM/iu', $pb)) return true;
+        }
+        $ask = '/(price|rate|kitn|kimat|cost|offer|discount|combo|\bml\b|size|chahiye|\d+\s*[x*]\s*\d+|bottle|perfume|order|कीमत|कितना|ભાવ|કિંમત)/iu';
+        // (d) the last 20 days of this chat (owner, 24 Nov: 'read the last 15-20 days of messages and stop when something is wrong')
+        $hs = $pdo->prepare("SELECT dir, who, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND dir IN ('in', 'out', 'sys') ORDER BY id DESC LIMIT 400"); $hs->execute([$phone, date('Y-m-d H:i:s', time() - 20 * 86400)]); $hist = $hs->fetchAll(PDO::FETCH_ASSOC); $nfu = 0; $orderMsg = false; $declined = false; $bad = false; $first = true;
+        foreach ($hist as $hm) { $bd = (string)($hm['body'] ?? ''); $dr = (string)($hm['dir'] ?? '');
+            if ($dr === 'sys' && strpos($bd, 'The bot followed up') !== false) $nfu++;
+            if ($dr === 'out' && (string)($hm['who'] ?? '') === 'order') $orderMsg = true;
+            if ($dr === 'in') { if ($first) { $first = false; continue; }   // the latest message is judged here and above
+                if (preg_match('/(not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|unsubscribe|\bstop\b|not now|abhi nahi)/iu', $bd)) $declined = true;
+                if (preg_match('/(damaged|leak|not received|nahi mila|nhi mila|wrong (item|product|perfume)|refund|exchange|cheat|fraud|fake|scam|bad quality|kharab|complaint)/iu', $bd)) $bad = true; } }
+        if ($nfu >= 20) return true;   // (h) already 20 bot follow-ups in 20 days: enough
+        if (!preg_match($ask, $lastIn) && ($orderMsg || $declined || $bad)) return true;   // (d) an order flow / a 'not now' / a complaint in the last 20 days and he asks nothing now
+        if (!preg_match($ask, $lastIn)) {   // (c)
+            try { $wc = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $wc->execute([$phone]); if ((int)$wc->fetchColumn() > 0) return true; } catch (Throwable $e) { }   // a bought customer in our own customer table (any time)
+            $k10 = substr(preg_replace('/\D+/', '', $phone), -10);
+            if (strlen($k10) === 10) { $o = $pdo->prepare("SELECT COUNT(*) FROM shop_orders WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+', ''), '-', '') LIKE ? AND created_at >= ?"); $o->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 365 * 86400)]); if ((int)$o->fetchColumn() > 0) return true; }
+        }
+    } catch (Throwable $e) { }
+    return false;
+}
 function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follow-ups must be FAST — 6 per tick (was 2; only ~4 a minute went out with 347 due)
 {
     if (defined('WA_IN_WEBHOOK') || (string)setting_get($pdo, 'wag_bfu_on', '1') === '0' || wag_cfg($pdo)['bot'] !== 'on') return 0;
@@ -1817,6 +1883,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         $lastOut = $rows[0]; if ((string)$lastOut['who'] !== 'bot' && !($cnt > 0) && !$__pp) continue;   // only a customer the BOT was talking to; later steps continue after our own follow-up
         if ($cnt > 0 && (string)$lastOut['who'] !== 'bot') continue; if ((string)$lastOut['mtype'] !== 'text') continue;
         $lastIn = ''; foreach ($rows as $r) { if (false) break; } $qi = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $qi->execute([$key]); $lastIn = trim((string)$qi->fetchColumn());
+        if (wag_fu_context_stop($pdo, $key, $lastIn)) { $D['ctx'] = (int)($D['ctx'] ?? 0) + 1; wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }   // owner, 24 Nov: no sales follow-up after our thanks for his feedback / a plain thanks to our care message / for a customer who just shopped and asked nothing
         if (preg_match('/(stop|unsubscribe|not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|no thanks|don.?t message|remove)/iu', $lastIn)) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }
         $fl = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $fl->execute([$key]); if ((int)$fl->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now . ($__pp ? '|p|' . $refT : ''));   // claimed before the AI call: never twice

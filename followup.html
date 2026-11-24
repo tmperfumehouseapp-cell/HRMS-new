@@ -330,7 +330,7 @@ guardPage(); renderSidebar('followup');
      the Admin / HR any earlier date, everybody else today or yesterday. ---------------- */
   function writeUp(id, day) {
     const list = D.topics.filter((x) => x.can_write && x.status !== 'done'); let t = D.topics.find((x) => x.id === id) || list[0]; if (!t) return; if (!day) day = t.due_day;
-    const u0 = id ? t.updates[day] : null; if (u0 && u0.q && u0.text) { askBack(t, day, { topic_id: t.id, day: day, text: u0.text, pct: u0.pct != null ? u0.pct : '' }, u0.q); return; }   // an open question from Claude is answered first
+    const u0 = id ? t.updates[day] : null;   // Claude's question (if any) is only a note: the form always opens and a save always counts
     const m = BD.modal('<h3>Update</h3>'
       + '<div class="fu-row2"><div class="bd-f"><label>Topic</label><select class="bd-in" id="uTop">' + list.map((x) => '<option value="' + x.id + '"' + (x.id === t.id ? ' selected' : '') + '>' + esc(x.title) + '</option>').join('') + '</select></div>'
       + '<div class="bd-f"><label>Date</label>' + (D.manager ? '<input class="bd-in" id="uD" type="date" max="' + D.today + '" value="' + day + '">' : '<select class="bd-in" id="uD">' + D.days.slice(0, 3).map((x) => '<option value="' + x + '"' + (day === x ? ' selected' : '') + '>' + esc(dayName(x, D.today)) + '</option>').join('') + '</select>') + '</div></div>'
@@ -367,8 +367,7 @@ guardPage(); renderSidebar('followup');
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
       for (const [k, file] of files) { q('#uOk').textContent = 'Sending the file…'; const fd = new FormData(); fd.append('topic_id', t.id); fd.append('day', d); fd.append('key', k); fd.append('file', file); await api.upload('fup.file_put', fd); }
       BD.close(); toast('Saved.'); await load(true);
-      if (r && r.ai && r.ai.question) askBack(t, d, body, r.ai.question);
-      else if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
+      if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
     });
     setTimeout(() => { try { (t.source || SUMONLY || q('#uV').value ? q('#uT') : q('#uV')).focus(); } catch (e) { /* fine */ } }, 50);
   }

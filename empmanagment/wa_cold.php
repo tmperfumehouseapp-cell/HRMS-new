@@ -13,7 +13,7 @@ require_once __DIR__ . '/wa_rate.php';   // the hourly speed limit with a ladder
 if (!function_exists('wcd_tick')) {
     /** Failure share of the latest 600 Cold sends: [delivered or read, failed]. */
     function wcd_fail_stats(PDO $pdo): array { try { $r = $pdo->query("SELECT SUM(m.status IN ('delivered','read')), SUM(m.status = 'failed') FROM (SELECT wamid FROM wa_cold_log WHERE ok = 1 AND wamid <> '' ORDER BY id DESC LIMIT 600) l JOIN wa_messages m ON (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci)")->fetch(PDO::FETCH_NUM); return [(int)($r[0] ?? 0), (int)($r[1] ?? 0)]; } catch (Throwable $e) { return [0, 0]; } }
-    function wcd_ladder(): array { return [1500, 2000, 2500, 3000]; }
+    function wcd_ladder(): array { return [1500, 2000, 2500, 3000, 3500]; }   // owner, 24 Nov: 40,000 a day needs ~3,400 an hour all day; the server load went to 12.6 at 4,000 an hour, so the top is 3,500 (12 hours x 3,500 = 42,000)
     function wcd_tables(PDO $pdo): bool
     {
         static $ok = null; if ($ok !== null) return $ok;
@@ -189,7 +189,7 @@ if (!function_exists('wcd_tick')) {
         if ($__main) $o['moved'] = wcd_mark_replies($pdo, $now);   /* owner, 23 Nov: the old one-statement JOIN failed silently (mixed collations of the two phone columns): 109 customers had written after a Cold message and only 3 were counted */
         if ($mode !== 'live') return $o;
         if (function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours'; return $o; } $h = (int)date('G', $now); if ($h < 9 || $h >= 21) { $o['why'] = 'outside 09-21'; return $o; }
-        if (setting_get($pdo, 'wcd_cap_v', '') !== '3') { setting_set($pdo, 'wcd_cap', '20000'); setting_set($pdo, 'wcd_cap_v', '3'); }   // owner, 23 Nov (night): the daily cap is 20,000 from tomorrow   // owner, 23 Nov: the daily cap goes from 5,000 to 15,000 (utility only, Rs 0.15 each); later changes on the card stay
+        if (setting_get($pdo, 'wcd_cap_v', '') !== '4') { setting_set($pdo, 'wcd_cap', '40000'); setting_set($pdo, 'wcd_cap_v', '4'); }   /* owner, 24 Nov: the daily cap is 40,000 */ if (setting_get($pdo, 'wcd_lad_v', '') !== '1') { setting_set($pdo, 'wrt_idx_cold', '5'); setting_set($pdo, 'wcd_shards', '3'); setting_set($pdo, 'wcd_lad_v', '1'); }   /* owner, 24 Nov: start at 4,000 an hour now (12,500 were sent by 13:20), three Cold ticks at once (a tick sends ~26 in 30 s, so 4,000 an hour needs three) */   // owner, 23 Nov (night): the daily cap is 20,000 from tomorrow   // owner, 23 Nov: the daily cap goes from 5,000 to 15,000 (utility only, Rs 0.15 each); later changes on the card stay
         $cap = max(0, (int)wcd_set($pdo, 'wcd_cap', '15000')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= ?"); $q->execute([date('Y-m-d 00:00:00', $now)]); $today = (int)$q->fetchColumn(); if ($today >= $cap) { $o['why'] = 'daily cap'; return $o; }
         if ($__main && wrt_due($pdo, 'cold')) { try { [$__ok, $__fl] = wcd_fail_stats($pdo); wrt_adapt($pdo, 'cold', wcd_ladder(), 2, $__ok, $__fl, 3.0, 8.0); } catch (Throwable $e) { } }   // once an hour: the failure share of the latest sends moves the hourly limit one step (1,500 / 2,000 / 2,500 / 3,000)
         $__room = wrt_room($pdo, 'cold', wcd_ladder(), 2, $__ns); $o['limit'] = wrt_limit($pdo, 'cold', wcd_ladder(), 2); if ($__room <= 0) { $o['why'] = 'hourly limit'; return $o; }
