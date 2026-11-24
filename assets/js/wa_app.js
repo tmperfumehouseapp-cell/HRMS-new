@@ -1551,7 +1551,7 @@
     let wsLd = null;
     function wsReady(cb) {
       if (window.WaWebOrder) return cb(); if (wsLd) { wsLd.push(cb); return; } wsLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wso_ui.js?v=3';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wso_ui.js?v=4';
       sc.onload = () => { const q = wsLd || []; wsLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = wsLd || []; wsLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     function openWeb() {
