@@ -381,7 +381,7 @@ try {
 } catch (Throwable $e) { echo "ASK CAMPS2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 // 47) After-Order by step (owner 24 Nov): what each kind of message brings, last 24 h and last 7 days (read-only, counts only)
 try {
-    foreach ([['24 h', 1], ['7 days', 7]] as [$lab47, $dd47]) {
+    foreach ([['24 h', 1], ['3 days', 3]] as [$lab47, $dd47]) {
         $r47 = $one("SELECT IF(p.step <= 4, CONCAT('care', p.step), IF((p.step - 5) % 2 = 0, 'offer', 'content')) AS k, COUNT(*) n, SUM(m.status IN ('delivered', 'read')) d, SUM(m.status = 'failed') f,
             SUM(EXISTS (SELECT 1 FROM wa_messages i WHERE i.dir = 'in' AND (i.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) AND i.ts > p.sent_at AND i.ts < DATE_ADD(p.sent_at, INTERVAL 2 DAY))) rep,
             SUM(EXISTS (SELECT 1 FROM shop_orders o WHERE (o.phone COLLATE utf8mb4_unicode_ci) LIKE CONCAT('%', (p.phone COLLATE utf8mb4_unicode_ci)) AND o.created_at > p.sent_at AND o.created_at < DATE_ADD(p.sent_at, INTERVAL 7 DAY))) ord
