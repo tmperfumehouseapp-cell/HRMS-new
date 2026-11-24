@@ -150,6 +150,23 @@ if (!function_exists('wcd_tick')) {
         $st = wcd_tpl_stats($pdo); if (count($o) > 1 && $st) usort($o, function ($a, $b) use ($st) { $sa = $st[(int)$a[0]] ?? ['sent' => 0, 'replied' => 0]; $sb = $st[(int)$b[0]] ?? ['sent' => 0, 'replied' => 0]; return (($sb['replied'] + 0.5) / ($sb['sent'] + 50)) <=> (($sa['replied'] + 0.5) / ($sa['sent'] + 50)); });   /* the message with the best reply rate goes first (a new one starts at a fair guess and is judged after its first sends) */
         return $o;
     }
+    /** 💬 The people behind the Cold funnel's Replies number (owner, 24 Nov: every Replies number opens the WhatsApp chats): the customers who wrote after a Cold message since $from, newest first,
+     *  each with his last message, whether he still waits for an answer, and who holds the chat. Same row shape as the Lineup / After-Order replies. [rows, more, count] */
+    function wcd_repliers(PDO $pdo, int $from, int $limit = 600): array
+    {
+        $q = $pdo->prepare("SELECT phone, left_at FROM wa_cold_cust WHERE status = 'replied' AND left_at >= ? ORDER BY left_at DESC LIMIT 3000"); $q->execute([date('Y-m-d H:i:s', $from)]); $left = [];
+        foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $left[(string)$r[0]] = (string)$r[1];
+        if (!$left) return [[], false, 0];
+        $info = []; $last = [];
+        foreach (array_chunk(array_keys($left), 400) as $ch) { $in = implode(',', array_fill(0, count($ch), '?'));
+            $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, last_out_at, status FROM wa_contacts WHERE phone IN ($in)"); $c->execute($ch); foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $info[(string)$r['phone']] = $r;
+            $m = $pdo->prepare("SELECT m.phone, m.body, m.mtype, m.ts FROM wa_messages m JOIN (SELECT phone, MAX(id) id FROM wa_messages WHERE dir = 'in' AND phone IN ($in) GROUP BY phone) x ON x.id = m.id"); $m->execute($ch); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) $last[(string)$r['phone']] = $r; }
+        $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = [];
+        foreach ($left as $ph => $at) { $c = $info[$ph] ?? []; $l = $last[$ph] ?? null; $answered = !empty($c['last_out_at']) && (string)$c['last_out_at'] >= (string)($c['last_in_at'] ?? ''); $emp = (int)($c['assigned_emp'] ?? 0);
+            $rows[] = ['phone' => $ph, 'name' => (string)($c['name'] ?? ''), 'text' => $l ? mb_substr(((string)$l['body'] !== '' ? (string)$l['body'] : '[' . (string)$l['mtype'] . ']'), 0, 90) : '', 'at' => $l ? (string)$l['ts'] : $at, 'wait' => !$answered, 'emp' => $emp, 'holder' => $emp > 0 ? (string)($nm[$emp] ?? '') : '', 'closed' => ((string)($c['status'] ?? '') === 'closed')]; }
+        usort($rows, function ($a, $b) { return [(int)$b['wait'], $b['at']] <=> [(int)$a['wait'], $a['at']]; });
+        return [array_slice($rows, 0, $limit), count($rows) > $limit, count($rows)];
+    }
     /** WHO WROTE AFTER A COLD MESSAGE (owner, 23 Nov: the card said 2-3 replies while 109 customers had written: 62 tapped "Not now", 9 "Very good", 5 "I need help", 4 STOP ...). Looks at the customers who wrote in the last 3 hours (9 days on the first run: backfill) and, for the ones still 'active' in the Cold ledger whose newest message came after they entered, marks them: a "Not now / stop / no" answer ends the Cold funnel for him ('done'), every other answer is a reply ('replied': the Lineup takes him). Phones are compared as literals, so no collation problem and no scan of the whole ledger. Returns the number of customers moved. */
     function wcd_mark_replies(PDO $pdo, int $now): int
     {
