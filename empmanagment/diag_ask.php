@@ -372,6 +372,8 @@ try {
 // 46) Module A: why the running campaigns are not faster (owner 24 Nov) - the reason text the Campaigns page shows, and the per-number speed plan
 try {
     $sg2 = function ($k) use ($one) { return $one("SELECT setting_value FROM hrms_settings WHERE setting_key = ?", [$k])[0][0] ?? ''; };
+    echo "ASK DQ settings (hourly, base, floor, top, push_mult, smart, hold_until, 7k flag, 15k flag, log) " . json_encode(array_map($sg2, ['wa_dq_hourly', 'wa_dq_base', 'wa_dq_floor', 'wa_dq_top', 'wa_dq_push_mult', 'wa_dq_smart', 'wa_dq_hold_until', 'wa_dq_7k_2411', 'wa_dq_15k_2411'])) . "\n";
+    echo "ASK DQ campaign marketing pushed last 10 / 30 / 60 min (not failed, failed) " . json_encode([$one("SELECT SUM(ts >= ? AND status <> 'failed'), SUM(ts >= ? AND status <> 'failed'), SUM(status <> 'failed'), SUM(status = 'failed') FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ?", [date('Y-m-d H:i:s', time() - 600), date('Y-m-d H:i:s', time() - 1800), date('Y-m-d H:i:s', time() - 3600)])]) . "\n";
     echo "ASK CAMPS auto speed plan (wa_camp_auto) " . substr($sg2('wa_camp_auto'), 0, 900) . "\n";
     echo "ASK CAMPS scheduled campaigns start times (id, start_at, queued) " . json_encode($one("SELECT c.id, c.start_at, SUM(i.status = 'queued') FROM wa_campaigns c JOIN wa_camp_items i ON i.camp_id = c.id WHERE c.status = 'scheduled' GROUP BY c.id, c.start_at ORDER BY c.start_at LIMIT 14")) . "\n";
     echo "ASK CAMPS running campaigns note / last tick (id, note, last_tick) " . json_encode($one("SELECT id, LEFT(note, 90), last_tick FROM wa_campaigns WHERE status = 'running' ORDER BY id LIMIT 12")) . "\n";
