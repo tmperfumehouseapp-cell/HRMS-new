@@ -1138,7 +1138,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
             $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wa_rc_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
-        case 'wa.mod_strip': { if (!function_exists('wa_strip_report')) require_once __DIR__ . '/wa_strip.php'; json_response(['ok' => true] + wa_strip_report($pdo)); }   // one line per module at the top of the Campaigns page
+        case 'wa.mod_strip': { if (!function_exists('wa_strip_report')) require_once __DIR__ . '/wa_strip.php'; json_response(['ok' => true] + wa_strip_report($pdo, (string)($_GET['mod'] ?? ''))); }   // one line per module at the top of the Campaigns page
         case 'wa.pat_report': { if (!function_exists('wa_pat_report')) require_once __DIR__ . '/wa_pat.php'; json_response(['ok' => true] + wa_pat_report($pdo, (string)($_GET['scope'] ?? 'today'), !empty($_GET['fresh']))); }   // 🧩 message patterns: topics, styles, samples and replies per module
         case 'wa.line_modc': { if (!function_exists('wa_rc_overview')) require_once __DIR__ . '/wa_modc.php'; json_response(['ok' => true] + wa_rc_overview($pdo)); }   // Module C card under the After-Order card
         case 'wa.line_aft_replies': {   // 💬 the people behind the After-Order Replies number: today or the last 30 days
