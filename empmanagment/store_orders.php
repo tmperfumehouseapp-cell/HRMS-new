@@ -180,6 +180,31 @@ if ((string)$action === 'tms.gift') {   // 🎁 the website's gift perfume on pa
     $k = (int)($r['kept'] ?? 0); $rm = (int)($r['removed'] ?? 0);
     json_response(['ok' => true, 'day' => $day, 'kept' => $k, 'removed' => $rm, 'rate' => $k + $rm > 0 ? (int)round($k * 100 / ($k + $rm)) : null, 'money' => round((float)($r['money'] ?? 0), 2), 'orders' => array_values(array_map('strval', (array)($r['orders'] ?? [])))]);
 }
+if ((string)$action === 'tms.gift_orders') {   // 🎁 the orders behind the Gift add-on number of one business day: who took the gift perfume and for how much (owner 24 Nov). Read-only; the shop is asked for each order once per 10 minutes.
+    $ok = tms_can($pdo, $auth) || (function_exists('user_can') && (user_can($auth, 'control_tower') || user_can($auth, 'orders')));
+    if (!$ok) json_response(['error' => 'Not allowed.'], 403);
+    $day = (string)($in['date'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = function_exists('waa_day') ? waa_day($pdo) : date('Y-m-d');
+    [$from, $to] = function_exists('biz_window') ? biz_window($pdo, $day, $day) : [$day . ' 00:00:00', $day . ' 23:59:59'];
+    $run = function () use ($pdo, $from, $to) { [$d, $e] = tms_get($pdo, '/gift-report', ['from' => $from, 'to' => date('Y-m-d H:i:s', strtotime($to) + 1)]); return $e !== '' ? ['error' => $e] : (array)$d; };
+    $r = function_exists('hrms_memo') ? hrms_memo('tms_gift:' . $from, 60, $run) : $run();
+    if (!is_array($r) || !empty($r['error'])) json_response(['ok' => false, 'error' => (string)($r['error'] ?? 'The shop could not be read.'), 'day' => $day]);
+    $nos = array_slice(array_values(array_unique(array_filter(array_map(function ($x) { return strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string)$x)); }, (array)($r['orders'] ?? []))))), 0, 150);
+    $emp = []; try { tms_cols($pdo); foreach (array_chunk($nos, 200) as $ch) { $q = $pdo->prepare("SELECT mp_no, employee_id FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) $emp[strtoupper((string)$x['mp_no'])] = (int)$x['employee_id']; } } catch (Throwable $e) { }
+    $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = []; $miss = 0; $t0 = microtime(true);
+    foreach ($nos as $no) {
+        $one = function () use ($pdo, $no) { [$d, $e] = tms_get($pdo, '/orders/' . rawurlencode($no)); return $e !== '' ? ['error' => $e] : ['order' => tms_row((array)$d)]; };
+        if (microtime(true) - $t0 > 40) { $miss++; continue; }   // never hang the screen: the rest comes on the next open (each order read is kept 10 minutes)
+        $o = function_exists('hrms_memo') ? hrms_memo('tms_giftrow:' . $no, 600, $one) : $one();
+        if (!is_array($o) || !empty($o['error']) || empty($o['order']['number'])) { if (function_exists('hrms_memo_drop')) hrms_memo_drop('tms_giftrow:' . $no); $miss++; continue; }
+        $o = $o['order']; $amt = 0.0; $gf = [];
+        foreach ((array)($o['lines'] ?? []) as $l) if (!empty($l['gift'])) { $amt += max(0, (float)$l['price'] * max(1, (int)$l['qty']) - (float)$l['discount']); $gf[] = trim((string)$l['title'] . ' ' . (string)$l['size']); }
+        $e = (int)($emp[$no] ?? 0);
+        $rows[] = ['number' => (string)$o['number'], 'customer' => (string)$o['customer'], 'emp' => $e > 0 ? (string)($names[$e] ?? '') : '', 'gift' => implode(', ', $gf), 'amount' => round($amt, 2), 'total' => (float)$o['total'], 'time' => (string)($o['pay_time'] ?: $o['placed_at'])];
+    }
+    usort($rows, function ($a, $b) { return strcmp((string)$b['time'], (string)$a['time']); });
+    $k = (int)($r['kept'] ?? 0); $rm = (int)($r['removed'] ?? 0);
+    json_response(['ok' => true, 'day' => $day, 'kept' => $k, 'removed' => $rm, 'money' => round((float)($r['money'] ?? 0), 2), 'rows' => $rows, 'missing' => $miss]);
+}
 if ((string)$action === 'tms.detail') {   // 🔎 one shop order with every product and the delivery address — for the pop-up on the Allocation page. Read-only. Who: Website orders people, the Orders pages, or the order's own salesperson.
     $no = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string)($in['number'] ?? ''))); if ($no === '') json_response(['error' => 'Which order?'], 422);
     $ok = tms_can($pdo, $auth) || (function_exists('user_can') && user_can($auth, 'orders'));
