@@ -1796,6 +1796,27 @@ function wag_fu1_text(PDO $pdo, array $c, array $rows): string
     $hi = $nm !== '' ? 'Hi ' . $nm . ', ' : 'Hi, ';
     return $hi . 'aapko ' . ($pf !== '' ? $pf : 'kaun se perfume') . ' ka confusion hai, aap wo hamare saath share kar sakte ho.';
 }
+/** True when the follow-up ladder must NOT start / go on for this chat (owner, 24 Nov: a customer who shopped, answered our 'how was your experience' message and got thanked, then got 'step 1 of 10 ... Doubt hai' three minutes later; same after a plain 'Thanks' to our customer-care message):
+ *  (a) the bot has just thanked his experience feedback (the thank-you answered his last message), (b) his last message is only thanks / ok / very good and the message before it was one of our care / experience / order-check messages, (c) he ordered in the last 10 days and his last message asks nothing (no price / size / perfume word). */
+function wag_fu_context_stop(PDO $pdo, string $phone, string $lastIn): bool
+{
+    try {
+        $li = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'in'"); $li->execute([$phone]); $lt = (string)$li->fetchColumn();
+        $t = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'sys' AND body LIKE ? AND ts >= ?"); $t->execute([$phone, '%thanked the customer for his experience feedback%', date('Y-m-d H:i:s', time() - 3 * 86400)]); $tt = (string)$t->fetchColumn();
+        if ($tt !== '' && $lt !== '' && $tt >= $lt) return true;   // (a)
+        $triv = '/^\W*(thanks?|thank you|thanku|thx|ty|ok+|okay|k|done|got it|noted|fine|nice|good|very good|great|cool|awesome|excellent|superb|welcome|shukriya|dhanyawad|धन्यवाद|शुक्रिया|ठीक( है)?|जी|हाँ|हां|ओके|theek( hai)?|thik( hai)?|bahut accha|bahut badhiya|mast)\W*$/iu';
+        if (preg_match($triv, trim($lastIn))) {   // (b)
+            $p = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND ts < ? ORDER BY id DESC LIMIT 1"); $p->execute([$phone, $lt !== '' ? $lt : date('Y-m-d H:i:s')]); $pb = (string)$p->fetchColumn();
+            if ($pb !== '' && preg_match('/customer care team|thank you for being|thank you for shopping|how was your experience|did your order|your contact is saved|welcome back to TM|registered customer|this is about your order|experience with TM/iu', $pb)) return true;
+        }
+        $ask = '/(price|rate|kitn|kimat|cost|offer|discount|combo|\bml\b|size|chahiye|\d+\s*[x*]\s*\d+|bottle|perfume|order|कीमत|कितना|ભાવ|કિંમત)/iu';
+        if (!preg_match($ask, $lastIn)) {   // (c)
+            $k10 = substr(preg_replace('/\D+/', '', $phone), -10);
+            if (strlen($k10) === 10) { $o = $pdo->prepare("SELECT COUNT(*) FROM shop_orders WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+', ''), '-', '') LIKE ? AND created_at >= ?"); $o->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 10 * 86400)]); if ((int)$o->fetchColumn() > 0) return true; }
+        }
+    } catch (Throwable $e) { }
+    return false;
+}
 function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follow-ups must be FAST — 6 per tick (was 2; only ~4 a minute went out with 347 due)
 {
     if (defined('WA_IN_WEBHOOK') || (string)setting_get($pdo, 'wag_bfu_on', '1') === '0' || wag_cfg($pdo)['bot'] !== 'on') return 0;
@@ -1840,6 +1861,7 @@ function wag_bot_followup(PDO $pdo, int $max = 6): int   // owner, 21 Nov: follo
         $lastOut = $rows[0]; if ((string)$lastOut['who'] !== 'bot' && !($cnt > 0) && !$__pp) continue;   // only a customer the BOT was talking to; later steps continue after our own follow-up
         if ($cnt > 0 && (string)$lastOut['who'] !== 'bot') continue; if ((string)$lastOut['mtype'] !== 'text') continue;
         $lastIn = ''; foreach ($rows as $r) { if (false) break; } $qi = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $qi->execute([$key]); $lastIn = trim((string)$qi->fetchColumn());
+        if (wag_fu_context_stop($pdo, $key, $lastIn)) { $D['ctx'] = (int)($D['ctx'] ?? 0) + 1; wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }   // owner, 24 Nov: no sales follow-up after our thanks for his feedback / a plain thanks to our care message / for a customer who just shopped and asked nothing
         if (preg_match('/(stop|unsubscribe|not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|no thanks|don.?t message|remove)/iu', $lastIn)) { wag_meta_put($pdo, 'bgf:' . $key, $li . '|9|' . $now); continue; }
         $fl = $pdo->prepare("SELECT COUNT(*) FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready')"); try { $fl->execute([$key]); if ((int)$fl->fetchColumn() > 0) continue; } catch (Throwable $e) { }
         wag_meta_put($pdo, 'bgf:' . $key, $li . '|' . ($cnt + 1) . '|' . $now . ($__pp ? '|p|' . $refT : ''));   // claimed before the AI call: never twice
