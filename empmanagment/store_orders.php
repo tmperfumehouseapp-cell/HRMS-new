@@ -112,12 +112,12 @@ if (!function_exists('tms_cfg')) {
         foreach ($rows as $r) {
             $no = (string)$r['number'];
             // owner (24 Nov): an order with NO payment received (a payment link the customer has not paid yet) is not given to anybody. One the robot already gave is taken back; it is given when the payment comes.
-            if ((float)$r['paid'] <= 0 && isset($given[$no]) && strpos($given[$no], 'auto') === 0) { try { $pdo->prepare("DELETE FROM manual_orders WHERE channel = 'TM Store' AND mp_no = ? AND created_by LIKE 'auto%'")->execute([$no]); $mark->execute([$no, 0, 'payment not received yet', $now]); } catch (Throwable $e) { } continue; }
+            if ((string)$r['pay_status'] === 'pending' && isset($given[$no]) && strpos($given[$no], 'auto') === 0) { try { $pdo->prepare("DELETE FROM manual_orders WHERE channel = 'TM Store' AND mp_no = ? AND created_by LIKE 'auto%'")->execute([$no]); $mark->execute([$no, 0, 'payment not received yet', $now]); } catch (Throwable $e) { } continue; }
             if (isset($given[$no]) || isset($done[$no])) continue;
             try {
                 $t = strtotime((string)$r['placed_at']) ?: time(); $why = '';
                 if ((float)$r['total'] <= 0) $why = 'order has no amount';
-                elseif ((float)$r['paid'] <= 0) $why = 'payment not received yet';
+                elseif ((string)$r['pay_status'] === 'pending') $why = 'payment not received yet';
                 elseif (strlen((string)$r['phone']) !== 10) $why = 'no mobile number on the order';
                 else {
                     $qc->execute([$r['phone']]); $c = $qc->fetch(PDO::FETCH_ASSOC);
