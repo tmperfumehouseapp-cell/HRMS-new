@@ -2386,7 +2386,7 @@ function code_orders_range(PDO $pdo, string $dateFrom, string $dateTo, array &$e
                 $o = [
                     'source' => $key, 'source_label' => $st['store']['label'], 'id' => (string)$so['id'], 'order_name' => (string)$so['order_name'],
                     'created_at' => $so['created_at'], 'biz_date' => biz_day_of($pdo, strtotime((string)$so['created_at'])),
-                    'customer' => $so['customer'] ?? 'Guest', 'items' => (int)($so['items'] ?? 0), 'total' => (float)$so['total'],
+                    'customer' => $so['customer'] ?? 'Guest', 'phone' => (string)($so['phone'] ?? ''), 'items' => (int)($so['items'] ?? 0), 'total' => (float)$so['total'],
                     'financial_status' => (string)($so['financial_status'] ?? ''), 'fulfillment_status' => (string)($so['fulfillment_status'] ?? ''),
                     'house' => $gk, 'store' => house_labels()[$gk] ?? $st['store']['label'], 'tags' => (string)($so['tags'] ?? ''),
                     'code' => code_from_tags((string)($so['tags'] ?? ''), $tagMap), 'can_tag' => 1,
@@ -2417,7 +2417,7 @@ function code_orders_range(PDO $pdo, string $dateFrom, string $dateTo, array &$e
     //    Its code is kept in the HRMS only (source 'manual': there is no Shopify order to tag) — the same rule order_codes.set already follows.
     try {
         [$ws, $we] = biz_window($pdo, $dateFrom, $dateTo);
-        $wq = $pdo->prepare("SELECT manual_order_id, order_no, mp_no, customer_name, items, total, payment_status, fulfillment_status, order_date FROM manual_orders WHERE channel = 'TM Store' AND order_date >= ? AND order_date <= ? ORDER BY order_date DESC LIMIT 5000");
+        $wq = $pdo->prepare("SELECT manual_order_id, order_no, mp_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date FROM manual_orders WHERE channel = 'TM Store' AND order_date >= ? AND order_date <= ? ORDER BY order_date DESC LIMIT 5000");
         $wq->execute([$ws, $we]);
         foreach ($wq->fetchAll() as $m) {
             $nm = (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . (string)$m['order_no'];
@@ -2425,7 +2425,7 @@ function code_orders_range(PDO $pdo, string $dateFrom, string $dateTo, array &$e
             $o = [
                 'source' => 'manual', 'source_label' => 'Website (TM Store)', 'id' => (string)$m['manual_order_id'], 'order_name' => $nm,
                 'created_at' => str_replace(' ', 'T', (string)$m['order_date']) . '+05:30', 'biz_date' => biz_day_of($pdo, strtotime((string)$m['order_date'])),
-                'customer' => (string)($m['customer_name'] ?? '') !== '' ? (string)$m['customer_name'] : 'Guest', 'items' => $ni, 'total' => (float)$m['total'],
+                'customer' => (string)($m['customer_name'] ?? '') !== '' ? (string)$m['customer_name'] : 'Guest', 'phone' => (string)($m['phone'] ?? ''), 'web' => 1, 'products' => ctype_digit($its) ? '' : $its, 'items' => $ni, 'total' => (float)$m['total'],
                 'financial_status' => (string)($m['payment_status'] ?? ''), 'fulfillment_status' => (string)($m['fulfillment_status'] ?? ''),
                 'house' => 'tmph', 'store' => 'Website (TM Store)', 'tags' => '', 'code' => '', 'can_tag' => 0,
             ];

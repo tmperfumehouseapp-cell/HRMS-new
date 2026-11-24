@@ -157,7 +157,7 @@
               <span class="pill" data-f="none">No code <b id="cntNone">0</b></span>
               <span class="pill" data-f="coded">With code <b id="cntCoded">0</b></span>
               <select id="sourceFilter" class="sel" title="Filter by store"><option value="">All stores</option></select>
-              <div class="search-box"><input type="text" id="search" placeholder="Search order, customer, code..."></div>
+              <div class="search-box"><input type="text" id="search" placeholder="Search order, customer, mobile, code..."></div>
             </div>
           </div>
           <table class="no-stack">
@@ -289,6 +289,8 @@
     if (src && o.source !== src) return false;
     const q = document.getElementById('search').value.trim().toLowerCase();
     if (!q || custMode) return true;
+    const qd = q.replace(/\D/g, '');      // 📱 a mobile number finds the order too (typed with or without +91 / spaces)
+    if (qd.length >= 4 && String(o.phone || '').replace(/\D/g, '').includes(qd.length > 10 ? qd.slice(-10) : qd)) return true;
     return [o.order_name, o.customer, o.code, o.store, o.id].some(v => String(v || '').toLowerCase().includes(q));
   }
   function renderOrders() {
@@ -335,6 +337,18 @@
       const o = curRows()[Number(a.dataset.i)]; if (!o) return;
       const own = kv('Customer', o.customer) + kv('Mobile', o.phone) + kv('Items', o.items) + kv('Total', inr(o.total)) + kv('Payment', o.financial_status) + kv('Store', o.store) + kv('Code', o.code);
       shell(o.order_name + ' — ' + (o.store || ''), fmtDT(o.created_at), '<div class="osub">Loading the order…</div>');
+      if (o.web) {      // 🛍 a website order: its products, address and money are read from the shop
+        const base = kv('Customer', o.customer) + kv('Mobile', o.phone) + kv('Payment', o.financial_status) + kv('Code', o.code);
+        try {
+          const r = (await api.get('tms.detail', { number: o.order_name })).order, a = r.addr || {}, m = r.money || {};
+          const rows = (r.lines || []).map((li) => '<tr><td>' + esc(li.title) + (li.size ? '<div style="color:var(--muted)">' + esc(li.size) + '</div>' : '') + '</td><td>' + esc(li.qty) + '</td><td style="text-align:right">' + esc(inr(li.price * li.qty - (li.discount || 0))) + '</td></tr>').join('');
+          shell(o.order_name + ' — ' + (o.store || ''), fmtDT(o.created_at),
+            kv('Customer', r.customer || o.customer) + kv('Mobile', r.phone || o.phone) + kv('Address', [a.name, a.address1, a.address2, a.city, a.state, a.pincode].filter(Boolean).join(', ')) + kv('Payment', [r.pay_status, r.pay_method].filter(Boolean).join(' · ')) + kv('Fulfillment', r.ship_status) + kv('Tracking', r.awb ? r.awb + (r.courier ? ' (' + r.courier + ')' : '') : '') + kv('Code', o.code) + kv('Note', r.note)
+            + '<table><thead><tr><th>Product</th><th>Qty</th><th style="text-align:right">Total</th></tr></thead><tbody>' + rows + '</tbody></table>'
+            + kv('Subtotal', m.subtotal != null ? inr(m.subtotal) : '') + kv('Discount', m.discount ? inr(m.discount) + (m.code ? ' (' + m.code + ')' : '') : '') + kv('Shipping', m.shipping ? inr(m.shipping) : '') + kv('Total', inr(r.total)) + kv('Paid', inr(r.paid)) + kv('To collect', r.due ? inr(r.due) : ''));
+        } catch (er) { shell(o.order_name + ' — ' + (o.store || ''), fmtDT(o.created_at), base + kv('Products', o.products) + kv('Items', o.items) + kv('Total', inr(o.total)) + '<div class="alert error" style="margin-top:10px">The shop details could not be read: ' + esc(er.message) + '</div>'); }
+        return;
+      }
       if (!SOURCES[o.source] || o.source === 'mysales') { shell(o.order_name + ' — ' + (o.store || ''), fmtDT(o.created_at), own); return; }      // not a Shopify order: what the list knows
       try {
         const d = (await api.get('shopify.order_detail', { store: o.source, id: o.id })).order;
