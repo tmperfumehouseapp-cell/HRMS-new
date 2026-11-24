@@ -42,7 +42,7 @@ if (!function_exists('tms_cfg')) {
     function tms_cols(PDO $pdo): void
     {
         static $ok = false; if ($ok) return; $ok = true;
-        try { foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'mp_no' => "VARCHAR(60) NOT NULL DEFAULT ''", 'ml' => 'INT NULL'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (Throwable $e) { error_log('tms_cols: ' . $e->getMessage()); }
+        try { foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'mp_no' => "VARCHAR(60) NOT NULL DEFAULT ''", 'ml' => 'INT NULL', 'is_direct' => 'TINYINT NOT NULL DEFAULT 0'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (Throwable $e) { error_log('tms_cols: ' . $e->getMessage()); }
     }
     /** one shop order in the few fields the page and the saved row need */
     function tms_row(array $o): array
@@ -115,7 +115,7 @@ if (!function_exists('tms_cfg')) {
         }
         tms_cols($pdo); $nos = array_column($rows, 'number'); $given = []; $done = [];
         foreach (array_chunk($nos, 400) as $part) { $in = implode(',', array_fill(0, count($part), '?'));
-            $q = $pdo->prepare("SELECT mp_no, created_by, employee_id, manual_order_id FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN ($in)"); $q->execute($part); foreach ($q->fetchAll() as $x) $given[(string)$x['mp_no']] = ['by' => (string)$x['created_by'], 'emp' => (int)$x['employee_id'], 'id' => (int)$x['manual_order_id']];
+            $q = $pdo->prepare("SELECT mp_no, created_by, employee_id, manual_order_id, is_direct FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN ($in)"); $q->execute($part); foreach ($q->fetchAll() as $x) $given[(string)$x['mp_no']] = ['by' => (string)$x['created_by'], 'emp' => (int)$x['employee_id'], 'id' => (int)$x['manual_order_id'], 'direct' => (int)$x['is_direct']];
             $q = $pdo->prepare("SELECT number FROM tms_auto WHERE done = 1 AND number IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; }
         try { $qc = $pdo->prepare("SELECT c.phone, c.assigned_emp, c.source, c.last_in_at, COALESCE(n.camp_tag, 0) AS camp_tag FROM wa_contacts c LEFT JOIN wa_numbers n ON n.id = c.last_number_id WHERE c.phone = ?"); $qc->execute(['0']); }
         catch (Throwable $e) { try { $qc = $pdo->prepare("SELECT phone, assigned_emp, source, last_in_at, 0 AS camp_tag FROM wa_contacts WHERE phone = ?"); $qc->execute(['0']); } catch (Throwable $e2) { return 0; } }   // no WhatsApp tables here: nothing to do
@@ -126,8 +126,8 @@ if (!function_exists('tms_cfg')) {
             $no = (string)$r['number'];
             // owner (24 Nov): an order with NO payment received (a payment link the customer has not paid yet) is not given to anybody. One the robot already gave is taken back; it is given when the payment comes.
             $row = $given[$no] ?? null; $unpaid = (string)$r['pay_status'] === 'pending';
-            if ($unpaid && $row && ($row['emp'] === 0 || $row['by'] === 'auto (WhatsApp)')) { try { $pdo->prepare("DELETE FROM manual_orders WHERE manual_order_id = ?")->execute([$row['id']]); $mark->execute([$no, 0, 'payment not received yet', $now]); } catch (Throwable $e) { } continue; }
-            if ($row && $row['emp'] > 0) continue;          // a salesperson has it
+            if ($unpaid && $row && $row['direct'] !== 1 && ($row['emp'] === 0 || $row['by'] === 'auto (WhatsApp)')) { try { $pdo->prepare("DELETE FROM manual_orders WHERE manual_order_id = ?")->execute([$row['id']]); $mark->execute([$no, 0, 'payment not received yet', $now]); } catch (Throwable $e) { } continue; }
+            if ($row && ($row['emp'] > 0 || $row['direct'] === 1)) continue;          // a salesperson has it, or a person marked it a Direct order
             try {
                 $t = strtotime((string)($r['pay_time'] ?: $r['placed_at'])) ?: time(); $why = '';
                 if ((float)$r['total'] <= 0) $why = 'order has no amount';

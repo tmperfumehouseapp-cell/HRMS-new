@@ -31546,7 +31546,7 @@ switch ($action) {
         }
         // 🧾 Quick-entry orders (Add orders: Personal / AiSensy / Myntra / Amazon / Flipkart): listed here with the allocation they were saved with
         try {
-            foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''"] as $c0 => $d0) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c0'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c0 $d0"); }
+            foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'is_direct' => 'TINYINT NOT NULL DEFAULT 0'] as $c0 => $d0) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c0'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c0 $d0"); }
             $mq = $pdo->prepare("SELECT * FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND batch <> '' ORDER BY order_date DESC LIMIT 1500"); $mq->execute(biz_window($pdo, $dateFrom, $dateTo)); $mmap = []; $mnames = employee_names_by_id($pdo); $hl0 = house_labels();
             foreach ($mq->fetchAll() as $m) {
                 $mid = (string)$m['manual_order_id']; $ch = (string)($m['channel'] ?? ''); $eid = (int)($m['employee_id'] ?? 0); $hs = (string)($m['house'] ?? '');
@@ -31554,7 +31554,8 @@ switch ($action) {
                     'financial_status' => $m['payment_status'], 'fulfillment_status' => $m['fulfillment_status'], 'tags' => (string)($m['order_type'] ?? ''), 'store_key' => 'manual', 'source_label' => ($ch !== '' ? $ch : 'Quick entry'), 'store' => ($ch !== '' ? $ch : 'Quick entry'), 'house' => $hs,
                     'biz_date' => biz_day_of($pdo, strtotime((string)$m['order_date'])), 'salesman' => $eid ? (string)($mnames[$eid] ?? '') : '', 'employee_id' => $eid, 'employee_from' => $eid ? 'quick entry' : '', 'tag_type' => (string)($m['order_type'] ?? ''), 'custom_store' => 1,
                     'outstanding' => ($m['outstanding'] !== null ? (float)$m['outstanding'] : null), 'channel' => $ch];
-                if ($eid > 0 && $hs !== '') $mmap['manual|' . $mid] = ['house' => $hs, 'emp' => $eid, 'direct' => 0, 'by' => (string)($m['created_by'] ?? ''), 'at' => (string)$m['order_date'], 'type' => (string)($m['order_type'] ?? '')];
+                $mdir = $eid <= 0 && (int)($m['is_direct'] ?? 0) === 1;   // a Direct order: a panel, no salesperson (owner, 24 Nov: it used to fall back to Pending)
+                if (($eid > 0 || $mdir) && $hs !== '') $mmap['manual|' . $mid] = ['house' => $hs, 'emp' => $eid, 'direct' => $mdir ? 1 : 0, 'by' => (string)($m['created_by'] ?? ''), 'at' => (string)$m['order_date'], 'type' => (string)($m['order_type'] ?? '')];
                 apply_allocation($o, 'manual', $mmap); if ($o['allocated_emp']) $o['employee_id'] = $o['allocated_emp'];
                 $o['employee_code'] = $o['employee_id'] ? ($codes[$o['employee_id']] ?? '') : '';
                 $orders[] = $o;
@@ -31839,10 +31840,11 @@ switch ($action) {
         }
         if ($source === 'manual') {   // a quick-entry order: its salesperson / panel / type live on the order itself
             if (!ctype_digit($orderId)) json_response(['error' => 'Bad order id.'], 422);
-            if ($house === '') { $pdo->prepare("UPDATE manual_orders SET employee_id = 0 WHERE manual_order_id = ?")->execute([(int)$orderId]); json_response(['message' => 'Quick-entry order allocation removed.']); }
+            try { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE 'is_direct'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN is_direct TINYINT NOT NULL DEFAULT 0"); } catch (Throwable $e) { }
+            if ($house === '') { $pdo->prepare("UPDATE manual_orders SET employee_id = 0, is_direct = 0 WHERE manual_order_id = ?")->execute([(int)$orderId]); json_response(['message' => 'Quick-entry order allocation removed.']); }
             if (!$direct && $empId <= 0) json_response(['error' => 'Choose an employee.'], 422);
             $en = ''; if (!$direct) { $chk = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $chk->execute([$empId]); $en = (string)$chk->fetchColumn(); if ($en === '') json_response(['error' => 'Unknown employee.'], 422); }
-            $pdo->prepare("UPDATE manual_orders SET employee_id = ?, house = ?, order_type = ? WHERE manual_order_id = ?")->execute([$empId, $house, $type, (int)$orderId]);
+            $pdo->prepare("UPDATE manual_orders SET employee_id = ?, house = ?, order_type = ?, is_direct = ? WHERE manual_order_id = ?")->execute([$empId, $house, $type, $direct ? 1 : 0, (int)$orderId]);
             json_response(['message' => 'Quick-entry order → ' . ($direct ? 'Direct order' : $en) . ' · ' . house_labels()[$house] . ($type ? ' · ' . ucfirst($type) : '') . '.', 'allocated_by' => (string)($auth['username'] ?? ''), 'allocated_at' => date('Y-m-d H:i:s'), 'employee_name' => $direct ? 'Direct order' : $en, 'direct' => $direct ? 1 : 0]);
         }
         if ($house === '') {
