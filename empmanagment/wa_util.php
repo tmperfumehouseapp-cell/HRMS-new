@@ -169,6 +169,14 @@ function wa_util_auto(PDO $pdo): int
  *  (inside the window the owner picks). No offers, no prices — each states true facts about THAT customer. Any reply opens the free 24-hour chat. */
 function wa_util_pool_defs(): array
 {
+    $d = wa_util_pool_defs_raw();
+    // owner 24 Nov 2026: a SPACED twin (a blank line between the thoughts) of every warm Hinglish message that was made line by line (the first version stays in rotation; they are compared by reply rate)
+    if (!function_exists('wa_space_body') && is_file(__DIR__ . '/wa_space.php')) { try { require_once __DIR__ . '/wa_space.php'; } catch (Throwable $e) { } }
+    if (function_exists('wa_space_body')) { foreach ($d as $k => $x) { if (strpos($k, '_hi_') === false || substr($k, -2) === '_s') continue; $sb = wa_space_body((string)$x['body']); if ($sb !== (string)$x['body']) { $x['body'] = $sb; $d[$k . '_s'] = $x; } } }
+    return $d;
+}
+function wa_util_pool_defs_raw(): array
+{
     $qr = fn(array $l) => array_map(fn($t) => ['type' => 'QUICK_REPLY', 'text' => $t], $l);
     return [
         'ask_followup' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Yes, I need it', 'Not now']),
