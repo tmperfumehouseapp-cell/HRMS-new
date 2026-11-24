@@ -254,6 +254,44 @@ function fup_feedback_owner(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_feedback_owner: ' . $e->getMessage()); }
 }
 
+/** Once: the 16 daily tasks of Mehul in the owner's "Dispatch" section (the section is made by the owner; this waits for it). One topic a task, the task name only; a number box only where a number is needed. Nobody is assigned (the owner gives them). A task with the same name is not made twice. */
+function fup_seed_mehul_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_mehul_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'dispatch' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%dispatch%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $num = function ($l) { return [['label' => $l, 'type' => 'num', 'req' => 1], ['label' => 'Note', 'type' => 'text', 'req' => 0]]; };
+        $list = [   // [title, what to write, summary-only (1) or with a number box (0), fields]
+            ['List ready karvani', 'Write what was done today: the list made ready.', 1, []],
+            ['Product sorting karvanu', 'Write what was done today: the product sorting.', 1, []],
+            ['Remittance entry', 'Write today\'s remittance entries.', 0, $num('Remittance entries')],
+            ['Pending parcel report', 'Write today\'s pending parcels.', 0, $num('Pending parcels')],
+            ['Average sheet maintain', 'Write what was done today: the average sheet.', 1, []],
+            ['Oil pending list on time', 'Write what was done today: the oil pending list, on time.', 1, []],
+            ['4 days parcel zero', 'Write how many parcels are older than 4 days.', 0, $num('Parcels older than 4 days')],
+            ['OG SKU sheet maintain', 'Write what was done today: the OG SKU sheet.', 1, []],
+            ['Stock sheet maintain', 'Write what was done today: the stock sheet.', 1, []],
+            ['Parcel status update', 'Write what was done today: the parcel status update.', 1, []],
+            ['Value software', 'Write what was done today: the value software.', 1, []],
+            ['Normal parcel tracking update', 'Write what was done today: the normal parcel tracking update.', 1, []],
+            ['Miss invoice generate', 'Write how many missed invoices were generated today.', 0, $num('Missed invoices')],
+            ['Badha parcel ma chain compulsory', 'Write whether the chain went in every parcel, and any parcel it did not.', 1, []],
+            ['Myntra ni invoice 11 vage aavi gay', 'Write whether the Myntra invoice came by 11 o\'clock.', 1, []],
+            ['Potani aju baju ni jagya saf karvi', 'Write what was cleaned around your own place today.', 1, []],
+        ];
+        foreach ($list as $x) {
+            if (isset($have[mb_strtolower($x[0])])) continue;
+            $ins->execute([$sid, $x[0], $x[1], $x[2], $x[3] ? json_encode(fup_fields_clean($x[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_mehul_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_mehul_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order for the topic "Office Pickup Parcel Update": no number from the HRMS, only the written update. The system number (it was connected by its name) is taken off the topic, the numbers the system had filled in by itself are removed from its days (a number a person typed, and every written update, stay), and the form asks only for the summary. */
 function fup_office_pickup_clean(PDO $pdo): void
 {
@@ -1034,6 +1072,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_photography_topics($pdo);
     fup_seed_feedback_topics($pdo);
     fup_seed_dispatch_topics($pdo);
+    fup_seed_mehul_topics($pdo);
     fup_office_pickup_clean($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
