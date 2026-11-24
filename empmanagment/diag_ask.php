@@ -369,3 +369,11 @@ try {
     echo "ASK CAMPS settings (camp / mkt / window) " . json_encode($one("SELECT setting_key, LEFT(setting_value, 60) FROM hrms_settings WHERE setting_key LIKE 'wa\\_camp\\_%' OR setting_key LIKE 'wa\\_mkt\\_%' OR setting_key IN ('wa_window_from','wa_window_to','wa_hourly_plan') ORDER BY 1 LIMIT 40")) . "\n";
     echo "ASK CAMPS why queued items wait: skip notes of items (err, n) " . json_encode($one("SELECT LEFT(i.err, 60), COUNT(*) FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE COALESCE(c.started_at, c.created_at) >= ? AND i.status = 'queued' AND i.err <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT 8", [$dd8])) . "\n";
 } catch (Throwable $e) { echo "ASK CAMPS ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 46) Module A: why the running campaigns are not faster (owner 24 Nov) - the reason text the Campaigns page shows, and the per-number speed plan
+try {
+    $sg2 = function ($k) use ($one) { return $one("SELECT setting_value FROM hrms_settings WHERE setting_key = ?", [$k])[0][0] ?? ''; };
+    echo "ASK CAMPS auto speed plan (wa_camp_auto) " . substr($sg2('wa_camp_auto'), 0, 900) . "\n";
+    echo "ASK CAMPS scheduled campaigns start times (id, start_at, queued) " . json_encode($one("SELECT c.id, c.start_at, SUM(i.status = 'queued') FROM wa_campaigns c JOIN wa_camp_items i ON i.camp_id = c.id WHERE c.status = 'scheduled' GROUP BY c.id, c.start_at ORDER BY c.start_at LIMIT 14")) . "\n";
+    echo "ASK CAMPS running campaigns note / last tick (id, note, last_tick) " . json_encode($one("SELECT id, LEFT(note, 90), last_tick FROM wa_campaigns WHERE status = 'running' ORDER BY id LIMIT 12")) . "\n";
+    try { if (!function_exists('wa_camp_wait_reason')) require_once $root . 'empmanagment/wa_camp.php'; foreach ($pdo->query("SELECT * FROM wa_campaigns WHERE status = 'running' ORDER BY id LIMIT 4")->fetchAll(PDO::FETCH_ASSOC) as $cr) echo "ASK CAMPS wait reason of #" . $cr['id'] . ": " . substr((string)wa_camp_wait_reason($pdo, $cr), 0, 420) . "\n"; } catch (Throwable $e) { echo "ASK CAMPS wait reason ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
+} catch (Throwable $e) { echo "ASK CAMPS2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
