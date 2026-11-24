@@ -239,6 +239,21 @@ function fup_seed_myntra_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_myntra_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's order "the whole Feedback section is Sanna Rathod's": she becomes the OWNER of the section, so every topic nobody else was given is hers (My Day) without assigning each one. Only if the section has no owner yet and exactly ONE working employee matches her name; otherwise nothing is changed (and it is tried again later). */
+function fup_feedback_owner(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_feedback_owner_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id, owner_emp, owner_dept FROM fu_sections WHERE LOWER(TRIM(name)) = 'feedback' AND active = 1 ORDER BY id LIMIT 1"); $sec = $q->fetch(); $q->closeCursor();
+        if (!$sec) return;
+        if ((int)$sec['owner_emp'] > 0 || (int)$sec['owner_dept'] > 0) { setting_set($pdo, 'fup_feedback_owner_v1', '1'); return; }      // the owner already chose a person: never overwritten
+        $q = $pdo->query("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND (LOWER(full_name) LIKE 'sanna%rathod%' OR LOWER(full_name) LIKE 'sana%rathod%')"); $ids = $q->fetchAll(PDO::FETCH_COLUMN); $q->closeCursor();
+        if (count($ids) !== 1) return;
+        $pdo->prepare("UPDATE fu_sections SET owner_emp = ? WHERE id = ? AND owner_emp = 0 AND owner_dept = 0")->execute([(int)$ids[0], (int)$sec['id']]);
+        setting_set($pdo, 'fup_feedback_owner_v1', '1');
+    } catch (Throwable $e) { error_log('fup_feedback_owner: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's hand-written topics of his "Feedback" section (the section is made by the owner; this waits for it). Manual updates; a number box only where the owner needs a number. A topic with the same title is not made twice. Nobody is assigned. */
 function fup_seed_feedback_topics(PDO $pdo): void
 {
@@ -951,6 +966,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_website_topics2($pdo);
     fup_seed_photography_topics($pdo);
     fup_seed_feedback_topics($pdo);
+    fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
