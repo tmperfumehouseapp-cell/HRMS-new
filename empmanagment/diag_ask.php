@@ -426,4 +426,12 @@ try {
         if ($n52 < 6 && ($n52 < 3 ? $a52[0] === 'MARKETING' : true)) { $n52++; echo "ASK RESTYLE sample " . $a52[0] . " #" . $old52 . " (" . ($p52['st'] ?? '') . ") OLD: " . str_replace("\n", ' / ', mb_substr((string)$a52[1], 0, 260)) . " || NEW: " . str_replace("\n", ' / ', mb_substr((string)$b52, 0, 300)) . "\n"; } }
     echo "ASK RESTYLE twins by category of the old message " . json_encode($cats52) . "\n";
 } catch (Throwable $e) { echo "ASK RESTYLE2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 53) What goes out today, by module, and how many of the new-style messages (owner 24 Nov; counts only)
+try {
+    if (!function_exists('wa_rs_state')) require_once $root . 'empmanagment/wa_restyle.php';
+    $st53 = wa_rs_state($pdo); $tw = []; foreach ($st53['pairs'] as $p53) if (($p53['st'] ?? '') === 'replaced' && !empty($p53['new'])) $tw[] = (int)$p53['new']; $t53 = date('Y-m-d 00:00:00');
+    echo "ASK UPD After-Order sent today (all, by a new-style twin) " . json_encode($one("SELECT COUNT(*), SUM(tpl_id IN (" . ($tw ? implode(',', $tw) : '0') . ")) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?", [$t53])) . " · twins in use " . count($tw) . " · twin sends all-time " . json_encode($one("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND tpl_id IN (" . ($tw ? implode(',', $tw) : '0') . ")")) . "\n";
+    echo "ASK UPD Lineup follow-ups sent today / this hour " . json_encode($one("SELECT COUNT(*), SUM(sent_at >= ?) FROM wa_line_plan WHERE status = 'sent' AND sent_at >= ?", [date('Y-m-d H:i:s', time() - 3600), $t53])) . "\n";
+    echo "ASK UPD New-style twins now approved (new id, sends) " . json_encode($one("SELECT tpl_id, COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND tpl_id IN (" . ($tw ? implode(',', $tw) : '0') . ") GROUP BY tpl_id ORDER BY 2 DESC LIMIT 12")) . "\n";
+} catch (Throwable $e) { echo "ASK UPD ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 
