@@ -44,7 +44,7 @@ if (!function_exists('wa_pat_topic')) {
             case 'modc': $sql = "SELECT l.tpl_id, COUNT(*), SUM(" . $rep('l.phone', 'l.at') . ") FROM wa_ru_log l WHERE l.ok = 1 AND l.kind = 'cnev' AND l.tpl_id > 0 AND l.at >= ?" . $smp('l.id') . " GROUP BY l.tpl_id"; break;
             case 'after': $sql = "SELECT l.tpl_id, COUNT(*), SUM(" . $rep('l.phone', 'l.sent_at') . ") FROM wa_aft_plan l WHERE l.status = 'sent' AND l.tpl_id > 0 AND l.sent_at >= ? GROUP BY l.tpl_id"; $m = 1; break;
             case 'line': $sql = "SELECT l.tpl_id, COUNT(*), SUM(" . $rep('l.phone', 'l.sent_at') . ") FROM wa_line_plan l WHERE l.status = 'sent' AND l.tpl_id > 0 AND l.sent_at >= ? GROUP BY l.tpl_id"; $m = 1; break;
-            case 'moda': $sql = "SELECT c.tpl_id, COUNT(*), SUM(" . $rep('i.phone', 'i.sent_at') . ") FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.sent_at >= ? AND c.tpl_id > 0 AND (i.status IN ('sent','delivered','read') OR i.last_status IN ('delivered','read'))" . $smp('i.id') . " GROUP BY c.tpl_id"; break;
+            case 'moda': $m = max($m, 5); $sql = "SELECT c.tpl_id, COUNT(*), SUM(" . $rep('i.phone', 'i.sent_at') . ") FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.id > (SELECT MAX(id) - 300000 FROM wa_camp_items) AND i.sent_at >= ? AND c.tpl_id > 0 AND (i.status IN ('sent','delivered','read') OR i.last_status IN ('delivered','read'))" . " AND i.id % 5 = 0 GROUP BY c.tpl_id"; break;
             default: return [];
         }
         $q = $pdo->prepare($sql); $q->execute([$from]); $o = [];
@@ -83,7 +83,7 @@ if (!function_exists('wa_pat_topic')) {
                     $T = &$M['topics'][$tk]; $T['sent'] += $it[2]; $T['replied'] += $it[3]; $T['msgs']++; $T['samples'][] = ['text' => mb_substr((string)$it[0], 0, 420), 'name' => (string)$it[1], 'sent' => (int)$it[2], 'replied' => (int)$it[3]]; unset($T);
                     foreach ($st as $s) { if (!isset($M['styles'][$s])) $M['styles'][$s] = ['label' => $s, 'sent' => 0, 'replied' => 0]; $M['styles'][$s]['sent'] += $it[2]; $M['styles'][$s]['replied'] += $it[3]; }
                 }
-                foreach ($M['topics'] as &$T) { usort($T['samples'], function ($a, $b) { return $b['sent'] <=> $a['sent']; }); $T['samples'] = array_slice($T['samples'], 0, 5); } unset($T);
+                foreach ($M['topics'] as &$T) { usort($T['samples'], function ($a, $b) { return $b['sent'] <=> $a['sent']; }); $T['samples'] = array_slice($T['samples'], 0, 5); $T['standard'] = $T['samples'] ? preg_replace(['/₹ ?\d[\d,]*/u', '/\b\d+ ?ml\b/iu'], ['₹X', 'N ml'], (string)$T['samples'][0]['text']) : ''; foreach ($T['samples'] as &$S) $S['best'] = false; unset($S); $bi = -1; $br = -1; foreach ($T['samples'] as $i => $S) if ($S['sent'] >= 30 && $S['replied'] / $S['sent'] > $br) { $br = $S['replied'] / $S['sent']; $bi = $i; } if ($bi >= 0) $T['samples'][$bi]['best'] = true; } unset($T);
                 $M['topics'] = array_values($M['topics']); usort($M['topics'], function ($a, $b) { return $b['sent'] <=> $a['sent']; });
                 $M['styles'] = array_values($M['styles']); usort($M['styles'], function ($a, $b) { return strcmp($a['label'], $b['label']); });
             } catch (Throwable $e) { $M['err'] = substr($e->getMessage(), 0, 120); }
