@@ -762,10 +762,10 @@
     setInterval(() => { try { if (S.cur && S.cur.contact && !document.hidden) pcDraw(); } catch (e) { } }, 8000);
     function drawHead() {
       const c = S.cur.contact; try { pcDraw(); } catch (e) { }
-      $('wiH').innerHTML = `<button type="button" class="wi-back" id="wiBack" aria-label="Back to chats">‹<span class="lb"> Chats</span></button>${av(c)}<div class="wi-id"><b>${esc(title(c))}</b>${c.name ? `<span class="ph">${esc(pretty(c.phone))}</span>` : ''}</div>${asgHtml(c)}${pills(Object.assign({}, c, { assigned_name: '' }))}<span class="wi-fu-p" id="wiFuP"></span><span class="sp"></span>${admin && c.status !== 'closed' && c.assigned_emp !== meId() ? `<button type="button" class="wi-btn wi-ib" id="wiTo" title="Take this chat into your own panel" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;font-weight:800">🔄<span class="lb"> Take over</span></button>` : ''}<button type="button" class="wi-btn wi-ib" id="wiPrc" title="Send the price chart (made for this customer's price level)">💰<span class="lb"> Price chart</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiCartH" title="Make a cart with a chain (same as the salesperson app) — 🩺 Diagnose is inside">🛒<span class="lb"> Cart</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiMoH" title="Manual order: the customer paid by QR / UPI (or pays on delivery) — no website">🧾<span class="lb"> Manual order</span></button>
+      $('wiH').innerHTML = `<button type="button" class="wi-back" id="wiBack" aria-label="Back to chats">‹<span class="lb"> Chats</span></button>${av(c)}<div class="wi-id"><b>${esc(title(c))}</b>${c.name ? `<span class="ph">${esc(pretty(c.phone))}</span>` : ''}</div>${asgHtml(c)}${pills(Object.assign({}, c, { assigned_name: '' }))}<span class="wi-fu-p" id="wiFuP"></span><span class="sp"></span>${admin && c.status !== 'closed' && c.assigned_emp !== meId() ? `<button type="button" class="wi-btn wi-ib" id="wiTo" title="Take this chat into your own panel" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;font-weight:800">🔄<span class="lb"> Take over</span></button>` : ''}<button type="button" class="wi-btn wi-ib" id="wiPrc" title="Send the price chart (made for this customer's price level)">💰<span class="lb"> Price chart</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiCartH" title="Make a cart with a chain (same as the salesperson app) — 🩺 Diagnose is inside">🛒<span class="lb"> Cart</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiWsH" title="Website order: the website makes the order and its payment link (with the gift perfume offer), sent in this chat">🛒<span class="lb"> Website order</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiMoH" title="Manual order: the customer paid by QR / UPI (or pays on delivery) — no website">🧾<span class="lb"> Manual order</span></button>
         ${c.status !== 'closed' && (admin || c.assigned_emp === meId()) ? '<button type="button" class="wi-btn wi-ib" id="wiBp" title="Stop bot messages for this customer for some time (e.g. he will send the address in the evening)">⏸<span class="lb"> Stop bot</span></button>' : ''}<button type="button" class="wi-btn wi-ib wi-pc" id="wiCx" title="Mark as complaint" style="background:#f3efff;color:#6d4fc2">🎫<span class="lb"> Complaint</span></button>${c.status === 'closed' ? '<button type="button" class="wi-btn wi-ib" id="wiRe" title="Open this chat again">↺<span class="lb"> Re-open</span></button>' : '<button type="button" class="wi-btn wi-ib" id="wiCl" title="Resolve (finish) this chat">✓<span class="lb"> Resolve</span></button>'}<button type="button" class="wi-more wi-ib wi-pc" id="wiMore" aria-label="Details">ⓘ<span class="lb"> Details</span></button><button type="button" class="wi-more wi-ib wi-ph" id="wiMo2" aria-label="More">⋯<span class="lb"> More</span></button><div id="wiCxB" style="flex-basis:100%"></div><div id="wiBpB" style="flex-basis:100%"></div>`;
       const cx = () => { if (!window.CXR) { alert('Complaints are not installed yet. Refresh the page.'); return; } CXR.open({ phone: c.phone, name: c.name || '', source: 'whatsapp', onDone: () => cxBan(c.phone) }); };
-      $('wiCx').onclick = cx; if ($('wiCartH')) $('wiCartH').onclick = () => openCart(c); if ($('wiMoH')) $('wiMoH').onclick = () => openManual(c);   // 🛒 the chain cart, one tap from the chat (also in Details)
+      $('wiCx').onclick = cx; if ($('wiCartH')) $('wiCartH').onclick = () => openCart(c); if ($('wiMoH')) $('wiMoH').onclick = () => openManual(c); if ($('wiWsH')) $('wiWsH').onclick = () => openWeb(c);   // 🛒 the chain cart, one tap from the chat (also in Details)
       cxBan(c.phone); orderPill(c);
       if ($('wiBp')) $('wiBp').onclick = () => openBotPause(c); bpBanner(c.phone);
       if ($('wiAsg')) $('wiAsg').onclick = openAssign;
@@ -781,11 +781,13 @@
       $('wiMore').onclick = det;
       $('wiMo2').onclick = () => {   // phone: the less-used actions, each with words
         const b0 = sheet('More for this chat'); const it = (k, ic, t, d) => `<button type="button" class="wi-mi" data-k="${k}"><span>${ic}</span><b>${t}<small>${d}</small></b></button>`;
-        b0.innerHTML = it('cart', '🛒', 'Make a cart', 'Perfumes + chain, send to the customer') + it('det', 'ⓘ', 'Details', 'Cart, journey, tags, summary, profile') + it('cx', '⚠️', 'Mark as complaint', 'Send this chat to the Complaint team');
+        b0.innerHTML = it('web', '🛍️', 'Website order', 'Payment link with the gift offer, sent in this chat') + it('mo', '🧾', 'Manual order', 'Paid by QR / UPI, or COD — no website') + it('cart', '🛒', 'Make a cart', 'Perfumes + chain, send to the customer') + it('det', 'ⓘ', 'Details', 'Cart, journey, tags, summary, profile') + it('cx', '⚠️', 'Mark as complaint', 'Send this chat to the Complaint team');
         b0.onclick = (e) => {
           const x = e.target.closest('[data-k]'); if (!x) return;
           if (x.dataset.k === 'cx') { closeSheet(); cx(); return; }
           if (x.dataset.k === 'cart') { closeSheet(); openCart(c); return; }
+          if (x.dataset.k === 'web') { closeSheet(); openWeb(c); return; }
+          if (x.dataset.k === 'mo') { closeSheet(); openManual(c); return; }
           closeSheet(true); const L = LY.st.find((y) => y.n === 'sheet'); root.classList.add('det');   // Details takes over the sheet's Back step
           if (L) { L.n = 'det'; L.f = () => root.classList.remove('det'); } else det();
         };
@@ -1189,6 +1191,14 @@
       const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=15';
       sc.onload = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
+    // ---------- 🛒 website order (wso.php, wso_ui.js): the website's Create order + payment link, sent in the chat
+    let wsLd = null;
+    function wsReady(cb) {
+      if (window.WaWebOrder) return cb(); if (wsLd) { wsLd.push(cb); return; } wsLd = [cb];
+      const sc = document.createElement('script'); sc.src = 'assets/js/wso_ui.js?v=1';
+      sc.onload = () => { const q = wsLd || []; wsLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = wsLd || []; wsLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
+    }
+    function openWeb(c) { wsReady(() => { if (!window.WaWebOrder) { alert('Website order is not installed yet. Refresh the page.'); return; } WaWebOrder.open({ phone: c.phone, name: c.name || '', api, onDone: () => { try { refreshChat(true); } catch (e) { } } }); }); }
     function openManual(c) { moReady(() => { if (!window.WaManual) { alert('Manual order is not installed yet. Refresh the page.'); return; } WaManual.open({ phone: c.phone, name: c.name || '', api, onDone: () => { try { refreshChat(true); } catch (e) { } } }); }); }
     function openCart(c) { chReady(() => { if (!window.WaCart) { alert('The cart is not installed yet. Refresh the page.'); return; } WaCart.open({ phone: c.phone, name: c.name || '', api, onChange: () => { drawCartChip(c); } }); }); }
     function drawCartChip(c) { chReady(() => { const el = $('wiCtS'); if (el && window.WaCart) WaCart.status(el, { phone: c.phone, name: c.name || '', api, onChange: () => drawCartChip(c) }); }); }

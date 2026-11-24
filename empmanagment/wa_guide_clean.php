@@ -132,3 +132,19 @@ function wag_gb_patch_rows(PDO $pdo): bool
         $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_rows_v', 'v' . (int)$g['id']); return true;
     } catch (Throwable $e) { return false; }
 }
+/** Once for every live version (owner, 24 Nov 2026): the owner's MESSAGE STYLE goes INTO the live guidebook, so the bot's chat replies and its follow-ups carry it too: warm Hinglish, the name, a few emoji, blank lines between thoughts,
+ *  a little excitement / curiosity, ONE clear next step, the season; and never an invented price, offer or promise. It is appended to the existing GOAL = MAXIMUM ORDERS point (no new point). Call while holding the guidebook lock. */
+function wag_gb_patch_style(PDO $pdo): bool
+{
+    if (!function_exists('lib_guide_row')) return false;
+    try {
+        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; if (setting_get($pdo, 'wag_gb_style_v', '') === 'v' . (int)$g['id']) return false;
+        $gb = json_decode((string)$g['body'], true); if (!is_array($gb) || empty($gb['do'])) return false;
+        $add = ' MESSAGE STYLE (owner, 24 Nov; chat replies AND every follow-up): write like a warm, friendly person of TM Perfume House in simple Hinglish (or the customer\'s own language), use his first name, 1-3 emoji, short thoughts with a blank line between them (never one long block), and a little EXCITEMENT or curiosity (something nice for him, a small surprise to see, "bas ek button dabaiye"); finish with ONE clear next step (a size, a perfume, the address, a button); fit the season when it helps (winter perfumes, wedding / New Year gifts); in a follow-up be a friendly curious nudge, never flat or formal, never the same words twice to one customer; and never invent a price, an offer, a discount or a promise: only the price chart and the offers that are running.';
+        $hit = false; foreach ($gb['do'] as $i => $t) if (is_string($t) && strpos($t, 'GOAL = MAXIMUM ORDERS') === 0) { if (strpos($t, 'MESSAGE STYLE') === false) $gb['do'][$i] = rtrim($t) . $add; $hit = true; break; }
+        if (!$hit) foreach ($gb['do'] as $i => $t) if (is_string($t) && strpos($t, 'SELL MORE PERFUMES') === 0) { if (strpos($t, 'MESSAGE STYLE') === false) $gb['do'][$i] = rtrim($t) . $add; $hit = true; break; }
+        if (!$hit) return false;
+        $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_style_v', 'v' . (int)$g['id']); return true;
+    } catch (Throwable $e) { return false; }
+}
+

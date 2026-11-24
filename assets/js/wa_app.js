@@ -1253,11 +1253,12 @@
     // ⋯ More: the actions staff use less often, each with a plain-words label (no guessing what an icon means)
     function openMore() {
       const sh = sheet('More for this chat'); const it = (k, ic, t, d) => `<button type="button" class="wx-mi" data-k="${k}"><span>${ic}</span><b>${t}<small>${d}</small></b></button>`;
-      sh.body.innerHTML = it('cust', '👤', 'Customer details', 'Name, orders, tags, notes') + it('jr', '🧭', 'Customer journey', 'Everything this customer did, step by step')
+      sh.body.innerHTML = it('web', '🛍️', 'Website order', 'Payment link with the gift offer, sent in this chat') + it('cust', '👤', 'Customer details', 'Name, orders, tags, notes') + it('jr', '🧭', 'Customer journey', 'Everything this customer did, step by step')
         + it('hand', '↪️', 'Hand over to a colleague', 'Search a name — the chat moves to them') + it('cx', '⚠️', 'Mark as complaint', 'Send this chat to the Complaint team') + it('rep', '🚩', 'Report a bad bot reply', 'The owner sees it on the Teach screen');
       sh.body.onclick = (e) => {
         const b = e.target.closest('[data-k]'); if (!b) return; const k = b.dataset.k;
         if (k === 'cust' || k === 'rep' || k === 'hand') { sh.el._shut(); S.reuseSheet = 1; (k === 'cust' ? openCustomer : k === 'hand' ? openHandover : reportBad)(); return; }   // the next sheet takes this one's Back step
+        if (k === 'web') { sh.close(); setTimeout(openWeb, 60); return; }
         sh.close(); setTimeout(() => (k === 'jr' ? openJourney : markComplaint)(), 60);
       };
     }
@@ -1546,6 +1547,17 @@
       if (window.WaManual) return cb(); if (moLd) { moLd.push(cb); return; } moLd = [cb];
       const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=15';
       sc.onload = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
+    }
+    // ---- 🛒 website order (wso.php / wso_ui.js): the website's Create order + payment link, sent in the chat
+    let wsLd = null;
+    function wsReady(cb) {
+      if (window.WaWebOrder) return cb(); if (wsLd) { wsLd.push(cb); return; } wsLd = [cb];
+      const sc = document.createElement('script'); sc.src = 'assets/js/wso_ui.js?v=1';
+      sc.onload = () => { const q = wsLd || []; wsLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = wsLd || []; wsLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
+    }
+    function openWeb() {
+      if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
+      wsReady(() => { if (!window.WaWebOrder) { toast('Could not open the website order. Refresh the page.', true); return; } WaWebOrder.open({ phone: p, name: nm, api, onDone: () => { try { pollChat(); } catch (e) { } } }); });
     }
     function openManual() {
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);
@@ -1895,8 +1907,8 @@
         };
         paint();
       };
-      const mountCart = () => { const mo = sh.body.querySelector('#wxMoGo'); if (mo) mo.onclick = () => { sh.close(); openManual(); }; const b = sh.body.querySelector('#wxCtGo'); if (!b) return; b.onclick = () => { sh.close(); openCart(); }; chReady(() => { const st = sh.body.querySelector('#wxCtS'); if (window.WaCart && st && st.isConnected) WaCart.status(st, { phone: d.phone || (S.cur && S.cur.phone), name: d.name || '', api, onChange: () => { try { pollChat(); } catch (e) { } } }); }); };
-      const draw = () => { sh.body.innerHTML = `<div id="wxCt2" style="margin:0 0 12px"><button class="wx-btn" id="wxCtGo" style="width:100%;min-height:44px">🛒 Make cart</button><button class="wx-btn" id="wxMoGo" style="width:100%;min-height:44px;margin-top:6px">🧾 Manual order (QR / UPI / COD)</button><div id="wxCtS" style="margin-top:8px"></div></div><div id="wxUt" style="margin:0 0 12px"></div><div id="wxQt" style="margin:0 0 12px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${d.badge && d.badge.t ? `<span class="wx-chip ${d.badge.k === 'vip' ? 'p' : d.badge.k === 'hot' ? 'r' : 'g'}">${esc(d.badge.t)}</span>` : ''}${(d.tags || []).map((t) => `<span class="wx-chip m">${esc(t.t)}</span>`).join('')}</div>
+      const mountCart = () => { const mo = sh.body.querySelector('#wxMoGo'); if (mo) mo.onclick = () => { sh.close(); openManual(); }; const ws = sh.body.querySelector('#wxWsGo'); if (ws) ws.onclick = () => { sh.close(); openWeb(); }; const b = sh.body.querySelector('#wxCtGo'); if (!b) return; b.onclick = () => { sh.close(); openCart(); }; chReady(() => { const st = sh.body.querySelector('#wxCtS'); if (window.WaCart && st && st.isConnected) WaCart.status(st, { phone: d.phone || (S.cur && S.cur.phone), name: d.name || '', api, onChange: () => { try { pollChat(); } catch (e) { } } }); }); };
+      const draw = () => { sh.body.innerHTML = `<div id="wxCt2" style="margin:0 0 12px"><button class="wx-btn" id="wxCtGo" style="width:100%;min-height:44px">🛒 Make cart</button><button class="wx-btn" id="wxWsGo" style="width:100%;min-height:44px;margin-top:6px">🛒 Website order (payment link + gift)</button><button class="wx-btn" id="wxMoGo" style="width:100%;min-height:44px;margin-top:6px">🧾 Manual order (QR / UPI / COD)</button><div id="wxCtS" style="margin-top:8px"></div></div><div id="wxUt" style="margin:0 0 12px"></div><div id="wxQt" style="margin:0 0 12px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${d.badge && d.badge.t ? `<span class="wx-chip ${d.badge.k === 'vip' ? 'p' : d.badge.k === 'hot' ? 'r' : 'g'}">${esc(d.badge.t)}</span>` : ''}${(d.tags || []).map((t) => `<span class="wx-chip m">${esc(t.t)}</span>`).join('')}</div>
  <div class="wx-kv"><span>Phone</span><b><a href="tel:+91${d.phone}" style="color:inherit">${pretty(d.phone)}</a></b></div><div class="wx-kv"><span>Orders</span><b>${d.orders_n} · ${money(d.ltv)}</b></div>${d.ad ? `<div class="wx-kv"><span>Came from ad</span><b style="max-width:60%">${esc(d.ad)}</b></div>` : ''}${d.summary ? `<div class="wx-kv"><span>Claude summary</span><b style="max-width:65%;font-weight:600">${esc(d.summary)}</b></div>` : ''}
         ${n.why ? `<div class="wx-banner b" style="margin:8px 0">📱 ${esc(n.why)}</div>` : ''}
         ${(d.orders || []).length ? `<div class="wx-h" style="padding-left:0">Orders</div>${d.orders.map((o) => `<div class="wx-kv"><span>${esc(o.name || '#')} · ${esc(String(o.at || '').slice(0, 10))}</span><b>${money(o.total)} <span class="wx-chip ${o.paid ? 'g' : 'o'}">${esc(o.status || '')}</span></b></div>`).join('')}` : ''}
