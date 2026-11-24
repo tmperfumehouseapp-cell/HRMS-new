@@ -480,6 +480,7 @@
   .lc-seg{display:inline-flex; background:rgba(128,128,128,.14); border-radius:10px; padding:3px;} .lc-seg button{border:0; background:transparent; color:inherit; padding:5px 12px; border-radius:8px; font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;} .lc-seg button.on{background:#0f172a; color:#fff;}
   .lc-kp{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin:6px 0 8px;} .lc-kp>div{border:1px solid rgba(128,128,128,.25); border-radius:11px; padding:7px 11px;} .lc-kp small{display:block; font-size:11px; opacity:.7;} .lc-kp b{font-size:19px;} .lc-kp i{font-style:normal; font-size:11.5px; font-weight:700; margin-left:4px;}
   .lc-up{color:#15803d;} .lc-dn{color:#b91c1c;}
+  .lc-lg.qc-lg span:not(.y):before{border-top-color:#7c3aed;}
   .lc-lg{display:flex; gap:16px; font-size:12px; opacity:.85; margin:2px 0;} .lc-lg span:before{content:''; display:inline-block; width:22px; border-top:3px solid #2563eb; vertical-align:middle; margin-right:6px;} .lc-lg span.y:before{border-top:3px dashed #94a3b8;}
   .lc-w{position:relative;} .lc-w svg{width:100%; height:auto; display:block; touch-action:pan-y;}
   .lc-tip{position:absolute; z-index:5; background:#0f172a; color:#e2e8f0; border-radius:10px; padding:9px 12px; font-size:12px; line-height:1.55; pointer-events:none; min-width:230px; box-shadow:0 8px 24px rgba(0,0,0,.25); display:none;} .lc-tip b{color:#fff;} .lc-tip .r{display:flex; justify-content:space-between; gap:14px;} .lc-tip .g{color:#86efac;} .lc-tip .d{color:#fca5a5;} .lc-tip .h{font-size:13px; margin-bottom:3px;}
@@ -2090,6 +2091,57 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     if (dt) { const mx = Number(svg.dataset.mx), tp = Number(svg.dataset.tp), ph = Number(svg.dataset.ph); dt.setAttribute('cx', xx); dt.setAttribute('cy', tp + ph * (1 - T[mt] / mx)); dt.style.display = ''; }
   }
   document.addEventListener('mousemove', lcMove); document.addEventListener('touchstart', lcMove, { passive: true }); document.addEventListener('touchmove', lcMove, { passive: true });
+  // ---------- 📞 Fresh queries through the day — today vs yesterday (owner, 24 Nov): the same picture as the orders line above, for FRESH queries only (no campaign / community) ----------
+  const QC = { y: true, D: null, day: '', busy: false, at: 0 };
+  async function qcLoad(force) {
+    const df = document.getElementById('dateFrom').value, dt = document.getElementById('dateTo').value; if (EMP_VIEW || !df || df !== dt) { QC.D = null; QC.day = ''; return; }
+    if (QC.busy || (!force && QC.day === df && Date.now() - QC.at < 60000)) return; QC.busy = true;
+    try { const d = await api.get('queries.fresh_hours', { date: df }); if (document.getElementById('dateFrom').value === df) { QC.D = d; QC.day = df; QC.at = Date.now(); const c = document.getElementById('qcCard'); if (c) c.innerHTML = qcBody(); } } catch (e) { } QC.busy = false;
+  }
+  function qcM() {
+    const df = document.getElementById('dateFrom').value; if (!QC.D || QC.day !== df) return null;
+    ohSetStart(); const S = OH_S, nowD = new Date(), isToday = df === bizDayOf(nowD), nowIdx = isToday ? (nowD.getHours() - S + 24) % 24 : 23, nowFrac = isToday ? nowIdx + nowD.getMinutes() / 60 : 24;
+    const cum = (a) => { let n = 0; return (a || []).map((v) => { n += Number(v) || 0; return { n, hn: Number(v) || 0 }; }); };
+    return { S, isToday, nowIdx, nowFrac, T: cum(QC.D.today), Y: cum(QC.D.yday) };
+  }
+  function qcBody() {
+    const M = qcM(), fmt = (v) => String(Math.round(v));
+    let h = `<div class="lc-top"><span class="lc-t">📞 Fresh queries through the day — today vs yesterday</span><span class="lc-sw"><span class="lc-seg"><button type="button" data-qc="y" class="${QC.y ? 'on' : ''}">${QC.y ? '✓ ' : ''}Yesterday</button></span></span></div>`;
+    if (!M || M.T.length < 24) return h + '<div class="dtt">' + (document.getElementById('dateFrom').value === document.getElementById('dateTo').value ? 'Loading the fresh queries…' : 'Pick one day (From = To) to see the day line.') + '</div>';
+    const upI = Math.min(23, M.nowIdx), t = M.T[upI].n, yv = lcY(M, upI, 'n', M.isToday);
+    h += `<div class="lc-kp"><div><small>Today so far${M.isToday ? '' : ' (whole day)'}</small><b>${fmt(t)}</b></div><div><small>Yesterday, same hour</small><b>${fmt(yv)}</b>${lcChip(lcPct(t, yv))}</div><div><small>Ahead / behind</small><b class="${t - yv >= 0 ? 'lc-up' : 'lc-dn'}">${t - yv >= 0 ? '+' : '−'}${fmt(Math.abs(t - yv))}</b></div><div><small>Yesterday's whole day</small><b>${fmt(M.Y[23].n)}</b></div></div>`;
+    const W = 1000, Hh = 340, L = 54, R = 56, Tp = 14, B = 34, pw = W - L - R, ph = Hh - Tp - B, C = '#7c3aed';
+    const todayPts = []; for (let i = 0; i < 24; i++) { if (M.isToday && i > M.nowIdx) break; todayPts.push([i + 1, M.T[i].n]); }
+    if (M.isToday) todayPts[todayPts.length - 1][0] = Math.max(M.nowFrac, 0.05);
+    const yPts = QC.y ? M.Y.map((r, i) => [i + 1, r.n]) : []; const mx0 = Math.max(1, ...todayPts.map((p) => p[1]), ...yPts.map((p) => p[1])), step = mx0 <= 12 ? 2 : (mx0 <= 60 ? 10 : (mx0 <= 150 ? 25 : (mx0 <= 400 ? 50 : (mx0 <= 1500 ? 250 : (mx0 <= 5000 ? 1000 : 5000))))), mx = Math.ceil(mx0 / step) * step;
+    const X = (x) => L + pw * x / 24, Yv = (v) => Tp + ph * (1 - v / mx), line = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Yv(p[1]).toFixed(1)).join(' ');
+    let g = ''; for (let v = 0; v <= mx; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${Yv(v)}" y2="${Yv(v)}" stroke="currentColor" stroke-opacity=".12" /><text x="${L - 8}" y="${Yv(v) + 4}" text-anchor="end" font-size="11" fill="currentColor" fill-opacity=".6">${v}</text>`;
+    for (let i = 0; i <= 24; i += 2) g += `<text x="${X(i)}" y="${Hh - 12}" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity=".6">${(() => { const hh = (M.S + i) % 24; return ((hh % 12) || 12) + (hh < 12 ? ' AM' : ' PM'); })()}</text>`;
+    if (yPts.length && todayPts.length > 1) { const a = [[0, 0]].concat(todayPts), b = [[0, 0]].concat(yPts.filter((p) => p[0] <= todayPts[todayPts.length - 1][0] + 1)); g += `<path d="${a.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Yv(p[1]).toFixed(1)).join(' ')} ${b.slice().reverse().map((p) => 'L' + X(p[0]).toFixed(1) + ' ' + Yv(p[1]).toFixed(1)).join(' ')} Z" fill="${C}" fill-opacity=".10" />`; }
+    if (yPts.length) g += `<path d="${line([[0, 0]].concat(yPts))}" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-dasharray="7 5" />`;
+    if (todayPts.length) { g += `<path d="${line([[0, 0]].concat(todayPts))}" fill="none" stroke="${C}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round" />`; todayPts.forEach((p, i) => { g += `<circle cx="${X(p[0]).toFixed(1)}" cy="${Yv(p[1]).toFixed(1)}" r="${i === todayPts.length - 1 ? 6.5 : 3.2}" fill="${C}" ${i === todayPts.length - 1 ? 'stroke="#fff" stroke-width="2.5"' : ''} />`; }); const lp = todayPts[todayPts.length - 1]; g += `<text x="${X(lp[0]).toFixed(1)}" y="${(Yv(lp[1]) - 13).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="${C}">${fmt(lp[1])}</text>`; }
+    if (yPts.length) { const ly = yPts[yPts.length - 1]; g += `<text x="${X(24) + 6}" y="${Yv(ly[1]) + 4}" font-size="12" font-weight="700" fill="#64748b">${fmt(ly[1])}</text>`; }
+    g += '<line id="qcVl" x1="0" x2="0" y1="' + Tp + '" y2="' + (Hh - B) + '" stroke="currentColor" stroke-opacity=".4" stroke-dasharray="3 3" style="display:none" /><circle id="qcDot" r="6" fill="' + C + '" stroke="#fff" stroke-width="2.5" style="display:none" />';
+    h += `<div class="lc-lg qc-lg"><span>Today</span>${QC.y ? '<span class="y">Yesterday</span>' : ''}</div><div class="lc-w" id="qcW"><svg id="qcSvg" viewBox="0 0 ${W} ${Hh}" data-l="${L}" data-pw="${pw}" data-w="${W}" data-mx="${mx}" data-tp="${Tp}" data-ph="${ph}" role="img" aria-label="Fresh queries through the day, today against yesterday">${g}</svg><div class="lc-tip" id="qcTip"></div></div>`;
+    h += '<div class="dtt" style="margin-top:4px">Put the cursor on (or tap) any point of the day: fresh queries so far and this hour alone — each against yesterday. Fresh = a new query a salesperson got (the Query card); campaign and community queries are not counted here.</div>';
+    return h;
+  }
+  function qcCardHtml() { if (EMP_VIEW) return ''; setTimeout(() => qcLoad(false), 0); return `<div class="stat-card lc-card" id="qcCard">${qcBody()}</div>`; }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-qc]'); if (!b) return; QC.y = !QC.y; const c = document.getElementById('qcCard'); if (c) c.innerHTML = qcBody(); });
+  function qcMove(e) {
+    const svg = e.target.closest && e.target.closest('#qcSvg'); const tip = document.getElementById('qcTip'); if (!tip) return; const M = qcM(); if (!svg || !M) { tip.style.display = 'none'; const vl = document.getElementById('qcVl'), dt = document.getElementById('qcDot'); if (vl) vl.style.display = 'none'; if (dt) dt.style.display = 'none'; return; }
+    const r = svg.getBoundingClientRect(), W = Number(svg.dataset.w), L = Number(svg.dataset.l), pw = Number(svg.dataset.pw), px = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) * (W / r.width);
+    let i = Math.round((px - L) / pw * 24) - 1; i = Math.max(0, Math.min(M.isToday ? Math.min(23, M.nowIdx) : 23, i));
+    const isNowPt = M.isToday && i === M.nowIdx, T = M.T[i], yy = (k) => lcY(M, i, k, isNowPt), fn = (v) => String(Math.round(v));
+    const line = (lab, a, b) => `<div class="r"><span>${lab}</span><span><b>${fn(a)}</b> <span style="opacity:.7">· Y ${fn(b)}</span> <span class="${a >= b ? 'g' : 'd'}">${lcPct(a, b) == null ? '' : (lcPct(a, b) > 0 ? '+' : '') + lcPct(a, b) + '%'}</span></span></div>`;
+    const df = T.n - yy('n');
+    tip.innerHTML = `<div class="h"><b>${isNowPt ? 'Now · ' + new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : 'Till ' + lcHr(M.S, i)}</b></div>` + line('Fresh queries so far', T.n, yy('n')) + line('This hour', T.hn, yy('hn')) + `<div class="r"><span>Ahead / behind</span><span><b class="${df >= 0 ? 'g' : 'd'}">${df >= 0 ? '+' : '−'}${fn(Math.abs(df))}</b></span></div>`;
+    tip.style.display = 'block'; const wr = document.getElementById('qcW').getBoundingClientRect(), tx = (e.touches ? e.touches[0].clientX : e.clientX) - wr.left; tip.style.left = Math.max(0, Math.min(wr.width - 250, tx + 14)) + 'px'; tip.style.top = '8px';
+    const vl = document.getElementById('qcVl'), dt = document.getElementById('qcDot'), xx = L + pw * ((isNowPt ? Math.max(M.nowFrac, 0.05) : i + 1)) / 24;
+    if (vl) { vl.setAttribute('x1', xx); vl.setAttribute('x2', xx); vl.style.display = ''; }
+    if (dt) { const mx = Number(svg.dataset.mx), tp = Number(svg.dataset.tp), ph = Number(svg.dataset.ph); dt.setAttribute('cx', xx); dt.setAttribute('cy', tp + ph * (1 - T.n / mx)); dt.style.display = ''; }
+  }
+  document.addEventListener('mousemove', qcMove); document.addEventListener('touchstart', qcMove, { passive: true }); document.addEventListener('touchmove', qcMove, { passive: true });
   // ---------- 🎯 Ideal day vs actual (after Orders by hour): the day's ideal spend / replies / Campaign orders at fixed times against what really happened ----------
   let IDL = null, IDLday = '', IDLat = 0, IDLbusy = false;
   const idN = (v) => Number(v || 0).toLocaleString('en-IN'), idR = (v) => '₹' + idN(Math.round(v || 0)), idDay = () => { const f = document.getElementById('dateFrom').value, t = document.getElementById('dateTo').value; return f && f === t ? f : ''; };
@@ -2846,6 +2898,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
       ${cslCardHtml()}
       ${pmCardHtml()}
       ${lcCardHtml(base)}
+      ${qcCardHtml()}
       <div id="m3Host" style="grid-column:1 / -1; min-width:0;"></div>
     `;
     grid.style.display = 'grid';

@@ -531,6 +531,7 @@ function action_permission(string $action): ?string
         'order_ratings.' => 'performance',   // per-order star ratings on the Performance page
         'employees.set_color' => 'assign_queries',
         'queries.hourly' => 'assign_queries',
+        'queries.fresh_hours' => 'assign_queries',   // 📞 Fresh queries through the day (Orders page chart)
         'queries.assign' => 'assign_queries',
         'queries.assign_set' => 'assign_queries',
         'queries.panel_hour_set' => 'assign_queries',
@@ -26861,6 +26862,22 @@ switch ($action) {
         break;
     }
 
+    case 'queries.fresh_hours': {
+        // 📞 Fresh queries through the day — today vs yesterday (owner, 24 Nov; the chart under "Orders through the day" on the Orders page). FRESH = a query a salesperson holds that is not campaign / community
+        // (the same count as the Query card: wq_new_day_fresh). Returns two rows of 24 numbers: the queries opened in each hour of the business day (index 0 = the first hour after the day start), for the day and the day before.
+        $auth = require_auth();
+        if (!orders_page_controls($auth)) require_role(['Admin', 'HR'], $auth);
+        $day = (string)($_GET['date'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = biz_today($pdo);
+        $one = function (string $d) use ($pdo) {
+            $a = array_fill(0, 24, 0); $from = $d . ' ' . day_start_for($pdo, $d) . ':00'; $to = date('Y-m-d H:i:s', strtotime($from) + 86400);
+            try { $q = $pdo->prepare("SELECT FLOOR(TIMESTAMPDIFF(MINUTE, ?, q.opened_at) / 60) h, COUNT(*) n FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND q.emp_id > 0 AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community') GROUP BY h");
+                $q->execute([$from, $from, $to]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $h = (int)$r['h']; if ($h >= 0 && $h < 24) $a[$h] = (int)$r['n']; } } catch (Throwable $e) { error_log('fresh_hours: ' . $e->getMessage()); }
+            return $a; };
+        $yd = date('Y-m-d', strtotime($day . ' -1 day')); $isToday = $day === biz_today($pdo);
+        $out = hrms_memo('fresh_hours:' . $day, $isToday ? 60 : 900, function () use ($one, $day, $yd) { return ['today' => $one($day), 'yday' => $one($yd)]; });
+        json_response(['ok' => true, 'date' => $day, 'start' => (int)substr(day_start_for($pdo, $day), 0, 2)] + (is_array($out) ? $out : ['today' => array_fill(0, 24, 0), 'yday' => array_fill(0, 24, 0)]));
+        break;
+    }
     case 'queries.hourly': {
         // The team's Query / Campaign counts for a day grouped by the hour
         // each +1 / − was clicked (from the click log). Counts that were
