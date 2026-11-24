@@ -29,7 +29,7 @@ jobs:
           echo "--- deployed api.php has the COD fee code? ---"; grep -c "PANEL_COD_FEE" "${P}empmanagment/api.php" || true
           php -r '
             require $argv[1] . "empmanagment/config.php";
-            $u = defined("SALES_DB_USER") ? SALES_DB_USER : "u897577217_sales"; $pw = defined("SALES_DB_PASS") ? SALES_DB_PASS : "";
+            $u = defined("SALES_DB_USER") ? SALES_DB_USER : "u897577217_sales"; $pw = defined("SALES_DB_PASS") ? SALES_DB_PASS : (preg_match("/\\? SALES_DB_PASS : \x27([^\x27]*)\x27/", (string)file_get_contents($argv[1] . "empmanagment/api.php"), $m) ? $m[1] : "");   // same fallback the app uses
             try { $d = new PDO("mysql:host=" . DB_HOST . ";dbname=u897577217_sales;charset=utf8mb4", $u, $pw, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); }
             catch (Throwable $e) { echo "cannot open the panel database: " . $e->getMessage() . "\n"; exit; }
             echo "--- money-looking columns of the panel order table ---\n";
@@ -41,5 +41,28 @@ jobs:
             }
             echo "--- last 5 prepaid orders (no change expected) ---\n";
             foreach ($d->query("SELECT id, `date`, prepaid, COD, totalAmount, finalPrice FROM `order` WHERE COALESCE(COD,0) = 0 ORDER BY `date` DESC, id DESC LIMIT 5")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  #" . $r["id"] . " " . $r["date"] . " prepaid=" . $r["prepaid"] . " totalAmount=" . $r["totalAmount"] . " finalPrice=" . $r["finalPrice"] . "\n";
+          ' "$P"
+          REMOTE
+      - name: Website (TM Store) COD orders — is the COD fee inside the total? (read-only, money fields only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          php -r '
+            require $argv[1] . "empmanagment/config.php";
+            $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8]);
+            $g = function ($k, $def) use ($d) { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false || $v === null || $v === "" ? $def : (string)$v; };
+            $base = rtrim($g("tms_api_base", "https://test.tmperfumehouse.store/api/v1"), "/"); $key = $g("tms_api_key", "");
+            if ($key === "") { echo "no shop key saved\n"; exit; }
+            $ch = curl_init($base . "/orders?limit=100&page=1"); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_HTTPHEADER => ["Authorization: Bearer " . $key, "Accept: application/json"]]);
+            $j = json_decode((string)curl_exec($ch), true); curl_close($ch); $items = (array)($j["data"]["items"] ?? []);
+            echo "orders read: " . count($items) . "\n--- orders with a COD fee or COD payment (money fields only) ---\n"; $n = 0;
+            foreach ($items as $o) { $fee = (float)($o["cod_fee"] ?? 0); $pm = strtolower((string)($o["payment_method"] ?? "")); if ($fee <= 0 && strpos($pm, "cod") === false) continue; if (++$n > 15) break;
+              $sum = (float)($o["subtotal"] ?? 0) - (float)($o["discount_total"] ?? 0) + (float)($o["shipping_total"] ?? 0) + $fee;
+              echo "  " . ($o["number"] ?? "?") . " " . substr((string)($o["placed_at"] ?? ""), 0, 10) . " pay=" . $pm . " status=" . ($o["payment_status"] ?? "") . " subtotal=" . ($o["subtotal"] ?? "") . " discount=" . ($o["discount_total"] ?? "") . " shipping=" . ($o["shipping_total"] ?? "") . " cod_fee=" . $fee . " total=" . ($o["total"] ?? "") . " paid=" . ($o["amount_paid"] ?? "") . "  subtotal-discount+shipping+fee=" . $sum . "\n"; }
+            if (!$n) echo "  none in the last 100 orders\n";
           ' "$P"
           REMOTE

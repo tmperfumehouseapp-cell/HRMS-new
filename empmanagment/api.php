@@ -1147,9 +1147,10 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
     $n = 0;
     foreach ($orders as $o) {
         $created = date('Y-m-d H:i:s', strtotime($o['created_at']));
+        try {      // one order that cannot be saved (a value too long for its column …) must never stop the orders after it from being copied
         $stmt->execute([
-            $o['id'], $storeKey, $o['order_name'], $created,
-            $o['customer'] ?? '', $o['phone'] ?? '', (int)($o['items'] ?? 0),
+            $o['id'], $storeKey, mb_substr((string)$o['order_name'], 0, 40), $created,
+            mb_substr((string)($o['customer'] ?? ''), 0, 120), mb_substr((string)($o['phone'] ?? ''), 0, 40), (int)($o['items'] ?? 0),
             (float)$o['total'], $o['currency'] ?? 'INR',
             $o['financial_status'] ?? '', $o['fulfillment_status'] ?? 'unfulfilled',
             (string)($o['tags'] ?? ''),
@@ -1160,6 +1161,7 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
             array_key_exists('xparts', $o) && $o['xparts'] !== null ? json_encode($o['xparts'], JSON_UNESCAPED_UNICODE) : null,
             isset($o['pay_ref']) ? mb_substr((string)$o['pay_ref'], 0, 200) : null,
         ]);
+        } catch (PDOException $e) { error_log('orders_upsert ' . $storeKey . ' ' . ($o['order_name'] ?? '') . ': ' . $e->getMessage()); $GLOBALS['__orders_upsert_err'] = ($o['order_name'] ?? '') . ': ' . $e->getMessage(); continue; }
         $n++;
         try { order_auto_alloc($pdo, $storeKey, $o); } catch (Throwable $e) { }   // 🤖 a new order is allocated to the chat's salesperson at once
     }
@@ -2411,6 +2413,26 @@ function code_orders_range(PDO $pdo, string $dateFrom, string $dateTo, array &$e
             $orders[] = $o;
         }
     }
+    // 🛍 WEBSITE orders (the new TM Perfume House shop, store_orders.php): every one that is in the HRMS (given to a salesperson, or waiting on the Allocation page) is listed here too.
+    //    Its code is kept in the HRMS only (source 'manual': there is no Shopify order to tag) — the same rule order_codes.set already follows.
+    try {
+        [$ws, $we] = biz_window($pdo, $dateFrom, $dateTo);
+        $wq = $pdo->prepare("SELECT manual_order_id, order_no, mp_no, customer_name, items, total, payment_status, fulfillment_status, order_date FROM manual_orders WHERE channel = 'TM Store' AND order_date >= ? AND order_date <= ? ORDER BY order_date DESC LIMIT 5000");
+        $wq->execute([$ws, $we]);
+        foreach ($wq->fetchAll() as $m) {
+            $nm = (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . (string)$m['order_no'];
+            $its = (string)($m['items'] ?? ''); $ni = ctype_digit($its) ? (int)$its : ($its === '' ? 0 : count(array_filter(array_map('trim', explode(',', $its)))));
+            $o = [
+                'source' => 'manual', 'source_label' => 'Website (TM Store)', 'id' => (string)$m['manual_order_id'], 'order_name' => $nm,
+                'created_at' => str_replace(' ', 'T', (string)$m['order_date']) . '+05:30', 'biz_date' => biz_day_of($pdo, strtotime((string)$m['order_date'])),
+                'customer' => (string)($m['customer_name'] ?? '') !== '' ? (string)$m['customer_name'] : 'Guest', 'items' => $ni, 'total' => (float)$m['total'],
+                'financial_status' => (string)($m['payment_status'] ?? ''), 'fulfillment_status' => (string)($m['fulfillment_status'] ?? ''),
+                'house' => 'tmph', 'store' => 'Website (TM Store)', 'tags' => '', 'code' => '', 'can_tag' => 0,
+            ];
+            $stamp($o);
+            $orders[] = $o;
+        }
+    } catch (Throwable $e) { $errors[] = 'Website orders: ' . $e->getMessage(); }
     usort($orders, fn($a, $b) => strcmp((string)$b['created_at'], (string)$a['created_at']));
     return $orders;
 }
@@ -19557,7 +19579,7 @@ if (strpos((string)$action, 'fb.') === 0) {
     fb_route($pdo, (string)$action);
 }      // Feedback page (Dispatch → Feedback): delivered parcels → feedback message, screenshots, reward, complaint
 if (strpos((string)$action, 'psum.') === 0) { require_once __DIR__ . '/prod_summary.php'; psum_route($pdo, (string)$action); }   // 🧴 shower gel + ⭐ TM Originals summary of the Orders page (read-only)
-if (strpos((string)$action, 'dpx.') === 0) { require_once __DIR__ . '/dispatch_push.php'; if ($action === 'dpx.feed') dpx_feed($pdo); if ($action === 'dpx.feed_shop') dpx_feed_shop($pdo); dpx_route($pdo, (string)$action); }          // automatic send of the HRMS (manual) orders to the dispatch panel through n8n, at a set time (Admin / HR)          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
+if (strpos((string)$action, 'dpx.') === 0) { require_once __DIR__ . '/dispatch_push.php'; if ($action === 'dpx.feed') dpx_feed($pdo); if ($action === 'dpx.feed_shop') dpx_feed_shop($pdo); if ($action === 'dpx.feed_web') dpx_feed_web($pdo); dpx_route($pdo, (string)$action); }          // automatic send of the HRMS (manual) orders to the dispatch panel through n8n, at a set time (Admin / HR)          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
 if (strpos((string)$action, 'sysload.') === 0 && function_exists('sysload_route')) { sysload_route($pdo, (string)$action); }          // Admin → Server load: what the server is busy with
 if (strpos((string)$action, 'll.') === 0) { require_once __DIR__ . '/learn_loop.php'; }          // the nightly review loop: log, export, suggestions
 if (strpos((string)$action, 'chg.') === 0) { require_once __DIR__ . '/changes.php'; }          // Request a change: GitHub issue -> Claude Code builds -> Admin approves -> deploy
@@ -31946,6 +31968,19 @@ switch ($action) {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) json_response(['error' => 'Dates must be YYYY-MM-DD.'], 422);
         @set_time_limit(300);
         $errors = [];
+        // The Codes page reads the saved copy of the Shopify orders. When the range reaches today, today's (and yesterday's) orders are copied from Shopify NOW, in full
+        // (the background copy takes only a few pages and can fall behind on a busy day: new website orders were on the Orders page but not here) — at most once in 45 s.
+        try {
+            $__bt = biz_today($pdo);
+            if ($dateTo >= $__bt && ensure_shop_orders_table($pdo)) {
+                $__sf = sys_get_temp_dir() . '/hrms_codes_sync.txt';
+                if (time() - (int)@file_get_contents($__sf) > 45) {
+                    @file_put_contents($__sf, (string)time());
+                    orders_sync_range($pdo, max($dateFrom, date('Y-m-d', strtotime($__bt . ' -1 day'))), $dateTo, 40, $errors);
+                    if (!empty($GLOBALS['__orders_upsert_err'])) $errors[] = 'An order could not be saved in the order copy: ' . $GLOBALS['__orders_upsert_err'];
+                }
+            }
+        } catch (Throwable $e) { $errors[] = 'Copying today\'s orders from Shopify failed: ' . $e->getMessage(); }
         $orders = code_orders_range($pdo, $dateFrom, $dateTo, $errors);
         $sources = [];
         foreach (shopify_stores() as $k => $st) $sources[$k] = $st['label'];

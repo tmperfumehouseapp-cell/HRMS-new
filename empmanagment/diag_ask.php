@@ -381,7 +381,7 @@ try {
 } catch (Throwable $e) { echo "ASK CAMPS2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 // 47) After-Order by step (owner 24 Nov): what each kind of message brings, last 24 h and last 7 days (read-only, counts only)
 try {
-    foreach ([['24 h', 1], ['7 days', 7]] as [$lab47, $dd47]) {
+    foreach ([['24 h', 1]] as [$lab47, $dd47]) {
         $r47 = $one("SELECT IF(p.step <= 4, CONCAT('care', p.step), IF((p.step - 5) % 2 = 0, 'offer', 'content')) AS k, COUNT(*) n, SUM(m.status IN ('delivered', 'read')) d, SUM(m.status = 'failed') f,
             SUM(EXISTS (SELECT 1 FROM wa_messages i WHERE i.dir = 'in' AND (i.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) AND i.ts > p.sent_at AND i.ts < DATE_ADD(p.sent_at, INTERVAL 2 DAY))) rep,
             SUM(EXISTS (SELECT 1 FROM shop_orders o WHERE (o.phone COLLATE utf8mb4_unicode_ci) LIKE CONCAT('%', (p.phone COLLATE utf8mb4_unicode_ci)) AND o.created_at > p.sent_at AND o.created_at < DATE_ADD(p.sent_at, INTERVAL 7 DAY))) ord
@@ -397,3 +397,41 @@ try {
     echo "ASK LINEOFFER Lineup customers who wrote today (all, with a price offer sent today after that, with any offer row today, with a reason row) " . json_encode($one("SELECT COUNT(*), SUM(EXISTS (SELECT 1 FROM wa_offer o WHERE (o.phone COLLATE utf8mb4_unicode_ci) = (w.phone COLLATE utf8mb4_unicode_ci) AND o.ok = 1 AND o.at >= ?)), SUM(EXISTS (SELECT 1 FROM wa_offer o WHERE (o.phone COLLATE utf8mb4_unicode_ci) = (w.phone COLLATE utf8mb4_unicode_ci) AND o.at >= ?)), SUM(EXISTS (SELECT 1 FROM wa_offer o WHERE (o.phone COLLATE utf8mb4_unicode_ci) = (w.phone COLLATE utf8mb4_unicode_ci) AND o.ok = 0 AND o.at >= ?)) FROM (SELECT DISTINCT (m.phone COLLATE utf8mb4_unicode_ci) AS phone FROM wa_messages m JOIN wa_line_cust c ON (c.phone COLLATE utf8mb4_unicode_ci) = (m.phone COLLATE utf8mb4_unicode_ci) WHERE m.dir = 'in' AND m.ts >= ? AND c.status = 'active') w", [$t48, $t48, $t48, $t48])) . "\n";
     echo "ASK LINEOFFER why no offer today (why first word, ok, n) " . json_encode($one("SELECT SUBSTRING_INDEX(why, ' ', 2) w, ok, COUNT(*) FROM wa_offer WHERE at >= ? GROUP BY w, ok ORDER BY 3 DESC LIMIT 14", [$t48])) . "\n";
 } catch (Throwable $e) { echo "ASK LINEOFFER ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 49) Module C (owner 24 Nov): can people who never wrote get a utility message? the pool of approved utility messages by kind, and how many of the failed items belong to people who never wrote (counts only)
+try {
+    if (!function_exists('wa_ru_pool')) require_once $root . 'empmanagment/wa_rec_util.php'; if (function_exists('wa_ru_load_util')) wa_ru_load_util($pdo);
+    $pk49 = []; foreach (wa_ru_pool($pdo) as $t49) { $k49 = ($t49['pool_kind'] ?? '?') . (!empty($t49['claims']) ? '+claims' : ''); $pk49[$k49] = ($pk49[$k49] ?? 0) + 1; }
+    echo "ASK MODC usable utility messages by kind " . json_encode($pk49) . "\n";
+    echo "ASK MODC failed marketing-only items today (items) " . json_encode($one("SELECT COUNT(*), COUNT(DISTINCT phone) FROM wa_camp_items WHERE sent_at >= ? AND status IN ('failed', 'skipped') AND err_code IN (131049, 131050, 130472)", [date('Y-m-d 00:00:00')])) . "\n";
+    echo "ASK MODC last round " . substr((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_last'")[0][0] ?? ''), 0, 500) . " · sent per hour today (h, n, failed) " . json_encode($one("SELECT HOUR(r.at), COUNT(*), SUM(r.ok = 0) FROM wa_ru_log r WHERE r.kind = 'cnev' AND r.at >= ? GROUP BY 1 ORDER BY 1", [date('Y-m-d 00:00:00')])) . " · receipts (status, code, n) " . json_encode($one("SELECT m.status, COALESCE(m.err_code, 0), COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? GROUP BY 1, 2", [date('Y-m-d 00:00:00')])) . "\n";
+} catch (Throwable $e) { echo "ASK MODC ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 50) Module C pending + style messages + Lineup silent customers (owner 24 Nov, counts only)
+try {
+    if (!function_exists('wa_rc_overview')) require_once $root . 'empmanagment/wa_modc.php';
+    $ov = wa_rc_overview($pdo); echo "ASK MODC pending people (never wrote, failed marketing-only since 14 Nov, no B/C message yet) " . json_encode([$ov['pending'], $ov['pending_partial'], $ov['pending_failed_people'] ?? null, $ov['sent_hour'], $ov['sent_today']]) . "\n";
+    echo "ASK STYLE messages (name, category, status per account) " . json_encode($one("SELECT t.name, t.category, GROUP_CONCAT(w.status) FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph_style_%' OR t.name LIKE 'tmph_fu_open_hi_%' GROUP BY t.id, t.name, t.category LIMIT 12")) . "\n";
+    echo "ASK LINEUP silent: active customers whose first message is older than 31 days / the same in status done by left_why " . json_encode($one("SELECT SUM(status = 'active' AND anchor_at < ?), COUNT(*) FROM wa_line_cust", [date('Y-m-d H:i:s', time() - 31 * 86400)])) . " · done by why " . json_encode($one("SELECT left_why, COUNT(*) FROM wa_line_cust WHERE status = 'done' GROUP BY left_why ORDER BY 2 DESC LIMIT 8")) . "\n";
+} catch (Throwable $e) { echo "ASK MODC2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 51) New-style messages (owner 24 Nov): made / replaced counts and Module C speed level (counts only)
+try {
+    if (!function_exists('wa_rs_report')) require_once $root . 'empmanagment/wa_restyle.php';
+    echo "ASK RESTYLE " . json_encode(wa_rs_report($pdo)) . " · Module C level " . ($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_level'")[0][0] ?? '-') . " · last ladder " . ($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_lad_last'")[0][0] ?? '-') . "\n";
+    echo "ASK RESTYLE twins at Meta (old id, new id, name, status per account) " . json_encode($one("SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(t.extra, 'restyle_of\":', -1), '}', 1) AS old_id, t.id, t.name, GROUP_CONCAT(w.status) FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.extra LIKE '%restyle_of%' GROUP BY t.id, t.name, t.extra ORDER BY t.id DESC LIMIT 10")) . "\n";
+} catch (Throwable $e) { echo "ASK RESTYLE ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 52) New-style twins: old body vs new body, offers (marketing) first (template texts only, no customer data)
+try {
+    if (!function_exists('wa_rs_state')) require_once $root . 'empmanagment/wa_restyle.php';
+    $st52 = wa_rs_state($pdo); $n52 = 0; $cats52 = [];
+    foreach ($st52['pairs'] as $old52 => $p52) { if (empty($p52['new'])) continue; $a52 = $one("SELECT category, body FROM wa_templates WHERE id = ?", [(int)$old52])[0] ?? null; $b52 = $one("SELECT body FROM wa_templates WHERE id = ?", [(int)$p52['new']])[0][0] ?? null; if (!$a52) continue; $cats52[$a52[0]] = ($cats52[$a52[0]] ?? 0) + 1;
+        if ($n52 < 6 && ($n52 < 3 ? $a52[0] === 'MARKETING' : true)) { $n52++; echo "ASK RESTYLE sample " . $a52[0] . " #" . $old52 . " (" . ($p52['st'] ?? '') . ") OLD: " . str_replace("\n", ' / ', mb_substr((string)$a52[1], 0, 260)) . " || NEW: " . str_replace("\n", ' / ', mb_substr((string)$b52, 0, 300)) . "\n"; } }
+    echo "ASK RESTYLE twins by category of the old message " . json_encode($cats52) . "\n";
+} catch (Throwable $e) { echo "ASK RESTYLE2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 53) What goes out today, by module, and how many of the new-style messages (owner 24 Nov; counts only)
+try {
+    if (!function_exists('wa_rs_state')) require_once $root . 'empmanagment/wa_restyle.php';
+    $st53 = wa_rs_state($pdo); $tw = []; foreach ($st53['pairs'] as $p53) if (($p53['st'] ?? '') === 'replaced' && !empty($p53['new'])) $tw[] = (int)$p53['new']; $t53 = date('Y-m-d 00:00:00');
+    echo "ASK UPD After-Order sent today (all, by a new-style twin) " . json_encode($one("SELECT COUNT(*), SUM(tpl_id IN (" . ($tw ? implode(',', $tw) : '0') . ")) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ?", [$t53])) . " · twins in use " . count($tw) . " · twin sends all-time " . json_encode($one("SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND tpl_id IN (" . ($tw ? implode(',', $tw) : '0') . ")")) . "\n";
+    echo "ASK UPD Lineup follow-ups sent today / this hour " . json_encode($one("SELECT COUNT(*), SUM(sent_at >= ?) FROM wa_line_plan WHERE status = 'sent' AND sent_at >= ?", [date('Y-m-d H:i:s', time() - 3600), $t53])) . "\n";
+    echo "ASK UPD New-style twins now approved (new id, sends) " . json_encode($one("SELECT tpl_id, COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND tpl_id IN (" . ($tw ? implode(',', $tw) : '0') . ") GROUP BY tpl_id ORDER BY 2 DESC LIMIT 12")) . "\n";
+} catch (Throwable $e) { echo "ASK UPD ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+

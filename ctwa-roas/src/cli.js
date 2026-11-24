@@ -18,6 +18,9 @@ if (cmd === 'report') {
   process.stdout.write(flag('csv', false) ? toCsv(rep) : toText(rep));
 } else if (cmd === 'sync-spend') {
   console.log(`synced ${await syncSpend(db, cfg, Number(flag('days', 3)))} ad-day rows`);
+} else if (cmd === 'tmph-sync') {
+  const { syncTmph } = await import('./tmph.js');
+  console.log(JSON.stringify(await syncTmph(db, cfg)));
 } else if (cmd === 'dataset') {
   console.log('dataset id:', await getWabaDataset(cfg));
 } else if (cmd === 'retry-capi') {
