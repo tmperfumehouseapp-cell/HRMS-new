@@ -434,4 +434,13 @@ try {
     echo "ASK UPD Lineup follow-ups sent today / this hour " . json_encode($one("SELECT COUNT(*), SUM(sent_at >= ?) FROM wa_line_plan WHERE status = 'sent' AND sent_at >= ?", [date('Y-m-d H:i:s', time() - 3600), $t53])) . "\n";
     echo "ASK UPD New-style twins now approved (new id, sends) " . json_encode($one("SELECT tpl_id, COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND tpl_id IN (" . ($tw ? implode(',', $tw) : '0') . ") GROUP BY tpl_id ORDER BY 2 DESC LIMIT 12")) . "\n";
 } catch (Throwable $e) { echo "ASK UPD ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 54) Restyle failure reasons, Module C pending error, Cold "lost" customers (counts only)
+try {
+    if (!function_exists('wa_rs_state')) require_once $root . 'empmanagment/wa_restyle.php';
+    $st54 = wa_rs_state($pdo); $why54 = []; foreach ($st54['pairs'] as $p54) if (($p54['st'] ?? '') === 'fail') { $w54 = (string)($p54['why'] ?? '?'); $why54[$w54] = ($why54[$w54] ?? 0) + 1; }
+    echo "ASK RESTYLE fail reasons (pairs) " . json_encode($why54) . " · attempt reasons " . json_encode($st54['why_n'] ?? []) . " · attempts today " . (int)($st54['n'] ?? 0) . "\n";
+    if (!function_exists('wa_rc_overview')) require_once $root . 'empmanagment/wa_modc.php';
+    echo "ASK MODC pending cache " . substr((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_pending'")[0][0] ?? ''), 0, 300) . "\n";
+    echo "ASK COLD lost (replied but no Lineup row): by why / contact flags (why, optout, camp_optout, n) " . json_encode($one("SELECT c.why, ct.optout, ct.camp_optout, COUNT(*) FROM wa_cold_cust c LEFT JOIN wa_line_cust l ON l.phone = c.phone LEFT JOIN wa_contacts ct ON ct.phone = c.phone WHERE c.status = 'replied' AND l.phone IS NULL GROUP BY c.why, ct.optout, ct.camp_optout ORDER BY 4 DESC LIMIT 8")) . "\n";
+} catch (Throwable $e) { echo "ASK RESTYLE3 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 
