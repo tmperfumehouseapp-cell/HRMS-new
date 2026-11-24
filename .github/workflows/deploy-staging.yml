@@ -57,6 +57,8 @@ jobs:
         run: php tests/pack_rows_test.php
       - name: Follow-up ladder context stop
         run: php tests/fu_context_test.php
+      - name: One bottle is never quoted below its official price
+        run: php tests/single_price_test.php
       - name: Hourly speed limit ladder
         run: php tests/rate_test.php
   staging:
