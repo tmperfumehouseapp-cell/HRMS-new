@@ -413,6 +413,7 @@ function all_permissions(): array
         'server_load' => 'Server load (CPU, what the database and each function cost): technical, give with care',
         'finance' => 'Finance (bank and card statements, settlements, bills, reports): money data, give with care',
         'analytics' => 'Analytics (the store analytics report: sales, SEO, clicks)',
+        'store_orders' => 'Website orders (orders of the new TM Perfume House shop: give each one to a salesperson so it counts in their target)',
         'inventory' => 'Inventory (oils, perfumes, orders, dealers, alerts, reports): stock and purchase data, give with care',
     ];
 }
@@ -489,6 +490,7 @@ function action_permission(string $action): ?string
         'retail.visit_plan_approve' => 'visit_approval',   // Approve / Reject a shop visit: only roles ticked for it (before the 'retail.' line)
         'retail.' => 'retail',
         'manual_orders.save' => null,              // a salesperson makes their own manual order (the handler checks the role)
+        'tms.' => null,                            // 🛍 Website orders (store_orders.php): the handler checks Admin / HR / Sales Head / the "Website orders" tick
         'manual_orders.mp_' => null,               // a sales person adds / lists their own marketplace orders (the handler checks the login)
         'manual_orders.shot' => null, 'manual_orders.reassign' => null,   // the handlers check who
         'manual_orders.quick_' => null,            // the quick entries card on the Sales Head's home (the handler checks who)
@@ -610,7 +612,7 @@ function role_permissions(PDO $pdo, string $roleName): array
                 // saving there records the module as known, so the untick
                 // sticks. The Employee role stays portal-only unless ticked.
                 // 'order_code_lock' goes to HR automatically, to every other role only when Admin ticks it.
-                $noAuto = ['approvals', 'users', 'leave', 'detailed_report', 'visit_approval', 'finance', 'analytics', 'inventory', 'retail_store', 'rs_counter', 'rs_tasks', 'rs_manage'];   // 'detailed_report' (ad spend, ROAS, collection) and 'visit_approval' are ticked by Admin per role, never automatic
+                $noAuto = ['approvals', 'users', 'leave', 'detailed_report', 'visit_approval', 'finance', 'analytics', 'store_orders', 'inventory', 'retail_store', 'rs_counter', 'rs_tasks', 'rs_manage'];   // 'detailed_report' (ad spend, ROAS, collection) and 'visit_approval' are ticked by Admin per role, never automatic
                 if (strcasecmp(trim($roleName), 'HR') !== 0) $noAuto[] = 'order_code_lock';
                 foreach (role_new_modules($row['known_modules'] ?? null) as $m) {
                     if (!in_array($m, $noAuto, true) && !in_array($m, $perms, true)) $perms[] = $m;   // 'leave' (My Leave) is handed out by Admin per role, never automatically
@@ -8313,16 +8315,20 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
     // so the Commission page / tower / target % showed fewer orders and less sales than the Orders page for the same day (18 orders ₹39,964 there, 14 orders ₹36,068 here).
     // Their products are not known (no ML), so they add to the SALES and the target, and the commission chart pays nothing for them.
     try {
-        try { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch, channel FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }
+        try { try { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch, channel, ml, mp_no FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }   // 'ml' exists once a website order was given (store_orders.php)
+              catch (Throwable $e9) { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch, channel FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); } }
         catch (Throwable $e0) { $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0"); $mq->execute(biz_window($pdo, $from, $day)); }   // 'channel' exists once a Myntra / Amazon / Flipkart order was added
         foreach ($mq->fetchAll() as $m) {
             $mk2 = 'manual|' . (string)$m['manual_order_id']; if (isset($cancel[$mk2])) continue;
             $a = $allocMap[$mk2] ?? null; if ($a && !empty($a['direct'])) continue;
             $who = ($a && !empty($a['emp'])) ? (int)$a['emp'] : (int)$m['employee_id']; if (!$who || !isset($emps[$who])) continue;
             $ts = strtotime((string)$m['order_date']); $fs = strtolower((string)$m['payment_status']);
-            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => null, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false,
-                'xnote' => ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
-                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
+            // 🛍 a WEBSITE order (the new shop, given on Sales → Orders → Website orders): its perfumes and ML are known, so the ML chart pays it like a Shopify order.
+            //    A website order cannot carry a code, so the no-code half does not apply to it ('web' => true). Setting tms_commission = '0' switches this off (sales and target only).
+            $isWeb = (string)($m['channel'] ?? '') === 'TM Store'; $webMl = ($isWeb && (int)($m['ml'] ?? 0) > 0 && (string)setting_get($pdo, 'tms_commission', '1') !== '0') ? (int)$m['ml'] : null;
+            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => $webMl, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false, 'web' => $webMl !== null,
+                'xnote' => $isWeb ? ($webMl !== null ? 'Website order ' . (string)($m['mp_no'] ?? '') . ': paid by the ML chart, no code needed.' : 'Website order: it counts in the sales and the target. Its ML is not known, so the chart cannot pay it.') : ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
+                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => $isWeb ? order_code_for($pdo, 'manual', (string)$m['manual_order_id']) : '', 'name' => $isWeb && (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? '')),
                 'mp' => in_array((string)($m['channel'] ?? ''), ['Myntra', 'Amazon', 'Flipkart'], true) ? (string)$m['channel'] : ''];   // 🛍 marketplace order: a flat % without a code (mp_flat_pct)
         }
     } catch (Throwable $e) { error_log('coach_sales_load manual orders: ' . $e->getMessage()); }
@@ -8562,7 +8568,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
                 $v = $o['amt'] * mp_flat_pct($pdo) / 100; $comAmt += $v; $comBase += $o['amt']; $com += $v; $comFlash += $v; $ordCom[$o['key']] = $v; $flashKeys[$o['key']] = true;
                 if (!$o['pre']) $nCod++; $h = date('G', $o['ts']); $byHour[$h] = ($byHour[$h] ?? 0) + 1; continue;
             }
-            if ($o['code'] !== '') $nCode++; else { $nNo++; $noCodeNames[] = $o['name']; }
+            if ($o['code'] !== '') $nCode++; elseif (empty($o['web'])) { $nNo++; $noCodeNames[] = $o['name']; }   // a website order cannot carry a code: it is not a "missing code"
             if (!$o['pre']) $nCod++;
             $h = date('G', $o['ts']); $byHour[$h] = ($byHour[$h] ?? 0) + 1;
             $flash = $flashList ? flash_offer_pct_for($flashList, $o['ml'], $o['amt'], $o['ts']) : null;
@@ -8571,16 +8577,16 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
                 // (no cap / bonus / floor — those are chart-only concepts); without one, this OFFER's own nocode% of it (its own
                 // number, set per-offer — e.g. 6% with a code, 3% without, independent of the main ML slab chart's nocode%).
                 $flashNocodeF = (float)$flash['nocode'] / 100;
-                $v = $o['amt'] * $flash['pct'] * (($o['code'] !== '' || $codeOk) ? 1 : $flashNocodeF) / 100;
-                if ($o['code'] === '' && !$codeOk) $lost += $o['amt'] * $flash['pct'] / 100 - $v;      // what the missing code cost on this order
+                $v = $o['amt'] * $flash['pct'] * (($o['code'] !== '' || $codeOk || !empty($o['web'])) ? 1 : $flashNocodeF) / 100;
+                if ($o['code'] === '' && !$codeOk && empty($o['web'])) $lost += $o['amt'] * $flash['pct'] / 100 - $v;      // what the missing code cost on this order
                 $comAmt += $v; $comBase += $o['amt']; $com += $v; $comFlash += $v; $ordCom[$o['key']] = $v; $flashKeys[$o['key']] = true;
                 continue;
             }
             $pc = !empty($chart['on']) && $o['ml'] ? coach_slab_pct($chart, $o['ml'], $o['amt'], $o['pre']) : null;
             if ($pc !== null) {
                 if ((float)($chart['floor'] ?? 0) > 0 && $pc <= (float)$chart['floor'] + 1e-9) $nFloor++;
-                $v = $o['amt'] * $pc * (($o['code'] !== '' || $codeOk) ? 1 : $nocodeF) / 100;
-                if ($o['code'] === '' && !$codeOk) $lost += $o['amt'] * $pc / 100 - $v;         // what the missing codes cost today
+                $v = $o['amt'] * $pc * (($o['code'] !== '' || $codeOk || !empty($o['web'])) ? 1 : $nocodeF) / 100;
+                if ($o['code'] === '' && !$codeOk && empty($o['web'])) $lost += $o['amt'] * $pc / 100 - $v;         // what the missing codes cost today
                 $comAmt += $v; $comBase += $o['amt']; $com += $v; $ordCom[$o['key']] = $v;
             }
         }
@@ -9727,7 +9733,7 @@ function lib_guide_write(PDO $pdo): array
         . "NEVER write an outcome or the customer's behaviour as a rule ('customer stopped replying', 'order was not placed', 'customer left', 'said will get back'), never a one-off, never a guess. "
         . "If nothing meets this bar leave 'dont' EMPTY: an empty list is the right answer. "
         . "openers and replies must be real lines taken or adapted from the WON chats, in the customer's language (Gujarati / Hinglish / English as written). Never write phone numbers, addresses or prices that are not in the chats. "
-        . "Max: do 8, dont 4, openers 5, objection_replies 6, offers 5, followups 4. confidence = low (<40 chats), medium or high (150+ chats). summary = 2–3 plain English sentences. "
+        . "Points of 'do' that start with a CAPITAL LABEL (PRICE LADDER, OFFICIAL ONLINE PRICE, BIGGER JUMPS, PAYMENT AND ORDER ...) are the owner's rules: keep each exactly as worded, one point per topic, never write the same topic twice, and put the newest decisions first. Max: do 12, dont 4, openers 5, objection_replies 6, offers 5, followups 4. confidence = low (<40 chats), medium or high (150+ chats). summary = 2–3 plain English sentences. "
         . ($live ? "A previous guidebook is given: keep every point that still holds exactly as worded, change only what the numbers now contradict, and say in change_note in one or two sentences what changed." : "This is the first guidebook: change_note = 'First guidebook'.");
     $schema = ['type' => 'OBJECT', 'properties' => [
         'summary' => ['type' => 'STRING'], 'confidence' => ['type' => 'STRING', 'enum' => ['low', 'medium', 'high']], 'change_note' => ['type' => 'STRING'],
@@ -9754,7 +9760,7 @@ function lib_guide_write(PDO $pdo): array
     [$ok, $v, $why] = convo_ai($sys, [['text' => $text]], $schema, false, 16000, 'claude');
     if ($ok) {
         $body = ['summary' => mb_substr((string)($v['summary'] ?? ''), 0, 600), 'confidence' => in_array($v['confidence'] ?? '', ['low', 'medium', 'high'], true) ? $v['confidence'] : 'low',
-            'do' => $strs($v['do'] ?? [], 12, 420), 'dont' => [], 'openers' => $strs($v['openers'] ?? [], 5, 240), 'followups' => $strs($v['followups'] ?? [], 4, 240), 'objection_replies' => [], 'offers' => []];
+            'do' => $strs($v['do'] ?? [], 12, 1500), 'dont' => [], 'openers' => $strs($v['openers'] ?? [], 5, 240), 'followups' => $strs($v['followups'] ?? [], 4, 240), 'objection_replies' => [], 'offers' => []];
         foreach ((array)($v['objection_replies'] ?? []) as $o) if (is_array($o) && trim((string)($o['reply'] ?? '')) !== '' && count($body['objection_replies']) < 6) $body['objection_replies'][] = ['objection' => lib_clip((string)($o['objection'] ?? ''), 200), 'reply' => lib_clip((string)$o['reply'], 320)];
         foreach ((array)($v['offers'] ?? []) as $o) if (is_array($o) && trim((string)($o['offer'] ?? '')) !== '' && count($body['offers']) < 5) $body['offers'][] = ['offer' => lib_clip((string)$o['offer'], 160), 'when' => lib_clip((string)($o['when'] ?? ''), 240)];
         // a "do not" must be proven: 3+ different LOST chats shown above, and almost none of the WON ones — otherwise it is dropped
@@ -11636,18 +11642,51 @@ function must3_photo_tick(PDO $pdo, int $max = 6): int
     try { setting_set($pdo, 'must3_photo_why', date('Y-m-d H:i:s') . ' read ' . $n . ($last !== '' ? ' · ' . $last : '')); } catch (Throwable $e) { }
     return $n;
 }
+/** 🏅 WHO IS BETTER AT WHAT (owner, 24 Nov): per salesperson — the QUERY ratio of ONE day (query orders ÷ queries he got that day) and the number of CAMPAIGN orders of the last $days days — each set against the TEAM in three steps:
+ *  good = 20% or more above the team · avg = between · weak = 20% or more below. No minimum number of queries (owner): the ratio alone decides. Campaign is measured in ORDERS (campaign query counts hold "ok / not now" replies).
+ *  label: both | query | campaign | avg | weak. Returns ['days', 'from', 'to', 'team' => [q_ratio, c_avg, people], 'emps' => [id => [...]]]. Not a remark: shown on the person's card and in the list. */
+function ct_better_at(PDO $pdo, int $days = 7, string $day = ''): array
+{
+    $today = preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) ? $day : biz_today($pdo); $fromDay = date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')); $out = ['days' => $days, 'from' => $fromDay, 'to' => $today, 'q_day' => $today, 'team' => ['q_ratio' => null, 'c_avg' => null, 'people' => 0], 'emps' => []];
+    try {
+        $E = []; $z = function () { return ['qq' => 0, 'qo' => 0, 'co' => 0]; }; $emps = rating_emps($pdo); $names = [];
+        foreach ($emps as $id => $x) $names[(int)$id] = trim((string)$x['full_name']);
+        // owner (24 Nov): QUERY is judged on ONE day ($today): that day's query orders ÷ the queries he got that day, against the team's ratio of the same day. CAMPAIGN stays on the last $days days.
+        foreach ((array)qa_emp_total($pdo, $today, $today) as $e => $n) { $e = (int)$e; if (!isset($E[$e])) $E[$e] = $z(); $E[$e]['qq'] += (int)$n; }
+        $commSet = []; if (ensure_order_community_table($pdo)) { try { foreach ($pdo->query("SELECT source, order_id FROM order_community")->fetchAll() as $r) $commSet[$r['source'] . '|' . $r['order_id']] = 1; } catch (Throwable $e2) { } }
+        foreach ((array)coach_sales_load($pdo, $emps, $fromDay, $today) as $k => $l) { $e = (int)substr($k, strpos($k, '|') + 1); if (!isset($E[$e])) $E[$e] = $z();
+            foreach ($l as $x) { if (isset($commSet[$x['key']]) || ($x['type'] ?? '') === 'campaign') $E[$e]['co']++; } }
+        foreach ((array)coach_sales_load($pdo, $emps, $today, $today) as $k => $l) { $e = (int)substr($k, strpos($k, '|') + 1); if (!isset($E[$e])) $E[$e] = $z();
+            foreach ($l as $x) { if (!(isset($commSet[$x['key']]) || ($x['type'] ?? '') === 'campaign')) $E[$e]['qo']++; } }
+        $tq = 0; $to = 0; $tc = 0; $np = 0;
+        foreach ($E as $e => $x) { if (!isset($names[$e]) || ($x['qq'] === 0 && $x['qo'] + $x['co'] === 0)) { unset($E[$e]); continue; } $tq += $x['qq']; $to += $x['qo']; $tc += $x['co']; $np++; }
+        $tr = $tq > 0 ? $to / $tq * 100 : null; $ca = $np > 0 ? $tc / $np : null; $out['team'] = ['q_ratio' => $tr !== null ? round($tr, 1) : null, 'c_avg' => $ca !== null ? round($ca, 1) : null, 'people' => $np];
+        $step = function ($v, $t) { if ($v === null || $t === null || $t <= 0) return 'low'; return $v >= $t * 1.2 ? 'good' : ($v <= $t * 0.8 ? 'weak' : 'avg'); };
+        foreach ($E as $e => $x) {
+            $qr = $x['qq'] > 0 ? $x['qo'] / $x['qq'] * 100 : null; $qs = $step($qr, $tr); $cs = $step((float)$x['co'], $ca);   // owner (24 Nov): no minimum number of queries — the ratio alone decides ('low' only when he took no query at all)
+            $lab = ($qs === 'good' && $cs === 'good') ? 'both' : ($qs === 'good' ? 'query' : ($cs === 'good' ? 'campaign' : (($qs === 'weak' && $cs === 'weak') ? 'weak' : 'avg')));
+            $out['emps'][$e] = ['id' => $e, 'name' => $names[$e], 'qq' => $x['qq'], 'qo' => $x['qo'], 'q_ratio' => $qr !== null ? round($qr, 1) : null, 'q_step' => $qs, 'co' => $x['co'], 'c_step' => $cs, 'label' => $lab];
+        }
+    } catch (Throwable $e) { error_log('ct_better_at: ' . $e->getMessage()); }
+    return $out;
+}
 /** ✅ The 3 must-send check of ONE business day (+ the add-on column, owner 23 Nov): per salesperson, per order — address re-check · chain selection · prepaid 2% (plain text match, no AI) and whether an add-on was put on the order (employee_addons) with the reason when not (order_rate_auto).
  *  $onlyEmp > 0 → only that salesperson's orders (the "my check" card of the sales app). Used by ct.must3 (Admin / HR) and ct.must3_me. */
-function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
+function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
 {
     $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0], 'people' => []];
     try {
         if (!ensure_order_allocations_table($pdo)) return $res;
         $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
-        $cc = 'COLLATE utf8mb4_unicode_ci'; $from = $day . ' ' . day_start_for($pdo, $day) . ':00'; $to = date('Y-m-d H:i:s', strtotime($from) + 86400);
+        $cc = 'COLLATE utf8mb4_unicode_ci'; $from = $day . ' ' . day_start_for($pdo, $day) . ':00'; $to = date('Y-m-d H:i:s', strtotime($from) + 86400); if (count($win) === 2) { $from = date('Y-m-d H:i:s', (int)$win[0]); $to = date('Y-m-d H:i:s', (int)$win[1]); }   // $win = [from ts, to ts]: only the orders created in that window (the reminder tick)
         $st = $pdo->prepare("SELECT o.order_name, o.store_key, o.shopify_id, o.created_at, o.phone, o.customer, o.total, a.employee_id FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
             WHERE o.created_at >= ? AND o.created_at < ? AND a.employee_id > 0 " . ($onlyEmp > 0 ? 'AND a.employee_id = ' . (int)$onlyEmp . ' ' : '') . "AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') ORDER BY o.created_at DESC LIMIT 400");
         $st->execute([$from, $to]); $P = []; $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        // 🛍 owner (24 Nov): website (TM Store) and HRMS-typed orders live in manual_orders — the check read only Shopify orders, so it showed 10 orders on a day of 101. They are checked the same way (those with a mobile number).
+        try { $mq = $pdo->prepare("SELECT manual_order_id, order_no, mp_no, channel, order_date, phone, customer_name, total, employee_id FROM manual_orders WHERE order_date >= ? AND order_date < ? AND employee_id > 0 " . ($onlyEmp > 0 ? 'AND employee_id = ' . (int)$onlyEmp . ' ' : '') . "AND total > 0 AND phone <> '' ORDER BY order_date DESC LIMIT 400"); $mq->execute([$from, $to]);
+            foreach ($mq->fetchAll(PDO::FETCH_ASSOC) as $m) { if (strlen(substr(preg_replace('/\D+/', '', (string)$m['phone']), -10)) !== 10) continue; $rows[] = ['order_name' => ((string)($m['channel'] ?? '') === 'TM Store' && (string)($m['mp_no'] ?? '') !== '') ? (string)$m['mp_no'] : '#' . (string)$m['order_no'], 'store_key' => 'manual', 'shopify_id' => (string)$m['manual_order_id'], 'created_at' => (string)$m['order_date'], 'phone' => (string)$m['phone'], 'customer' => (string)$m['customer_name'], 'total' => $m['total'], 'employee_id' => (int)$m['employee_id']]; }
+            usort($rows, function ($x, $y) { return strcmp((string)$y['created_at'], (string)$x['created_at']); }); $rows = array_slice($rows, 0, 500);
+        } catch (Throwable $e) { error_log('must3 manual: ' . $e->getMessage()); }
         // ➕ add-on of each order: put on the order (employee_addons) or not, and why not (order_rate_auto: tried / offered / the judge's reason)
         $ad = []; try { $ad = addon_sum_by_order($pdo, array_column($rows, 'order_name')); } catch (Throwable $e) { }
         $why = []; try { if (function_exists('ora_tables') && ora_tables($pdo) && $rows) { $ks = array_map(function ($x) { return (string)$x['store_key'] . ':' . (string)$x['shopify_id']; }, $rows); $wq = $pdo->prepare("SELECT order_key, tried, worked, tries, reason, offered, sz_tried, sz_worked, sz_reason FROM order_rate_auto WHERE order_key IN (" . implode(',', array_fill(0, count($ks), '?')) . ")"); $wq->execute($ks); foreach ($wq->fetchAll(PDO::FETCH_ASSOC) as $w) $why[(string)$w['order_key']] = $w; } } catch (Throwable $e) { }
@@ -11710,6 +11749,25 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0): array
         $res['people'] = $L;
     } catch (Throwable $e) { error_log('ct.must3: ' . $e->getMessage()); }
     return $res;
+}
+/** 📲 MUST-SEND REMINDER (owner, 23 Nov): 20 minutes after an order was made, its salesperson gets ONE phone notification naming what is still missing in that order (address re-check · chain · prepaid 2% · add-on offer). Orders whose chat was not found are skipped. Every 5 minutes from the WhatsApp engine; table must3_push keeps "already told". Switch: setting must3_push_on = 0. */
+function must3_push_tick(PDO $pdo): int
+{
+    try { if ((string)setting_get($pdo, 'must3_push_on', '1') === '0' || (int)setting_get($pdo, 'must3_push_at', '0') > time() - 290) return 0; setting_set($pdo, 'must3_push_at', (string)time()); } catch (Throwable $e) { return 0; }
+    if (!function_exists('ct_push')) return 0; $n = 0;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS must3_push (order_name VARCHAR(60) NOT NULL PRIMARY KEY, employee_id INT NOT NULL DEFAULT 0, missing VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $now = time(); $r = must3_compute($pdo, biz_today($pdo), 0, [$now - 50 * 60, $now - 20 * 60]);
+        $seen = $pdo->prepare("SELECT 1 FROM must3_push WHERE order_name = ?"); $ins = $pdo->prepare("INSERT IGNORE INTO must3_push (order_name, employee_id, missing, at) VALUES (?, ?, ?, ?)");
+        foreach ((array)($r['people'] ?? []) as $p) foreach ((array)($p['orders'] ?? []) as $o) {
+            if (!empty($o['nochat'])) continue; $miss = [];
+            if (empty($o['a'])) $miss[] = 'Address re-check'; if (empty($o['c'])) $miss[] = 'Chain'; if (empty($o['p'])) $miss[] = 'Prepaid 2%'; if (($o['d'] ?? null) === null) $miss[] = 'Add-on offer';
+            if (!$miss) continue; $seen->execute([(string)$o['order']]); if ($seen->fetchColumn()) continue;
+            $ins->execute([(string)$o['order'], (int)$p['id'], mb_substr(implode(', ', $miss), 0, 80), date('Y-m-d H:i:s')]); if ($ins->rowCount() < 1) continue;
+            ct_push($pdo, [(int)$p['id']], '⚠ ' . (string)$o['order'] . ': ' . count($miss) . ' thing' . (count($miss) === 1 ? '' : 's') . ' not done', trim((string)$o['customer']) . ' — ' . implode(', ', $miss) . '. Open the chat and send now.', '/my_app.html', 'must3-' . preg_replace('/\D+/', '', (string)$o['order'])); $n++;
+        }
+    } catch (Throwable $e) { error_log('must3_push_tick: ' . $e->getMessage()); }
+    return $n;
 }
 function ct_snapshot(PDO $pdo, string $day): array
 {
@@ -11927,7 +11985,7 @@ function ct_eval(PDO $pdo, string $day): array
                 'title' => "$nm has " . ct_money($e['sales']) . ' sales (' . $e['orders'] . ' order' . ($e['orders'] === 1 ? '' : 's') . ') but has not punched in' . ($pc !== null && $pc >= 100 ? ' — target already achieved' : ($pc !== null ? " — $pc% of target" : '')),
                 'body' => 'Selling without a punch-in. Ask why he did not punch in, and ask him to punch in now (or fix his attendance) so the day is counted properly.']);
         }
-        if (!empty($e['camp_weak'])) $add("camp_weak|$id|$day", ['kind' => 'camp_weak', 'sev' => 'warn', 'emp' => $id, 'meet' => 0,
+        if (false && !empty($e['camp_weak'])) $add("camp_weak|$id|$day",   /* owner (24 Nov): the 'query strong but campaign weak' remark is switched off */ ['kind' => 'camp_weak', 'sev' => 'warn', 'emp' => $id, 'meet' => 0,
             'title' => "$nm: query ratio " . round((float)$e['conv']) . '% (strong) but campaign ratio ' . round((float)$e['cq_conv']) . '% (team ' . round((float)($T['cq_conv'] ?? 0)) . '%) over ' . $e['cq'] . ' campaign queries',
             'body' => 'Good with fresh queries, weak with campaign customers. Check how he follows up campaign replies (already-assigned and newly assigned chats).']);
         if (!($e['target'] > 0) && $e['orders'] === 0) continue;          // on leave / not working today
@@ -11960,7 +12018,11 @@ function ct_eval(PDO $pdo, string $day): array
         if ($on('order_pace') && $e['target'] > 0 && $e['should_pct'] > 0 && $e['elapsed_h'] >= (float)$meet['order_pace']['v2'] && $e['orders'] > 0 && ($e['pct'] ?? 0) < $e['should_pct'] * (float)$meet['order_pace']['v1'] / 100)
             $hit('order_pace', "$nm is far behind the pace", ($e['pct'] ?? 0) . '% of target when ' . $e['should_pct'] . '% is expected.');
         if ($on('ticket') && $e['orders'] >= (int)$meet['ticket']['v2'] && $e['ticket'] < (float)$meet['ticket']['v1']) $hit('ticket', "$nm: ticket size very low", 'Average ' . ct_money($e['ticket']) . ' over ' . $e['orders'] . ' orders.');
-        if ($on('community') && $e['co'] === 0 && $clockH >= (int)$meet['community']['v1'] && $e['orders'] > 0) $hit('community', "$nm: no community order", 'Zero community orders at ' . date('g A', strtotime((string)$S['now'])) . '.');
+        // owner (24 Nov): 'no community order' is gone — it is 'no CAMPAIGN order' now (same switch and hour on the Settings): campaign queries taken today and not one campaign order
+        if ($on('community') && $e['co'] === 0 && (int)($e['cq'] ?? 0) > 0 && $clockH >= (int)$meet['community']['v1']) $hit('community', "$nm: no campaign order", (int)$e['cq'] . ' campaign quer' . ((int)$e['cq'] === 1 ? 'y' : 'ies') . ' taken, 0 campaign orders at ' . date('g A', strtotime((string)$S['now'])) . '.');
+        // owner (24 Nov): many queries taken, few query orders — 10+ queries today and the query ratio under the goal
+        { $qN = (int)($e['queries'] ?? 0); $qO = (int)($e['qo'] ?? 0); $qG = max(1.0, (float)($cfg['q_conv_goal'] ?? 23)); if ($qN >= 10 && $qO / $qN * 100 < $qG) { $needQ = max(1, (int)ceil($qN * $qG / 100) - $qO);
+            $add("q_low|$id|$day", ['kind' => 'q_low', 'sev' => 'red', 'emp' => $id, 'meet' => 1, 'title' => "$nm: $qN queries taken, $qO query order" . ($qO === 1 ? '' : 's') . ' = ' . round($qO / $qN * 100) . '% (goal ' . round($qG) . '%)', 'body' => $needQ . ' more query order' . ($needQ === 1 ? '' : 's') . ' needed to reach the goal. Close the queries already taken before taking new ones.']); } }
         if ($on('code') && $e['orders'] >= (int)$meet['code']['v2'] && $e['code_rate'] !== null && $e['code_rate'] < (float)$meet['code']['v1'] && !$e['code_ok']) $hit('code', "$nm: not giving order codes", $e['code'] . '/' . $e['orders'] . ' orders have a code.');
         if ($on('mix') && $e['mix']['pieces'] >= (int)$meet['mix']['v2'] && $e['mix']['pct'] !== null && $e['mix']['pct'] < (float)$meet['mix']['v1']) $hit('mix', "$nm: colour mix far below goal", 'Only ' . $e['mix']['pct'] . '% DG / LG / WH.');
     }
@@ -19421,7 +19483,8 @@ function retail_display_pending(PDO $pdo, string $city): array
 $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
-if (is_file(__DIR__ . '/chain_prices.php')) { require_once __DIR__ . '/chain_prices.php'; }   // 💰 public price feed of the chain page (chain/chain_index.html): chain.prices
+if (is_file(__DIR__ . '/chain_prices.php')) { require_once __DIR__ . '/chain_prices.php'; }
+if (strpos((string)$action, 'tms.') === 0 && is_file(__DIR__ . '/store_orders.php')) { require __DIR__ . '/store_orders.php'; }   // 🛍 Website orders → a salesperson (answers tms.* itself)   // 💰 public price feed of the chain page (chain/chain_index.html): chain.prices
 if (is_file(__DIR__ . '/wa_collage.php')) { require_once __DIR__ . '/wa_collage.php'; }   // one picture for 2–5 suggested perfumes (public view: wa.collage_view)
 if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   // streaks + the Wins feed on the salesperson home; answers play.* itself
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
@@ -23181,6 +23244,14 @@ switch ($action) {
         $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? (string)$_GET['date'] : biz_today($pdo);
         $out = hrms_memo('must3:' . $day, 60, function () use ($pdo, $day) { return must3_compute($pdo, $day, 0); });
         json_response($out);
+        break;
+    }
+    case 'ct.better_at': {
+        // 🏅 Query or Campaign: who is better at what, against the team (last 7 business days). Admin / HR. Kept 5 minutes.
+        $auth = require_auth();
+        if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
+        $baDay = (string)($_GET['date'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $baDay)) $baDay = biz_today($pdo);
+        json_response(['ok' => true] + hrms_memo('better_at3:' . $baDay, $baDay === biz_today($pdo) ? 120 : 600, function () use ($pdo, $baDay) { return ct_better_at($pdo, 7, $baDay); }));
         break;
     }
     case 'ct.must3_me': {
@@ -31480,15 +31551,16 @@ switch ($action) {
         }
         // 🧾 Quick-entry orders (Add orders: Personal / AiSensy / Myntra / Amazon / Flipkart): listed here with the allocation they were saved with
         try {
-            foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''"] as $c0 => $d0) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c0'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c0 $d0"); }
+            foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'is_direct' => 'TINYINT NOT NULL DEFAULT 0'] as $c0 => $d0) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c0'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c0 $d0"); }
             $mq = $pdo->prepare("SELECT * FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND batch <> '' ORDER BY order_date DESC LIMIT 1500"); $mq->execute(biz_window($pdo, $dateFrom, $dateTo)); $mmap = []; $mnames = employee_names_by_id($pdo); $hl0 = house_labels();
             foreach ($mq->fetchAll() as $m) {
                 $mid = (string)$m['manual_order_id']; $ch = (string)($m['channel'] ?? ''); $eid = (int)($m['employee_id'] ?? 0); $hs = (string)($m['house'] ?? '');
-                $o = ['id' => $mid, 'order_name' => '#' . $m['order_no'], 'created_at' => str_replace(' ', 'T', (string)$m['order_date']) . '+05:30', 'customer' => ($ch !== '' ? $ch : 'Quick entry'), 'phone' => '', 'items' => (int)$m['items'], 'total' => $m['total'], 'currency' => 'INR',
+                $o = ['id' => $mid, 'order_name' => ($ch === 'TM Store' && (string)($m['mp_no'] ?? '') !== '' ? (string)$m['mp_no'] : '#' . $m['order_no']), 'created_at' => str_replace(' ', 'T', (string)$m['order_date']) . '+05:30', 'customer' => ($ch === 'TM Store' && trim((string)($m['customer_name'] ?? '')) !== '' ? (string)$m['customer_name'] : ($ch !== '' ? $ch : 'Quick entry')), 'phone' => ($ch === 'TM Store' ? (string)($m['phone'] ?? '') : ''), 'ml' => ($ch === 'TM Store' && (int)($m['ml'] ?? 0) > 0 ? (int)$m['ml'] : null), 'ml10' => 0, 'web' => ($ch === 'TM Store' ? 1 : 0), 'code' => ($ch === 'TM Store' ? order_code_for($pdo, 'manual', $mid) : ''),   /* 🛍 a website order shows its own number (TM10020), customer and mobile, not "#M0093 · TM Store" */ 'items' => (int)$m['items'], 'total' => $m['total'], 'currency' => 'INR',
                     'financial_status' => $m['payment_status'], 'fulfillment_status' => $m['fulfillment_status'], 'tags' => (string)($m['order_type'] ?? ''), 'store_key' => 'manual', 'source_label' => ($ch !== '' ? $ch : 'Quick entry'), 'store' => ($ch !== '' ? $ch : 'Quick entry'), 'house' => $hs,
                     'biz_date' => biz_day_of($pdo, strtotime((string)$m['order_date'])), 'salesman' => $eid ? (string)($mnames[$eid] ?? '') : '', 'employee_id' => $eid, 'employee_from' => $eid ? 'quick entry' : '', 'tag_type' => (string)($m['order_type'] ?? ''), 'custom_store' => 1,
                     'outstanding' => ($m['outstanding'] !== null ? (float)$m['outstanding'] : null), 'channel' => $ch];
-                if ($eid > 0 && $hs !== '') $mmap['manual|' . $mid] = ['house' => $hs, 'emp' => $eid, 'direct' => 0, 'by' => (string)($m['created_by'] ?? ''), 'at' => (string)$m['order_date'], 'type' => (string)($m['order_type'] ?? '')];
+                $mdir = $eid <= 0 && (int)($m['is_direct'] ?? 0) === 1;   // a Direct order: a panel, no salesperson (owner, 24 Nov: it used to fall back to Pending)
+                if (($eid > 0 || $mdir) && $hs !== '') $mmap['manual|' . $mid] = ['house' => $hs, 'emp' => $eid, 'direct' => $mdir ? 1 : 0, 'by' => (string)($m['created_by'] ?? ''), 'at' => (string)$m['order_date'], 'type' => (string)($m['order_type'] ?? '')];
                 apply_allocation($o, 'manual', $mmap); if ($o['allocated_emp']) $o['employee_id'] = $o['allocated_emp'];
                 $o['employee_code'] = $o['employee_id'] ? ($codes[$o['employee_id']] ?? '') : '';
                 $orders[] = $o;
@@ -31773,10 +31845,12 @@ switch ($action) {
         }
         if ($source === 'manual') {   // a quick-entry order: its salesperson / panel / type live on the order itself
             if (!ctype_digit($orderId)) json_response(['error' => 'Bad order id.'], 422);
-            if ($house === '') { $pdo->prepare("UPDATE manual_orders SET employee_id = 0 WHERE manual_order_id = ?")->execute([(int)$orderId]); json_response(['message' => 'Quick-entry order allocation removed.']); }
+            try { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE 'is_direct'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN is_direct TINYINT NOT NULL DEFAULT 0"); } catch (Throwable $e) { }
+            if ($house === '') { $pdo->prepare("UPDATE manual_orders SET employee_id = 0, is_direct = 0 WHERE manual_order_id = ?")->execute([(int)$orderId]); json_response(['message' => 'Quick-entry order allocation removed.']); }
+            if (strcasecmp(trim((string)($auth['role'] ?? '')), 'Employee') === 0) { $mx = $pdo->prepare("SELECT employee_id, is_direct FROM manual_orders WHERE manual_order_id = ?"); $mx->execute([(int)$orderId]); $mr = $mx->fetch(); if ($mr && ((int)$mr['employee_id'] > 0 || (int)$mr['is_direct'] === 1)) json_response(['error' => 'This order is already allocated — only Admin or Sales Head can change it.'], 403); }
             if (!$direct && $empId <= 0) json_response(['error' => 'Choose an employee.'], 422);
             $en = ''; if (!$direct) { $chk = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $chk->execute([$empId]); $en = (string)$chk->fetchColumn(); if ($en === '') json_response(['error' => 'Unknown employee.'], 422); }
-            $pdo->prepare("UPDATE manual_orders SET employee_id = ?, house = ?, order_type = ? WHERE manual_order_id = ?")->execute([$empId, $house, $type, (int)$orderId]);
+            $pdo->prepare("UPDATE manual_orders SET employee_id = ?, house = ?, order_type = ?, is_direct = ? WHERE manual_order_id = ?")->execute([$empId, $house, $type, $direct ? 1 : 0, (int)$orderId]);
             json_response(['message' => 'Quick-entry order → ' . ($direct ? 'Direct order' : $en) . ' · ' . house_labels()[$house] . ($type ? ' · ' . ucfirst($type) : '') . '.', 'allocated_by' => (string)($auth['username'] ?? ''), 'allocated_at' => date('Y-m-d H:i:s'), 'employee_name' => $direct ? 'Direct order' : $en, 'direct' => $direct ? 1 : 0]);
         }
         if ($house === '') {
@@ -31912,6 +31986,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $phone = preg_replace('/[\s().-]+/', '', trim((string)($in['phone'] ?? '')));
         if ($phone === '') {
@@ -31939,6 +32014,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $chain = strtolower(trim((string)($in['chain'] ?? '')));
         if ($chain !== 'yes' && $chain !== 'no') json_response(['error' => 'Chain must be Yes or No.'], 422);
@@ -31965,6 +32041,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $addr = strtolower(trim((string)($in['address'] ?? '')));
         if ($addr !== 'yes' && $addr !== 'no') json_response(['error' => 'Address must be Yes or No.'], 422);
@@ -31990,6 +32067,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $pt = strtolower(trim((string)($in['price_type'] ?? '')));
         if (!in_array($pt, ['old', 'new'], true)) json_response(['error' => 'Price must be Old or New.'], 422);
@@ -32011,6 +32089,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $comm = strtolower(trim((string)($in['community'] ?? '')));
         if ($comm !== 'yes' && $comm !== 'no') json_response(['error' => 'Community must be Yes or No.'], 422);
@@ -32035,6 +32114,7 @@ switch ($action) {
         $in = json_input();
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
+        if ($source === 'manual') json_response(['error' => 'This box does not work on a quick-entry or website order (it has no code, extra mobile, chain or ML to save here). The order itself is fine.'], 422);
         if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '' || strlen($orderId) > 40) json_response(['error' => 'source and order_id are required.'], 422);
         $skip = !empty($in['skip']) ? 1 : 0;
         if (!$skip) {
@@ -32058,11 +32138,15 @@ switch ($action) {
         $source = (string)($in['source'] ?? '');
         $orderId = trim((string)($in['order_id'] ?? ''));
         $code = code_norm((string)($in['code'] ?? ''));
-        if (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);
+        if ($source === 'manual') {   // 🛍 only a WEBSITE order (channel TM Store) can carry a code among the hand-entered orders; it is kept in HRMS only (there is no Shopify order to tag)
+            if (!ctype_digit($orderId)) json_response(['error' => 'Bad order id.'], 422);
+            $wq = $pdo->prepare("SELECT channel FROM manual_orders WHERE manual_order_id = ?"); $wq->execute([(int)$orderId]); if ((string)$wq->fetchColumn() !== 'TM Store') json_response(['error' => 'A quick-entry order has no code. Only a website order can have one.'], 422);
+        }
+        elseif (!(isset(shopify_stores()[$source]) || $source === 'mysales') || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);
         if ($code !== '' && !preg_match('/^[A-Z0-9_-]{2,40}$/', $code)) json_response(['error' => 'Code can only have letters, numbers, - and _ (e.g. AG00123).'], 422);
         $o = [
             'source' => $source, 'id' => $orderId, 'order_name' => trim((string)($in['order_name'] ?? '')),
-            'can_tag' => $source !== 'mysales' ? 1 : 0, 'code' => code_norm((string)($in['old_code'] ?? '')),
+            'can_tag' => ($source !== 'mysales' && $source !== 'manual') ? 1 : 0, 'code' => code_norm((string)($in['old_code'] ?? '')),
         ];
         $lockErr = code_lock_error($pdo, $auth, $source, $orderId);
         if ($lockErr !== '') json_response(['error' => $lockErr, 'code_locked' => 1], 403);

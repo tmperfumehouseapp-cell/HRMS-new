@@ -652,6 +652,9 @@
       if (e.detail.wa === 'assigned') { toast((e.detail.msg || 'Done') + (nx ? ' Next customer opened.' : ' Nothing else is waiting. 🎉')); if (nx) ctx.openChat(nx.phone); else if (ctx.closeSide) ctx.closeSide(); }
     };
     document.addEventListener('wa-side', onSide);
+    // 🔄 owner (23 Nov): a chat a salesperson took in the meantime stayed in this list (it was loaded once): the list now re-reads itself every 20 s while the tab is in front, and when the tab comes back
+    const __gT = setInterval(() => { if (!el.isConnected) { clearInterval(__gT); return; } if (!document.hidden && !document.querySelector('.wp-modal, .wp-md')) load(true); }, 20000);
+    document.addEventListener('visibilitychange', () => { if (el.isConnected && !document.hidden) load(true); });
     async function give(ph, emp, name, bt) {
       if (bt) bt.disabled = true;
       try { await api.post('wa.assign', { phone: ph, emp_id: emp }); toast('Given to ' + name + ' ✓'); await load(true); } catch (e) { if (bt) bt.disabled = false; toast(e.message, true); }

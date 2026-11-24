@@ -258,6 +258,8 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('cfun_fast') && !defined('WA_IN_WEBHOOK')) $o['cfun_fast'] = cfun_fast($pdo, 2000, 8, 20); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'funnel fast: ' . $e->getMessage()); }   // ⚡ customers whose status changed are recounted every run
     try { if (function_exists('waa_tick') && !defined('WA_IN_WEBHOOK')) $o['auto'] = waa_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto assign (new): ' . $e->getMessage()); } $__mk('waa_tick');   // 🏪 new queries → salespeople by the rules
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); } $__mk('wa_auto_alloc');   // 🤖 orders → the salesperson of the chat
+    if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && is_file(__DIR__ . '/store_orders.php')) { require_once __DIR__ . '/store_orders.php'; if (function_exists('tms_auto_tick')) $o['tms'] = tms_auto_tick($pdo); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'website orders: ' . $e->getMessage()); }   // 🛍 new website orders go to the salesperson who holds the customer's chat (same rules as a Shopify order)
+    if (!$__late()) try { if (function_exists('must3_push_tick') && !defined('WA_IN_WEBHOOK')) $o['m3n'] = must3_push_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'must-send reminder: ' . $e->getMessage()); }   // 📲 20 minutes after an order: its salesperson is told what is still missing
     try { if (function_exists('must3_photo_tick') && !defined('WA_IN_WEBHOOK')) $o['m3p'] = must3_photo_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain photos: ' . $e->getMessage()); }   // 📷 chain photos sent without words are looked at for the must-send check — its OWN engine step (inside wa_auto_alloc it was never reached: 8 photos waited, none read)
     if (!$__late()) try { if (function_exists('ora_catchup') && !defined('WA_IN_WEBHOOK')) $o['ora'] = ora_catchup($pdo); } catch (Throwable $e) { } $__mk('ora_catchup');   // 📈 today's unread orders are read by themselves (growth effort): nobody has to press Read chats now
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); } $__mk('wa_callnow_scan');
@@ -630,6 +632,7 @@ function wa_number_caps(PDO $pdo, array $health): array
         $ramp = !$own11 && (($cfg['ramp'] && $ownT < 10000) || $young);
         $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $ownT ? 'slow start (day ' . ($age + 1) . ')' : '';
         $cap = min($cap, max(1, (int)$ownT));   // owner 20 Nov 2026: the full limit of the number (2,000 = 2,000), no 90% gate of our own
+        if (($young || $own11) && $cap > 0) $cap = max(1, intdiv($cap, 2));   // owner 23 Nov 2026: a small NEW number uses only HALF of the limit that opens for it (number 11: 1,000 -> 500; a new number on its slow start / small Meta limit: half)
         // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
