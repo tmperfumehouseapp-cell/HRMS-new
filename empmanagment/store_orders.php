@@ -172,8 +172,22 @@ switch ((string)$action) {
         tms_cols($pdo); $given = []; $names = employee_names_by_id($pdo);
         if ($rows) { $nos = array_column($rows, 'number'); foreach (array_chunk($nos, 400) as $part) { $q = $pdo->prepare("SELECT manual_order_id, order_no, mp_no, employee_id, order_type, created_by FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN (" . implode(',', array_fill(0, count($part), '?')) . ")"); $q->execute($part); foreach ($q->fetchAll() as $g) $given[(string)$g['mp_no']] = $g; } }
         $whyMap = []; if ($rows && tms_auto_table($pdo)) { try { foreach (array_chunk(array_column($rows, 'number'), 400) as $part) { $q = $pdo->prepare("SELECT number, why FROM tms_auto WHERE done = 0 AND number IN (" . implode(',', array_fill(0, count($part), '?')) . ")"); $q->execute($part); foreach ($q->fetchAll() as $g) $whyMap[(string)$g['number']] = (string)$g['why']; } } catch (Throwable $e) { } }
+        // 👤 owner (24 Nov): an order nobody has yet (not paid, so the robot waits) shows the salesperson ALREADY chosen — the one who holds the customer's WhatsApp chat, else the last person who wrote to
+        //    the customer there (the shop does not say who made the payment link). Query / Campaign is suggested by the usual rule. The person only presses Give; Admin / Sales Head can pick another name.
+        $sug = []; try {
+            $live = []; foreach ($pdo->query("SELECT employee_id FROM employees WHERE status != 'ex'")->fetchAll(PDO::FETCH_COLUMN) as $x) $live[(int)$x] = 1;
+            try { $qc = $pdo->prepare("SELECT c.phone, c.assigned_emp, c.source, c.last_in_at, COALESCE(n.camp_tag, 0) AS camp_tag FROM wa_contacts c LEFT JOIN wa_numbers n ON n.id = c.last_number_id WHERE c.phone = ?"); $qc->execute(['0']); }
+            catch (Throwable $e) { $qc = $pdo->prepare("SELECT phone, assigned_emp, source, last_in_at, 0 AS camp_tag FROM wa_contacts WHERE phone = ?"); $qc->execute(['0']); }
+            $ql = $pdo->prepare("SELECT emp_id FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id > 0 ORDER BY id DESC LIMIT 1"); $left = 300;
+            foreach ($rows as $x) { if (isset($given[$x['number']]) || strlen((string)$x['phone']) !== 10 || $left-- <= 0) continue;
+                $qc->execute([$x['phone']]); $c = $qc->fetch(PDO::FETCH_ASSOC); if (!$c) continue; $e = (int)$c['assigned_emp']; $how = 'holds the WhatsApp chat';
+                if ($e <= 0 || !isset($live[$e])) { $ql->execute([$x['phone']]); $e = (int)$ql->fetchColumn(); $how = 'last wrote to the customer on WhatsApp'; }
+                if ($e <= 0 || !isset($live[$e])) continue;
+                $ty = 'query'; if (function_exists('order_chat_type')) { try { $ty = order_chat_type($pdo, $c, strtotime((string)$x['placed_at']) ?: time()) === 'campaign' ? 'campaign' : 'query'; } catch (Throwable $e3) { } }
+                $sug[$x['number']] = [$e, $ty, $how]; }
+        } catch (Throwable $e) { error_log('tms suggest: ' . $e->getMessage()); }
         $sum = ['orders' => count($rows), 'amount' => 0.0, 'given' => 0, 'given_amount' => 0.0];
-        foreach ($rows as &$r) { $g = $given[$r['number']] ?? null; $r['emp'] = $g ? (int)$g['employee_id'] : 0; $r['emp_name'] = $g ? (string)($names[(int)$g['employee_id']] ?? '') : ''; $r['type'] = $g ? (string)$g['order_type'] : ''; $r['hrms_no'] = $g ? (string)$g['order_no'] : ''; $r['by'] = $g ? (string)$g['created_by'] : ''; $r['auto'] = $g && strpos((string)$g['created_by'], 'auto') === 0; $r['auto_why'] = $g ? '' : (string)($whyMap[$r['number']] ?? '');
+        foreach ($rows as &$r) { $g = $given[$r['number']] ?? null; $r['emp'] = $g ? (int)$g['employee_id'] : 0; $r['emp_name'] = $g ? (string)($names[(int)$g['employee_id']] ?? '') : ''; $r['type'] = $g ? (string)$g['order_type'] : ''; $r['hrms_no'] = $g ? (string)$g['order_no'] : ''; $r['by'] = $g ? (string)$g['created_by'] : ''; $r['auto'] = $g && strpos((string)$g['created_by'], 'auto') === 0; $r['auto_why'] = $g ? '' : (string)($whyMap[$r['number']] ?? ''); $sg = $g ? null : ($sug[$r['number']] ?? null); $r['sug_emp'] = $sg ? (int)$sg[0] : 0; $r['sug_type'] = $sg ? (string)$sg[1] : ''; $r['sug_how'] = $sg ? (string)$sg[2] : '';
             $sum['amount'] += $r['total']; if ($r['emp'] > 0) { $sum['given']++; $sum['given_amount'] += $r['total']; } } unset($r);
         json_response(['from' => $from, 'to' => $to, 'rows' => $rows, 'sum' => $sum, 'admin' => $isAdm]);
     }
