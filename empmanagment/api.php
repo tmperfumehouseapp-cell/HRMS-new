@@ -17111,6 +17111,8 @@ function tmph_cfg(string $name, $default)
 //   define('TMPH_MONTH_BUDGET_USD', 180);               // the HRMS stops calling the AI for the rest of the month past this spend
 function tmph_claude_key(): string
 {
+    // 🆘 the owner's backup switch (AI usage page): while it is ON with a second CLAUDE key, that key IS the Claude key for every caller — also the ones that call Claude themselves (brain.php), which went on using the stopped main key
+    if (empty($GLOBALS['ai_fb_skip']) && function_exists('ai_fb_key')) { $__b = ai_fb_key(); if ($__b !== '' && strpos($__b, 'sk-ant-') === 0) return $__b; }
     $k = ''; if (defined('ANTHROPIC_API_KEY')) { $c = trim((string)ANTHROPIC_API_KEY); if ($c !== '' && stripos($c, 'PASTE') === false && stripos($c, 'YOUR_') === false) $k = $c; }   // the key written in config.php wins (so a new key saved there is used at once); a placeholder is ignored
     if ($k === '') $k = (string)getenv('ANTHROPIC_API_KEY');
     $k = trim((string)$k);
@@ -17558,8 +17560,9 @@ function tmph_claude_request(string $model, array $body, bool $stream): array
  *  in Gemini's own shape, so nothing else changes. Returns the Gemini key, or '' when the backup is off. The key lives in the settings table and is never sent to a browser. */
 function ai_fb_key(): string
 {
-    static $k = null; if ($k !== null) return $k; $k = '';
-    try { global $pdo; if (!$pdo instanceof PDO) return $k;
+    static $k = null; if ($k !== null) return $k;
+    try { global $pdo; if (!$pdo instanceof PDO) return '';   // asked before the database is open: not remembered, asked again later
+        $k = '';
         if ((string)setting_get($pdo, 'ai_fb_on', '') !== '1') return $k;
         $u = (int)setting_get($pdo, 'ai_fb_stop', '0'); if ($u > 0 && time() >= $u) return $k;
         $k = trim((string)setting_get($pdo, 'ai_fb_key', '')); } catch (Throwable $e) { $k = ''; }
