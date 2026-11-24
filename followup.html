@@ -375,11 +375,15 @@ guardPage(); renderSidebar('followup');
       const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (f.type === 'file') { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.value.trim(); });
       const anyF = files.length || Object.keys(fv).some((k) => fv[k] !== '');
       if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
+      // a required box left empty is told at once (it used to save only the words, and the day stayed "not filled" with no word about why)
+      const u1 = t.updates[d] || {}, need = t.fields.filter((f) => f.req && f.type !== 'file' && String(fv[f.k] == null ? '' : fv[f.k]) === '' && !(u1.f && fset(u1.f[f.k])));
+      if (need.length) { toast('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
       for (const [k, file] of files) { q('#uOk').textContent = 'Sending the file…'; const fd = new FormData(); fd.append('topic_id', t.id); fd.append('day', d); fd.append('key', k); fd.append('file', file); await api.upload('fup.file_put', fd); }
       BD.close(); toast('Saved.'); await load(true);
-      if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
+      if (d !== D.today) toast('Saved for ' + dayName(d, D.today) + ' — today is still empty.');
+      else if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
     });
     setTimeout(() => { try { (t.source || SUMONLY || q('#uV').value ? q('#uT') : q('#uV')).focus(); } catch (e) { /* fine */ } }, 50);
   }
