@@ -405,3 +405,11 @@ try {
     echo "ASK MODC failed marketing-only items today (items) " . json_encode($one("SELECT COUNT(*), COUNT(DISTINCT phone) FROM wa_camp_items WHERE sent_at >= ? AND status IN ('failed', 'skipped') AND err_code IN (131049, 131050, 130472)", [date('Y-m-d 00:00:00')])) . "\n";
     echo "ASK MODC last round " . substr((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_last'")[0][0] ?? ''), 0, 500) . " · sent per hour today (h, n, failed) " . json_encode($one("SELECT HOUR(r.at), COUNT(*), SUM(r.ok = 0) FROM wa_ru_log r WHERE r.kind = 'cnev' AND r.at >= ? GROUP BY 1 ORDER BY 1", [date('Y-m-d 00:00:00')])) . " · receipts (status, code, n) " . json_encode($one("SELECT m.status, COALESCE(m.err_code, 0), COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? GROUP BY 1, 2", [date('Y-m-d 00:00:00')])) . "\n";
 } catch (Throwable $e) { echo "ASK MODC ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 50) Module C pending + style messages + Lineup silent customers (owner 24 Nov, counts only)
+try {
+    if (!function_exists('wa_rc_overview')) require_once $root . 'empmanagment/wa_modc.php';
+    $ov = wa_rc_overview($pdo); echo "ASK MODC pending people (never wrote, failed marketing-only since 14 Nov, no B/C message yet) " . json_encode([$ov['pending'], $ov['pending_partial'], $ov['pending_failed_people'] ?? null, $ov['sent_hour'], $ov['sent_today']]) . "\n";
+    echo "ASK STYLE messages (name, category, status per account) " . json_encode($one("SELECT t.name, t.category, GROUP_CONCAT(w.status) FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph_style_%' OR t.name LIKE 'tmph_fu_open_hi_%' GROUP BY t.id, t.name, t.category LIMIT 12")) . "\n";
+    echo "ASK LINEUP silent: active customers whose first message is older than 31 days / the same in status done by left_why " . json_encode($one("SELECT SUM(status = 'active' AND anchor_at < ?), COUNT(*) FROM wa_line_cust", [date('Y-m-d H:i:s', time() - 31 * 86400)])) . " · done by why " . json_encode($one("SELECT left_why, COUNT(*) FROM wa_line_cust WHERE status = 'done' GROUP BY left_why ORDER BY 2 DESC LIMIT 8")) . "\n";
+} catch (Throwable $e) { echo "ASK MODC2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+
