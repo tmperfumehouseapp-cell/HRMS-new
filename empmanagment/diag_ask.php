@@ -326,3 +326,9 @@ try {
         echo "ASK ENROLL follow-up of " . $dy . ": customers who got a bot follow-up " . count($fu) . " · of them wrote after it " . count($rep) . " · of those in the Lineup now " . count($inl) . " (joined after the follow-up " . $after . ", still active " . $act . ")\n";
     }
 } catch (Throwable $e) { echo "ASK ENROLL ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 41) which of today's guidebook sentences the LIVE version has (owner 24 Nov: the 14:00 AI rewrite made v34)
+try {
+    $gbr = $one("SELECT id, version, body FROM lib_guide WHERE status = 'live' ORDER BY id DESC LIMIT 1"); $gbb = (string)($gbr[0][2] ?? '');
+    echo "ASK GBCHK live id/version " . ($gbr[0][0] ?? '?') . "/" . ($gbr[0][1] ?? '?') . " · PRICE LADDER " . (int)(strpos($gbb, 'PRICE LADDER') !== false) . " · OUR OWN CARD " . (int)(strpos($gbb, 'OUR OWN CARD') !== false) . " · PACK = TOTAL ML " . (int)(strpos($gbb, 'PACK = TOTAL ML') !== false) . " · NO PHOTO WITHOUT A NAME " . (int)(strpos($gbb, 'NO PHOTO WITHOUT A NAME') !== false) . " · markers card/rows " . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wag_gb_card_v'")[0][0] . "/" . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wag_gb_rows_v'")[0][0] . "\n";
+    echo "ASK MODA/B wa_rec_hourly " . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rec_hourly'")[0][0] . " · nopause_until " . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rec_nopause_until'")[0][0] . " · rec pause_until " . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rec_pause_until'")[0][0] . " · B ramp_max " . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_ru_ramp_max'")[0][0] . " · B hourly " . $one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_ru_hourly'")[0][0] . "\n";
+} catch (Throwable $e) { echo "ASK GBCHK ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
