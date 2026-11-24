@@ -96,6 +96,7 @@ function wag_cfg(PDO $pdo): array
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_clean_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_clean_run($pdo); } } catch (Throwable $e) { }
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_purge_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_purge_old($pdo); } } catch (Throwable $e) { }
     try { if (!empty($__gbl)) { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_rows($pdo); } } catch (Throwable $e) { }   // PACK = TOTAL ML + no photo without a named perfume go into the live guidebook once (owner, 24 Nov)
+    try { if (!empty($__gbl)) { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_style($pdo); } } catch (Throwable $e) { }   // the owner's message style goes into the live guidebook once per version (24 Nov)
     try { if (!empty($__gbl)) { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_card($pdo); } } catch (Throwable $e) { }   // the OUR OWN CARD sentence goes into the live guidebook once (owner, 23 Nov)   // the old guidebook versions are removed once (owner, 23 Nov)
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules4', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules4', '1'); $g = lib_guide_row($pdo, 'live');
@@ -1831,7 +1832,7 @@ function wag_fu1_text(PDO $pdo, array $c, array $rows): string
     $nm = ''; $n0 = trim((string)($c['name'] ?? '')); if ($n0 !== '' && preg_match('/^[\p{L}]{2,14}$/u', ($__f = preg_split('/\s+/', $n0)[0]))) $nm = $__f;
     $pf = ''; try { $bt = ''; foreach ($rows as $rw) if ((string)($rw['who'] ?? '') === 'bot') { $bt = (string)($rw['body'] ?? ''); break; } if ($bt !== '' && function_exists('wa_prod_find_named')) { $h = wa_prod_find_named($pdo, $bt, 1); if ($h) $pf = (string)($h[0]['name'] ?? ''); } } catch (Throwable $e) { }
     $hi = $nm !== '' ? 'Hi ' . $nm . ', ' : 'Hi, ';
-    return $hi . 'aapko ' . ($pf !== '' ? $pf : 'kaun se perfume') . ' ka confusion hai, aap wo hamare saath share kar sakte ho.';
+    return rtrim($hi, ', ') . " 😊\n\nAapko " . ($pf !== '' ? '*' . $pf . '*' : 'kaun se perfume') . " ke bare me koi confusion he ? 🤔\n\nBas ek button dabaiye, hum turant aapko best option suggest kar denge ✨";   // owner 24 Nov: the warm style with blank lines and a little curiosity (the two buttons stay)
 }
 /** True when the follow-up ladder must NOT start / go on for this chat (owner, 24 Nov: a customer who shopped, answered our 'how was your experience' message and got thanked, then got 'step 1 of 10 ... Doubt hai' three minutes later; same after a plain 'Thanks' to our customer-care message):
  *  (a) the bot has just thanked his experience feedback (the thank-you answered his last message), (b) his last message is only thanks / ok / very good and the message before it was one of our care / experience / order-check messages, (c) he ever bought from us (our customer table, or a shop order in the last year) and his last message asks nothing (no price / size / perfume word), (d) in the last 20 days of the chat: an automatic order message, a not-now / not-interested or a complaint word, and his last message asks nothing, (h) 20 bot follow-ups already in 20 days. */
