@@ -117,7 +117,8 @@
     o = o || {}; const API = o.api || (typeof api !== 'undefined' ? api : null); if (!API) { alert('Not logged in.'); return; }
     const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, shot2: null, proof: null, proofing: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), single: new Map(), otype: o.outside ? 'query' : '', cust: { phone: o.phone || '', name: o.name || '', addr1: '', landmark: '', pin: '', city: '', state: '' }, busy: false, order: null, seq: { perfume: 0, chain: 0, other: 0 }, cache: {}, msg: '', nn: { 10: { q: 0, p: 0 }, 20: { q: 0, p: 0 }, 50: { q: 0, p: 0 }, 100: { q: 0, p: 0 } }, ck: { q: 0, p: 0 } };
     const NN = !!o.noname;   // 🏷 No Name order: no perfume is picked — sizes + prices + quantities (and a Car kit)
-    const { bd, ft, top } = shell(NN ? 'No Name order' : 'Manual order', (o.name || '') + ' · QR / UPI / COD'); top.innerHTML = '<button type="button" class="mo-lk" id="moList">Orders</button>'; top.querySelector('#moList').onclick = () => orders(o);
+    const { bd, ft, top } = shell(NN ? 'No Name order' : 'Manual order', (o.name || '') + ' · QR / UPI / COD'); top.innerHTML = (o.outside ? '' : '<button type="button" class="mo-lk" id="moNnT" title="' + (NN ? 'Back to the normal order with perfume names' : 'A perfume sold without a name: only the size, the price and the quantity') + '">' + (NN ? '← With names' : '🏷 No Name') + '</button> ') + '<button type="button" class="mo-lk" id="moList">Orders</button>'; top.querySelector('#moList').onclick = () => orders(o);
+    if (top.querySelector('#moNnT')) top.querySelector('#moNnT').onclick = () => { try { close(); } catch (e) { } open(Object.assign({}, o, { noname: !NN })); };   // 🏷 owner (24 Nov): the No Name order is one tap away inside the chat too
 
     const needShot = () => S.pay !== 'cod';
     const paidP = () => (S.pay === 'cod' ? 0 : paise(num(S.paid)));
