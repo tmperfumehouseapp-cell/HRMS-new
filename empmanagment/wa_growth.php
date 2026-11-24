@@ -1689,6 +1689,30 @@ function wag_addon_gate(): bool
         ftruncate($h, 0); rewind($h); fwrite($h, sprintf('%.3f', $now)); return true;
     } finally { @flock($h, LOCK_UN); @fclose($h); }
 }
+/** ✅ Owner (24 Nov): a customer who only TAPPED A BUTTON under our "How was your experience?" message (Very good / Good / Could be better / Not now ...) has asked nothing — the chat is resolved by itself
+ *  (it goes to History, out of Requests / Unanswered). The moment the customer WRITES anything, the chat opens again like every chat. Runs in the engine; a tap is handled 2 minutes after it
+ *  (the bot's thank-you goes first). The first run also clears the taps of the last 10 days. Returns how many chats were resolved. */
+function wag_cx_btn_close(PDO $pdo): int
+{
+    $n = 0;
+    try {
+        $cur = (string)setting_get($pdo, 'wag_cxbtn_ts', ''); if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $cur)) $cur = date('Y-m-d H:i:s', time() - 10 * 86400);
+        $q = $pdo->prepare("SELECT id, phone, ts FROM wa_messages WHERE dir = 'in' AND mtype IN ('button', 'interactive') AND ts >= ? AND ts <= ? ORDER BY ts, id LIMIT 400"); $q->execute([$cur, date('Y-m-d H:i:s', time() - 120)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); if (!$rows) return 0;
+        $prev = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND id < ? ORDER BY id DESC LIMIT 1");
+        $later = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND id > ? AND (dir = 'in' OR (dir = 'out' AND (who IN ('emp', 'phone') OR emp_id > 0))) LIMIT 1");
+        $st = $pdo->prepare("SELECT status FROM wa_contacts WHERE phone = ?"); $cl = $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND status = 'open'");
+        foreach ($rows as $m) {
+            $cur = (string)$m['ts']; $k = (string)$m['phone'];
+            $st->execute([$k]); if ((string)$st->fetchColumn() !== 'open') continue;
+            $prev->execute([$k, (int)$m['id']]); if (!preg_match('/(how was your experience|your experience with us)/iu', (string)$prev->fetchColumn())) continue;
+            $later->execute([$k, (int)$m['id']]); if ($later->fetchColumn()) continue;          // the customer wrote, or a person is talking to him: a live chat
+            $cl->execute([date('Y-m-d H:i:s'), $k]); if ($cl->rowCount() < 1) continue; $n++;
+            if (function_exists('wa_event')) { try { wa_event($pdo, $k, '✅ Resolved automatically: the customer only tapped a button under our experience message. It opens again when the customer writes.'); } catch (Throwable $e) { } }
+        }
+        setting_set($pdo, 'wag_cxbtn_ts', count($rows) >= 400 ? $cur : date('Y-m-d H:i:s', time() - 300));
+    } catch (Throwable $e) { error_log('wag_cx_btn_close: ' . $e->getMessage()); }
+    return $n;
+}
 /** The 24/7 bot: answers a waiting customer by itself — only from the taught guidebook, only text chats inside the 24-hour window, never a HOT chat. */
 function wag_bot_scan(PDO $pdo, int $max = 4): array
 {
@@ -1742,6 +1766,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
                     if ($__ok2) { $o['sent']++; wa_event($pdo, $key, '🤖 The bot thanked the customer for his experience feedback (no offer, no price)'); } elseif (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply');
                 } else {
                     if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply');
+                    if (in_array((string)$m['mtype'], ['button', 'interactive'], true)) continue;   // owner (24 Nov): a BUTTON answer (Could be better / Not now ...) needs no reply — wag_cx_btn_close() resolves the chat; a typed message still goes to the person below
                     if (wag_meta_get($pdo, 'cxfb:' . $key, '') !== (string)$m['id']) { wag_meta_put($pdo, 'cxfb:' . $key, (string)$m['id']); wa_event($pdo, $key, '💬 The customer answered our experience message with a not-clearly-positive reply. The bot stays silent: please read the chat and answer.');
                         $__ho = (int)($c['assigned_emp'] ?? 0); if ($__ho > 0 && function_exists('ct_push')) { try { ct_push($pdo, [$__ho], 'Customer feedback', 'The bot did not answer an experience reply. Please reply.', '/my_chats.html?phone=' . $key, 'wa-cxfb-' . $key); } catch (Throwable $e) { } } }
                 }
