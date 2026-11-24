@@ -381,7 +381,7 @@ try {
 } catch (Throwable $e) { echo "ASK CAMPS2 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 // 47) After-Order by step (owner 24 Nov): what each kind of message brings, last 24 h and last 7 days (read-only, counts only)
 try {
-    foreach ([['24 h', 1], ['3 days', 3]] as [$lab47, $dd47]) {
+    foreach ([['24 h', 1]] as [$lab47, $dd47]) {
         $r47 = $one("SELECT IF(p.step <= 4, CONCAT('care', p.step), IF((p.step - 5) % 2 = 0, 'offer', 'content')) AS k, COUNT(*) n, SUM(m.status IN ('delivered', 'read')) d, SUM(m.status = 'failed') f,
             SUM(EXISTS (SELECT 1 FROM wa_messages i WHERE i.dir = 'in' AND (i.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) AND i.ts > p.sent_at AND i.ts < DATE_ADD(p.sent_at, INTERVAL 2 DAY))) rep,
             SUM(EXISTS (SELECT 1 FROM shop_orders o WHERE (o.phone COLLATE utf8mb4_unicode_ci) LIKE CONCAT('%', (p.phone COLLATE utf8mb4_unicode_ci)) AND o.created_at > p.sent_at AND o.created_at < DATE_ADD(p.sent_at, INTERVAL 7 DAY))) ord
@@ -399,8 +399,8 @@ try {
 } catch (Throwable $e) { echo "ASK LINEOFFER ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 // 49) Module C (owner 24 Nov): can people who never wrote get a utility message? the pool of approved utility messages by kind, and how many of the failed items belong to people who never wrote (counts only)
 try {
-    if (!function_exists('wa_util_pool_usable')) require_once $root . 'empmanagment/wa_util.php';
-    $pk49 = []; foreach (wa_util_pool_usable($pdo, true) as $t49) { $k49 = ($t49['pool_kind'] ?? '?') . (!empty($t49['claims']) ? '+claims' : ''); $pk49[$k49] = ($pk49[$k49] ?? 0) + 1; }
+    if (!function_exists('wa_ru_pool')) require_once $root . 'empmanagment/wa_rec_util.php'; if (function_exists('wa_ru_load_util')) wa_ru_load_util($pdo);
+    $pk49 = []; foreach (wa_ru_pool($pdo) as $t49) { $k49 = ($t49['pool_kind'] ?? '?') . (!empty($t49['claims']) ? '+claims' : ''); $pk49[$k49] = ($pk49[$k49] ?? 0) + 1; }
     echo "ASK MODC usable utility messages by kind " . json_encode($pk49) . "\n";
     echo "ASK MODC failed marketing-only items today (items) " . json_encode($one("SELECT COUNT(*), COUNT(DISTINCT phone) FROM wa_camp_items WHERE sent_at >= ? AND status IN ('failed', 'skipped') AND err_code IN (131049, 131050, 130472)", [date('Y-m-d 00:00:00')])) . "\n";
     echo "ASK MODC last round " . substr((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_last'")[0][0] ?? ''), 0, 500) . " · sent per hour today (h, n, failed) " . json_encode($one("SELECT HOUR(r.at), COUNT(*), SUM(r.ok = 0) FROM wa_ru_log r WHERE r.kind = 'cnev' AND r.at >= ? GROUP BY 1 ORDER BY 1", [date('Y-m-d 00:00:00')])) . " · receipts (status, code, n) " . json_encode($one("SELECT m.status, COALESCE(m.err_code, 0), COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.kind = 'cnev' AND r.at >= ? GROUP BY 1, 2", [date('Y-m-d 00:00:00')])) . "\n";
