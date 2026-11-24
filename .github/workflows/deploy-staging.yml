@@ -55,6 +55,8 @@ jobs:
         run: php tests/price_guard_test.php
       - name: Pack price by total ml (any word order)
         run: php tests/pack_rows_test.php
+      - name: Follow-up ladder context stop
+        run: php tests/fu_context_test.php
       - name: Hourly speed limit ladder
         run: php tests/rate_test.php
   staging:
