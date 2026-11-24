@@ -89,8 +89,8 @@ if (!defined('APP_SECRET')) define('APP_SECRET', '');
 if (!defined('API_KEY')) define('API_KEY', '');
 // Shown in the sidebar (with the layout.js build) so you can see at a glance
 // which api.php is live. Bump when you change api.php.
-define('HRMS_BUILD', '261105.1');
-define('LAYOUT_MIN', '261101.1');   // oldest layout.js that has every current page in its menu
+define('HRMS_BUILD', '261124.1');
+define('LAYOUT_MIN', '261124.1');   // oldest layout.js that has every current page in its menu
 
 // Targets page: minimum gap between real Shopify syncs for a given month,
 // enforced here on the server so it applies no matter how many browsers/
@@ -218,6 +218,8 @@ function me_flags_data(PDO $pdo, array $auth): array
             $sStmt->execute([$auth['employee_id']]);
             $hasSalary = (float)$sStmt->fetchColumn() > 0;
         }
+        // 🏷 a wholesale salesperson on the Barcodes list opens "My bag" (no Roles-page tick needed)
+        if (!empty($auth['employee_id']) && !in_array('ws_bag', $perms, true)) { try { $wq = $pdo->prepare("SELECT 1 FROM ws_people WHERE emp_id = ? AND active = 1"); $wq->execute([(int)$auth['employee_id']]); if ($wq->fetchColumn()) $perms[] = 'ws_bag'; } catch (Throwable $e) { /* table not made yet */ } }
     return ['is_sales' => $isSales, 'has_salary' => $hasSalary, 'has_employee' => !empty($auth['employee_id']), 'permissions' => $perms, 'role' => $role, 'build' => HRMS_BUILD, 'layout_min' => LAYOUT_MIN];
 }
 
@@ -407,6 +409,7 @@ function all_permissions(): array
         'rs_manage' => 'Retail Store · Assign tasks, review and Setup (manager)',
         'store_pos' => 'Store · POS only (billing, inventory, returns, cash out, expenses) — for store staff logins',
         'dispatch_restock' => 'Dispatch · Store orders only (plan and send restock memos, record what was dispatched) — for the dispatch person',
+        'ws_barcode' => 'Shop wholesale · Barcodes: make the barcodes for the salespeople\'s orders, print, scan into the parcel, hand over — for the barcode maker',
         'sku_sheet' => 'SKU sheet (the day\'s orders counted per SKU and size, with the Excel download)',
         'feedback' => 'Feedback (Dispatch → Feedback: ask delivered customers for feedback, keep the proof, rewards, complaints, the WhatsApp chat with the customer)',
         'manual_orders' => 'Manual orders: the full list and the Manual order sheet (every manual order, with export)',
@@ -490,6 +493,7 @@ function action_permission(string $action): ?string
         'retail.visit_plan_approve' => 'visit_approval',   // Approve / Reject a shop visit: only roles ticked for it (before the 'retail.' line)
         'retail.' => 'retail',
         'manual_orders.save' => null,              // a salesperson makes their own manual order (the handler checks the role)
+        'ws.' => null,                             // 🏷 Shop wholesale · Barcodes (ws_barcode.php): the handler checks Admin / HR / Retail, the barcode maker and the salespeople on its list
         'tms.' => null,                            // 🛍 Website orders (store_orders.php): the handler checks Admin / HR / Sales Head / the "Website orders" tick
         'manual_orders.mp_' => null,               // a sales person adds / lists their own marketplace orders (the handler checks the login)
         'manual_orders.shot' => null, 'manual_orders.reassign' => null,   // the handlers check who
@@ -612,7 +616,7 @@ function role_permissions(PDO $pdo, string $roleName): array
                 // saving there records the module as known, so the untick
                 // sticks. The Employee role stays portal-only unless ticked.
                 // 'order_code_lock' goes to HR automatically, to every other role only when Admin ticks it.
-                $noAuto = ['approvals', 'users', 'leave', 'detailed_report', 'visit_approval', 'finance', 'analytics', 'store_orders', 'inventory', 'retail_store', 'rs_counter', 'rs_tasks', 'rs_manage'];   // 'detailed_report' (ad spend, ROAS, collection) and 'visit_approval' are ticked by Admin per role, never automatic
+                $noAuto = ['approvals', 'users', 'leave', 'detailed_report', 'visit_approval', 'finance', 'analytics', 'store_orders', 'inventory', 'retail_store', 'rs_counter', 'rs_tasks', 'rs_manage', 'ws_barcode'];   // 'detailed_report' (ad spend, ROAS, collection) and 'visit_approval' are ticked by Admin per role, never automatic
                 if (strcasecmp(trim($roleName), 'HR') !== 0) $noAuto[] = 'order_code_lock';
                 foreach (role_new_modules($row['known_modules'] ?? null) as $m) {
                     if (!in_array($m, $noAuto, true) && !in_array($m, $perms, true)) $perms[] = $m;   // 'leave' (My Leave) is handed out by Admin per role, never automatically
@@ -19564,7 +19568,8 @@ if (strpos((string)$action, 'chg.') === 0) { require_once __DIR__ . '/changes.ph
 if (strpos((string)$action, 'iv.') === 0) { require_once __DIR__ . '/inventory.php'; }       // Smart Inventory: oils, perfumes, orders, dealers, alerts, reports
 if (strpos((string)$action, 'fi.') === 0) { require_once __DIR__ . '/finance_in.php'; }       // Finance step 1: money in per channel / day, receipts, outstanding, Excel read by Claude
 if (strpos((string)$action, 'fn.') === 0) { require_once __DIR__ . '/finance_new.php'; }       // Finance New: a separate, from-scratch Finance (actions "fn.*")
-if (strpos((string)$action, 'st_') === 0) { require __DIR__ . '/store_pos.php'; }      // Store inventory + billing (short per-bottle barcodes, total-ml price, commission like online)
+if (strpos((string)$action, 'st_') === 0) { require __DIR__ . '/store_pos.php'; }
+if (strpos((string)$action, 'ws.') === 0) { require __DIR__ . '/ws_barcode.php'; }      // 🏷 Shop wholesale · Barcodes: salesperson orders → barcodes → hand over → his bag → typed at the shop = the shop's bill      // Store inventory + billing (short per-bottle barcodes, total-ml price, commission like online)
 if (strpos((string)$action, 'cp.') === 0) { require __DIR__ . '/ct_people.php'; }
 if (strpos((string)$action, 'lr.') === 0) { require __DIR__ . '/leader_roas.php'; }
 if (strpos((string)$action, 'budget.cm_') === 0 && is_file(__DIR__ . '/budget_cm.php')) { require __DIR__ . '/budget_cm.php'; }   // 💰 the commission engine and its screens: Total Budgeting's own (was inside the Boss Engine)

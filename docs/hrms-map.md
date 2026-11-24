@@ -51,6 +51,7 @@ Core HR tables used heavily (some created elsewhere / assumed existing — **cre
 | Shopify orders & allocation | Order list, assign codes/phones | `orders.html`, `order_allocation.html`, `order_codes.html` | `shop_orders`, `order_allocations`, `order_codes`, `order_address`, `order_extra_phones`, `order_chain`, `order_community`, `order_cancels`, `order_moved`, `order_remarks`, `order_ratings`, … |
 | Targets / performance / commission | Sales targets & pay rules | `targets.html`, `order_targets.html`, `performance.html`, `detailed_report.html`, `commission*.html`, `leaders.html`, `leader_pay.php`, `leader_roas.php` | `order_targets`, `order_target_*`, `panel_targets`, `target_rule(s)`, `commission_*`, `leader_pay_adj`, `leader_roas_manual`, `rating_daily`, `employee_daily_overall`, … |
 | Retail shops (dealer) | Shop visits, stock, dues | `retail_shops.html`, `retail_inventory.html`, `retail_field.html`, `retail_field.php` | `retail_*`, `rf_*` |
+| Shop wholesale · Barcodes | Salesperson orders → barcode maker makes/prints/packs 6-digit codes (800001+) → hand over → salesperson receives (his bag, + city stock) → types the codes at a shop = that shop's Retail order | `retail_barcodes.html`, `empmanagment/ws_barcode.php` (`ws.*`) | `ws_people`, `ws_orders`, `ws_items`, `ws_bottles`, `ws_log`; writes `retail_orders` / `retail_order_items` / `retail_stock_log` |
 | Sales chat / queries | My chats & WA query board | `my_chats.html`, `my_sales.html`, `my_orders.html`, `wq.php`, `wa_sales.php` | `wq_*`, `wa_queries`, `wa_query_moves`, … |
 
 ---

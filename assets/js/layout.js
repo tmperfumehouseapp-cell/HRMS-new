@@ -3,7 +3,7 @@
  * Call renderSidebar('dashboard' | 'departments' | 'employees' | 'documents'
  *                     | 'history' | 'approvals' | 'users' | 'ex_employees') after guardPage().
  */
-const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
+const LAYOUT_BUILD = '261124.1';   // shown under your name in the sidebar
 
 // Opening splash (TM·PH comet chain + name). Loaded on every page; assets/js/splash.js decides whether to
 // play (new tab / app launch, or back after 10+ min away). Add ?splash=1 to any page address to force it.
@@ -345,7 +345,7 @@ window.WS = (function () {
     { key: 'sales', label: 'Sales', icon: 'sales', direct: 'sales.html', sub: '', tabs: [] },
     { key: 'budget', label: 'Budgeting', icon: 'commission', sub: 'Commission, leaders, salaries, fixed expenses and penalties, day by day', tabs: [['bt_total', 'Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Commission', 'commission_new.html', ''], ['bt_leaders', 'Leaders', 'leaders.html', ''], ['bt_helpers', 'Leaders Helper', 'leaders_helper.html', ''], ['bt_daysheet', 'Day sheet (company sales)', 'detailed_report.html', '']] },   // its own menu item; the same pages are also inside Sales → Money
     { key: 'followup', label: 'Follow-up', icon: 'followup', sub: 'Every section, its topics and one update a day, checked by Claude', tabs: [['followup', 'Follow-up', 'followup.html', 'fup']] },   // 📌 Shop Wholesale, Surat Store and every section added later (pills inside the page)
-    { key: 'shops', label: 'Shop wholesale', icon: 'retail_store', sub: 'Wholesale shops and their stock', tabs: [['retail_shops', 'Shops', 'retail_shops.html', ''], ['retail_inventory', 'Stock', 'retail_inventory.html', '']] },   // moved out of Sales into the side menu
+    { key: 'shops', label: 'Shop wholesale', icon: 'retail_store', sub: 'Wholesale shops and their stock', tabs: [['retail_shops', 'Shops', 'retail_shops.html', ''], ['retail_inventory', 'Stock', 'retail_inventory.html', ''], ['retail_barcodes', 'Barcodes', 'retail_barcodes.html', 'wsb']] },   // moved out of Sales into the side menu   // 🏷 Barcodes: salesperson orders → barcodes → his bag → typed at the shop
     { key: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', sub: 'Chats, campaigns and groups', tabs: [['whatsapp', 'WhatsApp', 'whatsapp.html', 'wa'], ['whatsapp_groups', 'Groups', 'whatsapp_groups.html', '']] },
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', sub: 'Instagram, Facebook, email and reviews — answered in one place', tabs: [['social_inbox', 'Inbox hub', 'social_inbox.html', 'sx']] },
@@ -425,6 +425,7 @@ window.WS = (function () {
     if (need === 'sk') return !!ctx.boss || ctx.perms.indexOf('sku_sheet') > -1 || ctx.perms.indexOf('orders') > -1;   // SKU sheet: a boss, the 'SKU sheet' tick, or the Orders page
     if (need === 'sl') return ctx.isAdmin || ctx.perms.indexOf('server_load') > -1;   // Server load: Admin, or the 'Server load' tick
     if (need === 'srp') return ctx.isAdmin || ctx.perms.indexOf('store_pos') > -1;   // Store → POS: Admin and roles ticked 'Store · POS only'
+    if (need === 'wsb') return ctx.isAdmin || ctx.perms.some((p) => /^(retail|ws_barcode|ws_bag|dispatch_restock)$/.test(p));   // 🏷 Shop wholesale → Barcodes: Admin, Retail, the barcode maker, the dispatch person and the salespeople on its list
     if (need === 'rsd') return ctx.isAdmin || ctx.perms.indexOf('dispatch_restock') > -1;   // Dispatch → Store orders: Admin and the Dispatch role
     if (need === 'wa') return ctx.isAdmin || ctx.role === 'HR' || ctx.perms.indexOf('control_tower') > -1;   // the WhatsApp console: the same people wa.php lets in
     if (need === 'boss') return ctx.boss;
@@ -791,6 +792,7 @@ window.WS = (function () {
       const btn = [];
       btn.push(['my_day.html', 'My Day', '✅', (bd && bd.my_open) || 0]);   // everybody: the day starts here (punch-in steps, duties, sales)
       if (f.is_sales) { btn.push(['my_sales.html', 'My Sales', '\u{1F4C8}', 0]); btn.push(['my_orders.html', 'Orders', '\u{1F6CD}', 0]); btn.push(['manual_order.html', 'Manual', '\u270D\uFE0F', 0]); btn.push(['my_chats.html', 'Chats', '\u{1F4AC}', 0]); btn.push(['my_chats.html?tab=queries', 'Queries', '\u{1F4CB}', 0]); }
+      if ((f.permissions || []).indexOf('ws_bag') > -1) btn.push(['retail_barcodes.html', 'My bag', '\u{1F392}', 0]);   // 🏷 wholesale salesperson: order, receive, give at the shop by typing the codes
       const fub = await api.get('fup.badge').catch(() => null);   // 📌 Follow-up: the topics I must update every day
       if (fub && fub.show) btn.push(['followup.html', 'Follow-up', '\u{1F4CC}', Number(fub.due) || 0]);
       const cxb = await api.get('bd.cx_badge').catch(() => null);   // Complaints: the team opens the board, a salesperson who raised one sees the status
@@ -889,6 +891,8 @@ function renderSidebarCore(active) {
     sku_sheet: [['sku_sheet.html', 'SKU sheet', 'sku_sheet']],
     manual_orders: [['dispatch_manual.html', 'Manual orders (all)', 'dispatch_manual'], ['manual_sheet.html', 'Manual order sheet', 'manual_sheet']],
     server_load: [['server_load.html', 'Server load', 'server_load']],
+    ws_bag: [['retail_barcodes.html', 'My bag (barcodes)', 'retail_barcodes']],          // 🏷 a wholesale salesperson on the Barcodes list (the server adds this tick by itself)
+    ws_barcode: [['retail_barcodes.html', 'Wholesale barcodes', 'retail_barcodes']],     // 🏷 the barcode maker
   };
   const PAGES_FOR_PERM = {
     inventory: [['inventory.html', 'Inventory', 'iv_dash']],
@@ -1072,7 +1076,7 @@ function renderSidebarCore(active) {
           links += `
         <div class="nav-label">More</div>`;
           morePerms.forEach((p) => {
-            (PAGES_FOR_PERM[p] || (p === 'server_load' ? PAGES_OPEN[p] : null) || []).forEach((def) => {      // Manual orders and the SKU sheet get their links below (wmo.dsp_access / sku.access), ticked or by department
+            (PAGES_FOR_PERM[p] || (/^(server_load|ws_bag|ws_barcode)$/.test(p) ? PAGES_OPEN[p] : null) || []).forEach((def) => {      // Manual orders and the SKU sheet get their links below (wmo.dsp_access / sku.access), ticked or by department
               links += `
         <a href="${def[0]}" class="${active === def[2] ? 'active' : ''}">${def[1]}</a>`;
             });
@@ -1277,7 +1281,7 @@ const RAIL_ICONS = {
 };
 const RAIL_ICON_FOR = {
   inventory: 'drop',
-  complaints: 'alert', my_complaints: 'alert', social_inbox: 'inbox', dashboard: 'home', dispatch: 'truck', finance: 'wallet', analytics: 'chart', sales: 'briefcase', control_tower: 'tower', orders: 'bag', order_allocation: 'split', order_codes: 'tag', retail_shops: 'shop', retail_inventory: 'folder', retail_store: 'shop', flyers: 'file', flyer_map: 'pin', my_day: 'file', boss_engine: 'file', boss_inbox: 'file', daily_summary: 'file', office_care: 'file', boss_questions: 'file', boss_penalties: 'file', dept_hub: 'file', dept_dispatch: 'file', customers: 'user', dept_restock: 'file', dept_shops: 'file', dept_supplies: 'file', dept_work: 'file', dept_fix: 'file', people_admin: 'file',
+  complaints: 'alert', my_complaints: 'alert', social_inbox: 'inbox', dashboard: 'home', dispatch: 'truck', finance: 'wallet', analytics: 'chart', sales: 'briefcase', control_tower: 'tower', orders: 'bag', order_allocation: 'split', order_codes: 'tag', retail_shops: 'shop', retail_inventory: 'folder', retail_barcodes: 'tag', retail_store: 'shop', flyers: 'file', flyer_map: 'pin', my_day: 'file', boss_engine: 'file', boss_inbox: 'file', daily_summary: 'file', office_care: 'file', boss_questions: 'file', boss_penalties: 'file', dept_hub: 'file', dept_dispatch: 'file', customers: 'user', dept_restock: 'file', dept_shops: 'file', dept_supplies: 'file', dept_work: 'file', dept_fix: 'file', people_admin: 'file',
   attendance_admin: 'clock', attendance: 'clock', my_space: 'user', my_orders: 'bag', offices: 'pin', targets: 'target', order_targets: 'cart',
   followup: 'check', performance: 'chart', detailed_report: 'sheet', salary: 'wallet', my_salary: 'wallet', commission: 'percent',
   commission_rules: 'sliders', help: 'pulse', my_chats: 'chat', wasales: 'chart', penalties: 'alert', my_penalties: 'alert', agreements: 'file', my_agreements: 'file',

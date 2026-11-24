@@ -410,7 +410,7 @@ try {
             // every bottle's real code in ONE statement: its own id + 100000 (a different number each time, always 6 digits)
             $pdo->prepare("UPDATE st_bottles SET code = CAST(bottle_id + " . ST_CODE_BASE . " AS CHAR) WHERE batch = ? AND code LIKE 't%'")->execute([$batch]);
             $top = (int)$pdo->query("SELECT MAX(bottle_id) FROM st_bottles")->fetchColumn();
-            if (ST_CODE_BASE + $top > 999999) { $pdo->rollBack(); json_response(['error' => 'The 6-digit code range is used up.'], 500); }
+            if (ST_CODE_BASE + $top >= 800000) { $pdo->rollBack(); json_response(['error' => 'The store\'s 6-digit code range (100001-799999) is used up: 800000 and up are the Shop wholesale barcodes.'], 500); }
             $pdo->commit();
             $bs = $pdo->prepare("SELECT b.*, p.title FROM st_bottles b JOIN st_products p ON p.product_id = b.product_id WHERE b.batch = ? ORDER BY p.title, b.ml, b.bottle_id"); $bs->execute([$batch]);
             json_response(['ok' => true, 'batch' => $batch, 'count' => $n, 'bottles' => array_map('st_bottle_out', $bs->fetchAll()), 'message' => $n . ' barcodes made. Print the labels and stick them on the bottles.']);

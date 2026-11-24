@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Wholesale Barcodes — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  /* 🏷 Shop wholesale · Barcodes: order → barcodes (Hemil) → hand over → salesperson's bag → typed at the shop = the shop's bill */
+  .wb{max-width:1100px;}
+  .sub{font-size:12px;color:var(--muted);}
+  .wb-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;}
+  .wb-tabs button{border:1px solid var(--line,#e5e7eb);background:#fff;border-radius:99px;padding:9px 16px;font:inherit;font-weight:700;font-size:13.5px;cursor:pointer;color:#4a505c;min-height:42px;position:relative;}
+  .wb-tabs button.on{background:#111827;border-color:#111827;color:#fff;}
+  .wb-tabs button em{font-style:normal;background:#e02424;color:#fff;border-radius:9px;padding:0 6px;font-size:11px;margin-left:6px;}
+  .pane{display:none}.pane.on{display:block}
+  .wb-flow{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;font-size:12px;}
+  .wb-flow span{background:#f3f4f6;border-radius:99px;padding:4px 10px;font-weight:700;color:#374151;}
+  .wb-flow i{font-style:normal;color:#9ca3af;align-self:center;}
+  .wb-card{background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:16px;padding:14px;margin-bottom:12px;}
+  .wb-card h3{margin:0 0 2px;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .wb-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;}
+  .wb-row .grow{flex:1;min-width:150px;}
+  .wb-b{border:1px solid var(--line,#e5e7eb);background:#fff;color:#111827;border-radius:12px;padding:10px 14px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;min-height:44px;}
+  .wb-b.pri{background:#111827;border-color:#111827;color:#fff;}.wb-b.g{background:#16945a;border-color:#16945a;color:#fff;}.wb-b.r{color:#b91c1c;border-color:#f3c9c9;}
+  .wb-b[disabled]{opacity:.45;cursor:default;}
+  .wb-in,.wb-sel{border:1px solid #d1d5db;border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;min-height:44px;background:#fff;color:#111827;box-sizing:border-box;width:100%;}
+  .wb-code{font-size:26px;letter-spacing:4px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums;}
+  .pill{display:inline-block;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:800;white-space:nowrap;}
+  .p-placed{background:#fef3c7;color:#92400e}.p-making{background:#dbeafe;color:#1e40af}.p-sent{background:#ede9fe;color:#5b21b6}.p-received{background:#dcfce7;color:#166534}.p-cancelled{background:#f3f4f6;color:#6b7280}
+  .ln{display:grid;grid-template-columns:minmax(0,1fr) 64px 64px 64px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #f1f3f6;font-size:14px;}
+  .ln.h{font-size:10.5px;text-transform:uppercase;color:#6b7280;font-weight:800;}
+  .ln .n{text-align:center;font-variant-numeric:tabular-nums;}
+  .ln input{width:100%;padding:8px 4px;border:1px solid #d1d5db;border-radius:9px;font:inherit;font-size:15px;text-align:center;}
+  .ok{color:#15803d;font-weight:800}.bad{color:#b91c1c;font-weight:800}.mut{color:#6b7280}
+  .stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px;}
+  .stat div{background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:14px;padding:10px 12px;}
+  .stat small{display:block;font-size:10.5px;font-weight:800;text-transform:uppercase;color:#6b7280;}.stat b{font-size:22px;}
+  .bagl{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #f1f3f6;font-size:14px;}
+  .bagl small{display:block;color:#6b7280;font-size:11.5px;word-break:break-all;}
+  .tl{max-height:340px;overflow:auto;border:1px solid #eef0f3;border-radius:12px;margin-top:10px;}
+  .tl div{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:14px;}
+  .tl div:last-child{border-bottom:0}
+  .tl button{border:0;background:#fee2e2;color:#b91c1c;border-radius:8px;padding:4px 10px;font-weight:800;cursor:pointer;}
+  .msg{border-radius:12px;padding:10px 12px;font-size:13.5px;margin:10px 0;}
+  .msg.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;font-weight:600}.msg.bad{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-weight:600}.msg.in{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-weight:500}
+  .ov{position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
+  .ov .box{background:#fff;border-radius:18px;padding:16px;width:100%;max-width:640px;margin-top:4vh;}
+  .ov h3{margin:0 0 6px;font-size:17px;}
+  .ol{display:grid;grid-template-columns:minmax(0,1fr) 90px 72px 34px;gap:6px;align-items:center;margin-top:6px;}
+  .chk{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:14px;}
+  .chk input{width:20px;height:20px;}
+  .shopl div{padding:10px 12px;border-bottom:1px solid #f3f4f6;cursor:pointer;font-size:14px;}.shopl div:hover{background:#f9fafb;}
+  .shopl small{color:#6b7280;display:block;font-size:12px;}
+  #printArea{display:none}
+  .lbl{box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;text-align:center;background:#fff;color:#000;font-family:Arial,sans-serif;page-break-after:always;break-after:page}
+  .lbl .nm{font-weight:800;white-space:nowrap;overflow:hidden;line-height:1.05;display:block;margin:0}
+  .lbl .mid{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .lbl svg{width:100%;flex:1;min-height:0;display:block}
+  .lbl .code{font-weight:800;letter-spacing:.4px;line-height:1}
+  .lbl .dt{color:#000;font-weight:700;white-space:nowrap;line-height:1.1}
+  .prev{display:flex;gap:12px;margin-top:10px;overflow-x:auto}.prev .lbl{zoom:3;box-shadow:0 0 0 1px #e5e7eb;border-radius:3px;flex:0 0 auto}
+  @media print{body *{visibility:hidden}#printArea,#printArea *{visibility:visible}#printArea{display:block;position:absolute;left:0;top:0}.lbl:last-child{page-break-after:auto;break-after:auto}}
+  @media (max-width:600px){.wb-flow{display:none}.ln{grid-template-columns:minmax(0,1fr) 52px 52px 56px;font-size:13px}.wb-code{font-size:22px}.ol{grid-template-columns:minmax(0,1fr) 76px 60px 30px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Barcodes</h1><div class="sub" style="margin-top:2px">Shop wholesale: every bottle a salesperson carries has its own 6-digit code</div></div></div>
+    <div class="content wb">
+      <div class="wb-flow"><span>1 · Order</span><i>→</i><span>2 · Barcodes made &amp; stuck</span><i>→</i><span>3 · Handed over</span><i>→</i><span>4 · Received (his bag)</span><i>→</i><span>5 · Codes typed at the shop = bill</span></div>
+      <div id="top"></div>
+      <div class="wb-tabs" id="tabs"></div>
+
+      <!-- MY BAG (salesperson) -->
+      <div class="pane" id="p-bag"></div>
+      <!-- GIVE AT A SHOP (salesperson) -->
+      <div class="pane" id="p-give">
+        <div class="wb-card">
+          <h3>Give bottles at a shop</h3>
+          <div class="sub">Pick the shop, type the 6-digit code on every bottle you hand over. The shop's bill is made from the codes.</div>
+          <div id="gShopBox" style="margin-top:10px"></div>
+          <div id="gCodeBox" hidden>
+            <div class="wb-row"><input class="wb-in wb-code" id="gCode" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6-digit code"></div>
+            <div class="sub" style="margin-top:6px">Each code is checked as soon as 6 digits are typed. A wrong one shows in red: remove it and type it again.</div>
+            <div class="tl" id="gList"></div>
+            <div id="gSum" class="msg in" hidden></div>
+            <div class="wb-row">
+              <select class="wb-sel" id="gType" style="max-width:200px"><option value="display">Display (on credit)</option><option value="sale">Sale</option></select>
+              <input class="wb-in grow" id="gNote" placeholder="Note (optional)">
+            </div>
+            <div class="wb-row"><button class="wb-b g" id="gGo" style="flex:1" disabled>Make the bill</button><button class="wb-b" id="gClear">Clear</button></div>
+          </div>
+          <div id="gMsg"></div>
+        </div>
+      </div>
+      <!-- ORDERS -->
+      <div class="pane" id="p-orders"></div>
+      <!-- MAKE & HAND OVER (barcode maker) -->
+      <div class="pane" id="p-make"></div>
+      <!-- STOCK WITH EVERY SALESPERSON (admin) -->
+      <div class="pane" id="p-stock"></div>
+      <!-- SETUP (admin) -->
+      <div class="pane" id="p-setup"></div>
+    </div>
+  </main>
+</div>
+<div id="printArea"></div>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js?v=14"></script>
+<script src="assets/js/layout.js?v=261124"></script>
+<script src="assets/js/jsbarcode.code128.min.js"></script>
+<script>
+  guardPage();
+  renderSidebar('retail_barcodes');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const dt = (d) => d ? new Date(String(d).replace(' ', 'T')).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const ST = { placed: 'Waiting for barcodes', making: 'Barcodes made', sent: 'On the way', received: 'Received', cancelled: 'Cancelled' };
+  const pill = (s) => `<span class="pill p-${esc(s)}">${esc(ST[s] || s)}</span>`;
+  const say = (box, m, bad) => { $(box).innerHTML = m ? `<div class="msg ${bad ? 'bad' : 'ok'}">${esc(m)}</div>` : ''; };
+  let ME = null, TAB = '', PERF = null, SIZES = [], LABEL = { w: 31, h: 21 };
+
+  /* ---------------- start ---------------- */
+  async function start() {
+    try { ME = await api.get('ws.me'); } catch (e) { $('top').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; return; }
+    const t = [];
+    if (ME.sp) { t.push(['bag', '🎒 My bag']); t.push(['give', '🏪 Give at shop']); }
+    t.push(['orders', '🧾 Orders', (ME.open.placed + ME.open.making + ME.open.sent) || 0]);
+    if (ME.maker) t.push(['make', '🏷 Make & hand over', (ME.open.placed + ME.open.making) || 0]);
+    if (ME.admin || ME.maker) t.push(['stock', '📦 Salespeople stock']);
+    if (ME.admin) t.push(['setup', '⚙ Salespeople']);
+    $('tabs').innerHTML = t.map((x) => `<button data-t="${x[0]}">${x[1]}${x[2] ? `<em>${x[2]}</em>` : ''}</button>`).join('');
+    $('tabs').onclick = (e) => { const b = e.target.closest('button[data-t]'); if (b) show(b.dataset.t); };
+    if (ME.admin && !ME.people.length) $('top').innerHTML = '<div class="msg in">First add your wholesale salespeople (Vadodara / Surat) under <b>⚙ Salespeople</b>. Then place their first order under <b>🧾 Orders</b>.</div>';
+    let want = ''; try { want = new URLSearchParams(location.search).get('t') || localStorage.getItem('wb_tab') || ''; } catch (e) {}
+    show(t.some((x) => x[0] === want) ? want : t[0][0]);
+  }
+  function show(t) {
+    TAB = t; try { localStorage.setItem('wb_tab', t); } catch (e) {}
+    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
+    document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'p-' + t));
+    ({ bag: loadBag, give: giveStart, orders: loadOrders, make: loadMake, stock: loadStock, setup: loadSetup })[t]();
+  }
+  async function perfumes() {
+    if (PERF) return PERF;
+    try { const d = await api.get('ws.perfumes'); PERF = d.perfumes || []; SIZES = d.sizes || []; } catch (e) { PERF = []; SIZES = [{ ml: '20' }, { ml: '50' }, { ml: '100' }]; }
+    return PERF;
+  }
+
+  /* ---------------- MY BAG ---------------- */
+  async function loadBag() {
+    const P = $('p-bag'); P.innerHTML = '<div class="mut">Loading…</div>';
+    try {
+      const [b, o] = await Promise.all([api.get('ws.bag'), api.get('ws.orders', { f: 'open' })]);
+      const way = o.orders.filter((x) => x.status === 'sent'), wait = o.orders.filter((x) => x.status !== 'sent');
+      let h = `<div class="stat"><div><small>In my bag</small><b>${b.total}</b></div><div><small>On the way to me</small><b>${b.on_the_way}</b></div><div><small>Given (7 days)</small><b>${b.given.reduce((a, x) => a + x.n, 0)}</b></div><div><small>City</small><b style="font-size:17px">${esc(b.city)}</b></div></div>`;
+      h += way.map((x) => `<div class="wb-card" style="border-color:#c4b5fd"><h3>📦 Parcel ${esc(x.no)} ${pill(x.status)}</h3><div class="sub">${x.totals.made} bottles handed over by ${esc(x.sent_by)} · ${dt(x.sent_at)}. Count them, then press Received.</div>
+        ${x.lines.map((l) => `<div class="bagl"><span><b>${esc(l.product)}</b> ${esc(l.ml)} ml</span><b>${l.sent}</b></div>`).join('')}
+        <div class="wb-row"><button class="wb-b g" data-rcv="${x.order_id}" style="flex:1">✓ Received all ${x.totals.made}</button><button class="wb-b r" data-rcvm="${x.order_id}">Some are missing</button></div></div>`).join('');
+      h += `<div class="wb-card"><h3>🎒 My bag</h3><div class="sub">Every bottle with you now. Tap a line to see its codes.</div>
+        ${b.bag.length ? b.bag.map((x) => `<details class="bagl" style="display:block"><summary style="display:flex;justify-content:space-between;cursor:pointer"><span><b>${esc(x.product)}</b> ${esc(x.ml)} ml</span><b>${x.qty}</b></summary><small>${x.codes.join(' · ')}</small></details>`).join('') : '<div class="mut" style="padding:10px 0">Nothing in your bag. Order new stock under 🧾 Orders.</div>'}
+        <div class="wb-row"><button class="wb-b pri" id="bGive" ${b.total ? '' : 'disabled'}>🏪 Give at a shop</button><button class="wb-b" id="bOrder">+ Order new stock</button></div></div>`;
+      if (wait.length) h += `<div class="wb-card"><h3>Ordered, not here yet</h3>${wait.map((x) => `<div class="bagl"><span>${esc(x.no)} · ${x.totals.qty} bottles · ${dt(x.placed_at)}</span>${pill(x.status)}</div>`).join('')}</div>`;
+      if (b.given.length) h += `<div class="wb-card"><h3>Given at shops (7 days)</h3>${b.given.map((x) => `<div class="bagl"><span><b>${esc(x.shop)}</b><small>${esc(x.order_no)} · ${dt(x.at)}</small></span><b>${x.n}</b></div>`).join('')}</div>`;
+      P.innerHTML = h;
+      P.querySelectorAll('[data-rcv]').forEach((x) => x.onclick = () => receive(+x.dataset.rcv, false));
+      P.querySelectorAll('[data-rcvm]').forEach((x) => x.onclick = () => receive(+x.dataset.rcvm, true));
+      if ($('bGive')) $('bGive').onclick = () => show('give');
+      $('bOrder').onclick = () => orderForm(ME.sp.emp_id);
+    } catch (e) { P.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  }
+  async function receive(id, some) {
+    if (!some) { if (!confirm('Did you count them? All bottles of this parcel go into your bag.')) return; try { const r = await api.post('ws.receive', { order_id: id, missing: [] }); alert(r.message); loadBag(); } catch (e) { alert(e.message); } return; }
+    const d = await api.get('ws.order', { id }); const list = d.bottles.filter((b) => b.status === 'sent');
+    const ov = overlay(`<h3>Which bottles did NOT come?</h3><div class="sub">Untick the bottles you did not get. Everything ticked goes into your bag.</div>
+      <div class="tl" style="max-height:50vh">${list.map((b) => `<label class="chk"><input type="checkbox" data-c="${b.code}" checked> <span><b>${b.code}</b> · ${esc(b.product)} ${esc(b.ml)} ml</span></label>`).join('')}</div>
+      <div class="wb-row"><button class="wb-b g" data-go style="flex:1">Save</button><button class="wb-b" data-x>Close</button></div>`);
+    ov.querySelector('[data-go]').onclick = async () => {
+      const miss = [...ov.querySelectorAll('[data-c]')].filter((c) => !c.checked).map((c) => c.dataset.c);
+      try { const r = await api.post('ws.receive', { order_id: id, missing: miss }); ov.remove(); alert(r.message); loadBag(); } catch (e) { alert(e.message); }
+    };
+  }
+
+  /* ---------------- GIVE AT A SHOP ---------------- */
+  let G = { shop: null, codes: [], res: {} };
+  function giveStart() {
+    $('gMsg').innerHTML = '';
+    if (G.shop) { drawShop(); return; }
+    $('gCodeBox').hidden = true;
+    $('gShopBox').innerHTML = `<input class="wb-in" id="gQ" placeholder="Search the shop (name, owner, mobile, area)…" autocomplete="off"><div class="shopl tl" id="gShops"></div>`;
+    let tm = 0; const find = async () => { try { const d = await api.get('ws.shops', { q: $('gQ').value.trim() }); $('gShops').innerHTML = d.shops.length ? d.shops.map((s) => `<div data-s="${s.shop_id}" data-n="${esc(s.name)}"><b>${esc(s.name)}</b><small>${esc([s.owner, s.area, s.mobile].filter(Boolean).join(' · '))}</small></div>`).join('') : '<div class="mut">No shop found in ' + esc(d.city) + '.</div>'; } catch (e) { $('gShops').innerHTML = `<div class="bad">${esc(e.message)}</div>`; } };
+    $('gQ').oninput = () => { clearTimeout(tm); tm = setTimeout(find, 250); }; find();
+    $('gShops').onclick = (e) => { const r = e.target.closest('[data-s]'); if (!r) return; G.shop = { id: +r.dataset.s, name: r.dataset.n }; drawShop(); };
+  }
+  function drawShop() {
+    $('gShopBox').innerHTML = `<div class="msg in" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>Shop: <b>${esc(G.shop.name)}</b></span><button class="wb-b" id="gChange" style="min-height:36px;padding:6px 12px">Change</button></div>`;
+    $('gChange').onclick = () => { if (G.codes.length && !confirm('Start again with another shop? The typed codes are cleared.')) return; G = { shop: null, codes: [], res: {} }; drawCodes(); giveStart(); };
+    $('gCodeBox').hidden = false; drawCodes(); setTimeout(() => $('gCode').focus(), 50);
+  }
+  function drawCodes() {
+    const ok = G.codes.filter((c) => G.res[c] && G.res[c].ok), bad = G.codes.length - ok.length;
+    $('gList').innerHTML = G.codes.slice().reverse().map((c) => { const r = G.res[c]; return `<div><span><b>${c}</b> · ${r ? (r.ok ? `<span class="ok">✓ ${esc(r.what)}</span>` : `<span class="bad">✗ ${esc(r.message)}</span>`) : '<span class="mut">checking…</span>'}</span><button data-del="${c}">✕</button></div>`; }).join('') || '<div class="mut">No code typed yet.</div>';
+    const sum = {}; let tot = 0; ok.forEach((c) => { const r = G.res[c], k = r.product + ' ' + r.ml + ' ml'; sum[k] = (sum[k] || 0) + 1; tot += r.price || 0; });
+    $('gSum').hidden = !ok.length; $('gSum').innerHTML = `<b>${ok.length} bottles · ${inr(tot)}</b><br>` + Object.entries(sum).map(([k, n]) => `${n} × ${esc(k)}`).join(' · ');
+    $('gGo').disabled = !ok.length || bad > 0; $('gGo').textContent = bad ? `Fix ${bad} wrong code${bad > 1 ? 's' : ''} first` : `Make the bill (${ok.length})`;
+  }
+  async function checkCodes(list) {
+    try { const d = await api.post('ws.check', { codes: list }); (d.results || []).forEach((r) => { G.res[r.code] = r; }); } catch (e) { list.forEach((c) => { G.res[c] = { ok: false, message: e.message }; }); }
+    drawCodes();
+  }
+  function addCode(raw) {
+    const list = String(raw).split(/[^0-9]+/).filter((x) => x.length);
+    const add = []; list.forEach((c) => { if (c.length !== 6) { G.res[c] = { ok: false, message: 'A code has 6 digits.' }; if (!G.codes.includes(c)) G.codes.push(c); return; } if (G.codes.includes(c)) { $('gMsg').innerHTML = `<div class="msg bad">${c} is already on the list.</div>`; return; } G.codes.push(c); add.push(c); });
+    drawCodes(); if (add.length) checkCodes(add);
+  }
+  $('gCode').addEventListener('input', () => { const v = $('gCode').value.replace(/\D/g, ''); $('gCode').value = v; if (v.length === 6) { $('gMsg').innerHTML = ''; addCode(v); $('gCode').value = ''; } });
+  $('gCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const v = $('gCode').value.trim(); if (v) { addCode(v); $('gCode').value = ''; } } });
+  $('gCode').addEventListener('paste', (e) => { const t = (e.clipboardData || window.clipboardData).getData('text'); if (/\D/.test(t.trim())) { e.preventDefault(); addCode(t); } });
+  $('gList').onclick = (e) => { const b = e.target.closest('[data-del]'); if (!b) return; G.codes = G.codes.filter((c) => c !== b.dataset.del); delete G.res[b.dataset.del]; drawCodes(); $('gCode').focus(); };
+  $('gClear').onclick = () => { if (G.codes.length && !confirm('Clear all typed codes?')) return; G.codes = []; G.res = {}; drawCodes(); $('gMsg').innerHTML = ''; };
+  $('gGo').onclick = async () => {
+    const codes = G.codes.filter((c) => G.res[c] && G.res[c].ok); if (!codes.length) return;
+    if (!confirm(`Make the bill for ${G.shop.name}: ${codes.length} bottles?`)) return;
+    $('gGo').disabled = true;
+    try {
+      const r = await api.post('ws.give', { shop_id: G.shop.id, codes, type: $('gType').value, note: $('gNote').value.trim() });
+      $('gMsg').innerHTML = `<div class="msg ok">✓ ${esc(r.message)}<br>${r.lines.map((l) => `${l.qty} × ${esc(l.product)} ${esc(l.ml)} ml @ ${inr(l.price)}`).join('<br>')}</div>`;
+      G = { shop: null, codes: [], res: {} }; $('gNote').value = ''; drawCodes(); $('gCodeBox').hidden = true; giveStartKeepMsg();
+    } catch (e) { $('gMsg').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; drawCodes(); }
+  };
+  function giveStartKeepMsg() { const m = $('gMsg').innerHTML; giveStart(); $('gMsg').innerHTML = m; }
+
+  /* ---------------- ORDERS ---------------- */
+  let OF = 'open';
+  async function loadOrders() {
+    const P = $('p-orders'); P.innerHTML = '<div class="mut">Loading…</div>';
+    try {
+      const d = await api.get('ws.orders', { f: OF });
+      const canPlace = ME.sp || ME.admin;
+      let h = `<div class="wb-row" style="margin:0 0 10px">${canPlace ? '<button class="wb-b pri" id="oNew">+ New order</button>' : ''}<span class="grow"></span>
+        <select class="wb-sel" id="oF" style="max-width:200px"><option value="open">Open</option><option value="done">Received / cancelled</option><option value="all">All</option></select></div>`;
+      h += d.orders.length ? d.orders.map(orderCard).join('') : '<div class="wb-card mut">No orders here.</div>';
+      P.innerHTML = h; $('oF').value = OF; $('oF').onchange = () => { OF = $('oF').value; loadOrders(); };
+      if ($('oNew')) $('oNew').onclick = () => orderForm(ME.sp && !ME.admin ? ME.sp.emp_id : 0);
+      P.querySelectorAll('[data-cancel]').forEach((b) => b.onclick = async () => { if (!confirm('Cancel this order?')) return; try { await api.post('ws.order_cancel', { order_id: +b.dataset.cancel }); loadOrders(); } catch (e) { alert(e.message); } });
+    } catch (e) { P.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  }
+  function orderCard(o) {
+    return `<div class="wb-card"><h3>${esc(o.no)} ${pill(o.status)} <span class="sub" style="font-weight:600">${esc(o.name)} · ${esc(o.city)}</span></h3>
+      <div class="sub">Placed ${dt(o.placed_at)} by ${esc(o.placed_by)}${o.sent_at ? ' · handed over ' + dt(o.sent_at) : ''}${o.received_at ? ' · received ' + dt(o.received_at) : ''}${o.note ? ' · ' + esc(o.note) : ''}</div>
+      <div class="ln h"><span>Perfume</span><span class="n">Asked</span><span class="n">Made</span><span class="n">Received</span></div>
+      ${o.lines.map((l) => `<div class="ln"><span><b>${esc(l.product)}</b> ${esc(l.ml)} ml${l.qty < l.asked ? ` <span class="bad">(only ${l.qty} supplied)</span>` : ''}${l.missing ? ` <span class="bad">${l.missing} missing</span>` : ''}</span><span class="n">${l.asked}</span><span class="n">${l.made}</span><span class="n">${l.received}</span></div>`).join('')}
+      <div class="sub" style="margin-top:6px"><b>${o.totals.qty}</b> bottles${o.status === 'placed' && (ME.sp && o.emp_id === ME.sp.emp_id || ME.admin) ? ` · <a href="#" data-cancel="${o.order_id}" style="color:#b91c1c;font-weight:700" onclick="return false">Cancel order</a>` : ''}</div></div>`;
+  }
+  async function orderForm(empId) {
+    await perfumes();
+    const who = ME.admin || ME.maker ? `<select class="wb-sel" data-emp><option value="">— Salesperson —</option>${ME.people.map((p) => `<option value="${p.emp_id}" ${p.emp_id === empId ? 'selected' : ''}>${esc(p.name)} · ${esc(p.city)}</option>`).join('')}</select>` : '';
+    const ov = overlay(`<h3>New order</h3><div class="sub">The perfumes and how many bottles. The barcode maker makes one code per bottle.</div>
+      <datalist id="pfl">${PERF.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
+      <div style="margin-top:8px">${who}</div><div id="oLines"></div>
+      <div class="wb-row"><button class="wb-b" data-add>+ Add perfume</button><span class="grow"></span><b data-tot>0 bottles</b></div>
+      <input class="wb-in" data-note placeholder="Note (optional)" style="margin-top:8px">
+      <div class="wb-row"><button class="wb-b pri" data-go style="flex:1">Place order</button><button class="wb-b" data-x>Close</button></div><div data-m></div>`);
+    const L = ov.querySelector('#oLines');
+    const addLine = () => { const r = document.createElement('div'); r.className = 'ol'; r.innerHTML = `<input class="wb-in" list="pfl" placeholder="Perfume" data-p><select class="wb-sel" data-ml>${SIZES.map((s) => `<option value="${esc(s.ml)}" ${s.ml === '50' ? 'selected' : ''}>${esc(s.ml)} ml</option>`).join('')}</select><input class="wb-in" type="number" inputmode="numeric" min="1" placeholder="Qty" data-q><button class="wb-b r" style="padding:6px;min-height:40px" data-rm>✕</button>`; L.appendChild(r); r.querySelector('[data-p]').focus(); };
+    const tot = () => { ov.querySelector('[data-tot]').textContent = [...L.querySelectorAll('[data-q]')].reduce((a, i) => a + (+i.value || 0), 0) + ' bottles'; };
+    addLine(); addLine(); addLine();
+    L.addEventListener('input', tot); L.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (b) { b.parentElement.remove(); tot(); } });
+    ov.querySelector('[data-add]').onclick = addLine;
+    ov.querySelector('[data-go]').onclick = async () => {
+      const lines = [...L.querySelectorAll('.ol')].map((r) => ({ product: r.querySelector('[data-p]').value.trim(), ml: r.querySelector('[data-ml]').value, qty: +r.querySelector('[data-q]').value || 0 })).filter((x) => x.product && x.qty > 0);
+      const emp = ov.querySelector('[data-emp]') ? +ov.querySelector('[data-emp]').value : (ME.sp ? ME.sp.emp_id : 0);
+      if (!emp) return say2(ov, 'Pick the salesperson.'); if (!lines.length) return say2(ov, 'Add at least one perfume with a quantity.');
+      try { const r = await api.post('ws.order_place', { emp_id: emp, lines, note: ov.querySelector('[data-note]').value.trim() }); ov.remove(); alert(r.message); ME = await api.get('ws.me'); show(TAB); } catch (e) { say2(ov, e.message); }
+    };
+  }
+  const say2 = (ov, m) => { ov.querySelector('[data-m]').innerHTML = `<div class="msg bad">${esc(m)}</div>`; };
+  function overlay(html) {
+    const ov = document.createElement('div'); ov.className = 'ov'; ov.innerHTML = `<div class="box">${html}</div>`; document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-x]')) ov.remove(); }); return ov;
+  }
+
+  /* ---------------- MAKE & HAND OVER (Hemil) ---------------- */
+  async function loadMake() {
+    const P = $('p-make'); P.innerHTML = '<div class="mut">Loading…</div>';
+    try {
+      try { const l = await api.get('ws.label'); LABEL = { w: l.label_w, h: l.label_h }; } catch (e) {}
+      const d = await api.get('ws.orders', { f: 'open' }); const list = d.orders.filter((o) => o.status === 'placed' || o.status === 'making');
+      P.innerHTML = (list.length ? list.map((o) => `<div class="wb-card" data-o="${o.order_id}"><h3>${esc(o.no)} ${pill(o.status)} <span class="sub" style="font-weight:700">for ${esc(o.name)} · ${esc(o.city)}</span></h3>
+        <div class="sub">Placed ${dt(o.placed_at)} by ${esc(o.placed_by)}${o.note ? ' · ' + esc(o.note) : ''}</div>
+        <div class="ln h"><span>Perfume</span><span class="n">Bottles</span><span class="n">Labels</span><span class="n">In parcel</span></div>
+        ${o.lines.map((l) => `<div class="ln"><span><b>${esc(l.product)}</b> ${esc(l.ml)} ml</span><span class="n">${l.made ? l.qty : `<input type="number" min="0" value="${l.qty}" data-q="${l.item_id}" title="The supplier has fewer? Change the number before making the barcodes">`}</span><span class="n">${l.made}</span><span class="n ${l.packed === l.made && l.made ? 'ok' : ''}">${l.packed}</span></div>`).join('')}
+        <div class="wb-row">${o.totals.made < o.totals.qty ? `<button class="wb-b pri" data-make>1 · Make ${o.totals.qty - o.totals.made} barcodes</button>` : ''}${o.totals.made ? `<button class="wb-b" data-labels>2 · Print labels (${o.totals.printed}/${o.totals.made} printed)</button>` : ''}</div>
+        ${o.totals.made ? `<div class="sub" style="margin-top:10px"><b>3 · Stick a label on each bottle, then scan (or type) each one into the parcel</b> — this checks no bottle is without its label.</div>
+          <div class="wb-row"><input class="wb-in wb-code" data-pack inputmode="numeric" autocomplete="off" placeholder="Scan / type the code" style="flex:1"></div><div data-pm></div>
+          <div class="wb-row"><button class="wb-b g" data-send style="flex:1">4 · Hand over to ${esc(o.name)} (${o.totals.packed}/${o.totals.made} scanned)</button></div>` : ''}
+      </div>`).join('') : '<div class="wb-card mut">No order is waiting for barcodes. 🎉</div>')
+        + `<div class="wb-card"><h3>Labels already handed over</h3><div class="sub">Look up any code, or write off a damaged / lost bottle.</div><div class="wb-row"><input class="wb-in" id="fCode" inputmode="numeric" placeholder="6-digit code" style="max-width:200px"><button class="wb-b" id="fGo">Look up</button></div><div id="fOut"></div></div>`;
+      P.querySelectorAll('[data-q]').forEach((i) => i.onchange = async () => { try { await api.post('ws.order_qty', { item_id: +i.dataset.q, qty: +i.value || 0 }); loadMake(); } catch (e) { alert(e.message); loadMake(); } });
+      P.querySelectorAll('[data-o]').forEach((c) => {
+        const id = +c.dataset.o;
+        const mk = c.querySelector('[data-make]'); if (mk) mk.onclick = async () => { if (!confirm(mk.textContent.replace(/^1 · /, '') + '?')) return; mk.disabled = true; try { const r = await api.post('ws.make', { order_id: id }); await printLabels(r.bottles, true); loadMake(); } catch (e) { alert(e.message); mk.disabled = false; } };
+        const lb = c.querySelector('[data-labels]'); if (lb) lb.onclick = async () => { const d2 = await api.get('ws.order', { id }); printLabels(d2.bottles, false); };
+        const pk = c.querySelector('[data-pack]'); if (pk) {
+          let q = [], tm = 0;
+          const flush = async () => { const codes = q; q = []; if (!codes.length) return; try { const r = await api.post('ws.pack', { order_id: id, codes }); const last = r.results[r.results.length - 1]; c.querySelector('[data-pm]').innerHTML = r.results.map((x) => `<div class="msg ${x.ok ? 'ok' : 'bad'}" style="margin:6px 0">${esc(x.message)}</div>`).slice(-3).join(''); const t = r.order.totals; const sb = c.querySelector('[data-send]'); if (sb) sb.textContent = `4 · Hand over to ${r.order.name} (${t.packed}/${t.made} scanned)`; if (last && last.ok && t.packed === t.made) c.querySelector('[data-pm]').insertAdjacentHTML('beforeend', '<div class="msg ok">All bottles are in the parcel. Hand it over.</div>'); } catch (e) { c.querySelector('[data-pm]').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; } };
+          const push = (v) => { q.push(v); clearTimeout(tm); tm = setTimeout(flush, 60); };
+          pk.addEventListener('input', () => { const v = pk.value.replace(/\D/g, ''); pk.value = v; if (v.length === 6) { push(v); pk.value = ''; } });
+          pk.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const v = pk.value.replace(/\D/g, ''); if (v) push(v); pk.value = ''; } });
+        }
+        const sb = c.querySelector('[data-send]'); if (sb) sb.onclick = async () => {
+          if (!confirm('Hand this parcel over now? The salesperson then counts it and presses Received.')) return;
+          try { const r = await api.post('ws.send', { order_id: id }); alert(r.message); loadMake(); }
+          catch (e) { if (/scanned into the parcel/.test(e.message) && confirm(e.message + '\n\nHand over anyway (all labels made)?')) { try { const r = await api.post('ws.send', { order_id: id, force: true }); alert(r.message); loadMake(); } catch (e2) { alert(e2.message); } } else alert(e.message); }
+        };
+      });
+      $('fGo').onclick = lookUp; $('fCode').onkeydown = (e) => { if (e.key === 'Enter') lookUp(); };
+    } catch (e) { P.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  }
+  const SB = { made: 'label made (at the office)', sent: 'on the way to the salesperson', bag: 'in the salesperson\'s bag', shop: 'given to a shop', missing: 'did not arrive', void: 'written off' };
+  async function lookUp() {
+    const c = $('fCode').value.replace(/\D/g, ''); if (!c) return;
+    try {
+      const d = await api.get('ws.find', { code: c }); const b = d.bottle;
+      $('fOut').innerHTML = `<div class="msg in"><b>${b.code}</b> · ${esc(b.product)} ${esc(b.ml)} ml<br>Now: <b>${esc(SB[b.status] || b.status)}</b>${b.shop ? ' — ' + esc(b.shop) + ' (' + esc(b.retail_order_no) + ', ' + dt(b.given_at) + ')' : ''} · salesperson: ${esc(b.name)} · order WS-${b.order_id}${b.note ? '<br>Note: ' + esc(b.note) : ''}
+        <div style="margin-top:6px;font-size:12px">${d.log.map((l) => `${dt(l.at)} · ${esc(l.who)} · ${esc(l.kind)} · ${esc(l.detail)}`).join('<br>')}</div></div>
+        ${['made', 'bag', 'missing', 'sent'].includes(b.status) ? '<div class="wb-row"><input class="wb-in grow" id="vWhy" placeholder="Why write it off? (damaged, lost, made by mistake)"><button class="wb-b r" id="vGo">Write off</button></div>' : ''}`;
+      if ($('vGo')) $('vGo').onclick = async () => { try { const r = await api.post('ws.void', { codes: [b.code], reason: $('vWhy').value.trim() }); alert(r.message); lookUp(); } catch (e) { alert(e.message); } };
+    } catch (e) { $('fOut').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  }
+  function labelNode(b) {
+    const k = LABEL.h / 21, f = (s) => { const p = String(s).slice(0, 10).split('-'); return p[2] + '/' + p[1] + '/' + p[0].slice(2); };
+    const exp = (() => { const d = new Date(String(b.made_at).slice(0, 10) + 'T00:00:00'); d.setFullYear(d.getFullYear() + 4); return d.toISOString().slice(0, 10); })();
+    const d = document.createElement('div'); d.className = 'lbl'; d.style.width = LABEL.w + 'mm'; d.style.height = LABEL.h + 'mm'; d.style.padding = `${0.6 * k}mm ${1.6 * k}mm ${0.5 * k}mm`;
+    const nm = document.createElement('div'); nm.className = 'nm';
+    const n1 = document.createElement('div'); n1.textContent = b.product; n1.style.fontSize = Math.max(4.4, Math.min(7.4, 130 / Math.max(1, b.product.length))) * k + 'pt'; n1.style.whiteSpace = 'nowrap';
+    const n2 = document.createElement('div'); n2.textContent = b.ml + ' ml'; n2.style.fontSize = 6 * k + 'pt'; n2.style.fontWeight = '800';
+    nm.append(n1, n2);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    JsBarcode(svg, b.code, { format: 'CODE128C', width: 3, height: 80, margin: 0, displayValue: false });
+    svg.setAttribute('viewBox', '0 0 ' + svg.getAttribute('width').replace('px', '') + ' 80'); svg.removeAttribute('width'); svg.removeAttribute('height');
+    svg.setAttribute('preserveAspectRatio', 'none'); svg.style.height = svg.style.maxHeight = (LABEL.h * 0.52) + 'mm'; svg.style.flex = 'none';
+    const code = document.createElement('div'); code.className = 'code'; code.style.fontSize = Math.min(20, 6 * k) + 'pt'; code.textContent = b.code;
+    const mid = document.createElement('div'); mid.className = 'mid'; mid.append(svg, code);
+    const ds = document.createElement('div'); ds.className = 'dt'; ds.style.fontSize = Math.min(14, 4.5 * k) + 'pt'; ds.textContent = 'MFG ' + f(b.made_at) + ' · EXP ' + f(exp);
+    d.append(nm, mid, ds); return d;
+  }
+  async function printLabels(bottles, fresh) {
+    const list = bottles.filter((b) => b.status === 'made');
+    if (!list.length) { alert('No label to print (they were handed over already).'); return; }
+    const notPrinted = list.filter((b) => !b.print_count);
+    const ov = overlay(`<h3>Print labels</h3><div class="sub">${list.length} labels · ${notPrinted.length} not printed yet · label ${LABEL.w} × ${LABEL.h} mm (the Store's label size)</div><div class="prev" data-prev></div>
+      <div class="wb-row"><button class="wb-b pri" data-p1 ${notPrinted.length ? '' : 'disabled'}>Print the ${notPrinted.length} new</button><button class="wb-b" data-pa>Print all ${list.length} again</button><button class="wb-b" data-x>Close</button></div>`);
+    list.slice(0, 2).forEach((b) => ov.querySelector('[data-prev]').appendChild(labelNode(b)));
+    const go = async (L) => {
+      const pa = $('printArea'); pa.innerHTML = ''; L.forEach((b) => pa.appendChild(labelNode(b)));
+      let st = $('pgStyle'); if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); } st.textContent = `@page{size:${LABEL.w}mm ${LABEL.h}mm;margin:0}`;
+      await new Promise((r) => setTimeout(r, 120)); window.print();
+      try { await api.post('ws.mark_printed', { codes: L.map((b) => b.code) }); } catch (e) {}
+      ov.remove(); if (TAB === 'make') loadMake();
+    };
+    ov.querySelector('[data-p1]').onclick = () => go(notPrinted); ov.querySelector('[data-pa]').onclick = () => go(list);
+  }
+
+  /* ---------------- SALESPEOPLE STOCK (admin) ---------------- */
+  async function loadStock() {
+    const P = $('p-stock'); P.innerHTML = '<div class="mut">Loading…</div>';
+    try {
+      const d = await api.get('ws.overview');
+      let h = `<div class="stat"><div><small>In the bags</small><b>${d.people.reduce((a, p) => a + p.in_bag, 0)}</b></div><div><small>On the way</small><b>${d.people.reduce((a, p) => a + p.on_the_way, 0)}</b></div><div><small>Given today</small><b>${d.people.reduce((a, p) => a + p.given_today, 0)}</b></div><div><small>Missing</small><b style="color:#b91c1c">${d.missing.length}</b></div></div>`;
+      h += d.people.length ? d.people.map((p) => `<div class="wb-card"><h3>${esc(p.name)} <span class="sub" style="font-weight:700">${esc(p.city)}</span></h3>
+        <div class="sub">In bag <b>${p.in_bag}</b> · on the way ${p.on_the_way} · labels being made ${p.being_made} · given today ${p.given_today} · at shops (all time) ${p.at_shops}${p.missing ? ` · <span class="bad">${p.missing} missing</span>` : ''} · open orders ${p.open_orders}</div>
+        ${p.bag.length ? p.bag.map((x) => `<details class="bagl" style="display:block"><summary style="display:flex;justify-content:space-between;cursor:pointer"><span><b>${esc(x.product)}</b> ${esc(x.ml)} ml</span><b>${x.qty}</b></summary><small>${x.codes.join(' · ')}</small></details>`).join('') : '<div class="mut" style="padding:8px 0">Bag empty.</div>'}
+        ${ME.admin ? `<div class="wb-row"><button class="wb-b" data-ord="${p.emp_id}">+ Order for ${esc(p.name)}</button></div>` : ''}</div>`).join('') : '<div class="wb-card mut">No salespeople on the list yet.</div>';
+      if (d.missing.length) h += `<div class="wb-card"><h3>Did not arrive</h3>${d.missing.map((b) => `<div class="bagl"><span><b>${b.code}</b> · ${esc(b.product)} ${esc(b.ml)} ml</span><span class="mut">WS-${b.order_id}</span></div>`).join('')}</div>`;
+      P.innerHTML = h; P.querySelectorAll('[data-ord]').forEach((b) => b.onclick = () => orderForm(+b.dataset.ord));
+    } catch (e) { P.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  }
+
+  /* ---------------- SETUP (admin) ---------------- */
+  async function loadSetup() {
+    const P = $('p-setup'); P.innerHTML = '<div class="mut">Loading…</div>';
+    try {
+      const d = await api.get('ws.people');
+      P.innerHTML = `<div class="wb-card"><h3>Wholesale salespeople</h3><div class="sub">Only the people on this list get "My bag" (order, receive, give at a shop). Each one works in one city.</div>
+        ${d.people.map((p) => `<div class="bagl"><span><b>${esc(p.name)}</b> · ${esc(p.city)}</span><button class="wb-b r" style="min-height:34px;padding:4px 12px" data-rm="${p.emp_id}">Remove</button></div>`).join('') || '<div class="mut" style="padding:8px 0">Nobody yet.</div>'}
+        <div class="wb-row"><select class="wb-sel grow" id="sEmp"><option value="">— Employee —</option>${d.employees.map((e) => `<option value="${e.emp_id}">${esc(e.name)}${e.dept ? ' · ' + esc(e.dept) : ''}</option>`).join('')}</select>
+          <select class="wb-sel" id="sCity" style="max-width:180px">${(ME.cities.length ? ME.cities : ['Vadodara', 'Surat']).map((c) => `<option>${esc(c)}</option>`).join('')}</select><button class="wb-b pri" id="sAdd">Add</button></div><div id="sMsg"></div></div>
+        <div class="wb-card"><h3>City stock</h3><label class="chk" style="border:0;padding-left:0"><input type="checkbox" id="sSync" ${ME.stock_sync ? 'checked' : ''}> <span>When a salesperson presses <b>Received</b>, add those bottles to his city's stock on the <b>Stock</b> page (and every shop bill takes them out again). Do not add barcoded bottles there by hand as well.</span></label></div>
+        <div class="wb-card"><h3>Who makes the barcodes?</h3><div class="sub">Tick <b>Shop wholesale · Barcodes</b> on the Roles page for the barcode maker's role (Hemil). The Dispatch "Store orders only" role can also do it.</div></div>`;
+      $('sAdd').onclick = async () => { try { const r = await api.post('ws.people_save', { emp_id: +$('sEmp').value, city: $('sCity').value }); say('sMsg', r.message); ME = await api.get('ws.me'); loadSetup(); } catch (e) { say('sMsg', e.message, 1); } };
+      P.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => { if (!confirm('Remove from the list?')) return; try { await api.post('ws.people_save', { emp_id: +b.dataset.rm, remove: 1 }); ME = await api.get('ws.me'); loadSetup(); } catch (e) { alert(e.message); } });
+      $('sSync').onchange = async () => { try { await api.post('ws.settings_save', { stock_sync: $('sSync').checked ? 1 : 0 }); ME.stock_sync = $('sSync').checked; } catch (e) { alert(e.message); } };
+    } catch (e) { P.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  }
+
+  start();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
