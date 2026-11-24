@@ -356,6 +356,46 @@ function fup_seed_dhvanil_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_dhvanil_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the 17 daily tasks of Dharmik in the owner's "Dispatch" section (the section is made by the owner; this waits for it). One topic a task, the task name only; a number box only where a number is needed. The owner asked for them to be given to Dharmik: they are given to him only when exactly ONE working employee is called Dharmik, otherwise nobody is assigned (the owner gives them). A task with the same name is not made twice. */
+function fup_seed_dharmik_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_dharmik_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'dispatch' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%dispatch%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $emp = 0; try { $q = $pdo->query("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(full_name) LIKE 'dharmik%'"); $ids = $q->fetchAll(PDO::FETCH_COLUMN); $q->closeCursor(); if (count($ids) === 1) $emp = (int)$ids[0]; } catch (Throwable $e) { $emp = 0; }
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, ?, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $w = function ($what) { return 'Write what was done today: ' . $what . '.'; };
+        $list = [   // [title, what to write, summary-only (1) or with a number box (0), fields]
+            ['Maximum tempo no use karvo', $w('the tempo was used to the maximum'), 1, []],
+            ['Store room clean rakhvo', $w('the store room kept clean'), 1, []],
+            ['Not selling sticker direct lagava', $w('the not selling stickers put directly'), 1, []],
+            ['Refill vala perfume daily set karva', $w('the refill perfumes set'), 1, []],
+            ['Sticker numberwise hova joie', $w('the stickers checked number wise'), 1, []],
+            ['Saman eni jagya e hovo joie', $w('every item checked to be in its own place'), 1, []],
+            ['Extra saman no vahivat karvo', $w('the extra items handled'), 1, []],
+            ['Stock sheet daily fill karvi', $w('the stock sheet filled'), 1, []],
+            ['Timeline pehla pehla milan bhai ne order apvo', $w('the orders given to Milan bhai, earliest first'), 1, []],
+            ['Oil ave tyare tema number marva', $w('the numbers marked on the oil when it came'), 1, []],
+            ['Incoming outgoing ni entry done karvi', 'Write how many incoming and outgoing entries were done today.', 0, [['label' => 'Entries done', 'type' => 'num', 'req' => 1], ['label' => 'Note', 'type' => 'text', 'req' => 0]]],
+            ['All bill pramane mal check karvo', $w('the goods checked against every bill'), 1, []],
+            ['Pending oil na daily msg nakhva', $w('the daily pending oil messages sent'), 1, []],
+            ['Bhangar saman no hisab Shwetul ne', $w('the scrap account given to Shwetul'), 1, []],
+            ['Rack parna khrb sticker vala product check', $w('the products with bad stickers on the racks checked'), 1, []],
+            ['Store room 1 daily clean karay ne badhu proper mukavvu', $w('store room 1 cleaned and everything put properly'), 1, []],
+            ['Last ma video mokline javo badhu bandh karine', 'Write whether everything was closed and the video was sent before leaving.', 1, []],
+        ];
+        foreach ($list as $x) {
+            if (isset($have[mb_strtolower($x[0])])) continue;
+            $ins->execute([$sid, $x[0], $emp, $x[1], $x[2], $x[3] ? json_encode(fup_fields_clean($x[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_dharmik_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_dharmik_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order for the topic "Office Pickup Parcel Update": no number from the HRMS, only the written update. The system number (it was connected by its name) is taken off the topic, the numbers the system had filled in by itself are removed from its days (a number a person typed, and every written update, stay), and the form asks only for the summary. */
 function fup_office_pickup_clean(PDO $pdo): void
 {
@@ -1139,6 +1179,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_mehul_topics($pdo);
     fup_seed_hemil_topics($pdo);
     fup_seed_dhvanil_topics($pdo);
+    fup_seed_dharmik_topics($pdo);
     fup_office_pickup_clean($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
