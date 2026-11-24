@@ -53,6 +53,8 @@ jobs:
         run: php tests/line_reenter_test.php
       - name: Price guards read x99 prices as chart columns
         run: php tests/price_guard_test.php
+      - name: Pack price by total ml (any word order)
+        run: php tests/pack_rows_test.php
       - name: Hourly speed limit ladder
         run: php tests/rate_test.php
   staging:

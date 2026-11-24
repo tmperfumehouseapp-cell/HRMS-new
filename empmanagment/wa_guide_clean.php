@@ -114,3 +114,19 @@ function wag_gb_patch_card(PDO $pdo): bool
         $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_card_v', '1'); return true;
     } catch (Throwable $e) { return false; }
 }
+/** Once (owner, 24 Nov, "8 x 20 ml for Rs 600" and a Happy Orange photo for a combo-ad customer): two sentences go INTO existing points of the live guidebook (no new point): PRICE LADDER gets (7) PACK = TOTAL ML, ONLY OUR CATALOGUE gets the no-photo-without-a-named-perfume sentence. Call while holding the guidebook lock. */
+function wag_gb_patch_rows(PDO $pdo): bool
+{
+    if (setting_get($pdo, 'wag_gb_rows_v', '') === '1' || !function_exists('lib_guide_row')) return false;
+    try {
+        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; $gb = json_decode((string)$g['body'], true); if (!is_array($gb) || empty($gb['do'])) return false;
+        $a1 = ' (7) PACK = TOTAL ML: the price of a pack is the price table row of its TOTAL ml (bottles x ml: 8 x 20 ml = 160 ml, 5 x 20 ml = 100 ml); never use the price of another row, and never work out a price or an extra-bottle amount yourself: the extra amount is the difference of the two table rows (the system fixes any other number).';
+        $a2 = ' NO PHOTO WITHOUT A NAME: when the customer has not named a perfume (a combo-ad customer: "5 x 50 ml combo for Rs 2750"), no perfume picture is sent; ask which perfumes he wants.';
+        $h1 = false; $h2 = false;
+        foreach ($gb['do'] as $i => $t) { if (!is_string($t)) continue;
+            if (!$h1 && strpos($t, 'PRICE LADDER') === 0) { if (strpos($t, 'PACK = TOTAL ML') === false) $gb['do'][$i] = rtrim($t) . $a1; $h1 = true; }
+            elseif (!$h2 && strpos($t, 'ONLY OUR CATALOGUE') === 0) { if (strpos($t, 'NO PHOTO WITHOUT A NAME') === false) $gb['do'][$i] = rtrim($t) . $a2; $h2 = true; } }
+        if (!$h1 && !$h2) return false;
+        $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_rows_v', '1'); return true;
+    } catch (Throwable $e) { return false; }
+}

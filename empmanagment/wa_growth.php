@@ -95,6 +95,7 @@ function wag_cfg(PDO $pdo): array
     // once (owner, 23 Nov): the whole guidebook is rewritten as ONE clean version (newest rules first, one rule per topic); see wa_guide_clean.php
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_clean_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_clean_run($pdo); } } catch (Throwable $e) { }
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_purge_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_purge_old($pdo); } } catch (Throwable $e) { }
+    try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_rows_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_rows($pdo); } } catch (Throwable $e) { }   // PACK = TOTAL ML + no photo without a named perfume go into the live guidebook once (owner, 24 Nov)
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_gb_card_v', '') !== '1') { require_once __DIR__ . '/wa_guide_clean.php'; wag_gb_patch_card($pdo); } } catch (Throwable $e) { }   // the OUR OWN CARD sentence goes into the live guidebook once (owner, 23 Nov)   // the old guidebook versions are removed once (owner, 23 Nov)
     // once (owner, 21 Nov): price start + add-on focus (ticket size Rs 2,700-2,800)
     try { if (!empty($__gbl) && setting_get($pdo, 'wag_rules4', '') !== '1' && function_exists('lib_guide_row')) { setting_set($pdo, 'wag_rules4', '1'); $g = lib_guide_row($pdo, 'live');
@@ -580,10 +581,32 @@ function wag_pack_price_clamp(PDO $pdo, array $msgs, string $reply): string
     } catch (Throwable $e) { return $reply; }
 }
 /** Checks a reply: a price that belongs to ANOTHER chart row than the customer's total, or a first price that is not the chart (7%) price, is replaced by the correct chart price. Returns [reply, changed]. */
+/** A pack named in ANY word order ('8 x 20 ml', '20 ml ke 8 bottle', '8 bottle 20 ml') followed by a rupee amount: when the amount is not on the price table row of the pack's TOTAL ml (owner, 24 Nov: 'Rs 600' said for 8 x 20 ml = 160 ml, 600 is the 100 ml price) it is replaced by that row's price at the level already said (the chart price when nothing was said). Then 'Rs X aur dekar N bottle extra ... M bottle' gets X = the difference of the two table rows. */
+function wag_pack_rows_guard(PDO $pdo, array $msgs, string $reply): string
+{
+    try {
+        $c = ml_slab_get($pdo); $rows = []; foreach ((array)($c['rows'] ?? []) as $r) $rows[(int)($r['ml'] ?? 0)] = array_map('intval', (array)($r['p'] ?? [])); if (!$rows) return $reply;
+        $res = ['/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu' => [1, 2], '/(?<![\d.])(\d{2,3})\s*ml\s*(?:ke|ki|ka|ko|x)?\s*(\d{1,2})\s*(?:bottles?|btl|pcs|pieces?)([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu' => [2, 1], '/(?<![\d.])(\d{1,2})\s*(?:bottles?|btl|pcs|pieces?)\s*(?:of\s*)?(\d{2,3})\s*ml([^₹\n]{0,90}?)((?:rs\.?|₹)\s*)([\d,]{3,6})/iu' => [1, 2]];
+        $fixed = 0; $last = [0, 0];
+        foreach ($res as $re => $ix) {
+            $reply = preg_replace_callback($re, function ($m) use ($rows, $msgs, $ix, &$fixed, &$last) {
+                $n = (int)$m[$ix[0]]; $ml = (int)$m[$ix[1]]; if ($n < 2 || $n > 30 || $ml < 10 || $ml > 500) return $m[0]; $total = $n * $ml; if (!isset($rows[$total])) return $m[0];
+                $p = $rows[$total]; $v = (int)str_replace(',', '', $m[5]); if (wag_near_idx($p, $v) >= 0) { $last = [$total, $v]; return $m[0]; }
+                $row = ['ml' => $total, 'p' => $p, 'chart' => (int)$p[0]]; $lo = max(wag_price_depth($msgs, $row), wag_arrival_idx($row, $msgs)); $new = (int)$p[max(0, min($lo, count($p) - 1))]; $fixed++; $last = [$total, $new];
+                $txt = strpos($m[5], ',') !== false ? number_format($new) : (string)$new; return str_replace($m[5], $txt, $m[0]); }, $reply);
+            if (!is_string($reply)) return $reply ?? '';
+        }
+        if ($fixed > 0 && $last[0] > 0 && preg_match('/(rs\.?|₹)\s*([\d,]{2,5})(\s*(?:aur|more|extra|dekar|de kar)[^.\n]{0,30}?)(\d{1,2})\s*(?:bottles?|btl)([^.\n]{0,40}?)(\d{1,2})\s*bottles?/iu', $reply, $q)) {
+            $per = 0; foreach ([20, 50, 100, 10] as $mlx) if ($last[0] % $mlx === 0 && $last[0] / $mlx >= 2) { $per = $mlx; break; } $t2 = $per > 0 ? $last[0] + (int)$q[4] * $per : 0;
+            if ($t2 > 0 && isset($rows[$t2])) { $pi = array_search($last[1], $rows[$last[0]], true); $d = (int)$rows[$t2][$pi === false ? 0 : $pi] - $last[1]; if ($d > 0) { $txt = strpos($q[2], ',') !== false ? number_format($d) : (string)$d; $reply = str_replace($q[0], $q[1] . ' ' . $txt . $q[3] . $q[4] . ' bottle' . $q[5] . $q[6] . ' bottles', $reply); } } }
+        if ($fixed > 0) { try { if (function_exists('wag_fg_count')) wag_fg_count($pdo, 'pack_rows', 'fix'); } catch (Throwable $e) { } }
+        return $reply;
+    } catch (Throwable $e) { return $reply; }
+}
 function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
 {
     [$__r1, $__c1] = wag_price_enforce0($pdo, $msgs, $reply); if ($__c1) return [$__r1, true];
-    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); return [$__r2, $__r2 !== $reply];
+    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); $__r3 = wag_pack_rows_guard($pdo, $msgs, $__r2); return [$__r3, $__r3 !== $reply];
 }
 function wag_price_enforce0(PDO $pdo, array $msgs, string $reply): array
 {
