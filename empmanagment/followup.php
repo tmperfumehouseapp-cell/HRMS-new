@@ -332,6 +332,29 @@ function fup_seed_photography_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_photography_topics: ' . $e->getMessage()); }
 }
 
+/** Once: two more manual topics for the owner's "Website" section (replies to all comments; Judge.me reviews TM / photo that came). Nobody assigned. Same title is not made twice. */
+function fup_seed_website_topics3(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_website_topics_v3', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'website' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%website%' AND LOWER(REPLACE(name, ' ', '')) NOT LIKE '%tm4u%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $list = [
+            ['All comments: replies', 'Write which comments were replied to today.', 1, []],
+            ['Judge.me reviews: how many came (TM and photo)', 'Write how many Judge.me reviews came today: the TM ones and the ones with a photo.', 0, [['label' => 'TM reviews', 'type' => 'num', 'req' => 1], ['label' => 'Photo reviews', 'type' => 'num', 'req' => 1], ['label' => 'Note', 'type' => 'text', 'req' => 0]]],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3] ? json_encode(fup_fields_clean($t[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_website_topics_v3', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_website_topics3: ' . $e->getMessage()); }
+}
+
 /** Once: two more manual topics for the owner's "Website" section (what was learned in editing today, which community was made today). Nobody assigned. Same title is not made twice. */
 function fup_seed_website_topics2(PDO $pdo): void
 {
@@ -964,6 +987,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_third_party_topics($pdo);
     fup_seed_website_topics($pdo);
     fup_seed_website_topics2($pdo);
+    fup_seed_website_topics3($pdo);
     fup_seed_photography_topics($pdo);
     fup_seed_feedback_topics($pdo);
     fup_feedback_owner($pdo);
