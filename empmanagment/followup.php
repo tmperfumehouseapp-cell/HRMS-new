@@ -239,6 +239,50 @@ function fup_seed_myntra_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_myntra_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's hand-written topics of his "Photography" section (the section is made by the owner; this waits for it). Manual updates; a number box only where the owner needs a number. A topic with the same title is not made twice. Nobody is assigned. */
+function fup_seed_photography_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_photo_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'photography' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%photograph%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $num = function ($l) { return [['label' => $l, 'type' => 'num', 'req' => 1], ['label' => 'Note', 'type' => 'text', 'req' => 0]]; };
+        $list = [   // [title, what to write, summary-only (1) or with a number box (0), fields]
+            ['Every week: shout out planning', 'Write this week\'s shout out plan: who or which brand, and on which day.', 1, []],
+            ['Insta highlight', 'Write what was added or changed in the Instagram highlights today.', 1, []],
+            ['Insta story', 'Write what was put in the Instagram story today.', 1, []],
+            ['Gangs of TMPH: posting', 'Write what was posted in Gangs of TMPH today.', 1, []],
+            ['Insta DM quality check', 'Write how the Instagram DM replies were checked today and what was found.', 1, []],
+            ['OG highlight', 'Write what was added or changed in the OG highlight today.', 1, []],
+            ['What to launch now for sale', 'Write what is to be launched now for the sale.', 1, []],
+            ['Ads: how much is running', 'Write how much the ads are running for today.', 0, $num('Ad spend today (₹)')],
+            ['How much stock is selling', 'Write how much stock is selling today.', 0, $num('Sold today')],
+            ['Retail story and community', 'Write what went in the retail story and the community today.', 1, []],
+            ['Community: upload and check', 'Write what was uploaded in the community today and what the check showed.', 1, []],
+            ['Channel: upload and growth check', 'Write what was uploaded in the channel today and how it is growing.', 0, $num('Channel members')],
+            ['FB posting: Tail and TM', 'Write what was posted on Facebook for Tail and TM today.', 1, []],
+            ['Website banner and video', 'Write what changed in the website banner and the video.', 1, []],
+            ['YouTube journey', 'Write the YouTube journey of today.', 1, []],
+            ['Whole display neat', 'Write whether the whole display is neat and what is wrong.', 1, []],
+            ['New arrivals to launch this week', 'Write which new arrivals are to be launched this week.', 1, []],
+            ['Wholesale lead (Neel Bhatiya)', 'Write today\'s wholesale leads of Neel Bhatiya.', 0, $num('Leads today')],
+            ['Store: video', 'Write what video was made at the store today.', 1, []],
+            ['Notes', 'Write the notes of today.', 1, []],
+            ['Tony', 'Write the update on Tony.', 1, []],
+            ['Community check and rating', 'Write the community check of today and give the rating.', 0, $num('Rating')],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3] ? json_encode(fup_fields_clean($t[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_photo_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_photography_topics: ' . $e->getMessage()); }
+}
+
 /** Once: two more manual topics for the owner's "Website" section (what was learned in editing today, which community was made today). Nobody assigned. Same title is not made twice. */
 function fup_seed_website_topics2(PDO $pdo): void
 {
@@ -871,6 +915,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_third_party_topics($pdo);
     fup_seed_website_topics($pdo);
     fup_seed_website_topics2($pdo);
+    fup_seed_photography_topics($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
