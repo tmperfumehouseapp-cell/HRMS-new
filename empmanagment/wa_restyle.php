@@ -11,13 +11,26 @@
 if (!function_exists('wa_rs_tick')) {
     function wa_rs_state(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wa_rs_state', ''), true); return is_array($j) && isset($j['pairs']) && is_array($j['pairs']) ? $j : ['pairs' => [], 'day' => '', 'n' => 0]; }
     function wa_rs_save(PDO $pdo, array $s): void { setting_set($pdo, 'wa_rs_state', json_encode($s)); }
-    /** old template id => where it is used ('aft:group' / 'line:key'). */
+    /** The shop's own approved messages the Lineup really sends (wln_existing_map in wa_line.php, overridden by the setting wl_map). */
+    function wa_rs_line_map(PDO $pdo): array
+    {
+        $j = json_decode((string)setting_get($pdo, 'wl_map', ''), true); if (is_array($j) && $j) return array_map('intval', $j);
+        $m = []; $by = ['trust' => [386, 336, 31, 3196], 'price' => [386, 2612, 32, 277], 'pending' => [60, 155, 153, 3196], 'size' => [386, 278, 2612, 32], 'reorder' => [288, 395, 277, 386], 'general' => [386, 336, 2612, 32]];
+        foreach ($by as $t => $ids) foreach ($ids as $i => $id) $m['ln_' . $t . '_' . ($i + 1)] = $id;
+        foreach ([388, 336, 277, 32] as $i => $id) $m['ln_campaign_' . ($i + 1)] = $id;
+        $m['ln_all_5'] = 42; $m['ln_all_6'] = 23; $m['ln_all_7'] = 109; return $m;
+    }
+    /** old template id => where it is used ('aft:group' / 'lmap:id' / 'camp:id' / 'line:key'), the sources interleaved so every module gets its turn. */
     function wa_rs_targets(PDO $pdo): array
     {
-        $o = [];
+        $aft = []; $lmap = []; $camp = []; $line = [];
         if (!function_exists('wa_aft_groups') && is_file(__DIR__ . '/wa_after.php')) { try { require_once __DIR__ . '/wa_after.php'; } catch (Throwable $e) { } }
-        if (function_exists('wa_aft_groups')) { foreach (wa_aft_groups() as $g => $ids) foreach ($ids as $id) $o[(int)$id] = 'aft:' . $g; }
-        try { $lt = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); if (is_array($lt)) foreach ($lt as $k => $id) if ((int)$id > 0 && !isset($o[(int)$id])) $o[(int)$id] = 'line:' . $k; } catch (Throwable $e) { }
+        if (function_exists('wa_aft_groups')) { foreach (wa_aft_groups() as $g => $ids) foreach ($ids as $id) $aft[(int)$id] = 'aft:' . $g; }
+        try { foreach (array_unique(array_values(wa_rs_line_map($pdo))) as $id) if ((int)$id > 0) $lmap[(int)$id] = 'lmap:' . (int)$id; } catch (Throwable $e) { }
+        try { $q = $pdo->query("SELECT DISTINCT c.tpl_id FROM wa_campaigns c JOIN wa_templates t ON t.id = c.tpl_id WHERE c.created_at >= '" . date('Y-m-d H:i:s', time() - 14 * 86400) . "' AND t.category = 'MARKETING' AND (t.extra IS NULL OR t.extra NOT LIKE '%restyle_of%') AND t.name NOT LIKE 'tmph_style_%' ORDER BY c.id DESC LIMIT 40"); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $id) if ((int)$id > 0) $camp[(int)$id] = 'camp:' . (int)$id; } catch (Throwable $e) { }
+        try { $lt = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); if (is_array($lt)) foreach ($lt as $k => $id) if ((int)$id > 0) $line[(int)$id] = 'line:' . $k; } catch (Throwable $e) { }
+        $o = []; $lists = [array_keys($aft), array_keys($lmap), array_keys($camp), array_keys($line)]; $srcs = [$aft, $lmap, $camp, $line]; $max = max(array_map('count', $lists));
+        for ($i = 0; $i < $max; $i++) foreach ($lists as $n => $L) if (isset($L[$i]) && !isset($o[$L[$i]])) $o[$L[$i]] = $srcs[$n][$L[$i]];
         return $o;
     }
     /** After-Order's groups with the replaced messages swapped for their twins. */
@@ -42,15 +55,22 @@ if (!function_exists('wa_rs_tick')) {
     {
         foreach (['wa_tpl_row', 'wa_tpl_clean', 'wa_tpl_insert', 'brain_ai_json'] as $f) if (!function_exists($f)) return ['why' => 'module not loaded: ' . $f];
         $o = wa_tpl_row($pdo, $oldId); if (!$o) return ['why' => 'old message not found'];
+        if (!function_exists('wa_style_season') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
         $cat = strtoupper((string)($o['category'] ?? 'MARKETING')); $body = (string)$o['body']; preg_match_all('/\{\{(\d+)\}\}/', $body, $vm); $vars = array_values(array_unique(array_map('intval', $vm[1]))); sort($vars);
         $btn = (array)($o['buttons'] ?? []); $qrOnly = true; foreach ($btn as $b) if (strtoupper((string)($b['type'] ?? '')) !== 'QUICK_REPLY') $qrOnly = false;
         $sys = "You rewrite a WhatsApp message of TM Perfume House (perfume shop, Surat, India) in the owner's favourite style, keeping its MEANING and PURPOSE. " . wa_rs_style_text()
             . "Rules: use exactly these variables, each at least once: " . ($vars ? '{{' . implode('}}, {{', $vars) . '}}' : '(none)') . "; a variable never starts or ends the message and is never next to another variable; keep what each variable means (as in the old message). "
             . "Category " . $cat . ($cat === 'UTILITY' ? ": NO offer, discount, sale, free, deal, limited, hurry, coupon, price-as-a-deal words (Meta would turn it into marketing); only follow up on what the customer did, ask a simple question. Still design it as close to the owner's messages as those rules allow: an emoji heading line, short lines with line breaks, *bold* on the one important word, 2-4 emoji, a friendly Hinglish tone and one clear button label (for example 'Mujhe madad chahiye', 'Order status'); no urgency and no scarcity words." : ": offers and curiosity hooks are allowed, but keep every price / number the old message has (they are the shop's chart prices).") . " "
+            . "SEASON NOW (use it lightly where it fits the old message, as a gift order or a season add-on idea; never invent a price, a date or a promise the old message does not have): " . (function_exists('wa_style_season') ? wa_style_season() : '') . " "
             . "Maximum 600 characters. " . ($btn && $qrOnly ? "Give exactly " . count($btn) . " button texts (quick replies, max 20 characters each, same meaning as the old buttons) in the same order as the old ones: " . json_encode(array_map(function ($b) { return (string)($b['text'] ?? ''); }, $btn), JSON_UNESCAPED_UNICODE) . ". " : "No buttons. ")
             . "Do not copy the old wording; do not invent facts, prices or promises that the old message does not have. Answer only JSON: {\"body\":\"...\",\"buttons\":[\"...\"]}.";
-        $j = brain_ai_json('internal', 'whatsapp', $sys, "The old message:\n" . $body, 1500, ['ctx' => false]);
-        if (!is_array($j) || trim((string)($j['body'] ?? '')) === '') return ['why' => 'Claude gave no answer'];
+        $j = null; $err2 = '';
+        if (function_exists('brain_prepare_system') && function_exists('brain_claude_call')) {
+            try { $sys2 = brain_prepare_system('internal', 'whatsapp', $sys . ' Reply with JSON only, no other text.', ['ctx' => false, 'purpose' => 'internal:whatsapp']); [$okc, $tc] = brain_claude_call($sys2, "The old message:\n" . $body, 1800, ['ctx' => false, 'purpose' => 'internal:whatsapp']);
+                if (!$okc) $err2 = 'Claude: ' . mb_substr((string)$tc, 0, 90); elseif (preg_match('/\{.*\}/s', (string)$tc, $mm)) { $j = json_decode($mm[0], true); if (!is_array($j)) $err2 = 'Claude: answer was not JSON'; } else $err2 = 'Claude: no JSON in the answer'; } catch (Throwable $e) { $err2 = 'Claude: ' . mb_substr($e->getMessage(), 0, 80); }
+        } else { $j = brain_ai_json('internal', 'whatsapp', $sys, "The old message:\n" . $body, 1500, ['ctx' => false]); }
+        if (!is_array($j) && $err2 !== '') return ['why' => $err2, 'retry' => true];
+        if (!is_array($j) || trim((string)($j['body'] ?? '')) === '') return ['why' => 'Claude gave no answer', 'retry' => true];
         if (!function_exists('wa_space_body') && is_file(__DIR__ . '/wa_space.php')) { try { require_once __DIR__ . '/wa_space.php'; } catch (Throwable $e) { } }
         $nb = trim((string)$j['body']); if (function_exists('wa_space_body')) $nb = wa_space_body($nb); preg_match_all('/\{\{(\d+)\}\}/', $nb, $nm); $nv = array_values(array_unique(array_map('intval', $nm[1]))); sort($nv);
         if ($nv !== $vars) return ['why' => 'variables differ'];
@@ -76,6 +96,7 @@ if (!function_exists('wa_rs_tick')) {
             if ((string)setting_get($pdo, 'wa_rs_on', '1') === '0') { $o['note'] = 'off'; return $o; }
             if (!function_exists('wa_lock') || !wa_lock($pdo, 'rs', 55)) { $o['note'] = 'busy'; return $o; }
             $st = wa_rs_state($pdo); $tg = wa_rs_targets($pdo);
+            if (empty($st['retry_0']) ) { $st['retry_0'] = 1; foreach ($st['pairs'] as $k1 => $p1) if (($p1['st'] ?? '') === 'fail' && in_array((string)($p1['why'] ?? ''), ['Claude gave no answer', 'old message not approved'], true)) unset($st['pairs'][$k1]); $st['fails'] = []; $st['n'] = 0; }   // once: the 74 that failed because Claude gave no answer (and the Lineup messages that were not approved) are tried again
             foreach ($st['pairs'] as $k0 => $p0) if (($p0['st'] ?? '') === 'making' && (int)($p0['at'] ?? 0) < time() - 900) unset($st['pairs'][$k0]);   // a round that died halfway: try again after 15 minutes $today = date('Y-m-d'); if (($st['day'] ?? '') !== $today) { $st['day'] = $today; $st['n'] = 0; }
             // 1) replace: the twin is approved on every account where the old message is approved
             if ((int)setting_get($pdo, 'wa_rs_chk_at', '0') < time() - 240) { setting_set($pdo, 'wa_rs_chk_at', (string)time());
@@ -86,18 +107,21 @@ if (!function_exists('wa_rs_tick')) {
                     $row = wa_tpl_row($pdo, $new); if ($row && (!empty($row['relabelled_at']) || strtoupper((string)($row['category_now'] ?? '')) === 'MARKETING') && strtoupper((string)($row['category'] ?? '')) === 'UTILITY') { $p['st'] = 'fail'; $p['why'] = 'Meta moved it to marketing'; continue; }
                     if (!$okN || count(array_diff($okO, $okN)) > 0) continue;
                     $src = (string)($p['src'] ?? '');
+                    if (strpos($src, 'camp:') === 0) continue;   // campaign messages: the twin is only made and approved; the owner chooses it for a campaign
+                    if (strpos($src, 'lmap:') === 0) { $wm = wa_rs_line_map($pdo); foreach ($wm as $k2 => $id2) if ((int)$id2 === (int)$old) $wm[$k2] = $new; setting_set($pdo, 'wl_map', json_encode($wm)); }   // the Lineup's shop messages (one id can serve several steps)
                     if (strpos($src, 'line:') === 0) { $key = substr($src, 5); $ids = json_decode((string)setting_get($pdo, 'wl_tpls', ''), true); if (is_array($ids) && isset($ids[$key]) && (int)$ids[$key] === (int)$old) { $ids[$key] = $new; setting_set($pdo, 'wl_tpls', json_encode($ids)); } }
                     $p['st'] = 'replaced'; $p['rep_at'] = time(); $o['replaced']++;
                 } unset($p);
             }
             // 2) make: two old messages without a twin
             foreach ($tg as $old => $src) {
-                if ($o['made'] >= 2 || (int)$st['n'] >= 400) break; if (isset($st['pairs'][$old])) continue;
+                if ($o['made'] >= 2 || (int)$st['n'] >= 400) break; if (isset($st['pairs'][$old])) continue; if ((int)($st['next'][$old] ?? 0) > time()) continue;
                 try { $to = wa_camp_tpl($pdo, (int)$old, true, 0); } catch (Throwable $e) { $to = null; } if (!$to || empty($to['ok_wabas'])) { $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => 'old message not approved', 'at' => time()]; continue; }
                 $st['pairs'][$old] = ['src' => $src, 'st' => 'making', 'at' => time()]; wa_rs_save($pdo, $st);   // saved BEFORE the work: two overlapping rounds made two twins of the same message (the second one was refused by Meta: the name existed)
                 $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
                 if (!empty($r['new'])) { $st['pairs'][$old] = ['new' => (int)$r['new'], 'src' => $src, 'st' => 'made', 'at' => time()]; $o['made']++; wa_rs_save($pdo, $st); }
-                else { unset($st['pairs'][$old]); $f = (int)($st['fails'][$old] ?? 0) + 1; $st['fails'][$old] = $f; if ($f >= 3) $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => (string)($r['why'] ?? '?'), 'at' => time()]; $o['note'] = (string)($r['why'] ?? ''); }
+                else { unset($st['pairs'][$old]); $f = (int)($st['fails'][$old] ?? 0) + 1; $st['fails'][$old] = $f; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600);
+                    if ($f >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => (string)($r['why'] ?? '?'), 'at' => time()]; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; }   // a Claude error (not the message's fault): retry in 10 minutes, up to 30 times; a round stops at the first one
             }
             wa_rs_save($pdo, $st);
             if ($o['note'] !== '') { $st['why_last'] = $o['note']; $st['why_n'][$o['note']] = (int)($st['why_n'][$o['note']] ?? 0) + 1; wa_rs_save($pdo, $st); }
