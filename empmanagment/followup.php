@@ -239,6 +239,35 @@ function fup_seed_myntra_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_myntra_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the nine hand-written topics of the owner's "Third party" section (from the yellow columns of his Uploadings sheet). The section is made by the owner; this waits for it. A topic with the same title is not made twice. Nobody is assigned. */
+function fup_seed_third_party_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_third_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE (LOWER(REPLACE(REPLACE(name, ' ', ''), '-', '')) LIKE '%thirdparty%' OR LOWER(REPLACE(REPLACE(name, ' ', ''), '-', '')) LIKE '%3rdparty%') AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $f = function ($l, $t, $r = 1) { return ['label' => $l, 'type' => $t, 'req' => $r]; };
+        $list = [
+            ['3rd party story: what went out today', 'Write what was put in the 3rd party story today (products, videos).', 1, []],
+            ['OG broadcast: what was sent / planned', 'Write what was sent on the OG broadcast today, or what is planned.', 1, []],
+            ['Code ma growth', 'Write today\'s growth number in the code.', 0, [$f('Code ma growth', 'num')]],
+            ['OG growth and community', 'Write how many communities are running, the total members and how many were removed.', 0, [$f('Communities running', 'num'), $f('Total members', 'num'), $f('Removed', 'num', 0), $f('Note (for example new group started)', 'text', 0)]],
+            ['3rd party orders', 'Write today\'s 3rd party orders.', 0, [$f('Orders today', 'num')]],
+            ['3rd party collection', 'Write today\'s collection, the buying and the profit (collection minus buying).', 0, [$f('Collection (₹)', 'num'), $f('Buying (₹)', 'num'), $f('Profit (₹)', 'num', 0)]],
+            ['Deep bhai pase payment', 'Write the amount of payment that is with Deep bhai.', 0, [$f('Amount (₹)', 'num')]],
+            ['3rd party DP and bio', 'Is the DP and the bio of the 3rd party all done?', 0, [$f('DP and bio all done?', 'yesno')]],
+            ['Pradeep pase sales', 'Does Pradeep check everything 3 times a day? Write a note if needed.', 0, [$f('Checked 3 times in the day?', 'yesno'), $f('Note', 'text', 0)]],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3] ? json_encode(fup_fields_clean($t[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_third_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_third_party_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's five hand-written topics of the TM4U section (the section is made by the owner; this waits for it). Nothing is read from the website. A topic with the same title is not made twice. Nobody is assigned. */
 function fup_seed_tm4u_topics(PDO $pdo): void
 {
@@ -782,6 +811,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_tm4u_topics($pdo);
     fup_tm4u_numbers_update($pdo);
     fup_tm4u_upload_topic($pdo);
+    fup_seed_third_party_topics($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
