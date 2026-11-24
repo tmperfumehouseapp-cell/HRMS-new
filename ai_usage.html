@@ -34,6 +34,13 @@
     <div class="topbar"><h1>AI usage</h1></div>
     <div class="content">
       <div id="alertBox"></div>
+      <div class="card" id="fbCard" style="padding:14px;margin-bottom:12px;border:2px solid #f59e0b;background:#fffbeb">
+        <h3 style="margin:0 0 4px">🆘 Backup AI key</h3>
+        <div class="sub" style="margin-bottom:8px">When the main Claude account is stopped at its monthly limit, the HRMS can run on a second key until the limit resets: a Claude key of another organization (starts with <b>sk-ant-</b>), or a Google AI (Gemini) key. Paste the key here (never in a chat), press Test, then switch it on. It switches itself off at the time below.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="password" id="fbKey" placeholder="Paste the backup key" autocomplete="off" style="flex:1;min-width:220px"><button type="button" class="btn secondary" id="fbSave" style="width:auto">Save key</button><button type="button" class="btn secondary" id="fbTest" style="width:auto">Test</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"><label>Switch off by itself at <input type="datetime-local" id="fbStop" style="width:auto"></label><button type="button" class="btn" id="fbOn" style="width:auto">Switch backup ON</button><button type="button" class="btn secondary" id="fbOff" style="width:auto">Switch OFF</button></div>
+        <div id="fbMsg" class="sub" style="margin-top:8px;font-weight:700"></div>
+      </div>
       <div class="card" style="padding:14px">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><b>Month</b><input type="month" id="auM" style="width:auto"><span class="sub" id="auP"></span></div>
         <div class="au-plan" id="auRange">
@@ -63,6 +70,17 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const n = (x) => Number(x || 0).toLocaleString('en-IN'), usd = (x) => '$' + Number(x || 0).toFixed(2), mt = (x) => (Number(x || 0) / 1e6).toFixed(1) + ' M';
   const M = document.getElementById('auM'), B = document.getElementById('auBody');
+  // 🆘 Backup AI key (ai.fb_*): a second Claude key or a Google key that answers while the main account is stopped at its monthly limit
+  (function () {
+    const g = (i) => document.getElementById(i), msg = (t, bad) => { g('fbMsg').textContent = t; g('fbMsg').style.color = bad ? '#b91c1c' : '#166534'; };
+    const show = (d) => { msg((d.on ? '🟢 Backup is ON' + (d.stop ? ' until ' + d.stop : '') : '⚪ Backup is off') + (d.key_set ? ' · key saved (…' + d.key_tail + ', ' + (d.kind === 'claude' ? 'Claude' : 'Google') + ')' : ' · no key saved yet') + (d.test ? ' · ' + d.test.message : ''), d.test && !d.test.ok); if (d.stop && !g('fbStop').value) g('fbStop').value = d.stop.replace(' ', 'T'); };
+    const call = async (a, body) => { try { msg('Working…'); show(a === 'ai.fb_get' ? await api.get(a) : await api.post(a, body || {})); } catch (e) { msg(e.message, true); } };
+    g('fbSave').onclick = () => { const k = g('fbKey').value.trim(); if (!k) { msg('Paste the key first.', true); return; } call('ai.fb_save', { key: k }).then(() => { g('fbKey').value = ''; }); };
+    g('fbTest').onclick = () => call('ai.fb_test');
+    g('fbOn').onclick = () => { if (confirm('Switch the backup ON? Every AI call of the HRMS will use the backup key until the time shown.')) call('ai.fb_save', { on: 1, stop: g('fbStop').value.replace('T', ' ') }); };
+    g('fbOff').onclick = () => call('ai.fb_save', { on: 0 });
+    call('ai.fb_get');
+  })();
   const now = new Date(); M.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   // 📅 price for any date range: one line per AI job + total (and the total with tax)
   const JOBS = { chat: 'Older AI calls without a label (all pages)', wa_presugg: 'WhatsApp › Chats — replies written in advance for waiting customers', wa_sugg: 'WhatsApp › Chats — a reply when a person asks for one', wa_bot: 'WhatsApp › Autobot — automatic replies',

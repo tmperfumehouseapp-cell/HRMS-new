@@ -17553,10 +17553,32 @@ function tmph_claude_request(string $model, array $body, bool $stream): array
     if ($tools) $req['tools'] = $tools;
     return $req;
 }
+/** 🆘 EMERGENCY BACKUP (owner, 24 Nov): Claude's provider stopped every call at its monthly limit ($1,000, cannot be raised before 1 Dec) and the bot / suggestions / chat reader all went silent.
+ *  While the owner's switch is ON (AI usage page; it switches itself off at the saved time), every Claude call is answered by Google Gemini with the key typed there. The requests are already built
+ *  in Gemini's own shape, so nothing else changes. Returns the Gemini key, or '' when the backup is off. The key lives in the settings table and is never sent to a browser. */
+function ai_fb_key(): string
+{
+    static $k = null; if ($k !== null) return $k; $k = '';
+    try { global $pdo; if (!$pdo instanceof PDO) return $k;
+        if ((string)setting_get($pdo, 'ai_fb_on', '') !== '1') return $k;
+        $u = (int)setting_get($pdo, 'ai_fb_stop', '0'); if ($u > 0 && time() >= $u) return $k;
+        $k = trim((string)setting_get($pdo, 'ai_fb_key', '')); } catch (Throwable $e) { $k = ''; }
+    return $k;
+}
+/** our own '_id' marks on tool calls are for Claude: Google refuses unknown fields */
+function ai_fb_strip($v) { if (!is_array($v)) return $v; $o = []; foreach ($v as $kk => $x) { if ($kk === '_id') continue; $o[$kk] = ai_fb_strip($x); } return $o; }
 /** Claude call in the same result shape as tmph_call_gemini(): text, parts (functionCall with _id), calls, blocked, status, detail, curl. */
 function tmph_call_claude(string $key, string $model, array $body, bool $stream, callable $onText): array
 {
     $res = ['status' => 0, 'text' => '', 'blocked' => false, 'detail' => '', 'curl' => '', 'parts' => [], 'calls' => []];
+    $__fb = empty($GLOBALS['ai_fb_skip']) ? ai_fb_key() : '';
+    if ($__fb !== '' && strpos($__fb, 'sk-ant-') === 0) { $key = $__fb; $__fb = ''; }   // 🆘 the backup key is a SECOND Claude key (another organization of the owner): the same Claude call, paid from that key
+    if ($__fb !== '' && function_exists('curl_init')) {   // 🆘 the backup key is a Google key: Google answers instead of Claude
+        $__old = $GLOBALS['tmph_force_gemini'] ?? null; $GLOBALS['tmph_force_gemini'] = 1; $__b = ai_fb_strip($body); $__out = $res;
+        foreach (tmph_gem_clean([]) as $__gm) { $__out = tmph_call_gemini($__fb, $__gm, $__b, $stream, $onText); if (!in_array((int)$__out['status'], [404, 429, 500, 503], true) || $__out['text'] !== '' || $__out['calls']) break; }
+        if ($__old === null) unset($GLOBALS['tmph_force_gemini']); else $GLOBALS['tmph_force_gemini'] = $__old;
+        return $__out;
+    }
     if (tmph_is_background() && tmph_is_busy()) { $res['status'] = 429; $res['detail'] = 'Claude is busy with live chats — this background job tries again in a moment.'; return $res; }   // 🚦 live chats first
     if (!function_exists('curl_init')) { $res['curl'] = 'cURL is not available on this server.'; return $res; }
     if (tmph_over_budget()) { $res['status'] = 402; $res['detail'] = 'Monthly AI budget (TMPH_MONTH_BUDGET_USD) is used up.'; return $res; }
@@ -35149,6 +35171,29 @@ switch ($action) {
         if (array_key_exists('presugg', $in)) setting_set($pdo, 'ai_presugg', !empty($in['presugg']) ? '1' : '0');
         if (array_key_exists('fast', $in)) setting_set($pdo, 'ai_sugg_fast', !empty($in['fast']) ? '1' : '0');
         json_response(['ok' => true, 'presugg' => (string)setting_get($pdo, 'ai_presugg', '0') === '1', 'fast' => (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0']);
+    }
+    case 'ai.fb_get': case 'ai.fb_save': case 'ai.fb_test': {   // 🆘 AI usage page: the emergency backup (Google Gemini answers while Claude is stopped at its monthly limit). Admin only. The key is never sent back.
+        $auth = require_auth(); require_role(['Admin'], $auth);
+        if ($action !== 'ai.fb_get' && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        if ($action === 'ai.fb_save') {
+            $in = json_input(); $k = trim((string)($in['key'] ?? ''));
+            if ($k !== '') { if (strlen($k) < 20 || strlen($k) > 300 || preg_match('/\s/', $k)) json_response(['error' => 'That does not look like an API key. Paste it exactly as it is shown.'], 422); setting_set($pdo, 'ai_fb_key', $k); }
+            if (isset($in['on'])) { $on = !empty($in['on']); if ($on && trim((string)setting_get($pdo, 'ai_fb_key', '')) === '') json_response(['error' => 'Paste the backup key first.'], 422);
+                setting_set($pdo, 'ai_fb_on', $on ? '1' : '0'); $st = strtotime((string)($in['stop'] ?? '')); setting_set($pdo, 'ai_fb_stop', (string)($on ? ($st && $st > time() ? $st : strtotime('first day of next month 05:30')) : 0)); }
+        }
+        $key = trim((string)setting_get($pdo, 'ai_fb_key', '')); $stop = (int)setting_get($pdo, 'ai_fb_stop', '0'); $on = (string)setting_get($pdo, 'ai_fb_on', '') === '1' && $key !== '' && ($stop <= 0 || time() < $stop);
+        $out = ['ok' => true, 'on' => $on, 'key_set' => $key !== '', 'key_tail' => $key !== '' ? substr($key, -4) : '', 'kind' => $key === '' ? '' : (strpos($key, 'sk-ant-') === 0 ? 'claude' : 'google'), 'stop' => $stop > 0 ? date('Y-m-d H:i', $stop) : ''];
+        if ($action === 'ai.fb_test') {   // one tiny question to Google with the saved key: does it answer?
+            if ($key === '') json_response(['error' => 'Paste the backup key first.'], 422);
+            $t = ['status' => 0, 'text' => '', 'detail' => '', 'curl' => '']; $used = ''; $tb = ['contents' => [['role' => 'user', 'parts' => [['text' => 'Reply with the single word OK.']]]], 'generationConfig' => ['maxOutputTokens' => 256]];
+            if (strpos($key, 'sk-ant-') === 0) { $GLOBALS['ai_fb_skip'] = 1; foreach (tmph_chat_models() as $cm) { $used = $cm; $t = tmph_call_claude($key, $cm, $tb, false, function ($x) { }); if (trim((string)$t['text']) !== '') break; } unset($GLOBALS['ai_fb_skip']); $good = trim((string)$t['text']) !== '';
+                $out['test'] = ['ok' => $good, 'model' => $used, 'message' => $good ? 'Claude answered with this key (' . $used . '). The backup can be switched on.' : 'Claude did not answer with this key (HTTP ' . (int)$t['status'] . '): ' . mb_substr((string)($t['detail'] ?: $t['curl'] ?: 'no text came back'), 0, 220)]; json_response($out); }
+            $GLOBALS['tmph_force_gemini'] = 1;
+            foreach (tmph_gem_clean([]) as $gm) { $used = $gm; $t = tmph_call_gemini($key, $gm, ['contents' => [['role' => 'user', 'parts' => [['text' => 'Reply with the single word OK.']]]], 'generationConfig' => ['maxOutputTokens' => 20]], false, function ($x) { }); if (trim((string)$t['text']) !== '') break; }
+            unset($GLOBALS['tmph_force_gemini']); $good = trim((string)$t['text']) !== '';
+            $out['test'] = ['ok' => $good, 'model' => $used, 'message' => $good ? 'Google answered (' . $used . '). The backup can be switched on.' : 'Google did not answer (HTTP ' . (int)$t['status'] . '): ' . mb_substr((string)($t['detail'] ?: $t['curl'] ?: 'no text came back'), 0, 200)];
+        }
+        json_response($out);
     }
     case 'ai.caps_save': {   // 🛑 AI usage page: daily $ limit per AI job (0 / empty = no limit). A job that reaches its limit waits until tomorrow; people keep working by hand.
         $auth = require_auth(); require_role(['Admin'], $auth);
