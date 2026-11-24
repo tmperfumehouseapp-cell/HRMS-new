@@ -15,6 +15,9 @@ if (!function_exists('wa_style_pack')) {
             'tmph_style_mlwise' => ['body' => "Hello {{1}}! 👋\n\nAapke liye kuch special unlock hua hai 👀🔥\n\n🎁 EXCLUSIVE ML-WISE DEAL\n✨ Special Discount\n🎁 FREE Gift\n💥 Surprise Combo\n\n👇 Apni ML size par click kijiye aur dekhiye aapke liye kya unlock hua hai! 🔓😍", 'buttons' => $qr(['20ML Combo', '50ML Combo', '100ML Combo'])],
             'tmph_style_choose' => ['body' => "Hi {{1}} 🌸 ek chhoti si baat batani thi...\n\nAapke liye aaj ek *surprise combo* ready he 🎁💥\n\nKaunsa size chahiye ? 👇", 'buttons' => $qr(['20ML', '50ML', '100ML'])],
             'tmph_style_reorder' => ['body' => "Hi {{1}} 😊 aapka perfume kaisa laga ?\n\nAgar pasand aaya ho to aapke liye *special reorder deal* ready he 🔓🎁\n\nDekhna chahenge ?", 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi'])],
+            'tmph_style_launch' => ['body' => "Hello {{1}} 🎉\n\nNaye perfumes launch hue hain aur ek *dhamakedaar offer* bhi aaya hai! 🔥\n\nOrder par aapko milega *add-on* aur extra discount bhi 🎁\n\nDekhne ke liye button dabaiye 👇", 'buttons' => $qr(['Naye Perfumes', 'Offer Dikhao'])],
+            'tmph_style_fun' => ['body' => "Hi {{1}}! 👋 Hamne naye perfumes launch kiye hain 🌸\n\nEk dhamakedaar cheez aayi hai, aapko bahut maza aane wala hai 😍\n\nOrder par add-on ke saath extra discount bhi karwa denge 🎁\n\nNiche tap kijiye 👇", 'buttons' => $qr(['Dekhein', 'Abhi nahi'])],
+            'tmph_style_addon' => ['body' => "Hello {{1}} ✨\n\nAaj order par kuch na kuch *add-on* zaroor milega 🎁 Aur extra discount bhi karwa denge!\n\nNaya offer aur naye perfumes dekhne ke liye button dabaiye 👇", 'buttons' => $qr(['Naya Offer Dekhein', 'Abhi nahi'])],
             'tmph_style_asked' => ['body' => "Hello {{1}} 👋 aapne perfume ke bare me poocha tha na ?\n\nAaj ek *exclusive deal* mili he 🎁🔥 Apni ML size choose kijiye 👇", 'buttons' => $qr(['20ML', '50ML', '100ML'])],
         ];
     }

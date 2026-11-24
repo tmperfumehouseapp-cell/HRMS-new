@@ -239,6 +239,8 @@ function wa_util_pool_defs(): array
             'body' => "Hi {{1}} 😊 aapka order {{2}} ({{3}}) sahi se pahunch gaya na ? Koi dikkat ho to button dabaiye 👇"],
         'order_hi_exp' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Bahut badhiya', 'Thoda alag']),
             'body' => "Hello {{1}} 🌸 order {{2}} ({{3}}) ka perfume aapko kaisa laga ? Apna experience button se batayein 👇"],
+        'open_hi_4' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Perfume help', 'Order status']),
+            'body' => "Hi {{1}} 👋\n\nTM Perfume House se aapke liye ek khaas update 👀\n\nPerfume ya order me kuch bhi poochna ho to niche tap kijiye, hum turant madad karenge 🙏"],
         'order_exp_how' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['It was great', 'I had an issue']),
             'body' => "Hi {{1}}, your order {{2}} placed on {{3}} should have reached you by now. How was your experience with it? Tap a button to share."],
         'order_exp_share' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Share experience', 'All good']),
