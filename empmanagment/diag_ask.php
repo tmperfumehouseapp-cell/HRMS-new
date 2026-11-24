@@ -483,3 +483,5 @@ try {
     foreach ($r60['modules'] as $m60) $o60[] = [$m60['key'], $m60['sent'], $m60['replied'], count($m60['topics']), $m60['err'], array_map(function ($t) { return [$t['label'], $t['sent'], $t['replied']]; }, array_slice($m60['topics'], 0, 4))];
     echo "ASK PATTERNS (module, sent, replied, topics, error, top topics) " . json_encode($o60, JSON_UNESCAPED_UNICODE) . " · seconds " . round(microtime(true) - $t60, 1) . "\n";
 } catch (Throwable $e) { echo "ASK PATTERNS ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 61) The module lines at the top of the Campaigns page: run the report once and print it with the time it takes
+try { require_once __DIR__ . '/wa_strip.php'; $t61 = microtime(true); $pdo->exec("DELETE FROM hrms_settings WHERE setting_key = 'wa_strip_cache'"); $r61 = wa_strip_report($pdo); echo "ASK STRIP " . json_encode($r61['modules'], JSON_UNESCAPED_UNICODE) . " · seconds " . round(microtime(true) - $t61, 1) . "\n"; } catch (Throwable $e) { echo "ASK STRIP ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
