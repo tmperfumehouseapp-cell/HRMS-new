@@ -283,7 +283,8 @@ if (!function_exists('wa_aft_days')) {
             return $o; }
         if (wa_aft_set($pdo, 'wa_aft_photo_made', '0') !== '1') { setting_set($pdo, 'wa_aft_photo_made', '1'); try { $pm = wa_aft_photo_make($pdo); setting_set($pdo, 'wa_aft_photo_log', json_encode($pm)); if (!empty($pm['failed']) && $pm['made'] === 0) setting_set($pdo, 'wa_aft_photo_made', '0'); } catch (Throwable $e) { setting_set($pdo, 'wa_aft_photo_made', '0'); } }
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_learn_at', '0') >= 21600) { setting_set($pdo, 'wa_aft_learn_at', (string)$now); wa_aft_learn($pdo, $now); }
-        if ($now - (int)wa_aft_set($pdo, 'wa_aft_top_at', '0') >= 600) { setting_set($pdo, 'wa_aft_top_at', (string)$now); wa_aft_topup($pdo, $now); }
+        if ($now - (int)wa_aft_set($pdo, 'wa_aft_top_at', '0') >= 3600) {   // the rows are kept 60-120 days ahead: looking once an hour is plenty (it was every 10 minutes, a 15 s query)
+            setting_set($pdo, 'wa_aft_top_at', (string)$now); wa_aft_topup($pdo, $now); }
         if ($now - (int)wa_aft_set($pdo, 'wa_aft_enrol_at', '0') >= 1800) { setting_set($pdo, 'wa_aft_enrol_at', (string)$now); $o['entered'] = wa_aft_enrol($pdo, $now); }
         // 🛟 owner 22 Nov: a message that failed for a marketing-only reason (131049 / 131050 / 130472) is sent again at once as a UTILITY twin (the same rescue as the 30-day Lineup)
         try { $o['rescued'] = wa_aft_rescue($pdo, $now); } catch (Throwable $e) { }
