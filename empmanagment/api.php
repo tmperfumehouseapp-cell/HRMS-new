@@ -1555,17 +1555,18 @@ function ora_fill_day(PDO $pdo, string $day, int $secs = 22): array
     $sel = "FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
             WHERE o.created_at >= ? AND o.created_at <= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')
               AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 7)";
-    $n = 0; $t0 = time();
+    $n = 0; $t0 = time(); $fails = 0; $lastWhy = '';
     $st = $pdo->prepare("SELECT o.store_key, o.shopify_id, o.order_name, o.created_at, o.phone, o.total, o.ml_total, a.employee_id, a.house $sel ORDER BY o.created_at DESC LIMIT 40"); $st->execute([$from, $to]);
     $all = array_merge($st->fetchAll(PDO::FETCH_ASSOC), ora_manual_cands($pdo, $from, $to, 40)); usort($all, function ($x, $y) { return strcmp((string)$y['created_at'], (string)$x['created_at']); });   // 🛍 website / HRMS-typed orders are read too
     foreach ($all as $o) {
         if (time() - $t0 > $secs) break;
-        $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;
+        $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) { $fails++; $lastWhy = mb_substr((string)($r['why'] ?? ''), 0, 200); if ($fails >= 3 && $n === 0) break; continue; }   // the AI did not answer: after 3 in a row nothing more is tried this round
         $d = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
         ora_store($pdo, $key, $o, $r, $d);
         if ($r['rating'] !== null && $mode === 'apply' && ora_apply($pdo, $key, ['order_name' => (string)$o['order_name'], 'employee_id' => (int)$o['employee_id'], 'day' => $d, 'house' => (string)$o['house'], 'rating' => $r['rating']])) $pdo->prepare("UPDATE order_rate_auto SET applied = 1 WHERE order_key = ?")->execute([$key]);
         $n++;
     }
+    try { setting_set($pdo, 'ora_fill_dbg', json_encode(['at' => date('Y-m-d H:i:s'), 'cands' => count($all), 'read' => $n, 'fails' => $fails, 'why' => $lastWhy])); } catch (Throwable $e) { }   // why reading may stand still (shown on the Growth effort card)
     $c = $pdo->prepare("SELECT COUNT(*) $sel"); $c->execute([$from, $to]);
     return [$n, (int)$c->fetchColumn() + (int)ora_manual_cands($pdo, $from, $to, 1, true)];
 }
@@ -23225,6 +23226,7 @@ switch ($action) {
         $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? (string)$_GET['date'] : biz_today($pdo);
         $out = ['day' => $day, 'mode' => ora_mode($pdo), 'emps' => new stdClass(), 'team' => [0, 0, 0, 0], 'team_sz' => [0, 0, 0, 0], 'missed_sz' => [], 'tips_sz' => [], 'missed' => [], 'tips' => [], 'measured' => 0];
         if (!ora_tables($pdo)) json_response($out);
+        try { $fi = json_decode((string)setting_get($pdo, 'ora_fill_dbg', ''), true); if (is_array($fi)) $out['fill'] = $fi; } catch (Throwable $e) { }
         $names = []; try { foreach (rating_emps($pdo) as $id => $x) $names[(int)$id] = trim((string)$x['full_name']); } catch (Throwable $e) {}
         $q = $pdo->prepare("SELECT order_key, order_name, employee_id, rating, tried, worked, tries, tip, sz_tried, sz_worked, sz_tries, sz_tip, asked, offered, reason, sz_reason, at FROM order_rate_auto WHERE day = ? AND rating IS NOT NULL AND sz_ok = 7 ORDER BY at DESC LIMIT 600");
         $q->execute([$day]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); $ovr = ora_up_ovr($pdo, $day);
