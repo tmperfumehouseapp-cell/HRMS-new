@@ -1,0 +1,45 @@
+# READ-ONLY: checks the ₹100 COD fee on MySales panel orders — the panel's own columns for recent COD orders next to the amount HRMS now counts.
+# Run by hand: Actions → "Diagnose MySales COD fee (read-only)" → Run workflow. Changes nothing.
+name: Diagnose MySales COD fee (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Panel COD orders vs what HRMS counts (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          echo "--- deployed api.php has the COD fee code? ---"; grep -c "PANEL_COD_FEE" "${P}empmanagment/api.php" || true
+          php -r '
+            require $argv[1] . "empmanagment/config.php";
+            $u = defined("SALES_DB_USER") ? SALES_DB_USER : "u897577217_sales"; $pw = defined("SALES_DB_PASS") ? SALES_DB_PASS : "";
+            try { $d = new PDO("mysql:host=" . DB_HOST . ";dbname=u897577217_sales;charset=utf8mb4", $u, $pw, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); }
+            catch (Throwable $e) { echo "cannot open the panel database: " . $e->getMessage() . "\n"; exit; }
+            echo "--- money-looking columns of the panel order table ---\n";
+            foreach ($d->query("SHOW COLUMNS FROM `order`")->fetchAll(PDO::FETCH_ASSOC) as $c) if (preg_match("/amount|price|cod|prepaid|fee|charge|total|ship|deliver/i", $c["Field"])) echo "  " . $c["Field"] . " (" . $c["Type"] . ")\n";
+            echo "--- last 12 orders with a COD part: panel columns -> HRMS now counts ---\n";
+            foreach ($d->query("SELECT id, `date`, prepaid, COD, totalAmount, finalPrice FROM `order` WHERE COD > 0 ORDER BY `date` DESC, id DESC LIMIT 12")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+              $amt = (float)$r["totalAmount"] ?: (float)$r["finalPrice"];
+              echo "  #" . $r["id"] . " " . $r["date"] . "  prepaid=" . $r["prepaid"] . " COD=" . $r["COD"] . " totalAmount=" . $r["totalAmount"] . " finalPrice=" . $r["finalPrice"] . "  prepaid+COD=" . ((float)$r["prepaid"] + (float)$r["COD"]) . "  -> HRMS counts " . ($amt + 100) . "\n";
+            }
+            echo "--- last 5 prepaid orders (no change expected) ---\n";
+            foreach ($d->query("SELECT id, `date`, prepaid, COD, totalAmount, finalPrice FROM `order` WHERE COALESCE(COD,0) = 0 ORDER BY `date` DESC, id DESC LIMIT 5")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  #" . $r["id"] . " " . $r["date"] . " prepaid=" . $r["prepaid"] . " totalAmount=" . $r["totalAmount"] . " finalPrice=" . $r["finalPrice"] . "\n";
+          ' "$P"
+          REMOTE
