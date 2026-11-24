@@ -865,6 +865,22 @@
     const body = document.getElementById('detailBody');
     detailModal.classList.add('open');
     lockPage(true);
+    if (o.custom_store && o.web) {   // 🛍 a website order: its products, money lines and address are read from the shop
+      body.innerHTML = localDetail(o) + '<div class="loading" style="padding:14px 0;">Loading the products and the address...</div>';
+      const wid = ++detailReqId;
+      try {
+        const r = (await api.get('tms.detail', { number: o.order_name })).order; if (wid !== detailReqId) return;
+        const th = (txt, al) => `<th style="text-align:${al}; font-size:11.5px; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line);">${txt}</th>`;
+        const td = (inner, al, extra) => `<td style="padding:7px 8px; border-bottom:1px solid #f2f2f2; text-align:${al}; ${extra || ''}">${inner}</td>`;
+        const line = (l, v, st) => `<div style="display:flex; justify-content:space-between; padding:3px 0; ${st || ''}"><span>${l}</span><span>${v}</span></div>`;
+        const a = r.addr || {}, m = r.money || {}, adr = [a.name, a.address1, a.address2, [a.city, a.state].filter(Boolean).join(', '), a.pincode].filter(Boolean).map(esc).join('<br>');
+        body.innerHTML = localDetail(o) + detailRow('Address', adr || '—') + (r.note ? detailRow('Note', esc(r.note)) : '') + (r.awb ? detailRow('Tracking', esc(r.awb) + (r.courier ? ' (' + esc(r.courier) + ')' : '')) : '') +
+          `<table class="no-stack" style="width:100%; border-collapse:collapse; margin:10px 0;"><thead><tr>${th('Product', 'left')}${th('Qty', 'center')}${th('Price', 'right')}${th('Total', 'right')}</tr></thead><tbody>${(r.lines || []).map(li => `<tr>
+            ${td(esc(li.title) + (li.size ? `<div style="font-size:12px; color:var(--muted);">${esc(li.size)}</div>` : ''), 'left')}${td(li.qty, 'center')}${td(fmtMoney(li.price, 'INR'), 'right')}${td(fmtMoney(li.price * li.qty - (li.discount || 0), 'INR'), 'right', 'font-weight:600;')}</tr>`).join('')}</tbody></table>
+          <div style="margin-left:auto; max-width:260px; font-size:13.5px;">${m.subtotal ? line('Subtotal', fmtMoney(m.subtotal, 'INR')) : ''}${m.discount > 0 ? line('Discount' + (m.code ? ' <span class="dcode">' + esc(m.code) + '</span>' : ''), '−' + fmtMoney(m.discount, 'INR'), 'color:var(--ok-fg);') : ''}${m.shipping > 0 ? line('Shipping', fmtMoney(m.shipping, 'INR')) : ''}${m.cod_fee > 0 ? line('COD fee', fmtMoney(m.cod_fee, 'INR')) : ''}${line('Total', fmtMoney(r.total, 'INR'), 'padding:6px 0; border-top:1px solid var(--line); font-weight:700;')}${r.paid > 0 && r.due > 0 ? line('Paid', fmtMoney(r.paid, 'INR'), 'color:#0f7a41; font-weight:700;') + line('To pay on delivery', fmtMoney(r.due, 'INR'), 'font-weight:700;') : ''}</div>`;
+      } catch (err) { if (wid !== detailReqId) return; body.innerHTML = localDetail(o, esc(err.message)); }
+      return;
+    }
     if (o.custom_store) { body.innerHTML = localDetail(o); return; }
     body.innerHTML = '<div class="loading" style="padding:20px 0;">Loading order details...</div>';
     const id = ++detailReqId;       // opening another order before this one loads: only the latest fills the popup

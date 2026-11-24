@@ -10,7 +10,7 @@
  * Who: Admin, HR, the Sales Head (qe_viewer_ok) and every role ticked "Website orders" on the Roles page.
  * 🤖 Automatic (owner, 24 Nov): tms_auto_tick() gives a new shop order to the salesperson who holds the customer's WhatsApp chat — the SAME rules as a Shopify order
  *   (order_auto_alloc in api.php): chat given to a salesperson, the customer wrote in the last 7 days, Query / Campaign from order_chat_type(). Run by the engine and when the page opens.
- * Actions: tms.cfg_get · tms.cfg_save · tms.test · tms.people · tms.list · tms.assign · tms.unassign          PHP 7.4 safe. */
+ * Actions: tms.detail · tms.cfg_get · tms.cfg_save · tms.test · tms.people · tms.list · tms.assign · tms.unassign          PHP 7.4 safe. */
 if (!isset($pdo) || !function_exists('json_response')) { return; }
 if (!function_exists('tms_cfg')) {
     function tms_cfg(PDO $pdo): array
@@ -164,6 +164,16 @@ if (!function_exists('tms_cfg')) {
 if (strpos((string)($action ?? ($_GET['action'] ?? '')), 'tms.') !== 0) { return; }
 
 $auth = require_auth(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $in = $isPost ? json_input() : $_GET;
+if ((string)$action === 'tms.detail') {   // 🔎 one shop order with every product and the delivery address — for the pop-up on the Allocation page. Read-only. Who: Website orders people, the Orders pages, or the order's own salesperson.
+    $no = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string)($in['number'] ?? ''))); if ($no === '') json_response(['error' => 'Which order?'], 422);
+    $ok = tms_can($pdo, $auth) || (function_exists('user_can') && user_can($auth, 'orders'));
+    if (!$ok) { try { tms_cols($pdo); $q = $pdo->prepare("SELECT employee_id FROM manual_orders WHERE channel = 'TM Store' AND mp_no = ? LIMIT 1"); $q->execute([$no]); $own = (int)$q->fetchColumn(); $ok = $own > 0 && $own === (int)($auth['employee_id'] ?? 0); } catch (Throwable $e) { } }
+    if (!$ok) json_response(['error' => 'Full details are only available for your own orders.'], 403);
+    $run = function () use ($pdo, $no) { [$d, $e] = tms_get($pdo, '/orders/' . rawurlencode($no)); return $e !== '' ? ['error' => $e] : ['order' => tms_row((array)$d)]; };
+    $r = function_exists('hrms_memo') ? hrms_memo('tms_detail:' . $no, 60, $run) : $run();
+    if (!is_array($r) || !empty($r['error']) || (string)($r['order']['number'] ?? '') === '') { if (function_exists('hrms_memo_drop')) hrms_memo_drop('tms_detail:' . $no); json_response(['error' => (string)($r['error'] ?? 'The shop does not have this order.')], 422); }
+    json_response(['order' => $r['order']]);
+}
 if (!tms_can($pdo, $auth)) json_response(['error' => 'Your role does not have "Website orders". Ask Admin to tick it on the Roles page.'], 403);
 $isAdm = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
 
