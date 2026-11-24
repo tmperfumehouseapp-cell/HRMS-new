@@ -239,6 +239,40 @@ function fup_seed_myntra_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_myntra_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's hand-written topics of his "Feedback" section (the section is made by the owner; this waits for it). Manual updates; a number box only where the owner needs a number. A topic with the same title is not made twice. Nobody is assigned. */
+function fup_seed_feedback_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_feedback_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'feedback' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%feedback%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $num = function (array $labels) { $o = []; foreach ($labels as $l) $o[] = ['label' => $l, 'type' => 'num', 'req' => 1]; $o[] = ['label' => 'Note', 'type' => 'text', 'req' => 0]; return $o; };
+        $list = [   // [title, what to write, summary-only (1) or with number boxes (0), fields]
+            ['Google review', 'Write what the Google reviews of today say.', 1, []],
+            ['Google review: what was done about it', 'Write what was done about the Google reviews today.', 1, []],
+            ['Google: 1 star removed', 'Write how many 1-star reviews were removed on Google today.', 0, $num(['1-star removed'])],
+            ['Reels: how many done', 'Write how many reels were done today.', 0, $num(['Reels done'])],
+            ['Google reviews: how many came', 'Write how many Google reviews came today.', 0, $num(['Google reviews'])],
+            ['Amazon review', 'Write what the Amazon reviews of today say.', 1, []],
+            ['Judge.me / Facebook review', 'Write what the Judge.me and Facebook reviews of today say.', 1, []],
+            ['Trustpilot review', 'Write what the Trustpilot reviews of today say.', 1, []],
+            ['YouTube review', 'Write what the YouTube reviews of today say.', 1, []],
+            ['Instagram review', 'Write what the Instagram reviews of today say.', 1, []],
+            ['Rating: Google, Trustpilot and Judge.me', 'Write the rating of Google, Trustpilot and Judge.me.', 0, $num(['Google rating', 'Trustpilot rating', 'Judge.me rating'])],
+            ['Extra parcels sent today', 'Write how many extra parcels were sent today.', 0, $num(['Extra parcels'])],
+        ];
+        foreach ($list as $t) {
+            if (isset($have[mb_strtolower($t[0])])) continue;
+            $ins->execute([$sid, $t[0], $t[1], $t[2], $t[3] ? json_encode(fup_fields_clean($t[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_feedback_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_feedback_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's hand-written topics of his "Photography" section (the section is made by the owner; this waits for it). Manual updates; a number box only where the owner needs a number. A topic with the same title is not made twice. Nobody is assigned. */
 function fup_seed_photography_topics(PDO $pdo): void
 {
@@ -916,6 +950,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_website_topics($pdo);
     fup_seed_website_topics2($pdo);
     fup_seed_photography_topics($pdo);
+    fup_seed_feedback_topics($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $topicRow = function (int $id) use ($pdo) { $q = $pdo->prepare("SELECT * FROM fu_topics WHERE id = ? AND active = 1"); $q->execute([$id]); $t = $q->fetch(); if (!$t) json_response(['error' => 'This topic is not there any more.'], 404); return $t; };
