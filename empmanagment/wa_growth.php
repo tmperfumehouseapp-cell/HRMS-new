@@ -1691,12 +1691,12 @@ function wag_addon_gate(): bool
 }
 /** ✅ Owner (24 Nov): a customer who only TAPPED A BUTTON under our "How was your experience?" message (Very good / Good / Could be better / Not now ...) has asked nothing — the chat is resolved by itself
  *  (it goes to History, out of Requests / Unanswered). The moment the customer WRITES anything, the chat opens again like every chat. Runs in the engine; a tap is handled 2 minutes after it
- *  (the bot's thank-you goes first). The first run also clears the taps of the last 10 days. Returns how many chats were resolved. */
+ *  (the bot's thank-you goes first). The first run also clears the taps of the last 2 days. Returns how many chats were resolved. */
 function wag_cx_btn_close(PDO $pdo): int
 {
     $n = 0;
     try {
-        $cur = (string)setting_get($pdo, 'wag_cxbtn_ts3', ''); if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $cur)) $cur = date('Y-m-d H:i:s', time() - 10 * 86400);
+        $cur = (string)setting_get($pdo, 'wag_cxbtn_ts4', ''); if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $cur)) $cur = date('Y-m-d H:i:s', time() - 2 * 86400);   // the first run starts 2 days back (10 days of old campaign taps took hours to get through and held nothing to resolve)
         $q = $pdo->prepare("SELECT m.id, m.phone, m.ts, m.body FROM wa_messages m JOIN wa_contacts c ON c.phone = m.phone AND c.status = 'open' WHERE m.dir = 'in' AND m.mtype IN ('button', 'interactive') AND m.ts >= ? AND m.ts <= ? AND m.id = (SELECT MAX(x.id) FROM wa_messages x WHERE x.phone = m.phone AND x.dir = 'in') ORDER BY m.ts, m.id LIMIT 1500");   /* and only a tap that is the customer's LAST message (he wrote nothing after it) */   /* only chats still open: the 10-day backlog is cleared in a few runs */ $q->execute([$cur, date('Y-m-d H:i:s', time() - 120)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); if (!$rows) return 0;
         $prev = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND id < ? ORDER BY id DESC LIMIT 1");
         $later = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND id > ? AND (dir = 'in' OR (dir = 'out' AND (who IN ('emp', 'phone') OR emp_id > 0))) LIMIT 1");
@@ -1710,7 +1710,7 @@ function wag_cx_btn_close(PDO $pdo): int
             $cl->execute([date('Y-m-d H:i:s'), $k]); if ($cl->rowCount() < 1) continue; $n++;
             if (function_exists('wa_event')) { try { wa_event($pdo, $k, '✅ Resolved automatically: the customer only tapped a button (a rating or "not now"). It opens again when the customer writes.'); } catch (Throwable $e) { } }
         }
-        setting_set($pdo, 'wag_cxbtn_ts3', count($rows) >= 1500 ? $cur : date('Y-m-d H:i:s', time() - 300));
+        setting_set($pdo, 'wag_cxbtn_ts4', count($rows) >= 1500 ? $cur : date('Y-m-d H:i:s', time() - 300));
     } catch (Throwable $e) { error_log('wag_cx_btn_close: ' . $e->getMessage()); }
     return $n;
 }
