@@ -218,7 +218,7 @@
       const tag = t.kind === 'deadline' && dl != null ? '<span style="font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;margin-left:6px;' + (dl < 0 ? 'background:#fde8e6;color:#b42318' : dl <= 2 ? 'background:#fff3d6;color:#8a5a00' : 'background:#eef2f6;color:#475467') + '">' + (dl < 0 ? -dl + ' day' + (dl === -1 ? '' : 's') + ' late' : dl === 0 ? 'last day today' : dl + ' day' + (dl === 1 ? '' : 's') + ' left') + '</span>' : '';
       return '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid #f0f1f3"><span style="flex:none;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;margin-top:1px;' + (t.done_today ? 'background:#16a34a;color:#fff' : 'border:2px solid #f59e0b;color:transparent') + '">✓</span>'
         + '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px">' + esc(t.title) + tag + '</div><div class="bd-sub">' + esc(t.section) + (t.lag ? ' · for yesterday' : '') + (num(t, u) ? ' · ' + num(t, u) : '') + (t.nums && t.nums.length > 1 ? ' · +' + (t.nums.length - 1) + ' more numbers' : '') + '</div>' + (t.missing && t.missing.length ? '<div class="bd-sub" style="margin-top:3px;color:#b45309;font-weight:700">To fill: ' + esc(t.missing.join(', ')) + '</div>' : '')
-        + (u && u.q ? '<div class="bd-sub" style="margin-top:3px;color:#d9423b;font-weight:700">Claude asked: ' + esc(u.q) + '</div>' : '') + (t.done_today ? '<div class="bd-sub" style="margin-top:3px;color:#14161a;white-space:pre-wrap">' + esc((u && u.text) || '') + '</div>' : (t.yesterday && t.yesterday.text ? '<div class="bd-sub" style="margin-top:3px">Last time: ' + esc(t.yesterday.text) + '</div>' : '')) + '</div>'
+        + (u && u.q ? '<div class="bd-sub" style="margin-top:3px;color:#6b7280">Claude asks (you can reply any time): ' + esc(u.q) + '</div>' : '') + (t.done_today ? '<div class="bd-sub" style="margin-top:3px;color:#14161a;white-space:pre-wrap">' + esc((u && u.text) || '') + '</div>' : (t.yesterday && t.yesterday.text ? '<div class="bd-sub" style="margin-top:3px">Last time: ' + esc(t.yesterday.text) + '</div>' : '')) + '</div>'
         + '<button class="bd-btn sm ' + (t.done_today ? '' : 'pri') + '" data-fu="' + t.id + '" style="flex:none">' + (t.done_today ? 'Change' : (u && u.q ? 'Answer' : 'Write update')) + '</button></div>';
     };
     // the topics already filled today are folded away: only what is still to do stays in view
@@ -229,8 +229,7 @@
   }
   function fuWrite(id) {
     const t = FU && FU.topics.find((x) => x.id === id); if (!t) return; const u = t.today || {};
-    if (t.fields > 0 && !(u.q && u.text)) { location.href = 'followup.html?s=' + t.section_id + '&u=' + t.id; return; }   // a topic with its own fields (link, yes / no, file …) is filled on the Follow-up page, where the fields are
-    if (u.q && u.text) { fuAsk(t, { topic_id: id, day: t.day, text: u.text, pct: u.pct != null ? u.pct : '' }, u.q); return; }   // an open question from Claude is answered first
+    if (t.fields > 0) { location.href = 'followup.html?s=' + t.section_id + '&u=' + t.id; return; }   // a topic with its own fields (link, yes / no, file …) is filled on the Follow-up page, where the fields are
     const m = BD.modal('<h3>' + esc(t.title) + '</h3><div class="bd-sub" style="margin-bottom:8px">' + esc(t.section) + (t.note ? ' · ' + esc(t.note) : '') + '</div>'
       + (t.nums && t.nums.length > 1 ? '<div style="display:grid;grid-template-columns:1fr auto;gap:2px 12px;font-size:13px;background:#f6f7f9;border-radius:14px;padding:10px 12px;margin-bottom:10px">' + t.nums.map((n) => '<span style="color:#6b7280">' + esc(String(n[0]).replace(/\s*\(₹\)/, '')) + '</span><b style="text-align:right">' + (n[1] === '₹' ? inr(n[2]) : n[1] === '%' ? n[2] + '%' : n[1] === 'x' ? n[2] + 'x' : Number(n[2]).toLocaleString('en-IN')) + '</b>').join('') + '</div><div class="bd-sub" style="margin-bottom:6px">These numbers come from the HRMS. ' + (t.need_text ? 'Write only the summary: why they moved and what you changed.' : '') + '</div>' : '')
       + '<textarea class="bd-in" id="fuT" maxlength="2000" rows="4" placeholder="' + (t.lag ? 'What happened yesterday on this topic?' : 'What happened today on this topic?') + '">' + esc(u.text || '') + '</textarea>'
@@ -242,7 +241,7 @@
       const text = m.querySelector('#fuT').value.trim(), v = m.querySelector('#fuV').value.trim(), p = m.querySelector('#fuP').value.trim();
       if (!text) { toast('Write the update first.'); return; }
       const body = { topic_id: id, day: t.day, text: text, pct: p }; if (v !== '' || !t.source) body.value = v;
-      try { m.querySelector('#fuOk').disabled = true; const r = await api.post('fup.update_save', body); BD.close(m); toast('Update saved.'); load(); if (r && r.ai && r.ai.question) fuAsk(t, body, r.ai.question); } catch (e) { m.querySelector('#fuOk').disabled = false; toast(e.message || 'Could not save.'); }
+      try { m.querySelector('#fuOk').disabled = true; const r = await api.post('fup.update_save', body); BD.close(m); toast('Saved ✓'); load(); } catch (e) { m.querySelector('#fuOk').disabled = false; toast(e.message || 'Could not save.'); }
     };
   }
   // the update was not clear: Claude's ONE question; the day counts as filled when it is answered

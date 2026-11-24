@@ -731,10 +731,10 @@ function fup_covered(?array $u, array $t): bool
 {
     $req = array_filter(fup_fields($t), function ($f) { return !empty($f['req']); });
     if ($req) {   // a topic with required fields: every one filled, no open question from Claude, and the words too when the topic asks for them
-        if ($u === null || fup_fields_missing($t, ['f' => (array)($u['f'] ?? [])]) || ($u['q'] ?? '') !== '') return false;
+        if ($u === null || fup_fields_missing($t, ['f' => (array)($u['f'] ?? [])])) return false;
         return empty($t['need_text']) || fup_has_text($u);
     }
-    return (fup_has_text($u) && ($u['q'] ?? '') === '') || (empty($t['need_text']) && (string)$t['source'] !== '' && $u !== null && $u['val'] !== null);
+    return fup_has_text($u) || (empty($t['need_text']) && (string)$t['source'] !== '' && $u !== null && $u['val'] !== null);
 }
 
 /**
@@ -1150,9 +1150,13 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $fvText = $defs ? fup_fvals_text($t, ['f' => $fvNow]) : '';
             if (($text !== '' || $fvChanged) && !($was && (string)$was['txt'] === $text && !$fvChanged && (string)$was['ai_verdict'] !== '' && empty($in['final']))) {
                 $mine = $w['emp'] > 0 && ((int)$t['assignee_emp'] === $w['emp'] || !$w['manager']); $final = !empty($in['final']) || !$mine;
-                $r = fup_ai_check($pdo, $t, $sec, $day, $text, $f['val'] ?? null, $f['pct'] ?? null, $final, $fvText);
-                fup_put($pdo, (int)$t['id'], $day, ['ai_verdict' => $r[0], 'ai_note' => $r[1], 'ai_q' => $r[2]]);
-                $ai = ['verdict' => $r[0], 'note' => $r[1], 'question' => $r[2]];
+                // one save, one click: the update counts as filled at once. Claude reads it AFTER the answer has gone back (the person never waits for Claude and is never stopped by a question); his remark is shown to the owner later.
+                $runAi = function () use ($pdo, $t, $sec, $day, $text, $f, $final, $fvText) {
+                    try { $r = fup_ai_check($pdo, $t, $sec, $day, $text, $f['val'] ?? null, $f['pct'] ?? null, $final, $fvText); fup_put($pdo, (int)$t['id'], $day, ['ai_verdict' => $r[0], 'ai_note' => $r[1], 'ai_q' => $r[2]]); return $r; }
+                    catch (Throwable $e) { error_log('fup ai check: ' . $e->getMessage()); return null; }
+                };
+                if (!empty($GLOBALS['__jr_cap']) || !function_exists('fastcgi_finish_request')) { $r = $runAi(); if ($r) $ai = ['verdict' => $r[0], 'note' => $r[1], 'question' => $r[2]]; }   // where the answer cannot be sent early (and in the tests) Claude is read at once
+                else register_shutdown_function(function () use ($runAi) { ignore_user_abort(true); @fastcgi_finish_request(); $runAi(); });
             }
             json_response(['ok' => true, 'ai' => $ai]);
         }
