@@ -26,6 +26,7 @@
       <div class="sx-card" id="lnCard"><h3>🔗 Links in the messages <small>set once here · they fill {community_link}, {review_link} and {friends_link} in every message below</small></h3><div id="lnBody"><div class="sx-mut">Loading…</div></div></div>
       <div class="sx-card" id="tkCard"><h3>🧾 Order thank-you message <small>sent by hand from Store → Billing, right after the bill</small></h3><div id="tkBody"><div class="sx-mut">Loading…</div></div></div>
       <div class="sx-card" id="blCard"><h3>🧾 The bill the customer gets <small>the same bill details as Learning → Cart setup → Billing · what the customer sees when the bill link is opened</small></h3><div id="blMount"><div class="sx-mut">Loading…</div></div></div>
+      <div class="sx-card" id="rmCard"><h3>💬 Customer reminders <small>to send by hand · WhatsApp opens with the message written, you press Send, then Done</small></h3><div id="rmBody"><div class="sx-mut">Loading…</div></div></div>
       <div id="bdMount"></div>
     </div></div>
   </main>
@@ -131,6 +132,41 @@
     const go = () => { if (!window.WaCartSetup) { box.innerHTML = '<div class="sx-mut">The bill screen is not installed on this server (assets/js/wch_setup_ui.js and empmanagment/wch.php).</div>'; return; } box.innerHTML = ''; try { WaCartSetup.billing(box, { api }); } catch (err) { box.innerHTML = '<div class="sx-mut" style="color:var(--sx-bad)">' + (err.message || 'Could not open the bill screen.') + '</div>'; } };
     sc.onload = go; sc.onerror = go; document.head.appendChild(sc);
   })();
+
+  // ---------- 💬 customer reminders: who to message today (thank-you, perfume finishing / finished, not seen for long, kem cho). Nothing is sent by the server.
+  (function () {
+    let D = null, cfgOpen = false, CF = null;
+    const E = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const ICON = { finished: '🔁', running: '⏳', thank: '🙏', missing: '👋', hello: '💬' };
+    const NAME = { finished: 'Perfume must be finished', running: 'Perfume is about to finish', thank: 'Thank you', missing: 'Not seen for long', hello: 'Kem cho' };
+    const draw = () => {
+      if (!D) return; const c = D.counts, rows = D.rows, pend = rows.filter((r) => r.status === 'pending'), done = rows.filter((r) => r.status === 'sent');
+      let h = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">${[['To send today', c.pending, '#5b3fb0'], ['Sent today', c.sent_today, '#157a3c'], ['Sent this month', c.month, '#0f7a4d'], ['Stopped', c.stopped, '#b3261e']].map((x) => `<div style="flex:1;min-width:110px;background:var(--sx-bg2,#f6f7f9);border-radius:12px;padding:8px 12px"><div style="font-size:22px;font-weight:800;color:${x[2]}">${x[1]}</div><div class="sx-mut" style="font-size:12px">${x[0]}</div></div>`).join('')}</div>`;
+      const el = (c.eligible || 0) + (c.sent_today || 0), per = D.cfg.limit; const bk = c.by_kind || {};
+      h += `<div class="sx-mut" style="font-size:12.5px;margin-bottom:8px"><b>${el}</b> customers are due now (${Object.keys(bk).map((k) => (ICON[k] || '') + ' ' + bk[k]).join(' · ') || 'none'}). At <b>${per}</b> a day that is about <b>${Math.max(1, Math.ceil(el / per))}</b> day${Math.ceil(el / per) === 1 ? '' : 's'} of work${D.more ? ` · ${D.more} more are waiting for the next days` : ''}. If this number keeps growing, raise “Customers a day” below; if it stays small, ${per} is enough.</div>`;
+      h += pend.length ? pend.map((r, i) => `<div class="rm-row" data-i="${i}" style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--sx-line)"><div style="flex:1;min-width:230px"><div><b>${E(r.name || ('+' + r.phone))}</b> <span class="sx-pill info">${ICON[r.kind] || ''} ${E(NAME[r.kind] || r.kind)}</span> <span class="sx-mut" style="font-size:12px">${E(r.why)}</span></div><div style="font-size:13px;margin-top:4px;white-space:pre-wrap;color:var(--sx-ink,#222)">${E(r.text)}</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="sx-btn" data-rm="open" data-i="${i}">💬 Open WhatsApp</button><button class="sx-btn ghost" data-rm="done" data-i="${i}">✓ Done</button><button class="sx-btn ghost" data-rm="skip" data-i="${i}" title="Not today">Later</button><button class="sx-btn ghost" data-rm="stop" data-i="${i}" title="Never message this customer" style="color:#b3261e">Stop</button></div></div>`).join('') : '<div class="sx-clear">Nothing to send right now. ✓</div>';
+      if (done.length) h += `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:700;color:#157a3c">✓ ${done.length} sent today</summary>${done.map((r) => `<div style="font-size:13px;padding:4px 0;border-top:1px solid var(--sx-line)"><b>${E(r.name || ('+' + r.phone))}</b> · ${ICON[r.kind] || ''} ${E(NAME[r.kind] || r.kind)}</div>`).join('')}</details>`;
+      h += `<details style="margin-top:10px" id="rmCfg"${cfgOpen ? ' open' : ''}><summary style="cursor:pointer;font-weight:700">⚙ Messages and settings</summary><div id="rmCfgBody" class="sx-mut" style="margin-top:6px">Loading…</div></details>`;
+      $('rmBody').innerHTML = h; if (cfgOpen) drawCfg();
+    };
+    const drawCfg = () => {
+      if (!CF) { api.get('st_rm.cfg').then((r) => { CF = r; drawCfg(); }).catch(() => { $('rmCfgBody').textContent = 'Could not load.'; }); return; }
+      const c = CF.cfg; $('rmCfgBody').innerHTML = `<div class="sx-mut" style="font-size:12.5px;margin-bottom:8px">Use <b>{name}</b>, <b>{perfume}</b> and <b>{ml}</b> in a message. One message per customer per 7 days; a customer you press Stop on is never messaged.</div>`
+        + Object.keys(CF.kinds).map((k) => `<label class="sx-f" style="display:block;margin-bottom:8px"><b>${ICON[k]} ${E(NAME[k])}</b><textarea class="sx-in" data-rmk="${k}" rows="2" style="width:100%">${E(c.msgs[k])}</textarea></label>`).join('')
+        + `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="sx-f" style="width:130px">Customers a day<input class="sx-in" id="rmLim" type="number" min="5" max="300" value="${c.limit}"></label><label class="sx-f" style="width:170px">Perfume used (ml a day)<input class="sx-in" id="rmRate" type="number" step="0.1" min="0.1" max="5" value="${c.rate}"></label><label class="sx-f" style="width:170px">“Not seen” after (days)<input class="sx-in" id="rmMiss" type="number" min="14" max="365" value="${c.missing_days}"></label><label class="sx-f" style="width:170px">Kem cho every (days)<input class="sx-in" id="rmGap" type="number" min="7" max="90" value="${c.hello_gap}"></label><button class="sx-btn" id="rmSave">Save</button><span id="rmSaved" class="sx-mut"></span></div>`;
+    };
+    const load = () => api.get('st_rm.list').then((r) => { D = r; draw(); }).catch((e) => { $('rmBody').innerHTML = '<div class="sx-mut">' + E((e && e.message) || 'Could not load the reminders.') + '</div>'; });
+    $('rmCard').addEventListener('toggle', (e) => { if (e.target.id === 'rmCfg') { cfgOpen = e.target.open; if (cfgOpen) drawCfg(); } }, true);
+    $('rmCard').addEventListener('click', async (e) => {
+      if (e.target.id === 'rmSave') { const msgs = {}; document.querySelectorAll('[data-rmk]').forEach((t) => { msgs[t.dataset.rmk] = t.value; }); try { const r = await api.post('st_rm.cfg', { msgs, limit: +$('rmLim').value, rate: +$('rmRate').value, missing_days: +$('rmMiss').value, hello_gap: +$('rmGap').value }); CF.cfg = r.cfg; $('rmSaved').textContent = 'Saved ✓'; load(); } catch (er) { $('rmSaved').textContent = (er && er.message) || 'Could not save.'; } return; }
+      const b = e.target.closest('[data-rm]'); if (!b) return; const pend = D.rows.filter((r) => r.status === 'pending'), r = pend[+b.dataset.i]; if (!r) return; const act = b.dataset.rm;
+      if (act === 'open') { window.open(r.url, 'wa_rm', 'width=900,height=800'); return; }
+      if (act === 'stop' && !confirm('Never message ' + (r.name || r.phone) + ' again?')) return;
+      b.disabled = true; try { await api.post('st_rm.' + act, { phone: r.phone, name: r.name, kind: r.kind, text: r.text }); await load(); } catch (er) { b.disabled = false; alert((er && er.message) || 'Could not save.'); }
+    });
+    load();
+  })();
+
   StoreBday.mount(document.getElementById('bdMount'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>

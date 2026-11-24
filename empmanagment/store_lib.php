@@ -1247,7 +1247,7 @@ function st_plan_calc(PDO $pdo, int $total, int $targetMl, int $days, string $mo
     foreach ($pdo->query("SELECT product_id, ml, COUNT(*) c FROM st_bottles WHERE status = 'stock' AND kind = 'sale' GROUP BY product_id, ml")->fetchAll() as $r) {
         $pid = (int)$r['product_id']; if (!isset($P[$pid])) continue; $P[$pid]['stock_ml'] += (int)$r['c'] * (int)$r['ml']; if (isset($P[$pid]['stock_by'][(int)$r['ml']])) $P[$pid]['stock_by'][(int)$r['ml']] += (int)$r['c'];
     }
-    foreach (st_on_order_map($pdo) as $k => $qty) { [$pid, $ml] = array_map('intval', explode('|', $k)); if (isset($P[$pid])) { $P[$pid]['oo_ml'] += (int)$qty * $ml; if (isset($P[$pid]['oo_by'][$ml])) $P[$pid]['oo_by'][$ml] += (int)$qty * $ml; } }
+    // orders already placed are NOT counted as stock: a new order starts from zero (the earlier order is cleared when the new one is created)
     if ($mode === 'same') {       // only the size being ordered: its own sales, its own stock, its own placed orders
         foreach ($P as $pid => &$p) { $p['ml7'] = $p['m7'][$targetMl] ?? 0; $p['ml30'] = $p['m30'][$targetMl] ?? 0; $p['b30'] = (int)round($p['ml30'] / $targetMl); $p['stock_ml'] = ($p['stock_by'][$targetMl] ?? 0) * $targetMl; $p['oo_ml'] = $p['oo_by'][$targetMl] ?? 0; }
         unset($p);
@@ -1596,14 +1596,15 @@ function st_bday_voucher_for(PDO $pdo, string $phone, int $year): ?array
 /** Every store bill of a range with the commission the ONLINE engine's rules pay for it (price chart, a matching offer, the order-code rule), no over-target extra.
  *  The code rule works per person per day, so changing who billed one bill recounts the other bills of both people. Returns [] rows + counters. */
 if (!function_exists('budget_store_calc')) {
-    /** the online commission engine (boss.php → boss2.php cm_*) is loaded and ready */
+    /** the online commission engine (budget_cm.php, Total Budgeting's own file) is loaded and ready */
     function budget_engine_ready(): bool
     {
         // boss.php only loads when $pdo and $action are in scope (it returns at once otherwise - and a plain require from inside a function left the engine missing for the whole request,
         // so the Store commission card showed no offers / no price chart / 0%). Put both in scope here, like cm_engine_load() in api.php does.
         if (!function_exists('cm_chart')) {
             $pdo = $GLOBALS['pdo'] ?? null; $action = (string)($GLOBALS['action'] ?? '');
-            try { if ($pdo && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; if (!function_exists('cm_chart') && is_file(__DIR__ . '/boss2.php')) require_once __DIR__ . '/boss2.php'; } catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
+            $GLOBALS['cm_funcs_only'] = true; try { if (is_file(__DIR__ . '/budget_cm.php')) require_once __DIR__ . '/budget_cm.php'; }   /* Total Budgeting's own commission file: the Boss Engine is not needed */ catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
+            unset($GLOBALS['cm_funcs_only']);
         }
         return function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
     }

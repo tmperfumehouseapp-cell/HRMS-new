@@ -312,18 +312,26 @@ function bossMenu(active, nav) {
   if (!nav || typeof api === 'undefined') return;
   api.get('bd.badge').then((d) => {
     if (!d || !d.show) return;
-    if (!d.manager && !d.has_tasks) return;
+    if (!d.has_tasks) return;   // the Boss Engine screens are out of the menu: only My Day is left here
     const add = (href, label, key, badge) => {
       if (nav.querySelector('a[href="' + href + '"]')) return;
       const a = document.createElement('a'); a.href = href; a.innerHTML = label + (badge ? ' <span style="background:#e02424;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:6px;">' + badge + '</span>' : '');
       if (active === key) a.className = 'active';
       nav.appendChild(a);
     };
-    const lab = document.createElement('div'); lab.className = 'nav-label'; lab.textContent = 'Boss Engine'; nav.appendChild(lab);
     if (d.has_tasks) add('my_day.html', 'My Day', 'my_day', d.my_open);
-    if (d.manager) { add('boss_engine.html', 'Boss Engine', 'boss_engine', (Number(d.be) || 0) + (Number(d.inbox) || 0)); }
   }).catch(() => { /* the Boss Engine links are optional */ });
 }/*BD-END*/
+/* 📌 Follow-up link in the old side menus (roles that do not get the workspace icons): shown to Admin / HR and to anyone who was given a topic or a section. */
+function fupMenu(active, nav) {
+  if (!nav || typeof api === 'undefined') return;
+  api.get('fup.badge').then((d) => {
+    if (!d || !d.show || nav.querySelector('a[href="followup.html"]')) return;
+    const a = document.createElement('a'); a.href = 'followup.html'; if (active === 'followup') a.className = 'active';
+    a.innerHTML = 'Follow-up' + (Number(d.due) > 0 ? ' <span style="background:#e02424;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:6px;">' + d.due + '</span>' : '');
+    nav.appendChild(a);
+  }).catch(() => { /* the link is optional */ });
+}
 
 /*WS-START workspaces v2: the menu is 8 icons, each opening hub.html with the pages of that area as tabs */
 /* Workspaces v2: the whole HRMS menu is 9 icons (Home, Sales, WhatsApp, Boss, Store, Finance, People, Offices, Admin). Each icon opens ONE page (hub.html) with the pages of that area as tabs.
@@ -336,11 +344,12 @@ window.WS = (function () {
     { key: 'home', label: 'Home', icon: 'dashboard', sub: 'What needs you today', tabs: [['dashboard', 'Dashboard', 'dashboard.html', '']] },
     { key: 'sales', label: 'Sales', icon: 'sales', direct: 'sales.html', sub: '', tabs: [] },
     { key: 'budget', label: 'Budgeting', icon: 'commission', sub: 'Commission, leaders, salaries, fixed expenses and penalties, day by day', tabs: [['bt_total', 'Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Commission', 'commission_new.html', ''], ['bt_leaders', 'Leaders', 'leaders.html', ''], ['bt_helpers', 'Leaders Helper', 'leaders_helper.html', ''], ['bt_daysheet', 'Day sheet (company sales)', 'detailed_report.html', '']] },   // its own menu item; the same pages are also inside Sales → Money
+    { key: 'followup', label: 'Follow-up', icon: 'followup', sub: 'Every section, its topics and one update a day, checked by Claude', tabs: [['followup', 'Follow-up', 'followup.html', 'fup']] },   // 📌 Shop Wholesale, Surat Store and every section added later (pills inside the page)
     { key: 'shops', label: 'Shop wholesale', icon: 'retail_store', sub: 'Wholesale shops and their stock', tabs: [['retail_shops', 'Shops', 'retail_shops.html', ''], ['retail_inventory', 'Stock', 'retail_inventory.html', '']] },   // moved out of Sales into the side menu
     { key: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', sub: 'Chats, campaigns and groups', tabs: [['whatsapp', 'WhatsApp', 'whatsapp.html', 'wa'], ['whatsapp_groups', 'Groups', 'whatsapp_groups.html', '']] },
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', sub: 'Instagram, Facebook, email and reviews — answered in one place', tabs: [['social_inbox', 'Inbox hub', 'social_inbox.html', 'sx']] },
-    { key: 'boss', label: 'Boss', icon: 'approvals', sub: 'Tasks, numbers, problems and penalties (people, pay and commission live in Budgeting)', tabs: [['boss_engine', 'Today', 'boss_engine.html', 'boss', 'today'], ['be_sections', 'Sections', 'boss_engine.html', 'boss', 'sections'], ['be_work', 'All work', 'boss_engine.html', 'boss', 'work'], ['staff_progress', 'Staff progress', 'staff_progress.html', 'cxr'], ['be_pens', 'Penalties', 'boss_engine.html', 'boss', 'pens'], ['be_problems', 'Problems', 'boss_engine.html', 'boss', 'problems'], ['boss_questions', 'Questions', 'boss_questions.html', 'boss'], ['dept_hub', 'Workbenches', 'dept_hub.html', 'boss'], ['daily_summary', 'Summary', 'daily_summary.html', 'boss'], ['tracker', 'Daily tracker', 'tracker.html', 'boss'], ['brain', 'Brain', 'brain.html', 'boss'], ['be_setup', 'Setup & health', 'boss_engine.html', 'boss', 'setup'], ['boss_rules', 'Rules in sync', 'boss_rules.html', 'admin']] },
+    { key: 'boss', label: 'Boss', icon: 'approvals', sub: 'Questions, workbenches, summary and the Brain (the Boss Engine screens are removed; daily follow-up lives in Follow-up)', tabs: [['staff_progress', 'Staff progress', 'staff_progress.html', 'cxr'], ['boss_questions', 'Questions', 'boss_questions.html', 'boss'], ['dept_hub', 'Workbenches', 'dept_hub.html', 'boss'], ['daily_summary', 'Summary', 'daily_summary.html', 'boss'], ['tracker', 'Daily tracker', 'tracker.html', 'boss'], ['brain', 'Brain', 'brain.html', 'boss'], ['boss_rules', 'Rules in sync', 'boss_rules.html', 'admin']] },
     { key: 'dispatch', label: 'Dispatch', icon: 'dispatch', sub: 'Parcels, tracking numbers and Shiprocket', tabs: [['dept_dispatch', 'Parcels and tracking', 'dept_dispatch.html', 'boss'], ['dispatch_manual', 'Manual orders', 'dispatch_manual.html', 'mo'], ['manual_sheet', 'Manual order sheet', 'manual_sheet.html', 'mo'], ['sku_sheet', 'SKU sheet', 'sku_sheet.html', 'sk'], ['feedback', 'Feedback', 'feedback.html', 'fbk'], ['customers', 'Customers', 'customers.html', 'boss'], ['dept_restock', 'Store orders', 'dept_restock.html', 'rsd'], ['dispatch_logins', 'Dispatch logins', 'dispatch_logins.html', 'admin']] },
     { key: 'store', label: 'Store', icon: 'retail_store', sub: 'Everything about the Surat store', tabs: [['store_dashboard', 'Dashboard', 'store_dashboard.html', 'rsm'], ['store_billing', 'Billing', 'store_billing.html', 'rs'], ['store_messages', 'Messages', 'store_messages.html', 'rs'], ['store_team', 'Team', 'store_team.html', 'rsm'], ['store_commission', 'Store Commission', 'store_commission.html', 'rsm'], ['store_inventory', 'Inventory', 'store_inventory.html', 'rs'], ['store_cleaning', 'Cleaning & Pantry', 'store_cleaning.html', 'boss'], ['store_contacts', 'Customer follow-up', 'store_contacts.html', 'rsm'], ['flyers', 'Flyers', 'flyers.html', 'fl'], ['flyer_map', 'Flyer Map', 'flyer_map.html', 'flm'], ['store_logins', 'Store logins', 'store_logins.html', 'admin']] },
     { key: 'inventory', label: 'Inventory', icon: 'inventory', sub: 'Oils, perfumes, orders and dealers: what you have, what you need, what will be late', tabs: [['iv_dash', 'Dashboard', 'inventory.html', '', 'dashboard'], ['iv_oils', 'Oil stock', 'inventory.html', '', 'oils'], ['iv_perf', 'Perfumes', 'inventory.html', '', 'perfumes'], ['iv_calc', 'Oil calculator', 'inventory.html', '', 'calc'], ['iv_orders', 'Orders', 'inventory.html', '', 'orders'], ['iv_sup', 'Dealers', 'inventory.html', '', 'dealers'], ['iv_alerts', 'Alerts', 'inventory.html', '', 'alerts'], ['iv_rep', 'Reports', 'inventory.html', '', 'reports']] },
@@ -384,18 +393,20 @@ window.WS = (function () {
     const user = (typeof api !== 'undefined' && api.currentUser()) || {};
     const get = (a) => api.get(a).catch(() => null);
     // ONE request for all five menu answers (bd.menu_ctx). If the server does not know it (older copy) or it fails, the five separate calls run as before.
-    let flags, bd, fl, cxb, sxb, got = false;
+    let flags, bd, fl, cxb, sxb, fu = null, got = false;
     try {
       const m = await api.get('bd.menu_ctx');
       if (m && typeof m === 'object' && 'flags' in m && m.flags) {
-        flags = m.flags; bd = m.bd; fl = m.fl; cxb = m.cx; sxb = m.sx; got = true;
+        flags = m.flags; bd = m.bd; fl = m.fl; cxb = m.cx; sxb = m.sx; fu = m.fu || null; got = true; if (m.fu) api.seed('fup.badge', m.fu);
         // the rest of the page asks these by their own names: answer those from the same memory
         api.seed('me.flags', m.flags); api.seed('bd.badge', m.bd); api.seed('fl.badge', m.fl); api.seed('bd.cx_badge', m.cx); api.seed('bd.sx_badge', m.sx);
       }
     } catch (e) { got = false; }
     if (!got) [flags, bd, fl, cxb, sxb] = await Promise.all([get('me.flags'), get('bd.badge'), get('fl.badge'), get('bd.cx_badge'), get('bd.sx_badge')]);
+    if (!fu || !fu.show) fu = await get('fup.badge') || fu;   // a missing or stale 'no' from the batch is checked once more, fresh   // 📌 Follow-up: in the menu for Admin / HR and for anyone who was given a topic or a section
     const f = flags || {};
     return {
+      fu: fu && fu.show ? fu : null,
       cx: cxb || null,
       sx: sxb || null,
       isAdmin: (f.role || user.role) === 'Admin',
@@ -417,6 +428,7 @@ window.WS = (function () {
     if (need === 'rsd') return ctx.isAdmin || ctx.perms.indexOf('dispatch_restock') > -1;   // Dispatch → Store orders: Admin and the Dispatch role
     if (need === 'wa') return ctx.isAdmin || ctx.role === 'HR' || ctx.perms.indexOf('control_tower') > -1;   // the WhatsApp console: the same people wa.php lets in
     if (need === 'boss') return ctx.boss;
+    if (need === 'fup') return !!(ctx.isAdmin || ['admin', 'hr'].indexOf(String(ctx.role || '').trim().toLowerCase()) > -1 || ctx.fu);   // Follow-up: Admin, HR, and the people who were given a topic or a section
     if (need === 'pp') return !!(ctx.isAdmin || ctx.role === 'HR');   // People (Boss → People): Admin and HR
     if (need === 'cx') return !!(ctx.isAdmin || (ctx.cx && ctx.cx.team));   // the Complaint team (people on a desk seat), Admin and the complaints boss
     if (need === 'cxr') return !!(ctx.isAdmin || (ctx.cx && ctx.cx.mgr));   // Staff progress: Admin, the complaints boss, the top boss / deputy (the same people bd.staff_report lets in)
@@ -451,6 +463,7 @@ window.WS = (function () {
     let label = esc(w.label);
     if (w.key === 'sales') label += ' <span id="ctBadge" style="display:none; background:#e02424; color:#fff; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:700; margin-left:6px;"></span>';
     if (w.key === 'boss') label += bdg('wsb_boss');
+    if (w.key === 'followup') label += bdg('wsb_followup');
     if (w.key === 'complaints') label += bdg('wsb_complaints');
     if (w.key === 'inbox') label += bdg('wsb_inbox');
     if (w.key === 'people') label += bdg('wsb_people');
@@ -463,6 +476,7 @@ window.WS = (function () {
     api.get('bd.sx_badge').then((d) => { if (d && d.show) setBadge('wsb_inbox', (Number(d.late) || 0) || (Number(d.mine) || 0)); }).catch(() => {});
     api.get('bd.cx_badge').then((d) => { if (d && d.show) setBadge('wsb_complaints', (Number(d.late) || 0) || (Number(d.my_open) || 0)); }).catch(() => {});
     Promise.all([api.get('bd.badge').catch(() => null), api.get('dp.badge').catch(() => null)]).then(([d, p]) => { if (d && d.manager) setBadge('wsb_boss', (Number(d.inbox) || 0) + (Number(p && p.tasks) || 0)); }).catch(() => {});
+    api.get('fup.badge').then((d) => { if (d && d.show) setBadge('wsb_followup', Number(d.due) || 0); }).catch(() => {});   // my follow-up updates still to write today
     api.get('chk.badge').then((d) => { if (d) setBadge('wsb_offices', Number(d.review) || 0); }).catch(() => {});
     Promise.all([api.get('leave_admin.count').catch(() => null), api.get('approvals.count').catch(() => null)])
       .then(([a, b]) => setBadge('wsb_people', (Number(a && a.count) || 0) + (Number(b && b.count) || 0))).catch(() => {});
@@ -611,7 +625,7 @@ window.WS = (function () {
     const [lv, ap, ck, ct, st, nc] = await Promise.all([ctx.isAdmin || ctx.perms.indexOf('leave_requests') > -1 ? get('leave_admin.count') : null, ctx.isAdmin || ctx.perms.indexOf('approvals') > -1 ? get('approvals.count') : null, ctx.boss ? get('chk.badge') : null,
       canCt ? get('ct.pulse') : null, canShop ? get('retail.stock_alerts', { badge: 1 }) : null, get('needs.counts')]);
     const items = [];
-    if (ctx.bd && ctx.boss && ctx.bd.inbox > 0) items.push(['hub.html?w=boss&t=boss_engine', ctx.bd.inbox, ctx.bd.inbox === 1 ? 'decision for the Boss' : 'decisions for the Boss']);
+    if (ctx.fu && Number(ctx.fu.due) > 0) items.push(['hub.html?w=followup', ctx.fu.due, ctx.fu.due === 1 ? 'follow-up update to write today' : 'follow-up updates to write today']);
     const ctN = ct && ct.admin ? (Number(ct.red) || 0) + (Number(ct.meet) || 0) : 0;
     if (ctN > 0) items.push(['sales.html#live/blocks', ctN, ctN === 1 ? 'sales alert (red or meet admin)' : 'sales alerts (red or meet admin)']);
     if (nc && nc.visits_waiting > 0) items.push(['sales.html#retail/shops', nc.visits_waiting, nc.visits_waiting === 1 ? 'shop visit to approve' : 'shop visits to approve']);
@@ -636,7 +650,7 @@ window.WS = (function () {
   }
 
   /* ---- top bar: search (Ctrl+K) and one bell ---- */
-  const KW = { brain: 'brain shelves company customer internal teach claude knows rules facts notes leak test trial bot replies old notes', tracker: 'daily tracker topics fields who fills verify admin penalty deadline steps proof screenshot video priority', wasales: 'whatsapp sales queries attention behind meta campaign community regenerated bot types analytics cut over', finance: 'money bank statement upload cod prepaid settlement remittance bill memo gst tds profit loss ledger accounts card reconcile', dept_work: 'shopping list buy milk ice supplies assign buyer', dept_fix: 'fix repair maintenance report problem broken workman', boss_questions: 'questions ask claude learn understand live', dept_hub: 'departments seats dispatch parcels money retail supplies track record', boss_penalties: 'penalty rules amount fine charged', people_admin: 'admin team founders who can approve tasks', my_day: 'my day punch in out attendance selfie jobs tasks', dept_dispatch: 'dispatch parcels tracking shiprocket courier awb rto delivered', dept_restock: 'restock reorder memo stock empty dispatch pending barcode scan delay order every 2 days', daily_summary: 'summary report checked loop repeating claude', boss_inbox: 'inbox decisions approve penalty photo', penalties: 'fine deduction penalty', documents: 'licence license passport aadhaar pan id upload', doc_check: 'documents missing expiry licence passport id claude read', agreements: 'contract agreement', handover: 'leaver left resign replace takeover', office_care: 'office cleaning cleaner zones checkpoints maintenance ticket', leave_requests: 'leave holiday', attendance_admin: 'punch attendance', salary: 'pay payroll payslip pay slip wages salary slip advance deduction earned paid month all employees', employees: 'staff people', approvals: 'approve pending' };
+  const KW = { followup: 'follow up followup daily update topics sections shop wholesale surat store progress deadline assign claude excel', brain: 'brain shelves company customer internal teach claude knows rules facts notes leak test trial bot replies old notes', tracker: 'daily tracker topics fields who fills verify admin penalty deadline steps proof screenshot video priority', wasales: 'whatsapp sales queries attention behind meta campaign community regenerated bot types analytics cut over', finance: 'money bank statement upload cod prepaid settlement remittance bill memo gst tds profit loss ledger accounts card reconcile', dept_work: 'shopping list buy milk ice supplies assign buyer', dept_fix: 'fix repair maintenance report problem broken workman', boss_questions: 'questions ask claude learn understand live', dept_hub: 'departments seats dispatch parcels money retail supplies track record', boss_penalties: 'penalty rules amount fine charged', people_admin: 'admin team founders who can approve tasks', my_day: 'my day punch in out attendance selfie jobs tasks', dept_dispatch: 'dispatch parcels tracking shiprocket courier awb rto delivered', dept_restock: 'restock reorder memo stock empty dispatch pending barcode scan delay order every 2 days', daily_summary: 'summary report checked loop repeating claude', boss_inbox: 'inbox decisions approve penalty photo', penalties: 'fine deduction penalty', documents: 'licence license passport aadhaar pan id upload', doc_check: 'documents missing expiry licence passport id claude read', agreements: 'contract agreement', handover: 'leaver left resign replace takeover', office_care: 'office cleaning cleaner zones checkpoints maintenance ticket', leave_requests: 'leave holiday', attendance_admin: 'punch attendance', salary: 'pay payroll payslip pay slip wages salary slip advance deduction earned paid month all employees', employees: 'staff people', approvals: 'approve pending' };
   // every Sales tab and page, so Ctrl+K opens it directly: [name, group, #section/tab/page, permission, words people type]
   const SALES_FIND = [
     ['Blocks (today)', 'Live', 'live/blocks', 'control_tower', 'today strip control tower query orders goal community checkpoints'],
@@ -777,6 +791,8 @@ window.WS = (function () {
       const btn = [];
       btn.push(['my_day.html', 'My Day', '✅', (bd && bd.my_open) || 0]);   // everybody: the day starts here (punch-in steps, duties, sales)
       if (f.is_sales) { btn.push(['my_sales.html', 'My Sales', '\u{1F4C8}', 0]); btn.push(['my_orders.html', 'Orders', '\u{1F6CD}', 0]); btn.push(['manual_order.html', 'Manual', '\u270D\uFE0F', 0]); btn.push(['my_chats.html', 'Chats', '\u{1F4AC}', 0]); btn.push(['my_chats.html?tab=queries', 'Queries', '\u{1F4CB}', 0]); }
+      const fub = await api.get('fup.badge').catch(() => null);   // 📌 Follow-up: the topics I must update every day
+      if (fub && fub.show) btn.push(['followup.html', 'Follow-up', '\u{1F4CC}', Number(fub.due) || 0]);
       const cxb = await api.get('bd.cx_badge').catch(() => null);   // Complaints: the team opens the board, a salesperson who raised one sees the status
       if (cxb && cxb.team) btn.push(['complaints.html', 'Complaints', '\u26A0\uFE0F', Number(cxb.my_open) || Number(cxb.late) || 0]); else if (cxb && cxb.has_mine) btn.push(['my_complaints.html', 'Complaints', '\u26A0\uFE0F', 0]);
       if (cxb && cxb.mgr) btn.push(['staff_progress.html', 'Staff', '\u{1F4C8}', 0]);   // 📈 Staff progress (complaints boss)
@@ -973,7 +989,7 @@ function renderSidebarCore(active) {
           nav.insertAdjacentHTML('beforeend', `<a href="${def[0]}" class="${active === def[2] ? 'active' : ''}">${def[1]}</a>`);
         });
       });
-      bossMenu(active, nav); /*bd*/
+      bossMenu(active, nav); /*bd*/ fupMenu(active, nav);
       flyerMenu(active, nav);
       if (perms.length === 0) {
         nav.insertAdjacentHTML('beforeend', '<span style="display:block; padding:8px 20px; font-size:12.5px; color:#8a93a6;">No access granted yet — ask Admin.</span>');
@@ -996,7 +1012,7 @@ function renderSidebarCore(active) {
     // Pages every employee may open. Anything else is hidden immediately —
     // before its own script can show admin data — until me.flags confirms
     // the Employee role was granted that module on the Roles page.
-    const EMPLOYEE_PAGES = ['dispatch_manual', 'manual_sheet', 'sku_sheet', 'social_inbox', 'attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_sales', 'orders', 'my_chats', 'wasales', 'my_space', 'my_orders', 'manual_order', 'my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'customers', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin' /*bd-arr*/, 'flyers', 'complaints', 'my_complaints', 'feedback'];
+    const EMPLOYEE_PAGES = ['dispatch_manual', 'manual_sheet', 'sku_sheet', 'social_inbox', 'attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_sales', 'orders', 'my_chats', 'wasales', 'my_space', 'my_orders', 'manual_order', 'my_day', 'followup', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'customers', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin' /*bd-arr*/, 'flyers', 'complaints', 'my_complaints', 'feedback'];
     const needsCheck = !EMPLOYEE_PAGES.includes(active);
     const empOkKey = 'hrms_pok:' + user.username + ':Employee:' + active;
     const empSeenOk = (() => { try { return Date.now() - Number(localStorage.getItem(empOkKey) || 0) < 43200000; } catch (e) { return false; } })();   // already confirmed in the last 12 h: no waiting
@@ -1025,7 +1041,7 @@ function renderSidebarCore(active) {
       const perms = d.permissions || [];
       const grantedActives = perms.flatMap(p => (PAGES_FOR_PERM[p] || PAGES_OPEN[p] || []).map(def => def[2]));
       const allowed = ['attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_space'].concat(grantedActives);
-      allowed.push('my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin'); /*bd*/
+      allowed.push('my_day', 'followup', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin'); /*bd*/
       allowed.push('flyers', 'complaints', 'my_complaints', 'social_inbox', 'staff_progress', 'dispatch_manual', 'manual_sheet', 'sku_sheet', 'feedback');      // Manual orders and the SKU sheet: the server lets in the Dispatch department, Sales Heads and the ticked roles   // staff_progress: the server (bd.staff_report) lets in only the complaints boss / top boss / deputy
       if (d.is_sales) allowed.push('my_sales', 'orders', 'my_chats', 'wasales', 'my_orders', 'manual_order');
       // Home page after login: sales people open My Sales (their numbers, rating, offer); everyone else opens Attendance. Remembered for index.html.
@@ -1065,7 +1081,7 @@ function renderSidebarCore(active) {
         holder.outerHTML = links;
         if (d.is_sales) startChatBadge();   // the number of customer messages waiting, next to My Chats
         flyerMenu(active, document.querySelector('.sidebar nav'));
-        bossMenu(active, document.querySelector('.sidebar nav')); /*bd*/
+        bossMenu(active, document.querySelector('.sidebar nav')); /*bd*/ fupMenu(active, document.querySelector('.sidebar nav'));
         api.get('bd.sx_badge').then((c) => {   // Inbox hub: the Inbox team and the boss
           const nav = document.querySelector('.sidebar nav'); if (!nav || !c || !c.team || document.getElementById('sxNavLink')) return;
           const a3 = document.createElement('a'); a3.id = 'sxNavLink'; a3.href = 'social_inbox.html'; a3.className = active === 'social_inbox' ? 'active' : '';
@@ -1173,7 +1189,7 @@ function renderSidebarCore(active) {
   addMobileMenu();
   initNavCategories(categories, active);
   if (!isAdmin) flyerMenu(active, document.querySelector('[data-cat-body="store"]'));
-  if (!window.WS) bossMenu(active, document.querySelector('.sidebar nav')); /*bd*/
+  if (!window.WS) { bossMenu(active, document.querySelector('.sidebar nav')); /*bd*/ fupMenu(active, document.querySelector('.sidebar nav')); }
 
   if (isAdmin) {
     api.get('me.flags').then((d) => {
@@ -1263,7 +1279,7 @@ const RAIL_ICON_FOR = {
   inventory: 'drop',
   complaints: 'alert', my_complaints: 'alert', social_inbox: 'inbox', dashboard: 'home', dispatch: 'truck', finance: 'wallet', analytics: 'chart', sales: 'briefcase', control_tower: 'tower', orders: 'bag', order_allocation: 'split', order_codes: 'tag', retail_shops: 'shop', retail_inventory: 'folder', retail_store: 'shop', flyers: 'file', flyer_map: 'pin', my_day: 'file', boss_engine: 'file', boss_inbox: 'file', daily_summary: 'file', office_care: 'file', boss_questions: 'file', boss_penalties: 'file', dept_hub: 'file', dept_dispatch: 'file', customers: 'user', dept_restock: 'file', dept_shops: 'file', dept_supplies: 'file', dept_work: 'file', dept_fix: 'file', people_admin: 'file',
   attendance_admin: 'clock', attendance: 'clock', my_space: 'user', my_orders: 'bag', offices: 'pin', targets: 'target', order_targets: 'cart',
-  performance: 'chart', detailed_report: 'sheet', salary: 'wallet', my_salary: 'wallet', commission: 'percent',
+  followup: 'check', performance: 'chart', detailed_report: 'sheet', salary: 'wallet', my_salary: 'wallet', commission: 'percent',
   commission_rules: 'sliders', help: 'pulse', my_chats: 'chat', wasales: 'chart', penalties: 'alert', my_penalties: 'alert', agreements: 'file', my_agreements: 'file',
   departments: 'building', employees: 'users', documents: 'folder', whatsapp_groups: 'chat', whatsapp: 'chat', excel_files: 'sheet',
   ex_employees: 'userx', history: 'history', approvals: 'check', users: 'user', roles: 'lock', my_sales: 'cart', leave: 'calendar', leave_requests: 'calendar',

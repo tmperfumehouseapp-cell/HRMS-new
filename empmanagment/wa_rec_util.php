@@ -329,6 +329,14 @@ function wa_ru_reset_once(PDO $pdo): void
             setting_set($pdo, 'wa_ru_now1700_2111', '1'); setting_set($pdo, 'wa_ru_ramp_max', '1700'); setting_set($pdo, 'wa_ru_hourly', '1700'); setting_set($pdo, 'wa_ru_lvl_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the maximum is now 1,700 an hour (owner); the real speed follows the people still to reach');
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_to2000_2311', '') !== '1') {   /* owner 23 Nov 2026 (night): Module B maximum 2,000 an hour (was 1,700); it still starts low and the pool decides the real speed */
+            setting_set($pdo, 'wa_ru_to2000_2311', '1'); setting_set($pdo, 'wa_ru_ramp_max', '2000');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the maximum is now 2,000 an hour (owner)');
+        } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_ru_to4000_2411', '') !== '1') {   /* owner 24 Nov 2026: Module B maximum doubled, 2,000 -> 4,000 an hour; it climbs by the same good-delivery rules, the pool decides the real speed */
+            setting_set($pdo, 'wa_ru_to4000_2411', '1'); setting_set($pdo, 'wa_ru_ramp_max', '4000');
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the maximum is now 4,000 an hour (owner)');
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_ru_base260', '') !== '1') {   /* owner 20 Nov 2026 (02:00): Module B must not run at 180; the floor is 260 an hour (it starts again from 260 after a bad stretch, never lower) */
             setting_set($pdo, 'wa_ru_base260', '1'); setting_set($pdo, 'wa_ru_ramp_base', '260'); if ((int)setting_get($pdo, 'wa_ru_hourly', '260') < 260) setting_set($pdo, 'wa_ru_hourly', '260'); setting_set($pdo, 'wa_ru_ramp_at', (string)time()); setting_set($pdo, 'wa_ru_freeze_n', '0');
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the floor is now 260 an hour (it never goes lower), it runs at ' . setting_get($pdo, 'wa_ru_hourly', '260') . ' now (owner)');
@@ -409,10 +417,10 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
         if ((int)setting_get($pdo, 'wa_ru_ramp_hold', '0') > $now) return;
         $rat = (int)setting_get($pdo, 'wa_ru_ramp_at', '0'); if ($rat === 0) { setting_set($pdo, 'wa_ru_ramp_at', (string)$now); return; }   // the first look only starts the hour
         if ($now - $rat < $every - ($every <= 600 ? 20 : 0)) return;   /* 10-minute looks: a look a few seconds early must not wait for the next look */
-        $gn = $n; $gf = $f; $gd = $d; $need = (int)floor($cur * 0.6);
+        $gn = $n; $gf = $f; $gd = $d; $need = (int)floor($cur * max(0.1, min(1.0, (float)setting_get($pdo, 'wa_ru_need_pct', '40') / 100)));
         if ($every < 3600) {   // short steps: judge only the messages sent since the last change (15 minutes to one step-length old), the limit used in proportion to the length of that look
             $gs = max($now - $every - 900, ($every <= 600 ? 0 : $rat), (int)setting_get($pdo, 'wa_ru_brake_since', '0'));   /* 10-minute looks: the receipts are 15 minutes late, so every look judges the messages 15 to 25 minutes old (not only those after the last change) */ $q2 = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
-            $q2->execute([date('Y-m-d H:i:s', $gs), date('Y-m-d H:i:s', $now - 900)]); $r2 = $q2->fetch(); $gn = (int)$r2['n']; $gf = (int)$r2['f']; $gd = (int)$r2['d']; $span = max(600, ($now - 900) - $gs); $need = max(10, (int)floor($cur * 0.6 * $span / 3600)); }
+            $q2->execute([date('Y-m-d H:i:s', $gs), date('Y-m-d H:i:s', $now - 900)]); $r2 = $q2->fetch(); $gn = (int)$r2['n']; $gf = (int)$r2['f']; $gd = (int)$r2['d']; $span = max(600, ($now - 900) - $gs); $need = max(10, (int)floor($cur * max(0.1, min(1.0, (float)setting_get($pdo, 'wa_ru_need_pct', '40') / 100)) * $span / 3600)); }
         $dmin = $every < 3600 ? 0.5 : 0.7;   // at night many phones are off: a third of the messages stay 'sent' for a long time without any failure; for the small steps the delivered share needs to be 50% (failures still must be 5% or less and the 10% failure brake is unchanged)
         if ($every <= 600 && $gn >= max(10, (int)floor($need * 0.5)) && $gf / max(1, $gn) > 0.05) {   /* owner 20 Nov 2026 (02:30): a bad look is ONLY more than 5% failed; a low delivered share (phones off at night) just does not let it grow */   /* owner 19 Nov 2026 (23:20): failures start to rise -> it stays where it is; a second bad look in a row sends it back to the floor (30 per 10 minutes) */
             $fz = (int)setting_get($pdo, 'wa_ru_freeze_n', '0') + 1; setting_set($pdo, 'wa_ru_ramp_at', (string)$now);
@@ -425,7 +433,7 @@ function wa_ru_ramp(PDO $pdo, array $cfg): void
         $hi = $cur >= 700; $hiOk = true; if ($hi) { $la = (int)setting_get($pdo, 'wa_ru_lvl_at', '0'); if ($la <= 0) { setting_set($pdo, 'wa_ru_lvl_at', (string)$now); $la = $now; } $hiOk = ($now - $la >= 3600) && $gf / max(1, $gn) < 0.02 && $gd / max(1, $gn) >= 0.85; }
         if ($cur < $max && $hiOk && $gn >= $need && $gf / max(1, $gn) <= 0.05 && $gd / max(1, $gn) >= $dmin) {
             setting_set($pdo, 'wa_ru_freeze_n', '0');
-            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([240, 300, 360, 420, 480, 500, 540, 550, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 20 Nov 2026: 40 / 50 / 60 / 70 / 80 / 90 / 100 messages per 10 minutes = 240 ... 600 an hour; owner 20 Nov 2026 (15:20): from now the slots are 550 / 600 / 700 an hour (floor 550, top 700, never 800) */
+            $to = min($max, $cur + $step); if ($every <= 600) { $to = $max; foreach ([240, 300, 360, 420, 480, 500, 540, 550, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2400, 2800, 3200, 3600, 4000] as $lv) { if ($lv > $cur) { $to = min($max, $lv); break; } } }   /* owner 20 Nov 2026: 40 / 50 / 60 / 70 / 80 / 90 / 100 messages per 10 minutes = 240 ... 600 an hour; owner 20 Nov 2026 (15:20): from now the slots are 550 / 600 / 700 an hour (floor 550, top 700, never 800) */
             setting_set($pdo, 'wa_ru_hourly', (string)$to); setting_set($pdo, 'wa_ru_ramp_at', (string)$now); if ($to >= 700) setting_set($pdo, 'wa_ru_lvl_at', (string)$now);   // the 2-hour clock of a level from 700 up starts when it is reached
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B) runs well (' . $gn . ' sent, ' . $gf . ' failed, ' . $gd . ' delivered in the last look): ' . $cur . ' → ' . $to . ' an hour'); } } catch (Throwable $e) { }
 }
@@ -533,6 +541,9 @@ function wa_ru_tick_inner(PDO $pdo): array
         $cache = []; $seen = []; $rot = 0; $lastId = $cursor; $broke = false; $numSt = wa_ru_numbers($pdo, $nowTs); $mixDays = function_exists('wa_mix_cfg') ? (int)wa_mix_cfg($pdo, 'wa_mix_days', 30) : 30; $shift = max(0, $cfg['ask_days'] - $mixDays) * 86400;
         $sk = function (string $k) use (&$res, &$why) { $res['skipped']++; $why[$k] = ($why[$k] ?? 0) + 1; };
         $batch = []; $bsz = max(5, min(100, (int)setting_get($pdo, 'wa_ru_parallel', '40')));
+        // 🕰 owner, 24 Nov: people who asked 90 - 180 days ago (older than the normal window; Meta sees them as riskier) may get the standard follow-up too, but never more than wa_ru_old_pct (20) % of an hour's Module B messages (switch: wa_ru_old_on = 0; window: wa_ru_old_days 180)
+        $oldOn = (string)setting_get($pdo, 'wa_ru_old_on', '1') !== '0'; $oldPct = max(0, min(50, (int)setting_get($pdo, 'wa_ru_old_pct', '20'))); $oldDays = max((int)$cfg['ask_days'], (int)setting_get($pdo, 'wa_ru_old_days', '180')); $oldBatch = 0; $oldUsed = 0; $sentHour = 0;
+        try { $oh = json_decode((string)setting_get($pdo, 'wa_ru_old_h', ''), true); if (is_array($oh) && ($oh['h'] ?? '') === date('YmdH', $nowTs)) $oldUsed = (int)($oh['n'] ?? 0); $qh = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $qh->execute([date('Y-m-d H:i:s', $nowTs - 3600)]); $sentHour = (int)$qh->fetchColumn(); } catch (Throwable $e) { }
         // 🚀 sends a batch of Module B messages at the same time (the old way: one after the other, about 1 a second = 17 a minute). Returns true when the round must stop (Meta flagged spam / throughput limit).
         $flush = function () use (&$batch, &$res, $pdo, $now, $nowTs): bool {
             $stop = false; $reqs = []; $out = [];
@@ -578,6 +589,9 @@ function wa_ru_tick_inner(PDO $pdo): array
                 if (wa_mix_cheap_ok($pdo, $ctm, $om, $nowTs - $shift)) { $fl = array_values($famU[(int)$it['ctpl']]); for ($fi = 0; $fi < count($fl); $fi++) { $u0 = $fl[($rot + $fi) % count($fl)]; $uv = wa_mix_u_vars($pdo, $u0, $ctm, $om, $nowTs - $shift); if (is_array($uv) && count($uv) >= count(wa_tpl_vars((string)$u0['body']))) { $pk = ['t' => $u0, 'vars' => $uv, 'kind' => 'fam']; break; } } }   // the asked / ordered window is the owner's (30 / 60 / 90 days …), the words stay true: the real dates are shown
             }
             if (!$pk && $pool) $pk = wa_util_pick($pdo, in_array($ec, WA_RU_MARKETING_ONLY, true) ? array_values(array_filter($pool, fn($z) => empty($z['as_marketing']))) : $pool, $ctm, $cfg['ord_days'], $nowTs, $rot, $cfg['ask_days'], true);   // 2) the standard follow-ups
+            if (!$pk && $pool && $oldOn && $oldPct > 0 && (int)floor($oldPct / 100 * ($sentHour + count($batch) + 1)) - ($oldUsed + $oldBatch) > 0) {   // the older lane (at most 20 % of the hour)
+                $pk = wa_util_pick($pdo, in_array($ec, WA_RU_MARKETING_ONLY, true) ? array_values(array_filter($pool, fn($z) => empty($z['as_marketing']))) : $pool, $ctm, $cfg['ord_days'], $nowTs, $rot, $oldDays, true);
+                if ($pk) { $oldBatch++; try { setting_set($pdo, 'wa_ru_old_h', json_encode(['h' => date('YmdH', $nowTs), 'n' => $oldUsed + $oldBatch])); } catch (Throwable $e) { } } }
             if (!$pk) { $sk('no approved utility message fits this person yet'); continue; }
             $tid = (int)$pk['t']['id']; if (!array_key_exists($tid, $cache)) $cache[$tid] = wa_ru_tpl_ctx($pdo, $pk['t']);
             [$tUse, $ctx] = $cache[$tid]; if (!$tUse || !$ctx) { $sk('utility message not approved on a number with room'); continue; }
@@ -628,7 +642,7 @@ function wa_ru_warm_tick(PDO $pdo, array $cfg, int $nowTs): array
         if (!in_array($ql[$hn] ?? '', ['GREEN', 'YELLOW'], true)) continue;   /* only a number with good rating takes part every hour */
         $q6 = $pdo->prepare("SELECT SUM(at >= ?) h1, SUM(at >= ?) m10 FROM wa_ru_log WHERE number_id = ? AND at >= ?"); $q6->execute([date('Y-m-d H:i:s', $nowTs - 3600), date('Y-m-d H:i:s', $nowTs - 600), $hn, date('Y-m-d H:i:s', $nowTs - 3600)]); $r6 = $q6->fetch();
         $q7 = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE number_id = ? AND dir = 'out' AND mtype = 'template' AND ts >= ?"); $q7->execute([$hn, date('Y-m-d H:i:s', $nowTs - 86400)]); $d24 = (int)$q7->fetchColumn();
-        $tr = $tier[$hn] ?? 0; $dcap = $tr > 0 ? (int)floor($tr * 0.9) : 5000;   /* 90% of Meta's own 24-hour tier of that number (250 -> 225; a higher tier gives more room); unknown / unlimited = 5000 */
+        $tr = $tier[$hn] ?? 0; $dcap = $tr > 0 ? (int)floor($tr * 0.45) : 2500;   /* 90% of Meta's own 24-hour tier of that number (250 -> 225; a higher tier gives more room); unknown / unlimited = 5000 */
         $room = min($hv - (int)($r6['h1'] ?? 0), max(1, (int)ceil($hv / 6)) - (int)($r6['m10'] ?? 0), $dcap - $d24);
         if ($room > 0) { $targets[$hn] = max((int)($targets[$hn] ?? 0), $room); $hr[$hn] = 1; }
     }
@@ -712,7 +726,7 @@ function wa_ru_new_ramp(PDO $pdo, int $nowTs): void
         $q = $pdo->prepare("SELECT COUNT(*) n, SUM(ok = 0) f FROM wa_ru_log WHERE number_id = ? AND at >= ?"); $q->execute([(int)$nid, date('Y-m-d H:i:s', $nowTs - 3600)]); $r = $q->fetch();
         $n = (int)($r['n'] ?? 0); $f = (int)($r['f'] ?? 0); $nh = $hv;
         if ($n >= 20 && $f * 20 > $n) $nh = max(10, (int)floor($hv / 2));
-        elseif ($n >= (int)ceil($hv * 0.7) && $f * 20 <= $n) $nh = min(1700, $hv + max(10, (int)floor($hv / 2)));
+        elseif ($n >= (int)ceil($hv * 0.7) && $f * 20 <= $n) $nh = min(4000, $hv + max(10, (int)floor($hv / 2)));
         if ($nh !== $hv) { $h[$nid] = $nh; $ch = true; }
     }
     if ($ch) { setting_set($pdo, 'wa_ru_new_hourly', json_encode((object)$h)); try { wa_log($pdo, 'campaign', true, 'New numbers: hourly allowance now ' . json_encode((object)$h)); } catch (Throwable $e) { } }

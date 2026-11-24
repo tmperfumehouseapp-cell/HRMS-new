@@ -957,7 +957,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=14"></script>
 <script src="assets/js/layout.js?v=36"></script>
-<script src="assets/js/must3.js?v=4"></script>
+<script src="assets/js/must3.js?v=6"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261120c"></script>
 <script src="assets/js/addon_view.js?v=2"></script>
@@ -1051,7 +1051,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     try {
       const data = await api.get('shopify.stores');
       STORE_OPTS = (data.stores || []).map(s => [s.key, s.label]).concat([
-        ['tmsg', 'TM Shower Gel'], ['manual', 'Manual']]);
+        ['manual', 'Manual']]);   // 'TM Shower Gel' is no longer a store to pick (one platform)
       renderStorePanel();
     } catch (err) {
       showAlert(err.message, 'error');
@@ -1266,12 +1266,13 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
   // ---------- Panels ----------
   // The five panels (businesses), each with its own block, its own button and its own daily target.
   // "No panel" holds MySales / manual orders that were not moved to a panel on the Order Allocation page.
-  const PANELS = [['tmph', 'TM Perfume House', '#1d4ed8'], ['tmsg', 'TM Shower Gel', '#15803d'], ['none', 'No panel', '#475569']];
+  // owner (24 Nov): ONE platform now — TM Perfume House. The old Shower Gel panel is gone from this page: its orders (still stored as 'tmsg', the commission needs that) count as TM Perfume House, and there is one target per person
+  const PANELS = [['tmph', 'TM Perfume House', '#1d4ed8'], ['none', 'No panel', '#475569']];
   const PANEL_NAME = {}; PANELS.forEach(p => { PANEL_NAME[p[0]] = p[1]; });
-  const PANEL_GK = { tmph: 'tmph', tmsg: 'tmsg' };       // every panel has a target → the key its daily target is saved under
-  const panelOfHouse = (h) => PANEL_GK[h] !== undefined ? h : 'none';
+  const PANEL_GK = { tmph: 'tmph' };       // every panel has a target → the key its daily target is saved under
+  const panelOfHouse = (h) => h === 'tmsg' ? 'tmph' : (PANEL_GK[h] !== undefined ? h : 'none');
   const panelOf = (o) => panelOfHouse(o.house || STORE_HOUSE_MAP[o.store_key] || '');
-  const STORE_PANEL = { tmperfumehouse: 'tmph', tmsg: 'tmsg' };   // any other store (MySales, Manual) = no panel
+  const STORE_PANEL = { tmperfumehouse: 'tmph', tmsg: 'tmph' };   // any other store (MySales, Manual) = no panel
   let panelPick = '';       // the panel button picked above the sheet ('' = all panels)
   const panelAllowed = (k) => !storeSel.size || [...storeSel].some(s => (STORE_PANEL[s] || 'none') === k);   // the Store picker can hide panels
 
@@ -1360,6 +1361,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     const keys = PANELS.filter(p => panelAllowed(p[0]) && (p[0] !== 'none' || cnt.none)).map(p => p[0]);
     const all = keys.reduce((a, k) => a + (sum[k] || 0), 0);
     const chip = (k, label, c, v) => `<button type="button" class="pchip${panelPick === k ? ' on' : ''}" data-p="${k}" style="--c:${c};"><i></i>${ocEsc(label)}<small>${esInr(v)}</small></button>`;
+    if (keys.length <= 1) { el.hidden = true; el.innerHTML = ''; return; }   // one platform: no panel buttons
     el.innerHTML = '<span class="lbl">Panel</span>' + chip('', 'All panels', '#111827', all) + PANELS.filter(p => keys.includes(p[0])).map(p => chip(p[0], p[1], p[2], sum[p[0]] || 0)).join('');
     el.hidden = false;
   }
@@ -1411,10 +1413,12 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     q('[data-copy]').onclick = () => { const t = q('[data-out]'); t.select(); try { navigator.clipboard.writeText(t.value).then(() => { q('[data-msg]').textContent = 'Copied — paste it to Claude.'; }, () => document.execCommand('copy')); } catch (e) { document.execCommand('copy'); } };
   }
   // the strip does not depend on the rest of the page drawing without a hitch: it also looks by itself, now and whenever the dates change
-  setInterval(() => { try { const f = document.getElementById('dateFrom'), t = document.getElementById('dateTo'); if (f && t && f.value && t.value && PSUM.key !== f.value + '|' + t.value && PSUM.busy !== f.value + '|' + t.value) loadProdSum(); } catch (e) { /* next tick */ } }, 1500);
+  if (false) setInterval(() => { try { const f = document.getElementById('dateFrom'), t = document.getElementById('dateTo'); if (f && t && f.value && t.value && PSUM.key !== f.value + '|' + t.value && PSUM.busy !== f.value + '|' + t.value) loadProdSum(); } catch (e) { /* next tick */ } }, 1500);
   document.addEventListener('click', (e) => { if (e.target && e.target.id === 'sgDiagBtn') sgDiag(); if (e.target && e.target.id === 'psumRetry') { PSUM = { key: '', d: null, at: 0, busy: '' }; loadProdSum(); } });
   async function loadProdSum() {
     const el = document.getElementById('prodSum'); if (!el) return;
+    // owner (24 Nov): the 🧴 Shower gel and ⭐ TM Originals cards ("Inside the collection") are not needed any more — never shown, nothing is read
+    el.style.display = 'none'; el.innerHTML = ''; return;
     if (EMP_VIEW) { el.style.display = 'none'; return; }
     const from = document.getElementById('dateFrom').value, to = document.getElementById('dateTo').value; if (!from || !to) return;
     const key = from + '|' + to;
@@ -1468,7 +1472,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
   // One column per platform (house). A platform is the house tag first,
   // then the store — the same rule the server uses (o.house). Query counts
   // come from Assign Queries for the same dates.
-  const PLATFORMS = [['tmph', 'TM Perfume House', 'ph'], ['tmsg', 'TM Shower Gel', 'sg']];
+  const PLATFORMS = [['tmph', 'TM Perfume House', 'ph']];
   const QUERY_TAGS = ['query', 's'], CAMPAIGN_TAGS = ['campaign', 'c'];
   const STORE_HOUSE_MAP = { tmperfumehouse: 'tmph' };
   function orderTagType(tags) {
@@ -1506,7 +1510,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
   }
   // ---- "Queries by hour" (o_details): the day's Query / Campaign counts per hour for each panel, from Assign Queries ----
   let hourData = {}, hourFor = '', hourReq = 0;      // panel key -> queries.hourly reply, for the single day picked
-  const HOUR_KEYS = ['tmph', 'tmsg'];
+  const HOUR_KEYS = ['tmph'];
   const qhOpen = new Set();                          // boxes whose hour list is open (kept across redraws)
   // Yesterday's orders (one-day view only) → the "Y" line under each running total in Orders by hour, to compare today with yesterday at the same hour.
   let ydayOrders = [], ydayFor = '';
@@ -1685,7 +1689,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     const ppl = (teamPeople(c.k) || []).slice().sort((a, b) => a.name.localeCompare(b.name));
     const pres = ppl.filter(p => p.present), abs = ppl.filter(p => !p.present), rows = c.side === 'p' ? pres : (c.side === 'a' ? abs : ppl);
     const day = ppl.length ? ppl[0].date : '';
-    esEl('tmTtl').textContent = 'Sales team · ' + (c.k === 'all' ? 'All panels' : (PANEL_NAME[c.k] || c.k));
+    esEl('tmTtl').textContent = 'Sales team · ' + (c.k === 'all' ? 'TM Perfume House' : (PANEL_NAME[c.k] || c.k));
     esEl('tmSub').textContent = (day ? dateLabel(day) + ' · ' : '') + ppl.length + ' people · ' + pres.length + ' present · ' + abs.length + ' absent';
     const tag = (p) => p.present ? `<span class="tmtag p">${p.mark === 'wfh' ? 'Work from home' : (p.punch ? 'In ' + fmtHM(p.punch) : 'Present')}</span>` : (p.mark && TM_MARK[p.mark] ? `<span class="tmtag ${p.mark === 'leave' || p.mark === 'half_leave' ? 'lv' : 'o'}">${TM_MARK[p.mark]}</span>` : '<span class="tmtag np">Not punched</span>');
     esEl('tmBd').innerHTML = `<div class="tmtabs"><button type="button" class="t${c.side === 't' ? ' on' : ''}" data-tms="t">Total<span>${ppl.length}</span></button><button type="button" class="p${c.side === 'p' ? ' on' : ''}" data-tms="p">Present<span>${pres.length}</span></button><button type="button" class="a${c.side === 'a' ? ' on' : ''}" data-tms="a">Absent<span>${abs.length}</span></button></div>` +
@@ -1833,7 +1837,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     if (ev.key === 'Escape') { rsEdit = ''; renderSummary(); }
   });
 
-  const TOP_ORDER = ['tmph', 'tmsg'];     // order of the panel boxes in the top boxes
+  const TOP_ORDER = ['tmph'];     // order of the panel boxes in the top boxes
   // ---------- Extra ML row (All Orders & Revenue box) ----------
   // Extra ML given by price (ML in the box − ML the customer paid for, see the Extra ML column), for the orders in the boxes.
   // Tap it → the same per employee. Hidden until the ML price chart is loaded / when no order has product sizes.
@@ -2790,6 +2794,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
       if (byStore[label] || (ES_ALLOWED && panelAllowed(k) && (!panelPick || panelPick === k))) boxes.push([label, byStore[label] || { count: 0, total: 0, currency: 'INR', pre: 0, cod: 0 }]);
     });
     Object.entries(byStore).forEach(([label, s]) => { if (!PANELS.some(p => p[0] !== 'none' && p[1] === label)) boxes.push([label, s]); });
+    boxes.length = 0;   // owner (24 Nov): ONE platform now (TM Perfume House) — no card per panel any more (TM Perfume / TM Shower Gel); everything is in the one Orders & Revenue card above
 
     const grid = document.getElementById('summaryGrid');
     // Each card carries both a full label/amount and a short one; CSS shows
@@ -2798,8 +2803,8 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
       <div class="stat-card ar">
         <div class="label"><span class="lbl-full">All Orders &amp; Revenue</span><span class="lbl-short">Orders &amp; Revenue</span></div>
         <div class="value vline"><span>${fmtMoney(grandTotal, 'INR')}</span><span>/ ${base.length}</span></div>
-        ${(() => { const tm = base.filter(o => !o.cancelled && Number(o.allocated) === 1), tmS = tm.reduce((x, o) => x + (Number(o.total) || 0), 0), useTm = tm.length > 0 && tm.length !== base.length;
-          return `<div class="tkr"${useTm ? ` title="Ticket of the ${tm.length} orders given to a salesperson (same as the Team ticket on the Sales Live page). All ${base.length} orders together: ${ticket(grandTotal, base.length, 'INR')}"` : ''}><span>Ticket size${useTm ? ` <small style="color:var(--muted)">(${tm.length} given)</small>` : ''}</span> <b>${useTm ? ticket(tmS, tm.length, 'INR') : ticket(grandTotal, base.length, 'INR')}</b></div>`; })()}
+        ${(() => { const tm = base.filter(o => !o.cancelled && (Number(o.allocated) === 1 || (o.store_key === 'manual' && Number(o.employee_id) > 0))) /* owner (23 Nov): an order typed in HRMS (manual / quick entry) that carries a salesperson IS a given order — 15 of them were left out of the ticket (268 orders, ticket of 253) */, tmS = tm.reduce((x, o) => x + (Number(o.total) || 0), 0), useTm = tm.length > 0 && tm.length !== base.length;
+          return `<div class="tkr" title="Collection of ALL orders ÷ ALL orders (given to a salesperson or not)"><span>Ticket size <small style="color:var(--muted)">(${base.length} orders)</small></span> <b>${ticket(grandTotal, base.length, 'INR')}</b></div>`; })()}
         <div class="tkr"><span>Query order</span> <b class="n">${qOrders}</b></div>
         ${EMP_VIEW ? '' : `<div class="tkr"><span>Query ratio</span> ${qRatio(qOrders, qTotal)}</div>`}
         <div class="tkr"><span>Campaign order</span> <b class="n">${cOrders}</b></div>
@@ -2867,7 +2872,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
   // Which house the order counts under, and why — same rule as the server:
   // a house tag (tmph / tm4u) beats the store; two house tags = store.
   const HOUSE_TAG = { tmph: 'tmph', 'tm perfume house': 'tmph', tmsg: 'tmsg', 'tm shower gel': 'tmsg' };
-  const HOUSE_LABEL = { tmph: 'TM Perfume House', tmsg: 'TM Shower Gel' };
+  const HOUSE_LABEL = { tmph: 'TM Perfume House', tmsg: 'TM Perfume House' };
   const STORE_HOUSE = { tmperfumehouse: 'tmph' };
   function houseReason(o, tags) {
     if (!STORE_HOUSE[o.store_key]) return '—';
@@ -4190,7 +4195,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
         all.forEach(e => { if (panelAllowed(e.b)) bh[e.b] = (bh[e.b] || 0) + e.coll; });
         const split = PANELS.filter(p => bh[p[0]] > 0).map(p => `<span class="hs"><i style="background:${p[2]}"></i>${ocEsc(PANEL_SHORT[p[0]])} <b>${esInr(bh[p[0]])}</b></span>`).join('');
         const stats = `${real.length} employee${real.length === 1 ? '' : 's'} · Collection <b>${esInr(t.coll)}</b> · Target <b>${t.tg ? esInr(t.tg) : '—'}</b>${pc !== null ? ' · <b>' + pc + '%</b>' : ''}${split ? `<span class="hsplit">${split}</span>` : ''}`;
-        blocks.push({ k: 'all', label: 'All panels', color: '#111827', rows, t, real, stats });
+        blocks.push({ k: 'all', label: 'Sales team', color: '#111827', rows, t, real, stats });
       }
     } else PANELS.forEach(([k, label, color]) => {
       if (!panelAllowed(k) || panelPick !== k) return;

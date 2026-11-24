@@ -54,6 +54,15 @@ jobs:
             }
           ' "$P" 2>&1 | head -60
           echo "php error log (analytics lines):"; for L in "${P}analytics/error_log" "${P}error_log" /home/*/logs/php/error.log /home/*/logs/nginx/error.log; do [ -f "$L" ] && { echo "-- $L"; grep -i "analytics" "$L" 2>/dev/null | tail -8 | cut -c1-300; }; done
+          echo "=== WEBSITE ORDERS (given to salespeople) ==="
+          php -r '
+            $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; } require $f;
+            try { $d = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]); } catch (Throwable $e) { echo "db: " . $e->getMessage() . "\n"; exit; }
+            try { foreach ($d->query("SELECT manual_order_id, order_no, mp_no, employee_id, order_type, house, batch, total, payment_status, order_date, created_by, ml FROM manual_orders WHERE channel = \"TM Store\" ORDER BY manual_order_id DESC LIMIT 10") as $r) echo "  row " . json_encode($r) . "\n"; echo "  (end of TM Store rows)\n"; } catch (Throwable $e) { echo "  rows: " . $e->getMessage() . "\n"; }
+            try { foreach ($d->query("SELECT at, actor, ref, detail FROM bd_log WHERE kind = \"order\" AND (detail LIKE \"website order%\" OR ref LIKE \"TM1%\") ORDER BY at DESC LIMIT 15") as $r) echo "  log " . $r["at"] . " | " . $r["actor"] . " | " . $r["ref"] . " | " . $r["detail"] . "\n"; echo "  (end of log)\n"; } catch (Throwable $e) { echo "  log: " . $e->getMessage() . "\n"; }
+            try { $x = $d->query("SELECT setting_key, LEFT(setting_value, 60) v FROM hrms_settings WHERE setting_key IN (\"tms_api_base\", \"tms_commission\")")->fetchAll(); echo "  settings " . json_encode($x) . "\n"; $k = $d->query("SELECT LENGTH(setting_value) FROM hrms_settings WHERE setting_key = \"tms_api_key\"")->fetchColumn(); echo "  key saved: " . ($k ? "yes (" . $k . " chars)" : "no") . "\n"; } catch (Throwable $e) { echo "  settings: " . $e->getMessage() . "\n"; }
+            try { foreach ($d->query("SELECT employee_id, full_name FROM employees WHERE full_name LIKE \"%Ankit%\"") as $r) echo "  emp " . json_encode($r) . "\n"; } catch (Throwable $e) { }
+          ' "$P" 2>&1 | head -50
           echo "=== database activity (SHOW FULL PROCESSLIST, no passwords) ==="
           php -r '
             $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }

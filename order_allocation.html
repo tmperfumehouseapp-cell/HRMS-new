@@ -436,7 +436,9 @@
   const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };
   function todayStr() { return bizDayOf(new Date()); }
 
-  let HOUSES = { tmph: 'TM Perfume House', tmsg: 'TM Shower Gel' };
+  // owner (24 Nov): ONE platform now — TM Perfume House. No panel is chosen any more; an order stored under the old 'tmsg' panel (kept in the data for the commission) is shown as TM Perfume House
+  let HOUSES = { tmph: 'TM Perfume House' };
+  const HN = (h) => HOUSES[h] || (h === 'tmsg' ? 'TM Perfume House' : h);
   let TYPES = { query: 'Query', campaign: 'Campaign' };
   let SOURCES = {};
   let EMPS = [];          // [{id, code, name, groups:[...]}]
@@ -451,12 +453,13 @@
   const empById = (id) => EMPS.find(e => e.id === Number(id));
   // Effective choice for a pending row: what was picked, else what the order already says
   // (employee from the order tag / panel salesman, panel from the store or house tag).
-  const effEmp = (o, p) => (p.emp !== undefined ? p.emp : (o.employee_id || 0));
+  // A salesperson's own login: a pending order with nobody on it starts with THEIR name, so only the Type is left to choose (owner, 24 Nov).
+  const effEmp = (o, p) => (p.emp !== undefined ? p.emp : (o.employee_id || ((IS_EMP && MY_EMP && !o.allocated && !o.cancelled && EMPS.some(e => e.id === MY_EMP)) ? MY_EMP : 0)));
   // "Direct order" is chosen in the Employee select: a panel, no employee. In a pending pick it is -1; once saved the order has allocated_direct.
   const DIRECT = -1;
   const isDirect = (o, p) => (p.emp !== undefined ? p.emp === DIRECT : !!o.allocated_direct);
   const noEmpMsg = (o, p) => (isDirect(o, p) ? 'Direct order has no employee' : 'Choose the employee first');
-  const effHouse = (o, p) => (p.house !== undefined ? p.house : (o.house || ''));
+  const effHouse = (o, p) => (p.house !== undefined ? p.house : (o.house || 'tmph'));
   const effType = (o, p) => (p.type !== undefined ? p.type : (o.order_type || ''));
 
   function matches(o) {
@@ -610,6 +613,7 @@
 
   // Extra mobile number of the customer — type it here; saved on Enter / when you leave the box.
   function phoneBox(o) {
+    if (o.store_key === 'manual') return '';   // a quick-entry / website order: its mobile is already on the order, there is nothing to save here (the box gave "source and order_id are required")
     if (o.cancelled) return o.extra_phone ? `<div class="sub">+ ${esc(o.extra_phone)}</div>` : '';
     return `<input type="tel" inputmode="tel" class="ph-in" data-k="${key(o)}" maxlength="16" value="${esc(o.extra_phone || '')}" placeholder="Extra mobile no." autocomplete="off" spellcheck="false" title="Customer's extra mobile number"><input type="text" class="bd-in" data-k="${key(o)}" maxlength="5" placeholder="🎂 DD/MM" autocomplete="off" spellcheck="false" title="Customer's birthday (day/month). We send a free 50 ml gift on the birthday.">`;
   }
@@ -649,6 +653,7 @@
 
   // Chain: Yes / No per order (saved straight away; only "Yes" is stored, no row means No). Employee logins only see it.
   function chainCell(o, canEdit) {
+    if (o.store_key === 'manual') canEdit = false;   // a quick-entry / website order: shown only, nothing to save here
     const yes = o.chain === 'yes';
     if (!canEdit) return `<span class="sub" style="${yes ? 'color:#0f7a41; font-weight:700;' : ''}">${yes ? 'Yes' : 'No'}</span>`;
     return `<select class="sel chain-sel ${yes ? 'yes' : ''}" data-k="${key(o)}" title="Chain order">` +
@@ -673,6 +678,7 @@
 
   // Address: Yes / No per order (saved straight away; only "Yes" is stored, no row means No). Employee logins only see it.
   function addressCell(o, canEdit) {
+    if (o.store_key === 'manual') canEdit = false;   // a quick-entry / website order: shown only, nothing to save here
     const yes = o.address === 'yes';
     if (!canEdit) return `<span class="sub" style="${yes ? 'color:#0f7a41; font-weight:700;' : ''}">${yes ? 'Yes' : 'No'}</span>`;
     return `<select class="sel addr-sel ${yes ? 'yes' : ''}" data-k="${key(o)}" title="Address">` +
@@ -699,6 +705,7 @@
   const PT_TXT = { old: 'Old', new: 'New' };
   const ptOf = (o) => o.price_type === 'old' ? 'old' : 'new';
   function priceCell(o, canEdit) {
+    if (o.store_key === 'manual') canEdit = false;   // a quick-entry / website order: shown only, nothing to save here
     const v = ptOf(o);
     if (!canEdit) return `<span class="sub" style="${v === 'old' ? 'color:#8a5a00;' : 'color:#1d4ed8;'} font-weight:700;">${PT_TXT[v]}</span>`;
     return `<select class="sel price-sel ${v}" data-k="${key(o)}" title="Old or New price">` +
@@ -754,9 +761,9 @@
       ? (shownType ? `<span class="otype ${shownType}">${esc(TYPES[shownType] || shownType)}</span>` : '<span class="sub">—</span>')
       : `<select class="sel ${p.type ? 'changed' : ''}" onchange="pickType('${k}', this.value)">${options(TYPES, effType(o, p), '— Type —')}</select>`;
     const panelCell = lock
-      ? (o.allocated ? `<span class="house ${o.allocated_house}">${esc(HOUSES[o.allocated_house] || o.allocated_house)}</span>
-         <div class="sub">by ${/^auto/.test(o.allocated_by || '') ? '🤖 ' : ''}${esc(o.allocated_by || '—')}${o.allocated_at ? ' · ' + fmtDT(o.allocated_at) : ''}</div>` : (houseSel ? `<span class="house ${houseSel}">${esc(HOUSES[houseSel] || houseSel)}</span>` : '<span class="sub">—</span>'))
-      : `<select class="sel ${p.house ? 'changed' : ''}" onchange="pickHouse('${k}', this.value)">${options(HOUSES, houseSel, '— Panel —')}</select>`;
+      ? (o.allocated ? `<span class="house tmph">${esc(HN(o.allocated_house))}</span>
+         <div class="sub">by ${/^auto/.test(o.allocated_by || '') ? '🤖 ' : ''}${esc(o.allocated_by || '—')}${o.allocated_at ? ' · ' + fmtDT(o.allocated_at) : ''}</div>` : (houseSel ? `<span class="house tmph">${esc(HN(houseSel))}</span>` : '<span class="sub">—</span>'))
+      : `<span class="house tmph">${esc(HN(houseSel || 'tmph'))}</span>`;
     // Employee role: the Type (Query / Campaign) must be picked too before the ✓ works.
     const needType = IS_EMP && !effType(o, p);
     const ready = !o.allocated && houseSel && (empSel > 0 || direct) && !needType;
@@ -770,7 +777,7 @@
       : `<button type="button" class="cx-btn" onclick="cancelOrder('${k}', true, this)">✕ Cancel</button>`);
     return `<tr class="${o.cancelled ? 'row-cx' : (o.allocated ? 'row-done' : '')}" data-k="${k}">
       <td><a href="#" class="ord-link" onclick="openDetail('${k}'); return false;" title="Open order details"><b>${esc(o.order_name)}</b></a>${/^#?WM-\d+/i.test(String(o.order_name || '')) ? `<button type="button" class="wm-upd" onclick="wmUpdate('${esc(String(o.order_name).replace(/^#/, ''))}')" title="Remove or add perfumes in this manual order (until a tracking ID is given)">✏️ Update</button>` : ''}<div class="sub">${fmtT(o.created_at)} <span class="src">${esc(o.source_label || o.store_src || o.store)}</span></div></td>
-      <td>${o.cancelled ? (o.code ? `<span class="code-tag">${esc(o.code)}</span>` : '<span class="sub">—</span>') : o.code_locked ? `<input type="text" class="code-in locked" data-k="${k}" value="${esc(o.code || '')}" placeholder="Locked" disabled title="Locked — the time allowed for adding a code after allocation has passed. Ask Admin / HR."><span class="code-lk" title="Locked — ask Admin / HR">🔒</span>` : `<input type="text" class="code-in" data-k="${k}" maxlength="40" value="${esc(o.code || '')}" placeholder="Ex:-Og12345" autocomplete="off" spellcheck="false">`}</td>
+      <td>${o.store_key === 'manual' && !o.web ? '<span class="sub" title="A quick-entry order has no code">no code</span>' : o.cancelled ? (o.code ? `<span class="code-tag">${esc(o.code)}</span>` : '<span class="sub">—</span>') : o.code_locked ? `<input type="text" class="code-in locked" data-k="${k}" value="${esc(o.code || '')}" placeholder="Locked" disabled title="Locked — the time allowed for adding a code after allocation has passed. Ask Admin / HR."><span class="code-lk" title="Locked — ask Admin / HR">🔒</span>` : `<input type="text" class="code-in" data-k="${k}" maxlength="40" value="${esc(o.code || '')}" placeholder="Ex:-Og12345" autocomplete="off" spellcheck="false">`}</td>
       <td>${empCell}${botWhy(o)}</td>
       <td>${esc(o.customer || 'Guest')}<div class="sub">${o.phone ? `<a href="#" title="Open this customer's chat beside the list" onclick="SideChat.open('${String(o.phone).replace(/\D/g, '').slice(-10)}'); return false;" style="color:inherit;text-decoration:underline dotted">${esc(o.phone)} 💬</a>` : ''}</div>${phoneBox(o)}</td>
       <td>${o.items}${clrLine(o)}${addonItemsLine(o)}</td>
@@ -821,7 +828,7 @@
     (fs === 'partially_paid' && paid != null ? ` &nbsp;<b style="color:#0f7a41;">Paid ${inr(paid)}</b>${outstanding != null ? ' · ' + inr(outstanding) + ' to pay' : ''}` : '');
   function countedUnder(o) {
     if (o.cancelled) return 'Cancelled — not counted anywhere';
-    if (o.allocated) return `<b>${esc(HOUSES[o.allocated_house] || o.allocated_house)}</b> — allocated${o.allocated_by ? ' by ' + esc(o.allocated_by) : ''}${o.allocated_at ? ' · ' + esc(fmtDT(o.allocated_at)) : ''}`;
+    if (o.allocated) return `<b>${esc(HN(o.allocated_house))}</b> — allocated${o.allocated_by ? ' by ' + esc(o.allocated_by) : ''}${o.allocated_at ? ' · ' + esc(fmtDT(o.allocated_at)) : ''}`;
     return 'Not allocated yet — it is not counted on the Orders page until it is allocated';
   }
   // What the list already knows about the order — used for MySales orders (no Shopify record) and when the full details cannot be opened.
@@ -859,6 +866,22 @@
     const body = document.getElementById('detailBody');
     detailModal.classList.add('open');
     lockPage(true);
+    if (o.custom_store && o.web) {   // 🛍 a website order: its products, money lines and address are read from the shop
+      body.innerHTML = localDetail(o) + '<div class="loading" style="padding:14px 0;">Loading the products and the address...</div>';
+      const wid = ++detailReqId;
+      try {
+        const r = (await api.get('tms.detail', { number: o.order_name })).order; if (wid !== detailReqId) return;
+        const th = (txt, al) => `<th style="text-align:${al}; font-size:11.5px; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line);">${txt}</th>`;
+        const td = (inner, al, extra) => `<td style="padding:7px 8px; border-bottom:1px solid #f2f2f2; text-align:${al}; ${extra || ''}">${inner}</td>`;
+        const line = (l, v, st) => `<div style="display:flex; justify-content:space-between; padding:3px 0; ${st || ''}"><span>${l}</span><span>${v}</span></div>`;
+        const a = r.addr || {}, m = r.money || {}, adr = [a.name, a.address1, a.address2, [a.city, a.state].filter(Boolean).join(', '), a.pincode].filter(Boolean).map(esc).join('<br>');
+        body.innerHTML = localDetail(o) + detailRow('Address', adr || '—') + (r.note ? detailRow('Note', esc(r.note)) : '') + (r.awb ? detailRow('Tracking', esc(r.awb) + (r.courier ? ' (' + esc(r.courier) + ')' : '')) : '') +
+          `<table class="no-stack" style="width:100%; border-collapse:collapse; margin:10px 0;"><thead><tr>${th('Product', 'left')}${th('Qty', 'center')}${th('Price', 'right')}${th('Total', 'right')}</tr></thead><tbody>${(r.lines || []).map(li => `<tr>
+            ${td(esc(li.title) + (li.size ? `<div style="font-size:12px; color:var(--muted);">${esc(li.size)}</div>` : ''), 'left')}${td(li.qty, 'center')}${td(fmtMoney(li.price, 'INR'), 'right')}${td(fmtMoney(li.price * li.qty - (li.discount || 0), 'INR'), 'right', 'font-weight:600;')}</tr>`).join('')}</tbody></table>
+          <div style="margin-left:auto; max-width:260px; font-size:13.5px;">${m.subtotal ? line('Subtotal', fmtMoney(m.subtotal, 'INR')) : ''}${m.discount > 0 ? line('Discount' + (m.code ? ' <span class="dcode">' + esc(m.code) + '</span>' : ''), '−' + fmtMoney(m.discount, 'INR'), 'color:var(--ok-fg);') : ''}${m.shipping > 0 ? line('Shipping', fmtMoney(m.shipping, 'INR')) : ''}${m.cod_fee > 0 ? line('COD fee', fmtMoney(m.cod_fee, 'INR')) : ''}${line('Total', fmtMoney(r.total, 'INR'), 'padding:6px 0; border-top:1px solid var(--line); font-weight:700;')}${r.paid > 0 && r.due > 0 ? line('Paid', fmtMoney(r.paid, 'INR'), 'color:#0f7a41; font-weight:700;') + line('To pay on delivery', fmtMoney(r.due, 'INR'), 'font-weight:700;') : ''}</div>`;
+      } catch (err) { if (wid !== detailReqId) return; body.innerHTML = localDetail(o, esc(err.message)); }
+      return;
+    }
     if (o.custom_store) { body.innerHTML = localDetail(o); return; }
     body.innerHTML = '<div class="loading" style="padding:20px 0;">Loading order details...</div>';
     const id = ++detailReqId;       // opening another order before this one loads: only the latest fills the popup
@@ -980,7 +1003,7 @@
     if (!m) return '<span class="sub">—</span>';
     const top = `<span class="mlv">${m.base} ml${m.extra ? ` <span class="mlx">+${m.extra} ml free</span> <span class="mlt">= ${m.total} ml</span>` : ''}</span>`;
     if (!ML_CHART || !m.total) return top;
-    const r = MLSLAB.offerCom(CM_OFFERS, CM_WIN, ML_CHART, { ml: m.total, extra: m.extra, day: o.biz_date || '', amt: Number(o.total || 0), pre: MLSLAB.isPre(o.financial_status), code: o.code || '' }) || MLSLAB.orderCom(MLSLAB.preview(ML_CHART), { ml: m.total, day: o.biz_date || '', emp: o.employee_id, amt: Number(o.total || 0), pre: MLSLAB.isPre(o.financial_status), code: o.code || '' }, null);      // daily target not known here: chart % only (+ bonus on the Commission page when achieved)
+    const r = MLSLAB.offerCom(CM_OFFERS, CM_WIN, ML_CHART, { ml: m.total, extra: m.extra, day: o.biz_date || '', amt: Number(o.total || 0), pre: MLSLAB.isPre(o.financial_status), code: o.code || (o.web ? 'WEB' : '') }) || MLSLAB.orderCom(MLSLAB.preview(ML_CHART), { ml: m.total, day: o.biz_date || '', emp: o.employee_id, amt: Number(o.total || 0), pre: MLSLAB.isPre(o.financial_status), code: o.code || (o.web ? 'WEB' : '') }, null);      // daily target not known here: chart % only (+ bonus on the Commission page when achieved)
     if (!r) return top + `<div class="mln">${!MLSLAB.activeOn(ML_CHART, o.biz_date) ? 'ML slab not active on this date' : m.total + ' ml not in chart'} · normal commission</div>`;
     const tip = r.steps.join(' · ') + (MLSLAB.on(ML_CHART) ? '' : ' · (ML price slab is OFF — preview only)') + (Number(r.bonusPct) > 0 ? ' · daily target achieved → +' + r.bonusPct + '% bonus on the Commission page' : '') + (r.special ? ' · 📅 special day: ' + r.special.join(', ') : '');
     return top + `<div><span class="mlp ${r.pct < 2 ? 'lo' : r.pct >= 6 ? 'hi' : ''}" title="${esc(tip)}">${Math.round(r.pct * 100) / 100}% · ${inr(Math.round(r.v))}</span></div>` + mlXLine(o);
@@ -1041,7 +1064,7 @@
     const e = empById(emp), h = adHouse(o);
     addonKey = k;
     document.getElementById('addonTitle').textContent = 'Add-on for ' + (e ? e.name : 'employee');
-    document.getElementById('addonSub').textContent = new Date(adDate(o) + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }) + (h ? ' · ' + (HOUSES[h] || h) : '');
+    document.getElementById('addonSub').textContent = new Date(adDate(o) + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }) + (h ? ' · ' + (HN(h)) : '');
     document.getElementById('addonOrder').value = o.order_name || '';
     document.getElementById('addonItems').innerHTML = addonItemRow() + addonItemRow();
     document.getElementById('addonPrice').value = ''; document.getElementById('addonPre').value = ''; document.getElementById('addonCod').value = '';
@@ -1380,7 +1403,7 @@
       o.allocated_direct = dir ? 1 : 0;
       o.allocated_emp = dir ? 0 : emp; o.employee_id = dir ? 0 : emp; o.salesman = dir ? '' : (d.employee_name || (e ? e.name : o.salesman)); o.employee_code = e ? e.code : (dir ? '' : o.employee_code);
       o.allocated_by = d.allocated_by; o.allocated_at = d.allocated_at;
-      o.store_src = o.store_src || o.store; o.store = HOUSES[house];
+      o.store_src = o.store_src || o.store; o.store = HN(house);
       delete pending[k];
       showAlert(d.message, 'success');
       render();
@@ -1452,7 +1475,7 @@
         catch (e2) { throw new Error(/fetch|network|load failed/i.test(e2.message || '') ? 'The server took too long for this date range. Pick fewer days (e.g. one month) and try again.' : e2.message); }
       }
       orders = d.orders || [];
-      if (d.houses) HOUSES = d.houses;
+      if (d.houses && d.houses.tmph) HOUSES = { tmph: d.houses.tmph };
       if (d.types) TYPES = d.types;
       if (d.sources) SOURCES = d.sources;
       if (d.employees) EMPS = d.employees;
@@ -1482,7 +1505,7 @@
   function custOrderRow(o) {
     const k = key(o);
     const who = o.allocated_direct ? '<span class="dtag">Direct order</span>' : (o.salesman ? `<b>${esc(o.salesman)}</b>` : '<span class="sub">No employee</span>');
-    const panel = o.house ? `<span class="house ${esc(o.house)}">${esc(o.house_label || HOUSES[o.house] || o.house)}</span>` : '';
+    const panel = o.house ? `<span class="house tmph">${esc(HN(o.house))}</span>` : '';
     const state = o.cancelled ? '<span class="badge inactive">Cancelled</span>' : (o.allocated ? '<span class="badge">Allocated</span>' : '<span class="badge inactive">Not allocated</span>');
     return `<div class="co ${o.cancelled ? 'cx' : ''}">
       <div class="co-a"><a href="#" class="ord-link" onclick="openDetail('${k}'); return false;" title="Open order details"><b>${esc(o.order_name)}</b></a> <span class="src">${esc(o.source_label || o.store)}</span>

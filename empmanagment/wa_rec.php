@@ -3,7 +3,7 @@
  * wa_rec.php — 🔁 Recover failed campaign messages (owner, 11 Nov 2026).
  *
  * THE IDEA IN PLAIN WORDS
- *  - A person whose campaign message FAILED for a reason another number can fix gets the same message again from a DIFFERENT number, slowly (up to wa_rec_hourly = 5,000 an hour,
+ *  - A person whose campaign message FAILED for a reason another number can fix gets the same message again from a DIFFERENT number, slowly (up to wa_rec_hourly = 25,000 an hour (owner, 24 Nov; was 5,000),
  *    one by one, never inside the running campaign pool and never inside ⚡ Send fast). Three attempts per person in all (the first send is attempt 1), at least an hour apart.
  *  - Attempt 3 (or attempt 2 when Meta says the message itself has a problem) uses an approved ALTERNATIVE wording of the same message (same variables, same offer).
  *  - Alternatives (max 2 per message: versions 2 and 3 of its family) are written by Claude and sent to Meta for approval by themselves for every message that has failures today;
@@ -13,7 +13,7 @@
  *  - Never to people who were delivered another way, wrote back, opted out, or already have an attempt in the last hour.
  *  - Every attempt is written to wa_rec_log (who, which number, which message version, when). Delivery comes from the same Meta receipts as every message (wa_messages.status by wamid),
  *    so "recovered" only ever means Meta said delivered / read.
- * Settings: wa_rec_on 1 · wa_rec_hourly 5000 · wa_rec_alts 1 · wa_rec_pause_until (set by itself)
+ * Settings: wa_rec_on 1 · wa_rec_hourly 25000 · wa_rec_alts 1 · wa_rec_pause_until (set by itself)
  * Routes (in wa_camp.php): wa.rec_report GET {id} · wa.rec_set POST {on}
  */
 if (!function_exists('wa_rec_tables')) {
@@ -35,7 +35,9 @@ function wa_rec_tables(PDO $pdo): bool
 function wa_rec_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
-    return ['on' => $g('wa_rec_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_rec_hourly', '5000'))), 'alts' => $g('wa_rec_alts', '1') !== '0', 'pause_until' => (int)$g('wa_rec_pause_until', '0'), 'max_attempts' => 3, 'gap_min' => 60, 'held_on' => $g('wa_rec_held', '1') !== '0', 'held_off_until' => (int)$g('wa_rec_held_off_until', '0')];
+    try { if ($g('wa_rec_np_v', '') !== '1') { $__np = (new DateTime('2026-11-25 00:00:00', new DateTimeZone('Asia/Kolkata')))->getTimestamp(); setting_set($pdo, 'wa_rec_nopause_until', (string)$__np); setting_set($pdo, 'wa_rec_pause_until', '0'); setting_set($pdo, 'wa_rec_np_v', '1'); } } catch (Throwable $e) { }   // owner, 24 Nov: the 'more than 60% failed -> rest an hour' safety is off until midnight tonight (IST), back on from tomorrow; a pause that was already set is cleared once
+    try { if ($g('wa_rec_h25_v', '') !== '1') { setting_set($pdo, 'wa_rec_hourly', '25000'); setting_set($pdo, 'wa_rec_h25_v', '1'); } } catch (Throwable $e) { }   // owner, 24 Nov: Module A's recovery speed limit 5,000 -> 25,000 an hour (one time; later changes stay)
+    return ['on' => $g('wa_rec_on', '1') !== '0', 'hourly' => max(10, min(30000, (int)$g('wa_rec_hourly', '5000'))), 'alts' => $g('wa_rec_alts', '1') !== '0', 'pause_until' => (int)$g('wa_rec_pause_until', '0'), 'max_attempts' => 3, 'gap_min' => 60, 'held_on' => $g('wa_rec_held', '1') !== '0', 'held_off_until' => (int)$g('wa_rec_held_off_until', '0')];
 }
 /** 'never' | 'held' | 'tpl' (the message itself has a problem → use an alternative) | 'now' (another number can fix it). */
 function wa_rec_class(int $ec): string
@@ -105,6 +107,7 @@ function wa_rec_tick(PDO $pdo): array
 {
     $t0r = microtime(true); $r = wa_rec_tick_run($pdo); wa_dq_precompute($pdo);
     if (function_exists('wa_ru_tick') && microtime(true) - $t0r < 25) { try { $r['util'] = wa_ru_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'Utility follow-up: ' . $e->getMessage()); } }   // 💸 Module B: a failed marketing message gets a utility follow-up (wa_rec_util.php)   // the heavy counts of the hour grid and the message ranking are prepared in the background
+    if (microtime(true) - $t0r < 40) { try { if (!function_exists('wa_rc_tick') && is_file(__DIR__ . '/wa_modc.php')) require_once __DIR__ . '/wa_modc.php'; if (function_exists('wa_rc_tick')) $r['modc'] = wa_rc_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'Module C: ' . $e->getMessage()); } }   // 🧾 Module C (owner 24 Nov 2026): utility only, 200 an hour, to failed people who never wrote (wa_modc.php)
     if (($r['note'] ?? '') !== 'busy') {
         try { $last = json_decode((string)setting_get($pdo, 'wa_rec_last', ''), true); $last = is_array($last) ? $last : []; $diag = $last['diag'] ?? null; $dAt = (int)($last['diag_at'] ?? 0);
             if (!$diag || $dAt < time() - 120) { $diag = wa_rec_diag($pdo); $dAt = time(); }
@@ -131,7 +134,7 @@ function wa_rec_tick_run(PDO $pdo): array
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_rec_log WHERE at >= ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 3600)]); $left = $cfg['hourly'] - (int)$q->fetchColumn(); if ($left <= 0) { $res['note'] = 'this hour\'s recovery pool is used'; return $res; }
         // a round of recovery that mostly fails (Meta receipts) pauses itself for an hour
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status = 'failed') AS f FROM wa_rec_log r JOIN wa_messages m ON m.wamid = r.wamid WHERE r.at >= ? AND r.wamid <> ''"); $q->execute([date('Y-m-d H:i:s', $nowTs - 7200)]); $hr = $q->fetch();
-        if ((int)$hr['n'] >= 60 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_rec_pause_until', (string)($nowTs + 3600)); wa_log($pdo, 'campaign', false, 'Recovery paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' recovery messages failed'); $res['note'] = 'paused: too many failures'; return $res; }
+        if ((int)$hr['n'] >= 60 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6 && $nowTs >= (int)setting_get($pdo, 'wa_rec_nopause_until', '0')) { setting_set($pdo, 'wa_rec_pause_until', (string)($nowTs + 3600)); wa_log($pdo, 'campaign', false, 'Recovery paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' recovery messages failed'); $res['note'] = 'paused: too many failures'; return $res; }
         // somebody was delivered again → the campaign's own retry of that person (a day later) must not send it a second time
         try { $pdo->exec("UPDATE wa_camp_items i JOIN wa_rec_log r ON r.item_id = i.id JOIN wa_messages m ON m.wamid = r.wamid SET i.status = 'skipped' WHERE (i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND r.ok = 1 AND r.wamid <> '' AND m.status IN ('delivered', 'read')"); } catch (Throwable $e) { }
         // "held by Meta" (131049) people are tried from another number after 30 minutes — an experiment with a brake: if almost none get delivered, it stops for a day

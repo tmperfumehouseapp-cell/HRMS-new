@@ -192,7 +192,6 @@ function wa_auto_alloc(PDO $pdo): int
     try { wa_camp_requery($pdo, 30); } catch (Throwable $e) { }
     try { if (function_exists('order_gel_fix')) $n += order_gel_fix($pdo); } catch (Throwable $e) { }
     try { if (function_exists('order_type_fill')) $n += order_type_fill($pdo); } catch (Throwable $e) { }   // a hand-allocated order with no Query / Campaign type is typed from the chat
-    try { if (function_exists('must3_photo_tick')) must3_photo_tick($pdo); } catch (Throwable $e) { }   // 📷 chain photos sent without words are looked at for the must-send check
     try { if (function_exists('ora_tick')) ora_tick($pdo); } catch (Throwable $e) { }
     try { if (function_exists('grow_learn_tick')) grow_learn_tick($pdo); } catch (Throwable $e) { }   // 📚 15-minute learning pulse + hourly digest for the guidebook   // ⭐ the stars of new orders are worked out from the chat   // 🧴 shower-gel orders of the month belong to TM Shower Gel
     return $n;
@@ -259,6 +258,10 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('cfun_fast') && !defined('WA_IN_WEBHOOK')) $o['cfun_fast'] = cfun_fast($pdo, 2000, 8, 20); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'funnel fast: ' . $e->getMessage()); }   // ⚡ customers whose status changed are recounted every run
     try { if (function_exists('waa_tick') && !defined('WA_IN_WEBHOOK')) $o['auto'] = waa_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto assign (new): ' . $e->getMessage()); } $__mk('waa_tick');   // 🏪 new queries → salespeople by the rules
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); } $__mk('wa_auto_alloc');   // 🤖 orders → the salesperson of the chat
+    if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && is_file(__DIR__ . '/store_orders.php')) { require_once __DIR__ . '/store_orders.php'; if (function_exists('tms_auto_tick')) $o['tms'] = tms_auto_tick($pdo); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'website orders: ' . $e->getMessage()); }   // 🛍 new website orders go to the salesperson who holds the customer's chat (same rules as a Shopify order)
+    if (!$__late()) try { if (function_exists('wag_cx_btn_close') && !defined('WA_IN_WEBHOOK')) $o['cxbtn'] = wag_cx_btn_close($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'experience buttons: ' . $e->getMessage()); }   // ✅ a button tap under our experience message resolves the chat by itself
+    if (!$__late()) try { if (function_exists('must3_push_tick') && !defined('WA_IN_WEBHOOK')) $o['m3n'] = must3_push_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'must-send reminder: ' . $e->getMessage()); }   // 📲 20 minutes after an order: its salesperson is told what is still missing
+    try { if (function_exists('must3_photo_tick') && !defined('WA_IN_WEBHOOK')) $o['m3p'] = must3_photo_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain photos: ' . $e->getMessage()); }   // 📷 chain photos sent without words are looked at for the must-send check — its OWN engine step (inside wa_auto_alloc it was never reached: 8 photos waited, none read)
     if (!$__late()) try { if (function_exists('ora_catchup') && !defined('WA_IN_WEBHOOK')) $o['ora'] = ora_catchup($pdo); } catch (Throwable $e) { } $__mk('ora_catchup');   // 📈 today's unread orders are read by themselves (growth effort): nobody has to press Read chats now
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); } $__mk('wa_callnow_scan');
     if (!$__late()) try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); } $__mk('wq_urgent_push');   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
@@ -626,9 +629,11 @@ function wa_number_caps(PDO $pdo, array $health): array
         $ownT = $perNum ? ($h['tier'] === -1 ? 1000000 : (int)$h['tier']) : ($gT[$wb[$id] ?? ''] ?? $tier);   // per number: its own limit · shared: the limit of ITS OWN WhatsApp account (never another portfolio's)
         // slow start protects a NEW account only: once Meta itself trusts the account (limit 10,000 or more) Meta's own limit is the cap; owner 20 Nov 2026: in per-number mode it is the NUMBER's own limit that counts, so a new number of another portfolio (limit 2,000) gets the slow start (250 / 500 / 1,000 … a day by its age) although the old numbers are trusted
         $young = $ownT < 10000 && $age < 42;   // owner 20 Nov 2026: a YOUNG number with a small own limit (a new number of another portfolio) ALWAYS gets the slow start, whatever the team setting says — the 2nd port number got 835 campaign + 2,086 follow-up messages in its first hours and its rating fell to Yellow
-        $ramp = ($cfg['ramp'] && $ownT < 10000) || $young;
+        $own11 = $id === 11 && ($man[$id] ?? 0) > 0; if ($own11) { $young = false; }   // owner 23 Nov 2026: "loosen the 3-day rule for number 11" - its day limit is the one typed for it (tier_manual: 500, doubling once a day by Module B), not the 250 / 500 / 1,000 age steps
+        $ramp = !$own11 && (($cfg['ramp'] && $ownT < 10000) || $young);
         $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $ownT ? 'slow start (day ' . ($age + 1) . ')' : '';
         $cap = min($cap, max(1, (int)$ownT));   // owner 20 Nov 2026: the full limit of the number (2,000 = 2,000), no 90% gate of our own
+        if (($young || $own11) && $cap > 0) $cap = max(1, intdiv($cap, 2));   // owner 23 Nov 2026: a small NEW number uses only HALF of the limit that opens for it (number 11: 1,000 -> 500; a new number on its slow start / small Meta limit: half)
         // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }

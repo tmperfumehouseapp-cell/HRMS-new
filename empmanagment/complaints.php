@@ -314,6 +314,7 @@ function cx_raise(PDO $pdo, array $auth, array $role, array $in) {
     $id = (int)$pdo->lastInsertId();
     if (!empty($in['quiet']) || $src === 'oldphone') { try { $pdo->prepare("UPDATE cx_cases SET quiet = 1 WHERE id = ?")->execute([$id]); } catch (Throwable $e) { } }   // 📱 the customer talks on our OLD phone (migration): HRMS sends them nothing, the team answers on that phone
     $code = cx_code($id); $case = cx_row($pdo, $id);
+    try { $hold = $contact ? (int)$contact['assigned_emp'] : 0; if ($hold > 0 && $hold !== $emp && function_exists('ct_push')) ct_push($pdo, [$hold], '⚠ Complaint from your customer', ($name !== '' ? $name : '+91 ' . $key) . ': ' . $P[$problem][0] . ' (' . $code . '). Complaint Care answers it.', '/my_chats.html?phone=' . $key, 'cx-raised-' . $id); } catch (Throwable $e) { }   // 📲 owner (23 Nov): the salesperson who holds the customer's chat is told when a complaint is raised on that customer
     cx_ev($pdo, $id, $emp, 'raised', cx_name($pdo, $emp) . ' raised the complaint (' . $P[$problem][0] . ', ' . $U[$urg] . ') from ' . $S[$src]);
     if ($summary !== '' && $summary !== $P[$problem][0] && empty($in['quiet_note'])) cx_ev($pdo, $id, $emp, 'note', $summary);
     if ($key !== '') { $n = $pdo->prepare("SELECT COUNT(*) FROM cx_cases WHERE phone = ? AND id <> ? AND raised_at >= ?"); $n->execute([$key, $id, date('Y-m-d', strtotime('-90 days'))]); if ((int)$n->fetchColumn() > 0) cx_ev($pdo, $id, 0, 'alert', 'Repeat complainer: this customer has complained before in the last 90 days.'); }
@@ -400,8 +401,8 @@ function cx_suggest(PDO $pdo, array $r, $meName) {
 function cx_looks_like(PDO $pdo, $key) {
     try {
         $m = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' ORDER BY id DESC LIMIT 4"); $m->execute([$key]); $t = ' ' . mb_strtolower(implode(' ', array_column($m->fetchAll(), 'body'))) . ' ';
-        $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|bottle.{0,12}(crack|toot))/u', 'wrong' => '/(wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived))/u', 'notdelivered' => '/(not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|marked delivered)/u',
-                'quality' => '/(fake|smell.{0,14}(different|bad|weak|not same)|khushbu.{0,14}(alag|nahi|kam)|quality (is )?(bad|poor)|duplicate)/u', 'refund' => '/(refund|paisa wapas|money back|return kar)/u'];
+        $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|bottle.{0,12}(crack|toot))/u', 'wrong' => '/(wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)|exchange|replace(ment)?|badalna|badalni|badalne)/u', 'notdelivered' => '/(not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|marked delivered)/u',
+                'quality' => '/(fake|smell.{0,14}(different|bad|weak|not same)|khushbu.{0,14}(alag|nahi|kam)|quality (is )?(bad|poor)|duplicate)/u', 'refund' => '/(refund|paisa wapas|money back|return kar)/u', 'missing' => '/(missing|incomplete|kam aaya|(nhi|nahi) (ayi|aayi|aya|aaya) (h|hai)\b)/u'];
         foreach ($map as $k => $re) if (preg_match($re, $t)) return ['problem' => $k, 'label' => cx_problems()[$k][0]];
     } catch (Throwable $e) {}
     return null;
@@ -591,6 +592,21 @@ function cx_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
         if (isset($in['urgency']) && isset(cx_urgencies()[$in['urgency']])) { $u = $in['urgency']; $f[] = 'urgency = ?'; $a[] = $u; $f[] = 'reply_due = ?'; $a[] = date('Y-m-d H:i:s', strtotime($r['raised_at']) + (int)cx_cfg($pdo, 'reply_' . $u) * 60); $f[] = 'due_at = ?'; $a[] = date('Y-m-d H:i:s', strtotime($r['raised_at']) + (int)cx_cfg($pdo, 'fix_' . $u) * 3600); $f[] = 'late_alert = 0'; $f[] = 'reply_alert = 0'; cx_ev($pdo, (int)$r['id'], $me, 'note', $meName . ' changed the urgency to ' . cx_urgencies()[$u] . '.'); }
         if (!$f) json_response(['error' => 'Nothing to change.'], 422); $a[] = bd_now(); $a[] = (int)$r['id'];
         $pdo->prepare("UPDATE cx_cases SET " . implode(', ', $f) . ", updated_at = ? WHERE id = ?")->execute($a); if (function_exists('cx2_flag')) cx2_flag($pdo, (int)$r['id'], false, true); json_response(['ok' => true, 'message' => 'Saved.']);
+    }
+
+    case 'bd.cx_chat_edit': {   // owner, 23 Nov: a complaint the BOT raised can be corrected from the chat by the person who holds the chat (or the team): problem, note, order, urgency
+        $post(); $key = function_exists('wa_key') ? wa_key($in['phone'] ?? '') : ''; $c = $key !== '' && function_exists('wa_contact') ? wa_contact($pdo, $key) : null;
+        if (!$c) json_response(['error' => 'Chat not found.'], 404); if (!($role['team'] || $role['mgr'] || wa_can_chat($pdo, $auth, $c))) json_response(['error' => 'This chat is not yours.'], 403);
+        $st = $pdo->prepare("SELECT * FROM cx_cases WHERE phone = ? AND status IN ('open','reopened') ORDER BY id DESC LIMIT 1"); $st->execute([$key]); $r = $st->fetch(); if (!$r) json_response(['error' => 'No open complaint on this chat.'], 404);
+        $f = []; $a = []; $log = [];
+        if (isset($in['problem']) && (string)$in['problem'] !== (string)$r['problem'] && isset(cx_problems()[(string)$in['problem']])) { $pk = (string)$in['problem']; $f[] = 'problem = ?'; $a[] = $pk; $f[] = 'desk = ?'; $a[] = (string)(cx_problems()[$pk][2] ?? $r['desk']); $log[] = 'problem ' . $r['problem'] . ' > ' . $pk; }
+        if (array_key_exists('summary', $in)) { $f[] = 'summary = ?'; $a[] = trim(mb_substr((string)$in['summary'], 0, 1000)); $log[] = 'note'; }
+        if (array_key_exists('order_name', $in)) { $f[] = 'order_name = ?'; $a[] = trim(mb_substr((string)$in['order_name'], 0, 40)); $log[] = 'order'; }
+        if (isset($in['urgency']) && isset(cx_urgencies()[$in['urgency']]) && (string)$in['urgency'] !== (string)$r['urgency']) { $u = (string)$in['urgency']; $f[] = 'urgency = ?'; $a[] = $u; $f[] = 'reply_due = ?'; $a[] = date('Y-m-d H:i:s', strtotime($r['raised_at']) + (int)cx_cfg($pdo, 'reply_' . $u) * 60); $f[] = 'due_at = ?'; $a[] = date('Y-m-d H:i:s', strtotime($r['raised_at']) + (int)cx_cfg($pdo, 'fix_' . $u) * 3600); $f[] = 'late_alert = 0'; $f[] = 'reply_alert = 0'; $log[] = 'urgency ' . $u; }
+        if (!$f) json_response(['error' => 'Nothing to change.'], 422); $a[] = bd_now(); $a[] = (int)$r['id'];
+        $pdo->prepare("UPDATE cx_cases SET " . implode(', ', $f) . ", updated_at = ? WHERE id = ?")->execute($a);
+        try { cx_ev($pdo, (int)$r['id'], (int)$me, 'note', 'Edited from the chat: ' . implode(', ', $log)); } catch (Throwable $e) { }
+        json_response(['ok' => true, 'message' => 'Saved.']);
     }
 
     case 'bd.cx_refund': {

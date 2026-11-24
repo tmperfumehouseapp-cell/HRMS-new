@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<title>Website orders — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  /* 🛍 Website orders: the orders of the new shop (read through its API) → give each one to a salesperson so it counts in their sales and target. */
+  .wo{max-width:1240px; margin:0 auto; padding:4px 4px 40px; font-size:13.5px; color:var(--ink);}
+  .wo-h{display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:10px;}
+  .wo-h .t{flex:1; min-width:220px;} .wo-h h1{margin:0; font-size:20px;} .wo-h p{margin:3px 0 0; font-size:12.5px; color:var(--muted); line-height:1.45;}
+  .wo-b{border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:99px; padding:8px 14px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; min-height:36px;}
+  .wo-b.pri{background:#111827; border-color:#111827; color:#fff;} .wo-b.g{background:#16945a; border-color:#16945a; color:#fff;} .wo-b.r{border-color:#f3c9c9; color:#b91c1c;} .wo-b[disabled]{opacity:.5; cursor:default;}
+  .wo-card{background:#fff; border:1px solid var(--line); border-radius:16px; padding:12px 14px; margin-bottom:10px;}
+  .wo-lb{font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); margin:8px 0 5px;} .wo-lb:first-child{margin-top:0;}
+  .wo-row{display:flex; gap:6px; flex-wrap:wrap; align-items:center;} .wo-row[hidden], .wo-b[hidden]{display:none;}
+  .wo-chip{border:1px solid #d9dee6; background:#fff; color:var(--ink); border-radius:99px; padding:7px 12px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; min-height:34px;}
+  .wo-chip.on{background:#111827; border-color:#111827; color:#fff;} .wo-chip i{font-style:normal; font-weight:800; margin-left:6px; color:#c2410c;} .wo-chip.on i{color:#fed7aa;}
+  .wo-in{border:1px solid #d9dee6; border-radius:10px; padding:7px 10px; font:inherit; font-size:13.5px; min-height:36px; background:#fff; color:var(--ink); box-sizing:border-box;}
+  .wo-kpi{display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; margin-bottom:10px;}
+  .wo-kpi div{background:#fff; border:1px solid var(--line); border-radius:14px; padding:9px 12px;} .wo-kpi small{display:block; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.3px; color:var(--muted);} .wo-kpi b{font-size:19px; font-weight:800;} .wo-kpi .w b{color:#c2410c;} .wo-kpi .ok b{color:#16945a;}
+  .wo-bulk{position:sticky; top:6px; z-index:5; display:none; align-items:center; gap:8px; flex-wrap:wrap; background:#111827; color:#fff; border-radius:14px; padding:9px 12px; margin-bottom:10px;} .wo-bulk.on{display:flex;} .wo-bulk b{font-size:13.5px;} .wo-bulk .sp{flex:1;}
+  .wo-bulk select{min-width:170px;}
+  .wo-l{background:#fff; border:1px solid var(--line); border-radius:16px; overflow:hidden;}
+  .wo-th,.wo-r{display:grid; grid-template-columns:30px 118px minmax(120px,1fr) minmax(0,1.4fr) 88px 132px minmax(330px,1.5fr); gap:10px; align-items:center; padding:9px 14px;}
+  .wo-th{font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); background:#f8fafc; border-bottom:1px solid var(--line);}
+  .wo-r{border-bottom:1px solid #f0f2f5;} .wo-r:last-child{border-bottom:0;} .wo-r.done{background:#f6fdf9;}
+  .wo-r .no b{display:block; font-weight:800;} .wo-r small{color:var(--muted); font-size:12px;}
+  .wo-r .cu b{display:block; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .wo-r .it{color:#374151; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.35;}
+  .wo-r .am b{font-weight:800; font-size:14.5px;}
+  .wo-p{display:inline-block; border-radius:99px; padding:2px 9px; font-size:11.5px; font-weight:800; white-space:nowrap;}
+  .wo-p.ok{background:#dcfce7; color:#166534;} .wo-p.no{background:#fee2e2; color:#991b1b;} .wo-p.pt{background:#ffedd5; color:#9a3412;} .wo-p.gy{background:#f1f5f9; color:#334155;}
+  .wo-as{display:flex; gap:6px; align-items:center; flex-wrap:nowrap;} .wo-as select{flex:1 1 auto; min-width:0;} .wo-as .ty{flex:0 0 98px; min-width:0;} .wo-as .wo-b{flex:0 0 auto;} .wo-as small{white-space:nowrap;}
+  .wo-who{font-weight:800; color:#166534; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;} .wo-r .py .wo-p{white-space:normal; line-height:1.3; margin:1px 0;} .wo-e{padding:34px 16px; text-align:center; color:var(--muted);}
+  .wo-msg{border-radius:12px; padding:9px 12px; font-size:13px; margin-bottom:10px;} .wo-msg.bad{background:#fef2f2; border:1px solid #fecaca; color:#991b1b;} .wo-msg.ok{background:#f0fdf4; border:1px solid #bbf7d0; color:#166534;} .wo-msg.in{background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a;}
+  .wo-ov{position:fixed; inset:0; z-index:9999; background:rgba(15,23,42,.55); display:flex; align-items:center; justify-content:center; padding:16px;}
+  .wo-md{background:#fff; width:min(520px,100%); border-radius:18px; padding:16px; max-height:90vh; overflow:auto;} .wo-md h3{margin:0 0 4px; font-size:16px;} .wo-md label{display:block; font-size:12px; font-weight:700; margin:10px 0 4px;} .wo-md .wo-in{width:100%;}
+  .wo-r .k{display:none;}
+  @media (max-width:1180px){   /* the page sits inside the Sales frame, so even a laptop is narrow here: the table became unreadable (items cut to "1 × Jp…") */
+    .wo-kpi{grid-template-columns:repeat(2, minmax(0,1fr));}
+    .wo-card .wo-row.sc{flex-wrap:nowrap; overflow-x:auto; padding-bottom:3px; scrollbar-width:none;} .wo-card .wo-row.sc::-webkit-scrollbar{display:none;} .wo-chip{flex:0 0 auto; min-height:38px;}
+    .wo-th{display:none;}
+    .wo-r{grid-template-columns:28px 1fr auto; gap:4px 10px; padding:12px;}
+    .wo-r .ck{grid-row:1;} .wo-r .no{grid-column:2;} .wo-r .am{grid-column:3; grid-row:1; text-align:right;}
+    .wo-r .cu,.wo-r .it,.wo-r .py,.wo-r .as{grid-column:1 / -1;} .wo-r .it{-webkit-line-clamp:3;}
+    .wo-as select{min-height:42px;} .wo-as .wo-b{min-height:42px; flex:1;}
+    .wo-bulk b{flex:1 1 100%;} .wo-bulk select{flex:1 1 40%; min-width:0; min-height:42px;} .wo-bulk .sp{display:none;} .wo-bulk .wo-b{flex:1 1 40%; min-height:42px;}
+    .wo-as{flex-wrap:wrap;} .wo-as select{flex:1 1 45%;} .wo-as .ty{flex:1 1 30%;}
+  }
+  html[data-theme=dark] .wo-card, html[data-theme=dark] .wo-l, html[data-theme=dark] .wo-kpi div, html[data-theme=dark] .wo-md{background:#fff;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="content">
+      <div class="wo">
+        <div class="wo-h">
+          <div class="t"><h1>🛍 Website orders</h1><p>Orders of the new TM Perfume House shop. Choose the salesperson for an order and press <b>Give</b>: it then counts in that person's sales and target. Nothing is changed in the shop.</p></div>
+          <button type="button" class="wo-b" id="woRef">↻ Refresh</button>
+          <button type="button" class="wo-b" id="woCfg" hidden>⚙ Connection</button>
+        </div>
+        <div id="woMsg"></div>
+        <div class="wo-kpi" id="woKpi"></div>
+        <div class="wo-card">
+          <div class="wo-lb">Orders placed</div>
+          <div class="wo-row sc" id="woDays"></div>
+          <div class="wo-row" id="woDates" style="margin-top:8px" hidden><input type="date" class="wo-in" id="woFrom"> to <input type="date" class="wo-in" id="woTo"><button type="button" class="wo-b pri" id="woGo">Show</button></div>
+          <div class="wo-lb">Show</div>
+          <div class="wo-row sc" id="woShow"></div>
+          <div class="wo-lb">Payment</div>
+          <div class="wo-row sc" id="woPay"></div>
+          <div class="wo-row" style="margin-top:8px"><input type="search" class="wo-in" id="woQ" placeholder="Search order number, customer or mobile" style="flex:1; min-width:180px"></div>
+        </div>
+        <div class="wo-bulk" id="woBulk"><b id="woBn"></b><select class="wo-in" id="woBe"></select><select class="wo-in" id="woBt" style="min-width:110px"><option value="query">Query</option><option value="campaign">Campaign</option></select><button type="button" class="wo-b g" id="woBg">Give selected</button><span class="sp"></span><button type="button" class="wo-b" id="woBx">Clear</button></div>
+        <div class="wo-l" id="woL"><div class="wo-e">Loading…</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/side_chat.js?v=2"></script>
+<script>
+  guardPage();
+  renderSidebar('sales');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (v) => '₹' + (Math.round(v * 100) % 100 === 0 ? Math.round(v).toLocaleString('en-IN') : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const ago = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
+  const S = { d: '7', from: ago(6), to: ago(0), show: 'open', q: '', rows: [], sum: null, people: [], sel: new Set(), admin: false, busy: false };
+  const DAYS = [['today', 'Today', 0, 0], ['yest', 'Yesterday', 1, 1], ['7', '7 days', 6, 0], ['30', '30 days', 29, 0], ['60', '60 days', 59, 0]];
+  const msg = (t, cls) => { $('woMsg').innerHTML = t ? '<div class="wo-msg ' + (cls || 'in') + '">' + t + '</div>' : ''; };
+  const when = (s) => { const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? s : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); };
+  const payChip = (r) => r.pay_status === 'paid' ? '<span class="wo-p ok">Paid ' + inr(r.paid || r.total) + '</span>' : r.pay_status === 'partially_paid' ? '<span class="wo-p pt">Paid ' + inr(r.paid) + ' · due ' + inr(r.due) + '</span>' : (r.pay_method === 'cod' ? '<span class="wo-p pt">COD ' + inr(r.total) + '</span>' : '<span class="wo-p no">Not paid yet</span>');
+  const opts = (sel) => '<option value="0">Choose salesperson…</option>' + S.people.map((p) => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
+  const isPaid = (r) => r.pay_status !== 'pending';   // a payment received, full or part
+  const view = () => { const q = S.q.trim().toLowerCase(); return S.rows.filter((r) => (S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)) && (!S.pay || S.pay === 'all' || (S.pay === 'paid') === isPaid(r)) && (!q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1)); };
+
+  // 🔎 one order opened: every product (size, pieces, price), the money lines and the delivery address
+  function openInfo(no) {
+    const r = S.rows.find((o) => o.number === no); if (!r) return; const old = document.getElementById('woInfo'); if (old) old.remove();
+    const a = r.addr || {}, m = r.money || {}, L = r.lines || [];
+    const ln = (k, v) => '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px dashed #e5e9f0;font-size:13px;"><span style="color:#667781;">' + k + '</span><b style="text-align:right;">' + v + '</b></div>';
+    const adr = [a.name, a.address1, a.address2, [a.city, a.state].filter(Boolean).join(', '), a.pincode].filter(Boolean).map(esc).join('<br>');
+    const bd = document.createElement('div'); bd.id = 'woInfo'; bd.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;';
+    bd.innerHTML = '<div role="dialog" aria-modal="true" style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:16px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;"><div><b style="font-size:17px;">' + esc(r.number) + '</b><div style="color:#667781;font-size:12.5px;">' + esc(when(r.placed_at)) + (r.source ? ' · made in: ' + esc(r.source === 'admin' ? 'shop admin (link)' : r.source === 'web' ? 'website (customer)' : r.source) : '') + '</div></div><button type="button" class="wo-b" id="woInfoX" aria-label="Close">✕</button></div>'
+      + '<div style="margin:10px 0 4px;font-size:11.5px;font-weight:800;color:#667781;letter-spacing:.05em;">PRODUCTS · ' + r.pieces + ' pcs' + (r.ml ? ' · ' + r.ml + ' ml' : '') + '</div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px;">' + (L.length ? L.map((x) => '<tr><td style="border-top:1px solid #e5e9f0;padding:6px 4px;"><b>' + esc(x.title) + '</b>' + (x.size ? '<br><small style="color:#667781;">' + esc(x.size) + (x.sku ? ' · ' + esc(x.sku) : '') + '</small>' : '') + '</td><td style="border-top:1px solid #e5e9f0;padding:6px 4px;white-space:nowrap;">× ' + x.qty + '</td><td style="border-top:1px solid #e5e9f0;padding:6px 4px;text-align:right;white-space:nowrap;">' + inr(x.price * x.qty) + (x.discount > 0 ? '<br><small style="color:#16a34a;">− ' + inr(x.discount) + '</small>' : '') + '</td></tr>').join('') : '<tr><td>' + esc(r.items || '—') + '</td></tr>') + '</table>'
+      + '<div style="margin-top:8px;">' + (m.subtotal ? ln('Subtotal', inr(m.subtotal)) : '') + (m.discount > 0 ? ln('Discount' + (m.code ? ' (' + esc(m.code) + ')' : ''), '− ' + inr(m.discount)) : '') + (m.shipping > 0 ? ln('Shipping', inr(m.shipping)) : '') + (m.cod_fee > 0 ? ln('COD fee', inr(m.cod_fee)) : '') + ln('Total', inr(r.total)) + ln('Payment', payChip(r) + (r.pay_method ? ' <small style="color:#667781;">' + esc(r.pay_method.toUpperCase()) + '</small>' : '')) + (r.awb ? ln('AWB', esc(r.awb) + (r.courier ? ' · ' + esc(r.courier) : '')) : '') + (r.emp ? ln('Salesperson', esc(r.emp_name) + ' · ' + (r.type === 'campaign' ? 'Campaign' : 'Query')) : ln('Salesperson', '<span style="color:#b91c1c;">not given yet</span>')) + '</div>'
+      + '<div style="margin:12px 0 4px;font-size:11.5px;font-weight:800;color:#667781;letter-spacing:.05em;">CUSTOMER &amp; ADDRESS</div><div style="font-size:13.5px;line-height:1.5;"><b>' + esc(r.customer || '—') + '</b>' + (r.phone ? ' · +91 ' + esc(r.phone) + ' <button type="button" class="wo-b" id="woInfoC">💬 Chat</button>' : '') + (adr ? '<div style="margin-top:4px;">' + adr + '</div>' : '<div style="color:#667781;">No address on the order.</div>') + '</div>'
+      + (r.note ? '<div style="margin-top:10px;background:#fffbeb;border-radius:10px;padding:8px 10px;font-size:13px;"><b>Note:</b> ' + esc(r.note) + '</div>' : '') + '</div>';
+    bd.addEventListener('click', (ev) => { if (ev.target.id === 'woInfoC') { bd.remove(); if (window.SideChat) SideChat.open(r.phone); return; } if (ev.target === bd || ev.target.id === 'woInfoX') bd.remove(); }); document.body.appendChild(bd);
+  }
+  function drawBars() {
+    $('woDays').innerHTML = DAYS.map((d) => '<button type="button" class="wo-chip' + (S.d === d[0] ? ' on' : '') + '" data-d="' + d[0] + '">' + d[1] + '</button>').join('') + '<button type="button" class="wo-chip' + (S.d === 'dates' ? ' on' : '') + '" data-d="dates">📅 Pick dates…</button>';
+    $('woDates').hidden = S.d !== 'dates'; if (S.d === 'dates') { $('woFrom').value = S.from; $('woTo').value = S.to; }
+    const n = S.rows.length, g = S.rows.filter((r) => r.emp).length;
+    $('woShow').innerHTML = [['open', 'Not given yet', n - g], ['done', 'Given', g], ['all', 'All', n]].map((x) => '<button type="button" class="wo-chip' + (S.show === x[0] ? ' on' : '') + '" data-s="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
+    $('woDays').querySelectorAll('[data-d]').forEach((b) => { b.onclick = () => { S.d = b.dataset.d; const d = DAYS.find((x) => x[0] === S.d); if (d) { S.from = ago(d[2]); S.to = ago(d[3]); load(); } else drawBars(); }; });
+    { const inShow = S.rows.filter((r) => S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)), pd = inShow.filter(isPaid).length;   // 💰 Paid / Not paid yet — counted inside the Show filter chosen above
+      $('woPay').innerHTML = [['all', 'All', inShow.length], ['paid', 'Paid', pd], ['unpaid', 'Not paid yet', inShow.length - pd]].map((x) => '<button type="button" class="wo-chip' + ((S.pay || 'all') === x[0] ? ' on' : '') + '" data-p="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
+      $('woPay').querySelectorAll('[data-p]').forEach((b) => { b.onclick = () => { S.pay = b.dataset.p; S.sel.clear(); drawBars(); drawList(); }; }); }
+    $('woShow').querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { S.show = b.dataset.s; S.sel.clear(); drawBars(); drawList(); }; });
+    const s = S.sum || { orders: 0, amount: 0, given: 0, given_amount: 0 };
+    $('woKpi').innerHTML = '<div><small>Orders</small><b>' + s.orders + '</b></div><div><small>Order value</small><b>' + inr(s.amount) + '</b></div><div class="w"><small>Not given yet</small><b>' + (s.orders - s.given) + ' · ' + inr(s.amount - s.given_amount) + '</b></div><div class="ok"><small>Given to salespeople</small><b>' + s.given + ' · ' + inr(s.given_amount) + '</b></div>';
+  }
+  function drawBulk() { const n = S.sel.size; $('woBulk').classList.toggle('on', n > 0); $('woBn').textContent = n + ' selected'; if (!$('woBe').options.length || $('woBe').dataset.n !== String(S.people.length)) { $('woBe').innerHTML = opts(0); $('woBe').dataset.n = String(S.people.length); } }
+  function drawList() {
+    const L = $('woL'), R = view();
+    if (!R.length) { L.innerHTML = '<div class="wo-e">' + (S.rows.length ? (S.show === 'open' ? '🎉 Every order of these days is given to a salesperson.' : 'No order matches.') : 'The shop has no orders in these days.') + '</div>'; drawBulk(); return; }
+    L.innerHTML = '<div class="wo-th"><span></span><span>Order</span><span>Customer</span><span>Items</span><span>Amount</span><span>Payment</span><span>Salesperson</span></div>' + R.map((r) => '<div class="wo-r' + (r.emp ? ' done' : '') + '" data-n="' + esc(r.number) + '">'
+      + '<div class="ck">' + (r.emp ? '' : '<input type="checkbox" data-ck="1"' + (S.sel.has(r.number) ? ' checked' : '') + ' aria-label="Select">') + '</div>'
+      + '<div class="no"><b><a href="#" data-a="info" style="color:inherit;text-decoration:underline dotted;" title="See the products and the address">' + esc(r.number) + '</a></b><small>' + esc(when(r.placed_at)) + '</small></div>'
+      + '<div class="cu"><b>' + esc(r.customer || '—') + '</b><small>' + (r.phone ? '<a href="#" data-a="chat" title="Open this customer\'s WhatsApp chat beside the list" style="color:inherit;text-decoration:underline dotted;">+91 ' + esc(r.phone) + ' 💬</a>' : '') + (r.city ? ' · ' + esc(r.city) : '') + '</small></div>'
+      + '<div class="it">' + esc(r.items || '—') + (r.ml ? ' <small>· ' + r.ml + ' ml</small>' : '') + '</div>'
+      + '<div class="am"><b>' + inr(r.total) + '</b></div>'
+      + '<div class="py">' + payChip(r) + (r.ship_status && r.ship_status !== 'unfulfilled' ? ' <span class="wo-p gy">' + esc(r.ship_status) + '</span>' : '') + '</div>'
+      + '<div class="as">' + (r.emp
+          ? '<div class="wo-as"><span class="wo-who">✓ ' + esc(r.emp_name || 'Given') + '</span><small>' + esc(r.type === 'campaign' ? 'Campaign' : 'Query') + (r.hrms_no ? ' · #' + esc(r.hrms_no) : '') + (r.auto ? ' · 🤖 automatic' : '') + '</small><span style="flex:1"></span><button type="button" class="wo-b" data-a="move">Change</button><button type="button" class="wo-b r" data-a="back">Take back</button></div>'
+          : '<div class="wo-as"><select class="wo-in" data-e="1">' + opts(r.sug_emp || 0) + '</select><select class="wo-in ty" data-t="1"><option value="query">Query</option><option value="campaign"' + (r.sug_type === 'campaign' ? ' selected' : '') + '>Campaign</option></select><button type="button" class="wo-b g" data-a="give">Give</button></div>' + (r.sug_emp ? '<small style="display:block;margin-top:4px;color:#1e40af;font-size:11.5px;">👤 Name filled in: ' + esc(r.sug_how || 'from the WhatsApp chat') + '. Check Query / Campaign and press Give.</small>' : '') + (r.auto_why ? '<small style="display:block;margin-top:4px;color:#92400e;font-size:11.5px;">🤖 Not given automatically: ' + esc(r.auto_why) + '</small>' : '')) + '</div></div>').join('');
+    drawBulk();
+  }
+  async function give(no, emp, type, quiet) {
+    const r = await api.post('tms.assign', { number: no, employee_id: emp, order_type: type });
+    const x = S.rows.find((o) => o.number === no); if (x) { x.emp = r.emp; x.emp_name = r.emp_name; x.type = r.type; x.hrms_no = r.hrms_no; }
+    if (!quiet) msg(esc(r.message), 'ok'); return r;
+  }
+  function resum() { const s = { orders: S.rows.length, amount: 0, given: 0, given_amount: 0 }; S.rows.forEach((r) => { s.amount += r.total; if (r.emp) { s.given++; s.given_amount += r.total; } }); S.sum = s; }
+  $('woL').addEventListener('change', (e) => { const c = e.target.closest('[data-ck]'); if (!c) return; const n = c.closest('.wo-r').dataset.n; if (c.checked) S.sel.add(n); else S.sel.delete(n); drawBulk(); });
+  $('woL').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const row = b.closest('.wo-r'), no = row.dataset.n, x = S.rows.find((o) => o.number === no); if (!x) return;
+    if (b.dataset.a === 'info') { e.preventDefault(); openInfo(no); return; }
+    if (b.dataset.a === 'chat') { e.preventDefault(); if (window.SideChat && String(x.phone || '').length === 10) SideChat.open(x.phone); else msg('The chat could not be opened. Refresh the page.', 'bad'); return; }   // 💬 the customer's chat beside the list (same as the Allocation page)
+    if (b.dataset.a === 'give') { const emp = +row.querySelector('[data-e]').value, ty = row.querySelector('[data-t]').value; if (!emp) { msg('Choose the salesperson for ' + esc(no) + ' first.', 'bad'); return; }
+      b.disabled = true; b.textContent = 'Giving…'; try { await give(no, emp, ty); S.sel.delete(no); resum(); drawBars(); drawList(); } catch (er) { b.disabled = false; b.textContent = 'Give'; msg(esc(er.message), 'bad'); } }
+    else if (b.dataset.a === 'back') { if (!confirm('Take ' + no + ' back from ' + (x.emp_name || 'the salesperson') + '? It will count for nobody.')) return; b.disabled = true;
+      try { const r = await api.post('tms.unassign', { number: no }); x.emp = 0; x.emp_name = ''; x.type = ''; x.hrms_no = ''; msg(esc(r.message), 'ok'); resum(); drawBars(); drawList(); } catch (er) { b.disabled = false; msg(esc(er.message), 'bad'); } }
+    else if (b.dataset.a === 'move') { row.querySelector('.as').innerHTML = '<div class="wo-as"><select class="wo-in" data-e="1">' + opts(x.emp) + '</select><select class="wo-in ty" data-t="1"><option value="query"' + (x.type !== 'campaign' ? ' selected' : '') + '>Query</option><option value="campaign"' + (x.type === 'campaign' ? ' selected' : '') + '>Campaign</option></select><button type="button" class="wo-b g" data-a="give">Save</button></div>'; }
+  });
+  $('woBg').onclick = async () => {
+    const emp = +$('woBe').value, ty = $('woBt').value, list = Array.from(S.sel); if (!emp) { msg('Choose the salesperson for the selected orders.', 'bad'); return; } if (!list.length) return;
+    const nm = (S.people.find((p) => p.id === emp) || {}).name || 'the salesperson'; if (!confirm('Give ' + list.length + ' order' + (list.length > 1 ? 's' : '') + ' to ' + nm + '?')) return;
+    $('woBg').disabled = true; let ok = 0; const bad = [];
+    for (const no of list) { $('woBg').textContent = 'Giving ' + (ok + bad.length + 1) + ' of ' + list.length + '…'; try { await give(no, emp, ty, true); S.sel.delete(no); ok++; } catch (er) { bad.push(no + ': ' + er.message); } }
+    $('woBg').disabled = false; $('woBg').textContent = 'Give selected'; resum(); drawBars(); drawList();
+    msg(ok + ' order' + (ok === 1 ? '' : 's') + ' now count for ' + esc(nm) + '.' + (bad.length ? '<br>Not given: ' + esc(bad.join(' · ')) : ''), bad.length ? 'bad' : 'ok');
+  };
+  $('woBx').onclick = () => { S.sel.clear(); drawList(); };
+  $('woQ').oninput = () => { S.q = $('woQ').value; drawList(); };
+  $('woGo').onclick = () => { const f = $('woFrom').value, t = $('woTo').value; if (!f || !t) { msg('Pick both dates.', 'bad'); return; } S.from = f; S.to = t; load(); };
+  $('woRef').onclick = () => load(true);
+
+  async function load(fresh) {
+    if (S.busy) return; S.busy = true; S.sel.clear(); drawBars(); $('woL').innerHTML = '<div class="wo-e">Reading the shop…</div>';
+    try {
+      const d = await api.get('tms.list', Object.assign({ from: S.from, to: S.to }, fresh ? { fresh: 1 } : {}));
+      S.rows = d.rows || []; S.sum = d.sum; S.admin = !!d.admin; msg('');
+    } catch (e) { S.rows = []; S.sum = null; $('woL').innerHTML = '<div class="wo-e">The orders could not be read.</div>'; msg(esc(e.message) + ($('woCfg').hidden ? '' : ' Press <b>⚙ Connection</b>.'), 'bad'); S.busy = false; drawBars(); return; }
+    S.busy = false; drawBars(); drawList();
+  }
+  function cfgOpen(c) {
+    const ov = document.createElement('div'); ov.className = 'wo-ov';
+    ov.innerHTML = '<div class="wo-md"><h3>⚙ Connection to the shop</h3><div style="font-size:12.5px;color:var(--muted)">HRMS only reads orders from the shop. The key is saved on your server and is never shown again.</div>'
+      + '<label>Shop API address</label><input class="wo-in" id="cfB" value="' + esc(c.base) + '" placeholder="https://your-shop/api/v1">'
+      + '<label>API key ' + (c.key_set ? '<span style="font-weight:500;color:#16945a">— saved, ends in …' + esc(c.key_tail) + '. Leave empty to keep it.</span>' : '<span style="font-weight:500;color:#b91c1c">— not saved yet</span>') + '</label><input class="wo-in" id="cfK" type="password" autocomplete="new-password" placeholder="' + (c.key_set ? 'Paste a new key only to replace it' : 'Paste the key here (starts with tmph_)') + '">'
+      + '<div id="cfM" style="margin-top:10px"></div><div class="wo-row" style="margin-top:12px;justify-content:flex-end"><button type="button" class="wo-b" id="cfX">Close</button><button type="button" class="wo-b" id="cfT">Test</button><button type="button" class="wo-b pri" id="cfS">Save</button></div></div>';
+    document.body.appendChild(ov); const q = (i) => ov.querySelector('#' + i), m = (t, cls) => { q('cfM').innerHTML = '<div class="wo-msg ' + cls + '" style="margin:0">' + esc(t) + '</div>'; };
+    q('cfX').onclick = () => { ov.remove(); load(true); }; ov.addEventListener('mousedown', (e) => { if (e.target === ov) ov.remove(); });
+    q('cfS').onclick = async () => { try { const r = await api.post('tms.cfg_save', { base: q('cfB').value.trim(), key: q('cfK').value.trim() }); q('cfK').value = ''; m(r.message, 'ok'); } catch (e) { m(e.message, 'bad'); } };
+    q('cfT').onclick = async () => { m('Testing…', 'in'); try { const r = await api.get('tms.test'); m(r.message, r.ok ? 'ok' : 'bad'); } catch (e) { m(e.message, 'bad'); } };
+  }
+  (async function init() {
+    drawBars();
+    try { const c = await api.get('tms.cfg_get'); if (c.can_edit) { $('woCfg').hidden = false; $('woCfg').onclick = async () => { try { cfgOpen(await api.get('tms.cfg_get')); } catch (e) { msg(esc(e.message), 'bad'); } }; }
+      if (!c.key_set) { $('woL').innerHTML = '<div class="wo-e">The shop is not connected yet.</div>'; msg(c.can_edit ? 'The shop key is not saved yet. Press <b>⚙ Connection</b>, paste the key and press Save.' : 'The shop is not connected yet. Ask Admin to open this page and save the key.', 'in'); return; } }
+    catch (e) { $('woL').innerHTML = '<div class="wo-e">This page could not open.</div>'; msg(esc(e.message), 'bad'); return; }
+    try { S.people = (await api.get('tms.people')).people || []; } catch (e) { S.people = []; }
+    load();
+  })();
+</script>
+</body>
+</html>

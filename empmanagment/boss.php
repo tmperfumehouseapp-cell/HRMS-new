@@ -1203,6 +1203,7 @@ if (strpos((string)$action, 'bd.') === 0) {
     // separate calls, from one request and one database connection. A part that fails is null, exactly like a failed separate call.
     case 'bd.menu_ctx': {
         if (is_file(__DIR__ . '/flyers.php')) { try { require_once __DIR__ . '/flyers.php'; } catch (Throwable $e) { } }
+        if (!function_exists('fup_badge_data') && is_file(__DIR__ . '/followup.php')) { try { require_once __DIR__ . '/followup.php'; } catch (Throwable $e) { } }
         $cap = function (callable $f) { $GLOBALS['__jr_cap'] = true; $r = null; try { $f(); } catch (JrCapture $c) { $r = ((int)$c->httpCode >= 400) ? null : $c->data; } catch (Throwable $e) { $r = null; } $GLOBALS['__jr_cap'] = false; return $r; };
         // ⚡ every page asks for these numbers when it opens (11 requests at once on Agreements): the same person gets the same answer for 15 s, so the five counts are not recounted on every page. Per person, so nobody sees another person's numbers.
         $out = hrms_memo('bd_menu_ctx:' . (string)($auth['username'] ?? ('e' . (int)$w['emp'])) . ':' . (int)$w['emp'], 15, function () use ($cap, $pdo, $auth, $w, $by) { return [
@@ -1211,6 +1212,7 @@ if (strpos((string)$action, 'bd.') === 0) {
             'fl' => function_exists('fl_badge_data') ? $cap(function () use ($pdo, $auth) { json_response(fl_badge_data($pdo, $auth)); }) : null,
             'cx' => function_exists('cx_dispatch') ? $cap(function () use ($pdo, $auth, $w, $by) { cx_dispatch($pdo, 'bd.cx_badge', $auth, $w, $by, [], false); }) : null,
             'sx' => function_exists('sx_dispatch') ? $cap(function () use ($pdo, $auth, $w, $by) { sx_dispatch($pdo, 'bd.sx_badge', $auth, $w, $by, [], false); }) : null,
+            'fu' => function_exists('fup_badge_data') ? fup_badge_data($pdo, $auth) : null,   // 📌 Follow-up: is it in this person's menu, how many updates are waiting today
         ]; });
         json_response($out);
     }
