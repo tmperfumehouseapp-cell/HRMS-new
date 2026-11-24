@@ -396,6 +396,35 @@ function fup_seed_dharmik_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_dharmik_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the 23 daily tasks of Nitin in the owner's "Dispatch" section (the section is made by the owner; this waits for it). One topic a task, the task name only, summary only. Given to Nitin only when exactly ONE working employee is called Nitin, otherwise nobody is assigned (the owner gives them). A task with the same name is not made twice. */
+function fup_seed_nitin_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_nitin_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'dispatch' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%dispatch%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $emp = 0; try { $q = $pdo->query("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(full_name) LIKE 'nitin%'"); $ids = $q->fetchAll(PDO::FETCH_COLUMN); $q->closeCursor(); if (count($ids) === 1) $emp = (int)$ids[0]; } catch (Throwable $e) { $emp = 0; }
+        $have = []; foreach ($pdo->query("SELECT title FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll(PDO::FETCH_COLUMN) as $t0) $have[mb_strtolower((string)$t0)] = 1;
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, ?, '', ?, '', 0, '', 1, '', 'open', ?, 1, 0, ?)");
+        $list = [
+            'All oil number wise hone chahiye', 'All oil one bottle me hone chahiye', 'Pehele old oil then new oil use', 'Rack par proper oil hone chahiye',
+            'All products uske material me make honi chahiye', 'Pending oil proper banane hai and verify', 'Rack me perfume pe pending oil se pehele nazar',
+            'All perfume banne ke bad verify karne hai', 'Perfume ke sprayer and dust check karvana hai', 'Oil and other product ekdam khali hone ke bad fekni hai',
+            'Darek manas e cap pereli hovi joie and gloves pan', 'Refill product daily banani hai', 'All OG parcel dispatch and month end return',
+            'Week me 2 bar Oberon visit and collect products', 'Har chiz ke kapde alag', 'Badha material ratna saf karva, dry karva', 'Sanitizer lavvaanu',
+            'Gel kadhva mate nu sadhan lavvu', 'Daily oil gothvine java', 'Washroom ki jagah sari daily check', 'Potani aju baju ni jagya saf karine javi',
+            'Chair sarkhi mukvi', 'Table ni vastu o proper mukine javi',
+        ];
+        foreach ($list as $title) {
+            if (isset($have[mb_strtolower($title)])) continue;
+            $ins->execute([$sid, $title, $emp, 'Write what was done today: ' . mb_strtolower(mb_substr($title, 0, 1)) . mb_substr($title, 1) . '.', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_nitin_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_nitin_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order for the topic "Office Pickup Parcel Update": no number from the HRMS, only the written update. The system number (it was connected by its name) is taken off the topic, the numbers the system had filled in by itself are removed from its days (a number a person typed, and every written update, stay), and the form asks only for the summary. */
 function fup_office_pickup_clean(PDO $pdo): void
 {
@@ -1180,6 +1209,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_hemil_topics($pdo);
     fup_seed_dhvanil_topics($pdo);
     fup_seed_dharmik_topics($pdo);
+    fup_seed_nitin_topics($pdo);
     fup_office_pickup_clean($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
