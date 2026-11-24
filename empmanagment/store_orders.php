@@ -48,8 +48,9 @@ if (!function_exists('tms_cfg')) {
     function tms_row(array $o): array
     {
         $items = is_array($o['items'] ?? null) ? $o['items'] : []; $pcs = 0; $ml = 0; $names = []; $lines = [];
-        foreach ($items as $i) { $q = max(1, (int)($i['quantity'] ?? 1)); $pcs += $q; $vt = (string)($i['variant_title'] ?? ''); if (preg_match('/(\d{1,4})\s*ml/i', $vt . ' ' . (string)($i['title'] ?? ''), $m)) $ml += (int)$m[1] * $q;
-            $t = trim(preg_replace('/\s*[|｜].*$/u', '', (string)($i['title'] ?? ''))); $t = trim(preg_replace('/\s*[-–]\s*(DG|LG|WH)?\s*Inspired.*$/iu', '', $t)); $sz = preg_match('/^\s*(\d{1,4}\s*ml)/i', $vt, $m2) ? ' ' . str_replace(' ', '', strtolower($m2[1])) : ''; $names[] = $q . ' × ' . $t . $sz; $lines[] = ['title' => $t, 'size' => trim((string)$vt), 'qty' => $q, 'price' => round((float)($i['price'] ?? 0), 2), 'discount' => round((float)($i['discount'] ?? 0), 2), 'sku' => (string)($i['sku'] ?? '')]; }
+        foreach ($items as $i) { $q = max(1, (int)($i['quantity'] ?? 1)); $pcs += $q; $vt = (string)($i['variant_title'] ?? ''); $gift = !empty($i['gift']);   // 🎁 the complimentary perfume of a payment link: in the total (ticket size), NOT in the ml (no commission on it)
+            if (!$gift && preg_match('/(\d{1,4})\s*ml/i', $vt . ' ' . (string)($i['title'] ?? ''), $m)) $ml += (int)$m[1] * $q;
+            $t = trim(preg_replace('/\s*[|｜].*$/u', '', (string)($i['title'] ?? ''))); $t = trim(preg_replace('/\s*[-–]\s*(DG|LG|WH)?\s*Inspired.*$/iu', '', $t)); $sz = preg_match('/^\s*(\d{1,4}\s*ml)/i', $vt, $m2) ? ' ' . str_replace(' ', '', strtolower($m2[1])) : ''; $names[] = $q . ' × ' . $t . $sz . ($gift ? ' (gift)' : ''); $lines[] = ['title' => $t, 'size' => trim((string)$vt), 'qty' => $q, 'price' => round((float)($i['price'] ?? 0), 2), 'discount' => round((float)($i['discount'] ?? 0), 2), 'sku' => (string)($i['sku'] ?? ''), 'gift' => $gift]; }
         $total = round((float)($o['total'] ?? 0), 2); $paid = round((float)($o['amount_paid'] ?? 0), 2); $ps = strtolower((string)($o['payment_status'] ?? '')); $pm = strtolower((string)($o['payment_method'] ?? ''));
         $fs = $ps === 'paid' || ($total > 0 && $paid >= $total) ? 'paid' : ($paid > 0 ? 'partially_paid' : 'pending');
         $cu = is_array($o['customer'] ?? null) ? $o['customer'] : []; $sh = is_array($o['shipping_address'] ?? null) ? $o['shipping_address'] : [];
@@ -115,7 +116,7 @@ if (!function_exists('tms_cfg')) {
         }
         tms_cols($pdo); $nos = array_column($rows, 'number'); $given = []; $done = [];
         foreach (array_chunk($nos, 400) as $part) { $in = implode(',', array_fill(0, count($part), '?'));
-            $q = $pdo->prepare("SELECT mp_no, created_by, employee_id, manual_order_id, is_direct FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN ($in)"); $q->execute($part); foreach ($q->fetchAll() as $x) $given[(string)$x['mp_no']] = ['by' => (string)$x['created_by'], 'emp' => (int)$x['employee_id'], 'id' => (int)$x['manual_order_id'], 'direct' => (int)$x['is_direct']];
+            $q = $pdo->prepare("SELECT mp_no, created_by, employee_id, manual_order_id, is_direct, total, payment_status, outstanding, ml FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN ($in)"); $q->execute($part); foreach ($q->fetchAll() as $x) $given[(string)$x['mp_no']] = ['by' => (string)$x['created_by'], 'emp' => (int)$x['employee_id'], 'id' => (int)$x['manual_order_id'], 'direct' => (int)$x['is_direct'], 'total' => (float)$x['total'], 'ps' => (string)$x['payment_status'], 'due' => (float)$x['outstanding'], 'ml' => (int)$x['ml']];
             $q = $pdo->prepare("SELECT number FROM tms_auto WHERE done = 1 AND number IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; }
         try { $qc = $pdo->prepare("SELECT c.phone, c.assigned_emp, c.source, c.last_in_at, COALESCE(n.camp_tag, 0) AS camp_tag FROM wa_contacts c LEFT JOIN wa_numbers n ON n.id = c.last_number_id WHERE c.phone = ?"); $qc->execute(['0']); }
         catch (Throwable $e) { try { $qc = $pdo->prepare("SELECT phone, assigned_emp, source, last_in_at, 0 AS camp_tag FROM wa_contacts WHERE phone = ?"); $qc->execute(['0']); } catch (Throwable $e2) { return 0; } }   // no WhatsApp tables here: nothing to do
@@ -127,6 +128,10 @@ if (!function_exists('tms_cfg')) {
             // owner (24 Nov): an order with NO payment received (a payment link the customer has not paid yet) is not given to anybody. One the robot already gave is taken back; it is given when the payment comes.
             $row = $given[$no] ?? null; $unpaid = (string)$r['pay_status'] === 'pending';
             if ($unpaid && $row && $row['direct'] !== 1 && ($row['emp'] === 0 || $row['by'] === 'auto (WhatsApp)')) { try { $pdo->prepare("DELETE FROM manual_orders WHERE manual_order_id = ?")->execute([$row['id']]); $mark->execute([$no, 0, 'payment not received yet', $now]); } catch (Throwable $e) { } continue; }
+            // 🔄 owner (24 Nov): the shop order changed after it was saved here (the 🎁 gift perfume is added when the customer pays, a balance was paid...): the saved row follows it, so the totals and the ticket size stay right
+            if ($row && !$unpaid && (abs($row['total'] - (float)$r['total']) > 0.004 || $row['ps'] !== (string)$r['pay_status'] || abs($row['due'] - (float)$r['due']) > 0.004 || $row['ml'] !== (int)$r['ml'])) {
+                try { $pdo->prepare("UPDATE manual_orders SET total = ?, payment_status = ?, outstanding = ?, items = ?, ml = ? WHERE manual_order_id = ?")->execute([$r['total'], $r['pay_status'], $r['due'], max(1, $r['pieces']), $r['ml'] ?: null, $row['id']]); } catch (Throwable $e) { error_log('tms refresh ' . $no . ': ' . $e->getMessage()); }
+            }
             if ($row && ($row['emp'] > 0 || $row['direct'] === 1)) continue;          // a salesperson has it, or a person marked it a Direct order
             try {
                 $t = strtotime((string)($r['pay_time'] ?: $r['placed_at'])) ?: time(); $why = '';

@@ -498,9 +498,32 @@ function wq_send_guard(PDO $pdo, array $c, string $text, array $in): string
 // ------------------------------------------------------------------------------------------------------------------ orders (indexed copy of recent Shopify orders, by last 10 digits)
 function wq_phone10($p): string { $d = preg_replace('/\D+/', '', (string)$p); return strlen($d) >= 10 ? substr($d, -10) : ''; }
 /** Copies recent shop_orders into wq_ord (phone10, name, total, time). Incremental by created_at with a 2-day overlap; idempotent. */
-function wq_ord_sync(PDO $pdo, float $deadline, int $max = 4000): int
+/** 🛍 owner (24 Nov): the WEBSITE orders (new TM Perfume House shop, saved in manual_orders with channel 'TM Store' once paid) go into the same order copy,
+ *  so the WhatsApp Sales board counts them in orders, revenue and ticket size (the 🎁 gift perfume is in their total). Last 40 days, every 2 minutes; the key is 'tms|<shop order number>'. */
+function wq_ord_sync_web(PDO $pdo): int
 {
     $n = 0;
+    try {
+        if (wq_ts(wq_meta_get($pdo, 'ord_web_at', '')) > wq_now() - 120) return 0;
+        wq_meta_put($pdo, 'ord_web_at', wq_dt());
+        if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE 'mp_no'")->fetch()) return 0;
+        $q = $pdo->prepare("SELECT mp_no, phone, total, order_date FROM manual_orders WHERE channel = 'TM Store' AND mp_no <> '' AND payment_status <> 'pending' AND total > 0 AND order_date >= ? LIMIT 5000");
+        $q->execute([wq_dt(wq_now() - 40 * 86400)]);
+        $ins = $pdo->prepare("INSERT INTO wq_ord (okey, phone, order_name, total, created_at) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE phone = VALUES(phone), total = VALUES(total), created_at = VALUES(created_at)");
+        $touched = [];
+        foreach ($q->fetchAll() as $r) {
+            $p = wq_phone10($r['phone']); if ($p === '') continue;
+            $ins->execute([mb_substr('tms|' . $r['mp_no'], 0, 90), $p, mb_substr((string)$r['mp_no'], 0, 40), (float)$r['total'], $r['order_date']]);
+            if ($ins->rowCount() > 0) { $touched[$p] = 1; $n++; }   // new, or its total / time changed
+        }
+        if ($touched) { foreach (array_chunk(array_keys($touched), 300) as $ch) $pdo->prepare("UPDATE wq_qstat SET stat_at = NULL WHERE final = 0 AND phone IN (" . wq_in($ch) . ")")->execute($ch); }
+    } catch (Throwable $e) { error_log('wq_ord_sync_web: ' . $e->getMessage()); }
+    return $n;
+}
+
+function wq_ord_sync(PDO $pdo, float $deadline, int $max = 4000): int
+{
+    $n = wq_ord_sync_web($pdo);
     try {
         $cur = wq_meta_get($pdo, 'ord_cursor', ''); $first = $cur === '';
         if ($cur === '') $cur = wq_dt(wq_now() - 100 * 86400);
