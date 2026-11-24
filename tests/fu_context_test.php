@@ -2,7 +2,7 @@
 // The follow-up ladder must not start after our thanks for his feedback, after a plain thanks to our care message, or for a customer who just shopped and asked nothing (owner, 24 Nov: 'Very good' -> thanked -> 'step 1 of 10 ... Doubt hai' 3 minutes later).
 $src = file_get_contents(__DIR__ . '/../empmanagment/wa_growth.php');
 if (!preg_match('/\nfunction wag_fu_context_stop\(.*?\n\}\n/s', $src, $m)) { echo "FAIL cannot find wag_fu_context_stop\n"; exit(1); } eval($m[0]);
-$pdo = new PDO('sqlite::memory:'); $pdo->exec("CREATE TABLE wa_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, dir TEXT, mtype TEXT, body TEXT, ts TEXT)"); $pdo->exec("CREATE TABLE shop_orders (phone TEXT, created_at TEXT)"); $pdo->exec("CREATE TABLE wa_cust (phone TEXT, n INTEGER)");
+$pdo = new PDO('sqlite::memory:'); $pdo->exec("CREATE TABLE wa_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, dir TEXT, mtype TEXT, who TEXT, body TEXT, ts TEXT)"); $pdo->exec("CREATE TABLE shop_orders (phone TEXT, created_at TEXT)"); $pdo->exec("CREATE TABLE wa_cust (phone TEXT, n INTEGER)");
 $fail = 0; $chk = function ($n, $c) use (&$fail) { if (!$c) { echo "FAIL $n\n"; $fail++; } };
 $add = function ($ph, $dir, $type, $body, $ts) use ($pdo) { $pdo->prepare("INSERT INTO wa_messages (phone, dir, mtype, body, ts) VALUES (?, ?, ?, ?, ?)")->execute([$ph, $dir, $type, $body, $ts]); };
 $now = time(); $t = function ($m) use ($now) { return date('Y-m-d H:i:s', $now - $m * 60); };
@@ -27,4 +27,15 @@ $chk('(c3) ordered 100 days ago and asked nothing -> no follow-up', wag_fu_conte
 $pdo->exec("INSERT INTO wa_cust (phone, n) VALUES ('919000000007', 3)"); $add('919000000007', 'in', 'text', 'hello', $t(5));
 $chk('(c4) bought customer in the customer table, asked nothing -> no follow-up', wag_fu_context_stop($pdo, '919000000007', 'hello') === true);
 $chk('(c5) the same customer asks a size -> ladder allowed', wag_fu_context_stop($pdo, '919000000007', '50 ml chahiye') === false);
+$add2 = function ($ph, $dir, $who, $body, $ts) use ($pdo) { $pdo->prepare("INSERT INTO wa_messages (phone, dir, mtype, body, ts) VALUES (?, ?, 'text', ?, ?)")->execute([$ph, $dir, $body, $ts]); };
+$d = function ($days) use ($now) { return date('Y-m-d H:i:s', $now - $days * 86400); };
+$pdo->exec("INSERT INTO wa_messages (phone, dir, mtype, who, body, ts) VALUES ('919000000010', 'out', 'text', 'order', 'Your order #1234 is shipped', '" . $d(8) . "')"); $add('919000000010', 'in', 'text', 'hello', $t(5));
+$chk('(d1) an automatic order message 8 days ago, asks nothing -> no follow-up', wag_fu_context_stop($pdo, '919000000010', 'hello') === true);
+$chk('(d2) the same but he asks a size -> ladder allowed', wag_fu_context_stop($pdo, '919000000010', '100 ml chahiye') === false);
+$add('919000000011', 'in', 'text', 'not now', $d(12)); $add('919000000011', 'in', 'text', 'hi', $t(5));
+$chk('(d3) said not now 12 days ago, writes hi -> no follow-up', wag_fu_context_stop($pdo, '919000000011', 'hi') === true);
+$add('919000000012', 'in', 'text', 'perfume leak ho gaya, refund do', $d(5)); $add('919000000012', 'in', 'text', 'ok', $t(5));
+$chk('(d4) complaint words 5 days ago, writes ok -> no follow-up', wag_fu_context_stop($pdo, '919000000012', 'ok') === true);
+for ($i = 0; $i < 20; $i++) $pdo->exec("INSERT INTO wa_messages (phone, dir, mtype, who, body, ts) VALUES ('919000000013', 'sys', 'text', '', 'The bot followed up [B] (step 1 of 10)', '" . $d(1 + $i * 0.5) . "')"); $add('919000000013', 'in', 'text', '50 ml chahiye', $t(5));
+$chk('(h) 20 follow-ups in 20 days -> no more, even if he asks', wag_fu_context_stop($pdo, '919000000013', '50 ml chahiye') === true);
 echo $fail ? "follow-up context FAILED ($fail)\n" : "follow-up context ok\n"; exit($fail ? 1 : 0);

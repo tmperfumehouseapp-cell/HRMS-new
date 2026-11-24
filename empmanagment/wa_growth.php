@@ -1797,7 +1797,7 @@ function wag_fu1_text(PDO $pdo, array $c, array $rows): string
     return $hi . 'aapko ' . ($pf !== '' ? $pf : 'kaun se perfume') . ' ka confusion hai, aap wo hamare saath share kar sakte ho.';
 }
 /** True when the follow-up ladder must NOT start / go on for this chat (owner, 24 Nov: a customer who shopped, answered our 'how was your experience' message and got thanked, then got 'step 1 of 10 ... Doubt hai' three minutes later; same after a plain 'Thanks' to our customer-care message):
- *  (a) the bot has just thanked his experience feedback (the thank-you answered his last message), (b) his last message is only thanks / ok / very good and the message before it was one of our care / experience / order-check messages, (c) he ever bought from us (our customer table, or a shop order in the last year) and his last message asks nothing (no price / size / perfume word). */
+ *  (a) the bot has just thanked his experience feedback (the thank-you answered his last message), (b) his last message is only thanks / ok / very good and the message before it was one of our care / experience / order-check messages, (c) he ever bought from us (our customer table, or a shop order in the last year) and his last message asks nothing (no price / size / perfume word), (d) in the last 20 days of the chat: an automatic order message, a not-now / not-interested or a complaint word, and his last message asks nothing, (h) 20 bot follow-ups already in 20 days. */
 function wag_fu_context_stop(PDO $pdo, string $phone, string $lastIn): bool
 {
     try {
@@ -1810,6 +1810,16 @@ function wag_fu_context_stop(PDO $pdo, string $phone, string $lastIn): bool
             if ($pb !== '' && preg_match('/customer care team|thank you for being|thank you for shopping|how was your experience|did your order|your contact is saved|welcome back to TM|registered customer|this is about your order|experience with TM/iu', $pb)) return true;
         }
         $ask = '/(price|rate|kitn|kimat|cost|offer|discount|combo|\bml\b|size|chahiye|\d+\s*[x*]\s*\d+|bottle|perfume|order|कीमत|कितना|ભાવ|કિંમત)/iu';
+        // (d) the last 20 days of this chat (owner, 24 Nov: 'read the last 15-20 days of messages and stop when something is wrong')
+        $hs = $pdo->prepare("SELECT dir, who, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? AND dir IN ('in', 'out', 'sys') ORDER BY id DESC LIMIT 400"); $hs->execute([$phone, date('Y-m-d H:i:s', time() - 20 * 86400)]); $hist = $hs->fetchAll(PDO::FETCH_ASSOC); $nfu = 0; $orderMsg = false; $declined = false; $bad = false; $first = true;
+        foreach ($hist as $hm) { $bd = (string)($hm['body'] ?? ''); $dr = (string)($hm['dir'] ?? '');
+            if ($dr === 'sys' && strpos($bd, 'The bot followed up') !== false) $nfu++;
+            if ($dr === 'out' && (string)($hm['who'] ?? '') === 'order') $orderMsg = true;
+            if ($dr === 'in') { if ($first) { $first = false; continue; }   // the latest message is judged here and above
+                if (preg_match('/(not interested|nahi chahiye|nhi chahiye|mat bhej|band kar|unsubscribe|\bstop\b|not now|abhi nahi)/iu', $bd)) $declined = true;
+                if (preg_match('/(damaged|leak|not received|nahi mila|nhi mila|wrong (item|product|perfume)|refund|exchange|cheat|fraud|fake|scam|bad quality|kharab|complaint)/iu', $bd)) $bad = true; } }
+        if ($nfu >= 20) return true;   // (h) already 20 bot follow-ups in 20 days: enough
+        if (!preg_match($ask, $lastIn) && ($orderMsg || $declined || $bad)) return true;   // (d) an order flow / a 'not now' / a complaint in the last 20 days and he asks nothing now
         if (!preg_match($ask, $lastIn)) {   // (c)
             try { $wc = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $wc->execute([$phone]); if ((int)$wc->fetchColumn() > 0) return true; } catch (Throwable $e) { }   // a bought customer in our own customer table (any time)
             $k10 = substr(preg_replace('/\D+/', '', $phone), -10);
