@@ -2663,8 +2663,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
                 elseif ($held === $me && $me > 0) $o['state'] = 'mine'; else $o['state'] = 'free';
                 $o['window'] = !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > time() - 86400 && $o['state'] !== 'other' && $o['state'] !== 'optout'; }
             try { $q = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $q->execute([$k]); $o['orders'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
-            $lim = max(1, (int)setting_get($pdo, 'wa_add_daily', '30')); $used = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_assign_log WHERE how = 'added' AND by_emp = ? AND at >= ?"); $q->execute([$me, date('Y-m-d 00:00:00')]); $used = (int)$q->fetchColumn(); } catch (Throwable $e) { }
-            $o['left'] = $adm ? 999 : max(0, $lim - $used); json_response($o);
+            $o['left'] = 999; json_response($o);   // owner (24 Nov): no daily limit on adding customers any more (it was the setting wa_add_daily, 30 a day)
         }
         case 'wa.g_add': {   // ➕ Add customer: make the chat (if the number is new) and give it to ME; the message goes next through wa.tpl_send (the 24-hour rule: a new customer gets a pre-made message)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if ($me <= 0) json_response(['error' => 'Only a salesperson login can add a customer.'], 403);
@@ -2673,7 +2672,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             if ($c && (int)$c['optout'] === 1) json_response(['error' => 'This customer opted out — do not message them.'], 422);
             if ($c && (int)$c['assigned_emp'] > 0 && (int)$c['assigned_emp'] !== $me && !$adm) json_response(['error' => 'This customer is with ' . (employee_names_by_id($pdo)[(int)$c['assigned_emp']] ?? 'a colleague') . '. Ask your manager to transfer the chat.'], 403);
             $mine = $c && (int)$c['assigned_emp'] === $me;
-            if (!$mine && !$adm) { $lim = max(1, (int)setting_get($pdo, 'wa_add_daily', '30')); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_assign_log WHERE how = 'added' AND by_emp = ? AND at >= ?"); $q->execute([$me, date('Y-m-d 00:00:00')]); if ((int)$q->fetchColumn() >= $lim) json_response(['error' => 'You have added ' . $lim . ' customers today — that is the daily limit. Try again tomorrow.'], 429); }
+            // (no daily limit: a salesperson can add as many customers as they need — owner, 24 Nov)
             if (!$c) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, last_number_id, state, status) VALUES (?, ?, ?, ?, 0, 'human', 'open')")->execute([$k, '91' . $k, $name, date('Y-m-d H:i:s')]); }
             elseif ($name !== '' && trim((string)$c['name']) === '') $pdo->prepare("UPDATE wa_contacts SET name = ? WHERE phone = ?")->execute([$name, $k]);
             if (!$mine) wa_assign_to($pdo, $k, $me, $me, 'added');

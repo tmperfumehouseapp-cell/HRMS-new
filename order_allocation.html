@@ -453,7 +453,8 @@
   const empById = (id) => EMPS.find(e => e.id === Number(id));
   // Effective choice for a pending row: what was picked, else what the order already says
   // (employee from the order tag / panel salesman, panel from the store or house tag).
-  const effEmp = (o, p) => (p.emp !== undefined ? p.emp : (o.employee_id || 0));
+  // A salesperson's own login: a pending order with nobody on it starts with THEIR name, so only the Type is left to choose (owner, 24 Nov).
+  const effEmp = (o, p) => (p.emp !== undefined ? p.emp : (o.employee_id || ((IS_EMP && MY_EMP && !o.allocated && !o.cancelled && EMPS.some(e => e.id === MY_EMP)) ? MY_EMP : 0)));
   // "Direct order" is chosen in the Employee select: a panel, no employee. In a pending pick it is -1; once saved the order has allocated_direct.
   const DIRECT = -1;
   const isDirect = (o, p) => (p.emp !== undefined ? p.emp === DIRECT : !!o.allocated_direct);
