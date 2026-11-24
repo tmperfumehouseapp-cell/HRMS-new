@@ -1,6 +1,7 @@
-/* wso_ui.js — 🛒 "Website order": the website's Create order inside the WhatsApp chat (wso.php). A compact bottom sheet:
- *   search a perfume → tap a size (adds 1) → qty −/+ → Full payment link / Advance + COD → optional discount → the website's total → "Create & send link".
- *   The website makes the order and its payment link (with the gift perfume offer); the link message is sent into this chat at once.
+/* wso_ui.js — 🛍️ "Order": a CHECKOUT link from the WhatsApp chat (wso.php). A compact bottom sheet:
+ *   search a perfume → tap a size (adds 1) → qty −/+ → optional discount → the total → "Send checkout link".
+ *   The website keeps a ready cart; the customer opens it, adds the address, chooses prepaid or COD, sees the gift perfume offer and places the order.
+ *   No order exists until then. The link message is sent into this chat at once.
  *   WaWebOrder.open({ phone, name, api, onDone })        Needs the global `api` (api.js).
  */
 (function () {
@@ -44,9 +45,9 @@
   function open(o) {
     css();
     const api = o.api || window.api, phone = String(o.phone || ''), name = String(o.name || '');
-    const S = { lines: [], kind: 'full', dType: 'rs', dVal: '', prev: null, perr: '', busy: false, nonce: Math.random().toString(36).slice(2) + Date.now().toString(36), done: null, res: [], q: '' };
+    const S = { lines: [], dType: 'rs', dVal: '', prev: null, perr: '', busy: false, nonce: Math.random().toString(36).slice(2) + Date.now().toString(36), done: null, res: [], q: '' };
     const ov = document.createElement('div'); ov.className = 'wso-ov';
-    ov.innerHTML = `<div class="wso-sh" role="dialog" aria-modal="true" aria-label="Website order"><div class="wso-hd"><div class="sp"><b>🛒 Website order</b><small>${esc(name || 'Customer')} · ${esc(phone.slice(-10))} · link with the gift perfume offer</small></div><button type="button" class="wso-x" aria-label="Close">✕</button></div>
+    ov.innerHTML = `<div class="wso-sh" role="dialog" aria-modal="true" aria-label="Website order"><div class="wso-hd"><div class="sp"><b>🛍️ Order · checkout link</b><small>${esc(name || 'Customer')} · ${esc(phone.slice(-10))}</small></div><button type="button" class="wso-x" aria-label="Close">✕</button></div>
       <div class="wso-bd" id="wsoBd"></div><div class="wso-ft" id="wsoFt"></div></div>`;
     document.body.appendChild(ov);
     const $ = (s) => ov.querySelector(s), bd = $('#wsoBd'), ft = $('#wsoFt');
@@ -55,7 +56,7 @@
     $('.wso-x').onclick = close; ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
 
     let pT = 0, sT = 0;
-    const body = () => ({ phone, name, lines: S.lines.map((l) => ({ variant_id: l.v, qty: l.q })), link_type: S.kind,
+    const body = () => ({ phone, name, lines: S.lines.map((l) => ({ variant_id: l.v, qty: l.q })),
       discount: Number(S.dVal) > 0 ? (S.dType === 'rs' ? { amount: Number(S.dVal) } : { percent: Number(S.dVal) }) : {} });
     function preview() {
       clearTimeout(pT); S.prev = null; S.perr = ''; drawTot(); if (!S.lines.length) return;
@@ -81,14 +82,13 @@
       if (!S.lines.length) return '';
       if (S.perr) return `<div class="wso-note bad">${esc(S.perr)}</div>`;
       if (!p) return '<div class="wso-tot"><div class="r"><span>Working out the total…</span></div></div>';
-      const later = Math.max(0, Number(p.total) - Number(p.link_amount || 0));
-      return `<div class="wso-tot"><div class="r"><span>Subtotal</span><span>${rs(p.subtotal)}</span></div>${Number(p.discount) > 0 ? `<div class="r g"><span>${esc(p.discount_label || 'Discount')}</span><span>− ${rs(p.discount)}</span></div>` : ''}${Number(p.shipping) > 0 ? `<div class="r"><span>Shipping</span><span>${rs(p.shipping)}</span></div>` : ''}${Number(p.cod_fee) > 0 ? `<div class="r"><span>COD fee</span><span>${rs(p.cod_fee)}</span></div>` : ''}<div class="r t"><span>Order total</span><span>${rs(p.total)}</span></div><div class="r p"><span>Customer pays on the link</span><span>${rs(p.link_amount)}</span></div>${later > 0.004 ? `<div class="r"><span>Balance on delivery</span><span>${rs(later)}</span></div>` : ''}</div>${(p.problems || []).length ? `<div class="wso-note bad">${p.problems.map(esc).join('<br>')}</div>` : ''}<div class="wso-note">🎁 On the link the customer also sees the gift perfume offer (when the order has 2 or more bottles).</div>`;
+      return `<div class="wso-tot"><div class="r"><span>Subtotal</span><span>${rs(p.subtotal)}</span></div>${Number(p.discount) > 0 ? `<div class="r g"><span>Discount</span><span>− ${rs(p.discount)}</span></div>` : ''}<div class="r t"><span>Total</span><span>${rs(p.total)}</span></div></div>${(p.problems || []).length ? `<div class="wso-note bad">${p.problems.map(esc).join('<br>')}</div>` : ''}<div class="wso-note">🔗 The customer gets a <b>checkout link</b>: adds the address, chooses <b>prepaid or COD</b>, sees the 🎁 gift offer and places the order. No order is made before that. Works 72 hours, one order.</div>`;
     }
     function draw() {
       if (S.done) {
         const d = S.done;
-        bd.innerHTML = `<div class="wso-done"><div class="ic">✅</div><b>Order ${esc(d.number)} made</b><div>Total ${rs(d.total)} · customer pays ${rs(d.pay_now)} on the link${d.later > 0 ? ' · ' + rs(d.later) + ' on delivery' : ''}</div>
-          ${d.sent ? '<div class="wso-note ok">💬 The payment link was sent in this chat.</div>' : `<div class="wso-note bad">The link was not sent in the chat${d.send_error ? ': ' + esc(d.send_error) : ''}. Copy it and send it yourself.</div>`}
+        bd.innerHTML = `<div class="wso-done"><div class="ic">✅</div><b>Checkout link ${d.again ? 'already made' : 'made'}</b><div>Total ${rs(d.total)}${d.discount > 0 ? ' (after ' + rs(d.discount) + ' off)' : ''} · works 72 hours</div>
+          ${d.sent ? '<div class="wso-note ok">💬 The checkout link was sent in this chat. The order is made when the customer places it.</div>' : `<div class="wso-note bad">The link was not sent in the chat${d.send_error ? ': ' + esc(d.send_error) : ''}. Copy it and send it yourself.</div>`}
           <p><a href="${esc(d.link)}" target="_blank" rel="noopener">${esc(d.link)}</a></p></div>`;
         ft.innerHTML = `<button type="button" class="wso-sec" id="wsoCopy">Copy message</button><button type="button" class="wso-go" id="wsoClose">Done</button>`;
         $('#wsoClose').onclick = close;
@@ -99,7 +99,6 @@
       const keepQ = $('#wsoQ') ? $('#wsoQ').value : S.q;
       bd.innerHTML = `<div class="wso-h">Perfumes</div><div class="wso-sb"><input id="wsoQ" type="search" placeholder="Search a perfume (2+ letters)" autocomplete="off" value="${esc(keepQ)}"></div><div class="wso-res" id="wsoRes"></div>
         <div class="wso-h">In the order</div>${lines}
-        <div class="wso-h">Payment</div><div class="wso-seg"><button type="button" data-k="full" class="${S.kind === 'full' ? 'on' : ''}">💳 Full payment link<small>pays all on the link</small></button><button type="button" data-k="advance" class="${S.kind === 'advance' ? 'on' : ''}">🚚 Advance + COD<small>part now, rest on delivery</small></button></div>
         <div class="wso-h">Discount (optional)</div><div class="wso-dc"><input id="wsoD" inputmode="decimal" placeholder="${S.dType === 'rs' ? 'Rupees off' : 'Percent off'}" value="${esc(S.dVal)}"><button type="button" data-dt="rs" class="${S.dType === 'rs' ? 'on' : ''}">₹</button><button type="button" data-dt="pc" class="${S.dType === 'pc' ? 'on' : ''}">%</button></div>
         <div id="wsoTot"></div>`;
       drawRes(); drawTot();
@@ -109,19 +108,18 @@
     function drawTot() {
       if (S.done) return; const t = $('#wsoTot'); if (t) t.innerHTML = totals();
       const can = S.lines.length && S.prev && !(S.prev.problems || []).length && !S.busy;
-      ft.innerHTML = `<button type="button" class="wso-go" id="wsoGo"${can ? '' : ' disabled'}>${S.busy ? 'Making the order…' : '🔗 Create & send link' + (S.prev ? ' · ' + rs(S.prev.link_amount) : '')}</button>`;
+      ft.innerHTML = `<button type="button" class="wso-go" id="wsoGo"${can ? '' : ' disabled'}>${S.busy ? 'Making the link…' : '🔗 Send checkout link' + (S.prev ? ' · ' + rs(S.prev.total) : '')}</button>`;
       $('#wsoGo').onclick = create;
     }
     function create() {
       if (S.busy) return; S.busy = true; drawTot();
       api.post('wso.create', Object.assign(body(), { send: 1, nonce: S.nonce })).then((r) => { S.busy = false; S.done = r; S.nonce = Math.random().toString(36).slice(2) + Date.now().toString(36); draw(); try { o.onDone && o.onDone(r); } catch (e) { } },
-        (e) => { S.busy = false; S.perr = (e && e.message) || 'The order could not be made.'; drawTot(); });
+        (e) => { S.busy = false; S.perr = (e && e.message) || 'The link could not be made.'; drawTot(); });
     }
     bd.addEventListener('click', (e) => {
       const a = e.target.closest('[data-add]'); if (a) { add(+a.dataset.p, +a.dataset.add); return; }
       const dq = e.target.closest('[data-dq]'); if (dq) { const l = S.lines[+dq.dataset.dq]; if (l) { l.q -= 1; if (l.q < 1) S.lines.splice(+dq.dataset.dq, 1); } draw(); preview(); return; }
       const iq = e.target.closest('[data-iq]'); if (iq) { const l = S.lines[+iq.dataset.iq]; if (l) l.q = Math.min(99, l.q + 1); draw(); preview(); return; }
-      const k = e.target.closest('[data-k]'); if (k) { S.kind = k.dataset.k; draw(); preview(); return; }
       const dt = e.target.closest('[data-dt]'); if (dt) { S.dType = dt.dataset.dt; draw(); preview(); }
     });
     draw(); setTimeout(() => { const q = $('#wsoQ'); if (q) q.focus(); }, 50);

@@ -2,14 +2,16 @@
 /**
  * wso.php — 🛒 WEBSITE ORDER from a WhatsApp chat (owner, 24 Nov): the website's "Create order" without opening the website admin.
  *
- * In the chat the salesperson presses "🛒 Website order", picks the perfumes (the website catalogue), chooses Full payment link / Advance + COD link,
- * optionally a discount, sees the total (the website works it out: same maths as Orders > Create order) and presses "Create & send link".
- * The order is made ON THE WEBSITE through its API (POST /api/v1/orders, with a reference so a double tap never makes two orders); the website answers
- * with the payment link and its WhatsApp text, which is sent into this chat at once. The customer opens the link, checks the address, sees the gift perfume
- * offer and pays. When paid, the order comes back to HRMS like every website order (store_orders.php: given to the chat's salesperson).
+ * In the chat the salesperson presses "🛍️ Order", picks the perfumes (the website catalogue) and quantities, optionally a discount, sees the total
+ * and presses "Send checkout link". The website keeps a ready cart (POST /api/v1/checkout-links, with a reference so a double tap never makes two) and
+ * answers with the link /o/TOKEN and its WhatsApp text, sent into this chat at once. NO ORDER EXISTS YET: the customer opens the link, adds the address,
+ * chooses prepaid or COD, sees the gift perfume offer and places the order. Then it comes back to HRMS like every website order (store_orders.php:
+ * given to the chat's salesperson). A link works 72 hours and gives one order.
  *
  * The website key (Website orders > Connection, setting tms_api_key) needs the scopes read_products and create_orders (and read_orders, already used).
- * Actions: wso.products GET {q} · wso.preview POST {phone, lines, link_type, discount} · wso.create POST {phone, name, lines, link_type, discount, send}
+ * Actions: wso.products GET {q} · wso.preview POST {phone, lines, discount} · wso.create POST {phone, name, lines, discount, send, nonce}
+ * Since 24 Nov (owner): it sends a CHECKOUT link (POST /api/v1/checkout-links): the customer opens a ready cart and places the order on the website's checkout
+ * (address, prepaid or COD, the gift perfume offer). No order exists until then.
  * PHP 7.4 safe. Own table: wso_order (what was made from which chat).
  */
 if (!isset($pdo) || !function_exists('json_response')) { return; }
@@ -43,12 +45,11 @@ if (!function_exists('wso_table')) {
     function wso_body(array $in, string $phone, string $name, string $sp): array
     {
         $lines = []; foreach (array_slice((array)($in['lines'] ?? []), 0, 50) as $l) { $v = (int)($l['variant_id'] ?? 0); $q = (int)($l['qty'] ?? 1); if ($v > 0 && $q >= 1 && $q <= 99) $lines[] = ['variant_id' => $v, 'quantity' => $q]; }
-        $kind = in_array((string)($in['link_type'] ?? 'full'), ['full', 'advance'], true) ? (string)$in['link_type'] : 'full';
         $d = (array)($in['discount'] ?? []); $disc = [];
         if ((float)($d['amount'] ?? 0) > 0) $disc = ['amount' => round((float)$d['amount'], 2), 'reason' => 'WhatsApp chat'];
         elseif ((float)($d['percent'] ?? 0) > 0) $disc = ['percent' => min(100, round((float)$d['percent'], 2)), 'reason' => 'WhatsApp chat'];
         $b = ['items' => $lines, 'customer' => ['phone' => $phone, 'name' => $name], 'shipping_address' => ['name' => $name, 'phone' => $phone],
-            'payment' => ['method' => 'link', 'link_type' => $kind, 'link_hours' => 48], 'note' => 'Made from the WhatsApp chat (HRMS)'];
+            'note' => 'Made from the WhatsApp chat (HRMS)'];
         if ($disc) $b['discount'] = $disc;
         if ($sp !== '') $b['salesperson'] = $sp;
         return $b;
@@ -99,7 +100,7 @@ if ($__wso === 'wso.preview' || $__wso === 'wso.create') {
     $body = wso_body($in, $phone, $name, $spName());
     if (!$body['items']) json_response(['error' => 'Add at least one perfume.'], 422);
     if ($__wso === 'wso.preview') {
-        [$d, $e] = wso_post($pdo, '/orders/preview', $body); if ($e !== '') json_response(['error' => $e], 422);
+        [$d, $e] = wso_post($pdo, '/checkout-links/preview', $body); if ($e !== '') json_response(['error' => $e], 422);
         json_response(['ok' => true, 'preview' => $d]);
     }
     // create: one reference per press (the sheet sends a fresh nonce per order), so a double tap or a retry never makes two orders
@@ -107,10 +108,11 @@ if ($__wso === 'wso.preview' || $__wso === 'wso.create') {
     $nonce = preg_replace('/[^a-z0-9]/i', '', (string)($in['nonce'] ?? '')); if (strlen($nonce) < 6) $nonce = bin2hex(random_bytes(6));
     $ref = 'hrms-wa:' . $phone . ':' . substr($nonce, 0, 24);
     $body['reference'] = $ref;
-    [$d, $e] = wso_post($pdo, '/orders', $body); if ($e !== '') json_response(['error' => $e], 422);
-    $o = (array)($d['order'] ?? []); $l = (array)($o['payment_link'] ?? []); $num = (string)($o['number'] ?? ''); $url = (string)($l['url'] ?? '');
-    try { $pdo->prepare("INSERT INTO wso_order (phone, emp_id, ref, number, total, link, created_at) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE number = VALUES(number), link = VALUES(link)")->execute([$phone, $me, $ref, $num, (float)($o['total'] ?? 0), mb_substr($url, 0, 255), date('Y-m-d H:i:s')]); } catch (Throwable $ex) { error_log('wso save: ' . $ex->getMessage()); }
-    $text = (string)($l['whatsapp']['text'] ?? ''); if ($text === '' && $url !== '') $text = 'Hello ' . $name . ", here is your order " . $num . " from TM Perfume House.\n\nPay securely here:\n" . $url;
+    [$d, $e] = wso_post($pdo, '/checkout-links', $body); if ($e !== '') json_response(['error' => $e], 422);
+    // a CHECKOUT link (owner, 24 Nov): no order exists yet; the website makes it only when the customer places it (then it comes to HRMS like every website order)
+    $url = (string)($d['url'] ?? ''); $tok = (string)($d['token'] ?? ''); $total = (float)($d['total'] ?? 0);
+    try { $pdo->prepare("INSERT INTO wso_order (phone, emp_id, ref, number, total, link, created_at) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE number = VALUES(number), link = VALUES(link)")->execute([$phone, $me, $ref, $tok, $total, mb_substr($url, 0, 255), date('Y-m-d H:i:s')]); } catch (Throwable $ex) { error_log('wso save: ' . $ex->getMessage()); }
+    $text = (string)($d['whatsapp']['text'] ?? ''); if ($text === '' && $url !== '') $text = 'Hello ' . $name . ", your order from TM Perfume House is ready.\n\nTap to checkout:\n" . $url;
     $sent = false; $why = '';
     $was = 0; try { $q = $pdo->prepare("SELECT sent FROM wso_order WHERE ref = ?"); $q->execute([$ref]); $was = (int)$q->fetchColumn(); } catch (Throwable $ex) { }
     if ($was === 1) { $sent = true; $in['send'] = 0; }      // the same press came twice (double tap / retry): the link is in the chat already, it is not sent again
@@ -118,7 +120,7 @@ if ($__wso === 'wso.preview' || $__wso === 'wso.create') {
         [$ok, $res] = wa_send_text($pdo, $c, $text, 'emp', $me); $sent = (bool)$ok; $why = $ok ? '' : (string)$res;
         if ($ok) { try { $pdo->prepare("UPDATE wso_order SET sent = 1 WHERE ref = ?")->execute([$ref]); } catch (Throwable $ex) { } }
     }
-    if (function_exists('wa_event')) { try { wa_event($pdo, (string)$c['phone'], '🛒 Website order ' . $num . ' made from the chat (₹' . number_format((float)($o['total'] ?? 0)) . ')' . ($sent ? ' — payment link sent' : '')); } catch (Throwable $ex) { } }
-    json_response(['ok' => true, 'number' => $num, 'total' => (float)($o['total'] ?? 0), 'pay_now' => (float)($l['amount'] ?? 0), 'later' => (float)($l['balance_on_delivery'] ?? 0), 'link' => $url, 'text' => $text, 'sent' => $sent, 'send_error' => $why, 'again' => empty($d['created'])]);
+    if (function_exists('wa_event')) { try { wa_event($pdo, (string)$c['phone'], '🛍️ Checkout link sent from the chat (₹' . number_format($total) . ', works 72 hours) — the order is made when the customer places it'); } catch (Throwable $ex) { } }
+    json_response(['ok' => true, 'token' => $tok, 'subtotal' => (float)($d['subtotal'] ?? 0), 'discount' => (float)($d['discount'] ?? 0), 'total' => $total, 'expires_at' => (string)($d['expires_at'] ?? ''), 'link' => $url, 'text' => $text, 'sent' => $sent, 'send_error' => $why, 'again' => empty($d['created'])]);
 }
 json_response(['error' => 'Unknown action.'], 404);
