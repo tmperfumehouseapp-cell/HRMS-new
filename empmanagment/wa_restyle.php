@@ -70,7 +70,8 @@ if (!function_exists('wa_rs_tick')) {
         try {
             if ((string)setting_get($pdo, 'wa_rs_on', '1') === '0') { $o['note'] = 'off'; return $o; }
             if (!function_exists('wa_lock') || !wa_lock($pdo, 'rs', 55)) { $o['note'] = 'busy'; return $o; }
-            $st = wa_rs_state($pdo); $tg = wa_rs_targets($pdo); $today = date('Y-m-d'); if (($st['day'] ?? '') !== $today) { $st['day'] = $today; $st['n'] = 0; }
+            $st = wa_rs_state($pdo); $tg = wa_rs_targets($pdo);
+            foreach ($st['pairs'] as $k0 => $p0) if (($p0['st'] ?? '') === 'making' && (int)($p0['at'] ?? 0) < time() - 900) unset($st['pairs'][$k0]);   // a round that died halfway: try again after 15 minutes $today = date('Y-m-d'); if (($st['day'] ?? '') !== $today) { $st['day'] = $today; $st['n'] = 0; }
             // 1) replace: the twin is approved on every account where the old message is approved
             if ((int)setting_get($pdo, 'wa_rs_chk_at', '0') < time() - 240) { setting_set($pdo, 'wa_rs_chk_at', (string)time());
                 foreach ($st['pairs'] as $old => &$p) {
@@ -88,9 +89,10 @@ if (!function_exists('wa_rs_tick')) {
             foreach ($tg as $old => $src) {
                 if ($o['made'] >= 2 || (int)$st['n'] >= 150) break; if (isset($st['pairs'][$old])) continue;
                 try { $to = wa_camp_tpl($pdo, (int)$old, true, 0); } catch (Throwable $e) { $to = null; } if (!$to || empty($to['ok_wabas'])) { $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => 'old message not approved', 'at' => time()]; continue; }
+                $st['pairs'][$old] = ['src' => $src, 'st' => 'making', 'at' => time()]; wa_rs_save($pdo, $st);   // saved BEFORE the work: two overlapping rounds made two twins of the same message (the second one was refused by Meta: the name existed)
                 $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
-                if (!empty($r['new'])) { $st['pairs'][$old] = ['new' => (int)$r['new'], 'src' => $src, 'st' => 'made', 'at' => time()]; $o['made']++; }
-                else { $f = (int)($st['fails'][$old] ?? 0) + 1; $st['fails'][$old] = $f; if ($f >= 3) $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => (string)($r['why'] ?? '?'), 'at' => time()]; $o['note'] = (string)($r['why'] ?? ''); }
+                if (!empty($r['new'])) { $st['pairs'][$old] = ['new' => (int)$r['new'], 'src' => $src, 'st' => 'made', 'at' => time()]; $o['made']++; wa_rs_save($pdo, $st); }
+                else { unset($st['pairs'][$old]); $f = (int)($st['fails'][$old] ?? 0) + 1; $st['fails'][$old] = $f; if ($f >= 3) $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => (string)($r['why'] ?? '?'), 'at' => time()]; $o['note'] = (string)($r['why'] ?? ''); }
             }
             wa_rs_save($pdo, $st);
             if (($o['made'] || $o['replaced']) && function_exists('wa_log')) wa_log($pdo, 'template', true, 'New-style messages: ' . $o['made'] . ' made, ' . $o['replaced'] . ' replaced');
