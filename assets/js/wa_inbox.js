@@ -781,11 +781,13 @@
       $('wiMore').onclick = det;
       $('wiMo2').onclick = () => {   // phone: the less-used actions, each with words
         const b0 = sheet('More for this chat'); const it = (k, ic, t, d) => `<button type="button" class="wi-mi" data-k="${k}"><span>${ic}</span><b>${t}<small>${d}</small></b></button>`;
-        b0.innerHTML = it('cart', '🛒', 'Make a cart', 'Perfumes + chain, send to the customer') + it('det', 'ⓘ', 'Details', 'Cart, journey, tags, summary, profile') + it('cx', '⚠️', 'Mark as complaint', 'Send this chat to the Complaint team');
+        b0.innerHTML = it('web', '🛍️', 'Website order', 'Payment link with the gift offer, sent in this chat') + it('mo', '🧾', 'Manual order', 'Paid by QR / UPI, or COD — no website') + it('cart', '🛒', 'Make a cart', 'Perfumes + chain, send to the customer') + it('det', 'ⓘ', 'Details', 'Cart, journey, tags, summary, profile') + it('cx', '⚠️', 'Mark as complaint', 'Send this chat to the Complaint team');
         b0.onclick = (e) => {
           const x = e.target.closest('[data-k]'); if (!x) return;
           if (x.dataset.k === 'cx') { closeSheet(); cx(); return; }
           if (x.dataset.k === 'cart') { closeSheet(); openCart(c); return; }
+          if (x.dataset.k === 'web') { closeSheet(); openWeb(c); return; }
+          if (x.dataset.k === 'mo') { closeSheet(); openManual(c); return; }
           closeSheet(true); const L = LY.st.find((y) => y.n === 'sheet'); root.classList.add('det');   // Details takes over the sheet's Back step
           if (L) { L.n = 'det'; L.f = () => root.classList.remove('det'); } else det();
         };

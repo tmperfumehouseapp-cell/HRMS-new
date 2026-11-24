@@ -1253,11 +1253,12 @@
     // ⋯ More: the actions staff use less often, each with a plain-words label (no guessing what an icon means)
     function openMore() {
       const sh = sheet('More for this chat'); const it = (k, ic, t, d) => `<button type="button" class="wx-mi" data-k="${k}"><span>${ic}</span><b>${t}<small>${d}</small></b></button>`;
-      sh.body.innerHTML = it('cust', '👤', 'Customer details', 'Name, orders, tags, notes') + it('jr', '🧭', 'Customer journey', 'Everything this customer did, step by step')
+      sh.body.innerHTML = it('web', '🛍️', 'Website order', 'Payment link with the gift offer, sent in this chat') + it('cust', '👤', 'Customer details', 'Name, orders, tags, notes') + it('jr', '🧭', 'Customer journey', 'Everything this customer did, step by step')
         + it('hand', '↪️', 'Hand over to a colleague', 'Search a name — the chat moves to them') + it('cx', '⚠️', 'Mark as complaint', 'Send this chat to the Complaint team') + it('rep', '🚩', 'Report a bad bot reply', 'The owner sees it on the Teach screen');
       sh.body.onclick = (e) => {
         const b = e.target.closest('[data-k]'); if (!b) return; const k = b.dataset.k;
         if (k === 'cust' || k === 'rep' || k === 'hand') { sh.el._shut(); S.reuseSheet = 1; (k === 'cust' ? openCustomer : k === 'hand' ? openHandover : reportBad)(); return; }   // the next sheet takes this one's Back step
+        if (k === 'web') { sh.close(); setTimeout(openWeb, 60); return; }
         sh.close(); setTimeout(() => (k === 'jr' ? openJourney : markComplaint)(), 60);
       };
     }
