@@ -37,13 +37,15 @@ jobs:
           $get = function ($path) use ($base, $key) { $ch = curl_init($base . $path); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ["Authorization: Bearer " . $key, "Accept: application/json"]]); $o = curl_exec($ch); $c = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch); return [$c, json_decode((string)$o, true)]; };
           $hide = ["phone", "name", "email", "address1", "address2", "customer", "shipping_address", "billing_address", "whatsapp", "text", "pincode", "city", "state"];
           $show = function ($v, $depth = 0) use (&$show, $hide) { if (!is_array($v)) return is_string($v) ? mb_substr($v, 0, 70) : $v; $o = []; foreach ($v as $k => $x) { if (is_string($k) && in_array($k, $hide, true)) { $o[$k] = "(hidden)"; continue; } $o[$k] = $depth >= 3 ? "..." : $show($x, $depth + 1); } return $o; };
-          $rows = $d->query("SELECT id, number, total, sent, created_at FROM wso_order ORDER BY id DESC LIMIT 12")->fetchAll(PDO::FETCH_ASSOC); $n = 0;
+          $rows = $d->query("SELECT id, number, total, sent, created_at FROM wso_order ORDER BY id DESC LIMIT 26")->fetchAll(PDO::FETCH_ASSOC); $n = 0;
           foreach ($rows as $r) { echo "--- link #" . $r["id"] . " made " . $r["created_at"] . " · HRMS was told total " . $r["total"] . " · sent " . $r["sent"] . "\n";
             if (!preg_match('/^[a-z0-9]{6,20}$/', (string)$r["number"])) { echo "    (older row, an order number)\n"; continue; }
             [$c, $j] = $get("/checkout-links/" . $r["number"]); $x = is_array($j) ? ($j["data"] ?? $j) : null;
             if (!is_array($x)) { echo "    website HTTP $c\n"; continue; }
             $flat = []; foreach ($x as $k => $v) if (!is_array($v) && !in_array($k, $hide, true) && !in_array($k, ["url", "token"], true)) $flat[] = $k . "=" . (is_string($v) ? mb_substr($v, 0, 40) : json_encode($v)); echo "    website: " . implode(" · ", $flat) . "\n";
-            if ($n++ < 3) echo "    full: " . mb_substr(json_encode($show(array_diff_key($x, ["url" => 1, "token" => 1])), JSON_UNESCAPED_UNICODE), 0, 1800) . "\n"; }
+            if (!empty($x["order_number"])) { [$c2, $j2] = $get("/orders/" . rawurlencode((string)$x["order_number"])); $o = is_array($j2) ? ($j2["data"] ?? $j2) : []; echo "    ORDER " . $x["order_number"] . ": total=" . json_encode($o["total"] ?? null) . " subtotal=" . json_encode($o["subtotal"] ?? null) . " discount=" . json_encode($o["discount"] ?? ($o["total_discount"] ?? null)) . " paid=" . json_encode($o["amount_paid"] ?? null) . " method=" . json_encode($o["payment_method"] ?? null) . " items=" . count((array)($o["items"] ?? [])) . " keys=" . implode(",", array_slice(array_keys((array)$o), 0, 40)) . "\n"; }
+            if (isset($x["items"])) { $ql = []; foreach ((array)$x["items"] as $it) $ql[] = (int)($it["quantity"] ?? 1) . "x" . json_encode($it["price"] ?? null) . (preg_match('/(\d+)\s*ml/i', (string)($it["variant_title"] ?? ""), $mm) ? "(" . $mm[1] . "ml)" : ""); echo "    lines: " . implode(" ", $ql) . "\n"; }
+            if ($n++ < 0) echo "    full: " . mb_substr(json_encode($show(array_diff_key($x, ["url" => 1, "token" => 1])), JSON_UNESCAPED_UNICODE), 0, 1800) . "\n"; }
           PHP
           php /tmp/cl_check.php "$P"; rm -f /tmp/cl_check.php
           REMOTE
