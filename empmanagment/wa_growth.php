@@ -1797,7 +1797,7 @@ function wag_fu1_text(PDO $pdo, array $c, array $rows): string
     return $hi . 'aapko ' . ($pf !== '' ? $pf : 'kaun se perfume') . ' ka confusion hai, aap wo hamare saath share kar sakte ho.';
 }
 /** True when the follow-up ladder must NOT start / go on for this chat (owner, 24 Nov: a customer who shopped, answered our 'how was your experience' message and got thanked, then got 'step 1 of 10 ... Doubt hai' three minutes later; same after a plain 'Thanks' to our customer-care message):
- *  (a) the bot has just thanked his experience feedback (the thank-you answered his last message), (b) his last message is only thanks / ok / very good and the message before it was one of our care / experience / order-check messages, (c) he ordered in the last 10 days and his last message asks nothing (no price / size / perfume word). */
+ *  (a) the bot has just thanked his experience feedback (the thank-you answered his last message), (b) his last message is only thanks / ok / very good and the message before it was one of our care / experience / order-check messages, (c) he ever bought from us (our customer table, or a shop order in the last year) and his last message asks nothing (no price / size / perfume word). */
 function wag_fu_context_stop(PDO $pdo, string $phone, string $lastIn): bool
 {
     try {
@@ -1811,8 +1811,9 @@ function wag_fu_context_stop(PDO $pdo, string $phone, string $lastIn): bool
         }
         $ask = '/(price|rate|kitn|kimat|cost|offer|discount|combo|\bml\b|size|chahiye|\d+\s*[x*]\s*\d+|bottle|perfume|order|कीमत|कितना|ભાવ|કિંમત)/iu';
         if (!preg_match($ask, $lastIn)) {   // (c)
+            try { $wc = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $wc->execute([$phone]); if ((int)$wc->fetchColumn() > 0) return true; } catch (Throwable $e) { }   // a bought customer in our own customer table (any time)
             $k10 = substr(preg_replace('/\D+/', '', $phone), -10);
-            if (strlen($k10) === 10) { $o = $pdo->prepare("SELECT COUNT(*) FROM shop_orders WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+', ''), '-', '') LIKE ? AND created_at >= ?"); $o->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 10 * 86400)]); if ((int)$o->fetchColumn() > 0) return true; }
+            if (strlen($k10) === 10) { $o = $pdo->prepare("SELECT COUNT(*) FROM shop_orders WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+', ''), '-', '') LIKE ? AND created_at >= ?"); $o->execute(['%' . $k10, date('Y-m-d H:i:s', time() - 365 * 86400)]); if ((int)$o->fetchColumn() > 0) return true; }
         }
     } catch (Throwable $e) { }
     return false;
