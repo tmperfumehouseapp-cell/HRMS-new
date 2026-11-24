@@ -191,6 +191,20 @@ switch ((string)$action) {
         $sc = array_keys((array)($d['key']['scopes'] ?? [])); $can = in_array('read_orders', $sc, true);
         json_response(['ok' => $can, 'message' => $can ? 'Connected to "' . (string)($d['store'] ?? 'the shop') . '". The key can read orders.' : 'Connected, but this key is not allowed to read orders. Give it "Orders: read" in the shop.']);
     }
+    case 'tms.offer_leads': {   // 🌐 visitors who pressed "Login to check" on the shop's product page and verified their mobile (they agreed to offers on WhatsApp). Read-only; the Campaigns page shows them above the Cold funnel.
+        $days = max(1, min(90, (int)($in['days'] ?? 30))); $since = date('Y-m-d', time() - $days * 86400);
+        $get = function () use ($pdo, $since) { [$d, $e] = tms_get($pdo, '/offer-logins', ['since' => $since]); return ['d' => $d, 'e' => $e]; };
+        $r = function_exists('hrms_memo') ? hrms_memo('tms_offer_leads:' . $since, 300, $get) : $get();
+        if ((string)$r['e'] !== '') { $nr = strpos((string)$r['e'], 'HTTP 404') !== false; if (function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_offer_leads:' . $since); } catch (Throwable $e2) { } } json_response(['ok' => true, 'ready' => false, 'message' => $nr ? 'The website has not switched this on yet (the "Login to check" box is being built).' : (string)$r['e']]); }
+        $list = (array)$r['d']; if (isset($list['rows']) && is_array($list['rows'])) $list = $list['rows'];
+        $rows = []; $seen = []; $today = date('Y-m-d'); $wk = date('Y-m-d', time() - 6 * 86400); $c = ['today' => 0, 'week' => 0, 'all' => 0, 'ordered' => 0];
+        foreach ($list as $x) { if (!is_array($x)) continue; $ph = preg_replace('/\D+/', '', (string)($x['phone'] ?? '')); if (strlen($ph) === 10) $ph = '91' . $ph; if (strlen($ph) < 11 || isset($seen[$ph])) continue; if (array_key_exists('consent', $x) && !$x['consent']) continue; $seen[$ph] = 1;
+            $at = (string)($x['verified_at'] ?? ''); $ts = $at !== '' ? strtotime($at) : 0; $day = $ts ? date('Y-m-d', $ts) : ''; $ord = !empty($x['ordered']);
+            $c['all']++; if ($day === $today) $c['today']++; if ($day !== '' && $day >= $wk) $c['week']++; if ($ord) $c['ordered']++;
+            $rows[] = ['phone' => $ph, 'name' => mb_substr((string)($x['name'] ?? ''), 0, 60), 'at' => $ts ? date('Y-m-d H:i', $ts) : '', 'product' => mb_substr((string)($x['product_title'] ?? ($x['product_handle'] ?? '')), 0, 80), 'ordered' => $ord ? 1 : 0, 'order_no' => mb_substr((string)($x['last_order_number'] ?? ''), 0, 30)]; }
+        usort($rows, function ($a, $b) { return strcmp($b['at'], $a['at']); });
+        json_response(['ok' => true, 'ready' => true, 'days' => $days, 'count' => $c, 'rows' => array_slice($rows, 0, 2000)]);
+    }
     case 'tms.people': {
         $o = []; foreach ($pdo->query("SELECT employee_id, employee_code, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll() as $e) $o[] = ['id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'code' => (string)$e['employee_code']];
         json_response(['people' => $o]);
