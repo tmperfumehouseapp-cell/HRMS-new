@@ -391,3 +391,9 @@ try {
     echo "ASK AFT sent per customer last 30 days (messages, customers) " . json_encode($one("SELECT c, COUNT(*) FROM (SELECT phone, COUNT(*) c FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= ? GROUP BY phone) t GROUP BY c ORDER BY c LIMIT 12", [date('Y-m-d H:i:s', time() - 30 * 86400)])) . "\n";
     echo "ASK AFT customers by days since delivery (active, due now) " . json_encode($one("SELECT COUNT(*), SUM(EXISTS (SELECT 1 FROM wa_aft_plan p WHERE p.phone = c.phone AND p.status = 'planned' AND p.due_at <= NOW())) FROM wa_aft_cust c WHERE c.status = 'active'")) . "\n";
 } catch (Throwable $e) { echo "ASK AFT ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 48) Lineup customers who wrote today vs price offers (owner 24 Nov: did every one who replied get the price offer?) counts only
+try {
+    $t48 = date('Y-m-d 00:00:00');
+    echo "ASK LINEOFFER Lineup customers who wrote today (all, with a price offer sent today after that, with any offer row today, with a reason row) " . json_encode($one("SELECT COUNT(*), SUM(EXISTS (SELECT 1 FROM wa_offer o WHERE o.phone = w.phone AND o.ok = 1 AND o.at >= ?)), SUM(EXISTS (SELECT 1 FROM wa_offer o WHERE o.phone = w.phone AND o.at >= ?)), SUM(EXISTS (SELECT 1 FROM wa_offer o WHERE o.phone = w.phone AND o.ok = 0 AND o.at >= ?)) FROM (SELECT DISTINCT m.phone FROM wa_messages m JOIN wa_line_cust c ON (c.phone COLLATE utf8mb4_unicode_ci) = (m.phone COLLATE utf8mb4_unicode_ci) WHERE m.dir = 'in' AND m.ts >= ? AND c.status = 'active') w", [$t48, $t48, $t48, $t48])) . "\n";
+    echo "ASK LINEOFFER why no offer today (why first word, ok, n) " . json_encode($one("SELECT SUBSTRING_INDEX(why, ' ', 2) w, ok, COUNT(*) FROM wa_offer WHERE at >= ? GROUP BY w, ok ORDER BY 3 DESC LIMIT 14", [$t48])) . "\n";
+} catch (Throwable $e) { echo "ASK LINEOFFER ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
