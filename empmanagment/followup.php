@@ -425,6 +425,45 @@ function fup_seed_nitin_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_nitin_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the 14 daily tasks of Sachin in the owner's "Dispatch" section (the section is made by the owner; this waits for it). One topic a task, the task name only; a number box only where a number is needed. Given to Sachin only when exactly ONE working employee is called Sachin, otherwise nobody is assigned (the owner gives them). Four of his tasks have the same name as tasks of other people: they are made for him too (a topic is skipped only when the same task already belongs to the same person; when nobody can be assigned, a shared name gets "(Sachin)" so the topics can be told apart). */
+function fup_seed_sachin_topics(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_sachin_topics_v1', '') === '1') return;
+        $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(TRIM(name)) = 'dispatch' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor();
+        if ($sid <= 0) { $q = $pdo->query("SELECT id FROM fu_sections WHERE LOWER(name) LIKE '%dispatch%' AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); }
+        if ($sid <= 0) return;
+        $emp = 0; try { $q = $pdo->query("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(full_name) LIKE 'sachin%'"); $ids = $q->fetchAll(PDO::FETCH_COLUMN); $q->closeCursor(); if (count($ids) === 1) $emp = (int)$ids[0]; } catch (Throwable $e) { $emp = 0; }
+        $have = []; $any = []; foreach ($pdo->query("SELECT title, assignee_emp FROM fu_topics WHERE section_id = " . $sid . " AND active = 1")->fetchAll() as $r0) { $k = mb_strtolower((string)$r0['title']); $any[$k] = 1; $have[$k . '|' . (int)$r0['assignee_emp']] = 1; }
+        $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+        $ins = $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, ?, '', ?, '', 0, '', ?, ?, 'open', ?, 1, 0, ?)");
+        $w = function ($what) { return 'Write what was done today: ' . $what . '.'; };
+        $list = [   // [title, what to write, summary-only (1) or with a number box (0), fields]
+            ['All perfume ke proper sticker lagne chaiye', $w('proper stickers on all perfumes'), 1, []],
+            ['Daily sticker mistake ki list banani hai', $w('the list of sticker mistakes made'), 1, []],
+            ['All can me proper sticker lagake set', $w('proper stickers put on all cans and set'), 1, []],
+            ['5 kg making batch banana hai', $w('the 5 kg making batch'), 1, []],
+            ['All not selling blend ready karne hai', $w('all the not selling blends made ready'), 1, []],
+            ['Sticker, sprayer, dust check karvana hai', $w('the sticker, sprayer and dust check'), 1, []],
+            ['Daily 20-30 fragrance random check karni hai', 'Write how many fragrances were checked at random today (20 to 30).', 0, [['label' => 'Fragrances checked', 'type' => 'num', 'req' => 1], ['label' => 'Note', 'type' => 'text', 'req' => 0]]],
+            ['Sealing machine daily check', $w('the sealing machine checked'), 1, []],
+            ['And all extra products rack pe rakhvane hai', $w('all extra products put on the rack'), 1, []],
+            ['Darek manas e cap pereli hovi joie and gloves pan', $w('everyone wearing a cap and gloves'), 1, []],
+            ['RJD me sab extra chiz check (machine, AC, light, plumber etc)', $w('every extra thing in RJD checked (machine, AC, light, plumber etc)'), 1, []],
+            ['Potani aju baju ni jagya saf karine javi', $w('the place around you cleaned before leaving'), 1, []],
+            ['Chair sarkhi mukvi', $w('the chair put properly'), 1, []],
+            ['Table ni vastu o proper mukine javi', $w('the things on the table put properly'), 1, []],
+        ];
+        foreach ($list as $x) {
+            $title = $x[0]; $k = mb_strtolower($title);
+            if ($emp > 0) { if (isset($have[$k . '|' . $emp])) continue; }
+            else { if (isset($any[$k])) $title .= ' (Sachin)'; if (isset($have[mb_strtolower($title) . '|0'])) continue; }
+            $ins->execute([$sid, $title, $emp, $x[1], $x[2], $x[3] ? json_encode(fup_fields_clean($x[3]), JSON_UNESCAPED_UNICODE) : '', ++$n, fup_now()]);
+        }
+        setting_set($pdo, 'fup_sachin_topics_v1', '1');      // only after everything went in
+    } catch (Throwable $e) { error_log('fup_seed_sachin_topics: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order for the topic "Office Pickup Parcel Update": no number from the HRMS, only the written update. The system number (it was connected by its name) is taken off the topic, the numbers the system had filled in by itself are removed from its days (a number a person typed, and every written update, stay), and the form asks only for the summary. */
 function fup_office_pickup_clean(PDO $pdo): void
 {
@@ -1210,6 +1249,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_dhvanil_topics($pdo);
     fup_seed_dharmik_topics($pdo);
     fup_seed_nitin_topics($pdo);
+    fup_seed_sachin_topics($pdo);
     fup_office_pickup_clean($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
