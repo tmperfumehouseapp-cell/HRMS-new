@@ -441,6 +441,6 @@ try {
     echo "ASK RESTYLE fail reasons (pairs) " . json_encode($why54) . " · attempt reasons " . json_encode($st54['why_n'] ?? []) . " · attempts today " . (int)($st54['n'] ?? 0) . "\n";
     if (!function_exists('wa_rc_overview')) require_once $root . 'empmanagment/wa_modc.php';
     echo "ASK MODC pending cache " . substr((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_pending'")[0][0] ?? ''), 0, 300) . "\n";
-    echo "ASK COLD lost (replied but no Lineup row): by why / contact flags (why, optout, camp_optout, n) " . json_encode($one("SELECT c.why, ct.optout, ct.camp_optout, COUNT(*) FROM wa_cold_cust c LEFT JOIN wa_line_cust l ON l.phone = c.phone LEFT JOIN wa_contacts ct ON ct.phone = c.phone WHERE c.status = 'replied' AND l.phone IS NULL GROUP BY c.why, ct.optout, ct.camp_optout ORDER BY 4 DESC LIMIT 8")) . "\n";
+    echo "ASK COLD lost (replied but no Lineup row): by why / contact flags (why, optout, camp_optout, n) " . json_encode($one("SELECT c.why, ct.optout, ct.camp_optout, COUNT(*) FROM wa_cold_cust c LEFT JOIN wa_contacts ct ON (ct.phone COLLATE utf8mb4_unicode_ci) = (c.phone COLLATE utf8mb4_unicode_ci) WHERE c.status = 'replied' AND NOT EXISTS (SELECT 1 FROM wa_line_cust l WHERE (l.phone COLLATE utf8mb4_unicode_ci) = (c.phone COLLATE utf8mb4_unicode_ci)) GROUP BY c.why, ct.optout, ct.camp_optout ORDER BY 4 DESC LIMIT 8")) . "\n";
 } catch (Throwable $e) { echo "ASK RESTYLE3 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 
