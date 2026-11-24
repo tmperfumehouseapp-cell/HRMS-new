@@ -472,7 +472,7 @@ try {
 
 // 59) Why the new utility messages never reach Meta (owner 24 Nov): settings + submission state, read-only
 try {
-    $wk59 = $pdo->query("SELECT setting_key, setting_value FROM hrms_settings WHERE setting_key LIKE 'wa\\_tpl\\_wk\\_block\\_%' OR setting_key IN ('wa_tpl_util_off_wabas','wa_tpl_auto','wa_tpl_tick_max','wa_tpl_hour_cap','wa_tpl_day_cap')")->fetchAll(PDO::FETCH_NUM);
+    $wk59 = $pdo->query("SELECT setting_key, setting_value FROM hrms_settings WHERE setting_key LIKE 'wa\\_tpl\\_wk\\_block\\_%' OR setting_key IN ('wa_tpl_util_off_wabas','wa_tpl_auto','wa_ru_got_sql','wa_tpl_tick_max','wa_tpl_hour_cap','wa_tpl_day_cap')")->fetchAll(PDO::FETCH_NUM);
     echo "ASK UTILSET settings (now " . time() . ") " . json_encode($wk59) . "\n";
     $u59 = $pdo->query("SELECT t.name, t.category, t.extra, (SELECT GROUP_CONCAT(CONCAT(RIGHT(r.waba_id,4),':',r.status) SEPARATOR ',') FROM wa_tpl_waba r WHERE r.tpl_id = t.id) FROM wa_templates t WHERE t.name LIKE 'tmph\\_fu\\_open\\_hi\\_%' LIMIT 6")->fetchAll(PDO::FETCH_NUM);
     echo "ASK UTILSET open_hi templates (name, category, extra, per-account status) " . json_encode($u59) . "\n";
