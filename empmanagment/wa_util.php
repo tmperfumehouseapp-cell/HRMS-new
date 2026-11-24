@@ -221,6 +221,13 @@ function wa_util_pool_defs(): array
             'body' => "Hi {{1}}, a reminder from TM Perfume House: our team can help you with your perfume or any order. Reply with a button below."],
         'open_rem_chat' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Chat with us', 'Not now']),
             'body' => "Hello {{1}}, a quick reminder that you can chat with TM Perfume House any time for help with a perfume or an order. Tap a button to reply."],
+        // 💬 owner, 24 Nov 2026: the warm Hinglish style the customers like (name, emoji, one clear choice by button) - for people who never wrote: no offer, no deal word, no claim of an enquiry or an order
+        'open_hi_1' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Perfume help', 'Order help']),
+            'body' => "Hello {{1}} 👋 TM Perfume House ki team yahan he. Perfume, order ya delivery me koi madad chahiye ? Neeche button dabaiye 👇"],
+        'open_hi_2' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Apne liye', 'Gift ke liye']),
+            'body' => "Hi {{1}} 😊 TM Perfume House se ek chhoti si madad: aap perfume apne liye dhoond rahe hain ya gift ke liye ? Button dabaiye 👇"],
+        'open_hi_3' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, madad chahiye', 'Abhi nahi']),
+            'body' => "Hello {{1}} 🌸 TM Perfume House team yahan he. Koi sawal ho ya perfume chunne me help chahiye to bas ek button dabaiye 🙏"],
         'order_exp_how' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['It was great', 'I had an issue']),
             'body' => "Hi {{1}}, your order {{2}} placed on {{3}} should have reached you by now. How was your experience with it? Tap a button to share."],
         'order_exp_share' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Share experience', 'All good']),

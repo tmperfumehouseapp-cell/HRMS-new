@@ -12,6 +12,7 @@ if (!function_exists('wa_rc_tick')) {
     function wa_rc_tick(PDO $pdo): array
     {
         $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
+        try { if ((string)setting_get($pdo, 'wa_style_v1', '') !== '1') { setting_set($pdo, 'wa_style_v1', '1'); if (!function_exists('wa_style_make') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php'; if (function_exists('wa_style_make')) wa_style_make($pdo); } } catch (Throwable $e) { }   // the five style messages of the owner (once)
         try {
             if ((string)setting_get($pdo, 'wa_rc_on', '1') === '0') { $res['note'] = 'off'; return $res; }
             if (!function_exists('wa_ru_tables') || !wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
