@@ -57,15 +57,17 @@ if (!function_exists('wa_pat_topic')) {
         $q = $pdo->prepare("SELECT SUBSTRING(m.body, 1, 500), EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts > m.ts AND i.ts <= DATE_ADD(m.ts, INTERVAL 48 HOUR)) FROM wa_messages m WHERE m.dir = 'out' AND m.who = 'followup' AND m.ts >= ? ORDER BY m.id DESC LIMIT 6000");
         $q->execute([$from]); return $q->fetchAll(PDO::FETCH_NUM);
     }
-    function wa_pat_report(PDO $pdo, string $scope = 'today', bool $fresh = false): array
+    function wa_pat_report(PDO $pdo, string $scope = 'today', bool $fresh = false, string $only = ''): array
     {
-        $scope = $scope === '3d' ? '3d' : 'today'; $key = 'wa_pat_cache_' . $scope;
+        $scope = $scope === '3d' ? '3d' : 'today'; $only = preg_replace('/\W/', '', $only); $key = 'wa_pat_cache_' . $scope . ($only !== '' ? '_' . $only : '');
         if (!$fresh) { $c = json_decode((string)setting_get($pdo, $key, ''), true); if (is_array($c) && !empty($c['t']) && time() - (int)$c['t'] < 600) return $c; }
         @set_time_limit(120); try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 25000"); } catch (Throwable $e) { }
-        $from = $scope === '3d' ? date('Y-m-d 00:00:00', time() - 2 * 86400) : date('Y-m-d 00:00:00'); $mult = $scope === '3d' ? 3 : 1;
+        $from = $scope === '3d' ? date('Y-m-d 00:00:00', time() - 2 * 86400) : date('Y-m-d 00:00:00'); $mult0 = $scope === '3d' ? 3 : 1;
         $names = ['cold' => 'Cold', 'line' => '30-day Lineup', 'after' => 'After-Order', 'moda' => 'Module A (campaigns)', 'modb' => 'Module B', 'modc' => 'Module C', 'follow' => 'Bot follow-ups'];
-        $tpl = []; $out = ['t' => time(), 'scope' => $scope, 'from' => $from, 'sampled' => $mult > 1, 'modules' => []];
+        $tpl = []; $out = ['t' => time(), 'scope' => $scope, 'from' => $from, 'sampled' => $mult0 > 1, 'modules' => []];
         foreach ($names as $mod => $label) {
+            if ($only !== '' && $mod !== $only) continue;
+            $mult = in_array($mod, ['cold', 'modb', 'modc'], true) ? max($mult0, 3) : $mult0;   /* the three big ones are read as a 1-in-3 sample and scaled, so each module answers in a few seconds */
             $M = ['key' => $mod, 'label' => $label, 'sent' => 0, 'replied' => 0, 'topics' => [], 'styles' => [], 'err' => '', 'new' => ['sent' => 0, 'replied' => 0, 'types' => []]];
             try {
                 $items = [];   // [text, name, sent, replied]
