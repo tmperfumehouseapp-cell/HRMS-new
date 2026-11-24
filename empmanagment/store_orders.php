@@ -169,6 +169,17 @@ if (!function_exists('tms_cfg')) {
 if (strpos((string)($action ?? ($_GET['action'] ?? '')), 'tms.') !== 0) { return; }
 
 $auth = require_auth(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $in = $isPost ? json_input() : $_GET;
+if ((string)$action === 'tms.gift') {   // 🎁 the website's gift perfume on payment links for one business day: how many kept it / removed it and the add-on money (Sales > Live tile). Read-only.
+    $ok = tms_can($pdo, $auth) || (function_exists('user_can') && (user_can($auth, 'control_tower') || user_can($auth, 'orders')));
+    if (!$ok) json_response(['error' => 'Not allowed.'], 403);
+    $day = (string)($in['date'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = function_exists('waa_day') ? waa_day($pdo) : date('Y-m-d');
+    [$from, $to] = function_exists('biz_window') ? biz_window($pdo, $day, $day) : [$day . ' 00:00:00', $day . ' 23:59:59'];
+    $run = function () use ($pdo, $from, $to) { [$d, $e] = tms_get($pdo, '/gift-report', ['from' => $from, 'to' => date('Y-m-d H:i:s', strtotime($to) + 1)]); return $e !== '' ? ['error' => $e] : (array)$d; };
+    $r = function_exists('hrms_memo') ? hrms_memo('tms_gift:' . $from, 60, $run) : $run();
+    if (!is_array($r) || !empty($r['error'])) { if (function_exists('hrms_memo_drop')) hrms_memo_drop('tms_gift:' . $from); json_response(['ok' => false, 'error' => (string)($r['error'] ?? 'The shop could not be read.'), 'day' => $day]); }
+    $k = (int)($r['kept'] ?? 0); $rm = (int)($r['removed'] ?? 0);
+    json_response(['ok' => true, 'day' => $day, 'kept' => $k, 'removed' => $rm, 'rate' => $k + $rm > 0 ? (int)round($k * 100 / ($k + $rm)) : null, 'money' => round((float)($r['money'] ?? 0), 2), 'orders' => array_values(array_map('strval', (array)($r['orders'] ?? [])))]);
+}
 if ((string)$action === 'tms.detail') {   // 🔎 one shop order with every product and the delivery address — for the pop-up on the Allocation page. Read-only. Who: Website orders people, the Orders pages, or the order's own salesperson.
     $no = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string)($in['number'] ?? ''))); if ($no === '') json_response(['error' => 'Which order?'], 422);
     $ok = tms_can($pdo, $auth) || (function_exists('user_can') && user_can($auth, 'orders'));
