@@ -224,7 +224,11 @@ function dpx_feed(PDO $pdo): void
         $t1 = 0; $s1 = []; foreach (wmo_dsp_rows($pdo, '2020-01-01', $to, 'confirmed', '', $nm, 5, 0, $t1, $s1) as $x) if (strcasecmp((string)$x['order_no'], $nm) === 0 && !empty($x['lines'])) { $orders[] = $x; $have[strtolower($nm)] = 1; }
     }
     $addons = dpx_addons_map($pdo, array_map(fn($o0) => (string)$o0['order_no'], $orders));
-    $csv = dpx_csv(dpx_sheet_rows($orders, true, $addons), true);
+    $rows = dpx_sheet_rows($orders, true, $addons);
+    // 🛍 &web=1 (owner, 24 Nov): the WEBSITE orders (the new TM Perfume House shop, store_orders.php) of the same days are added to the same file, in the same columns, so the same n8n workflow sends them to dispatch.
+    //    Without web=1 the file is exactly what it was.
+    if (!empty($_GET['web'])) { try { foreach (dpx_web_rows($pdo, $from, $to) as $wr) $rows[] = $wr; } catch (Throwable $e) { error_log('dpx web rows: ' . $e->getMessage()); json_response(['error' => 'The website orders could not be read: ' . $e->getMessage()], 502); } }
+    $csv = dpx_csv($rows, true);
     header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="hrms_orders_' . $to . '.csv"'); header('Cache-Control: no-store');
     echo $csv; exit;
 }
@@ -357,6 +361,51 @@ function dpx_shop_rows(array $orders, array $addons = []): array
         if ($__ad && count($out) > $__start) { $out[$__start]['Total'] = round((float)$out[$__start]['Total'] + $__ad['total'], 2); $out[$__start]['Outstanding Balance'] = round((float)$out[$__start]['Outstanding Balance'] + $__ad['cod'], 2); foreach (dpx_addon_lines((string)($o['name'] ?? ''), $__ad, array_fill_keys($cols, '')) as $x) $out[] = $x; }
     }
     return $out;
+}
+
+/** 🛍 The website orders (new shop API) placed in [from, to], as rows of the n8n file. Only orders that can be packed: paid / part-paid, or cash on delivery; a prepaid order still waiting for its payment is left out.
+ *  Throws when the shop cannot be read, so n8n shows the run as failed instead of silently sending a file without them. */
+function dpx_web_rows(PDO $pdo, string $from, string $to): array
+{
+    if (!function_exists('tms_orders') && is_file(__DIR__ . '/store_orders.php')) { $action = ''; require_once __DIR__ . '/store_orders.php'; }
+    if (!function_exists('tms_orders')) throw new RuntimeException('the Website orders module is not installed');
+    [$list, $err] = tms_orders($pdo, $from, $to); if ($err !== '') throw new RuntimeException($err);
+    $orders = [];
+    foreach ($list as $x) {
+        $cod = (bool)preg_match('/cod|cash/i', (string)$x['pay_method']);
+        if ((string)$x['pay_status'] === 'pending' && !$cod) continue;      // the payment link is not paid yet
+        if (preg_match('/cancel/i', (string)$x['ship_status'])) continue;
+        $a = (array)($x['addr'] ?? []); $mo = (array)($x['money'] ?? []);
+        $adr = ['name' => (string)($a['name'] ?? $x['customer']), 'address1' => (string)($a['address1'] ?? ''), 'address2' => (string)($a['address2'] ?? ''), 'city' => (string)($a['city'] ?? ''), 'zip' => (string)($a['pincode'] ?? ''),
+            'province' => (string)($a['state'] ?? ''), 'province_code' => (string)($a['state'] ?? ''), 'country_code' => 'IN', 'phone' => (string)(($a['phone'] ?? '') ?: $x['phone'])];
+        $li = []; foreach ((array)($x['lines'] ?? []) as $l) $li[] = ['quantity' => (int)$l['qty'], 'name' => trim((string)$l['title'] . ((string)$l['size'] !== '' ? ' - ' . (string)$l['size'] : '')), 'price' => (string)$l['price'], 'sku' => (string)$l['sku'], 'requires_shipping' => true, 'taxable' => false];
+        if (!$li) continue;
+        $t = (string)(($x['pay_time'] ?? '') ?: $x['placed_at']);
+        $orders[] = ['name' => (string)$x['number'], 'id' => (string)$x['number'], 'created_at' => $t !== '' ? $t . '+05:30' : '', 'financial_status' => (string)$x['pay_status'], 'fulfillment_status' => (string)$x['ship_status'], 'currency' => 'INR',
+            'subtotal_price' => (string)($mo['subtotal'] ?? ''), 'total_price' => (string)$x['total'], 'total_discounts' => (string)($mo['discount'] ?? '0'), 'discount_codes' => ((string)($mo['code'] ?? '') !== '' ? [['code' => (string)$mo['code']]] : []),
+            'shipping_lines' => [['price' => (string)round((float)($mo['shipping'] ?? 0) + (float)($mo['cod_fee'] ?? 0), 2), 'title' => (string)($x['courier'] ?? '')]], 'shipping_address' => $adr, 'billing_address' => $adr, 'note' => (string)($x['note'] ?? ''),
+            'payment_gateway_names' => [(string)$x['pay_method']], 'total_outstanding' => (string)$x['due'], 'tags' => 'TM Store', 'source_name' => 'TM Store', 'phone' => (string)$x['phone'], 'line_items' => $li];
+    }
+    return dpx_shop_rows($orders, []);
+}
+
+/** GET api.php?action=dpx.feed_web&from=&to= — ONLY the website orders (the new TM Perfume House shop), as the same CSV the n8n workflow of the manual orders reads (same key as dpx.feed).
+ *  Default: yesterday + today. For a NEW n8n workflow that sends the website orders to dispatch. */
+function dpx_feed_web(PDO $pdo): void
+{
+    $key = (string)($_SERVER['HTTP_X_API_KEY'] ?? ''); if ($key === '') $key = (string)($_GET['key'] ?? '');
+    $okKey = false;
+    if ($key !== '') { $h = (string)setting_get($pdo, 'dpx_feed_key', ''); if ($h !== '' && hash_equals($h, hash('sha256', $key))) $okKey = true; }
+    if (!$okKey && $key !== '' && defined('API_KEY') && (string)API_KEY !== '' && hash_equals((string)API_KEY, $key)) $okKey = true;
+    if (!$okKey) json_response(['error' => 'Forbidden.'], 403);
+    @set_time_limit(120);
+    $d = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) ? (string)$v : '';
+    $to = $d($_GET['to'] ?? '') ?: date('Y-m-d'); $from = $d($_GET['from'] ?? '') ?: date('Y-m-d', strtotime($to . ' -1 day')); if ($from > $to) $from = $to;
+    if ((strtotime($to) - strtotime($from)) > 31 * 86400) json_response(['error' => 'Ask for at most 31 days.'], 422);
+    try { $rows = dpx_web_rows($pdo, $from, $to); } catch (Throwable $e) { json_response(['error' => 'The website orders could not be read: ' . $e->getMessage()], 502); }      // never an empty file when the shop could not be read: n8n shows the run as failed
+    $csv = dpx_csv($rows, true);
+    header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="website_orders_' . $to . '.csv"'); header('Cache-Control: no-store');
+    echo $csv; exit;
 }
 
 /** GET api.php?action=dpx.feed_shop&from=&to= — the Shopify orders as a Shopify-export CSV for n8n (same key as dpx.feed). Default: yesterday + today of the business day. */
