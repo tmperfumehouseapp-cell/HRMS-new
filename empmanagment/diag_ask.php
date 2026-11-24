@@ -447,4 +447,9 @@ try {
 try {
     echo "ASK DAILY state " . substr((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_style_daily'")[0][0] ?? ''), 0, 200) . " · latest " . json_encode($one("SELECT t.name, t.category, GROUP_CONCAT(w.status) FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph_new_%' OR t.name LIKE 'tmph_style_mystery%' OR t.name LIKE 'tmph_style_refill%' OR t.name LIKE 'tmph_style_sender%' OR t.name LIKE 'tmph_style_wedding%' OR t.name LIKE 'tmph_style_newyear%' OR t.name LIKE 'tmph_style_winter2%' GROUP BY t.id, t.name, t.category ORDER BY t.id DESC LIMIT 12")) . "\n";
 } catch (Throwable $e) { echo "ASK DAILY ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 56) AI budget (owner 24 Nov): the monthly spend, by purpose and by day (numbers only)
+try {
+    $m56 = date('Y-m-01');
+    echo "ASK AIBUDGET month spend USD by purpose " . json_encode($one("SELECT purpose, ROUND(SUM(cost_usd), 1), SUM(calls) FROM ai_usage WHERE use_date >= ? GROUP BY purpose ORDER BY 2 DESC LIMIT 10", [$m56])) . " · by model " . json_encode($one("SELECT model, ROUND(SUM(cost_usd), 1) FROM ai_usage WHERE use_date >= ? GROUP BY model ORDER BY 2 DESC LIMIT 6", [$m56])) . " · by day " . json_encode($one("SELECT use_date, ROUND(SUM(cost_usd), 1), SUM(calls) FROM ai_usage WHERE use_date >= ? GROUP BY use_date ORDER BY use_date DESC LIMIT 7", [$m56])) . "\n";
+} catch (Throwable $e) { echo "ASK AIBUDGET ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 
