@@ -443,4 +443,8 @@ try {
     echo "ASK MODC pending cache " . substr((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rc_pending'")[0][0] ?? ''), 0, 300) . "\n";
     echo "ASK COLD lost (replied but no Lineup row): by why / contact flags (why, optout, camp_optout, n) " . json_encode($one("SELECT c.why, ct.optout, ct.camp_optout, COUNT(*) FROM wa_cold_cust c LEFT JOIN wa_contacts ct ON (ct.phone COLLATE utf8mb4_unicode_ci) = (c.phone COLLATE utf8mb4_unicode_ci) WHERE c.status = 'replied' AND NOT EXISTS (SELECT 1 FROM wa_line_cust l WHERE (l.phone COLLATE utf8mb4_unicode_ci) = (c.phone COLLATE utf8mb4_unicode_ci)) GROUP BY c.why, ct.optout, ct.camp_optout ORDER BY 4 DESC LIMIT 8")) . "\n";
 } catch (Throwable $e) { echo "ASK RESTYLE3 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 55) Daily new messages (owner 24 Nov): today's count and the latest ones (name, category, status per account)
+try {
+    echo "ASK DAILY state " . substr((string)($one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_style_daily'")[0][0] ?? ''), 0, 200) . " · latest " . json_encode($one("SELECT t.name, t.category, GROUP_CONCAT(w.status) FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph_new_%' OR t.name LIKE 'tmph_style_mystery%' OR t.name LIKE 'tmph_style_refill%' OR t.name LIKE 'tmph_style_sender%' OR t.name LIKE 'tmph_style_wedding%' OR t.name LIKE 'tmph_style_newyear%' OR t.name LIKE 'tmph_style_winter2%' GROUP BY t.id, t.name, t.category ORDER BY t.id DESC LIMIT 12")) . "\n";
+} catch (Throwable $e) { echo "ASK DAILY ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 

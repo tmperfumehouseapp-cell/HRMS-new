@@ -127,6 +127,7 @@ if (!function_exists('wa_rs_tick')) {
             wa_rs_save($pdo, $st);
             if ($o['note'] !== '') { $st['why_last'] = $o['note']; $st['why_n'][$o['note']] = (int)($st['why_n'][$o['note']] ?? 0) + 1; wa_rs_save($pdo, $st); }
             if (($o['made'] || $o['replaced']) && function_exists('wa_log')) wa_log($pdo, 'template', true, 'New-style messages: ' . $o['made'] . ' made, ' . $o['replaced'] . ' replaced');
+            try { if (!function_exists('wa_style_daily_tick') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php'; if (function_exists('wa_style_daily_tick')) { $dn = wa_style_daily_tick($pdo); $o['daily'] = $dn['note'] ?? ''; } } catch (Throwable $e2) { }   // 🆕 up to 7 brand-new messages a day (owner 24 Nov)
         } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'New-style messages error: ' . mb_substr($e->getMessage(), 0, 120)); $o['note'] = 'error'; }
         return $o;
     }
