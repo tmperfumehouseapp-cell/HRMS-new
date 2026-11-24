@@ -706,6 +706,7 @@ require_once __DIR__ . '/wa_plan.php';   // 🎯 Daily budget planner (wa.plan_g
 require_once __DIR__ . '/wa_drip.php';   // 🔁 7-Day Drip: a pre-made message per day for new queries / campaign repliers (wa.drip_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_line.php';   // 🧵 Lineup: the 7-day follow-up by topic (replaces the 7-Day Drip when started; wa.line_*) - AFTER wa_drip.php (uses wd_send), BEFORE wa_seg.php
 require_once __DIR__ . '/wa_after.php';   // 🛍 After-Order plan: delivered customers get a 365-day ladder (care, soft offers, reorder); runs from wa.cron_send
+require_once __DIR__ . '/wso.php';        // 🛒 Website order from a chat: the website's Create order + payment link, sent in the chat (wso.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
 
