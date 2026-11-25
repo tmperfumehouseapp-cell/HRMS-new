@@ -189,4 +189,9 @@ ok(count($x['topics']) === 1 && $x['topics'][0]['who'] === 'Chirag' && count($x[
 [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); ok(isset($b['rahul_checks'][(string)$ws], $b['rahul_checks'][(string)$st]), 'the checked sections are marked');
 [$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'Added the calls topic, done']); [$c, $j] = call('fup.jaimin_board', $ADMIN);
 ok(count($j['jaimin'][(string)$ws]['2026-11-22']['extra']['topics']) === 1 && count($j['jaimin'][(string)$ws]['2026-11-22']['extra']['check']) === 2, 'changing only the words keeps the topics and the checks');
+$tLive = (int)$pdo->query("SELECT id FROM fu_topics WHERE active = 1 AND section_id = $st ORDER BY id LIMIT 1")->fetchColumn(); $tLiveName = (string)$pdo->query("SELECT title FROM fu_topics WHERE id = $tLive")->fetchColumn();
+// Strict: Rahul ticks one topic (not the whole section); that topic is marked, its section shows on the pill
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'Watching sales myself', 'check' => [], 'strict' => [$tLive, 99999]]); ok($c === 200, 'Strict: one topic ticked');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok($tLive > 0 && isset($b['rahul_strict'][(string)$tLive]) && !isset($b['rahul_checks'][(string)$st]) && isset($b['rahul_any'][(string)$st]) && $b['topics'][0]['section_id'] === $st, 'Strict: the topic is marked, not the whole section; its section shows on the pill');
+[$c, $j] = call('fup.jaimin_board', $E(20)); ok(count($j['topics']) >= 3 && $j['jaimin'][(string)$ws]['2026-11-22']['extra']['strict'][0]['title'] === $tLiveName && count($j['jaimin'][(string)$ws]['2026-11-22']['extra']['topics']) === 1, 'Strict: listed under his update, the made topic stays');
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);
