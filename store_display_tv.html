@@ -127,13 +127,14 @@
   }
   setTheme(themeLock || 'classic');
   // the little kid who runs about the card (Store -> Display setting, or ?kid=1 in the link for a preview)
-  var km = /[?&]kid=([01])/.exec(location.search), kidLock = km ? km[1] : '', kidOn = false;
-  function setKid(on) { if (on === kidOn) return; kidOn = on; var el = $('kid');
-    if (on && !el) { var sc = document.createElement('script'); sc.src = 'assets/js/tv_kid.js?v=1'; document.body.appendChild(sc); } else if (el) el.style.display = on ? '' : 'none'; }
-  if (kidLock) setKid(kidLock === '1');
+  // ?kid=0 off · 1 / kid our little boy · owner the owner drawn as a little boy · photo the owner's own face on the little body
+  var km = /[?&]kid=([a-z01]+)/.exec(location.search), kidLock = km ? km[1] : '', kidOn = false;
+  function setKid(v) { var on = !!v && v !== '0'; if (on === kidOn) return; kidOn = on; var el = $('kid');
+    if (on && !el) { window.TV_KID_CFG = { style: v === 'owner' || v === 'photo' ? v : 'kid', face: 'assets/img/tv_face.png' }; var sc = document.createElement('script'); sc.src = 'assets/js/tv_kid.js?v=2'; document.body.appendChild(sc); } else if (el) el.style.display = on ? '' : 'none'; }
+  if (kidLock) setKid(kidLock);
   function setNum(id, v, old) { $(id).textContent = f(v); if (old !== undefined && old !== null && v !== old) flash(id); }
   function show(d) {
-    setTheme(themeLock || d.theme || 'classic'); if (!kidLock) setKid(!!d.kid);
+    setTheme(themeLock || d.theme || 'classic'); if (!kidLock) setKid(d.kid ? String(d.kid) : '');
     $('title').textContent = d.title; $('place').textContent = d.place; $('per').textContent = d.period; $('cta').textContent = d.cta; $('url').textContent = d.url;
     $('rt').textContent = d.rating !== '' ? d.rating + '/5' : '–'; $('gr').textContent = f(d.reviews);
     setNum('ord', d.orders, last && last.orders); setNum('bt', d.bottles, last && last.bottles); setNum('cm', d.community, last && last.community);
