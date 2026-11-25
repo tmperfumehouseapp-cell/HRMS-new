@@ -31721,6 +31721,7 @@ switch ($action) {
                 if (($eid > 0 || $mdir) && $hs !== '') $mmap['manual|' . $mid] = ['house' => $hs, 'emp' => $eid, 'direct' => $mdir ? 1 : 0, 'by' => (string)($m['created_by'] ?? ''), 'at' => (string)$m['order_date'], 'type' => (string)($m['order_type'] ?? '')];
                 apply_allocation($o, 'manual', $mmap); if ($o['allocated_emp']) $o['employee_id'] = $o['allocated_emp'];
                 $o['employee_code'] = $o['employee_id'] ? ($codes[$o['employee_id']] ?? '') : '';
+                $o['code'] = order_code_for($pdo, 'manual', $mid);   // owner (25 Nov 2026): "142 orders, only 2 with a code" — the codes of the HRMS / website orders are saved (source 'manual', 88 that day) but these orders are added to the list AFTER the codes were put on the Shopify ones, so they all counted as "no code"
                 $orders[] = $o;
             }
         } catch (Throwable $e) { error_log('allocation quick entries: ' . $e->getMessage()); }
