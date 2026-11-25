@@ -1040,13 +1040,25 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
     if (!function_exists('cx_looks_like') || !function_exists('cx_raise')) return 0;
     $n = 0; $now = time();
     $st = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) ORDER BY c.last_in_at DESC LIMIT 80");
-    $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - 4)]);
-    foreach ($st->fetchAll() as $c) {
-        if ($n >= $max) break; $key = (string)$c['phone'];
+    $st->execute([date('Y-m-d H:i:s', $now - 23 * 3600), date('Y-m-d H:i:s', $now - 4)]); $cands = $st->fetchAll();
+    // 🎫 owner (25 Nov): a complaint is raised by itself WHEREVER the chat is — also when a salesperson already answered it and it sits in his queries (it then leaves his query count: wag_q_forget).
+    //    Every 5 minutes the chats a person holds and answered are looked at too: only customers who ordered before, whose own message of the last 23 hours names a real problem (the same strict check as below).
+    //    A chat is looked at once per customer message (meta cxsw:<phone>), so nothing is raised twice and a salesperson's decision "not a complaint" is not asked again for the same message.
+    try { if ($now - (int)setting_get($pdo, 'wag_cxans_at', '0') >= 300) { setting_set($pdo, 'wag_cxans_at', (string)$now);
+        $sa = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint') AND c.assigned_emp > 0 AND c.last_in_at >= ? AND c.last_out_at >= c.last_in_at
+            AND EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = c.phone AND m.dir = 'in' AND m.mtype = 'text' AND m.ts >= ? AND LOWER(m.body) REGEXP 'leak|broken|damage|toota|tut gay|wrong (item|product|perfume)|galat|not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|fake|duplicate|refund|paisa wapas|money back|return kar|exchange|replace|complaint|shikayat') ORDER BY c.last_in_at DESC LIMIT 40");
+        $f23 = date('Y-m-d H:i:s', $now - 23 * 3600); $sa->execute([$f23, $f23]); foreach ($sa->fetchAll() as $ca) { $ca['__ans'] = 1; $cands[] = $ca; } } } catch (Throwable $e) { }
+    foreach ($cands as $c) {
+        if ($n >= $max) break; $key = (string)$c['phone']; $ans = !empty($c['__ans']);
+        if ($ans) {   // an answered chat: once per customer message, and only a customer who has ordered before (a new lead asking about quality / exchange is a sales question)
+            try { $__la = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__la->execute([$key]); $__lid = (string)(int)$__la->fetchColumn();
+                if (wag_meta_get($pdo, 'cxsw:' . $key, '') === $__lid) continue; wag_meta_put($pdo, 'cxsw:' . $key, $__lid);
+                $__oq = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $__oq->execute([$key]); if ((int)$__oq->fetchColumn() < 1) continue; } catch (Throwable $e) { continue; }
+        }
         $h = cx_looks_like($pdo, $key); if (!$h) continue;
         // 🛡 only what the customer wrote AFTER the last answer counts, and a question about the policy ("refund karna rahe, koi damage rahe to ...", "if ... then") or a short "ok / thik hai" is NOT a complaint (owner, 21 Nov: a customer asked about the return policy, a person answered, he said "Thik hai" and the bot raised a damage complaint)
         try {
-            $__lo = (string)($c['last_out_at'] ?? ''); $__q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND ts > ? ORDER BY id DESC LIMIT 4"); $__q->execute([$key, $__lo !== '' ? $__lo : '2000-01-01 00:00:00']);
+            $__lo = $ans ? date('Y-m-d H:i:s', $now - 23 * 3600) : (string)($c['last_out_at'] ?? ''); $__q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND ts > ? ORDER BY id DESC LIMIT 4"); $__q->execute([$key, $__lo !== '' ? $__lo : '2000-01-01 00:00:00']);
             $__t = ' ' . mb_strtolower(implode(' ', array_column($__q->fetchAll(), 'body'))) . ' ';
             if (!preg_match('/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)|not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|fake|duplicate|refund|paisa wapas|money back|return kar|quality|exchange|replace|badalna|badalni|missing|incomplete)/u', $__t)) continue;
             if (preg_match('/(policy|agar|\bif\b|rahe (to|too)|hoti hai|hota hai|kya hai|kaise|how|can i|sakte|sakta)/u', $__t) && !preg_match('/(mila|aaya|aayi|hai mera|mere|my (order|parcel|bottle)|order (id|no)|#\d{4})/u', $__t)) continue;
@@ -1059,12 +1071,12 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
         } catch (Throwable $e) { continue; }
         try {
             $li = $pdo->prepare("SELECT id, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch(); if (!$m) continue;
-            if (function_exists('wq_guard') && !wq_guard($pdo, $key, (int)$m['id'], 'reply', 'bot')) continue;
+            if (!$ans && function_exists('wq_guard') && !wq_guard($pdo, $key, (int)$m['id'], 'reply', 'bot')) continue;
             if (function_exists('cx_ensure')) cx_ensure($pdo); if (function_exists('cx2_ensure')) cx2_ensure($pdo);
             $a = cx_raise($pdo, [], ['emp' => 0, 'admin' => false, 'mgr' => false, 'team' => true, 'desks' => []], ['problem' => $h['problem'], 'source' => 'whatsapp', 'phone' => $key, 'name' => (string)($c['name'] ?? ''), 'summary' => 'WhatsApp (raised by the bot): ' . mb_substr((string)$m['body'], 0, 600), 'urgency' => 'normal', 'auto' => 1]);
             if (empty($a[0]) || empty($a[3]['code'])) { if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); continue; }
             $ok = true; if ((string)setting_get($pdo, 'wag_cx_ack', '1') === '1') [$ok] = wa_send_text($pdo, $c, 'Aapki complaint note kar li gayi hai (ticket ' . $a[3]['code'] . ') 🙏 Hamari team jaldi aapse is chat me sampark karegi.', 'bot', 0);
-            wa_event($pdo, $key, '🎫 The bot raised complaint ' . $a[3]['code'] . ' (' . $h['label'] . ')'); $n++;
+            wa_event($pdo, $key, '🎫 The bot raised complaint ' . $a[3]['code'] . ' (' . $h['label'] . ')' . ($ans ? ' — the chat was with ' . (employee_names_by_id($pdo)[(int)($c['assigned_emp'] ?? 0)] ?? 'a salesperson') . ' and had been answered; it is no longer counted in his queries' : '')); $n++;
         } catch (Throwable $e) { wag_log($pdo, 'bot', false, 'complaint sweep: ' . $e->getMessage()); }
     }
     return $n;
