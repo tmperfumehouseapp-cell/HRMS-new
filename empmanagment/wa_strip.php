@@ -110,3 +110,47 @@ if (!function_exists('wa_strip_replies')) {
         return $out;
     }
 }
+
+if (!function_exists('wa_strip_money')) {
+    /** Per module, today (owner 25 Nov: "orders and rupees spent per module, how many failed, how many re-sent and delivered"): website orders (PHP shop_orders) credited to the module whose message was the LAST one sent to
+     *  that phone in the 72 hours before the order; the money spent is an upper estimate (messages sent x Meta price: marketing 1.09, utility 0.15; failed receipts are not billed); failed = refused at sending + failed receipts;
+     *  re-sent = for Module A the utility follow-ups (Module B) that went today to people whose marketing failed; delivered = of those, the ones Meta confirmed. Kept 10 minutes. */
+    function wa_strip_money(PDO $pdo, string $mod): array
+    {
+        $ck = 'wa_strip_money_' . preg_replace('/\W/', '', $mod); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
+        if (is_array($c) && !empty($c['t']) && time() - (int)$c['t'] < 600) return $c;
+        try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 9000"); } catch (Throwable $e) { }
+        $t0 = date('Y-m-d 00:00:00'); $P = ['MARKETING' => 1.09, 'UTILITY' => 0.15];
+        $one = function ($sql, $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetch(PDO::FETCH_NUM) ?: []; } catch (Throwable $e) { return null; } };
+        $all = function ($sql, $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return null; } };
+        $cost = function ($rows) use ($P) { $t = 0.0; foreach ((array)$rows as $r) $t += (int)$r[1] * ($P[strtoupper((string)$r[0])] ?? 0.15); return round($t); };
+        // the last-touch logs: [table, phone col, time col, extra where, range]
+        $LT = ['moda' => ["SELECT MAX(i.sent_at) FROM wa_camp_items i WHERE i.id > (SELECT MAX(id) - 500000 FROM wa_camp_items) AND i.phone IN (?, ?) AND i.status IN ('sent','delivered','read') AND i.sent_at BETWEEN ? AND ?"],
+            'modb' => ["SELECT MAX(l.at) FROM wa_ru_log l WHERE l.id > (SELECT MAX(id) - 120000 FROM wa_ru_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.kind <> 'cnev' AND l.at BETWEEN ? AND ?"],
+            'modc' => ["SELECT MAX(l.at) FROM wa_ru_log l WHERE l.id > (SELECT MAX(id) - 120000 FROM wa_ru_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.kind = 'cnev' AND l.at BETWEEN ? AND ?"],
+            'cold' => ["SELECT MAX(l.at) FROM wa_cold_log l WHERE l.id > (SELECT MAX(id) - 400000 FROM wa_cold_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.at BETWEEN ? AND ?"],
+            'line' => ["SELECT MAX(l.sent_at) FROM wa_line_plan l WHERE l.id > (SELECT MAX(id) - 800000 FROM wa_line_plan) AND l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ?"],
+            'after' => ["SELECT MAX(l.sent_at) FROM wa_aft_plan l WHERE l.id > (SELECT MAX(id) - 600000 FROM wa_aft_plan) AND l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ?"]];
+        $orders = 0; $rev = 0.0; $seen = 0;
+        $ords = $all("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= ? AND phone <> '' AND total > 0 ORDER BY created_at DESC LIMIT 400", [$t0]);
+        foreach ((array)$ords as $o) { $seen++; $p = substr(preg_replace('/\D+/', '', (string)$o[0]), -10); if (strlen($p) < 10) continue; $to = (string)$o[1]; $from = date('Y-m-d H:i:s', strtotime($to) - 72 * 3600); $best = ''; $bt = '';
+            foreach ($LT as $k => $q) { $r = $one($q[0], [$p, '91' . $p, $from, $to]); if ($r && $r[0] && (string)$r[0] > $bt) { $bt = (string)$r[0]; $best = $k; } }
+            if ($best === $mod) { $orders++; $rev += (float)$o[2]; } }
+        $spent = null; $failed = null; $resent = null; $resentOk = null;
+        if ($mod === 'moda') { $r = $one("SELECT COUNT(*) FROM wa_camp_items WHERE id > (SELECT MAX(id) - 500000 FROM wa_camp_items) AND sent_at >= ? AND status IN ('sent','delivered','read')", [$t0]); $spent = $r ? round((int)$r[0] * $P['MARKETING']) : null;
+            $f = $one("SELECT COUNT(*) FROM wa_messages WHERE id > (SELECT MAX(id) - 250000 FROM wa_messages) AND dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND status = 'failed'", [$t0]); $failed = $f ? (int)$f[0] : null;
+            $rs = $one("SELECT COUNT(*) FROM wa_ru_log WHERE id > (SELECT MAX(id) - 120000 FROM wa_ru_log) AND ok = 1 AND kind <> 'cnev' AND at >= ?", [$t0]); $resent = $rs ? (int)$rs[0] : null;
+            $rk = $one("SELECT COUNT(*) FROM wa_ru_log r JOIN wa_messages m ON m.wamid COLLATE utf8mb4_unicode_ci = r.wamid COLLATE utf8mb4_unicode_ci WHERE r.id > (SELECT MAX(id) - 120000 FROM wa_ru_log) AND r.ok = 1 AND r.kind <> 'cnev' AND r.at >= ? AND m.status IN ('delivered','read')", [$t0]); $resentOk = $rk ? (int)$rk[0] : null; }
+        elseif ($mod === 'modb' || $mod === 'modc') { $kw = $mod === 'modc' ? "l.kind = 'cnev'" : "l.kind <> 'cnev'"; $spent = $cost($all("SELECT t.category, COUNT(*) FROM wa_ru_log l JOIN wa_templates t ON t.id = l.tpl_id WHERE l.id > (SELECT MAX(id) - 120000 FROM wa_ru_log) AND l.ok = 1 AND $kw AND l.at >= ? GROUP BY t.category", [$t0]));
+            $f = $one("SELECT COUNT(*) FROM wa_ru_log l WHERE l.id > (SELECT MAX(id) - 120000 FROM wa_ru_log) AND l.ok = 0 AND $kw AND l.at >= ?", [$t0]); $failed = $f ? (int)$f[0] : null; }
+        elseif ($mod === 'cold') { $spent = $cost($all("SELECT t.category, COUNT(*) FROM wa_cold_log l JOIN wa_templates t ON t.id = l.tpl_id WHERE l.id > (SELECT MAX(id) - 400000 FROM wa_cold_log) AND l.ok = 1 AND l.at >= ? GROUP BY t.category", [$t0]));
+            $f = $one("SELECT COUNT(*) FROM wa_cold_log WHERE id > (SELECT MAX(id) - 400000 FROM wa_cold_log) AND ok = 0 AND at >= ?", [$t0]); $failed = $f ? (int)$f[0] : null; }
+        elseif ($mod === 'line') { $spent = $cost($all("SELECT t.category, COUNT(*) FROM wa_line_plan l JOIN wa_templates t ON t.id = l.tpl_id WHERE l.id > (SELECT MAX(id) - 800000 FROM wa_line_plan) AND l.status = 'sent' AND l.sent_at >= ? GROUP BY t.category", [$t0]));
+            $f = $one("SELECT COUNT(*) FROM wa_line_plan WHERE id > (SELECT MAX(id) - 800000 FROM wa_line_plan) AND status = 'failed' AND sent_at >= ?", [$t0]); $failed = $f ? (int)$f[0] : null; }
+        elseif ($mod === 'after') { $spent = $cost($all("SELECT t.category, COUNT(*) FROM wa_aft_plan l JOIN wa_templates t ON t.id = l.tpl_id WHERE l.id > (SELECT MAX(id) - 600000 FROM wa_aft_plan) AND l.status = 'sent' AND l.sent_at >= ? GROUP BY t.category", [$t0]));
+            $f = $one("SELECT COUNT(*) FROM wa_aft_plan WHERE id > (SELECT MAX(id) - 600000 FROM wa_aft_plan) AND status = 'failed' AND sent_at >= ?", [$t0]); $failed = $f ? (int)$f[0] : null; }
+        $out = ['t' => time(), 'modules' => [['key' => $mod, 'orders' => $orders, 'rev' => round($rev), 'orders_seen' => $seen, 'spent' => $spent, 'failed_n' => $failed, 'resent' => $resent, 'resent_ok' => $resentOk]]];
+        try { setting_set($pdo, $ck, json_encode($out)); } catch (Throwable $e) { }
+        return $out;
+    }
+}
