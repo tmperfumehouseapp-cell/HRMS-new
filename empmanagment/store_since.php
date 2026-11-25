@@ -45,11 +45,26 @@ function ss_report(PDO $pdo, ?string $from, ?string $to): array
             foreach ($ord as $o) { if (isset($newDays[$o['d']])) continue; $add($o['d'], 'old', 1, $o['b'], $o['ml'], $o['total']); $noMl += $o['nm']; }
         }
     } catch (Throwable $e) { error_log('ss_report old: ' . $e->getMessage()); }
+    // a plain look at the two sources (the whole tables, not the range): where each starts and ends, orders with 0 rupees, and days with NO order between the first and the last order
+    $diag = ['old' => null, 'new' => null];
+    try {
+        $r = $pdo->query("SELECT MIN(created_at) f, MAX(created_at) l, COUNT(*) n, COALESCE(SUM(total = 0), 0) z, COALESCE(SUM(total), 0) amt FROM pos_orders")->fetch();
+        if ($r && (int)$r['n'] > 0) {
+            $days = []; foreach ($pdo->query("SELECT DATE(DATE_SUB(created_at, INTERVAL $h HOUR)) d, COUNT(*) c FROM pos_orders GROUP BY d")->fetchAll() as $x) $days[(string)$x['d']] = (int)$x['c'];
+            $dmin = min(array_keys($days)); $dmax = max(array_keys($days)); $gaps = []; $run = null;
+            for ($t = strtotime($dmin); $t <= strtotime($dmax); $t += 86400) { $d = date('Y-m-d', $t); if (!isset($days[$d])) { if ($run === null) $run = [$d, $d]; else $run[1] = $d; } elseif ($run !== null) { if ((strtotime($run[1]) - strtotime($run[0])) / 86400 >= 2) $gaps[] = $run[0] . ' → ' . $run[1]; $run = null; } }
+            $diag['old'] = ['first' => $dmin, 'last' => $dmax, 'orders' => (int)$r['n'], 'zero_total' => (int)$r['z'], 'sum' => round((float)$r['amt'], 2), 'gaps' => array_slice($gaps, 0, 15), 'gap_count' => count($gaps)];
+        }
+    } catch (Throwable $e) { $diag['old'] = ['error' => 'The old POS table could not be read.']; }
+    try {
+        $r = $pdo->query("SELECT MIN(biz_date) f, MAX(biz_date) l, SUM(status = 'ok') n, SUM(status <> 'ok') v, COALESCE(SUM(CASE WHEN status = 'ok' THEN total END), 0) amt, COALESCE(SUM(status = 'ok' AND total = 0), 0) z FROM st_bills")->fetch();
+        if ($r && ((int)$r['n'] + (int)$r['v']) > 0) $diag['new'] = ['first' => (string)$r['f'], 'last' => (string)$r['l'], 'orders' => (int)$r['n'], 'cancelled' => (int)$r['v'], 'zero_total' => (int)$r['z'], 'sum' => round((float)$r['amt'], 2)];
+    } catch (Throwable $e) { $diag['new'] = ['error' => 'The new billing table could not be read.']; }
     krsort($M); $rows = array_values($M);
     $tot = ['orders' => 0, 'bottles' => 0, 'ml' => 0, 'rs' => 0.0];
     foreach ($rows as &$r) { $r['rs'] = round($r['rs'], 2); $r['from'] = $r['old'] > 0 && $r['new'] > 0 ? 'both' : ($r['new'] > 0 ? 'new' : 'old'); foreach (['orders', 'bottles', 'ml'] as $k) $tot[$k] += $r[$k]; $tot['rs'] += $r['rs']; } unset($r);
     $tot['rs'] = round($tot['rs'], 2);
-    return ['rows' => $rows, 'total' => $tot, 'first_day' => $first, 'from' => $from, 'to' => $to, 'ml_not_read' => $noMl, 'new_from' => $newFrom];
+    return ['rows' => $rows, 'total' => $tot, 'first_day' => $first, 'from' => $from, 'to' => $to, 'ml_not_read' => $noMl, 'new_from' => $newFrom, 'check' => $diag];
 }
 
 function ss_handle(PDO $pdo): void
