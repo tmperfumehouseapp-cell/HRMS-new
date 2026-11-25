@@ -3,7 +3,7 @@
  * (season / secret / price / offer / gift / extra ML / crazy discount / deadline), blank-line spacing, emojis, quick-reply buttons.
  * Names tmph_ord_NN. Made once (by name), sent to Meta through the normal template path. Switch off: wa_ordpack = 0. */
 if (!function_exists('wa_ordpack_defs')) {
-    function wa_ordpack_defs(): array
+    function wa_ordpack_parts(): array
     {
         $open = [
             "Hello {{1}} ❄️\n\nSardi + shaadi ka season shuru — perfume ki sabse zyada demand abhi hai 🔥",
@@ -13,7 +13,7 @@ if (!function_exists('wa_ordpack_defs')) {
             "Hello {{1}} 🌸\n\nWinter ki khushboo aa gayi: oud, musk, amber 🔥 Aur uske saath ek crazy offer bhi!",
             "Hi {{1}} 👋\n\nEk chhoti si baat... aaj hamne *dhamakedaar* kuch rakha he, sirf aapke liye ✨",
             "Hello {{1}} 🧥\n\nThand badh rahi he aur khushboo ka maza bhi! Aaj ek *reward* aapke naam unlock hua he 🏆",
-            "Hi {{1}} ❄️\n\nSardi ki raat, shaadi ki baraat — perfume ke bina adhoora! Aaj ka *crazy price dhamaka* dekhiye 💥",
+            "Hi {{1}} ❄️\n\nSardi aur shaadi ka season he — aaj ka *crazy price* dekhiye 💥",
             "Hello {{1}} 🎊\n\nExcitement ka time! Aapke liye ek *surprise reward* aur extra ML ki offer taiyar he 🎁",
             "Hi {{1}} 🌙\n\nWinter evening special: lambi chalne wali khushboo + ek secret discount jo sirf aaj ke liye he 🤫",
         ];
@@ -39,12 +39,40 @@ if (!function_exists('wa_ordpack_defs')) {
             "⏰ Aaj raat 11:59 PM ke baad ye price wapas normal!\n\nAbhi order karke bachat kijiye 👇",
         ];
         $btn = [['Order Now', 'Send Details', 'Not Now'], ['Yes, Order', 'Show Offer'], ['I Want It', 'Send Details', 'Not Now']];   /* buttons in English (owner 25 Nov) */
+        return [$open, $mid, $close, $btn];
+    }
+    function wa_ordpack_defs(): array
+    {
+        [$open, $mid, $close, $btn] = wa_ordpack_parts();
         $o = []; $seen = []; $O = count($open); $M = count($mid); $C = count($close);
         for ($n = 1; $n <= 90 && count($o) < 40; $n++) {
             $body = $open[($n * 3) % $O] . "\n\n" . $mid[($n * 5) % $M] . "\n\n" . $close[($n * 7) % $C]; if (isset($seen[$body])) continue; $seen[$body] = 1;
             $o[sprintf('tmph_ord_%02d', count($o) + 1)] = ['body' => $body, 'buttons' => $btn[$n % 3]];
         }
         return $o;
+    }
+    /** DAILY LEARNING (owner 25 Nov 2026: "see which messages get the replies, and change the daily messages by that"): once a day, after 06:00 IST, the reply rate of every order-pack / style message sent by the Cold funnel
+     *  (replies per send, with a small prior) is credited to its parts (opening, offer lines, closing). The best parts are mixed into up to 6 NEW messages (a part that nobody has tried yet is also tried: 1 in 3),
+     *  made through the normal path; messages with 600+ sends and less than half the median reply rate are taken out of the Cold list (setting wa_ordl_off). Report in setting wa_ordl_rep. Off: wa_ordl = 0. */
+    function wa_ordpack_learn(PDO $pdo): void
+    {
+        if ((string)setting_get($pdo, 'wa_ordl', '1') === '0') return; $day = date('Y-m-d'); if ((string)setting_get($pdo, 'wa_ordl_day', '') === $day || (int)date('G') < 6) return;
+        if (!function_exists('wcd_tpl_stats') && is_file(__DIR__ . '/wa_cold.php')) { try { require_once __DIR__ . '/wa_cold.php'; } catch (Throwable $e) { return; } } if (!function_exists('wcd_tpl_stats')) return;
+        setting_set($pdo, 'wa_ordl_day', $day); [$open, $mid, $close, $btn] = wa_ordpack_parts(); $st = wcd_tpl_stats($pdo);
+        $rows = $pdo->query("SELECT id, name, body FROM wa_templates WHERE category = 'MARKETING' AND name LIKE 'tmph\\_ord\\_%'")->fetchAll(PDO::FETCH_NUM); $rates = []; $sc = ['o' => [], 'm' => [], 'c' => []]; $cn = ['o' => [], 'm' => [], 'c' => []]; $per = [];
+        foreach ($rows as $r) { $s = $st[(int)$r[0]] ?? null; if (!$s || (int)$s['sent'] < 200) continue; $rate = ((int)$s['replied'] + 0.5) / ((int)$s['sent'] + 50); $per[(int)$r[0]] = [$rate, (int)$s['sent'], (string)$r[1]]; $rates[] = $rate; $b = (string)$r[2];
+            foreach ($open as $i => $x) if (strpos($b, $x) === 0) { $sc['o'][$i] = ($sc['o'][$i] ?? 0) + $rate; $cn['o'][$i] = ($cn['o'][$i] ?? 0) + 1; }
+            foreach ($mid as $i => $x) if (strpos($b, $x) !== false) { $sc['m'][$i] = ($sc['m'][$i] ?? 0) + $rate; $cn['m'][$i] = ($cn['m'][$i] ?? 0) + 1; }
+            foreach ($close as $i => $x) if (substr($b, -strlen($x)) === $x) { $sc['c'][$i] = ($sc['c'][$i] ?? 0) + $rate; $cn['c'][$i] = ($cn['c'][$i] ?? 0) + 1; } }
+        $best = function (array $arr, array $cnt, int $total) { $a = []; for ($i = 0; $i < $total; $i++) $a[$i] = isset($cnt[$i]) ? $arr[$i] / $cnt[$i] : -1; arsort($a); return array_keys($a); };
+        if (count($rates) >= 3) { sort($rates); $med = $rates[intdiv(count($rates), 2)]; $off = []; foreach ($per as $id => $p) if ($p[1] >= 600 && $p[0] < $med * 0.5) $off[] = $id; setting_set($pdo, 'wa_ordl_off', json_encode($off)); } else { $off = []; $med = 0; }
+        $bo = $best($sc['o'], $cn['o'], count($open)); $bm = $best($sc['m'], $cn['m'], count($mid)); $bc = $best($sc['c'], $cn['c'], count($close)); $new = []; $seed = (int)date('z') * 7;
+        if (count($rates) >= 3) for ($k = 0; $k < 6; $k++) { $ex = ($k % 3 === 2);   /* every third new message tries parts nobody tested */
+            $i = $ex ? ($seed + $k * 3) % count($open) : $bo[$k % 2]; $j = $ex ? ($seed + $k * 5) % count($mid) : $bm[($k + intdiv($k, 2)) % 3]; $c = $ex ? ($seed + $k * 7) % count($close) : $bc[$k % 2];
+            $new[] = ['name' => 'tmph_ord_d' . date('ymd') . '_' . ($k + 1), 'body' => $open[$i] . "\n\n" . $mid[$j] . "\n\n" . $close[$c], 'buttons' => $btn[($i + $j) % 3]]; }
+        $old = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $keep = array_slice(array_merge((array)$old, $new), -60); setting_set($pdo, 'wa_ordl_new', json_encode($keep, JSON_UNESCAPED_UNICODE));
+        $top = []; foreach ($per as $p) $top[] = $p; usort($top, function ($a, $b) { return $b[0] <=> $a[0]; });
+        setting_set($pdo, 'wa_ordl_rep', json_encode(['day' => $day, 'tested' => count($per), 'median' => round($med * 100, 2), 'top' => array_slice(array_map(function ($p) { return [$p[2], round($p[0] * 100, 2), $p[1]]; }, $top), 0, 5), 'off' => count($off), 'new' => count($new), 'best_open' => $bo[0] ?? null, 'best_mid' => $bm[0] ?? null, 'best_close' => $bc[0] ?? null]));
     }
     function wa_ordpack_tick(PDO $pdo): array
     {
@@ -53,7 +81,9 @@ if (!function_exists('wa_ordpack_defs')) {
         if ((int)setting_get($pdo, 'wa_ordpack_at', '0') > time() - 120) return $res; setting_set($pdo, 'wa_ordpack_at', (string)time());
         foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row'] as $f) if (!function_exists($f)) return $res;
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
-        foreach (wa_ordpack_defs() as $name => $m) {
+        try { wa_ordpack_learn($pdo); } catch (Throwable $e) { }
+        $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
+        foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;
             try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? OR body = ? LIMIT 1"); $q->execute([$name, $m['body']]); if ($q->fetchColumn()) continue; } catch (Throwable $e) { continue; }
             $qr = array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, $m['buttons']);
