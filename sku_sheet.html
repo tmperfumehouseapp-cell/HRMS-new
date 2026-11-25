@@ -63,6 +63,7 @@
         <button class="btn" type="button" id="bRef" style="background:#fff;color:#111;border:1px solid var(--line)">🔄 Refresh</button>
         <span style="flex:1"></span>
         <button class="btn" type="button" id="bUp" style="background:#fff;color:#111;border:1px solid var(--line);display:none" title="Replace the SKU list: an Excel whose first three columns are SKU · original name · shop name">⬆ Upload SKU file</button>
+        <button class="btn" type="button" id="bList" style="background:#fff;color:#111;border:1px solid var(--line)" title="The SKU list as Excel: SKU NO · ORIGINAL NAME · TM NAME">⬇ Download SKU list</button>
         <input type="file" id="fUp" accept=".xlsx,.xls,.csv" style="display:none">
         <button class="btn" type="button" id="bXlsx" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
       </div>
@@ -176,6 +177,23 @@
       const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'sku_sheet_' + D.day + '.xlsx'; document.body.appendChild(a); a.click(); a.remove();
     } catch (e) { alert('The Excel file could not be made: ' + e.message); }
+    b.disabled = false; b.textContent = old;
+  };
+
+  // ---- ⬇ the SKU list itself as Excel, in the owner's format: SKU NO · ORIGINAL NAME · TM NAME (one sheet, bold head, thin borders)
+  $('bList').onclick = async function () {
+    const b = this, old = b.textContent; b.disabled = true; b.textContent = 'Preparing…';
+    try {
+      const r = await api.get('sku.list'), rows = (r && r.rows) || []; if (!rows.length) throw new Error('The SKU list is empty.');
+      await lib('assets/js/exceljs.min.js?v=440', () => !!window.ExcelJS);
+      const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Sheet1'), thin = { style: 'thin' }, box = { top: thin, left: thin, bottom: thin, right: thin };
+      const put = (vals, head) => { const row = ws.addRow(vals); for (let i = 1; i <= 3; i++) { const c = row.getCell(i); c.border = box; if (head) c.font = { bold: true }; if (i === 1) c.alignment = { horizontal: 'center' }; } };
+      put(['SKU NO', 'ORIGINAL NAME', 'TM NAME'], true);
+      rows.forEach((x) => { const k = String(x[0] == null ? '' : x[0]).trim(); put([/^\d+$/.test(k) ? Number(k) : k, String(x[1] == null ? '' : x[1]), String(x[2] == null ? '' : x[2]) || null], false); });
+      ws.getColumn(1).width = 7.4; ws.getColumn(2).width = 57.4; ws.getColumn(3).width = 39.3;
+      const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'og_sku_' + rows.length + '_perfumes.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { alert('The SKU list could not be downloaded: ' + e.message); }
     b.disabled = false; b.textContent = old;
   };
 
