@@ -216,4 +216,16 @@ $ff = json_decode((string)$pdo->query("SELECT fields FROM fu_topics WHERE id = $
 $ff = json_decode((string)$pdo->query("SELECT fields FROM fu_topics WHERE id = $tW")->fetchColumn(), true); ok($c === 200 && $ff[0]['min'] === 5 && $ff[0]['g'] === 'Front display' && $ff[2]['type'] === 'video' && !isset($ff[1]['min']), 'sub-topic: min words and group kept');
 [$c, $r] = call('fup.update_save', $E(12), ['topic_id' => $tW, 'text' => '', 'day' => '2026-11-23', 'fields' => [$ff[0]['k'] => 'looks ok']]); ok($c === 422 && strpos($r['error'], 'at least 5 words') !== false, 'sub-topic: a short box is refused');
 [$c] = call('fup.update_save', $E(12), ['topic_id' => $tW, 'text' => '', 'day' => '2026-11-23', 'fields' => [$ff[0]['k'] => 'new perfume row set at eye level']]); ok($c === 200, 'sub-topic: a long enough box saves');
+// Nitin's 23 Dispatch tasks become one topic with a Words box each; the old days' words are copied in, the old topics hidden
+$pdo->exec("INSERT INTO employees VALUES (30, 'Nitin Futwalk', 1, 'approved', '', '')");
+[$c, $r] = call('fup.section_save', $ADMIN, ['name' => 'Dispatch']); $dsp = (int)$r['id'];
+$GLOBALS['SET']['fup_nitin_merge_v1'] = '1'; $GLOBALS['SET']['fup_nitin_topics_v1'] = ''; call('fup.board', $ADMIN, null, ['section' => $dsp]);
+$nOld = (int)$pdo->query("SELECT COUNT(*) FROM fu_topics WHERE section_id = $dsp AND active = 1 AND assignee_emp = 30")->fetchColumn(); ok($nOld === 23, 'Nitin: 23 seeded topics (' . $nOld . ')');
+$a = (int)$pdo->query("SELECT id FROM fu_topics WHERE section_id = $dsp AND title = 'All oil number wise hone chahiye'")->fetchColumn(); $b2 = (int)$pdo->query("SELECT id FROM fu_topics WHERE section_id = $dsp AND title = 'Chair sarkhi mukvi'")->fetchColumn();
+$pdo->exec("INSERT INTO fu_updates (topic_id, day, txt, emp_id, emp_name, updated_at) VALUES ($a, '2026-11-22', 'Badha number pramane', 30, 'Nitin Futwalk', '2026-11-23 10:00:00'), ($b2, '2026-11-22', 'Chair mukayi', 30, 'Nitin Futwalk', '2026-11-23 10:05:00')");
+$GLOBALS['SET']['fup_nitin_merge_v1'] = ''; [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $dsp]); $b['topics'] = array_values(array_filter($b['topics'], function ($x) { return $x['assignee_emp'] === 30; }));
+ok(count($b['topics']) === 1 && $b['topics'][0]['title'] === 'Nitin — daily work' && count($b['topics'][0]['fields']) === 23 && $b['topics'][0]['fields'][0]['type'] === 'text' && $b['topics'][0]['fields'][0]['req'] === 1 && $b['topics'][0]['assignee_emp'] === 30, 'Nitin: one topic, 23 Words boxes, given to Nitin');
+$u = $b['topics'][0]['updates']['2026-11-22'] ?? null; ok($u && $u['f']['f1'] === 'Badha number pramane' && $u['f']['f22'] === 'Chair mukayi', 'Nitin: the old words are in the boxes of that day');
+ok((int)$pdo->query("SELECT COUNT(*) FROM fu_updates WHERE topic_id = $a")->fetchColumn() === 1, 'Nitin: the old updates are kept');
+call('fup.board', $ADMIN, null, ['section' => $dsp]); ok((int)$pdo->query("SELECT COUNT(*) FROM fu_topics WHERE section_id = $dsp AND active = 1 AND assignee_emp = 30")->fetchColumn() === 1, 'Nitin: done once only');
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);
