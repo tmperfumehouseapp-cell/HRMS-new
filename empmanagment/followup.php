@@ -464,6 +464,26 @@ function fup_seed_sachin_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_sachin_topics: ' . $e->getMessage()); }
 }
 
+/** Once: the questions Claude had already put on updates are taken off (the owner does not want the staff asked anything), so nobody sees an old "Claude asks" any more. */
+function fup_clear_questions(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_no_questions_v1', '') === '1') return;
+        $pdo->exec("UPDATE fu_updates SET ai_q = '' WHERE ai_q <> ''");
+        setting_set($pdo, 'fup_no_questions_v1', '1');
+    } catch (Throwable $e) { error_log('fup_clear_questions: ' . $e->getMessage()); }
+}
+
+/** Once: the owner's order "make every topic about the day before": all open daily topics are filled the next day (the day asked for is yesterday; yesterday and the day before can be written). Nothing written is changed. A topic can still be ticked back off in Edit topic. Deadline topics are left alone. */
+function fup_all_day_before(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_all_lag_v1', '') === '1') return;
+        $pdo->exec("UPDATE fu_topics SET `lag` = 1 WHERE active = 1 AND kind = 'progress' AND `lag` = 0");
+        setting_set($pdo, 'fup_all_lag_v1', '1');
+    } catch (Throwable $e) { error_log('fup_all_day_before: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order for the topic "Office Pickup Parcel Update": no number from the HRMS, only the written update. The system number (it was connected by its name) is taken off the topic, the numbers the system had filled in by itself are removed from its days (a number a person typed, and every written update, stay), and the form asks only for the summary. */
 function fup_office_pickup_clean(PDO $pdo): void
 {
@@ -1155,12 +1175,13 @@ function fup_ai_check(PDO $pdo, array $t, array $sec, string $day, string $text,
         . "clear = it says concretely what happened (a count, a name, a result, or a real reason). vague = words like 'work going on', 'done', 'ok', 'will do' with nothing concrete, or it leaves out what the owner wants. "
         . "no_progress = it clearly says the same as the earlier days with nothing new. mismatch = it clearly contradicts the number from the system or the earlier days. "
         . "A short update is fine when it is concrete: do not ask for more than the topic needs. note = one short plain-English line for the owner (max 20 words; for 'clear' a 3 to 6 word gist). "
-        . "question = ONLY for 'vague': ONE short, exact question to the person, in the same language and script the update is written in (max 18 words). Otherwise an empty string.";
+        . "question = always an empty string (the staff are never asked anything).";
     $old = function_exists('ai_feat') ? ai_feat('followup') : '';
     try { $j = brain_ai_json('internal', 'followup', $sys, implode("\n", $L), 300, ['ctx' => false, 'rules' => false, 'model' => 'claude-haiku-5-5', 'timeout' => 25]); } catch (Throwable $e) { $j = null; }
     if (function_exists('ai_feat')) ai_feat((string)$old);
     if (!is_array($j) || !in_array((string)($j['verdict'] ?? ''), ['clear', 'vague', 'no_progress', 'mismatch'], true)) return ['', '', ''];
-    $v = (string)$j['verdict']; $q = ($v === 'vague' && !$final) ? trim(mb_substr((string)($j['question'] ?? ''), 0, 300)) : '';
+    // the owner's order: Claude never asks the staff a question (it kept asking one after another). He still reads the update and leaves his one-line note for the owner. Setting fup_ai_ask = 1 would bring the question back.
+    $v = (string)$j['verdict']; $q = ($v === 'vague' && !$final && (string)setting_get($pdo, 'fup_ai_ask', '0') === '1') ? trim(mb_substr((string)($j['question'] ?? ''), 0, 300)) : '';
     return [$v, trim(mb_substr((string)($j['note'] ?? ''), 0, 300)), $q];
 }
 
@@ -1251,6 +1272,8 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_nitin_topics($pdo);
     fup_seed_sachin_topics($pdo);
     fup_office_pickup_clean($pdo);
+    fup_clear_questions($pdo);
+    fup_all_day_before($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };

@@ -514,3 +514,19 @@ try { if (!function_exists('json_response')) { function json_response($a = null,
     foreach ($miss67 as $k67) { $d67 = $defs67[$k67]; [$t67, $e67] = wa_tpl_clean(['name' => 'tmph_fu_' . $k67, 'language' => 'en', 'category' => 'UTILITY', 'body' => $d67['body'], 'footer' => '', 'buttons' => $d67['buttons'], 'examples' => ['body' => $d67['ex'], 'labels' => $d67['labels']], 'folder' => 'utility']); $o67[] = [$k67, $e67 === '' ? 'ok' : mb_substr($e67, 0, 120)]; }
     echo "ASK POOLMISS defs " . count($defs67) . " · rows " . count($have67) . " · missing " . json_encode($o67, JSON_UNESCAPED_UNICODE) . " · wa_ru_pool_auto " . json_encode(setting_get($pdo, 'wa_ru_pool_auto', '1')) . " · wa_rs_pool_at " . json_encode(setting_get($pdo, 'wa_rs_pool_at', '')) . " · now " . time() . "\n";
 } catch (Throwable $e) { echo "ASK POOLMISS ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 68) Why the offer engine looks at nobody (owner 25 Nov): counts of the candidates and of each message source before their reply - counts only
+try { $a68 = date('Y-m-d H:i:s', time() - 23 * 3600); $b68 = date('Y-m-d H:i:s', time() - 1200); $c68 = date('Y-m-d H:i:s', time() - 25 * 86400);
+    $q68 = function ($sql, $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetch(PDO::FETCH_NUM); } catch (Throwable $e) { return ['ERR ' . substr($e->getMessage(), 0, 90)]; } };
+    $base68 = "FROM wa_contacts c WHERE c.last_in_at >= ? AND c.last_in_at <= ? AND c.optout = 0 AND c.camp_optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')";
+    $o68 = ['candidates' => $q68("SELECT COUNT(*) $base68", [$a68, $b68]),
+        'line' => $q68("SELECT COUNT(DISTINCT c.phone) $base68 AND EXISTS (SELECT 1 FROM wa_line_plan l WHERE l.phone = c.phone AND l.status = 'sent' AND l.sent_at >= ? AND l.sent_at < c.last_in_at)", [$a68, $b68, $c68]),
+        'cold' => $q68("SELECT COUNT(DISTINCT c.phone) $base68 AND EXISTS (SELECT 1 FROM wa_cold_log l WHERE l.phone = c.phone AND l.ok = 1 AND l.at >= ? AND l.at < c.last_in_at)", [$a68, $b68, $c68]),
+        'ru' => $q68("SELECT COUNT(DISTINCT c.phone) $base68 AND EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.phone = c.phone AND l.ok = 1 AND l.at >= ? AND l.at < c.last_in_at)", [$a68, $b68, $c68]),
+        'camp' => $q68("SELECT COUNT(DISTINCT c.phone) $base68 AND EXISTS (SELECT 1 FROM wa_messages l WHERE l.phone = c.phone AND l.dir = 'out' AND l.who IN ('campaign','recover') AND l.ts >= ? AND l.ts < c.last_in_at)", [$a68, $b68, $c68]),
+        'night_or_recent' => $q68("SELECT COUNT(*) $base68 AND (c.last_in_at >= ? OR HOUR(c.last_in_at) < 9 OR c.last_in_at >= '" . date('Y-m-d') . " 00:00:00' - INTERVAL 2 HOUR)", [$a68, $b68, date('Y-m-d H:i:s', time() - 7200)]),
+        'offer_rows_24h' => $q68("SELECT COUNT(DISTINCT phone) FROM wa_offer WHERE at >= ? AND mode = 'live'", [date('Y-m-d H:i:s', time() - 86400)])];
+    echo "ASK OFFERWHY " . json_encode($o68, JSON_UNESCAPED_UNICODE) . "\n"; } catch (Throwable $e) { echo "ASK OFFERWHY ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
+// 69) Orders per day in HRMS (shop_orders) - counts only, to compare with Shopify's analytics (owner 25 Nov)
+try { $r69 = $pdo->query("SELECT DATE(created_at), COUNT(*), ROUND(SUM(total)) FROM shop_orders WHERE created_at >= '" . date('Y-m-d', time() - 5 * 86400) . "' GROUP BY 1 ORDER BY 1")->fetchAll(PDO::FETCH_NUM); echo "ASK SHOPORDERS per day (date, orders, total) " . json_encode($r69) . "\n";
+    $h69 = $pdo->query("SELECT HOUR(created_at), COUNT(*) FROM shop_orders WHERE created_at >= '" . date('Y-m-d') . " 00:00:00' GROUP BY 1 ORDER BY 1")->fetchAll(PDO::FETCH_NUM); echo "ASK SHOPORDERS today by hour " . json_encode($h69) . " · last order " . json_encode($pdo->query("SELECT MAX(created_at) FROM shop_orders")->fetchColumn()) . "\n";
+} catch (Throwable $e) { echo "ASK SHOPORDERS ERR " . substr($e->getMessage(), 0, 160) . "\n"; }

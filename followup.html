@@ -12,6 +12,7 @@
 <style>
   .fu{max-width:1500px;margin:0 auto;padding-bottom:40px;}
   .fu *{box-sizing:border-box;}
+  .fu-ckbar{display:flex;align-items:center;margin-top:8px;} .fu-cklist{max-height:260px;overflow-y:auto;padding-right:4px;}
   .fu-pills{display:flex;flex-wrap:wrap;gap:7px;padding:2px 0 10px;}   /* every section is shown: the row wraps instead of hiding the rest behind a scroll with no bar */
   .fu-pills::-webkit-scrollbar{display:none;}
   .fu-pill{flex:none;white-space:nowrap;font:inherit;font-size:13px;font-weight:800;padding:9px 17px;border-radius:999px;background:#fff;border:1px solid var(--line);color:#4a4f5c;cursor:pointer;}
@@ -125,7 +126,8 @@ guardPage(); renderSidebar('followup');
   try { api.swrAdd('fup.board', 0); } catch (e) { /* older api.js */ }   // the sheet is always asked fresh: an update somebody else just wrote must show at once, never a remembered copy
   let ALL = true, OPEN_D = '', OWN_NOW = false; try { ALL = localStorage.getItem('fup_all') !== '0' && !new URLSearchParams(location.search).get('s'); } catch (e) { ALL = true; }
   let OPEN_U = 0; try { OPEN_U = Number(new URLSearchParams(location.search).get('u')) || 0; } catch (e) { OPEN_U = 0; }
-  let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true, PERS = '', LASTSEC = -1;
+  let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true, PERS = '', LASTSEC = -1, CK = '';
+  try { CK = localStorage.getItem('fup_ck') || ''; } catch (e) { CK = ''; }
   let PREF = null; try { PREF = localStorage.getItem('fup_side'); } catch (e) { PREF = null; }   // nothing chosen yet: a section with many topics (like a Dispatch sheet) opens as topics down, days across
   SIDE = PREF === null ? true : PREF !== '0';
   try { SID = Number(new URLSearchParams(location.search).get('s')) || Number(localStorage.getItem('fup_sec')) || 0; } catch (e) { SID = 0; }
@@ -220,9 +222,13 @@ guardPage(); renderSidebar('followup');
       + (D.topics.some((t) => t.can_write && t.status !== 'done') ? '<button class="bd-btn sm" id="addAny">＋ Add update / number</button>' : '') + (D.manager ? '<button class="bd-btn sm" id="secEdit">Section settings</button><button class="bd-btn sm pri" id="topAdd">＋ Topic</button>' : '') + '</div>'
       + persChips() + '<div class="fu-stats"><div class="fu-stat"><b>' + open.length + '</b>open topics</div><div class="fu-stat ' + (got === open.length && open.length ? 'g' : '') + '"><b>' + got + ' / ' + open.length + '</b>up to date</div><div class="fu-stat ' + (red ? 'r' : 'g') + '"><b>' + red + '</b>need attention</div></div></div>';
 
+    // Claude's check: only the people chosen above, folded away when it is long (it pushed the sheet far down the page)
+    const ckList = PERS === '' ? D.checks : D.checks.filter((c) => D.topics.some((x) => x.id === c.topic_id));
+    const CKS = { list: ckList, n: ckList.length, red: ckList.filter((c) => c.level === 'red').length, fold: ckList.length > 3 }; CKS.open = !CKS.fold || CK === '1';
     if (s.own && D.topics.length) {
       h += '<div class="fu-card"><div class="fu-head"><div class="fu-lb" style="margin:0">Claude’s check</div><span class="sp"></span><button class="bd-btn sm" id="askAi"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ ' + (D.digest ? 'Ask Claude again' : 'Ask Claude to read this section') + '</button></div>'
-        + (D.checks.length ? '<div style="margin-top:8px">' + D.checks.map((c) => '<div class="fu-chk"><span class="fu-dot ' + (c.level === 'red' ? 'red' : '') + '"></span><span class="tx">' + esc(c.text) + '</span>' + ((tp) => (tp && tp.assignee_emp ? callBtns(tp.assignee_emp) : ''))(D.topics.find((x) => x.id === c.topic_id)) + '</div>').join('') + '</div>' : '<div class="fu-sub" style="margin-top:8px">Every open topic has today’s update. Nothing is late.</div>')
+        + (CKS.n ? '<div class="fu-ckbar">' + '<span class="fu-tag amb" style="margin:0">⚠ ' + CKS.n + ' need attention' + (CKS.red ? ' · ' + CKS.red + ' late' : '') + '</span>' + (CKS.fold ? '<button class="bd-btn sm" id="ckTog" style="margin-left:8px">' + (CKS.open ? 'Hide ▴' : 'Show all ▾') + '</button>' : '') + '</div>' : '')
+        + (CKS.n && CKS.open ? '<div class="fu-cklist" style="margin-top:8px">' + CKS.list.map((c) => '<div class="fu-chk"><span class="fu-dot ' + (c.level === 'red' ? 'red' : '') + '"></span><span class="tx">' + esc(c.text) + '</span>' + ((tp) => (tp && tp.assignee_emp ? callBtns(tp.assignee_emp) : ''))(D.topics.find((x) => x.id === c.topic_id)) + '</div>').join('') + '</div>' : (CKS.n ? '' : '<div class="fu-sub" style="margin-top:8px">Every open topic has today’s update. Nothing is late.</div>'))
         + (D.digest ? '<div class="fu-dig">' + esc(D.digest.text) + '</div><div class="fu-by">Claude read it on ' + esc(dayName(D.digest.day, D.today)) + (D.digest.day !== D.today ? ' — ask again for today' : '') + '</div>' : (D.ai ? '' : '<div class="fu-sub" style="margin-top:8px">The checks above work without Claude. Claude’s written note needs the Anthropic key on the server.</div>')) + '</div>';
     }
 
@@ -319,6 +325,7 @@ guardPage(); renderSidebar('followup');
     loadPantry();
     document.querySelectorAll('[data-go]').forEach((b) => { b.onclick = (e) => { if (e.target.closest('[data-stop]')) return; SID = Number(b.dataset.go); ALL = false; try { localStorage.setItem('fup_all', '0'); } catch (x) { /* private mode */ } load(); }; });
     const setAll = (v) => { ALL = v; try { localStorage.setItem('fup_all', v ? '1' : '0'); } catch (e) { /* private mode */ } };
+    if ($('ckTog')) $('ckTog').onclick = () => { CK = CK === '1' ? '0' : '1'; try { localStorage.setItem('fup_ck', CK); } catch (e) { /* private mode */ } render(); };
     document.querySelectorAll('[data-pers]').forEach((b) => { b.onclick = () => { PERS = b.dataset.pers; render(); }; });
     document.querySelectorAll('[data-sec]').forEach((b) => { b.onclick = () => { SID = Number(b.dataset.sec); setAll(false); load(); }; });
     if ($('allPill')) $('allPill').onclick = () => { setAll(true); load(); };
