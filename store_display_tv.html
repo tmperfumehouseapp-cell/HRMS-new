@@ -67,13 +67,28 @@
   .th-emerald .sp{background:#a7f3d0;box-shadow:0 0 8px #5eead4} .th-emerald .line{background:linear-gradient(90deg,#2dd4bf,#facc15)} .th-emerald .bl{color:#5eead4} .th-emerald .big{background-image:linear-gradient(100deg,#5eead4 20%,#ffffff 40%,#5eead4 60%)}
   .th-emerald .h2,.th-emerald .per,.th-emerald .url,.th-emerald .r{color:#bfe9dd} .th-emerald .r{border-color:rgba(234,255,248,.15)} .th-emerald .r b{color:#fff} .th-emerald .cta{background:linear-gradient(90deg,#14b8a6,#2dd4bf);color:#042f2a} .th-emerald .toast{background:#14b8a6;color:#042f2a}
 
+  /* TM Perfume House: the logo's own colours. Cream, the logo orange, chunky letters with a dark brown outline */
+  .tmlogo{display:none;position:absolute;right:34px;top:30px;width:116px;height:116px;-webkit-animation:bob 3.2s ease-in-out infinite alternate;animation:bob 3.2s ease-in-out infinite alternate}
+  @-webkit-keyframes bob{from{-webkit-transform:translateY(0) rotate(-3deg)}to{-webkit-transform:translateY(-10px) rotate(3deg)}} @keyframes bob{from{transform:translateY(0) rotate(-3deg)}to{transform:translateY(-10px) rotate(3deg)}}
+  .th-brand{background:#faf1e2 !important;color:#2b1a10}
+  .th-brand .tmlogo{display:block} .th-brand .live{top:158px;right:44px;color:#16a34a}
+  .th-brand .b1{background:radial-gradient(circle,rgba(255,145,74,.42),rgba(255,145,74,0) 65%)} .th-brand .b2{background:radial-gradient(circle,rgba(255,196,140,.55),rgba(255,196,140,0) 65%)} .th-brand .b3{background:radial-gradient(circle,rgba(255,145,74,.3),rgba(255,145,74,0) 65%)}
+  .th-brand .sp{background:#ff914a;opacity:.7}
+  .th-brand .h1{color:#2b1a10;font-size:48px;top:58px;letter-spacing:-1.5px} .th-brand .h2{top:116px} .th-brand .h2,.th-brand .per,.th-brand .url{color:#6b4a35}
+  .th-brand .t{color:#ff914a;-webkit-text-stroke:3px #2b1a10;text-shadow:5px 5px 0 #2b1a10}
+  .th-brand .line{height:7px;border-radius:7px;background:#2b1a10}
+  .th-brand .big{color:#ff914a;-webkit-text-stroke:6px #2b1a10;text-shadow:9px 9px 0 #2b1a10}
+  .th-brand .bl{color:#2b1a10} .th-brand .r{border-color:#ead9c1} .th-brand .r b{color:#2b1a10}
+  .th-brand .cta{background:#ff914a;color:#2b1a10;border:5px solid #2b1a10;box-shadow:0 8px 0 #2b1a10;padding:11px}
+  .th-brand .toast{background:#2b1a10;color:#ffd3b0} .th-brand .big.flash{-webkit-animation:flb .9s;animation:flb .9s} @-webkit-keyframes flb{0%{-webkit-transform:scale(1.08)}100%{-webkit-transform:scale(1)}} @keyframes flb{0%{transform:scale(1.08)}100%{transform:scale(1)}} .th-brand .plus{color:#ff914a;-webkit-text-stroke:3px #2b1a10}
+
   /* Classic (white) keeps its look: only a few soft orange sparkles */
   .th-classic .blob{display:none} .th-classic .sp{background:#ff5a00;opacity:.35}
 </style>
 </head>
 <body>
-<div id="stage" class="th-classic"><div id="fx"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
-  <div class="h1" id="title">TM Perfume House</div><div class="h2" id="place">Vesu, Surat</div><div class="live" id="live"><i></i><span id="livet">LIVE</span></div>
+<div id="stage" class="th-brand"><div id="fx"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+  <img class="tmlogo" src="assets/img/tmph-logo.png" alt=""><div class="h1" id="title">TM Perfume House</div><div class="h2" id="place">Vesu, Surat</div><div class="live" id="live"><i></i><span id="livet">LIVE</span></div>
   <div class="t">Store<br>Report Card</div><div class="per" id="per">Last 2 months</div><div class="line"></div>
   <div class="big" id="ord">–</div><div class="bl">Orders</div><div class="plus" id="pl">+1</div>
   <div class="rows">
@@ -109,9 +124,9 @@
   function ding() { try { var AC = window.AudioContext || window.webkitAudioContext; audio = audio || new AC(); var o = audio.createOscillator(), g = audio.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(0.0001, audio.currentTime); g.gain.exponentialRampToValueAtTime(0.4, audio.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.7); o.connect(g); g.connect(audio.destination); o.start(0); o.stop(audio.currentTime + 0.75); } catch (e) { /* no sound on this screen */ } }
   // the look: from the settings (d.theme), or ?theme= in the link (used by the previews in Store -> Display)
   var tm = /[?&]theme=([a-z]+)/.exec(location.search), themeLock = tm ? tm[1] : '', theme = '';
-  var COL = { classic: ['#ff5a00', '#ffb020', '#16a34a'], gold: ['#d4af37', '#f9e08b', '#ffffff'], sunset: ['#ffffff', '#ffd400', '#ff3d6e'], rose: ['#c2185b', '#f48fb1', '#ffcc80'], emerald: ['#2dd4bf', '#facc15', '#ffffff'] };
+  var COL = { brand: ['#ff914a', '#2b1a10', '#ffd3b0'], classic: ['#ff5a00', '#ffb020', '#16a34a'], gold: ['#d4af37', '#f9e08b', '#ffffff'], sunset: ['#ffffff', '#ffd400', '#ff3d6e'], rose: ['#c2185b', '#f48fb1', '#ffcc80'], emerald: ['#2dd4bf', '#facc15', '#ffffff'] };
   function setTheme(t) {
-    t = COL[t] ? t : 'classic'; if (t === theme) return; theme = t; st.className = 'th-' + t;
+    t = COL[t] ? t : 'brand'; if (t === theme) return; theme = t; st.className = 'th-' + t;
     var big = $('ord'); big.className = (t === 'gold' || t === 'emerald') ? 'big shim' : 'big';
   }
   (function sparkles() {   // tiny dots rising slowly, like perfume mist
@@ -125,23 +140,17 @@
       e.style.setProperty('--x', Math.round(Math.cos(a) * r) + 'px'); e.style.setProperty('--y', Math.round(Math.sin(a) * r - 120) + 'px'); e.style.setProperty('--r', Math.round(Math.random() * 720 - 360) + 'deg');
       st.appendChild(e); (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 2100); })(e); }
   }
-  setTheme(themeLock || 'classic');
-  // the little kid who runs about the card (Store -> Display setting, or ?kid=1 in the link for a preview)
-  // ?kid=0 off · 1 / kid our little boy · owner the owner drawn as a little boy · photo the owner's own face on the little body
-  var km = /[?&]kid=([a-z01]+)/.exec(location.search), kidLock = km ? km[1] : '', kidOn = false;
-  function setKid(v) { var on = !!v && v !== '0'; if (on === kidOn) return; kidOn = on; var el = $('kid');
-    if (on && !el) { window.TV_KID_CFG = { style: v === 'owner' || v === 'photo' ? v : 'kid', face: 'assets/img/tv_face.png' }; var sc = document.createElement('script'); sc.src = 'assets/js/tv_kid.js?v=2'; document.body.appendChild(sc); } else if (el) el.style.display = on ? '' : 'none'; }
-  if (kidLock) setKid(kidLock);
+  setTheme(themeLock || 'brand');
   function setNum(id, v, old) { $(id).textContent = f(v); if (old !== undefined && old !== null && v !== old) flash(id); }
   function show(d) {
-    setTheme(themeLock || d.theme || 'classic'); if (!kidLock) setKid(d.kid ? String(d.kid) : '');
+    setTheme(themeLock || d.theme || 'brand');
     $('title').textContent = d.title; $('place').textContent = d.place; $('per').textContent = d.period; $('cta').textContent = d.cta; $('url').textContent = d.url;
     $('rt').textContent = d.rating !== '' ? d.rating + '/5' : '–'; $('gr').textContent = f(d.reviews);
     setNum('ord', d.orders, last && last.orders); setNum('bt', d.bottles, last && last.bottles); setNum('cm', d.community, last && last.community);
     if (last && d.orders > last.orders) {
       var p = $('pl'); p.textContent = '+' + (d.orders - last.orders); restart(p, 'go');
       var nb = Math.max(0, d.bottles - last.bottles);
-      confetti(); if (kidOn && window.tvKid) window.tvKid.party(d.orders - last.orders); toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
+      confetti(); toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
     }
     last = d; $('msg').style.display = 'none'; $('live').className = 'live'; $('livet').textContent = 'LIVE';
   }

@@ -28,7 +28,7 @@
   let D = null;
   const shortLink = () => new URL('tv.html?k=' + D.cfg.key.slice(0, 8), location.href).href;
   const link = () => new URL('store_display_tv.html?k=' + encodeURIComponent(D.cfg.key), location.href).href;
-  const LOOKS = [['classic', 'Classic white'], ['gold', 'Midnight Gold'], ['sunset', 'Sunset'], ['rose', 'Rose Luxe'], ['emerald', 'Emerald']];
+  const LOOKS = [['brand', 'TM Perfume House'], ['classic', 'Classic white'], ['gold', 'Midnight Gold'], ['sunset', 'Sunset'], ['rose', 'Rose Luxe'], ['emerald', 'Emerald']];
   const PER = { '2m': 'Last 2 months', month: 'This month', all: 'Since the start' };
   const v = (id) => ($(id) || {}).value;
   function render() {
@@ -44,9 +44,9 @@
           <div style="margin-top:10px;font-size:13.5px">Short link to type on the TV: <b id="sl" style="user-select:all">${esc(shortLink())}</b></div>
           <div id="cmsg" style="font-size:12.5px;margin-top:6px"></div></div>
         <div class="sx-card"><h3>Look on the TV <small>colours with slow live effects: soft moving light, rising sparkles, a shine on the button and confetti on every new bill</small></h3>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">${LOOKS.map(([k, n]) => `<button type="button" class="sd-look" data-look="${k}" style="padding:6px;border-radius:14px;border:2px solid ${(c.theme || 'classic') === k ? '#ff5a00' : '#e5e7eb'};background:#fff;cursor:pointer;text-align:center;font:inherit">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">${LOOKS.map(([k, n]) => `<button type="button" class="sd-look" data-look="${k}" style="padding:6px;border-radius:14px;border:2px solid ${(c.theme || 'brand') === k ? '#ff5a00' : '#e5e7eb'};background:#fff;cursor:pointer;text-align:center;font:inherit">
             <div style="width:100%;aspect-ratio:9/16;position:relative;overflow:hidden;border-radius:9px;pointer-events:none"><iframe src="${esc(link() + '&theme=' + k)}" loading="lazy" style="position:absolute;left:0;top:0;width:100%;height:100%;border:0" title="${esc(n)}"></iframe></div>
-            <div style="font-size:12.5px;font-weight:800;margin-top:6px">${(c.theme || 'classic') === k ? '✓ ' : ''}${esc(n)}</div></button>`).join('')}</div>
+            <div style="font-size:12.5px;font-weight:800;margin-top:6px">${(c.theme || 'brand') === k ? '✓ ' : ''}${esc(n)}</div></button>`).join('')}</div>
           <div id="tmsg" style="font-size:12.5px;margin-top:8px"></div></div>
         <div class="sx-card"><h3>What the card shows <small>now: ${Number(n.orders || 0).toLocaleString('en-IN')} orders · ${Number(n.bottles || 0).toLocaleString('en-IN')} bottles · ${Number(n.community || 0).toLocaleString('en-IN')} community</small></h3>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
@@ -89,7 +89,7 @@
     }
     if (id === 'bSave') {
       try {
-        await api.post('st_disp.save', { period: v('fPer'), community_base: Number(v('fCom') || 0), google_reviews: Number(v('fRev') || 0), rating: v('fRat'), cta: v('fCta'), url: v('fUrl'), title: v('fTit'), place: v('fPl'), sound: $('fSnd').checked ? 1 : 0, theme: D.cfg.theme || 'classic' });
+        await api.post('st_disp.save', { period: v('fPer'), community_base: Number(v('fCom') || 0), google_reviews: Number(v('fRev') || 0), rating: v('fRat'), cta: v('fCta'), url: v('fUrl'), title: v('fTit'), place: v('fPl'), sound: $('fSnd').checked ? 1 : 0, theme: D.cfg.theme || 'brand' });
         await load(); say('smsg', 'Saved. The TV changes within a few seconds.');
       } catch (x) { say('smsg', x.message, 1); }
     }
