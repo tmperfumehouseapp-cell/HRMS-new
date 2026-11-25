@@ -9,7 +9,7 @@
 
 function sd_cfg(PDO $pdo, bool $make = true): array
 {
-    $d = ['key' => '', 'period' => '2m', 'community_base' => 0, 'community_from' => '', 'google_reviews' => 0, 'rating' => '', 'cta' => 'Order it now', 'url' => 'tmperfumehouse.com', 'sound' => 1, 'title' => 'TM Perfume House', 'place' => 'Vesu, Surat'];
+    $d = ['key' => '', 'period' => '2m', 'community_base' => 0, 'community_from' => '', 'google_reviews' => 0, 'rating' => '', 'cta' => 'Order it now', 'url' => 'tmperfumehouse.com', 'sound' => 1, 'title' => 'TM Perfume House', 'place' => 'Vesu, Surat', 'theme' => 'brand'];
     try { $pdo->exec("CREATE TABLE IF NOT EXISTS st_cs_settings (skey VARCHAR(30) NOT NULL PRIMARY KEY, svalue MEDIUMTEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'disp'")->fetchColumn(); $j = $v ? json_decode($v, true) : null; if (is_array($j)) foreach ($d as $k => $_) if (array_key_exists($k, $j)) $d[$k] = $j[$k]; } catch (Throwable $e) { }
     if ($make && !preg_match('/^[a-f0-9]{24}$/', (string)$d['key'])) { $d['key'] = bin2hex(random_bytes(12)); sd_cfg_put($pdo, $d); }
     return $d;
@@ -45,9 +45,11 @@ function sd_feed(PDO $pdo): void
     if (!preg_match('/^[a-f0-9]{24}$/', (string)$c['key']) || !(hash_equals((string)$c['key'], $k) || (strlen($k) === 8 && hash_equals(substr((string)$c['key'], 0, 8), $k)))) json_response(['error' => 'This screen link is not valid any more.'], 403);
     $n = sd_numbers($pdo, $c);
     json_response(['orders' => $n['orders'], 'bottles' => $n['bottles'], 'community' => $n['community'], 'reviews' => (int)$c['google_reviews'], 'rating' => (string)$c['rating'], 'period' => sd_label((string)$c['period']),
-        'cta' => (string)$c['cta'], 'url' => (string)$c['url'], 'sound' => !empty($c['sound']) ? 1 : 0, 'title' => (string)$c['title'], 'place' => (string)$c['place']]);
+        'cta' => (string)$c['cta'], 'url' => (string)$c['url'], 'sound' => !empty($c['sound']) ? 1 : 0, 'title' => (string)$c['title'], 'place' => (string)$c['place'], 'theme' => sd_theme((string)($c['theme'] ?? ''))]);
 }
 
+/** the looks of the TV card (store_display_tv.html has the colours and the moving effects of each) */
+function sd_theme(string $t): string { return in_array($t, ['brand', 'classic', 'gold', 'sunset', 'rose', 'emerald'], true) ? $t : 'brand'; }
 function sd_manager(): array
 {
     $auth = require_auth();
@@ -88,7 +90,7 @@ function sd_handle(PDO $pdo, string $action): void
         $c['google_reviews'] = max(0, min(10000000, (int)($in['google_reviews'] ?? $c['google_reviews'])));
         $r = trim((string)($in['rating'] ?? $c['rating'])); $c['rating'] = ($r !== '' && is_numeric($r)) ? (string)max(0, min(5, round((float)$r, 1))) : '';
         foreach (['cta' => 40, 'url' => 60, 'title' => 40, 'place' => 40] as $k => $mx) if (isset($in[$k])) { $v = trim(mb_substr((string)$in[$k], 0, $mx)); if ($v !== '') $c[$k] = $v; }
-        $c['sound'] = !empty($in['sound']) ? 1 : 0;
+        $c['sound'] = !empty($in['sound']) ? 1 : 0; if (isset($in['theme'])) $c['theme'] = sd_theme((string)$in['theme']);
         sd_cfg_put($pdo, $c); json_response(['ok' => true]);
     }
     json_response(['error' => 'Unknown action.'], 404);
