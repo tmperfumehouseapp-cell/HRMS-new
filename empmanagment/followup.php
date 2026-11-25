@@ -437,6 +437,46 @@ function fup_seed_nitin_topics(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_seed_nitin_topics: ' . $e->getMessage()); }
 }
 
+/** Once (the owner asked): Nitin's 23 Dispatch tasks, one topic each, become ONE topic "Nitin — daily work" with a "Words" box (must) for every task.
+ *  Every old day's words are copied into the new topic's boxes, so the record stays on one line; the old topics are hidden (their updates stay in the table). */
+function fup_nitin_merge(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_nitin_merge_v1', '') === '1') return;
+        if ((string)setting_get($pdo, 'fup_nitin_topics_v1', '') !== '1') return;   // the tasks are not there yet
+        $titles = ['All oil number wise hone chahiye', 'All oil one bottle me hone chahiye', 'Pehele old oil then new oil use', 'Rack par proper oil hone chahiye',
+            'All products uske material me make honi chahiye', 'Pending oil proper banane hai and verify', 'Rack me perfume pe pending oil se pehele nazar',
+            'All perfume banne ke bad verify karne hai', 'Perfume ke sprayer and dust check karvana hai', 'Oil and other product ekdam khali hone ke bad fekni hai',
+            'Darek manas e cap pereli hovi joie and gloves pan', 'Refill product daily banani hai', 'All OG parcel dispatch and month end return',
+            'Week me 2 bar Oberon visit and collect products', 'Har chiz ke kapde alag', 'Badha material ratna saf karva, dry karva', 'Sanitizer lavvaanu',
+            'Gel kadhva mate nu sadhan lavvu', 'Daily oil gothvine java', 'Washroom ki jagah sari daily check', 'Potani aju baju ni jagya saf karine javi',
+            'Chair sarkhi mukvi', 'Table ni vastu o proper mukine javi'];
+        $want = []; foreach ($titles as $i => $t) $want[mb_strtolower($t)] = $i;
+        $old = []; foreach ($pdo->query("SELECT t.* FROM fu_topics t JOIN fu_sections s ON s.id = t.section_id WHERE t.active = 1 AND s.active = 1 AND LOWER(s.name) LIKE '%dispatch%' ORDER BY t.id")->fetchAll() as $t) { $k = mb_strtolower(trim((string)$t['title'])); if (isset($want[$k]) && !isset($old[$want[$k]])) $old[$want[$k]] = $t; }
+        if (count($old) < 5) { setting_set($pdo, 'fup_nitin_merge_v1', '1'); return; }   // not the seeded list (renamed or removed by the owner): leave it alone
+        ksort($old); $first = reset($old); $sid = (int)$first['section_id'];
+        $emps = []; foreach ($old as $t) if ((int)$t['assignee_emp'] > 0) $emps[(int)$t['assignee_emp']] = ($emps[(int)$t['assignee_emp']] ?? 0) + 1; arsort($emps); $emp = $emps ? (int)array_key_first($emps) : 0;
+        $fields = []; $keyOf = []; $n = 0; foreach ($old as $i => $t) { $k = 'f' . (++$n); $keyOf[(int)$t['id']] = $k; $fields[] = ['k' => $k, 'label' => mb_substr((string)$t['title'], 0, 80), 'type' => 'text', 'opts' => [], 'req' => 1]; }
+        $sort = min(array_map(function ($t) { return (int)$t['sort_no']; }, $old));
+        $pdo->beginTransaction();
+        $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, ?, '', ?, '', 1, '', 0, ?, 'open', ?, 1, 0, ?)")
+            ->execute([$sid, 'Nitin — daily work', $emp, 'All of Nitin\'s daily work in one place: write what was done on each.', json_encode($fields, JSON_UNESCAPED_UNICODE), $sort, fup_now()]);
+        $new = (int)$pdo->lastInsertId();
+        // the old days: every old topic's words go into its box of the same day
+        $ids = implode(',', array_map('intval', array_keys($keyOf))); $days = [];
+        foreach ($pdo->query("SELECT * FROM fu_updates WHERE topic_id IN (" . $ids . ") ORDER BY day, updated_at")->fetchAll() as $u) {
+            $txt = trim((string)$u['txt']); if ($txt === '') continue; $d = (string)$u['day'];
+            if (!isset($days[$d])) $days[$d] = ['f' => [], 'emp' => (int)$u['emp_id'], 'name' => (string)$u['emp_name'], 'at' => (string)$u['updated_at']];
+            $days[$d]['f'][$keyOf[(int)$u['topic_id']]] = mb_substr($txt, 0, 2000); if ((string)$u['updated_at'] > $days[$d]['at']) { $days[$d]['at'] = (string)$u['updated_at']; $days[$d]['name'] = (string)$u['emp_name']; $days[$d]['emp'] = (int)$u['emp_id']; }
+        }
+        $ins = $pdo->prepare("INSERT INTO fu_updates (topic_id, day, txt, emp_id, emp_name, updated_at, fvals) VALUES (?, ?, '', ?, ?, ?, ?)");
+        foreach ($days as $d => $x) $ins->execute([$new, $d, $x['emp'], $x['name'], $x['at'], json_encode($x['f'], JSON_UNESCAPED_UNICODE)]);
+        $pdo->exec("UPDATE fu_topics SET active = 0 WHERE id IN (" . $ids . ")");
+        $pdo->commit();
+        setting_set($pdo, 'fup_nitin_merge_v1', '1');
+    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('fup_nitin_merge: ' . $e->getMessage()); }
+}
+
 /** Once: the 14 daily tasks of Sachin in the owner's "Dispatch" section (the section is made by the owner; this waits for it). One topic a task, the task name only; a number box only where a number is needed. Given to Sachin only when exactly ONE working employee is called Sachin, otherwise nobody is assigned (the owner gives them). Four of his tasks have the same name as tasks of other people: they are made for him too (a topic is skipped only when the same task already belongs to the same person; when nobody can be assigned, a shared name gets "(Sachin)" so the topics can be told apart). */
 function fup_seed_sachin_topics(PDO $pdo): void
 {
@@ -1034,7 +1074,7 @@ function fup_due_day(array $t, string $today): string { return !empty($t['lag'])
 /** The first day this topic can be asked for: the day it was made (a topic about the day before: the day before that, since yesterday is exactly what it is for). */
 function fup_start_day(array $t): string { $c = substr((string)$t['created_at'], 0, 10); return ($c !== '' && !empty($t['lag'])) ? date('Y-m-d', strtotime($c . ' -1 day')) : $c; }
 /* ============================== the owner's own fields on a topic ==============================
- * A topic can carry up to 20 fields the person fills every day: a number, a few words, yes / no, a link, one of a list, or a file (photo, PDF, sheet).
+ * A topic can carry up to 40 fields the person fills every day: a number, a few words, yes / no, a link, one of a list, or a file (photo, PDF, sheet).
  * fu_topics.fields = [{k, label, type: num|text|yesno|link|choice|file, opts: [...], req: 0|1}]      fu_updates.fvals = {k: value}   (a file: {f: stored name, n: its own name}) */
 function fup_field_types(): array { return ['num' => 'Number', 'text' => 'Words', 'yesno' => 'Yes / No', 'link' => 'Link', 'choice' => 'Choose one', 'file' => 'File / photo', 'photo' => 'Photo', 'video' => 'Video']; }
 /** The field types that take an upload (fup.file_put) instead of typed words. */
@@ -1046,7 +1086,7 @@ function fup_fields_clean($in, array $old = []): array
     $types = fup_field_types(); $out = []; $used = []; $max = 0;
     foreach ($old as $f) if (preg_match('/^f(\d+)$/', (string)$f['k'], $m)) $max = max($max, (int)$m[1]);
     foreach ((array)$in as $f) {
-        if (!is_array($f) || count($out) >= 20) continue; $label = trim(mb_substr((string)($f['label'] ?? ''), 0, 80)); if ($label === '') continue;
+        if (!is_array($f) || count($out) >= 40) continue; $label = trim(mb_substr((string)($f['label'] ?? ''), 0, 80)); if ($label === '') continue;
         $type = isset($types[(string)($f['type'] ?? '')]) ? (string)$f['type'] : 'text'; $k = (string)($f['k'] ?? '');
         if (!preg_match('/^f\d+$/', $k) || isset($used[$k])) $k = 'f' . (++$max); elseif (preg_match('/^f(\d+)$/', $k, $m)) $max = max($max, (int)$m[1]);
         $used[$k] = 1; $opts = [];
@@ -1346,6 +1386,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_dhvanil_topics($pdo);
     fup_seed_dharmik_topics($pdo);
     fup_seed_nitin_topics($pdo);
+    fup_nitin_merge($pdo);
     fup_seed_sachin_topics($pdo);
     fup_office_pickup_clean($pdo);
     fup_clear_questions($pdo);
