@@ -118,7 +118,7 @@ if (!function_exists('wcd_tick')) {
     function wcd_style_ids(PDO $pdo): array
     {
         static $c = null, $at = 0; if ($c !== null && time() - $at < 600) return $c; $at = time(); $c = [];
-        try { $r = $pdo->query("SELECT t.id, t.name FROM wa_templates t WHERE UPPER(t.category) = 'MARKETING' AND (t.name LIKE 'tmph\\_style\\_%' OR t.name REGEXP '^tmph_new_[0-9]+_m[0-9]') AND t.body NOT LIKE '%{{2}}%' AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED')")->fetchAll(PDO::FETCH_NUM); foreach ($r as $x) $c[(string)$x[1]] = (int)$x[0]; } catch (Throwable $e) { }
+        try { $r = $pdo->query("SELECT t.id, t.name FROM wa_templates t WHERE UPPER(t.category) = 'MARKETING' AND (t.name LIKE 'tmph\\_style\\_%' OR t.name REGEXP '^tmph_new_[0-9]+_m[0-9]' OR t.name LIKE 'tmph\\_ord\\_%') AND t.body NOT LIKE '%{{2}}%' AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED')")->fetchAll(PDO::FETCH_NUM); foreach ($r as $x) $c[(string)$x[1]] = (int)$x[0]; } catch (Throwable $e) { }
         return $c;
     }
     function wcd_own_m(PDO $pdo): array
