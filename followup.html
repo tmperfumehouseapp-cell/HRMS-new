@@ -99,6 +99,9 @@
   .fu-tag.brn{background:#ead6bd;color:#6b4423;} .fu-pill.rkp:not(.on){border-color:#c9a37a;box-shadow:inset 0 -3px 0 #d9b994;}
   .fu-ck2 details{border:1px solid var(--line);border-radius:12px;padding:6px 10px;margin-bottom:6px;} .fu-ck2 summary{cursor:pointer;font-weight:700;font-size:13.5px;} .fu-ck2 .ws{display:flex;align-items:center;gap:6px;margin:6px 0;font-weight:700;color:#6b4423;font-size:13px;} .fu-ck2 .tp{display:flex;flex-wrap:wrap;gap:6px;}
   .fu-ck2 .tp label{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer;} .fu-ck2 input{margin:0;}
+  .bd-modal .acts.fu-stk{position:sticky;bottom:-24px;background:#fff;padding:10px 0 6px;margin-top:8px;z-index:3;border-top:1px solid #f0f1f3;}
+  .fu-mx{display:flex;align-items:center;gap:8px;} .fu-mx .sp{flex:1;} .fu-cls{border:0;background:#f3f4f6;width:34px;height:34px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer;color:#4a505c;flex:none;} .fu-cls:hover{background:#e5e7eb;}
+  .fu-err{color:#b42318;background:#fde8e6;border-radius:10px;padding:8px 10px;font-size:13px;font-weight:700;margin-top:8px;display:none;}
   .fu-rx{margin-top:5px;font-size:12px;line-height:1.45;color:#344054;} .fu-rx b{color:#0f7a4d;}
   .fu-ck{display:flex;flex-wrap:wrap;gap:6px;} .fu-ck label{display:inline-flex;align-items:center;gap:5px;font-size:13px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;cursor:pointer;} .fu-ck input{margin:0;}
   .fu-nt{display:grid;grid-template-columns:1fr 1.4fr 1fr auto;gap:6px;margin-bottom:6px;} .fu-nt .bd-in{padding:8px 10px;font-size:14px;} .fu-nt .x{border:0;background:none;font-size:18px;cursor:pointer;color:#9aa1ac;}
@@ -370,12 +373,13 @@ guardPage(); renderSidebar('followup');
     const name = sid === 0 ? 'My final decision' : (((JD && JD.sections) || []).concat(D.sections).find((x) => x.id === sid) || {}).name || 'Section';
     const cur = sid === 0 ? (JD && JD.jaimin['0'] || {})[day] : (JD && JV ? (JD.jaimin[String(sid)] || {})[day] : (sid === D.section && D.jaimin ? D.jaimin[day] : ((D.all || []).find((a) => a.id === sid) || {}).jaimin?.[day]));
     if (!D.jaimin_write || asRahul) return replyForm(sid, day, name, cur);
-    const m = BD.modal('<h3>🧭 Jaimin decided</h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
+    const m = BD.modal('<h3 class="fu-mx">🧭 Jaimin decided<span class="sp"></span><button class="fu-cls" id="jC" type="button" title="Close">×</button></h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
       + '<div class="bd-f"><label>' + (sid === 0 ? 'After reading every section, what did you finally decide?' : 'After reading this section’s tasks, what did you decide?') + '</label><textarea class="bd-in" id="jT" maxlength="4000" rows="6" placeholder="What you decided, and who does what next…">' + esc(cur ? cur.text : '') + '</textarea><div class="hint">Leave it empty and Save to remove it.</div></div>'
       + (cur && cur.text ? '<div class="bd-f"><label>' + esc(flName()) + '’s update</label>' + (cur.reply ? '<div class="fu-rh"><div class="tx">' + esc(cur.reply) + '</div>' + rextra(cur.extra) + '<div class="fu-by">' + esc(cur.reply_by || '') + '</div></div>' : '<div class="fu-rh no"><div class="fu-by" style="margin:0">Not written yet.</div></div>') + '<button class="bd-btn sm" id="jRh" style="margin-top:6px">✍ ' + (cur.reply ? 'Change' : 'Write') + ' ' + esc(flName()) + '’s update</button></div>'
         : '<div class="hint" style="margin-top:-4px">After you save, ' + esc(flName()) + ' writes his update under it from his own login.</div>')
-      + '<div class="acts"><button class="bd-btn" id="jX">Cancel</button><button class="bd-btn go" id="jOk">Save</button></div>', { sticky: true });
+      + '<div class="acts fu-stk"><button class="bd-btn" id="jX">Cancel</button><button class="bd-btn go" id="jOk">Save</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i); q('#jT').focus(); q('#jX').onclick = () => BD.close();
+    q('#jC').onclick = () => BD.close();
     if (q('#jRh')) q('#jRh').onclick = () => { BD.close(); replyForm(sid, day, name, cur); };
     q('#jOk').onclick = () => run(q('#jOk'), async () => { await api.post('fup.jaimin_save', { section_id: sid, day, text: q('#jT').value }); BD.close(); toast('Saved.'); await load(true); });
   }
@@ -385,30 +389,32 @@ guardPage(); renderSidebar('followup');
   async function replyForm(sid, day, name, cur) {
     if (!cur || !cur.text) return;
     let SECS = [], P = { people: [] };
-    try { if (!JD || !JD.sections || !JD.topics) JD = await api.get('fup.jaimin_board', { days: DAYS }); SECS = JD.sections || []; } catch (e) { SECS = D.sections; }
+    try { JD = await api.get('fup.jaimin_board', { days: DAYS }); SECS = JD.sections || []; } catch (e) { SECS = D.sections; }   // always fresh: a section or topic made a minute ago is in the list
     try { P = await people(); } catch (e) { P = { people: [] }; }
     const x = cur.extra || { topics: [], check: [], strict: [] }, chk = {}, stc = {}; (x.check || []).forEach((c) => { chk[c.id] = 1; }); (x.strict || []).forEach((c) => { stc[c.id] = 1; });
     const TPS = (JD && JD.topics) || [];
     const secOpts = '<option value="0">Section…</option>' + SECS.map((z) => '<option value="' + z.id + '"' + (z.id === sid ? ' selected' : '') + '>' + esc(z.name) + '</option>').join('');
     const pplOpts = '<option value="0">Person (optional)</option>' + P.people.map((p) => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
     const ntRow = () => '<div class="fu-nt"><select class="bd-in nS">' + secOpts + '</select><input class="bd-in nT" maxlength="160" placeholder="New topic"><select class="bd-in nE">' + pplOpts + '</select><button class="x" type="button" title="Remove">×</button></div>';
-    const m = BD.modal('<h3>' + esc(flName()) + '’s update</h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
+    const m = BD.modal('<h3 class="fu-mx">' + esc(flName()) + '’s update<span class="sp"></span><button class="fu-cls" id="rC" type="button" title="Close">×</button></h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
       + '<div class="fu-jcard" style="margin:0 0 12px"><div class="d">🧭 Jaimin decided</div><div class="fu-jm">' + esc(cur.text) + '</div></div>'
       + '<div class="bd-f"><label>Your whole update: what did you do on this decision?</label><textarea class="bd-in" id="rT" maxlength="4000" rows="5" placeholder="What was done, who you spoke to, what changed, what is still left…">' + esc(cur.reply || '') + '</textarea></div>'
-      + '<div class="bd-f"><label>＋ Make new topic (which section, which topic)</label>' + (x.topics && x.topics.length ? '<div class="fu-rx" style="margin:0 0 8px">Already added: ' + x.topics.map((t) => esc(t.section) + ' → ' + esc(t.title)).join(' · ') + '</div>' : '') + '<div id="rN">' + ntRow() + '</div><button class="bd-btn sm" type="button" id="rAdd">＋ One more topic</button><div class="hint">Each one is added to that section as a real topic, filled every day (about the day before).</div></div>'
+      + '<div class="bd-f"><label>＋ Make new topic (which section, which topic)</label>' + (x.topics && x.topics.length ? '<div class="fu-rx" style="margin:0 0 8px">Already added: ' + x.topics.map((t) => esc(t.section) + ' → ' + esc(t.title)).join(' · ') + '</div>' : '') + '<div id="rN">' + ntRow() + '</div><button class="bd-btn sm" type="button" id="rAdd">＋ One more topic</button><div class="hint">Each one is added to that section as a real topic (filled every day, about the day before) and goes on your 🔍 Strict list by itself: light brown, you check it yourself.</div></div>'
       + '<div class="bd-f"><label>🔍 Strict: what you will check yourself — a whole section, or only some topics in it</label><div class="fu-ck2">' + SECS.map((z) => { const tp = TPS.filter((t) => t.section_id === z.id), any = chk[z.id] || tp.some((t) => stc[t.id]);
           return '<details' + (any || z.id === sid ? ' open' : '') + '><summary>' + esc(z.name) + (any ? ' · 🔍' : '') + '</summary><label class="ws"><input type="checkbox" class="cS" value="' + z.id + '"' + (chk[z.id] ? ' checked' : '') + '>Check the whole section</label>'
             + (tp.length ? '<div class="tp">' + tp.map((t) => '<label><input type="checkbox" class="cT" value="' + t.id + '"' + (stc[t.id] ? ' checked' : '') + '>' + esc(t.title) + '</label>').join('') + '</div>' : '<div class="fu-sub">No topics yet.</div>') + '</details>'; }).join('')
       + '</div><div class="hint">Ticked ones turn light brown with “🔍 ' + esc(flName()) + ' checks this himself” for 7 days. Go into each one and check it.</div></div>'
-      + '<div class="acts"><button class="bd-btn" id="rX">Cancel</button><button class="bd-btn go" id="rOk">Save</button></div>', { sticky: true });
+      + '<div class="acts fu-stk" style="flex-direction:column;align-items:stretch"><div class="fu-err" id="rE"></div><div style="display:flex;justify-content:flex-end;gap:8px"><button class="bd-btn" id="rX">Cancel</button><button class="bd-btn go" id="rOk">Save</button></div></div>', { sticky: true });
     const q = (i) => m.querySelector(i), wire = () => m.querySelectorAll('.fu-nt .x').forEach((b) => { b.onclick = () => b.parentNode.remove(); });
     wire(); q('#rAdd').onclick = () => { q('#rN').insertAdjacentHTML('beforeend', ntRow()); wire(); };
-    q('#rT').focus(); q('#rX').onclick = () => BD.close();
+    q('#rT').focus(); q('#rX').onclick = () => BD.close(); q('#rC').onclick = () => BD.close();
+    const err = (t, el) => { const e = q('#rE'); e.textContent = t; e.style.display = t ? 'block' : 'none'; if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus(); el.style.borderColor = '#d9423b'; } };
     q('#rOk').onclick = () => run(q('#rOk'), async () => {
       const nts = [...m.querySelectorAll('.fu-nt')].map((r) => ({ section_id: Number(r.querySelector('.nS').value), title: r.querySelector('.nT').value.trim(), assignee_emp: Number(r.querySelector('.nE').value) })).filter((r) => r.title);
-      if (nts.some((r) => !r.section_id)) { toast('Choose the section of each new topic.'); return; }
-      if (!q('#rT').value.trim()) { toast('Write your whole update first.'); return; }
-      await api.post('fup.jaimin_reply', { section_id: sid, day, text: q('#rT').value, new_topics: nts, check: [...m.querySelectorAll('.fu-ck2 input.cS:checked')].map((c) => Number(c.value)), strict: [...m.querySelectorAll('.fu-ck2 input.cT:checked')].map((c) => Number(c.value)) });
+      err('');
+      if (nts.some((r) => !r.section_id)) { err('Choose the section of each new topic.', m.querySelector('.fu-nt .nS')); return; }
+      if (!q('#rT').value.trim()) { err('Write the whole update at the top first (what was done on this decision), then Save.', q('#rT')); return; }
+      try { await api.post('fup.jaimin_reply', { section_id: sid, day, text: q('#rT').value, new_topics: nts, check: [...m.querySelectorAll('.fu-ck2 input.cS:checked')].map((c) => Number(c.value)), strict: [...m.querySelectorAll('.fu-ck2 input.cT:checked')].map((c) => Number(c.value)) }); } catch (e) { err('Not saved: ' + (e.message || 'try again')); return; }
       BD.close(); toast(nts.length ? 'Update saved, ' + nts.length + ' topic' + (nts.length === 1 ? '' : 's') + ' added.' : 'Update saved.'); await load(true);
     });
   }

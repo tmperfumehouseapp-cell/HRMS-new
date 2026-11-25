@@ -1515,6 +1515,8 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             }
             $strict = $old['strict']; if (array_key_exists('strict', $in)) { $strict = []; $ids = array_values(array_unique(array_filter(array_map('intval', (array)$in['strict']))));
                 if ($ids) { $q = $pdo->query("SELECT t.id, t.title, t.section_id FROM fu_topics t WHERE t.active = 1 AND t.id IN (" . implode(',', array_slice($ids, 0, 60)) . ")"); foreach ($q->fetchAll() as $r) if (isset($allSec[(int)$r['section_id']])) $strict[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'section_id' => (int)$r['section_id'], 'section' => $allSec[(int)$r['section_id']]]; } }
+            // a topic Rahul makes is one he checks himself: it goes on his Strict list at once
+            $sIds = array_column($strict, 'id'); foreach ($topics as $tp) if ($tp['topic_id'] > 0 && !in_array($tp['topic_id'], $sIds, true)) { $strict[] = ['id' => $tp['topic_id'], 'title' => $tp['title'], 'section_id' => $tp['section_id'], 'section' => $tp['section']]; $sIds[] = $tp['topic_id']; }
             $check = []; if (array_key_exists('check', $in)) { foreach ((array)$in['check'] as $cid) { $cid = (int)$cid; if (isset($allSec[$cid])) $check[$cid] = ['id' => $cid, 'name' => $allSec[$cid]]; } $check = array_values($check); } else $check = $old['check'];
             if ($txt === '' && ($topics || $check || $strict)) json_response(['error' => 'Write the whole update too: what you did on this decision.'], 422);
             $extra = ($topics || $check || $strict) ? json_encode(['topics' => $topics, 'check' => $check, 'strict' => $strict], JSON_UNESCAPED_UNICODE) : null;
