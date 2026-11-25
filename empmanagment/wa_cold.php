@@ -136,6 +136,8 @@ if (!function_exists('wcd_tick')) {
         $tw = wcd_own_m($pdo); if (!$tw) return [];
         $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_cold_log WHERE phone = ? AND ok = 1"); $q->execute([$ph]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
         $o = []; foreach ($tw as $r) if (!isset($got[(int)$r[0]])) $o[] = $r;
+        /* owner 25 Nov 2026: no basic marketing message goes to the Cold funnel (cd_askm3 alone made 9,930 sends at about Rs 1.09 on the first morning): only exciting ones */
+        try { if ($o) { if (!function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php'; if (function_exists('wa_rs_dull')) { $bd = []; foreach ($pdo->query("SELECT id, body FROM wa_templates WHERE id IN (" . implode(',', array_map(function ($r) { return (int)$r[0]; }, $o)) . ")")->fetchAll(PDO::FETCH_NUM) as $x) $bd[(int)$x[0]] = (string)$x[1]; $o = array_values(array_filter($o, function ($r) use ($bd) { return isset($bd[(int)$r[0]]) && !wa_rs_dull($bd[(int)$r[0]]); })); } } } catch (Throwable $e) { }
         $st = wcd_tpl_stats($pdo); if (count($o) > 1 && $st) usort($o, function ($a, $b) use ($st) { $sa = $st[(int)$a[0]] ?? ['sent' => 0, 'replied' => 0]; $sb = $st[(int)$b[0]] ?? ['sent' => 0, 'replied' => 0]; return (($sb['replied'] + 0.5) / ($sb['sent'] + 50)) <=> (($sa['replied'] + 0.5) / ($sa['sent'] + 50)); });
         return $o;
     }
