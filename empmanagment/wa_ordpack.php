@@ -146,6 +146,26 @@ if (!function_exists('wa_ordpack_defs')) {
         try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 0"); } catch (Throwable $e) { }
         return $n;
     }
+    /** COLD PACK 2 (owner 25 Nov 2026: "apply the changes you suggested"): the patterns that brought orders from customers who were not coming anyway, in 12 new MARKETING messages for the Cold funnel: the owner's own PROVEN offers (160 ml at Rs 1,999 in five combos, flat Rs 2,099, 3 x 50 ml Rs 2,140 + FREE 20 ml, 8 x 20 ml Rs 1,899, 5 x 50 ml Rs 2,750), each with a one-tap order button,
+     *  and four that START with a question (men / women / unisex, for me / a gift, which size) because the question message of the Cold funnel brought orders. No prepaid 2% (it is gone). Names tmph_cp_NN. */
+    function wa_cp_defs(): array
+    {
+        $o = [
+            'tmph_cp_01' => ["Hello {{1}} 🥳\n\n*160 ML @ JUST ₹1,999* 🔥\n\nApni marzi ka combo banao 🤩\n\n8 × 20ml  ·  3 × 50ml + 1 × 10ml  ·  1 × 100ml + 3 × 20ml\n\nSab combo ek hi price ₹1,999 💥\n\nOrder karne ke liye tap kijiye 👇", ['BOOK MY COMBO', 'Show more combos']],
+            'tmph_cp_02' => ["Hi {{1}} 🎁\n\nEk combo, flat ₹2,099 💥\n\n4 × 50ml  ya  2 × 100ml  ya  10 × 20ml\n\nApne pasand ke perfumes mix karo ✨\n\nAbhi order karne ke liye tap kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_03' => ["Hello {{1}} 🔥\n\n3 × 50ml sirf ₹2,140 🎁\n\nSaath me 1 × 20ml FREE\n\nSardi ke perfumes ki khaas offer ❄️\n\nOrder Now 👇", ['Order Now', 'Show Offer']],
+            'tmph_cp_04' => ["Hi {{1}} ❄️\n\n8 × 20ml sirf ₹1,899 💥\n\nSardi + shaadi season ke liye 8 alag khushbu\n\nTap karke order kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_05' => ["Hello {{1}} 🎉\n\n5 × 50ml sirf ₹2,750 💥\n\nApni pasand ke 5 perfumes chuniye\n\nShaadi aur winter ke liye perfect 💍❄️\n\nOrder Now 👇", ['Order Now', 'Show Combos']],
+            'tmph_cp_06' => ["Hi {{1}} 🎁\n\nGift dene ka season aa gaya! 3 × 50ml ₹2,140 me 1 × 20ml FREE 🔥\n\nShaadi, birthday ya New Year — sab ke liye perfect ✨\n\nAbhi order kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_07' => ["Hello {{1}} 🤩\n\n160 ML sirf ₹1,999 me! 5 combo me se koi ek chuniye 💥\n\nAaj hi order karoge to hi ye price 🔥\n\nTap kijiye 👇", ['BOOK MY COMBO', 'Show more combos']],
+            'tmph_cp_08' => ["Hi {{1}} 💍\n\nShaadi season special 🎊\n\nFlat ₹2,099 me ek combo: 4 × 50ml ya 2 × 100ml ya 10 × 20ml\n\nAapki pasand, aapka mix ✨ Order Now 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_09' => ["Hi {{1}} 👋\n\nEk chhota sa sawal 🤔 Aapko kaunsi khushbu pasand hai?\n\nMen, women ya unisex — batayiye, aapke liye ek khaas combo ready he 🎁💥\n\nNiche tap kijiye 👇", ['Men', 'Women', 'Unisex']],
+            'tmph_cp_10' => ["Hello {{1}} ❄️\n\nSardi ka season he! Aap apne liye dhundh rahe hain ya gift ke liye? 🎁\n\nBatayiye, hum 3 best combo dikhayenge — sirf ₹1,999 se 🔥", ['For me', 'As a gift']],
+            'tmph_cp_11' => ["Hi {{1}} 🌸\n\nAapko kaunsa size chahiye? 20ml, 50ml ya 100ml?\n\nHar size par ek crazy combo ready he 💥 Tap kijiye 👇", ['20ML', '50ML', '100ML']],
+            'tmph_cp_12' => ["Hello {{1}} 🎊\n\nShaadi ka season — kisi ke liye perfume chahiye? 💍\n\nBatayiye kiske liye, hum best combo bata denge 🔥", ['Men', 'Women', 'Gift set']],
+        ];
+        $r = []; foreach ($o as $k => $v) $r[$k] = ['body' => $v[0], 'buttons' => $v[1]]; return $r;
+    }
     function wa_ordpack_tick(PDO $pdo): array
     {
         $res = ['made' => 0, 'failed' => []];
@@ -161,7 +181,7 @@ if (!function_exists('wa_ordpack_defs')) {
         try { wa_hand_tick($pdo); } catch (Throwable $e) { }
         try { wa_undeliv_tick($pdo); } catch (Throwable $e) { }
         try { wa_ordattr_tick($pdo); } catch (Throwable $e) { }
-        $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
+        $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs() + wa_cp_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
         foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;
             try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? OR body = ? LIMIT 1"); $q->execute([$name, $m['body']]); if ($q->fetchColumn()) continue; } catch (Throwable $e) { continue; }
