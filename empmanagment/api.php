@@ -33375,6 +33375,17 @@ switch ($action) {
             $qty += $q; $total += $q * $pr; $delQty += $d; $delTotal += $d * $pr;
         }
         if (!$items) json_response(['error' => 'Add at least one perfume line (name and quantity).'], 422);
+        // 🏷 Barcodes: the bottles of the order are scanned. A new sale / display / replacement order needs one number per piece (Admin may save without: "allow_no_barcode").
+        $bcCodes = is_array($in['codes'] ?? null) ? $in['codes'] : []; $bcOn = is_file(__DIR__ . '/retail_barcode.php');
+        if ($bcOn) {
+            require_once __DIR__ . '/retail_barcode.php';
+            $bcChk = bc_order_check($pdo, $oid, $shopId, $type, $items, $bcCodes);
+            if ($bcChk['errors']) json_response(['error' => 'Barcodes: ' . implode(' · ', $bcChk['errors']) . '.'], 422);
+            if ($bcChk['missing']) {
+                $isAdminUser = ($auth['role'] ?? '') === 'Admin';
+                if (!$isAdminUser || empty($in['allow_no_barcode'])) json_response(['error' => 'Scan the barcode of every bottle: ' . implode(', ', $bcChk['missing']) . '.', 'no_barcode' => $bcChk['missing'], 'can_override_bc' => $isAdminUser], 422);
+            }
+        }
         // Retail Inventory: a Sale / Display / Replacement order cannot take more pieces than are in stock. Admin may save anyway ("allow_short").
         $short = retail_stock_shortage($pdo, $oid, $type, $items, $shopId);
         if ($short) {
@@ -33428,6 +33439,7 @@ switch ($action) {
         try { retail_order_apply_paid($pdo, $oid, $shopId, $paid, $payment, $isNew ? $date : date('Y-m-d'), $auth['employee_id'] ?? null, $payMode); retail_order_sync_due($pdo, $oid); }
         catch (PDOException $e) { json_response(['error' => 'The order was saved but the ledger could not be updated: ' . $e->getMessage()], 500); }
         retail_stock_after_order($pdo, $no, $isNew, $type, $items, $shopId, (string)($auth['username'] ?? ''));
+        if ($bcOn) { try { bc_order_link($pdo, $oid, $no, $shopId, $type, $bcCodes, (string)($auth['username'] ?? '')); } catch (Throwable $e) { error_log('bc_order_link: ' . $e->getMessage()); } }
         json_response(['message' => 'Order ' . $no . ' saved.' . ($delQty < $qty ? ' ' . ($qty - $delQty) . ' pcs still to deliver.' : ''), 'order_id' => $oid, 'order_no' => $no, 'qty' => $qty, 'delivered_qty' => $delQty, 'total' => round($total, 2), 'billed_total' => round($billed, 2)]);
         break;
     }
@@ -33721,7 +33733,10 @@ switch ($action) {
         if ($cur) $name = $cur['product_name'];      // keep one spelling for the same perfume
         else foreach (retail_stock_rows($pdo) as $r) if ($r['key'] === $key) { $name = $r['product_name']; break; }
         $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 255);
-        if (array_key_exists('set_to', $in) && $in['set_to'] !== '' && $in['set_to'] !== null) {
+        $isCount = array_key_exists('set_to', $in) && $in['set_to'] !== '' && $in['set_to'] !== null;
+        // 🏷 stock comes in only with barcodes (Barcodes → Stock in makes one number per bottle and adds the pieces); a count of a perfume already in stock may still correct it
+        if ((!$isCount || !$cur) && is_file(__DIR__ . '/retail_barcode.php')) json_response(['error' => 'Stock comes in only with barcodes: open Barcodes → Stock in, make one number per bottle and print the labels.', 'use_barcodes' => 1], 422);
+        if ($isCount) {
             $to = (int)$in['set_to'];
             if ($to < 0 || $to > 1000000) json_response(['error' => 'Enter the counted pieces (0 or more).'], 422);
             $delta = $to - ($cur ? $cur['on_hand'] : 0);

@@ -1032,6 +1032,12 @@
       <div class="field"><label>Date</label><input type="date" id="oDate"></div>
     </div>
     <div id="oLegacyPay" class="sub" style="display:none; margin:-4px 0 10px;"></div>
+    <div id="oBcBox" style="background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:0 0 12px;">
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"><label for="oBc" style="font-weight:700; margin:0; font-size:13px; text-transform:none; letter-spacing:0;">🏷 Scan barcode</label>
+        <input id="oBc" inputmode="numeric" maxlength="9" placeholder="6-digit number — the perfume fills itself" autocomplete="off" style="flex:1; min-width:200px; font-size:17px; letter-spacing:2px; font-weight:700; padding:8px 12px;"></div>
+      <div id="oBcList" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;"></div>
+      <div class="sub" id="oBcNote" style="margin-top:4px;">Scan every bottle you send: the line, size and price fill themselves.</div>
+    </div>
     <div class="ol h"><span>Perfume name</span><span>Qty</span><span>Price/pc ₹</span><span style="text-align:right;">Total</span><span></span></div>
     <div id="oLines"></div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin:4px 0 8px; font-size:13px; flex-wrap:wrap;"><button type="button" class="link" id="btnAddLine">+ Add line</button><span><span id="oQty">0</span> pcs · <b style="font-size:15px;" id="oTotal">₹0</b></span></div>
@@ -3233,9 +3239,54 @@
       if (ex.length > o.items.length) document.getElementById('orderAlert').innerHTML = `<div class="alert success">This order had several perfumes in one line. They are now ${ex.length} separate lines, 1 piece each at the price for their size. Check the total and tap Save to fix the order.</div>`;
     } else { addLine(); addLine(); }
     STK = null; recalc(); loadStock(o);
+    oCodes = []; oBcDraw();
+    if (o) api.get('retail.bc_order_codes', { order_id: o.order_id }).then(d => { if (document.getElementById('oId').value == o.order_id) { oCodes = (d.rows || []).map(r => ({ code: r.code, name: r.product_name, ml: r.ml })); oBcDraw(); } }).catch(() => {});
     modalScrollY = window.scrollY; orderModal.classList.add('open');
+    setTimeout(() => { if (!o) document.getElementById('oBc').focus(); }, 150);
     setTimeout(() => { const f = document.querySelector('#oLines .l-name'); if (f && !o) f.focus(); }, 100);
   }
+
+  // ---- 🏷 barcodes on the order: scanning a bottle fills its line (perfume, size, price); a new order needs one number per piece
+  let oCodes = [];   // {code, name, ml}
+  const oBcKey = (name, ml) => stkKey(name, ml);
+  function oBcLine(name, ml) { return [...document.querySelectorAll('#oLines .ol')].find(r => { const v = splitMl(r.querySelector('.l-name').value); return v.name && oBcKey(v.name, v.ml) === oBcKey(name, ml); }); }
+  function oBcDraw() {
+    const pcs = [...document.querySelectorAll('#oLines .ol')].reduce((a, r) => a + (Number(r.querySelector('.l-qty').value) || 0), 0), isRet = document.getElementById('oType').value === 'return';
+    document.getElementById('oBcList').innerHTML = oCodes.map((c, i) => `<span class="pchip" title="${esc(c.name)} ${esc(c.ml)} ml"><b style="letter-spacing:1px;">${esc(c.code)}</b>&nbsp;${esc(c.name)} ${esc(c.ml)} ml<button type="button" data-bcrm="${i}" title="Remove">×</button></span>`).join('');
+    document.getElementById('oBcNote').innerHTML = oCodes.length || pcs ? `<b>${oCodes.length}</b> of <b>${pcs}</b> piece${pcs === 1 ? '' : 's'} scanned${!isRet && oCodes.length < pcs ? ' — <span style="color:#b45f06;">scan the rest</span>' : (oCodes.length >= pcs && pcs ? ' ✓' : '')}` : (isRet ? 'Scan the bottles that come back.' : 'Scan every bottle you send: the line, size and price fill themselves.');
+  }
+  async function oBcAdd(code) {
+    const al = document.getElementById('orderAlert'); al.innerHTML = '';
+    if (oCodes.some(c => c.code === code)) { al.innerHTML = `<div class="alert error">${code} is already scanned.</div>`; return; }
+    let p; try { p = (await api.get('retail.bc_scan', { code })).piece; } catch (e) { al.innerHTML = `<div class="alert error">${esc(e.message)}</div>`; return; }
+    const shopId = Number(document.getElementById('oShop').value), oid = Number(document.getElementById('oId').value) || 0, isRet = document.getElementById('oType').value === 'return';
+    const ok = isRet ? (p.status === 'shop' && p.shop_id === shopId) : (p.status === 'stock' || (p.status === 'shop' && oid && p.order_id === oid));
+    if (!ok) { al.innerHTML = `<div class="alert error">${esc(code)} · ${esc(p.product_name)} ${esc(p.ml)} ml — ${p.status === 'shop' ? 'already at ' + esc(p.shop_name) : (p.status === 'void' ? 'cancelled number' : (isRet ? 'not at this shop' : 'not in stock'))}.</div>`; return; }
+    oCodes.push({ code, name: p.product_name, ml: p.ml });
+    const n = oCodes.filter(c => oBcKey(c.name, c.ml) === oBcKey(p.product_name, p.ml)).length;
+    let row = oBcLine(p.product_name, p.ml);
+    if (row) { const q = row.querySelector('.l-qty'); if ((Number(q.value) || 0) < n) q.value = n; }
+    else {
+      const empty = [...document.querySelectorAll('#oLines .ol')].find(r => !r.querySelector('.l-name').value.trim());
+      const pr = mlPrices[mlKey(p.ml)];
+      if (empty) { empty.querySelector('.l-name').value = joinMl(p.product_name, p.ml); empty.querySelector('.l-qty').value = 1; if (!empty.querySelector('.l-price').value && pr !== undefined) empty.querySelector('.l-price').value = pr; }
+      else addLine({ product_name: p.product_name, ml: p.ml, qty: 1, price: pr === undefined ? '' : pr });
+    }
+    recalc(); oBcDraw();
+  }
+  (function () {
+    const inp = document.getElementById('oBc'); let t = null;
+    const go = () => { const c = String(inp.value).replace(/\D/g, ''); if (c.length !== 6) return; inp.value = ''; oBcAdd(c); };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    inp.addEventListener('input', () => { clearTimeout(t); if (String(inp.value).replace(/\D/g, '').length === 6) t = setTimeout(go, 350); });
+  })();
+  document.getElementById('oBcList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-bcrm]'); if (!b) return; const c = oCodes.splice(Number(b.dataset.bcrm), 1)[0]; if (!c) return;
+    const row = oBcLine(c.name, c.ml); if (row) { const q = row.querySelector('.l-qty'), v = (Number(q.value) || 0) - 1; if (v <= 0) { row.remove(); if (!document.querySelector('#oLines .ol')) addLine(); } else q.value = v; }
+    recalc(); oBcDraw();
+  });
+  document.getElementById('oLines').addEventListener('input', () => setTimeout(oBcDraw, 0));
+  document.getElementById('oType').addEventListener('change', oBcDraw);
   function closeOrderModal() { orderModal.classList.remove('open'); const y = modalScrollY; window.scrollTo(0, y); requestAnimationFrame(() => window.scrollTo(0, y)); }
   document.getElementById('btnOrderCancel').addEventListener('click', closeOrderModal);
   orderModal.addEventListener('click', (e) => { if (e.target === orderModal) closeOrderModal(); });
@@ -3250,16 +3301,23 @@
         order_id: document.getElementById('oId').value || 0, shop_id: Number(document.getElementById('oShop').value),
         order_type: document.getElementById('oType').value, payment: isRet ? 'free' : (oKeepPay || 'pending'), pay_mode: money ? oKeepMode : '', order_date: document.getElementById('oDate').value,
         paid_amount: money ? oKeepPaid : 0, dues, discount_type: isRet ? '' : oDiscT, discount_value: isRet ? 0 : (Number(document.getElementById('oDiscVal').value) || 0), note: document.getElementById('oNote').value.trim(),
-        bill_delivered: document.getElementById('oBillDel').checked ? 1 : 0, items,
+        bill_delivered: document.getElementById('oBillDel').checked ? 1 : 0, items, codes: oCodes.map(c => c.code),
       };
       let d;
-      try { d = await api.post('retail.order_save', payload); }
-      catch (e) {
-        const sh = e.data && e.data.short;
-        if (sh && sh.length && e.data.can_override) {
-          if (!confirm('Not enough stock:\n' + sh.map(x => `• ${x.product_name} ${x.ml_text}: need ${x.need}, have ${x.have}`).join('\n') + '\n\nSave this order anyway? Stock will show minus until you add stock.')) { btn.disabled = false; return; }
-          payload.allow_short = 1; d = await api.post('retail.order_save', payload);
-        } else throw e;
+      for (let tries = 0; ; tries++) {   // Admin may save without every barcode / with too little stock, after a yes
+        try { d = await api.post('retail.order_save', payload); break; }
+        catch (e) {
+          const sh = e.data && e.data.short, nb = e.data && e.data.no_barcode;
+          if (tries < 3 && nb && nb.length && e.data.can_override_bc && !payload.allow_no_barcode) {
+            if (!confirm('Not every bottle is scanned:\n' + nb.map(x => '• ' + x).join('\n') + '\n\nSave this order without those barcodes?')) { btn.disabled = false; return; }
+            payload.allow_no_barcode = 1; continue;
+          }
+          if (tries < 3 && sh && sh.length && e.data.can_override && !payload.allow_short) {
+            if (!confirm('Not enough stock:\n' + sh.map(x => `• ${x.product_name} ${x.ml_text}: need ${x.need}, have ${x.have}`).join('\n') + '\n\nSave this order anyway? Stock will show minus until you add stock.')) { btn.disabled = false; return; }
+            payload.allow_short = 1; continue;
+          }
+          throw e;
+        }
       }
       closeOrderModal(); showAlert(d.message);
       const sid = Number(document.getElementById('oShop').value);

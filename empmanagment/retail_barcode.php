@@ -200,6 +200,7 @@ function bc_list(PDO $pdo, array $g): array
     $city = trim((string)($g['city'] ?? '')); if ($city !== '') { $w[] = 'b.city = ?'; $a[] = $city; }
     $st = (string)($g['status'] ?? ''); if (in_array($st, ['stock', 'shop', 'void'], true)) { $w[] = 'b.status = ?'; $a[] = $st; } elseif ($st === '') { $w[] = "b.status <> 'void'"; }
     $sid = (int)($g['shop_id'] ?? 0); if ($sid > 0) { $w[] = 'b.shop_id = ?'; $a[] = $sid; }
+    $oid = (int)($g['order_id'] ?? 0); if ($oid > 0) { $w[] = 'b.order_id = ?'; $a[] = $oid; }
     $q = trim((string)($g['q'] ?? ''));
     if ($q !== '') { $d = preg_replace('/\D+/', '', $q); if ($d !== '' && strlen($d) >= 3 && $d === str_replace(' ', '', $q)) { $w[] = 'b.code LIKE ?'; $a[] = $d . '%'; } else { $w[] = '(b.product_name LIKE ? OR b.order_no LIKE ?)'; $a[] = '%' . $q . '%'; $a[] = '%' . $q . '%'; } }
     $where = implode(' AND ', $w);
@@ -231,6 +232,77 @@ function bc_orders(PDO $pdo, int $shopId): array
     return ['shop' => $shop, 'orders' => $orders];
 }
 
+
+/* ============================== orders: the bottles of an order are its barcodes ============================== */
+/**
+ * Checked BEFORE an order is saved (retail.order_save). $items = [[name, ml, qty, delivered, price, total], ...] as order_save builds them.
+ * Sale / display / replacement: every number must be in stock (or already on this order) in the shop's city. Return: every number must be at this shop.
+ * A line cannot have more numbers than pieces. A NEW sale / display / replacement order needs one number per piece (Admin may save without).
+ * Returns ['errors' => [...], 'missing' => [...]] ('missing' = lines short of numbers, the only thing Admin may override).
+ */
+function bc_order_check(PDO $pdo, int $oid, int $shopId, string $type, array $items, array $codes): array
+{
+    if (!bc_ensure($pdo)) return ['errors' => [], 'missing' => []];
+    $codes = bc_codes($codes); $rows = bc_get($pdo, $codes); $errors = []; $byKey = [];
+    $city = function_exists('retail_shop_city') ? retail_shop_city($pdo, $shopId) : '';
+    $out = in_array($type, ['sale', 'display', 'replacement'], true);
+    foreach ($codes as $c) {
+        $r = $rows[$c] ?? null;
+        if (!$r) { $errors[] = $c . ': not in the system'; continue; }
+        $st = (string)$r['status'];
+        if ($st === 'void') { $errors[] = $c . ': cancelled number'; continue; }
+        if ($out) {
+            $mine = $oid && (int)$r['order_id'] === $oid && $st === 'shop';
+            if (!$mine && $st !== 'stock') { $s = bc_shop($pdo, (int)$r['shop_id']); $errors[] = $c . ': already at ' . ($s ? $s['shop_name'] : 'a shop'); continue; }
+            if (!$mine && $city !== '' && (string)$r['city'] !== '' && mb_strtolower((string)$r['city']) !== mb_strtolower($city)) { $errors[] = $c . ': stock of ' . $r['city'] . ', this shop is in ' . $city; continue; }
+        } elseif ($type === 'return') {
+            if (!($st === 'shop' && (int)$r['shop_id'] === $shopId) && !($oid && $st === 'stock' && bc_returned_on($pdo, $c, $oid))) { $errors[] = $c . ': not at this shop'; continue; }
+        }
+        $k = bc_key((string)$r['product_name'], (string)$r['ml']); $byKey[$k] = ($byKey[$k] ?? 0) + 1;
+    }
+    $want = []; $names = [];
+    foreach ($items as $it) { $k = bc_key((string)$it[0], (string)$it[1]); $want[$k] = ($want[$k] ?? 0) + (int)$it[2]; $names[$k] = trim($it[0] . ' ' . bc_mlk((string)$it[1])) . ' ml'; }
+    foreach ($byKey as $k => $n) {
+        if (!isset($want[$k])) { [$nm, $ml] = explode('|', $k, 2); $errors[] = 'a scanned bottle (' . $nm . ' ' . $ml . ' ml) has no line on this order'; }
+        elseif ($n > $want[$k]) $errors[] = $names[$k] . ': ' . $n . ' scanned but the line says ' . $want[$k];
+    }
+    $missing = [];
+    if (!$oid && $out) foreach ($want as $k => $q) { $n = $byKey[$k] ?? 0; if ($n < $q) $missing[] = $names[$k] . ': ' . $n . ' of ' . $q . ' scanned'; }
+    return ['errors' => $errors, 'missing' => $missing];
+}
+function bc_returned_on(PDO $pdo, string $code, int $oid): bool
+{
+    $no = bc_all($pdo, "SELECT order_no FROM retail_orders WHERE order_id = ?", [$oid]); if (!$no) return false;
+    return (bool)bc_all($pdo, "SELECT 1 FROM retail_bc_log WHERE code = ? AND action = 'return' AND order_no = ? LIMIT 1", [$code, (string)$no[0]['order_no']]);
+}
+/** AFTER the order is saved: link its numbers (the order already moved the stock, so retail_stock_log is not written here) */
+function bc_order_link(PDO $pdo, int $oid, string $no, int $shopId, string $type, array $codes, string $who): int
+{
+    if (!bc_ensure($pdo)) return 0;
+    $codes = bc_codes($codes); $now = bc_now(); $n = 0;
+    if (in_array($type, ['sale', 'display', 'replacement'], true)) {
+        foreach (bc_all($pdo, "SELECT code, city FROM retail_bc WHERE order_id = ? AND status = 'shop'", [$oid]) as $r) {   // taken off the order while editing: back in stock
+            if (in_array((string)$r['code'], $codes, true)) continue;
+            $pdo->prepare("UPDATE retail_bc SET status = 'stock', shop_id = NULL, order_id = NULL, order_no = '', moved_at = ? WHERE code = ?")->execute([$now, (string)$r['code']]);
+            bc_log($pdo, (string)$r['code'], 'unlink', $shopId, $no, (string)$r['city'], 'taken off the order', $who);
+        }
+        $rows = bc_get($pdo, $codes);
+        foreach ($codes as $c) {
+            $r = $rows[$c] ?? null; if (!$r || ((string)$r['status'] === 'shop' && (int)$r['order_id'] === $oid)) continue;
+            $pdo->prepare("UPDATE retail_bc SET status = 'shop', shop_id = ?, order_id = ?, order_no = ?, moved_at = ? WHERE code = ?")->execute([$shopId, $oid, $no, $now, $c]);
+            bc_log($pdo, $c, 'out', $shopId, $no, (string)$r['city'], '', $who); $n++;
+        }
+    } elseif ($type === 'return') {
+        $rows = bc_get($pdo, $codes);
+        foreach ($codes as $c) {
+            $r = $rows[$c] ?? null; if (!$r || (string)$r['status'] !== 'shop') continue;
+            $pdo->prepare("UPDATE retail_bc SET status = 'stock', shop_id = NULL, order_id = NULL, order_no = '', moved_at = ? WHERE code = ?")->execute([$now, $c]);
+            bc_log($pdo, $c, 'return', $shopId, $no, (string)$r['city'], 'return order', $who); $n++;
+        }
+    }
+    return $n;
+}
+
 /** retail.bc_* (called from api.php after the login and the 'retail' permission check) */
 function bc_dispatch(PDO $pdo, string $action, array $auth): void
 {
@@ -253,6 +325,10 @@ function bc_dispatch(PDO $pdo, string $action, array $auth): void
                 json_response(['message' => 'Number ' . $c . ' cancelled (stock not changed).']); break;
             }
             case 'retail.bc_list': json_response(bc_list($pdo, $_GET)); break;
+            case 'retail.bc_order_codes': { $oid = (int)($_GET['order_id'] ?? 0); $l = bc_list($pdo, ['order_id' => $oid, 'status' => 'shop']);
+                $ret = []; $no = bc_all($pdo, "SELECT order_no, order_type FROM retail_orders WHERE order_id = ?", [$oid]);
+                if ($no && (string)$no[0]['order_type'] === 'return') { $cs = array_column(bc_all($pdo, "SELECT DISTINCT code FROM retail_bc_log WHERE action = 'return' AND order_no = ?", [(string)$no[0]['order_no']]), 'code'); $ret = array_map(function ($r) { return bc_row($r, []); }, array_values(bc_get($pdo, $cs))); }
+                json_response(['rows' => $no && (string)$no[0]['order_type'] === 'return' ? $ret : $l['rows']]); break; }
             case 'retail.bc_orders': json_response(bc_orders($pdo, (int)($_GET['shop_id'] ?? 0))); break;
             default: json_response(['error' => 'Unknown barcode action.'], 404);
         }
