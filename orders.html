@@ -969,7 +969,7 @@ html.emb .top-row { display: contents !important; } html.emb .top-row > .rs-card
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=14"></script>
 <script src="assets/js/layout.js?v=36"></script>
-<script src="assets/js/must3.js?v=7"></script>
+<script src="assets/js/must3.js?v=8"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261120c"></script>
 <script src="assets/js/addon_view.js?v=2"></script>
@@ -2924,7 +2924,7 @@ html.emb .top-row { display: contents !important; } html.emb .top-row > .rs-card
     `;
     grid.style.display = 'grid';
     idealLoad(); queryIdealLoad(); setTimeout(idSync, 0);
-    if (window.Must3 && !EMP_VIEW) Must3.mount(document.getElementById('m3Host'), (typeof idDay === 'function' ? idDay() : '') || '');   // ✅ 3 must-send check, right under the day-by-day chart
+    if (window.Must3 && !EMP_VIEW) Must3.mount(document.getElementById('m3Host'), (typeof idDay === 'function' ? idDay() : '') || '');   // ✅ 4 must-send check, right under the day-by-day chart
     renderUnallocNote();
   }
   // One line saying how many orders are left out because they are not allocated yet.

@@ -4,7 +4,7 @@
   const box = document.getElementById('m3Box'); if (!box || typeof api === 'undefined') return;
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const inr = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
-  const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain'], ['p', '💳', 'Prepaid (COD +₹100)'], ['d', '➕', 'Add-on']];
+  const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain'], ['p', '💳', 'Prepaid (COD +₹100)'], ['k', '🔑', 'Code message'], ['d', '➕', 'Add-on']];   // 🔑 owner (25 Nov 2026): the code message (group / community join links) is the 4th must-send
   const R = [['today', 'Today'], ['yday', 'Yesterday'], ['7d', '7 days']];
   const S = { range: 'today', sel: '', d: null, busy: false };
   const col = (v, t) => !t ? '#9ca3af' : (v / t >= .8 ? '#16a34a' : v / t >= .5 ? '#d97706' : '#dc2626');
@@ -25,8 +25,8 @@
     }).join('');
     const xt = NC.length ? `<div data-t="x" style="cursor:pointer;margin-top:8px;border:${S.sel === 'x' ? '2.5px solid #111827' : '1.5px solid #fcd34d'};border-radius:14px;padding:9px 10px;background:#fffbeb;display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-size:12.5px;color:#92400e;font-weight:700">📱 Chat not found — not counted above. Tap to see</span><b style="font-size:20px;color:#b45309">${NC.length}</b></div>` : '';
     const body = n === 0 && !NC.length ? '<div style="padding:12px 4px;color:#667781;font-size:13px">No orders in this period yet.</div>'
-      : (list.length ? `<div style="font-size:12.5px;font-weight:800;color:#92400e;margin:10px 0 2px">${head}</div>${rows}` : n === 0 ? '' : `<div style="text-align:center;padding:16px 6px"><div style="font-size:34px">🎉</div><b>${S.sel ? 'Done in every order' : 'All 3 messages sent and the add-on offered in every order'}</b></div>`);
-    host.innerHTML = `<div class="card" style="margin-bottom:12px;border:2.5px solid #f59e0b;box-shadow:0 2px 12px rgba(245,158,11,.3)"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:15px">✅ Must-send check</div><div style="display:flex;gap:6px">${pills}</div></div><div style="font-size:12px;color:#667781;margin:2px 0 8px">Your orders: the 3 messages every order needs, and the add-on. Tap a box to see which customers.</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${tiles}</div>${xt}${body}</div>`;
+      : (list.length ? `<div style="font-size:12.5px;font-weight:800;color:#92400e;margin:10px 0 2px">${head}</div>${rows}` : n === 0 ? '' : `<div style="text-align:center;padding:16px 6px"><div style="font-size:34px">🎉</div><b>${S.sel ? 'Done in every order' : 'All 4 messages sent and the add-on offered in every order'}</b></div>`);
+    host.innerHTML = `<div class="card" style="margin-bottom:12px;border:2.5px solid #f59e0b;box-shadow:0 2px 12px rgba(245,158,11,.3)"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:15px">✅ Must-send check</div><div style="display:flex;gap:6px">${pills}</div></div><div style="font-size:12px;color:#667781;margin:2px 0 8px">Your orders: the 4 messages every order needs (address, chain, prepaid, code), and the add-on. Tap a box to see which customers.</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${tiles}</div>${xt}${body}</div>`;
   }
   async function load() {
     if (S.busy) return; S.busy = true;
