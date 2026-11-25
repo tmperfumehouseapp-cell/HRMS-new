@@ -256,6 +256,23 @@ function sku_sheet(PDO $pdo, string $day): array
             foreach ((array)(json_decode((string)$r['lines_json'], true) ?: []) as $l) { $nLines++; sku_take($grid, $bad, (string)$r['order_no'], (string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), max(1, (int)($l['qty'] ?? 1)), []); }
         }
     } catch (Throwable $e) { }
+    // 🛍 the WEBSITE orders (the new TM Perfume House shop, store_orders.php) of that day. Shopify is closed, so this is where the day's orders come from now. The product names are the Shopify names
+    //    (the shop was copied from Shopify), so the same SKU list matches them. Counted on the day the customer PAID (a COD order: the day it was placed); a payment link nobody paid yet and a cancelled order are left out.
+    $nWeb = 0;
+    try {
+        if (is_file(__DIR__ . '/store_orders.php')) { require_once __DIR__ . '/store_orders.php'; }
+        if (function_exists('tms_orders') && tms_cfg($pdo)['key'] !== '') {
+            [$wo, $we] = tms_orders($pdo, date('Y-m-d', strtotime($day) - 7 * 86400), $day);
+            if ($we !== '') $errs[] = 'Website orders: ' . $we;
+            foreach ($wo as $w) {
+                $at = (string)($w['pay_time'] ?: $w['placed_at']); if ($at < $cal[0] || $at > $cal[1]) continue;
+                if (!empty($w['cancelled'])) { $nCancel++; continue; }
+                if ((string)$w['pay_status'] === 'pending' && (string)$w['pay_method'] !== 'cod') continue;      // a payment link not paid yet is not an order to pack
+                $nWeb++;
+                foreach ((array)($w['lines'] ?? []) as $l) { $nLines++; sku_take($grid, $bad, (string)$w['number'], (string)(($l['raw'] ?? '') !== '' ? $l['raw'] : ($l['title'] ?? '')), (string)($l['size'] ?? ''), (string)($l['sku'] ?? ''), max(1, (int)($l['qty'] ?? 1)), (array)($l['props'] ?? [])); }
+            }
+        }
+    } catch (Throwable $e) { $errs[] = 'Website orders: ' . $e->getMessage(); }
     $ix = sku_index(); $rows = [];
     foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : ($sku === 'NONAME' ? 'No Name (perfume sold without a name)' : ($sku === 'NOTFOUND' ? 'Not in SKU list (names are in the box above)' : (string)($ix['name'][$sku] ?? 'Not Found'))), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
     usort($rows, function ($a, $b) { $la = ['FREE' => 1, 'NONAME' => 1, 'NOTFOUND' => 2][$a['sku']] ?? 0; $lb = ['FREE' => 1, 'NONAME' => 1, 'NOTFOUND' => 2][$b['sku']] ?? 0; if ($la !== $lb) return $la <=> $lb; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
@@ -264,7 +281,7 @@ function sku_sheet(PDO $pdo, string $day): array
     $grp = [];
     foreach ($bad as $b) { $k = $b['kind'] . '|' . mb_strtolower($b['text']) . '|' . $b['why']; if (!isset($grp[$k])) $grp[$k] = ['text' => $b['text'], 'why' => $b['why'], 'kind' => $b['kind'], 'qty' => 0, 'orders' => []]; $grp[$k]['qty'] += $b['qty']; if (count($grp[$k]['orders']) < 12 && !in_array($b['order'], $grp[$k]['orders'], true)) $grp[$k]['orders'][] = $b['order']; }
     $un = array_values($grp); usort($un, fn($a, $b) => ($a['kind'] === 'left') <=> ($b['kind'] === 'left') ?: $b['qty'] <=> $a['qty']);
-    return ['day' => $day, 'cols' => sku_cols(), 'rows' => $rows, 'totals' => $tot, 'pieces' => array_sum($tot), 'orders' => $nOrd, 'manual' => $nMan, 'cancelled' => $nCancel, 'lines' => $nLines,
+    return ['day' => $day, 'cols' => sku_cols(), 'rows' => $rows, 'totals' => $tot, 'pieces' => array_sum($tot), 'orders' => $nOrd, 'manual' => $nMan, 'web' => $nWeb, 'cancelled' => $nCancel, 'lines' => $nLines,
         'oid' => (object)$oid, 'unmatched' => array_values(array_filter($un, fn($x) => !in_array($x['kind'], ['left', 'counted'], true))), 'left_out' => array_values(array_filter($un, fn($x) => $x['kind'] === 'left')), 'noted' => array_values(array_filter($un, fn($x) => $x['kind'] === 'counted')),
         'unmatched_pieces' => array_sum(array_map(fn($x) => !in_array($x['kind'], ['left', 'counted'], true) ? $x['qty'] : 0, $un)), 'errors' => $errs, 'sku_count' => count(sku_list())];
 }

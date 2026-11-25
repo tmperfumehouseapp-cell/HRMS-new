@@ -54,7 +54,7 @@
   <main class="main">
     <div class="topbar"><h1>📦 SKU sheet</h1></div>
     <div class="content dm">
-      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">How many of each perfume and size were ordered on one day, read live from the orders (every Shopify order and every manual order from 12 AM to 12 AM of that day — 24 hours — cancelled ones left out). Combos are opened into their perfumes. <b>Download Excel</b> gives this sheet in your format.</p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">How many of each perfume and size were ordered on one day, read live from the orders (every Shopify order, every website order and every manual order from 12 AM to 12 AM of that day — 24 hours — cancelled ones left out). Combos are opened into their perfumes. <b>Download Excel</b> gives this sheet in your format.</p>
       <div class="bar">
         <div><label>Day · 12 AM – 12 AM</label><input type="date" id="dDay"></div>
         <button class="btn" type="button" id="bToday" style="background:#fff;color:#111;border:1px solid var(--line)">Today</button>
@@ -126,7 +126,7 @@
     if ((d.noted || []).length) top += '<div class="box info" style="background:#fff7e0;border-color:#f3d48a;color:#7a5200"><b>ℹ ' + num(d.noted.reduce((a, x) => a + x.qty, 0)) + ' box item' + (d.noted.reduce((a, x) => a + x.qty, 0) === 1 ? '' : 's') + ' are not in the SKU list.</b> They ARE counted in the sheet below, on the row <b>"Not in SKU list"</b>, in their size column. To count them as the right perfume, add these names in the third column of the SKU file: '
       + d.noted.map((u) => '<b>' + esc(u.text.replace(/\s*\(inside:.*$/, '')) + '</b> ×' + u.qty + ' (' + esc((u.orders || []).join(', ')) + ')').join(' · ') + '</div>';
     else if (d.rows.length) top += '<div class="box ok"><b>✓ Every product of the day was matched to a SKU.</b></div>';
-    top += '<div class="box info"><b>' + dmy(d.day) + '</b> · ' + num(d.orders) + ' Shopify order' + (d.orders === 1 ? '' : 's') + ' + ' + num(d.manual) + ' manual order' + (d.manual === 1 ? '' : 's') + ' read · ' + num(d.lines) + ' product lines · <b>' + num(d.pieces) + ' pieces</b> in the sheet · ' + d.rows.length + ' SKUs' + (d.cancelled ? ' · ' + d.cancelled + ' cancelled order' + (d.cancelled === 1 ? '' : 's') + ' left out' : '')
+    top += '<div class="box info"><b>' + dmy(d.day) + '</b> · ' + num(d.orders) + ' Shopify order' + (d.orders === 1 ? '' : 's') + ' + ' + num(d.manual) + ' manual order' + (d.manual === 1 ? '' : 's') + ' + ' + num(d.web || 0) + ' website order' + (d.web === 1 ? '' : 's') + ' read · ' + num(d.lines) + ' product lines · <b>' + num(d.pieces) + ' pieces</b> in the sheet · ' + d.rows.length + ' SKUs' + (d.cancelled ? ' · ' + d.cancelled + ' cancelled order' + (d.cancelled === 1 ? '' : 's') + ' left out' : '')
       + ((d.left_out || []).length ? ' · left out on purpose: ' + d.left_out.map((u) => esc(u.text) + ' ×' + u.qty).join(', ') : '') + '</div>';
     $('skTop').innerHTML = top;
     $('skHead').innerHTML = '<tr><th>SKU</th><th style="text-align:left;max-width:none">Perfume Name (Original)</th>' + d.cols.map((c) => '<th>' + esc(c) + '</th>').join('') + '<th>Total</th></tr>';
