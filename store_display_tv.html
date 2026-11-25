@@ -82,13 +82,26 @@
   .th-brand .cta{background:#ff914a;color:#2b1a10;border:5px solid #2b1a10;box-shadow:0 8px 0 #2b1a10;padding:11px}
   .th-brand .toast{background:#2b1a10;color:#ffd3b0} .th-brand .big.flash{-webkit-animation:flb .9s;animation:flb .9s} @-webkit-keyframes flb{0%{-webkit-transform:scale(1.08)}100%{-webkit-transform:scale(1)}} @keyframes flb{0%{transform:scale(1.08)}100%{transform:scale(1)}} .th-brand .plus{color:#ff914a;-webkit-text-stroke:3px #2b1a10}
 
+  /* live bits of the TM Perfume House look: a clock, a strip of changing lines, the logo's little jump with a perfume puff */
+  .clk,.tick,.puff{display:none}
+  .th-brand .clk{display:block;position:absolute;right:44px;top:190px;font-size:24px;font-weight:800;color:#6b4a35;font-variant-numeric:tabular-nums}
+  .th-brand .tick{display:block;position:absolute;left:250px;right:44px;top:700px;height:58px;border:3px solid #2b1a10;border-radius:30px;background:#fff;overflow:hidden;box-shadow:0 4px 0 #2b1a10}
+  .tick span{position:absolute;left:0;right:0;top:0;height:52px;line-height:52px;text-align:center;font-size:22px;font-weight:800;color:#2b1a10;white-space:nowrap;-webkit-transition:-webkit-transform .5s,opacity .5s;transition:transform .5s,opacity .5s}
+  .tick span.out{-webkit-transform:translateY(-52px);transform:translateY(-52px);opacity:0} .tick span.in{-webkit-transform:translateY(52px);transform:translateY(52px);opacity:0}
+  .tmlogo.jump{-webkit-animation:ljump 1.1s ease-in-out;animation:ljump 1.1s ease-in-out}
+  @-webkit-keyframes ljump{0%{-webkit-transform:translateY(0) rotate(0)}30%{-webkit-transform:translateY(-40px) rotate(-12deg) scale(1.08)}60%{-webkit-transform:translateY(0) rotate(360deg)}75%{-webkit-transform:scale(1.12,.88)}100%{-webkit-transform:rotate(360deg)}}
+  @keyframes ljump{0%{transform:translateY(0) rotate(0)}30%{transform:translateY(-40px) rotate(-12deg) scale(1.08)}60%{transform:translateY(0) rotate(360deg)}75%{transform:scale(1.12,.88)}100%{transform:rotate(360deg)}}
+  .th-brand .puff{display:block;position:absolute;width:26px;height:26px;border-radius:50%;background:#ffd3b0;opacity:0;z-index:2}
+  .puff.go{-webkit-animation:pf 1.4s ease-out forwards;animation:pf 1.4s ease-out forwards}
+  @-webkit-keyframes pf{0%{opacity:.95;-webkit-transform:translate(0,0) scale(.4)}100%{opacity:0;-webkit-transform:translate(var(--x),var(--y)) scale(2.6)}} @keyframes pf{0%{opacity:.95;transform:translate(0,0) scale(.4)}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(2.6)}}
+
   /* Classic (white) keeps its look: only a few soft orange sparkles */
   .th-classic .blob{display:none} .th-classic .sp{background:#ff5a00;opacity:.35}
 </style>
 </head>
 <body>
 <div id="stage" class="th-brand"><div id="fx"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
-  <img class="tmlogo" src="assets/img/tmph-logo.png" alt=""><div class="h1" id="title">TM Perfume House</div><div class="h2" id="place">Vesu, Surat</div><div class="live" id="live"><i></i><span id="livet">LIVE</span></div>
+  <img class="tmlogo" src="assets/img/tmph-logo.png" alt=""><div class="h1" id="title">TM Perfume House</div><div class="h2" id="place">Vesu, Surat</div><div class="live" id="live"><i></i><span id="livet">LIVE</span></div><div class="clk" id="clk"></div><div class="tick" id="tick"><span id="tk"></span></div>
   <div class="t">Store<br>Report Card</div><div class="per" id="per">Last 2 months</div><div class="line"></div>
   <div class="big" id="ord">–</div><div class="bl">Orders</div><div class="plus" id="pl">+1</div>
   <div class="rows">
@@ -141,16 +154,39 @@
       st.appendChild(e); (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 2100); })(e); }
   }
   setTheme(themeLock || 'brand');
-  function setNum(id, v, old) { $(id).textContent = f(v); if (old !== undefined && old !== null && v !== old) flash(id); }
+  // a changed number counts up to the new one (like a meter), then flashes
+  function setNum(id, v, old) {
+    if (old === undefined || old === null || v === old || v < old || v - old > 500) { $(id).textContent = f(v); if (old !== undefined && old !== null && v !== old) flash(id); return; }
+    var t0 = new Date().getTime(), dur = 1200; (function go() { var k = Math.min(1, (new Date().getTime() - t0) / dur); $(id).textContent = f(Math.round(old + (v - old) * k)); if (k < 1) setTimeout(go, 40); else flash(id); })();
+  }
+  // the live clock (seconds), and the strip of lines that change every 4 seconds
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+  setInterval(function () { var d = new Date(), h = d.getHours(), ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; $('clk').textContent = h + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()) + ' ' + ap; }, 1000);
+  var TK = [], tki = 0;
+  function lines(d) { TK = [];
+    if (d.rating !== '') TK.push('\u2605 ' + d.rating + ' on Google \u2014 thanks, Surat!');
+    if (d.community) TK.push('\u2665 ' + f(d.community) + ' happy people in our family');
+    if (d.bottles) TK.push(f(d.bottles) + ' bottles of happiness sold');
+    TK.push('Smell it. Love it. Take it home.');
+    if (d.reviews) TK.push('\u2605 ' + f(d.reviews) + ' Google reviews & counting'); }
+  function nextLine() { if (!TK.length) return; var o = $('tk'), n = document.createElement('span'); n.className = 'in'; n.textContent = TK[tki++ % TK.length]; o.parentNode.appendChild(n);
+    o.className = 'out'; o.removeAttribute('id'); n.id = 'tk'; setTimeout(function () { n.className = ''; }, 30); setTimeout(function () { if (o.parentNode) o.parentNode.removeChild(o); }, 600); }
+  setInterval(nextLine, 4000);
+  // the logo: now and then a jump and a spin, with a little perfume puff
+  function puff() { var L = document.querySelector('.tmlogo'); if (!L || theme !== 'brand') return; restart(L, 'jump'); setTimeout(function () { L.className = 'tmlogo'; }, 1200);
+    for (var i = 0; i < 6; i++) { var p = document.createElement('div'); p.className = 'puff'; p.style.left = (560 + Math.random() * 40) + 'px'; p.style.top = (90 + Math.random() * 30) + 'px';
+      p.style.setProperty('--x', Math.round(-60 - Math.random() * 120) + 'px'); p.style.setProperty('--y', Math.round(-20 + Math.random() * 90) + 'px'); st.appendChild(p);
+      (function (el, dl) { setTimeout(function () { restart(el, 'go'); }, dl); setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, dl + 1500); })(p, 350 + i * 90); } }
+  setTimeout(puff, 3000); setInterval(puff, 14000);
   function show(d) {
-    setTheme(themeLock || d.theme || 'brand');
+    setTheme(themeLock || d.theme || 'brand'); var firstLines = !TK.length; lines(d); if (firstLines) { $('tk').textContent = TK[0]; tki = 1; }
     $('title').textContent = d.title; $('place').textContent = d.place; $('per').textContent = d.period; $('cta').textContent = d.cta; $('url').textContent = d.url;
     $('rt').textContent = d.rating !== '' ? d.rating + '/5' : '–'; $('gr').textContent = f(d.reviews);
     setNum('ord', d.orders, last && last.orders); setNum('bt', d.bottles, last && last.bottles); setNum('cm', d.community, last && last.community);
     if (last && d.orders > last.orders) {
       var p = $('pl'); p.textContent = '+' + (d.orders - last.orders); restart(p, 'go');
       var nb = Math.max(0, d.bottles - last.bottles);
-      confetti(); toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
+      confetti(); puff(); toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
     }
     last = d; $('msg').style.display = 'none'; $('live').className = 'live'; $('livet').textContent = 'LIVE';
   }
