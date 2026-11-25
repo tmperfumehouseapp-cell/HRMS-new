@@ -21,7 +21,7 @@ $pdo = new PDO('sqlite::memory:'); $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ER
 $pdo->exec("CREATE TABLE fu_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_emp INT DEFAULT 0, owner_dept INT DEFAULT 0, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', lag INT DEFAULT 0, metrics TEXT DEFAULT '', need_text INT DEFAULT 0, fields TEXT, status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, topic_id INT, day TEXT, txt TEXT, val REAL, pct INT, auto INT DEFAULT 0, emp_id INT DEFAULT 0, emp_name TEXT DEFAULT '', updated_at TEXT, ai_verdict TEXT DEFAULT '', ai_note TEXT DEFAULT '', ai_q TEXT DEFAULT '', vals TEXT, fvals TEXT, UNIQUE (topic_id, day))");
-$pdo->exec("CREATE TABLE fu_jaimin (section_id INT, day TEXT, txt TEXT, emp_name TEXT DEFAULT '', updated_at TEXT, PRIMARY KEY (section_id, day))");
+$pdo->exec("CREATE TABLE fu_jaimin (section_id INT, day TEXT, txt TEXT, emp_name TEXT DEFAULT '', updated_at TEXT, r_txt TEXT, r_name TEXT DEFAULT '', r_at TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE fu_digest (section_id INT, day TEXT, txt TEXT, made_at TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT, designation TEXT, mobile TEXT)");
 $pdo->exec("CREATE TABLE departments (department_id INTEGER PRIMARY KEY, department_name TEXT)");
@@ -162,4 +162,17 @@ $r = fup_daily_pass($pdo); ok(isset($r['skipped']), 'it does not run twice a day
 [$c, $j] = call('fup.jaimin_board', $ADMIN); ok($c === 200 && $j['jaimin']['0']['2026-11-22']['text'] === 'Final: focus wholesale' && $j['jaimin'][(string)$ws]['2026-11-23']['text'] === 'Push 5 new perfumes', 'Jaimin section: final + section decisions');
 [$c] = call('fup.jaimin_board', $E(12)); ok($c === 403, 'Jaimin section: Admin / HR only');
 [$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $ws, 'text' => '  ']); ok($c === 200 && (int)$pdo->query("SELECT COUNT(*) FROM fu_jaimin WHERE section_id = $ws")->fetchColumn() === 0, 'Jaimin layer: empty text removes it');
+// Rahul: the follow-up person writes his update under each Jaimin decision; the decision's pill turns green for the day
+$pdo->exec("INSERT INTO employees VALUES (20, 'Rahul V', 2, 'approved', '', '')"); $GLOBALS['FUP_NOCACHE'] = 1;
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $st, 'text' => 'Call 3 old shops']); ok($c === 200, 'Rahul: a decision to work on');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok(!empty($b['jaimin_today'][(string)$st]) && empty($b['jaimin_today'][(string)$ws]) && $b['follower']['id'] === 20, 'pill green only where Jaimin wrote today; the one Rahul is found by himself');
+[$c, $g] = call('fup.badge', $E(20)); ok($g['show'] === true && $g['due'] === 2, 'Rahul sees Follow-up with the decisions still to answer');
+[$c, $b] = call('fup.board', $E(20)); ok($b['jaimin_follow'] === true && $b['jaimin_reply'] === true && $b['jaimin_write'] === false, 'Rahul: can reply, cannot decide');
+[$c, $j] = call('fup.jaimin_board', $E(20)); ok($c === 200 && count($j['sections']) === 2 && $j['open'] === 2, 'Rahul opens the Jaimin section with every section');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-23', 'text' => 'x']); ok($c === 422, 'Rahul: no reply where Jaimin wrote nothing');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $st, 'day' => '2026-11-23', 'text' => 'Called 3, 1 order']); ok($c === 200, 'Rahul: update saved');
+[$c] = call('fup.jaimin_reply', $E(12), ['section_id' => $st, 'day' => '2026-11-23', 'text' => 'x']); ok($c === 403, 'somebody else cannot write Rahul\'s update');
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $st, 'text' => 'Call 4 old shops']); [$c, $j] = call('fup.jaimin_board', $ADMIN);
+ok($j['jaimin'][(string)$st]['2026-11-23']['text'] === 'Call 4 old shops' && $j['jaimin'][(string)$st]['2026-11-23']['reply'] === 'Called 3, 1 order' && $j['open'] === 1, 'changing the decision keeps Rahul\'s update');
+[$c] = call('fup.jaimin_follower', $ADMIN, ['emp_id' => 12]); [$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $st, 'day' => '2026-11-23', 'text' => 'y']); ok($c === 403, 'the Admin can give the job to somebody else');
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);
