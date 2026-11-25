@@ -81,6 +81,19 @@ if (!function_exists('tms_cfg')) {
         return is_array($r) ? $r : [[], 'Could not read the shop.'];
     }
     /** save ONE shop order as a manual_orders row for $emp (a new row; the caller checked there is none). Returns the HRMS order number (M0123). */
+    /** 🔔 ORDER RING (owner, 25 Nov: "like Shopify — a ring when an order comes, on the phone of the salesperson whose order it is"): one row per website order the robot gave to a salesperson;
+     *  his chat app plays the ring + shows a banner (tms.ring), and a push notification goes to his phone (also when the app is closed). Only for a fresh order (paid in the last 3 hours), once per order. */
+    function tms_ring(PDO $pdo, int $emp, array $r, string $type): void
+    {
+        if ($emp <= 0) return;
+        try {
+            $t = strtotime((string)(($r['pay_time'] ?? '') ?: ($r['placed_at'] ?? ''))) ?: time(); if ($t < time() - 3 * 3600) return;   // an old order given late (a backfill) does not ring
+            $pdo->exec("CREATE TABLE IF NOT EXISTS tms_ring (id INT AUTO_INCREMENT PRIMARY KEY, emp_id INT NOT NULL, number VARCHAR(30) NOT NULL, customer VARCHAR(120) NOT NULL DEFAULT '', phone VARCHAR(12) NOT NULL DEFAULT '', total DECIMAL(12,2) NOT NULL DEFAULT 0, otype VARCHAR(10) NOT NULL DEFAULT '', at DATETIME NOT NULL, seen TINYINT NOT NULL DEFAULT 0, UNIQUE KEY uq_ring_no (number), KEY k_ring_emp (emp_id, seen)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $q = $pdo->prepare("INSERT IGNORE INTO tms_ring (emp_id, number, customer, phone, total, otype, at) VALUES (?, ?, ?, ?, ?, ?, ?)"); $q->execute([$emp, (string)$r['number'], mb_substr((string)$r['customer'], 0, 120), (string)$r['phone'], (float)$r['total'], $type, date('Y-m-d H:i:s')]);
+            if ($q->rowCount() !== 1) return;
+            if (function_exists('ct_push')) ct_push($pdo, [$emp], '💰 New order ₹' . number_format((float)$r['total']), trim((string)$r['customer']) . ' · ' . $r['number'] . ' · ' . ucfirst($type) . ' — the order is yours.', '/my_chats.html?phone=' . (string)$r['phone'], 'ord-' . (string)$r['number']);
+        } catch (Throwable $e) { error_log('tms_ring: ' . $e->getMessage()); }
+    }
     function tms_give(PDO $pdo, array $r, int $emp, string $ot, string $by): string
     {
         tms_cols($pdo); $rxd = '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/'; $dt = preg_match($rxd, (string)($r['pay_time'] ?? '')) ? (string)$r['pay_time'] : (preg_match($rxd, $r['placed_at']) ? $r['placed_at'] : date('Y-m-d H:i:s'));   // the time of the payment
@@ -157,7 +170,7 @@ if (!function_exists('tms_cfg')) {
                 $mark->execute([$no, 1, '', $now]);          // marked first: whatever happens next, the robot never gives the same order twice
                 if ($row) $pdo->prepare("UPDATE manual_orders SET employee_id = ?, order_type = ?, house = 'tmph', created_by = 'auto (WhatsApp)' WHERE manual_order_id = ? AND employee_id = 0")->execute([$emp, $type, $row['id']]);   // it was waiting on the Allocation page
                 else tms_give($pdo, $r, $emp, $type, 'auto (WhatsApp)');
-                $n++;
+                $n++; tms_ring($pdo, $emp, $r, $type);   // 🔔 the salesperson hears it
                 if (function_exists('wa_event')) { try { wa_event($pdo, (string)$c['phone'], '🧾 Website order ' . $no . ' allocated to ' . ($names[$emp] ?? 'the salesperson') . ' · ' . ucfirst($type) . ' (automatic)'); } catch (Throwable $e) { } }
             } catch (Throwable $e) { error_log('tms_auto_tick ' . $no . ': ' . $e->getMessage()); }
         }
@@ -179,6 +192,13 @@ if ((string)$action === 'tms.gift') {   // 🎁 the website's gift perfume on pa
     if (!is_array($r) || !empty($r['error'])) { if (function_exists('hrms_memo_drop')) hrms_memo_drop('tms_gift:' . $from); json_response(['ok' => false, 'error' => (string)($r['error'] ?? 'The shop could not be read.'), 'day' => $day]); }
     $k = (int)($r['kept'] ?? 0); $rm = (int)($r['removed'] ?? 0);
     json_response(['ok' => true, 'day' => $day, 'kept' => $k, 'removed' => $rm, 'rate' => $k + $rm > 0 ? (int)round($k * 100 / ($k + $rm)) : null, 'money' => round((float)($r['money'] ?? 0), 2), 'orders' => array_values(array_map('strval', (array)($r['orders'] ?? [])))]);
+}
+if ((string)$action === 'tms.ring') {   // 🔔 the orders that just came for ME and have not rung yet (asked by the chat app every 20 s): each is returned once, then marked heard. Older than 30 minutes = not rung any more.
+    $me = (int)($auth['employee_id'] ?? 0); $out = [];
+    if ($me > 0) { try { $q = $pdo->prepare("SELECT id, number, customer, phone, total, otype FROM tms_ring WHERE emp_id = ? AND seen = 0 AND at >= ? ORDER BY id LIMIT 5"); $q->execute([$me, date('Y-m-d H:i:s', time() - 1800)]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $u = $pdo->prepare("UPDATE tms_ring SET seen = 1 WHERE id = ? AND seen = 0"); $u->execute([(int)$x['id']]); if ($u->rowCount() === 1) $out[] = ['number' => (string)$x['number'], 'customer' => (string)$x['customer'], 'phone' => (string)$x['phone'], 'total' => (float)$x['total'], 'type' => (string)$x['otype']]; }
+    } catch (Throwable $e) { } }   // no table yet = no order has rung yet
+    json_response(['ok' => true, 'rows' => $out]);
 }
 if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 Nov): the website orders of the last 5 days whose payment has not come, for the salesperson who holds the customer's WhatsApp chat (open, closed or in History),
     // else the last person who wrote to the customer there — the same rule as the name filled in on Website orders. An Admin sees everybody's. An order leaves when it is paid, cancelled, or the customer paid a later order. Read-only.
