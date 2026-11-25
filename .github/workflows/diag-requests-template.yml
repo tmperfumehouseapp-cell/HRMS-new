@@ -31,16 +31,16 @@ jobs:
           <?php
           require $argv[1] . "empmanagment/config.php";
           $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-          echo "server " . date("Y-m-d H:i:s") . "\n"; $since = date("Y-m-d H:i:s", time() - 5 * 3600);
+          date_default_timezone_set("Asia/Kolkata"); echo "IST " . date("Y-m-d H:i:s") . " · db now " . $d->query("SELECT NOW()")->fetchColumn() . " · newest message " . $d->query("SELECT MAX(ts) FROM wa_messages")->fetchColumn() . "\n"; $since = date("Y-m-d H:i:s", time() - 5 * 3600);
           $mask = function ($s) { return preg_replace('/\d{6,}/', '#', (string)$s); };
           echo "--- template sends by people, last 5 h, by minute (top)\n";
-          foreach ($d->query("SELECT LEFT(ts, 16) m, who, emp_id, COUNT(*) n, COUNT(DISTINCT phone) ph FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= '$since' AND who IN ('emp','campaign') GROUP BY LEFT(ts, 16), who, emp_id ORDER BY n DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . $r["m"] . " who=" . $r["who"] . " emp=" . $r["emp_id"] . " msgs=" . $r["n"] . " phones=" . $r["ph"] . "\n";
+          foreach ($d->query("SELECT CONCAT(LEFT(ts, 15), "x ", mtype) m, who, emp_id, COUNT(*) n, COUNT(DISTINCT phone) ph FROM wa_messages WHERE dir = 'out' AND ts >= '$since' GROUP BY LEFT(ts, 15), who, emp_id, mtype ORDER BY n DESC LIMIT 14")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . $r["m"] . " who=" . $r["who"] . " emp=" . $r["emp_id"] . " msgs=" . $r["n"] . " phones=" . $r["ph"] . "\n";
           $base = "FROM wa_contacts c WHERE c.assigned_emp = 0 AND c.status = 'open' AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_out_at >= '$since'";
           echo "--- unassigned open chats with our message in the last 5 h: " . $d->query("SELECT COUNT(*) $base")->fetchColumn() . "\n";
           echo "    of them the customer wrote AFTER our last message: " . $d->query("SELECT COUNT(*) $base AND c.last_in_at > c.last_out_at")->fetchColumn() . "\n";
           echo "    of them the customer's last message is older than 24 h: " . $d->query("SELECT COUNT(*) $base AND c.last_in_at < '" . date("Y-m-d H:i:s", time() - 86400) . "'")->fetchColumn() . "\n";
-          foreach ($d->query("SELECT c.phone, c.state, c.source, c.tag, c.last_in_at, c.last_out_at, c.closed_at, c.unread $base ORDER BY c.last_out_at DESC LIMIT 7")->fetchAll(PDO::FETCH_ASSOC) as $c) {
-            echo "=== chat · state " . $c["state"] . " · source [" . $c["source"] . "] · last_in " . $c["last_in_at"] . " · last_out " . $c["last_out_at"] . " · closed_at " . ($c["closed_at"] ?: "-") . " · unread " . $c["unread"] . "\n";
+          foreach ($d->query("SELECT c.phone, c.state, c.source, c.tag, c.last_in_at, c.last_out_at, c.closed_at $base ORDER BY c.last_out_at DESC LIMIT 7")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            echo "=== chat · state " . $c["state"] . " · source [" . $c["source"] . "] · last_in " . $c["last_in_at"] . " · last_out " . $c["last_out_at"] . " · closed_at " . ($c["closed_at"] ?: "-") . "\n";
             $m = $d->prepare("SELECT dir, who, emp_id, mtype, ts, LEFT(REPLACE(body, CHAR(10), ' '), 70) b FROM wa_messages WHERE phone = ? ORDER BY id DESC LIMIT 9"); $m->execute([$c["phone"]]);
             foreach (array_reverse($m->fetchAll(PDO::FETCH_ASSOC)) as $x) echo "    " . $x["ts"] . " " . $x["dir"] . " " . $x["who"] . ($x["emp_id"] ? "#" . $x["emp_id"] : "") . " [" . $x["mtype"] . "] " . $mask($x["b"]) . "\n";
             try { $a = $d->prepare("SELECT at, to_emp, by_emp, how FROM wa_assign_log WHERE phone = ? ORDER BY id DESC LIMIT 3"); $a->execute([$c["phone"]]); foreach ($a->fetchAll(PDO::FETCH_ASSOC) as $x) echo "    assign " . $x["at"] . " to=" . $x["to_emp"] . " by=" . $x["by_emp"] . " how=" . $x["how"] . "\n"; } catch (Throwable $e) { }
