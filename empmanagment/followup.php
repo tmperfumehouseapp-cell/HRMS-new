@@ -1051,7 +1051,10 @@ function fup_fields_clean($in, array $old = []): array
         if (!preg_match('/^f\d+$/', $k) || isset($used[$k])) $k = 'f' . (++$max); elseif (preg_match('/^f(\d+)$/', $k, $m)) $max = max($max, (int)$m[1]);
         $used[$k] = 1; $opts = [];
         if ($type === 'choice') { $raw = is_array($f['opts'] ?? null) ? $f['opts'] : preg_split('/[,\n]+/u', (string)($f['opts'] ?? '')); foreach ($raw as $o) { $o = trim(mb_substr((string)$o, 0, 40)); if ($o !== '' && !in_array($o, $opts, true) && count($opts) < 20) $opts[] = $o; } if (count($opts) < 2) $type = 'text'; }
-        $out[] = ['k' => $k, 'label' => $label, 'type' => $type, 'opts' => $type === 'choice' ? $opts : [], 'req' => !empty($f['req']) ? 1 : 0];
+        $row = ['k' => $k, 'label' => $label, 'type' => $type, 'opts' => $type === 'choice' ? $opts : [], 'req' => !empty($f['req']) ? 1 : 0];
+        if ($type === 'text' && (int)($f['min'] ?? 0) > 0) $row['min'] = min(500, (int)$f['min']);   // the least words this box takes
+        $g = trim(mb_substr((string)($f['g'] ?? ''), 0, 60)); if ($g !== '') $row['g'] = $g;          // the sub-topic this box belongs to
+        $out[] = $row;
     }
     return $out;
 }
@@ -1559,7 +1562,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                         elseif ($fd['type'] === 'yesno') { $v = strtolower($v); if (!in_array($v, ['yes', 'no'], true)) json_response(['error' => 'Choose Yes or No for ' . $lb . '.'], 422); }
                         elseif ($fd['type'] === 'link') { if (!preg_match('#^https?://[^\s]+\.[^\s]+#i', $v)) json_response(['error' => $lb . ' must be a link that starts with https://'], 422); $v = mb_substr($v, 0, 500); }
                         elseif ($fd['type'] === 'choice') { if (!in_array($v, $fd['opts'], true)) json_response(['error' => 'Choose one of the list for ' . $lb . '.'], 422); }
-                        else $v = mb_substr($v, 0, 500);
+                        else { $v = mb_substr($v, 0, 2000); $mn = (int)($fd['min'] ?? 0); if ($mn > 0 && fup_words($v) < $mn) json_response(['error' => $lb . ': write at least ' . $mn . ' words. You wrote ' . fup_words($v) . '.'], 422); }
                     }
                     if ((string)($fvNow[$k] ?? '') !== $v || !array_key_exists($k, $fvNow)) { if ($v === '') unset($fvNow[$k]); else $fvNow[$k] = $v; $fvChanged = true; }
                 }
