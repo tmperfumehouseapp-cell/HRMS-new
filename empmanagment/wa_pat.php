@@ -81,7 +81,7 @@ if (!function_exists('wa_pat_topic')) {
                 foreach ($items as $it) {
                     [$tk, $tl] = wa_pat_topic((string)$it[1], (string)$it[0]); $st = wa_pat_style((string)$it[0]);
                     $M['sent'] += $it[2]; $M['replied'] += $it[3]; if (!empty($it[4])) { $M['new']['sent'] += $it[2]; $M['new']['replied'] += $it[3]; $M['new']['types'][] = ['text' => mb_substr((string)$it[0], 0, 420), 'name' => (string)$it[1], 'topic' => $tl, 'sent' => (int)$it[2], 'replied' => (int)$it[3]]; }
-                    if (!isset($M['topics'][$tk])) $M['topics'][$tk] = ['label' => $tl, 'sent' => 0, 'replied' => 0, 'msgs' => 0, 'samples' => []];
+                    if (!isset($M['topics'][$tk])) $M['topics'][$tk] = ['key' => $tk, 'label' => $tl, 'sent' => 0, 'replied' => 0, 'msgs' => 0, 'samples' => []];
                     $T = &$M['topics'][$tk]; $T['sent'] += $it[2]; $T['replied'] += $it[3]; $T['msgs']++; $T['samples'][] = ['text' => mb_substr((string)$it[0], 0, 420), 'name' => (string)$it[1], 'sent' => (int)$it[2], 'replied' => (int)$it[3]]; unset($T);
                     foreach ($st as $s) { if (!isset($M['styles'][$s])) $M['styles'][$s] = ['label' => $s, 'sent' => 0, 'replied' => 0]; $M['styles'][$s]['sent'] += $it[2]; $M['styles'][$s]['replied'] += $it[3]; }
                 }
@@ -94,5 +94,51 @@ if (!function_exists('wa_pat_topic')) {
         }
         try { setting_set($pdo, $key, json_encode($out, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)); } catch (Throwable $e) { }
         return $out;
+    }
+}
+if (!function_exists('wa_pat_repliers')) {
+    /** 💬 The customers behind a module's Replies number (owner 25 Nov 2026): everyone who wrote today AFTER a message of this module went to them today.
+     *  $topic (the key or the label of a message type, '' = all) keeps only the customers whose message was of that type. Each row says which type they got and when.
+     *  Read from the customer side (today's incoming phones, then the module's log by phone) so it stays quick; the base list is kept 60 seconds. Read-only. */
+    function wa_pat_repliers(PDO $pdo, string $mod, string $topic = '', int $limit = 600): array
+    {
+        $sqls = [
+            'cold' => "SELECT l.phone, l.tpl_id, l.at FROM wa_cold_log l WHERE l.ok = 1 AND l.tpl_id > 0 AND l.at >= ? AND l.phone IN (%s)",
+            'modb' => "SELECT l.phone, l.tpl_id, l.at FROM wa_ru_log l WHERE l.ok = 1 AND l.kind <> 'cnev' AND l.tpl_id > 0 AND l.at >= ? AND l.phone IN (%s)",
+            'modc' => "SELECT l.phone, l.tpl_id, l.at FROM wa_ru_log l WHERE l.ok = 1 AND l.kind = 'cnev' AND l.tpl_id > 0 AND l.at >= ? AND l.phone IN (%s)",
+            'after' => "SELECT l.phone, l.tpl_id, l.sent_at FROM wa_aft_plan l WHERE l.status = 'sent' AND l.tpl_id > 0 AND l.sent_at >= ? AND l.phone IN (%s)",
+            'line' => "SELECT l.phone, l.tpl_id, l.sent_at FROM wa_line_plan l WHERE l.status = 'sent' AND l.tpl_id > 0 AND l.sent_at >= ? AND l.phone IN (%s)",
+            'moda' => "SELECT i.phone, c.tpl_id, i.sent_at FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.sent_at >= ? AND c.tpl_id > 0 AND (i.status IN ('sent','delivered','read') OR i.last_status IN ('delivered','read')) AND i.phone IN (%s)",
+        ];
+        if (!isset($sqls[$mod])) return [[], false, 0];
+        $from = date('Y-m-d 00:00:00'); $sql = $sqls[$mod];
+        $base = function () use ($pdo, $from, $sql) {
+            try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 20000"); } catch (Throwable $e) { }
+            $q = $pdo->prepare("SELECT phone, MAX(ts) FROM wa_messages WHERE dir = 'in' AND who = 'customer' AND ts >= ? GROUP BY phone LIMIT 30000"); $q->execute([$from]); $in = [];
+            foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $in[(string)$r[0]] = (string)$r[1];
+            $hit = [];   // phone => [tpl_id, sent at]: the newest message of this module that the customer wrote after
+            foreach (array_chunk(array_keys($in), 400) as $ch) {
+                $s = $pdo->prepare(sprintf($sql, implode(',', array_fill(0, count($ch), '?')))); $s->execute(array_merge([$from], array_map('strval', $ch)));
+                foreach ($s->fetchAll(PDO::FETCH_NUM) as $r) { $ph = (string)$r[0]; $at = (string)$r[2]; if (!isset($in[$ph]) || $at === '' || $at >= $in[$ph]) continue; if (!isset($hit[$ph]) || $at > $hit[$ph][1]) $hit[$ph] = [(int)$r[1], $at]; }
+            }
+            $o = []; foreach ($hit as $ph => $v) $o[] = [(string)$ph, $v[0], $v[1]]; return $o;
+        };
+        $hits = function_exists('hrms_memo') ? hrms_memo('wa_pat_rep1:' . $mod . ':' . $from, 60, $base) : $base();
+        if (!is_array($hits) || !$hits) return [[], false, 0];
+        $ids = []; foreach ($hits as $h) $ids[(int)$h[1]] = 1; $tp = [];
+        if ($ids) { $q = $pdo->query("SELECT id, name, body FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_keys($ids))) . ")"); foreach ($q->fetchAll(PDO::FETCH_NUM) as $t) $tp[(int)$t[0]] = wa_pat_topic((string)$t[1], (string)$t[2]); }
+        $want = trim($topic); $pick = [];   // phone => [type label, sent at]
+        foreach ($hits as $h) { $t = $tp[(int)$h[1]] ?? wa_pat_topic('#' . (int)$h[1], ''); if ($want !== '' && $want !== $t[0] && $want !== $t[1]) continue; $pick[(string)$h[0]] = [(string)$t[1], (string)$h[2]]; }
+        if (!$pick) return [[], false, 0];
+        $n = count($pick); $info = []; $last = [];
+        if ($n > 3000) $pick = array_slice($pick, 0, 3000, true);
+        foreach (array_chunk(array_map('strval', array_keys($pick)), 400) as $ch) { $in = implode(',', array_fill(0, count($ch), '?'));
+            $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, last_out_at, status FROM wa_contacts WHERE phone IN ($in)"); $c->execute($ch); foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $info[(string)$r['phone']] = $r;
+            $m = $pdo->prepare("SELECT m.phone, m.body, m.mtype, m.ts FROM wa_messages m JOIN (SELECT phone, MAX(id) id FROM wa_messages WHERE dir = 'in' AND phone IN ($in) GROUP BY phone) x ON x.id = m.id"); $m->execute($ch); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) $last[(string)$r['phone']] = $r; }
+        $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = [];
+        foreach ($pick as $ph => $v) { $ph = (string)$ph; $c = $info[$ph] ?? []; $l = $last[$ph] ?? null; $answered = !empty($c['last_out_at']) && (string)$c['last_out_at'] >= (string)($c['last_in_at'] ?? ''); $emp = (int)($c['assigned_emp'] ?? 0);
+            $rows[] = ['phone' => $ph, 'name' => (string)($c['name'] ?? ''), 'text' => $l ? mb_substr(((string)$l['body'] !== '' ? (string)$l['body'] : '[' . (string)$l['mtype'] . ']'), 0, 90) : '', 'at' => $l ? (string)$l['ts'] : $v[1], 'wait' => !$answered, 'emp' => $emp, 'holder' => $emp > 0 ? (string)($nm[$emp] ?? '') : '', 'closed' => ((string)($c['status'] ?? '') === 'closed'), 'tag' => $v[0] . ' · sent ' . substr($v[1], 11, 5)]; }
+        usort($rows, function ($a, $b) { return [(int)$b['wait'], $b['at']] <=> [(int)$a['wait'], $a['at']]; });
+        return [array_slice($rows, 0, $limit), $n > $limit, $n];
     }
 }
