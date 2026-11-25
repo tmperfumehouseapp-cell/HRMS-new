@@ -29,7 +29,7 @@ if (!function_exists('wa_ordpack_defs')) {
             "🚚 Jaldi order karoge to jaldi delivery bhi!\n\nNiche tap kijiye 👇",
             "Stock kam he, deal aaj raat tak 🔥\n\nOrder pakka karne ke liye tap kijiye 👇",
         ];
-        $btn = [['Order karna hai', 'Details bhejo', 'Abhi nahi'], ['Haan, order', 'Offer dikhao'], ['Mujhe chahiye', 'Details bhejo', 'Abhi nahi']];
+        $btn = [['Order Now', 'Send Details', 'Not Now'], ['Yes, Order', 'Show Offer'], ['I Want It', 'Send Details', 'Not Now']];   /* buttons in English (owner 25 Nov) */
         $o = []; $n = 0;
         for ($i = 0; $i < 6; $i++) for ($j = 0; $j < 8; $j++) {
             if (($i * 3 + $j) % 4 !== 0 && ($i + $j) % 3 !== 0) continue;   /* a spread of 30+ different mixes */
