@@ -6,6 +6,15 @@
  * get the same warm Hinglish + buttons through the utility pool (wa_util_pool_defs 'open_hi_*'), but NEVER the deal words ("surprise deal", "unlock", "discount", "free gift"): Meta would move a utility message with those words to marketing.
  * Called once from the Module C round (wa_modc.php). PHP 7.4 safe.
  */
+if (!function_exists('wa_style_dull')) {
+    /** Basic customer-care wording the owner does not want in ANY module (25 Nov 2026: "thank you for being a customer / customer care team / registered customer / here to help" gets replies but no orders). Returns the reason or ''. */
+    function wa_style_dull(string $text): string
+    {
+        $t = mb_strtolower($text);
+        foreach (['customer care', 'thank you for being', 'thanks for being', 'registered customer', 'here to help', 'happy to help', 'we are here to', 'help with your order', 'help with an order', 'how can we help', 'how are you enjoying', 'just checking in', 'checking in', 'check-in', 'any doubt', 'koi sawal', 'koi doubt', 'help karne', 'hum help', 'madad karne'] as $w) if (mb_strpos($t, $w) !== false) return 'too basic: ' . $w;
+        return '';
+    }
+}
 if (!function_exists('wa_style_pack')) {
     /** The season the messages should fit (owner 24 Nov 2026: "consider the new season: gift orders, season add-ons"). Used in the text Claude gets; it never creates a price, a date or a promise. */
     function wa_style_season(?int $ts = null): string
@@ -77,7 +86,7 @@ if (!function_exists('wa_style_pack')) {
             if (!function_exists('wa_rs_style_text') && is_file(__DIR__ . '/wa_restyle.php')) { try { require_once __DIR__ . '/wa_restyle.php'; } catch (Throwable $e) { } }
             $have = []; try { foreach ($pdo->query("SELECT body FROM wa_templates WHERE name LIKE 'tmph_new_%' OR name LIKE 'tmph_style_%' ORDER BY id DESC LIMIT 14")->fetchAll(PDO::FETCH_COLUMN) as $b) $have[] = mb_substr(str_replace("\n", ' / ', (string)$b), 0, 140); } catch (Throwable $e) { }
             $sys = "You write ONE new WhatsApp message for TM Perfume House (perfume shop, Surat, India), a brand-new idea in the owner's style, not a copy of the earlier ones. " . (function_exists('wa_rs_style_text') ? wa_rs_style_text() : '')
-                . "Category " . $cat . ". Use exactly one variable {{1}} (the customer's first name), in the first line but never as the very first or the very last word. 2-5 short paragraphs with ONE blank line between them, 2-4 emoji, EXCITEMENT and a small SURPRISE or mystery. NO price, NO rupee sign, NO date, NO quantity and no promise of a specific discount; the only numbers allowed are the sizes 20 / 50 / 100 ML. "
+                . "Category " . $cat . ". Use exactly one variable {{1}} (the customer's first name), in the first line but never as the very first or the very last word. 2-5 short paragraphs with ONE blank line between them, 2-4 emoji, NEVER a basic customer-care message (no \"thank you for being a customer\", \"customer care team\", \"registered customer\", \"here to help\", \"how are you enjoying\", \"any doubt\", \"just checking in\" - owner 25 Nov: they get replies but no orders); every message carries excitement, surprise or a curiosity hook about the next perfume / size / combo. EXCITEMENT and a small SURPRISE or mystery. NO price, NO rupee sign, NO date, NO quantity and no promise of a specific discount; the only numbers allowed are the sizes 20 / 50 / 100 ML. "
                 . ($cat === 'MARKETING' ? "MARKETING: you may use words like surprise, unlock, exclusive, new perfumes, season, gift, add-on, dhamakedaar. Season now: " . (function_exists('wa_style_season') ? wa_style_season() : '') . " " : "UTILITY: warm and curious but NO offer, discount, sale, free, deal, limited, hurry, launch, add-on, dhamaka, coupon; no claim that the customer asked about or ordered anything; one friendly question about how we can help, ending in an order or help step by button. ")
                 . "Give 1-3 quick-reply button texts (max 20 characters each; for marketing for example '20ML', '50ML', '100ML' or 'Show my surprise'). Do not repeat an idea from these recent messages:\n" . implode("\n", $have) . "\nAnswer only JSON: {\"body\":\"...\",\"buttons\":[\"...\"],\"name\":\"short_snake_case_idea\"}.";
             $sys2 = brain_prepare_system('internal', 'whatsapp', $sys . ' Reply with JSON only, no other text.', ['ctx' => false, 'purpose' => 'internal:whatsapp']);
@@ -89,6 +98,7 @@ if (!function_exists('wa_style_pack')) {
             elseif (preg_match('/^\s*\{\{1\}\}/u', $body) || preg_match('/\{\{1\}\}\s*$/u', $body)) $why = 'variable at the start or end';
             elseif (mb_strlen($body) < 40 || mb_strlen($body) > 700) $why = 'length';
             elseif (!preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u', $body)) $why = 'no emoji';
+            elseif (($__dl = wa_style_dull($body)) !== '') $why = $__dl;   /* owner 25 Nov: no basic customer-care messages in any module */
             elseif (preg_match('/₹|\brs\.?\s*\d|\d{4}/iu', $body)) $why = 'a price / date / number';
             elseif ($cat === 'UTILITY') { $low = mb_strtolower($body); foreach (array_merge(function_exists('wa_util_bad_words') ? wa_util_bad_words() : [], ['launch', 'add-on', 'addon', 'dhamaka', 'dhamake', 'unlock', 'exclusive', 'surprise deal']) as $w) if ($w !== '' && mb_strpos($low, $w) !== false) { $why = 'deal word: ' . trim($w); break; } }
             if ($why !== '') { $o['note'] = 'rejected: ' . $why; return $o; }

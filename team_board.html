@@ -124,7 +124,7 @@ guardPage();
       + '<div class="tb-top"><div class="tb-k"><b>' + v(T.at_work) + ' / ' + v(T.people) + '</b><span>at work now</span></div><div class="tb-k"><b>' + v(T.ratio_pct, '%') + '</b><span>team ratio (' + esc(PL()) + ')</span></div><div class="tb-k"><b>' + (T.ticket == null ? '—' : '₹' + esc(T.ticket)) + '</b><span>team ticket</span></div><div class="tb-k"><b style="font-size:13px">' + esc(D.mode) + '</b><span>Team manager mode</span></div></div>'
       + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px"><label style="font-size:13px" title="Suggest only shows what Claude decided. Apply decides who sees new chats first and shows each person a card.">Team manager <select id="tbMode" style="max-width:100%"><option value="off">Off</option><option value="suggest">Suggest only</option><option value="apply">Apply</option></select></label><button class="btn" id="tbRun">Ask Claude now</button><span style="font-size:12px;color:var(--muted)">Last run: ' + esc(D.ran_at || 'never') + ' · runs by itself every 10 minutes</span></div>'
       + (D.summary ? '<div class="tb-sum">🧠 ' + esc(D.summary) + '</div>' : '')
-      + (rows2.length ? '<div class="tb-wrap"><table class="tb"><thead><tr>' + COLS.map((c) => '<th data-k="' + c[0] + '" title="' + esc(HELP[c[0]] || '') + '">' + c[1] + (sort.k === c[0] ? (sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + '<th style="cursor:default">Details</th></tr></thead><tbody>' + rows2.map(rowHtml).join('') + '</tbody></table></div><div class="cards">' + rows2.map(cardHtml).join('') + '</div>' : '<div class="empty">No one matches.</div>');
+      + (rows2.length ? '<div class="tb-wrap"><table class="tb"><thead><tr>' + COLS.map((c) => '<th data-k="' + c[0] + '" title="' + esc(HELP[c[0]] || '') + '">' + c[1] + (sort.k === c[0] ? (sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + '<th style="cursor:default">Details</th></tr></thead><tbody>' + rows2.map(rowHtml).join('') + '</tbody></table></div><div class="cards">' + rows2.map(cardHtml).join('') + '</div>' : '<div class="empty">No one matches.</div>') + '<div id="qmBar"></div>';
     afterDraw();
   }
   const SCORE_COL = (x) => x == null ? '#cbd5e1' : x >= 7 ? '#22c55e' : x >= 5.5 ? '#f59e0b' : '#ef4444';
@@ -225,8 +225,24 @@ guardPage();
            ['4 · Overnight, 12 am – 10 am', 'Everybody can pick from Requests. A person below the ratio band can pick at most 5. Not applied to a button Admin / Sales Head turned ON.'],
            ['5 · Campaign queries', 'Equal for everybody; 2 times for people below the band. The ratio rule never stops campaign queries. Admin / Sales Head OFF, or no punch-in, stops everything.']]
           .map((r) => '<div><b>' + r[0] + '</b><div class="d">' + r[1] + '</div></div>').join('') + '</div></details></div>';
-      AA.filt();
+      AA.filt(); QM();
     } };
+  // 🔀 QUERY MODE (bottom of Team performance): Auto assign · Open market · Both OFF (no rules). One is on at a time; an Admin changes it, everybody sees it.
+  function QM() {
+    const el = document.getElementById('qmBar'), d = AA.d; if (!el) return; if (!d || d.error || !d.mode) { el.innerHTML = ''; return; }
+    const m = d.mode, B = [['aa', '⚙️ Auto assign', 'The system gives each query to a person by the Auto assign rules.', '#1f5fbf', '#e6effc'], ['om', '🏪 Open market', 'Nobody is given a chat. People take queries from Requests (fresh: query lock + equal share · campaign / community: no limit).', '#17874f', '#e3f5ea'], ['no', '🔓 Both OFF — no rules', 'Auto assign AND Open market are off. Anybody can take any query, any number.', '#935c00', '#fff0d4']];
+    const NOW = { aa: '⚙️ Auto assign is ON — queries are given automatically.', om: '🏪 Open market is ON — people take queries from Requests.', no: '🔓 Both are OFF — no rules. Anybody can take any query from Requests.' };
+    const by = d.mode_by && d.mode_by.by ? 'Last change: ' + esc(d.mode_by.by) + ' · ' + esc(String(d.mode_by.at || '').slice(5, 16)) : '';
+    el.innerHTML = '<div style="margin:18px 0 8px;background:#fff;border-radius:16px;padding:16px;box-shadow:0 1px 3px rgba(20,26,43,.12);color:#141a2b"><div style="display:flex;gap:8px 12px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px"><b style="font-size:16px">🔀 Query mode</b><span style="font-size:12.5px;color:#5b6478">' + (d.is_admin ? 'Tap a button to switch. It stays until you change it.' : 'Only an Admin can change it.') + '</span></div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">' + B.map((b) => { const on = m === b[0]; return '<button type="button" data-qm="' + b[0] + '"' + (d.is_admin ? '' : ' disabled') + ' aria-pressed="' + on + '" style="min-width:0;text-align:left;font:inherit;color:#141a2b;cursor:' + (d.is_admin ? 'pointer' : 'default') + ';border-radius:14px;padding:12px 14px;border:2px solid ' + (on ? b[3] : '#e0ddef') + ';background:' + (on ? b[4] : '#f4f4f8') + '"><span style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:16px">' + b[1] + '</b><span style="font-size:11.5px;font-weight:800;border-radius:99px;padding:2px 10px;background:' + (on ? b[3] : '#fff') + ';color:' + (on ? '#fff' : '#8a879c') + ';border:1px solid ' + (on ? b[3] : '#e0ddef') + '">' + (on ? 'ON' : 'OFF') + '</span></span><span style="display:block;font-size:12.5px;color:#5b6478;margin-top:4px">' + b[2] + '</span></button>'; }).join('') + '</div>'
+      + '<div style="margin-top:12px;border-radius:12px;padding:10px 14px;font-size:14px;font-weight:700;background:' + (B.find((b) => b[0] === m) || B[1])[4] + ';color:' + (B.find((b) => b[0] === m) || B[1])[3] + '">' + NOW[m] + '</div>' + (by ? '<div style="font-size:12px;color:#5b6478;margin-top:6px">' + by + '</div>' : '') + '</div>';
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-qm]'); if (!b || AA.busy || !AA.d) return; let to = b.dataset.qm; if (to === AA.d.mode) { if (to === 'no') return; to = 'no'; }   // tapping the one that is ON switches it off = both off
+    const Q = { aa: 'Switch Auto assign ON?\n\nOpen market goes OFF. New queries, and the chats waiting in Requests (last 24 hours), are given to people by the Auto assign rules.', om: 'Switch Open market ON?\n\nAuto assign goes OFF. Nothing is given automatically; people take queries from Requests.', no: 'Switch BOTH off?\n\nAuto assign and Open market stop and NO rule applies: anybody can take any query, any number.' };
+    if (!confirm(Q[to])) return;
+    AA.busy = true; try { AA.d = await api.post('wq.aa_engine', { mode: to }); } catch (er) { alert((er && er.message) || 'Could not change'); } AA.busy = false; AA.draw();
+  });
   document.addEventListener('input', (e) => { if (e.target && e.target.id === 'waaQ') { AA.q = e.target.value; AA.filt(); } });
   document.addEventListener('click', async (e) => {   // 🔓 Admin only: switch ALL rules off / on for one person
     const f = e.target.closest('[data-force]'); if (!f || AA.busy) return; AA.busy = true; f.disabled = true;
@@ -239,8 +255,8 @@ guardPage();
     AA.busy = false; AA.draw();
   });
   document.addEventListener('click', async (e) => {
-    if (!e.target.closest('#waaEng') || AA.busy || !AA.d) return; const on = !AA.d.engine;
-    if (!confirm(on ? 'Start Auto assign?\n\nNew queries will go by themselves to the punched-in salespeople by the rules below.' : 'Stop Auto assign? New queries will wait in Requests.')) return;
+    if (!e.target.closest('#waaEng') || AA.busy || !AA.d) return; const on = !AA.d.engine; if (!AA.d.is_admin) { alert('Only an Admin can change the Query mode.'); return; }
+    if (!confirm(on ? 'Start Auto assign?\n\nNew queries will go by themselves to the punched-in salespeople by the rules below.' : 'Stop Auto assign? Both Auto assign and Open market will be OFF (no rules) — use Query mode at the bottom to choose Open market.')) return;
     AA.busy = true; try { AA.d = await api.post('wq.aa_engine', { on }); } catch (er) { alert((er && er.message) || 'Could not change'); } AA.busy = false; AA.draw();
   });
   document.addEventListener('click', async (e) => {

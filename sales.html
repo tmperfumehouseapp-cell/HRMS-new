@@ -994,14 +994,47 @@
   function giftNums() { const d = GFD.day === $('datePick').value ? GFD.d : null; return d && d.ok ? d : null; }
   function giftTileHtml() {
     const d = giftNums(), on = (T && T.team && Number(T.team.orders)) || 0;
-    return `<div class="ct-tile" id="gfTile"><div class="k">🎁 Gift perfume (website link)</div>
+    return `<div class="ct-tile" id="gfTile" role="button" tabindex="0" style="cursor:pointer" title="Tap: every order that took the gift perfume and for how much"><div class="k">🎁 Gift perfume (website link)</div>
           <div class="v">${d ? d.kept + ' <small>took it</small> · ' + inr(d.money) : '…'}</div>
           <div class="s">${d ? d.removed + ' removed' + (d.rate != null ? ' · ' + d.rate + '% kept the offer' : '') + (on && d.money ? ' · adds ' + inr(Math.round(d.money / on)) + ' to the team ticket' : '') + '. In sales and ticket size, not in commission.' : 'Loading the website numbers…'}</div></div>`;
   }
   function giftK() {
     const d = giftNums();
-    return `<div class="k${d && d.kept ? ' g' : ''}" id="gfK" title="Customers who kept / removed the complimentary perfume on the website payment link. Counted in sales and ticket size, not in commission."><small>🎁 Gift add-on</small><b>${d ? inr(d.money) : '…'}<span>${d ? d.kept + ' took it · ' + d.removed + ' removed' + (d.rate != null ? ' · ' + d.rate + '% kept' : '') : 'website numbers'}</span></b></div>`;
+    return `<div class="k${d && d.kept ? ' g' : ''}" id="gfK" role="button" tabindex="0" style="cursor:pointer" title="Tap: every order that took the gift perfume and for how much. Counted in sales and ticket size, not in commission."><small>🎁 Gift add-on</small><b>${d ? inr(d.money) : '…'}<span>${d ? d.kept + ' took it · ' + d.removed + ' removed' + (d.rate != null ? ' · ' + d.rate + '% kept' : '') : 'website numbers'}</span></b></div>`;
   }
+  // 🎁 tap the Gift add-on number: how many orders at which amount, then one row per order (tms.gift_orders)
+  const GFW = { d: null, amt: 0, emp: '' };
+  function giftWinDraw() {
+    const ov = document.getElementById('gfWin'); if (!ov) return; const bx = ov.firstElementChild, d = GFW.d;
+    const head = '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px"><b style="font-size:17px;flex:1">🎁 Gift add-on — ' + esc($('datePick').value) + '</b><button type="button" data-gfx="1" style="border:0;background:#eef0f4;border-radius:99px;width:34px;height:34px;font-size:16px;cursor:pointer">✕</button></div>';
+    if (!d) { bx.innerHTML = head + '<div style="color:#64748b;padding:18px 0">Reading the orders from the website… the first time can take up to half a minute.</div>'; return; }
+    if (!d.ok) { bx.innerHTML = head + '<div style="background:#fde9e6;color:#a11;border-radius:10px;padding:10px 12px">' + esc(d.error || 'Could not load.') + '</div>'; return; }
+    const R = d.rows || [], sum = R.reduce((a, r) => a + r.amount, 0), G = {}; R.forEach((r) => { const k = Math.round(r.amount); (G[k] = G[k] || { n: 0, m: 0 }); G[k].n++; G[k].m += r.amount; });
+    const keys = Object.keys(G).map(Number).sort((a, b) => a - b), mx = Math.max(1, ...keys.map((k) => G[k].n)), emps = [...new Set(R.map((r) => r.emp || '—'))].sort();
+    const w = R.filter((r) => (!GFW.amt || Math.round(r.amount) === GFW.amt) && (!GFW.emp || (r.emp || '—') === GFW.emp));
+    const K = (l, v) => '<div style="border:1px solid #e3e8ef;border-radius:12px;padding:8px 12px;min-width:0"><div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#64748b">' + l + '</div><b style="font-size:20px">' + v + '</b></div>';
+    const chip = (v, lab, on) => '<button type="button" data-gfe="' + esc(v) + '" style="font:inherit;font-size:12.5px;font-weight:700;border-radius:99px;padding:4px 12px;cursor:pointer;border:1px solid ' + (on ? '#6d3fd4' : '#e3e8ef') + ';background:' + (on ? '#6d3fd4' : '#fff') + ';color:' + (on ? '#fff' : '#141a2b') + '">' + esc(lab) + '</button>';
+    bx.innerHTML = head
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px">' + K('Add-on money', inr(d.money)) + K('Took it', d.kept) + K('Removed', d.removed) + K('Average add-on', R.length ? inr(Math.round(sum / R.length)) : '–') + '</div>'
+      + (Math.abs(sum - d.money) > 1 || d.missing ? '<div style="background:#fff0d4;color:#935c00;border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:10px">' + (d.missing ? d.missing + ' order' + (d.missing === 1 ? '' : 's') + ' could not be read from the website yet — open this again in a minute. ' : '') + (Math.abs(sum - d.money) > 1 ? 'The rows below add up to ' + inr(Math.round(sum)) + '; the website says ' + inr(d.money) + '.' : '') + '</div>' : '')
+      + '<div style="font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6d3fd4;margin-bottom:4px">How many at which amount <span style="text-transform:none;letter-spacing:0;font-weight:600;color:#64748b">· tap a row to see only those orders</span></div>'
+      + (keys.length ? keys.map((k) => '<button type="button" data-gfa="' + k + '" style="display:grid;grid-template-columns:70px 1fr 150px;gap:10px;align-items:center;width:100%;font:inherit;font-size:13.5px;text-align:left;border:0;border-radius:8px;padding:3px 4px;cursor:pointer;color:#141a2b;background:' + (GFW.amt === k ? '#f1ebff' : 'none') + '"><b>' + inr(k) + '</b><span style="background:#e3f5ea;border-radius:5px"><i style="display:block;height:16px;border-radius:5px;background:#17874f;width:' + Math.round(G[k].n * 100 / mx) + '%"></i></span><span style="color:#64748b;text-align:right">' + G[k].n + ' order' + (G[k].n === 1 ? '' : 's') + ' · ' + inr(Math.round(G[k].m)) + '</span></button>').join('') : '<div style="color:#64748b;font-size:13px">No order took the gift on this day.</div>')
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:12px 0 8px"><span style="font-size:12.5px;color:#64748b;font-weight:700">Salesperson:</span>' + chip('', 'Everyone', !GFW.emp) + emps.map((e) => chip(e, e, GFW.emp === e)).join('') + '</div>'
+      + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px;font-variant-numeric:tabular-nums"><thead><tr style="text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#64748b"><th style="padding:6px 8px">Order</th><th>Customer</th><th>Salesperson</th><th>Gift perfume</th><th style="text-align:right">Add-on ₹</th><th style="text-align:right;padding-right:8px">Order total</th><th>Time</th></tr></thead><tbody>'
+      + (w.map((r) => '<tr style="border-top:1px solid #eef0f3"><td style="padding:6px 8px;white-space:nowrap"><b>' + esc(r.number) + '</b></td><td>' + esc(r.customer || '—') + '</td><td>' + esc(r.emp || '—') + '</td><td>' + esc(r.gift || '—') + '</td><td style="text-align:right;font-weight:800;color:#17874f">' + inr(Math.round(r.amount)) + '</td><td style="text-align:right;padding-right:8px">' + inr(Math.round(r.total)) + '</td><td style="white-space:nowrap">' + esc(String(r.time || '').slice(11, 16)) + '</td></tr>').join('') || '<tr><td colspan="7" style="padding:10px 8px;color:#64748b">No order matches.</td></tr>')
+      + '</tbody><tfoot><tr style="border-top:2px solid #e3e8ef"><td colspan="4" style="padding:6px 8px"><b>Total of what is shown (' + w.length + ' of ' + R.length + ')</b></td><td style="text-align:right"><b>' + inr(Math.round(w.reduce((a, r) => a + r.amount, 0))) + '</b></td><td style="text-align:right;padding-right:8px"><b>' + inr(Math.round(w.reduce((a, r) => a + r.total, 0))) + '</b></td><td></td></tr></tfoot></table></div>'
+      + '<div style="font-size:12px;color:#64748b;margin-top:8px">The website gives the orders that took the gift. The ' + d.removed + ' who removed it are only counted, not listed. In sales and ticket size, not in commission.</div>';
+  }
+  async function giftWinOpen() {
+    let ov = document.getElementById('gfWin'); if (ov) ov.remove();
+    ov = document.createElement('div'); ov.id = 'gfWin'; ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:3vh 12px;overflow:auto';
+    ov.innerHTML = '<div style="background:#fff;color:#141a2b;border-radius:16px;padding:16px;width:100%;max-width:980px;box-shadow:0 10px 40px rgba(0,0,0,.3)"></div>'; document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-gfx]')) { ov.remove(); return; } const a = e.target.closest('[data-gfa]'), p = e.target.closest('[data-gfe]'); if (a) { const k = +a.dataset.gfa; GFW.amt = GFW.amt === k ? 0 : k; giftWinDraw(); } else if (p) { GFW.emp = p.dataset.gfe; giftWinDraw(); } });
+    GFW.d = null; GFW.amt = 0; GFW.emp = ''; giftWinDraw();
+    try { GFW.d = await api.get('tms.gift_orders', { date: $('datePick').value }); } catch (e) { GFW.d = { ok: false, error: (e && e.message) || 'Could not load.' }; }
+    giftWinDraw();
+  }
+  document.addEventListener('click', (e) => { if (e.target.closest('#gfK, #gfTile')) giftWinOpen(); });
   async function giftLoad() {
     const day = $('datePick').value; if (!day || (GFD.day === day && GFD.at > Date.now() - 60000)) return;
     try { const d = await api.get('tms.gift', { date: day }); GFD = { day, d, at: Date.now() }; } catch (e) { GFD = { day, d: null, at: Date.now() }; }

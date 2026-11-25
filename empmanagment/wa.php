@@ -268,6 +268,14 @@ function wa_parse_msg(array $m): array
 
 /** Owner (9 Nov): chats are given to salespeople BY HAND only (Waiting → Choose person, the chat's Assign button). While this is on (the default; setting wa_manual_assign = 0 turns the robots back on),
  *  no engine — routing, hot chats, flows, re-assignment — gives a chat to anybody by itself. */
+/** 🔀 QUERY MODE (owner, 24 Nov): 'aa' = Auto assign gives the queries by its rules · 'om' = Open market, people take from Requests (query lock, equal share) · 'no' = both off: no rule at all, anybody takes any query.
+ *  One setting (wq_mode), changed by an Admin on Team performance; it stays until it is changed (no daily start). Before it was ever set: the old switches decide. */
+function wa_query_mode(PDO $pdo): string
+{
+    try { $m = (string)setting_get($pdo, 'wq_mode', ''); if (in_array($m, ['aa', 'om', 'no'], true)) return $m;
+        if ((string)setting_get($pdo, 'wag_open_market', '') === '1') return 'om';
+        return (string)setting_get($pdo, 'waa_off', '1') === '0' ? 'aa' : 'no'; } catch (Throwable $e) { return 'om'; }
+}
 function wa_manual_assign(PDO $pdo): bool { try { return (string)setting_get($pdo, 'wa_manual_assign', '1') !== '0'; } catch (Throwable $e) { return true; } }
 /** 🔀 Owner (9 Nov): a customer who writes to a number that has the Meta payment problem (131042) is answered from another number — the chat is switched to it at once.
  *  The new number has no 24-hour window with this customer yet, so the first message from it must be a pre-made message (the chat opens the list by itself). Returns the new number id or 0. */

@@ -1,0 +1,49 @@
+# READ-ONLY: is the gift add-on money inside the order totals HRMS uses for sales and ticket size? Website order total vs the total saved in HRMS (no customer details).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Gift add-on in ticket size (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Gift add-on
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/gt_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $set = function ($k) use ($d) { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); return trim((string)$q->fetchColumn()); };
+          $base = rtrim($set("tms_api_base") ?: "https://test.tmperfumehouse.store/api/v1", "/"); $key = $set("tms_api_key");
+          $get = function ($path) use ($base, $key) { $ch = curl_init($base . $path); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ["Authorization: Bearer " . $key, "Accept: application/json"]]); $o = curl_exec($ch); curl_close($ch); $j = json_decode((string)$o, true); return is_array($j) ? ($j["data"] ?? $j) : []; };
+          $from = date("Y-m-d H:i:s", time() - 30 * 3600); $to = date("Y-m-d H:i:s", time() + 3600); echo "window $from .. $to\n";
+          $r = $get("/gift-report?" . http_build_query(["from" => $from, "to" => $to])); echo "website: kept=" . ($r["kept"] ?? "?") . " removed=" . ($r["removed"] ?? "?") . " money=" . ($r["money"] ?? "?") . " orders listed=" . count((array)($r["orders"] ?? [])) . "\n";
+          $sumG = 0; $sumW = 0; $sumH = 0; $n = 0; $same = 0; $diff = 0; $noRow = 0; $noEmp = 0;
+          foreach (array_slice((array)($r["orders"] ?? []), 0, 80) as $no) { $no = (string)$no; $o = $get("/orders/" . rawurlencode($no)); $g = 0; $gl = 0;
+            foreach ((array)($o["items"] ?? []) as $it) if (!empty($it["gift"])) { $gl++; $g += (float)($it["price"] ?? 0) * max(1, (int)($it["quantity"] ?? 1)) - (float)($it["discount"] ?? 0); }
+            $q = $d->prepare("SELECT total, employee_id, order_type FROM manual_orders WHERE channel = 'TM Store' AND mp_no = ? LIMIT 1"); $q->execute([$no]); $m = $q->fetch(PDO::FETCH_ASSOC);
+            $wt = (float)($o["total"] ?? 0); $n++; $sumG += $g; $sumW += $wt;
+            if (!$m) { $noRow++; $st = "NOT in HRMS"; } else { $sumH += (float)$m["total"]; if ((int)$m["employee_id"] <= 0) $noEmp++; if (abs((float)$m["total"] - $wt) < 0.5) { $same++; $st = "HRMS total " . $m["total"] . " = website"; } else { $diff++; $st = "HRMS total " . $m["total"] . " DIFFERENT (website " . $wt . ")"; } $st .= " · emp " . ((int)$m["employee_id"] > 0 ? "yes" : "NO") . " · type " . $m["order_type"]; }
+            echo "  " . $no . " · website total " . $wt . " · gift lines " . $gl . " = " . round($g, 2) . " · " . $st . "\n"; }
+          echo "SUMMARY orders $n · gift money in lines " . round($sumG) . " · HRMS has same total: $same · different: $diff · not in HRMS: $noRow · in HRMS with no salesperson: $noEmp\n";
+          PHP
+          php /tmp/gt_check.php "$P"; rm -f /tmp/gt_check.php
+          REMOTE

@@ -84,7 +84,7 @@
       if (!S.lines.length) return '';
       if (S.perr) return `<div class="wso-note bad">${esc(S.perr)}</div>`;
       if (!p) return '<div class="wso-tot"><div class="r"><span>Working out the total…</span></div></div>';
-      return `<div class="wso-tot"><div class="r"><span>Subtotal</span><span>${rs(p.subtotal)}</span></div>${Number(p.discount) > 0 ? `<div class="r g"><span>Discount</span><span>− ${rs(p.discount)}</span></div>` : ''}<div class="r t"><span>Total</span><span>${rs(p.total)}</span></div></div>${(p.problems || []).length ? `<div class="wso-note bad">${p.problems.map(esc).join('<br>')}</div>` : ''}<div class="wso-note">🔗 The customer gets a <b>checkout link</b>: adds the address, chooses <b>prepaid or COD</b>, sees the 🎁 gift offer and places the order. No order is made before that. Works 72 hours, one order.</div>`;
+      return `<div class="wso-tot"><div class="r"><span>Subtotal</span><span>${rs(p.subtotal)}</span></div>${Number(p.discount) > 0 ? `<div class="r g"><span>Discount</span><span>− ${rs(p.discount)}</span></div>` : ''}<div class="r t"><span>Total</span><span>${rs(p.total)}</span></div></div>${(p.problems || []).length ? `<div class="wso-note bad">${p.problems.map(esc).join('<br>')}</div>` : ''}<div class="wso-note">🔗 The customer gets a <b>checkout link</b> and pays <b>exactly this total</b>, prepaid or COD (no COD fee, no shipping, combo deals do not change it). Only a 🎁 gift perfume they choose to keep adds. No order is made before they place it. Works 72 hours, one order.</div>`;
     }
     function draw() {
       if (S.done) {
