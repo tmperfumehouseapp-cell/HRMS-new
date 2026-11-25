@@ -11761,6 +11761,14 @@ function ct_better_at(PDO $pdo, int $days = 1, string $day = ''): array
 }
 /** ✅ The 3 must-send check of ONE business day (+ the add-on column, owner 23 Nov): per salesperson, per order — address re-check · chain selection · prepaid 2% (plain text match, no AI) and whether an add-on was put on the order (employee_addons) with the reason when not (order_rate_auto).
  *  $onlyEmp > 0 → only that salesperson's orders (the "my check" card of the sales app). Used by ct.must3 (Admin / HR) and ct.must3_me. */
+/** 💳 The prepaid offer told as the COD CHARGE (owner, 25 Nov 2026: "COD karte hai to delivery charges 100rs dena hota hai, full payment par koi extra charges nhi" stayed "pending" — it has no "2%", no "discount" and no order amount).
+ *  One message that names COD, a charge (charge / extra / free) and prepaid / full / online / advance payment is the prepaid offer. "Prepaid ya COD?" alone is not. */
+function must3_cod_pitch(string $body): bool
+{
+    if ($body === '' || !preg_match('/(?<![a-z])(cod|c\.o\.d\.?|cash\s*on\s*delivery)(?![a-z])/iu', $body)) return false;
+    if (!preg_match('/prepaid|pre\s*paid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?|pay\s*(now|online)/iu', $body)) return false;
+    return (bool)preg_match('/charges?|extra|free|shulk|चार्ज|ચાર્જ/iu', $body);
+}
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
 {
     $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0], 'people' => []];
@@ -11800,7 +11808,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = [])
                     if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; if ($by === 'S') $person = true; $mark = [substr((string)$m['ts'], 11, 5), $by];
                     if ($by === 'S' && (string)$m['mtype'] === 'image' && ctype_digit((string)$m['media_id'])) $pics[(int)$m['id']] = [(string)$m['media_id'], $mark];   // 📷 a photo a person sent: it may be the chain catalogue with no words (read by must3_photo_tick)
                     if ($ff['a'] === null && preg_match($rxA, $body)) $ff['a'] = $mark;
-                    if ($ff['p'] === null && $body !== '' && preg_match($rxP, $body)) $ff['p'] = $mark;
+                    if ($ff['p'] === null && $body !== '' && (preg_match($rxP, $body) || must3_cod_pitch($body))) $ff['p'] = $mark;
                     if ($ff['c'] === null) {
                         if (preg_match($rxC, $body) || preg_match($rxChainWord, $body)) $ff['c'] = $mark;
                         elseif ((string)$m['mtype'] === 'image') { for ($z = max(0, $mi - 6); $z <= min($nm - 1, $mi + 6); $z++) if ($z !== $mi && preg_match($rxChainWord, (string)$ms[$z]['body'])) { $ff['c'] = $mark; break; } }
