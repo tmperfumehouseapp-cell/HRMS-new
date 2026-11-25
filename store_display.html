@@ -60,7 +60,7 @@
   }
   const say = (id, t, bad) => { const e = $(id); if (e) { e.style.color = bad ? '#b91c1c' : '#15803d'; e.textContent = t; } };
   async function load() {
-    try { D = await api.get('st_disp.get'); render(); }
+    try { const r = await api.get('st_disp.get'); D = { cfg: r, numbers: r.numbers || {} }; render(); }
     catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
   $('root').addEventListener('click', async (e) => {
