@@ -509,6 +509,8 @@ try {
         }
 
         // ---- suggested order: what to make next, from what REALLY sold (per perfume AND size), not from guesses
+        case 'st_disp.feed': { require_once __DIR__ . '/store_display.php'; sd_feed($pdo); break; }      // PUBLIC: the store screen (secret key in its link), totals only
+        case 'st_disp.get': case 'st_disp.save': case 'st_disp.newkey': { require_once __DIR__ . '/store_display.php'; sd_handle($pdo, $action); break; }
         case 'st_since.get': { require_once __DIR__ . '/store_since.php'; ss_handle($pdo); break; }      // Store → Since the start (orders, bottles, ml, ₹ by month)
         case 'st_rm.list': case 'st_rm.done': case 'st_rm.skip': case 'st_rm.stop': {          // Store → Messages → Customer reminders (sent by hand, nothing goes out by itself)
             require_once __DIR__ . '/store_remind.php'; sr_handle($pdo, $action); break;
