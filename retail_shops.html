@@ -2200,7 +2200,7 @@
         <div class="s">${s.orders ? `🧾 ${inr(s.order_amt)} · ` : ''}${s.balance > 0.5 ? `${inr(s.balance)} due` : 'no dues'}</div><div class="bar"><i style="width:${pct}%"></i></div></div>
         <div class="rt-cards">${day.cards.map(rtCard).join('') || '<div class="sub" style="text-align:center; padding:12px;">Drop shops here</div>'}</div></div>`;
     }).join('')}</div>`;
-    if (rt.c === 0) { const col = rtEl('rtBoard').querySelector('.rt-col.today'); if (col && col.offsetLeft > 600) col.parentElement.scrollLeft = col.offsetLeft - 280;   // yesterday stays in sight (its red cards) }
+    if (rt.c === 0) { const col = rtEl('rtBoard').querySelector('.rt-col.today'); if (col && col.offsetLeft > 600) col.parentElement.scrollLeft = col.offsetLeft - 280; }   /* yesterday stays in sight (its red cards) */
   }
   const rtFind = (sid) => { for (const day of (rt.data ? rt.data.days : [])) for (const x of day.cards) if (x.shop_id === sid) return { x, day }; return null; };
   async function rtCall(action, body, msg) {
