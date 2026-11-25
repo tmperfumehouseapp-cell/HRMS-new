@@ -126,16 +126,21 @@
       st.appendChild(e); (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 2100); })(e); }
   }
   setTheme(themeLock || 'classic');
+  // the little kid who runs about the card (Store -> Display setting, or ?kid=1 in the link for a preview)
+  var km = /[?&]kid=([01])/.exec(location.search), kidLock = km ? km[1] : '', kidOn = false;
+  function setKid(on) { if (on === kidOn) return; kidOn = on; var el = $('kid');
+    if (on && !el) { var sc = document.createElement('script'); sc.src = 'assets/js/tv_kid.js?v=1'; document.body.appendChild(sc); } else if (el) el.style.display = on ? '' : 'none'; }
+  if (kidLock) setKid(kidLock === '1');
   function setNum(id, v, old) { $(id).textContent = f(v); if (old !== undefined && old !== null && v !== old) flash(id); }
   function show(d) {
-    setTheme(themeLock || d.theme || 'classic');
+    setTheme(themeLock || d.theme || 'classic'); if (!kidLock) setKid(!!d.kid);
     $('title').textContent = d.title; $('place').textContent = d.place; $('per').textContent = d.period; $('cta').textContent = d.cta; $('url').textContent = d.url;
     $('rt').textContent = d.rating !== '' ? d.rating + '/5' : '–'; $('gr').textContent = f(d.reviews);
     setNum('ord', d.orders, last && last.orders); setNum('bt', d.bottles, last && last.bottles); setNum('cm', d.community, last && last.community);
     if (last && d.orders > last.orders) {
       var p = $('pl'); p.textContent = '+' + (d.orders - last.orders); restart(p, 'go');
       var nb = Math.max(0, d.bottles - last.bottles);
-      confetti(); toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
+      confetti(); if (kidOn && window.tvKid) window.tvKid.party(d.orders - last.orders); toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
     }
     last = d; $('msg').style.display = 'none'; $('live').className = 'live'; $('livet').textContent = 'LIVE';
   }
