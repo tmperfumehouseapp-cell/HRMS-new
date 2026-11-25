@@ -102,6 +102,8 @@
   .bd-modal .acts.fu-stk{position:sticky;bottom:-24px;background:#fff;padding:10px 0 6px;margin-top:8px;z-index:3;border-top:1px solid #f0f1f3;}
   .fu-mx{display:flex;align-items:center;gap:8px;} .fu-mx .sp{flex:1;} .fu-cls{border:0;background:#f3f4f6;width:34px;height:34px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer;color:#4a505c;flex:none;} .fu-cls:hover{background:#e5e7eb;}
   .fu-err{color:#b42318;background:#fde8e6;border-radius:10px;padding:8px 10px;font-size:13px;font-weight:700;margin-top:8px;display:none;}
+  .fu-cl{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px;cursor:pointer;font-size:14px;line-height:1.35;background:#fff}
+  .fu-cl input{width:20px;height:20px;flex:none;margin:0;accent-color:#16945a} .fu-cl:has(input:checked){background:#effaf4;border-color:#b7e4c9} .fu-cl:has(input:checked) span{color:#0f5a3a}
   .fu-rx{margin-top:5px;font-size:12px;line-height:1.45;color:#344054;} .fu-rx b{color:#0f7a4d;}
   .fu-ck{display:flex;flex-wrap:wrap;gap:6px;} .fu-ck label{display:inline-flex;align-items:center;gap:5px;font-size:13px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;cursor:pointer;} .fu-ck input{margin:0;}
   .fu-nt{display:grid;grid-template-columns:1fr 1.4fr 1fr auto;gap:6px;margin-bottom:6px;} .fu-nt .bd-in{padding:8px 10px;font-size:14px;} .fu-nt .x{border:0;background:none;font-size:18px;cursor:pointer;color:#9aa1ac;}
@@ -173,7 +175,11 @@ guardPage(); renderSidebar('followup');
     return !!((u.text && !u.q) || (!t.need_text && t.source && u.val != null)); };
   const fileUrl = (t, d, k) => api.buildUrl('fup.file', { topic_id: t.id, day: d, key: k, token: api.token() });
   // the owner's own fields of a row: label on the left, what was filled on the right (a link opens, a file opens, yes / no is coloured)
-  const fvals = (t, d, u) => { if (!t.fields.length || !u) return ''; const rows = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null; if (!fset(v)) return f.req ? '<span>' + esc(f.label) + '</span><b style="color:#b45309">not filled</b>' : '';
+  const isList = (t) => t.fields.filter((f) => f.type === 'yesno').length >= 5;
+  const listSum = (t, u) => { const yn = t.fields.filter((f) => f.type === 'yesno'), ok = yn.filter((f) => u.f && u.f[f.k] === 'yes'), no = yn.filter((f) => !(u.f && u.f[f.k] === 'yes'));
+    return '<div class="fu-num" style="color:' + (no.length ? '#b45309' : '#16945a') + '">✓ ' + ok.length + ' <small>of ' + yn.length + ' done</small></div><div class="fu-bar"><i style="width:' + Math.round(ok.length * 100 / yn.length) + '%"></i></div>'
+      + (no.length ? '<div class="fu-vals" style="grid-template-columns:1fr">' + no.slice(0, 8).map((f) => '<span style="color:#b42318">✗ ' + esc(f.label) + '</span>').join('') + (no.length > 8 ? '<span>+ ' + (no.length - 8) + ' more not done</span>' : '') + '</div>' : '<div class="fu-by" style="color:#16945a">All done</div>'); };
+  const fvals = (t, d, u) => { if (!t.fields.length || !u) return ''; if (isList(t) && u.f && Object.keys(u.f).length) return listSum(t, u) + ((tx) => (tx.length ? '<div class="fu-vals fu-fv">' + tx.join('') + '</div>' : ''))(t.fields.filter((f) => f.type !== 'yesno' && u.f && fset(u.f[f.k])).map((f) => '<span>' + esc(f.label) + '</span><b>' + (isUp(f.type) ? '📎' : esc(String(u.f[f.k]))) + '</b>')); const rows = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null; if (!fset(v)) return f.req ? '<span>' + esc(f.label) + '</span><b style="color:#b45309">not filled</b>' : '';
       const show = isUp(f.type) ? '<a href="' + esc(fileUrl(t, d, f.k)) + '" target="_blank" rel="noopener" data-stop="1">' + (f.type === 'photo' ? '📷 photo' : f.type === 'video' ? '🎥 video' : '📎 ' + esc(v.n || 'file')) + '</a>' : f.type === 'link' ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer" data-stop="1">🔗 open</a>' : f.type === 'yesno' ? '<b style="color:' + (v === 'yes' ? '#16945a' : '#d9423b') + '">' + (v === 'yes' ? 'Yes' : 'No') + '</b>' : f.type === 'num' ? '<b>' + Number(v).toLocaleString('en-IN') + '</b>' : '<b style="font-weight:600;white-space:normal">' + esc(v) + '</b>';
       return '<span>' + esc(f.label) + '</span>' + show; }).join(''); return rows ? '<div class="fu-vals fu-fv">' + rows + '</div>' : ''; };
   // who to call: name (+ title) with a Call and a WhatsApp button when the phone is recorded on the employee
@@ -502,6 +508,7 @@ guardPage(); renderSidebar('followup');
     const fill = () => {   // show what is already saved for this topic and date
       t = D.topics.find((x) => x.id === Number(q('#uTop').value)) || t; const u = t.updates[q('#uD').value] || {};
       let gPrev = ''; q('#uF').innerHTML = t.fields.map((f) => { const head = f.g && f.g !== gPrev ? '<div class="fu-lb" style="margin:6px 0 6px;color:#14161a">▸ ' + esc(f.g) + '</div>' : ''; gPrev = f.g || ''; return head + ((f) => { const v = u.f ? u.f[f.k] : null, id = 'uf_' + f.k, lab = '<label>' + esc(f.label) + (f.req ? ' <span style="color:#d9423b">*</span>' : '') + (f.min ? ' <span class="fu-sub" style="display:inline">· at least ' + f.min + ' words</span>' : '') + '</label>';
+        if (f.type === 'yesno' && isList(t)) return '<label class="fu-cl"><input type="checkbox" id="' + id + '"' + (v === 'yes' ? ' checked' : '') + '><span>' + esc(f.label) + '</span></label>';
         if (f.type === 'yesno') return '<div class="bd-f">' + lab + '<select class="bd-in" id="' + id + '"><option value="">Choose…</option><option value="yes"' + (v === 'yes' ? ' selected' : '') + '>Yes</option><option value="no"' + (v === 'no' ? ' selected' : '') + '>No</option></select></div>';
         if (f.type === 'choice') return '<div class="bd-f">' + lab + '<select class="bd-in" id="' + id + '"><option value="">Choose…</option>' + f.opts.map((o) => '<option' + (v === o ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></div>';
         if (isUp(f.type)) return '<div class="bd-f">' + lab + (fset(v) ? '<div class="bd-sub" style="margin-bottom:4px">Attached: <a href="' + esc(fileUrl(t, q('#uD').value, f.k)) + '" target="_blank" rel="noopener">' + (f.type === 'photo' ? '📷 ' : f.type === 'video' ? '🎥 ' : '📎 ') + esc(v.n || 'file') + '</a> — choose another to replace it</div>' : '')
@@ -527,7 +534,7 @@ guardPage(); renderSidebar('followup');
     q('#uOk').onclick = () => run(q('#uOk'), async () => {
       const d = q('#uD').value, text = q('#uT').value.trim(), v = q('#uV').value.trim(), p = q('#uP').value.trim();
       if (!d) { toast('Choose the date.'); return; }
-      const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (isUp(f.type)) { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.value.trim(); });
+      const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (isUp(f.type)) { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.type === 'checkbox' ? (el.checked ? 'yes' : 'no') : el.value.trim(); });
       const anyF = files.length || Object.keys(fv).some((k) => fv[k] !== '');
       if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
       // a required box left empty is told at once (it used to save only the words, and the day stayed "not filled" with no word about why)
