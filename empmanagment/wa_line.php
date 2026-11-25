@@ -797,7 +797,7 @@ function wl_snap(PDO $pdo, bool $force = false): bool
     try { wl_topics_refresh($pdo); } catch (Throwable $e) { }   // a new topic goes live when its 4 messages are approved
     try { wl_learn_night($pdo); } catch (Throwable $e) { }   // once a night: days, new wordings (to Meta), sentences
     try { wl_heal($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup heal: ' . $e->getMessage()); }
-    $st = wl_status($pdo); try { [$td0] = wl_ist(time()); $st['cost_today'] = wl_summary($pdo, wl_ist_at($td0, 0))['cost']; } catch (Throwable $e) { }
+    $st = wl_status($pdo); try { [$td0] = wl_ist(time()); $st['cost_today'] = wl_summary($pdo, (int)strtotime(function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 00:00:00')))['cost']; } catch (Throwable $e) { }
     $pdo->prepare("INSERT INTO wa_line_snap (at, j) VALUES (?, ?)")->execute([date('Y-m-d H:i:s'), json_encode($st, JSON_UNESCAPED_UNICODE)]);
     try { wl_push($pdo, $st); } catch (Throwable $e) { }
     if (mt_rand(1, 30) === 1) $pdo->prepare("DELETE FROM wa_line_snap WHERE at < ?")->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]); return true;
@@ -879,7 +879,7 @@ function wl_overview_calc(PDO $pdo): array
         if ($d === $td) { if ($r['status'] === 'planned') $o['today']['left_by_hour'][$hh] = ($o['today']['left_by_hour'][$hh] ?? 0) + 1; $o['today']['total']++; if ($r['status'] === 'sent') $o['today']['sent']++; $o['today']['by_topic'][$r['topic']] = ($o['today']['by_topic'][$r['topic']] ?? 0) + 1; }
         elseif ($d === $tm) { $o['tomorrow']['total']++; $o['tomorrow']['by_topic'][$r['topic']] = ($o['tomorrow']['by_topic'][$r['topic']] ?? 0) + 1; $o['tomorrow']['by_hour'][$hh] = ($o['tomorrow']['by_hour'][$hh] ?? 0) + 1; } }
     $o['by_day'] = []; try { foreach ($pdo->query("SELECT DATE(anchor_at) d, COUNT(*) n, SUM(status = 'active') a, SUM(status = 'replied') r, SUM(status = 'done') x FROM wa_line_cust GROUP BY DATE(anchor_at) ORDER BY d")->fetchAll() as $r) $o['by_day'][] = ['day' => (string)$r['d'], 'n' => (int)$r['n'], 'active' => (int)$r['a'], 'replied' => (int)$r['r'], 'done' => (int)$r['x']]; } catch (Throwable $e) { }   // customers by the day they came in
-    ksort($o['tomorrow']['by_hour']); ksort($o['today']['left_by_hour']); $o['calendar'] = wl_calendar($pdo); $o['suggest'] = json_decode((string)setting_get($pdo, 'wl_suggest', ''), true) ?: ['at' => '', 'items' => []]; $o['learn_log'] = json_decode((string)setting_get($pdo, 'wl_learn_log', ''), true) ?: []; $o['extras'] = array_map(fn($e) => ['key' => $e['key'], 'of' => $e['of'] ?? '', 'body' => $e['body'], 'at' => $e['at'] ?? ''], (array)(json_decode((string)setting_get($pdo, 'wl_extra', ''), true) ?: [])); $o['days_now'] = wl_days(); $o['ready'] = wl_ready($pdo); $o['status'] = wl_status($pdo); [$td0] = wl_ist(time()); $o['summary'] = ['today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => wl_summary($pdo, (int)strtotime($cfg['started'] ?: 'now') - 60)]; $o['snaps'] = wl_snaps($pdo, 36); $o['tpl'] = wl_tpl_status($pdo); $o['tpl_counts'] = array_count_values($o['tpl']);
+    ksort($o['tomorrow']['by_hour']); ksort($o['today']['left_by_hour']); $o['calendar'] = wl_calendar($pdo); $o['suggest'] = json_decode((string)setting_get($pdo, 'wl_suggest', ''), true) ?: ['at' => '', 'items' => []]; $o['learn_log'] = json_decode((string)setting_get($pdo, 'wl_learn_log', ''), true) ?: []; $o['extras'] = array_map(fn($e) => ['key' => $e['key'], 'of' => $e['of'] ?? '', 'body' => $e['body'], 'at' => $e['at'] ?? ''], (array)(json_decode((string)setting_get($pdo, 'wl_extra', ''), true) ?: [])); $o['days_now'] = wl_days(); $o['ready'] = wl_ready($pdo); $o['status'] = wl_status($pdo); [$td0] = wl_ist(time()); $o['summary'] = ['today' => wl_summary($pdo, (int)strtotime(function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 00:00:00'))), 'total' => wl_summary($pdo, (int)strtotime($cfg['started'] ?: 'now') - 60)]; $o['snaps'] = wl_snaps($pdo, 36); $o['tpl'] = wl_tpl_status($pdo); $o['tpl_counts'] = array_count_values($o['tpl']);
     $o['guide'] = ['live' => false, 'excerpt' => '']; try { if (function_exists('wk_guide_text')) { $g = wk_guide_text($pdo, 1500); $o['guide'] = ['live' => $g !== '', 'excerpt' => $g]; } } catch (Throwable $e) { }   // the approved guidebook: the owner reads the lineup messages against it
     $dj = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); $o['old_drip'] = is_array($dj) ? (string)($dj['mode'] ?? 'manual') : 'manual';
     return $o;
@@ -1130,17 +1130,17 @@ if (strpos($__wl, 'wa.line_') === 0) {
         }
         case 'wa.line_aft': { if (!function_exists('wa_aft_overview')) require_once __DIR__ . '/wa_after.php'; json_response(['ok' => true] + wa_aft_overview($pdo)); }   // the After-Order plan card under the 30-day plan
         case 'wa.line_replies': {   // 💬 the people behind the Replies number: today or since the start
-            $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : wl_ist_at($td0, 0);
+            $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $from = ((string)($_GET['scope'] ?? 'today')) === 'total' ? (int)strtotime($c['started'] ?: 'now') - 60 : (int)strtotime(function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wl_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
         case 'wa.line_cold_replies': {   // 💬 the people behind the Cold funnel's Replies number: today or all
             if (!function_exists('wcd_repliers')) require_once __DIR__ . '/wa_cold.php';
-            $from = ((string)($_GET['scope'] ?? 'today')) === 'all' ? time() - 120 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
+            $from = ((string)($_GET['scope'] ?? 'today')) === 'all' ? time() - 120 * 86400 : (int)strtotime(function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wcd_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
         case 'wa.line_modc_replies': {   // 💬 the people behind Module C's Replied number: today or the last 30 days
             if (!function_exists('wa_rc_repliers')) require_once __DIR__ . '/wa_modc.php';
-            $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
+            $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wa_rc_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
         case 'wa.line_strip': { if (!function_exists('wa_strip_report')) require_once __DIR__ . '/wa_strip.php'; json_response(['ok' => true] + (!empty($_GET['money']) ? wa_strip_money($pdo, (string)($_GET['mod'] ?? '')) : (!empty($_GET['rep']) ? wa_strip_replies($pdo, (string)($_GET['mod'] ?? '')) : wa_strip_report($pdo, (string)($_GET['mod'] ?? ''))))); }   // one line per module at the top of the Campaigns page
@@ -1152,11 +1152,11 @@ if (strpos($__wl, 'wa.line_') === 0) {
         case 'wa.line_modc': { if (!function_exists('wa_rc_overview')) require_once __DIR__ . '/wa_modc.php'; json_response(['ok' => true] + wa_rc_overview($pdo)); }   // Module C card under the After-Order card
         case 'wa.line_aft_replies': {   // 💬 the people behind the After-Order Replies number: today or the last 30 days
             if (!function_exists('wa_aft_repliers')) require_once __DIR__ . '/wa_after.php';
-            $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
+            $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wa_aft_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
         case 'wa.line_card': {      // ⚡ the card's numbers are counted ONCE a minute and shared by every open screen (it took ~17 s a load and was 96 loads an hour: every load re-read all sent Lineup messages and their status). Only this report is up to 1 minute old; nothing that is sent changes.
-            $calc = function () use ($pdo) { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); return ['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, wl_ist_at($td0, 0)), 'total' => hrms_memo('wl_card_total_v1:' . (string)$c['started'], 300, function () use ($pdo, $c) { return wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60); }), 'tomorrow' => wl_overview($pdo)['tomorrow']]; };      // ⚡ "total since start" re-reads EVERY Lineup message ever sent and its status (the biggest query of the database, 6.8%): counted once in 5 minutes; "today" stays at 1 minute
+            $calc = function () use ($pdo) { $c = wl_cfg($pdo); [$td0] = wl_ist(time()); $st = wl_status($pdo, false); return ['ok' => true, 'started' => $c['started'], 'ready' => wl_ready($pdo), 'status' => $st, 'today' => wl_summary($pdo, (int)strtotime(function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 00:00:00'))), 'total' => hrms_memo('wl_card_total_v1:' . (string)$c['started'], 300, function () use ($pdo, $c) { return wl_summary($pdo, (int)strtotime($c['started'] ?: 'now') - 60); }), 'tomorrow' => wl_overview($pdo)['tomorrow']]; };      // ⚡ "total since start" re-reads EVERY Lineup message ever sent and its status (the biggest query of the database, 6.8%): counted once in 5 minutes; "today" stays at 1 minute
             json_response(function_exists('hrms_memo') ? hrms_memo('wl_card_v1', 60, $calc) : $calc()); }
         case 'wa.line_report': json_response(['ok' => true] + wl_report($pdo, max(7, min(90, (int)($_GET['days'] ?? 30)))));
         case 'wa.line_customer': json_response(['ok' => true] + wl_customer($pdo, preg_replace('/\D/', '', (string)($_GET['phone'] ?? ''))));
