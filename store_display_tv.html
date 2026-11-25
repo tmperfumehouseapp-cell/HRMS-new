@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="robots" content="noindex, nofollow">
 <title>Store Report Card</title>
+<link rel="manifest" href="tv_manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" href="icons/icon-192.png">
 <style>
   html,body{margin:0;height:100%;background:#fff;overflow:hidden;cursor:none}
   body{font-family:Inter,'Segoe UI',system-ui,Roboto,Arial,'Noto Sans Gujarati',sans-serif;color:#0b0b0b}
@@ -97,6 +100,8 @@
 
   /* Classic (white) keeps its look: only a few soft orange sparkles */
   .th-classic .blob{display:none} .th-classic .sp{background:#ff5a00;opacity:.35}
+  #fsb{position:fixed;left:50%;bottom:6%;-webkit-transform:translateX(-50%);transform:translateX(-50%);z-index:99;font:900 26px/1 Inter,Arial,sans-serif;white-space:nowrap;padding:20px 32px;border-radius:50px;border:5px solid #2b1a10;background:#ff914a;color:#2b1a10;box-shadow:0 8px 0 #2b1a10;cursor:pointer;outline:none}
+  #fsb:focus{box-shadow:0 0 0 8px #fff,0 8px 0 #2b1a10} #fsb.off{display:none}
 </style>
 </head>
 <body>
@@ -114,6 +119,7 @@
   <div class="cta" id="cta">Order it now</div><div class="url" id="url">tmperfumehouse.com</div>
   <div id="msg" style="color:#555">Loading…</div>
 </div>
+<button id="fsb" type="button" autofocus>&#x26F6; Full screen &ndash; press OK</button>
 <script src="assets/js/config.js?v=4"></script>
 <script>
 /* written in plain old JavaScript so it also runs in the old Chrome of cheap Android TV boxes */
@@ -226,6 +232,14 @@
   function full() { var e = document.documentElement, f = e.requestFullscreen || e.webkitRequestFullscreen || e.webkitRequestFullScreen || e.mozRequestFullScreen || e.msRequestFullscreen;
     var on = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement; if (f && !on) { try { var r = f.call(e); if (r && r.catch) r.catch(function () { /* not allowed here */ }); } catch (x) { /* old browser */ } } }
   document.addEventListener('click', full); document.addEventListener('touchend', full); document.addEventListener('keydown', full);
+  // a big button: OK on the remote presses it (a press is what the browser needs). It hides in full screen, and after 30 s; any key or tap brings it back.
+  var fsb = $('fsb'), fsT = null;
+  function isFull() { return !!(document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement); }
+  function fsShow() { if (isFull() || (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches)) { fsb.className = 'off'; return; } fsb.className = ''; try { fsb.focus(); } catch (e) { /* ok */ } clearTimeout(fsT); fsT = setTimeout(function () { fsb.className = 'off'; }, 30000); }
+  fsb.onclick = function (e) { e.stopPropagation(); full(); setTimeout(fsShow, 600); };
+  document.addEventListener('fullscreenchange', fsShow); document.addEventListener('webkitfullscreenchange', fsShow);
+  document.addEventListener('keydown', function () { if (fsb.className === 'off' && !isFull()) fsShow(); }); document.addEventListener('touchstart', function () { if (fsb.className === 'off' && !isFull()) fsShow(); });
+  fsShow();
   document.addEventListener('click', function () { try { var AC = window.AudioContext || window.webkitAudioContext; audio = audio || new AC(); if (audio.resume) audio.resume(); } catch (e) { /* ok */ } });
 })();
 </script>
