@@ -398,14 +398,25 @@ function cx_suggest(PDO $pdo, array $r, $meName) {
     return ['text' => $text, 'source' => $src, 'title' => $pick];
 }
 /** a hint (never an automatic case): the last customer messages sound like a complaint. */
-function cx_looks_like(PDO $pdo, $key) {
+/** The problem a customer's last messages look like (leak / wrong item / not delivered / quality / refund / missing), or null. Whole WORDS only (owner, 25 Nov 2026: "fireplace" was read as "replace" and a customer asking
+ *  whether a perfume is in stock got a "Wrong item" ticket). $strict = true (the bot raising a ticket by itself): the words exchange / replace / badalna do NOT count — a customer who asks about an exchange is asking a
+ *  question, the salesperson answers it and raises a ticket by hand when it is one. The hint shown to a person and the "is this a sales query" check keep those words ($strict = false). */
+function cx_looks_like(PDO $pdo, $key, $strict = false) {
     try {
         $m = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' ORDER BY id DESC LIMIT 4"); $m->execute([$key]); $t = ' ' . mb_strtolower(implode(' ', array_column($m->fetchAll(), 'body'))) . ' ';
-        $map = ['leak' => '/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|bottle.{0,12}(crack|toot))/u', 'wrong' => '/(wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)|exchange|replace(ment)?|badalna|badalni|badalne)/u', 'notdelivered' => '/(not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|marked delivered)/u',
-                'quality' => '/(fake|smell.{0,14}(different|bad|weak|not same)|khushbu.{0,14}(alag|nahi|kam)|quality (is )?(bad|poor)|duplicate)/u', 'refund' => '/(refund|paisa wapas|money back|return kar)/u', 'missing' => '/(missing|incomplete|kam aaya|(nhi|nahi) (ayi|aayi|aya|aaya) (h|hai)\b)/u'];
-        foreach ($map as $k => $re) if (preg_match($re, $t)) return ['problem' => $k, 'label' => cx_problems()[$k][0]];
+        $k = cx_text_problem($t, (bool)$strict); return $k === '' ? null : ['problem' => $k, 'label' => cx_problems()[$k][0]];
     } catch (Throwable $e) {}
     return null;
+}
+/** Pure: the problem key a lower-case text looks like ('' = none). */
+function cx_text_problem($t, $strict = false) {
+    $soft = $strict ? '' : '|\bexchange\b|\breplace(ment)?\b|\bbadalna\b|\bbadalni\b|\bbadalne\b';
+    $map = ['leak' => '/(\bleak|\btoota\b|\btut gay|\bbroken\b|\bdamaged?\b|\bspill|dabba khula|bottle.{0,12}(crack|toot))/u',
+            'wrong' => '/(\bwrong (item|product|perfume)|\bgalat\b|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)' . $soft . ')/u',
+            'notdelivered' => '/(\bnot (delivered|received)|\bnahi (mila|aaya|pahucha)|\babhi tak nahi|\bkab aayega|\bstill (not|waiting)|marked delivered)/u',
+            'quality' => '/(\bfake\b|\bsmell.{0,14}(different|bad|weak|not same)|\bkhushbu.{0,14}(alag|nahi|kam)|\bquality (is )?(bad|poor)|\bduplicate\b)/u', 'refund' => '/(\brefund|\bpaisa wapas|\bmoney back|\breturn kar)/u', 'missing' => '/(\bmissing\b|\bincomplete\b|\bkam aaya|(nhi|nahi) (ayi|aayi|aya|aaya) (h|hai)\b)/u'];
+    foreach ($map as $k => $re) if (preg_match($re, (string)$t)) return $k;
+    return '';
 }
 
 /* ============================== the tick (late cases, silent cases, "messaged again") ============================== */

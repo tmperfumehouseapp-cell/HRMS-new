@@ -1051,6 +1051,13 @@ function wag_botlearn_auto(PDO $pdo, int $max = 40): array
     return $o;
 }
 /** Customers who wrote a complaint (leak, wrong item, not delivered, quality, refund) and nobody answered: a complaint ticket is raised for them at once (the Complaint team owns it), they are told the number. */
+/** Has this customer ordered before? The customer summary first, then an HRMS / website order on the same mobile number in the last 120 days. */
+function wag_cx_has_order(PDO $pdo, string $key): bool
+{
+    try { $q = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $q->execute([$key]); if ((int)$q->fetchColumn() >= 1) return true; } catch (Throwable $e) { }
+    try { $k = substr(preg_replace('/\D+/', '', $key), -10); if (strlen($k) === 10) { $q = $pdo->prepare("SELECT 1 FROM manual_orders WHERE order_date >= ? AND phone LIKE ? LIMIT 1"); $q->execute([date('Y-m-d H:i:s', time() - 120 * 86400), '%' . $k]); if ($q->fetchColumn()) return true; } } catch (Throwable $e) { }
+    return false;
+}
 function wag_complaint_sweep(PDO $pdo, int $max = 6): int
 {
     if ((string)setting_get($pdo, 'wag_cx_auto', '1') !== '1') return 0;   // owner, 23 Nov 2026: complaints are raised by the bot again (the 22 Nov stop is lifted); setting wag_cx_auto = 0 stops it, wag_cx_ack = 0 also stops the 'complaint noted' line to the customer
@@ -1064,21 +1071,23 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
     //    A chat is looked at once per customer message (meta cxsw:<phone>), so nothing is raised twice and a salesperson's decision "not a complaint" is not asked again for the same message.
     try { if ($now - (int)setting_get($pdo, 'wag_cxans_at', '0') >= 300) { setting_set($pdo, 'wag_cxans_at', (string)$now);
         $sa = $pdo->prepare("SELECT c.* FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint') AND c.assigned_emp > 0 AND c.last_in_at >= ? AND c.last_out_at >= c.last_in_at
-            AND EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = c.phone AND m.dir = 'in' AND m.mtype = 'text' AND m.ts >= ? AND LOWER(m.body) REGEXP 'leak|broken|damage|toota|tut gay|wrong (item|product|perfume)|galat|not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|fake|duplicate|refund|paisa wapas|money back|return kar|exchange|replace|complaint|shikayat') ORDER BY c.last_in_at DESC LIMIT 40");
+            AND EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = c.phone AND m.dir = 'in' AND m.mtype = 'text' AND m.ts >= ? AND LOWER(m.body) REGEXP 'leak|broken|damage|toota|tut gay|wrong (item|product|perfume)|galat|not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|fake|duplicate|refund|paisa wapas|money back|return kar|complaint|shikayat') ORDER BY c.last_in_at DESC LIMIT 40");
         $f23 = date('Y-m-d H:i:s', $now - 23 * 3600); $sa->execute([$f23, $f23]); foreach ($sa->fetchAll() as $ca) { $ca['__ans'] = 1; $cands[] = $ca; } } } catch (Throwable $e) { }
     foreach ($cands as $c) {
         if ($n >= $max) break; $key = (string)$c['phone']; $ans = !empty($c['__ans']);
         if ($ans) {   // an answered chat: once per customer message, and only a customer who has ordered before (a new lead asking about quality / exchange is a sales question)
             try { $__la = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__la->execute([$key]); $__lid = (string)(int)$__la->fetchColumn();
                 if (wag_meta_get($pdo, 'cxsw:' . $key, '') === $__lid) continue; wag_meta_put($pdo, 'cxsw:' . $key, $__lid);
-                $__oq = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $__oq->execute([$key]); if ((int)$__oq->fetchColumn() < 1) continue; } catch (Throwable $e) { continue; }
+                if (!wag_cx_has_order($pdo, $key)) continue; } catch (Throwable $e) { continue; }
         }
-        $h = cx_looks_like($pdo, $key); if (!$h) continue;
+        $h = cx_looks_like($pdo, $key, true); if (!$h) continue;   // strict: whole words only, and "exchange / replace" alone is a question, not a complaint (owner, 25 Nov)
         // 🛡 only what the customer wrote AFTER the last answer counts, and a question about the policy ("refund karna rahe, koi damage rahe to ...", "if ... then") or a short "ok / thik hai" is NOT a complaint (owner, 21 Nov: a customer asked about the return policy, a person answered, he said "Thik hai" and the bot raised a damage complaint)
         try {
             $__lo = $ans ? date('Y-m-d H:i:s', $now - 23 * 3600) : (string)($c['last_out_at'] ?? ''); $__q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND ts > ? ORDER BY id DESC LIMIT 4"); $__q->execute([$key, $__lo !== '' ? $__lo : '2000-01-01 00:00:00']);
             $__t = ' ' . mb_strtolower(implode(' ', array_column($__q->fetchAll(), 'body'))) . ' ';
-            if (!preg_match('/(leak|leaking|toota|tut gay|broken|damaged|damage|spill|dabba khula|wrong (item|product|perfume)|galat|(mila|aaya|aayi|received|got|came|diya|bheja|delivered|arrived).{0,30}(different|alag) (perfume|product)|(different|alag) (perfume|product).{0,30}(mila|aaya|aayi|received|came|delivered|diya|bheja|arrived)|not (delivered|received)|nahi (mila|aaya|pahucha)|abhi tak nahi|kab aayega|still (not|waiting)|fake|duplicate|refund|paisa wapas|money back|return kar|quality|exchange|replace|badalna|badalni|missing|incomplete)/u', $__t)) continue;
+            $__pk = function_exists('cx_text_problem') ? cx_text_problem($__t, true) : ''; if ($__pk === '') continue;   // 🛡 owner (25 Nov 2026): the customer's NEW words must name a real problem — whole words only ("fireplace" is not "replace"), and exchange / replace / quality alone do not count
+            if (in_array($__pk, ['notdelivered', 'quality', 'refund'], true) && !$ans && !wag_cx_has_order($pdo, $key)) continue;   // "kab aayega", "refund milega?", "fake to nahi?" from somebody who never ordered is a sales question (a parcel that leaked / a wrong item needs no such check)
+            $h = ['problem' => $__pk, 'label' => function_exists('cx_problems') ? cx_problems()[$__pk][0] : $h['label']];   // the ticket is named after the NEW words, not after an older message
             if (preg_match('/(policy|agar|\bif\b|rahe (to|too)|hoti hai|hota hai|kya hai|kaise|how|can i|sakte|sakta)/u', $__t) && !preg_match('/(mila|aaya|aayi|hai mera|mere|my (order|parcel|bottle)|order (id|no)|#\d{4})/u', $__t)) continue;
             if (preg_match('/(\bcodes?\b|\bog\b|coupon|promo)/u', $__t)) {   // owner 22 Nov: "Code toh nahi aaya" is the talk about our OG code process, not a complaint - the bot never raises it by itself: it asks the salesperson once (a hint in the chat + a push to the holder), the person decides
                 $__li = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__li->execute([$key]); $__mid = (int)$__li->fetchColumn();
