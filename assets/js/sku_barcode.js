@@ -93,24 +93,32 @@
   }
   const dShort = (s) => { const p = String(s || '').split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0].slice(2) : ''; };
   /** one label as an element sized in mm (the same node is used on the screen and in the PDF) */
+  // type sizes (pt) and the bar height (mm) of each sticker size, chosen so every line is readable when printed — a small sticker is NOT a shrunk big one
+  const SPEC = { in24: { px: 3.5, py: 2, name: 20, l2: 16, bar: 17, num: 12, bot: 11, wide: 1, zoom: 1 }, cm24: { px: 1.5, py: 0.8, name: 7.6, l2: 6.6, bar: 6.4, num: 5.6, bot: 5.8, zoom: 2.3 }, st: { px: 1.4, py: 0.7, name: 6.6, l2: 6, bar: 7.6, num: 5.8, bot: 5.3, zoom: 2.5 } };
+  /** one label as an element sized in mm (the same node is used on the screen and in the PDF) */
   function labelNode(l) {
-    const W = DIM[O.size][0], H = DIM[O.size][1], k = H / 50.8, d = document.createElement('div');
-    d.style.cssText = 'width:' + W + 'mm;height:' + H + 'mm;box-sizing:border-box;padding:' + (2.2 * k) + 'mm ' + (3 * k) + 'mm;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden';
-    const nm = String(l.name || ''), fs = Math.max(5, Math.min(15, 330 / Math.max(8, nm.length))) * k;
-    const l2 = [l.size, O.mrp && l.mrp ? 'MRP ₹' + Number(l.mrp).toLocaleString('en-IN') : ''].filter(Boolean).join(' · ');
-    const top = document.createElement('div'); top.innerHTML = '<div style="font-weight:800;font-size:' + fs + 'pt;line-height:1.1;white-space:nowrap;overflow:hidden">' + E(nm) + '</div><div style="display:flex;justify-content:space-between;gap:2mm;font-weight:800;font-size:' + (10.5 * k) + 'pt;line-height:1.2"><span>' + E(l2) + '</span><span>' + (O.bat ? E(l.batch) : '') + '</span></div>';
+    const W = DIM[O.size][0], H = DIM[O.size][1], S = SPEC[O.size], d = document.createElement('div');
+    d.style.cssText = 'width:' + W + 'mm;height:' + H + 'mm;box-sizing:border-box;padding:' + S.py + 'mm ' + S.px + 'mm;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden';
+    const nm = String(l.name || ''), fs = Math.max(S.name * 0.6, Math.min(S.name, (W - 2 * S.px) / (Math.max(1, nm.length) * 0.2)));      // the name is as big as fits on ONE line
+    const mrp = O.mrp && l.mrp ? 'MRP ₹' + Number(l.mrp).toLocaleString('en-IN') : '', bat = O.bat ? String(l.batch || '') : '';
+    const mfg = O.mfg ? (l.kind === 'chain' ? 'PKD ' : 'MFG ') + dShort(l.mfg) : '', exp = O.exp && l.kind !== 'chain' ? 'EXP ' + dShort(l.exp) : '';
+    const row = (cells, pt) => '<div style="display:flex;justify-content:space-between;gap:1.5mm;font-weight:800;font-size:' + pt + 'pt;line-height:1.15;white-space:nowrap">' + cells.map((c) => '<span>' + E(c) + '</span>').join('') + '</div>';
+    const top = document.createElement('div');
+    // big sticker: size and MRP large under the name, then batch · MFG · EXP in one clear line at the bottom. Small stickers: the batch sits beside the size, the dates have the bottom line to themselves.
+    top.innerHTML = '<div style="font-weight:800;font-size:' + fs + 'pt;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + E(nm) + '</div>' + (S.wide ? row([l.size, mrp], S.l2) : row([[l.size, mrp].filter(Boolean).join(' · '), bat], S.l2));
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     try { JsBarcode(svg, String(l.code), { format: 'CODE128C', width: 3, height: 80, margin: 0, displayValue: false }); svg.setAttribute('viewBox', '0 0 ' + String(svg.getAttribute('width')).replace('px', '') + ' 80'); svg.removeAttribute('width'); svg.removeAttribute('height'); } catch (e) { }
-    svg.setAttribute('preserveAspectRatio', 'none'); svg.style.cssText = 'width:100%;height:' + (H * 0.42) + 'mm;display:block;flex:none';
-    const num = document.createElement('div'); num.style.cssText = 'text-align:center;font:700 ' + (11 * k) + 'pt monospace;letter-spacing:' + (0.8 * k) + 'mm;line-height:1.1'; num.textContent = l.code;
-    const dt = document.createElement('div'); dt.style.cssText = 'text-align:center;font-weight:700;font-size:' + (9 * k) + 'pt;line-height:1.1'; dt.textContent = [O.mfg ? (l.kind === 'chain' ? 'PKD ' : 'MFG ') + dShort(l.mfg) : '', O.exp && l.kind !== 'chain' ? 'EXP ' + dShort(l.exp) : ''].filter(Boolean).join(' · ');
-    d.append(top, svg, num, dt); return d;
+    svg.setAttribute('preserveAspectRatio', 'none'); svg.style.cssText = 'width:100%;height:' + S.bar + 'mm;display:block;flex:none';
+    const num = document.createElement('div'); num.style.cssText = 'text-align:center;font:700 ' + S.num + 'pt monospace;letter-spacing:' + (S.wide ? 1 : 0.4) + 'mm;line-height:1.1'; num.textContent = l.code;
+    const bot = document.createElement('div'); const cells = (S.wide ? [bat ? 'BATCH ' + bat : '', mfg, exp] : [mfg, exp]).filter(Boolean);
+    bot.innerHTML = cells.length === 1 ? '<div style="text-align:center;font-weight:800;font-size:' + S.bot + 'pt;line-height:1.15">' + E(cells[0]) + '</div>' : row(cells, S.bot);
+    d.append(top, svg, num, bot); return d;
   }
   function drawSheet() {
     const s = $('bcSheet'); if (!s) return; if (!sheet.length) { s.innerHTML = ''; return; }
     s.innerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b>' + E(sheetTitle) + '</b><span style="flex:1"></span>' + btn('bcPdf', '⬇ Download PDF / Print', '#b91c1c') + btn('bcClr', 'Clear', '') + '</div>'
-      + '<div id="bcPrev" style="display:flex;flex-wrap:wrap;gap:6px;max-height:420px;overflow:auto;background:#f1f5f9;border-radius:10px;padding:8px"></div>' + (sheet.length > 12 ? '<div style="font-size:11.5px;color:var(--muted);margin-top:4px">The first 12 are shown here. The PDF has all ' + sheet.length + '.</div>' : '');
-    const pv = $('bcPrev'); sheet.slice(0, 12).forEach((l) => { const n = labelNode(l); n.style.border = '1px dashed #94a3b8'; n.style.borderRadius = '4px'; n.style.backgroundImage = 'none'; pv.appendChild(n); });      // background-image: the dark mode of the HRMS (a colour flip of the whole page) leaves such an element as it is, so the label stays white paper with black bars
+      + '<div id="bcPrev" style="display:flex;flex-wrap:wrap;gap:6px;max-height:420px;overflow:auto;background:#f1f5f9;border-radius:10px;padding:8px"></div>' + (sheet.length > 12 ? '<div style="font-size:11.5px;color:var(--muted);margin-top:4px">The first 12 are shown here' + (SPEC[O.size].zoom > 1 ? ', enlarged to read them' : '') + '. The PDF has all ' + sheet.length + ' in the true size.</div>' : '');
+    const pv = $('bcPrev'); sheet.slice(0, 12).forEach((l) => { const n = labelNode(l); n.style.border = '1px dashed #94a3b8'; n.style.borderRadius = '4px'; n.className = 'bc-keep'; n.style.zoom = SPEC[O.size].zoom; pv.appendChild(n); });      // background-image: the dark mode of the HRMS (a colour flip of the whole page) leaves such an element as it is, so the label stays white paper with black bars
     $('bcPdf').onclick = pdf; $('bcClr').onclick = () => { sheet = []; drawSheet(); };
   }
   /** ⬇ the PDF: one label on each page of exactly the sticker size — the browser's own "Save as PDF" (the same way as Chain PDF) */
@@ -121,6 +129,8 @@
     w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch (e) { } }, 400);
   }
   async function state() { const d = day(); if (!d) return; const my = ++seq; try { const r = await api.get('sku.bc_state', { day: d }); if (my !== seq) return; ST = r; } catch (e) { if (my === seq) { ST = null; say(e.message, true); } } }
+  // the dark mode of the HRMS flips the colours of the whole page: a label is turned back, so it always shows as white paper with black bars (small stickers are shown enlarged on the screen, the PDF has the true size)
+  { const st = document.createElement('style'); st.textContent = 'html.hrms-dk .bc-keep,html.hrms-dkf .bc-keep{filter:invert(1) hue-rotate(180deg)}'; document.head.appendChild(st); }
   shell(); pane();
   window.SkuBC = { refresh: async function () { if (!$('bcPane')) return; await state(); pane(); } };
   window.SkuBC.refresh();
