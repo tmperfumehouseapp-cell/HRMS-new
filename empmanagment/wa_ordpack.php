@@ -24,11 +24,11 @@ if (!function_exists('wa_ordpack_defs')) {
             "🎁 7 × 50ml sirf ₹2,899\n🔓 Secret gift unlock hoga",
             "🔥 8 × 50ml sirf ₹3,299\n🎁 Extra discount alag se",
             "💥 3 × 50ml ₹2,100 + 1 × 20ml FREE\n✨ Gift packing bhi saath me",
-            "🎁 5 × 20ml sirf ₹1,700\n🔥 Flat 5% OFF + prepaid par extra 2%",
+            "🎁 5 × 20ml sirf ₹1,700\n🔥 Flat 5% OFF",
             "💥 Flat ₹2,250 me 4 × 50ml + 2 × 100ml\n🎁 Extra ML bhi milega",
             "🏆 Reward: 3 × 50ml ₹2,140 par 1 × 20ml FREE\n💥 Extra ML ka seedha fayda",
-            "💥 CRAZY PRICE: 8 × 20ml sirf ₹1,899\n🔥 Prepaid par extra 2% OFF alag se",
-            "🎁 Flat 5% OFF + prepaid par extra 2%\n✨ Saath me gift packing, dhamaka deal",
+            "💥 CRAZY PRICE: 8 × 20ml sirf ₹1,899\n✨ Gift packing bhi saath me",
+            "🎁 Flat 5% OFF\n✨ Saath me gift packing, dhamaka deal",   /* owner 25 Nov: the "prepaid par extra 2%" part is gone from these three lines (that discount does not exist any more) */
         ];
         $close = [
             "⏰ Offer aaj raat 11:59 PM tak!\n\nAbhi order karoge to hi milega 👇",

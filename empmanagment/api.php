@@ -11761,21 +11761,26 @@ function ct_better_at(PDO $pdo, int $days = 1, string $day = ''): array
 }
 /** ✅ The 3 must-send check of ONE business day (+ the add-on column, owner 23 Nov): per salesperson, per order — address re-check · chain selection · prepaid 2% (plain text match, no AI) and whether an add-on was put on the order (employee_addons) with the reason when not (order_rate_auto).
  *  $onlyEmp > 0 → only that salesperson's orders (the "my check" card of the sales app). Used by ct.must3 (Admin / HR) and ct.must3_me. */
-/** 💳 THE PREPAID MESSAGE — new standard (owner, 25 Nov 2026): orders are taken in the HRMS now, and there is NO "2% off on full prepaid" any more. The rule is: a COD parcel costs the customer Rs 100 extra,
- *  so the salesperson tells him "COD par Rs 100 extra dena padega, full prepaid kar do". The Prepaid box of the must-send check is done when the chat holds BOTH parts:
- *    must3_cod_charge()   — a message that names COD and its extra charge (100 / charge / extra / zyada / more)
- *    must3_prepaid_word() — a message that names prepaid / full / online / advance payment
- *  in ONE message (must3_cod_pitch) or in two messages of the same chat. "2%", "discount" or a prepaid price alone no longer count; "Prepaid ya COD?" alone never did. */
+/** 💳 THE PREPAID MESSAGE — the standard (owner, 25 Nov 2026, final): orders are taken in the HRMS now and there is NO "2% off on full prepaid" any more. A parcel that is not fully prepaid (COD) costs the customer Rs 100 extra.
+ *  The SALESPERSON (never the bot) must say something that makes the customer see he should pay full prepaid: "COD par Rs 100 extra dena padega, full prepaid kar do" / "full prepaid nahi karoge to Rs 100 extra charge lagega" —
+ *  before the payment link, after it, or while closing the deal. The Prepaid box of the must-send check is done when the salesperson's messages of the chat hold BOTH parts, in ONE message or in two:
+ *    the extra charge  — must3_cod_charge() (COD + charge / extra / 100 / zyada / more) or must3_extra100() (Rs 100 + extra / charge, without the word COD)
+ *    the prepaid ask   — must3_prepaid_word() (prepaid / full / online / advance payment)
+ *  A message of the bot or an automatic message never counts. "2%", "discount" or a prepaid price alone do not count; "Prepaid ya COD?" alone never did. */
 function must3_cod_charge(string $body): bool
 {
     if ($body === '' || !preg_match('/(?<![a-z])(cod|c\.o\.d\.?|cash\s*on\s*delivery)(?![a-z])/iu', $body)) return false;
     return (bool)preg_match('/charges?|extra|zyada|jyada|jada|vadhu|vadhare|additional|(?<![a-z])more(?![a-z])|shulk|चार्ज|ज़्यादा|ज्यादा|ચાર્જ|વધારે|(?<![\d.,])100(?![\d,])(?!\s*ml)/iu', $body);
 }
+function must3_extra100(string $body): bool
+{
+    return $body !== '' && preg_match('/(?<![\d.,])100(?![\d,])(?!\s*ml)/u', $body) && preg_match('/charges?|extra|zyada|jyada|jada|vadhu|vadhare|additional|(?<![a-z])more(?![a-z])|shulk|चार्ज|ज़्यादा|ज्यादा|ચાર્જ|વધારે/iu', $body);
+}
 function must3_prepaid_word(string $body): bool
 {
     return $body !== '' && (bool)preg_match('/prepaid|pre\s*paid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?|pay\s*online|प्रीपेड|પ્રીપેડ/iu', $body);
 }
-function must3_cod_pitch(string $body): bool { return must3_cod_charge($body) && must3_prepaid_word($body); }
+function must3_cod_pitch(string $body): bool { return (must3_cod_charge($body) || must3_extra100($body)) && must3_prepaid_word($body); }
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
 {
     $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0], 'people' => []];
@@ -11815,7 +11820,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = [])
                     if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; if ($by === 'S') $person = true; $mark = [substr((string)$m['ts'], 11, 5), $by];
                     if ($by === 'S' && (string)$m['mtype'] === 'image' && ctype_digit((string)$m['media_id'])) $pics[(int)$m['id']] = [(string)$m['media_id'], $mark];   // 📷 a photo a person sent: it may be the chain catalogue with no words (read by must3_photo_tick)
                     if ($ff['a'] === null && preg_match($rxA, $body)) $ff['a'] = $mark;
-                    if ($ff['p'] === null && $body !== '') { if ($pc === null && must3_cod_charge($body)) $pc = $mark; if ($pw === null && must3_prepaid_word($body)) $pw = $mark; if ($pc !== null && $pw !== null) $ff['p'] = $mark; }   // 💳 new standard (25 Nov): "COD par Rs 100 extra — full prepaid kar do", in one message or in two
+                    if ($ff['p'] === null && $body !== '' && $by === 'S') { if ($pc === null && (must3_cod_charge($body) || must3_extra100($body))) $pc = $mark; if ($pw === null && must3_prepaid_word($body)) $pw = $mark; if ($pc !== null && $pw !== null) $ff['p'] = $mark; }   // only what the SALESPERSON wrote counts (the bot does not send this message)   // 💳 new standard (25 Nov): "COD par Rs 100 extra — full prepaid kar do", in one message or in two
                     if ($ff['c'] === null) {
                         if (preg_match($rxC, $body) || preg_match($rxChainWord, $body)) $ff['c'] = $mark;
                         elseif ((string)$m['mtype'] === 'image') { for ($z = max(0, $mi - 6); $z <= min($nm - 1, $mi + 6); $z++) if ($z !== $mi && preg_match($rxChainWord, (string)$ms[$z]['body'])) { $ff['c'] = $mark; break; } }
