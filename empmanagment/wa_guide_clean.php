@@ -15,7 +15,7 @@ function wag_gb_clean_body(): array
         'MINIMUM PACK AND NO ASSUMING (owner, 23 Nov): 20 ml is sold only as 5 bottles or more (never 1-4); if a salesperson in this chat said "minimum N bottle", follow that. "Combo of 5" means 5 bottles; "both / dono" means 2. Never assume the size: when it is not in the chat, ask 20, 50 or 100 ml.',
         'A SALESPERSON ALREADY SPOKE (owner, 23 Nov): read the last salesperson messages first. Their price, offer and promise are binding: never repeat them, never contradict them, never restart the pitch. When a person wrote in the last minutes, wait or continue exactly from their last line.',
         'PRICE TALK AND THE ADD-ON: talk about price or discount only when the customer brings up the price. After the address has come (before the payment link) make ONE add-on offer: 2 or 3 more bottles of the same size at the combo rate; drop it when he says no. Never push the add-on in the first price message.',
-        'PAYMENT AND ORDER (shop rules): COD is available, but 35% of the order amount is paid in advance to confirm the order and the rest on delivery; never say "full COD". Prepaid gets 2% off the cart only, nothing more. You never take a payment; a person sends the payment link. When he is ready, ask the order details: 1. Full Name 2. Address 3. Near By Landmark 4. City 5. State 6. Pincode 7. Email 8. Primary No 9. Alternate No. When the address has come, send the address check before the payment link: (1) Kindly recheck your delivery address before making payment, as the system may fetch your saved address. (2) If you see an old or incorrect address at the checkout link, select Change Address / Add New Address and update your correct delivery address.',
+        'PAYMENT AND ORDER (shop rules): COD is available, but 35% of the order amount is paid in advance to confirm the order and the rest on delivery; never say "full COD". COD CHARGE (owner, 25 Nov; it replaces the old prepaid discount): there is NO "2% off on prepaid" any more - never offer or promise it. A COD parcel costs the customer Rs 100 extra; full prepaid has no extra charge. When he asks about COD or the payment, or chooses COD, tell him once: "Sir, COD par Rs 100 extra dene padenge, full prepaid karenge to ye Rs 100 bach jayenge". Never change the order total yourself. You never take a payment; a person sends the payment link. When he is ready, ask the order details: 1. Full Name 2. Address 3. Near By Landmark 4. City 5. State 6. Pincode 7. Email 8. Primary No 9. Alternate No. When the address has come, send the address check before the payment link: (1) Kindly recheck your delivery address before making payment, as the system may fetch your saved address. (2) If you see an old or incorrect address at the checkout link, select Change Address / Add New Address and update your correct delivery address.',
         'FINAL OFFER (owner, 23 Nov): only the system sends it (follow-up step 5, one column lower, a real 2-hour deadline). Never write a "final offer", a deadline or an extra discount yourself.',
         'AFTER DELIVERY, COMPLAINTS AND COMPLIMENTS (owner, 23 Nov): feedback, a quality problem, "I need help", exchange, replacement or a missing item after a delivered order get NO sales pitch (stay silent; the system alerts the person who holds the chat and raises the complaint). Praise ("very good", "EM5 is better") gets one short thank-you, no price, no combo. A positive reply to "How was your experience" gets a thank-you; "where did you find us" gets no reply. "Not now / stop / not interested" gets one polite line and then nothing more.',
         'QUALITY: a customer who doubts the quality or says he only want to check the fragrance gets real reviews and a trial invitation, no price and no discount.',
@@ -54,7 +54,7 @@ function wag_gb_clean_body(): array
         ['offer' => 'Add-on: 2 or 3 more bottles at the combo rate', 'when' => 'Only after the address has come, before the payment link; one offer, drop it on "no".'],
         ['offer' => 'One column lower price (never below the 6% column)', 'when' => 'Only when the customer himself says mehenga / discount / best price; never in follow-ups 1-8.'],
         ['offer' => 'FINAL offer with a 2-hour deadline', 'when' => 'Sent by the system as follow-up 5 only.'],
-        ['offer' => 'Prepaid 2% off the cart', 'when' => 'Only when he asks about paying online; nothing more is promised.'],
+        ['offer' => 'Full prepaid saves the Rs 100 COD charge (there is no percentage discount on prepaid)', 'when' => 'When he asks about COD / paying online, or chooses COD: say it once.'],
     ];
     $corr = [
         ['customer' => '150 ml ka kitna hoga?', 'better' => 'Sir, 150 ml ka Rs [price] hai. Aur sirf Rs [difference] aur dene par 200 ml mil jayega (Rs [price]) - per ml bahut better value hai. Kaunsa le lun?'],
@@ -113,6 +113,34 @@ function wag_gb_patch_card(PDO $pdo): bool
         $hit = false; foreach ($gb['do'] as $i => $t) if (is_string($t) && strpos($t, 'PRICE LADDER') === 0) { if (strpos($t, 'OUR OWN CARD') === false) $gb['do'][$i] = rtrim($t) . $add; $hit = true; break; }
         if (!$hit) return false;
         $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb, JSON_UNESCAPED_UNICODE), (int)$g['id']]); setting_set($pdo, 'wag_gb_card_v', 'v' . (int)$g['id']); return true;
+    } catch (Throwable $e) { return false; }
+}
+/** 💳 COD CHARGE instead of the prepaid 2% (owner, 25 Nov 2026: orders are taken in the HRMS now, the "2% off on full prepaid" rule is gone; a COD parcel costs the customer Rs 100 extra).
+ *  Goes INTO the live guidebook once per live version (no new point when PAYMENT AND ORDER exists): the old 2% sentence is replaced, the 2% row of the offers is replaced. Call while holding the guidebook lock. */
+function wag_gb_cod_text(): string
+{
+    return 'COD CHARGE (owner, 25 Nov; it replaces the old prepaid discount): there is NO "2% off on prepaid" any more - never offer or promise it. A COD parcel costs the customer Rs 100 extra; full prepaid has no extra charge. When he asks about COD or the payment, or chooses COD, tell him once: "Sir, COD par Rs 100 extra dene padenge, full prepaid karenge to ye Rs 100 bach jayenge". Never change the order total yourself.';
+}
+/** Pure: the guidebook body with the COD charge rule in it. Returns [body, changed]. */
+function wag_gb_cod_apply(array $gb): array
+{
+    $new = wag_gb_cod_text(); $chg = false; $has = false; if (empty($gb['do']) || !is_array($gb['do'])) return [$gb, false];
+    foreach ($gb['do'] as $i => $t) { if (!is_string($t)) continue;
+        $t2 = preg_replace('/Prepaid gets 2% off the cart only, nothing more\.?/u', $new, $t); if ($t2 !== null && $t2 !== $t) { $gb['do'][$i] = $t2; $chg = true; }
+        if (strpos((string)$gb['do'][$i], 'COD CHARGE (owner, 25 Nov') !== false) $has = true; }
+    if (!$has) { $put = false; foreach ($gb['do'] as $i => $t) if (is_string($t) && strpos($t, 'PAYMENT AND ORDER') === 0) { $gb['do'][$i] = rtrim($t) . ' ' . $new; $put = true; break; } if (!$put) array_unshift($gb['do'], $new); $chg = true; }
+    foreach (['offers', 'offer'] as $ok) if (!empty($gb[$ok]) && is_array($gb[$ok])) foreach ($gb[$ok] as $i => $r) { if (is_array($r) && isset($r['offer']) && preg_match('/prepaid/i', (string)$r['offer']) && preg_match('/2\s*%/', (string)$r['offer'])) { $gb[$ok][$i]['offer'] = 'Full prepaid saves the Rs 100 COD charge (there is no percentage discount on prepaid)'; $gb[$ok][$i]['when'] = 'When he asks about COD / paying online, or chooses COD: say it once.'; $chg = true; } }
+    return [$gb, $chg];
+}
+function wag_gb_patch_cod(PDO $pdo): bool
+{
+    if (!function_exists('lib_guide_row')) return false;
+    try {
+        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; if (setting_get($pdo, 'wag_gb_cod_v', '') === 'v' . (int)$g['id']) return false;   // checked again for every new live version (an AI rewrite can bring the old line back)
+        $gb = json_decode((string)$g['body'], true); if (!is_array($gb) || empty($gb['do'])) return false;
+        [$gb2, $chg] = wag_gb_cod_apply($gb);
+        if ($chg) $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb2, JSON_UNESCAPED_UNICODE), (int)$g['id']]);
+        setting_set($pdo, 'wag_gb_cod_v', 'v' . (int)$g['id']); return $chg;
     } catch (Throwable $e) { return false; }
 }
 /** Once (owner, 24 Nov, "8 x 20 ml for Rs 600" and a Happy Orange photo for a combo-ad customer): two sentences go INTO existing points of the live guidebook (no new point): PRICE LADDER gets (7) PACK = TOTAL ML, ONLY OUR CATALOGUE gets the no-photo-without-a-named-perfume sentence. Call while holding the guidebook lock. */
