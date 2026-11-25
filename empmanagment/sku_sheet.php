@@ -208,7 +208,7 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
     $by = []; $nOrd = 0; $nManC = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
     $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
         $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
-        if ($name === '' || stripos($name, 'chain') === false) return;
+        if ($name === '' || !preg_match('/chain|necklace|bracelet|pendant|signet|earring|anklet|bangle|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone|vanta ?crest|apex ?monolith)(?![a-z0-9])/i', $name)) return;      // every jewellery piece (the same words the SKU sheet leaves out as jewellery), not only names with "chain"
         $k = mb_strtolower($name); if (!isset($by[$k])) $by[$k] = ['name' => $name, 'sku' => $sku, 'qty' => 0, 'amount' => 0.0, 'orders' => []];
         $by[$k]['qty'] += $q; $by[$k]['amount'] += $amt; if ($sku !== '' && $by[$k]['sku'] === '') $by[$k]['sku'] = $sku; $by[$k]['orders'][$order] = 1;
     };
@@ -227,8 +227,21 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
             $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$r['order_no']);
         } }
     } catch (Throwable $e) { $errs[] = 'Manual orders: ' . $e->getMessage(); }
+    try {   // 🛍 the website orders (store_orders.php): paid or COD, on the day paid; an unpaid payment link and a cancelled order are left out
+        if (is_file(__DIR__ . '/store_orders.php')) { require_once __DIR__ . '/store_orders.php'; }
+        if (function_exists('tms_orders') && tms_cfg($pdo)['key'] !== '') {
+            $w2 = $nw ?: biz_window($pdo, $from, $to);
+            [$wo, $we] = tms_orders($pdo, date('Y-m-d', strtotime($from) - 7 * 86400), date('Y-m-d', strtotime($to) + 86400)); if ($we !== '') $errs[] = 'Website orders: ' . $we;
+            foreach ($wo as $w) {
+                $at = (string)($w['pay_time'] ?: $w['placed_at']); if ($at < $w2[0] || $at > $w2[1] || !empty($w['cancelled'])) continue;
+                if ((string)$w['pay_status'] === 'pending' && (string)$w['pay_method'] !== 'cod') continue;
+                $nManC++;
+                foreach ((array)($w['lines'] ?? []) as $l) { $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)(($l['raw'] ?? '') !== '' ? $l['raw'] : ($l['title'] ?? '')), (string)($l['size'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$w['number']); }
+            }
+        }
+    } catch (Throwable $e) { $errs[] = 'Website orders: ' . $e->getMessage(); }
     $rows = []; $pieces = 0; $money = 0.0; $withChain = [];
-    foreach ($by as $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_keys($r['orders']), 0, 60)]; $pieces += $r['qty']; $money += $r['amount']; }
+    foreach ($by as $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_map('strval', array_keys($r['orders'])), 0, 400)]; $pieces += $r['qty']; $money += $r['amount']; }
     usort($rows, fn($a, $b) => $b['qty'] <=> $a['qty'] ?: strcmp($a['name'], $b['name']));
     return ['from' => $from, 'to' => $to, 'noon' => $noon, 'window' => $nw, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd + $nManC, 'orders_with' => count($withChain), 'errors' => $errs];
 }
