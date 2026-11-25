@@ -31277,7 +31277,8 @@ switch ($action) {
             $st = $pdo->prepare("SELECT sales_tag FROM employees WHERE employee_id = ?");
             $st->execute([$auth['employee_id'] ?? 0]);
             $empTag = mb_strtolower(trim((string)$st->fetchColumn()));
-            if ($empTag === '') json_response(['error' => 'No order tag set on your profile yet — ask Admin to add one.'], 422);
+            // owner (25 Nov 2026, Bushra D.: "My earnings — Could not load · No order tag set on your profile"): the order tag is NOT needed any more. Orders are taken in the HRMS and belong to a person by
+            // Order Allocation / the salesperson on the order (employee id), so a salesperson without a Shopify tag sees her own orders and her commission like everybody else. (It used to stop here with an error.)
             $empScopeId = (int)$auth['employee_id'];
             $scopeInfo = ['tag' => $empTag, 'fetched' => 0, 'mine' => 0, 'elsewhere' => 0];
         }
