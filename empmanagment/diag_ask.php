@@ -509,7 +509,7 @@ try {
     echo "ASK INVENTORY replacement state " . json_encode($pr66) . " · attempts n " . json_encode($st66['n'] ?? null) . "\n";
 } catch (Throwable $e) { echo "ASK INVENTORY ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 // 67) Why the exciting pool messages (open_hi_*) are not made: the missing keys and the template check of each (read-only)
-try { require_once __DIR__ . '/wa_util.php'; $defs67 = wa_util_pool_defs(); $have67 = array_keys(wa_util_pool_rows($pdo, true)); $miss67 = array_values(array_diff(array_keys($defs67), $have67)); $o67 = [];
+try { if (!function_exists('json_response')) { function json_response($a = null, $b = 200) { } } require_once __DIR__ . '/wa_util.php'; $defs67 = wa_util_pool_defs(); $have67 = array_keys(wa_util_pool_rows($pdo, true)); $miss67 = array_values(array_diff(array_keys($defs67), $have67)); $o67 = [];
     foreach ($miss67 as $k67) { $d67 = $defs67[$k67]; [$t67, $e67] = wa_tpl_clean(['name' => 'tmph_fu_' . $k67, 'language' => 'en', 'category' => 'UTILITY', 'body' => $d67['body'], 'footer' => '', 'buttons' => $d67['buttons'], 'examples' => ['body' => $d67['ex'], 'labels' => $d67['labels']], 'folder' => 'utility']); $o67[] = [$k67, $e67 === '' ? 'ok' : mb_substr($e67, 0, 120)]; }
     echo "ASK POOLMISS defs " . count($defs67) . " · rows " . count($have67) . " · missing " . json_encode($o67, JSON_UNESCAPED_UNICODE) . " · wa_ru_pool_auto " . json_encode(setting_get($pdo, 'wa_ru_pool_auto', '1')) . " · wa_rs_pool_at " . json_encode(setting_get($pdo, 'wa_rs_pool_at', '')) . " · now " . time() . "\n";
 } catch (Throwable $e) { echo "ASK POOLMISS ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
