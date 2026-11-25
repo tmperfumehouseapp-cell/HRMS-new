@@ -370,11 +370,11 @@ guardPage(); renderSidebar('followup');
     if (!D.jaimin_write) return replyForm(sid, day, name, cur);
     const m = BD.modal('<h3>🧭 Jaimin decided</h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
       + '<div class="bd-f"><label>' + (sid === 0 ? 'After reading every section, what did you finally decide?' : 'After reading this section’s tasks, what did you decide?') + '</label><textarea class="bd-in" id="jT" maxlength="4000" rows="6" placeholder="What you decided, and who does what next…">' + esc(cur ? cur.text : '') + '</textarea><div class="hint">Leave it empty and Save to remove it.</div></div>'
-      + (cur && cur.text ? '<div class="bd-f"><label>' + esc(flName()) + '’s update</label><textarea class="bd-in" id="jR" maxlength="4000" rows="3" placeholder="' + esc(flName()) + ' writes here what he did">' + esc(cur.reply || '') + '</textarea>' + rextra(cur.extra) + '</div>' : '')
+      + (cur && cur.text ? '<div class="bd-f"><label>' + esc(flName()) + '’s update</label>' + (cur.reply ? '<div class="fu-rh"><div class="tx">' + esc(cur.reply) + '</div>' + rextra(cur.extra) + '<div class="fu-by">' + esc(cur.reply_by || '') + '</div></div>' : '<div class="fu-rh no"><div class="fu-by" style="margin:0">Not written yet. ' + esc(flName()) + ' writes it from his own login.</div></div>') + '</div>'
+        : '<div class="hint" style="margin-top:-4px">After you save, ' + esc(flName()) + ' writes his update under it from his own login.</div>')
       + '<div class="acts"><button class="bd-btn" id="jX">Cancel</button><button class="bd-btn go" id="jOk">Save</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i); q('#jT').focus(); q('#jX').onclick = () => BD.close();
-    q('#jOk').onclick = () => run(q('#jOk'), async () => { await api.post('fup.jaimin_save', { section_id: sid, day, text: q('#jT').value });
-      if (q('#jR') && q('#jT').value.trim() && q('#jR').value.trim() !== String(cur.reply || '').trim()) await api.post('fup.jaimin_reply', { section_id: sid, day, text: q('#jR').value }); BD.close(); toast('Saved.'); await load(true); });
+    q('#jOk').onclick = () => run(q('#jOk'), async () => { await api.post('fup.jaimin_save', { section_id: sid, day, text: q('#jT').value }); BD.close(); toast('Saved.'); await load(true); });
   }
 
   // the follow-up person (Rahul): Jaimin's words on top, his own update under it
