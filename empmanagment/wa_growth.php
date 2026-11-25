@@ -1693,26 +1693,42 @@ function wag_addon_gate(): bool
 }
 /** ✅ Owner (24 Nov): a customer who only TAPPED A BUTTON under our "How was your experience?" message (Very good / Good / Could be better / Not now ...) has asked nothing — the chat is resolved by itself
  *  (it goes to History, out of Requests / Unanswered). The moment the customer WRITES anything, the chat opens again like every chat. Runs in the engine; a tap is handled 2 minutes after it
- *  (the bot's thank-you goes first). The first run also clears the taps of the last 2 days. Returns how many chats were resolved. */
+ *  (the bot's thank-you goes first). The first run also clears the taps of the last 2 days. A one- or two-word typed opinion after the experience message counts like a tap (wag_cx_short_opinion). Returns how many chats were resolved. */
+/** A one- or two-word OPINION typed by the customer ("worst", "bad", "good", "ok", "nice" ...) — no question, no complaint text. Owner (25 Nov): after our experience message this is treated like a button tap. */
+function wag_cx_short_opinion(string $b): bool
+{
+    $t = mb_strtolower(trim(preg_replace('/[\s.!?,👍👎🙏😊😡😠😞👌]+/u', ' ', $b)));
+    return $t === '' ? (bool)preg_match('/^[\s👍👎🙏😊😡😠😞👌]+$/u', $b) : (bool)preg_match('/^(very |too |so |bahut |bohot )?(worst|bad|poor|not good|not bad|good|nice|ok|okay|okk|fine|average|great|excellent|best|super|superb|awesome|amazing|perfect|could be better|bekar|bakwas|kharab|ghatiya|accha|achha|acha|badhiya|mast|thik|theek|thik hai|theek hai|saras|bekaar)$/u', $t);
+}
 function wag_cx_btn_close(PDO $pdo): int
 {
     $n = 0;
     try {
-        $cur = (string)setting_get($pdo, 'wag_cxbtn_ts4', ''); if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $cur)) $cur = date('Y-m-d H:i:s', time() - 2 * 86400);   // the first run starts 2 days back (10 days of old campaign taps took hours to get through and held nothing to resolve)
-        $q = $pdo->prepare("SELECT m.id, m.phone, m.ts, m.body FROM wa_messages m JOIN wa_contacts c ON c.phone = m.phone AND c.status = 'open' WHERE m.dir = 'in' AND m.mtype IN ('button', 'interactive') AND m.ts >= ? AND m.ts <= ? AND m.id = (SELECT MAX(x.id) FROM wa_messages x WHERE x.phone = m.phone AND x.dir = 'in') ORDER BY m.ts, m.id LIMIT 1500");   /* and only a tap that is the customer's LAST message (he wrote nothing after it) */   /* only chats still open: the 10-day backlog is cleared in a few runs */ $q->execute([$cur, date('Y-m-d H:i:s', time() - 120)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); if (!$rows) return 0;
+        $cur = (string)setting_get($pdo, 'wag_cxbtn_ts5', ''); if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $cur)) $cur = date('Y-m-d H:i:s', time() - 2 * 86400);   // the first run starts 2 days back (10 days of old campaign taps took hours to get through and held nothing to resolve)
+        $q = $pdo->prepare("SELECT m.id, m.phone, m.ts, m.body, m.mtype FROM wa_messages m JOIN wa_contacts c ON c.phone = m.phone AND c.status = 'open' WHERE m.dir = 'in' AND (m.mtype IN ('button', 'interactive') OR (m.mtype = 'text' AND CHAR_LENGTH(m.body) <= 24)) AND m.ts >= ? AND m.ts <= ? AND m.id = (SELECT MAX(x.id) FROM wa_messages x WHERE x.phone = m.phone AND x.dir = 'in') ORDER BY m.ts, m.id LIMIT 1500");   /* and only a tap that is the customer's LAST message (he wrote nothing after it) */   /* only chats still open: the 10-day backlog is cleared in a few runs */ $q->execute([$cur, date('Y-m-d H:i:s', time() - 120)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); if (!$rows) return 0;
         $prev = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND id < ? ORDER BY id DESC LIMIT 1");
+        $prev3 = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND id < ? AND ts >= ? ORDER BY id DESC LIMIT 3");
         $later = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND id > ? AND (dir = 'in' OR (dir = 'out' AND (who IN ('emp', 'phone') OR emp_id > 0))) LIMIT 1");
         $st = $pdo->prepare("SELECT status FROM wa_contacts WHERE phone = ?"); $cl = $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND status = 'open'");
         foreach ($rows as $m) {
             $cur = (string)$m['ts']; $k = (string)$m['phone'];
             $st->execute([$k]); if ((string)$st->fetchColumn() !== 'open') continue;
+            if ((string)$m['mtype'] === 'text') {   // owner (25 Nov, "Could be better" tapped and then "worst" typed stayed in Requests): a one- or two-word opinion typed after our experience message is resolved like a tap; anything longer, a question or a complaint stays with a person
+                if (!wag_cx_short_opinion((string)$m['body'])) continue;
+                $prev3->execute([$k, (int)$m['id'], date('Y-m-d H:i:s', strtotime((string)$m['ts']) - 36 * 3600)]); $exp = false; foreach ($prev3->fetchAll(PDO::FETCH_COLUMN) as $pb) if (preg_match('/(how was your experience|your experience with us)/iu', (string)$pb)) { $exp = true; break; }
+                if (!$exp) continue;
+                $later->execute([$k, (int)$m['id']]); if ($later->fetchColumn()) continue;
+                $cl->execute([date('Y-m-d H:i:s'), $k]); if ($cl->rowCount() < 1) continue; $n++;
+                if (function_exists('wa_event')) { try { wa_event($pdo, $k, '✅ Resolved automatically: the customer only gave a one-word opinion on our experience message. It opens again when the customer writes more.'); } catch (Throwable $e) { } }
+                continue;
+            }
             $tap = mb_strtolower(trim((string)$m['body'])); $closing = (bool)preg_match('/^(not now|no,? thanks?|no thank you|not interested|could be better|very good|good|great|excellent|average|okay|ok|bad|poor|maybe later|later)[.! ]*$/u', $tap);   // a rating or a "no": nothing to answer, whatever message it was under
             if (!$closing) { $prev->execute([$k, (int)$m['id']]); if (!preg_match('/(how was your experience|your experience with us)/iu', (string)$prev->fetchColumn())) continue; }
             $later->execute([$k, (int)$m['id']]); if ($later->fetchColumn()) continue;          // the customer wrote, or a person is talking to him: a live chat
             $cl->execute([date('Y-m-d H:i:s'), $k]); if ($cl->rowCount() < 1) continue; $n++;
             if (function_exists('wa_event')) { try { wa_event($pdo, $k, '✅ Resolved automatically: the customer only tapped a button (a rating or "not now"). It opens again when the customer writes.'); } catch (Throwable $e) { } }
         }
-        setting_set($pdo, 'wag_cxbtn_ts4', count($rows) >= 1500 ? $cur : date('Y-m-d H:i:s', time() - 300));
+        setting_set($pdo, 'wag_cxbtn_ts5', count($rows) >= 1500 ? $cur : date('Y-m-d H:i:s', time() - 300));
     } catch (Throwable $e) { error_log('wag_cx_btn_close: ' . $e->getMessage()); }
     return $n;
 }
@@ -1748,7 +1764,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         try {
             $__fq = $pdo->prepare("SELECT id, body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND ts > ? ORDER BY id DESC LIMIT 4"); $__fq->execute([$key, !empty($c['last_out_at']) ? (string)$c['last_out_at'] : '2000-01-01 00:00:00']); $__fr = $__fq->fetchAll();
             $__ft = ' ' . mb_strtolower(implode(' ', array_column($__fr, 'body'))) . ' ';
-            if ($__fr && preg_match('/(quality|synthetic|harsh|smell|fragrance|khushbu|fake|duplicate|original nahi|damage|leak|feedback|complaint|shikayat|disappoint|bekar|kharab|refund|return kar|need help|\bhelp\b|madad|exchange|replace|badal|wrong|galat|missing|nahi (?:aaya|aayi|ayi|mila)|nhi (?:aaya|aayi|ayi|mila)|defect|problem|issue|dikkat)/u', $__ft) && !preg_match('/(new order|another order|order karna|order karo|order dena|\bbuy\b|lena hai|lunga|\bprice\b|\brate\b|combo|add.?on|chahiye|offer|discount|\d+\s?ml)/u', $__ft) && wag_after_delivery($pdo, $key, 'x')) {
+            if ($__fr && preg_match('/(quality|synthetic|harsh|smell|fragrance|khushbu|fake|duplicate|original nahi|damage|leak|feedback|complaint|shikayat|disappoint|bekar|kharab|refund|return kar|need help|\bhelp\b|madad|exchange|replace|badal|wrong|galat|missing|nahi (?:aaya|aayi|ayi|mila)|nhi (?:aaya|aayi|ayi|mila)|defect|problem|issue|dikkat)/u', $__ft) && !preg_match('/(new order|another order|order karna|order karo|order dena|\bbuy\b|lena hai|lunga|\bprice\b|\brate\b|combo|add.?on|chahiye|offer|discount|\d+\s?ml)/u', $__ft) && !wag_cx_short_opinion((string)$__ft) && wag_after_delivery($pdo, $key, 'x')) {   /* a bare one-word opinion ("bekar") is resolved by wag_cx_btn_close, not sent to a person */
                 $__fid = (int)$__fr[0]['id'];
                 if (wag_meta_get($pdo, 'cxfb:' . $key, '') !== (string)$__fid) { wag_meta_put($pdo, 'cxfb:' . $key, (string)$__fid);
                     wa_event($pdo, $key, '💬 The customer has a delivered order and wrote feedback / a quality remark. The bot stays silent: please read the chat and answer (raise it from More → Complaint if it is a complaint).');
@@ -1769,7 +1785,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
                     if ($__ok2) { $o['sent']++; wa_event($pdo, $key, '🤖 The bot thanked the customer for his experience feedback (no offer, no price)'); } elseif (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply');
                 } else {
                     if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply');
-                    if (in_array((string)$m['mtype'], ['button', 'interactive'], true)) continue;   // owner (24 Nov): a BUTTON answer (Could be better / Not now ...) needs no reply — wag_cx_btn_close() resolves the chat; a typed message still goes to the person below
+                    if (in_array((string)$m['mtype'], ['button', 'interactive'], true) || wag_cx_short_opinion((string)$m['body'])) continue;   // owner (24 Nov): a BUTTON answer (Could be better / Not now ...) needs no reply — wag_cx_btn_close() resolves the chat; a typed message still goes to the person below
                     if (wag_meta_get($pdo, 'cxfb:' . $key, '') !== (string)$m['id']) { wag_meta_put($pdo, 'cxfb:' . $key, (string)$m['id']); wa_event($pdo, $key, '💬 The customer answered our experience message with a not-clearly-positive reply. The bot stays silent: please read the chat and answer.');
                         $__ho = (int)($c['assigned_emp'] ?? 0); if ($__ho > 0 && function_exists('ct_push')) { try { ct_push($pdo, [$__ho], 'Customer feedback', 'The bot did not answer an experience reply. Please reply.', '/my_chats.html?phone=' . $key, 'wa-cxfb-' . $key); } catch (Throwable $e) { } } }
                 }
