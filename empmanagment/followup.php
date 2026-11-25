@@ -1036,7 +1036,9 @@ function fup_start_day(array $t): string { $c = substr((string)$t['created_at'],
 /* ============================== the owner's own fields on a topic ==============================
  * A topic can carry up to 20 fields the person fills every day: a number, a few words, yes / no, a link, one of a list, or a file (photo, PDF, sheet).
  * fu_topics.fields = [{k, label, type: num|text|yesno|link|choice|file, opts: [...], req: 0|1}]      fu_updates.fvals = {k: value}   (a file: {f: stored name, n: its own name}) */
-function fup_field_types(): array { return ['num' => 'Number', 'text' => 'Words', 'yesno' => 'Yes / No', 'link' => 'Link', 'choice' => 'Choose one', 'file' => 'File / photo']; }
+function fup_field_types(): array { return ['num' => 'Number', 'text' => 'Words', 'yesno' => 'Yes / No', 'link' => 'Link', 'choice' => 'Choose one', 'file' => 'File / photo', 'photo' => 'Photo', 'video' => 'Video']; }
+/** The field types that take an upload (fup.file_put) instead of typed words. */
+function fup_is_upload(string $type): bool { return in_array($type, ['file', 'photo', 'video'], true); }
 function fup_fields(array $t): array { $j = json_decode((string)($t['fields'] ?? ''), true); return is_array($j) ? array_values(array_filter($j, function ($f) { return is_array($f) && isset($f['k'], $f['label'], $f['type']); })) : []; }
 /** Clean the field list the page (or Claude) sends. Existing keys are kept so old values stay attached to their field. */
 function fup_fields_clean($in, array $old = []): array
@@ -1550,7 +1552,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             if ($defs) {
                 $q1 = $pdo->prepare("SELECT fvals FROM fu_updates WHERE topic_id = ? AND day = ?"); $q1->execute([(int)$t['id'], $day]); $fvNow = json_decode((string)$q1->fetchColumn(), true); if (!is_array($fvNow)) $fvNow = [];
                 foreach ($defs as $fd) {
-                    $k = $fd['k']; if ($fd['type'] === 'file' || !is_array($in['fields'] ?? null) || !array_key_exists($k, $in['fields'])) continue;   // a file comes through fup.file_put
+                    $k = $fd['k']; if (fup_is_upload((string)$fd['type']) || !is_array($in['fields'] ?? null) || !array_key_exists($k, $in['fields'])) continue;   // a file comes through fup.file_put
                     $v = trim((string)$in['fields'][$k]); $lb = '“' . $fd['label'] . '”';
                     if ($v !== '') {
                         if ($fd['type'] === 'num') { if (!is_numeric($v)) json_response(['error' => $lb . ' must be a number.'], 422); $v = (string)round((float)$v, 2); }
@@ -1589,11 +1591,15 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             if (!fup_owns($sec, $w) && !($w['emp'] > 0 && (int)$t['assignee_emp'] === $w['emp'])) json_response(['error' => 'This topic is not given to you.'], 403);
             $today = fup_today($pdo); $day = (string)($_POST['day'] ?? $today); if (!fup_is_day($day) || $day > $today) json_response(['error' => 'Choose a day up to today.'], 422);
             if (!$w['manager'] && $day < date('Y-m-d', strtotime($today . (!empty($t['lag']) ? ' -2 day' : ' -1 day')))) json_response(['error' => 'Only today and yesterday can be written.'], 422);
-            $k = (string)($_POST['key'] ?? ''); $fd = null; foreach (fup_fields($t) as $x) if ($x['k'] === $k && $x['type'] === 'file') $fd = $x; if (!$fd) json_response(['error' => 'This field takes no file.'], 422);
-            $up = $_FILES['file'] ?? null; if (!$up || (int)($up['error'] ?? 1) !== 0 || !is_file((string)$up['tmp_name'])) json_response(['error' => 'The file did not arrive. Try again.'], 422);
-            if ((int)$up['size'] > 12 * 1024 * 1024) json_response(['error' => 'The file is bigger than 12 MB.'], 422);
-            $ext = strtolower(pathinfo((string)$up['name'], PATHINFO_EXTENSION)); $okExt = ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'txt', 'mp4'];
-            if (!in_array($ext, $okExt, true)) json_response(['error' => 'This kind of file is not allowed. Use a photo, PDF, Excel, Word, text or MP4 file.'], 422);
+            $k = (string)($_POST['key'] ?? ''); $fd = null; foreach (fup_fields($t) as $x) if ($x['k'] === $k && fup_is_upload((string)$x['type'])) $fd = $x; if (!$fd) json_response(['error' => 'This field takes no file.'], 422);
+            $up = $_FILES['file'] ?? null; $ue = (int)($up['error'] ?? 1);
+            if ($up && in_array($ue, [1, 2], true)) json_response(['error' => 'The file is bigger than the server takes (' . ini_get('upload_max_filesize') . '). Send a shorter video or a smaller file.'], 422);
+            if (!$up || $ue !== 0 || !is_file((string)$up['tmp_name'])) json_response(['error' => 'The file did not arrive. Try again.'], 422);
+            $ft = (string)$fd['type']; $maxMb = $ft === 'video' ? 100 : 12;
+            if ((int)$up['size'] > $maxMb * 1024 * 1024) json_response(['error' => 'The file is bigger than ' . $maxMb . ' MB.'], 422);
+            $ext = strtolower(pathinfo((string)$up['name'], PATHINFO_EXTENSION));
+            $okExt = $ft === 'photo' ? ['jpg', 'jpeg', 'png', 'webp', 'heic'] : ($ft === 'video' ? ['mp4', 'mov', 'webm', '3gp', 'm4v'] : ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'txt', 'mp4']);
+            if (!in_array($ext, $okExt, true)) json_response(['error' => $ft === 'photo' ? 'Send a photo (JPG, PNG, WEBP or HEIC).' : ($ft === 'video' ? 'Send a video (MP4, MOV, WEBM or 3GP).' : 'This kind of file is not allowed. Use a photo, PDF, Excel, Word, text or MP4 file.')], 422);
             $dir = fup_file_dir(); if (!is_dir($dir)) @mkdir($dir, 0775, true); if (!is_dir($dir) || !is_writable($dir)) json_response(['error' => 'The server cannot save files in uploads/followup.'], 500);
             $name = 'fu_' . (int)$t['id'] . '_' . str_replace('-', '', $day) . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
             if (!@move_uploaded_file((string)$up['tmp_name'], $dir . $name) && !@copy((string)$up['tmp_name'], $dir . $name)) json_response(['error' => 'Could not save the file on the server.'], 500);
@@ -1608,9 +1614,9 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $q1 = $pdo->prepare("SELECT fvals FROM fu_updates WHERE topic_id = ? AND day = ?"); $q1->execute([(int)$t['id'], (string)($_GET['day'] ?? '')]); $fv = json_decode((string)$q1->fetchColumn(), true);
             $v = is_array($fv) ? ($fv[(string)($_GET['key'] ?? '')] ?? null) : null; $fn = is_array($v) ? basename((string)($v['f'] ?? '')) : '';
             if ($fn === '' || !is_file(fup_file_dir() . $fn)) json_response(['error' => 'The file is not there.'], 404);
-            $ct = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'pdf' => 'application/pdf', 'mp4' => 'video/mp4', 'txt' => 'text/plain; charset=utf-8', 'csv' => 'text/csv; charset=utf-8'][strtolower(pathinfo($fn, PATHINFO_EXTENSION))] ?? 'application/octet-stream';
+            $ct = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'pdf' => 'application/pdf', 'mp4' => 'video/mp4', 'm4v' => 'video/mp4', 'mov' => 'video/quicktime', 'webm' => 'video/webm', '3gp' => 'video/3gpp', 'heic' => 'image/heic', 'txt' => 'text/plain; charset=utf-8', 'csv' => 'text/csv; charset=utf-8'][strtolower(pathinfo($fn, PATHINFO_EXTENSION))] ?? 'application/octet-stream';
             header('Content-Type: ' . $ct); header('X-Content-Type-Options: nosniff'); header('Cache-Control: private, max-age=3600'); header('Content-Length: ' . filesize(fup_file_dir() . $fn));
-            header('Content-Disposition: ' . (strpos($ct, 'image/') === 0 || $ct === 'application/pdf' || $ct === 'video/mp4' ? 'inline' : 'attachment') . '; filename="' . preg_replace('/[^A-Za-z0-9._ -]/', '_', (string)($v['n'] ?? $fn)) . '"');
+            header('Content-Disposition: ' . (strpos($ct, 'image/') === 0 || $ct === 'application/pdf' || strpos($ct, 'video/') === 0 ? 'inline' : 'attachment') . '; filename="' . preg_replace('/[^A-Za-z0-9._ -]/', '_', (string)($v['n'] ?? $fn)) . '"');
             readfile(fup_file_dir() . $fn); exit;
         }
         case 'fup.suggest': {   // Claude proposes the set-up of a topic from its name and the owner's description; nothing is saved until the owner presses Save
