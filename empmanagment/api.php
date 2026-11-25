@@ -19587,6 +19587,7 @@ if (is_file(__DIR__ . '/wa_collage.php')) { require_once __DIR__ . '/wa_collage.
 if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   // streaks + the Wins feed on the salesperson home; answers play.* itself
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
 if (strpos((string)$action, 'lh.') === 0) { require __DIR__ . '/leader_helper.php'; }   // 👥 Leaders Helper: fixed salary, daily checklist, daily payout
+if (strpos((string)$action, 'retail.route_') === 0 && is_file(__DIR__ . '/retail_route.php')) { $rrAuth = require_auth(); require_role(['Admin', 'HR'], $rrAuth); ensure_retail_tables($pdo); require_once __DIR__ . '/retail_route.php'; rr_dispatch($pdo, (string)$action, $rrAuth); exit; }   // 🛣 Shop wholesale → Routes: every shop on a 10-day route, area by area
 if (strpos((string)$action, 'fup.') === 0 && is_file(__DIR__ . '/followup.php')) { require __DIR__ . '/followup.php'; }   // 📌 Follow-up: sections → topics → one update a day, checked by Claude
        if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso)\.|^team\.(board|person)$/', (string)$action)) { require __DIR__ . '/wa.php'; }   // team.board / team.person live in team_board.php (loaded by wa.php); the other team.* actions (team.sheet = Orders → Employee sheet, team.check, team.me …) belong to api.php itself and must NOT go to wa.php (it answered them 'Unknown WhatsApp action')          // wq. = WhatsApp Sales (wq.php, loaded by wa.php → wa_more.php)
 
@@ -33418,7 +33419,11 @@ switch ($action) {
         require_role(['Admin', 'HR'], $auth);
         if (!ensure_retail_tables($pdo)) json_response(['error' => 'Could not create the retail tables.'], 500);
         $GLOBALS['RETAIL_VISIT_AUTH'] = $auth;
-        json_response(retail_visit_day($pdo, retail_visit_date($_GET['date'] ?? '', date('Y-m-d'))));
+        $vpDate = retail_visit_date($_GET['date'] ?? '', date('Y-m-d')); $rrOn = is_file(__DIR__ . '/retail_route.php');
+        if ($rrOn) { try { require_once __DIR__ . '/retail_route.php'; rr_sync_all($pdo, $vpDate); } catch (Throwable $e) { error_log('route sync: ' . $e->getMessage()); } }   // 🛣 the day's route joins the plan
+        $vpDay = retail_visit_day($pdo, $vpDate);
+        if ($rrOn) { try { $vpDay = rr_annotate($pdo, $vpDay); } catch (Throwable $e) {} }
+        json_response($vpDay);
         break;
     }
 
