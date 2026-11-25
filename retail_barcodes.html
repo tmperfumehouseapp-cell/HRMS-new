@@ -138,7 +138,7 @@
     if (ME.sp) { t.push(['bag', '🎒 My bag']); t.push(['give', '🏪 Give at shop']); }
     t.push(['orders', '🧾 Orders', (ME.open.placed + ME.open.making + ME.open.sent) || 0]);
     if (ME.maker) t.push(['make', '🏷 Make & hand over', (ME.open.placed + ME.open.making) || 0]);
-    if (ME.admin || ME.maker) t.push(['stock', '📦 Salespeople stock']);
+    if (ME.admin || ME.maker) t.push(['stock', '📦 Stock']);
     if (ME.admin) t.push(['setup', '⚙ Salespeople']);
     $('tabs').innerHTML = t.map((x) => `<button data-t="${x[0]}">${x[1]}${x[2] ? `<em>${x[2]}</em>` : ''}</button>`).join('');
     $('tabs').onclick = (e) => { const b = e.target.closest('button[data-t]'); if (b) show(b.dataset.t); };
@@ -265,7 +265,7 @@
   }
   async function orderForm(empId) {
     await perfumes();
-    const who = ME.admin || ME.maker ? `<select class="wb-sel" data-emp><option value="">— Salesperson —</option>${ME.people.map((p) => `<option value="${p.emp_id}" ${p.emp_id === empId ? 'selected' : ''}>${esc(p.name)} · ${esc(p.city)}</option>`).join('')}</select>` : '';
+    const who = ME.admin || ME.maker ? `<select class="wb-sel" data-emp><option value="">— For whom? —</option>${ME.maker ? `<option value="office" ${empId === 'office' ? 'selected' : ''}>🏢 Office stock (bottles already here, get labels)</option>` : ''}${ME.people.map((p) => `<option value="${p.emp_id}" ${p.emp_id === empId ? 'selected' : ''}>${esc(p.name)} · ${esc(p.city)}</option>`).join('')}</select>` : '';
     const ov = overlay(`<h3>New order</h3><div class="sub">The perfumes and how many bottles. The barcode maker makes one code per bottle.</div>
       <datalist id="pfl">${PERF.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
       <div style="margin-top:8px">${who}</div><div id="oLines"></div>
@@ -280,9 +280,10 @@
     ov.querySelector('[data-add]').onclick = addLine;
     ov.querySelector('[data-go]').onclick = async () => {
       const lines = [...L.querySelectorAll('.ol')].map((r) => ({ product: r.querySelector('[data-p]').value.trim(), ml: r.querySelector('[data-ml]').value, qty: +r.querySelector('[data-q]').value || 0 })).filter((x) => x.product && x.qty > 0);
-      const emp = ov.querySelector('[data-emp]') ? +ov.querySelector('[data-emp]').value : (ME.sp ? ME.sp.emp_id : 0);
-      if (!emp) return say2(ov, 'Pick the salesperson.'); if (!lines.length) return say2(ov, 'Add at least one perfume with a quantity.');
-      try { const r = await api.post('ws.order_place', { emp_id: emp, lines, note: ov.querySelector('[data-note]').value.trim() }); ov.remove(); alert(r.message); ME = await api.get('ws.me'); show(TAB); } catch (e) { say2(ov, e.message); }
+      const ev = ov.querySelector('[data-emp]') ? ov.querySelector('[data-emp]').value : '', office = ev === 'office';
+      const emp = ov.querySelector('[data-emp]') ? (office ? 0 : +ev) : (ME.sp ? ME.sp.emp_id : 0);
+      if (!emp && !office) return say2(ov, 'Pick the salesperson (or Office stock).'); if (!lines.length) return say2(ov, 'Add at least one perfume with a quantity.');
+      try { const r = await api.post('ws.order_place', { emp_id: emp, office: office ? 1 : 0, lines, note: ov.querySelector('[data-note]').value.trim() }); ov.remove(); alert(r.message); ME = await api.get('ws.me'); show(TAB); } catch (e) { say2(ov, e.message); }
     };
   }
   const say2 = (ov, m) => { ov.querySelector('[data-m]').innerHTML = `<div class="msg bad">${esc(m)}</div>`; };
@@ -297,15 +298,16 @@
     try {
       try { const l = await api.get('ws.label'); LABEL = { w: l.label_w, h: l.label_h }; } catch (e) {}
       const d = await api.get('ws.orders', { f: 'open' }); const list = d.orders.filter((o) => o.status === 'placed' || o.status === 'making');
-      P.innerHTML = (list.length ? list.map((o) => `<div class="wb-card" data-o="${o.order_id}"><h3>${esc(o.no)} ${pill(o.status)} <span class="sub" style="font-weight:700">for ${esc(o.name)} · ${esc(o.city)}</span></h3>
+      P.innerHTML = `<div class="wb-row" style="margin:0 0 10px"><button class="wb-b pri" id="mOffice">+ Label office stock</button><span class="sub">Bottles already in the office (or new ones that came in): give them barcodes once, then every order is filled from them.</span></div>`
+        + (list.length ? list.map((o) => { const off = !o.emp_id; return `<div class="wb-card" data-o="${o.order_id}" ${off ? 'style="border-color:#fcd34d"' : ''}><h3>${esc(o.no)} ${pill(o.status)} <span class="sub" style="font-weight:700">${off ? '🏢 Office stock' : 'for ' + esc(o.name) + ' · ' + esc(o.city)}</span></h3>
         <div class="sub">Placed ${dt(o.placed_at)} by ${esc(o.placed_by)}${o.note ? ' · ' + esc(o.note) : ''}</div>
-        <div class="ln h"><span>Perfume</span><span class="n">Bottles</span><span class="n">Labels</span><span class="n">In parcel</span></div>
+        <div class="ln h"><span>Perfume</span><span class="n">Bottles</span><span class="n">Labels</span><span class="n">${off ? 'Scanned' : 'In parcel'}</span></div>
         ${o.lines.map((l) => `<div class="ln"><span><b>${esc(l.product)}</b> ${esc(l.ml)} ml</span><span class="n">${l.made ? l.qty : `<input type="number" min="0" value="${l.qty}" data-q="${l.item_id}" title="The supplier has fewer? Change the number before making the barcodes">`}</span><span class="n">${l.made}</span><span class="n ${l.packed === l.made && l.made ? 'ok' : ''}">${l.packed}</span></div>`).join('')}
         <div class="wb-row">${o.totals.made < o.totals.qty ? `<button class="wb-b pri" data-make>1 · Make ${o.totals.qty - o.totals.made} barcodes</button>` : ''}${o.totals.made ? `<button class="wb-b" data-labels>2 · Print labels (${o.totals.printed}/${o.totals.made} printed)</button>` : ''}</div>
-        ${o.totals.made ? `<div class="sub" style="margin-top:10px"><b>3 · Stick a label on each bottle, then scan (or type) each one into the parcel</b> — this checks no bottle is without its label.</div>
-          <div class="wb-row"><input class="wb-in wb-code" data-pack inputmode="numeric" autocomplete="off" placeholder="Scan / type the code" style="flex:1"></div><div data-pm></div>
-          <div class="wb-row"><button class="wb-b g" data-send style="flex:1">4 · Hand over to ${esc(o.name)} (${o.totals.packed}/${o.totals.made} scanned)</button></div>` : ''}
-      </div>`).join('') : '<div class="wb-card mut">No order is waiting for barcodes. 🎉</div>')
+        ${(o.totals.made || !off) ? `<div class="sub" style="margin-top:10px">${off ? '<b>3 · Stick a label on each bottle, then scan (or type) each one</b> — only scanned bottles count as office stock.' : '<b>Scan the bottles into the parcel.</b> A bottle from the office shelf (it already has a label) joins this order by itself — make new labels only for what the office does not have.'}</div>
+          <div class="wb-row"><input class="wb-in wb-code" data-pack inputmode="numeric" autocomplete="off" placeholder="Scan / type the code" style="flex:1"></div><div data-pm></div>` : ''}
+        ${o.totals.made ? `<div class="wb-row"><button class="wb-b g" data-send style="flex:1">${off ? '4 · Put into office stock' : '4 · Hand over to ' + esc(o.name)} (${o.totals.packed}/${o.totals.made} scanned)</button></div>` : ''}
+      </div>`; }).join('') : '<div class="wb-card mut">No order is waiting for barcodes. 🎉</div>')
         + `<div class="wb-card"><h3>Labels already handed over</h3><div class="sub">Look up any code, or write off a damaged / lost bottle.</div><div class="wb-row"><input class="wb-in" id="fCode" inputmode="numeric" placeholder="6-digit code" style="max-width:200px"><button class="wb-b" id="fGo">Look up</button></div><div id="fOut"></div></div>`;
       P.querySelectorAll('[data-q]').forEach((i) => i.onchange = async () => { try { await api.post('ws.order_qty', { item_id: +i.dataset.q, qty: +i.value || 0 }); loadMake(); } catch (e) { alert(e.message); loadMake(); } });
       P.querySelectorAll('[data-o]').forEach((c) => {
@@ -314,21 +316,22 @@
         const lb = c.querySelector('[data-labels]'); if (lb) lb.onclick = async () => { const d2 = await api.get('ws.order', { id }); printLabels(d2.bottles, false); };
         const pk = c.querySelector('[data-pack]'); if (pk) {
           let q = [], tm = 0;
-          const flush = async () => { const codes = q; q = []; if (!codes.length) return; try { const r = await api.post('ws.pack', { order_id: id, codes }); const last = r.results[r.results.length - 1]; c.querySelector('[data-pm]').innerHTML = r.results.map((x) => `<div class="msg ${x.ok ? 'ok' : 'bad'}" style="margin:6px 0">${esc(x.message)}</div>`).slice(-3).join(''); const t = r.order.totals; const sb = c.querySelector('[data-send]'); if (sb) sb.textContent = `4 · Hand over to ${r.order.name} (${t.packed}/${t.made} scanned)`; if (last && last.ok && t.packed === t.made) c.querySelector('[data-pm]').insertAdjacentHTML('beforeend', '<div class="msg ok">All bottles are in the parcel. Hand it over.</div>'); } catch (e) { c.querySelector('[data-pm]').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; } };
+          const flush = async () => { const codes = q; q = []; if (!codes.length) return; try { const r = await api.post('ws.pack', { order_id: id, codes }); const last = r.results[r.results.length - 1]; c.querySelector('[data-pm]').innerHTML = r.results.map((x) => `<div class="msg ${x.ok ? 'ok' : 'bad'}" style="margin:6px 0">${esc(x.message)}</div>`).slice(-3).join(''); const t = r.order.totals; const sb = c.querySelector('[data-send]'); if (sb) sb.textContent = `${r.order.emp_id ? '4 · Hand over to ' + r.order.name : '4 · Put into office stock'} (${t.packed}/${t.made} scanned)`; if (r.results.some((x) => /^From office/.test(x.message))) { setTimeout(loadMake, 900); } else if (last && last.ok && t.packed === t.made) c.querySelector('[data-pm]').insertAdjacentHTML('beforeend', '<div class="msg ok">All bottles are scanned. Press 4.</div>'); } catch (e) { c.querySelector('[data-pm]').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; } };
           const push = (v) => { q.push(v); clearTimeout(tm); tm = setTimeout(flush, 60); };
           pk.addEventListener('input', () => { const v = pk.value.replace(/\D/g, ''); pk.value = v; if (v.length === 6) { push(v); pk.value = ''; } });
           pk.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const v = pk.value.replace(/\D/g, ''); if (v) push(v); pk.value = ''; } });
         }
         const sb = c.querySelector('[data-send]'); if (sb) sb.onclick = async () => {
-          if (!confirm('Hand this parcel over now? The salesperson then counts it and presses Received.')) return;
+          if (!confirm(/office stock/.test(sb.textContent) ? 'Put these bottles into the office stock now?' : 'Hand this parcel over now? The salesperson then counts it and presses Received.')) return;
           try { const r = await api.post('ws.send', { order_id: id }); alert(r.message); loadMake(); }
           catch (e) { if (/scanned into the parcel/.test(e.message) && confirm(e.message + '\n\nHand over anyway (all labels made)?')) { try { const r = await api.post('ws.send', { order_id: id, force: true }); alert(r.message); loadMake(); } catch (e2) { alert(e2.message); } } else alert(e.message); }
         };
       });
+      $('mOffice').onclick = () => orderForm('office');
       $('fGo').onclick = lookUp; $('fCode').onkeydown = (e) => { if (e.key === 'Enter') lookUp(); };
     } catch (e) { P.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
   }
-  const SB = { made: 'label made (at the office)', sent: 'on the way to the salesperson', bag: 'in the salesperson\'s bag', shop: 'given to a shop', missing: 'did not arrive', void: 'written off' };
+  const SB = { office: 'in the office stock', made: 'label made (at the office)', sent: 'on the way to the salesperson', bag: 'in the salesperson\'s bag', shop: 'given to a shop', missing: 'did not arrive', void: 'written off' };
   async function lookUp() {
     const c = $('fCode').value.replace(/\D/g, ''); if (!c) return;
     try {
@@ -378,14 +381,44 @@
     const P = $('p-stock'); P.innerHTML = '<div class="mut">Loading…</div>';
     try {
       const d = await api.get('ws.overview');
-      let h = `<div class="stat"><div><small>In the bags</small><b>${d.people.reduce((a, p) => a + p.in_bag, 0)}</b></div><div><small>On the way</small><b>${d.people.reduce((a, p) => a + p.on_the_way, 0)}</b></div><div><small>Given today</small><b>${d.people.reduce((a, p) => a + p.given_today, 0)}</b></div><div><small>Missing</small><b style="color:#b91c1c">${d.missing.length}</b></div></div>`;
+      const inBags = d.people.reduce((a, p) => a + p.in_bag, 0), way = d.people.reduce((a, p) => a + p.on_the_way, 0), cols = Object.entries(d.cols);
+      let h = `<div class="stat"><div><small>🏢 In the office</small><b>${d.in_office}</b></div><div><small>🎒 In the bags</small><b>${inBags}</b></div><div><small>🚚 On the way</small><b>${way}</b></div><div><small>Total with us</small><b>${d.in_office + inBags + way}</b></div></div>`;
+      h += `<div class="wb-card"><h3>Where every bottle is now</h3><div class="sub">Counted from the barcodes: one code = one bottle. Bottles given at shops are not here (they are on the shops' bills).</div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:8px;min-width:${360 + cols.length * 80}px"><thead><tr style="font-size:11px;text-transform:uppercase;color:#6b7280"><th style="text-align:left;padding:6px">Perfume</th>${cols.map(([, n]) => `<th style="padding:6px">${esc(n)}</th>`).join('')}<th style="padding:6px">On the way</th><th style="padding:6px">Total</th></tr></thead><tbody>
+        ${d.matrix.length ? d.matrix.map((r) => `<tr style="border-top:1px solid #f1f3f6"><td style="padding:7px 6px"><b>${esc(r.product)}</b> ${esc(r.ml)} ml</td>${cols.map(([k]) => `<td style="text-align:center">${r.by[k] || '<span class="mut">·</span>'}</td>`).join('')}<td style="text-align:center">${r.way || '<span class="mut">·</span>'}</td><td style="text-align:center"><b>${r.total}</b></td></tr>`).join('') : `<tr><td colspan="${cols.length + 3}" class="mut" style="padding:10px 6px">No barcoded bottle yet. Start with <b>🏷 Make &amp; hand over → + Label office stock</b>.</td></tr>`}
+        </tbody></table></div></div>`;
+      h += `<div class="wb-card" style="border-color:#fcd34d"><h3>🏢 Office stock <span class="sub" style="font-weight:700">${d.in_office} bottles${d.office_labels_waiting ? ' · ' + d.office_labels_waiting + ' labels made, not scanned in yet' : ''}</span></h3>
+        ${d.office.length ? d.office.map((x) => `<details class="bagl" style="display:block"><summary style="display:flex;justify-content:space-between;cursor:pointer"><span><b>${esc(x.product)}</b> ${esc(x.ml)} ml</span><b>${x.qty}</b></summary><small>${x.codes.join(' · ')}</small></details>`).join('') : '<div class="mut" style="padding:8px 0">Nothing labelled in the office yet.</div>'}
+        ${ME.maker ? `<div class="wb-row"><button class="wb-b" id="sAud">🔍 Count the office shelf</button></div><div id="audBox"></div>` : ''}</div>`;
       h += d.people.length ? d.people.map((p) => `<div class="wb-card"><h3>${esc(p.name)} <span class="sub" style="font-weight:700">${esc(p.city)}</span></h3>
         <div class="sub">In bag <b>${p.in_bag}</b> · on the way ${p.on_the_way} · labels being made ${p.being_made} · given today ${p.given_today} · at shops (all time) ${p.at_shops}${p.missing ? ` · <span class="bad">${p.missing} missing</span>` : ''} · open orders ${p.open_orders}</div>
         ${p.bag.length ? p.bag.map((x) => `<details class="bagl" style="display:block"><summary style="display:flex;justify-content:space-between;cursor:pointer"><span><b>${esc(x.product)}</b> ${esc(x.ml)} ml</span><b>${x.qty}</b></summary><small>${x.codes.join(' · ')}</small></details>`).join('') : '<div class="mut" style="padding:8px 0">Bag empty.</div>'}
         ${ME.admin ? `<div class="wb-row"><button class="wb-b" data-ord="${p.emp_id}">+ Order for ${esc(p.name)}</button></div>` : ''}</div>`).join('') : '<div class="wb-card mut">No salespeople on the list yet.</div>';
       if (d.missing.length) h += `<div class="wb-card"><h3>Did not arrive</h3>${d.missing.map((b) => `<div class="bagl"><span><b>${b.code}</b> · ${esc(b.product)} ${esc(b.ml)} ml</span><span class="mut">WS-${b.order_id}</span></div>`).join('')}</div>`;
       P.innerHTML = h; P.querySelectorAll('[data-ord]').forEach((b) => b.onclick = () => orderForm(+b.dataset.ord));
+      if ($('sAud')) $('sAud').onclick = audit;
     } catch (e) { P.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  }
+
+  // 🔍 count the office shelf: scan every bottle on it, then Check = what is missing / what should not be here
+  function audit() {
+    const A = new Set();
+    $('audBox').innerHTML = `<div class="sub" style="margin-top:10px">Scan (or type) every bottle on the office shelf. Then press Check.</div>
+      <div class="wb-row"><input class="wb-in wb-code" id="aIn" inputmode="numeric" autocomplete="off" placeholder="Scan / type the code" style="flex:1"></div>
+      <div class="wb-row"><b id="aN">0 scanned</b><span class="grow"></span><button class="wb-b g" id="aGo">Check</button></div><div id="aOut"></div>`;
+    const add = (v) => { if (v.length === 6) { A.add(v); $('aN').textContent = A.size + ' scanned'; } };
+    $('aIn').oninput = () => { const v = $('aIn').value.replace(/\D/g, ''); $('aIn').value = v; if (v.length === 6) { add(v); $('aIn').value = ''; } };
+    $('aIn').onkeydown = (e) => { if (e.key === 'Enter') { add($('aIn').value.replace(/\D/g, '')); $('aIn').value = ''; } };
+    $('aIn').focus();
+    $('aGo').onclick = async () => {
+      try {
+        const r = await api.post('ws.audit', { codes: [...A] });
+        $('aOut').innerHTML = `<div class="msg ${r.missing.length || r.extra.length || r.unknown.length ? 'bad' : 'ok'}">System says ${r.system} in the office · you scanned ${r.found} of them${!r.missing.length && !r.extra.length && !r.unknown.length ? ' — everything tallies ✓' : ''}</div>`
+          + (r.missing.length ? `<div class="sub"><b>Not found on the shelf (${r.missing.length}):</b></div>${r.missing.map((b) => `<div class="bagl"><span><b>${b.code}</b> · ${esc(b.product)} ${esc(b.ml)} ml</span></div>`).join('')}` : '')
+          + (r.extra.length ? `<div class="sub" style="margin-top:8px"><b>On the shelf but the system says it is elsewhere (${r.extra.length}):</b></div>${r.extra.map((b) => `<div class="bagl"><span><b>${b.code}</b> · ${esc(b.product)} ${esc(b.ml)} ml</span><span class="mut">${esc(SB[b.status] || b.status)}${b.shop ? ' · ' + esc(b.shop) : ''} · ${esc(b.name)}</span></div>`).join('')}` : '')
+          + (r.unknown.length ? `<div class="sub" style="margin-top:8px"><b>Not our codes:</b> ${r.unknown.join(', ')}</div>` : '');
+      } catch (e) { $('aOut').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+    };
   }
 
   /* ---------------- SETUP (admin) ---------------- */

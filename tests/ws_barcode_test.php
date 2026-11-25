@@ -10,6 +10,6 @@ if (strpos($api, "'ws_barcode' =>") === false) { echo "ws_barcode is not on the 
 if (strpos($ws, 'const WS_CODE_BASE = 800000;') === false) { echo "wholesale codes must start at 800000\n"; $bad++; }
 if (strpos($pos, 'ST_CODE_BASE + $top >= 800000') === false) { echo "the Store generator must stop before the wholesale range\n"; $bad++; }
 if (strpos($lay, "'retail_barcodes.html', 'wsb'") === false || strpos($lay, "need === 'wsb'") === false) { echo "the Barcodes tab is missing in Shop wholesale\n"; $bad++; }
-foreach (['ws.me', 'ws.order_place', 'ws.make', 'ws.pack', 'ws.send', 'ws.receive', 'ws.bag', 'ws.check', 'ws.give', 'ws.overview', 'ws.find', 'ws.void', 'ws.people_save'] as $a) if (strpos($ws, "case '$a':") === false) { echo "missing action $a\n"; $bad++; }
+foreach (['ws.me', 'ws.order_place', 'ws.make', 'ws.pack', 'ws.send', 'ws.receive', 'ws.bag', 'ws.check', 'ws.give', 'ws.overview', 'ws.find', 'ws.void', 'ws.people_save', 'ws.audit'] as $a) if (strpos($ws, "case '$a':") === false) { echo "missing action $a\n"; $bad++; }
 if (!is_file("$root/retail_barcodes.html")) { echo "retail_barcodes.html missing\n"; $bad++; }
 echo $bad ? "ws_barcode_test: $bad FAILED\n" : "ws_barcode_test: ok\n"; exit($bad ? 1 : 0);

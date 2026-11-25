@@ -9,6 +9,8 @@
  *   bag   -> the salesperson pressed "Received": it is in HIS stock now (and in his city's stock on the Stock page)
  *   shop  -> he typed its code at a shop: it is on that shop's bill (a Retail order, same row the Shops page writes)
  *   missing / void -> did not arrive / damaged or lost (taken off his stock)
+ *   office -> in the OFFICE STOCK (godown): an "office stock" order (emp_id 0) was made, labelled and scanned in. A salesperson's order is then
+ *             filled from it by scanning those bottles into his parcel (they join his order); labels are made only for what the office does not have.
  *
  * Who:
  *   Admin / HR / the "Retail" tick           everything (place orders for a salesperson, set who the salespeople are, see every bag)
@@ -18,7 +20,7 @@
  *   ws.me · ws.people · ws.people_save · ws.perfumes · ws.label
  *   ws.order_place · ws.orders · ws.order · ws.order_qty · ws.order_cancel
  *   ws.make · ws.mark_printed · ws.pack · ws.send
- *   ws.receive · ws.bag · ws.overview · ws.shops · ws.check · ws.give · ws.find · ws.void
+ *   ws.receive · ws.bag · ws.overview (office stock + every bag + one perfume × place table) · ws.audit (count the office shelf) · ws.shops · ws.check · ws.give · ws.find · ws.void
  *
  * Codes: 800000 + bottle_id (800001 … 999999), so they never meet the Store's codes (100000 + id, guarded in store_pos.php).
  */
@@ -74,7 +76,7 @@ function ws_log(PDO $pdo, $who, $kind, $orderId, $shopId, array $codes, $detail)
 
 function ws_emp_name(PDO $pdo, $id) {
     static $c = [];
-    $id = (int)$id; if (!$id) return '';
+    $id = (int)$id; if (!$id) return 'Office stock';
     if (!isset($c[$id])) $c[$id] = (string)ws_val($pdo, "SELECT full_name FROM employees WHERE employee_id = ?", [$id], '#' . $id);
     return $c[$id];
 }
@@ -139,9 +141,9 @@ function ws_bottle_out(array $b) {
 }
 
 /** what a salesperson holds now, grouped by perfume + size (and the codes) */
-function ws_bag(PDO $pdo, $empId) {
+function ws_bag(PDO $pdo, $empId, $status = 'bag') {
     $g = [];
-    foreach (ws_all($pdo, "SELECT code, product, ml, received_at FROM ws_bottles WHERE emp_id = ? AND status = 'bag' ORDER BY product, CAST(ml AS DECIMAL(8,2)), bottle_id", [(int)$empId]) as $r) {
+    foreach (ws_all($pdo, "SELECT code, product, ml, received_at FROM ws_bottles WHERE emp_id = ? AND status = ? ORDER BY product, CAST(ml AS DECIMAL(8,2)), bottle_id", [(int)$empId, $status]) as $r) {
         $k = mb_strtolower($r['product']) . '|' . $r['ml'];
         if (!isset($g[$k])) $g[$k] = ['product' => $r['product'], 'ml' => $r['ml'], 'qty' => 0, 'codes' => []];
         $g[$k]['qty']++; $g[$k]['codes'][] = (string)$r['code'];
@@ -239,7 +241,9 @@ try {
     /* ---------- ORDERS: the salesperson (or Admin for him) asks for bottles ---------- */
     case 'ws.order_place': {
         if (!$wsPost) ws_err('Method not allowed.', 405);
-        $g = ws_gate($pdo); $in = json_input(); $t = ws_target($pdo, $g, $in['emp_id'] ?? 0);
+        $g = ws_gate($pdo); $in = json_input();
+        if (!empty($in['office'])) { ws_need($g, 'maker'); $t = ['emp_id' => 0, 'city' => '']; }      // 🏢 office stock: the bottles in the godown get their labels (the opening stock, or new stock that came in)
+        else $t = ws_target($pdo, $g, $in['emp_id'] ?? 0);
         $lines = [];
         foreach ((array)($in['lines'] ?? []) as $l) {
             $p = ws_name($l['product'] ?? ''); $ml = ws_ml((string)($l['ml'] ?? '')); $q = (int)($l['qty'] ?? 0);
@@ -258,7 +262,7 @@ try {
             $pdo->commit();
         } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); ws_err('The order could not be saved. Try again.', 500); }
         ws_log($pdo, $g['by'], 'order', $oid, 0, [], $n . ' bottles for ' . ws_emp_name($pdo, $t['emp_id']));
-        json_response(['ok' => true, 'order' => ws_order_out($pdo, ws_order_get($pdo, $oid)), 'message' => 'Order WS-' . $oid . ' placed: ' . $n . ' bottles for ' . ws_emp_name($pdo, $t['emp_id']) . '. The barcode maker sees it now.']);
+        json_response(['ok' => true, 'order' => ws_order_out($pdo, ws_order_get($pdo, $oid)), 'message' => $t['emp_id'] ? 'Order WS-' . $oid . ' placed: ' . $n . ' bottles for ' . ws_emp_name($pdo, $t['emp_id']) . '. The barcode maker sees it now.' : 'WS-' . $oid . ': ' . $n . ' bottles of office stock to label. Make the barcodes, stick them, scan them in.']);
     }
     case 'ws.orders': {
         $g = ws_gate($pdo); $f = (string)($_GET['f'] ?? 'open');
@@ -334,16 +338,32 @@ try {
         $g = ws_gate($pdo); ws_need($g, 'maker'); $in = json_input(); $o = ws_order_get($pdo, $in['order_id'] ?? 0); $res = [];
         $codes = ws_codes($in['codes'] ?? [], 200); $found = [];
         if ($codes) foreach (ws_all($pdo, "SELECT * FROM ws_bottles WHERE code IN (" . ws_in($codes) . ")", $codes) as $b) $found[(string)$b['code']] = $b;
-        $ok = [];
+        $ok = []; $take = [];
+        if (!in_array($o['status'], ['placed', 'making'], true)) ws_err('This order is ' . $o['status'] . '.');
+        $need = []; foreach (ws_order_out($pdo, $o)['lines'] as $l) $need[mb_strtolower($l['product']) . '|' . $l['ml']] = ['item_id' => $l['item_id'], 'n' => $l['to_make']];
         foreach ($codes as $c) {
             $b = $found[$c] ?? null;
             if (!$b) { $res[] = ['code' => $c, 'ok' => false, 'message' => $c . ' is not a wholesale barcode.']; continue; }
+            if ($b['status'] === 'office') {      // a bottle from the office stock goes into this salesperson's parcel: it joins his order
+                $k = mb_strtolower($b['product']) . '|' . $b['ml'];
+                if (!(int)$o['emp_id']) { $res[] = ['code' => $c, 'ok' => false, 'dup' => true, 'message' => 'Already in the office stock: ' . $b['product'] . ' ' . $b['ml'] . ' ml.']; continue; }
+                if (!isset($need[$k])) { $res[] = ['code' => $c, 'ok' => false, 'message' => $b['product'] . ' ' . $b['ml'] . ' ml is not on this order.']; continue; }
+                if ($need[$k]['n'] <= 0) { $res[] = ['code' => $c, 'ok' => false, 'message' => 'Enough ' . $b['product'] . ' ' . $b['ml'] . ' ml for this order already. Put it back on the shelf.']; continue; }
+                $need[$k]['n']--; $take[] = [(int)$b['bottle_id'], $need[$k]['item_id']];
+                $res[] = ['code' => $c, 'ok' => true, 'message' => 'From office stock into the parcel: ' . $b['product'] . ' ' . $b['ml'] . ' ml']; continue;
+            }
             if ((int)$b['order_id'] !== (int)$o['order_id']) { $res[] = ['code' => $c, 'ok' => false, 'message' => $c . ' belongs to order WS-' . $b['order_id'] . ', not this one.']; continue; }
             if ($b['status'] !== 'made') { $res[] = ['code' => $c, 'ok' => false, 'message' => $c . ' is already ' . $b['status'] . '.']; continue; }
             if ($b['packed_at'] !== null) { $res[] = ['code' => $c, 'ok' => false, 'dup' => true, 'message' => 'Already in the parcel: ' . $b['product'] . ' ' . $b['ml'] . ' ml.']; continue; }
             $ok[] = (int)$b['bottle_id']; $res[] = ['code' => $c, 'ok' => true, 'message' => 'In the parcel: ' . $b['product'] . ' ' . $b['ml'] . ' ml'];
         }
         if ($ok) $pdo->prepare("UPDATE ws_bottles SET packed_at = ? WHERE packed_at IS NULL AND bottle_id IN (" . implode(',', $ok) . ")")->execute([ws_now()]);
+        if ($take) {
+            $u = $pdo->prepare("UPDATE ws_bottles SET order_id = ?, item_id = ?, emp_id = ?, status = 'made', packed_at = ? WHERE bottle_id = ? AND status = 'office'");
+            foreach ($take as $x) $u->execute([(int)$o['order_id'], $x[1], (int)$o['emp_id'], ws_now(), $x[0]]);
+            $pdo->prepare("UPDATE ws_orders SET status = 'making', made_at = COALESCE(made_at, ?) WHERE order_id = ? AND status = 'placed'")->execute([ws_now(), (int)$o['order_id']]);
+            ws_log($pdo, $g['by'], 'from_office', (int)$o['order_id'], 0, array_values(array_filter($codes, function ($c) use ($found) { return isset($found[$c]) && $found[$c]['status'] === 'office'; })), count($take) . ' from office stock');
+        }
         json_response(['results' => $res, 'order' => ws_order_out($pdo, ws_order_get($pdo, $o['order_id']))]);
     }
     case 'ws.send': {               // hand over: every label made for the order goes to the salesperson ("on the way" until he presses Received)
@@ -355,6 +375,13 @@ try {
         if (empty($in['force']) && $out['totals']['packed'] < $n) json_response(['error' => 'Only ' . $out['totals']['packed'] . ' of ' . $n . ' bottles were scanned into the parcel.', 'need_force' => true, 'packed' => $out['totals']['packed'], 'made' => $n], 409);
         $short = 0; foreach ($out['lines'] as $l) $short += $l['to_make'];
         $now = ws_now();
+        if (!(int)$o['emp_id']) {      // 🏢 an office-stock order: the labelled bottles are now the office stock
+            $pdo->prepare("UPDATE ws_bottles SET status = 'office', received_at = ? WHERE order_id = ? AND status = 'made'")->execute([$now, (int)$o['order_id']]);
+            $pdo->prepare("UPDATE ws_orders SET status = 'received', sent_at = ?, sent_by = ?, received_at = ? WHERE order_id = ?")->execute([$now, mb_substr($g['by'], 0, 80), $now, (int)$o['order_id']]);
+            if ($short) foreach ($out['lines'] as $l) if ($l['to_make'] > 0) $pdo->prepare("UPDATE ws_items SET qty = ? WHERE item_id = ?")->execute([$l['made'], $l['item_id']]);
+            ws_log($pdo, $g['by'], 'office_in', (int)$o['order_id'], 0, [], $n . ' bottles into the office stock');
+            json_response(['ok' => true, 'message' => $n . ' bottles are in the office stock now (WS-' . $o['order_id'] . ').']);
+        }
         $pdo->beginTransaction();
         try {
             $pdo->prepare("UPDATE ws_bottles SET status = 'sent', sent_at = ? WHERE order_id = ? AND status = 'made'")->execute([$now, (int)$o['order_id']]);
@@ -413,7 +440,31 @@ try {
                            'open_orders' => (int)ws_val($pdo, "SELECT COUNT(*) FROM ws_orders WHERE emp_id = ? AND status IN ('placed','making','sent')", [$p['emp_id']], 0)];
         }
         $miss = array_map('ws_bottle_out', ws_all($pdo, "SELECT * FROM ws_bottles WHERE status = 'missing' ORDER BY bottle_id DESC LIMIT 100"));
-        json_response(['people' => $out, 'missing' => $miss]);
+        $office = ws_bag($pdo, 0, 'office'); $on = 0; foreach ($office as $x) $on += $x['qty'];
+        $waitLab = (int)ws_val($pdo, "SELECT COUNT(*) FROM ws_bottles WHERE emp_id = 0 AND status = 'made'", [], 0);
+        // ONE table: every perfume + size, where its bottles are now (office · each salesperson's bag · on the way) and the total
+        $mx = []; $cols = ['office' => 'Office'];
+        foreach ($out as $p) $cols['e' . $p['emp_id']] = $p['name'];
+        foreach (ws_all($pdo, "SELECT product, ml, emp_id, status, COUNT(*) n FROM ws_bottles WHERE status IN ('office','bag','sent') GROUP BY product, ml, emp_id, status") as $r) {
+            $k = mb_strtolower($r['product']) . '|' . $r['ml'];
+            if (!isset($mx[$k])) $mx[$k] = ['product' => $r['product'], 'ml' => $r['ml'], 'by' => [], 'way' => 0, 'total' => 0];
+            $n = (int)$r['n']; $mx[$k]['total'] += $n;
+            if ($r['status'] === 'sent') $mx[$k]['way'] += $n; else { $c = $r['status'] === 'office' ? 'office' : 'e' . (int)$r['emp_id']; $mx[$k]['by'][$c] = ($mx[$k]['by'][$c] ?? 0) + $n; }
+        }
+        uasort($mx, function ($a, $b) { return [mb_strtolower($a['product']), (float)$a['ml']] <=> [mb_strtolower($b['product']), (float)$b['ml']]; });
+        json_response(['people' => $out, 'missing' => $miss, 'office' => $office, 'in_office' => $on, 'office_labels_waiting' => $waitLab, 'cols' => $cols, 'matrix' => array_values($mx)]);
+    }
+    case 'ws.audit': {              // count the office shelf: scan every bottle, then compare with what the system says is in the office
+        if (!$wsPost) ws_err('Method not allowed.', 405);
+        $g = ws_gate($pdo); ws_need($g, 'maker'); $codes = ws_codes(json_input()['codes'] ?? [], 5000); $set = array_flip($codes);
+        $sys = ws_all($pdo, "SELECT * FROM ws_bottles WHERE status = 'office' ORDER BY product, CAST(ml AS DECIMAL(8,2)), bottle_id");
+        $found = []; $missing = [];
+        foreach ($sys as $b) { if (isset($set[(string)$b['code']])) $found[] = (string)$b['code']; else $missing[] = ws_bottle_out($b); }
+        $extra = []; $fs = array_flip($found); $rest = array_values(array_filter($codes, function ($c) use ($fs) { return !isset($fs[$c]); }));
+        if ($rest) foreach (ws_all($pdo, "SELECT b.*, s.shop_name FROM ws_bottles b LEFT JOIN retail_shops s ON s.shop_id = b.shop_id WHERE b.code IN (" . ws_in($rest) . ")", $rest) as $b) $extra[(string)$b['code']] = ws_bottle_out($b) + ['name' => ws_emp_name($pdo, $b['emp_id']), 'shop' => (string)($b['shop_name'] ?? '')];
+        $unknown = array_values(array_filter($rest, function ($c) use ($extra) { return !isset($extra[$c]); }));
+        ws_log($pdo, $g['by'], 'audit', 0, 0, [], count($found) . ' found, ' . count($missing) . ' missing, ' . count($extra) . ' should not be here, ' . count($unknown) . ' unknown');
+        json_response(['system' => count($sys), 'found' => count($found), 'missing' => $missing, 'extra' => array_values($extra), 'unknown' => $unknown]);
     }
 
     /* ---------- SALESPERSON at the shop: type the codes -> the shop's bill ---------- */
@@ -434,7 +485,7 @@ try {
             $what = $b['product'] . ' ' . $b['ml'] . ' ml';
             if ((int)$b['emp_id'] !== $t['emp_id']) { $res[] = ['code' => $c, 'ok' => false, 'what' => $what, 'message' => $what . ' — this bottle is ' . ws_emp_name($pdo, $b['emp_id']) . '\'s, not yours.']; continue; }
             if ($b['status'] === 'shop') { $res[] = ['code' => $c, 'ok' => false, 'what' => $what, 'message' => $what . ' — already given to ' . ($b['shop_name'] ?: 'a shop') . ' (' . $b['retail_order_no'] . ').']; continue; }
-            $why = ['sent' => 'still "on the way": press Received on its parcel first.', 'made' => 'still at the office (not handed over yet).', 'missing' => 'marked "did not arrive" when the parcel was received. Ask the office.', 'void' => 'written off by the office.'];
+            $why = ['sent' => 'still "on the way": press Received on its parcel first.', 'made' => 'still at the office (not handed over yet).', 'missing' => 'marked "did not arrive" when the parcel was received. Ask the office.', 'void' => 'written off by the office.', 'office' => 'in the office stock, not in your bag.'];
             if ($b['status'] !== 'bag') { $res[] = ['code' => $c, 'ok' => false, 'what' => $what, 'message' => $what . ' — ' . ($why[$b['status']] ?? 'it is ' . $b['status'] . '.')]; continue; }
             $res[] = ['code' => $c, 'ok' => true, 'product' => $b['product'], 'ml' => $b['ml'], 'what' => $what, 'price' => ws_price($pdo, $b['ml'])];
         }
@@ -495,7 +546,7 @@ try {
         if (!$codes) ws_err('Type the code(s).'); if (mb_strlen($why) < 3) ws_err('Write why (damaged, lost, label made by mistake ...).');
         $n = 0;
         foreach (ws_all($pdo, "SELECT * FROM ws_bottles WHERE code IN (" . ws_in($codes) . ")", $codes) as $b) {
-            if (!in_array($b['status'], ['made', 'bag', 'missing', 'sent'], true)) continue;
+            if (!in_array($b['status'], ['made', 'bag', 'missing', 'sent', 'office'], true)) continue;
             $pdo->prepare("UPDATE ws_bottles SET status = 'void', note = ? WHERE bottle_id = ?")->execute([$why, (int)$b['bottle_id']]); $n++;
             if ($b['status'] === 'bag') { $city = (string)ws_val($pdo, "SELECT city FROM ws_orders WHERE order_id = ?", [(int)$b['order_id']], ''); ws_city_stock($pdo, $city, $b['product'], $b['ml'], -1, 'Barcode ' . $b['code'] . ' written off: ' . $why, $g['auth']); }
         }
