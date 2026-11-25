@@ -236,6 +236,23 @@ function wa_util_pool_defs_raw(): array
             'body' => "Hello {{1}} 😍\n\nShaadi aur winter season ki khaas khushbuyein tayaar hain ✨\n\nAapko kaisi pasand hai ? Button dabake apni pasand batayein 👇"],
         'open_hi_3' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
             'body' => "Hi {{1}} 🎁\n\nGift season shuru ho gaya he, aur humne aapke liye ek khaas pick tayaar rakha he 👀\n\nDekhna chahenge ? Button dabaiye 👇"],
+        // ✨ owner, 25 Nov 2026: utility messages that are exciting but still ABOUT THE CUSTOMER'S OWN earlier chat / enquiry / order (so Meta keeps them utility): season, curiosity, spacing, one choice by button, no deal words
+        'open_ex_1' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 🤩\n\nAapne pehle TM Perfume House se baat ki thi, aur is shaadi-season ke liye ek khaas khushbu ki list aapke liye taiyaar he ✨\n\nDekhna chahenge ? Button dabaiye 👇"],
+        'open_ex_2' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['20ML', '50ML', '100ML']),
+            'body' => "Hello {{1}} 😍\n\nSardi shuru ho gayi he, aur aapki pasand ki khushbuyein aapke ek message ka intezaar kar rahi hain 🔥\n\nKaunsa size dekhna chahenge ? 👇"],
+        'open_ex_3' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Apne liye', 'Gift ke liye']),
+            'body' => "Hi {{1}} 🎁\n\nAapke pichhle sawal ke baad humne gift-season ke liye ek khaas surprise taiyaar kiya he 👀\n\nBatayein, apne liye ya kisi ko gift dene ke liye ? 👇"],
+        'open_ex_4' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Baad me']),
+            'body' => "Hello {{1}} 🌟\n\nAapse baat hone ke baad humare paas kuch nayi khushbuyein aayi hain, jo aapko pasand aa sakti hain 🤩\n\nDekhna chahenge ? 👇"],
+        'open_ex_5' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Zaroor', 'Abhi nahi']),
+            'body' => "Hi {{1}} 💫\n\nWinter wedding-season me aapke liye ek chhota sa secret humne bachake rakha he 🤫\n\nJaanna chahenge ? Button dabaiye 👇"],
+        'ask_ex_1' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 😊\n\nAapne {{3}} ko {{2}} ke bare me poocha tha 🌸\n\nAb uske jaisi hi ek khaas khushbu humare paas he 🤩 Dekhna chahenge ? 👇"],
+        'ask_ex_2' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['20ML', '50ML', '100ML']),
+            'body' => "Hello {{1}} 😍\n\n{{2}} ke liye aapka sawal ({{3}}) humein yaad he, aur ab uska ek naya size aapke liye taiyaar he ✨\n\nKaunsa size dekhna chahenge ? 👇"],
+        'order_ex_1' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Dikhao', 'Baad me']),
+            'body' => "Hi {{1}} 🤩\n\nAapka order {{2}} ({{3}}) kaisa laga ? Isi khushbu jaisi ek aur khaas khushbu aapke liye taiyaar he 🔥\n\nJaanna chahenge ? 👇"],
         // 💬 owner, 24 Nov 2026: the same warm Hinglish style for the enquiry / order follow-ups (they join the rotation, so they are tested against the older wording by reply rate)
         'ask_hi_followup' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Haan, chahiye', 'Abhi nahi']),
             'body' => "Hi {{1}} 😊 aapne {{3}} ko {{2}} ke bare me poocha tha... abhi bhi chahiye ? Neeche button dabaiye 👇"],
@@ -399,7 +416,8 @@ function wa_util_pool_view(PDO $pdo): array
 /** The pool messages a campaign may send now (approved somewhere, not moved to marketing by Meta). */
 function wa_util_pool_usable(PDO $pdo, bool $behaviour = false): array
 {
-    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING') continue; $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
+    $o = []; $__blk = (string)setting_get($pdo, 'wa_block_dull', '1') !== '0'; if ($__blk && !function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) { try { require_once __DIR__ . '/wa_restyle.php'; } catch (Throwable $e) { } }
+    foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING') continue; if ($__blk && function_exists('wa_rs_dull') && wa_rs_dull((string)($r['body'] ?? ''))) continue;   /* a basic message is not picked (owner 25 Nov) */ $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
         $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; if ($claims) { $t['claims'] = true; $t['body'] = (string)$r['body']; }
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;

@@ -230,6 +230,10 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
         if ($co === 1) return [false, 'This customer asked to stop promotional messages.', 0];
     }
     if (!in_array($who, ['order', 'test'], true) && wa_quiet_hours() && empty($GLOBALS['wa_ru_noquiet'])) return [false, 'No number has room now (quiet hours 03:00-09:00: no automatic message goes).', 0];   // 🌙 universal rule (owner, 21 Nov) - except Module B's utility follow-up (owner 23 Nov: Module B never rests; $GLOBALS['wa_ru_noquiet'] is set only while its own tick runs)
+    /* owner 25 Nov 2026: "not a single dull message may go": automatic follow-ups (Cold, Lineup, After-Order, Module B / C, rescue) are refused when the wording is basic customer care / has no hook; campaign messages (Module A, chosen by the owner) only when they use the customer-care phrases. Order messages (who = order: thank-you, tracking) and the staff's own messages are never touched. Switch off: wa_block_dull = 0. */
+    if (in_array($who, ['followup', 'recover', 'campaign'], true) && (string)setting_get($pdo, 'wa_block_dull', '1') !== '0') {
+        try { if (!function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php'; if (function_exists('wa_rs_dull')) { $__b = (string)($t['body'] ?? ''); $__dl = $who === 'campaign' ? (function_exists('wa_style_dull') && wa_style_dull($__b) !== '') : wa_rs_dull($__b); if ($__dl) return [false, 'Dull message blocked (owner, 25 Nov 2026): it is not sent.', 0]; } } catch (Throwable $e1) { }
+    }
     if (in_array($who, ['bot', 'auto', 'flow', 'followup', 'recover', 'campaign'], true) && function_exists('wa_bot_paused') && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.', 0];   // ⏸ stopped by the salesperson
     if (in_array($who, ['flow', 'followup'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off until tomorrow night.', 0];
     $to = (string)($c['wa_id'] ?: '91' . $c['phone']);
