@@ -474,6 +474,16 @@ function fup_clear_questions(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_clear_questions: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's order "make every topic about the day before": all open daily topics are filled the next day (the day asked for is yesterday; yesterday and the day before can be written). Nothing written is changed. A topic can still be ticked back off in Edit topic. Deadline topics are left alone. */
+function fup_all_day_before(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_all_lag_v1', '') === '1') return;
+        $pdo->exec("UPDATE fu_topics SET `lag` = 1 WHERE active = 1 AND kind = 'progress' AND `lag` = 0");
+        setting_set($pdo, 'fup_all_lag_v1', '1');
+    } catch (Throwable $e) { error_log('fup_all_day_before: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order for the topic "Office Pickup Parcel Update": no number from the HRMS, only the written update. The system number (it was connected by its name) is taken off the topic, the numbers the system had filled in by itself are removed from its days (a number a person typed, and every written update, stay), and the form asks only for the summary. */
 function fup_office_pickup_clean(PDO $pdo): void
 {
@@ -1263,6 +1273,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_sachin_topics($pdo);
     fup_office_pickup_clean($pdo);
     fup_clear_questions($pdo);
+    fup_all_day_before($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
