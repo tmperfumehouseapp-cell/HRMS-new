@@ -523,7 +523,12 @@ function wln_twins(PDO $pdo, string $phone, string $topic, int $step, int $faile
     unset($cand[$failedTid]); if (!$cand) return [];
     $util = []; try { foreach ($pdo->query("SELECT id, category FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_keys($cand))) . ")")->fetchAll() as $r) if (strtoupper((string)$r['category']) === 'UTILITY') $util[(int)$r['id']] = 1; } catch (Throwable $e) { return []; }
     $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $q->execute([$phone]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
-    $o = []; foreach ($cand as $id => $k) if (isset($util[$id]) && !isset($got[$id])) $o[] = [(int)$id, (string)$k]; return $o;
+    $o = []; foreach ($cand as $id => $k) if (isset($util[$id]) && !isset($got[$id])) $o[] = [(int)$id, (string)$k];
+    /* owner 25 Nov 2026: a rescue is never a basic customer-care message (the After-Order rescue sent #3055 1,541 times), and the exciting ones come first */
+    try { if ($o && (string)setting_get($pdo, 'wa_block_dull', '1') !== '0') { if (!function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php';
+        if (function_exists('wa_rs_dull')) { $bd = []; foreach ($pdo->query("SELECT id, name, body FROM wa_templates WHERE id IN (" . implode(',', array_map(function ($x) { return (int)$x[0]; }, $o)) . ")")->fetchAll(PDO::FETCH_NUM) as $r) $bd[(int)$r[0]] = [(string)$r[1], (string)$r[2]];
+            $good = []; $first = []; foreach ($o as $x) { $b = $bd[(int)$x[0]] ?? null; if ($b && wa_rs_dull($b[1])) continue; if ($b && preg_match('/(_ex_|^tmph_hm_|^rs\d+_|_tw[0-9a-f]+$|^tmph_ord_)/', $b[0])) $first[] = $x; else $good[] = $x; } $o = array_merge($first, $good); } } } catch (Throwable $e) { }
+    return $o;
 }
 /** How much of what we sent a customer he actually OPENED: [messages sent, messages read]. A customer who never opened 3+ messages does not get the paid (marketing) price steps — the plain utility message goes instead (cheaper, and it protects the numbers' quality); one who read but did not answer gets the price step. */
 function wln_engagement(PDO $pdo, string $phone): array
