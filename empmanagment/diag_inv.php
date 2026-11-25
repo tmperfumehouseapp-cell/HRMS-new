@@ -47,3 +47,11 @@ try { $s9 = json_decode((string)$pdo->query("SELECT setting_value FROM hrms_sett
     foreach (($s9['pairs'] ?? []) as $id => $p) { if (($p['st'] ?? '') !== 'fail') continue; $w9[(string)($p['why'] ?? '?')] = ($w9[(string)($p['why'] ?? '?')] ?? 0) + 1; $k = explode(':', (string)($p['src'] ?? '?'))[0]; $o9[$k] = ($o9[$k] ?? 0) + 1; }
     echo "ASK FAILED pairs by reason " . json_encode($w9, JSON_UNESCAPED_UNICODE) . " · by module " . json_encode($o9) . " · retry flag " . (int)($s9['retry_0'] ?? 0) . " · next-try entries " . count($s9['next'] ?? []) . "\n";
 } catch (Throwable $e) { echo "ASK FAILED ERR " . substr($e->getMessage(), 0, 150) . "\n"; }
+// OFFER REACH (owner 25 Nov: "does every replier get the offer within 60 minutes, and is the chat read?"): today, counts only
+try { $d0 = date('Y-m-d 00:00:00'); $tn = date('Y-m-d H:i:s');
+    $rep = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE last_in_at >= '$d0' AND optout = 0 AND camp_optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag <> 'complaint')")->fetchColumn();
+    $of = $pdo->query("SELECT COUNT(*), COUNT(DISTINCT phone), SUM(TIMESTAMPDIFF(MINUTE, reply_at, at) <= 60), SUM(TIMESTAMPDIFF(MINUTE, reply_at, at) BETWEEN 61 AND 180), SUM(TIMESTAMPDIFF(MINUTE, reply_at, at) > 180), AVG(TIMESTAMPDIFF(MINUTE, reply_at, at)) FROM wa_offer WHERE mode = 'live' AND ok = 1 AND at >= '$d0'")->fetch(PDO::FETCH_NUM);
+    $why = $pdo->query("SELECT LEFT(why, 60) w, COUNT(*) n FROM wa_offer WHERE mode = 'live' AND ok = 0 AND at >= '$d0' GROUP BY w ORDER BY n DESC LIMIT 6")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $kinds = $pdo->query("SELECT kind, ml, COUNT(*) n FROM wa_offer WHERE mode = 'live' AND ok = 1 AND at >= '$d0' GROUP BY kind, ml ORDER BY n DESC LIMIT 8")->fetchAll(PDO::FETCH_NUM);
+    echo "ASK OFFERREACH2 today writers " . $rep . " · offers sent " . (int)$of[0] . " to " . (int)$of[1] . " people · delay after reply: <=60 min " . (int)$of[2] . ", 61-180 min " . (int)$of[3] . ", >180 min " . (int)$of[4] . ", average " . round((float)$of[5]) . " min · not made, by reason " . json_encode($why, JSON_UNESCAPED_UNICODE) . " · kind/size sent " . json_encode($kinds) . "\n";
+} catch (Throwable $e) { echo "ASK OFFERREACH2 ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
