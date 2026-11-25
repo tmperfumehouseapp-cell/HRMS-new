@@ -46,6 +46,8 @@ jobs:
 
       - name: Bot add-on offer counts as add-on effort
         run: php -d zend.assertions=1 -d assert.exception=1 tests/bot_addon_effort_test.php
+      - name: History chats stay in History after our own message
+        run: php -d zend.assertions=1 -d assert.exception=1 tests/history_chat_test.php
       - name: Lineup replies (Stop / Not now are not replies)
         run: php tests/line_decline_test.php
       - name: Offer add-ons

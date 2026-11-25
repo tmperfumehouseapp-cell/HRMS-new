@@ -1036,7 +1036,7 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
             $shown = wa_tpl_shown_text($t, $vars, $hvar); $now = date('Y-m-d H:i:s');
             $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'template', ?, 'sent', 'emp', ?, ?)")->execute([$wamid, $key, (int)$use['id'], $shown, $me, $now]);
             // a pre-made message to a CLOSED chat whose 24-hour window is over (the 🕘 History list) must NOT put it back in Requests — it comes back only when the customer replies (wa.php re-opens it then)
-            $histChat = (string)($c['status'] ?? '') === 'closed' && (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400);
+            $histChat = function_exists('wa_is_history_chat') ? wa_is_history_chat($pdo, $c) : ((string)($c['status'] ?? '') === 'closed' && (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400));   // the History list's own rule: also a chat closed by Stop / Not now in the last 24 hours
             if ($histChat) $pdo->prepare("UPDATE wa_contacts SET last_out_at = ? WHERE phone = ?")->execute([$now, $key]);
             else $pdo->prepare("UPDATE wa_contacts SET last_out_at = ?, state = 'human', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$now, $key]);
             $pdo->prepare("UPDATE wa_templates SET used = used + 1 WHERE id = ?")->execute([$t['id']]);

@@ -276,6 +276,14 @@ function wa_query_mode(PDO $pdo): string
         if ((string)setting_get($pdo, 'wag_open_market', '') === '1') return 'om';
         return (string)setting_get($pdo, 'waa_off', '1') === '0' ? 'aa' : 'no'; } catch (Throwable $e) { return 'om'; }
 }
+/** 🕘 Is this a HISTORY chat (the same rule as the History list)? Closed AND (the customer's last message is over 24 hours old, OR he opted out, OR he said Stop / Not now — tag 'declined').
+ *  A message WE send to such a chat (a pre-made message, a bulk send) must not put it back in Requests: it comes back only when the customer writes (owner, 25 Nov: 277 "Not now" chats came back into Requests after one bulk pre-made message). */
+function wa_is_history_chat(PDO $pdo, array $c): bool
+{
+    if ((string)($c['status'] ?? '') !== 'closed') return false;
+    if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400 || (int)($c['optout'] ?? 0) === 1) return true;
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'declined' LIMIT 1"); $q->execute([(string)($c['phone'] ?? '')]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+}
 function wa_manual_assign(PDO $pdo): bool { try { return (string)setting_get($pdo, 'wa_manual_assign', '1') !== '0'; } catch (Throwable $e) { return true; } }
 /** 🔀 Owner (9 Nov): a customer who writes to a number that has the Meta payment problem (131042) is answered from another number — the chat is switched to it at once.
  *  The new number has no 24-hour window with this customer yet, so the first message from it must be a pre-made message (the chat opens the list by itself). Returns the new number id or 0. */
@@ -1464,7 +1472,8 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
             wa_send_claim_done($pdo, $cid, (string)$r);
             if ($__cxFirst) { try { $pdo->prepare("UPDATE cx_cases SET first_reply_at = ?, updated_at = ? WHERE id = ? AND first_reply_at IS NULL")->execute([date('Y-m-d H:i:s'), date('Y-m-d H:i:s'), $__cxFirst]); } catch (Throwable $e) { } }
             if (empty($in['auto']) && function_exists('wq_tag_drop')) { try { wq_tag_drop($pdo, $key, 'orange'); } catch (Throwable $e) { } }   // a person answered: the orange mark is done
-            if (empty($in['auto'])) $pdo->prepare("UPDATE wa_contacts SET state = 'human', status = 'open', closed_at = NULL, remind_at = NULL WHERE phone = ?")->execute([$key]);   // replied → the reminder is done   // a person replied → the bot stays quiet, a closed chat re-opens
+            if (empty($in['auto']) && strpos($cid, 'bk') === 0 && wa_is_history_chat($pdo, $c)) { /* 📨 a BULK message to a History chat (Stop / Not now, closed): it stays in History until the customer writes */ }
+            elseif (empty($in['auto'])) $pdo->prepare("UPDATE wa_contacts SET state = 'human', status = 'open', closed_at = NULL, remind_at = NULL WHERE phone = ?")->execute([$key]);   // replied → the reminder is done   // a person replied → the bot stays quiet, a closed chat re-opens
             else $pdo->prepare("UPDATE wa_contacts SET status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]);
             wa_reply_early(['ok' => true, 'wamid' => $r]);   // the phone gets its answer now; the bookkeeping below runs after
             if (empty($in['auto']) && function_exists('wa_learn_log')) wa_learn_log($pdo, $c, $text, (int)($auth['employee_id'] ?? 0));   // used / edited / own reply → the Learning queue
