@@ -171,6 +171,7 @@ if ($__tkA === 'wq.grow_chat') {   // 📈 the live effort of ONE open chat (big
         };
         $r = function_exists('hrms_memo') ? hrms_memo('growchat:' . $k . ':' . $last, 300, $judge) : $judge();
         if (!is_array($r) || !empty($r['__empty']) || !empty($r['retry'])) json_response($empty);
+        if (function_exists('ora_bot_addon_apply')) $r = ora_bot_addon_apply($pdo, $r, [$k], time() - 3 * 86400, time() + 60);   // 🧩 the bot's add-on offer counts as the add-on effort of this chat
         $mk = fn($tr, $wk, $wo, $rf) => ['tries' => (int)$tr, 'weak' => (int)$wk, 'worked' => (int)$wo, 'refused' => (int)$rf, 'level' => ora_effort((int)($tr >= 1 || $wo), (int)$wo, (int)$tr)];
         json_response(['ok' => true, 'big' => $mk($r['big_tries'] ?? 0, $r['big_weak'] ?? 0, $r['big_worked'] ?? 0, $r['big_refused'] ?? 0), 'add' => $mk($r['tries'] ?? 0, $r['weak'] ?? 0, $r['worked'] ?? 0, $r['refused'] ?? 0), 'last' => $last]);
     } catch (Throwable $e) { error_log('wq.grow_chat: ' . $e->getMessage()); json_response($empty); }
@@ -208,6 +209,7 @@ function wq_grow_levels(PDO $pdo, string $k): ?array
         if (!$rows) return null; $last = (int)end($rows)['id']; [$text, $nc, $ns] = ora_transcript($rows); if ($nc < 1 || $ns < 1) return null;
         $r = hrms_memo('growchat:' . $k . ':' . $last, 300, fn() => ora_judge_text($text, 'This chat is still running: the order is being confirmed now.'));
         if (!is_array($r) || !empty($r['retry']) || !array_key_exists('tries', $r)) return null;
+        if (function_exists('ora_bot_addon_apply')) $r = ora_bot_addon_apply($pdo, $r, [$k], time() - 3 * 86400, time() + 60);   // 🧩 the bot's add-on offer counts as the add-on effort of this chat
         return ['add' => ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']), 'big' => ora_effort((int)($r['big_tried'] ?? 0), (int)($r['big_worked'] ?? 0), (int)($r['big_tries'] ?? 0)), 'add_ref' => !empty($r['refused']), 'big_ref' => !empty($r['big_refused'])];
     } catch (Throwable $e) { return null; }
 }

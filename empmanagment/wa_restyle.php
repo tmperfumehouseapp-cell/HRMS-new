@@ -61,6 +61,7 @@ if (!function_exists('wa_rs_tick')) {
     {
         if (!function_exists('wa_style_dull') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
         if (function_exists('wa_style_dull') && wa_style_dull($b) !== '') return true;
+        if (!preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B50}]/u', $b)) return true;   /* owner 25 Nov: a plain text with no emoji is not exciting */
         return !preg_match('/(naya|nayi|naye|nai |khaas|special|season|shaadi|wedding|winter|gift|surprise|dhamaka|intezaar|dekhna|dekhiye|dekhiyega|dekho|dikhao|pick|combo|offer|deal|launch|sirf|flat|deadline|aaj hi|abhi order|jaldi|reveal|maza)/iu', $b);
     }
     /** What "replaced" means for the Cold funnel's own messages and the utility pool: the Cold mapping points to the twin / the old pool message is retired (it is no longer picked). */
@@ -192,7 +193,7 @@ if (!function_exists('wa_rs_tick')) {
                     $q = ["SELECT 1 FROM wa_cold_log WHERE tpl_id = ? AND at >= ? AND id > (SELECT MAX(id) - 400000 FROM wa_cold_log) LIMIT 1", "SELECT 1 FROM wa_ru_log WHERE tpl_id = ? AND at >= ? AND id > (SELECT MAX(id) - 250000 FROM wa_ru_log) LIMIT 1", "SELECT 1 FROM wa_line_plan WHERE tpl_id = ? AND sent_at >= ? AND id > (SELECT MAX(id) - 800000 FROM wa_line_plan) LIMIT 1", "SELECT 1 FROM wa_aft_plan WHERE tpl_id = ? AND sent_at >= ? AND id > (SELECT MAX(id) - 600000 FROM wa_aft_plan) LIMIT 1", "SELECT 1 FROM wa_campaigns WHERE tpl_id = ? LIMIT 1"];
                     foreach ($q as $x) { try { $st2 = $pdo->prepare($x); if (strpos($x, '?') !== strrpos($x, '?')) $st2->execute([(int)$id, $wk]); else $st2->execute([(int)$id]); if ($st2->fetchColumn()) return true; } catch (Throwable $e) { return true; } } return false; };
                 $rows = $pdo->prepare("SELECT id, name, body, extra FROM wa_templates WHERE id > ? ORDER BY id ASC LIMIT 300"); $rows->execute([$cur]); $rows = $rows->fetchAll(PDO::FETCH_ASSOC); $del = 0; $chk = 0; $last = $cur;
-                foreach ($rows as $r) { if ($del >= 8 || $chk >= 40) break; $last = (int)$r['id'];
+                foreach ($rows as $r) { if ($del >= 4 || $chk >= 40) break; $last = (int)$r['id'];
                     $nm = (string)$r['name']; if (strpos((string)$r['extra'], 'restyle_of') !== false || preg_match('/^(tmph_ord_|tmph_style_|tmph_new_|tmph_util_open_ex|open_ex|ask_ex|order_ex|rs\d+_)/', $nm) || !wa_rs_dull((string)$r['body'])) continue;
                     $chk++; if ($inUse((int)$r['id'])) continue;
                     try { if ((string)setting_get($pdo, 'wa_rs_meta_del', '1') !== '0' && function_exists('wa_api') && function_exists('wa_wabas')) { foreach (wa_wabas($pdo) as $wb) { wa_api('DELETE', '/' . $wb . '/message_templates?name=' . rawurlencode($nm)); } }

@@ -84,6 +84,11 @@ function wag_cfg(PDO $pdo): array
     try { if (setting_get($pdo, 'wag_cxtags1', '') !== '1' && function_exists('cx_clean_tags')) { setting_set($pdo, 'wag_cxtags1', '1');
         { $cs = $pdo->query("SELECT id, phone FROM cx_cases WHERE status IN ('open', 'reopened') AND phone <> '' LIMIT 3000")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($cs as $__c) { $pdo->prepare("UPDATE wa_contacts SET cx_id = ? WHERE phone = ? AND (cx_id IS NULL OR cx_id = 0)")->execute([(int)$__c['id'], (string)$__c['phone']]); cx_clean_tags($pdo, (string)$__c['phone']); } } } } catch (Throwable $e) { }
+    // once (owner, 25 Nov): orders already judged as "no add-on effort" although the bot had offered the add-on in that chat (the customer said no): they become "tried", like new ones (ora_bot_addon_apply)
+    try { if (setting_get($pdo, 'wag_botaddon1', '') !== '1') { setting_set($pdo, 'wag_botaddon1', '1');
+        $pdo->exec("UPDATE order_rate_auto r JOIN wag_addon a ON RIGHT(a.phone, 10) = r.phone AND a.at >= DATE_SUB(r.at, INTERVAL 7 DAY) AND a.at <= r.at
+            SET r.tried = 1, r.tries = 1, r.refused = IF(a.status = 'declined', 1, r.refused), r.reason = CONCAT('The add-on was offered in this chat by the bot (2 more ', a.size_ml, ' ml for Rs ', a.p1, ' or 3 more for Rs ', a.p2, ') and ', IF(a.status = 'declined', 'the customer said no', IF(a.status = 'accepted', 'the customer said yes', 'the customer did not answer clearly')), '.')
+            WHERE r.tried = 0 AND r.tries = 0 AND r.worked = 0 AND r.phone <> ''"); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): order-status / tracking / refund chats are removed from the query counts (last 3 days)
     try { if (setting_get($pdo, 'wag_cxq2', '') !== '1') { setting_set($pdo, 'wag_cxq2', '1');
         $st = $pdo->prepare("SELECT DISTINCT q.phone FROM wa_queries q JOIN wa_messages m ON m.phone = q.phone AND m.dir = 'in' AND m.ts >= q.opened_at AND m.ts <= DATE_ADD(q.opened_at, INTERVAL 10 MINUTE) WHERE q.opened_at >= ? AND m.body REGEXP 'tracking|track my|track order|where is my order|order status|order id|order no|kab aayega|kab tak aayega|kab milega|nahi mila|not received|refund|return|replace|damaged|leak|wrong item|wrong product|cancel my order|order kaha|parcel' LIMIT 4000"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);

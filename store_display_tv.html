@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Store Report Card</title>
+<style>
+  html,body{margin:0;height:100%;background:#fff;overflow:hidden;cursor:none}
+  body{font-family:Inter,'Segoe UI',system-ui,Roboto,Arial,'Noto Sans Gujarati',sans-serif;color:#0b0b0b}
+  #stage{position:absolute;left:0;top:0;width:720px;height:1280px;transform-origin:top left;background:#fff}
+  #stage *{box-sizing:border-box}
+  .h1{position:absolute;left:42px;top:50px;font-size:58px;font-weight:800;letter-spacing:-2px;white-space:nowrap}.h2{position:absolute;left:46px;top:114px;font-size:32px;font-weight:500}
+  .live{position:absolute;right:42px;top:62px;display:flex;align-items:center;gap:9px;font-size:24px;color:#16a34a;font-weight:800}.live i{width:15px;height:15px;border-radius:50%;background:#16a34a;animation:p 1.4s infinite}.live.off{color:#b45309}.live.off i{background:#b45309;animation:none}@keyframes p{50%{opacity:.2}}
+  .t{position:absolute;left:40px;top:196px;font-size:88px;font-weight:900;line-height:.92;letter-spacing:-3.5px}.per{position:absolute;left:44px;top:366px;font-size:34px;font-weight:500}
+  .line{position:absolute;left:44px;right:44px;top:430px;height:4px;background:#ff5a00}
+  .big{position:absolute;left:30px;top:430px;font-size:262px;font-weight:900;letter-spacing:-11px;line-height:1;font-variant-numeric:tabular-nums}.bl{position:absolute;left:44px;top:700px;font-size:48px;font-weight:800;color:#ff5a00}
+  .plus{position:absolute;left:470px;top:640px;font-size:74px;font-weight:900;color:#16a34a;opacity:0}.plus.go{animation:up 1.8s ease-out}@keyframes up{0%{opacity:0;transform:translateY(30px) scale(.6)}20%{opacity:1;transform:translateY(0) scale(1.1)}100%{opacity:0;transform:translateY(-60px)}}
+  .rows{position:absolute;left:44px;right:44px;top:768px}.r{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #d4d7e0;padding:10px 0;font-size:32px;font-weight:500}.r b{font-size:54px;font-weight:900;letter-spacing:-2px;font-variant-numeric:tabular-nums}.r small{display:block;font-size:32px;font-weight:500;line-height:1.1}
+  .cta{position:absolute;left:42px;right:42px;top:1132px;background:#ff5a00;color:#fff;font-size:56px;font-weight:900;text-align:center;padding:16px;border-radius:60px;letter-spacing:-1px}.url{position:absolute;left:0;right:0;top:1228px;text-align:center;font-size:40px;font-weight:500}
+  .flash{animation:fl 1s}@keyframes fl{0%{color:#16a34a;transform:scale(1.07)}100%{transform:scale(1)}}
+  .toast{position:absolute;left:44px;right:44px;top:1068px;background:#111;color:#fff;border-radius:14px;padding:12px 20px;font-size:30px;font-weight:700;opacity:0;transition:.3s;text-align:center}.toast.on{opacity:1}
+  #msg{position:absolute;left:0;right:0;top:40%;text-align:center;font-size:28px;color:#b91c1c;display:none;padding:0 30px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="h1" id="title">TM Perfume House</div><div class="h2" id="place">Vesu, Surat</div><div class="live" id="live"><i></i><span id="livet">LIVE</span></div>
+  <div class="t">Store<br>Report Card</div><div class="per" id="per">Last 2 months</div><div class="line"></div>
+  <div class="big" id="ord">–</div><div class="bl">Orders</div><div class="plus" id="pl">+1</div>
+  <div class="rows">
+    <div class="r"><span>Bottles sold</span><b id="bt">–</b></div>
+    <div class="r"><span>WhatsApp<small>community members</small></span><b id="cm">–</b></div>
+    <div class="r"><span>Google reviews</span><b id="gr">–</b></div>
+    <div class="r"><span>Average Google rating</span><b id="rt">–</b></div>
+  </div>
+  <div class="toast" id="ts"></div>
+  <div class="cta" id="cta">Order it now</div><div class="url" id="url">tmperfumehouse.com</div>
+  <div id="msg"></div>
+</div>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id), st = $('stage'), key = new URLSearchParams(location.search).get('k') || '';
+  const fit = () => { const s = Math.min(innerWidth / 720, innerHeight / 1280); st.style.transform = 'scale(' + s + ')'; st.style.left = Math.max(0, (innerWidth - 720 * s) / 2) + 'px'; st.style.top = Math.max(0, (innerHeight - 1280 * s) / 2) + 'px'; };
+  addEventListener('resize', fit); fit();
+  const f = (n) => Number(n || 0).toLocaleString('en-IN');
+  let last = null, audio = null;
+  const flash = (id) => { const e = $(id); e.classList.remove('flash'); void e.offsetWidth; e.classList.add('flash'); };
+  const toast = (t) => { const e = $('ts'); e.textContent = t; e.classList.add('on'); setTimeout(() => e.classList.remove('on'), 2600); };
+  const ding = () => { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); const o = audio.createOscillator(), g = audio.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(.0001, audio.currentTime); g.gain.exponentialRampToValueAtTime(.4, audio.currentTime + .02); g.gain.exponentialRampToValueAtTime(.0001, audio.currentTime + .7); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + .75); } catch (e) { /* no sound on this screen */ } };
+  function show(d) {
+    $('title').textContent = d.title; $('place').textContent = d.place; $('per').textContent = d.period; $('cta').textContent = d.cta; $('url').textContent = d.url;
+    $('rt').textContent = d.rating !== '' ? d.rating + '/5' : '–'; $('gr').textContent = f(d.reviews);
+    const set = (id, v, old) => { $(id).textContent = f(v); if (old !== undefined && old !== null && v !== old) flash(id); };
+    set('ord', d.orders, last && last.orders); set('bt', d.bottles, last && last.bottles); set('cm', d.community, last && last.community);
+    if (last && d.orders > last.orders) {
+      const p = $('pl'); p.textContent = '+' + (d.orders - last.orders); p.classList.remove('go'); void p.offsetWidth; p.classList.add('go');
+      toast('New bill · ' + Math.max(0, d.bottles - last.bottles) + ' bottle' + (d.bottles - last.bottles === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
+    }
+    last = d; $('msg').style.display = 'none'; $('live').classList.remove('off'); $('livet').textContent = 'LIVE';
+  }
+  async function tick() {
+    try {
+      const r = await fetch('api.php?action=st_disp.feed&k=' + encodeURIComponent(key) + '&_t=' + Date.now(), { cache: 'no-store' }); const d = await r.json();
+      if (!r.ok || d.error) { if (!last) { $('msg').textContent = d.error || 'The screen could not start.'; $('msg').style.display = 'block'; } else { $('live').classList.add('off'); $('livet').textContent = 'OFFLINE'; } return; }
+      show(d);
+    } catch (e) { $('live').classList.add('off'); $('livet').textContent = 'OFFLINE'; }
+  }
+  tick(); setInterval(tick, 8000);
+  setTimeout(() => location.reload(), 6 * 3600 * 1000);      // a fresh page every 6 hours keeps a screen that never sleeps healthy
+  document.addEventListener('click', () => { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume && audio.resume(); } catch (e) { /* ok */ } }, { once: true });
+})();
+</script>
+</body>
+</html>
