@@ -526,3 +526,7 @@ try { $a68 = date('Y-m-d H:i:s', time() - 23 * 3600); $b68 = date('Y-m-d H:i:s',
         'night_or_recent' => $q68("SELECT COUNT(*) $base68 AND (c.last_in_at >= ? OR HOUR(c.last_in_at) < 9 OR c.last_in_at >= '" . date('Y-m-d') . " 00:00:00' - INTERVAL 2 HOUR)", [$a68, $b68, date('Y-m-d H:i:s', time() - 7200)]),
         'offer_rows_24h' => $q68("SELECT COUNT(DISTINCT phone) FROM wa_offer WHERE at >= ? AND mode = 'live'", [date('Y-m-d H:i:s', time() - 86400)])];
     echo "ASK OFFERWHY " . json_encode($o68, JSON_UNESCAPED_UNICODE) . "\n"; } catch (Throwable $e) { echo "ASK OFFERWHY ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
+// 69) Orders per day in HRMS (shop_orders) - counts only, to compare with Shopify's analytics (owner 25 Nov)
+try { $r69 = $pdo->query("SELECT DATE(created_at), COUNT(*), ROUND(SUM(total)) FROM shop_orders WHERE created_at >= '" . date('Y-m-d', time() - 5 * 86400) . "' GROUP BY 1 ORDER BY 1")->fetchAll(PDO::FETCH_NUM); echo "ASK SHOPORDERS per day (date, orders, total) " . json_encode($r69) . "\n";
+    $h69 = $pdo->query("SELECT HOUR(created_at), COUNT(*) FROM shop_orders WHERE created_at >= '" . date('Y-m-d') . " 00:00:00' GROUP BY 1 ORDER BY 1")->fetchAll(PDO::FETCH_NUM); echo "ASK SHOPORDERS today by hour " . json_encode($h69) . " · last order " . json_encode($pdo->query("SELECT MAX(created_at) FROM shop_orders")->fetchColumn()) . "\n";
+} catch (Throwable $e) { echo "ASK SHOPORDERS ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
