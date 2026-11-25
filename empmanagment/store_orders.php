@@ -192,6 +192,18 @@ if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 N
         if ((string)$r['pay_status'] !== 'pending') { if (!$dead && (!isset($paidAt[$ph]) || $r['placed_at'] > $paidAt[$ph])) $paidAt[$ph] = (string)$r['placed_at']; continue; }
         if ($dead || (float)$r['total'] <= 0 || (string)$r['placed_at'] < $cut) continue; $un[] = $r; }
     $un = array_values(array_filter($un, function ($r) use ($paidAt) { return !isset($paidAt[(string)$r['phone']]) || $paidAt[(string)$r['phone']] < (string)$r['placed_at']; }));   // he paid a later order: the older unpaid one is done
+    // 🧾 owner (25 Nov: "Kadam already ordered and is still in the list"): the customer ordered ANOTHER way (a manual order typed in HRMS, a Shopify order) around or after the unpaid one — he is done.
+    //    [phone => newest other order time]; an order from 12 hours before the unpaid order / link onwards counts (the salesperson often types the manual order a few minutes before or after the website one).
+    $otherAt = function (array $phones) use ($pdo, $cut): array {
+        $o = []; $set = array_flip($phones); if (!$set) return $o; $from = date('Y-m-d H:i:s', strtotime($cut) - 43200);
+        try { $q = $pdo->prepare("SELECT RIGHT(REPLACE(REPLACE(phone, ' ', ''), '-', ''), 10) p, MAX(order_date) t FROM manual_orders WHERE order_date >= ? AND phone <> '' AND COALESCE(fulfillment_status, '') NOT LIKE '%cancel%' AND NOT (COALESCE(channel, '') = 'TM Store' AND COALESCE(payment_status, '') = 'pending') GROUP BY p"); $q->execute([$from]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) if (isset($set[(string)$r['p']])) $o[(string)$r['p']] = (string)$r['t']; } catch (Throwable $e) { error_log('tms unpaid manual: ' . $e->getMessage()); }
+        try { $q = $pdo->prepare("SELECT phone, created_at FROM shop_orders WHERE created_at >= ? AND phone IS NOT NULL AND phone <> '' AND COALESCE(tags, '') NOT LIKE '%wa-rx%' LIMIT 100000"); $q->execute([$from]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if (isset($set[$k]) && (!isset($o[$k]) || (string)$r['created_at'] > $o[$k])) $o[$k] = (string)$r['created_at']; } } catch (Throwable $e) { error_log('tms unpaid shop: ' . $e->getMessage()); }
+        return $o; };
+    $near = function (string $at) { return date('Y-m-d H:i:s', (strtotime($at) ?: time()) - 43200); };
+    $un = array_values(array_filter($un, function ($r) { return (float)$r['total'] >= 50; }));   // a ₹1 test order is not a customer
+    if ($un) { $__oa = $otherAt(array_values(array_unique(array_column($un, 'phone')))); $un = array_values(array_filter($un, function ($r) use ($__oa, $near) { $ph = (string)$r['phone']; return !(isset($__oa[$ph]) && $__oa[$ph] >= $near((string)$r['placed_at'])); })); }
     $who = []; $nameOf = [];
     if ($un) { try {
         $phs = array_values(array_unique(array_column($un, 'phone'))); $live = []; foreach ($pdo->query("SELECT employee_id FROM employees WHERE status != 'ex'")->fetchAll(PDO::FETCH_COLUMN) as $x) $live[(int)$x] = 1;
@@ -206,6 +218,7 @@ if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 N
     // 🔗 owner (25 Nov): also the customers who were SENT a checkout link in these 5 days and placed no order after it (the link is in the chat, nothing came). The salesperson who made the link sees it; one row per customer (the newest link).
     try { $lq = $pdo->prepare("SELECT phone, emp_id, total, created_at FROM wso_order WHERE sent = 1 AND created_at >= ?" . ($adm ? '' : ' AND emp_id = ?') . " ORDER BY id DESC LIMIT 1500"); $lq->execute($adm ? [$cut] : [$cut, $me]); $lrows = $lq->fetchAll(PDO::FETCH_ASSOC);
         $lph = []; foreach ($lrows as $l) { $ph = substr(preg_replace('/\D+/', '', (string)$l['phone']), -10); if (strlen($ph) === 10 && !isset($seen[$ph]) && !(isset($anyAt[$ph]) && $anyAt[$ph] >= (string)$l['created_at'])) $lph[$ph] = 1; }
+        if ($lph) { $__ob = $otherAt(array_keys($lph)); foreach ($lrows as $l) { $ph = substr(preg_replace('/\D+/', '', (string)$l['phone']), -10); if (isset($lph[$ph]) && isset($__ob[$ph]) && $__ob[$ph] >= $near((string)$l['created_at'])) unset($lph[$ph]); } }   // he ordered another way after (or just before) the link
         $lname = []; foreach (array_chunk(array_keys($lph), 400) as $ch) { $q = $pdo->prepare("SELECT phone, name FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $c) $lname[(string)$c['phone']] = (string)$c['name']; }
         foreach ($lrows as $l) { $ph = substr(preg_replace('/\D+/', '', (string)$l['phone']), -10); if (!isset($lph[$ph]) || isset($seen[$ph])) continue; $seen[$ph] = 1; $e = (int)$l['emp_id']; if (!$adm && $e !== $me) continue;
             $t = strtotime((string)$l['created_at']) ?: $now; $amt += (float)$l['total'];
