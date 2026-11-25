@@ -622,7 +622,7 @@ guardPage(); renderSidebar('followup');
       const nm = q('#sbN').value.trim().slice(0, 60); if (!nm) { toast('Write the name of the sub-topic.'); q('#sbN').focus(); return; }
       const want = [q('#sbW').checked && { label: nm, type: 'text', req: q('#sbWr').checked ? 1 : 0, min: Number(q('#sbWm').value) || 0, g: nm }, q('#sbP').checked && { label: nm + ' · photo', type: 'photo', req: q('#sbPr').checked ? 1 : 0, g: nm }, q('#sbV').checked && { label: nm + ' · video', type: 'video', req: q('#sbVr').checked ? 1 : 0, g: nm }].filter(Boolean);
       if (!want.length) { toast('Tick at least one: Words, Photo or Video.'); return; }
-      if (m.querySelectorAll('#tF .fu-fr').length + want.length > 20) { toast('A topic takes at most 20 boxes.'); return; }
+      if (m.querySelectorAll('#tF .fu-fr').length + want.length > 40) { toast('A topic takes at most 40 boxes.'); return; }
       want.forEach(addField); q('#sbN').value = ''; q('#tSp').style.display = 'none'; toast('Sub-topic “' + nm + '” added. Save the topic to keep it.');
     };
     q('#tFph').onclick = () => { const r = addField({ label: 'Photo', type: 'photo', req: 1 }); try { r.querySelector('[data-l]').select(); } catch (e) { /* fine */ } };

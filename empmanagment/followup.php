@@ -1034,7 +1034,7 @@ function fup_due_day(array $t, string $today): string { return !empty($t['lag'])
 /** The first day this topic can be asked for: the day it was made (a topic about the day before: the day before that, since yesterday is exactly what it is for). */
 function fup_start_day(array $t): string { $c = substr((string)$t['created_at'], 0, 10); return ($c !== '' && !empty($t['lag'])) ? date('Y-m-d', strtotime($c . ' -1 day')) : $c; }
 /* ============================== the owner's own fields on a topic ==============================
- * A topic can carry up to 20 fields the person fills every day: a number, a few words, yes / no, a link, one of a list, or a file (photo, PDF, sheet).
+ * A topic can carry up to 40 fields the person fills every day: a number, a few words, yes / no, a link, one of a list, or a file (photo, PDF, sheet).
  * fu_topics.fields = [{k, label, type: num|text|yesno|link|choice|file, opts: [...], req: 0|1}]      fu_updates.fvals = {k: value}   (a file: {f: stored name, n: its own name}) */
 function fup_field_types(): array { return ['num' => 'Number', 'text' => 'Words', 'yesno' => 'Yes / No', 'link' => 'Link', 'choice' => 'Choose one', 'file' => 'File / photo', 'photo' => 'Photo', 'video' => 'Video']; }
 /** The field types that take an upload (fup.file_put) instead of typed words. */
@@ -1046,7 +1046,7 @@ function fup_fields_clean($in, array $old = []): array
     $types = fup_field_types(); $out = []; $used = []; $max = 0;
     foreach ($old as $f) if (preg_match('/^f(\d+)$/', (string)$f['k'], $m)) $max = max($max, (int)$m[1]);
     foreach ((array)$in as $f) {
-        if (!is_array($f) || count($out) >= 20) continue; $label = trim(mb_substr((string)($f['label'] ?? ''), 0, 80)); if ($label === '') continue;
+        if (!is_array($f) || count($out) >= 40) continue; $label = trim(mb_substr((string)($f['label'] ?? ''), 0, 80)); if ($label === '') continue;
         $type = isset($types[(string)($f['type'] ?? '')]) ? (string)$f['type'] : 'text'; $k = (string)($f['k'] ?? '');
         if (!preg_match('/^f\d+$/', $k) || isset($used[$k])) $k = 'f' . (++$max); elseif (preg_match('/^f(\d+)$/', $k, $m)) $max = max($max, (int)$m[1]);
         $used[$k] = 1; $opts = [];
