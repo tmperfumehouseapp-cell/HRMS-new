@@ -64,9 +64,12 @@ if (!function_exists('wof_run')) {
     {
         $n = function (int $v) { return '₹' . number_format($v); }; $total = $o['qty'] * $o['ml']; $pb = (int)round($o['price'] / max(1, $o['qty']));
         $dt = (int)date('md'); $season = ($dt >= 1115 || $dt <= 228) ? 'Shaadi season special 💍' : 'Special offer 🎁'; if ($dt >= 1205 || $dt <= 115) $season = 'New Year special 🎊';
-        $line = $o['qty'] . ' x ' . $o['ml'] . ' ml (' . $total . ' ml) sirf ' . $n($o['price']) . ' (ek bottle ' . $n($pb) . ')' . ($o['online'] > $o['price'] ? ', online price ' . $n($o['online']) : '');
-        if ($o['kind'] === 'lower') return "Sir, aapke liye ek special price 🎉\n" . $line . ".\nYe price aap ke liye abhi lock kar deta hoon. Order bana dun? ✅";
-        return $season . "\n" . $line . ".\nKaunse perfumes chahiye? Bata dijiye, order bana deta hoon 😊";
+        /* owner 25 Nov 2026: a proper "crazy pricing" message, shaped by his size (20 / 50 / 100 ml): spacing, emojis, the price per bottle, what he saves against the online price, and the lock-in; prices come from the chart only */
+        $ml = (int)$o['ml']; $hook = $ml >= 100 ? '100 ml ki shaan 👑' : ($ml >= 50 ? '50 ml ki asli value 🔥' : '20 ml ki pocket-size khushboo 🌸');
+        $save = $o['online'] > $o['price'] ? "\n💰 Online price " . $n($o['online']) . " — aapko seedha " . $n($o['online'] - $o['price']) . " ki bachat!" : '';
+        $line = "🎁 " . $o['qty'] . ' x ' . $ml . ' ml (' . $total . " ml)\n💥 Sirf " . $n($o['price']) . ' (ek bottle ' . $n($pb) . ')' . $save;
+        if ($o['kind'] === 'lower') return "Sir, aapke liye aur bhi khaas price 🎉\n\n" . $hook . "\n\n" . $line . "\n\n⏰ Ye price abhi aapke liye lock hai — aaj hi order karoge to hi.\n\nOrder bana dun? ✅";
+        return $season . "\n\n" . $hook . "\n\n" . $line . "\n\n⏰ Ye price aaj ke liye hi — abhi order karoge to hi milega.\n\nKaunse perfumes chahiye? Bata dijiye, order abhi bana deta hoon 😊✅";
     }
     /** One run (about a minute): up to $cap customers. Returns [candidates looked at, offers made, sent, notes]. */
     function wof_run(PDO $pdo, int $cap = 30, ?array &$samples = null, bool $simulate = false): array
