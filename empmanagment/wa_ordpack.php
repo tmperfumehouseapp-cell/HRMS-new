@@ -12,6 +12,10 @@ if (!function_exists('wa_ordpack_defs')) {
             "Hi {{1}} 🎁\n\nNew Year + wedding season — gift dene ka sabse achha time, aur gift ke saath surprise bhi 🤫",
             "Hello {{1}} 🌸\n\nWinter ki khushboo aa gayi: oud, musk, amber 🔥 Aur uske saath ek crazy offer bhi!",
             "Hi {{1}} 👋\n\nEk chhoti si baat... aaj hamne *dhamakedaar* kuch rakha he, sirf aapke liye ✨",
+            "Hello {{1}} 🧥\n\nThand badh rahi he aur khushboo ka maza bhi! Aaj ek *reward* aapke naam unlock hua he 🏆",
+            "Hi {{1}} ❄️\n\nSardi ki raat, shaadi ki baraat — perfume ke bina adhoora! Aaj ka *crazy price dhamaka* dekhiye 💥",
+            "Hello {{1}} 🎊\n\nExcitement ka time! Aapke liye ek *surprise reward* aur extra ML ki offer taiyar he 🎁",
+            "Hi {{1}} 🌙\n\nWinter evening special: lambi chalne wali khushboo + ek secret discount jo sirf aaj ke liye he 🤫",
         ];
         $mid = [
             "🎁 8 × 20ml sirf ₹1,899\n💥 Saath me extra gift FREE",
@@ -22,21 +26,23 @@ if (!function_exists('wa_ordpack_defs')) {
             "💥 3 × 50ml ₹2,100 + 1 × 20ml FREE\n✨ Gift packing bhi saath me",
             "🎁 5 × 20ml sirf ₹1,700\n🔥 Flat 5% OFF + prepaid par extra 2%",
             "💥 Flat ₹2,250 me 4 × 50ml + 2 × 100ml\n🎁 Extra ML bhi milega",
+            "🏆 Reward: 3 × 50ml ₹2,140 par 1 × 20ml FREE\n💥 Extra ML ka seedha fayda",
+            "💥 CRAZY PRICE: 8 × 20ml sirf ₹1,899\n🔥 Prepaid par extra 2% OFF alag se",
+            "🎁 Flat 5% OFF + prepaid par extra 2%\n✨ Saath me gift packing, dhamaka deal",
         ];
         $close = [
             "⏰ Offer aaj raat 11:59 PM tak!\n\nAbhi order karoge to hi milega 👇",
             "⏰ Sirf aaj ke liye — kal ye nahi milega!\n\nAbhi order karne ke liye tap kijiye 👇",
             "🚚 Jaldi order karoge to jaldi delivery bhi!\n\nNiche tap kijiye 👇",
             "Stock kam he, deal aaj raat tak 🔥\n\nOrder pakka karne ke liye tap kijiye 👇",
+            "🏃 Jo pehle order karega, usi ko ye reward milega!\n\nAbhi order karne ke liye tap kijiye 👇",
+            "⏰ Aaj raat 11:59 PM ke baad ye price wapas normal!\n\nAbhi order karke bachat kijiye 👇",
         ];
         $btn = [['Order Now', 'Send Details', 'Not Now'], ['Yes, Order', 'Show Offer'], ['I Want It', 'Send Details', 'Not Now']];   /* buttons in English (owner 25 Nov) */
-        $o = []; $n = 0;
-        for ($i = 0; $i < 6; $i++) for ($j = 0; $j < 8; $j++) {
-            if (($i * 3 + $j) % 4 !== 0 && ($i + $j) % 3 !== 0) continue;   /* a spread of 30+ different mixes */
-            $n++; if ($n > 40) break 2;
-            $k = ($i + $j * 2) % 4;
-            $body = $open[$i] . "\n\n" . $mid[$j] . "\n\n" . $close[$k];
-            $o[sprintf('tmph_ord_%02d', $n)] = ['body' => $body, 'buttons' => $btn[($i + $j) % 3]];
+        $o = []; $seen = []; $O = count($open); $M = count($mid); $C = count($close);
+        for ($n = 1; $n <= 90 && count($o) < 40; $n++) {
+            $body = $open[($n * 3) % $O] . "\n\n" . $mid[($n * 5) % $M] . "\n\n" . $close[($n * 7) % $C]; if (isset($seen[$body])) continue; $seen[$body] = 1;
+            $o[sprintf('tmph_ord_%02d', count($o) + 1)] = ['body' => $body, 'buttons' => $btn[$n % 3]];
         }
         return $o;
     }
@@ -49,7 +55,7 @@ if (!function_exists('wa_ordpack_defs')) {
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
         foreach (wa_ordpack_defs() as $name => $m) {
             if ($res['made'] >= 5) break;
-            try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? LIMIT 1"); $q->execute([$name]); if ($q->fetchColumn()) continue; } catch (Throwable $e) { continue; }
+            try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? OR body = ? LIMIT 1"); $q->execute([$name, $m['body']]); if ($q->fetchColumn()) continue; } catch (Throwable $e) { continue; }
             $qr = array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, $m['buttons']);
             [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'MARKETING', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => $qr, 'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => 'Offers']);
             if ($err !== '') { $res['failed'][] = $name . ': ' . $err; continue; }

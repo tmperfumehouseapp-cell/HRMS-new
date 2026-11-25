@@ -61,6 +61,7 @@ if (!function_exists('wa_rs_tick')) {
     {
         if (!function_exists('wa_style_dull') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
         if (function_exists('wa_style_dull') && wa_style_dull($b) !== '') return true;
+        if (!preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B50}]/u', $b)) return true;   /* owner 25 Nov: a plain text with no emoji is not exciting */
         return !preg_match('/(naya|nayi|naye|nai |khaas|special|season|shaadi|wedding|winter|gift|surprise|dhamaka|intezaar|dekhna|dekhiye|dekhiyega|dekho|dikhao|pick|combo|offer|deal|launch|sirf|flat|deadline|aaj hi|abhi order|jaldi|reveal|maza)/iu', $b);
     }
     /** What "replaced" means for the Cold funnel's own messages and the utility pool: the Cold mapping points to the twin / the old pool message is retired (it is no longer picked). */

@@ -11,7 +11,7 @@ if (!function_exists('wa_style_dull')) {
     function wa_style_dull(string $text): string
     {
         $t = mb_strtolower($text);
-        foreach (['customer care', 'thank you for being', 'thanks for being', 'registered customer', 'here to help', 'happy to help', 'we are here to', 'help with your order', 'help with an order', 'how can we help', 'how are you enjoying', 'just checking in', 'checking in', 'check-in', 'any doubt', 'koi sawal', 'koi doubt', 'help karne', 'hum help', 'madad karne'] as $w) if (mb_strpos($t, $w) !== false) return 'too basic: ' . $w;
+        foreach (['customer care', 'thank you for being', 'thanks for being', 'registered customer', 'here to help', 'happy to help', 'we are here to', 'help with your order', 'help with an order', 'how can we help', 'how are you enjoying', 'just checking in', 'checking in', 'check-in', 'any doubt', 'koi sawal', 'koi doubt', 'help karne', 'hum help', 'madad karne', 'yahin available', 'yahin hain', 'requirement ke liye', 'pichhle message', 'chhota sa message', 'we are available', 'always available', 'feel free', 'let us know', 'reach out', 'contact us'] as $w) if (mb_strpos($t, $w) !== false) return 'too basic: ' . $w;
         return '';
     }
 }
