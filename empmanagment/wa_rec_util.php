@@ -180,7 +180,7 @@ function wa_ru_make_tick(PDO $pdo): array
     try {
         if ((string)setting_get($pdo, 'wa_ru_pool_auto', '1') !== '0' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < $now - 600) {   // setting wa_ru_pool_auto = 0 switches the automatic making of missing standard messages off   // a missing standard follow-up (e.g. the welcome message) is made within 10 minutes, not 6 hours; a complete set costs one count query
             setting_set($pdo, 'wa_ru_pool_at', (string)$now);
-            if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
+            if (array_diff(array_keys(wa_util_pool_defs()), array_keys(wa_util_pool_rows($pdo, true)))) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
         }
         if (function_exists('wa_util_pool_learn') && (int)setting_get($pdo, 'wa_ru_learn_at', '0') < $now - 600) {   // 🧠 a follow-up that Meta moved to marketing gets a new utility replacement written like the ones Meta kept (setting wa_ru_learn = 0 switches it off)
             setting_set($pdo, 'wa_ru_learn_at', (string)$now); $lr = wa_util_pool_learn($pdo, 0); $o['made'] += count($lr['made'] ?? []); if (!empty($lr['made'])) return $o;
@@ -481,7 +481,7 @@ function wa_ru_tick_inner(PDO $pdo): array
     if (!wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
     $cfg = wa_ru_cfg($pdo); if (!$cfg['on']) { $res['note'] = 'off'; return $res; } if ($cfg['pause_until'] > time()) {
         // the 4-hour stop only holds back SENDING to customers: the standard follow-up messages that are missing (e.g. the new welcome / experience / request ones) are still made and sent to Meta for approval, so they are ready when sending restarts (owner, 18 Nov 2026)
-        try { if ((string)setting_get($pdo, 'wa_ru_pool_auto', '1') !== '0' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_pool_at', (string)time()); if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $mk = wa_util_pool_make($pdo, 0); $res['made'] = count($mk['made'] ?? []); } } } catch (Throwable $e) { }
+        try { if ((string)setting_get($pdo, 'wa_ru_pool_auto', '1') !== '0' && function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_pool_at', (string)time()); if (array_diff(array_keys(wa_util_pool_defs()), array_keys(wa_util_pool_rows($pdo, true)))) { $mk = wa_util_pool_make($pdo, 0); $res['made'] = count($mk['made'] ?? []); } } } catch (Throwable $e) { }
         try { if (function_exists('wa_util_pool_learn') && (int)setting_get($pdo, 'wa_ru_learn_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_learn_at', (string)time()); $lr = wa_util_pool_learn($pdo, 0); $res['made'] = (int)($res['made'] ?? 0) + count($lr['made'] ?? []); } } catch (Throwable $e) { }
         $res['note'] = 'paused after a Meta warning'; return $res; }
     try { if ((int)setting_get($pdo, 'wa_dq_hold_until', '0') > time()) { $res['note'] = 'marketing hold (131048) running: Module B waits too'; return $res; } } catch (Throwable $e) { }   /* owner 19 Nov 2026, 16:20: while the marketing hold runs, Module B sends nothing; it restarts when the hold ends */
