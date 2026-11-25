@@ -172,7 +172,16 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
     if ((int)$c['optout'] === 1 || (int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') { $dbg['optout_cx']++; return false; }
     if (!$c['last_in_at'] || strtotime((string)$c['last_in_at']) < $now - 86400 + 600) { $dbg['old']++; return false; }
     static $hq = null, $bq = null; if ($hq === null) { $humanSql = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0"; $hq = $pdo->prepare("SELECT 1 FROM wa_contacts c JOIN wa_messages h ON h.phone = c.phone WHERE c.phone = ? AND $humanSql LIMIT 1"); $bq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1"); }
-    $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; return false; } $bq->execute([$ph]); if ($bq->fetchColumn()) { $dbg['biz']++; return false; }
+    $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; return false; }
+    $bq->execute([$ph]); if ($bq->fetchColumn()) {
+        // owner (25 Nov, "why are these queries not given?"): 19 of the 22 waiting chats were skipped only because the customer's phone ONCE sent a business auto-reply — the mark stayed for ever, also after the
+        // person really wrote (the bot was already talking to him). The mark now blocks only while the customer's LAST message is still an automatic reply; a real message (a tap, a photo, a typed text that is
+        // not an auto-reply) takes the mark off and the query is given like any other.
+        $real = false; try { $lm = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $lm->execute([$ph]); $l = $lm->fetch(PDO::FETCH_ASSOC);
+            if ($l) { $mt = (string)$l['mtype']; $real = !in_array($mt, ['reaction', 'system', 'unsupported'], true) && ($mt !== 'text' || !(function_exists('wa_autoreply_text') && wa_autoreply_text((string)$l['body']))); } } catch (Throwable $e) { $real = false; }
+        if (!$real) { $dbg['biz']++; return false; }
+        try { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply'")->execute([$ph]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = 'business_autoreply'")->execute([$ph]); } catch (Throwable $e) { }
+    }
     // ONE decision at a time over the whole server: the webhook and the engine pass both give queries; without this lock they both saw "nobody was given a query a moment ago" and gave the same person two at once (Shivam V. twice in one second)
     $gl = 0; try { $gl = (int)$pdo->query("SELECT GET_LOCK('waa_pick', 5)")->fetchColumn(); } catch (Throwable $e) { }
     if ($gl !== 1) return false;   // the next pass tries again
