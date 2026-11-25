@@ -41,4 +41,23 @@ $k = $b['codes'];
 [$c, $v] = call('retail.bc_void', ['code' => $k[0]]); ok($c === 422, 'a bottle at a shop cannot be cancelled');
 [$c, $v] = call('retail.bc_void', ['code' => $k[4]]); [$c, $s] = call('retail.bc_scan', [], ['code' => $k[4]]); ok($s['piece']['status'] === 'void' && $stock('Bdc') === 5, 'cancel a label (stock unchanged)');
 [$c, $e] = call('retail.bc_scan', [], ['code' => '12345']); ok($c === 422, 'not 6 digits');
+
+// orders: scanned bottles fill the order; a new order needs one number per piece
+[$c, $m] = call('retail.bc_make', ['product_name' => 'Rose', 'ml' => '50', 'qty' => 3, 'city' => 'Surat', 'add_stock' => 1]); $R = $m['codes'];
+$it = [['Rose', '50 ml', 2, 2, 300, 600]];
+$x = bc_order_check($pdo, 0, 1, 'sale', $it, [$R[0]]); ok(!$x['errors'] && $x['missing'] === ['Rose 50 ml: 1 of 2 scanned'], 'new order: one bottle short is reported');
+$x = bc_order_check($pdo, 0, 1, 'sale', $it, [$R[0], $R[1], $R[2]]); ok(strpos(implode('|', $x['errors']), '3 scanned but the line says 2') !== false, 'more numbers than pieces is an error');
+$x = bc_order_check($pdo, 0, 2, 'sale', $it, [$R[0], $R[1]]); ok($x['errors'] && strpos($x['errors'][0], 'Vadodara') !== false, 'Surat bottles cannot go on a Vadodara order');
+$x = bc_order_check($pdo, 0, 1, 'sale', [['Musk', '20', 1, 1, 0, 0]], [$R[0]]); ok(strpos(implode('|', $x['errors']), 'has no line') !== false, 'a bottle with no line on the order');
+$x = bc_order_check($pdo, 0, 1, 'sale', $it, [$R[0], $R[1]]); ok(!$x['errors'] && !$x['missing'], 'every piece scanned: ok');
+$pdo->exec("INSERT INTO retail_orders VALUES (11, 1, 'R0011', 'sale', '2026-11-25', 2, 600, 'pending')");
+bc_order_link($pdo, 11, 'R0011', 1, 'sale', [$R[0], $R[1]], 'boss'); [$c, $s1] = call('retail.bc_scan', [], ['code' => $R[0]]);
+ok($s1['piece']['order_no'] === 'R0011' && $s1['piece']['shop_name'] === 'Raj Stores' && $stock('Rose') === 3, 'saved order links its bottles (stock moved by the order itself)');
+$x = bc_order_check($pdo, 11, 1, 'sale', [['Rose', '50', 1, 1, 300, 300]], [$R[0]]); ok(!$x['errors'] && !$x['missing'], 'editing the order: its own bottles are fine');
+bc_order_link($pdo, 11, 'R0011', 1, 'sale', [$R[0]], 'boss'); [$c, $s2] = call('retail.bc_scan', [], ['code' => $R[1]]); ok($s2['piece']['status'] === 'stock', 'a bottle taken off the order goes back to stock');
+[$c, $oc] = call('retail.bc_order_codes', [], ['order_id' => '11']); ok(count($oc['rows']) === 1 && $oc['rows'][0]['code'] === $R[0], 'order shows its numbers');
+$pdo->exec("INSERT INTO retail_orders VALUES (12, 1, 'R0012', 'return', '2026-11-26', 1, 0, 'free')");
+$x = bc_order_check($pdo, 0, 1, 'return', [['Rose', '50', 1, 1, 0, 0]], [$R[2]]); ok($x['errors'] && strpos($x['errors'][0], 'not at this shop') !== false, 'return: only bottles at this shop');
+bc_order_link($pdo, 12, 'R0012', 1, 'return', [$R[0]], 'boss'); [$c, $s3] = call('retail.bc_scan', [], ['code' => $R[0]]); ok($s3['piece']['status'] === 'stock' && $stock('Rose') === 3, 'return order brings the bottle back (stock counted by the order)');
+[$c, $oc] = call('retail.bc_order_codes', [], ['order_id' => '12']); ok(count($oc['rows']) === 1, 'return order shows its numbers');
 echo $fail ? "\n$fail FAILED\n" : "\nall passed\n"; exit($fail ? 1 : 0);

@@ -325,8 +325,18 @@
   });
   $('aPrint').addEventListener('click', () => { const l = aRows.filter(r => r.status !== 'void').map(r => ({ code: r.code, name: r.product_name, ml: r.ml })); if (!l.length) return; if (l.length > 50 && !confirm('Print ' + l.length + ' labels?')) return; printList(l); });
 
-  loadBase();
-  setTimeout(() => $('fCode').focus(), 300);
+  // opened from the Stock page (+ Add stock): Stock in with the perfume filled in
+  const QS = new URLSearchParams(location.search);
+  loadBase().then(() => {
+    if (QS.get('t') !== 'make') return;
+    if (QS.get('city')) { const c = QS.get('city'); if (![...$('mCity').options].some(o => o.value === c)) $('mCity').insertAdjacentHTML('beforeend', `<option>${esc(c)}</option>`); $('mCity').value = c; }
+  });
+  if (QS.get('t') === 'make') {
+    tab('make'); if (QS.get('name')) $('mName').value = QS.get('name');
+    const ml = String(parseFloat(QS.get('ml') || '')); if (['20', '50', '100'].includes(ml)) $('mMl').value = ml; else if (ml !== 'NaN') $('mMl').insertAdjacentHTML('beforeend', `<option value="${esc(ml)}" selected>${esc(ml)} ml</option>`);
+    if (QS.get('qty')) $('mQty').value = QS.get('qty');
+    setTimeout(() => (QS.get('name') ? $('mQty') : $('mName')).focus(), 300);
+  } else setTimeout(() => $('fCode').focus(), 300);
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 </body>
