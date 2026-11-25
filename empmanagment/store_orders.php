@@ -180,6 +180,30 @@ if ((string)$action === 'tms.gift') {   // 🎁 the website's gift perfume on pa
     $k = (int)($r['kept'] ?? 0); $rm = (int)($r['removed'] ?? 0);
     json_response(['ok' => true, 'day' => $day, 'kept' => $k, 'removed' => $rm, 'rate' => $k + $rm > 0 ? (int)round($k * 100 / ($k + $rm)) : null, 'money' => round((float)($r['money'] ?? 0), 2), 'orders' => array_values(array_map('strval', (array)($r['orders'] ?? [])))]);
 }
+if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 Nov): the website orders of the last 5 days whose payment has not come, for the salesperson who holds the customer's WhatsApp chat (open, closed or in History),
+    // else the last person who wrote to the customer there — the same rule as the name filled in on Website orders. An Admin sees everybody's. An order leaves when it is paid, cancelled, or the customer paid a later order. Read-only.
+    $me = (int)($auth['employee_id'] ?? 0); $adm = function_exists('wa_is_admin') ? (bool)wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (tms_cfg($pdo)['key'] === '') json_response(['ok' => true, 'rows' => [], 'amount' => 0, 'days' => 5]);
+    $days = 5; [$all, $err] = tms_orders($pdo, date('Y-m-d', time() - $days * 86400), date('Y-m-d'));
+    if ($err !== '') json_response(['ok' => false, 'error' => $err, 'rows' => [], 'amount' => 0]);
+    $cut = date('Y-m-d H:i:s', time() - $days * 86400); $paidAt = []; $un = [];
+    foreach ($all as $r) { $ph = (string)$r['phone']; if (strlen($ph) !== 10) continue; $dead = (bool)preg_match('/cancel|refund|void/i', (string)$r['ship_status'] . ' ' . (string)$r['pay_status']);
+        if ((string)$r['pay_status'] !== 'pending') { if (!$dead && (!isset($paidAt[$ph]) || $r['placed_at'] > $paidAt[$ph])) $paidAt[$ph] = (string)$r['placed_at']; continue; }
+        if ($dead || (float)$r['total'] <= 0 || (string)$r['placed_at'] < $cut) continue; $un[] = $r; }
+    $un = array_values(array_filter($un, function ($r) use ($paidAt) { return !isset($paidAt[(string)$r['phone']]) || $paidAt[(string)$r['phone']] < (string)$r['placed_at']; }));   // he paid a later order: the older unpaid one is done
+    $who = []; $nameOf = [];
+    if ($un) { try {
+        $phs = array_values(array_unique(array_column($un, 'phone'))); $live = []; foreach ($pdo->query("SELECT employee_id FROM employees WHERE status != 'ex'")->fetchAll(PDO::FETCH_COLUMN) as $x) $live[(int)$x] = 1;
+        foreach (array_chunk($phs, 400) as $ch) { $q = $pdo->prepare("SELECT phone, assigned_emp, name FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $c) { $nameOf[(string)$c['phone']] = (string)$c['name']; $e = (int)$c['assigned_emp']; if ($e > 0 && isset($live[$e])) $who[(string)$c['phone']] = $e; } }
+        $ql = $pdo->prepare("SELECT emp_id FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id > 0 ORDER BY id DESC LIMIT 1"); $left = 200;
+        foreach ($phs as $ph) { if (isset($who[$ph]) || !isset($nameOf[$ph]) || $left-- <= 0) continue; $ql->execute([$ph]); $e = (int)$ql->fetchColumn(); if ($e > 0 && isset($live[$e])) $who[$ph] = $e; }
+    } catch (Throwable $e) { error_log('tms unpaid: ' . $e->getMessage()); } }
+    $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = []; $amt = 0.0; $now = time(); $seen = [];
+    foreach ($un as $r) { $ph = (string)$r['phone']; $e = (int)($who[$ph] ?? 0); if (!$adm && ($me <= 0 || $e !== $me)) continue; if ($adm && $e <= 0) continue; if (isset($seen[$ph])) continue; $seen[$ph] = 1;   // one row per customer: his newest unpaid order (the list is newest first)
+        $t = strtotime((string)$r['placed_at']) ?: $now; $amt += (float)$r['total'];
+        $rows[] = ['number' => (string)$r['number'], 'phone' => $ph, 'customer' => (string)($r['customer'] ?: ($nameOf[$ph] ?? '')), 'total' => (float)$r['total'], 'items' => mb_substr((string)$r['items'], 0, 140), 'placed_at' => (string)$r['placed_at'], 'mins' => max(0, (int)floor(($now - $t) / 60)), 'emp' => $adm ? (string)($names[$e] ?? '') : '']; }
+    json_response(['ok' => true, 'rows' => array_slice($rows, 0, 150), 'count' => count($rows), 'amount' => round($amt), 'days' => $days, 'admin' => $adm]);
+}
 if ((string)$action === 'tms.gift_orders') {   // 🎁 the orders behind the Gift add-on number of one business day: who took the gift perfume and for how much (owner 24 Nov). Read-only; the shop is asked for each order once per 10 minutes.
     $ok = tms_can($pdo, $auth) || (function_exists('user_can') && (user_can($auth, 'control_tower') || user_can($auth, 'orders')));
     if (!$ok) json_response(['error' => 'Not allowed.'], 403);
