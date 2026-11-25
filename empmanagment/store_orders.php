@@ -195,12 +195,19 @@ if ((string)$action === 'tms.gift') {   // 🎁 the website's gift perfume on pa
     $k = (int)($r['kept'] ?? 0); $rm = (int)($r['removed'] ?? 0);
     json_response(['ok' => true, 'day' => $day, 'kept' => $k, 'removed' => $rm, 'rate' => $k + $rm > 0 ? (int)round($k * 100 / ($k + $rm)) : null, 'money' => round((float)($r['money'] ?? 0), 2), 'orders' => array_values(array_map('strval', (array)($r['orders'] ?? [])))]);
 }
-if ((string)$action === 'tms.ring') {   // 🔔 the orders that just came for ME and have not rung yet (asked by the chat app every 20 s): each is returned once, then marked heard. Older than 30 minutes = not rung any more.
-    $me = (int)($auth['employee_id'] ?? 0); $out = [];
-    if ($me > 0) { try { $q = $pdo->prepare("SELECT id, number, customer, phone, total, otype FROM tms_ring WHERE emp_id = ? AND seen = 0 AND at >= ? ORDER BY id LIMIT 5"); $q->execute([$me, date('Y-m-d H:i:s', time() - 1800)]);
-        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $u = $pdo->prepare("UPDATE tms_ring SET seen = 1 WHERE id = ? AND seen = 0"); $u->execute([(int)$x['id']]); if ($u->rowCount() === 1) $out[] = ['number' => (string)$x['number'], 'customer' => (string)$x['customer'], 'phone' => (string)$x['phone'], 'total' => (float)$x['total'], 'type' => (string)$x['otype']]; }
+if ((string)$action === 'tms.ring') {   // 🔔 the orders that just came for ME (asked by the chat app every 20 s). EVERY device of the salesperson rings (owner, 25 Nov: "the pop-up does not come" — a person is logged in on
+    // several phones / tabs and only the first one to ask got the order): the device sends the last ring id it has shown (after) and gets the newer ones of the last 3 minutes. after = -1 (a device that just opened): only the newest id, nothing rings.
+    $me = (int)($auth['employee_id'] ?? 0); $out = []; $max = 0; $after = (int)($in['after'] ?? -1);
+    if ($me > 0) { try {
+        $max = (int)$pdo->query("SELECT COALESCE(MAX(id), 0) FROM tms_ring")->fetchColumn();
+        if (!isset($in['after'])) {   // an app that was not refreshed yet (the first version): each order once, as before
+            $q = $pdo->prepare("SELECT id, number, customer, phone, total, otype FROM tms_ring WHERE emp_id = ? AND seen = 0 AND at >= ? ORDER BY id LIMIT 5"); $q->execute([$me, date('Y-m-d H:i:s', time() - 1800)]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $u = $pdo->prepare("UPDATE tms_ring SET seen = 1 WHERE id = ? AND seen = 0"); $u->execute([(int)$x['id']]); if ($u->rowCount() === 1) $out[] = ['id' => (int)$x['id'], 'number' => (string)$x['number'], 'customer' => (string)$x['customer'], 'phone' => (string)$x['phone'], 'total' => (float)$x['total'], 'type' => (string)$x['otype']]; }
+        } elseif ($after >= 0 && $after < $max) { $q = $pdo->prepare("SELECT id, number, customer, phone, total, otype FROM tms_ring WHERE emp_id = ? AND id > ? AND at >= ? ORDER BY id LIMIT 5"); $q->execute([$me, $after, date('Y-m-d H:i:s', time() - 180)]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $out[] = ['id' => (int)$x['id'], 'number' => (string)$x['number'], 'customer' => (string)$x['customer'], 'phone' => (string)$x['phone'], 'total' => (float)$x['total'], 'type' => (string)$x['otype']]; }
+            if ($out) { try { $pdo->prepare("UPDATE tms_ring SET seen = 1 WHERE emp_id = ? AND id > ? AND seen = 0")->execute([$me, $after]); } catch (Throwable $e) { } } }   // seen = at least one of his devices showed it (for the check)
     } catch (Throwable $e) { } }   // no table yet = no order has rung yet
-    json_response(['ok' => true, 'rows' => $out]);
+    json_response(['ok' => true, 'rows' => $out, 'max' => $max]);
 }
 if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 Nov): the website orders of the last 5 days whose payment has not come, for the salesperson who holds the customer's WhatsApp chat (open, closed or in History),
     // else the last person who wrote to the customer there — the same rule as the name filled in on Website orders. An Admin sees everybody's. An order leaves when it is paid, cancelled, or the customer paid a later order. Read-only.

@@ -294,9 +294,9 @@
       let done = false; const shut = () => { if (done) return; done = true; clearTimeout(tm); b.classList.remove('show'); setTimeout(() => { b.remove(); ringNext(); }, 380); };
       const tm = setTimeout(shut, 10000);   // owner (25 Nov): it leaves by itself after 10 seconds; ✕ closes it at once; a tap opens the customer's chat
       b.onclick = (e) => { const cross = !!e.target.closest('[data-rx]'); shut(); if (!cross) { try { if (x.phone) openChat(x.phone); } catch (er) { } } };
-      document.body.appendChild(b); requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add('show')));
+      document.body.appendChild(b); const on = () => b.classList.add('show'); requestAnimationFrame(() => requestAnimationFrame(on)); setTimeout(on, 250);   // also by a timer: an animation frame may never come (a screen that just woke up)
     }
-    if (!EMB) setInterval(() => { if (document.hidden) return; api.get('tms.ring').then((d) => { (d && d.rows || []).forEach((x) => orderRing(x)); S.unpaidAt = (d && d.rows && d.rows.length) ? 0 : S.unpaidAt; }).catch(() => { }); }, 20000);
+    let ringAfter = -1; if (!EMB) setInterval(() => { if (document.hidden) return; api.get('tms.ring', { after: ringAfter }).then((d) => { (d && d.rows || []).forEach((x) => orderRing(x)); if (d && d.max != null) ringAfter = Math.max(ringAfter, +d.max || 0); S.unpaidAt = (d && d.rows && d.rows.length) ? 0 : S.unpaidAt; }).catch(() => { }); }, 20000);
     function toast(m, bad) { const t = document.createElement('div'); t.className = 'wx-toast' + (bad ? ' bad' : ''); t.textContent = m; R.appendChild(t); setTimeout(() => t.remove(), bad ? 5000 : 2200); }
     function sheet(title, onClose) {
       if (S.cur && S.cur.sg && S.cur.sg.counting) { suggStop(); S.auDone[S.cur.phone + ':' + S.cur.sg.li] = 1; suggDraw(); }
