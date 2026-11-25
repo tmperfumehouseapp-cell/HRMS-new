@@ -65,6 +65,15 @@ $seq = []; $T = [1 => ['last' => 0, 'cnt' => 12], 2 => ['last' => 0, 'cnt' => 12
 for ($i = 0; $i < 9; $i++) { $cand = []; foreach ($T as $e => $x) $cand[$e] = $g($x['cnt'], 1, ['last' => $x['last'], 'w' => $e === 1 ? 70000.0 : 25000.0]); $e = waa_pick_tiers($cand, 5, 0); $seq[] = $e; $T[$e]['last'] = ++$clock; $T[$e]['cnt']++; }
 $eq('three greens (one with a 70,000 target) take turns: 3 each, in order', $seq, [3, 1, 2, 3, 1, 2, 3, 1, 2]);
 $eq('yellows take turns too', (function () use ($g) { $c = [8 => $g(5, 2, ['last' => 10]), 9 => $g(5, 2, ['last' => 5])]; return waa_pick_tiers($c, 5, 2); })(), 9);
+// 🔓 "No rules": he takes his turn in the line whatever group is served
+$F = [1 => $g(12, 0, ['last' => 900]), 2 => $g(12, 0, ['last' => 950]), 7 => $g(18, 1, ['last' => 0, 'force' => true])];
+$eq('normal rules pick an under-5 person', waa_pick_tiers($F, 5, 0), 1); $eq('the No-rules person who was never given goes instead', waa_pick_force($F, 1), 7);
+$F[7]['last'] = 1000; $eq('after his give the line goes on with the others', waa_pick_force($F, waa_pick_tiers($F, 5, 0)), 1);
+$F[1]['last'] = 1100; $F[2]['last'] = 1200; $eq('his turn comes again when his give is the oldest', waa_pick_force($F, waa_pick_tiers($F, 5, 0)), 7);
+$F[7]['rest'] = true; $eq('not while he rests', waa_pick_force($F, 1), 1); $F[7]['rest'] = false; $F[7]['force'] = false; $eq('not without No rules', waa_pick_force($F, 1), 1); $eq('nobody picked stays nobody', waa_pick_force($F, 0), 0);
+$seq = []; $F = [1 => $g(12, 0, ['last' => 10]), 2 => $g(12, 0, ['last' => 20]), 3 => $g(12, 0, ['last' => 30]), 7 => $g(18, 1, ['last' => 0, 'force' => true])]; $clock = 100;
+for ($i = 0; $i < 8; $i++) { $e = waa_pick_force($F, waa_pick_tiers($F, 5, 0)); $seq[] = $e; $F[$e]['last'] = ++$clock; $F[$e]['cnt']++; }
+$eq('over 8 queries he gets 2, like everybody else', count(array_keys($seq, 7)), 2);
 // a customer's last message that needs no answer (it must not count as "waiting for his answer")
 foreach (['ok', 'Ok thank you', 'K', 'thanks!', '👍', 'Already Ordered', 'order ho gaya', 'Thank you.'] as $b) $eq('no answer needed: ' . $b, waa_no_answer_needed('text', $b), true);
 foreach (['Sir ??', 'Kb tk aaega', 'Bro where is my tracking id?', 'Please call me', 'Change address', 'Aa rakho'] as $b) $eq('needs an answer: ' . $b, waa_no_answer_needed('text', $b), false);

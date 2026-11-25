@@ -117,6 +117,19 @@ function waa_pick_tiers(array $c, int $min = WAA_MIN_Q, int $pos = 0): int
     return 0;
 }
 
+/**
+ * "No rules" (Admin / Sales Head ON with no rule applies, $c[e]['force']) also means: he takes his turn in THE LINE whatever group is being served (owner, 25 Nov 2026).
+ * The under-5 group is served first and on a busy day it never empties, so a No-rules person with 5+ queries got no fresh query at all for hours.
+ * $to = the person the normal rules picked. A No-rules person who is free (not resting, not full) and whose last give is OLDER than $to's goes instead (the oldest of them). Returns the person to give to.
+ */
+function waa_pick_force(array $c, int $to): int
+{
+    if ($to <= 0 || !isset($c[$to])) return $to;
+    $best = 0; $bl = (int)($c[$to]['last'] ?? 0);
+    foreach ($c as $e => $x) { if (empty($x['force']) || !empty($x['rest']) || !empty($x['full']) || (int)$e === $to) continue; $l = (int)($x['last'] ?? 0); if ($l < $bl) { $bl = $l; $best = (int)$e; } }
+    return $best > 0 ? $best : $to;
+}
+
 /** Who is far ahead of his fair share of fresh queries INSIDE HIS OWN GROUP (green among greens, yellow among yellows; the greens are meant to get twice what the yellows get): more than 25% over the share his weight earns (and at least 2 queries over). Marks cand[e]['ahead']. */
 function waa_mark_ahead(array $c): array
 {
