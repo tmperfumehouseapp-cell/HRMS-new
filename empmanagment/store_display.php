@@ -54,6 +54,21 @@ function sd_manager(): array
     if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) && !user_can($auth, 'rs_manage')) json_response(['error' => 'Only the store manager can change the display.'], 403);
     return $auth;
 }
+/** pairing: the TV shows a 6-digit code, the owner types it in Store -> Display, and the TV then picks up its secret key by itself (no typing of the long link) */
+function sd_pair_load(PDO $pdo): array
+{
+    try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'disp_pair'")->fetchColumn(); $j = $v ? json_decode($v, true) : []; } catch (Throwable $e) { $j = []; }
+    $j = is_array($j) ? $j : []; foreach ($j as $c => $x) if (!is_array($x) || (int)($x['at'] ?? 0) < time() - 1800) unset($j[$c]);
+    return $j;
+}
+function sd_pair_put(PDO $pdo, array $j): void { $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('disp_pair', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($j)]); }
+/** PUBLIC: the TV asks "has anyone typed my code yet?" Gives the key once, only for a code the owner has typed. */
+function sd_pair_poll(PDO $pdo): void
+{
+    $c = (string)($_GET['c'] ?? ''); if (!preg_match('/^\d{6}$/', $c)) json_response(['wait' => 1]);
+    $j = sd_pair_load($pdo); if (!isset($j[$c])) json_response(['wait' => 1]);
+    $key = (string)$j[$c]['key']; unset($j[$c]); sd_pair_put($pdo, $j); json_response(['key' => $key]);
+}
 function sd_handle(PDO $pdo, string $action): void
 {
     sd_manager(); $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $c = sd_cfg($pdo);
@@ -61,6 +76,10 @@ function sd_handle(PDO $pdo, string $action): void
     if (!$post) json_response(['error' => 'Method not allowed.'], 405);
     $in = json_input();
     if ($action === 'st_disp.newkey') { $c['key'] = bin2hex(random_bytes(12)); sd_cfg_put($pdo, $c); json_response(['ok' => true, 'key' => $c['key']]); }
+    if ($action === 'st_disp.link') {
+        $code = preg_replace('/\D/', '', (string)($in['code'] ?? '')); if (strlen($code) !== 6) json_response(['error' => 'Type the 6 numbers shown on the TV.'], 400);
+        $j = sd_pair_load($pdo); $j[$code] = ['key' => $c['key'], 'at' => time()]; sd_pair_put($pdo, $j); json_response(['ok' => true]);
+    }
     if ($action === 'st_disp.save') {
         $p = (string)($in['period'] ?? $c['period']); if (!in_array($p, ['2m', 'month', 'all'], true)) $p = '2m';
         $base = max(0, min(10000000, (int)($in['community_base'] ?? $c['community_base'])));

@@ -19,9 +19,9 @@ function push_send_many($pdo, $ids, $payload) { $GLOBALS['PUSH'] = [$ids, $paylo
 function brain_ai_text($s, $a, $sys, $user, $max = 700, $o = []) { $GLOBALS['AI_SAW'] = $user; return "MOVING\nSales went up."; }
 $pdo = new PDO('sqlite::memory:'); $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION); $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 $pdo->exec("CREATE TABLE fu_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_emp INT DEFAULT 0, owner_dept INT DEFAULT 0, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_at TEXT)");
-$pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', lag INT DEFAULT 0, metrics TEXT DEFAULT '', need_text INT DEFAULT 0, fields TEXT, status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
+$pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', lag INT DEFAULT 0, metrics TEXT DEFAULT '', need_text INT DEFAULT 0, min_words INT DEFAULT 0, fields TEXT, status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, topic_id INT, day TEXT, txt TEXT, val REAL, pct INT, auto INT DEFAULT 0, emp_id INT DEFAULT 0, emp_name TEXT DEFAULT '', updated_at TEXT, ai_verdict TEXT DEFAULT '', ai_note TEXT DEFAULT '', ai_q TEXT DEFAULT '', vals TEXT, fvals TEXT, UNIQUE (topic_id, day))");
-$pdo->exec("CREATE TABLE fu_jaimin (section_id INT, day TEXT, txt TEXT, emp_name TEXT DEFAULT '', updated_at TEXT, PRIMARY KEY (section_id, day))");
+$pdo->exec("CREATE TABLE fu_jaimin (section_id INT, day TEXT, txt TEXT, emp_name TEXT DEFAULT '', updated_at TEXT, r_txt TEXT, r_name TEXT DEFAULT '', r_at TEXT, r_extra TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE fu_digest (section_id INT, day TEXT, txt TEXT, made_at TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT, designation TEXT, mobile TEXT)");
 $pdo->exec("CREATE TABLE departments (department_id INTEGER PRIMARY KEY, department_name TEXT)");
@@ -162,4 +162,58 @@ $r = fup_daily_pass($pdo); ok(isset($r['skipped']), 'it does not run twice a day
 [$c, $j] = call('fup.jaimin_board', $ADMIN); ok($c === 200 && $j['jaimin']['0']['2026-11-22']['text'] === 'Final: focus wholesale' && $j['jaimin'][(string)$ws]['2026-11-23']['text'] === 'Push 5 new perfumes', 'Jaimin section: final + section decisions');
 [$c] = call('fup.jaimin_board', $E(12)); ok($c === 403, 'Jaimin section: Admin / HR only');
 [$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $ws, 'text' => '  ']); ok($c === 200 && (int)$pdo->query("SELECT COUNT(*) FROM fu_jaimin WHERE section_id = $ws")->fetchColumn() === 0, 'Jaimin layer: empty text removes it');
+// Rahul: the follow-up person writes his update under each Jaimin decision; the decision's pill turns green for the day
+$pdo->exec("INSERT INTO employees VALUES (20, 'Rahul V', 2, 'approved', '', '')"); $GLOBALS['FUP_NOCACHE'] = 1;
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $st, 'text' => 'Call 3 old shops']); ok($c === 200, 'Rahul: a decision to work on');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok(!empty($b['jaimin_today'][(string)$st]) && empty($b['jaimin_today'][(string)$ws]) && $b['follower']['id'] === 20, 'pill green only where Jaimin wrote today; the one Rahul is found by himself');
+[$c, $g] = call('fup.badge', $E(20)); ok($g['show'] === true && $g['due'] === 2, 'Rahul sees Follow-up with the decisions still to answer');
+[$c, $b] = call('fup.board', $E(20)); ok($b['jaimin_follow'] === true && $b['jaimin_reply'] === true && $b['jaimin_write'] === false, 'Rahul: can reply, cannot decide');
+[$c, $j] = call('fup.jaimin_board', $E(20)); ok($c === 200 && count($j['sections']) === 2 && $j['open'] === 2, 'Rahul opens the Jaimin section with every section');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-23', 'text' => 'x']); ok($c === 422, 'Rahul: no reply where Jaimin wrote nothing');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $st, 'day' => '2026-11-23', 'text' => 'Called 3, 1 order']); ok($c === 200, 'Rahul: update saved');
+[$c] = call('fup.jaimin_reply', $E(12), ['section_id' => $st, 'day' => '2026-11-23', 'text' => 'x']); ok($c === 403, 'somebody else cannot write Rahul\'s update');
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $st, 'text' => 'Call 4 old shops']); [$c, $j] = call('fup.jaimin_board', $ADMIN);
+ok($j['jaimin'][(string)$st]['2026-11-23']['text'] === 'Call 4 old shops' && $j['jaimin'][(string)$st]['2026-11-23']['reply'] === 'Called 3, 1 order' && $j['open'] === 1, 'changing the decision keeps Rahul\'s update');
+[$c] = call('fup.jaimin_follower', $ADMIN, ['emp_id' => 12]); [$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $st, 'day' => '2026-11-23', 'text' => 'y']); ok($c === 403, 'the Admin can give the job to somebody else');
+// Rahul's update with new topics (made for real in that section) and the sections he checks himself; the pill is green when Jaimin wrote on any day's box today
+[$c] = call('fup.jaimin_follower', $ADMIN, ['emp_id' => 20]);
+$pdo->exec("UPDATE fu_jaimin SET updated_at = '" . date('Y-m-d') . " 09:00:00' WHERE section_id = 0");
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $ws, 'text' => 'Yesterday was slow: add a follow-up for old parties', 'day' => '2026-11-22']); 
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); ok(!empty($b['jaimin_today'][(string)$ws]), 'green: decision written today in the box of an earlier day');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => '', 'new_topics' => [['section_id' => $ws, 'title' => 'Old party calls']]]); ok($c === 422, 'Rahul: new topics need the whole update too');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'x', 'new_topics' => [['section_id' => 0, 'title' => 'Old party calls']]]); ok($c === 422, 'Rahul: a new topic needs its section');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'Added the calls topic, I check both', 'new_topics' => [['section_id' => $ws, 'title' => 'Old party calls', 'assignee_emp' => 12]], 'check' => [$ws, $st, 999]]); ok($c === 200, 'Rahul: update with a new topic and sections to check');
+ok((int)$pdo->query("SELECT COUNT(*) FROM fu_topics WHERE section_id = $ws AND title = 'Old party calls' AND assignee_emp = 12 AND active = 1")->fetchColumn() === 1, 'the new topic is really in the section');
+[$c, $j] = call('fup.jaimin_board', $ADMIN); $x = $j['jaimin'][(string)$ws]['2026-11-22']['extra'];
+ok(count($x['topics']) === 1 && $x['topics'][0]['who'] === 'Chirag' && count($x['check']) === 2, 'the update lists the new topic and the sections he checks');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); ok(isset($b['rahul_checks'][(string)$ws], $b['rahul_checks'][(string)$st]), 'the checked sections are marked');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'Added the calls topic, done']); [$c, $j] = call('fup.jaimin_board', $ADMIN);
+ok(count($j['jaimin'][(string)$ws]['2026-11-22']['extra']['topics']) === 1 && count($j['jaimin'][(string)$ws]['2026-11-22']['extra']['check']) === 2, 'changing only the words keeps the topics and the checks');
+$tLive = (int)$pdo->query("SELECT id FROM fu_topics WHERE active = 1 AND section_id = $st ORDER BY id LIMIT 1")->fetchColumn(); $tLiveName = (string)$pdo->query("SELECT title FROM fu_topics WHERE id = $tLive")->fetchColumn();
+// Strict: Rahul ticks one topic (not the whole section); that topic is marked, its section shows on the pill
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'Watching sales myself', 'check' => [], 'strict' => [$tLive, 99999]]); ok($c === 200, 'Strict: one topic ticked');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok($tLive > 0 && isset($b['rahul_strict'][(string)$tLive]) && !isset($b['rahul_checks'][(string)$st]) && isset($b['rahul_any'][(string)$st]) && $b['topics'][0]['section_id'] === $st, 'Strict: the topic is marked, not the whole section; its section shows on the pill');
+[$c, $j] = call('fup.jaimin_board', $E(20)); ok(count($j['topics']) >= 3 && $j['jaimin'][(string)$ws]['2026-11-22']['extra']['strict'][0]['title'] === $tLiveName && count($j['jaimin'][(string)$ws]['2026-11-22']['extra']['topics']) === 1, 'Strict: listed under his update, the made topic stays');
+// Admin writes Rahul's update on the final decision (section 0) with a whole section ticked
+[$c, $r] = call('fup.jaimin_reply', $ADMIN, ['section_id' => 0, 'day' => '2026-11-22', 'text' => 'Will check dispatch myself', 'new_topics' => [], 'check' => [$ws], 'strict' => []]); ok($c === 200, 'Admin: Rahul update on the final decision saves');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); ok(isset($b['rahul_checks'][(string)$ws]), 'Admin: the ticked whole section is marked');
+// a topic Rahul makes goes on his Strict list by itself
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'One more', 'new_topics' => [['section_id' => $st, 'title' => 'Display check']], 'strict' => []]); 
+$newT = (int)$pdo->query("SELECT id FROM fu_topics WHERE title = 'Display check'")->fetchColumn(); [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $st]); ok($newT > 0 && isset($b['rahul_strict'][(string)$newT]), 'a made topic is Strict at once');
+// minimum words: the Admin sets 6 on a topic; a shorter update is refused, a long enough one saves
+$tW = (int)$pdo->query("SELECT id FROM fu_topics WHERE active = 1 AND status <> 'done' AND assignee_emp = 12 ORDER BY id LIMIT 1")->fetchColumn();
+$tw = $pdo->query("SELECT * FROM fu_topics WHERE id = $tW")->fetch();
+[$c] = call('fup.topic_save', $ADMIN, ['id' => $tW, 'title' => $tw['title'], 'kind' => 'progress', 'assignee_emp' => 12, 'min_words' => 6, 'lag' => (int)$tw['lag']]); ok($c === 200 && (int)$pdo->query("SELECT min_words FROM fu_topics WHERE id = $tW")->fetchColumn() === 6, 'min words: saved on the topic');
+[$c, $r] = call('fup.update_save', $E(12), ['topic_id' => $tW, 'text' => 'customer update chale che', 'day' => '2026-11-23']); ok($c === 422 && strpos($r['error'], 'at least 6 words') !== false, 'min words: a short update is refused');
+[$c] = call('fup.update_save', $E(12), ['topic_id' => $tW, 'text' => 'Called 4 customers, 2 ordered, website banner changed today', 'day' => '2026-11-23']); ok($c === 200, 'min words: a long enough update saves');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); $tt = array_values(array_filter($b['topics'], function ($x) use ($tW) { return $x['id'] === $tW; })); ok($tt && $tt[0]['min_words'] === 6, 'min words: sent to the page');
+// photo and video fields on a topic
+[$c] = call('fup.topic_save', $ADMIN, ['id' => $tW, 'title' => $tw['title'], 'kind' => 'progress', 'assignee_emp' => 12, 'min_words' => 6, 'lag' => (int)$tw['lag'], 'fields' => [['label' => 'Shop photo', 'type' => 'photo', 'req' => 1], ['label' => 'Shop video', 'type' => 'video', 'req' => 0]]]);
+$ff = json_decode((string)$pdo->query("SELECT fields FROM fu_topics WHERE id = $tW")->fetchColumn(), true); ok($c === 200 && $ff[0]['type'] === 'photo' && $ff[1]['type'] === 'video', 'photo and video fields are kept');
+[$c, $r] = call('fup.update_save', $E(12), ['topic_id' => $tW, 'text' => 'Called 4 customers, 2 ordered, website banner changed today', 'day' => '2026-11-23', 'fields' => ['f1' => 'x']]); ok($c === 200, 'a photo field is not filled by typing (comes as a file)');
+// sub-topic: a words box with its own minimum words, a photo and a video, grouped by the sub-topic name
+[$c] = call('fup.topic_save', $ADMIN, ['id' => $tW, 'title' => $tw['title'], 'kind' => 'progress', 'assignee_emp' => 12, 'min_words' => 0, 'lag' => (int)$tw['lag'], 'fields' => [['label' => 'Front display', 'type' => 'text', 'req' => 1, 'min' => 5, 'g' => 'Front display'], ['label' => 'Front display · photo', 'type' => 'photo', 'req' => 0, 'g' => 'Front display'], ['label' => 'Front display · video', 'type' => 'video', 'req' => 0, 'g' => 'Front display']]]);
+$ff = json_decode((string)$pdo->query("SELECT fields FROM fu_topics WHERE id = $tW")->fetchColumn(), true); ok($c === 200 && $ff[0]['min'] === 5 && $ff[0]['g'] === 'Front display' && $ff[2]['type'] === 'video' && !isset($ff[1]['min']), 'sub-topic: min words and group kept');
+[$c, $r] = call('fup.update_save', $E(12), ['topic_id' => $tW, 'text' => '', 'day' => '2026-11-23', 'fields' => [$ff[0]['k'] => 'looks ok']]); ok($c === 422 && strpos($r['error'], 'at least 5 words') !== false, 'sub-topic: a short box is refused');
+[$c] = call('fup.update_save', $E(12), ['topic_id' => $tW, 'text' => '', 'day' => '2026-11-23', 'fields' => [$ff[0]['k'] => 'new perfume row set at eye level']]); ok($c === 200, 'sub-topic: a long enough box saves');
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);

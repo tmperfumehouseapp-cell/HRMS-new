@@ -74,6 +74,38 @@ if (!function_exists('wa_ordpack_defs')) {
         $top = []; foreach ($per as $p) $top[] = $p; usort($top, function ($a, $b) { return $b[0] <=> $a[0]; });
         setting_set($pdo, 'wa_ordl_rep', json_encode(['day' => $day, 'tested' => count($per), 'median' => round($med * 100, 2), 'top' => array_slice(array_map(function ($p) { return [$p[2], round($p[0] * 100, 2), $p[1]]; }, $top), 0, 5), 'off' => count($off), 'new' => count($new), 'best_open' => $bo[0] ?? null, 'best_mid' => $bm[0] ?? null, 'best_close' => $bc[0] ?? null]));
     }
+    /** HAND-WRITTEN replacements (owner 25 Nov 2026: "the 36 failed ones, write them by hand"): the dull messages of the Lineup / its map that the twin engine could not replace. Each gets a new exciting MARKETING message; the pair is
+     *  registered as 'made', so the normal replace step swaps it in as soon as Meta approved it. Once per old message. Names tmph_hm_<old id>. */
+    function wa_hand_defs(): array
+    {
+        $b = function (array $l) { return array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, $l); };
+        return [
+            3196 => ['src' => 'lmap:3196', 'vars' => 0, 'buttons' => $b(['Show me offers', 'Not now']), 'body' => "Hello Sir / Ma'am 🙏\n\nTM Perfume House me aaj sardi aur shaadi ka season special chal raha he ❄️💍\n\n🎁 Naye perfumes + combo offers aapke liye taiyaar\n\nDekhne ke liye button dabaiye 👇"],
+            4728 => ['src' => 'lmap:4728', 'vars' => 0, 'buttons' => $b(['I Want To Order', 'Show Offer']), 'body' => "Hello! 👋\n\nSardi ka season aur aapke liye ek crazy combo ready he 🔥\n\n🎁 Extra ML + special price\n\nAbhi order karoge to hi milega 👇"],
+            4934 => ['src' => 'line:ln_reorder_4', 'vars' => 1, 'buttons' => $b(['Reorder Now']), 'body' => "Hi {{1}} ji 😊\n\nAapka perfume khatam hone wala hai kya ? 👀\n\nSardi me wahi khushbu dobara, aur saath me ek khaas reorder surprise 🎁\n\nNeeche tap kijiye 👇"],
+            4911 => ['src' => 'line:ln_general_4', 'vars' => 1, 'buttons' => $b(['Suggest Perfumes']), 'body' => "Hi {{1}} 😊\n\nSardi aur shaadi ka season he, aapke liye 2-3 perfume ka crazy combo chun ke rakha he 🔥\n\nWarm gehri khushbu ya light fragrance ? Tap kijiye 👇🎁"],
+            4940 => ['src' => 'line:ln_all_10', 'vars' => 1, 'buttons' => $b(['Order Now']), 'body' => "Hi {{1}} 👋\n\nAaj ka special: extra ML aur flat discount aapke order par 🎁🔥\n\nCOD bhi chalu he, aur offer sirf aaj ke liye ⏰\n\nOrder karne ke liye tap kijiye 👇"],
+            3916 => ['src' => 'line:ln_brand_4', 'vars' => 1, 'buttons' => $b(['20 ml Combo', '50 ml Combo']), 'body' => "Hi {{1}} ji 🌸\n\nPehli baar le rahe hain ? 20 ml se shuru karna sabse smart rahega, aur starter combo par extra bachat 💥\n\nKaunsa size dekhna chahenge ? 👇"],
+        ];
+    }
+    function wa_hand_tick(PDO $pdo): int
+    {
+        if ((string)setting_get($pdo, 'wa_hand', '1') === '0' || !function_exists('wa_rs_state') || !function_exists('wa_rs_save') || !function_exists('wa_tpl_clean')) return 0;
+        $st = wa_rs_state($pdo); $made = 0; $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
+        foreach (wa_hand_defs() as $old => $d) {
+            $p = $st['pairs'][$old] ?? null; if ($p && !in_array((string)($p['st'] ?? ''), ['fail', 'making'], true)) continue; if ($made >= 2) break;
+            $name = 'tmph_hm_' . $old; $ex = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? LIMIT 1"); $ex->execute([$name]); $id = (int)$ex->fetchColumn();
+            if ($id <= 0) {
+                $in = ['name' => $name, 'language' => 'en', 'category' => 'MARKETING', 'body' => $d['body'], 'footer' => 'TM Perfume House', 'buttons' => $d['buttons'], 'folder' => 'Offers']; if ($d['vars'] > 0) $in['examples'] = ['body' => ['Rahul'], 'labels' => ['Name']];
+                [$t, $err] = wa_tpl_clean($in); if ($err !== '') { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'Hand-made ' . $name . ': ' . $err); continue; }
+                $id = (int)wa_tpl_insert($pdo, $t, 0, 'Hand-written replacement (owner, 25 Nov 2026) of #' . $old, 'Hand-made'); $r = $id > 0 ? wa_tpl_row($pdo, $id) : null; if (!$r) continue;
+                foreach ($wabas as $w) { if (function_exists('wa_tpl_try_create')) wa_tpl_try_create($pdo, $r, $w, $budget); }
+            }
+            $st['pairs'][$old] = ['new' => $id, 'src' => $d['src'], 'st' => 'made', 'at' => time(), 'hand' => 1]; $made++;
+        }
+        if ($made) wa_rs_save($pdo, $st);
+        return $made;
+    }
     function wa_ordpack_tick(PDO $pdo): array
     {
         $res = ['made' => 0, 'failed' => []];
@@ -82,6 +114,7 @@ if (!function_exists('wa_ordpack_defs')) {
         foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row'] as $f) if (!function_exists($f)) return $res;
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
         try { wa_ordpack_learn($pdo); } catch (Throwable $e) { }
+        try { wa_hand_tick($pdo); } catch (Throwable $e) { }
         $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
         foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;

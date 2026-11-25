@@ -25,6 +25,8 @@
  */
 if (!function_exists('fup_tables')) {
 
+/** Words in a text, counted by the spaces between them ("60 words" = 60 pieces separated by spaces or new lines). */
+function fup_words(string $t): int { $t = trim($t); return $t === '' ? 0 : count(preg_split('/\s+/u', $t)); }
 function fup_now(): string { return date('Y-m-d H:i:s'); }
 function fup_today(PDO $pdo): string { try { if (function_exists('biz_today')) return (string)biz_today($pdo); } catch (Throwable $e) { } return date('Y-m-d'); }
 function fup_is_day($d): bool { return is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && strtotime($d) !== false; }
@@ -40,8 +42,16 @@ function fup_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_updates (id INT AUTO_INCREMENT PRIMARY KEY, topic_id INT NOT NULL, day DATE NOT NULL, txt TEXT NULL, val DECIMAL(14,2) NULL, pct SMALLINT NULL, auto TINYINT NOT NULL DEFAULT 0, emp_id INT NOT NULL DEFAULT 0, emp_name VARCHAR(120) NOT NULL DEFAULT '', updated_at DATETIME NULL,
             UNIQUE KEY u_td (topic_id, day), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_digest (section_id INT NOT NULL, day DATE NOT NULL, txt MEDIUMTEXT NULL, made_at DATETIME NULL, PRIMARY KEY (section_id, day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if ((string)setting_get($pdo, 'fup_minw', '') !== '1') {   // the least number of words an update of a topic must have (0 = any)
+            try { $pdo->exec("ALTER TABLE fu_topics ADD COLUMN min_words SMALLINT NOT NULL DEFAULT 0"); } catch (Throwable $e) { }
+            $pdo->query("SELECT min_words FROM fu_topics LIMIT 1"); setting_set($pdo, 'fup_minw', '1');
+        }
         // Jaimin's layer: what Jaimin decided on a day, one note a section a day; section_id 0 = his own final decision after all the sections
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_jaimin (section_id INT NOT NULL, day DATE NOT NULL, txt TEXT NULL, emp_name VARCHAR(120) NOT NULL DEFAULT '', updated_at DATETIME NULL, PRIMARY KEY (section_id, day), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if ((string)setting_get($pdo, 'fup_jaimin_schema', '') !== '2') {   // the follow-up person's (Rahul's) update under each decision; r_extra = the topics he added and the sections he checks himself
+            foreach (["ALTER TABLE fu_jaimin ADD COLUMN r_txt TEXT NULL", "ALTER TABLE fu_jaimin ADD COLUMN r_name VARCHAR(120) NOT NULL DEFAULT ''", "ALTER TABLE fu_jaimin ADD COLUMN r_at DATETIME NULL", "ALTER TABLE fu_jaimin ADD COLUMN r_extra TEXT NULL"] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { } }
+            $pdo->query("SELECT r_txt, r_name, r_at, r_extra FROM fu_jaimin LIMIT 1"); setting_set($pdo, 'fup_jaimin_schema', '2');
+        }
         if ((string)setting_get($pdo, 'fup_schema', '') !== '5') {   // added later: Claude's check of each update, a unit for typed numbers, a longer note for Claude
             foreach (["ALTER TABLE fu_updates ADD COLUMN ai_verdict VARCHAR(12) NOT NULL DEFAULT ''", "ALTER TABLE fu_updates ADD COLUMN ai_note VARCHAR(300) NOT NULL DEFAULT ''", "ALTER TABLE fu_updates ADD COLUMN ai_q VARCHAR(300) NOT NULL DEFAULT ''",
                 "ALTER TABLE fu_topics ADD COLUMN unit VARCHAR(12) NOT NULL DEFAULT ''", "ALTER TABLE fu_topics ADD COLUMN `lag` TINYINT NOT NULL DEFAULT 0", "ALTER TABLE fu_topics ADD COLUMN metrics VARCHAR(400) NOT NULL DEFAULT ''", "ALTER TABLE fu_topics ADD COLUMN need_text TINYINT NOT NULL DEFAULT 0", "ALTER TABLE fu_updates ADD COLUMN vals TEXT NULL", "ALTER TABLE fu_topics ADD COLUMN `fields` TEXT NULL", "ALTER TABLE fu_updates ADD COLUMN fvals TEXT NULL", "ALTER TABLE fu_topics MODIFY note VARCHAR(1000) NOT NULL DEFAULT ''"] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { } }
@@ -983,8 +993,41 @@ function fup_jaimin(PDO $pdo, array $sids, string $from, string $to): array
 {
     $sids = array_values(array_unique(array_map('intval', $sids))); if (!$sids) return [];
     try { $q = $pdo->prepare("SELECT * FROM fu_jaimin WHERE section_id IN (" . implode(',', $sids) . ") AND day BETWEEN ? AND ?"); $q->execute([$from, $to]); } catch (Throwable $e) { return []; }
-    $out = []; foreach ($q->fetchAll() as $r) if (trim((string)$r['txt']) !== '') $out[(int)$r['section_id']][(string)$r['day']] = ['text' => (string)$r['txt'], 'by' => (string)$r['emp_name'], 'at' => (string)$r['updated_at']];
+    $out = []; foreach ($q->fetchAll() as $r) if (trim((string)$r['txt']) !== '') $out[(int)$r['section_id']][(string)$r['day']] = ['text' => (string)$r['txt'], 'by' => (string)$r['emp_name'], 'at' => (string)$r['updated_at'], 'reply' => (string)($r['r_txt'] ?? ''), 'reply_by' => (string)($r['r_name'] ?? ''), 'reply_at' => (string)($r['r_at'] ?? ''), 'extra' => fup_jaimin_extra($r['r_extra'] ?? null)];
     return $out;
+}
+/** What Rahul added with his update: the new topics (section, title, person) and the sections he will check himself. */
+function fup_jaimin_extra($raw): array
+{
+    $j = json_decode((string)$raw, true); $j = is_array($j) ? $j : [];
+    $t = []; foreach ((array)($j['topics'] ?? []) as $x) if (is_array($x) && trim((string)($x['title'] ?? '')) !== '') $t[] = ['section_id' => (int)($x['section_id'] ?? 0), 'section' => (string)($x['section'] ?? ''), 'title' => (string)$x['title'], 'who' => (string)($x['who'] ?? ''), 'topic_id' => (int)($x['topic_id'] ?? 0)];
+    $c = []; foreach ((array)($j['check'] ?? []) as $x) if (is_array($x) && (int)($x['id'] ?? 0) > 0) $c[] = ['id' => (int)$x['id'], 'name' => (string)($x['name'] ?? '')];
+    $st = []; foreach ((array)($j['strict'] ?? []) as $x) if (is_array($x) && (int)($x['id'] ?? 0) > 0) $st[] = ['id' => (int)$x['id'], 'title' => (string)($x['title'] ?? ''), 'section_id' => (int)($x['section_id'] ?? 0), 'section' => (string)($x['section'] ?? '')];
+    return ['topics' => $t, 'check' => $c, 'strict' => $st];
+}
+/** Sections Rahul said he will check himself, from his updates of the last 7 days: [section_id => latest day]. */
+function fup_jaimin_checks(PDO $pdo, string $today): array
+{
+    $out = []; $top = []; $any = [];   // whole sections => day; strict topics => day (a section with a strict topic counts as checked too)
+    try { $q = $pdo->prepare("SELECT day, r_extra FROM fu_jaimin WHERE day BETWEEN ? AND ? AND r_extra IS NOT NULL ORDER BY day"); $q->execute([date('Y-m-d', strtotime($today . ' -6 day')), $today]);
+        foreach ($q->fetchAll() as $r) { $x = fup_jaimin_extra($r['r_extra']); foreach ($x['check'] as $c) $out[(string)$c['id']] = (string)$r['day']; foreach ($x['strict'] as $c) { $top[(string)$c['id']] = (string)$r['day']; if ($c['section_id'] > 0) $any[(string)$c['section_id']] = 1; } } } catch (Throwable $e) { }
+    foreach ($out as $k => $v) $any[$k] = 1; $GLOBALS['FUP_STRICT'] = $top; $GLOBALS['FUP_STRICT_SEC'] = $any; return $out;   // $out = whole sections only
+}
+/** The person who works on Jaimin's decisions and writes his update under each one (Rahul). Chosen by the Admin; until then the one employee called Rahul, if there is exactly one. */
+function fup_jaimin_follower(PDO $pdo): array
+{
+    static $c = null; if ($c !== null && empty($GLOBALS['FUP_NOCACHE'])) return $c;
+    $id = (int)setting_get($pdo, 'fup_jaimin_follower', 0);
+    try {
+        if ($id <= 0 && (string)setting_get($pdo, 'fup_jaimin_follower', '') === '') { $q = $pdo->query("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(full_name) LIKE '%rahul%'"); $ids = $q->fetchAll(PDO::FETCH_COLUMN); if (count($ids) === 1) $id = (int)$ids[0]; }
+        if ($id > 0) { $q = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ?"); $q->execute([$id]); $n = $q->fetchColumn(); if ($n !== false) return $c = ['id' => $id, 'name' => (string)$n]; }
+    } catch (Throwable $e) { }
+    return $c = ['id' => 0, 'name' => ''];
+}
+/** Jaimin's decisions of the last 7 days with no update from the follow-up person yet. */
+function fup_jaimin_open(PDO $pdo, string $today): int
+{
+    try { $q = $pdo->prepare("SELECT COUNT(*) FROM fu_jaimin j LEFT JOIN fu_sections s ON s.id = j.section_id WHERE j.day BETWEEN ? AND ? AND TRIM(COALESCE(j.txt, '')) <> '' AND TRIM(COALESCE(j.r_txt, '')) = '' AND (j.section_id = 0 OR s.active = 1)"); $q->execute([date('Y-m-d', strtotime($today . ' -6 day')), $today]); return (int)$q->fetchColumn(); } catch (Throwable $e) { return 0; }
 }
 /** The day whose update is DUE for this topic right now: today, or (a topic "about the day before", like yesterday's sale, filled the next morning) yesterday. */
 function fup_due_day(array $t, string $today): string { return !empty($t['lag']) ? date('Y-m-d', strtotime($today . ' -1 day')) : $today; }
@@ -993,7 +1036,9 @@ function fup_start_day(array $t): string { $c = substr((string)$t['created_at'],
 /* ============================== the owner's own fields on a topic ==============================
  * A topic can carry up to 20 fields the person fills every day: a number, a few words, yes / no, a link, one of a list, or a file (photo, PDF, sheet).
  * fu_topics.fields = [{k, label, type: num|text|yesno|link|choice|file, opts: [...], req: 0|1}]      fu_updates.fvals = {k: value}   (a file: {f: stored name, n: its own name}) */
-function fup_field_types(): array { return ['num' => 'Number', 'text' => 'Words', 'yesno' => 'Yes / No', 'link' => 'Link', 'choice' => 'Choose one', 'file' => 'File / photo']; }
+function fup_field_types(): array { return ['num' => 'Number', 'text' => 'Words', 'yesno' => 'Yes / No', 'link' => 'Link', 'choice' => 'Choose one', 'file' => 'File / photo', 'photo' => 'Photo', 'video' => 'Video']; }
+/** The field types that take an upload (fup.file_put) instead of typed words. */
+function fup_is_upload(string $type): bool { return in_array($type, ['file', 'photo', 'video'], true); }
 function fup_fields(array $t): array { $j = json_decode((string)($t['fields'] ?? ''), true); return is_array($j) ? array_values(array_filter($j, function ($f) { return is_array($f) && isset($f['k'], $f['label'], $f['type']); })) : []; }
 /** Clean the field list the page (or Claude) sends. Existing keys are kept so old values stay attached to their field. */
 function fup_fields_clean($in, array $old = []): array
@@ -1006,7 +1051,10 @@ function fup_fields_clean($in, array $old = []): array
         if (!preg_match('/^f\d+$/', $k) || isset($used[$k])) $k = 'f' . (++$max); elseif (preg_match('/^f(\d+)$/', $k, $m)) $max = max($max, (int)$m[1]);
         $used[$k] = 1; $opts = [];
         if ($type === 'choice') { $raw = is_array($f['opts'] ?? null) ? $f['opts'] : preg_split('/[,\n]+/u', (string)($f['opts'] ?? '')); foreach ($raw as $o) { $o = trim(mb_substr((string)$o, 0, 40)); if ($o !== '' && !in_array($o, $opts, true) && count($opts) < 20) $opts[] = $o; } if (count($opts) < 2) $type = 'text'; }
-        $out[] = ['k' => $k, 'label' => $label, 'type' => $type, 'opts' => $type === 'choice' ? $opts : [], 'req' => !empty($f['req']) ? 1 : 0];
+        $row = ['k' => $k, 'label' => $label, 'type' => $type, 'opts' => $type === 'choice' ? $opts : [], 'req' => !empty($f['req']) ? 1 : 0];
+        if ($type === 'text' && (int)($f['min'] ?? 0) > 0) $row['min'] = min(500, (int)$f['min']);   // the least words this box takes
+        $g = trim(mb_substr((string)($f['g'] ?? ''), 0, 60)); if ($g !== '') $row['g'] = $g;          // the sub-topic this box belongs to
+        $out[] = $row;
     }
     return $out;
 }
@@ -1144,6 +1192,7 @@ function fup_badge_data(PDO $pdo, array $auth): array
         if (!fup_tables($pdo)) return ['show' => false, 'manager' => false, 'due' => 0];
         $w = fup_who($pdo, $auth); if ($w['manager']) return ['show' => true, 'manager' => true, 'due' => 0];
         $m = fup_mine($pdo, $w); $show = count($m['topics']) > 0;
+        if ($w['emp'] > 0 && fup_jaimin_follower($pdo)['id'] === $w['emp']) return ['show' => true, 'manager' => false, 'due' => (int)$m['due'] + fup_jaimin_open($pdo, fup_today($pdo))];
         if (!$show && $w['emp'] > 0) { $q = $pdo->prepare("SELECT COUNT(*) FROM fu_sections WHERE active = 1 AND ((owner_emp > 0 AND owner_emp = ?) OR (owner_dept > 0 AND owner_dept = ?))"); $q->execute([$w['emp'], $w['dept']]); $show = (int)$q->fetchColumn() > 0; }
         return ['show' => $show, 'manager' => false, 'due' => (int)$m['due']];
     } catch (Throwable $e) { return ['show' => false, 'manager' => false, 'due' => 0]; }
@@ -1334,7 +1383,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
         case 'fup.mine': json_response(fup_mine($pdo, $w));
 
         case 'fup.people': {
-            if (!$w['manager']) json_response(['error' => 'Not allowed.'], 403);
+            if (!$w['manager'] && !($w['emp'] > 0 && fup_jaimin_follower($pdo)['id'] === $w['emp'])) json_response(['error' => 'Not allowed.'], 403);
             $st = $pdo->query("SELECT employee_id AS id, full_name AS name, department_id AS dept FROM employees WHERE COALESCE(status, 'approved') <> 'ex' ORDER BY full_name");
             $ppl = array_map(function ($r) { return ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'dept' => (int)$r['dept']]; }, $st->fetchAll());
             $dn = fup_dept_names($pdo); $depts = []; foreach ($dn as $i => $n) $depts[] = ['id' => $i, 'name' => $n];
@@ -1349,6 +1398,8 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                 'owner' => (int)$s['owner_emp'] > 0 ? ($ownerNames[(int)$s['owner_emp']] ?? '') : ((int)$s['owner_dept'] > 0 ? (($dn[(int)$s['owner_dept']] ?? 'Department') . ' department') : '')];
             $out = ['today' => $today, 'manager' => $w['manager'], 'me' => $w['emp'], 'sections' => $list, 'sources' => $srcList, 'section' => null, 'topics' => [], 'days' => fup_days($today, $n), 'checks' => [], 'people' => (object)[], 'overview' => ['late' => [], 'empty' => [], 'by_section' => (object)[]], 'digest' => null, 'ai' => function_exists('brain_ai_on') ? (bool)brain_ai_on() : false];
             if (!empty($_GET['all'])) $out['all'] = [];
+            $FL = fup_jaimin_follower($pdo); $isFl = $w['emp'] > 0 && $FL['id'] === $w['emp'];
+            $out['jaimin_write'] = $w['manager']; $out['jaimin_reply'] = $isFl || $w['manager']; $out['jaimin_follow'] = $isFl; $out['follower'] = $FL;
             if (!$secs) json_response($out);
             $out['overview'] = fup_overview($pdo, $secs, $w, $today);
             // who to call: the boss of every section this person sees; the people of the topics too for the Admin / HR and for a section's own boss
@@ -1363,9 +1414,9 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                 $days = $out['days']; $ups = fup_updates($pdo, array_column($topics, 'id'), end($days), $today); $names = fup_names($pdo, array_column($topics, 'assignee_emp')); $src = fup_sources();
                 foreach ($topics as $t) {
                     $id = (int)$t['id']; $can = !empty($sec['own']) || (int)$t['assignee_emp'] === $w['emp'];
-                    $tOut[] = ['id' => $id, 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
+                    $tOut[] = ['id' => $id, 'section_id' => (int)$t['section_id'], 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
                         'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
-                        'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''), 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'fields' => fup_fields($t), 'metrics' => fup_topic_metrics($t), 'due_day' => fup_due_day($t, $today), 'created' => fup_start_day($t),
+                        'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''), 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'min_words' => (int)($t['min_words'] ?? 0), 'fields' => fup_fields($t), 'metrics' => fup_topic_metrics($t), 'due_day' => fup_due_day($t, $today), 'created' => fup_start_day($t),
                         'note' => (string)$t['note'], 'status' => (string)$t['status'], 'can_write' => $can, 'updates' => (object)($ups[$id] ?? [])];
                 }
                 $ch = fup_checks($topics, $ups, $names, $today); foreach ($ch as $c) $cOut[] = ['level' => $c[0], 'topic_id' => $c[1], 'text' => $c[2]];
@@ -1374,9 +1425,13 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             [$out['topics'], $out['checks']] = $sheet($sec);
             if (!empty($_GET['all'])) { foreach ($secs as $s2) { [$tt, $cc] = (int)$s2['id'] === $sid ? [$out['topics'], $out['checks']] : $sheet($s2); $out['all'][] = ['id' => (int)$s2['id'], 'topics' => $tt, 'checks' => $cc]; } }
             // Jaimin's layer: the section's boss and the Admin / HR see what Jaimin decided; only the Admin / HR write it
-            $out['jaimin_write'] = $w['manager']; $ownIds = array_keys(array_filter($secs, function ($x) { return !empty($x['own']); }));
-            $J = fup_jaimin($pdo, $ownIds, end($out['days']), $today); $out['jaimin'] = isset($secs[$sid]['own']) && $secs[$sid]['own'] ? (object)($J[$sid] ?? []) : null;
-            if (!empty($out['all'])) foreach ($out['all'] as &$aa) $aa['jaimin'] = !empty($secs[$aa['id']]['own']) ? (object)($J[$aa['id']] ?? []) : null; unset($aa);
+            // the pills on top: light green when Jaimin has written today's decision for that section
+            $jt = []; try { $ids = array_map('intval', array_keys($secs)); $q = $pdo->prepare("SELECT DISTINCT section_id FROM fu_jaimin WHERE section_id IN (" . implode(',', $ids) . ") AND TRIM(COALESCE(txt, '')) <> '' AND (day = ? OR updated_at >= ? OR updated_at >= ?)"); $q->execute([$today, $today . ' 00:00:00', date('Y-m-d') . ' 00:00:00']); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $jt[(string)$x] = true; } catch (Throwable $e) { }
+            $out['jaimin_today'] = (object)$jt; $out['rahul_checks'] = (object)fup_jaimin_checks($pdo, $today); $out['rahul_strict'] = (object)($GLOBALS['FUP_STRICT'] ?? []); $out['rahul_any'] = (object)($GLOBALS['FUP_STRICT_SEC'] ?? []);
+            $seeJ = function ($s) use ($isFl) { return !empty($s['own']) || $isFl; };   // the section's boss, the Admin / HR and the follow-up person see it
+            $ownIds = array_keys(array_filter($secs, $seeJ));
+            $J = fup_jaimin($pdo, $ownIds, end($out['days']), $today); $out['jaimin'] = $seeJ($secs[$sid]) ? (object)($J[$sid] ?? []) : null;
+            if (!empty($out['all'])) foreach ($out['all'] as &$aa) $aa['jaimin'] = $seeJ($secs[$aa['id']]) ? (object)($J[$aa['id']] ?? []) : null; unset($aa);
             if (!empty($sec['own'])) { $q = $pdo->prepare("SELECT day, txt, made_at FROM fu_digest WHERE section_id = ? ORDER BY day DESC LIMIT 1"); $q->execute([$sid]); $d = $q->fetch(); if ($d) $out['digest'] = ['day' => (string)$d['day'], 'text' => (string)$d['txt'], 'at' => (string)$d['made_at']]; }
             json_response($out);
         }
@@ -1400,7 +1455,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $mx = ''; if (isset($in['metrics']) && is_array($in['metrics'])) { $ks = fup_topic_metrics(['source' => '', 'metrics' => implode(',', array_map('strval', $in['metrics']))]); $source = $ks ? $ks[0] : ''; $mx = implode(',', array_slice($ks, 1, 30)); }   // the first ticked number is the main one
             $unit = $source !== '' ? '' : trim(mb_substr((string)($in['unit'] ?? ''), 0, 12));
             $needText = !empty($in['need_text']) ? 1 : 0; $fieldsIn = array_key_exists('fields', $in) ? $in['fields'] : null; $note = trim(mb_substr((string)($in['note'] ?? ''), 0, 1000)); $lag = !empty($in['lag']) ? 1 : 0;
-            $was = 0;
+            $was = 0; $minW = max(0, min(500, (int)($in['min_words'] ?? 0)));
             if ($id > 0) { $t = $topicRow($id); $was = (int)$t['assignee_emp']; $pdo->prepare("UPDATE fu_topics SET title = ?, kind = ?, due_date = ?, assignee_emp = ?, source = ?, note = ?, unit = ?, `lag` = ?, metrics = ?, need_text = ? WHERE id = ?")->execute([$title, $kind, $due, $emp, $source, $note, $unit, $lag, $mx, $needText, $id]); $sid = (int)$t['section_id'];
                 if ($fieldsIn !== null) $pdo->prepare("UPDATE fu_topics SET `fields` = ? WHERE id = ?")->execute([json_encode(fup_fields_clean($fieldsIn, fup_fields($t)), JSON_UNESCAPED_UNICODE), $id]); }
             else {
@@ -1408,6 +1463,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                 $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, status, sort_no, active, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 1, ?, ?)")->execute([$sid, $title, $kind, $due, $emp, $source, $note, $unit, $lag, $mx, $needText, $sn, $w['emp'], fup_now()]); $id = (int)$pdo->lastInsertId();
                 if ($fieldsIn !== null) $pdo->prepare("UPDATE fu_topics SET `fields` = ? WHERE id = ?")->execute([json_encode(fup_fields_clean($fieldsIn), JSON_UNESCAPED_UNICODE), $id]);
             }
+            if (array_key_exists('min_words', $in)) { try { $pdo->prepare("UPDATE fu_topics SET min_words = ? WHERE id = ?")->execute([$minW, $id]); } catch (Throwable $e) { } }
             if ($source !== '') {   // the last 7 days are filled at once, so the sheet (and Claude) can compare from the first day
                 try { $tt = $topicRow($id); $td = fup_today($pdo); for ($i = 0; $i < 7; $i++) { $d = date('Y-m-d', strtotime($td . ' -' . $i . ' day')); $v = fup_source_val($pdo, $source, $d); if ($v !== null) { $q0 = $pdo->prepare("SELECT val, auto FROM fu_updates WHERE topic_id = ? AND day = ?"); $q0->execute([$id, $d]); $r0 = $q0->fetch(); if ($r0 ? ($r0['val'] === null || (int)$r0['auto'] === 1) : ($v != 0.0 || $d === $td)) fup_put($pdo, $id, $d, ['val' => $v, 'auto' => 1]); } if ($mx !== '') fup_fetch_extra($pdo, $tt, $d); } } catch (Throwable $e) { error_log('fup backfill: ' . $e->getMessage()); }
             }
@@ -1432,20 +1488,58 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
         }
 
         case 'fup.jaimin_board': {   // the Jaimin section: every section's decision of each day side by side, and his own final decision. Admin / HR only.
-            if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can open the Jaimin section.'], 403);
-            $secs = fup_my_sections($pdo, $w); $today = fup_today($pdo); $n = max(3, min(31, (int)($_GET['days'] ?? 7))); $days = fup_days($today, $n);
+            $FL = fup_jaimin_follower($pdo); $isFl = $w['emp'] > 0 && $FL['id'] === $w['emp'];
+            if (!$w['manager'] && !$isFl) json_response(['error' => 'Only the Admin, HR or ' . ($FL['name'] !== '' ? $FL['name'] : 'the follow-up person') . ' can open the Jaimin section.'], 403);
+            $secs = []; foreach ($pdo->query("SELECT * FROM fu_sections WHERE active = 1 ORDER BY sort_no, id")->fetchAll() as $s) $secs[(int)$s['id']] = $s; $today = fup_today($pdo); $n = max(3, min(31, (int)($_GET['days'] ?? 7))); $days = fup_days($today, $n);
             $list = []; foreach ($secs as $s) $list[] = ['id' => (int)$s['id'], 'name' => (string)$s['name']];
             $J = fup_jaimin($pdo, array_merge([0], array_keys($secs)), end($days), $today); $o = []; foreach ($J as $k => $v) $o[(string)$k] = $v;
-            json_response(['today' => $today, 'days' => $days, 'sections' => $list, 'jaimin' => (object)$o]);
+            json_response(['today' => $today, 'days' => $days, 'sections' => $list, 'jaimin' => (object)$o, 'follower' => $FL, 'can_write' => $w['manager'], 'can_reply' => $w['manager'] || $isFl, 'topics' => array_map(function ($r) { return ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'section_id' => (int)$r['section_id']]; }, $pdo->query("SELECT id, title, section_id FROM fu_topics WHERE active = 1 AND status <> 'done' ORDER BY section_id, sort_no, id")->fetchAll()), 'open' => fup_jaimin_open($pdo, $today)]);
         }
         case 'fup.jaimin_save': {    // one note a section a day (section 0 = the final decision); an empty note removes it
             $needMgr(); $in = json_input(); $sid = (int)($in['section_id'] ?? 0); if ($sid !== 0) $secRow($sid);
             $today = fup_today($pdo); $day = (string)($in['day'] ?? $today); if (!fup_is_day($day)) $day = $today;
             if ($day > $today) json_response(['error' => 'You cannot write a decision for a day that has not come yet.'], 422);
             $txt = trim(mb_substr((string)($in['text'] ?? ''), 0, 4000));
-            $pdo->prepare("DELETE FROM fu_jaimin WHERE section_id = ? AND day = ?")->execute([$sid, $day]);
-            if ($txt !== '') $pdo->prepare("INSERT INTO fu_jaimin (section_id, day, txt, emp_name, updated_at) VALUES (?, ?, ?, ?, ?)")->execute([$sid, $day, $txt, mb_substr($w['name'], 0, 120), fup_now()]);
+            $q = $pdo->prepare("SELECT COUNT(*) FROM fu_jaimin WHERE section_id = ? AND day = ?"); $q->execute([$sid, $day]); $has = (int)$q->fetchColumn() > 0;
+            if ($txt === '') $pdo->prepare("DELETE FROM fu_jaimin WHERE section_id = ? AND day = ?")->execute([$sid, $day]);
+            elseif ($has) $pdo->prepare("UPDATE fu_jaimin SET txt = ?, emp_name = ?, updated_at = ? WHERE section_id = ? AND day = ?")->execute([$txt, mb_substr($w['name'], 0, 120), fup_now(), $sid, $day]);   // the follow-up person's update under it stays
+            else $pdo->prepare("INSERT INTO fu_jaimin (section_id, day, txt, emp_name, updated_at) VALUES (?, ?, ?, ?, ?)")->execute([$sid, $day, $txt, mb_substr($w['name'], 0, 120), fup_now()]);
             json_response(['ok' => true, 'section_id' => $sid, 'day' => $day, 'text' => $txt]);
+        }
+        case 'fup.jaimin_reply': {   // the follow-up person (Rahul) writes what he did on one of Jaimin's decisions; an empty text removes his update
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $FL = fup_jaimin_follower($pdo); if (!$w['manager'] && !($w['emp'] > 0 && $FL['id'] === $w['emp'])) json_response(['error' => 'Only ' . ($FL['name'] !== '' ? $FL['name'] : 'the follow-up person') . ' writes the update on Jaimin\'s decisions.'], 403);
+            $in = json_input(); $sid = (int)($in['section_id'] ?? 0); $day = (string)($in['day'] ?? ''); if (!fup_is_day($day)) json_response(['error' => 'Choose the day.'], 422);
+            $q = $pdo->prepare("SELECT txt FROM fu_jaimin WHERE section_id = ? AND day = ?"); $q->execute([$sid, $day]); $j = $q->fetchColumn();
+            if ($j === false || trim((string)$j) === '') json_response(['error' => 'Jaimin has not written a decision here yet.'], 422);
+            $txt = trim(mb_substr((string)($in['text'] ?? ''), 0, 4000));
+            $q = $pdo->prepare("SELECT r_extra FROM fu_jaimin WHERE section_id = ? AND day = ?"); $q->execute([$sid, $day]); $old = fup_jaimin_extra($q->fetchColumn());
+            $allSec = []; foreach ($pdo->query("SELECT id, name FROM fu_sections WHERE active = 1")->fetchAll() as $r) $allSec[(int)$r['id']] = (string)$r['name'];
+            $topics = $old['topics'];   // topics made earlier with this update stay listed; new rows are made now as real topics of that section
+            foreach (array_slice((array)($in['new_topics'] ?? []), 0, 20) as $nt) {
+                if (!is_array($nt)) continue; $ts = (int)($nt['section_id'] ?? 0); $tt = trim(mb_substr((string)($nt['title'] ?? ''), 0, 160)); if ($tt === '') continue;
+                if (!isset($allSec[$ts])) json_response(['error' => 'Choose the section for the new topic “' . $tt . '”.'], 422);
+                $te = (int)($nt['assignee_emp'] ?? 0); $who = ''; if ($te > 0) { $qq = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ?"); $qq->execute([$te]); $who = (string)$qq->fetchColumn(); if ($who === '') $te = 0; }
+                $qq = $pdo->prepare("SELECT COALESCE(MAX(sort_no), 0) + 1 FROM fu_topics WHERE section_id = ?"); $qq->execute([$ts]); $sn = (int)$qq->fetchColumn();
+                $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, ?, '', ?, '', 1, '', 0, 'open', ?, 1, ?, ?)")
+                    ->execute([$ts, $tt, $te, mb_substr('Added by ' . $w['name'] . ' on Jaimin\'s decision of ' . $day, 0, 255), $sn, $w['emp'], fup_now()]);
+                $topics[] = ['section_id' => $ts, 'section' => $allSec[$ts], 'title' => $tt, 'who' => $who, 'topic_id' => (int)$pdo->lastInsertId()];
+            }
+            $strict = $old['strict']; if (array_key_exists('strict', $in)) { $strict = []; $ids = array_values(array_unique(array_filter(array_map('intval', (array)$in['strict']))));
+                if ($ids) { $q = $pdo->query("SELECT t.id, t.title, t.section_id FROM fu_topics t WHERE t.active = 1 AND t.id IN (" . implode(',', array_slice($ids, 0, 60)) . ")"); foreach ($q->fetchAll() as $r) if (isset($allSec[(int)$r['section_id']])) $strict[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'section_id' => (int)$r['section_id'], 'section' => $allSec[(int)$r['section_id']]]; } }
+            // a topic Rahul makes is one he checks himself: it goes on his Strict list at once
+            $sIds = array_column($strict, 'id'); foreach ($topics as $tp) if ($tp['topic_id'] > 0 && !in_array($tp['topic_id'], $sIds, true)) { $strict[] = ['id' => $tp['topic_id'], 'title' => $tp['title'], 'section_id' => $tp['section_id'], 'section' => $tp['section']]; $sIds[] = $tp['topic_id']; }
+            $check = []; if (array_key_exists('check', $in)) { foreach ((array)$in['check'] as $cid) { $cid = (int)$cid; if (isset($allSec[$cid])) $check[$cid] = ['id' => $cid, 'name' => $allSec[$cid]]; } $check = array_values($check); } else $check = $old['check'];
+            if ($txt === '' && ($topics || $check || $strict)) json_response(['error' => 'Write the whole update too: what you did on this decision.'], 422);
+            $extra = ($topics || $check || $strict) ? json_encode(['topics' => $topics, 'check' => $check, 'strict' => $strict], JSON_UNESCAPED_UNICODE) : null;
+            $pdo->prepare("UPDATE fu_jaimin SET r_txt = ?, r_name = ?, r_at = ?, r_extra = ? WHERE section_id = ? AND day = ?")->execute([$txt === '' ? null : $txt, $txt === '' ? '' : mb_substr($w['name'], 0, 120), $txt === '' ? null : fup_now(), $extra, $sid, $day]);
+            json_response(['ok' => true, 'section_id' => $sid, 'day' => $day, 'text' => $txt]);
+        }
+        case 'fup.jaimin_follower': {   // the Admin / HR choose who works on Jaimin's decisions (0 = nobody)
+            $needMgr(); $id = (int)(json_input()['emp_id'] ?? 0);
+            if ($id > 0) { $q = $pdo->prepare("SELECT COUNT(*) FROM employees WHERE employee_id = ?"); $q->execute([$id]); if (!(int)$q->fetchColumn()) json_response(['error' => 'This person is not there.'], 404); }
+            setting_set($pdo, 'fup_jaimin_follower', (string)$id); $GLOBALS['FUP_NOCACHE'] = 1;
+            json_response(['ok' => true, 'follower' => fup_jaimin_follower($pdo)]);
         }
         case 'fup.update_save': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
@@ -1461,20 +1555,21 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             if ($defs) {
                 $q1 = $pdo->prepare("SELECT fvals FROM fu_updates WHERE topic_id = ? AND day = ?"); $q1->execute([(int)$t['id'], $day]); $fvNow = json_decode((string)$q1->fetchColumn(), true); if (!is_array($fvNow)) $fvNow = [];
                 foreach ($defs as $fd) {
-                    $k = $fd['k']; if ($fd['type'] === 'file' || !is_array($in['fields'] ?? null) || !array_key_exists($k, $in['fields'])) continue;   // a file comes through fup.file_put
+                    $k = $fd['k']; if (fup_is_upload((string)$fd['type']) || !is_array($in['fields'] ?? null) || !array_key_exists($k, $in['fields'])) continue;   // a file comes through fup.file_put
                     $v = trim((string)$in['fields'][$k]); $lb = '“' . $fd['label'] . '”';
                     if ($v !== '') {
                         if ($fd['type'] === 'num') { if (!is_numeric($v)) json_response(['error' => $lb . ' must be a number.'], 422); $v = (string)round((float)$v, 2); }
                         elseif ($fd['type'] === 'yesno') { $v = strtolower($v); if (!in_array($v, ['yes', 'no'], true)) json_response(['error' => 'Choose Yes or No for ' . $lb . '.'], 422); }
                         elseif ($fd['type'] === 'link') { if (!preg_match('#^https?://[^\s]+\.[^\s]+#i', $v)) json_response(['error' => $lb . ' must be a link that starts with https://'], 422); $v = mb_substr($v, 0, 500); }
                         elseif ($fd['type'] === 'choice') { if (!in_array($v, $fd['opts'], true)) json_response(['error' => 'Choose one of the list for ' . $lb . '.'], 422); }
-                        else $v = mb_substr($v, 0, 500);
+                        else { $v = mb_substr($v, 0, 2000); $mn = (int)($fd['min'] ?? 0); if ($mn > 0 && fup_words($v) < $mn) json_response(['error' => $lb . ': write at least ' . $mn . ' words. You wrote ' . fup_words($v) . '.'], 422); }
                     }
                     if ((string)($fvNow[$k] ?? '') !== $v || !array_key_exists($k, $fvNow)) { if ($v === '') unset($fvNow[$k]); else $fvNow[$k] = $v; $fvChanged = true; }
                 }
                 if ($fvChanged) $f['fvals'] = json_encode($fvNow, JSON_UNESCAPED_UNICODE);
             }
             if ($text === '' && !isset($f['val']) && !isset($f['pct']) && !$fvChanged && !array_filter($fvNow, 'fup_fval_set')) json_response(['error' => 'Write the update.'], 422);
+            $minW = (int)($t['min_words'] ?? 0); if ($minW > 0 && fup_words($text) < $minW) json_response(['error' => 'Write the update in detail: at least ' . $minW . ' words. You wrote ' . fup_words($text) . '.', 'min_words' => $minW], 422);
             $q0 = $pdo->prepare("SELECT txt, ai_verdict FROM fu_updates WHERE topic_id = ? AND day = ?"); $q0->execute([(int)$t['id'], $day]); $was = $q0->fetch();
             fup_put($pdo, (int)$t['id'], $day, $f);
             // Claude reads the update now. A vague one gets ONE question back to the person (never to the Admin editing somebody's row, never twice): the day counts as filled when it is answered.
@@ -1499,11 +1594,15 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             if (!fup_owns($sec, $w) && !($w['emp'] > 0 && (int)$t['assignee_emp'] === $w['emp'])) json_response(['error' => 'This topic is not given to you.'], 403);
             $today = fup_today($pdo); $day = (string)($_POST['day'] ?? $today); if (!fup_is_day($day) || $day > $today) json_response(['error' => 'Choose a day up to today.'], 422);
             if (!$w['manager'] && $day < date('Y-m-d', strtotime($today . (!empty($t['lag']) ? ' -2 day' : ' -1 day')))) json_response(['error' => 'Only today and yesterday can be written.'], 422);
-            $k = (string)($_POST['key'] ?? ''); $fd = null; foreach (fup_fields($t) as $x) if ($x['k'] === $k && $x['type'] === 'file') $fd = $x; if (!$fd) json_response(['error' => 'This field takes no file.'], 422);
-            $up = $_FILES['file'] ?? null; if (!$up || (int)($up['error'] ?? 1) !== 0 || !is_file((string)$up['tmp_name'])) json_response(['error' => 'The file did not arrive. Try again.'], 422);
-            if ((int)$up['size'] > 12 * 1024 * 1024) json_response(['error' => 'The file is bigger than 12 MB.'], 422);
-            $ext = strtolower(pathinfo((string)$up['name'], PATHINFO_EXTENSION)); $okExt = ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'txt', 'mp4'];
-            if (!in_array($ext, $okExt, true)) json_response(['error' => 'This kind of file is not allowed. Use a photo, PDF, Excel, Word, text or MP4 file.'], 422);
+            $k = (string)($_POST['key'] ?? ''); $fd = null; foreach (fup_fields($t) as $x) if ($x['k'] === $k && fup_is_upload((string)$x['type'])) $fd = $x; if (!$fd) json_response(['error' => 'This field takes no file.'], 422);
+            $up = $_FILES['file'] ?? null; $ue = (int)($up['error'] ?? 1);
+            if ($up && in_array($ue, [1, 2], true)) json_response(['error' => 'The file is bigger than the server takes (' . ini_get('upload_max_filesize') . '). Send a shorter video or a smaller file.'], 422);
+            if (!$up || $ue !== 0 || !is_file((string)$up['tmp_name'])) json_response(['error' => 'The file did not arrive. Try again.'], 422);
+            $ft = (string)$fd['type']; $maxMb = $ft === 'video' ? 100 : 12;
+            if ((int)$up['size'] > $maxMb * 1024 * 1024) json_response(['error' => 'The file is bigger than ' . $maxMb . ' MB.'], 422);
+            $ext = strtolower(pathinfo((string)$up['name'], PATHINFO_EXTENSION));
+            $okExt = $ft === 'photo' ? ['jpg', 'jpeg', 'png', 'webp', 'heic'] : ($ft === 'video' ? ['mp4', 'mov', 'webm', '3gp', 'm4v'] : ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'txt', 'mp4']);
+            if (!in_array($ext, $okExt, true)) json_response(['error' => $ft === 'photo' ? 'Send a photo (JPG, PNG, WEBP or HEIC).' : ($ft === 'video' ? 'Send a video (MP4, MOV, WEBM or 3GP).' : 'This kind of file is not allowed. Use a photo, PDF, Excel, Word, text or MP4 file.')], 422);
             $dir = fup_file_dir(); if (!is_dir($dir)) @mkdir($dir, 0775, true); if (!is_dir($dir) || !is_writable($dir)) json_response(['error' => 'The server cannot save files in uploads/followup.'], 500);
             $name = 'fu_' . (int)$t['id'] . '_' . str_replace('-', '', $day) . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
             if (!@move_uploaded_file((string)$up['tmp_name'], $dir . $name) && !@copy((string)$up['tmp_name'], $dir . $name)) json_response(['error' => 'Could not save the file on the server.'], 500);
@@ -1518,9 +1617,9 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $q1 = $pdo->prepare("SELECT fvals FROM fu_updates WHERE topic_id = ? AND day = ?"); $q1->execute([(int)$t['id'], (string)($_GET['day'] ?? '')]); $fv = json_decode((string)$q1->fetchColumn(), true);
             $v = is_array($fv) ? ($fv[(string)($_GET['key'] ?? '')] ?? null) : null; $fn = is_array($v) ? basename((string)($v['f'] ?? '')) : '';
             if ($fn === '' || !is_file(fup_file_dir() . $fn)) json_response(['error' => 'The file is not there.'], 404);
-            $ct = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'pdf' => 'application/pdf', 'mp4' => 'video/mp4', 'txt' => 'text/plain; charset=utf-8', 'csv' => 'text/csv; charset=utf-8'][strtolower(pathinfo($fn, PATHINFO_EXTENSION))] ?? 'application/octet-stream';
+            $ct = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'pdf' => 'application/pdf', 'mp4' => 'video/mp4', 'm4v' => 'video/mp4', 'mov' => 'video/quicktime', 'webm' => 'video/webm', '3gp' => 'video/3gpp', 'heic' => 'image/heic', 'txt' => 'text/plain; charset=utf-8', 'csv' => 'text/csv; charset=utf-8'][strtolower(pathinfo($fn, PATHINFO_EXTENSION))] ?? 'application/octet-stream';
             header('Content-Type: ' . $ct); header('X-Content-Type-Options: nosniff'); header('Cache-Control: private, max-age=3600'); header('Content-Length: ' . filesize(fup_file_dir() . $fn));
-            header('Content-Disposition: ' . (strpos($ct, 'image/') === 0 || $ct === 'application/pdf' || $ct === 'video/mp4' ? 'inline' : 'attachment') . '; filename="' . preg_replace('/[^A-Za-z0-9._ -]/', '_', (string)($v['n'] ?? $fn)) . '"');
+            header('Content-Disposition: ' . (strpos($ct, 'image/') === 0 || $ct === 'application/pdf' || strpos($ct, 'video/') === 0 ? 'inline' : 'attachment') . '; filename="' . preg_replace('/[^A-Za-z0-9._ -]/', '_', (string)($v['n'] ?? $fn)) . '"');
             readfile(fup_file_dir() . $fn); exit;
         }
         case 'fup.suggest': {   // Claude proposes the set-up of a topic from its name and the owner's description; nothing is saved until the owner presses Save

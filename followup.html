@@ -93,6 +93,22 @@
   .fu-t td.jm.fin,.fu-t th.jm.fin{background:#ede9fe !important;border-left:0;border-right:2px solid #a78bfa;}
   .fu-jm{white-space:pre-wrap;word-break:break-word;line-height:1.4;font-size:13px;color:#2e1065;} .fu-jadd{color:#7c3aed;font-weight:700;font-size:12px;}
   .fu-jcard{background:#f5f3ff;border:1px solid #ddd6fe;border-radius:14px;padding:10px 12px;margin-top:8px;} .fu-jcard .d{font-size:11.5px;font-weight:800;color:#6d28d9;}
+  .fu-pill.jdone:not(.on){background:#dcfce7;border-color:#86efac;}
+  /* what Rahul checks himself (a whole section or one topic): light brown */
+  .fu-t th.rk,.fu-t td.rk{background:#f3e7d9 !important;} .fu-t td.c.rk.td{background:#efdfcb !important;} .fu-t tr.rk td{background:#f6ece0 !important;} .fu-mc.rk,.fu-mday.rk{background:#f6ece0;border-color:#e2c9a8;}
+  .fu-tag.brn{background:#ead6bd;color:#6b4423;} .fu-pill.rkp:not(.on){border-color:#c9a37a;box-shadow:inset 0 -3px 0 #d9b994;}
+  .fu-ck2 details{border:1px solid var(--line);border-radius:12px;padding:6px 10px;margin-bottom:6px;} .fu-ck2 summary{cursor:pointer;font-weight:700;font-size:13.5px;} .fu-ck2 .ws{display:flex;align-items:center;gap:6px;margin:6px 0;font-weight:700;color:#6b4423;font-size:13px;} .fu-ck2 .tp{display:flex;flex-wrap:wrap;gap:6px;}
+  .fu-ck2 .tp label{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer;} .fu-ck2 input{margin:0;} .fu-ed{border:0;background:none;color:#5b3fd1;font-weight:700;font-size:12px;cursor:pointer;padding:0 4px;} .fu-ck2 summary .fu-ed{margin-left:8px;}
+  .bd-modal .acts.fu-stk{position:sticky;bottom:-24px;background:#fff;padding:10px 0 6px;margin-top:8px;z-index:3;border-top:1px solid #f0f1f3;}
+  .fu-mx{display:flex;align-items:center;gap:8px;} .fu-mx .sp{flex:1;} .fu-cls{border:0;background:#f3f4f6;width:34px;height:34px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer;color:#4a505c;flex:none;} .fu-cls:hover{background:#e5e7eb;}
+  .fu-err{color:#b42318;background:#fde8e6;border-radius:10px;padding:8px 10px;font-size:13px;font-weight:700;margin-top:8px;display:none;}
+  .fu-rx{margin-top:5px;font-size:12px;line-height:1.45;color:#344054;} .fu-rx b{color:#0f7a4d;}
+  .fu-ck{display:flex;flex-wrap:wrap;gap:6px;} .fu-ck label{display:inline-flex;align-items:center;gap:5px;font-size:13px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;cursor:pointer;} .fu-ck input{margin:0;}
+  .fu-nt{display:grid;grid-template-columns:1fr 1.4fr 1fr auto;gap:6px;margin-bottom:6px;} .fu-nt .bd-in{padding:8px 10px;font-size:14px;} .fu-nt .x{border:0;background:none;font-size:18px;cursor:pointer;color:#9aa1ac;}
+  @media (max-width:820px){ .fu-nt{grid-template-columns:1fr 1fr;} }   /* Jaimin wrote today's decision for this section */
+  .fu-rh{margin-top:7px;padding:6px 8px;border-radius:9px;background:#fff;border:1px dashed #c4b5fd;font-size:12.5px;} .fu-rh .l{font-size:10.5px;font-weight:800;color:#0f7a4d;text-transform:uppercase;letter-spacing:.03em;}
+  .fu-rh.no{border-color:#f5c46b;background:#fffbeb;} .fu-rh.no .l{color:#b45309;} .fu-rh .tx{white-space:pre-wrap;word-break:break-word;color:#14161a;line-height:1.4;}
+  #jmPill{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:7px 16px;} #jmPill small{font-size:10.5px;font-weight:600;opacity:.75;}
   .fu-pill.jm{border-color:#c4b5fd;color:#5b3fd1;} .fu-pill.jm.on{background:#5b3fd1;color:#fff;border-color:#5b3fd1;}
   @media (max-width:820px){
     /* one tidy grid for every card head: the name (and the boss) across, the controls in two equal columns under it */
@@ -133,7 +149,7 @@ guardPage(); renderSidebar('followup');
   try { api.swrAdd('fup.board', 0); } catch (e) { /* older api.js */ }   // the sheet is always asked fresh: an update somebody else just wrote must show at once, never a remembered copy
   let ALL = true, OPEN_D = '', OWN_NOW = false; try { ALL = localStorage.getItem('fup_all') !== '0' && !new URLSearchParams(location.search).get('s'); } catch (e) { ALL = true; }
   let OPEN_U = 0; try { OPEN_U = Number(new URLSearchParams(location.search).get('u')) || 0; } catch (e) { OPEN_U = 0; }
-  let JV = false, JD = null;   // the Jaimin section (Admin / HR): every section's decision of a day + the final one
+  let JV = false, JD = null, OPEN_EDIT = 0;   // the Jaimin section (Admin / HR): every section's decision of a day + the final one
   let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true, PERS = '', LASTSEC = -1, CK = '';
   try { CK = localStorage.getItem('fup_ck') || ''; } catch (e) { CK = ''; }
   let PREF = null; try { PREF = localStorage.getItem('fup_side'); } catch (e) { PREF = null; }   // nothing chosen yet: a section with many topics (like a Dispatch sheet) opens as topics down, days across
@@ -150,6 +166,7 @@ guardPage(); renderSidebar('followup');
   const numTxt = (t, u) => { if (!(u && u.val != null)) return extras(u); const so = t.source && srcOf(t.source), many = t.metrics && t.metrics.length > 1;
     return '<div class="fu-num">' + (many && so ? '<small style="font-size:11px;display:block">' + esc(short(so.label)) + '</small>' : '') + fmt(u.val, t.unit) + (u.auto ? ' <small>from the system</small>' : '') + '</div>' + extras(u); };
   const canDay = (t, d) => t.can_write && t.status !== 'done' && (D.manager || d >= D.days[t.lag ? 2 : 1] || d === D.today);
+  const isUp = (ty) => ty === 'file' || ty === 'photo' || ty === 'video';   // fields that take an upload
   const fset = (v) => (v && typeof v === 'object' ? !!v.f : String(v == null ? '' : v).trim() !== '');
   const missing = (t, u) => t.fields.filter((f) => f.req && !fset(u && u.f ? u.f[f.k] : null));
   const covered = (t, d) => { const u = t.updates[d]; if (!u) return false; if (t.fields.some((f) => f.req)) return !missing(t, u).length && !u.q && (!t.need_text || !!u.text);
@@ -157,7 +174,7 @@ guardPage(); renderSidebar('followup');
   const fileUrl = (t, d, k) => api.buildUrl('fup.file', { topic_id: t.id, day: d, key: k, token: api.token() });
   // the owner's own fields of a row: label on the left, what was filled on the right (a link opens, a file opens, yes / no is coloured)
   const fvals = (t, d, u) => { if (!t.fields.length || !u) return ''; const rows = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null; if (!fset(v)) return f.req ? '<span>' + esc(f.label) + '</span><b style="color:#b45309">not filled</b>' : '';
-      const show = f.type === 'file' ? '<a href="' + esc(fileUrl(t, d, f.k)) + '" target="_blank" rel="noopener" data-stop="1">📎 ' + esc(v.n || 'file') + '</a>' : f.type === 'link' ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer" data-stop="1">🔗 open</a>' : f.type === 'yesno' ? '<b style="color:' + (v === 'yes' ? '#16945a' : '#d9423b') + '">' + (v === 'yes' ? 'Yes' : 'No') + '</b>' : f.type === 'num' ? '<b>' + Number(v).toLocaleString('en-IN') + '</b>' : '<b style="font-weight:600;white-space:normal">' + esc(v) + '</b>';
+      const show = isUp(f.type) ? '<a href="' + esc(fileUrl(t, d, f.k)) + '" target="_blank" rel="noopener" data-stop="1">' + (f.type === 'photo' ? '📷 photo' : f.type === 'video' ? '🎥 video' : '📎 ' + esc(v.n || 'file')) + '</a>' : f.type === 'link' ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer" data-stop="1">🔗 open</a>' : f.type === 'yesno' ? '<b style="color:' + (v === 'yes' ? '#16945a' : '#d9423b') + '">' + (v === 'yes' ? 'Yes' : 'No') + '</b>' : f.type === 'num' ? '<b>' + Number(v).toLocaleString('en-IN') + '</b>' : '<b style="font-weight:600;white-space:normal">' + esc(v) + '</b>';
       return '<span>' + esc(f.label) + '</span>' + show; }).join(''); return rows ? '<div class="fu-vals fu-fv">' + rows + '</div>' : ''; };
   // who to call: name (+ title) with a Call and a WhatsApp button when the phone is recorded on the employee
   const person = (id) => (D.people && D.people[id]) || null;
@@ -165,9 +182,22 @@ guardPage(); renderSidebar('followup');
   const callBtns = (id) => { const p = person(id), n = telOf(p); if (!p) return ''; return n ? '<span class="fu-callg"><a class="fu-call" href="tel:+' + n + '" data-stop="1" title="Call ' + esc(p.name) + '">📞 Call</a><a class="fu-call wa" href="https://wa.me/' + n + '" target="_blank" rel="noopener" data-stop="1" title="WhatsApp ' + esc(p.name) + '">WhatsApp</a></span>' : '<span class="fu-call off" title="This person has no mobile number on the Employees page">no mobile on the employee</span>'; };
   const sec = () => D.sections.find((s) => s.id === D.section) || null;
   // Jaimin's note of one section on one day (sid 0 = the final decision): the words, or "+ write" for the Admin / HR
-  const jcell = (map, d) => { const j = map && map[d]; if (j && j.text) return '<div class="fu-jm">' + esc(j.text) + '</div><div class="fu-by">' + esc(j.by || '') + '</div>';
+  // Rahul checks this himself: the whole section, or this one topic (Strict)
+  const rk = (t) => !!(D.rahul_strict && D.rahul_strict[t.id]) || !!(D.rahul_checks && t.section_id && D.rahul_checks[t.section_id]);
+  const flName = () => (D.follower && D.follower.name ? String(D.follower.name).split(' ')[0] : 'Rahul');
+  // under each decision: what the follow-up person (Rahul) did on it, or that he has not written yet
+  const rextra = (x) => { if (!x) return ''; let h = '';
+    if (x.topics && x.topics.length) h += '<div class="fu-rx"><b>＋ New topics:</b><br>' + x.topics.map((t) => '• ' + esc(t.section) + ' → ' + esc(t.title) + (t.who ? ' (' + esc(t.who) + ')' : '')).join('<br>') + '</div>';
+    if (x.check && x.check.length) h += '<div class="fu-rx"><b style="color:#6b4423">🔍 Checks the whole section:</b> ' + x.check.map((c) => esc(c.name)).join(', ') + '</div>';
+    if (x.strict && x.strict.length) h += '<div class="fu-rx"><b style="color:#6b4423">🔍 Strict topics:</b><br>' + x.strict.map((c) => '• ' + esc(c.section) + ' → ' + esc(c.title)).join('<br>') + '</div>'; return h; };
+  // the Admin login can write Rahul's update too: the box opens Rahul's own form (data-rh)
+  const rcell = (j, sid, d) => { const rh = D.jaimin_write && sid != null ? ' data-rh="' + sid + '|' + d + '" style="cursor:pointer" title="Write ' + esc(flName()) + '’s update"' : '';
+    return (j.reply ? '<div class="fu-rh"' + rh + '><div class="l">✓ ' + esc(flName()) + '’s update</div><div class="tx">' + esc(j.reply) + '</div>' + rextra(j.extra) + '<div class="fu-by">' + esc(j.reply_by || '') + '</div>' + (rh ? '<div class="fu-jadd">✍ Change ' + esc(flName()) + '’s update</div>' : '') + '</div>'
+    : '<div class="fu-rh no"' + rh + '><div class="l">' + esc(flName()) + '’s update</div>' + (D.jaimin_follow ? '<div class="fu-jadd">+ Write your update</div>' : rh ? '<div class="fu-jadd">✍ Write ' + esc(flName()) + '’s update</div>' : '<div class="fu-by" style="margin:0">not written yet</div>') + '</div>'); };
+  const jcell = (map, d, sid) => { const j = map && map[d]; if (j && j.text) return '<div class="fu-jm">' + esc(j.text) + '</div><div class="fu-by">' + esc(j.by || '') + '</div>' + rcell(j, sid, d);
     return D.jaimin_write ? '<div class="fu-jadd">+ What did you decide?</div>' : '<span class="fu-none">—</span>'; };
-  const jtd = (sid, map, d, fin) => '<td class="jm' + (fin ? ' fin' : '') + (D.jaimin_write ? ' w" data-jm="' + sid + '|' + d : '') + '">' + jcell(map, d) + '</td>';
+  const jClick = (map, d) => D.jaimin_write || (D.jaimin_reply && map && map[d] && map[d].text);
+  const jtd = (sid, map, d, fin) => '<td class="jm' + (fin ? ' fin' : '') + (jClick(map, d) ? ' w" data-jm="' + sid + '|' + d : '') + '">' + jcell(map, d, sid) + '</td>';
   const JH = '🧭 Jaimin decided<div class="fu-sub" style="font-weight:600;color:#7c3aed">after reading the day’s tasks</div>';
 
   async function load(keep) {
@@ -176,8 +206,10 @@ guardPage(); renderSidebar('followup');
       D = await api.get('fup.board', { section: SID || '', days: DAYS, all: ALL ? 1 : '' }); if (!D.all || D.sections.length < 2) ALL = false;
       SID = D.section || 0; try { if (SID) localStorage.setItem('fup_sec', String(SID)); } catch (e) { /* private mode */ }
       D.allTopics = D.topics; if (D.section !== LASTSEC) { PERS = ''; LASTSEC = D.section; }
-      if (JV && D.manager) { try { JD = await api.get('fup.jaimin_board', { days: DAYS }); } catch (e) { JV = false; toast(e.message || 'Could not open the Jaimin section.'); } } else JV = false;
+      if (D.jaimin_follow && !D.manager && !D.sections.length) JV = true;   // the follow-up person with no section of his own: the Jaimin section is his page
+      if (JV && (D.manager || D.jaimin_follow)) { try { JD = await api.get('fup.jaimin_board', { days: DAYS }); } catch (e) { JV = false; toast(e.message || 'Could not open the Jaimin section.'); } } else JV = false;
       render();
+      if (OPEN_EDIT) { const te = D.topics.find((x) => x.id === OPEN_EDIT); OPEN_EDIT = 0; if (te && D.manager) topicForm(te); }
       if (OPEN_U) { const tu = D.topics.find((x) => x.id === OPEN_U); OPEN_U = 0; const od = OPEN_D; OPEN_D = ''; if (tu && tu.can_write && tu.status !== 'done') writeUp(tu.id, od || tu.due_day); }
     } catch (e) { $('root').innerHTML = '<div class="bd-empty"><b>Could not open Follow-up</b>' + esc(e.message || '') + '</div>'; }
     $('root').style.opacity = '1';
@@ -193,6 +225,8 @@ guardPage(); renderSidebar('followup');
     const so = t.source && D.sources.find((x) => x.key === t.source);
     if (so && t.metrics.length > 1) h += '<a class="fu-tag pur" href="' + esc(so.page) + '" target="_top" style="text-decoration:none">🔗 Auto · ' + t.metrics.length + ' numbers from the HRMS</a>' + (t.need_text ? '<span class="fu-tag">+ summary by the person</span>' : '');
     else if (so) h += '<a class="fu-tag pur" href="' + esc(so.page) + '" target="_top" style="text-decoration:none" title="Open ' + esc(so.group) + '">🔗 Auto · ' + esc(so.group) + ' · ' + esc(so.label) + '</a>';
+    if (t.min_words) h += '<span class="fu-tag">✍ at least ' + t.min_words + ' words</span>';
+    if (rk(t)) h += '<span class="fu-tag brn">🔍 ' + esc(flName()) + ' checks this himself</span>';
     return '<div class="fu-tags">' + h + '</div>';
   }
   // Claude's check of this one update: a question that is still open, a remark, or a small tick
@@ -226,12 +260,12 @@ guardPage(); renderSidebar('followup');
   function render() {
     if (D.allTopics) D.topics = PERS === '' ? D.allTopics : D.allTopics.filter((t) => (t.assignee_emp > 0 ? String(t.assignee_emp) : 'none') === PERS);   // the chips of people inside one section
     const s = sec(), OV = D.overview || { late: [], empty: [], by_section: {} }; OWN_NOW = !!(s && s.own);
-    let h = attention(OV) + '<div class="fu-pills">' + (D.manager && D.sections.length ? '<button class="fu-pill jm' + (JV ? ' on' : '') + '" id="jmPill"><span class="pn">🧭 Jaimin</span></button>' : '') + (D.sections.length > 1 ? '<button class="fu-pill' + (ALL && !JV ? ' on' : '') + '" id="allPill">All sections</button>' : '') + D.sections.map((x) => '<button class="fu-pill' + (!ALL && !JV && x.id === D.section ? ' on' : '') + '" data-sec="' + x.id + '"><span class="pn">' + esc(x.name) + (OV.by_section[x.id] ? '<em class="fu-n">' + OV.by_section[x.id] + '</em>' : '') + '</span><small>' + (x.owner ? 'Boss: ' + esc(x.owner) : 'Boss: not set') + '</small></button>').join('') + (D.manager ? '<button class="fu-pill add" id="secAdd">＋ New section</button>' : '') + '</div>';
+    let h = attention(OV) + '<div class="fu-pills">' + ((D.manager && D.sections.length) || D.jaimin_follow ? '<button class="fu-pill jm' + (JV ? ' on' : '') + '" id="jmPill"><span class="pn">🧭 Jaimin</span>' + (D.jaimin_follow ? '<small>' + esc(flName()) + '’s list</small>' : '') + '</button>' : '') + (D.sections.length > 1 ? '<button class="fu-pill' + (ALL && !JV ? ' on' : '') + '" id="allPill">All sections</button>' : '') + D.sections.map((x) => '<button class="fu-pill' + (!ALL && !JV && x.id === D.section ? ' on' : '') + (D.rahul_any && D.rahul_any[x.id] ? ' rkp' : '') + (D.jaimin_today && D.jaimin_today[x.id] ? ' jdone" title="Jaimin wrote a decision for this section today' : '') + '" data-sec="' + x.id + '"><span class="pn">' + (D.rahul_any && D.rahul_any[x.id] ? '🔍 ' : '') + esc(x.name) + (OV.by_section[x.id] ? '<em class="fu-n">' + OV.by_section[x.id] + '</em>' : '') + '</span><small>' + (x.owner ? 'Boss: ' + esc(x.owner) : 'Boss: not set') + '</small></button>').join('') + (D.manager ? '<button class="fu-pill add" id="secAdd">＋ New section</button>' : '') + '</div>';
     if (JV && JD) { $('root').innerHTML = h + jView(); bind(); return; }
     if (ALL && s) { $('root').innerHTML = h + allView(); bind(); return; }
     if (!s) { $('root').innerHTML = h + '<div class="bd-empty"><b>Nothing here for you yet</b>' + (D.manager ? 'Make the first section with “＋ New section”.' : 'When a topic or a section is given to you, it shows here and on My Day.') + '</div>'; bind(); return; }
     const open = D.topics.filter((t) => t.status !== 'done'), got = open.filter((t) => covered(t, t.due_day) || t.due_day < t.created).length, red = D.checks.filter((c) => c.level === 'red').length;
-    h += '<div class="fu-card"><div class="fu-head"><div><h2>' + esc(s.name) + '</h2><div style="margin-top:4px;display:flex;align-items:center;flex-wrap:wrap;gap:4px">' + (s.owner_emp && person(s.owner_emp) ? '<span class="fu-bossline">Boss: <b>' + esc(person(s.owner_emp).name) + '</b>' + (person(s.owner_emp).title ? ' · ' + esc(person(s.owner_emp).title) : '') + '</span>' + callBtns(s.owner_emp)
+    h += '<div class="fu-card"><div class="fu-head"><div><h2>' + esc(s.name) + (D.rahul_checks && D.rahul_checks[s.id] ? ' <span class="fu-tag brn" style="vertical-align:middle">🔍 ' + esc(flName()) + ' checks this whole section himself</span>' : (D.rahul_any && D.rahul_any[s.id] ? ' <span class="fu-tag brn" style="vertical-align:middle">🔍 ' + esc(flName()) + ' checks some topics himself</span>' : '')) + '</h2><div style="margin-top:4px;display:flex;align-items:center;flex-wrap:wrap;gap:4px">' + (s.owner_emp && person(s.owner_emp) ? '<span class="fu-bossline">Boss: <b>' + esc(person(s.owner_emp).name) + '</b>' + (person(s.owner_emp).title ? ' · ' + esc(person(s.owner_emp).title) : '') + '</span>' + callBtns(s.owner_emp)
       : (s.owner ? '<span class="fu-bossline">' + (s.owner_dept ? 'Given to: ' : 'Boss: ') + '<b>' + esc(s.owner) + '</b></span>' : '<span class="fu-bossline" style="color:#b45309">⚠ Boss: not set</span>' + (D.manager ? '<button class="bd-btn sm" id="secBoss" style="margin-left:8px">Choose the boss</button>' : ''))) + '</div></div><span class="sp"></span>'
       + (D.sections.length > 1 ? '<button class="bd-btn sm" id="allBtn" title="Every section one under the other">☰ All sections</button>' : '') + '<select class="bd-in" id="daysSel" style="width:auto;padding:7px 10px;font-size:13px">' + [7, 14, 31].map((n) => '<option value="' + n + '"' + (n === DAYS ? ' selected' : '') + '>Last ' + n + ' days</option>').join('') + '</select>'
       + (D.topics.some((t) => t.can_write && t.status !== 'done') ? '<button class="bd-btn sm" id="addAny">＋ Add update / number</button>' : '') + (D.manager ? '<button class="bd-btn sm" id="secEdit">Section settings</button><button class="bd-btn sm pri" id="topAdd">＋ Topic</button>' : '') + '</div>'
@@ -251,20 +285,20 @@ guardPage(); renderSidebar('followup');
     else {
       // big screens: the Excel sheet. Default = topics side by side (one column a topic), one row a day; the switch turns it (topics down, days across).
       const th = (t) => '<div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t) + (D.manager ? '<div style="margin-top:6px"><button class="bd-btn sm" data-edit="' + t.id + '">Edit</button></div>' : '');
-      const td = (t, d) => '<td class="c' + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + (canDay(t, d) ? ' w" data-up="' + t.id + '" data-day="' + d : '') + '">' + cell(t, d) + '</td>';
+      const td = (t, d) => '<td class="c' + (rk(t) ? ' rk' : '') + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + (canDay(t, d) ? ' w" data-up="' + t.id + '" data-day="' + d : '') + '">' + cell(t, d) + '</td>';
       if (PREF === null) SIDE = (D.allTopics || D.topics).length <= 8;
       h += '<div style="display:flex;justify-content:flex-end;margin:0 0 8px" class="fu-sw"><button class="bd-btn sm" id="flip">⇄ ' + (SIDE ? 'Show topics down, days across' : 'Show topics side by side') + '</button></div>';
       const JM = D.jaimin || null;   // Jaimin's layer of this section (null: this person does not see it)
-      if (SIDE) h += '<div class="fu-wrap"><table class="fu-t side"><thead><tr><th>' + esc(s.name) + '<div class="fu-sub" style="font-weight:600">Day</div></th>' + (JM ? '<th class="jm">' + JH + '</th>' : '') + D.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '">' + th(t) + '</th>').join('') + '</tr></thead><tbody>'
+      if (SIDE) h += '<div class="fu-wrap"><table class="fu-t side"><thead><tr><th>' + esc(s.name) + '<div class="fu-sub" style="font-weight:600">Day</div></th>' + (JM ? '<th class="jm">' + JH + '</th>' : '') + D.topics.map((t) => '<th class="tp' + (rk(t) ? ' rk' : '') + (t.status === 'done' ? ' dn' : '') + '">' + th(t) + '</th>').join('') + '</tr></thead><tbody>'
         + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + (JM ? jtd(D.section, JM, d) : '') + D.topics.map((t) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
       else h += '<div class="fu-wrap"><table class="fu-t"><thead><tr><th>Topic</th>' + D.days.map((d) => '<th class="' + (d === D.today ? 'td' : '') + '">' + esc(dayName(d, D.today)) + '</th>').join('') + '</tr></thead><tbody>'
         + (JM ? '<tr><td class="jm">' + JH + '</td>' + D.days.map((d) => jtd(D.section, JM, d)).join('') + '</tr>' : '')
-        + D.topics.map((t) => '<tr class="' + (t.status === 'done' ? 'done' : '') + '"><td>' + th(t) + '</td>' + D.days.map((d) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
+        + D.topics.map((t) => '<tr class="' + (t.status === 'done' ? 'done' : '') + (rk(t) ? ' rk' : '') + '"><td>' + th(t) + '</td>' + D.days.map((d) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
       // phones: one card a topic, today on top, the earlier days under it
       h += '<div class="fu-m">' + jPhone(D.section, JM) + D.topics.map((t) => {
         const dd = t.due_day, dn = dd === D.today ? 'today' : 'yesterday', w = canDay(t, dd), has = t.updates[dd] && t.updates[dd].text, prev = D.days[D.days.indexOf(dd) + 1];
         const past = D.days.filter((d) => d !== dd && t.updates[d] && (t.updates[d].text || t.updates[d].val != null));
-        return '<div class="fu-mc' + (t.status === 'done' ? ' done' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t)
+        return '<div class="fu-mc' + (t.status === 'done' ? ' done' : '') + (rk(t) ? ' rk' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t)
           + '<div class="fu-mday" style="margin-top:10px"><div class="d">' + esc(dayName(dd, D.today)) + '</div>' + cell(t, dd) + '</div>'
           + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">' + (w ? '<button class="bd-btn sm ' + (has ? '' : 'pri') + '" data-up="' + t.id + '" data-day="' + dd + '">' + (has ? 'Change ' + dn + '’s update' : 'Write ' + dn + '’s update') + '</button>' : '')
           + (prev && canDay(t, prev) && !(t.updates[prev] && t.updates[prev].text) ? '<button class="bd-btn sm" data-up="' + t.id + '" data-day="' + prev + '">Write the day before</button>' : '') + (D.manager ? '<button class="bd-btn sm" data-edit="' + t.id + '">Edit topic</button>' : '') + '</div>'
@@ -307,10 +341,10 @@ guardPage(); renderSidebar('followup');
       if (!a.topics.length) h += '<div class="fu-sub" style="margin-top:10px">No topics in this section yet.</div>';
       else {
         const jump = (t, d) => (canDay(t, d) ? ' w" data-jump="' + a.id + '|' + t.id + '|' + d : '');
-        h += '<div class="fu-wrap" style="margin-top:12px;border-radius:14px"><table class="fu-t side"><thead><tr><th>Day</th>' + (a.jaimin ? '<th class="jm">' + JH + '</th>' : '') + a.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '</th>').join('') + '</tr></thead><tbody>'
-          + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + (a.jaimin ? jtd(a.id, a.jaimin, d) : '') + a.topics.map((t) => '<td class="c' + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + jump(t, d) + '">' + cell(t, d) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+        h += '<div class="fu-wrap" style="margin-top:12px;border-radius:14px"><table class="fu-t side"><thead><tr><th>Day</th>' + (a.jaimin ? '<th class="jm">' + JH + '</th>' : '') + a.topics.map((t) => '<th class="tp' + (rk(t) ? ' rk' : '') + (t.status === 'done' ? ' dn' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '</th>').join('') + '</tr></thead><tbody>'
+          + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + (a.jaimin ? jtd(a.id, a.jaimin, d) : '') + a.topics.map((t) => '<td class="c' + (rk(t) ? ' rk' : '') + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + jump(t, d) + '">' + cell(t, d) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
         // phones: one line a topic with the row that is due
-        h += '<div class="fu-m" style="margin-top:10px">' + jPhone(a.id, a.jaimin, 2) + a.topics.map((t) => '<div class="fu-mday' + (canDay(t, t.due_day) ? '" data-jump="' + a.id + '|' + t.id + '|' + t.due_day : '') + '" style="cursor:pointer"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '<div class="d" style="margin-top:6px">' + esc(dayName(t.due_day, D.today)) + '</div>' + cell(t, t.due_day) + '</div>').join('') + '</div>';
+        h += '<div class="fu-m" style="margin-top:10px">' + jPhone(a.id, a.jaimin, 2) + a.topics.map((t) => '<div class="fu-mday' + (rk(t) ? ' rk' : '') + (canDay(t, t.due_day) ? '" data-jump="' + a.id + '|' + t.id + '|' + t.due_day : '') + '" style="cursor:pointer"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '<div class="d" style="margin-top:6px">' + esc(dayName(t.due_day, D.today)) + '</div>' + cell(t, t.due_day) + '</div>').join('') + '</div>';
       }
       h += '</div>';
     });
@@ -320,30 +354,84 @@ guardPage(); renderSidebar('followup');
   /* ---------------- Jaimin's layer on a phone: one purple card a day (today and the day before; the rest folded away) ---------------- */
   function jPhone(sid, map, n) {
     if (!map) return ''; const days = D.days.slice(0, n || D.days.length), show = days.filter((d, i) => i < 2 || (map[d] && map[d].text));
-    return '<div class="fu-jcard"><div class="fu-lb" style="color:#5b3fd1;margin-bottom:4px">🧭 Jaimin decided</div>' + show.map((d) => '<div class="fu-mday"' + (D.jaimin_write ? ' data-jm="' + sid + '|' + d + '" style="cursor:pointer"' : '') + '><div class="d">' + esc(dayName(d, D.today)) + '</div>' + jcell(map, d) + '</div>').join('') + '</div>';
+    return '<div class="fu-jcard"><div class="fu-lb" style="color:#5b3fd1;margin-bottom:4px">🧭 Jaimin decided</div>' + show.map((d) => '<div class="fu-mday"' + (jClick(map, d) ? ' data-jm="' + sid + '|' + d + '" style="cursor:pointer"' : '') + '><div class="d">' + esc(dayName(d, D.today)) + '</div>' + jcell(map, d, sid) + '</div>').join('') + '</div>';
   }
 
   /* ---------------- the Jaimin section (Admin / HR): a row a day — what he decided in each section, and in the first column his final decision after all of them ---------------- */
   function jView() {
     const J = JD.jaimin || {}, fin = J['0'] || {}, secs = JD.sections;
-    let h = '<div class="fu-card"><div class="fu-head"><div><h2>🧭 Jaimin</h2><div class="fu-sub">Every section’s decision of the day side by side. After reading all of them, write what you finally decided in the first column.</div></div><span class="sp"></span>'
+    let h = '<div class="fu-card"><div class="fu-head"><div><h2>🧭 Jaimin</h2><div class="fu-sub">Every section’s decision of the day side by side. After reading all of them, write what you finally decided in the first column. ' + esc(flName()) + ' writes his update under each one.</div>'
+      + '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + (JD.open ? '<span class="fu-tag amb" style="margin:0">' + JD.open + ' decision' + (JD.open === 1 ? '' : 's') + ' of the last 7 days without ' + esc(flName()) + '’s update</span>' : '<span class="fu-tag grn" style="margin:0">' + esc(flName()) + ' has updated every decision</span>')
+      + (D.manager ? '<span class="fu-sub" style="margin:0">Follow-up by: <b>' + esc(JD.follower && JD.follower.name ? JD.follower.name : 'nobody chosen') + '</b></span><button class="bd-btn sm" id="jFl">Change</button>' : '') + '</div></div><span class="sp"></span>'
       + '<select class="bd-in" id="daysJ" style="width:auto;padding:7px 10px;font-size:13px">' + [7, 14, 31].map((n) => '<option value="' + n + '"' + (n === DAYS ? ' selected' : '') + '>Last ' + n + ' days</option>').join('') + '</select></div></div>';
     h += '<div class="fu-wrap"><table class="fu-t side"><thead><tr><th>Day</th><th class="jm fin">✅ My final decision<div class="fu-sub" style="font-weight:600;color:#7c3aed">after every section’s decision</div></th>' + secs.map((x) => '<th class="jm"><a href="#" data-sec="' + x.id + '" style="color:inherit;text-decoration:none">' + esc(x.name) + '</a></th>').join('') + '</tr></thead><tbody>'
       + JD.days.map((d) => '<tr><td class="dy' + (d === JD.today ? ' td' : '') + '">' + esc(dayName(d, JD.today)) + '</td>' + jtd(0, fin, d, true) + secs.map((x) => jtd(x.id, J[String(x.id)] || {}, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
     // phones: one card a day — the final decision on top, the sections that have one under it
     h += '<div class="fu-m">' + JD.days.map((d, i) => { const got = secs.filter((x) => J[String(x.id)] && J[String(x.id)][d]); if (i > 1 && !got.length && !fin[d]) return '';
-      return '<div class="fu-mc"><div class="fu-tt">' + esc(dayName(d, JD.today)) + '</div><div class="fu-jcard" data-jm="0|' + d + '" style="cursor:pointer"><div class="d">✅ My final decision</div>' + jcell(fin, d) + '</div>'
-        + secs.map((x) => (got.includes(x) || i < 1) ? '<div class="fu-mday" data-jm="' + x.id + '|' + d + '" style="cursor:pointer"><div class="d">' + esc(x.name) + '</div>' + jcell(J[String(x.id)] || {}, d) + '</div>' : '').join('') + '</div>'; }).join('') + '</div>';
+      return '<div class="fu-mc"><div class="fu-tt">' + esc(dayName(d, JD.today)) + '</div><div class="fu-jcard"' + (jClick(fin, d) ? ' data-jm="0|' + d + '" style="cursor:pointer"' : '') + '><div class="d">✅ My final decision</div>' + jcell(fin, d, 0) + '</div>'
+        + secs.map((x) => (got.includes(x) || i < 1) ? '<div class="fu-mday"' + (jClick(J[String(x.id)], d) ? ' data-jm="' + x.id + '|' + d + '" style="cursor:pointer"' : '') + '><div class="d">' + esc(x.name) + '</div>' + jcell(J[String(x.id)] || {}, d, x.id) + '</div>' : '').join('') + '</div>'; }).join('') + '</div>';
     return h;
   }
-  function jaiminForm(sid, day) {
-    const name = sid === 0 ? 'My final decision' : ((D.sections.find((x) => x.id === sid) || {}).name || 'Section');
+  function jaiminForm(sid, day, asRahul) {
+    const name = sid === 0 ? 'My final decision' : (((JD && JD.sections) || []).concat(D.sections).find((x) => x.id === sid) || {}).name || 'Section';
     const cur = sid === 0 ? (JD && JD.jaimin['0'] || {})[day] : (JD && JV ? (JD.jaimin[String(sid)] || {})[day] : (sid === D.section && D.jaimin ? D.jaimin[day] : ((D.all || []).find((a) => a.id === sid) || {}).jaimin?.[day]));
-    const m = BD.modal('<h3>🧭 Jaimin decided</h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
+    if (!D.jaimin_write || asRahul) return replyForm(sid, day, name, cur);
+    const m = BD.modal('<h3 class="fu-mx">🧭 Jaimin decided<span class="sp"></span><button class="fu-cls" id="jC" type="button" title="Close">×</button></h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
       + '<div class="bd-f"><label>' + (sid === 0 ? 'After reading every section, what did you finally decide?' : 'After reading this section’s tasks, what did you decide?') + '</label><textarea class="bd-in" id="jT" maxlength="4000" rows="6" placeholder="What you decided, and who does what next…">' + esc(cur ? cur.text : '') + '</textarea><div class="hint">Leave it empty and Save to remove it.</div></div>'
-      + '<div class="acts"><button class="bd-btn" id="jX">Cancel</button><button class="bd-btn go" id="jOk">Save</button></div>', { sticky: true });
+      + (cur && cur.text ? '<div class="bd-f"><label>' + esc(flName()) + '’s update</label>' + (cur.reply ? '<div class="fu-rh"><div class="tx">' + esc(cur.reply) + '</div>' + rextra(cur.extra) + '<div class="fu-by">' + esc(cur.reply_by || '') + '</div></div>' : '<div class="fu-rh no"><div class="fu-by" style="margin:0">Not written yet.</div></div>') + '<button class="bd-btn sm" id="jRh" style="margin-top:6px">✍ ' + (cur.reply ? 'Change' : 'Write') + ' ' + esc(flName()) + '’s update</button></div>'
+        : '<div class="hint" style="margin-top:-4px">After you save, ' + esc(flName()) + ' writes his update under it from his own login.</div>')
+      + '<div class="acts fu-stk"><button class="bd-btn" id="jX">Cancel</button><button class="bd-btn go" id="jOk">Save</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i); q('#jT').focus(); q('#jX').onclick = () => BD.close();
+    q('#jC').onclick = () => BD.close();
+    if (q('#jRh')) q('#jRh').onclick = () => { BD.close(); replyForm(sid, day, name, cur); };
     q('#jOk').onclick = () => run(q('#jOk'), async () => { await api.post('fup.jaimin_save', { section_id: sid, day, text: q('#jT').value }); BD.close(); toast('Saved.'); await load(true); });
+  }
+
+  // the follow-up person (Rahul): Jaimin's words on top, his own update under it
+  // the follow-up person (Rahul): Jaimin's words on top; his whole update, the new topics he adds (they become real topics of that section) and the sections he will check himself
+  async function replyForm(sid, day, name, cur) {
+    if (!cur || !cur.text) return;
+    let SECS = [], P = { people: [] };
+    try { JD = await api.get('fup.jaimin_board', { days: DAYS }); SECS = JD.sections || []; } catch (e) { SECS = D.sections; }   // always fresh: a section or topic made a minute ago is in the list
+    try { P = await people(); } catch (e) { P = { people: [] }; }
+    const x = cur.extra || { topics: [], check: [], strict: [] }, chk = {}, stc = {}; (x.check || []).forEach((c) => { chk[c.id] = 1; }); (x.strict || []).forEach((c) => { stc[c.id] = 1; });
+    const TPS = (JD && JD.topics) || [];
+    const secOpts = '<option value="0">Section…</option>' + SECS.map((z) => '<option value="' + z.id + '"' + (z.id === sid ? ' selected' : '') + '>' + esc(z.name) + '</option>').join('');
+    const pplOpts = '<option value="0">Person (optional)</option>' + P.people.map((p) => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+    const ntRow = () => '<div class="fu-nt"><select class="bd-in nS">' + secOpts + '</select><input class="bd-in nT" maxlength="160" placeholder="New topic"><select class="bd-in nE">' + pplOpts + '</select><button class="x" type="button" title="Remove">×</button></div>';
+    const m = BD.modal('<h3 class="fu-mx">' + esc(flName()) + '’s update<span class="sp"></span><button class="fu-cls" id="rC" type="button" title="Close">×</button></h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
+      + '<div class="fu-jcard" style="margin:0 0 12px"><div class="d">🧭 Jaimin decided</div><div class="fu-jm">' + esc(cur.text) + '</div></div>'
+      + '<div class="bd-f"><label>Your whole update: what did you do on this decision?</label><textarea class="bd-in" id="rT" maxlength="4000" rows="5" placeholder="What was done, who you spoke to, what changed, what is still left…">' + esc(cur.reply || '') + '</textarea></div>'
+      + '<div class="bd-f"><label>＋ Make new topic (which section, which topic)</label>' + (x.topics && x.topics.length ? '<div class="fu-rx" style="margin:0 0 8px">Already added: ' + x.topics.map((t) => esc(t.section) + ' → ' + esc(t.title)).join(' · ') + '</div>' : '') + '<div id="rN">' + ntRow() + '</div><button class="bd-btn sm" type="button" id="rAdd">＋ One more topic</button><div class="hint">Each one is added to that section as a real topic (filled every day, about the day before) and goes on your 🔍 Strict list by itself: light brown, you check it yourself.</div></div>'
+      + '<div class="bd-f"><label>🔍 Strict: what you will check yourself — a whole section, or only some topics in it</label><div class="fu-ck2">' + SECS.map((z) => { const tp = TPS.filter((t) => t.section_id === z.id), any = chk[z.id] || tp.some((t) => stc[t.id]);
+          return '<details' + (any || z.id === sid ? ' open' : '') + '><summary>' + esc(z.name) + (any ? ' · 🔍' : '') + (D.manager ? '<button type="button" class="fu-ed" data-esec="' + z.id + '">✎ Edit section</button>' : '') + '</summary><label class="ws"><input type="checkbox" class="cS" value="' + z.id + '"' + (chk[z.id] ? ' checked' : '') + '>Check the whole section</label>'
+            + (tp.length ? '<div class="tp">' + tp.map((t) => '<label><input type="checkbox" class="cT" value="' + t.id + '"' + (stc[t.id] ? ' checked' : '') + '>' + esc(t.title) + (D.manager ? '<button type="button" class="fu-ed" data-etop="' + t.id + '|' + z.id + '" title="Edit this topic">✎</button>' : '') + '</label>').join('') + '</div>' : '<div class="fu-sub">No topics yet.</div>') + '</details>'; }).join('')
+      + '</div><div class="hint">Ticked ones turn light brown with “🔍 ' + esc(flName()) + ' checks this himself” for 7 days. Go into each one and check it.</div></div>'
+      + '<div class="acts fu-stk" style="flex-direction:column;align-items:stretch"><div class="fu-err" id="rE"></div><div style="display:flex;justify-content:flex-end;gap:8px"><button class="bd-btn" id="rX">Cancel</button><button class="bd-btn go" id="rOk">Save</button></div></div>', { sticky: true });
+    const q = (i) => m.querySelector(i), wire = () => m.querySelectorAll('.fu-nt .x').forEach((b) => { b.onclick = () => b.parentNode.remove(); });
+    // ✎ Edit: a section's settings open here; a topic opens in its own section (its Edit window), as the topic's details live there
+    const leave = async () => !q('#rT').value.trim() || await BD.confirm('Leave this update?', 'What you wrote here is not saved yet.', 'Leave', true);
+    m.querySelectorAll('[data-esec]').forEach((b) => { b.onclick = async (e) => { e.preventDefault(); e.stopPropagation(); const z = D.sections.find((x) => x.id === Number(b.dataset.esec)); if (!z) { toast('Open this section once to edit it.'); return; } if (await leave()) sectionForm(z); }; });
+    m.querySelectorAll('[data-etop]').forEach((b) => { b.onclick = async (e) => { e.preventDefault(); e.stopPropagation(); const p = b.dataset.etop.split('|'); if (!(await leave())) return; BD.close(); OPEN_EDIT = Number(p[0]); SID = Number(p[1]); JV = false; ALL = false; try { localStorage.setItem('fup_all', '0'); } catch (x) { /* private mode */ } load(); }; });
+    wire(); q('#rAdd').onclick = () => { q('#rN').insertAdjacentHTML('beforeend', ntRow()); wire(); };
+    q('#rT').focus(); q('#rX').onclick = () => BD.close(); q('#rC').onclick = () => BD.close();
+    const err = (t, el) => { const e = q('#rE'); e.textContent = t; e.style.display = t ? 'block' : 'none'; if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus(); el.style.borderColor = '#d9423b'; } };
+    q('#rOk').onclick = () => run(q('#rOk'), async () => {
+      const nts = [...m.querySelectorAll('.fu-nt')].map((r) => ({ section_id: Number(r.querySelector('.nS').value), title: r.querySelector('.nT').value.trim(), assignee_emp: Number(r.querySelector('.nE').value) })).filter((r) => r.title);
+      err('');
+      if (nts.some((r) => !r.section_id)) { err('Choose the section of each new topic.', m.querySelector('.fu-nt .nS')); return; }
+      if (!q('#rT').value.trim()) { err('Write the whole update at the top first (what was done on this decision), then Save.', q('#rT')); return; }
+      try { await api.post('fup.jaimin_reply', { section_id: sid, day, text: q('#rT').value, new_topics: nts, check: [...m.querySelectorAll('.fu-ck2 input.cS:checked')].map((c) => Number(c.value)), strict: [...m.querySelectorAll('.fu-ck2 input.cT:checked')].map((c) => Number(c.value)) }); } catch (e) { err('Not saved: ' + (e.message || 'try again')); return; }
+      BD.close(); toast(nts.length ? 'Update saved, ' + nts.length + ' topic' + (nts.length === 1 ? '' : 's') + ' added.' : 'Update saved.'); await load(true);
+    });
+  }
+  async function followerForm() {
+    let P; try { P = await people(); } catch (e) { toast(e.message || 'Could not load the people.'); return; }
+    const cur = JD && JD.follower ? JD.follower.id : 0;
+    const m = BD.modal('<h3>Who follows up Jaimin’s decisions?</h3><div class="bd-f"><label>Person</label><select class="bd-in" id="fP"><option value="0">Nobody</option>' + P.people.map((p) => '<option value="' + p.id + '"' + (p.id === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select><div class="hint">This person sees the 🧭 Jaimin section and writes his update under every decision.</div></div>'
+      + '<div class="acts"><button class="bd-btn" id="fX">Cancel</button><button class="bd-btn go" id="fOk">Save</button></div>', { sticky: true });
+    const q = (i) => m.querySelector(i); q('#fX').onclick = () => BD.close();
+    q('#fOk').onclick = () => run(q('#fOk'), async () => { await api.post('fup.jaimin_follower', { emp_id: Number(q('#fP').value) }); BD.close(); toast('Saved.'); await load(true); });
   }
 
   /* Pantry photos topic: the photos Anil uploaded in Store > Cleaning & Pantry, shown here read-only (thumbnails; tap one to see it big) */
@@ -376,9 +464,11 @@ guardPage(); renderSidebar('followup');
     document.querySelectorAll('[data-sec]').forEach((b) => { b.onclick = (e) => { e.preventDefault(); JV = false; SID = Number(b.dataset.sec); setAll(false); load(); }; });
     if ($('allPill')) $('allPill').onclick = () => { JV = false; setAll(true); load(); };
     if ($('allBtn')) $('allBtn').onclick = () => { JV = false; setAll(true); load(); };
+    if ($('jFl')) $('jFl').onclick = followerForm;
     if ($('jmPill')) $('jmPill').onclick = () => { JV = true; load(); };
     if ($('daysJ')) $('daysJ').onchange = () => { DAYS = Number($('daysJ').value) || 7; load(); };
-    document.querySelectorAll('[data-jm]').forEach((b) => { b.onclick = (e) => { if (!D.jaimin_write || e.target.closest('[data-stop]')) return; e.stopPropagation(); const p = b.dataset.jm.split('|'); jaiminForm(Number(p[0]), p[1]); }; });
+    document.querySelectorAll('[data-rh]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); const p = b.dataset.rh.split('|'); jaiminForm(Number(p[0]), p[1], true); }; });
+    document.querySelectorAll('[data-jm]').forEach((b) => { b.onclick = (e) => { if (!(D.jaimin_write || D.jaimin_reply) || e.target.closest('[data-stop]')) return; e.stopPropagation(); const p = b.dataset.jm.split('|'); jaiminForm(Number(p[0]), p[1]); }; });
     // "All sections": a cell or a section's name opens that section (and the update window of that topic and day)
     document.querySelectorAll('[data-jump]').forEach((b) => { b.onclick = (e) => { if (e.target.closest('[data-stop]')) return; const p = b.dataset.jump.split('|'); SID = Number(p[0]); OPEN_U = Number(p[1]) || 0; OPEN_D = p[2] || ''; setAll(false); load(); }; });
     if ($('daysAll')) $('daysAll').onchange = () => { DAYS = Number($('daysAll').value) || 7; load(); };
@@ -406,16 +496,20 @@ guardPage(); renderSidebar('followup');
       + '<div class="bd-sub" id="uNote" style="margin:-4px 0 10px"></div>'
       + '<div class="fu-row2"><div class="bd-f"><label id="uVl">Number</label><input class="bd-in" id="uV" inputmode="decimal"><div class="hint" id="uVh"></div></div>'
       + '<div class="bd-f"><label>% done</label><input class="bd-in" id="uP" inputmode="numeric" placeholder="0 – 100, if it fits"></div></div>'
-      + '<div id="uNums"></div><div id="uF"></div><div class="bd-f"><label id="uTl">Update</label><textarea class="bd-in" id="uT" maxlength="2000" rows="4" placeholder="What happened on this topic?"></textarea></div>'
+      + '<div id="uNums"></div><div id="uF"></div><div class="bd-f"><label id="uTl">Update</label><textarea class="bd-in" id="uT" maxlength="2000" rows="4" placeholder="What happened on this topic?"></textarea><div class="hint" id="uWc"></div></div>'
       + '<div class="acts"><button class="bd-btn" id="uX">Cancel</button><button class="bd-btn go" id="uOk">Save</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i); let SUMONLY = false;
     const fill = () => {   // show what is already saved for this topic and date
       t = D.topics.find((x) => x.id === Number(q('#uTop').value)) || t; const u = t.updates[q('#uD').value] || {};
-      q('#uF').innerHTML = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null, id = 'uf_' + f.k, lab = '<label>' + esc(f.label) + (f.req ? ' <span style="color:#d9423b">*</span>' : '') + '</label>';
+      let gPrev = ''; q('#uF').innerHTML = t.fields.map((f) => { const head = f.g && f.g !== gPrev ? '<div class="fu-lb" style="margin:6px 0 6px;color:#14161a">▸ ' + esc(f.g) + '</div>' : ''; gPrev = f.g || ''; return head + ((f) => { const v = u.f ? u.f[f.k] : null, id = 'uf_' + f.k, lab = '<label>' + esc(f.label) + (f.req ? ' <span style="color:#d9423b">*</span>' : '') + (f.min ? ' <span class="fu-sub" style="display:inline">· at least ' + f.min + ' words</span>' : '') + '</label>';
         if (f.type === 'yesno') return '<div class="bd-f">' + lab + '<select class="bd-in" id="' + id + '"><option value="">Choose…</option><option value="yes"' + (v === 'yes' ? ' selected' : '') + '>Yes</option><option value="no"' + (v === 'no' ? ' selected' : '') + '>No</option></select></div>';
         if (f.type === 'choice') return '<div class="bd-f">' + lab + '<select class="bd-in" id="' + id + '"><option value="">Choose…</option>' + f.opts.map((o) => '<option' + (v === o ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></div>';
-        if (f.type === 'file') return '<div class="bd-f">' + lab + (fset(v) ? '<div class="bd-sub" style="margin-bottom:4px">Attached: <a href="' + esc(fileUrl(t, q('#uD').value, f.k)) + '" target="_blank" rel="noopener">📎 ' + esc(v.n || 'file') + '</a> — choose a file to replace it</div>' : '') + '<input class="bd-in" id="' + id + '" type="file" accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.mp4"></div>';
-        return '<div class="bd-f">' + lab + '<input class="bd-in" id="' + id + '"' + (f.type === 'num' ? ' inputmode="decimal" placeholder="Number"' : f.type === 'link' ? ' inputmode="url" placeholder="https://…"' : ' maxlength="500"') + ' value="' + esc(fset(v) ? v : '') + '"></div>'; }).join('');
+        if (isUp(f.type)) return '<div class="bd-f">' + lab + (fset(v) ? '<div class="bd-sub" style="margin-bottom:4px">Attached: <a href="' + esc(fileUrl(t, q('#uD').value, f.k)) + '" target="_blank" rel="noopener">' + (f.type === 'photo' ? '📷 ' : f.type === 'video' ? '🎥 ' : '📎 ') + esc(v.n || 'file') + '</a> — choose another to replace it</div>' : '')
+          + '<input class="bd-in" id="' + id + '" type="file" accept="' + (f.type === 'photo' ? 'image/*' : f.type === 'video' ? 'video/*' : 'image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.mp4') + '">' + (f.type === 'video' ? '<div class="hint">A video up to 100 MB (MP4, MOV, WEBM, 3GP). A short clip sends faster.</div>' : f.type === 'photo' ? '<div class="hint">Take a photo or choose one from the gallery.</div>' : '') + '</div>';
+        if (f.type === 'text') return '<div class="bd-f">' + lab + '<textarea class="bd-in" id="' + id + '" maxlength="2000" rows="' + (f.min ? 4 : 2) + '" data-min="' + (f.min || 0) + '">' + esc(fset(v) ? v : '') + '</textarea>' + (f.min ? '<div class="hint" data-wc="' + id + '"></div>' : '') + '</div>';
+        return '<div class="bd-f">' + lab + '<input class="bd-in" id="' + id + '"' + (f.type === 'num' ? ' inputmode="decimal" placeholder="Number"' : f.type === 'link' ? ' inputmode="url" placeholder="https://…"' : ' maxlength="500"') + ' value="' + esc(fset(v) ? v : '') + '"></div>'; })(f); }).join('');
+      m.querySelectorAll('#uF textarea[data-min]').forEach((ta) => { const mn = Number(ta.dataset.min) || 0, el = m.querySelector('[data-wc="' + ta.id + '"]'); if (!mn || !el) return;
+        const sh = () => { const n = ta.value.trim() ? ta.value.trim().split(/\s+/).length : 0; el.textContent = n + ' / ' + mn + ' words' + (n >= mn ? ' ✓' : ''); el.style.color = n >= mn ? '#16945a' : '#b45309'; el.style.fontWeight = '700'; }; ta.addEventListener('input', sh); sh(); });
       q('#uNote').textContent = t.note || ''; q('#uVl').textContent = 'Number' + (t.unit ? ' (' + t.unit + ')' : '');
       q('#uV').placeholder = t.source ? 'Comes by itself' + (u.val != null ? ': ' + u.val : '') : 'Type the number of this day'; q('#uV').value = u.val != null && !u.auto ? u.val : '';
       const many = t.metrics.length > 1; q('#uNums').innerHTML = many && (u.val != null || (u.vals && Object.keys(u.vals).length)) ? '<div class="fu-lb" style="margin-bottom:2px">Numbers of this day · from the HRMS</div>' + numTxt(t, u) + '<div style="height:10px"></div>' : (many ? '<div class="fu-sub" style="margin-bottom:10px">The numbers of this day are not in the HRMS yet.</div>' : '');
@@ -424,16 +518,23 @@ guardPage(); renderSidebar('followup');
       q('#uV').closest('.fu-row2').style.display = (many || t.fields.length || SUMONLY) ? 'none' : ''; q('#uTl').textContent = SUMONLY ? 'Summary' : (t.need_text ? 'Summary: why the numbers moved, what was changed' : 'Update'); q('#uT').placeholder = SUMONLY ? 'Write what was done today.' : (t.need_text ? 'Example: sales up because the campaign went to 12,000 people; ad spend kept the same; 2 big orders from Surat.' : 'What happened on this topic?');
       q('#uVh').textContent = t.source ? 'Leave empty to keep the number from the system. Type a number only to correct it.' : ''; q('#uP').value = u.pct != null ? u.pct : ''; q('#uT').value = u.text || '';
     };
-    fill(); q('#uTop').onchange = fill; q('#uD').onchange = fill;
+    // the least number of words the Admin set for this topic: a live count under the box
+    const wc = (x) => (String(x).trim() ? String(x).trim().split(/\s+/).length : 0);
+    const wcShow = () => { const n = wc(q('#uT').value), mw = t.min_words || 0, el = q('#uWc'); if (!mw) { el.textContent = ''; return; } el.textContent = n + ' / ' + mw + ' words' + (n >= mw ? ' ✓' : ' — write it in detail, at least ' + mw + ' words'); el.style.color = n >= mw ? '#16945a' : '#b45309'; el.style.fontWeight = '700'; };
+    q('#uT').addEventListener('input', wcShow);
+    fill(); wcShow(); q('#uTop').onchange = () => { fill(); wcShow(); }; q('#uD').onchange = () => { fill(); wcShow(); };
     q('#uX').onclick = () => BD.close();
     q('#uOk').onclick = () => run(q('#uOk'), async () => {
       const d = q('#uD').value, text = q('#uT').value.trim(), v = q('#uV').value.trim(), p = q('#uP').value.trim();
       if (!d) { toast('Choose the date.'); return; }
-      const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (f.type === 'file') { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.value.trim(); });
+      const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (isUp(f.type)) { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.value.trim(); });
       const anyF = files.length || Object.keys(fv).some((k) => fv[k] !== '');
       if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
       // a required box left empty is told at once (it used to save only the words, and the day stayed "not filled" with no word about why)
-      const u1 = t.updates[d] || {}, need = t.fields.filter((f) => f.req && f.type !== 'file' && String(fv[f.k] == null ? '' : fv[f.k]) === '' && !(u1.f && fset(u1.f[f.k])));
+      const u1 = t.updates[d] || {}, need = t.fields.filter((f) => f.req && !isUp(f.type) && String(fv[f.k] == null ? '' : fv[f.k]) === '' && !(u1.f && fset(u1.f[f.k])));
+      const short = t.fields.find((f) => f.type === 'text' && f.min && String(fv[f.k] || '').trim() && wc(fv[f.k]) < f.min);
+      if (short) { toast('“' + short.label + '”: write at least ' + short.min + ' words. Now ' + wc(fv[short.k]) + '.', true); try { q('#uf_' + short.k).focus(); } catch (e) { /* fine */ } return; }
+      if ((t.min_words || 0) > 0 && wc(text) < t.min_words) { toast('Write the update in detail: at least ' + t.min_words + ' words. Now ' + wc(text) + '.', true); q('#uT').focus(); return; }
       if (need.length) { toast('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
@@ -483,21 +584,42 @@ guardPage(); renderSidebar('followup');
       + '<div class="hint" id="tSh">Ticked numbers are read from the HRMS every day: nobody types them, so they cannot be wrong. Nothing ticked = the person types the number.</div>'
       + '<div id="tUw" style="margin-top:8px"><input class="bd-in" id="tU" maxlength="12" placeholder="Unit: ₹, pcs, shops … (optional)" value="' + esc(t ? (t.own_unit || '') : '') + '"></div>'
       + '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-top:10px;cursor:pointer"><input type="checkbox" id="tNt"' + (t && t.need_text ? ' checked' : '') + ' style="margin-top:3px"><span><b>The person must also write a summary every day</b>: why the numbers moved and what was changed. (Not ticked = when the numbers arrive, the day is complete by itself.)</span></label></div>'
-      + '<div class="bd-f" style="margin-top:12px"><label>Fields the person fills every day</label><div id="tF"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bd-btn sm" id="tFadd" type="button">＋ Add a field</button><button class="bd-btn sm" id="tSug" type="button"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ Let Claude set this topic up</button></div>'
-      + '<div class="hint" id="tFh">A post link, a yes / no, a count from Instagram or Google, a reason, a screenshot … A field marked “must” has to be filled before the day counts as done.</div></div>'
+      + '<div class="bd-f" style="margin-top:12px"><label>Minimum words in the update</label><input class="bd-in" id="tMw" type="number" min="0" max="500" inputmode="numeric" placeholder="0 = any length" value="' + (t && t.min_words ? t.min_words : '') + '" style="max-width:180px"><div class="hint">For example 60: the update is not saved with fewer words (words are counted by the spaces between them). Empty or 0 = any length.</div></div>'
+      + '<div class="bd-f" style="margin-top:12px"><label>Fields the person fills every day</label><div id="tF"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bd-btn sm" id="tFadd" type="button">＋ Add a field</button><button class="bd-btn sm pri" id="tFsub" type="button">＋ Sub-topic</button><button class="bd-btn sm" id="tFph" type="button">📷 ＋ Photo</button><button class="bd-btn sm" id="tFvd" type="button">🎥 ＋ Video</button><button class="bd-btn sm" id="tSug" type="button"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ Let Claude set this topic up</button></div>'
+      + '<div id="tSp" class="fu-jcard" style="display:none;background:#f6f7f9;border-color:var(--line)"><div class="fu-lb" style="color:#14161a">New sub-topic</div><input class="bd-in" id="sbN" maxlength="60" placeholder="Name: Front display, Banner, Stock shelf …" style="margin-bottom:8px">'
+      + '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;align-items:center;font-size:13px">'
+      + '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sbW" checked><b>✍ Words</b></label><input class="bd-in" id="sbWm" type="number" min="0" max="500" inputmode="numeric" placeholder="Minimum words (0 = any)" style="padding:7px 10px;font-size:13px"><label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sbWr" checked>must</label>'
+      + '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sbP" checked><b>📷 Photo</b></label><span></span><label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sbPr">must</label>'
+      + '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sbV"><b>🎥 Video</b></label><span></span><label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sbVr">must</label></div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="bd-btn sm" type="button" id="sbX">Cancel</button><button class="bd-btn sm go" type="button" id="sbOk">Add this sub-topic</button></div></div>'
+      + '<div class="hint" id="tFh">A post link, a yes / no, a count from Instagram or Google, a reason, a screenshot … “＋ Sub-topic” adds one part of this topic with its own words (and minimum words), photo and video. A field marked “must” has to be filled before the day counts as done.</div></div>'
       + (t ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="bd-btn sm" id="tUp">↑ Move up</button><button class="bd-btn sm" id="tDn">↓ Move down</button><button class="bd-btn sm" id="tFin">' + (t.status === 'done' ? 'Open again' : '✓ Mark finished') + '</button><button class="bd-btn sm bad" id="tDel">Remove topic</button></div>' : '')
       + '<div class="acts"><button class="bd-btn" id="tX">Cancel</button><button class="bd-btn go" id="tOk">Save topic</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i), dueVis = () => { q('#tDw').style.display = q('#tK').value === 'deadline' ? '' : 'none'; }; dueVis(); q('#tK').onchange = dueVis;
     // auto-connect: a new topic whose name says what it is (Sales, Visits, Displays, Payment …) is connected to this section's own part of the HRMS; the choice can be changed
     // the field builder: one line a field (name, kind, the choices of a list, must / optional, remove)
-    const TYPES = [['text', 'Words'], ['num', 'Number'], ['yesno', 'Yes / No'], ['link', 'Link'], ['choice', 'Choose one'], ['file', 'File / photo']];
+    const TYPES = [['text', 'Words'], ['num', 'Number'], ['yesno', 'Yes / No'], ['link', 'Link'], ['choice', 'Choose one'], ['photo', '📷 Photo'], ['video', '🎥 Video'], ['file', 'File (PDF, Excel …)']];
     const addField = (f) => { const r = document.createElement('div'); r.className = 'fu-fr'; r.dataset.k = (f && f.k) || '';
       r.innerHTML = '<input class="bd-in" data-l maxlength="80" placeholder="Name of the field" value="' + esc(f ? f.label : '') + '"><select class="bd-in" data-t>' + TYPES.map((x) => '<option value="' + x[0] + '"' + (f && f.type === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
         + '<label style="font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap"><input type="checkbox" data-r' + (f && f.req ? ' checked' : '') + '> must</label><button type="button" class="x" title="Remove this field">✕</button>'
-        + '<input class="bd-in" data-o placeholder="The choices, with a comma between: Reddit, Instagram, YouTube" value="' + esc(f && f.opts ? f.opts.join(', ') : '') + '" style="grid-column:1 / -1">';
-      const ov = () => { r.querySelector('[data-o]').style.display = r.querySelector('[data-t]').value === 'choice' ? '' : 'none'; }; ov(); r.querySelector('[data-t]').onchange = ov; r.querySelector('.x').onclick = () => r.remove(); q('#tF').appendChild(r); return r; };
-    const readFields = () => [...m.querySelectorAll('#tF .fu-fr')].map((r) => ({ k: r.dataset.k, label: r.querySelector('[data-l]').value.trim(), type: r.querySelector('[data-t]').value, opts: r.querySelector('[data-o]').value, req: r.querySelector('[data-r]').checked ? 1 : 0 })).filter((f) => f.label);
+        + '<input class="bd-in" data-o placeholder="The choices, with a comma between: Reddit, Instagram, YouTube" value="' + esc(f && f.opts ? f.opts.join(', ') : '') + '" style="grid-column:1 / -1">'
+        + '<label data-ml style="grid-column:1 / -1;display:flex;gap:8px;align-items:center;font-size:12.5px;color:#4a505c">✍ Minimum words in this box<input class="bd-in" data-m type="number" min="0" max="500" inputmode="numeric" placeholder="0 = any" value="' + (f && f.min ? f.min : '') + '" style="max-width:110px"></label>';
+      r.dataset.g = (f && f.g) || '';
+      const ov = () => { const ty = r.querySelector('[data-t]').value; r.querySelector('[data-o]').style.display = ty === 'choice' ? '' : 'none'; r.querySelector('[data-ml]').style.display = ty === 'text' ? '' : 'none'; }; ov(); r.querySelector('[data-t]').onchange = ov; r.querySelector('.x').onclick = () => r.remove(); q('#tF').appendChild(r); return r; };
+    const readFields = () => [...m.querySelectorAll('#tF .fu-fr')].map((r) => ({ k: r.dataset.k, label: r.querySelector('[data-l]').value.trim(), type: r.querySelector('[data-t]').value, opts: r.querySelector('[data-o]').value, req: r.querySelector('[data-r]').checked ? 1 : 0, min: Number(r.querySelector('[data-m]').value) || 0, g: r.dataset.g || '' })).filter((f) => f.label);
     (t ? t.fields : []).forEach(addField);
+    // a sub-topic inside the topic: its own words box and its own photo box (two fields with the sub-topic's name)
+    q('#tFsub').onclick = () => { const p = q('#tSp'); p.style.display = p.style.display === 'none' ? '' : 'none'; if (p.style.display === '') q('#sbN').focus(); };
+    q('#sbX').onclick = () => { q('#tSp').style.display = 'none'; };
+    q('#sbOk').onclick = () => {
+      const nm = q('#sbN').value.trim().slice(0, 60); if (!nm) { toast('Write the name of the sub-topic.'); q('#sbN').focus(); return; }
+      const want = [q('#sbW').checked && { label: nm, type: 'text', req: q('#sbWr').checked ? 1 : 0, min: Number(q('#sbWm').value) || 0, g: nm }, q('#sbP').checked && { label: nm + ' · photo', type: 'photo', req: q('#sbPr').checked ? 1 : 0, g: nm }, q('#sbV').checked && { label: nm + ' · video', type: 'video', req: q('#sbVr').checked ? 1 : 0, g: nm }].filter(Boolean);
+      if (!want.length) { toast('Tick at least one: Words, Photo or Video.'); return; }
+      if (m.querySelectorAll('#tF .fu-fr').length + want.length > 20) { toast('A topic takes at most 20 boxes.'); return; }
+      want.forEach(addField); q('#sbN').value = ''; q('#tSp').style.display = 'none'; toast('Sub-topic “' + nm + '” added. Save the topic to keep it.');
+    };
+    q('#tFph').onclick = () => { const r = addField({ label: 'Photo', type: 'photo', req: 1 }); try { r.querySelector('[data-l]').select(); } catch (e) { /* fine */ } };
+    q('#tFvd').onclick = () => { const r = addField({ label: 'Video', type: 'video', req: 0 }); try { r.querySelector('[data-l]').select(); } catch (e) { /* fine */ } };
     q('#tFadd').onclick = () => { const r = addField(null); try { r.querySelector('[data-l]').focus(); } catch (e) { /* fine */ } };
     // Claude reads the name and the owner's words and proposes the numbers, the fields and the ticks. Nothing is saved until Save is pressed.
     q('#tSug').onclick = () => { if (!q('#tT').value.trim()) { toast('Write the topic first.'); return; } const b = q('#tSug'), old = b.textContent; b.textContent = 'Claude is thinking…';
@@ -512,7 +634,7 @@ guardPage(); renderSidebar('followup');
     q('#tNt').addEventListener('change', () => { ntTouched = true; });
     q('#tX').onclick = () => BD.close();
     q('#tOk').onclick = () => run(q('#tOk'), async () => {
-      await api.post('fup.topic_save', { id: t ? t.id : 0, section_id: D.section, title: q('#tT').value, note: q('#tN').value, kind: q('#tK').value, due_date: q('#tD').value, assignee_emp: Number(q('#tE').value), metrics: ticks(), fields: readFields(), need_text: q('#tNt').checked ? 1 : 0, unit: q('#tU').value, lag: q('#tL').checked ? 1 : 0 });
+      await api.post('fup.topic_save', { min_words: Math.max(0, Math.min(500, Number(q('#tMw').value) || 0)), id: t ? t.id : 0, section_id: D.section, title: q('#tT').value, note: q('#tN').value, kind: q('#tK').value, due_date: q('#tD').value, assignee_emp: Number(q('#tE').value), metrics: ticks(), fields: readFields(), need_text: q('#tNt').checked ? 1 : 0, unit: q('#tU').value, lag: q('#tL').checked ? 1 : 0 });
       BD.close(); toast('Topic saved.'); await load(true);
     });
     if (t) {

@@ -95,7 +95,7 @@
       <div><h1>Retail Inventory</h1><div class="sub" style="margin-top:2px;">Finished perfumes in stock by size — every retail order takes its pieces out automatically</div></div>
       <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
         <button class="btn secondary" id="btnLog" style="width:auto;">Stock log</button>
-        <button class="btn" id="btnAdd" style="width:auto;">+ Add stock</button>
+        <button class="btn" id="btnAdd" style="width:auto;">🏷 + Add stock (barcodes)</button>
         <button class="bellbtn" id="btnBell" title="Stock alerts" aria-label="Stock alerts">🔔<em id="bellN"></em></button>
       </div>
     </div>
@@ -142,7 +142,7 @@
         <input id="mMlOther" type="number" min="1" step="any" inputmode="decimal" placeholder="ml" style="width:90px; display:none;">
       </div>
     </div>
-    <div class="field"><span class="seg" id="mSeg"><button type="button" data-m="in" class="on">Stock in</button><button type="button" data-m="set">Count</button><button type="button" data-m="lim">Limit</button></span></div>
+    <div class="field"><span class="seg" id="mSeg"><button type="button" data-m="in" class="on">🏷 Stock in</button><button type="button" data-m="set">Count</button><button type="button" data-m="lim">Limit</button></span></div>
     <div class="field" id="fQty"><label id="lQty">Pieces that came in</label><input id="mQty" type="number" min="0" step="1" inputmode="numeric" placeholder="0"><div class="hint" id="hQty"></div></div>
     <div class="field" id="fLim" style="display:none;"><label>Low-stock limit for this item</label><input id="mLim" type="number" min="0" step="1" inputmode="numeric" placeholder="empty = same as everything"><div class="hint">You get an alert when this size drops to this many pieces or fewer.</div></div>
     <div class="field" id="fNote"><label>Note (optional)</label><input id="mNote" placeholder="e.g. new batch from production"></div>
@@ -301,7 +301,7 @@
     mode = m;
     document.querySelectorAll('#mSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
     $('fQty').style.display = m === 'lim' ? 'none' : ''; $('fLim').style.display = m === 'lim' ? '' : 'none'; $('fNote').style.display = m === 'lim' ? 'none' : '';
-    if (m === 'in') { $('lQty').textContent = 'Pieces that came in'; $('mQty').value = ''; $('hQty').textContent = cur ? 'Added on top of what is in stock now.' : 'First entry for this perfume and size = your opening stock.'; }
+    if (m === 'in') { $('lQty').textContent = 'Pieces that came in'; $('mQty').value = ''; $('hQty').textContent = '🏷 Stock comes in only with barcodes: Save opens Barcodes with this perfume filled in — make the numbers, print the labels, and the pieces are added.'; }
     if (m === 'set') { $('lQty').textContent = 'Pieces counted on the shelf'; $('mQty').value = cur ? (cityNow() ? cityNow().on_hand : 0) : ''; $('hQty').textContent = 'Use this after a physical check. The stock becomes exactly this number; the difference is saved in the log.'; }
     if (m === 'lim') { const c = cityNow(); $('mLim').value = c && c.custom_limit !== null && c.custom_limit !== undefined ? c.custom_limit : ''; }
   }
@@ -349,7 +349,12 @@
     setMode('in'); open('stkModal'); setTimeout(() => $('mQty').focus(), 80);
   }
   $('mCity').addEventListener('change', () => { if (cur) { paintNow(); setMode(mode); } });
-  $('btnAdd').addEventListener('click', () => openNew('', ''));
+  $('btnAdd').addEventListener('click', () => toBarcodes('', '', '', curCity));
+  // 🏷 every piece that comes in gets its barcode: the Barcodes page makes the numbers, prints the labels and adds the stock
+  function toBarcodes(name, ml, qty, city) {
+    const q = new URLSearchParams({ t: 'make' }); if (name) q.set('name', name); if (ml) q.set('ml', ml); if (qty) q.set('qty', qty); if (city) q.set('city', city);
+    location.href = 'retail_barcodes.html?' + q.toString();
+  }
   $('mMl').addEventListener('change', () => { $('mMlOther').style.display = $('mMl').value === '' ? '' : 'none'; });
   $('mSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setMode(b.dataset.m); });
   $('mCancel').addEventListener('click', () => shut('stkModal'));
@@ -365,7 +370,7 @@
         const body = { city: selCity(), product_name: cur ? cur.product_name : name, ml: cur ? cur.ml : ml, note: $('mNote').value.trim() };
         if (!body.product_name) throw new Error('Enter the perfume name.');
         if (mode === 'set') { if ($('mQty').value === '') throw new Error('Enter the counted pieces.'); body.set_to = Number($('mQty').value); }
-        else { body.qty = Number($('mQty').value) || 0; }
+        else { const q = Number($('mQty').value) || 0; if (q < 1) throw new Error('Enter how many pieces came in.'); toBarcodes(body.product_name, body.ml, q, body.city); return; }   // 🏷 stock comes in only with barcodes
         const d = await api.post('retail.stock_add', body);
         shut('stkModal'); showAlert(d.message || 'Saved.');
       }

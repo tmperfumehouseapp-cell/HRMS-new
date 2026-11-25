@@ -38,6 +38,8 @@
         <div class="sx-card"><h3>Put it on the TV</h3>
           <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sx-btn" id="bOpen">Open full screen</button><button class="sx-btn ghost" id="bCopy">Copy the screen link</button><button class="sx-btn ghost" id="bNew">Make a new link</button></div>
           <div class="sx-mut" style="font-size:12.5px;margin-top:8px;line-height:1.6">On the TV box: turn the screen 90° (portrait) in its display settings, open this link in Chrome (or Fully Kiosk), and leave it. It needs internet. Anyone with the link can see only these numbers, so if it is ever shared by mistake press <b>Make a new link</b> and the old one stops.</div>
+          <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa"><b>Connect a TV</b> <span class="sx-mut" style="font-size:12.5px">— on the TV open <b>${esc(location.host)}/tv.html</b>, it shows 6 numbers, type them here</span>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input class="sx-in" id="fCode" inputmode="numeric" maxlength="6" placeholder="6 numbers from the TV" style="max-width:220px"><button class="sx-btn" id="bLink">Connect</button></div><div id="lmsg" style="font-size:12.5px;margin-top:6px"></div></div>
           <div style="margin-top:10px;font-size:13.5px">Short link to type on the TV: <b id="sl" style="user-select:all">${esc(shortLink())}</b></div>
           <div id="cmsg" style="font-size:12.5px;margin-top:6px"></div></div>
         <div class="sx-card"><h3>What the card shows <small>now: ${Number(n.orders || 0).toLocaleString('en-IN')} orders · ${Number(n.bottles || 0).toLocaleString('en-IN')} bottles · ${Number(n.community || 0).toLocaleString('en-IN')} community</small></h3>
@@ -58,13 +60,16 @@
   }
   const say = (id, t, bad) => { const e = $(id); if (e) { e.style.color = bad ? '#b91c1c' : '#15803d'; e.textContent = t; } };
   async function load() {
-    try { D = await api.get('st_disp.get'); render(); }
+    try { const r = await api.get('st_disp.get'); D = { cfg: r, numbers: r.numbers || {} }; render(); }
     catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
   $('root').addEventListener('click', async (e) => {
     const id = e.target.id;
     if (id === 'bOpen') window.open(link(), '_blank');
     if (id === 'bCopy') { try { await navigator.clipboard.writeText(link()); say('cmsg', 'Link copied. Open it on the TV box.'); } catch (x) { prompt('Copy this link', link()); } }
+    if (id === 'bLink') {
+      try { await api.post('st_disp.link', { code: v('fCode') }); say('lmsg', 'Done. The TV will show the card in a few seconds.'); $('fCode').value = ''; } catch (x) { say('lmsg', x.message, 1); }
+    }
     if (id === 'bNew') {
       if (!confirm('Make a new link? The link now on the TV will stop working and you must open the new one there.')) return;
       try { await api.post('st_disp.newkey', {}); await load(); say('cmsg', 'New link made. The old one has stopped.'); } catch (x) { say('cmsg', x.message, 1); }
