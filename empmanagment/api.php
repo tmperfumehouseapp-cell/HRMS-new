@@ -11809,14 +11809,21 @@ function must3_code_msg(string $body): bool
     if (preg_match('~chat\.whatsapp\.com/[A-Za-z0-9]{6,}~i', $body)) return true;
     // owner (25 Nov 2026, TM10544): the OTHER wording of the same message has no link — "One-Time Order Verification … 1 Msg our number … 2 Add on our broadcast, send a screenshot … 3 Send your Order ID …
     // Your confirmation code will be shared after verification". It counts too: the verification title, the confirmation code line, or broadcast / community / group together with the screenshot.
-    if (preg_match('/order\s+verification|(confirmation|verification|coupon|dispatch)\s+code|\bog\s*code\b/iu', $body)) return true;
+    if (preg_match('/order\s+verification|(confirmation|verification)\s+code|\bog\s*code\b/iu', $body)) return true;
     if (preg_match('/broadcast|community|whatsapp\s+group/iu', $body) && preg_match('/screen\s*shot/iu', $body)) return true;
     // owner (25 Nov 2026, TM10498: "Bas 99… par Order id WhatsApp karke Code le lijiye aur humein share kar dijiye" — "look for the others like this yourself"). The lines the team really sends (read on the server, 4 days,
-    // 3+ chats each): "… par WhatsApp karke (coupon / dispatch) code le lijiye", "ye number pe order id send krdije, aapko code mile to muje send krdije", "uspe msj kijye waha se OG code ayga", "msg on this no he will give
-    // you a og code", "save this number and send screenshot in same number and get code". So: the word CODE (not pin / qr / zip code, not the perfume "… The Code") + getting or passing it on + WhatsApp / message / number.
-    if (!preg_match('/(?<!pin )(?<!pin)(?<!qr )(?<!zip )(?<!the )\bcode\b/iu', $body)) return false;
-    if (!preg_match('/le\s*lijiye|le\s*lo\b|\blelo\b|\bleke\b|le\s*ke\b|\bmile\b|milega|milne|\bayga\b|aayega|aaega|\baega\b|get\s+(the\s+)?code|give\s+you|bhej|\bbhj|\bsend\b|share\s+kar/iu', $body)) return false;
-    return (bool)preg_match('/whats\s*app|\bmsg\b|\bmsj\b|message|\bnumber\b|\bno\b|screen\s*shot|order\s*id/iu', $body);
+    // 3+ chats each): "… par WhatsApp karke (coupon / dispatch) code le lijiye", "ye number pe order id send krdije, aapko code mile to muje send krdije", "us number par msg kar dijiye … waha se code milega",
+    // "save this number and send screenshot in same number and get code". So: the word CODE (not pin / qr / zip code, not the perfume "… The Code") with GETTING it (le lijiye / leke / mile / milega / ayga / get code)
+    // and WhatsApp / msg / number / order id, all within the same few words.
+    // NOT the code message (the same read showed it): a marketing line "No coupon code, no hassle — just reply" (1,346 chats) and a promo code that is GIVEN in the message ("use code TM10").
+    $b = (string)preg_replace('/\b(no|without)\s+(any\s+)?(coupon\s+|promo\s+)?codes?\b/iu', ' ', $body);
+    if (!preg_match_all('/(?<!pin )(?<!pin)(?<!qr )(?<!zip )(?<!the )\bcode\b/iu', $b, $mm, PREG_OFFSET_CAPTURE)) return false;
+    foreach ($mm[0] as $hit) {
+        $at = (int)$hit[1]; if (preg_match('/\G\bcode\s*[:\-]?\s*[A-Z0-9]{4,}\b/', $b, $x, 0, $at) && preg_match('/\d/', $x[0])) continue;   // "code TM10": a code we give, not the verification code
+        $w = substr($b, max(0, $at - 110), 230);
+        if (preg_match('/le\s*lijiye|lelijiye|le\s*lo\b|\blelo\b|\bleke\b|le\s*ke\b|\bmile\b|milega|milne|\bayga\b|aayega|aaega|\baega\b|get\s+(the\s+)?code|give\s+you/iu', $w) && preg_match('/whats\s*app|\bmsg\b|\bmsj\b|message|\bnumber\b|\b(this|is|ye|us|same)\s+no\b|screen\s*shot|order\s*id/iu', $w)) return true;
+    }
+    return false;
 }
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
 {
