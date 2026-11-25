@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Store since the start — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=8">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Store · since the start</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Orders, bottles, ml and sales of the retail store, month by month: the old POS and the new billing together, nothing counted twice</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=14"></script>
+<script src="assets/js/layout.js?v=40"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('store_since');
+  const n0 = (n) => Number(n || 0).toLocaleString('en-IN');
+  const rs = (n) => { n = Number(n || 0); return n >= 10000000 ? '₹ ' + (n / 10000000).toFixed(2) + ' crore' : n >= 100000 ? '₹ ' + (n / 100000).toFixed(2) + ' lakh' : '₹ ' + n0(Math.round(n)); };
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monName = (m) => { const [y, k] = String(m).split('-'); return MON[(+k || 1) - 1] + ' ' + y; };
+  const FROM = { old: 'old POS', new: 'new billing', both: 'old + new' };
+  let D = null, from = '', to = '';
+  const checkHtml = () => {
+    const c = D.check || {}, o = c.old, n = c.new, L = [];
+    if (o && o.error) L.push(`<div class="sx-msg bad">${esc(o.error)}</div>`);
+    else if (o) L.push(`<div><b>Old POS</b>: ${n0(o.orders)} orders, from <b>${o.first}</b> to <b>${o.last}</b>, ₹ ${n0(Math.round(o.sum))} in all${o.zero_total ? ` · <span style="color:#b45309">${o.zero_total} orders with ₹ 0</span>` : ''}.${o.gap_count ? ` <span style="color:#b45309">${o.gap_count} stretch${o.gap_count > 1 ? 'es' : ''} of 3 or more days with no order at all:</span> ${o.gaps.map(esc).join(' · ')}` : ' No missing stretch.'}</div>`);
+    else L.push('<div class="sx-mut">No order in the old POS table.</div>');
+    if (n && n.error) L.push(`<div class="sx-msg bad">${esc(n.error)}</div>`);
+    else if (n) L.push(`<div><b>New billing</b>: ${n0(n.orders)} bills, from <b>${n.first}</b> to <b>${n.last}</b>, ₹ ${n0(Math.round(n.sum))} in all${n.cancelled ? ` · ${n.cancelled} cancelled (not counted)` : ''}${n.zero_total ? ` · <span style="color:#b45309">${n.zero_total} bills with ₹ 0</span>` : ''}.</div>`);
+    return `<div style="font-size:13px;line-height:1.7">${L.join('')}</div>`;
+  };
+  function render() {
+    const t = D.total, rows = D.rows, mx = Math.max(1, ...rows.map((r) => r.orders));
+    const avgB = t.orders ? (t.bottles / t.orders).toFixed(1) : '0', avgR = t.orders ? Math.round(t.rs / t.orders) : 0;
+    const card = (label, big, sub, c) => `<div class="sx-card" style="flex:1;min-width:150px;padding:12px 14px"><div style="font-size:24px;font-weight:800;color:${c || 'inherit'}">${big}</div><div class="sx-mut" style="font-size:12.5px">${label}</div><div class="sx-mut" style="font-size:11.5px;margin-top:2px">${sub || ''}</div></div>`;
+    $('root').innerHTML = `<div class="sx-card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="sx-f">From<input class="sx-in" type="date" id="fFrom" value="${from}"></label><label class="sx-f">To<input class="sx-in" type="date" id="fTo" value="${to}" max="${D.to}"></label><button class="sx-btn" id="fGo">Show</button><button class="sx-btn ghost" id="fAll">Since the start</button><span style="flex:1"></span><button class="sx-btn" id="fCsv">⬇ Download (Excel / CSV)</button></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">${card('Orders', n0(t.orders), D.first_day ? 'first bill: ' + D.first_day : '', '#5b3fb0')}${card('Bottles', n0(t.bottles), 'about ' + avgB + ' a order')}${card('ml sold', n0(t.ml) + ' ml', '≈ ' + (t.ml / 1000).toFixed(1) + ' litres', '#0f7a4d')}${card('Sales', rs(t.rs), 'about ₹ ' + n0(avgR) + ' an order', '#157a3c')}${card('Bottles with ml not read', n0(D.ml_not_read), 'old POS lines with no size in the name', D.ml_not_read ? '#b45309' : '')}</div>
+      <div class="sx-card"><h3>Month by month</h3>${rows.length ? `<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px"><thead><tr style="text-align:left;color:var(--sx-mut)"><th style="padding:6px">Month</th><th>From</th><th style="min-width:180px">Orders</th><th style="text-align:right">Bottles</th><th style="text-align:right">ml</th><th style="text-align:right;padding-right:8px">Sales</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr style="border-top:1px solid var(--sx-line,#e5e5e5)"><td style="padding:8px 6px"><b>${monName(r.month)}</b></td><td class="sx-mut" style="font-size:12.5px">${FROM[r.from]}</td><td><div style="display:flex;align-items:center;gap:8px"><div style="height:9px;border-radius:5px;background:#7c3aed;width:${Math.max(4, Math.round(r.orders / mx * 150))}px"></div><b>${n0(r.orders)}</b></div></td><td style="text-align:right">${n0(r.bottles)}</td><td style="text-align:right">${n0(r.ml)}</td><td style="text-align:right;padding-right:8px;font-weight:700">${rs(r.rs)}</td></tr>`).join('')}
+        <tr style="border-top:2px solid #14161a;font-weight:800"><td style="padding:8px 6px">Total</td><td></td><td>${n0(t.orders)}</td><td style="text-align:right">${n0(t.bottles)}</td><td style="text-align:right">${n0(t.ml)}</td><td style="text-align:right;padding-right:8px">${rs(t.rs)}</td></tr></tbody></table></div>` : '<div class="sx-clear">No bill in this range.</div>'}
+        <div class="sx-mut" style="font-size:12px;margin-top:8px">From ${D.new_from} the new billing is used: a day with a new bill counts only the new bills. Before that day, and on any day with no new bill, the old POS counts (the same rule as the commission). Testers and cancelled bills are not counted.</div></div>
+      <div class="sx-card"><h3>Data check <small>where each source starts and ends, so a missing stretch is easy to see</small></h3>${checkHtml()}</div>
+`;
+  }
+  async function load() {
+    try { D = await api.get('st_since.get', { from, to }); if (!from) from = ''; render(); }
+    catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  $('root').addEventListener('click', (e) => {
+    if (e.target.id === 'fGo') { from = $('fFrom').value; to = $('fTo').value; return load(); }
+    if (e.target.id === 'fAll') { from = ''; to = ''; return load(); }
+    if (e.target.id === 'fCsv' && D) {
+      const q = (v) => '"' + String(v).replace(/"/g, '""') + '"', L = [['Month', 'From', 'Orders', 'Bottles', 'ml', 'Sales (Rs)'].map(q).join(',')];
+      D.rows.forEach((r) => L.push([monName(r.month), FROM[r.from], r.orders, r.bottles, r.ml, r.rs].map(q).join(',')));
+      L.push(['Total', '', D.total.orders, D.total.bottles, D.total.ml, D.total.rs].map(q).join(','));
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + L.join('\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'store-since-the-start.csv'; document.body.appendChild(a); a.click(); a.remove();
+    }
+  });
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

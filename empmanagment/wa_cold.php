@@ -118,7 +118,7 @@ if (!function_exists('wcd_tick')) {
     function wcd_style_ids(PDO $pdo): array
     {
         static $c = null, $at = 0; if ($c !== null && time() - $at < 600) return $c; $at = time(); $c = [];
-        try { $r = $pdo->query("SELECT t.id, t.name FROM wa_templates t WHERE UPPER(t.category) = 'MARKETING' AND (t.name LIKE 'tmph\\_style\\_%' OR t.name REGEXP '^tmph_new_[0-9]+_m[0-9]') AND t.body NOT LIKE '%{{2}}%' AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED')")->fetchAll(PDO::FETCH_NUM); foreach ($r as $x) $c[(string)$x[1]] = (int)$x[0]; } catch (Throwable $e) { }
+        try { $r = $pdo->query("SELECT t.id, t.name FROM wa_templates t WHERE UPPER(t.category) = 'MARKETING' AND (t.name LIKE 'tmph\\_style\\_%' OR t.name REGEXP '^tmph_new_[0-9]+_m[0-9]' OR t.name LIKE 'tmph\\_ord\\_%') AND t.body NOT LIKE '%{{2}}%' AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED')")->fetchAll(PDO::FETCH_NUM); foreach ($r as $x) $c[(string)$x[1]] = (int)$x[0]; } catch (Throwable $e) { }
         return $c;
     }
     function wcd_own_m(PDO $pdo): array
@@ -136,6 +136,8 @@ if (!function_exists('wcd_tick')) {
         $tw = wcd_own_m($pdo); if (!$tw) return [];
         $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_cold_log WHERE phone = ? AND ok = 1"); $q->execute([$ph]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
         $o = []; foreach ($tw as $r) if (!isset($got[(int)$r[0]])) $o[] = $r;
+        /* owner 25 Nov 2026: no basic marketing message goes to the Cold funnel (cd_askm3 alone made 9,930 sends at about Rs 1.09 on the first morning): only exciting ones */
+        try { if ($o) { if (!function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php'; if (function_exists('wa_rs_dull')) { $bd = []; foreach ($pdo->query("SELECT id, body FROM wa_templates WHERE id IN (" . implode(',', array_map(function ($r) { return (int)$r[0]; }, $o)) . ")")->fetchAll(PDO::FETCH_NUM) as $x) $bd[(int)$x[0]] = (string)$x[1]; $o = array_values(array_filter($o, function ($r) use ($bd) { return isset($bd[(int)$r[0]]) && !wa_rs_dull($bd[(int)$r[0]]); })); } } } catch (Throwable $e) { }
         $st = wcd_tpl_stats($pdo); if (count($o) > 1 && $st) usort($o, function ($a, $b) use ($st) { $sa = $st[(int)$a[0]] ?? ['sent' => 0, 'replied' => 0]; $sb = $st[(int)$b[0]] ?? ['sent' => 0, 'replied' => 0]; return (($sb['replied'] + 0.5) / ($sb['sent'] + 50)) <=> (($sa['replied'] + 0.5) / ($sa['sent'] + 50)); });
         return $o;
     }

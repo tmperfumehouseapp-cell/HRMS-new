@@ -1,0 +1,28 @@
+<?php
+/** diag_inv.php: fast read-only inventory (counts only). */
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+if (!function_exists('json_response')) { function json_response($a = null, $b = 200) { } }   /* the pool files return early without it (the site has it); the diag only reads */
+$root = $argv[1] ?? ''; require $root . 'empmanagment/config.php';
+$pdo = new PDO('mysql:host=' . (defined('DB_HOST') ? DB_HOST : '127.0.0.1') . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+date_default_timezone_set('Asia/Kolkata'); $GLOBALS['pdo'] = $pdo; $action = ''; $t0 = date('Y-m-d 00:00:00'); $t36 = date('Y-m-d H:i:s', time() - 36 * 3600);
+$one = function (string $sql, array $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return [['ERR ' . substr($e->getMessage(), 0, 70)]]; } };
+// 66) The message inventory (owner 25 Nov): how many templates, how many offer-centric / basic, how many twins and replacements - counts only
+try {
+    require_once __DIR__ . '/wa_style.php'; if (is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php';
+    $rows66 = $pdo->query("SELECT t.id, UPPER(t.category), t.body, t.extra, EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED') FROM wa_templates t")->fetchAll(PDO::FETCH_NUM);
+    $offer66 = '/₹|\brs\.?\s*\d|offer|discount|% ?off|combo|deal|flat|deadline|sirf|aaj hi|jaldi|abhi order|ઓફર/iu'; $c66 = ['all' => 0, 'approved' => 0, 'marketing' => 0, 'utility' => 0, 'offer' => 0, 'offer_appr' => 0, 'basic' => 0, 'basic_appr' => 0, 'twins' => 0, 'twins_appr' => 0, 'twins_offer' => 0, 'twins_basic' => 0];
+    foreach ($rows66 as $r) { $c66['all']++; $ap = (int)$r[4] === 1; $b = (string)$r[2]; if ($ap) $c66['approved']++; if ($r[1] === 'MARKETING') $c66['marketing']++; if ($r[1] === 'UTILITY') $c66['utility']++; $of = (bool)preg_match($offer66, $b); $bs = function_exists('wa_rs_dull') ? wa_rs_dull($b) : (wa_style_dull($b) !== '');
+        if ($of) { $c66['offer']++; if ($ap) $c66['offer_appr']++; } if ($bs) { $c66['basic']++; if ($ap) $c66['basic_appr']++; }
+        if (strpos((string)$r[3], 'restyle_of') !== false) { $c66['twins']++; if ($ap) $c66['twins_appr']++; if ($of) $c66['twins_offer']++; if ($bs) $c66['twins_basic']++; } }
+    echo "ASK INVENTORY templates " . json_encode($c66) . "\n";
+    $st66 = json_decode((string)$pdo->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rs_state'")->fetchColumn(), true); $pr66 = ['made' => 0, 'replaced' => 0, 'fail' => 0, 'v2' => 0, 'v2done' => 0, 'pairs' => 0];
+    foreach (($st66['pairs'] ?? []) as $p) { $pr66['pairs']++; $s = (string)($p['st'] ?? ''); if (isset($pr66[$s])) $pr66[$s]++; if (!empty($p['v2'])) $pr66['v2']++; if (!empty($p['v2done'])) $pr66['v2done']++; }
+    echo "ASK INVENTORY replacement state " . json_encode($pr66) . " · attempts n " . json_encode($st66['n'] ?? null) . "\n";
+} catch (Throwable $e) { echo "ASK INVENTORY ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
+// 70) The top templates sent TODAY per module with name, category, first words and whether they count as basic (owner 25 Nov: how many dull messages still go) - counts only
+try { require_once __DIR__ . '/wa_style.php'; if (is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php'; $t70 = date('Y-m-d 00:00:00');
+    $src70 = ['cold' => "SELECT tpl_id, COUNT(*) FROM wa_cold_log WHERE ok = 1 AND at >= '$t70' AND id > (SELECT MAX(id) - 150000 FROM wa_cold_log) GROUP BY tpl_id ORDER BY 2 DESC LIMIT 40", 'modbc' => "SELECT tpl_id, COUNT(*) FROM wa_ru_log WHERE ok = 1 AND at >= '$t70' AND id > (SELECT MAX(id) - 80000 FROM wa_ru_log) GROUP BY tpl_id ORDER BY 2 DESC LIMIT 40", 'line' => "SELECT tpl_id, COUNT(*) FROM wa_line_plan WHERE status = 'sent' AND sent_at >= '$t70' AND id > (SELECT MAX(id) - 400000 FROM wa_line_plan) GROUP BY tpl_id ORDER BY 2 DESC LIMIT 40", 'after' => "SELECT tpl_id, COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND sent_at >= '$t70' AND id > (SELECT MAX(id) - 300000 FROM wa_aft_plan) GROUP BY tpl_id ORDER BY 2 DESC LIMIT 40"];
+    foreach ($src70 as $m70 => $sql70) { $rows = $pdo->query($sql70)->fetchAll(PDO::FETCH_NUM); $ids = array_map(function ($r) { return (int)$r[0]; }, $rows); $tp = []; if ($ids) foreach ($pdo->query("SELECT id, name, UPPER(category), body FROM wa_templates WHERE id IN (" . implode(',', array_filter($ids)) . ")")->fetchAll(PDO::FETCH_NUM) as $x) $tp[(int)$x[0]] = $x;
+        $tot = 0; $dull = 0; $offer = 0; $top = []; foreach ($rows as $r) { $x = $tp[(int)$r[0]] ?? [0, '?', '?', '']; $n = (int)$r[1]; $tot += $n; $d = function_exists('wa_rs_dull') ? wa_rs_dull((string)$x[3]) : false; $o = (bool)preg_match('/₹|offer|combo|deal|flat|deadline|sirf/iu', (string)$x[3]); if ($d) $dull += $n; if ($o) $offer += $n; if (count($top) < 6) $top[] = [(int)$r[0], mb_substr((string)$x[1], 0, 26), (string)$x[2], $n, $d ? 'DULL' : 'ok', mb_substr(preg_replace('/\s+/', ' ', (string)$x[3]), 0, 60)]; }
+        echo "ASK DULLSENT $m70 today sent(top40) $tot · dull $dull · offer-centric $offer · top " . json_encode($top, JSON_UNESCAPED_UNICODE) . "\n"; }
+} catch (Throwable $e) { echo "ASK DULLSENT ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
