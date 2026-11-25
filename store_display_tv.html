@@ -222,6 +222,10 @@
   }
   if (!key) { pairMode(); } else { tick(); setInterval(tick, 8000); }
   setTimeout(function () { location.reload(); }, 6 * 3600 * 1000);
+  // one tap on the screen = full screen (the address bar and tabs of Chrome go away); a browser allows it only after a tap
+  function full() { var e = document.documentElement, f = e.requestFullscreen || e.webkitRequestFullscreen || e.webkitRequestFullScreen || e.mozRequestFullScreen || e.msRequestFullscreen;
+    var on = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement; if (f && !on) { try { var r = f.call(e); if (r && r.catch) r.catch(function () { /* not allowed here */ }); } catch (x) { /* old browser */ } } }
+  document.addEventListener('click', full); document.addEventListener('touchend', full); document.addEventListener('keydown', full);
   document.addEventListener('click', function () { try { var AC = window.AudioContext || window.webkitAudioContext; audio = audio || new AC(); if (audio.resume) audio.resume(); } catch (e) { /* ok */ } });
 })();
 </script>
