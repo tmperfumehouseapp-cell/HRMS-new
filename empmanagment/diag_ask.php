@@ -2,6 +2,7 @@
 /** diag_ask.php — read-only, command line only (owner 22 Nov asked): who is blocked by the query gate, how many 131049-type failures went again as utility, and what the 30-day Lineup learning did
  *  (new topics, new wordings, winners). Usage: php diag_ask.php <path with trailing slash to the site root>. */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+if (!function_exists('json_response')) { function json_response($a = null, $b = 200) { } }   /* the pool files return early without it (the site has it); the diag only reads */
 $root = $argv[1] ?? ''; require $root . 'empmanagment/config.php';
 $pdo = new PDO('mysql:host=' . (defined('DB_HOST') ? DB_HOST : '127.0.0.1') . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 date_default_timezone_set('Asia/Kolkata'); $GLOBALS['pdo'] = $pdo; $action = ''; $t0 = date('Y-m-d 00:00:00'); $t36 = date('Y-m-d H:i:s', time() - 36 * 3600);
