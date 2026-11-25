@@ -1,4 +1,8 @@
 <?php
+if (!function_exists('wa_strip_t0')) {
+    /** THE START OF THE SALES DAY (owner 25 Nov 2026: "all numbers by the sales day, not from midnight"): the business day starts at the day-start time of the day (10:00 normally, or the date-specific time set on Day timing, e.g. 12:25), the same as attendance and orders. Falls back to midnight where that function is not loaded. */
+    function wa_strip_t0(PDO $pdo): string { try { if (function_exists('wa_bizday_start')) return wa_bizday_start($pdo); } catch (Throwable $e) { } return date('Y-m-d 00:00:00'); }
+}
 /**
  * One line per module for the top of the Campaigns page (owner 24 Nov 2026): A, B, C, Cold, Lineup, After-Order — sent today, this hour, the limit, failed, replies.
  * Counts only, read-only, cached 60 seconds. Replies come from the message-pattern report (wa_pat.php) when it is fresh.
@@ -9,7 +13,7 @@ if (!function_exists('wa_strip_report')) {
         $ck = 'wa_strip_cache' . ($only !== '' ? '_' . preg_replace('/\W/', '', $only) : ''); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
         if (is_array($c) && !empty($c['t']) && time() - (int)$c['t'] < 60) return $c;
         try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 2500"); } catch (Throwable $e) { }
-        $t0 = date('Y-m-d 00:00:00'); $h1 = date('Y-m-d H:i:s', time() - 3600); $one = function ($sql, $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetch(PDO::FETCH_NUM) ?: []; } catch (Throwable $e) { return null; } };
+        $t0 = wa_strip_t0($pdo); $h1 = date('Y-m-d H:i:s', time() - 3600); $one = function ($sql, $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetch(PDO::FETCH_NUM) ?: []; } catch (Throwable $e) { return null; } };
         $g = function ($k, $d = '') use ($pdo) { try { return (string)setting_get($pdo, $k, $d); } catch (Throwable $e) { return $d; } };
         $rep = []; $pc = json_decode($g('wa_pat_cache_today'), true);
         if (is_array($pc) && !empty($pc['t']) && time() - (int)$pc['t'] < 3600 && date('Y-m-d', (int)$pc['t']) === date('Y-m-d')) foreach ($pc['modules'] as $m) $rep[$m['key']] = [(int)$m['sent'], (int)$m['replied']];
@@ -43,7 +47,7 @@ if (!function_exists('wa_strip_detail')) {
         $n = function ($v) { return number_format((int)$v); }; $pct = function ($a, $b) { return $b > 0 ? round(100 * $a / $b, 1) . '%' : '–'; };
         $d = [];
         if ($mod === 'moda') {
-            $m10 = date('Y-m-d H:i:s', time() - 600); $m30 = date('Y-m-d H:i:s', time() - 1800); $m60 = date('Y-m-d H:i:s', time() - 3600); $t0 = date('Y-m-d 00:00:00');
+            $m10 = date('Y-m-d H:i:s', time() - 600); $m30 = date('Y-m-d H:i:s', time() - 1800); $m60 = date('Y-m-d H:i:s', time() - 3600); $t0 = wa_strip_t0($pdo);
             $r = $all("SELECT SUM(ts >= ? AND status <> 'failed'), SUM(ts >= ? AND status = 'failed'), SUM(ts >= ? AND status <> 'failed'), SUM(ts >= ? AND status = 'failed'), SUM(status <> 'failed'), SUM(status = 'failed') FROM wa_messages WHERE id > (SELECT MAX(id) - 60000 FROM wa_messages) AND dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ?", [$m10, $m10, $m30, $m30, $m60]);
             if ($r && $r[0]) { $x = $r[0]; $d[] = ['Pushed last 10 min', $n($x[0]) . ' ok · ' . $n($x[1]) . ' failed', $pct($x[1], $x[0] + $x[1]) . ' failed']; $d[] = ['Pushed last 30 min', $n($x[2]) . ' ok · ' . $n($x[3]) . ' failed', $pct($x[3], $x[2] + $x[3]) . ' failed']; $d[] = ['Pushed last 60 min', $n($x[4]) . ' ok · ' . $n($x[5]) . ' failed', $pct($x[5], $x[4] + $x[5]) . ' failed (danger above 65%)']; }
             $d[] = ['Plan (this hour allowance)', $n($g('wa_dq_hourly', '0')) . '/h', 'base ' . $n($g('wa_dq_base', '0')) . ' · floor ' . $n($g('wa_dq_floor', '0')) . ' · top ' . $n($g('wa_dq_top', '0')) . ' · steps 15k → 17k → 20k from 09:00 on 25 Nov (before: 11k → 13k → 15k)'];
@@ -62,7 +66,7 @@ if (!function_exists('wa_strip_detail')) {
             if ($au !== null) { $tot = 0; $nm = []; foreach ($au as $w) { $tot += (int)$w[1]; $nm[] = mb_substr((string)$w[0], 0, 22) . ' ' . $n($w[1]); } $pre[] = ['Audience added today', $n($tot) . ' people', $au ? count($au) . ' new campaign(s): ' . implode(' · ', $nm) : 'no new campaign today']; }
             $d = array_merge($pre, $d);
         } elseif ($mod === 'modb') {
-            $t0 = date('Y-m-d 00:00:00'); $r = $all("SELECT HOUR(at), COUNT(*) FROM wa_ru_log WHERE id > (SELECT MAX(id) - 80000 FROM wa_ru_log) AND ok = 1 AND kind <> 'cnev' AND at >= ? GROUP BY 1 ORDER BY 1 DESC LIMIT 4", [$t0]);
+            $t0 = wa_strip_t0($pdo); $r = $all("SELECT HOUR(at), COUNT(*) FROM wa_ru_log WHERE id > (SELECT MAX(id) - 80000 FROM wa_ru_log) AND ok = 1 AND kind <> 'cnev' AND at >= ? GROUP BY 1 ORDER BY 1 DESC LIMIT 4", [$t0]);
             $d[] = ['Level (speed limit)', $n($g('wa_ru_hourly', '0')) . '/h', 'steps up when the last hours were fast and clean'];
             if ($r) $d[] = ['Last hours (hour: sent)', implode(' · ', array_map(function ($w) { return $w[0] . ':00 → ' . number_format((int)$w[1]); }, array_reverse($r))), 'today'];
             $last = json_decode($g('wa_ru_last'), true); if (is_array($last)) { $why = []; foreach ($last['why'] ?? [] as $k => $v) $why[] = $k . ' ' . $v; $d[] = ['Last round', 'looked ' . $n($last['looked'] ?? 0) . ' · sent ' . $n($last['sent'] ?? 0) . ' · failed ' . $n($last['failed'] ?? 0), implode(' · ', $why)]; }
@@ -86,7 +90,7 @@ if (!function_exists('wa_strip_detail')) {
             $ll = $o['lad_last'] ?? null; if (is_array($ll)) $d[] = ['Last speed decision', date('H:i', (int)($ll['at'] ?? 0)) . ' · ' . $n($ll['n'] ?? 0) . ' sent · ' . $n($ll['f'] ?? 0) . ' failed', 'level ' . $n($ll['level'] ?? 0) . ' ' . (string)($ll['why'] ?? '')];
             $L = $o['last'] ?? null; if (is_array($L)) { $why = []; foreach ($L['why'] ?? [] as $k => $v) $why[] = $k . ' ' . $v; $d[] = ['Last round', 'looked ' . $n($L['looked'] ?? 0) . ' · sent ' . $n($L['sent'] ?? 0), implode(' · ', $why)]; }
             if (!empty($o['pause_until']) && (int)$o['pause_until'] > time()) $d[] = ['Paused until', date('H:i', (int)$o['pause_until']), 'a safety brake (spam flags / many failures)'];
-            $cc = $all("SELECT COUNT(DISTINCT camp_id), COUNT(*), COUNT(DISTINCT HOUR(at)) FROM wa_ru_log WHERE id > (SELECT MAX(id) - 80000 FROM wa_ru_log) AND kind = 'cnev' AND ok = 1 AND at >= ?", [date('Y-m-d 00:00:00')]);
+            $cc = $all("SELECT COUNT(DISTINCT camp_id), COUNT(*), COUNT(DISTINCT HOUR(at)) FROM wa_ru_log WHERE id > (SELECT MAX(id) - 80000 FROM wa_ru_log) AND kind = 'cnev' AND ok = 1 AND at >= ?", [wa_strip_t0($pdo)]);
             if ($cc && $cc[0] && (int)$cc[0][1] > 0) { $x = $cc[0]; array_unshift($d, ['Sent today', $n($x[1]) . ' messages', 'from ' . $n($x[0]) . ' campaigns · average ' . $n((int)round($x[1] / max(1, (int)$x[2]))) . ' per active hour (limit ' . $n($o['hourly'] ?? 0) . '/h)']); }
         }
         return $d;
@@ -103,8 +107,8 @@ if (!function_exists('wa_strip_replies')) {
         try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 12000"); } catch (Throwable $e) { }
         $rep = null; $sent = 0;
         try {
-            if ($mod === 'moda') { $q = $pdo->prepare("SELECT COUNT(*), SUM(EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = i.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 48 HOUR))) FROM wa_camp_items i WHERE i.id > (SELECT MAX(id) - 120000 FROM wa_camp_items) AND i.id % 12 = 0 AND i.sent_at >= ? AND i.status = 'sent'"); $q->execute([date('Y-m-d 00:00:00')]); $r = $q->fetch(PDO::FETCH_NUM); $sent = (int)$r[0] * 12; $rep = (int)$r[1] * 12; }   // a sample of the newest campaign rows (x12): the full count takes too long
-            else { $mult = in_array($mod, ['cold', 'modb', 'modc'], true) ? 3 : 1; $sent = 0; $rep = 0; foreach (wa_pat_rows($pdo, $mod, date('Y-m-d 00:00:00'), $mult) as $r) { $sent += $r[1]; $rep += $r[2]; } } } catch (Throwable $e) { $rep = null; }
+            if ($mod === 'moda') { $q = $pdo->prepare("SELECT COUNT(*), SUM(EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = i.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'in' AND m.ts > i.sent_at AND m.ts <= DATE_ADD(i.sent_at, INTERVAL 48 HOUR))) FROM wa_camp_items i WHERE i.id > (SELECT MAX(id) - 120000 FROM wa_camp_items) AND i.id % 12 = 0 AND i.sent_at >= ? AND i.status = 'sent'"); $q->execute([wa_strip_t0($pdo)]); $r = $q->fetch(PDO::FETCH_NUM); $sent = (int)$r[0] * 12; $rep = (int)$r[1] * 12; }   // a sample of the newest campaign rows (x12): the full count takes too long
+            else { $mult = in_array($mod, ['cold', 'modb', 'modc'], true) ? 3 : 1; $sent = 0; $rep = 0; foreach (wa_pat_rows($pdo, $mod, wa_strip_t0($pdo), $mult) as $r) { $sent += $r[1]; $rep += $r[2]; } } } catch (Throwable $e) { $rep = null; }
         $out = ['t' => time(), 'modules' => [['key' => $mod, 'replies' => $rep, 'replies_sent' => $sent]]];
         if ($rep !== null) { try { setting_set($pdo, $key, json_encode($out)); } catch (Throwable $e) { } }
         return $out;
@@ -120,7 +124,7 @@ if (!function_exists('wa_strip_money')) {
         $ck = 'wa_strip_money_' . preg_replace('/\W/', '', $mod); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
         if (is_array($c) && !empty($c['t']) && time() - (int)$c['t'] < 600) return $c;
         try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 9000"); } catch (Throwable $e) { }
-        $t0 = date('Y-m-d 00:00:00'); $P = ['MARKETING' => 1.09, 'UTILITY' => 0.15];
+        $t0 = wa_strip_t0($pdo); $P = ['MARKETING' => 1.09, 'UTILITY' => 0.15];
         $one = function ($sql, $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetch(PDO::FETCH_NUM) ?: []; } catch (Throwable $e) { return null; } };
         $all = function ($sql, $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return null; } };
         $cost = function ($rows) use ($P) { $t = 0.0; foreach ((array)$rows as $r) $t += (int)$r[1] * ($P[strtoupper((string)$r[0])] ?? 0.15); return round($t); };
