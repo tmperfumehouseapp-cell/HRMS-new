@@ -183,6 +183,7 @@ if ((string)$action === 'tms.gift') {   // 🎁 the website's gift perfume on pa
 if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 Nov): the website orders of the last 5 days whose payment has not come, for the salesperson who holds the customer's WhatsApp chat (open, closed or in History),
     // else the last person who wrote to the customer there — the same rule as the name filled in on Website orders. An Admin sees everybody's. An order leaves when it is paid, cancelled, or the customer paid a later order. Read-only.
     $me = (int)($auth['employee_id'] ?? 0); $adm = function_exists('wa_is_admin') ? (bool)wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (!$adm && function_exists('wa_boss_ok')) { try { $adm = (bool)wa_boss_ok($pdo, $auth); } catch (Throwable $e) { } }   // a Sales Head sees every salesperson's customers too
     if (tms_cfg($pdo)['key'] === '') json_response(['ok' => true, 'rows' => [], 'amount' => 0, 'days' => 7]);
     $days = 7; [$all, $err] = tms_orders($pdo, date('Y-m-d', time() - $days * 86400), date('Y-m-d'));
     if ($err !== '') json_response(['ok' => false, 'error' => $err, 'rows' => [], 'amount' => 0]);

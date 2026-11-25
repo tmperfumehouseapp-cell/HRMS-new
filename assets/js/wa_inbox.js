@@ -248,7 +248,7 @@
     const root = $(opts.root || 'wi'); root.className = 'wi ' + (admin ? 'admin' : 'mine') + (opts.one ? ' one' : '');
     const tellParent = (m) => { if (opts.one && window.parent !== window) { try { window.parent.postMessage(Object.assign({ wa: '' }, m), location.origin); } catch (e) { } } };   // wa_one.html: the side panel around this chat
     const st = document.createElement('style'); st.textContent = CSS + '.wi-new{display:inline-block;width:12px;height:12px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:-1px;box-shadow:0 0 0 0 rgba(34,197,94,.55);animation:winew 1.6s infinite}@keyframes winew{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}'; document.head.appendChild(st);
-    const tabs = admin ? [['unassigned', '🙋 Requests'], ['all', 'All open'], ['closed', 'Closed'], ['history', '🕘 History']] : [['mine', 'Open'], ['closed', 'Closed'], ['history', '🕘 History']];
+    const tabs = admin ? [['unassigned', '🙋 Requests'], ['all', 'All open'], ['unpaid', '💳 Not paid'], ['closed', 'Closed'], ['history', '🕘 History']] : [['mine', 'Open'], ['closed', 'Closed'], ['history', '🕘 History']];
     root.innerHTML = `
       <div class="wi-kpi" id="wiK"></div>
       <div class="wi-box">
@@ -266,7 +266,7 @@
     // ---------- list
     function drawTabs() {
       const c = S.counts || {};
-      const n = { unassigned: c.unassigned, all: c.all, mine: c.mine, closed: c.closed, history: c.history };
+      const n = { unassigned: c.unassigned, all: c.all, mine: c.mine, closed: c.closed, history: c.history, unpaid: S.unpaid && S.unpaid.rows ? S.unpaid.rows.length : null };
       $('wiT').innerHTML = tabs.map(([k, l]) => `<button type="button" class="wi-tab ${S.scope === k && !S.emp ? 'on' : ''}" data-k="${k}">${l}${n[k] != null ? '<i>' + n[k] + '</i>' : ''}</button>`).join('');
       $('wiT').querySelectorAll('button').forEach((b) => { b.onclick = () => { S.scope = b.dataset.k; S.emp = 0; if (!admin && S.bulk.on && S.scope !== 'history') bkToggleMode(false); else if (!admin) drawFeeds(); if ($('wiE')) { $('wiE').value = '0'; ebSync(); } if (admin && S.src === 'assigned' && S.scope === 'unassigned') { S.src = ''; if (opts.onFeed) { try { opts.onFeed(''); } catch (e) { } } } loadList(); }; });
     }
@@ -532,8 +532,28 @@
       root.appendChild(ruBox);
       $('wiRuOk').onclick = () => { try { localStorage.setItem('wa_rules_seen', rs.at); } catch (e) { } if (ruBox) { ruBox.remove(); ruBox = null; } };
     }
+    // 💳 NOT PAID (owner, 25 Nov): Admin / Sales Head tab beside All open — every salesperson's customers who have an unpaid website order or a checkout link with no order (7 days), the salesperson's name on each row, the chat opens on the right.
+    async function upLoad(quiet) { try { const d = await api.get('tms.unpaid_mine'); if (d && d.ok) { S.unpaid = d; S.unpaidAt = Date.now(); } else if (!quiet && d && d.error) S.unpaidErr = d.error; } catch (e) { if (!quiet) S.unpaidErr = e.message; } drawTabs(); }
+    function upDraw() {
+      const L = $('wiL'), U = S.unpaid; if (!U) { L.innerHTML = `<div class="wi-empty">${S.unpaidErr ? esc(S.unpaidErr) : 'Loading…'}</div>`; return; }
+      const rs = (v) => '₹' + Math.round(v || 0).toLocaleString('en-IN'), ago = (m) => m < 60 ? m + ' min' : m < 1440 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : Math.floor(m / 1440) + ' d ' + Math.floor((m % 1440) / 60) + ' h';
+      const q = (S.q || '').toLowerCase(), all = U.rows || [], sps = [...new Set(all.map((x) => x.emp || '—'))].sort(), sp = S.upSp && sps.includes(S.upSp) ? S.upSp : '', part = S.upPart == null ? -1 : S.upPart;
+      const base = all.filter((x) => (!sp || (x.emp || '—') === sp) && (!q || ((x.customer || '') + ' ' + x.phone + ' ' + x.number).toLowerCase().indexOf(q) > -1)), w = base.filter((x) => part === -1 || (x.part || 0) === part);
+      const P = [['Today', '#dcfce7', '#166534'], ['Yesterday', '#fef9c3', '#854d0e'], ['Day before yesterday', '#ffedd5', '#9a3412'], ['Earlier · up to ' + (U.days || 7) + ' days', '#fee2e2', '#991b1b']];
+      const chip = (k, lab) => `<button type="button" data-upp="${k}" style="font:inherit;font-size:12px;font-weight:800;border-radius:99px;padding:4px 10px;white-space:nowrap;cursor:pointer;border:1px solid ${part === k ? '#9a3412' : '#e3e8ef'};background:${part === k ? '#9a3412' : '#fff'};color:${part === k ? '#fff' : '#1c2430'}">${lab} ${base.filter((x) => k === -1 || (x.part || 0) === k).length}</button>`;
+      const row = (x) => `<div class="wi-it ${S.cur && S.cur.contact && S.cur.contact.phone === x.phone ? 'on' : ''}" data-p="${esc(x.phone)}" style="display:block"><div style="display:flex;gap:8px;align-items:baseline"><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.customer || pretty(x.phone))}</b><b>${rs(x.total)}</b></div>
+        <div style="font-size:12px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.number)} · ${esc(x.items || '')}</div>
+        <div class="pl" style="margin-top:4px"><span class="wi-p" style="background:#eef2ff;color:#3730a3;font-weight:800">👤 ${esc(x.emp || 'nobody')}</span><span class="wi-p" style="background:${x.mins < 60 ? '#dcfce7;color:#166534' : '#fee2e2;color:#991b1b'};font-weight:800">${x.kind === 'link' ? '🔗 link sent ' + ago(x.mins) + ' ago · no order' : '⏳ order not paid for ' + ago(x.mins)}</span></div></div>`;
+      L.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 10px;border-bottom:1px solid #eef1f4"><select id="wiUpSp" style="font:inherit;font-size:13px;border:1px solid #e3e8ef;border-radius:10px;padding:5px 8px;max-width:100%"><option value="">Everyone · ${all.length}</option>${sps.map((s) => `<option value="${esc(s)}"${s === sp ? ' selected' : ''}>${esc(s)} · ${all.filter((x) => (x.emp || '—') === s).length}</option>`).join('')}</select>${chip(-1, 'All')}${P.map((p, k) => chip(k, p[0].split(' · ')[0])).join('')}</div>
+        <div style="padding:8px 12px;background:#ffedd5;color:#9a3412;font-size:13px;font-weight:700">💳 ${w.length} customer${w.length === 1 ? '' : 's'} did not pay · ${rs(w.reduce((a, x) => a + (x.total || 0), 0))} · ${sp ? esc(sp) : 'all salespeople'}<div style="font-weight:600;font-size:11.5px">An unpaid website order, or a checkout link with no order · last ${U.days || 7} days · leaves when the payment comes</div></div>`
+        + ([0, 1, 2, 3].map((k) => { const g = w.filter((x) => (x.part || 0) === k); return g.length ? `<div style="padding:6px 12px;font-size:11.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;display:flex;gap:8px;background:${P[k][1]};color:${P[k][2]}"><span style="flex:1">${P[k][0]} · ${g.length}</span><span>${rs(g.reduce((a, x) => a + (x.total || 0), 0))}</span></div>` + g.map(row).join('') : ''; }).join('') || '<div class="wi-empty">Nobody matches.</div>');
+      L.querySelectorAll('.wi-it').forEach((el) => { el.onclick = () => openChat(el.dataset.p); });
+      L.querySelectorAll('[data-upp]').forEach((b) => { b.onclick = () => { S.upPart = +b.dataset.upp; upDraw(); }; });
+      const s = $('wiUpSp'); if (s) s.onchange = function () { S.upSp = this.value; upDraw(); };
+    }
     async function loadList(quiet) {
       if (opts.one) return;   // one chat only (side panel): no list to load
+      if (admin && S.scope === 'unpaid' && !S.emp) { if (S.unpaid && Date.now() - (S.unpaidAt || 0) < (quiet ? 60000 : 15000)) { if (!quiet) { drawTabs(); upDraw(); } return; } if (!S.unpaid) upDraw(); await upLoad(quiet); if (S.scope === 'unpaid' && !S.emp) upDraw(); return; }   // 💳 its own list (not wa.chats); refreshed once a minute
       if (S.busyList) return; S.busyList = true;
       try {
         const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.q && !(S.bulk && S.bulk.on)) p.wide = 1; if (S.src) p.src = S.src; if (S.hrs && S.hrs.length) { p.hrs = S.hrs.join(','); if (S.hdate) p.hdate = S.hdate; } if (S.emp) p.emp = S.emp; if (!admin) p.mine = 1; if (S.emp && S.empTag) p.tag = 1; if (S.sort) p.sort = S.sort; if (S.flt.length) p.flt = S.flt.join(','); if (S.scope === 'unans' && !S.emp) { Object.assign(p, unParams()); if (!p.sort) p.sort = 'new'; } if (admin && S.bulk && S.bulk.on) { const f = S.bulk.f || {}; p.bt = f.bt || ''; if (f.bd) { p.bd = f.bd; if (f.bd === 'custom') { p.bdf = f.bdf || ''; p.bdt = f.bdt || f.bdf || ''; } } if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); }
@@ -1674,6 +1694,7 @@
       let __act = Date.now(), __beat = 0; ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { __act = Date.now(); }, { passive: true }));
       setInterval(() => { if (document.hidden || !root.offsetParent) return; __beat++; if (Date.now() - __act > 120000 ? __beat % 3 : __beat % 2) return; loadList(true); refreshChat(); }, 5000);   // active: every 10 s as before (every 2nd beat); nobody touching the screen for 2 minutes: every 15 s   // only while the Chats screen is on view (another WhatsApp screen = no polling)
       if (!admin) { pollCall(); setInterval(pollCall, 12000); }
+      if (admin) { upLoad(true); setInterval(() => { if (!document.hidden && S.scope !== 'unpaid') upLoad(true); }, 180000); }   // 💳 the number on the Not paid tab
       document.addEventListener('visibilitychange', () => { if (document.hidden) { if (AU.run) auStop(false); } else { loadList(true); refreshChat(); auArm(); } });
     })();
   }
