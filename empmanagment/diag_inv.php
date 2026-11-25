@@ -43,7 +43,7 @@ try {
             [$nm, $bd, $ex] = $tpl[$id]; $dull = function_exists('wa_rs_dull') ? wa_rs_dull((string)$bd) : (wa_style_dull((string)$bd) !== ''); $new = !$dull && (strpos((string)$ex, 'restyle_of') !== false || preg_match('/^(tmph_ord_|tmph_style_|tmph_new_|open_ex|ask_ex|order_ex|rs\d+_)/', (string)$nm));
             $tot[$dull ? 'dull_h' : 'exc_h'] += (int)$r[1]; $tot[$dull ? 'dull_d' : 'exc_d'] += (int)$r[2]; if ($new) { $tot['new_h'] += (int)$r[1]; $tot['new_d'] += (int)$r[2]; } }
         $out[$m] = $tot; }
-    echo "ASK HOURLY (last 60 min | today) " . json_encode($out) . " · now " . date('H:i') . "\n";
+    $out_hourly_json = json_encode($out); echo "ASK HOURLY (last 60 min | today) " . json_encode($out) . " · now " . date('H:i') . "\n";
 } catch (Throwable $e) { echo "ASK HOURLY ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
 // the failed replacements: why, and from which module (owner 25 Nov: "the 74 that failed: are alternatives made?")
 try { $s9 = json_decode((string)$pdo->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rs_state'")->fetchColumn(), true); $w9 = []; $o9 = [];
@@ -127,3 +127,10 @@ try { $g = function ($k) use ($pdo) { return (string)setting_get($pdo, $k, '-');
 } catch (Throwable $e) { echo "ASK ARSC ERR " . substr($e->getMessage(), 0, 120) . "\n"; }
 try { $cols = $pdo->query("SHOW COLUMNS FROM wa_numbers")->fetchAll(PDO::FETCH_COLUMN); $pick = array_values(array_filter($cols, function ($c) { return preg_match('/^(id|label|display|quality|status|tier|limit|msg_limit|messaging|daily|cap|q$|qual)/i', $c); })); $rows = $pdo->query("SELECT " . implode(',', array_map(function ($c) { return "`$c`"; }, $pick)) . " FROM wa_numbers LIMIT 20")->fetchAll(PDO::FETCH_NUM);
     echo "ASK NUMBERS columns " . json_encode($pick) . " rows " . json_encode($rows, JSON_UNESCAPED_UNICODE) . "\n"; } catch (Throwable $e) { echo "ASK NUMBERS ERR " . substr($e->getMessage(), 0, 120) . "\n"; }
+// the REAL waiting backlog of Module B / C: of a sample of the failed marketing items, how many people got NO delivered / read message after the failure (owner 25 Nov)
+try { $h8 = date('Y-m-d H:i:s', time() - 8 * 86400); $mo = '131049,131050,130472'; $it = $pdo->prepare("SELECT i.id, i.phone, i.sent_at FROM wa_camp_items i WHERE i.id > (SELECT MAX(id) - 800000 FROM wa_camp_items) AND i.sent_at >= ? AND ((i.status = 'failed' AND i.err_code IN ($mo)) OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo))) AND i.id % 40 = 0 LIMIT 1500"); $it->execute([$h8]); $rows = $it->fetchAll(PDO::FETCH_NUM);
+    $chk = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts > ? AND status IN ('delivered','read') LIMIT 1"); $un = $pdo->prepare("SELECT 1 FROM wa_undeliv WHERE phone = ? LIMIT 1"); $ct = $pdo->prepare("SELECT optout + camp_optout, last_in_at FROM wa_contacts WHERE phone = ? LIMIT 1"); $tot = 0; $deliv = 0; $opt = 0; $wrote = 0; $never = 0; $left = 0; $seenp = [];
+    foreach ($rows as $r) { if (isset($seenp[$r[1]])) continue; $seenp[$r[1]] = 1; $tot++; $chk->execute([$r[1], $r[2]]); if ($chk->fetchColumn()) { $deliv++; continue; } $un->execute([$r[1]]); if ($un->fetchColumn()) { $never++; continue; } $ct->execute([$r[1]]); $c = $ct->fetch(PDO::FETCH_NUM); if ($c && (int)$c[0] > 0) { $opt++; continue; } if ($c && $c[1]) $wrote++; $left++; }
+    echo "ASK BACKLOG sample of " . $tot . " people with a failed marketing item in 8 days: already got a delivered / read message since " . $deliv . " (" . round(100 * $deliv / max(1, $tot)) . "%) · never-reach " . $never . " · opted out " . $opt . " · STILL WAITING " . $left . " (" . round(100 * $left / max(1, $tot)) . "%, of them wrote to us before: " . $wrote . ")\n";
+} catch (Throwable $e) { echo "ASK BACKLOG ERR " . substr($e->getMessage(), 0, 120) . "\n"; }
+try { if (isset($out_hourly_json)) echo "ASK HOURLY2 " . $out_hourly_json . "\n"; } catch (Throwable $e) { }
