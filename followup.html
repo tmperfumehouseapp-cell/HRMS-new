@@ -166,6 +166,7 @@ guardPage(); renderSidebar('followup');
   const numTxt = (t, u) => { if (!(u && u.val != null)) return extras(u); const so = t.source && srcOf(t.source), many = t.metrics && t.metrics.length > 1;
     return '<div class="fu-num">' + (many && so ? '<small style="font-size:11px;display:block">' + esc(short(so.label)) + '</small>' : '') + fmt(u.val, t.unit) + (u.auto ? ' <small>from the system</small>' : '') + '</div>' + extras(u); };
   const canDay = (t, d) => t.can_write && t.status !== 'done' && (D.manager || d >= D.days[t.lag ? 2 : 1] || d === D.today);
+  const isUp = (ty) => ty === 'file' || ty === 'photo' || ty === 'video';   // fields that take an upload
   const fset = (v) => (v && typeof v === 'object' ? !!v.f : String(v == null ? '' : v).trim() !== '');
   const missing = (t, u) => t.fields.filter((f) => f.req && !fset(u && u.f ? u.f[f.k] : null));
   const covered = (t, d) => { const u = t.updates[d]; if (!u) return false; if (t.fields.some((f) => f.req)) return !missing(t, u).length && !u.q && (!t.need_text || !!u.text);
@@ -173,7 +174,7 @@ guardPage(); renderSidebar('followup');
   const fileUrl = (t, d, k) => api.buildUrl('fup.file', { topic_id: t.id, day: d, key: k, token: api.token() });
   // the owner's own fields of a row: label on the left, what was filled on the right (a link opens, a file opens, yes / no is coloured)
   const fvals = (t, d, u) => { if (!t.fields.length || !u) return ''; const rows = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null; if (!fset(v)) return f.req ? '<span>' + esc(f.label) + '</span><b style="color:#b45309">not filled</b>' : '';
-      const show = f.type === 'file' ? '<a href="' + esc(fileUrl(t, d, f.k)) + '" target="_blank" rel="noopener" data-stop="1">📎 ' + esc(v.n || 'file') + '</a>' : f.type === 'link' ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer" data-stop="1">🔗 open</a>' : f.type === 'yesno' ? '<b style="color:' + (v === 'yes' ? '#16945a' : '#d9423b') + '">' + (v === 'yes' ? 'Yes' : 'No') + '</b>' : f.type === 'num' ? '<b>' + Number(v).toLocaleString('en-IN') + '</b>' : '<b style="font-weight:600;white-space:normal">' + esc(v) + '</b>';
+      const show = isUp(f.type) ? '<a href="' + esc(fileUrl(t, d, f.k)) + '" target="_blank" rel="noopener" data-stop="1">' + (f.type === 'photo' ? '📷 photo' : f.type === 'video' ? '🎥 video' : '📎 ' + esc(v.n || 'file')) + '</a>' : f.type === 'link' ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer" data-stop="1">🔗 open</a>' : f.type === 'yesno' ? '<b style="color:' + (v === 'yes' ? '#16945a' : '#d9423b') + '">' + (v === 'yes' ? 'Yes' : 'No') + '</b>' : f.type === 'num' ? '<b>' + Number(v).toLocaleString('en-IN') + '</b>' : '<b style="font-weight:600;white-space:normal">' + esc(v) + '</b>';
       return '<span>' + esc(f.label) + '</span>' + show; }).join(''); return rows ? '<div class="fu-vals fu-fv">' + rows + '</div>' : ''; };
   // who to call: name (+ title) with a Call and a WhatsApp button when the phone is recorded on the employee
   const person = (id) => (D.people && D.people[id]) || null;
@@ -503,7 +504,8 @@ guardPage(); renderSidebar('followup');
       q('#uF').innerHTML = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null, id = 'uf_' + f.k, lab = '<label>' + esc(f.label) + (f.req ? ' <span style="color:#d9423b">*</span>' : '') + '</label>';
         if (f.type === 'yesno') return '<div class="bd-f">' + lab + '<select class="bd-in" id="' + id + '"><option value="">Choose…</option><option value="yes"' + (v === 'yes' ? ' selected' : '') + '>Yes</option><option value="no"' + (v === 'no' ? ' selected' : '') + '>No</option></select></div>';
         if (f.type === 'choice') return '<div class="bd-f">' + lab + '<select class="bd-in" id="' + id + '"><option value="">Choose…</option>' + f.opts.map((o) => '<option' + (v === o ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></div>';
-        if (f.type === 'file') return '<div class="bd-f">' + lab + (fset(v) ? '<div class="bd-sub" style="margin-bottom:4px">Attached: <a href="' + esc(fileUrl(t, q('#uD').value, f.k)) + '" target="_blank" rel="noopener">📎 ' + esc(v.n || 'file') + '</a> — choose a file to replace it</div>' : '') + '<input class="bd-in" id="' + id + '" type="file" accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.mp4"></div>';
+        if (isUp(f.type)) return '<div class="bd-f">' + lab + (fset(v) ? '<div class="bd-sub" style="margin-bottom:4px">Attached: <a href="' + esc(fileUrl(t, q('#uD').value, f.k)) + '" target="_blank" rel="noopener">' + (f.type === 'photo' ? '📷 ' : f.type === 'video' ? '🎥 ' : '📎 ') + esc(v.n || 'file') + '</a> — choose another to replace it</div>' : '')
+          + '<input class="bd-in" id="' + id + '" type="file" accept="' + (f.type === 'photo' ? 'image/*' : f.type === 'video' ? 'video/*' : 'image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.mp4') + '">' + (f.type === 'video' ? '<div class="hint">A video up to 100 MB (MP4, MOV, WEBM, 3GP). A short clip sends faster.</div>' : f.type === 'photo' ? '<div class="hint">Take a photo or choose one from the gallery.</div>' : '') + '</div>';
         return '<div class="bd-f">' + lab + '<input class="bd-in" id="' + id + '"' + (f.type === 'num' ? ' inputmode="decimal" placeholder="Number"' : f.type === 'link' ? ' inputmode="url" placeholder="https://…"' : ' maxlength="500"') + ' value="' + esc(fset(v) ? v : '') + '"></div>'; }).join('');
       q('#uNote').textContent = t.note || ''; q('#uVl').textContent = 'Number' + (t.unit ? ' (' + t.unit + ')' : '');
       q('#uV').placeholder = t.source ? 'Comes by itself' + (u.val != null ? ': ' + u.val : '') : 'Type the number of this day'; q('#uV').value = u.val != null && !u.auto ? u.val : '';
@@ -522,11 +524,11 @@ guardPage(); renderSidebar('followup');
     q('#uOk').onclick = () => run(q('#uOk'), async () => {
       const d = q('#uD').value, text = q('#uT').value.trim(), v = q('#uV').value.trim(), p = q('#uP').value.trim();
       if (!d) { toast('Choose the date.'); return; }
-      const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (f.type === 'file') { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.value.trim(); });
+      const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (isUp(f.type)) { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.value.trim(); });
       const anyF = files.length || Object.keys(fv).some((k) => fv[k] !== '');
       if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
       // a required box left empty is told at once (it used to save only the words, and the day stayed "not filled" with no word about why)
-      const u1 = t.updates[d] || {}, need = t.fields.filter((f) => f.req && f.type !== 'file' && String(fv[f.k] == null ? '' : fv[f.k]) === '' && !(u1.f && fset(u1.f[f.k])));
+      const u1 = t.updates[d] || {}, need = t.fields.filter((f) => f.req && !isUp(f.type) && String(fv[f.k] == null ? '' : fv[f.k]) === '' && !(u1.f && fset(u1.f[f.k])));
       if ((t.min_words || 0) > 0 && wc(text) < t.min_words) { toast('Write the update in detail: at least ' + t.min_words + ' words. Now ' + wc(text) + '.', true); q('#uT').focus(); return; }
       if (need.length) { toast('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
@@ -578,14 +580,14 @@ guardPage(); renderSidebar('followup');
       + '<div id="tUw" style="margin-top:8px"><input class="bd-in" id="tU" maxlength="12" placeholder="Unit: ₹, pcs, shops … (optional)" value="' + esc(t ? (t.own_unit || '') : '') + '"></div>'
       + '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-top:10px;cursor:pointer"><input type="checkbox" id="tNt"' + (t && t.need_text ? ' checked' : '') + ' style="margin-top:3px"><span><b>The person must also write a summary every day</b>: why the numbers moved and what was changed. (Not ticked = when the numbers arrive, the day is complete by itself.)</span></label></div>'
       + '<div class="bd-f" style="margin-top:12px"><label>Minimum words in the update</label><input class="bd-in" id="tMw" type="number" min="0" max="500" inputmode="numeric" placeholder="0 = any length" value="' + (t && t.min_words ? t.min_words : '') + '" style="max-width:180px"><div class="hint">For example 60: the update is not saved with fewer words (words are counted by the spaces between them). Empty or 0 = any length.</div></div>'
-      + '<div class="bd-f" style="margin-top:12px"><label>Fields the person fills every day</label><div id="tF"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bd-btn sm" id="tFadd" type="button">＋ Add a field</button><button class="bd-btn sm" id="tSug" type="button"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ Let Claude set this topic up</button></div>'
-      + '<div class="hint" id="tFh">A post link, a yes / no, a count from Instagram or Google, a reason, a screenshot … A field marked “must” has to be filled before the day counts as done.</div></div>'
+      + '<div class="bd-f" style="margin-top:12px"><label>Fields the person fills every day</label><div id="tF"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bd-btn sm" id="tFadd" type="button">＋ Add a field</button><button class="bd-btn sm pri" id="tFsub" type="button">＋ Sub-topic (words + photo)</button><button class="bd-btn sm" id="tFph" type="button">📷 ＋ Photo</button><button class="bd-btn sm" id="tFvd" type="button">🎥 ＋ Video</button><button class="bd-btn sm" id="tSug" type="button"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ Let Claude set this topic up</button></div>'
+      + '<div class="hint" id="tFh">A post link, a yes / no, a count from Instagram or Google, a reason, a screenshot … “＋ Sub-topic” adds a words box and a photo box for one part of this topic (tick “must” on the photo if it is needed every day). A field marked “must” has to be filled before the day counts as done.</div></div>'
       + (t ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="bd-btn sm" id="tUp">↑ Move up</button><button class="bd-btn sm" id="tDn">↓ Move down</button><button class="bd-btn sm" id="tFin">' + (t.status === 'done' ? 'Open again' : '✓ Mark finished') + '</button><button class="bd-btn sm bad" id="tDel">Remove topic</button></div>' : '')
       + '<div class="acts"><button class="bd-btn" id="tX">Cancel</button><button class="bd-btn go" id="tOk">Save topic</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i), dueVis = () => { q('#tDw').style.display = q('#tK').value === 'deadline' ? '' : 'none'; }; dueVis(); q('#tK').onchange = dueVis;
     // auto-connect: a new topic whose name says what it is (Sales, Visits, Displays, Payment …) is connected to this section's own part of the HRMS; the choice can be changed
     // the field builder: one line a field (name, kind, the choices of a list, must / optional, remove)
-    const TYPES = [['text', 'Words'], ['num', 'Number'], ['yesno', 'Yes / No'], ['link', 'Link'], ['choice', 'Choose one'], ['file', 'File / photo']];
+    const TYPES = [['text', 'Words'], ['num', 'Number'], ['yesno', 'Yes / No'], ['link', 'Link'], ['choice', 'Choose one'], ['photo', '📷 Photo'], ['video', '🎥 Video'], ['file', 'File (PDF, Excel …)']];
     const addField = (f) => { const r = document.createElement('div'); r.className = 'fu-fr'; r.dataset.k = (f && f.k) || '';
       r.innerHTML = '<input class="bd-in" data-l maxlength="80" placeholder="Name of the field" value="' + esc(f ? f.label : '') + '"><select class="bd-in" data-t>' + TYPES.map((x) => '<option value="' + x[0] + '"' + (f && f.type === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
         + '<label style="font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap"><input type="checkbox" data-r' + (f && f.req ? ' checked' : '') + '> must</label><button type="button" class="x" title="Remove this field">✕</button>'
@@ -593,6 +595,14 @@ guardPage(); renderSidebar('followup');
       const ov = () => { r.querySelector('[data-o]').style.display = r.querySelector('[data-t]').value === 'choice' ? '' : 'none'; }; ov(); r.querySelector('[data-t]').onchange = ov; r.querySelector('.x').onclick = () => r.remove(); q('#tF').appendChild(r); return r; };
     const readFields = () => [...m.querySelectorAll('#tF .fu-fr')].map((r) => ({ k: r.dataset.k, label: r.querySelector('[data-l]').value.trim(), type: r.querySelector('[data-t]').value, opts: r.querySelector('[data-o]').value, req: r.querySelector('[data-r]').checked ? 1 : 0 })).filter((f) => f.label);
     (t ? t.fields : []).forEach(addField);
+    // a sub-topic inside the topic: its own words box and its own photo box (two fields with the sub-topic's name)
+    q('#tFsub').onclick = async () => {
+      if (m.querySelectorAll('#tF .fu-fr').length > 18) { toast('A topic takes at most 20 boxes (10 sub-topics).'); return; }
+      const n = window.prompt('Name of the sub-topic (for example: Front display, Banner, Stock shelf)'); if (!n || !n.trim()) return; const nm = n.trim().slice(0, 60);
+      addField({ label: nm, type: 'text', req: 1 }); addField({ label: nm + ' · photo', type: 'photo', req: 0 });
+    };
+    q('#tFph').onclick = () => { const r = addField({ label: 'Photo', type: 'photo', req: 1 }); try { r.querySelector('[data-l]').select(); } catch (e) { /* fine */ } };
+    q('#tFvd').onclick = () => { const r = addField({ label: 'Video', type: 'video', req: 0 }); try { r.querySelector('[data-l]').select(); } catch (e) { /* fine */ } };
     q('#tFadd').onclick = () => { const r = addField(null); try { r.querySelector('[data-l]').focus(); } catch (e) { /* fine */ } };
     // Claude reads the name and the owner's words and proposes the numbers, the fields and the ticks. Nothing is saved until Save is pressed.
     q('#tSug').onclick = () => { if (!q('#tT').value.trim()) { toast('Write the topic first.'); return; } const b = q('#tSug'), old = b.textContent; b.textContent = 'Claude is thinking…';
