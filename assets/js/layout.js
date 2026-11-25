@@ -345,7 +345,7 @@ window.WS = (function () {
     { key: 'sales', label: 'Sales', icon: 'sales', direct: 'sales.html', sub: '', tabs: [] },
     { key: 'budget', label: 'Budgeting', icon: 'commission', sub: 'Commission, leaders, salaries, fixed expenses and penalties, day by day', tabs: [['bt_total', 'Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Commission', 'commission_new.html', ''], ['bt_leaders', 'Leaders', 'leaders.html', ''], ['bt_helpers', 'Leaders Helper', 'leaders_helper.html', ''], ['bt_daysheet', 'Day sheet (company sales)', 'detailed_report.html', '']] },   // its own menu item; the same pages are also inside Sales → Money
     { key: 'followup', label: 'Follow-up', icon: 'followup', sub: 'Every section, its topics and one update a day, checked by Claude', tabs: [['followup', 'Follow-up', 'followup.html', 'fup']] },   // 📌 Shop Wholesale, Surat Store and every section added later (pills inside the page)
-    { key: 'shops', label: 'Shop wholesale', icon: 'retail_store', sub: 'Wholesale shops and their stock', tabs: [['retail_shops', 'Shops', 'retail_shops.html', ''], ['retail_inventory', 'Stock', 'retail_inventory.html', '']] },   // moved out of Sales into the side menu
+    { key: 'shops', label: 'Shop wholesale', icon: 'retail_store', sub: 'Wholesale shops and their stock', tabs: [['retail_shops', 'Shops', 'retail_shops.html', ''], ['retail_inventory', 'Stock', 'retail_inventory.html', ''], ['retail_barcodes', 'Barcodes', 'retail_barcodes.html', '']] },   // moved out of Sales into the side menu
     { key: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', sub: 'Chats, campaigns and groups', tabs: [['whatsapp', 'WhatsApp', 'whatsapp.html', 'wa'], ['whatsapp_groups', 'Groups', 'whatsapp_groups.html', '']] },
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', sub: 'Instagram, Facebook, email and reviews — answered in one place', tabs: [['social_inbox', 'Inbox hub', 'social_inbox.html', 'sx']] },
@@ -367,7 +367,7 @@ window.WS = (function () {
     'people.html': 'employees', 'employees.html': 'employees', 'ex_employees.html': 'employees', 'attendance_admin.html': 'attendance', 'leave_requests.html': 'leave_requests', 'salary.html': 'salary',
     'approvals.html': 'approvals', 'documents.html': 'documents', 'agreements.html': 'agreements', 'history.html': 'decline_history', 'users.html': 'users', 'roles.html': 'users', 'changes.html': 'users', 'rates_weights.html': 'users', 'whats_new.html': 'users',
     'inventory.html': 'inventory', 'finance_in.html': 'finance', 'finance_new.html': 'finance', 'finance_new_summary.html': 'finance', 'finance_new_in.html': 'finance', 'finance_new_out.html': 'finance', 'finance_new_banks.html': 'finance', 'finance_new_recon.html': 'finance', 'finance_sum.html': 'finance', 'finance_parcels.html': 'finance', 'analytics.html': 'analytics', 'departments.html': 'departments', 'offices.html': 'offices', 'excel_files.html': 'excel_files', 'doc_check.html': 'documents', 'handover.html': 'employees',
-    'detailed_report.html': 'detailed_report', 'retail_shops.html': 'retail', 'retail_inventory.html': 'retail', 'total_budgeting.html': 'commission', 'commission_new.html': 'commission', 'commission.html': 'commission', 'leaders.html': 'commission',
+    'detailed_report.html': 'detailed_report', 'retail_shops.html': 'retail', 'retail_inventory.html': 'retail', 'retail_barcodes.html': 'retail', 'total_budgeting.html': 'commission', 'commission_new.html': 'commission', 'commission.html': 'commission', 'leaders.html': 'commission',
   };
   const ICON_OF = {};  W.forEach((w) => { ICON_OF[w.key] = w.icon; });
   const WSA = { wasales: 'sales', team: 'sales' };   // old workspace keys: WhatsApp Sales and Team now live inside the Sales page
@@ -881,7 +881,7 @@ function renderSidebarCore(active) {
 
   // The permissions whose pages now live inside the single Sales item (sales.html).
   const SALES_PERMS = ['control_tower', 'orders', 'allocation', 'order_codes', 'retail', 'targets', 'order_targets', 'performance', 'detailed_report', 'commission', 'commission_rules'];
-  const SALES_PAGE_KEYS = ['control_tower', 'orders', 'order_allocation', 'order_codes', 'retail_shops', 'retail_inventory', 'targets', 'order_targets', 'performance', 'detailed_report', 'commission', 'commission_rules', 'price_charts', 'leaders', 'sales_sheet', 'my_chats'];
+  const SALES_PAGE_KEYS = ['control_tower', 'orders', 'order_allocation', 'order_codes', 'retail_shops', 'retail_inventory', 'retail_barcodes', 'targets', 'order_targets', 'performance', 'detailed_report', 'commission', 'commission_rules', 'price_charts', 'leaders', 'sales_sheet', 'my_chats'];
   // Each permission can unlock one or more pages.
   // Pages a role gets by a tick on the Roles page that ALSO stay open by their own rule (the Dispatch department, a boss …): they add a menu link for the ticked role,
   // but they are not part of the "this page is not for your role" guard below, so the people who already had them are never turned away. The server checks every one.
