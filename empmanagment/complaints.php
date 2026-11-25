@@ -217,7 +217,7 @@ function cx_link_chat(PDO $pdo, array $case, $ownerEmp, $byEmp) {
     $key = (string)$case['phone']; if ($key === '' || !function_exists('wa_contact')) return;
     $c = wa_contact($pdo, $key); if (!$c) return;
     $pdo->prepare("UPDATE wa_contacts SET cx_id = ?, state = 'human', status = 'open', closed_at = NULL WHERE phone = ?")->execute([(int)$case['id'], $key]);
-    if (function_exists('wag_q_forget')) { try { wag_q_forget($pdo, $key); } catch (Throwable $e) { } }   // a complaint is not a sales query: it leaves the query counts
+    if (function_exists('wag_q_forget')) { try { wag_q_forget($pdo, $key, 95, 'complaint'); } catch (Throwable $e) { } }   // a complaint is not a sales query: it leaves the query counts (and what left is remembered: wq_cx_minus)
     cx_clean_tags($pdo, $key);   // ... and the sales marks (query type, hot, wants to buy) leave the chat
 }
 function cx_chat_event(PDO $pdo, $key, $text) { if ($key !== '' && function_exists('wa_event')) wa_event($pdo, $key, $text); }

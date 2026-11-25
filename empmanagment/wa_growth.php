@@ -2306,10 +2306,25 @@ function wag_history(PDO $pdo, int $emp, bool $adm, array $f, array $cfg): array
 /** Order status / tracking / refund / return / damage words: the customer talks about an order he already made — after-sales, never a sales query (owner, 21 Nov). */
 function wag_after_sales_text(string $t): bool { return $t !== '' && (bool)preg_match('/(tracking|track my|track order|where is my order|order status|order id|order no|\bawb\b|kab aayega|kab tak aayega|kab milega|nahi mila|not received|refund|return|replace|damaged|leak|wrong (item|product)|cancel my order|order kaha|parcel)/iu', $t); }
 /** Complaints are not sales queries (owner, 21 Nov): the query rows of a complaint chat are removed from the ledger (and its type / stats rows), so no count shows them. */
-function wag_q_forget(PDO $pdo, string $key, int $days = 95): void
+/** 🎫 The queries a COMPLAINT took out of a salesperson's count (owner, 25 Nov: "Fresh 7 − 3 = 4" on Team performance). One row per query that was removed while a person held it:
+ *  who held it, fresh or campaign, the business day it was opened. Written by wag_q_forget(..., 'complaint'); nothing is ever counted from it — it only SHOWS what was taken away. */
+function wag_cxm_table(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS wq_cx_minus (id INT AUTO_INCREMENT PRIMARY KEY, query_id INT NOT NULL, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL, kind VARCHAR(6) NOT NULL DEFAULT 'fresh', opened_at DATETIME NOT NULL, day DATE NOT NULL, at DATETIME NOT NULL, UNIQUE KEY u_q (query_id), KEY k_day (day, emp_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $ok = true; }
+    catch (Throwable $e) { error_log('wag_cxm_table: ' . $e->getMessage()); $ok = false; }
+    return $ok;
+}
+function wag_q_forget(PDO $pdo, string $key, int $days = 95, string $why = ''): void
 {
     try {
         $st = $pdo->prepare("SELECT id FROM wa_queries WHERE phone = ? AND opened_at >= ?"); $st->execute([$key, date('Y-m-d H:i:s', time() - $days * 86400)]); $ids = $st->fetchAll(PDO::FETCH_COLUMN); if (!$ids) return; $in = implode(',', array_map('intval', $ids));
+        if ($why === 'complaint' && wag_cxm_table($pdo)) {   // remember what leaves a person's count (the queries of the last 3 days that somebody held)
+            try { $lq = $pdo->prepare("SELECT q.id, q.emp_id, q.opened_at, COALESCE(t.type, 'unclear') ty FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.id IN ($in) AND q.emp_id > 0 AND q.opened_at >= ?"); $lq->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
+                $li = $pdo->prepare("INSERT IGNORE INTO wq_cx_minus (query_id, phone, emp_id, kind, opened_at, day, at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                foreach ($lq->fetchAll(PDO::FETCH_ASSOC) as $x) { $ts = (int)strtotime((string)$x['opened_at']); $dy = function_exists('biz_day_of') ? (string)biz_day_of($pdo, $ts) : date('Y-m-d', $ts - 10 * 3600);
+                    $li->execute([(int)$x['id'], $key, (int)$x['emp_id'], in_array((string)$x['ty'], ['campaign', 'community'], true) ? 'camp' : 'fresh', (string)$x['opened_at'], $dy, date('Y-m-d H:i:s')]); } } catch (Throwable $e) { error_log('wq_cx_minus: ' . $e->getMessage()); }
+        }
         foreach (['wq_qtype', 'wq_qstat'] as $t) { try { $pdo->exec("DELETE FROM $t WHERE query_id IN ($in)"); } catch (Throwable $e) { } }
         $pdo->exec("DELETE FROM wa_queries WHERE id IN ($in)");
     } catch (Throwable $e) { }
