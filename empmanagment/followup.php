@@ -477,6 +477,66 @@ function fup_nitin_merge(PDO $pdo): void
     } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('fup_nitin_merge: ' . $e->getMessage()); }
 }
 
+/** Once a person (the owner asked, like Nitin): the Dispatch tasks of Dharmik, Dhvanil, Mehul, Hemil and Sachin, one topic each, become ONE topic
+ *  "<Name> — daily work": a Words box (must) a task, a Number box (must) where the task counts something, and a Note box at the end. The old days' words and
+ *  numbers are copied in; the old topics are hidden (their updates stay). */
+function fup_dispatch_merge_all(PDO $pdo): void
+{
+    $P = [
+        'dharmik' => ['Dharmik', [['Maximum tempo no use karvo'], ['Store room clean rakhvo'], ['Not selling sticker direct lagava'], ['Refill vala perfume daily set karva'], ['Sticker numberwise hova joie'], ['Saman eni jagya e hovo joie'], ['Extra saman no vahivat karvo'], ['Stock sheet daily fill karvi'], ['Timeline pehla pehla milan bhai ne order apvo'], ['Oil ave tyare tema number marva'], ['Incoming outgoing ni entry done karvi', 'Entries done'], ['All bill pramane mal check karvo'], ['Pending oil na daily msg nakhva'], ['Bhangar saman no hisab Shwetul ne'], ['Rack parna khrb sticker vala product check'], ['Store room 1 daily clean karay ne badhu proper mukavvu'], ['Last ma video mokline javo badhu bandh karine']]],
+        'dhvanil' => ['Dhvanil', [['Parcel manifest ready karavi'], ['Packing', 'Parcels packed'], ['Safai karavine javu'], ['Juni product ek rack par mukvi'], ['Refill products no vahivat'], ['Not forward select, baki daily vahivat'], ['Recheck mate manas set karvo'], ['Wrong parcel par daily nazar', 'Wrong parcels found'], ['Perfume randomly check karva', 'Perfumes checked'], ['Product sticker wise gothvvi'], ['Roj raat na parcel no tempo mokalvo', 'Parcels sent in the tempo'], ['Packing no badho saman packing ma hovo j joiye'], ['All list sathe verify ane pending list'], ['Perfume verify']]],
+        'mehul' => ['Mehul', [['List ready karvani'], ['Product sorting karvanu'], ['Remittance entry', 'Remittance entries'], ['Pending parcel report', 'Pending parcels'], ['Average sheet maintain'], ['Oil pending list on time'], ['4 days parcel zero', 'Parcels older than 4 days'], ['OG SKU sheet maintain'], ['Stock sheet maintain'], ['Parcel status update'], ['Value software'], ['Normal parcel tracking update'], ['Miss invoice generate', 'Missed invoices'], ['Badha parcel ma chain compulsory'], ['Myntra ni invoice 11 vage aavi gay'], ['Potani aju baju ni jagya saf karvi']]],
+        'hemil' => ['Hemil', [['Exchange parcel faalvava', 'Exchange parcels allotted'], ['Daily RTO resend karavva', 'RTO resent'], ['Exchange product check karvani'], ['Camera recording chalu rehvu joiye'], ['RTO sheet fill karvani'], ['4 divas pahela nu exchange clear', 'Exchanges older than 4 days']]],
+        'sachin' => ['Sachin', [['All perfume ke proper sticker lagne chaiye'], ['Daily sticker mistake ki list banani hai'], ['All can me proper sticker lagake set'], ['5 kg making batch banana hai'], ['All not selling blend ready karne hai'], ['Sticker, sprayer, dust check karvana hai'], ['Daily 20-30 fragrance random check karni hai', 'Fragrances checked'], ['Sealing machine daily check'], ['And all extra products rack pe rakhvane hai'], ['Darek manas e cap pereli hovi joie and gloves pan'], ['RJD me sab extra chiz check (machine, AC, light, plumber etc)'], ['Potani aju baju ni jagya saf karine javi'], ['Chair sarkhi mukvi'], ['Table ni vastu o proper mukine javi']]],
+    ];
+    foreach ($P as $key => $x) fup_dispatch_merge($pdo, $key, $x[0], $x[1]);
+}
+function fup_dispatch_merge(PDO $pdo, string $key, string $name, array $list): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_merge_' . $key . '_v1', '') === '1') return;
+        if ((string)setting_get($pdo, 'fup_' . $key . '_topics_v1', '') !== '1') return;   // the tasks are not there yet
+        $sid = (int)$pdo->query("SELECT id FROM fu_sections WHERE active = 1 AND LOWER(TRIM(name)) = 'dispatch' ORDER BY id LIMIT 1")->fetchColumn();
+        if ($sid <= 0) $sid = (int)$pdo->query("SELECT id FROM fu_sections WHERE active = 1 AND LOWER(name) LIKE '%dispatch%' ORDER BY id LIMIT 1")->fetchColumn();
+        if ($sid <= 0) return;
+        $me = 0; try { $q = $pdo->prepare("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(full_name) LIKE ?"); $q->execute([mb_strtolower($name) . '%']); $ids = $q->fetchAll(PDO::FETCH_COLUMN); if (count($ids) === 1) $me = (int)$ids[0]; } catch (Throwable $e) { $me = 0; }
+        $rows = $pdo->query("SELECT * FROM fu_topics WHERE active = 1 AND section_id = " . $sid . " ORDER BY id")->fetchAll();
+        $old = []; $used = [];
+        foreach ($list as $i => $task) {   // the topic of this task: its own title (or "title (Name)"); with the same title twice, the one given to this person
+            $t1 = mb_strtolower($task[0]); $t2 = mb_strtolower($task[0] . ' (' . $name . ')'); $pick = null;
+            foreach ($rows as $r) { $k = mb_strtolower(trim((string)$r['title'])); if (($k !== $t1 && $k !== $t2) || isset($used[(int)$r['id']])) continue; if ($pick === null || ($me > 0 && (int)$r['assignee_emp'] === $me && (int)$pick['assignee_emp'] !== $me)) $pick = $r; }
+            if ($pick) { $old[$i] = $pick; $used[(int)$pick['id']] = 1; }
+        }
+        if (count($old) < min(3, count($list))) { setting_set($pdo, 'fup_merge_' . $key . '_v1', '1'); return; }   // renamed or removed by the owner: leave it alone
+        $emps = []; foreach ($old as $t) if ((int)$t['assignee_emp'] > 0) $emps[(int)$t['assignee_emp']] = ($emps[(int)$t['assignee_emp']] ?? 0) + 1; arsort($emps); $emp = $emps ? (int)array_key_first($emps) : $me;
+        $fields = []; $map = []; $n = 0;
+        foreach ($list as $i => $task) { if (!isset($old[$i])) continue; $k = 'f' . (++$n); $num = isset($task[1]);
+            $fields[] = ['k' => $k, 'label' => mb_substr($task[0] . ($num ? ' — ' . $task[1] : ''), 0, 80), 'type' => $num ? 'num' : 'text', 'opts' => [], 'req' => 1];
+            $nk = ''; foreach (fup_fields($old[$i]) as $f0) if ($f0['type'] === 'num') { $nk = (string)$f0['k']; break; }
+            $map[(int)$old[$i]['id']] = ['k' => $k, 'num' => $num, 'nk' => $nk, 'title' => $task[0]]; }
+        $noteK = 'f' . (++$n); $fields[] = ['k' => $noteK, 'label' => 'Note (anything not done, and why)', 'type' => 'text', 'opts' => [], 'req' => 0];
+        $sort = min(array_map(function ($t) { return (int)$t['sort_no']; }, $old));
+        $pdo->beginTransaction();
+        $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, ?, '', ?, '', 1, '', 0, ?, 'open', ?, 1, 0, ?)")
+            ->execute([$sid, $name . ' — daily work', $emp, 'All of ' . $name . '\'s daily work in one place: write what was done on each.', json_encode($fields, JSON_UNESCAPED_UNICODE), $sort, fup_now()]);
+        $new = (int)$pdo->lastInsertId();
+        $ids = implode(',', array_map('intval', array_keys($map))); $days = [];
+        foreach ($pdo->query("SELECT * FROM fu_updates WHERE topic_id IN (" . $ids . ") ORDER BY day, updated_at")->fetchAll() as $u) {
+            $m = $map[(int)$u['topic_id']]; $d = (string)$u['day']; $fv = json_decode((string)($u['fvals'] ?? ''), true); $fv = is_array($fv) ? $fv : [];
+            $txt = trim((string)$u['txt']); foreach ($fv as $fk => $fvv) if ($fk !== $m['nk'] && is_string($fvv) && trim($fvv) !== '') $txt = trim($txt . ($txt !== '' ? ' · ' : '') . trim($fvv));
+            if (!isset($days[$d])) $days[$d] = ['f' => [], 'note' => [], 'emp' => (int)$u['emp_id'], 'name' => (string)$u['emp_name'], 'at' => (string)$u['updated_at']];
+            if ($m['num']) { $v = ($m['nk'] !== '' && isset($fv[$m['nk']]) && is_numeric($fv[$m['nk']])) ? $fv[$m['nk']] : ($u['val'] !== null ? $u['val'] : null); if ($v !== null && $v !== '') $days[$d]['f'][$m['k']] = (string)round((float)$v, 2); if ($txt !== '') $days[$d]['note'][] = $m['title'] . ': ' . $txt; }
+            elseif ($txt !== '') $days[$d]['f'][$m['k']] = mb_substr($txt, 0, 2000);
+            if ((string)$u['updated_at'] > $days[$d]['at']) { $days[$d]['at'] = (string)$u['updated_at']; $days[$d]['name'] = (string)$u['emp_name']; $days[$d]['emp'] = (int)$u['emp_id']; }
+        }
+        $ins = $pdo->prepare("INSERT INTO fu_updates (topic_id, day, txt, emp_id, emp_name, updated_at, fvals) VALUES (?, ?, '', ?, ?, ?, ?)");
+        foreach ($days as $d => $x) { if ($x['note']) $x['f'][$noteK] = mb_substr(implode("\n", $x['note']), 0, 2000); if (!$x['f']) continue; $ins->execute([$new, $d, $x['emp'], $x['name'], $x['at'], json_encode($x['f'], JSON_UNESCAPED_UNICODE)]); }
+        $pdo->exec("UPDATE fu_topics SET active = 0 WHERE id IN (" . $ids . ")");
+        $pdo->commit();
+        setting_set($pdo, 'fup_merge_' . $key . '_v1', '1');
+    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('fup_dispatch_merge ' . $key . ': ' . $e->getMessage()); }
+}
+
 /** Once: the 14 daily tasks of Sachin in the owner's "Dispatch" section (the section is made by the owner; this waits for it). One topic a task, the task name only; a number box only where a number is needed. Given to Sachin only when exactly ONE working employee is called Sachin, otherwise nobody is assigned (the owner gives them). Four of his tasks have the same name as tasks of other people: they are made for him too (a topic is skipped only when the same task already belongs to the same person; when nobody can be assigned, a shared name gets "(Sachin)" so the topics can be told apart). */
 function fup_seed_sachin_topics(PDO $pdo): void
 {
@@ -1387,6 +1447,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_dharmik_topics($pdo);
     fup_seed_nitin_topics($pdo);
     fup_nitin_merge($pdo);
+    fup_dispatch_merge_all($pdo);
     fup_seed_sachin_topics($pdo);
     fup_office_pickup_clean($pdo);
     fup_clear_questions($pdo);
