@@ -117,6 +117,35 @@ if (!function_exists('wa_ordpack_defs')) {
             foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) { $ins->execute([(string)$r[0], (int)$r[1], (int)$r[2], (string)$r[3], (string)$r[4]]); $k++; }
             return $k; } catch (Throwable $e) { return 0; }
     }
+    /** ORDER LEDGER (owner 25 Nov 2026: "every order must be attached to a campaign; 100% tracking"): every order of the last 15 days (website orders of shop_orders and the orders typed in HRMS: manual_orders, every panel / channel) gets ONE row in
+     *  wa_order_attr: the module and the message (template) of the LAST WhatsApp message we sent to that phone in the 72 hours before the order (Module A, B, C, Cold, Lineup, After-Order), or 'none' (no message of ours in those 72 hours)
+     *  or 'no phone'. Nothing is skipped: the ledger holds one row per order. 40 orders per round, newest first (so a new order is attached within minutes, the old ones fill in behind). It records only; it sends and changes nothing. Off: wa_ordattr = 0. */
+    function wa_ordattr_tick(PDO $pdo): int
+    {
+        if ((string)setting_get($pdo, 'wa_ordattr', '1') === '0') return 0; if ((int)setting_get($pdo, 'wa_ordattr_at', '0') > time() - 60) return 0; setting_set($pdo, 'wa_ordattr_at', (string)time());
+        try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_order_attr (okey VARCHAR(48) NOT NULL PRIMARY KEY, src VARCHAR(24) NOT NULL DEFAULT '', phone VARCHAR(20) NOT NULL DEFAULT '', order_at DATETIME NOT NULL, total DECIMAL(12,2) NOT NULL DEFAULT 0, module VARCHAR(10) NOT NULL DEFAULT '', tpl_id INT NOT NULL DEFAULT 0, msg_at DATETIME NULL, gap_min INT NOT NULL DEFAULT 0, noted_at DATETIME NOT NULL, KEY k_at (order_at), KEY k_mod (module)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { return 0; }
+        $from = date('Y-m-d 00:00:00', time() - 15 * 86400); $cand = [];
+        try { $q = $pdo->prepare("SELECT CONCAT('w', shopify_id, '_', store_key), 'web', phone, created_at, total FROM shop_orders WHERE created_at >= ? ORDER BY created_at DESC LIMIT 700"); $q->execute([$from]); foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $cand[(string)$r[0]] = $r; } catch (Throwable $e) { }
+        try { $q = $pdo->prepare("SELECT CONCAT('m', manual_order_id), CONCAT('panel:', COALESCE(NULLIF(channel, ''), 'HRMS')), phone, order_date, total FROM manual_orders WHERE order_date >= ? ORDER BY order_date DESC LIMIT 700"); $q->execute([$from]); foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $cand[(string)$r[0]] = $r; } catch (Throwable $e) { }
+        if (!$cand) return 0; $have = []; try { foreach (array_chunk(array_keys($cand), 400) as $ch) { $x = $pdo->prepare("SELECT okey FROM wa_order_attr WHERE okey IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll(PDO::FETCH_COLUMN) as $k) $have[(string)$k] = 1; } } catch (Throwable $e) { return 0; }
+        $todo = array_values(array_filter($cand, function ($r) use ($have) { return !isset($have[(string)$r[0]]); })); usort($todo, function ($a, $b) { return strcmp((string)$b[3], (string)$a[3]); }); $todo = array_slice($todo, 0, 40); if (!$todo) return 0;
+        $LT = ['A' => "SELECT i.sent_at, c.tpl_id FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.id > (SELECT MAX(id) - 2000000 FROM wa_camp_items) AND i.phone IN (?, ?) AND i.status IN ('sent','delivered','read') AND i.sent_at BETWEEN ? AND ? ORDER BY i.sent_at DESC LIMIT 1",
+            'B' => "SELECT l.at, l.tpl_id FROM wa_ru_log l WHERE l.id > (SELECT MAX(id) - 600000 FROM wa_ru_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.kind <> 'cnev' AND l.at BETWEEN ? AND ? ORDER BY l.at DESC LIMIT 1",
+            'C' => "SELECT l.at, l.tpl_id FROM wa_ru_log l WHERE l.id > (SELECT MAX(id) - 600000 FROM wa_ru_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.kind = 'cnev' AND l.at BETWEEN ? AND ? ORDER BY l.at DESC LIMIT 1",
+            'Cold' => "SELECT l.at, l.tpl_id FROM wa_cold_log l WHERE l.id > (SELECT MAX(id) - 700000 FROM wa_cold_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.at BETWEEN ? AND ? ORDER BY l.at DESC LIMIT 1",
+            'Lineup' => "SELECT l.sent_at, l.tpl_id FROM wa_line_plan l WHERE l.id > (SELECT MAX(id) - 2000000 FROM wa_line_plan) AND l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ? ORDER BY l.sent_at DESC LIMIT 1",
+            'After' => "SELECT l.sent_at, l.tpl_id FROM wa_aft_plan l WHERE l.id > (SELECT MAX(id) - 1000000 FROM wa_aft_plan) AND l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ? ORDER BY l.sent_at DESC LIMIT 1"];
+        $ps = []; foreach ($LT as $k => $sql) $ps[$k] = $pdo->prepare($sql); $ins = $pdo->prepare("INSERT IGNORE INTO wa_order_attr (okey, src, phone, order_at, total, module, tpl_id, msg_at, gap_min, noted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"); $n = 0; $t0 = microtime(true);
+        try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 6000"); } catch (Throwable $e) { }
+        foreach ($todo as $o) { if (microtime(true) - $t0 > 25) break; $p = substr(preg_replace('/\D+/', '', (string)$o[2]), -10); $to = (string)$o[3];
+            if (strlen($p) < 10) { $ins->execute([(string)$o[0], (string)$o[1], mb_substr((string)$o[2], 0, 20), $to, (float)$o[4], 'no phone', 0, null, 0, date('Y-m-d H:i:s')]); $n++; continue; }
+            $fr = date('Y-m-d H:i:s', strtotime($to) - 72 * 3600); $best = ''; $bt = ''; $btpl = 0; $fail = false;
+            foreach ($ps as $k => $st) { try { $st->execute([$p, '91' . $p, $fr, $to]); $r = $st->fetch(PDO::FETCH_NUM); } catch (Throwable $e) { $fail = true; continue; } if ($r && $r[0] && (string)$r[0] > $bt) { $bt = (string)$r[0]; $best = $k; $btpl = (int)$r[1]; } }
+            if ($fail && $best === '') continue;   // a query failed and nothing was found: try again next round (never a wrong 'none')
+            $ins->execute([(string)$o[0], (string)$o[1], $p, $to, (float)$o[4], $best !== '' ? $best : 'none', $btpl, $bt !== '' ? $bt : null, $bt !== '' ? (int)round((strtotime($to) - strtotime($bt)) / 60) : 0, date('Y-m-d H:i:s')]); $n++; }
+        try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 0"); } catch (Throwable $e) { }
+        return $n;
+    }
     function wa_ordpack_tick(PDO $pdo): array
     {
         $res = ['made' => 0, 'failed' => []];
@@ -131,6 +160,7 @@ if (!function_exists('wa_ordpack_defs')) {
         try { wa_ordpack_learn($pdo); } catch (Throwable $e) { }
         try { wa_hand_tick($pdo); } catch (Throwable $e) { }
         try { wa_undeliv_tick($pdo); } catch (Throwable $e) { }
+        try { wa_ordattr_tick($pdo); } catch (Throwable $e) { }
         $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
         foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;
