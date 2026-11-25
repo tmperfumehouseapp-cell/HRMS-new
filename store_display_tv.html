@@ -21,10 +21,58 @@
   .flash{animation:fl 1s}@keyframes fl{0%{color:#16a34a;transform:scale(1.07)}100%{transform:scale(1)}}
   .toast{position:absolute;left:44px;right:44px;top:1068px;background:#111;color:#fff;border-radius:14px;padding:12px 20px;font-size:30px;font-weight:700;opacity:0;transition:.3s;text-align:center}.toast.on{opacity:1}
   #msg{position:absolute;left:0;right:0;top:0;height:1280px;padding-top:560px !important;box-sizing:border-box;text-align:center;font-size:30px;color:#b91c1c;padding:0 30px;z-index:5;background:#fff}
+  /* ---------- the looks (Store -> Display -> Look on the TV) and their slow live effects. Only transform / opacity move, so a cheap TV box keeps up. ---------- */
+  #fx{position:absolute;left:0;top:0;width:720px;height:1280px;overflow:hidden;z-index:0;pointer-events:none}
+  #stage > div:not(#fx){z-index:1}
+  .blob{position:absolute;width:760px;height:760px;border-radius:50%;opacity:.55;will-change:transform}
+  .b1{left:-300px;top:-260px;-webkit-animation:dr1 26s ease-in-out infinite alternate;animation:dr1 26s ease-in-out infinite alternate}
+  .b2{right:-340px;top:380px;-webkit-animation:dr2 32s ease-in-out infinite alternate;animation:dr2 32s ease-in-out infinite alternate}
+  .b3{left:-200px;bottom:-380px;-webkit-animation:dr3 29s ease-in-out infinite alternate;animation:dr3 29s ease-in-out infinite alternate}
+  @-webkit-keyframes dr1{to{-webkit-transform:translate(180px,160px) scale(1.15)}} @keyframes dr1{to{transform:translate(180px,160px) scale(1.15)}}
+  @-webkit-keyframes dr2{to{-webkit-transform:translate(-220px,-120px) scale(.9)}} @keyframes dr2{to{transform:translate(-220px,-120px) scale(.9)}}
+  @-webkit-keyframes dr3{to{-webkit-transform:translate(160px,-200px) scale(1.2)}} @keyframes dr3{to{transform:translate(160px,-200px) scale(1.2)}}
+  .sp{position:absolute;bottom:-20px;border-radius:50%;opacity:0;will-change:transform,opacity;-webkit-animation:rise linear infinite;animation:rise linear infinite}
+  @-webkit-keyframes rise{0%{opacity:0;-webkit-transform:translateY(0)}10%{opacity:.9}80%{opacity:.6}100%{opacity:0;-webkit-transform:translateY(-1320px)}} @keyframes rise{0%{opacity:0;transform:translateY(0)}10%{opacity:.9}80%{opacity:.6}100%{opacity:0;transform:translateY(-1320px)}}
+  .cta{overflow:hidden}
+  .cta:after{content:'';position:absolute;top:0;left:-40%;width:30%;height:100%;background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.55),rgba(255,255,255,0));-webkit-transform:skewX(-20deg);transform:skewX(-20deg);-webkit-animation:shine 4.5s ease-in-out infinite;animation:shine 4.5s ease-in-out infinite}
+  @-webkit-keyframes shine{0%,55%{left:-40%}100%{left:130%}} @keyframes shine{0%,55%{left:-40%}100%{left:130%}}
+  .cf{position:absolute;width:14px;height:22px;border-radius:3px;z-index:6;pointer-events:none;-webkit-animation:cf 1.9s cubic-bezier(.2,.7,.4,1) forwards;animation:cf 1.9s cubic-bezier(.2,.7,.4,1) forwards}
+  @-webkit-keyframes cf{0%{opacity:1;-webkit-transform:translate(0,0) rotate(0)}100%{opacity:0;-webkit-transform:translate(var(--x),var(--y)) rotate(var(--r))}} @keyframes cf{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:0;transform:translate(var(--x),var(--y)) rotate(var(--r))}}
+  .shim{background-size:220% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;-webkit-animation:shim 6s linear infinite;animation:shim 6s linear infinite}
+  @-webkit-keyframes shim{to{background-position:-220% 0}} @keyframes shim{to{background-position:-220% 0}}
+
+  /* Midnight Gold: deep night blue, gold light */
+  .th-gold{background:#07070f !important;color:#f6efe0}
+  .th-gold .b1{background:radial-gradient(circle,rgba(212,175,55,.55),rgba(212,175,55,0) 65%)} .th-gold .b2{background:radial-gradient(circle,rgba(110,60,200,.55),rgba(110,60,200,0) 65%)} .th-gold .b3{background:radial-gradient(circle,rgba(200,120,40,.45),rgba(200,120,40,0) 65%)}
+  .th-gold .sp{background:#f5d77a;box-shadow:0 0 10px #f5d77a}
+  .th-gold .h2,.th-gold .per,.th-gold .url,.th-gold .r{color:#d9cfbd} .th-gold .line{background:linear-gradient(90deg,#d4af37,#f9e08b,#d4af37)}
+  .th-gold .big{background-image:linear-gradient(100deg,#d4af37 20%,#fff6cf 40%,#d4af37 60%)} .th-gold .bl{color:#e8c463} .th-gold .r{border-color:rgba(246,239,224,.16)} .th-gold .r b{color:#fff7e1}
+  .th-gold .cta{background:linear-gradient(90deg,#c8992b,#f3d277,#c8992b);color:#1a1205} .th-gold .live{color:#4ade80} .th-gold .live i{background:#4ade80} .th-gold .toast{background:#d4af37;color:#1a1205}
+
+  /* Sunset: warm orange to pink to violet */
+  .th-sunset{background:#ff5a00 !important;background:linear-gradient(165deg,#ff8a00 0%,#ff3d6e 52%,#7b2ff7 100%) !important;color:#fff}
+  .th-sunset .b1{background:radial-gradient(circle,rgba(255,214,0,.55),rgba(255,214,0,0) 65%)} .th-sunset .b2{background:radial-gradient(circle,rgba(255,255,255,.35),rgba(255,255,255,0) 65%)} .th-sunset .b3{background:radial-gradient(circle,rgba(70,0,160,.5),rgba(70,0,160,0) 65%)}
+  .th-sunset .sp{background:#fff} .th-sunset .line{background:#fff} .th-sunset .bl{color:#fff3c4} .th-sunset .r{border-color:rgba(255,255,255,.35)} .th-sunset .live{color:#fff} .th-sunset .live i{background:#bbf7d0}
+  .th-sunset .cta{background:#fff;color:#ff3d6e} .th-sunset .cta:after{background:linear-gradient(100deg,rgba(255,61,110,0),rgba(255,61,110,.25),rgba(255,61,110,0))} .th-sunset .toast{background:#fff;color:#ff3d6e}
+
+  /* Rose Luxe: cream, blush and deep wine */
+  .th-rose{background:#fff6f2 !important;color:#3b0a1e}
+  .th-rose .b1{background:radial-gradient(circle,rgba(255,170,190,.7),rgba(255,170,190,0) 65%)} .th-rose .b2{background:radial-gradient(circle,rgba(255,205,160,.7),rgba(255,205,160,0) 65%)} .th-rose .b3{background:radial-gradient(circle,rgba(220,150,230,.55),rgba(220,150,230,0) 65%)}
+  .th-rose .sp{background:#e9739a;opacity:.6} .th-rose .line{background:#b0174f} .th-rose .bl{color:#b0174f} .th-rose .big{color:#5a0f2e} .th-rose .r{border-color:rgba(59,10,30,.14)} .th-rose .h2,.th-rose .per,.th-rose .url{color:#7a3a52}
+  .th-rose .cta{background:linear-gradient(90deg,#8a0f3d,#c2185b);color:#fff} .th-rose .toast{background:#8a0f3d}
+
+  /* Emerald: deep green with mint and gold */
+  .th-emerald{background:#03201b !important;color:#eafff8}
+  .th-emerald .b1{background:radial-gradient(circle,rgba(45,212,191,.5),rgba(45,212,191,0) 65%)} .th-emerald .b2{background:radial-gradient(circle,rgba(16,185,129,.5),rgba(16,185,129,0) 65%)} .th-emerald .b3{background:radial-gradient(circle,rgba(234,179,8,.35),rgba(234,179,8,0) 65%)}
+  .th-emerald .sp{background:#a7f3d0;box-shadow:0 0 8px #5eead4} .th-emerald .line{background:linear-gradient(90deg,#2dd4bf,#facc15)} .th-emerald .bl{color:#5eead4} .th-emerald .big{background-image:linear-gradient(100deg,#5eead4 20%,#ffffff 40%,#5eead4 60%)}
+  .th-emerald .h2,.th-emerald .per,.th-emerald .url,.th-emerald .r{color:#bfe9dd} .th-emerald .r{border-color:rgba(234,255,248,.15)} .th-emerald .r b{color:#fff} .th-emerald .cta{background:linear-gradient(90deg,#14b8a6,#2dd4bf);color:#042f2a} .th-emerald .toast{background:#14b8a6;color:#042f2a}
+
+  /* Classic (white) keeps its look: only a few soft orange sparkles */
+  .th-classic .blob{display:none} .th-classic .sp{background:#ff5a00;opacity:.35}
 </style>
 </head>
 <body>
-<div id="stage">
+<div id="stage" class="th-classic"><div id="fx"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
   <div class="h1" id="title">TM Perfume House</div><div class="h2" id="place">Vesu, Surat</div><div class="live" id="live"><i></i><span id="livet">LIVE</span></div>
   <div class="t">Store<br>Report Card</div><div class="per" id="per">Last 2 months</div><div class="line"></div>
   <div class="big" id="ord">–</div><div class="bl">Orders</div><div class="plus" id="pl">+1</div>
@@ -59,15 +107,35 @@
   function flash(id) { restart($(id), 'flash'); }
   function toast(t) { var e = $('ts'); e.textContent = t; e.className = 'toast on'; setTimeout(function () { e.className = 'toast'; }, 2600); }
   function ding() { try { var AC = window.AudioContext || window.webkitAudioContext; audio = audio || new AC(); var o = audio.createOscillator(), g = audio.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(0.0001, audio.currentTime); g.gain.exponentialRampToValueAtTime(0.4, audio.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.7); o.connect(g); g.connect(audio.destination); o.start(0); o.stop(audio.currentTime + 0.75); } catch (e) { /* no sound on this screen */ } }
+  // the look: from the settings (d.theme), or ?theme= in the link (used by the previews in Store -> Display)
+  var tm = /[?&]theme=([a-z]+)/.exec(location.search), themeLock = tm ? tm[1] : '', theme = '';
+  var COL = { classic: ['#ff5a00', '#ffb020', '#16a34a'], gold: ['#d4af37', '#f9e08b', '#ffffff'], sunset: ['#ffffff', '#ffd400', '#ff3d6e'], rose: ['#c2185b', '#f48fb1', '#ffcc80'], emerald: ['#2dd4bf', '#facc15', '#ffffff'] };
+  function setTheme(t) {
+    t = COL[t] ? t : 'classic'; if (t === theme) return; theme = t; st.className = 'th-' + t;
+    var big = $('ord'); big.className = (t === 'gold' || t === 'emerald') ? 'big shim' : 'big';
+  }
+  (function sparkles() {   // tiny dots rising slowly, like perfume mist
+    var fx = $('fx'); for (var i = 0; i < 16; i++) { var d = document.createElement('div'), z = 4 + Math.round(Math.random() * 7), dur = 12 + Math.random() * 14;
+      d.className = 'sp'; d.style.left = Math.round(Math.random() * 700) + 'px'; d.style.width = z + 'px'; d.style.height = z + 'px';
+      d.style.webkitAnimationDuration = d.style.animationDuration = dur + 's'; d.style.webkitAnimationDelay = d.style.animationDelay = (-Math.random() * dur) + 's'; fx.appendChild(d); }
+  })();
+  function confetti() {   // a burst from the big number when a new bill comes
+    var c = COL[theme] || COL.classic; for (var i = 0; i < 26; i++) { var e = document.createElement('div'), a = Math.random() * Math.PI * 2, r = 160 + Math.random() * 260;
+      e.className = 'cf'; e.style.left = (260 + Math.random() * 120) + 'px'; e.style.top = (560 + Math.random() * 60) + 'px'; e.style.background = c[i % c.length];
+      e.style.setProperty('--x', Math.round(Math.cos(a) * r) + 'px'); e.style.setProperty('--y', Math.round(Math.sin(a) * r - 120) + 'px'); e.style.setProperty('--r', Math.round(Math.random() * 720 - 360) + 'deg');
+      st.appendChild(e); (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 2100); })(e); }
+  }
+  setTheme(themeLock || 'classic');
   function setNum(id, v, old) { $(id).textContent = f(v); if (old !== undefined && old !== null && v !== old) flash(id); }
   function show(d) {
+    setTheme(themeLock || d.theme || 'classic');
     $('title').textContent = d.title; $('place').textContent = d.place; $('per').textContent = d.period; $('cta').textContent = d.cta; $('url').textContent = d.url;
     $('rt').textContent = d.rating !== '' ? d.rating + '/5' : '–'; $('gr').textContent = f(d.reviews);
     setNum('ord', d.orders, last && last.orders); setNum('bt', d.bottles, last && last.bottles); setNum('cm', d.community, last && last.community);
     if (last && d.orders > last.orders) {
       var p = $('pl'); p.textContent = '+' + (d.orders - last.orders); restart(p, 'go');
       var nb = Math.max(0, d.bottles - last.bottles);
-      toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
+      confetti(); toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
     }
     last = d; $('msg').style.display = 'none'; $('live').className = 'live'; $('livet').textContent = 'LIVE';
   }
