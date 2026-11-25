@@ -2,6 +2,9 @@
 /** diag_inv.php: fast read-only inventory (counts only). */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 if (!function_exists('json_response')) { function json_response($a = null, $b = 200) { } }   /* the pool files return early without it (the site has it); the diag only reads */
+if (!function_exists('setting_get')) { function setting_get($p, $k, $d = '') { static $c = []; try { $q = $p->prepare('SELECT setting_value FROM hrms_settings WHERE setting_key = ?'); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? $d : (string)$v; } catch (Throwable $e) { return $d; } } }
+if (!function_exists('setting_set')) { function setting_set($p, $k, $v) { } }
+if (!function_exists('wa_log')) { function wa_log($p, $k, $ok, $i) { } }
 $root = $argv[1] ?? ''; require $root . 'empmanagment/config.php';
 $pdo = new PDO('mysql:host=' . (defined('DB_HOST') ? DB_HOST : '127.0.0.1') . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 date_default_timezone_set('Asia/Kolkata'); $GLOBALS['pdo'] = $pdo; $action = ''; $t0 = date('Y-m-d 00:00:00'); $t36 = date('Y-m-d H:i:s', time() - 36 * 3600);
@@ -62,3 +65,5 @@ try { if (!function_exists('wa_rs_report') && is_file(__DIR__ . '/wa_restyle.php
     $dullT = 0; foreach ($tg as $id => $src) { $b = (string)($pdo->query("SELECT body FROM wa_templates WHERE id = " . (int)$id)->fetchColumn() ?: ''); if ($b !== '' && wa_rs_dull($b)) $dullT++; }
     echo "ASK LEFT targets in use by the engine " . count($tg) . " by module " . json_encode($by) . " · state of those " . json_encode($st) . " · of the targets still basic now " . $dullT . " · report " . (function_exists('wa_rs_report') ? json_encode(wa_rs_report($pdo)) : '-') . "\n";
 } catch (Throwable $e) { echo "ASK LEFT ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
+try { $h2 = date('Y-m-d H:i:s', time() - 7200); $r2 = $pdo->query("SELECT COUNT(*), SUM(TIMESTAMPDIFF(MINUTE, reply_at, at) <= 60), SUM(TIMESTAMPDIFF(MINUTE, reply_at, at) > 60), AVG(TIMESTAMPDIFF(MINUTE, reply_at, at)) FROM wa_offer WHERE mode = 'live' AND ok = 1 AND at >= '$h2' AND TIME(reply_at) BETWEEN '09:00:00' AND '21:40:00'")->fetch(PDO::FETCH_NUM);
+    echo "ASK OFFERREACH3 offers in the last 2 h for DAYTIME replies: " . (int)$r2[0] . " · within 60 min " . (int)$r2[1] . " · later " . (int)$r2[2] . " · average " . round((float)$r2[3]) . " min\n"; } catch (Throwable $e) { echo "ASK OFFERREACH3 ERR " . substr($e->getMessage(), 0, 120) . "\n"; }
