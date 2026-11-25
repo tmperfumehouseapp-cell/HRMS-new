@@ -21,7 +21,7 @@ $pdo = new PDO('sqlite::memory:'); $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ER
 $pdo->exec("CREATE TABLE fu_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_emp INT DEFAULT 0, owner_dept INT DEFAULT 0, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', lag INT DEFAULT 0, metrics TEXT DEFAULT '', need_text INT DEFAULT 0, fields TEXT, status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, topic_id INT, day TEXT, txt TEXT, val REAL, pct INT, auto INT DEFAULT 0, emp_id INT DEFAULT 0, emp_name TEXT DEFAULT '', updated_at TEXT, ai_verdict TEXT DEFAULT '', ai_note TEXT DEFAULT '', ai_q TEXT DEFAULT '', vals TEXT, fvals TEXT, UNIQUE (topic_id, day))");
-$pdo->exec("CREATE TABLE fu_jaimin (section_id INT, day TEXT, txt TEXT, emp_name TEXT DEFAULT '', updated_at TEXT, r_txt TEXT, r_name TEXT DEFAULT '', r_at TEXT, PRIMARY KEY (section_id, day))");
+$pdo->exec("CREATE TABLE fu_jaimin (section_id INT, day TEXT, txt TEXT, emp_name TEXT DEFAULT '', updated_at TEXT, r_txt TEXT, r_name TEXT DEFAULT '', r_at TEXT, r_extra TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE fu_digest (section_id INT, day TEXT, txt TEXT, made_at TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT, designation TEXT, mobile TEXT)");
 $pdo->exec("CREATE TABLE departments (department_id INTEGER PRIMARY KEY, department_name TEXT)");
@@ -175,4 +175,18 @@ $pdo->exec("INSERT INTO employees VALUES (20, 'Rahul V', 2, 'approved', '', '')"
 [$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $st, 'text' => 'Call 4 old shops']); [$c, $j] = call('fup.jaimin_board', $ADMIN);
 ok($j['jaimin'][(string)$st]['2026-11-23']['text'] === 'Call 4 old shops' && $j['jaimin'][(string)$st]['2026-11-23']['reply'] === 'Called 3, 1 order' && $j['open'] === 1, 'changing the decision keeps Rahul\'s update');
 [$c] = call('fup.jaimin_follower', $ADMIN, ['emp_id' => 12]); [$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $st, 'day' => '2026-11-23', 'text' => 'y']); ok($c === 403, 'the Admin can give the job to somebody else');
+// Rahul's update with new topics (made for real in that section) and the sections he checks himself; the pill is green when Jaimin wrote on any day's box today
+[$c] = call('fup.jaimin_follower', $ADMIN, ['emp_id' => 20]);
+$pdo->exec("UPDATE fu_jaimin SET updated_at = '" . date('Y-m-d') . " 09:00:00' WHERE section_id = 0");
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $ws, 'text' => 'Yesterday was slow: add a follow-up for old parties', 'day' => '2026-11-22']); 
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); ok(!empty($b['jaimin_today'][(string)$ws]), 'green: decision written today in the box of an earlier day');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => '', 'new_topics' => [['section_id' => $ws, 'title' => 'Old party calls']]]); ok($c === 422, 'Rahul: new topics need the whole update too');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'x', 'new_topics' => [['section_id' => 0, 'title' => 'Old party calls']]]); ok($c === 422, 'Rahul: a new topic needs its section');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'Added the calls topic, I check both', 'new_topics' => [['section_id' => $ws, 'title' => 'Old party calls', 'assignee_emp' => 12]], 'check' => [$ws, $st, 999]]); ok($c === 200, 'Rahul: update with a new topic and sections to check');
+ok((int)$pdo->query("SELECT COUNT(*) FROM fu_topics WHERE section_id = $ws AND title = 'Old party calls' AND assignee_emp = 12 AND active = 1")->fetchColumn() === 1, 'the new topic is really in the section');
+[$c, $j] = call('fup.jaimin_board', $ADMIN); $x = $j['jaimin'][(string)$ws]['2026-11-22']['extra'];
+ok(count($x['topics']) === 1 && $x['topics'][0]['who'] === 'Chirag' && count($x['check']) === 2, 'the update lists the new topic and the sections he checks');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); ok(isset($b['rahul_checks'][(string)$ws], $b['rahul_checks'][(string)$st]), 'the checked sections are marked');
+[$c] = call('fup.jaimin_reply', $E(20), ['section_id' => $ws, 'day' => '2026-11-22', 'text' => 'Added the calls topic, done']); [$c, $j] = call('fup.jaimin_board', $ADMIN);
+ok(count($j['jaimin'][(string)$ws]['2026-11-22']['extra']['topics']) === 1 && count($j['jaimin'][(string)$ws]['2026-11-22']['extra']['check']) === 2, 'changing only the words keeps the topics and the checks');
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);

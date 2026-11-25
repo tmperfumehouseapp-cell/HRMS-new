@@ -42,9 +42,9 @@ function fup_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_digest (section_id INT NOT NULL, day DATE NOT NULL, txt MEDIUMTEXT NULL, made_at DATETIME NULL, PRIMARY KEY (section_id, day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         // Jaimin's layer: what Jaimin decided on a day, one note a section a day; section_id 0 = his own final decision after all the sections
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_jaimin (section_id INT NOT NULL, day DATE NOT NULL, txt TEXT NULL, emp_name VARCHAR(120) NOT NULL DEFAULT '', updated_at DATETIME NULL, PRIMARY KEY (section_id, day), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        if ((string)setting_get($pdo, 'fup_jaimin_schema', '') !== '1') {   // the follow-up person's (Rahul's) update under each decision
-            foreach (["ALTER TABLE fu_jaimin ADD COLUMN r_txt TEXT NULL", "ALTER TABLE fu_jaimin ADD COLUMN r_name VARCHAR(120) NOT NULL DEFAULT ''", "ALTER TABLE fu_jaimin ADD COLUMN r_at DATETIME NULL"] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { } }
-            $pdo->query("SELECT r_txt, r_name, r_at FROM fu_jaimin LIMIT 1"); setting_set($pdo, 'fup_jaimin_schema', '1');
+        if ((string)setting_get($pdo, 'fup_jaimin_schema', '') !== '2') {   // the follow-up person's (Rahul's) update under each decision; r_extra = the topics he added and the sections he checks himself
+            foreach (["ALTER TABLE fu_jaimin ADD COLUMN r_txt TEXT NULL", "ALTER TABLE fu_jaimin ADD COLUMN r_name VARCHAR(120) NOT NULL DEFAULT ''", "ALTER TABLE fu_jaimin ADD COLUMN r_at DATETIME NULL", "ALTER TABLE fu_jaimin ADD COLUMN r_extra TEXT NULL"] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { } }
+            $pdo->query("SELECT r_txt, r_name, r_at, r_extra FROM fu_jaimin LIMIT 1"); setting_set($pdo, 'fup_jaimin_schema', '2');
         }
         if ((string)setting_get($pdo, 'fup_schema', '') !== '5') {   // added later: Claude's check of each update, a unit for typed numbers, a longer note for Claude
             foreach (["ALTER TABLE fu_updates ADD COLUMN ai_verdict VARCHAR(12) NOT NULL DEFAULT ''", "ALTER TABLE fu_updates ADD COLUMN ai_note VARCHAR(300) NOT NULL DEFAULT ''", "ALTER TABLE fu_updates ADD COLUMN ai_q VARCHAR(300) NOT NULL DEFAULT ''",
@@ -987,7 +987,23 @@ function fup_jaimin(PDO $pdo, array $sids, string $from, string $to): array
 {
     $sids = array_values(array_unique(array_map('intval', $sids))); if (!$sids) return [];
     try { $q = $pdo->prepare("SELECT * FROM fu_jaimin WHERE section_id IN (" . implode(',', $sids) . ") AND day BETWEEN ? AND ?"); $q->execute([$from, $to]); } catch (Throwable $e) { return []; }
-    $out = []; foreach ($q->fetchAll() as $r) if (trim((string)$r['txt']) !== '') $out[(int)$r['section_id']][(string)$r['day']] = ['text' => (string)$r['txt'], 'by' => (string)$r['emp_name'], 'at' => (string)$r['updated_at'], 'reply' => (string)($r['r_txt'] ?? ''), 'reply_by' => (string)($r['r_name'] ?? ''), 'reply_at' => (string)($r['r_at'] ?? '')];
+    $out = []; foreach ($q->fetchAll() as $r) if (trim((string)$r['txt']) !== '') $out[(int)$r['section_id']][(string)$r['day']] = ['text' => (string)$r['txt'], 'by' => (string)$r['emp_name'], 'at' => (string)$r['updated_at'], 'reply' => (string)($r['r_txt'] ?? ''), 'reply_by' => (string)($r['r_name'] ?? ''), 'reply_at' => (string)($r['r_at'] ?? ''), 'extra' => fup_jaimin_extra($r['r_extra'] ?? null)];
+    return $out;
+}
+/** What Rahul added with his update: the new topics (section, title, person) and the sections he will check himself. */
+function fup_jaimin_extra($raw): array
+{
+    $j = json_decode((string)$raw, true); $j = is_array($j) ? $j : [];
+    $t = []; foreach ((array)($j['topics'] ?? []) as $x) if (is_array($x) && trim((string)($x['title'] ?? '')) !== '') $t[] = ['section_id' => (int)($x['section_id'] ?? 0), 'section' => (string)($x['section'] ?? ''), 'title' => (string)$x['title'], 'who' => (string)($x['who'] ?? ''), 'topic_id' => (int)($x['topic_id'] ?? 0)];
+    $c = []; foreach ((array)($j['check'] ?? []) as $x) if (is_array($x) && (int)($x['id'] ?? 0) > 0) $c[] = ['id' => (int)$x['id'], 'name' => (string)($x['name'] ?? '')];
+    return ['topics' => $t, 'check' => $c];
+}
+/** Sections Rahul said he will check himself, from his updates of the last 7 days: [section_id => latest day]. */
+function fup_jaimin_checks(PDO $pdo, string $today): array
+{
+    $out = [];
+    try { $q = $pdo->prepare("SELECT day, r_extra FROM fu_jaimin WHERE day BETWEEN ? AND ? AND r_extra IS NOT NULL ORDER BY day"); $q->execute([date('Y-m-d', strtotime($today . ' -6 day')), $today]);
+        foreach ($q->fetchAll() as $r) foreach (fup_jaimin_extra($r['r_extra'])['check'] as $c) $out[(string)$c['id']] = (string)$r['day']; } catch (Throwable $e) { }
     return $out;
 }
 /** The person who works on Jaimin's decisions and writes his update under each one (Rahul). Chosen by the Admin; until then the one employee called Rahul, if there is exactly one. */
@@ -1355,7 +1371,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
         case 'fup.mine': json_response(fup_mine($pdo, $w));
 
         case 'fup.people': {
-            if (!$w['manager']) json_response(['error' => 'Not allowed.'], 403);
+            if (!$w['manager'] && !($w['emp'] > 0 && fup_jaimin_follower($pdo)['id'] === $w['emp'])) json_response(['error' => 'Not allowed.'], 403);
             $st = $pdo->query("SELECT employee_id AS id, full_name AS name, department_id AS dept FROM employees WHERE COALESCE(status, 'approved') <> 'ex' ORDER BY full_name");
             $ppl = array_map(function ($r) { return ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'dept' => (int)$r['dept']]; }, $st->fetchAll());
             $dn = fup_dept_names($pdo); $depts = []; foreach ($dn as $i => $n) $depts[] = ['id' => $i, 'name' => $n];
@@ -1398,7 +1414,8 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             if (!empty($_GET['all'])) { foreach ($secs as $s2) { [$tt, $cc] = (int)$s2['id'] === $sid ? [$out['topics'], $out['checks']] : $sheet($s2); $out['all'][] = ['id' => (int)$s2['id'], 'topics' => $tt, 'checks' => $cc]; } }
             // Jaimin's layer: the section's boss and the Admin / HR see what Jaimin decided; only the Admin / HR write it
             // the pills on top: light green when Jaimin has written today's decision for that section
-            $JT = fup_jaimin($pdo, array_keys($secs), $today, $today); $out['jaimin_today'] = (object)array_fill_keys(array_map('strval', array_keys($JT)), true);
+            $jt = []; try { $ids = array_map('intval', array_keys($secs)); $q = $pdo->prepare("SELECT DISTINCT section_id FROM fu_jaimin WHERE section_id IN (" . implode(',', $ids) . ") AND TRIM(COALESCE(txt, '')) <> '' AND (day = ? OR updated_at >= ? OR updated_at >= ?)"); $q->execute([$today, $today . ' 00:00:00', date('Y-m-d') . ' 00:00:00']); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $jt[(string)$x] = true; } catch (Throwable $e) { }
+            $out['jaimin_today'] = (object)$jt; $out['rahul_checks'] = (object)fup_jaimin_checks($pdo, $today);
             $seeJ = function ($s) use ($isFl) { return !empty($s['own']) || $isFl; };   // the section's boss, the Admin / HR and the follow-up person see it
             $ownIds = array_keys(array_filter($secs, $seeJ));
             $J = fup_jaimin($pdo, $ownIds, end($out['days']), $today); $out['jaimin'] = $seeJ($secs[$sid]) ? (object)($J[$sid] ?? []) : null;
@@ -1483,7 +1500,22 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $q = $pdo->prepare("SELECT txt FROM fu_jaimin WHERE section_id = ? AND day = ?"); $q->execute([$sid, $day]); $j = $q->fetchColumn();
             if ($j === false || trim((string)$j) === '') json_response(['error' => 'Jaimin has not written a decision here yet.'], 422);
             $txt = trim(mb_substr((string)($in['text'] ?? ''), 0, 4000));
-            $pdo->prepare("UPDATE fu_jaimin SET r_txt = ?, r_name = ?, r_at = ? WHERE section_id = ? AND day = ?")->execute([$txt === '' ? null : $txt, $txt === '' ? '' : mb_substr($w['name'], 0, 120), $txt === '' ? null : fup_now(), $sid, $day]);
+            $q = $pdo->prepare("SELECT r_extra FROM fu_jaimin WHERE section_id = ? AND day = ?"); $q->execute([$sid, $day]); $old = fup_jaimin_extra($q->fetchColumn());
+            $allSec = []; foreach ($pdo->query("SELECT id, name FROM fu_sections WHERE active = 1")->fetchAll() as $r) $allSec[(int)$r['id']] = (string)$r['name'];
+            $topics = $old['topics'];   // topics made earlier with this update stay listed; new rows are made now as real topics of that section
+            foreach (array_slice((array)($in['new_topics'] ?? []), 0, 20) as $nt) {
+                if (!is_array($nt)) continue; $ts = (int)($nt['section_id'] ?? 0); $tt = trim(mb_substr((string)($nt['title'] ?? ''), 0, 160)); if ($tt === '') continue;
+                if (!isset($allSec[$ts])) json_response(['error' => 'Choose the section for the new topic “' . $tt . '”.'], 422);
+                $te = (int)($nt['assignee_emp'] ?? 0); $who = ''; if ($te > 0) { $qq = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ?"); $qq->execute([$te]); $who = (string)$qq->fetchColumn(); if ($who === '') $te = 0; }
+                $qq = $pdo->prepare("SELECT COALESCE(MAX(sort_no), 0) + 1 FROM fu_topics WHERE section_id = ?"); $qq->execute([$ts]); $sn = (int)$qq->fetchColumn();
+                $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, ?, '', ?, '', 1, '', 0, 'open', ?, 1, ?, ?)")
+                    ->execute([$ts, $tt, $te, mb_substr('Added by ' . $w['name'] . ' on Jaimin\'s decision of ' . $day, 0, 255), $sn, $w['emp'], fup_now()]);
+                $topics[] = ['section_id' => $ts, 'section' => $allSec[$ts], 'title' => $tt, 'who' => $who, 'topic_id' => (int)$pdo->lastInsertId()];
+            }
+            $check = []; if (array_key_exists('check', $in)) { foreach ((array)$in['check'] as $cid) { $cid = (int)$cid; if (isset($allSec[$cid])) $check[$cid] = ['id' => $cid, 'name' => $allSec[$cid]]; } $check = array_values($check); } else $check = $old['check'];
+            if ($txt === '' && ($topics || $check)) json_response(['error' => 'Write the whole update too: what you did on this decision.'], 422);
+            $extra = ($topics || $check) ? json_encode(['topics' => $topics, 'check' => $check], JSON_UNESCAPED_UNICODE) : null;
+            $pdo->prepare("UPDATE fu_jaimin SET r_txt = ?, r_name = ?, r_at = ?, r_extra = ? WHERE section_id = ? AND day = ?")->execute([$txt === '' ? null : $txt, $txt === '' ? '' : mb_substr($w['name'], 0, 120), $txt === '' ? null : fup_now(), $extra, $sid, $day]);
             json_response(['ok' => true, 'section_id' => $sid, 'day' => $day, 'text' => $txt]);
         }
         case 'fup.jaimin_follower': {   // the Admin / HR choose who works on Jaimin's decisions (0 = nobody)
