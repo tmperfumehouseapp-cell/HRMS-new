@@ -186,12 +186,14 @@ guardPage(); renderSidebar('followup');
     if (x.topics && x.topics.length) h += '<div class="fu-rx"><b>＋ New topics:</b><br>' + x.topics.map((t) => '• ' + esc(t.section) + ' → ' + esc(t.title) + (t.who ? ' (' + esc(t.who) + ')' : '')).join('<br>') + '</div>';
     if (x.check && x.check.length) h += '<div class="fu-rx"><b style="color:#6b4423">🔍 Checks the whole section:</b> ' + x.check.map((c) => esc(c.name)).join(', ') + '</div>';
     if (x.strict && x.strict.length) h += '<div class="fu-rx"><b style="color:#6b4423">🔍 Strict topics:</b><br>' + x.strict.map((c) => '• ' + esc(c.section) + ' → ' + esc(c.title)).join('<br>') + '</div>'; return h; };
-  const rcell = (j) => (j.reply ? '<div class="fu-rh"><div class="l">✓ ' + esc(flName()) + '’s update</div><div class="tx">' + esc(j.reply) + '</div>' + rextra(j.extra) + '<div class="fu-by">' + esc(j.reply_by || '') + '</div></div>'
-    : '<div class="fu-rh no"><div class="l">' + esc(flName()) + '’s update</div>' + (D.jaimin_follow ? '<div class="fu-jadd">+ Write your update</div>' : '<div class="fu-by" style="margin:0">not written yet</div>') + '</div>');
-  const jcell = (map, d) => { const j = map && map[d]; if (j && j.text) return '<div class="fu-jm">' + esc(j.text) + '</div><div class="fu-by">' + esc(j.by || '') + '</div>' + rcell(j);
+  // the Admin login can write Rahul's update too: the box opens Rahul's own form (data-rh)
+  const rcell = (j, sid, d) => { const rh = D.jaimin_write && sid != null ? ' data-rh="' + sid + '|' + d + '" style="cursor:pointer" title="Write ' + esc(flName()) + '’s update"' : '';
+    return (j.reply ? '<div class="fu-rh"' + rh + '><div class="l">✓ ' + esc(flName()) + '’s update</div><div class="tx">' + esc(j.reply) + '</div>' + rextra(j.extra) + '<div class="fu-by">' + esc(j.reply_by || '') + '</div>' + (rh ? '<div class="fu-jadd">✍ Change ' + esc(flName()) + '’s update</div>' : '') + '</div>'
+    : '<div class="fu-rh no"' + rh + '><div class="l">' + esc(flName()) + '’s update</div>' + (D.jaimin_follow ? '<div class="fu-jadd">+ Write your update</div>' : rh ? '<div class="fu-jadd">✍ Write ' + esc(flName()) + '’s update</div>' : '<div class="fu-by" style="margin:0">not written yet</div>') + '</div>'); };
+  const jcell = (map, d, sid) => { const j = map && map[d]; if (j && j.text) return '<div class="fu-jm">' + esc(j.text) + '</div><div class="fu-by">' + esc(j.by || '') + '</div>' + rcell(j, sid, d);
     return D.jaimin_write ? '<div class="fu-jadd">+ What did you decide?</div>' : '<span class="fu-none">—</span>'; };
   const jClick = (map, d) => D.jaimin_write || (D.jaimin_reply && map && map[d] && map[d].text);
-  const jtd = (sid, map, d, fin) => '<td class="jm' + (fin ? ' fin' : '') + (jClick(map, d) ? ' w" data-jm="' + sid + '|' + d : '') + '">' + jcell(map, d) + '</td>';
+  const jtd = (sid, map, d, fin) => '<td class="jm' + (fin ? ' fin' : '') + (jClick(map, d) ? ' w" data-jm="' + sid + '|' + d : '') + '">' + jcell(map, d, sid) + '</td>';
   const JH = '🧭 Jaimin decided<div class="fu-sub" style="font-weight:600;color:#7c3aed">after reading the day’s tasks</div>';
 
   async function load(keep) {
@@ -346,7 +348,7 @@ guardPage(); renderSidebar('followup');
   /* ---------------- Jaimin's layer on a phone: one purple card a day (today and the day before; the rest folded away) ---------------- */
   function jPhone(sid, map, n) {
     if (!map) return ''; const days = D.days.slice(0, n || D.days.length), show = days.filter((d, i) => i < 2 || (map[d] && map[d].text));
-    return '<div class="fu-jcard"><div class="fu-lb" style="color:#5b3fd1;margin-bottom:4px">🧭 Jaimin decided</div>' + show.map((d) => '<div class="fu-mday"' + (jClick(map, d) ? ' data-jm="' + sid + '|' + d + '" style="cursor:pointer"' : '') + '><div class="d">' + esc(dayName(d, D.today)) + '</div>' + jcell(map, d) + '</div>').join('') + '</div>';
+    return '<div class="fu-jcard"><div class="fu-lb" style="color:#5b3fd1;margin-bottom:4px">🧭 Jaimin decided</div>' + show.map((d) => '<div class="fu-mday"' + (jClick(map, d) ? ' data-jm="' + sid + '|' + d + '" style="cursor:pointer"' : '') + '><div class="d">' + esc(dayName(d, D.today)) + '</div>' + jcell(map, d, sid) + '</div>').join('') + '</div>';
   }
 
   /* ---------------- the Jaimin section (Admin / HR): a row a day — what he decided in each section, and in the first column his final decision after all of them ---------------- */
@@ -360,20 +362,21 @@ guardPage(); renderSidebar('followup');
       + JD.days.map((d) => '<tr><td class="dy' + (d === JD.today ? ' td' : '') + '">' + esc(dayName(d, JD.today)) + '</td>' + jtd(0, fin, d, true) + secs.map((x) => jtd(x.id, J[String(x.id)] || {}, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
     // phones: one card a day — the final decision on top, the sections that have one under it
     h += '<div class="fu-m">' + JD.days.map((d, i) => { const got = secs.filter((x) => J[String(x.id)] && J[String(x.id)][d]); if (i > 1 && !got.length && !fin[d]) return '';
-      return '<div class="fu-mc"><div class="fu-tt">' + esc(dayName(d, JD.today)) + '</div><div class="fu-jcard"' + (jClick(fin, d) ? ' data-jm="0|' + d + '" style="cursor:pointer"' : '') + '><div class="d">✅ My final decision</div>' + jcell(fin, d) + '</div>'
-        + secs.map((x) => (got.includes(x) || i < 1) ? '<div class="fu-mday"' + (jClick(J[String(x.id)], d) ? ' data-jm="' + x.id + '|' + d + '" style="cursor:pointer"' : '') + '><div class="d">' + esc(x.name) + '</div>' + jcell(J[String(x.id)] || {}, d) + '</div>' : '').join('') + '</div>'; }).join('') + '</div>';
+      return '<div class="fu-mc"><div class="fu-tt">' + esc(dayName(d, JD.today)) + '</div><div class="fu-jcard"' + (jClick(fin, d) ? ' data-jm="0|' + d + '" style="cursor:pointer"' : '') + '><div class="d">✅ My final decision</div>' + jcell(fin, d, 0) + '</div>'
+        + secs.map((x) => (got.includes(x) || i < 1) ? '<div class="fu-mday"' + (jClick(J[String(x.id)], d) ? ' data-jm="' + x.id + '|' + d + '" style="cursor:pointer"' : '') + '><div class="d">' + esc(x.name) + '</div>' + jcell(J[String(x.id)] || {}, d, x.id) + '</div>' : '').join('') + '</div>'; }).join('') + '</div>';
     return h;
   }
-  function jaiminForm(sid, day) {
+  function jaiminForm(sid, day, asRahul) {
     const name = sid === 0 ? 'My final decision' : (((JD && JD.sections) || []).concat(D.sections).find((x) => x.id === sid) || {}).name || 'Section';
     const cur = sid === 0 ? (JD && JD.jaimin['0'] || {})[day] : (JD && JV ? (JD.jaimin[String(sid)] || {})[day] : (sid === D.section && D.jaimin ? D.jaimin[day] : ((D.all || []).find((a) => a.id === sid) || {}).jaimin?.[day]));
-    if (!D.jaimin_write) return replyForm(sid, day, name, cur);
+    if (!D.jaimin_write || asRahul) return replyForm(sid, day, name, cur);
     const m = BD.modal('<h3>🧭 Jaimin decided</h3><div class="bd-sub" style="margin:-4px 0 10px"><b>' + esc(name) + '</b> · ' + esc(dayName(day, D.today)) + '</div>'
       + '<div class="bd-f"><label>' + (sid === 0 ? 'After reading every section, what did you finally decide?' : 'After reading this section’s tasks, what did you decide?') + '</label><textarea class="bd-in" id="jT" maxlength="4000" rows="6" placeholder="What you decided, and who does what next…">' + esc(cur ? cur.text : '') + '</textarea><div class="hint">Leave it empty and Save to remove it.</div></div>'
-      + (cur && cur.text ? '<div class="bd-f"><label>' + esc(flName()) + '’s update</label>' + (cur.reply ? '<div class="fu-rh"><div class="tx">' + esc(cur.reply) + '</div>' + rextra(cur.extra) + '<div class="fu-by">' + esc(cur.reply_by || '') + '</div></div>' : '<div class="fu-rh no"><div class="fu-by" style="margin:0">Not written yet. ' + esc(flName()) + ' writes it from his own login.</div></div>') + '</div>'
+      + (cur && cur.text ? '<div class="bd-f"><label>' + esc(flName()) + '’s update</label>' + (cur.reply ? '<div class="fu-rh"><div class="tx">' + esc(cur.reply) + '</div>' + rextra(cur.extra) + '<div class="fu-by">' + esc(cur.reply_by || '') + '</div></div>' : '<div class="fu-rh no"><div class="fu-by" style="margin:0">Not written yet.</div></div>') + '<button class="bd-btn sm" id="jRh" style="margin-top:6px">✍ ' + (cur.reply ? 'Change' : 'Write') + ' ' + esc(flName()) + '’s update</button></div>'
         : '<div class="hint" style="margin-top:-4px">After you save, ' + esc(flName()) + ' writes his update under it from his own login.</div>')
       + '<div class="acts"><button class="bd-btn" id="jX">Cancel</button><button class="bd-btn go" id="jOk">Save</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i); q('#jT').focus(); q('#jX').onclick = () => BD.close();
+    if (q('#jRh')) q('#jRh').onclick = () => { BD.close(); replyForm(sid, day, name, cur); };
     q('#jOk').onclick = () => run(q('#jOk'), async () => { await api.post('fup.jaimin_save', { section_id: sid, day, text: q('#jT').value }); BD.close(); toast('Saved.'); await load(true); });
   }
 
@@ -451,6 +454,7 @@ guardPage(); renderSidebar('followup');
     if ($('jFl')) $('jFl').onclick = followerForm;
     if ($('jmPill')) $('jmPill').onclick = () => { JV = true; load(); };
     if ($('daysJ')) $('daysJ').onchange = () => { DAYS = Number($('daysJ').value) || 7; load(); };
+    document.querySelectorAll('[data-rh]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); const p = b.dataset.rh.split('|'); jaiminForm(Number(p[0]), p[1], true); }; });
     document.querySelectorAll('[data-jm]').forEach((b) => { b.onclick = (e) => { if (!(D.jaimin_write || D.jaimin_reply) || e.target.closest('[data-stop]')) return; e.stopPropagation(); const p = b.dataset.jm.split('|'); jaiminForm(Number(p[0]), p[1]); }; });
     // "All sections": a cell or a section's name opens that section (and the update window of that topic and day)
     document.querySelectorAll('[data-jump]').forEach((b) => { b.onclick = (e) => { if (e.target.closest('[data-stop]')) return; const p = b.dataset.jump.split('|'); SID = Number(p[0]); OPEN_U = Number(p[1]) || 0; OPEN_D = p[2] || ''; setAll(false); load(); }; });
