@@ -4004,9 +4004,28 @@ function proof_emp_dept(PDO $pdo, int $empId): int
     } catch (PDOException $e) { return 0; }
 }
 
+/** The owners (Milan Gondaliya, Harsh Patel): "direct" punch — one tap, no photo, no face, no location rule, no proofs, no checklist, no ID card, no shoes.
+ *  The list is in settings 'punch_direct_ids' (employee ids); made once from the two names (only a name that matches exactly one working employee). */
+function punch_direct(PDO $pdo, int $empId): bool
+{
+    static $ids = null;
+    if ($ids === null) {
+        $raw = setting_get($pdo, 'punch_direct_ids', null);
+        if ($raw === null) {
+            $ids = [];
+            foreach (['milan%gondaliya%', 'harsh%patel%'] as $pat) {
+                try { $q = $pdo->prepare("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(TRIM(full_name)) LIKE ?"); $q->execute([$pat]); $f = $q->fetchAll(PDO::FETCH_COLUMN); if (count($f) === 1) $ids[] = (int)$f[0]; } catch (Throwable $e) { }
+            }
+            setting_set($pdo, 'punch_direct_ids', json_encode($ids));
+        } else { $j = json_decode((string)$raw, true); $ids = is_array($j) ? array_map('intval', $j) : []; }
+    }
+    return $empId > 0 && in_array($empId, $ids, true);
+}
+
 /** The active requirements that apply to one employee. */
 function proof_rules_for(PDO $pdo, int $empId, string $stage = 'punch'): array
 {
+    if (punch_direct($pdo, $empId)) return [];      // the owners punch directly: no proofs
     $rules = proof_rules_all($pdo, true);
     if (!$rules) return [];
     $dept = proof_emp_dept($pdo, $empId);
@@ -4074,6 +4093,7 @@ function proof_enroll_rules(PDO $pdo, int $empId): array
 /** Already enrolled but a once-only proof is still missing (new proof, or sent back): Punch In waits for it. null = nothing missing. */
 function proof_once_pending(PDO $pdo, int $empId): ?array
 {
+    if (punch_direct($pdo, $empId)) return null;
     if (!proof_face_enrolled($pdo, $empId)) return null;
     $rules = proof_enroll_rules($pdo, $empId);
     if (!$rules) return null;
@@ -28290,7 +28310,8 @@ switch ($action) {
 
         $type = $_POST['type'] ?? '';
         if (!in_array($type, ['in', 'out'], true)) json_response(['error' => 'type must be in or out.'], 422);
-        if (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
+        $direct = punch_direct($pdo, (int)$auth['employee_id']);      // the owners: one tap, nothing else asked
+        if (!$direct && (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK)) {
             json_response(['error' => 'A camera photo is required.'], 422);
         }
 
@@ -28302,7 +28323,8 @@ switch ($action) {
         $gLat = isset($_POST['lat']) && $_POST['lat'] !== '' ? (float)$_POST['lat'] : null;
         $gLng = isset($_POST['lng']) && $_POST['lng'] !== '' ? (float)$_POST['lng'] : null;
         $gAcc = isset($_POST['accuracy']) && $_POST['accuracy'] !== '' ? (float)$_POST['accuracy'] : null;
-        [$geoOk, $office, $dist, $geoWhy] = geo_check_punch($pdo, $empId, $gLat, $gLng, $gAcc);
+        [$geoOk, $office, $dist, $geoWhy] = ($direct && $gLat === null) ? [true, null, null, ''] : geo_check_punch($pdo, $empId, $gLat, $gLng, $gAcc);
+        if ($direct && !$geoOk) { $geoOk = true; $office = null; }      // the owners: the place is saved when the phone gives it, never a block
         if (!$geoOk) {
             log_punch_attempt($pdo, $empId, $type, $office, $dist, $gLat, $gLng, $gAcc, false, $geoWhy);
             json_response(['error' => $geoWhy, 'distance_m' => $dist === null ? null : (int)round($dist), 'office' => $office ? $office['office_name'] : null], 403);
@@ -28336,18 +28358,18 @@ switch ($action) {
             $today = $row['punch_date'];
             // Store staff: the opening checklist must be submitted first.
             $shift = emp_shift($pdo, $empId, $today);
-            if ($shift['is_store']) {
+            if (!$direct && $shift['is_store']) {
                 $why = store_punch_block($pdo, $empId, $today, 'out');
                 if ($why !== '') json_response(['error' => $why, 'checklist' => store_day_state($pdo, $empId, $today)], 409);
             }
             // Photo categories: the "After Punch In" and "Before Punch Out" ones must be finished first.
-            $why = photocat_punch_block($pdo, $empId, $today, 'out');
+            $why = $direct ? '' : photocat_punch_block($pdo, $empId, $today, 'out');
             if ($why !== '') json_response(['error' => $why, 'categories' => photocat_day_state($pdo, $empId, $today)], 409);
             // (The Sales call-recording gate at Punch Out ended on 1 Nov 2026.)
         }
 
         // Store staff: the "Before Punch In" tasks (photos) come first. Checked for the day the upload used, and for the day the punch lands on.
-        if ($type === 'in' && emp_shift($pdo, $empId, $today)['is_store']) {
+        if (!$direct && $type === 'in' && emp_shift($pdo, $empId, $today)['is_store']) {
             $why = store_punch_block($pdo, $empId, $today, 'in');
             $d2 = attendance_day_now($pdo);
             if ($why !== '' && $d2 !== $today && store_punch_block($pdo, $empId, $d2, 'in') === '') $why = '';
@@ -28355,7 +28377,7 @@ switch ($action) {
         }
 
         // Photo categories: the "Before Punch In" ones come first. Checked for the day the upload used, and for the day the punch lands on.
-        if ($type === 'in') {
+        if (!$direct && $type === 'in') {
             $why = photocat_punch_block($pdo, $empId, $today, 'in');
             $d2 = attendance_day_now($pdo);
             if ($why !== '' && $d2 !== $today && photocat_punch_block($pdo, $empId, $d2, 'in') === '') $why = '';
@@ -28364,7 +28386,7 @@ switch ($action) {
 
         // Punch-in proofs (Instagram / YouTube comment screenshots, plus any the admin added): every requirement that
         // applies to this employee must have its screenshot for today before Punch In is accepted.
-        if ($type === 'in') {
+        if (!$direct && $type === 'in') {
             // A once-only proof (ID card …) that this already-enrolled person has not given yet: asked one time, before this Punch In.
             if ($once = proof_once_pending($pdo, $empId)) {
                 json_response(['error' => 'One-time step first — ' . implode(', ', $once['missing']) . '.', 'proofs' => $once], 409);
@@ -28377,7 +28399,7 @@ switch ($action) {
 
         // Footwear check: Punch In is accepted only with the footwear photo that was approved by attendance.footwear_check a moment ago.
         $fwRow = null;
-        if ($type === 'in' && footwear_step_needed($pdo, $empId)) {
+        if (!$direct && $type === 'in' && footwear_step_needed($pdo, $empId)) {
             $fh = (isset($_FILES['footwear']) && $_FILES['footwear']['error'] === UPLOAD_ERR_OK) ? (string)hash_file('sha256', $_FILES['footwear']['tmp_name']) : '';
             $fwRow = $fh !== '' ? footwear_approved_row($pdo, $empId, $fh) : null;
             if (!$fwRow) json_response(['error' => 'Footwear check needed — take a photo of your shoes and get it approved first.', 'check' => 'footwear', 'footwear_required' => true], 409);
@@ -28386,13 +28408,14 @@ switch ($action) {
         $uploadDir = __DIR__ . '/uploads/attendance/';
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
         $safeName = 'punch_' . $empId . '_' . $type . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.jpg';
-        if (!move_uploaded_file($_FILES['photo']['tmp_name'], $uploadDir . $safeName)) {
+        $hasPhoto = isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK;
+        if ($hasPhoto && !move_uploaded_file($_FILES['photo']['tmp_name'], $uploadDir . $safeName)) {
             json_response(['error' => 'Failed to save punch photo.'], 500);
         }
-        $photoPath = 'uploads/attendance/' . $safeName;
+        $photoPath = $hasPhoto ? 'uploads/attendance/' . $safeName : '';      // the owners' direct punch has no photo
         $now = date('Y-m-d H:i:s');
 
-        $oid = (int)$office['office_id']; $dm = (int)round($dist);
+        $oid = $office ? (int)$office['office_id'] : null; $dm = $dist === null ? null : (int)round($dist);
         if (!$row) {
             $pdo->prepare("INSERT INTO attendance (employee_id, punch_date, punch_in, punch_in_photo, in_office_id, in_distance_m) VALUES (?, ?, ?, ?, ?, ?)")
                 ->execute([$empId, $today, $now, $photoPath, $oid, $dm]);
@@ -28409,7 +28432,7 @@ switch ($action) {
             $pdo->prepare("UPDATE footwear_checks SET used_at = ?, attendance_id = ? WHERE check_id = ?")->execute([$now, $aid ?: null, $fwRow['check_id']]);
         }
 
-        json_response(['message' => ($type === 'in' ? 'Punched in' : 'Punched out') . ' at ' . date('h:i A') . ' · ' . $office['office_name'] . ' (' . $dm . ' m).', 'time' => $now, 'office' => $office['office_name'], 'distance_m' => $dm]);
+        json_response(['message' => ($type === 'in' ? 'Punched in' : 'Punched out') . ' at ' . date('h:i A') . ($office ? ' · ' . $office['office_name'] . ' (' . $dm . ' m)' : '') . '.', 'time' => $now, 'office' => $office ? $office['office_name'] : null, 'distance_m' => $dm]);
         break;
     }
 
@@ -28552,14 +28575,15 @@ switch ($action) {
         $nm = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ?");
         $nm->execute([(int)$auth['employee_id']]);
         $myName = (string)($nm->fetchColumn() ?: '');
-        if ($open) json_response(['attendance' => $open, 'business_day' => $myDay, 'shift' => $myShift, 'employee_name' => $myName, 'footwear_required' => footwear_step_needed($pdo, (int)$auth['employee_id']), 'shoe_enrolled' => footwear_is_enrolled($pdo, (int)$auth['employee_id']), 'any_footwear' => employee_is_female($pdo, (int)$auth['employee_id'])]);
+        $direct = punch_direct($pdo, (int)$auth['employee_id']);
+        if ($open) json_response(['direct' => $direct, 'attendance' => $open, 'business_day' => $myDay, 'shift' => $myShift, 'employee_name' => $myName, 'footwear_required' => footwear_step_needed($pdo, (int)$auth['employee_id']), 'shoe_enrolled' => footwear_is_enrolled($pdo, (int)$auth['employee_id']), 'any_footwear' => employee_is_female($pdo, (int)$auth['employee_id'])]);
         $stmt = $pdo->prepare(
             "SELECT a.*, e.full_name, e.employee_code FROM attendance a
              JOIN employees e ON e.employee_id = a.employee_id
              WHERE a.employee_id = ? AND a.punch_date = ?"
         );
         $stmt->execute([$auth['employee_id'], $myDay]);
-        json_response(['attendance' => $stmt->fetch() ?: null, 'business_day' => $myDay, 'shift' => $myShift, 'employee_name' => $myName, 'footwear_required' => footwear_step_needed($pdo, (int)$auth['employee_id']), 'shoe_enrolled' => footwear_is_enrolled($pdo, (int)$auth['employee_id']), 'any_footwear' => employee_is_female($pdo, (int)$auth['employee_id'])]);
+        json_response(['direct' => $direct, 'attendance' => $stmt->fetch() ?: null, 'business_day' => $myDay, 'shift' => $myShift, 'employee_name' => $myName, 'footwear_required' => footwear_step_needed($pdo, (int)$auth['employee_id']), 'shoe_enrolled' => footwear_is_enrolled($pdo, (int)$auth['employee_id']), 'any_footwear' => employee_is_female($pdo, (int)$auth['employee_id'])]);
         break;
     }
 

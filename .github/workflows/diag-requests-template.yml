@@ -1,0 +1,49 @@
+# READ-ONLY: chats that sit in Requests right after a pre-made message went to them: what re-opened them (no phone numbers, no names).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Requests after a template (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Requests after template
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/rq_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          date_default_timezone_set("Asia/Kolkata"); echo "IST " . date("Y-m-d H:i:s") . "\n"; $since = date("Y-m-d H:i:s", time() - 4 * 3600); $d1 = date("Y-m-d H:i:s", time() - 86400);
+          $mask = function ($s) { return preg_replace('/\d{6,}/', '#', (string)$s); };
+          $d->exec("CREATE TEMPORARY TABLE t_tp AS SELECT phone, MAX(ts) tts, MAX(emp_id) emp FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'emp' AND ts >= '$since' GROUP BY phone");
+          echo "customers who got a pre-made message from a person in the last 4 h: " . $d->query("SELECT COUNT(*) FROM t_tp")->fetchColumn() . "\n";
+          echo "--- where they are now\n";
+          foreach ($d->query("SELECT c.status st, IF(c.assigned_emp > 0, 'with a person', 'nobody') who, IF(c.last_in_at IS NULL, 'never wrote', IF(c.last_in_at > t.tts, 'wrote AFTER the template', IF(c.last_in_at >= '$d1', 'wrote in the 24 h before', 'last wrote over 24 h ago'))) lin, COUNT(*) n FROM t_tp t JOIN wa_contacts c ON c.phone = t.phone GROUP BY st, who, lin ORDER BY n DESC")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . $r["n"] . " x " . $r["st"] . " · " . $r["who"] . " · " . $r["lin"] . "\n";
+          echo "--- samples: open, with nobody (in Requests)\n";
+          foreach ($d->query("SELECT c.phone, c.state, c.source, c.tag, c.optout, c.last_in_at, c.last_out_at, c.closed_at, t.tts FROM t_tp t JOIN wa_contacts c ON c.phone = t.phone WHERE c.status = 'open' AND c.assigned_emp = 0 ORDER BY t.tts DESC LIMIT 6")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            $tg = $d->prepare("SELECT GROUP_CONCAT(tag) FROM wa_ctags WHERE phone = ?"); $tg->execute([$c["phone"]]);
+            echo "=== state " . $c["state"] . " · source [" . $c["source"] . "] · tag [" . $c["tag"] . "] · optout " . $c["optout"] . " · last_in " . $c["last_in_at"] . " · template at " . $c["tts"] . " · tags " . $tg->fetchColumn() . "\n";
+            $m = $d->prepare("SELECT dir, who, emp_id, mtype, ts, LEFT(REPLACE(body, CHAR(10), ' '), 70) b FROM wa_messages WHERE phone = ? ORDER BY id DESC LIMIT 8"); $m->execute([$c["phone"]]);
+            foreach (array_reverse($m->fetchAll(PDO::FETCH_ASSOC)) as $x) echo "    " . $x["ts"] . " " . $x["dir"] . " " . $x["who"] . ($x["emp_id"] ? "#" . $x["emp_id"] : "") . " [" . $x["mtype"] . "] " . $mask($x["b"]) . "\n";
+          }
+          PHP
+          php /tmp/rq_check.php "$P"; rm -f /tmp/rq_check.php
+          REMOTE

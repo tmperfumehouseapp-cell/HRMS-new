@@ -523,7 +523,12 @@ function wln_twins(PDO $pdo, string $phone, string $topic, int $step, int $faile
     unset($cand[$failedTid]); if (!$cand) return [];
     $util = []; try { foreach ($pdo->query("SELECT id, category FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_keys($cand))) . ")")->fetchAll() as $r) if (strtoupper((string)$r['category']) === 'UTILITY') $util[(int)$r['id']] = 1; } catch (Throwable $e) { return []; }
     $got = []; try { $q = $pdo->prepare("SELECT tpl_id FROM wa_line_plan WHERE phone = ? AND status = 'sent'"); $q->execute([$phone]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $got[(int)$t] = 1; } catch (Throwable $e) { }
-    $o = []; foreach ($cand as $id => $k) if (isset($util[$id]) && !isset($got[$id])) $o[] = [(int)$id, (string)$k]; return $o;
+    $o = []; foreach ($cand as $id => $k) if (isset($util[$id]) && !isset($got[$id])) $o[] = [(int)$id, (string)$k];
+    /* owner 25 Nov 2026: a rescue is never a basic customer-care message (the After-Order rescue sent #3055 1,541 times), and the exciting ones come first */
+    try { if ($o && (string)setting_get($pdo, 'wa_block_dull', '1') !== '0') { if (!function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php';
+        if (function_exists('wa_rs_dull')) { $bd = []; foreach ($pdo->query("SELECT id, name, body FROM wa_templates WHERE id IN (" . implode(',', array_map(function ($x) { return (int)$x[0]; }, $o)) . ")")->fetchAll(PDO::FETCH_NUM) as $r) $bd[(int)$r[0]] = [(string)$r[1], (string)$r[2]];
+            $good = []; $first = []; foreach ($o as $x) { $b = $bd[(int)$x[0]] ?? null; if ($b && wa_rs_dull($b[1])) continue; if ($b && preg_match('/(_ex_|^tmph_hm_|^rs\d+_|_tw[0-9a-f]+$|^tmph_ord_)/', $b[0])) $first[] = $x; else $good[] = $x; } $o = array_merge($first, $good); } } } catch (Throwable $e) { }
+    return $o;
 }
 /** How much of what we sent a customer he actually OPENED: [messages sent, messages read]. A customer who never opened 3+ messages does not get the paid (marketing) price steps — the plain utility message goes instead (cheaper, and it protects the numbers' quality); one who read but did not answer gets the price step. */
 function wln_engagement(PDO $pdo, string $phone): array
@@ -1138,7 +1143,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
             $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wa_rc_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
-        case 'wa.line_strip': { if (!function_exists('wa_strip_report')) require_once __DIR__ . '/wa_strip.php'; json_response(['ok' => true] + (!empty($_GET['rep']) ? wa_strip_replies($pdo, (string)($_GET['mod'] ?? '')) : wa_strip_report($pdo, (string)($_GET['mod'] ?? '')))); }   // one line per module at the top of the Campaigns page
+        case 'wa.line_strip': { if (!function_exists('wa_strip_report')) require_once __DIR__ . '/wa_strip.php'; json_response(['ok' => true] + (!empty($_GET['money']) ? wa_strip_money($pdo, (string)($_GET['mod'] ?? '')) : (!empty($_GET['rep']) ? wa_strip_replies($pdo, (string)($_GET['mod'] ?? '')) : wa_strip_report($pdo, (string)($_GET['mod'] ?? ''))))); }   // one line per module at the top of the Campaigns page
         case 'wa.line_pat': { if (!function_exists('wa_pat_report')) require_once __DIR__ . '/wa_pat.php'; json_response(['ok' => true] + wa_pat_report($pdo, (string)($_GET['scope'] ?? 'today'), !empty($_GET['fresh']), (string)($_GET['mod'] ?? ''))); }   // 🧩 message patterns: topics, styles, samples and replies per module
         case 'wa.line_pat_replies': {   // 💬 the customers behind a module's Replies number today, or behind ONE message type of it (topic): the list for the chat window
             if (!function_exists('wa_pat_repliers')) require_once __DIR__ . '/wa_pat.php';

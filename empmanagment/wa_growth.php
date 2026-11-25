@@ -89,6 +89,12 @@ function wag_cfg(PDO $pdo): array
         $pdo->exec("UPDATE order_rate_auto r JOIN wag_addon a ON RIGHT(a.phone, 10) = r.phone AND a.at >= DATE_SUB(r.at, INTERVAL 7 DAY) AND a.at <= r.at
             SET r.tried = 1, r.tries = 1, r.refused = IF(a.status = 'declined', 1, r.refused), r.reason = CONCAT('The add-on was offered in this chat by the bot (2 more ', a.size_ml, ' ml for Rs ', a.p1, ' or 3 more for Rs ', a.p2, ') and ', IF(a.status = 'declined', 'the customer said no', IF(a.status = 'accepted', 'the customer said yes', 'the customer did not answer clearly')), '.')
             WHERE r.tried = 0 AND r.tries = 0 AND r.worked = 0 AND r.phone <> ''"); } } catch (Throwable $e) { }
+    // once (owner, 25 Nov): the Stop / Not now chats that a bulk pre-made message put back into Requests go back to History: open, with nobody, tag 'declined', our message is the last word (the customer wrote nothing after it), no complaint
+    try { if (setting_get($pdo, 'wag_histback1', '') !== '1') { setting_set($pdo, 'wag_histback1', '1');
+        $__n = $pdo->prepare("UPDATE wa_contacts c SET c.status = 'closed', c.closed_at = ? WHERE c.status = 'open' AND c.assigned_emp = 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at >= ?
+            AND EXISTS (SELECT 1 FROM wa_ctags g WHERE g.phone = c.phone AND g.tag = 'declined')
+            AND (SELECT m.mtype FROM wa_messages m WHERE m.phone = c.phone AND m.dir IN ('in', 'out') ORDER BY m.id DESC LIMIT 1) = 'template'");
+        $__n->execute([date('Y-m-d H:i:s'), date('Y-m-d H:i:s', time() - 2 * 86400)]); wag_log($pdo, 'engine', true, 'History repair: ' . $__n->rowCount() . ' Stop / Not now chats moved back from Requests to History'); } } catch (Throwable $e) { }
     // once (owner, 21 Nov): order-status / tracking / refund chats are removed from the query counts (last 3 days)
     try { if (setting_get($pdo, 'wag_cxq2', '') !== '1') { setting_set($pdo, 'wag_cxq2', '1');
         $st = $pdo->prepare("SELECT DISTINCT q.phone FROM wa_queries q JOIN wa_messages m ON m.phone = q.phone AND m.dir = 'in' AND m.ts >= q.opened_at AND m.ts <= DATE_ADD(q.opened_at, INTERVAL 10 MINUTE) WHERE q.opened_at >= ? AND m.body REGEXP 'tracking|track my|track order|where is my order|order status|order id|order no|kab aayega|kab tak aayega|kab milega|nahi mila|not received|refund|return|replace|damaged|leak|wrong item|wrong product|cancel my order|order kaha|parcel' LIMIT 4000"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);

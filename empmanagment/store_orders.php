@@ -180,6 +180,56 @@ if ((string)$action === 'tms.gift') {   // 🎁 the website's gift perfume on pa
     $k = (int)($r['kept'] ?? 0); $rm = (int)($r['removed'] ?? 0);
     json_response(['ok' => true, 'day' => $day, 'kept' => $k, 'removed' => $rm, 'rate' => $k + $rm > 0 ? (int)round($k * 100 / ($k + $rm)) : null, 'money' => round((float)($r['money'] ?? 0), 2), 'orders' => array_values(array_map('strval', (array)($r['orders'] ?? [])))]);
 }
+if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 Nov): the website orders of the last 5 days whose payment has not come, for the salesperson who holds the customer's WhatsApp chat (open, closed or in History),
+    // else the last person who wrote to the customer there — the same rule as the name filled in on Website orders. An Admin sees everybody's. An order leaves when it is paid, cancelled, or the customer paid a later order. Read-only.
+    $me = (int)($auth['employee_id'] ?? 0); $adm = function_exists('wa_is_admin') ? (bool)wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (!$adm && function_exists('wa_boss_ok')) { try { $adm = (bool)wa_boss_ok($pdo, $auth); } catch (Throwable $e) { } }   // a Sales Head sees every salesperson's customers too
+    if (tms_cfg($pdo)['key'] === '') json_response(['ok' => true, 'rows' => [], 'amount' => 0, 'days' => 7]);
+    $days = 7; [$all, $err] = tms_orders($pdo, date('Y-m-d', time() - $days * 86400), date('Y-m-d'));
+    if ($err !== '') json_response(['ok' => false, 'error' => $err, 'rows' => [], 'amount' => 0]);
+    $cut = date('Y-m-d H:i:s', time() - $days * 86400); $paidAt = []; $un = []; $anyAt = [];
+    foreach ($all as $r) { $ph = (string)$r['phone']; if (strlen($ph) !== 10) continue; $dead = (bool)preg_match('/cancel|refund|void/i', (string)$r['ship_status'] . ' ' . (string)$r['pay_status']);
+        if (!$dead && (!isset($anyAt[$ph]) || $r['placed_at'] > $anyAt[$ph])) $anyAt[$ph] = (string)$r['placed_at'];   // his newest order of any kind: a checkout link made before it has done its job
+        if ((string)$r['pay_status'] !== 'pending') { if (!$dead && (!isset($paidAt[$ph]) || $r['placed_at'] > $paidAt[$ph])) $paidAt[$ph] = (string)$r['placed_at']; continue; }
+        if ($dead || (float)$r['total'] <= 0 || (string)$r['placed_at'] < $cut) continue; $un[] = $r; }
+    $un = array_values(array_filter($un, function ($r) use ($paidAt) { return !isset($paidAt[(string)$r['phone']]) || $paidAt[(string)$r['phone']] < (string)$r['placed_at']; }));   // he paid a later order: the older unpaid one is done
+    // 🧾 owner (25 Nov: "Kadam already ordered and is still in the list"): the customer ordered ANOTHER way (a manual order typed in HRMS, a Shopify order) around or after the unpaid one — he is done.
+    //    [phone => newest other order time]; an order from 12 hours before the unpaid order / link onwards counts (the salesperson often types the manual order a few minutes before or after the website one).
+    $otherAt = function (array $phones) use ($pdo, $cut): array {
+        $o = []; $set = array_flip($phones); if (!$set) return $o; $from = date('Y-m-d H:i:s', strtotime($cut) - 43200);
+        try { $q = $pdo->prepare("SELECT RIGHT(REPLACE(REPLACE(phone, ' ', ''), '-', ''), 10) p, MAX(order_date) t FROM manual_orders WHERE order_date >= ? AND phone <> '' AND COALESCE(fulfillment_status, '') NOT LIKE '%cancel%' AND NOT (COALESCE(channel, '') = 'TM Store' AND COALESCE(payment_status, '') = 'pending') GROUP BY p"); $q->execute([$from]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) if (isset($set[(string)$r['p']])) $o[(string)$r['p']] = (string)$r['t']; } catch (Throwable $e) { error_log('tms unpaid manual: ' . $e->getMessage()); }
+        try { $q = $pdo->prepare("SELECT phone, created_at FROM shop_orders WHERE created_at >= ? AND phone IS NOT NULL AND phone <> '' AND COALESCE(tags, '') NOT LIKE '%wa-rx%' LIMIT 100000"); $q->execute([$from]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if (isset($set[$k]) && (!isset($o[$k]) || (string)$r['created_at'] > $o[$k])) $o[$k] = (string)$r['created_at']; } } catch (Throwable $e) { error_log('tms unpaid shop: ' . $e->getMessage()); }
+        return $o; };
+    $near = function (string $at) { return date('Y-m-d H:i:s', (strtotime($at) ?: time()) - 43200); };
+    $un = array_values(array_filter($un, function ($r) { return (float)$r['total'] >= 50; }));   // a ₹1 test order is not a customer
+    if ($un) { $__oa = $otherAt(array_values(array_unique(array_column($un, 'phone')))); $un = array_values(array_filter($un, function ($r) use ($__oa, $near) { $ph = (string)$r['phone']; return !(isset($__oa[$ph]) && $__oa[$ph] >= $near((string)$r['placed_at'])); })); }
+    $who = []; $nameOf = [];
+    if ($un) { try {
+        $phs = array_values(array_unique(array_column($un, 'phone'))); $live = []; foreach ($pdo->query("SELECT employee_id FROM employees WHERE status != 'ex'")->fetchAll(PDO::FETCH_COLUMN) as $x) $live[(int)$x] = 1;
+        foreach (array_chunk($phs, 400) as $ch) { $q = $pdo->prepare("SELECT phone, assigned_emp, name FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $c) { $nameOf[(string)$c['phone']] = (string)$c['name']; $e = (int)$c['assigned_emp']; if ($e > 0 && isset($live[$e])) $who[(string)$c['phone']] = $e; } }
+        $ql = $pdo->prepare("SELECT emp_id FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id > 0 ORDER BY id DESC LIMIT 1"); $left = 200;
+        foreach ($phs as $ph) { if (isset($who[$ph]) || !isset($nameOf[$ph]) || $left-- <= 0) continue; $ql->execute([$ph]); $e = (int)$ql->fetchColumn(); if ($e > 0 && isset($live[$e])) $who[$ph] = $e; }
+    } catch (Throwable $e) { error_log('tms unpaid: ' . $e->getMessage()); } }
+    $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $rows = []; $amt = 0.0; $now = time(); $seen = [];
+    foreach ($un as $r) { $ph = (string)$r['phone']; $e = (int)($who[$ph] ?? 0); if (!$adm && ($me <= 0 || $e !== $me)) continue; if ($adm && $e <= 0) continue; if (isset($seen[$ph])) continue; $seen[$ph] = 1;   // one row per customer: his newest unpaid order (the list is newest first)
+        $t = strtotime((string)$r['placed_at']) ?: $now; $amt += (float)$r['total'];
+        $rows[] = ['kind' => 'order', 'number' => (string)$r['number'], 'phone' => $ph, 'customer' => (string)($r['customer'] ?: ($nameOf[$ph] ?? '')), 'total' => (float)$r['total'], 'items' => mb_substr((string)$r['items'], 0, 140), 'placed_at' => (string)$r['placed_at'], 'mins' => max(0, (int)floor(($now - $t) / 60)), 'emp' => $adm ? (string)($names[$e] ?? '') : '']; }
+    // 🔗 owner (25 Nov): also the customers who were SENT a checkout link in these 5 days and placed no order after it (the link is in the chat, nothing came). The salesperson who made the link sees it; one row per customer (the newest link).
+    try { $lq = $pdo->prepare("SELECT phone, emp_id, total, created_at FROM wso_order WHERE sent = 1 AND created_at >= ?" . ($adm ? '' : ' AND emp_id = ?') . " ORDER BY id DESC LIMIT 1500"); $lq->execute($adm ? [$cut] : [$cut, $me]); $lrows = $lq->fetchAll(PDO::FETCH_ASSOC);
+        $lph = []; foreach ($lrows as $l) { $ph = substr(preg_replace('/\D+/', '', (string)$l['phone']), -10); if (strlen($ph) === 10 && !isset($seen[$ph]) && !(isset($anyAt[$ph]) && $anyAt[$ph] >= (string)$l['created_at'])) $lph[$ph] = 1; }
+        if ($lph) { $__ob = $otherAt(array_keys($lph)); foreach ($lrows as $l) { $ph = substr(preg_replace('/\D+/', '', (string)$l['phone']), -10); if (isset($lph[$ph]) && isset($__ob[$ph]) && $__ob[$ph] >= $near((string)$l['created_at'])) unset($lph[$ph]); } }   // he ordered another way after (or just before) the link
+        $lname = []; foreach (array_chunk(array_keys($lph), 400) as $ch) { $q = $pdo->prepare("SELECT phone, name FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $c) $lname[(string)$c['phone']] = (string)$c['name']; }
+        foreach ($lrows as $l) { $ph = substr(preg_replace('/\D+/', '', (string)$l['phone']), -10); if (!isset($lph[$ph]) || isset($seen[$ph])) continue; $seen[$ph] = 1; $e = (int)$l['emp_id']; if (!$adm && $e !== $me) continue;
+            $t = strtotime((string)$l['created_at']) ?: $now; $amt += (float)$l['total'];
+            $rows[] = ['kind' => 'link', 'number' => 'Checkout link', 'phone' => $ph, 'customer' => (string)($lname[$ph] ?? ''), 'total' => (float)$l['total'], 'items' => 'link sent in the chat — no order placed yet', 'placed_at' => (string)$l['created_at'], 'mins' => max(0, (int)floor(($now - $t) / 60)), 'emp' => $adm ? (string)($names[$e] ?? '') : '']; }
+    } catch (Throwable $e) { error_log('tms unpaid links: ' . $e->getMessage()); }   // no wso_order table yet: only the orders
+    usort($rows, function ($a, $b) { return strcmp((string)$b['placed_at'], (string)$a['placed_at']); });
+    $__d0 = date('Y-m-d'); $__d1 = date('Y-m-d', time() - 86400); $__d2 = date('Y-m-d', time() - 2 * 86400);   // 🗓 owner (25 Nov): the list in parts — today · yesterday · day before yesterday · earlier (up to 7 days)
+    foreach ($rows as &$__r) { $__dd = substr((string)$__r['placed_at'], 0, 10); $__r['part'] = $__dd >= $__d0 ? 0 : ($__dd === $__d1 ? 1 : ($__dd === $__d2 ? 2 : 3)); } unset($__r);
+    json_response(['ok' => true, 'rows' => array_slice($rows, 0, 150), 'count' => count($rows), 'amount' => round($amt), 'days' => $days, 'admin' => $adm]);
+}
 if ((string)$action === 'tms.gift_orders') {   // 🎁 the orders behind the Gift add-on number of one business day: who took the gift perfume and for how much (owner 24 Nov). Read-only; the shop is asked for each order once per 10 minutes.
     $ok = tms_can($pdo, $auth) || (function_exists('user_can') && (user_can($auth, 'control_tower') || user_can($auth, 'orders')));
     if (!$ok) json_response(['error' => 'Not allowed.'], 403);

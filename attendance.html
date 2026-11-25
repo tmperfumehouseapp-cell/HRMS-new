@@ -512,6 +512,25 @@
   let enrolledDescriptor = null; // Float32Array
   let otherDescriptors = [];     // a few other employees' fingerprints, for the look-alike check
   let enrollMode = false;
+  let DIRECT = false;      // the owners: one tap punches (no camera, face, location rule, proofs, checklist, ID card or shoes)
+  // the owners' buttons: plain Punch In / Out, never "Enroll My Face", never locked
+  function directUi() { if (!DIRECT) return; enrollMode = false; btnIn.classList.remove('enroll'); btnIn.textContent = 'Punch In'; btnIn.title = ''; btnOut.title = ''; if (!busy) { btnIn.disabled = false; btnOut.disabled = false; }
+    ['pfLock', 'remLock'].forEach((id) => { const e = document.getElementById(id); if (e) e.hidden = true; }); }
+  // the owners: get the place if the phone gives it at once (never waits long, never blocks), then punch
+  async function directPunch(type) {
+    if (busy) return; busy = true; [btnIn, btnOut].forEach(b => (b.disabled = true)); setMsg(type === 'in' ? 'Punching in…' : 'Punching out…', 'var(--accent)');
+    try {
+      const loc = await new Promise((res) => { if (!navigator.geolocation) return res(null); let done = false; const t = setTimeout(() => { if (!done) { done = true; res(null); } }, 4000);
+        navigator.geolocation.getCurrentPosition((p) => { if (done) return; done = true; clearTimeout(t); res({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }); }, () => { if (done) return; done = true; clearTimeout(t); res(null); }, { enableHighAccuracy: false, timeout: 3800, maximumAge: 300000 }); });
+      const fd = new FormData(); fd.append('type', type); if (loc) { fd.append('lat', loc.lat); fd.append('lng', loc.lng); fd.append('accuracy', loc.acc); }
+      const res = await fetch(api.buildUrl('attendance.punch'), { method: 'POST', headers: { 'Authorization': 'Bearer ' + api.token() }, body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Punch failed.');
+      showAlert(data.message); try { if (window.TMWin) TMWin.win({ title: data.message || 'Done', ms: 3200 }); } catch (e) { /* optional */ }
+      setMsg(''); loadToday();
+    } catch (err) { setMsg(err.message, 'var(--bad-fg)'); }
+    finally { busy = false; [btnIn, btnOut].forEach(b => (b.disabled = false)); }
+  }
   let faceLoaded = false;        // face.get answered (decides Enroll vs Punch)
   let setup = null;              // reminder setup (push key)
   let busy = false;
@@ -630,7 +649,8 @@
       const data = await api.get('attendance.today');
       const a = data.attendance;
       todayRow = a;
-      fwRequired = !!data.footwear_required;
+      DIRECT = !!data.direct; if (DIRECT) { faceLoaded = true; directUi(); }
+      fwRequired = !DIRECT && !!data.footwear_required;
       fwAny = !!data.any_footwear;            // female employee: any footwear (Crocs, slippers, heels …) is accepted
       { const ck = document.querySelector('#camCheck small'); if (ck) ck.textContent = fwAny ? 'Any footwear is fine' : 'Is this proper shoes?';
         const fr = document.querySelector('#camShoeFrame span'); if (fr) fr.textContent = fwAny ? 'Keep your footwear inside' : 'Keep both shoes inside'; }
@@ -723,6 +743,7 @@
     };
   }
   function ckApplyLock() {
+    if (DIRECT) return directUi();
     const d = ckState;
     const store = !!(d && Number(d.is_store) && d.phases);
     const ph = store ? d.phases : {};
@@ -1086,6 +1107,7 @@
 
   // Punch In is only offered once every proof is in (and not at all until the proofs have loaded).
   function pfApplyLock() {
+    if (DIRECT) return directUi();
     const d = pfState;
     const waiting = !pfLoaded;
     const lock = (waiting || !!(d && Number(d.total) && !Number(d.complete) && !Number(d.punched_in)));
@@ -1528,7 +1550,7 @@
         enrolledDescriptor = new Float32Array(JSON.parse(faceData.descriptor));
         enrollMode = false;
         paintHint();
-      } else {
+      } else if (!DIRECT) {
         enrollMode = true;
         btnIn.classList.add('enroll');
         paintHint();
@@ -2047,6 +2069,7 @@
   }
 
   async function handle(type) {
+    if (DIRECT) return directPunch(type);
     if (busy || !faceLoaded) return;
     if (reminderNeeded && !reminderOn) { applyRemLock(); return; }
     if (type === 'in' && pfLoaded && pfState && Number(pfState.total) && !Number(pfState.complete) && !Number(pfState.punched_in)) {
@@ -2180,6 +2203,7 @@
 
   // Keeps Punch In / Out locked while the required reminder is not on.
   function applyRemLock() {
+    if (DIRECT) return directUi();
     const lock = reminderNeeded && !reminderOn;
     const box = document.getElementById('remLock');
     if (lock) {

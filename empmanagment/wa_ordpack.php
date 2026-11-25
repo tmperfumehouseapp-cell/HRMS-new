@@ -106,6 +106,17 @@ if (!function_exists('wa_ordpack_defs')) {
         if ($made) wa_rs_save($pdo, $st);
         return $made;
     }
+    /** THE "WILL NEVER REACH" LIST (owner 25 Nov 2026: "the numbers no message can reach go to a separate list; the goal of 100% is for everybody else"): a phone whose messages failed with 131026 (not on WhatsApp / cannot receive) at least twice in
+     *  7 days is kept in wa_undeliv (phone, code, times, first / last seen), refreshed once an hour. Nothing is blocked by it yet: it is the list the 100% target is counted without. */
+    function wa_undeliv_tick(PDO $pdo): int
+    {
+        if ((int)setting_get($pdo, 'wa_undeliv_at', '0') > time() - 3600) return 0; setting_set($pdo, 'wa_undeliv_at', (string)time());
+        try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_undeliv (phone VARCHAR(20) NOT NULL PRIMARY KEY, code INT NOT NULL DEFAULT 0, n INT NOT NULL DEFAULT 0, first_at DATETIME NOT NULL, last_at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $q = $pdo->prepare("SELECT phone, err_code, COUNT(*) n, MIN(ts), MAX(ts) FROM wa_messages WHERE id > (SELECT MAX(id) - 600000 FROM wa_messages) AND dir = 'out' AND mtype = 'template' AND status = 'failed' AND err_code = 131026 AND ts >= ? GROUP BY phone, err_code HAVING n >= 2 LIMIT 5000"); $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400)]);
+            $ins = $pdo->prepare("INSERT INTO wa_undeliv (phone, code, n, first_at, last_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE n = VALUES(n), last_at = VALUES(last_at)"); $k = 0;
+            foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) { $ins->execute([(string)$r[0], (int)$r[1], (int)$r[2], (string)$r[3], (string)$r[4]]); $k++; }
+            return $k; } catch (Throwable $e) { return 0; }
+    }
     function wa_ordpack_tick(PDO $pdo): array
     {
         $res = ['made' => 0, 'failed' => []];
@@ -113,8 +124,12 @@ if (!function_exists('wa_ordpack_defs')) {
         if ((int)setting_get($pdo, 'wa_ordpack_at', '0') > time() - 120) return $res; setting_set($pdo, 'wa_ordpack_at', (string)time());
         foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row'] as $f) if (!function_exists($f)) return $res;
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
+        try { if ((string)setting_get($pdo, 'wa_ru_b2500_2511', '') !== '1') { setting_set($pdo, 'wa_ru_b2500_2511', '1'); setting_set($pdo, 'wa_ru_ramp_base', '1200'); setting_set($pdo, 'wa_ru_ramp_step', '200'); setting_set($pdo, 'wa_ru_ramp_max', '2500'); if ((int)setting_get($pdo, 'wa_ru_hourly', '0') < 1200) setting_set($pdo, 'wa_ru_hourly', '1200'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): restart level 1,200 an hour (was 500), steps of 200 up to 2,500 (owner 25 Nov)'); } } catch (Throwable $e) { }
+        try { if ((string)setting_get($pdo, 'wa_cap20b_2511', '') !== '1') { setting_set($pdo, 'wa_cap20b_2511', '1'); if ((int)setting_get($pdo, 'wa_rc_level', '0') >= 1000) setting_set($pdo, 'wa_rc_level', '1200'); } } catch (Throwable $e) { }   // Module C now runs at 1,200 an hour (owner 25 Nov)
+        try { if ((string)setting_get($pdo, 'wa_cap20_2511', '') !== '1') { setting_set($pdo, 'wa_cap20_2511', '1'); setting_set($pdo, 'wcd_cap', '48000'); setting_set($pdo, 'wcd_mkt_cap_day', '24000'); setting_set($pdo, 'wa_aft_cap', '12000'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Caps +20% (owner 25 Nov 2026): Cold 48,000 a day (marketing 24,000), After-Order 12,000 a day, Module C top step 1,200 an hour'); } } catch (Throwable $e) { }
         try { wa_ordpack_learn($pdo); } catch (Throwable $e) { }
         try { wa_hand_tick($pdo); } catch (Throwable $e) { }
+        try { wa_undeliv_tick($pdo); } catch (Throwable $e) { }
         $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
         foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;
