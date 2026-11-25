@@ -543,10 +543,15 @@
   .ocd{display:inline-block; background:#eef2ff; color:#3730a3; font-size:11px; font-weight:700; padding:2px 7px; border-radius:99px;} .ocd.no{background:#fee2e2; color:#b91c1c;}
   /* Wide screens: the stat grid is several narrow cards per row (~250px each) — too tight for Split + Total, so this card takes two grid columns. */
   @media (min-width:821px){ .stat-card.oh-card{grid-column:span 2;} }
-  /* owner (25 Nov 2026): line 1 = Orders by hour with Dress to Impress and Commission slabs beside it · line 2 = the two "Ideal day vs actual" cards (Campaign | Query) side by side, half the width each. On a phone they stack in the same order. */
-  .oh-row, .id-pair{grid-column:1 / -1; min-width:0; display:flex; gap:16px; align-items:stretch;} .oh-row:empty, .id-pair:empty{display:none;}
-  .oh-row > .stat-card, .id-pair > .stat-card{grid-column:auto !important; flex:1 1 0; min-width:0; margin:0;} .oh-row > .stat-card.oh-card{flex:2 1 0;}
-  @media (max-width:1100px){ .oh-row, .id-pair{flex-direction:column; gap:6px;} .oh-row > .stat-card, .id-pair > .stat-card, .oh-row > .stat-card.oh-card{flex:0 0 auto;} }
+  /* owner (25 Nov 2026): on a wide screen the cards sit in three full-width lines, each filled edge to edge (no empty space at the side):
+     top line = Orders & Revenue | Ad spend & ROAS | Pre-messages · line 2 = Orders by hour | Dress to Impress | Commission slabs · line 3 = the two "Ideal day vs actual" cards (Campaign | Query), half the width each.
+     On a narrower screen the three wrappers disappear (display:contents) and the cards flow in the grid as before, in the same order. */
+  .top-row, .oh-row, .id-pair{display:contents;}
+  @media (min-width:1101px){
+    .top-row, .oh-row, .id-pair{grid-column:1 / -1; min-width:0; display:flex; gap:16px; align-items:stretch;} .oh-row:empty, .id-pair:empty{display:none;}
+    .top-row > .stat-card, .oh-row > .stat-card, .id-pair > .stat-card{grid-column:auto !important; flex:1 1 0; min-width:0; margin:0;}
+    .top-row > .stat-card.rs-card, .oh-row > .stat-card.oh-card{flex:2 1 0;}
+  }
   @media (max-width:820px){ .stat-card.oh-card,.stat-card.dti-card, .stat-card.csl-card, .stat-card.tco-card, .stat-card.cq-card, .stat-card.rt-card, .stat-card.pm-card{grid-column:1 / -1;} }
   /* Dress to Impress box */
   .dti-card{display:flex; flex-direction:column; container-type:inline-size;}
@@ -705,6 +710,7 @@ html.emb #summaryGrid { margin: 0 !important; grid-template-columns: repeat(3, m
 @media (max-width: 760px) { html.emb #summaryGrid { grid-template-columns: minmax(0, 1fr) !important; } }
 /* the three cards = All Orders & Revenue + one card per panel (TM Perfume House, TM Shower Gel); the Ad spend & ROAS card and every box after it are left out */
 html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display: none !important; }
+html.emb .top-row { display: contents !important; } html.emb .top-row > .rs-card, html.emb .top-row > .rs-card ~ *, html.emb #summaryGrid > .top-row ~ * { display: none !important; }      /* the cards are grouped in lines now: the embed still shows only the platform cards */
 </style>
 </head>
 <body>
@@ -2856,7 +2862,7 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
     // Each card carries both a full label/amount and a short one; CSS shows
     // whichever fits (short only under the mobile breakpoint).
     grid.innerHTML = `
-      <div class="stat-card ar">
+      <div class="top-row"><div class="stat-card ar">
         <div class="label"><span class="lbl-full">All Orders &amp; Revenue</span><span class="lbl-short">Orders &amp; Revenue</span></div>
         <div class="value vline"><span>${fmtMoney(grandTotal, 'INR')}</span><span>/ ${base.length}</span></div>
         ${(() => { const tm = base.filter(o => !o.cancelled && (Number(o.allocated) === 1 || (o.store_key === 'manual' && Number(o.employee_id) > 0))) /* owner (23 Nov): an order typed in HRMS (manual / quick entry) that carries a salesperson IS a given order — 15 of them were left out of the ticket (268 orders, ticket of 253) */, tmS = tm.reduce((x, o) => x + (Number(o.total) || 0), 0), useTm = tm.length > 0 && tm.length !== base.length;
@@ -2894,10 +2900,9 @@ html.emb #summaryGrid > .rs-card, html.emb #summaryGrid > .rs-card ~ * { display
           `<div class="cg-bar">${tot ? CL.map(([, , col], i) => `<i style="width:${cn[i] / tot * 100}%; background:${col};"></i>`).join('') : ''}</div>` +
           `<div class="cg-tot"><span>Total</span><b>${tot}</b></div></div>`;
         return `<div class="stat-card rs-card"><div class="label"><span class="lbl-full">${r ? 'Ad spend &amp; ROAS' : 'DG / LG / WH / Other'}</span><span class="lbl-short">${r ? 'Ad spend &amp; ROAS' : 'DG/LG/WH/Other'}</span></div>${r}${colours}</div>`;
-      })()}
+      })()}${pmCardHtml()}</div>
       <div class="oh-row">${ohCardHtml(base)}${dtiCardHtml()}${cslCardHtml()}</div>
       <div class="id-pair">${idCardHtml()}${qdCardHtml()}</div>
-      ${pmCardHtml()}
       ${lcCardHtml(base)}
       ${qcCardHtml()}
       <div id="m3Host" style="grid-column:1 / -1; min-width:0;"></div>
