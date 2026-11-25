@@ -11809,8 +11809,14 @@ function must3_code_msg(string $body): bool
     if (preg_match('~chat\.whatsapp\.com/[A-Za-z0-9]{6,}~i', $body)) return true;
     // owner (25 Nov 2026, TM10544): the OTHER wording of the same message has no link — "One-Time Order Verification … 1 Msg our number … 2 Add on our broadcast, send a screenshot … 3 Send your Order ID …
     // Your confirmation code will be shared after verification". It counts too: the verification title, the confirmation code line, or broadcast / community / group together with the screenshot.
-    if (preg_match('/order\s+verification|confirmation\s+code|verification\s+code/iu', $body)) return true;
-    return (bool)(preg_match('/broadcast|community|whatsapp\s+group/iu', $body) && preg_match('/screen\s*shot/iu', $body));
+    if (preg_match('/order\s+verification|(confirmation|verification|coupon|dispatch)\s+code|\bog\s*code\b/iu', $body)) return true;
+    if (preg_match('/broadcast|community|whatsapp\s+group/iu', $body) && preg_match('/screen\s*shot/iu', $body)) return true;
+    // owner (25 Nov 2026, TM10498: "Bas 99… par Order id WhatsApp karke Code le lijiye aur humein share kar dijiye" — "look for the others like this yourself"). The lines the team really sends (read on the server, 4 days,
+    // 3+ chats each): "… par WhatsApp karke (coupon / dispatch) code le lijiye", "ye number pe order id send krdije, aapko code mile to muje send krdije", "uspe msj kijye waha se OG code ayga", "msg on this no he will give
+    // you a og code", "save this number and send screenshot in same number and get code". So: the word CODE (not pin / qr / zip code, not the perfume "… The Code") + getting or passing it on + WhatsApp / message / number.
+    if (!preg_match('/(?<!pin )(?<!pin)(?<!qr )(?<!zip )(?<!the )\bcode\b/iu', $body)) return false;
+    if (!preg_match('/le\s*lijiye|le\s*lo\b|\blelo\b|\bleke\b|le\s*ke\b|\bmile\b|milega|milne|\bayga\b|aayega|aaega|\baega\b|get\s+(the\s+)?code|give\s+you|bhej|\bbhj|\bsend\b|share\s+kar/iu', $body)) return false;
+    return (bool)preg_match('/whats\s*app|\bmsg\b|\bmsj\b|message|\bnumber\b|\bno\b|screen\s*shot|order\s*id/iu', $body);
 }
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
 {
@@ -11861,7 +11867,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = [])
                 if ($ff['c'] === null && $pics) { $hit = must3_photo_seen($pdo, array_slice($pics, -8, null, true)); if ($hit) $ff['c'] = $hit; }   // owner (23 Nov, #73499): a chain PHOTO sent without any words counts too — the last 8 photos of the salesperson are looked at once by Claude (in the background), the answer is kept
                 // 🔑 owner (25 Nov 2026, WM-00271): the code message is sent to a customer ONCE (one-time verification) — he got it on 22 Nov, ordered again on 25 Nov and the check said "not sent" because it only read the last 3 days.
                 //    So when the 3-day window has no code message, the 60 days before it are looked at too (only messages that can be one: a join link / verification / confirmation code / broadcast). It shows with its date.
-                if ($ff['k'] === null) { try { $kq = $pdo->prepare("SELECT body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? AND ts < ? AND (body LIKE '%chat.whatsapp.com/%' OR body LIKE '%erification%' OR body LIKE '%onfirmation code%' OR body LIKE '%roadcast%') ORDER BY id DESC LIMIT 25"); $kq->execute([$kk, date('Y-m-d H:i:s', $t - 63 * 86400), date('Y-m-d H:i:s', $t - 3 * 86400)]);
+                if ($ff['k'] === null) { try { $kq = $pdo->prepare("SELECT body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? AND ts < ? AND (body LIKE '%chat.whatsapp.com/%' OR body LIKE '%erification%' OR body LIKE '%code%' OR body LIKE '%roadcast%') ORDER BY id DESC LIMIT 40"); $kq->execute([$kk, date('Y-m-d H:i:s', $t - 63 * 86400), date('Y-m-d H:i:s', $t - 3 * 86400)]);
                     foreach ($kq->fetchAll(PDO::FETCH_ASSOC) as $km) { if (must3_code_msg((string)$km['body'])) { $ff['k'] = [date('j M', strtotime((string)$km['ts'])), (in_array((string)$km['who'], ['emp', 'phone'], true) || (int)$km['emp_id'] > 0) ? 'S' : 'A', 1]; break; } } } catch (Throwable $e) { } }   // [date, by, 1 = from before the 3 days]
                 return [$ff, $person];
             };
