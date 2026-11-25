@@ -484,6 +484,23 @@ function fup_all_day_before(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_all_day_before: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's order for the topic "4 Days Pehla Na Parcel Zero" (and any topic of the Dispatch section): no number from the HRMS, only the written update. The system numbers that were connected by the topic's name are taken off, the numbers the system had filled in by itself are removed from the days (a number a person typed and every written update stay), and the form asks only for the summary. Then every open daily topic made since the first "day before" order gets it too. */
+function fup_dispatch_manual(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_dispatch_manual_v1', '') === '1') return;
+        $ids = [];
+        foreach ($pdo->query("SELECT t.id FROM fu_topics t JOIN fu_sections s ON s.id = t.section_id WHERE t.active = 1 AND (t.source <> '' OR COALESCE(t.metrics, '') <> '') AND (LOWER(s.name) LIKE '%dispatch%' OR LOWER(TRIM(t.title)) = '4 days pehla na parcel zero')")->fetchAll(PDO::FETCH_COLUMN) as $i) $ids[] = (int)$i;
+        foreach ($ids as $id) {
+            $pdo->prepare("UPDATE fu_topics SET source = '', metrics = '', unit = '', need_text = IF(`fields` IS NULL OR `fields` = '' OR `fields` = '[]', 1, need_text) WHERE id = ?")->execute([$id]);
+            $pdo->prepare("DELETE FROM fu_updates WHERE topic_id = ? AND auto = 1 AND TRIM(COALESCE(txt, '')) = '' AND (fvals IS NULL OR fvals = '')")->execute([$id]);
+            $pdo->prepare("UPDATE fu_updates SET val = NULL, vals = NULL, auto = 0 WHERE topic_id = ? AND auto = 1")->execute([$id]);
+        }
+        $pdo->exec("UPDATE fu_topics SET `lag` = 1 WHERE active = 1 AND kind = 'progress' AND `lag` = 0");
+        setting_set($pdo, 'fup_dispatch_manual_v1', '1');
+    } catch (Throwable $e) { error_log('fup_dispatch_manual: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order for the topic "Office Pickup Parcel Update": no number from the HRMS, only the written update. The system number (it was connected by its name) is taken off the topic, the numbers the system had filled in by itself are removed from its days (a number a person typed, and every written update, stay), and the form asks only for the summary. */
 function fup_office_pickup_clean(PDO $pdo): void
 {
@@ -1274,6 +1291,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_office_pickup_clean($pdo);
     fup_clear_questions($pdo);
     fup_all_day_before($pdo);
+    fup_dispatch_manual($pdo);
     fup_feedback_owner($pdo);
     $w = fup_who($pdo, $auth); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $needMgr = function () use ($w, $isPost) { if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
