@@ -153,28 +153,8 @@ if (!function_exists('wa_rs_tick')) {
                     $p['new'] = $v2; $p['v1'] = $prev; unset($p['v2']); $p['v2done'] = time(); $o['replaced']++;
                 } unset($p);
             }
-            // 2) make: two old messages without a twin
-            foreach ($tg as $old => $src) {
-                if ($o['made'] >= 2 || (int)$st['n'] >= 900) break; if (isset($st['pairs'][$old])) continue; if ((int)($st['next'][$old] ?? 0) > time()) continue;
-                try { $to = wa_camp_tpl($pdo, (int)$old, true, 0); } catch (Throwable $e) { $to = null; } if (!$to || empty($to['ok_wabas'])) { $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => 'old message not approved', 'at' => time()]; continue; }
-                $st['pairs'][$old] = ['src' => $src, 'st' => 'making', 'at' => time()]; wa_rs_save($pdo, $st);   // saved BEFORE the work: two overlapping rounds made two twins of the same message (the second one was refused by Meta: the name existed)
-                $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
-                if (!empty($r['new'])) { $st['pairs'][$old] = ['new' => (int)$r['new'], 'src' => $src, 'st' => 'made', 'at' => time()]; $o['made']++; wa_rs_save($pdo, $st); }
-                else { unset($st['pairs'][$old]); if (!empty($r['busy'])) { $st['next'][$old] = time() + 120; $o['note'] = (string)$r['why']; $st['n'] = max(0, (int)$st['n'] - 1); break; }   // Claude is busy with live chats (they go first): not the message's fault, try again in 2 minutes, no strike
-                    $f = (int)($st['fails'][$old] ?? 0) + 1; $st['fails'][$old] = $f; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600);
-                    if ($f >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => (string)($r['why'] ?? '?'), 'at' => time()]; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; }   // a Claude error (not the message's fault): retry in 10 minutes, up to 30 times; a round stops at the first one
-            }
-            $__nb = []; try { $__ids = array_values(array_filter(array_map(function ($pp) { return (int)($pp['new'] ?? 0); }, $st['pairs']))); if ($__ids) foreach ($pdo->query("SELECT id, body FROM wa_templates WHERE id IN (" . implode(',', $__ids) . ")")->fetchAll(PDO::FETCH_NUM) as $__r) $__nb[(int)$__r[0]] = (string)$__r[1]; } catch (Throwable $e) { }
-            if ($o['made'] < 2 && $o['note'] === '' && (int)$st['n'] < 900) {   // 🔁 second pass: the twins made before the excitement / surprise rule (13:47 UTC, 24 Nov) get a second version, two a round
-                foreach ($st['pairs'] as $old => $p0) { if ($o['made'] >= 2 || (int)$st['n'] >= 400) break;
-                    if (empty($p0['new']) || !in_array((string)($p0['st'] ?? ''), ['made', 'replaced'], true) || !empty($p0['v2']) || !empty($p0['v2fail'])) continue;
-                    $__early = (int)($p0['at'] ?? 0) < 1795528020 && empty($p0['v2done']); $__dull = isset($__nb[(int)$p0['new']]) && wa_rs_dull((string)$__nb[(int)$p0['new']]);   /* a twin whose own wording is basic gets another version too (owner 25 Nov 2026: the customer must want to order) */
-                    if (!$__early && !$__dull) continue;
-                    if ((int)($st['next'][$old] ?? 0) > time()) continue;
-                    $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
-                    if (!empty($r['new'])) { $st['pairs'][$old]['v2'] = (int)$r['new']; $o['made']++; wa_rs_save($pdo, $st); }
-                    else { if (!empty($r['busy'])) { $st['next'][$old] = time() + 120; $o['note'] = (string)$r['why']; break; } $f2 = (int)($st['fails2'][$old] ?? 0) + 1; $st['fails2'][$old] = $f2; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600); if ($f2 >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old]['v2fail'] = 1; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; } }
-            }
+            /* owner 25 Nov 2026: the housekeeping (order pack, removal, purge) runs BEFORE the Claude-dependent steps: with Claude blocked the make step never got past and these never ran */
+            try { if (!function_exists('wa_ordpack_tick') && is_file(__DIR__ . '/wa_ordpack.php')) require_once __DIR__ . '/wa_ordpack.php'; if (function_exists('wa_ordpack_tick')) wa_ordpack_tick($pdo); } catch (Throwable $e2) { }   // owner 25 Nov: the order pack
             /* 4) remove: owner 25 Nov 2026 ("as the new messages are made, blow the old ones out of HRMS"): an old message whose twin took its place at least 24 hours ago, that is in no setting / map any more and was not sent in the last 24 hours, is deleted from the HRMS library (its template and account rows; Meta keeps its copy, nothing is deleted there). Up to 25 a round, every 10 minutes. Switch off: wa_rs_remove = 0. */
             try { if ((string)setting_get($pdo, 'wa_rs_remove', '1') !== '0' && (int)setting_get($pdo, 'wa_rs_rm_at', '0') < time() - 120) { setting_set($pdo, 'wa_rs_rm_at', (string)time()); $rm = 0; $day = date('Y-m-d H:i:s', time() - 86400);
                 $maps = (string)setting_get($pdo, 'wl_map', '') . (string)setting_get($pdo, 'wl_tpls', '') . (string)setting_get($pdo, 'wcd_tpls', '') . (string)setting_get($pdo, 'wcd_tpls_m', '');
@@ -199,10 +179,31 @@ if (!function_exists('wa_rs_tick')) {
                     try { if ((string)setting_get($pdo, 'wa_rs_meta_del', '1') !== '0' && function_exists('wa_api') && function_exists('wa_wabas')) { foreach (wa_wabas($pdo) as $wb) { wa_api('DELETE', '/' . $wb . '/message_templates?name=' . rawurlencode($nm)); } }
                         $pdo->prepare("DELETE FROM wa_tpl_waba WHERE tpl_id = ?")->execute([(int)$r['id']]); $pdo->prepare("DELETE FROM wa_templates WHERE id = ?")->execute([(int)$r['id']]); $del++; $st['purged'] = (int)($st['purged'] ?? 0) + 1; } catch (Throwable $e) { } }
                 setting_set($pdo, 'wa_rs_purge_cur', (string)(count($rows) === 0 ? 0 : $last)); } } catch (Throwable $e) { }
+            // 2) make: two old messages without a twin
+            foreach ($tg as $old => $src) {
+                if ($o['made'] >= 2 || (int)$st['n'] >= 900) break; if (isset($st['pairs'][$old])) continue; if ((int)($st['next'][$old] ?? 0) > time()) continue;
+                try { $to = wa_camp_tpl($pdo, (int)$old, true, 0); } catch (Throwable $e) { $to = null; } if (!$to || empty($to['ok_wabas'])) { $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => 'old message not approved', 'at' => time()]; continue; }
+                $st['pairs'][$old] = ['src' => $src, 'st' => 'making', 'at' => time()]; wa_rs_save($pdo, $st);   // saved BEFORE the work: two overlapping rounds made two twins of the same message (the second one was refused by Meta: the name existed)
+                $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
+                if (!empty($r['new'])) { $st['pairs'][$old] = ['new' => (int)$r['new'], 'src' => $src, 'st' => 'made', 'at' => time()]; $o['made']++; wa_rs_save($pdo, $st); }
+                else { unset($st['pairs'][$old]); if (!empty($r['busy'])) { $st['next'][$old] = time() + 120; $o['note'] = (string)$r['why']; $st['n'] = max(0, (int)$st['n'] - 1); break; }   // Claude is busy with live chats (they go first): not the message's fault, try again in 2 minutes, no strike
+                    $f = (int)($st['fails'][$old] ?? 0) + 1; $st['fails'][$old] = $f; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600);
+                    if ($f >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old] = ['src' => $src, 'st' => 'fail', 'why' => (string)($r['why'] ?? '?'), 'at' => time()]; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; }   // a Claude error (not the message's fault): retry in 10 minutes, up to 30 times; a round stops at the first one
+            }
+            $__nb = []; try { $__ids = array_values(array_filter(array_map(function ($pp) { return (int)($pp['new'] ?? 0); }, $st['pairs']))); if ($__ids) foreach ($pdo->query("SELECT id, body FROM wa_templates WHERE id IN (" . implode(',', $__ids) . ")")->fetchAll(PDO::FETCH_NUM) as $__r) $__nb[(int)$__r[0]] = (string)$__r[1]; } catch (Throwable $e) { }
+            if ($o['made'] < 2 && $o['note'] === '' && (int)$st['n'] < 900) {   // 🔁 second pass: the twins made before the excitement / surprise rule (13:47 UTC, 24 Nov) get a second version, two a round
+                foreach ($st['pairs'] as $old => $p0) { if ($o['made'] >= 2 || (int)$st['n'] >= 400) break;
+                    if (empty($p0['new']) || !in_array((string)($p0['st'] ?? ''), ['made', 'replaced'], true) || !empty($p0['v2']) || !empty($p0['v2fail'])) continue;
+                    $__early = (int)($p0['at'] ?? 0) < 1795528020 && empty($p0['v2done']); $__dull = isset($__nb[(int)$p0['new']]) && wa_rs_dull((string)$__nb[(int)$p0['new']]);   /* a twin whose own wording is basic gets another version too (owner 25 Nov 2026: the customer must want to order) */
+                    if (!$__early && !$__dull) continue;
+                    if ((int)($st['next'][$old] ?? 0) > time()) continue;
+                    $r = wa_rs_make_one($pdo, (int)$old); $st['n']++;
+                    if (!empty($r['new'])) { $st['pairs'][$old]['v2'] = (int)$r['new']; $o['made']++; wa_rs_save($pdo, $st); }
+                    else { if (!empty($r['busy'])) { $st['next'][$old] = time() + 120; $o['note'] = (string)$r['why']; break; } $f2 = (int)($st['fails2'][$old] ?? 0) + 1; $st['fails2'][$old] = $f2; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600); if ($f2 >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old]['v2fail'] = 1; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; } }
+            }
             wa_rs_save($pdo, $st);
             if ($o['note'] !== '') { $st['why_last'] = $o['note']; $st['why_n'][$o['note']] = (int)($st['why_n'][$o['note']] ?? 0) + 1; wa_rs_save($pdo, $st); }
             if (($o['made'] || $o['replaced']) && function_exists('wa_log')) wa_log($pdo, 'template', true, 'New-style messages: ' . $o['made'] . ' made, ' . $o['replaced'] . ' replaced');
-            try { if (!function_exists('wa_ordpack_tick') && is_file(__DIR__ . '/wa_ordpack.php')) require_once __DIR__ . '/wa_ordpack.php'; if (function_exists('wa_ordpack_tick')) wa_ordpack_tick($pdo); } catch (Throwable $e2) { }   // owner 25 Nov: the order pack
             try { if (!function_exists('wa_style_daily_tick') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php'; if (function_exists('wa_style_daily_tick')) { $dn = wa_style_daily_tick($pdo); $o['daily'] = $dn['note'] ?? ''; } } catch (Throwable $e2) { }   // 🆕 up to 7 brand-new messages a day (owner 24 Nov)
         } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'New-style messages error: ' . mb_substr($e->getMessage(), 0, 120)); $o['note'] = 'error'; }
         return $o;
