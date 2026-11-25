@@ -67,13 +67,16 @@
         <input type="file" id="fUp" accept=".xlsx,.xls,.csv" style="display:none">
         <button class="btn" type="button" id="bXlsx" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
       </div>
-      <div id="chBox" style="margin:0 0 12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin:0 0 12px">
+      <div id="chBox" style="flex:1 1 440px;min-width:0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b id="chTitle">⛓ Chain report</b>
           <span style="display:inline-flex;align-items:center;gap:6px;background:#f4f4f4;border-radius:10px;padding:4px 8px;font-size:13px"><span hidden><button type="button" class="btn" id="chPrev">◀</button><input type="date" id="chDay"><button type="button" class="btn" id="chNext">▶</button></span>🕛 <b id="chWin"></b></span><span style="flex:1"></span>
-          <button class="btn" type="button" id="chGo" hidden>🔄 Recount chains</button>
+          <button class="btn" type="button" id="chGo" style="display:none">🔄 Recount chains</button>
           <button class="btn" type="button" id="chXl" style="background:#15803d;border-color:#15803d" disabled>⬇ Chain Excel</button>
           <button class="btn" type="button" id="chPdf" style="background:#b91c1c;border-color:#b91c1c" disabled>⬇ Chain PDF</button></div>
         <div id="chOut" style="margin-top:8px;font-size:13px"></div>
+      </div>
+      <div id="bcBox" style="flex:1 1 440px;min-width:0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px"></div>      <!-- 🏷 barcode generator: assets/js/sku_barcode.js -->
       </div>
       <div class="sk-sr"><input type="search" id="skQ" placeholder="Search an order number or a perfume name…" autocomplete="off" aria-label="Search the SKU sheet"></div>
       <div id="skFound"></div>
@@ -118,7 +121,7 @@
   }
   let skT = 0; $('skQ').addEventListener('input', () => { clearTimeout(skT); skT = setTimeout(renderRows, 200); });
   function draw(d) {
-    D = d; $('bXlsx').disabled = !d.rows.length;
+    D = d; $('bXlsx').disabled = !d.rows.length; if (window.SkuBC) window.SkuBC.refresh();
     // ---- on top: everything that could not be put in the sheet
     let top = '';
     (d.errors || []).forEach((e) => { top += '<div class="box bad"><b>Some orders could not be read.</b> ' + esc(e) + ' — the sheet below is NOT complete. Press Refresh.</div>'; });
@@ -204,7 +207,7 @@
     if (!$('chDay').value) $('chDay').value = new Date(Date.now() + 19800000).toISOString().slice(0, 10);      // today (India time)
     const day = $('chDay').value, nxt = new Date(new Date(day + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10), my = ++chSeq; $('chXl').disabled = true; $('chPdf').disabled = true; $('chGo').disabled = true; $('chTitle').textContent = '⛓ Chain report'; $('chWin').textContent = dmy(day) + ' 12:00 AM → ' + dmy(nxt) + ' 12:00 AM (24 hours)'; $('chOut').textContent = 'Counting the chains of this 12 AM – 12 AM day…';
     try {
-      const r = await api.get('sku.chain', { from: day, to: day, noon: 1 }); if (my !== chSeq) return; CH = r;
+      const r = await api.get('sku.chain', { from: day, to: day, noon: 1 }); if (my !== chSeq) return; CH = r; if (window.SkuBC) window.SkuBC.refresh();
       $('chOut').innerHTML = '<div style="margin-bottom:8px;font-size:14px"><b>' + r.pieces + ' chain pieces</b> in <b>' + r.orders_with + '</b> orders (of ' + r.orders_read + ' orders in these 24 hours) · ₹' + Number(r.amount).toLocaleString('en-IN') + (r.errors.length ? ' · <span style="color:#b91c1c">' + chE(r.errors.join(' | ')) + '</span>' : '') + '</div>' +
         (r.rows.length ? '<table class="sk" style="width:auto;min-width:420px"><thead><tr><th style="text-align:left">Chain</th><th>SKU</th><th>Pieces</th><th>Orders</th><th>Amount</th></tr></thead><tbody>' + r.rows.map((x, i) => '<tr class="chRow" data-i="' + i + '" style="cursor:pointer" title="Click: show the order numbers"><td style="text-align:left">▸ ' + chE(x.name) + '</td><td>' + chE(x.sku) + '</td><td><b>' + x.qty + '</b></td><td>' + x.orders + '</td><td>₹' + Number(x.amount).toLocaleString('en-IN') + '</td></tr>').join('') + '<tr style="font-weight:800;background:#f4f4f4"><td style="text-align:left">TOTAL</td><td></td><td>' + r.pieces + '</td><td>' + r.orders_with + '</td><td>₹' + Number(r.amount).toLocaleString('en-IN') + '</td></tr></tbody></table>' : '<div>No chain product in the orders of these 24 hours.</div>');
       // 👆 a click on a chain row opens the order numbers of that chain under it (click again to close)
@@ -279,6 +282,8 @@
   });
   load();
 </script>
+<script src="assets/js/jsbarcode.code128.min.js"></script>
+<script src="assets/js/sku_barcode.js?v=1"></script>
 <script src="assets/js/min_text.js?v=3"></script>
 </body>
 </html>
