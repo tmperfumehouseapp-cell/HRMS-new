@@ -1,4 +1,8 @@
 <?php
+if (!function_exists('wa_strip_t0')) {
+    /** THE START OF THE SALES DAY (owner 25 Nov 2026: "all numbers by the sales day, not from midnight"): the business day starts at the day-start time of the day (10:00 normally, or the date-specific time set on Day timing, e.g. 12:25), the same as attendance and orders. Falls back to midnight where that function is not loaded. */
+    function wa_strip_t0(PDO $pdo): string { try { if (function_exists('wa_bizday_start')) return wa_bizday_start($pdo); } catch (Throwable $e) { } return date('Y-m-d 00:00:00'); }
+}
 /**
  * Message patterns (owner 24 Nov 2026): every message sent today (or the last 3 days) in Cold, Lineup, After-Order, Module A, B, C and the bot follow-ups,
  * sorted into TOPICS (price, launch, size, reorder ...) and STYLES (short / long, question, emoji), with sample messages and how many people REPLIED
@@ -62,7 +66,7 @@ if (!function_exists('wa_pat_topic')) {
         $scope = $scope === '3d' ? '3d' : 'today'; $only = preg_replace('/\W/', '', $only); $key = 'wa_pat_cache_' . $scope . ($only !== '' ? '_' . $only : '');
         if (!$fresh) { $c = json_decode((string)setting_get($pdo, $key, ''), true); if (is_array($c) && !empty($c['t']) && time() - (int)$c['t'] < 600) return $c; }
         @set_time_limit(120); try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 25000"); } catch (Throwable $e) { }
-        $from = $scope === '3d' ? date('Y-m-d 00:00:00', time() - 2 * 86400) : date('Y-m-d 00:00:00'); $mult0 = $scope === '3d' ? 3 : 1;
+        $from = $scope === '3d' ? date('Y-m-d 00:00:00', time() - 2 * 86400) : wa_strip_t0($pdo); $mult0 = $scope === '3d' ? 3 : 1;
         $names = ['cold' => 'Cold', 'line' => '30-day Lineup', 'after' => 'After-Order', 'moda' => 'Module A (campaigns)', 'modb' => 'Module B', 'modc' => 'Module C', 'follow' => 'Bot follow-ups'];
         $tpl = []; $out = ['t' => time(), 'scope' => $scope, 'from' => $from, 'sampled' => $mult0 > 1, 'modules' => []];
         foreach ($names as $mod => $label) {
@@ -111,7 +115,7 @@ if (!function_exists('wa_pat_repliers')) {
             'moda' => "SELECT i.phone, c.tpl_id, i.sent_at FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.sent_at >= ? AND c.tpl_id > 0 AND (i.status IN ('sent','delivered','read') OR i.last_status IN ('delivered','read')) AND i.phone IN (%s)",
         ];
         if (!isset($sqls[$mod])) return [[], false, 0];
-        $from = date('Y-m-d 00:00:00'); $sql = $sqls[$mod];
+        $from = wa_strip_t0($pdo); $sql = $sqls[$mod];
         $base = function () use ($pdo, $from, $sql) {
             try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 20000"); } catch (Throwable $e) { }
             $q = $pdo->prepare("SELECT phone, MAX(ts) FROM wa_messages WHERE dir = 'in' AND who = 'customer' AND ts >= ? GROUP BY phone LIMIT 30000"); $q->execute([$from]); $in = [];
