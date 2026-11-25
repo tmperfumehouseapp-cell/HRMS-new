@@ -1138,7 +1138,7 @@ if (strpos($__wl, 'wa.line_') === 0) {
             $from = ((string)($_GET['scope'] ?? 'today')) === '30d' ? time() - 30 * 86400 : (int)strtotime(date('Y-m-d 00:00:00'));
             [$rows, $more, $n] = wa_rc_repliers($pdo, $from); json_response(['ok' => true, 'rows' => $rows, 'more' => $more, 'count' => $n, 'at' => date('H:i:s')]);
         }
-        case 'wa.line_strip': { if (!function_exists('wa_strip_report')) require_once __DIR__ . '/wa_strip.php'; json_response(['ok' => true] + (!empty($_GET['rep']) ? wa_strip_replies($pdo, (string)($_GET['mod'] ?? '')) : wa_strip_report($pdo, (string)($_GET['mod'] ?? '')))); }   // one line per module at the top of the Campaigns page
+        case 'wa.line_strip': { if (!function_exists('wa_strip_report')) require_once __DIR__ . '/wa_strip.php'; json_response(['ok' => true] + (!empty($_GET['money']) ? wa_strip_money($pdo, (string)($_GET['mod'] ?? '')) : (!empty($_GET['rep']) ? wa_strip_replies($pdo, (string)($_GET['mod'] ?? '')) : wa_strip_report($pdo, (string)($_GET['mod'] ?? ''))))); }   // one line per module at the top of the Campaigns page
         case 'wa.line_pat': { if (!function_exists('wa_pat_report')) require_once __DIR__ . '/wa_pat.php'; json_response(['ok' => true] + wa_pat_report($pdo, (string)($_GET['scope'] ?? 'today'), !empty($_GET['fresh']), (string)($_GET['mod'] ?? ''))); }   // 🧩 message patterns: topics, styles, samples and replies per module
         case 'wa.line_pat_replies': {   // 💬 the customers behind a module's Replies number today, or behind ONE message type of it (topic): the list for the chat window
             if (!function_exists('wa_pat_repliers')) require_once __DIR__ . '/wa_pat.php';
