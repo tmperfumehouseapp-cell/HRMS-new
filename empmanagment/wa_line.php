@@ -196,7 +196,7 @@ function wl_gap_sum(int $from, int $to): int { $n = 0; for ($i = $from + 1; $i <
 /** The template key of step N (1..12) for a topic. */
 function wl_key(string $topic, int $step): string { return $step >= 5 ? 'ln_all_' . $step : 'ln_' . $topic . '_' . $step; }
 /** The PRICE / PREPAID message that goes instead of the plain one of this step when Meta approved it everywhere ('' = none): days 6, 10, 18, 26 carry a price, day 8 the 2% prepaid. */
-function wln_pref_key(int $step): string { return [5 => 'ln_px_5', 6 => 'ln_pp_6', 7 => 'ln_px_7', 9 => 'ln_px_9', 11 => 'ln_px_11'][$step] ?? ''; }
+function wln_pref_key(int $step): string { return [5 => 'ln_px_5', 7 => 'ln_px_7', 9 => 'ln_px_9', 11 => 'ln_px_11'][$step] ?? ''; }   // owner (25 Nov 2026): step 6 no longer sends 'ln_pp_6' (the 2% prepaid message) - that discount is gone, the plain message of the step goes instead
 /** Words the templates must never contain (Meta would re-label them as marketing). */
 function wl_banned(): array { return ['offer', 'discount', 'sale', 'free', 'special', 'khaas', 'chhoot', 'cashback', '%', '₹', 'off ']; }
 // ---- pure:end
