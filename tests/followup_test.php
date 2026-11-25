@@ -219,7 +219,7 @@ $ff = json_decode((string)$pdo->query("SELECT fields FROM fu_topics WHERE id = $
 // Nitin's 23 Dispatch tasks become one topic with a Words box each; the old days' words are copied in, the old topics hidden
 $pdo->exec("INSERT INTO employees VALUES (30, 'Nitin Futwalk', 1, 'approved', '', '')");
 [$c, $r] = call('fup.section_save', $ADMIN, ['name' => 'Dispatch']); $dsp = (int)$r['id'];
-$GLOBALS['SET']['fup_nitin_merge_v1'] = '1'; $GLOBALS['SET']['fup_nitin_topics_v1'] = ''; call('fup.board', $ADMIN, null, ['section' => $dsp]);
+$GLOBALS['SET']['fup_nitin_merge_v1'] = '1'; $GLOBALS['SET']['fup_nitin_topics_v1'] = ''; foreach (['dharmik', 'dhvanil', 'mehul', 'hemil', 'sachin'] as $pk) { $GLOBALS['SET']['fup_merge_' . $pk . '_v1'] = '1'; $GLOBALS['SET']['fup_' . $pk . '_topics_v1'] = ''; } call('fup.board', $ADMIN, null, ['section' => $dsp]);
 $nOld = (int)$pdo->query("SELECT COUNT(*) FROM fu_topics WHERE section_id = $dsp AND active = 1 AND assignee_emp = 30")->fetchColumn(); ok($nOld === 23, 'Nitin: 23 seeded topics (' . $nOld . ')');
 $a = (int)$pdo->query("SELECT id FROM fu_topics WHERE section_id = $dsp AND title = 'All oil number wise hone chahiye'")->fetchColumn(); $b2 = (int)$pdo->query("SELECT id FROM fu_topics WHERE section_id = $dsp AND title = 'Chair sarkhi mukvi'")->fetchColumn();
 $pdo->exec("INSERT INTO fu_updates (topic_id, day, txt, emp_id, emp_name, updated_at) VALUES ($a, '2026-11-22', 'Badha number pramane', 30, 'Nitin Futwalk', '2026-11-23 10:00:00'), ($b2, '2026-11-22', 'Chair mukayi', 30, 'Nitin Futwalk', '2026-11-23 10:05:00')");
@@ -228,4 +228,12 @@ ok(count($b['topics']) === 1 && $b['topics'][0]['title'] === 'Nitin — daily wo
 $u = $b['topics'][0]['updates']['2026-11-22'] ?? null; ok($u && $u['f']['f1'] === 'Badha number pramane' && $u['f']['f22'] === 'Chair mukayi', 'Nitin: the old words are in the boxes of that day');
 ok((int)$pdo->query("SELECT COUNT(*) FROM fu_updates WHERE topic_id = $a")->fetchColumn() === 1, 'Nitin: the old updates are kept');
 call('fup.board', $ADMIN, null, ['section' => $dsp]); ok((int)$pdo->query("SELECT COUNT(*) FROM fu_topics WHERE section_id = $dsp AND active = 1 AND assignee_emp = 30")->fetchColumn() === 1, 'Nitin: done once only');
+// the same for Dharmik, Dhvanil, Mehul, Hemil, Sachin: one topic each, Number boxes where a task counts, the old number and words copied in
+$pk = (int)$pdo->query("SELECT id FROM fu_topics WHERE section_id = $dsp AND active = 1 AND title = 'Packing'")->fetchColumn(); $pf = json_decode((string)$pdo->query("SELECT fields FROM fu_topics WHERE id = $pk")->fetchColumn(), true);
+$pdo->exec("INSERT INTO fu_updates (topic_id, day, txt, emp_id, emp_name, updated_at, fvals) VALUES ($pk, '2026-11-22', '', 0, 'Dhvanil', '2026-11-23 09:00:00', '" . json_encode([$pf[0]['k'] => '42', $pf[1]['k'] => 'late tempo']) . "')");
+foreach (['dharmik', 'dhvanil', 'mehul', 'hemil', 'sachin'] as $pk2) $GLOBALS['SET']['fup_merge_' . $pk2 . '_v1'] = ''; [$c, $b] = call('fup.board', $ADMIN, null, ['section' => $dsp]);
+$byT = []; foreach ($b['topics'] as $x) $byT[$x['title']] = $x;
+ok(isset($byT['Dharmik — daily work'], $byT['Dhvanil — daily work'], $byT['Mehul — daily work'], $byT['Hemil — daily work'], $byT['Sachin — daily work']) && !isset($byT['Packing']) && !isset($byT['Remittance entry']), 'Dispatch: one topic for each of the 5, the old ones gone');
+ok(count($byT['Mehul — daily work']['fields']) === 17 && $byT['Mehul — daily work']['fields'][2]['type'] === 'num' && count($byT['Hemil — daily work']['fields']) === 7 && count($byT['Sachin — daily work']['fields']) === 15, 'Dispatch: a box a task (number where it counts) + a Note');
+$dv = $byT['Dhvanil — daily work']; $u = $dv['updates']['2026-11-22'] ?? null; ok($u && $u['f']['f2'] === '42' && strpos($u['f']['f' . count($dv['fields'])], 'Packing: late tempo') === 0, 'Dispatch: the old number and its note are copied in');
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);
