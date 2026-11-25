@@ -11859,6 +11859,10 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = [])
                     }
                 }
                 if ($ff['c'] === null && $pics) { $hit = must3_photo_seen($pdo, array_slice($pics, -8, null, true)); if ($hit) $ff['c'] = $hit; }   // owner (23 Nov, #73499): a chain PHOTO sent without any words counts too — the last 8 photos of the salesperson are looked at once by Claude (in the background), the answer is kept
+                // 🔑 owner (25 Nov 2026, WM-00271): the code message is sent to a customer ONCE (one-time verification) — he got it on 22 Nov, ordered again on 25 Nov and the check said "not sent" because it only read the last 3 days.
+                //    So when the 3-day window has no code message, the 60 days before it are looked at too (only messages that can be one: a join link / verification / confirmation code / broadcast). It shows with its date.
+                if ($ff['k'] === null) { try { $kq = $pdo->prepare("SELECT body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? AND ts < ? AND (body LIKE '%chat.whatsapp.com/%' OR body LIKE '%erification%' OR body LIKE '%onfirmation code%' OR body LIKE '%roadcast%') ORDER BY id DESC LIMIT 25"); $kq->execute([$kk, date('Y-m-d H:i:s', $t - 63 * 86400), date('Y-m-d H:i:s', $t - 3 * 86400)]);
+                    foreach ($kq->fetchAll(PDO::FETCH_ASSOC) as $km) { if (must3_code_msg((string)$km['body'])) { $ff['k'] = [date('j M', strtotime((string)$km['ts'])), (in_array((string)$km['who'], ['emp', 'phone'], true) || (int)$km['emp_id'] > 0) ? 'S' : 'A', 1]; break; } } } catch (Throwable $e) { } }   // [date, by, 1 = from before the 3 days]
                 return [$ff, $person];
             };
             try {
@@ -11875,7 +11879,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = [])
                     }
                     $any = $person;
                     foreach (array_keys($cand) as $kc) { [$f2, $p2] = $scan((string)$kc); if ($p2 || $hits($f2)) $any = true; if ($hits($f2) > $hits($f) || ($hits($f2) === $hits($f) && $p2 && !$person)) { $f = $f2; $person = $p2; $k = (string)$kc; } }
-                    if (!$any && !$hits($f)) $nochat = true;
+                    if (!$any && !($f['a'] || $f['c'] || $f['p'] || (!empty($f['k']) && empty($f['k'][2])))) $nochat = true;   // an OLD code message alone does not make it "the chat of this order"
                 }
             } catch (Throwable $e) { }
             $e = (int)$o['employee_id'];
