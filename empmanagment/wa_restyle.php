@@ -112,6 +112,9 @@ if (!function_exists('wa_rs_tick')) {
     function wa_rs_tick(PDO $pdo): array
     {
         $o = ['made' => 0, 'replaced' => 0, 'note' => ''];
+        try { if ((string)setting_get($pdo, 'wa_ru_pool_auto', '1') !== '0' && (int)setting_get($pdo, 'wa_rs_pool_at', '0') < time() - 600) { setting_set($pdo, 'wa_rs_pool_at', (string)time());   /* owner 25 Nov 2026: the new exciting utility pool messages are made and sent to Meta from here too (this round runs in the quiet hours; Module B's own round, which did it, waits for 09:00) */
+                if (!function_exists('wa_util_pool_make') && is_file(__DIR__ . '/wa_util.php')) require_once __DIR__ . '/wa_util.php';
+                if (function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && function_exists('wa_ru_pool_made') && count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) wa_util_pool_make($pdo, 0); } } catch (Throwable $e) { }
         try {
             if ((string)setting_get($pdo, 'wa_rs_on', '1') === '0') { $o['note'] = 'off'; return $o; }
             if (!function_exists('wa_lock') || !wa_lock($pdo, 'rs', 55)) { $o['note'] = 'busy'; return $o; }
