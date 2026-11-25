@@ -10,7 +10,7 @@
  */
 if (!function_exists('wa_rc_tick')) {
     /** Module C's hourly speed (owner 24 Nov 2026): starts at 200, goes 300, 400, 500, 600, 1000 while delivery is clean (checked every 30 minutes on the messages of the window 2 hours to 30 minutes ago: at least 60% of the speed was used and under 10% failed), back to 200 when 25% or more failed, when Meta flags spam (131048) or when it paused. Setting wa_rc_level. */
-    function wa_rc_ladder(): array { return [200, 300, 400, 500, 600, 1000]; }
+    function wa_rc_ladder(): array { return [200, 300, 400, 500, 600, 1000, 1200]; }   /* owner 25 Nov 2026: +20% on the top step */
     function wa_rc_level(PDO $pdo, int $nowTs): int
     {
         $lad = wa_rc_ladder(); $lvl = (int)setting_get($pdo, 'wa_rc_level', '0'); if (!in_array($lvl, $lad, true)) { $lvl = 200; setting_set($pdo, 'wa_rc_level', '200'); }

@@ -113,6 +113,7 @@ if (!function_exists('wa_ordpack_defs')) {
         if ((int)setting_get($pdo, 'wa_ordpack_at', '0') > time() - 120) return $res; setting_set($pdo, 'wa_ordpack_at', (string)time());
         foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row'] as $f) if (!function_exists($f)) return $res;
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
+        try { if ((string)setting_get($pdo, 'wa_cap20_2511', '') !== '1') { setting_set($pdo, 'wa_cap20_2511', '1'); setting_set($pdo, 'wcd_cap', '48000'); setting_set($pdo, 'wcd_mkt_cap_day', '24000'); setting_set($pdo, 'wa_aft_cap', '12000'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Caps +20% (owner 25 Nov 2026): Cold 48,000 a day (marketing 24,000), After-Order 12,000 a day, Module C top step 1,200 an hour'); } } catch (Throwable $e) { }
         try { wa_ordpack_learn($pdo); } catch (Throwable $e) { }
         try { wa_hand_tick($pdo); } catch (Throwable $e) { }
         $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
