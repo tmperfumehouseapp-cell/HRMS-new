@@ -42,7 +42,9 @@
 /* written in plain old JavaScript so it also runs in the old Chrome of cheap Android TV boxes */
 (function () {
   function $(id) { return document.getElementById(id); }
-  var st = $('stage'), m = /[?&]k=([^&]*)/.exec(location.search), key = m ? decodeURIComponent(m[1]) : '';
+  var st = $('stage'), m = /[?&]k=([^&]*)/.exec(location.search), key = m ? decodeURIComponent(m[1]) : '', fromStore = false;
+  function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k) || ''; if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return ''; } return ''; }
+  if (key) ls('sd_key', key); else { key = ls('sd_key'); fromStore = !!key; }
   function fit() {
     var w = window.innerWidth || document.documentElement.clientWidth, h = window.innerHeight || document.documentElement.clientHeight, s = Math.min(w / 720, h / 1280);
     var tf = 'scale(' + s + ')'; st.style.webkitTransform = tf; st.style.transform = tf;
@@ -76,6 +78,7 @@
       x.timeout = 15000;
       x.onload = function () {
         var d = null; try { d = JSON.parse(x.responseText); } catch (e) { d = null; }
+        if (x.status === 403 && fromStore) { ls('sd_key', null); location.reload(); return; }
         if (x.status !== 200 || !d || d.error) { offline((d && d.error) || 'The screen could not start (code ' + x.status + ').'); return; }
         try { show(d); } catch (e) { offline('Display error: ' + e.message); }
       };
@@ -84,8 +87,19 @@
     } catch (e) { offline('Display error: ' + e.message); }
   }
   window.onerror = function (msg) { try { $('msg').textContent = 'Display error: ' + msg; $('msg').style.display = 'block'; } catch (e) { /* ok */ } };
-  if (!key) { offline('This link has no code. Open the short link from Store → Display.'); }
-  tick(); setInterval(tick, 8000);
+  function pairMode() {
+    var code = ls('sd_code'); if (!/^\d{6}$/.test(code)) { code = String(100000 + Math.floor(Math.random() * 900000)); ls('sd_code', code); }
+    $('msg').style.color = '#111'; $('msg').style.fontSize = '34px'; $('msg').style.display = 'block';
+    $('msg').innerHTML = 'Connect this screen<br><span style="font-size:130px;font-weight:900;letter-spacing:8px;color:#ff5a00;line-height:1.3">' + code + '</span><br><span style="font-size:28px;color:#444">On the computer or phone open HRMS<br>Store → Display → <b>Connect a TV</b><br>and type this number</span>';
+    $('livet').textContent = 'WAITING';
+    function poll() {
+      try { var x = new XMLHttpRequest(); x.open('GET', 'api.php?action=st_disp.pair&c=' + code + '&_t=' + new Date().getTime(), true); x.timeout = 15000;
+        x.onload = function () { var d = null; try { d = JSON.parse(x.responseText); } catch (e) { d = null; } if (d && d.key) { ls('sd_key', d.key); ls('sd_code', null); location.replace('store_display_tv.html'); } };
+        x.send(); } catch (e) { /* try again */ }
+    }
+    poll(); setInterval(poll, 3000);
+  }
+  if (!key) { pairMode(); } else { tick(); setInterval(tick, 8000); }
   setTimeout(function () { location.reload(); }, 6 * 3600 * 1000);
   document.addEventListener('click', function () { try { var AC = window.AudioContext || window.webkitAudioContext; audio = audio || new AC(); if (audio.resume) audio.resume(); } catch (e) { /* ok */ } });
 })();
