@@ -6,7 +6,7 @@
  * Label: name · size · MRP · batch (one a day: B + ddmmyy) · barcode + number · MFG · EXP (4 years). Size 2 × 4 inch by default (kept in this browser).
  * Reads the page's own D (the sheet) and CH (the chain report); the page calls SkuBC.refresh() after each of them is drawn. Needs assets/js/jsbarcode.code128.min.js. */
 (function () {
-  const box = document.getElementById('bcBox'); if (!box || !window.api) return;
+  const box = document.getElementById('bcBox'); if (!box || typeof api === 'undefined') return;      // api.js declares `const api`: it is a global name but NOT window.api
   const $ = (id) => document.getElementById(id);
   const E = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const SIZES = ['10 ml', '20 ml', '50 ml', '100 ml'];                      // the first four columns of the sheet (50/60 ml is one column)
@@ -110,7 +110,7 @@
     const s = $('bcSheet'); if (!s) return; if (!sheet.length) { s.innerHTML = ''; return; }
     s.innerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b>' + E(sheetTitle) + '</b><span style="flex:1"></span>' + btn('bcPdf', '⬇ Download PDF / Print', '#b91c1c') + btn('bcClr', 'Clear', '') + '</div>'
       + '<div id="bcPrev" style="display:flex;flex-wrap:wrap;gap:6px;max-height:420px;overflow:auto;background:#f1f5f9;border-radius:10px;padding:8px"></div>' + (sheet.length > 12 ? '<div style="font-size:11.5px;color:var(--muted);margin-top:4px">The first 12 are shown here. The PDF has all ' + sheet.length + '.</div>' : '');
-    const pv = $('bcPrev'); sheet.slice(0, 12).forEach((l) => { const n = labelNode(l); n.style.border = '1px dashed #94a3b8'; n.style.borderRadius = '4px'; pv.appendChild(n); });
+    const pv = $('bcPrev'); sheet.slice(0, 12).forEach((l) => { const n = labelNode(l); n.style.border = '1px dashed #94a3b8'; n.style.borderRadius = '4px'; n.style.backgroundImage = 'none'; pv.appendChild(n); });      // background-image: the dark mode of the HRMS (a colour flip of the whole page) leaves such an element as it is, so the label stays white paper with black bars
     $('bcPdf').onclick = pdf; $('bcClr').onclick = () => { sheet = []; drawSheet(); };
   }
   /** ⬇ the PDF: one label on each page of exactly the sticker size — the browser's own "Save as PDF" (the same way as Chain PDF) */
