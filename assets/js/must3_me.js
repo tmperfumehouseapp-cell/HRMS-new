@@ -1,10 +1,10 @@
-/* must3_me.js — "✅ Must-send check" on My Sales (owner, 23 Nov): the salesperson's OWN orders only. The 3 messages every order needs (address re-check · chain selection · prepaid 2%) + ➕ was an add-on put on the order. Tap a tile → the orders where it is missing, with "Open chat". Data: ct.must3_me (range = today | yday | 7d). Hidden for people without sales orders. */
+/* must3_me.js — "✅ Must-send check" on My Sales (owner, 23 Nov): the salesperson's OWN orders only. The 3 messages every order needs (address re-check · chain selection · prepaid (COD costs Rs 100 extra, so full prepaid)) + ➕ was an add-on put on the order. Tap a tile → the orders where it is missing, with "Open chat". Data: ct.must3_me (range = today | yday | 7d). Hidden for people without sales orders. */
 (function () {
   'use strict';
   const box = document.getElementById('m3Box'); if (!box || typeof api === 'undefined') return;
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const inr = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
-  const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain'], ['p', '💳', 'Prepaid 2%'], ['d', '➕', 'Add-on']];
+  const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain'], ['p', '💳', 'Prepaid (COD +₹100)'], ['d', '➕', 'Add-on']];
   const R = [['today', 'Today'], ['yday', 'Yesterday'], ['7d', '7 days']];
   const S = { range: 'today', sel: '', d: null, busy: false };
   const col = (v, t) => !t ? '#9ca3af' : (v / t >= .8 ? '#16a34a' : v / t >= .5 ? '#d97706' : '#dc2626');

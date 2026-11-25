@@ -11761,6 +11761,21 @@ function ct_better_at(PDO $pdo, int $days = 1, string $day = ''): array
 }
 /** ✅ The 3 must-send check of ONE business day (+ the add-on column, owner 23 Nov): per salesperson, per order — address re-check · chain selection · prepaid 2% (plain text match, no AI) and whether an add-on was put on the order (employee_addons) with the reason when not (order_rate_auto).
  *  $onlyEmp > 0 → only that salesperson's orders (the "my check" card of the sales app). Used by ct.must3 (Admin / HR) and ct.must3_me. */
+/** 💳 THE PREPAID MESSAGE — new standard (owner, 25 Nov 2026): orders are taken in the HRMS now, and there is NO "2% off on full prepaid" any more. The rule is: a COD parcel costs the customer Rs 100 extra,
+ *  so the salesperson tells him "COD par Rs 100 extra dena padega, full prepaid kar do". The Prepaid box of the must-send check is done when the chat holds BOTH parts:
+ *    must3_cod_charge()   — a message that names COD and its extra charge (100 / charge / extra / zyada / more)
+ *    must3_prepaid_word() — a message that names prepaid / full / online / advance payment
+ *  in ONE message (must3_cod_pitch) or in two messages of the same chat. "2%", "discount" or a prepaid price alone no longer count; "Prepaid ya COD?" alone never did. */
+function must3_cod_charge(string $body): bool
+{
+    if ($body === '' || !preg_match('/(?<![a-z])(cod|c\.o\.d\.?|cash\s*on\s*delivery)(?![a-z])/iu', $body)) return false;
+    return (bool)preg_match('/charges?|extra|zyada|jyada|jada|vadhu|vadhare|additional|(?<![a-z])more(?![a-z])|shulk|चार्ज|ज़्यादा|ज्यादा|ચાર્જ|વધારે|(?<![\d.,])100(?![\d,])(?!\s*ml)/iu', $body);
+}
+function must3_prepaid_word(string $body): bool
+{
+    return $body !== '' && (bool)preg_match('/prepaid|pre\s*paid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?|pay\s*online|प्रीपेड|પ્રીપેડ/iu', $body);
+}
+function must3_cod_pitch(string $body): bool { return must3_cod_charge($body) && must3_prepaid_word($body); }
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
 {
     $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'd' => 0, 'x' => 0], 'people' => []];
@@ -11784,15 +11799,15 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = [])
         //    an outgoing text / caption that mentions a chain, OR an outgoing photo with a chain talked about around it (the customer or the salesperson says chain / necklace / pendant … within 6 messages).
         $rxA = '/recheck your delivery address|change address\s*\/\s*add new address/i'; $rxC = '/chain_index|jewell?ery item from this catalogue|chain or any other jewell?ery/i';
         $rxChainWord = '/\b(chains?|necklaces?|pendants?|bracelets?|lockets?|jewell?ery|jewelry|mala|kada)\b/iu';
-        $rxP = '/((?<![\d.])2|\bdo|\btwo)\s*(%|percent|per\s*cent|pratishat)|extra discount|(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)[^.\n]{0,80}(discount|off|less|kam|chhut|chut|cashback)|(discount|off|less|kam|chhut|chut|cashback)[^.\n]{0,80}(prepaid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)|(prepaid|pre\s*paid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)[^.\n]{0,80}(?:rs\.?\s*|₹\s*)?(?<![\d.])\d{1,2},?\d{3}(?![\d%])|(?:rs\.?\s*|₹\s*)?(?<![\d.])\d{1,2},?\d{3}(?![\d%])[^.\n]{0,80}(prepaid|pre\s*paid|full\s*pay(ment)?|advance\s*pay(ment)?|online\s*pay(ment)?)|(make|do|kar|karo|kariye|kijiye|karna|karva|karwa|banao|bana)[^.\n]{0,25}(prepaid|pre\s*paid)|(prepaid|pre\s*paid)\s*(order|payment)?\s*(kar|karo|kariye|kijiye|kar\s*do|kar\s*lo|karoge|karenge|banao|bana)/iu';   // owner (23 Nov, #73501): "make a prepaid order I'll make it for 2850/-" — a prepaid PRICE (prepaid / full payment near an amount) also counts as the prepaid offer told · "make a prepaid order" / "prepaid kar do" (asking the customer to make it prepaid) counts too, whatever the amount
+        // 💳 the old prepaid rule (2% / discount / a prepaid price / "prepaid kar do") is gone (owner, 25 Nov 2026): the prepaid message is the COD-charge message now — must3_cod_charge() + must3_prepaid_word(), read in the scan below
         $xq = null; try { $xq = $pdo->prepare("SELECT phone FROM order_extra_phones WHERE source = ? AND order_id = ? LIMIT 1"); } catch (Throwable $e) { $xq = null; }
         $hasMsg = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? LIMIT 1");
         foreach ($rows as $o) {
             $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); $t = strtotime((string)$o['created_at']); $f = ['a' => null, 'c' => null, 'p' => null]; $nochat = false;
             // 📱 owner (23 Nov, order #73485): the customer ordered with ANOTHER number than the one he chats from — the check found no chat and said "nothing sent". The order's "Extra mobile no." (Order Allocation) is used when the order's own number has no chat; with no chat at all the order is marked "chat not found" (not "not sent")
             // 🔎 owner (23 Nov, orders #73485 / #7349x): the number on the order is often NOT the number the customer chats from — it has no chat, or only an old / automatic one. So: read the order number's chat; when it holds NO message of a person and none of the three messages, look for the real chat — the order's "Extra mobile no.", else the ONE chat of the order's salesperson where the order's number was written (3 days before .. 2 hours after the order; searched only inside that person's chats, kept 15 min / 6 h) — and read that one. Nothing found = "chat not found" (its own box, not "not sent").
-            $scan = function (string $kk) use ($pdo, $t, $rxA, $rxC, $rxP, $rxChainWord) {
-                $ff = ['a' => null, 'c' => null, 'p' => null]; $person = false; if (strlen($kk) !== 10) return [$ff, $person];
+            $scan = function (string $kk) use ($pdo, $t, $rxA, $rxC, $rxChainWord) {
+                $ff = ['a' => null, 'c' => null, 'p' => null]; $person = false; $pc = null; $pw = null; if (strlen($kk) !== 10) return [$ff, $person];   // $pc / $pw: the first message with the COD charge / with the prepaid word (the Prepaid box needs both)
                 $q = $pdo->prepare("SELECT id, media_id, dir, mtype, body, ts, who, emp_id FROM wa_messages WHERE phone = ? AND ts >= ? AND ts <= ? ORDER BY id ASC LIMIT 700");
                 $q->execute([$kk, date('Y-m-d H:i:s', $t - 3 * 86400), date('Y-m-d H:i:s', min(time(), $t + 48 * 3600))]);   // a message sent LATER (up to 48 h after the order, until now) also counts
                 $ms = $q->fetchAll(PDO::FETCH_ASSOC); $nm = count($ms); $pics = [];
@@ -11800,7 +11815,7 @@ function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = [])
                     if ($m['dir'] !== 'out') continue; $body = (string)$m['body']; $by = (in_array((string)$m['who'], ['emp', 'phone'], true) || (int)$m['emp_id'] > 0) ? 'S' : 'A'; if ($by === 'S') $person = true; $mark = [substr((string)$m['ts'], 11, 5), $by];
                     if ($by === 'S' && (string)$m['mtype'] === 'image' && ctype_digit((string)$m['media_id'])) $pics[(int)$m['id']] = [(string)$m['media_id'], $mark];   // 📷 a photo a person sent: it may be the chain catalogue with no words (read by must3_photo_tick)
                     if ($ff['a'] === null && preg_match($rxA, $body)) $ff['a'] = $mark;
-                    if ($ff['p'] === null && $body !== '' && preg_match($rxP, $body)) $ff['p'] = $mark;
+                    if ($ff['p'] === null && $body !== '') { if ($pc === null && must3_cod_charge($body)) $pc = $mark; if ($pw === null && must3_prepaid_word($body)) $pw = $mark; if ($pc !== null && $pw !== null) $ff['p'] = $mark; }   // 💳 new standard (25 Nov): "COD par Rs 100 extra — full prepaid kar do", in one message or in two
                     if ($ff['c'] === null) {
                         if (preg_match($rxC, $body) || preg_match($rxChainWord, $body)) $ff['c'] = $mark;
                         elseif ((string)$m['mtype'] === 'image') { for ($z = max(0, $mi - 6); $z <= min($nm - 1, $mi + 6); $z++) if ($z !== $mi && preg_match($rxChainWord, (string)$ms[$z]['body'])) { $ff['c'] = $mark; break; } }
@@ -11850,7 +11865,7 @@ function must3_push_tick(PDO $pdo): int
         $seen = $pdo->prepare("SELECT 1 FROM must3_push WHERE order_name = ?"); $ins = $pdo->prepare("INSERT IGNORE INTO must3_push (order_name, employee_id, missing, at) VALUES (?, ?, ?, ?)");
         foreach ((array)($r['people'] ?? []) as $p) foreach ((array)($p['orders'] ?? []) as $o) {
             if (!empty($o['nochat'])) continue; $miss = [];
-            if (empty($o['a'])) $miss[] = 'Address re-check'; if (empty($o['c'])) $miss[] = 'Chain'; if (empty($o['p'])) $miss[] = 'Prepaid 2%'; if (($o['d'] ?? null) === null) $miss[] = 'Add-on offer';
+            if (empty($o['a'])) $miss[] = 'Address re-check'; if (empty($o['c'])) $miss[] = 'Chain'; if (empty($o['p'])) $miss[] = 'Prepaid (tell: COD par Rs 100 extra, full prepaid kar do)'; if (($o['d'] ?? null) === null) $miss[] = 'Add-on offer';
             if (!$miss) continue; $seen->execute([(string)$o['order']]); if ($seen->fetchColumn()) continue;
             $ins->execute([(string)$o['order'], (int)$p['id'], mb_substr(implode(', ', $miss), 0, 80), date('Y-m-d H:i:s')]); if ($ins->rowCount() < 1) continue;
             ct_push($pdo, [(int)$p['id']], '⚠ ' . (string)$o['order'] . ': ' . count($miss) . ' thing' . (count($miss) === 1 ? '' : 's') . ' not done', trim((string)$o['customer']) . ' — ' . implode(', ', $miss) . '. Open the chat and send now.', '/my_app.html', 'must3-' . preg_replace('/\D+/', '', (string)$o['order'])); $n++;

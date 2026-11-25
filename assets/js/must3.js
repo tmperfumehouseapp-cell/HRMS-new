@@ -1,8 +1,8 @@
-/* ✅ 3 must-send check: address re-check · chain selection · prepaid 2% — per category, per salesperson, per order (data: ct.must3, plain text match, no AI). Used under the day-by-day chart of the Control Tower and on the Live page. */
+/* ✅ 3 must-send check: address re-check · chain selection · prepaid (COD costs Rs 100 extra, so full prepaid) — per category, per salesperson, per order (data: ct.must3, plain text match, no AI). Used under the day-by-day chart of the Control Tower and on the Live page. */
 (function () {
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
-  const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain'], ['p', '💳', 'Prepaid 2%']];
+  const K = [['a', '📍', 'Address re-check'], ['c', '⛓', 'Chain'], ['p', '💳', 'Prepaid (COD +₹100)']];
   const S = { day: '', d: null, at: 0, f: 'none', host: null, busy: false };
   const col = (v, t) => !t ? '#9ca3af' : (v / t >= .8 ? '#16a34a' : v / t >= .5 ? '#d97706' : '#dc2626');
   const chip = (k, o) => { const v = o[k[0]]; return v ? `<span style="font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#dcfce7;color:#166534" title="${v[1] === 'A' ? 'Sent automatically' : 'Sent by the salesperson'}">${k[1]} ✓ ${esc(v[0])}${v[1] === 'A' ? ' 🤖' : ''}</span>` : `<span style="font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#fee2e2;color:#991b1b">${k[1]} ✗ not sent</span>`; };
