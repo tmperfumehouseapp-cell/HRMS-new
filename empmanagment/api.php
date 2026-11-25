@@ -11803,7 +11803,15 @@ function must3_prepaid_word(string $body): bool
 function must3_cod_pitch(string $body): bool { return (must3_cod_charge($body) || must3_extra100($body)) && must3_prepaid_word($body); }
 /** 🔑 THE CODE MESSAGE (owner, 25 Nov 2026: the 4th must-send): "Step 1: Join our TMPerfumehouse WhatsApp community … Step 2: Join our Original Perfumes WhatsApp group … send a screenshot" — the message with our WhatsApp group / community
  *  join link (chat.whatsapp.com/…). Counted when it went out in the order's chat, by the salesperson or automatically (like the address and the chain message). "Group join kar lena" without the link is not it. */
-function must3_code_msg(string $body): bool { return $body !== '' && (bool)preg_match('~chat\.whatsapp\.com/[A-Za-z0-9]{6,}~i', $body); }
+function must3_code_msg(string $body): bool
+{
+    if ($body === '') return false;
+    if (preg_match('~chat\.whatsapp\.com/[A-Za-z0-9]{6,}~i', $body)) return true;
+    // owner (25 Nov 2026, TM10544): the OTHER wording of the same message has no link — "One-Time Order Verification … 1 Msg our number … 2 Add on our broadcast, send a screenshot … 3 Send your Order ID …
+    // Your confirmation code will be shared after verification". It counts too: the verification title, the confirmation code line, or broadcast / community / group together with the screenshot.
+    if (preg_match('/order\s+verification|confirmation\s+code|verification\s+code/iu', $body)) return true;
+    return (bool)(preg_match('/broadcast|community|whatsapp\s+group/iu', $body) && preg_match('/screen\s*shot/iu', $body));
+}
 function must3_compute(PDO $pdo, string $day, int $onlyEmp = 0, array $win = []): array
 {
     $res = ['day' => $day, 'team' => ['n' => 0, 'a' => 0, 'c' => 0, 'p' => 0, 'k' => 0, 'd' => 0, 'x' => 0], 'people' => []];
