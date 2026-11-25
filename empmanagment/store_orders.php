@@ -183,8 +183,8 @@ if ((string)$action === 'tms.gift') {   // 🎁 the website's gift perfume on pa
 if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 Nov): the website orders of the last 5 days whose payment has not come, for the salesperson who holds the customer's WhatsApp chat (open, closed or in History),
     // else the last person who wrote to the customer there — the same rule as the name filled in on Website orders. An Admin sees everybody's. An order leaves when it is paid, cancelled, or the customer paid a later order. Read-only.
     $me = (int)($auth['employee_id'] ?? 0); $adm = function_exists('wa_is_admin') ? (bool)wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
-    if (tms_cfg($pdo)['key'] === '') json_response(['ok' => true, 'rows' => [], 'amount' => 0, 'days' => 5]);
-    $days = 5; [$all, $err] = tms_orders($pdo, date('Y-m-d', time() - $days * 86400), date('Y-m-d'));
+    if (tms_cfg($pdo)['key'] === '') json_response(['ok' => true, 'rows' => [], 'amount' => 0, 'days' => 7]);
+    $days = 7; [$all, $err] = tms_orders($pdo, date('Y-m-d', time() - $days * 86400), date('Y-m-d'));
     if ($err !== '') json_response(['ok' => false, 'error' => $err, 'rows' => [], 'amount' => 0]);
     $cut = date('Y-m-d H:i:s', time() - $days * 86400); $paidAt = []; $un = []; $anyAt = [];
     foreach ($all as $r) { $ph = (string)$r['phone']; if (strlen($ph) !== 10) continue; $dead = (bool)preg_match('/cancel|refund|void/i', (string)$r['ship_status'] . ' ' . (string)$r['pay_status']);
@@ -225,6 +225,8 @@ if ((string)$action === 'tms.unpaid_mine') {   // 💳 NOT PAID YET (owner, 25 N
             $rows[] = ['kind' => 'link', 'number' => 'Checkout link', 'phone' => $ph, 'customer' => (string)($lname[$ph] ?? ''), 'total' => (float)$l['total'], 'items' => 'link sent in the chat — no order placed yet', 'placed_at' => (string)$l['created_at'], 'mins' => max(0, (int)floor(($now - $t) / 60)), 'emp' => $adm ? (string)($names[$e] ?? '') : '']; }
     } catch (Throwable $e) { error_log('tms unpaid links: ' . $e->getMessage()); }   // no wso_order table yet: only the orders
     usort($rows, function ($a, $b) { return strcmp((string)$b['placed_at'], (string)$a['placed_at']); });
+    $__d0 = date('Y-m-d'); $__d1 = date('Y-m-d', time() - 86400); $__d2 = date('Y-m-d', time() - 2 * 86400);   // 🗓 owner (25 Nov): the list in parts — today · yesterday · day before yesterday · earlier (up to 7 days)
+    foreach ($rows as &$__r) { $__dd = substr((string)$__r['placed_at'], 0, 10); $__r['part'] = $__dd >= $__d0 ? 0 : ($__dd === $__d1 ? 1 : ($__dd === $__d2 ? 2 : 3)); } unset($__r);
     json_response(['ok' => true, 'rows' => array_slice($rows, 0, 150), 'count' => count($rows), 'amount' => round($amt), 'days' => $days, 'admin' => $adm]);
 }
 if ((string)$action === 'tms.gift_orders') {   // 🎁 the orders behind the Gift add-on number of one business day: who took the gift perfume and for how much (owner 24 Nov). Read-only; the shop is asked for each order once per 10 minutes.
