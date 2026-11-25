@@ -996,15 +996,16 @@ function fup_jaimin_extra($raw): array
     $j = json_decode((string)$raw, true); $j = is_array($j) ? $j : [];
     $t = []; foreach ((array)($j['topics'] ?? []) as $x) if (is_array($x) && trim((string)($x['title'] ?? '')) !== '') $t[] = ['section_id' => (int)($x['section_id'] ?? 0), 'section' => (string)($x['section'] ?? ''), 'title' => (string)$x['title'], 'who' => (string)($x['who'] ?? ''), 'topic_id' => (int)($x['topic_id'] ?? 0)];
     $c = []; foreach ((array)($j['check'] ?? []) as $x) if (is_array($x) && (int)($x['id'] ?? 0) > 0) $c[] = ['id' => (int)$x['id'], 'name' => (string)($x['name'] ?? '')];
-    return ['topics' => $t, 'check' => $c];
+    $st = []; foreach ((array)($j['strict'] ?? []) as $x) if (is_array($x) && (int)($x['id'] ?? 0) > 0) $st[] = ['id' => (int)$x['id'], 'title' => (string)($x['title'] ?? ''), 'section_id' => (int)($x['section_id'] ?? 0), 'section' => (string)($x['section'] ?? '')];
+    return ['topics' => $t, 'check' => $c, 'strict' => $st];
 }
 /** Sections Rahul said he will check himself, from his updates of the last 7 days: [section_id => latest day]. */
 function fup_jaimin_checks(PDO $pdo, string $today): array
 {
-    $out = [];
+    $out = []; $top = []; $any = [];   // whole sections => day; strict topics => day (a section with a strict topic counts as checked too)
     try { $q = $pdo->prepare("SELECT day, r_extra FROM fu_jaimin WHERE day BETWEEN ? AND ? AND r_extra IS NOT NULL ORDER BY day"); $q->execute([date('Y-m-d', strtotime($today . ' -6 day')), $today]);
-        foreach ($q->fetchAll() as $r) foreach (fup_jaimin_extra($r['r_extra'])['check'] as $c) $out[(string)$c['id']] = (string)$r['day']; } catch (Throwable $e) { }
-    return $out;
+        foreach ($q->fetchAll() as $r) { $x = fup_jaimin_extra($r['r_extra']); foreach ($x['check'] as $c) $out[(string)$c['id']] = (string)$r['day']; foreach ($x['strict'] as $c) { $top[(string)$c['id']] = (string)$r['day']; if ($c['section_id'] > 0) $any[(string)$c['section_id']] = 1; } } } catch (Throwable $e) { }
+    foreach ($out as $k => $v) $any[$k] = 1; $GLOBALS['FUP_STRICT'] = $top; $GLOBALS['FUP_STRICT_SEC'] = $any; return $out;   // $out = whole sections only
 }
 /** The person who works on Jaimin's decisions and writes his update under each one (Rahul). Chosen by the Admin; until then the one employee called Rahul, if there is exactly one. */
 function fup_jaimin_follower(PDO $pdo): array
@@ -1402,7 +1403,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                 $days = $out['days']; $ups = fup_updates($pdo, array_column($topics, 'id'), end($days), $today); $names = fup_names($pdo, array_column($topics, 'assignee_emp')); $src = fup_sources();
                 foreach ($topics as $t) {
                     $id = (int)$t['id']; $can = !empty($sec['own']) || (int)$t['assignee_emp'] === $w['emp'];
-                    $tOut[] = ['id' => $id, 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
+                    $tOut[] = ['id' => $id, 'section_id' => (int)$t['section_id'], 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
                         'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
                         'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''), 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'fields' => fup_fields($t), 'metrics' => fup_topic_metrics($t), 'due_day' => fup_due_day($t, $today), 'created' => fup_start_day($t),
                         'note' => (string)$t['note'], 'status' => (string)$t['status'], 'can_write' => $can, 'updates' => (object)($ups[$id] ?? [])];
@@ -1415,7 +1416,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             // Jaimin's layer: the section's boss and the Admin / HR see what Jaimin decided; only the Admin / HR write it
             // the pills on top: light green when Jaimin has written today's decision for that section
             $jt = []; try { $ids = array_map('intval', array_keys($secs)); $q = $pdo->prepare("SELECT DISTINCT section_id FROM fu_jaimin WHERE section_id IN (" . implode(',', $ids) . ") AND TRIM(COALESCE(txt, '')) <> '' AND (day = ? OR updated_at >= ? OR updated_at >= ?)"); $q->execute([$today, $today . ' 00:00:00', date('Y-m-d') . ' 00:00:00']); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $jt[(string)$x] = true; } catch (Throwable $e) { }
-            $out['jaimin_today'] = (object)$jt; $out['rahul_checks'] = (object)fup_jaimin_checks($pdo, $today);
+            $out['jaimin_today'] = (object)$jt; $out['rahul_checks'] = (object)fup_jaimin_checks($pdo, $today); $out['rahul_strict'] = (object)($GLOBALS['FUP_STRICT'] ?? []); $out['rahul_any'] = (object)($GLOBALS['FUP_STRICT_SEC'] ?? []);
             $seeJ = function ($s) use ($isFl) { return !empty($s['own']) || $isFl; };   // the section's boss, the Admin / HR and the follow-up person see it
             $ownIds = array_keys(array_filter($secs, $seeJ));
             $J = fup_jaimin($pdo, $ownIds, end($out['days']), $today); $out['jaimin'] = $seeJ($secs[$sid]) ? (object)($J[$sid] ?? []) : null;
@@ -1480,7 +1481,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $secs = []; foreach ($pdo->query("SELECT * FROM fu_sections WHERE active = 1 ORDER BY sort_no, id")->fetchAll() as $s) $secs[(int)$s['id']] = $s; $today = fup_today($pdo); $n = max(3, min(31, (int)($_GET['days'] ?? 7))); $days = fup_days($today, $n);
             $list = []; foreach ($secs as $s) $list[] = ['id' => (int)$s['id'], 'name' => (string)$s['name']];
             $J = fup_jaimin($pdo, array_merge([0], array_keys($secs)), end($days), $today); $o = []; foreach ($J as $k => $v) $o[(string)$k] = $v;
-            json_response(['today' => $today, 'days' => $days, 'sections' => $list, 'jaimin' => (object)$o, 'follower' => $FL, 'can_write' => $w['manager'], 'can_reply' => $w['manager'] || $isFl, 'open' => fup_jaimin_open($pdo, $today)]);
+            json_response(['today' => $today, 'days' => $days, 'sections' => $list, 'jaimin' => (object)$o, 'follower' => $FL, 'can_write' => $w['manager'], 'can_reply' => $w['manager'] || $isFl, 'topics' => array_map(function ($r) { return ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'section_id' => (int)$r['section_id']]; }, $pdo->query("SELECT id, title, section_id FROM fu_topics WHERE active = 1 AND status <> 'done' ORDER BY section_id, sort_no, id")->fetchAll()), 'open' => fup_jaimin_open($pdo, $today)]);
         }
         case 'fup.jaimin_save': {    // one note a section a day (section 0 = the final decision); an empty note removes it
             $needMgr(); $in = json_input(); $sid = (int)($in['section_id'] ?? 0); if ($sid !== 0) $secRow($sid);
@@ -1512,9 +1513,11 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                     ->execute([$ts, $tt, $te, mb_substr('Added by ' . $w['name'] . ' on Jaimin\'s decision of ' . $day, 0, 255), $sn, $w['emp'], fup_now()]);
                 $topics[] = ['section_id' => $ts, 'section' => $allSec[$ts], 'title' => $tt, 'who' => $who, 'topic_id' => (int)$pdo->lastInsertId()];
             }
+            $strict = $old['strict']; if (array_key_exists('strict', $in)) { $strict = []; $ids = array_values(array_unique(array_filter(array_map('intval', (array)$in['strict']))));
+                if ($ids) { $q = $pdo->query("SELECT t.id, t.title, t.section_id FROM fu_topics t WHERE t.active = 1 AND t.id IN (" . implode(',', array_slice($ids, 0, 60)) . ")"); foreach ($q->fetchAll() as $r) if (isset($allSec[(int)$r['section_id']])) $strict[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'section_id' => (int)$r['section_id'], 'section' => $allSec[(int)$r['section_id']]]; } }
             $check = []; if (array_key_exists('check', $in)) { foreach ((array)$in['check'] as $cid) { $cid = (int)$cid; if (isset($allSec[$cid])) $check[$cid] = ['id' => $cid, 'name' => $allSec[$cid]]; } $check = array_values($check); } else $check = $old['check'];
-            if ($txt === '' && ($topics || $check)) json_response(['error' => 'Write the whole update too: what you did on this decision.'], 422);
-            $extra = ($topics || $check) ? json_encode(['topics' => $topics, 'check' => $check], JSON_UNESCAPED_UNICODE) : null;
+            if ($txt === '' && ($topics || $check || $strict)) json_response(['error' => 'Write the whole update too: what you did on this decision.'], 422);
+            $extra = ($topics || $check || $strict) ? json_encode(['topics' => $topics, 'check' => $check, 'strict' => $strict], JSON_UNESCAPED_UNICODE) : null;
             $pdo->prepare("UPDATE fu_jaimin SET r_txt = ?, r_name = ?, r_at = ?, r_extra = ? WHERE section_id = ? AND day = ?")->execute([$txt === '' ? null : $txt, $txt === '' ? '' : mb_substr($w['name'], 0, 120), $txt === '' ? null : fup_now(), $extra, $sid, $day]);
             json_response(['ok' => true, 'section_id' => $sid, 'day' => $day, 'text' => $txt]);
         }
