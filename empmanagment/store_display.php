@@ -42,7 +42,7 @@ function sd_numbers(PDO $pdo, array $c): array
 function sd_feed(PDO $pdo): void
 {
     $c = sd_cfg($pdo, false); $k = (string)($_GET['k'] ?? '');
-    if (!preg_match('/^[a-f0-9]{24}$/', (string)$c['key']) || !hash_equals((string)$c['key'], $k)) json_response(['error' => 'This screen link is not valid any more.'], 403);
+    if (!preg_match('/^[a-f0-9]{24}$/', (string)$c['key']) || !(hash_equals((string)$c['key'], $k) || (strlen($k) === 8 && hash_equals(substr((string)$c['key'], 0, 8), $k)))) json_response(['error' => 'This screen link is not valid any more.'], 403);
     $n = sd_numbers($pdo, $c);
     json_response(['orders' => $n['orders'], 'bottles' => $n['bottles'], 'community' => $n['community'], 'reviews' => (int)$c['google_reviews'], 'rating' => (string)$c['rating'], 'period' => sd_label((string)$c['period']),
         'cta' => (string)$c['cta'], 'url' => (string)$c['url'], 'sound' => !empty($c['sound']) ? 1 : 0, 'title' => (string)$c['title'], 'place' => (string)$c['place']]);

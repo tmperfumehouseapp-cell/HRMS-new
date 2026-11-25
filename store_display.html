@@ -26,6 +26,7 @@
   guardPage();
   renderSidebar('store_display');
   let D = null;
+  const shortLink = () => new URL('tv.html?k=' + D.cfg.key.slice(0, 8), location.href).href;
   const link = () => new URL('store_display_tv.html?k=' + encodeURIComponent(D.cfg.key), location.href).href;
   const PER = { '2m': 'Last 2 months', month: 'This month', all: 'Since the start' };
   const v = (id) => ($(id) || {}).value;
@@ -37,6 +38,7 @@
         <div class="sx-card"><h3>Put it on the TV</h3>
           <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sx-btn" id="bOpen">Open full screen</button><button class="sx-btn ghost" id="bCopy">Copy the screen link</button><button class="sx-btn ghost" id="bNew">Make a new link</button></div>
           <div class="sx-mut" style="font-size:12.5px;margin-top:8px;line-height:1.6">On the TV box: turn the screen 90° (portrait) in its display settings, open this link in Chrome (or Fully Kiosk), and leave it. It needs internet. Anyone with the link can see only these numbers, so if it is ever shared by mistake press <b>Make a new link</b> and the old one stops.</div>
+          <div style="margin-top:10px;font-size:13.5px">Short link to type on the TV: <b id="sl" style="user-select:all">${esc(shortLink())}</b></div>
           <div id="cmsg" style="font-size:12.5px;margin-top:6px"></div></div>
         <div class="sx-card"><h3>What the card shows <small>now: ${Number(n.orders || 0).toLocaleString('en-IN')} orders · ${Number(n.bottles || 0).toLocaleString('en-IN')} bottles · ${Number(n.community || 0).toLocaleString('en-IN')} community</small></h3>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
