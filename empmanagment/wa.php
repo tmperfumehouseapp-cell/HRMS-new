@@ -379,11 +379,19 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
     elseif ($ex && (int)($ex['optout'] ?? 0) === 1 && !in_array($t, ['reaction', 'system', 'unsupported'], true) && !preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) {   // owner (13 Nov): a customer who said Stop and then WRITES to us again wants to talk: the conversation starts again
         $pdo->prepare("UPDATE wa_contacts SET optout = 0, camp_optout = 1 WHERE phone = ?")->execute([$key]); if (function_exists('wa_event')) wa_event($pdo, $key, '↩ The customer wrote again after Stop — you can chat with them again. Campaigns / promotional messages stay OFF for this customer.');
     }
-    // 🎫 a customer whose complaint was SOLVED writes again (to order, to complain again, anything): the chat goes back into Requests (nobody holds it) so the whole team sees it
+    // 🎫 a customer whose complaint was SOLVED writes again (to order, to complain again, anything): the chat opens again with the person who holds it (Requests only when nobody does)
     try { if ($ex && (string)setting_get($pdo, 'cxres_' . $key, '') !== '') {
         setting_set($pdo, 'cxres_' . $key, '');
         $open = $pdo->prepare("SELECT 1 FROM cx_cases WHERE phone = ? AND status IN ('open', 'reopened') LIMIT 1"); $open->execute([$key]);
-        if (!$open->fetchColumn()) { $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0, assigned_at = NULL, state = 'unassigned', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, '↩ The customer wrote again after the complaint was solved — the chat is back in Requests'); }
+        if (!$open->fetchColumn()) {
+            // owner (25 Nov): a chat that was resolved / whose complaint was solved comes back to the SAME person when the customer writes again — not into Requests for somebody else
+            //   (it used to be unassigned here and Auto assign gave it to another salesperson). Only when that person has left, or nobody held it, does it go to Requests.
+            $__hq = $pdo->prepare("SELECT c.assigned_emp, e.full_name FROM wa_contacts c LEFT JOIN employees e ON e.employee_id = c.assigned_emp AND e.status != 'ex' WHERE c.phone = ?"); $__hq->execute([$key]); $__h = $__hq->fetch(); $__he = (int)($__h['assigned_emp'] ?? 0);
+            if ($__he > 0 && (string)($__h['full_name'] ?? '') !== '') {
+                $pdo->prepare("UPDATE wa_contacts SET status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, '↩ The customer wrote again after the complaint was solved — the chat is back with ' . (string)$__h['full_name']);
+                if (function_exists('ct_push')) { try { ct_push($pdo, [$__he], 'Customer wrote again', 'A customer whose complaint was solved wrote again — the chat is back with you.', '/my_chats.html?phone=' . $key, 'wa-cxback-' . $key); } catch (Throwable $e2) { } }
+            } else { $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0, assigned_at = NULL, state = 'unassigned', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, '↩ The customer wrote again after the complaint was solved — the chat is back in Requests'); }
+        }
     } } catch (Throwable $e) { }
     // 🙅 "Not now" (the campaign button, or typed): nothing to answer — if NOBODY holds the chat it is resolved at once, so it never fills Requests and never goes to a salesperson (switch off: setting wa_notnow_auto = 0)
     try { if ($t !== 'reaction' && (string)setting_get($pdo, 'wa_notnow_auto', '1') !== '0' && preg_match('/^\s*(not\s*now|abhi\s*nahi|abhi\s*nahin|hamna\s*nahi|अभी\s*नहीं|હમણાં\s*નહીં|હમણાં\s*નહિ)\s*[.!]*\s*$/iu', $body)) {
@@ -1615,7 +1623,15 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             $nm0 = employee_names_by_id($pdo)[(int)($auth['employee_id'] ?? 0)] ?? 'Admin';
             if ($__wa === 'wa.close' && empty(json_input()['quick']) && function_exists('wag_close_guard') && ($why = wag_close_guard($pdo, $auth, $c)) !== '') json_response(['error' => $why, 'need_result' => true], 422);   // every chat ends with a result
-            if ($__wa === 'wa.close') { $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s'), $key]); wa_event($pdo, $key, 'Resolved by ' . $nm0); }
+            if ($__wa === 'wa.close') {
+                // owner (25 Nov): the person who RESOLVES a chat gets it back when the customer writes again. A chat nobody held (resolved straight from Requests by a salesperson) is therefore kept under that
+                // salesperson's name while it sleeps in History — it used to come back into Requests and go to somebody else. Not for Admin / HR (they clean lists) and not for complaint chats.
+                $__me = (int)($auth['employee_id'] ?? 0); $__keep = false;
+                try { $__keep = $__me > 0 && (int)($c['assigned_emp'] ?? 0) === 0 && (int)($c['cx_id'] ?? 0) === 0 && (string)($c['tag'] ?? '') !== 'complaint' && !wa_is_admin($pdo, $auth) && in_array($__me, wa_sales_ids($pdo), true); } catch (Throwable $e) { $__keep = false; }
+                if ($__keep) $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ?, assigned_emp = ?, assigned_at = ?, state = 'human' WHERE phone = ? AND assigned_emp = 0")->execute([date('Y-m-d H:i:s'), $__me, date('Y-m-d H:i:s'), $key]);
+                else $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s'), $key]);
+                wa_event($pdo, $key, 'Resolved by ' . $nm0 . ($__keep ? ' — if the customer writes again, the chat comes back to ' . $nm0 : ''));
+            }
             else { $pdo->prepare("UPDATE wa_contacts SET status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, 'Re-opened by ' . $nm0); }
             json_response(['ok' => true]);
         }
