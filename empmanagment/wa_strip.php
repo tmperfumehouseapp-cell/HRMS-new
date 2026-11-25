@@ -136,7 +136,10 @@ if (!function_exists('wa_strip_money')) {
             'line' => ["SELECT MAX(l.sent_at) FROM wa_line_plan l WHERE l.id > (SELECT MAX(id) - 800000 FROM wa_line_plan) AND l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ?"],
             'after' => ["SELECT MAX(l.sent_at) FROM wa_aft_plan l WHERE l.id > (SELECT MAX(id) - 600000 FROM wa_aft_plan) AND l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ?"]];
         $orders = 0; $rev = 0.0; $seen = 0;
-        $ords = $all("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= ? AND phone <> '' AND total > 0 ORDER BY created_at DESC LIMIT 400", [$t0]);
+        /* owner 26 Nov: Orders and the rupees come from the ORDER LEDGER (every website order and every HRMS panel / channel, one row each, attached to the module of the last message in the 72 h before) since the start of the sales day */
+        $ledgerOk = false; $mapM = ['moda' => 'A', 'modb' => 'B', 'modc' => 'C', 'cold' => 'Cold', 'line' => 'Lineup', 'after' => 'After'];
+        try { $lr = $one("SELECT COUNT(*), COALESCE(SUM(total), 0) FROM wa_order_attr WHERE order_at >= ? AND module = ?", [$t0, $mapM[$mod] ?? '']); if ($lr !== null && $lr !== []) { $orders = (int)$lr[0]; $rev = (float)$lr[1]; $ledgerOk = true; $ls = $one("SELECT COUNT(*) FROM wa_order_attr WHERE order_at >= ?", [$t0]); $seen = $ls ? (int)$ls[0] : 0; } } catch (Throwable $e) { }
+        $ords = $ledgerOk ? [] : $all("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= ? AND phone <> '' AND total > 0 ORDER BY created_at DESC LIMIT 400", [$t0]);
         foreach ((array)$ords as $o) { $seen++; $p = substr(preg_replace('/\D+/', '', (string)$o[0]), -10); if (strlen($p) < 10) continue; $to = (string)$o[1]; $from = date('Y-m-d H:i:s', strtotime($to) - 72 * 3600); $best = ''; $bt = '';
             foreach ($LT as $k => $q) { $r = $one($q[0], [$p, '91' . $p, $from, $to]); if ($r && $r[0] && (string)$r[0] > $bt) { $bt = (string)$r[0]; $best = $k; } }
             if ($best === $mod) { $orders++; $rev += (float)$o[2]; } }
