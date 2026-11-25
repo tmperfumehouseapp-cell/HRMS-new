@@ -43,6 +43,9 @@ jobs:
         run: php tests/adleads_test.php
       - name: Comment guard (no code swallowed by a comment)
         run: php tests/comment_guard_test.php
+
+      - name: Bot add-on offer counts as add-on effort
+        run: php -d zend.assertions=1 -d assert.exception=1 tests/bot_addon_effort_test.php
       - name: Lineup replies (Stop / Not now are not replies)
         run: php tests/line_decline_test.php
       - name: Offer add-ons

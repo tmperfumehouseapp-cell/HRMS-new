@@ -1377,6 +1377,22 @@ function ora_alt_chat_phone(PDO $pdo, string $k, int $t): string
     } catch (Throwable $e) { error_log('ora_alt_chat_phone: ' . $e->getMessage()); }
     return '';
 }
+/** 🧩 The BOT's own add-on offer counts for the chat's salesperson (owner, 25 Nov: "the bot offers the add-on, the customer says no, and the order still shows NONE"): the offer is made in his chat, for his order.
+ *  An offer the bot (or the salesperson through the pop-up) sent to one of $phones between $from and $to turns "no add-on effort" into "tried"; a customer who pressed ❌ Nahi is a refusal. Only the ADD-ON lane changes, never 'worked'. */
+function ora_bot_addon_apply(PDO $pdo, array $r, array $phones, int $from, int $to): array
+{
+    if (!array_key_exists('tries', $r) || !$phones) return $r;
+    try {
+        $q = $pdo->prepare("SELECT status, size_ml, p1, p2 FROM wag_addon WHERE phone IN (" . implode(',', array_fill(0, count($phones), '?')) . ") AND at >= ? AND at <= ? ORDER BY id DESC LIMIT 1");
+        $q->execute(array_merge(array_values($phones), [date('Y-m-d H:i:s', $from), date('Y-m-d H:i:s', $to)])); $a = $q->fetch(PDO::FETCH_ASSOC); if (!$a) return $r;
+        $was = (int)($r['tried'] ?? 0) === 1 || (int)($r['tries'] ?? 0) >= 1;
+        $r['tried'] = 1; $r['tries'] = max(1, (int)($r['tries'] ?? 0)); if ((string)$a['status'] === 'declined') $r['refused'] = 1;
+        if (!$was) { $say = ['declined' => 'the customer said no', 'accepted' => 'the customer said yes', 'passed' => 'the customer did not answer clearly'][(string)$a['status']] ?? 'the customer did not answer';
+            $r['why'] = mb_substr('The add-on was offered in this chat by the bot (2 more ' . (int)$a['size_ml'] . ' ml for Rs ' . (int)$a['p1'] . ' or 3 more for Rs ' . (int)$a['p2'] . ') and ' . $say . '.', 0, 400);
+            if (isset($r['offered']) && (string)$r['offered'] === '') $r['offered'] = '2 more ' . (int)$a['size_ml'] . ' ml for Rs ' . (int)$a['p1'] . ' / 3 more for Rs ' . (int)$a['p2'] . ' (bot)'; }
+    } catch (Throwable $e) { }   // no wag_addon table yet: nothing to add
+    return $r;
+}
 function ora_rate_one(PDO $pdo, array $o): array
 {
     $t = strtotime((string)$o['created_at']); $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) return ['rating' => null, 'why' => 'No mobile number on the order'];
@@ -1399,7 +1415,9 @@ function ora_rate_one(PDO $pdo, array $o): array
         }
     }
     if ($nc < 2 || $ns < 1) return ['rating' => null, 'why' => 'No chat with a salesperson before this order'];
-    return ora_judge_text($text, "Final order for reference: Rs " . round((float)$o['total']) . ($o['ml_total'] ? ', ' . (int)$o['ml_total'] . ' ml in total' : '') . '.', (int)($o['ml_total'] ?? 0));
+    $__r = ora_judge_text($text, "Final order for reference: Rs " . round((float)$o['total']) . ($o['ml_total'] ? ', ' . (int)$o['ml_total'] . ' ml in total' : '') . '.', (int)($o['ml_total'] ?? 0));
+    $__ph = $ks; if (!empty($alt)) $__ph[] = $alt;
+    return ora_bot_addon_apply($pdo, $__r, $__ph, $t - 7 * 86400, $t + 15 * 60);
 }
 /** Saves the suggestion as the order's real stars (only when nobody has rated it). Returns true when saved. */
 function ora_apply(PDO $pdo, string $key, array $r): bool
