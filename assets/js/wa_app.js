@@ -284,14 +284,19 @@
     document.addEventListener('touchstart', ctx, { once: true, passive: true }); document.addEventListener('click', ctx, { once: true });
     // 🔔 ORDER RING (owner, 25 Nov): a website order that came for ME rings like a till and shows a banner on top; tap = the customer's chat. Asked every 20 s while the app is on screen (tms.ring gives each order once).
     const cashRing = () => { tone([1319, 1568], .12, .2); setTimeout(() => tone([2093, 2637], .5, .22), 190); try { navigator.vibrate && navigator.vibrate([80, 50, 80, 50, 200]); } catch (e) { } };
-    function orderRing(x) {
-      cashRing(); const b = document.createElement('div'); b.setAttribute('role', 'status');
-      b.style.cssText = 'position:fixed;left:10px;right:10px;top:calc(10px + env(safe-area-inset-top,0px));z-index:99999;background:#166534;color:#fff;border-radius:16px;padding:12px 14px;box-shadow:0 8px 28px rgba(0,0,0,.35);font-size:15px;font-weight:800;cursor:pointer;display:flex;gap:10px;align-items:center';
-      b.innerHTML = '<span style="font-size:26px">💰</span><span style="flex:1;min-width:0"><span style="display:block">New order · ₹' + Math.round(x.total || 0).toLocaleString('en-IN') + '</span><span style="display:block;font-size:12.5px;font-weight:600;opacity:.92;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((x.customer || '') + ' · ' + (x.number || '') + (x.type ? ' · ' + x.type : '')) + '</span></span><span data-rx="1" style="font-size:18px;padding:4px 6px">✕</span>';
-      b.onclick = (e) => { const shut = !!e.target.closest('[data-rx]'); b.remove(); if (!shut) { try { if (x.phone) openChat(x.phone); } catch (er) { } } };
-      document.body.appendChild(b); setTimeout(() => b.remove(), 15000);
+    let ringQ = [], ringOn = false;   // one pop-up at a time: a second order waits for the first to leave
+    function orderRing(x) { ringQ.push(x); if (!ringOn) ringNext(); }
+    function ringNext() {
+      const x = ringQ.shift(); if (!x) { ringOn = false; return; } ringOn = true; cashRing();
+      if (!document.getElementById('wxRingCss')) { const st = document.createElement('style'); st.id = 'wxRingCss'; st.textContent = '.wx-ring{position:fixed;left:10px;right:10px;top:calc(10px + env(safe-area-inset-top,0px));z-index:99999;max-width:520px;margin:0 auto;background:#14532d;color:#fff;border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,.35);overflow:hidden;cursor:pointer;transform:translateY(-160%);transition:transform .35s cubic-bezier(.2,.9,.3,1.2)}.wx-ring.show{transform:translateY(0)}.wx-ring .in{display:flex;gap:10px;align-items:center;padding:12px 8px 12px 14px}.wx-ring b{display:block;font-size:16px}.wx-ring small{display:block;font-size:12.5px;color:#bbf7d0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wx-ring .x{flex:none;font:inherit;font-size:18px;font-weight:800;width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.16);color:#fff;cursor:pointer}.wx-ring .bar{height:4px;background:#86efac;transform-origin:left}.wx-ring.show .bar{animation:wxring 10s linear forwards}@keyframes wxring{to{transform:scaleX(0)}}@media (prefers-reduced-motion:reduce){.wx-ring{transition:none}.wx-ring.show .bar{animation:none}}'; document.head.appendChild(st); }
+      const b = document.createElement('div'); b.className = 'wx-ring'; b.setAttribute('role', 'status');
+      b.innerHTML = '<div class="in"><span style="font-size:28px;flex:none">💰</span><span style="flex:1;min-width:0"><b>New order · ₹' + Math.round(x.total || 0).toLocaleString('en-IN') + '</b><small>' + esc((x.customer || '') + ' · ' + (x.number || '') + (x.type ? ' · ' + x.type.charAt(0).toUpperCase() + x.type.slice(1) : '')) + '</small></span><button type="button" class="x" data-rx="1" aria-label="Close">✕</button></div><div class="bar"></div>';
+      let done = false; const shut = () => { if (done) return; done = true; clearTimeout(tm); b.classList.remove('show'); setTimeout(() => { b.remove(); ringNext(); }, 380); };
+      const tm = setTimeout(shut, 10000);   // owner (25 Nov): it leaves by itself after 10 seconds; ✕ closes it at once; a tap opens the customer's chat
+      b.onclick = (e) => { const cross = !!e.target.closest('[data-rx]'); shut(); if (!cross) { try { if (x.phone) openChat(x.phone); } catch (er) { } } };
+      document.body.appendChild(b); requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add('show')));
     }
-    if (!EMB) setInterval(() => { if (document.hidden) return; api.get('tms.ring').then((d) => { (d && d.rows || []).forEach((x, i) => setTimeout(() => orderRing(x), i * 1600)); S.unpaidAt = (d && d.rows && d.rows.length) ? 0 : S.unpaidAt; }).catch(() => { }); }, 20000);
+    if (!EMB) setInterval(() => { if (document.hidden) return; api.get('tms.ring').then((d) => { (d && d.rows || []).forEach((x) => orderRing(x)); S.unpaidAt = (d && d.rows && d.rows.length) ? 0 : S.unpaidAt; }).catch(() => { }); }, 20000);
     function toast(m, bad) { const t = document.createElement('div'); t.className = 'wx-toast' + (bad ? ' bad' : ''); t.textContent = m; R.appendChild(t); setTimeout(() => t.remove(), bad ? 5000 : 2200); }
     function sheet(title, onClose) {
       if (S.cur && S.cur.sg && S.cur.sg.counting) { suggStop(); S.auDone[S.cur.phone + ':' + S.cur.sg.li] = 1; suggDraw(); }
