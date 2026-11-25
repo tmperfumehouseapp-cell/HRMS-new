@@ -21,6 +21,7 @@ $pdo = new PDO('sqlite::memory:'); $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ER
 $pdo->exec("CREATE TABLE fu_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_emp INT DEFAULT 0, owner_dept INT DEFAULT 0, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INT, title TEXT, kind TEXT DEFAULT 'progress', due_date TEXT, assignee_emp INT DEFAULT 0, source TEXT DEFAULT '', note TEXT DEFAULT '', unit TEXT DEFAULT '', lag INT DEFAULT 0, metrics TEXT DEFAULT '', need_text INT DEFAULT 0, fields TEXT, status TEXT DEFAULT 'open', done_at TEXT, sort_no INT DEFAULT 0, active INT DEFAULT 1, created_by INT DEFAULT 0, created_at TEXT)");
 $pdo->exec("CREATE TABLE fu_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, topic_id INT, day TEXT, txt TEXT, val REAL, pct INT, auto INT DEFAULT 0, emp_id INT DEFAULT 0, emp_name TEXT DEFAULT '', updated_at TEXT, ai_verdict TEXT DEFAULT '', ai_note TEXT DEFAULT '', ai_q TEXT DEFAULT '', vals TEXT, fvals TEXT, UNIQUE (topic_id, day))");
+$pdo->exec("CREATE TABLE fu_jaimin (section_id INT, day TEXT, txt TEXT, emp_name TEXT DEFAULT '', updated_at TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE fu_digest (section_id INT, day TEXT, txt TEXT, made_at TEXT, PRIMARY KEY (section_id, day))");
 $pdo->exec("CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, full_name TEXT, department_id INT, status TEXT, designation TEXT, mobile TEXT)");
 $pdo->exec("CREATE TABLE departments (department_id INTEGER PRIMARY KEY, department_name TEXT)");
@@ -150,4 +151,15 @@ ok(fup_po_left($pdo, 0) === [], 'punch out: a login without an employee is never
 $r = fup_daily_pass($pdo, true); ok($r['notes'] === 2 && $r['sent'] === 1 && $GLOBALS['PUSH'][0] === [10] && strpos($GLOBALS['PUSH'][1]['body'], '1 deadline missed') === 0, 'evening: a note for every section and one notification to the Admin with the count');
 ok((int)$pdo->query("SELECT COUNT(*) FROM fu_digest WHERE day = '2026-11-23'")->fetchColumn() === 2 && ($GLOBALS['SET']['fup_digest_day'] ?? '') === date('Y-m-d'), 'the notes are saved and the day is marked done');
 $r = fup_daily_pass($pdo); ok(isset($r['skipped']), 'it does not run twice a day');
+// Jaimin's layer: Admin writes a decision per section per day and a final one (section 0); the section boss reads it, a plain person does not
+[$c] = call('fup.jaimin_save', $E(12), ['section_id' => $ws, 'text' => 'x']); ok($c === 403, 'Jaimin layer: staff cannot write');
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $ws, 'text' => 'Push 5 new perfumes']); ok($c === 200, 'Jaimin layer: section decision saved');
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => 0, 'text' => 'Final: focus wholesale', 'day' => '2026-11-22']); ok($c === 200, 'Jaimin layer: final decision saved');
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => 0, 'text' => 'x', 'day' => '2026-11-30']); ok($c === 422, 'Jaimin layer: no future day');
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => 9999, 'text' => 'x']); ok($c === 404, 'Jaimin layer: unknown section');
+[$c, $b] = call('fup.board', $ADMIN, null, ['section' => $ws]); ok($b['jaimin_write'] === true && $b['jaimin']['2026-11-23']['text'] === 'Push 5 new perfumes', 'Jaimin layer: shown on the section sheet');
+[$c, $b] = call('fup.board', $E(12), null, ['section' => $ws]); ok($b['jaimin_write'] === false && $b['jaimin']['2026-11-23']['text'] === 'Push 5 new perfumes', 'Jaimin layer: the section boss reads it');
+[$c, $j] = call('fup.jaimin_board', $ADMIN); ok($c === 200 && $j['jaimin']['0']['2026-11-22']['text'] === 'Final: focus wholesale' && $j['jaimin'][(string)$ws]['2026-11-23']['text'] === 'Push 5 new perfumes', 'Jaimin section: final + section decisions');
+[$c] = call('fup.jaimin_board', $E(12)); ok($c === 403, 'Jaimin section: Admin / HR only');
+[$c] = call('fup.jaimin_save', $ADMIN, ['section_id' => $ws, 'text' => '  ']); ok($c === 200 && (int)$pdo->query("SELECT COUNT(*) FROM fu_jaimin WHERE section_id = $ws")->fetchColumn() === 0, 'Jaimin layer: empty text removes it');
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);

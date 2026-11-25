@@ -40,6 +40,8 @@ function fup_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_updates (id INT AUTO_INCREMENT PRIMARY KEY, topic_id INT NOT NULL, day DATE NOT NULL, txt TEXT NULL, val DECIMAL(14,2) NULL, pct SMALLINT NULL, auto TINYINT NOT NULL DEFAULT 0, emp_id INT NOT NULL DEFAULT 0, emp_name VARCHAR(120) NOT NULL DEFAULT '', updated_at DATETIME NULL,
             UNIQUE KEY u_td (topic_id, day), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_digest (section_id INT NOT NULL, day DATE NOT NULL, txt MEDIUMTEXT NULL, made_at DATETIME NULL, PRIMARY KEY (section_id, day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Jaimin's layer: what Jaimin decided on a day, one note a section a day; section_id 0 = his own final decision after all the sections
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fu_jaimin (section_id INT NOT NULL, day DATE NOT NULL, txt TEXT NULL, emp_name VARCHAR(120) NOT NULL DEFAULT '', updated_at DATETIME NULL, PRIMARY KEY (section_id, day), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         if ((string)setting_get($pdo, 'fup_schema', '') !== '5') {   // added later: Claude's check of each update, a unit for typed numbers, a longer note for Claude
             foreach (["ALTER TABLE fu_updates ADD COLUMN ai_verdict VARCHAR(12) NOT NULL DEFAULT ''", "ALTER TABLE fu_updates ADD COLUMN ai_note VARCHAR(300) NOT NULL DEFAULT ''", "ALTER TABLE fu_updates ADD COLUMN ai_q VARCHAR(300) NOT NULL DEFAULT ''",
                 "ALTER TABLE fu_topics ADD COLUMN unit VARCHAR(12) NOT NULL DEFAULT ''", "ALTER TABLE fu_topics ADD COLUMN `lag` TINYINT NOT NULL DEFAULT 0", "ALTER TABLE fu_topics ADD COLUMN metrics VARCHAR(400) NOT NULL DEFAULT ''", "ALTER TABLE fu_topics ADD COLUMN need_text TINYINT NOT NULL DEFAULT 0", "ALTER TABLE fu_updates ADD COLUMN vals TEXT NULL", "ALTER TABLE fu_topics ADD COLUMN `fields` TEXT NULL", "ALTER TABLE fu_updates ADD COLUMN fvals TEXT NULL", "ALTER TABLE fu_topics MODIFY note VARCHAR(1000) NOT NULL DEFAULT ''"] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { } }
@@ -976,6 +978,14 @@ function fup_updates(PDO $pdo, array $topicIds, string $from, string $to): array
     foreach ($q->fetchAll() as $r) $out[(int)$r['topic_id']][(string)$r['day']] = ['text' => (string)$r['txt'], 'val' => $r['val'] === null ? null : (float)$r['val'], 'pct' => $r['pct'] === null ? null : (int)$r['pct'], 'auto' => (int)$r['auto'] === 1, 'by' => (string)$r['emp_name'], 'at' => (string)$r['updated_at'], 'ai' => (string)($r['ai_verdict'] ?? ''), 'ai_note' => (string)($r['ai_note'] ?? ''), 'q' => (string)($r['ai_q'] ?? ''), 'vals' => (isset($r['vals']) && is_array($vj = json_decode((string)$r['vals'], true))) ? $vj : (object)[], 'f' => (isset($r['fvals']) && is_array($fj = json_decode((string)$r['fvals'], true))) ? $fj : (object)[]];
     return $out;
 }
+/** Jaimin's decisions of these sections (0 = his final one) between two days: [section_id => [day => {text, by, at}]]. */
+function fup_jaimin(PDO $pdo, array $sids, string $from, string $to): array
+{
+    $sids = array_values(array_unique(array_map('intval', $sids))); if (!$sids) return [];
+    try { $q = $pdo->prepare("SELECT * FROM fu_jaimin WHERE section_id IN (" . implode(',', $sids) . ") AND day BETWEEN ? AND ?"); $q->execute([$from, $to]); } catch (Throwable $e) { return []; }
+    $out = []; foreach ($q->fetchAll() as $r) if (trim((string)$r['txt']) !== '') $out[(int)$r['section_id']][(string)$r['day']] = ['text' => (string)$r['txt'], 'by' => (string)$r['emp_name'], 'at' => (string)$r['updated_at']];
+    return $out;
+}
 /** The day whose update is DUE for this topic right now: today, or (a topic "about the day before", like yesterday's sale, filled the next morning) yesterday. */
 function fup_due_day(array $t, string $today): string { return !empty($t['lag']) ? date('Y-m-d', strtotime($today . ' -1 day')) : $today; }
 /** The first day this topic can be asked for: the day it was made (a topic about the day before: the day before that, since yesterday is exactly what it is for). */
@@ -1363,6 +1373,10 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             };
             [$out['topics'], $out['checks']] = $sheet($sec);
             if (!empty($_GET['all'])) { foreach ($secs as $s2) { [$tt, $cc] = (int)$s2['id'] === $sid ? [$out['topics'], $out['checks']] : $sheet($s2); $out['all'][] = ['id' => (int)$s2['id'], 'topics' => $tt, 'checks' => $cc]; } }
+            // Jaimin's layer: the section's boss and the Admin / HR see what Jaimin decided; only the Admin / HR write it
+            $out['jaimin_write'] = $w['manager']; $ownIds = array_keys(array_filter($secs, function ($x) { return !empty($x['own']); }));
+            $J = fup_jaimin($pdo, $ownIds, end($out['days']), $today); $out['jaimin'] = isset($secs[$sid]['own']) && $secs[$sid]['own'] ? (object)($J[$sid] ?? []) : null;
+            if (!empty($out['all'])) foreach ($out['all'] as &$aa) $aa['jaimin'] = !empty($secs[$aa['id']]['own']) ? (object)($J[$aa['id']] ?? []) : null; unset($aa);
             if (!empty($sec['own'])) { $q = $pdo->prepare("SELECT day, txt, made_at FROM fu_digest WHERE section_id = ? ORDER BY day DESC LIMIT 1"); $q->execute([$sid]); $d = $q->fetch(); if ($d) $out['digest'] = ['day' => (string)$d['day'], 'text' => (string)$d['txt'], 'at' => (string)$d['made_at']]; }
             json_response($out);
         }
@@ -1417,6 +1431,22 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             json_response(['ok' => true]);
         }
 
+        case 'fup.jaimin_board': {   // the Jaimin section: every section's decision of each day side by side, and his own final decision. Admin / HR only.
+            if (!$w['manager']) json_response(['error' => 'Only the Admin or HR can open the Jaimin section.'], 403);
+            $secs = fup_my_sections($pdo, $w); $today = fup_today($pdo); $n = max(3, min(31, (int)($_GET['days'] ?? 7))); $days = fup_days($today, $n);
+            $list = []; foreach ($secs as $s) $list[] = ['id' => (int)$s['id'], 'name' => (string)$s['name']];
+            $J = fup_jaimin($pdo, array_merge([0], array_keys($secs)), end($days), $today); $o = []; foreach ($J as $k => $v) $o[(string)$k] = $v;
+            json_response(['today' => $today, 'days' => $days, 'sections' => $list, 'jaimin' => (object)$o]);
+        }
+        case 'fup.jaimin_save': {    // one note a section a day (section 0 = the final decision); an empty note removes it
+            $needMgr(); $in = json_input(); $sid = (int)($in['section_id'] ?? 0); if ($sid !== 0) $secRow($sid);
+            $today = fup_today($pdo); $day = (string)($in['day'] ?? $today); if (!fup_is_day($day)) $day = $today;
+            if ($day > $today) json_response(['error' => 'You cannot write a decision for a day that has not come yet.'], 422);
+            $txt = trim(mb_substr((string)($in['text'] ?? ''), 0, 4000));
+            $pdo->prepare("DELETE FROM fu_jaimin WHERE section_id = ? AND day = ?")->execute([$sid, $day]);
+            if ($txt !== '') $pdo->prepare("INSERT INTO fu_jaimin (section_id, day, txt, emp_name, updated_at) VALUES (?, ?, ?, ?, ?)")->execute([$sid, $day, $txt, mb_substr($w['name'], 0, 120), fup_now()]);
+            json_response(['ok' => true, 'section_id' => $sid, 'day' => $day, 'text' => $txt]);
+        }
         case 'fup.update_save': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $t = $topicRow((int)($in['topic_id'] ?? 0)); $sec = $secRow((int)$t['section_id']);
