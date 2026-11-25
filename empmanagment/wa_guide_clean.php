@@ -130,17 +130,35 @@ function wag_gb_cod_apply(array $gb): array
         if (strpos((string)$gb['do'][$i], 'COD CHARGE (owner, 25 Nov') !== false) $has = true; }
     if (!$has) { $put = false; foreach ($gb['do'] as $i => $t) if (is_string($t) && strpos($t, 'PAYMENT AND ORDER') === 0) { $gb['do'][$i] = rtrim($t) . ' ' . $new; $put = true; break; } if (!$put) array_unshift($gb['do'], $new); $chg = true; }
     foreach (['offers', 'offer'] as $ok) if (!empty($gb[$ok]) && is_array($gb[$ok])) foreach ($gb[$ok] as $i => $r) { if (is_array($r) && isset($r['offer']) && preg_match('/prepaid/i', (string)$r['offer']) && preg_match('/2\s*%/', (string)$r['offer'])) { $gb[$ok][$i]['offer'] = 'Full prepaid saves the Rs 100 COD charge (there is no percentage discount on prepaid)'; $gb[$ok][$i]['when'] = 'When he asks about COD / paying online, or chooses COD: say it once.'; $chg = true; } }
+    // every OTHER sentence of the guidebook that still promises the 2% on prepaid / full / online payment (the AI rewrites added their own: an "ask for prepaid" tip, a ready reply to "discount do") is rewritten too
+    $walk = function ($v, bool $say) use (&$walk, &$chg) {
+        if (is_string($v)) { $n = wag_gb_cod_scrub($v, $say); if ($n !== $v) $chg = true; return $n; }
+        if (is_array($v)) foreach ($v as $k => $x) $v[$k] = $walk($x, $say || in_array((string)$k, ['reply', 'better', 'openers', 'followups'], true));
+        return $v; };
+    $gb = $walk($gb, false);
     return [$gb, $chg];
+}
+/** Pure: one text without a "2% on prepaid" promise. $say = the text is said to the customer (a ready reply): the new line only; else the instruction form. Sentences are cut at . ! ? */
+function wag_gb_cod_scrub(string $t, bool $say): string
+{
+    if (!preg_match('/(?<![\d.])2\s*%/', $t)) return $t;
+    $line = 'Sir, COD par Rs 100 extra dene padenge, full prepaid karenge to ye Rs 100 bach jayenge';
+    $out = preg_replace_callback('/[^.!?]*(?<![\d.])2\s*%[^.!?]*[.!?]?/u', function ($m) use ($say, $line) {
+        $x = $m[0]; if (strpos($x, 'NO "2% off on prepaid"') !== false || !preg_match('/prepaid|pre\s*paid|full\s*pay|online\s*pay|advance\s*pay/i', $x)) return $x;
+        $lead = preg_match('/^\s+/', $x, $w) ? $w[0] : '';
+        return $lead . ($say ? $line . '.' : "Prepaid: tell him '" . $line . "' - prepaid saves the Rs 100 COD charge, there is no percentage discount on prepaid.");
+    }, $t);
+    return $out === null ? $t : $out;
 }
 function wag_gb_patch_cod(PDO $pdo): bool
 {
     if (!function_exists('lib_guide_row')) return false;
     try {
-        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; if (setting_get($pdo, 'wag_gb_cod_v', '') === 'v' . (int)$g['id']) return false;   // checked again for every new live version (an AI rewrite can bring the old line back)
+        $g = lib_guide_row($pdo, 'live'); if (!$g) return false; if (setting_get($pdo, 'wag_gb_cod_v', '') === 'b' . (int)$g['id']) return false;   // checked again for every new live version (an AI rewrite can bring the old line back)
         $gb = json_decode((string)$g['body'], true); if (!is_array($gb) || empty($gb['do'])) return false;
         [$gb2, $chg] = wag_gb_cod_apply($gb);
         if ($chg) $pdo->prepare("UPDATE lib_guide SET body = ? WHERE id = ?")->execute([json_encode($gb2, JSON_UNESCAPED_UNICODE), (int)$g['id']]);
-        setting_set($pdo, 'wag_gb_cod_v', 'v' . (int)$g['id']); return $chg;
+        setting_set($pdo, 'wag_gb_cod_v', 'b' . (int)$g['id']); return $chg;   // 'b' = the second pass (every 2% sentence): runs once more on a version the first pass already marked
     } catch (Throwable $e) { return false; }
 }
 /** Once (owner, 24 Nov, "8 x 20 ml for Rs 600" and a Happy Orange photo for a combo-ad customer): two sentences go INTO existing points of the live guidebook (no new point): PRICE LADDER gets (7) PACK = TOTAL ML, ONLY OUR CATALOGUE gets the no-photo-without-a-named-perfume sentence. Call while holding the guidebook lock. */
