@@ -31553,7 +31553,8 @@ switch ($action) {
 
         // Order code (Order Codes page / Shopify tag) on every order.
         foreach ($allOrders as &$ao) {
-            $ao['code'] = isset($ao['id']) ? order_code_for($pdo, (string)($ao['store_key'] ?? ''), $ao['id'], (string)($ao['tags'] ?? '')) : '';
+            $ao['code'] = isset($ao['id']) ? order_code_for($pdo, (string)($ao['store_key'] ?? ''), $ao['id'], (string)($ao['tags'] ?? ''))
+                : ((($ao['store_key'] ?? '') === 'manual' && !empty($ao['manual_order_id'])) ? order_code_for($pdo, 'manual', (string)$ao['manual_order_id']) : '');   // owner (25 Nov 2026): "145 orders, 2 with a code" — an HRMS / website order has no Shopify 'id' (it carries manual_order_id), so its saved code (source 'manual') was never read here and it counted as "no code"
         }
         unset($ao);
 
