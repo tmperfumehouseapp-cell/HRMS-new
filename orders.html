@@ -1112,10 +1112,10 @@ html.emb .top-row { display: contents !important; } html.emb .top-row > .rs-card
     const from = document.getElementById('dateFrom').value, to = document.getElementById('dateTo').value;
     const when = from === to ? dateLabel(from) : dateLabel(from) + ' – ' + dateLabel(to);
     const tag = ocEsc(scope.tag || '');
-    let why = `The stores had <b>${scope.fetched}</b> order${scope.fetched === 1 ? '' : 's'} in this window, but none is tagged “${tag}” or allocated to you.`;
+    let why = `The stores had <b>${scope.fetched}</b> order${scope.fetched === 1 ? '' : 's'} in this window, but none is ${tag ? 'tagged “' + tag + '” or ' : ''}allocated to you.`;
     if (!scope.fetched) why = 'No orders came in for these dates yet.';
-    else if (scope.elsewhere) why += ` <b>${scope.elsewhere}</b> tagged “${tag}” ${scope.elsewhere === 1 ? 'was' : 'were'} given to someone else on Order Allocation.`;
-    el.innerHTML = `<span><b>No orders for you on ${when}.</b> ${why} An order shows here once it carries your tag and is allocated.</span>`;
+    else if (scope.elsewhere && tag) why += ` <b>${scope.elsewhere}</b> tagged “${tag}” ${scope.elsewhere === 1 ? 'was' : 'were'} given to someone else on Order Allocation.`;
+    el.innerHTML = `<span><b>No orders for you on ${when}.</b> ${why} An order shows here once it is given to you.</span>`;
     el.hidden = false;
   }
 
