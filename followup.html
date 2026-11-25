@@ -98,7 +98,7 @@
   .fu-t th.rk,.fu-t td.rk{background:#f3e7d9 !important;} .fu-t td.c.rk.td{background:#efdfcb !important;} .fu-t tr.rk td{background:#f6ece0 !important;} .fu-mc.rk,.fu-mday.rk{background:#f6ece0;border-color:#e2c9a8;}
   .fu-tag.brn{background:#ead6bd;color:#6b4423;} .fu-pill.rkp:not(.on){border-color:#c9a37a;box-shadow:inset 0 -3px 0 #d9b994;}
   .fu-ck2 details{border:1px solid var(--line);border-radius:12px;padding:6px 10px;margin-bottom:6px;} .fu-ck2 summary{cursor:pointer;font-weight:700;font-size:13.5px;} .fu-ck2 .ws{display:flex;align-items:center;gap:6px;margin:6px 0;font-weight:700;color:#6b4423;font-size:13px;} .fu-ck2 .tp{display:flex;flex-wrap:wrap;gap:6px;}
-  .fu-ck2 .tp label{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer;} .fu-ck2 input{margin:0;}
+  .fu-ck2 .tp label{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer;} .fu-ck2 input{margin:0;} .fu-ed{border:0;background:none;color:#5b3fd1;font-weight:700;font-size:12px;cursor:pointer;padding:0 4px;} .fu-ck2 summary .fu-ed{margin-left:8px;}
   .bd-modal .acts.fu-stk{position:sticky;bottom:-24px;background:#fff;padding:10px 0 6px;margin-top:8px;z-index:3;border-top:1px solid #f0f1f3;}
   .fu-mx{display:flex;align-items:center;gap:8px;} .fu-mx .sp{flex:1;} .fu-cls{border:0;background:#f3f4f6;width:34px;height:34px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer;color:#4a505c;flex:none;} .fu-cls:hover{background:#e5e7eb;}
   .fu-err{color:#b42318;background:#fde8e6;border-radius:10px;padding:8px 10px;font-size:13px;font-weight:700;margin-top:8px;display:none;}
@@ -149,7 +149,7 @@ guardPage(); renderSidebar('followup');
   try { api.swrAdd('fup.board', 0); } catch (e) { /* older api.js */ }   // the sheet is always asked fresh: an update somebody else just wrote must show at once, never a remembered copy
   let ALL = true, OPEN_D = '', OWN_NOW = false; try { ALL = localStorage.getItem('fup_all') !== '0' && !new URLSearchParams(location.search).get('s'); } catch (e) { ALL = true; }
   let OPEN_U = 0; try { OPEN_U = Number(new URLSearchParams(location.search).get('u')) || 0; } catch (e) { OPEN_U = 0; }
-  let JV = false, JD = null;   // the Jaimin section (Admin / HR): every section's decision of a day + the final one
+  let JV = false, JD = null, OPEN_EDIT = 0;   // the Jaimin section (Admin / HR): every section's decision of a day + the final one
   let D = null, PPL = null, SID = 0, DAYS = 7, busy = false, SIDE = true, PERS = '', LASTSEC = -1, CK = '';
   try { CK = localStorage.getItem('fup_ck') || ''; } catch (e) { CK = ''; }
   let PREF = null; try { PREF = localStorage.getItem('fup_side'); } catch (e) { PREF = null; }   // nothing chosen yet: a section with many topics (like a Dispatch sheet) opens as topics down, days across
@@ -208,6 +208,7 @@ guardPage(); renderSidebar('followup');
       if (D.jaimin_follow && !D.manager && !D.sections.length) JV = true;   // the follow-up person with no section of his own: the Jaimin section is his page
       if (JV && (D.manager || D.jaimin_follow)) { try { JD = await api.get('fup.jaimin_board', { days: DAYS }); } catch (e) { JV = false; toast(e.message || 'Could not open the Jaimin section.'); } } else JV = false;
       render();
+      if (OPEN_EDIT) { const te = D.topics.find((x) => x.id === OPEN_EDIT); OPEN_EDIT = 0; if (te && D.manager) topicForm(te); }
       if (OPEN_U) { const tu = D.topics.find((x) => x.id === OPEN_U); OPEN_U = 0; const od = OPEN_D; OPEN_D = ''; if (tu && tu.can_write && tu.status !== 'done') writeUp(tu.id, od || tu.due_day); }
     } catch (e) { $('root').innerHTML = '<div class="bd-empty"><b>Could not open Follow-up</b>' + esc(e.message || '') + '</div>'; }
     $('root').style.opacity = '1';
@@ -223,6 +224,7 @@ guardPage(); renderSidebar('followup');
     const so = t.source && D.sources.find((x) => x.key === t.source);
     if (so && t.metrics.length > 1) h += '<a class="fu-tag pur" href="' + esc(so.page) + '" target="_top" style="text-decoration:none">🔗 Auto · ' + t.metrics.length + ' numbers from the HRMS</a>' + (t.need_text ? '<span class="fu-tag">+ summary by the person</span>' : '');
     else if (so) h += '<a class="fu-tag pur" href="' + esc(so.page) + '" target="_top" style="text-decoration:none" title="Open ' + esc(so.group) + '">🔗 Auto · ' + esc(so.group) + ' · ' + esc(so.label) + '</a>';
+    if (t.min_words) h += '<span class="fu-tag">✍ at least ' + t.min_words + ' words</span>';
     if (rk(t)) h += '<span class="fu-tag brn">🔍 ' + esc(flName()) + ' checks this himself</span>';
     return '<div class="fu-tags">' + h + '</div>';
   }
@@ -401,11 +403,15 @@ guardPage(); renderSidebar('followup');
       + '<div class="bd-f"><label>Your whole update: what did you do on this decision?</label><textarea class="bd-in" id="rT" maxlength="4000" rows="5" placeholder="What was done, who you spoke to, what changed, what is still left…">' + esc(cur.reply || '') + '</textarea></div>'
       + '<div class="bd-f"><label>＋ Make new topic (which section, which topic)</label>' + (x.topics && x.topics.length ? '<div class="fu-rx" style="margin:0 0 8px">Already added: ' + x.topics.map((t) => esc(t.section) + ' → ' + esc(t.title)).join(' · ') + '</div>' : '') + '<div id="rN">' + ntRow() + '</div><button class="bd-btn sm" type="button" id="rAdd">＋ One more topic</button><div class="hint">Each one is added to that section as a real topic (filled every day, about the day before) and goes on your 🔍 Strict list by itself: light brown, you check it yourself.</div></div>'
       + '<div class="bd-f"><label>🔍 Strict: what you will check yourself — a whole section, or only some topics in it</label><div class="fu-ck2">' + SECS.map((z) => { const tp = TPS.filter((t) => t.section_id === z.id), any = chk[z.id] || tp.some((t) => stc[t.id]);
-          return '<details' + (any || z.id === sid ? ' open' : '') + '><summary>' + esc(z.name) + (any ? ' · 🔍' : '') + '</summary><label class="ws"><input type="checkbox" class="cS" value="' + z.id + '"' + (chk[z.id] ? ' checked' : '') + '>Check the whole section</label>'
-            + (tp.length ? '<div class="tp">' + tp.map((t) => '<label><input type="checkbox" class="cT" value="' + t.id + '"' + (stc[t.id] ? ' checked' : '') + '>' + esc(t.title) + '</label>').join('') + '</div>' : '<div class="fu-sub">No topics yet.</div>') + '</details>'; }).join('')
+          return '<details' + (any || z.id === sid ? ' open' : '') + '><summary>' + esc(z.name) + (any ? ' · 🔍' : '') + (D.manager ? '<button type="button" class="fu-ed" data-esec="' + z.id + '">✎ Edit section</button>' : '') + '</summary><label class="ws"><input type="checkbox" class="cS" value="' + z.id + '"' + (chk[z.id] ? ' checked' : '') + '>Check the whole section</label>'
+            + (tp.length ? '<div class="tp">' + tp.map((t) => '<label><input type="checkbox" class="cT" value="' + t.id + '"' + (stc[t.id] ? ' checked' : '') + '>' + esc(t.title) + (D.manager ? '<button type="button" class="fu-ed" data-etop="' + t.id + '|' + z.id + '" title="Edit this topic">✎</button>' : '') + '</label>').join('') + '</div>' : '<div class="fu-sub">No topics yet.</div>') + '</details>'; }).join('')
       + '</div><div class="hint">Ticked ones turn light brown with “🔍 ' + esc(flName()) + ' checks this himself” for 7 days. Go into each one and check it.</div></div>'
       + '<div class="acts fu-stk" style="flex-direction:column;align-items:stretch"><div class="fu-err" id="rE"></div><div style="display:flex;justify-content:flex-end;gap:8px"><button class="bd-btn" id="rX">Cancel</button><button class="bd-btn go" id="rOk">Save</button></div></div>', { sticky: true });
     const q = (i) => m.querySelector(i), wire = () => m.querySelectorAll('.fu-nt .x').forEach((b) => { b.onclick = () => b.parentNode.remove(); });
+    // ✎ Edit: a section's settings open here; a topic opens in its own section (its Edit window), as the topic's details live there
+    const leave = async () => !q('#rT').value.trim() || await BD.confirm('Leave this update?', 'What you wrote here is not saved yet.', 'Leave', true);
+    m.querySelectorAll('[data-esec]').forEach((b) => { b.onclick = async (e) => { e.preventDefault(); e.stopPropagation(); const z = D.sections.find((x) => x.id === Number(b.dataset.esec)); if (!z) { toast('Open this section once to edit it.'); return; } if (await leave()) sectionForm(z); }; });
+    m.querySelectorAll('[data-etop]').forEach((b) => { b.onclick = async (e) => { e.preventDefault(); e.stopPropagation(); const p = b.dataset.etop.split('|'); if (!(await leave())) return; BD.close(); OPEN_EDIT = Number(p[0]); SID = Number(p[1]); JV = false; ALL = false; try { localStorage.setItem('fup_all', '0'); } catch (x) { /* private mode */ } load(); }; });
     wire(); q('#rAdd').onclick = () => { q('#rN').insertAdjacentHTML('beforeend', ntRow()); wire(); };
     q('#rT').focus(); q('#rX').onclick = () => BD.close(); q('#rC').onclick = () => BD.close();
     const err = (t, el) => { const e = q('#rE'); e.textContent = t; e.style.display = t ? 'block' : 'none'; if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus(); el.style.borderColor = '#d9423b'; } };
@@ -489,7 +495,7 @@ guardPage(); renderSidebar('followup');
       + '<div class="bd-sub" id="uNote" style="margin:-4px 0 10px"></div>'
       + '<div class="fu-row2"><div class="bd-f"><label id="uVl">Number</label><input class="bd-in" id="uV" inputmode="decimal"><div class="hint" id="uVh"></div></div>'
       + '<div class="bd-f"><label>% done</label><input class="bd-in" id="uP" inputmode="numeric" placeholder="0 – 100, if it fits"></div></div>'
-      + '<div id="uNums"></div><div id="uF"></div><div class="bd-f"><label id="uTl">Update</label><textarea class="bd-in" id="uT" maxlength="2000" rows="4" placeholder="What happened on this topic?"></textarea></div>'
+      + '<div id="uNums"></div><div id="uF"></div><div class="bd-f"><label id="uTl">Update</label><textarea class="bd-in" id="uT" maxlength="2000" rows="4" placeholder="What happened on this topic?"></textarea><div class="hint" id="uWc"></div></div>'
       + '<div class="acts"><button class="bd-btn" id="uX">Cancel</button><button class="bd-btn go" id="uOk">Save</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i); let SUMONLY = false;
     const fill = () => {   // show what is already saved for this topic and date
@@ -507,7 +513,11 @@ guardPage(); renderSidebar('followup');
       q('#uV').closest('.fu-row2').style.display = (many || t.fields.length || SUMONLY) ? 'none' : ''; q('#uTl').textContent = SUMONLY ? 'Summary' : (t.need_text ? 'Summary: why the numbers moved, what was changed' : 'Update'); q('#uT').placeholder = SUMONLY ? 'Write what was done today.' : (t.need_text ? 'Example: sales up because the campaign went to 12,000 people; ad spend kept the same; 2 big orders from Surat.' : 'What happened on this topic?');
       q('#uVh').textContent = t.source ? 'Leave empty to keep the number from the system. Type a number only to correct it.' : ''; q('#uP').value = u.pct != null ? u.pct : ''; q('#uT').value = u.text || '';
     };
-    fill(); q('#uTop').onchange = fill; q('#uD').onchange = fill;
+    // the least number of words the Admin set for this topic: a live count under the box
+    const wc = (x) => (String(x).trim() ? String(x).trim().split(/\s+/).length : 0);
+    const wcShow = () => { const n = wc(q('#uT').value), mw = t.min_words || 0, el = q('#uWc'); if (!mw) { el.textContent = ''; return; } el.textContent = n + ' / ' + mw + ' words' + (n >= mw ? ' ✓' : ' — write it in detail, at least ' + mw + ' words'); el.style.color = n >= mw ? '#16945a' : '#b45309'; el.style.fontWeight = '700'; };
+    q('#uT').addEventListener('input', wcShow);
+    fill(); wcShow(); q('#uTop').onchange = () => { fill(); wcShow(); }; q('#uD').onchange = () => { fill(); wcShow(); };
     q('#uX').onclick = () => BD.close();
     q('#uOk').onclick = () => run(q('#uOk'), async () => {
       const d = q('#uD').value, text = q('#uT').value.trim(), v = q('#uV').value.trim(), p = q('#uP').value.trim();
@@ -517,6 +527,7 @@ guardPage(); renderSidebar('followup');
       if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
       // a required box left empty is told at once (it used to save only the words, and the day stayed "not filled" with no word about why)
       const u1 = t.updates[d] || {}, need = t.fields.filter((f) => f.req && f.type !== 'file' && String(fv[f.k] == null ? '' : fv[f.k]) === '' && !(u1.f && fset(u1.f[f.k])));
+      if ((t.min_words || 0) > 0 && wc(text) < t.min_words) { toast('Write the update in detail: at least ' + t.min_words + ' words. Now ' + wc(text) + '.', true); q('#uT').focus(); return; }
       if (need.length) { toast('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
@@ -566,6 +577,7 @@ guardPage(); renderSidebar('followup');
       + '<div class="hint" id="tSh">Ticked numbers are read from the HRMS every day: nobody types them, so they cannot be wrong. Nothing ticked = the person types the number.</div>'
       + '<div id="tUw" style="margin-top:8px"><input class="bd-in" id="tU" maxlength="12" placeholder="Unit: ₹, pcs, shops … (optional)" value="' + esc(t ? (t.own_unit || '') : '') + '"></div>'
       + '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-top:10px;cursor:pointer"><input type="checkbox" id="tNt"' + (t && t.need_text ? ' checked' : '') + ' style="margin-top:3px"><span><b>The person must also write a summary every day</b>: why the numbers moved and what was changed. (Not ticked = when the numbers arrive, the day is complete by itself.)</span></label></div>'
+      + '<div class="bd-f" style="margin-top:12px"><label>Minimum words in the update</label><input class="bd-in" id="tMw" type="number" min="0" max="500" inputmode="numeric" placeholder="0 = any length" value="' + (t && t.min_words ? t.min_words : '') + '" style="max-width:180px"><div class="hint">For example 60: the update is not saved with fewer words (words are counted by the spaces between them). Empty or 0 = any length.</div></div>'
       + '<div class="bd-f" style="margin-top:12px"><label>Fields the person fills every day</label><div id="tF"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bd-btn sm" id="tFadd" type="button">＋ Add a field</button><button class="bd-btn sm" id="tSug" type="button"' + (D.ai ? '' : ' disabled title="Claude is switched off on this server"') + '>✨ Let Claude set this topic up</button></div>'
       + '<div class="hint" id="tFh">A post link, a yes / no, a count from Instagram or Google, a reason, a screenshot … A field marked “must” has to be filled before the day counts as done.</div></div>'
       + (t ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="bd-btn sm" id="tUp">↑ Move up</button><button class="bd-btn sm" id="tDn">↓ Move down</button><button class="bd-btn sm" id="tFin">' + (t.status === 'done' ? 'Open again' : '✓ Mark finished') + '</button><button class="bd-btn sm bad" id="tDel">Remove topic</button></div>' : '')
@@ -595,7 +607,7 @@ guardPage(); renderSidebar('followup');
     q('#tNt').addEventListener('change', () => { ntTouched = true; });
     q('#tX').onclick = () => BD.close();
     q('#tOk').onclick = () => run(q('#tOk'), async () => {
-      await api.post('fup.topic_save', { id: t ? t.id : 0, section_id: D.section, title: q('#tT').value, note: q('#tN').value, kind: q('#tK').value, due_date: q('#tD').value, assignee_emp: Number(q('#tE').value), metrics: ticks(), fields: readFields(), need_text: q('#tNt').checked ? 1 : 0, unit: q('#tU').value, lag: q('#tL').checked ? 1 : 0 });
+      await api.post('fup.topic_save', { min_words: Math.max(0, Math.min(500, Number(q('#tMw').value) || 0)), id: t ? t.id : 0, section_id: D.section, title: q('#tT').value, note: q('#tN').value, kind: q('#tK').value, due_date: q('#tD').value, assignee_emp: Number(q('#tE').value), metrics: ticks(), fields: readFields(), need_text: q('#tNt').checked ? 1 : 0, unit: q('#tU').value, lag: q('#tL').checked ? 1 : 0 });
       BD.close(); toast('Topic saved.'); await load(true);
     });
     if (t) {

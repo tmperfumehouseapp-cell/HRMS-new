@@ -25,6 +25,8 @@
  */
 if (!function_exists('fup_tables')) {
 
+/** Words in a text, counted by the spaces between them ("60 words" = 60 pieces separated by spaces or new lines). */
+function fup_words(string $t): int { $t = trim($t); return $t === '' ? 0 : count(preg_split('/\s+/u', $t)); }
 function fup_now(): string { return date('Y-m-d H:i:s'); }
 function fup_today(PDO $pdo): string { try { if (function_exists('biz_today')) return (string)biz_today($pdo); } catch (Throwable $e) { } return date('Y-m-d'); }
 function fup_is_day($d): bool { return is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && strtotime($d) !== false; }
@@ -40,6 +42,10 @@ function fup_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_updates (id INT AUTO_INCREMENT PRIMARY KEY, topic_id INT NOT NULL, day DATE NOT NULL, txt TEXT NULL, val DECIMAL(14,2) NULL, pct SMALLINT NULL, auto TINYINT NOT NULL DEFAULT 0, emp_id INT NOT NULL DEFAULT 0, emp_name VARCHAR(120) NOT NULL DEFAULT '', updated_at DATETIME NULL,
             UNIQUE KEY u_td (topic_id, day), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_digest (section_id INT NOT NULL, day DATE NOT NULL, txt MEDIUMTEXT NULL, made_at DATETIME NULL, PRIMARY KEY (section_id, day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if ((string)setting_get($pdo, 'fup_minw', '') !== '1') {   // the least number of words an update of a topic must have (0 = any)
+            try { $pdo->exec("ALTER TABLE fu_topics ADD COLUMN min_words SMALLINT NOT NULL DEFAULT 0"); } catch (Throwable $e) { }
+            $pdo->query("SELECT min_words FROM fu_topics LIMIT 1"); setting_set($pdo, 'fup_minw', '1');
+        }
         // Jaimin's layer: what Jaimin decided on a day, one note a section a day; section_id 0 = his own final decision after all the sections
         $pdo->exec("CREATE TABLE IF NOT EXISTS fu_jaimin (section_id INT NOT NULL, day DATE NOT NULL, txt TEXT NULL, emp_name VARCHAR(120) NOT NULL DEFAULT '', updated_at DATETIME NULL, PRIMARY KEY (section_id, day), KEY k_day (day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         if ((string)setting_get($pdo, 'fup_jaimin_schema', '') !== '2') {   // the follow-up person's (Rahul's) update under each decision; r_extra = the topics he added and the sections he checks himself
@@ -1405,7 +1411,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                     $id = (int)$t['id']; $can = !empty($sec['own']) || (int)$t['assignee_emp'] === $w['emp'];
                     $tOut[] = ['id' => $id, 'section_id' => (int)$t['section_id'], 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
                         'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
-                        'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''), 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'fields' => fup_fields($t), 'metrics' => fup_topic_metrics($t), 'due_day' => fup_due_day($t, $today), 'created' => fup_start_day($t),
+                        'assignee_emp' => (int)$t['assignee_emp'], 'assignee' => (int)$t['assignee_emp'] > 0 ? ($names[(int)$t['assignee_emp']] ?? '') : '', 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'own_unit' => (string)($t['unit'] ?? ''), 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'min_words' => (int)($t['min_words'] ?? 0), 'fields' => fup_fields($t), 'metrics' => fup_topic_metrics($t), 'due_day' => fup_due_day($t, $today), 'created' => fup_start_day($t),
                         'note' => (string)$t['note'], 'status' => (string)$t['status'], 'can_write' => $can, 'updates' => (object)($ups[$id] ?? [])];
                 }
                 $ch = fup_checks($topics, $ups, $names, $today); foreach ($ch as $c) $cOut[] = ['level' => $c[0], 'topic_id' => $c[1], 'text' => $c[2]];
@@ -1444,7 +1450,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $mx = ''; if (isset($in['metrics']) && is_array($in['metrics'])) { $ks = fup_topic_metrics(['source' => '', 'metrics' => implode(',', array_map('strval', $in['metrics']))]); $source = $ks ? $ks[0] : ''; $mx = implode(',', array_slice($ks, 1, 30)); }   // the first ticked number is the main one
             $unit = $source !== '' ? '' : trim(mb_substr((string)($in['unit'] ?? ''), 0, 12));
             $needText = !empty($in['need_text']) ? 1 : 0; $fieldsIn = array_key_exists('fields', $in) ? $in['fields'] : null; $note = trim(mb_substr((string)($in['note'] ?? ''), 0, 1000)); $lag = !empty($in['lag']) ? 1 : 0;
-            $was = 0;
+            $was = 0; $minW = max(0, min(500, (int)($in['min_words'] ?? 0)));
             if ($id > 0) { $t = $topicRow($id); $was = (int)$t['assignee_emp']; $pdo->prepare("UPDATE fu_topics SET title = ?, kind = ?, due_date = ?, assignee_emp = ?, source = ?, note = ?, unit = ?, `lag` = ?, metrics = ?, need_text = ? WHERE id = ?")->execute([$title, $kind, $due, $emp, $source, $note, $unit, $lag, $mx, $needText, $id]); $sid = (int)$t['section_id'];
                 if ($fieldsIn !== null) $pdo->prepare("UPDATE fu_topics SET `fields` = ? WHERE id = ?")->execute([json_encode(fup_fields_clean($fieldsIn, fup_fields($t)), JSON_UNESCAPED_UNICODE), $id]); }
             else {
@@ -1452,6 +1458,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                 $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, status, sort_no, active, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 1, ?, ?)")->execute([$sid, $title, $kind, $due, $emp, $source, $note, $unit, $lag, $mx, $needText, $sn, $w['emp'], fup_now()]); $id = (int)$pdo->lastInsertId();
                 if ($fieldsIn !== null) $pdo->prepare("UPDATE fu_topics SET `fields` = ? WHERE id = ?")->execute([json_encode(fup_fields_clean($fieldsIn), JSON_UNESCAPED_UNICODE), $id]);
             }
+            if (array_key_exists('min_words', $in)) { try { $pdo->prepare("UPDATE fu_topics SET min_words = ? WHERE id = ?")->execute([$minW, $id]); } catch (Throwable $e) { } }
             if ($source !== '') {   // the last 7 days are filled at once, so the sheet (and Claude) can compare from the first day
                 try { $tt = $topicRow($id); $td = fup_today($pdo); for ($i = 0; $i < 7; $i++) { $d = date('Y-m-d', strtotime($td . ' -' . $i . ' day')); $v = fup_source_val($pdo, $source, $d); if ($v !== null) { $q0 = $pdo->prepare("SELECT val, auto FROM fu_updates WHERE topic_id = ? AND day = ?"); $q0->execute([$id, $d]); $r0 = $q0->fetch(); if ($r0 ? ($r0['val'] === null || (int)$r0['auto'] === 1) : ($v != 0.0 || $d === $td)) fup_put($pdo, $id, $d, ['val' => $v, 'auto' => 1]); } if ($mx !== '') fup_fetch_extra($pdo, $tt, $d); } } catch (Throwable $e) { error_log('fup backfill: ' . $e->getMessage()); }
             }
@@ -1557,6 +1564,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                 if ($fvChanged) $f['fvals'] = json_encode($fvNow, JSON_UNESCAPED_UNICODE);
             }
             if ($text === '' && !isset($f['val']) && !isset($f['pct']) && !$fvChanged && !array_filter($fvNow, 'fup_fval_set')) json_response(['error' => 'Write the update.'], 422);
+            $minW = (int)($t['min_words'] ?? 0); if ($minW > 0 && fup_words($text) < $minW) json_response(['error' => 'Write the update in detail: at least ' . $minW . ' words. You wrote ' . fup_words($text) . '.', 'min_words' => $minW], 422);
             $q0 = $pdo->prepare("SELECT txt, ai_verdict FROM fu_updates WHERE topic_id = ? AND day = ?"); $q0->execute([(int)$t['id'], $day]); $was = $q0->fetch();
             fup_put($pdo, (int)$t['id'], $day, $f);
             // Claude reads the update now. A vague one gets ONE question back to the person (never to the Admin editing somebody's row, never twice): the day counts as filled when it is answered.
