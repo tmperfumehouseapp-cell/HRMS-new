@@ -11738,6 +11738,10 @@ function ct_better_at(PDO $pdo, int $days = 1, string $day = ''): array
         // absent: a Sales Executive with no punch-in that day and nothing in $E (no query, no order)
         $pres = null; try { $pres = attendance_present_map($pdo, $today, $today); } catch (Throwable $e2) { $pres = null; }
         $mk = []; try { $mk = day_marks_between($pdo, $today, $today); } catch (Throwable $e2) { }
+        // ... also when queries were only OPENED on his chats (an old customer wrote) while he is away: no punch-in, no order and he answered NO customer that day = absent (Aditya V., 25 Nov: on leave, 1 query, would have been rated "weak")
+        if (is_array($pres)) { $ans = null; foreach ($E as $e => $x) { if (!empty($pres[$e][$today]) || $x['qo'] + $x['co'] > 0 || (string)($mk[$today . '|' . $e] ?? '') === 'wfh') continue;
+            if ($ans === null) { $ans = []; try { $f0 = $today . ' ' . day_start_for($pdo, $today) . ':00'; $q = $pdo->prepare("SELECT DISTINCT emp_id FROM wa_messages WHERE dir = 'out' AND who IN ('emp', 'phone') AND ts >= ? AND ts < ? AND emp_id > 0"); $q->execute([$f0, date('Y-m-d H:i:s', strtotime($f0) + 86400)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $a) $ans[(int)$a] = 1; } catch (Throwable $e2) { $ans = false; } }
+            if (is_array($ans) && empty($ans[$e])) unset($E[$e]); } }
         if (is_array($pres)) foreach ($emps as $id => $x) { $id = (int)$id; if (isset($E[$id]) || !empty($pres[$id][$today])) continue;
             if (sales_role_kind((string)($x['department_name'] ?? ''), (string)($x['designation'] ?? '')) !== 'executive') continue;
             $m = (string)($mk[$today . '|' . $id] ?? ''); if ($m === 'wfh') continue;
@@ -23368,7 +23372,7 @@ switch ($action) {
         $auth = require_auth();
         if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
         $baDay = (string)($_GET['date'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $baDay)) $baDay = biz_today($pdo);
-        json_response(['ok' => true] + hrms_memo('better_at5:' . $baDay, $baDay === biz_today($pdo) ? 120 : 600, function () use ($pdo, $baDay) { return ct_better_at($pdo, 1, $baDay); }));
+        json_response(['ok' => true] + hrms_memo('better_at6:' . $baDay, $baDay === biz_today($pdo) ? 120 : 600, function () use ($pdo, $baDay) { return ct_better_at($pdo, 1, $baDay); }));
         break;
     }
     case 'ct.must3_me': {
