@@ -11717,32 +11717,40 @@ function must3_photo_tick(PDO $pdo, int $max = 6): int
 /** 🏅 WHO IS BETTER AT WHAT (owner, 24 Nov): per salesperson — the QUERY ratio of ONE day (query orders ÷ queries he got that day) and the number of CAMPAIGN orders of the last $days days — each set against the TEAM in three steps:
  *  good = 20% or more above the team · avg = between · weak = 20% or more below. No minimum number of queries (owner): the ratio alone decides. Campaign is measured in ORDERS (campaign query counts hold "ok / not now" replies).
  *  label: both | query | campaign | avg | weak. Returns ['days', 'from', 'to', 'team' => [q_ratio, c_avg, people], 'emps' => [id => [...]]]. Not a remark: shown on the person's card and in the list. */
-function ct_better_at(PDO $pdo, int $days = 7, string $day = ''): array
+function ct_better_at(PDO $pdo, int $days = 1, string $day = ''): array
 {
-    $today = preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) ? $day : biz_today($pdo); $fromDay = date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')); $out = ['days' => $days, 'from' => $fromDay, 'to' => $today, 'q_day' => $today, 'team' => ['q_ratio' => null, 'c_avg' => null, 'people' => 0], 'emps' => [], 'absent' => []];
+    // owner (25 Nov 2026, FINAL): nothing over 7 days any more. BOTH sides are judged on ONE day by RATIO against the team's ratio of the same day:
+    //   Query    = that day's query orders ÷ the fresh queries he got that day
+    //   Campaign = that day's campaign / community orders ÷ the campaign & community queries he got that day
+    //   good = 20% or more above the team's ratio · weak = 20% or more below · between = average · 'low' = he got no query of that kind that day.
+    // A salesperson who did not punch in that day and has no query and no order that day is ABSENT: listed at the bottom as absent, with no rating at all, and not in the team's numbers.
+    $today = preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) ? $day : biz_today($pdo);
+    $out = ['days' => 1, 'from' => $today, 'to' => $today, 'q_day' => $today, 'team' => ['q_ratio' => null, 'c_ratio' => null, 'people' => 0], 'emps' => [], 'absent' => []];
     try {
-        $E = []; $z = function () { return ['qq' => 0, 'qo' => 0, 'co' => 0, 'cod' => 0]; }; $emps = rating_emps($pdo); $names = [];
+        $E = []; $z = function () { return ['qq' => 0, 'qo' => 0, 'cq' => 0, 'co' => 0]; }; $emps = rating_emps($pdo); $names = [];
         foreach ($emps as $id => $x) $names[(int)$id] = trim((string)$x['full_name']);
-        // owner (24 Nov): QUERY is judged on ONE day ($today): that day's query orders ÷ the queries he got that day, against the team's ratio of the same day. CAMPAIGN stays on the last $days days.
         foreach ((array)qa_emp_total($pdo, $today, $today) as $e => $n) { $e = (int)$e; if (!isset($E[$e])) $E[$e] = $z(); $E[$e]['qq'] += (int)$n; }
+        try { foreach ((array)qa_cq_range($pdo, $today, $today) as $e => $k) { $e = (int)$e; if (!isset($E[$e])) $E[$e] = $z(); $E[$e]['cq'] += (int)($k['in'] ?? 0) + (int)($k['new'] ?? 0) + (int)($k['comm'] ?? 0); } } catch (Throwable $e2) { }
         $commSet = []; if (ensure_order_community_table($pdo)) { try { foreach ($pdo->query("SELECT source, order_id FROM order_community")->fetchAll() as $r) $commSet[$r['source'] . '|' . $r['order_id']] = 1; } catch (Throwable $e2) { } }
-        foreach ((array)coach_sales_load($pdo, $emps, $fromDay, $today) as $k => $l) { $e = (int)substr($k, strpos($k, '|') + 1); if (!isset($E[$e])) $E[$e] = $z();
-            foreach ($l as $x) { if (isset($commSet[$x['key']]) || ($x['type'] ?? '') === 'campaign') $E[$e]['co']++; } }
         foreach ((array)coach_sales_load($pdo, $emps, $today, $today) as $k => $l) { $e = (int)substr($k, strpos($k, '|') + 1); if (!isset($E[$e])) $E[$e] = $z();
-            foreach ($l as $x) { if (!(isset($commSet[$x['key']]) || ($x['type'] ?? '') === 'campaign')) $E[$e]['qo']++; else $E[$e]['cod']++; } }
-        // owner (25 Nov 2026): "Danish is absent, why does he get a review?" — a person who did not punch in on that day, got no query and made no order that day is ABSENT: no review, not in the team's numbers; only named under the list.
-        // (No punch-in but queries or orders that day = he worked, e.g. from home: he stays in the list.)
-        $pres = []; try { $pres = attendance_present_map($pdo, $today, $today); } catch (Throwable $e2) { $pres = null; }
-        if (is_array($pres)) foreach ($E as $e => $x) { if (isset($names[$e]) && empty($pres[$e][$today]) && $x['qq'] === 0 && $x['qo'] === 0 && $x['cod'] === 0) { $out['absent'][] = $names[$e]; unset($E[$e]); } }
-        sort($out['absent']);
-        $tq = 0; $to = 0; $tc = 0; $np = 0;
-        foreach ($E as $e => $x) { if (!isset($names[$e]) || ($x['qq'] === 0 && $x['qo'] + $x['co'] === 0)) { unset($E[$e]); continue; } $tq += $x['qq']; $to += $x['qo']; $tc += $x['co']; $np++; }
-        $tr = $tq > 0 ? $to / $tq * 100 : null; $ca = $np > 0 ? $tc / $np : null; $out['team'] = ['q_ratio' => $tr !== null ? round($tr, 1) : null, 'c_avg' => $ca !== null ? round($ca, 1) : null, 'people' => $np];
+            foreach ($l as $x) { if (isset($commSet[$x['key']]) || ($x['type'] ?? '') === 'campaign') $E[$e]['co']++; else $E[$e]['qo']++; } }
+        foreach ($E as $e => $x) if (!isset($names[$e]) || $x['qq'] + $x['qo'] + $x['cq'] + $x['co'] === 0) unset($E[$e]);
+        // absent: a Sales Executive with no punch-in that day and nothing in $E (no query, no order)
+        $pres = null; try { $pres = attendance_present_map($pdo, $today, $today); } catch (Throwable $e2) { $pres = null; }
+        $mk = []; try { $mk = day_marks_between($pdo, $today, $today); } catch (Throwable $e2) { }
+        if (is_array($pres)) foreach ($emps as $id => $x) { $id = (int)$id; if (isset($E[$id]) || !empty($pres[$id][$today])) continue;
+            if (sales_role_kind((string)($x['department_name'] ?? ''), (string)($x['designation'] ?? '')) !== 'executive') continue;
+            $m = (string)($mk[$today . '|' . $id] ?? ''); if ($m === 'wfh') continue;
+            $out['absent'][] = ['id' => $id, 'name' => $names[$id], 'why' => in_array($m, ['leave', 'holiday', 'week_off'], true) ? $m : 'no_punch']; }
+        usort($out['absent'], function ($a, $b) { return strcmp($a['name'], $b['name']); });
+        $tq = 0; $to = 0; $tcq = 0; $tco = 0; foreach ($E as $x) { $tq += $x['qq']; $to += $x['qo']; $tcq += $x['cq']; $tco += $x['co']; }
+        $tr = $tq > 0 ? $to / $tq * 100 : null; $cr = $tcq > 0 ? $tco / $tcq * 100 : null;
+        $out['team'] = ['q_ratio' => $tr !== null ? round($tr, 1) : null, 'c_ratio' => $cr !== null ? round($cr, 1) : null, 'qq' => $tq, 'qo' => $to, 'cq' => $tcq, 'co' => $tco, 'people' => count($E)];
         $step = function ($v, $t) { if ($v === null || $t === null || $t <= 0) return 'low'; return $v >= $t * 1.2 ? 'good' : ($v <= $t * 0.8 ? 'weak' : 'avg'); };
         foreach ($E as $e => $x) {
-            $qr = $x['qq'] > 0 ? $x['qo'] / $x['qq'] * 100 : null; $qs = $step($qr, $tr); $cs = $step((float)$x['co'], $ca);   // owner (24 Nov): no minimum number of queries — the ratio alone decides ('low' only when he took no query at all)
-            $lab = ($qs === 'good' && $cs === 'good') ? 'both' : ($qs === 'good' ? 'query' : ($cs === 'good' ? 'campaign' : (($qs === 'weak' && $cs === 'weak') ? 'weak' : 'avg')));
-            $out['emps'][$e] = ['id' => $e, 'name' => $names[$e], 'qq' => $x['qq'], 'qo' => $x['qo'], 'q_ratio' => $qr !== null ? round($qr, 1) : null, 'q_step' => $qs, 'co' => $x['co'], 'c_step' => $cs, 'label' => $lab];
+            $qr = $x['qq'] > 0 ? $x['qo'] / $x['qq'] * 100 : null; $cv = $x['cq'] > 0 ? $x['co'] / $x['cq'] * 100 : null; $qs = $step($qr, $tr); $cs = $step($cv, $cr);
+            $lab = ($qs === 'good' && $cs === 'good') ? 'both' : ($qs === 'good' ? 'query' : ($cs === 'good' ? 'campaign' : (($qs === 'low' && $cs === 'low') ? 'low' : (($qs === 'weak' && $cs === 'weak') ? 'weak' : (($qs === 'weak' && $cs === 'low') ? 'qweak' : (($cs === 'weak' && $qs === 'low') ? 'cweak' : 'avg'))))));   // qweak / cweak = weak on the one side he worked, no query of the other kind that day
+            $out['emps'][$e] = ['id' => $e, 'name' => $names[$e], 'qq' => $x['qq'], 'qo' => $x['qo'], 'q_ratio' => $qr !== null ? round($qr, 1) : null, 'q_step' => $qs, 'cq' => $x['cq'], 'co' => $x['co'], 'c_ratio' => $cv !== null ? round($cv, 1) : null, 'c_step' => $cs, 'label' => $lab];
         }
     } catch (Throwable $e) { error_log('ct_better_at: ' . $e->getMessage()); }
     return $out;
@@ -12066,6 +12074,7 @@ function ct_eval(PDO $pdo, string $day): array
             'title' => "$nm: query ratio " . round((float)$e['conv']) . '% (strong) but campaign ratio ' . round((float)$e['cq_conv']) . '% (team ' . round((float)($T['cq_conv'] ?? 0)) . '%) over ' . $e['cq'] . ' campaign queries',
             'body' => 'Good with fresh queries, weak with campaign customers. Check how he follows up campaign replies (already-assigned and newly assigned chats).']);
         if (!($e['target'] > 0) && $e['orders'] === 0) continue;          // on leave / not working today
+        if (array_key_exists('working', $e) && !$e['working']) continue;   // owner (25 Nov 2026): an ABSENT person (leave / switched off / no punch-in and nothing sold) gets no remark at all, also when a target was set for him
         $tv = $e['tv'];
         if ($tv['state'] === 'near' && $tv['next']) $add("ticket_push|$id|$day", ['kind' => 'ticket_push', 'sev' => 'info', 'emp' => $id,
             'title' => "$nm: ticket " . ct_money($e['ticket']) . ' — ' . ct_money($tv['next'] - $e['ticket']) . ' from ' . ct_money($tv['next']),
@@ -23359,7 +23368,7 @@ switch ($action) {
         $auth = require_auth();
         if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
         $baDay = (string)($_GET['date'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $baDay)) $baDay = biz_today($pdo);
-        json_response(['ok' => true] + hrms_memo('better_at4:' . $baDay, $baDay === biz_today($pdo) ? 120 : 600, function () use ($pdo, $baDay) { return ct_better_at($pdo, 7, $baDay); }));
+        json_response(['ok' => true] + hrms_memo('better_at5:' . $baDay, $baDay === biz_today($pdo) ? 120 : 600, function () use ($pdo, $baDay) { return ct_better_at($pdo, 1, $baDay); }));
         break;
     }
     case 'ct.must3_me': {
