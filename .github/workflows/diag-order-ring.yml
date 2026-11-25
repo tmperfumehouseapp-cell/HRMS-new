@@ -1,0 +1,49 @@
+# READ-ONLY: did the order ring fire? The rings written since it went live (salesperson, heard in the app or not, how many phones took the push) and how many salespeople have notifications switched on. No customer details.
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Order ring check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Order ring
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/or_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php"; date_default_timezone_set("Asia/Kolkata");
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          echo "IST " . date("Y-m-d H:i:s") . "\n";
+          $nm = []; foreach ($d->query("SELECT employee_id, full_name FROM employees")->fetchAll(PDO::FETCH_ASSOC) as $e) $nm[(int)$e["employee_id"]] = (string)$e["full_name"];
+          try { $cols = array_column($d->query("SHOW COLUMNS FROM tms_ring")->fetchAll(PDO::FETCH_ASSOC), "Field"); $hasP = in_array("pushed", $cols, true);
+            $rows = $d->query("SELECT emp_id, number, total, otype, at, seen" . ($hasP ? ", pushed" : "") . " FROM tms_ring ORDER BY id DESC LIMIT 40")->fetchAll(PDO::FETCH_ASSOC);
+            echo "rings written: " . $d->query("SELECT COUNT(*) FROM tms_ring")->fetchColumn() . " · heard in the app: " . $d->query("SELECT COUNT(*) FROM tms_ring WHERE seen = 1")->fetchColumn() . "\n";
+            foreach ($rows as $r) echo "  " . $r["at"] . " · " . $r["number"] . " · Rs " . round($r["total"]) . " · " . $r["otype"] . " · " . ($nm[(int)$r["emp_id"]] ?? ("#" . $r["emp_id"])) . " · app " . ((int)$r["seen"] ? "HEARD" : "not yet") . ($hasP ? " · push to " . ((int)$r["pushed"] < 0 ? "?" : (int)$r["pushed"]) . " phone(s)" : " · push count not recorded") . "\n";
+          } catch (Throwable $e) { echo "no ring table yet: " . $e->getMessage() . "\n"; }
+          try { $subs = []; foreach ($d->query("SELECT employee_id, COUNT(*) n FROM push_subscriptions GROUP BY employee_id")->fetchAll(PDO::FETCH_ASSOC) as $x) $subs[(int)$x["employee_id"]] = (int)$x["n"];
+            $given = $d->query("SELECT DISTINCT employee_id FROM manual_orders WHERE channel = 'TM Store' AND employee_id > 0 AND order_date >= '" . date("Y-m-d H:i:s", time() - 3 * 86400) . "'")->fetchAll(PDO::FETCH_COLUMN); $on = 0; $off = [];
+            foreach ($given as $e) { if (!empty($subs[(int)$e])) $on++; else $off[] = $nm[(int)$e] ?? ("#" . $e); }
+            echo "salespeople who got website orders in 3 days: " . count($given) . " · notifications ON on a phone: $on · OFF: " . count($off) . "\n"; if ($off) echo "  OFF: " . implode(", ", array_slice($off, 0, 40)) . "\n";
+          } catch (Throwable $e) { echo "push table: " . $e->getMessage() . "\n"; }
+          echo "website orders given by the robot in the last 2 h: " . $d->query("SELECT COUNT(*) FROM manual_orders WHERE channel = 'TM Store' AND created_by = 'auto (WhatsApp)' AND order_date >= '" . date("Y-m-d H:i:s", time() - 7200) . "'")->fetchColumn() . "\n";
+          PHP
+          php /tmp/or_check.php "$P"; rm -f /tmp/or_check.php
+          REMOTE
