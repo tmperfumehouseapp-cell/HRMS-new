@@ -635,8 +635,11 @@ function wag_single_price_guard(PDO $pdo, string $reply): string
 }
 function wag_price_enforce(PDO $pdo, array $msgs, string $reply): array
 {
-    [$__r1, $__c1] = wag_price_enforce0($pdo, $msgs, $reply); if ($__c1) return [$__r1, true];
-    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); $__r3 = wag_pack_rows_guard($pdo, $msgs, $__r2); $__r4 = wag_single_price_guard($pdo, $__r3); return [$__r4, $__r4 !== $reply];
+    [$__r1, $__c1] = wag_price_enforce0($pdo, $msgs, $reply);
+    if ($__c1) { try { if (wag_bare_20ml_price((string)$__r1)) $__r1 = wag_min_pack_msg($pdo, 20, 5); } catch (Throwable $e) { } return [$__r1, true]; }   // owner (25 Nov 2026): the corrected line itself was "Sir, 20 ml ka price Rs 400 hai" — for 20 ml it is the minimum combo of 5, on every path that sends a price
+    $__r2 = wag_pack_price_clamp($pdo, $msgs, $reply); $__r3 = wag_pack_rows_guard($pdo, $msgs, $__r2); $__r4 = wag_single_price_guard($pdo, $__r3);
+    try { if (wag_bare_20ml_price((string)$__r4)) $__r4 = wag_min_pack_msg($pdo, 20, 5); } catch (Throwable $e) { }
+    return [$__r4, $__r4 !== $reply];
 }
 function wag_price_enforce0(PDO $pdo, array $msgs, string $reply): array
 {
@@ -1554,6 +1557,7 @@ function wag_bot_block_msg(PDO $pdo, array $c): string
 function wag_one_bottle_msg(PDO $pdo, int $qty, int $ml): string
 {
     if ($qty < 1 || $qty > 2) return '';
+    if ($ml === 20) return wag_min_pack_msg($pdo, 20, 5);   // owner (25 Nov 2026): 20 ml is sold as 5 bottles or more — never "one 20 ml costs …" and never 3 x 20 ml
     $n = $qty === 1 ? 3 : 4; $one = wag_official_price($pdo, $ml); if ($one <= 0) return '';
     $row = wag_chart_row($pdo, $n * $ml); if (!$row || (int)$row['ml'] !== $n * $ml || (int)$row['chart'] <= 0) return '';
     $f = function ($v) { return number_format((int)$v); }; $chart = (int)$row['chart'];
@@ -1585,16 +1589,28 @@ function wag_praise_fix(PDO $pdo, string $key, string $text): string
     } catch (Throwable $e) { return $text; }
 }
 /** owner, 23 Nov (screenshot: the salesperson told the customer "20ml 5 bottle for 1799 ... No sir, Minimum 5 bottle hai", and the bot's follow-up offered "2 x 20 ml total 40 ml, Rs 1,199, aap Rs 799 wala price le sakte ho"): the bot never offers a pack below a minimum. The minimum is 5 bottles for 20 ml (our rule) or the number the salesperson named ("minimum 5 bottle", last 6 hours, when the reply names one pack). A pack below it is replaced by the minimum pack with its price from the chart. */
+function wag_min_pack_msg(PDO $pdo, int $ml, int $need): string
+{
+    $row = wag_chart_row($pdo, $need * $ml); $price = ($row && (int)$row['ml'] === $need * $ml) ? (int)$row['chart'] : 0;
+    return 'Sir, ' . $ml . ' ml mein minimum ' . $need . ' bottle ka combo milta hai (' . ($need * $ml) . ' ml total)' . ($price > 0 ? ', uska price Rs ' . number_format($price) . ' hai' : '') . ' 😊 Kaunse ' . $need . ' perfumes lena chahoge?';
+}
+/** A bare "20 ml ka price Rs X" (the price of ONE 20 ml bottle, no "N x" in front)? */
+function wag_bare_20ml_price(string $text): bool
+{
+    if (preg_match('/(?<![\d.])(?:[5-9]|1\d|20)\s*[x×*]\s*20\s*ml/iu', $text)) return false;   // a real pack of 5+ is named: nothing to fix here
+    return (bool)preg_match('/(?<![\d.x×*])(?<!\d )(?<![x×*] )20\s*ml\s*(?:ka|ki|ke)?\s*(?:price|rate|kimat|daam)[^₹\n]{0,14}?(?:rs\.?|₹)\s*[\d,]{3,5}/iu', $text);
+}
 function wag_min_pack_fix(PDO $pdo, string $key, string $text): string
 {
     try {
+        // owner (25 Nov 2026, screenshot: the customer answered "20ML" to "Kaunsa size chahiye?" and the bot said "Sir, 20 ml ka price Rs 400 hai"): for 20 ml the bot suggests the minimum combo of 5, never the price of one bottle
+        if (wag_bare_20ml_price($text)) return wag_min_pack_msg($pdo, 20, 5);
         if (!preg_match_all('/(?<![\d.])(\d{1,2})\s*[x×*]\s*(\d{2,3})\s*ml/iu', $text, $pm, PREG_SET_ORDER)) return $text;
         $min = 0;
         if (count($pm) === 1) { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND mtype = 'text' AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([$key, date('Y-m-d H:i:s', time() - 6 * 3600)]);
             foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $b) if (preg_match('/min(?:imum|\.)?\s*(\d{1,2})\s*(?:bottles?|btls?|btl|pcs|pieces?|nag)/iu', (string)$b, $mm)) { $min = max($min, (int)$mm[1]); } }
         foreach ($pm as $p) { $qty = (int)$p[1]; $ml = (int)$p[2]; $need = max($ml === 20 ? 5 : 0, count($pm) === 1 ? $min : 0); if ($need < 2 || $qty >= $need || $qty < 1) continue;
-            $row = wag_chart_row($pdo, $need * $ml); $price = ($row && (int)$row['ml'] === $need * $ml) ? (int)$row['chart'] : 0;
-            return 'Sir, ' . $ml . ' ml mein minimum ' . $need . ' bottle ka combo milta hai (' . ($need * $ml) . ' ml total)' . ($price > 0 ? ', uska price Rs ' . number_format($price) . ' hai' : '') . ' 😊 Kaunse ' . $need . ' perfumes lena chahoge?'; }
+            return wag_min_pack_msg($pdo, $ml, $need); }
         return $text;
     } catch (Throwable $e) { return $text; }
 }
