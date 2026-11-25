@@ -88,7 +88,7 @@
   .fu-mday .d{font-size:11.5px;font-weight:800;color:#6b7280;}
   .fu-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   /* Jaimin's layer: what Jaimin decided after reading the day — purple, so it never mixes with the team's updates */
-  .fu-t th.jm,.fu-t td.jm{background:#f5f3ff !important;min-width:230px;max-width:320px;border-left:2px solid #c4b5fd;}
+  .fu-t th.jm,.fu-t td.jm{background:#f5f3ff !important;min-width:230px;max-width:320px;border-left:2px solid #c4b5fd;border-right:2px solid #c4b5fd;}
   .fu-t th.jm{color:#5b3fd1;white-space:normal;} .fu-t td.jm.w{cursor:pointer;} .fu-t td.jm.w:hover{background:#ede9fe !important;}
   .fu-t td.jm.fin,.fu-t th.jm.fin{background:#ede9fe !important;border-left:0;border-right:2px solid #a78bfa;}
   .fu-jm{white-space:pre-wrap;word-break:break-word;line-height:1.4;font-size:13px;color:#2e1065;} .fu-jadd{color:#7c3aed;font-weight:700;font-size:12px;}
@@ -255,13 +255,13 @@ guardPage(); renderSidebar('followup');
       if (PREF === null) SIDE = (D.allTopics || D.topics).length <= 8;
       h += '<div style="display:flex;justify-content:flex-end;margin:0 0 8px" class="fu-sw"><button class="bd-btn sm" id="flip">⇄ ' + (SIDE ? 'Show topics down, days across' : 'Show topics side by side') + '</button></div>';
       const JM = D.jaimin || null;   // Jaimin's layer of this section (null: this person does not see it)
-      if (SIDE) h += '<div class="fu-wrap"><table class="fu-t side"><thead><tr><th>' + esc(s.name) + '<div class="fu-sub" style="font-weight:600">Day</div></th>' + D.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '">' + th(t) + '</th>').join('') + (JM ? '<th class="jm">' + JH + '</th>' : '') + '</tr></thead><tbody>'
-        + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + D.topics.map((t) => td(t, d)).join('') + (JM ? jtd(D.section, JM, d) : '') + '</tr>').join('') + '</tbody></table></div>';
+      if (SIDE) h += '<div class="fu-wrap"><table class="fu-t side"><thead><tr><th>' + esc(s.name) + '<div class="fu-sub" style="font-weight:600">Day</div></th>' + (JM ? '<th class="jm">' + JH + '</th>' : '') + D.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '">' + th(t) + '</th>').join('') + '</tr></thead><tbody>'
+        + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + (JM ? jtd(D.section, JM, d) : '') + D.topics.map((t) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
       else h += '<div class="fu-wrap"><table class="fu-t"><thead><tr><th>Topic</th>' + D.days.map((d) => '<th class="' + (d === D.today ? 'td' : '') + '">' + esc(dayName(d, D.today)) + '</th>').join('') + '</tr></thead><tbody>'
-        + D.topics.map((t) => '<tr class="' + (t.status === 'done' ? 'done' : '') + '"><td>' + th(t) + '</td>' + D.days.map((d) => td(t, d)).join('') + '</tr>').join('')
-        + (JM ? '<tr><td class="jm">' + JH + '</td>' + D.days.map((d) => jtd(D.section, JM, d)).join('') + '</tr>' : '') + '</tbody></table></div>';
+        + (JM ? '<tr><td class="jm">' + JH + '</td>' + D.days.map((d) => jtd(D.section, JM, d)).join('') + '</tr>' : '')
+        + D.topics.map((t) => '<tr class="' + (t.status === 'done' ? 'done' : '') + '"><td>' + th(t) + '</td>' + D.days.map((d) => td(t, d)).join('') + '</tr>').join('') + '</tbody></table></div>';
       // phones: one card a topic, today on top, the earlier days under it
-      h += '<div class="fu-m">' + D.topics.map((t) => {
+      h += '<div class="fu-m">' + jPhone(D.section, JM) + D.topics.map((t) => {
         const dd = t.due_day, dn = dd === D.today ? 'today' : 'yesterday', w = canDay(t, dd), has = t.updates[dd] && t.updates[dd].text, prev = D.days[D.days.indexOf(dd) + 1];
         const past = D.days.filter((d) => d !== dd && t.updates[d] && (t.updates[d].text || t.updates[d].val != null));
         return '<div class="fu-mc' + (t.status === 'done' ? ' done' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + (t.note ? '<div class="fu-sub">' + esc(t.note) + '</div>' : '') + tags(t)
@@ -269,7 +269,7 @@ guardPage(); renderSidebar('followup');
           + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">' + (w ? '<button class="bd-btn sm ' + (has ? '' : 'pri') + '" data-up="' + t.id + '" data-day="' + dd + '">' + (has ? 'Change ' + dn + '’s update' : 'Write ' + dn + '’s update') + '</button>' : '')
           + (prev && canDay(t, prev) && !(t.updates[prev] && t.updates[prev].text) ? '<button class="bd-btn sm" data-up="' + t.id + '" data-day="' + prev + '">Write the day before</button>' : '') + (D.manager ? '<button class="bd-btn sm" data-edit="' + t.id + '">Edit topic</button>' : '') + '</div>'
           + (past.length ? '<details style="margin-top:8px"><summary class="fu-sub" style="cursor:pointer;font-weight:700">Earlier days (' + past.length + ')</summary>' + past.map((d) => '<div class="fu-mday"><div class="d">' + esc(dayName(d, D.today)) + '</div>' + cell(t, d) + '</div>').join('') + '</details>' : '') + '</div>';
-      }).join('') + jPhone(D.section, JM) + '</div>';
+      }).join('') + '</div>';
     }
     $('root').innerHTML = h; bind();
   }
@@ -307,10 +307,10 @@ guardPage(); renderSidebar('followup');
       if (!a.topics.length) h += '<div class="fu-sub" style="margin-top:10px">No topics in this section yet.</div>';
       else {
         const jump = (t, d) => (canDay(t, d) ? ' w" data-jump="' + a.id + '|' + t.id + '|' + d : '');
-        h += '<div class="fu-wrap" style="margin-top:12px;border-radius:14px"><table class="fu-t side"><thead><tr><th>Day</th>' + a.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '</th>').join('') + (a.jaimin ? '<th class="jm">' + JH + '</th>' : '') + '</tr></thead><tbody>'
-          + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + a.topics.map((t) => '<td class="c' + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + jump(t, d) + '">' + cell(t, d) + '</td>').join('') + (a.jaimin ? jtd(a.id, a.jaimin, d) : '') + '</tr>').join('') + '</tbody></table></div>';
+        h += '<div class="fu-wrap" style="margin-top:12px;border-radius:14px"><table class="fu-t side"><thead><tr><th>Day</th>' + (a.jaimin ? '<th class="jm">' + JH + '</th>' : '') + a.topics.map((t) => '<th class="tp' + (t.status === 'done' ? ' dn' : '') + '"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '</th>').join('') + '</tr></thead><tbody>'
+          + D.days.map((d) => '<tr><td class="dy' + (d === D.today ? ' td' : '') + '">' + esc(dayName(d, D.today)) + '</td>' + (a.jaimin ? jtd(a.id, a.jaimin, d) : '') + a.topics.map((t) => '<td class="c' + (d === D.today ? ' td' : '') + (t.status === 'done' ? ' dn' : '') + jump(t, d) + '">' + cell(t, d) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
         // phones: one line a topic with the row that is due
-        h += '<div class="fu-m" style="margin-top:10px">' + a.topics.map((t) => '<div class="fu-mday' + (canDay(t, t.due_day) ? '" data-jump="' + a.id + '|' + t.id + '|' + t.due_day : '') + '" style="cursor:pointer"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '<div class="d" style="margin-top:6px">' + esc(dayName(t.due_day, D.today)) + '</div>' + cell(t, t.due_day) + '</div>').join('') + jPhone(a.id, a.jaimin, 2) + '</div>';
+        h += '<div class="fu-m" style="margin-top:10px">' + jPhone(a.id, a.jaimin, 2) + a.topics.map((t) => '<div class="fu-mday' + (canDay(t, t.due_day) ? '" data-jump="' + a.id + '|' + t.id + '|' + t.due_day : '') + '" style="cursor:pointer"><div class="fu-tt">' + esc(t.title) + '</div>' + tags(t) + '<div class="d" style="margin-top:6px">' + esc(dayName(t.due_day, D.today)) + '</div>' + cell(t, t.due_day) + '</div>').join('') + '</div>';
       }
       h += '</div>';
     });
