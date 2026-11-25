@@ -68,8 +68,8 @@
       </div>
       <div id="chBox" style="margin:0 0 12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b id="chTitle">⛓ Chain report</b>
-          <span style="display:inline-flex;align-items:center;gap:6px;background:#f4f4f4;border-radius:10px;padding:4px 8px;font-size:13px">🕛 Day <button type="button" class="btn" id="chPrev" style="background:#fff;color:#111;border:1px solid var(--line);padding:3px 9px">◀</button><input type="date" id="chDay"><button type="button" class="btn" id="chNext" style="background:#fff;color:#111;border:1px solid var(--line);padding:3px 9px">▶</button> <b id="chWin"></b></span><span style="flex:1"></span>
-          <button class="btn" type="button" id="chGo" style="background:#fff;color:#111;border:1px solid var(--line)">🔄 Recount chains</button>
+          <span style="display:inline-flex;align-items:center;gap:6px;background:#f4f4f4;border-radius:10px;padding:4px 8px;font-size:13px"><span hidden><button type="button" class="btn" id="chPrev">◀</button><input type="date" id="chDay"><button type="button" class="btn" id="chNext">▶</button></span>🕛 <b id="chWin"></b></span><span style="flex:1"></span>
+          <button class="btn" type="button" id="chGo" hidden>🔄 Recount chains</button>
           <button class="btn" type="button" id="chXl" style="background:#15803d;border-color:#15803d" disabled>⬇ Chain Excel</button>
           <button class="btn" type="button" id="chPdf" style="background:#b91c1c;border-color:#b91c1c" disabled>⬇ Chain PDF</button></div>
         <div id="chOut" style="margin-top:8px;font-size:13px"></div>
@@ -135,7 +135,7 @@
   }
   async function load() {
     const my = ++seq; $('bRef').disabled = true; $('skRows').innerHTML = '<tr><td colspan="13" style="padding:20px">Reading the orders of the day from Shopify…</td></tr>'; $('skTop').innerHTML = ''; $('bXlsx').disabled = true;
-    try { const d = await api.get('sku.sheet', { day: $('dDay').value }); if (my !== seq) return; if (!$('dDay').value) $('dDay').value = d.day; TODAY = d.today; draw(d); if (!window.__chOnce) { window.__chOnce = 1; chainRun(); } }      // the chain report has its own 12 PM – 12 PM day: counted once when the page opens, then by its own ◀ ▶ / date
+    try { const d = await api.get('sku.sheet', { day: $('dDay').value }); if (my !== seq) return; if (!$('dDay').value) $('dDay').value = d.day; TODAY = d.today; draw(d); $('chDay').value = $('dDay').value || d.day; chainRun(); }      // ⛓ ONE filter for both: the day picked at the top (date, Today / Yesterday / Tomorrow, Refresh) is the day of the chain report too — it has no date buttons of its own any more      // the chain report has its own 12 PM – 12 PM day: counted once when the page opens, then by its own ◀ ▶ / date
     catch (e) { if (my !== seq) return; $('skRows').innerHTML = ''; $('skTop').innerHTML = '<div class="box bad"><b>The SKU sheet could not be made.</b> ' + esc(e.message) + '</div>'; }
     $('bRef').disabled = false;
   }
