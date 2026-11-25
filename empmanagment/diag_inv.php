@@ -55,3 +55,10 @@ try { $d0 = date('Y-m-d 00:00:00'); $tn = date('Y-m-d H:i:s');
     $kinds = $pdo->query("SELECT kind, ml, COUNT(*) n FROM wa_offer WHERE mode = 'live' AND ok = 1 AND at >= '$d0' GROUP BY kind, ml ORDER BY n DESC LIMIT 8")->fetchAll(PDO::FETCH_NUM);
     echo "ASK OFFERREACH2 today writers " . $rep . " · offers sent " . (int)$of[0] . " to " . (int)$of[1] . " people · delay after reply: <=60 min " . (int)$of[2] . ", 61-180 min " . (int)$of[3] . ", >180 min " . (int)$of[4] . ", average " . round((float)$of[5]) . " min · not made, by reason " . json_encode($why, JSON_UNESCAPED_UNICODE) . " · kind/size sent " . json_encode($kinds) . "\n";
 } catch (Throwable $e) { echo "ASK OFFERREACH2 ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
+// WHAT IS LEFT (owner 25 Nov: "how many messages are still to be made, dull to exciting"): the targets of the replacement engine and its state, by module
+try { if (!function_exists('wa_rs_report') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php'; $tg = function_exists('wa_rs_targets') ? wa_rs_targets($pdo) : []; $by = []; foreach ($tg as $id => $src) { $k = explode(':', (string)$src)[0]; $by[$k] = ($by[$k] ?? 0) + 1; }
+    $s = json_decode((string)$pdo->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_rs_state'")->fetchColumn(), true); $pairs = $s['pairs'] ?? []; $left = []; $st = [];
+    foreach ($tg as $id => $src) { $p = $pairs[$id] ?? null; $k = $p ? (string)($p['st'] ?? '?') : 'no twin yet'; $st[$k] = ($st[$k] ?? 0) + 1; }
+    $dullT = 0; foreach ($tg as $id => $src) { $b = (string)($pdo->query("SELECT body FROM wa_templates WHERE id = " . (int)$id)->fetchColumn() ?: ''); if ($b !== '' && wa_rs_dull($b)) $dullT++; }
+    echo "ASK LEFT targets in use by the engine " . count($tg) . " by module " . json_encode($by) . " · state of those " . json_encode($st) . " · of the targets still basic now " . $dullT . " · report " . (function_exists('wa_rs_report') ? json_encode(wa_rs_report($pdo)) : '-') . "\n";
+} catch (Throwable $e) { echo "ASK LEFT ERR " . substr($e->getMessage(), 0, 160) . "\n"; }
