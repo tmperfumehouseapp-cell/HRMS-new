@@ -81,6 +81,9 @@ function sku_match(string $text, string $shopSku = ''): string
     if (isset($ix['by'][$n])) return $ix['by'][$n];
     $pad = ' ' . $n . ' ';
     foreach ($ix['by'] as $k => $sku) { if (mb_strlen($k) >= 5 && mb_strpos($pad, ' ' . $k . ' ') !== false) return $sku; }
+    // a short name with its kind behind it ("BDC - Solid Perfume", "BDC Shower Gel"): the kind word is taken off and the name is looked up again, exact only
+    $n2 = trim(preg_replace('/\s+/', ' ', preg_replace('/\b(solid|wax|shower gel|showergel|body wash|beard balm|beard|soap|car perfume|attar|ittar|essential oil|roll on)\b/u', ' ', $n)));
+    if ($n2 !== '' && $n2 !== $n && isset($ix['by'][$n2])) return $ix['by'][$n2];
     return '';
 }
 
