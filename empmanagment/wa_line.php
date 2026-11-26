@@ -554,10 +554,12 @@ function wln_rescue(PDO $pdo, int $now = 0, int $cap = 150, int $budget = 20, in
     try { if (setting_get($pdo, 'wl_rescue_reopen', '') !== date('Y-m-d', $now)) { setting_set($pdo, 'wl_rescue_reopen', date('Y-m-d', $now)); $pdo->prepare("UPDATE wa_line_plan SET why = '' WHERE status = 'sent' AND (why LIKE 'rescue: no utility message%' OR why = 'rescue: working') AND sent_at >= ?")->execute([date('Y-m-d H:i:s', $now - 36 * 3600)]); } } catch (Throwable $e) { }
     // (no JOIN on the wamids: the two tables have different collations — that threw an error and nothing was rescued; the receipts are read with a bound list instead)
     // (the FAILED receipts are read first, newest first, then their plan rows by a bound wamid list — before, the 4,000 oldest sent rows of the last 3 hours were read and the newer failures were never seen once more than 4,000 had gone)
+    $__idleF = rtrim(sys_get_temp_dir(), '/') . '/hrms_wln_resc_idle_' . substr(md5(__DIR__), 0, 6); if ((float)@file_get_contents($__idleF) > microtime(true)) return 0;   // the last look found NOTHING to rescue: nobody looks again for 20 s (every rescuer re-read 1,500 receipts and 400-row lookups each round)
     $rows = []; try { $f = $pdo->prepare("SELECT wamid, err_code FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND status = 'failed' AND err_code IN ($in) ORDER BY id DESC LIMIT 1500"); $f->execute([date('Y-m-d H:i:s', $now - 36 * 3600)]); $bad = [];
         foreach ($f->fetchAll() as $m) $bad[(string)$m['wamid']] = (int)$m['err_code'];
         foreach (array_chunk(array_keys($bad), 400) as $ch) { $x = $pdo->prepare("SELECT id, phone, topic, step, tpl_id, sent_at, wamid FROM wa_line_plan WHERE status = 'sent' AND why = '' AND wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch);
             foreach ($x->fetchAll() as $r) { $r['err_code'] = $bad[(string)$r['wamid']]; $rows[] = $r; if (count($rows) >= $cap) break 2; } } } catch (Throwable $e) { return 0; }
+    if (!$rows) { @file_put_contents($__idleF, sprintf('%.3f', microtime(true) + 20)); return 0; }
     $mark = $pdo->prepare("UPDATE wa_line_plan SET why = ? WHERE id = ?"); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, tpl_id, due_at, status, why, sent_at, wamid) VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)");
     if ($k % 2 === 1) $rows = array_reverse($rows);   // the second rescuer starts from the other end
     $claim = $pdo->prepare("UPDATE wa_line_plan SET why = 'rescue: working' WHERE id = ? AND why = ''");
