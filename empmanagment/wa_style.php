@@ -17,9 +17,18 @@ if (!function_exists('wa_style_dull')) {
 }
 if (!function_exists('wa_style_pack')) {
     /** The season the messages should fit (owner 24 Nov 2026: "consider the new season: gift orders, season add-ons"). Used in the text Claude gets; it never creates a price, a date or a promise. */
+    /** 🖤 BLACK FRIDAY week (owner 26 Nov 2026: "Black Friday is on and the season messages only say winter / wedding — how was it missed?"). It was missed because the season was written by the MONTH only
+     *  (November = winter + wedding) and the festival calendar had no Black Friday. The week: the Monday before Black Friday (the day after the 4th Thursday of November) to Cyber Monday. [from, to, the Friday]. */
+    function wa_bf_window(?int $ts = null): array
+    {
+        $y = (int)date('Y', $ts ?? time()); $bf = (int)strtotime('fourth thursday of november ' . $y) + 86400;
+        return [date('Y-m-d', $bf - 4 * 86400), date('Y-m-d', $bf + 3 * 86400), date('Y-m-d', $bf)];
+    }
+    function wa_bf_on(?int $ts = null): bool { [$a, $b] = wa_bf_window($ts); $d = date('Y-m-d', $ts ?? time()); return $d >= $a && $d <= $b; }
     function wa_style_season(?int $ts = null): string
     {
         $m = (int)date('n', $ts ?? time()); $d = (int)date('j', $ts ?? time());
+        if (wa_bf_on($ts)) return 'BLACK FRIDAY week is on NOW (until Cyber Monday, ' . date('j M', strtotime(wa_bf_window($ts)[1])) . '): it is the first hook of every MARKETING message this week - say "Black Friday" by name (Black Friday deal / Black Friday combo / Black Friday special); never invent a price, a percentage, a quantity or a deadline for it. It is also winter and the wedding (shaadi) season in India, with Christmas / New Year gifting coming: warm, deep, long-lasting fragrances (oud, musk, amber, woody) and gift orders fit now. In a UTILITY message do NOT write "Black Friday" or any sale word (Meta turns it into marketing): use winter / wedding / gift there.';
         if ($m === 11 || ($m === 12 && $d <= 20)) return 'Winter is starting and it is the wedding (shaadi) season in India; Christmas / New Year gifting is coming: warm, deep, long-lasting fragrances (oud, musk, amber, woody) suit the cold; perfumes make a good gift for weddings, family and friends; a gift order or a gift add-on fits now.';
         if ($m === 12 || $m === 1) return 'It is winter, the Christmas / New Year / wedding-season gifting time; warm, deep fragrances suit the cold; gift orders and a gift add-on fit now.';
         if ($m === 2) return 'Winter is ending; Valentine\'s Day gifting; fresh-floral and sweet fragrances for gifts for a partner.';
