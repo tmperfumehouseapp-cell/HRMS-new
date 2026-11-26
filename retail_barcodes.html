@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Wholesale Barcodes — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .sub{font-size:12px; color:var(--muted);}
+  .bc-tabs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
+  .bc-tabs button{border:1.5px solid var(--line); background:#fff; border-radius:999px; padding:9px 16px; font-size:13.5px; font-weight:700; color:#374151; cursor:pointer; min-height:0; width:auto;}
+  .bc-tabs button.on{background:#111827; color:#fff; border-color:#111827;}
+  .bc-pane{display:none;} .bc-pane.on{display:block;}
+  .bc-card{background:#fff; border-radius:18px; box-shadow:var(--shadow); padding:16px 18px; margin-bottom:14px;}
+  .bc-card h2{font-size:16px; margin:0 0 4px;}
+  .bc-scan{font-size:26px !important; letter-spacing:4px; font-weight:800; text-align:center; padding:14px !important; border:2px solid #111827 !important; border-radius:14px !important; width:100%; max-width:360px;}
+  .bc-row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;} .bc-row .field{margin:0; flex:1; min-width:140px;}
+  .bc-piece{display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin-top:14px;}
+  .bc-big{font-size:30px; font-weight:800; letter-spacing:3px;}
+  .bc-st{display:inline-block; border-radius:999px; padding:3px 11px; font-size:12px; font-weight:800;}
+  .bc-st.stock{background:#e4f6ec; color:#16945a;} .bc-st.shop{background:#e8efff; color:#1d4ed8;} .bc-st.void{background:#f3f4f6; color:#6b7280;}
+  .bc-hist{margin-top:12px; border-top:1px solid var(--line);} .bc-hist div{display:flex; gap:10px; padding:8px 0; border-bottom:1px dashed var(--line); font-size:13px;} .bc-hist small{color:var(--muted); min-width:120px;}
+  .bc-list{display:flex; flex-direction:column; gap:6px; margin-top:10px;}
+  .bc-li{display:flex; gap:10px; align-items:center; background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:8px 12px; font-size:13.5px;}
+  .bc-li b{letter-spacing:1px;} .bc-li .x{margin-left:auto; background:none; border:none; font-size:18px; cursor:pointer; color:#9ca3af; min-height:0; width:auto; padding:0 4px;}
+  .bc-li.bad{background:#fef2f2; border-color:#fecaca; color:#b91c1c;}
+  .bc-ord{display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto; margin-top:6px;}
+  .bc-ord label{display:flex; gap:10px; align-items:flex-start; border:1px solid var(--line); border-radius:12px; padding:8px 12px; cursor:pointer; font-size:13px; text-transform:none; letter-spacing:0; font-weight:500; margin:0;}
+  .bc-ord label.on{border-color:#2563eb; background:#eff6ff;} .bc-ord input{width:16px; height:16px; min-height:0; margin-top:2px;}
+  .bc-pick{position:relative;} .bc-sug{position:absolute; z-index:20; left:0; right:0; top:100%; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.12); max-height:260px; overflow:auto; display:none;}
+  .bc-sug div{padding:9px 12px; cursor:pointer; font-size:13.5px; border-bottom:1px solid #f3f4f6;} .bc-sug div:hover{background:#fff4ec;} .bc-sug small{color:var(--muted); margin-left:6px;}
+  .bc-tbl{width:100%; border-collapse:collapse; font-size:13px;} .bc-tbl th{font-size:11px; text-transform:uppercase; color:var(--muted); text-align:left; padding:8px; border-bottom:1px solid var(--line);} .bc-tbl td{padding:8px; border-bottom:1px solid #f3f4f6;}
+  .bc-tbl td.n, .bc-tbl th.n{text-align:right;}
+  .tscroll{overflow-x:auto;}
+  .bc-seg{display:inline-flex; border:1px solid var(--line); border-radius:999px; overflow:hidden;} .bc-seg button{border:none; background:#fff; padding:8px 14px; font-size:13px; font-weight:700; color:var(--muted); min-height:0; cursor:pointer; width:auto;} .bc-seg button.on{background:#111827; color:#fff;}
+  .bc-msg{margin-top:10px; font-size:13.5px; font-weight:600;} .bc-msg.err{color:#b91c1c;} .bc-msg.ok{color:#16945a;}
+  /* labels: the same proven design as the store labels (31 x 21 mm roll by default) */
+  #printArea{display:none}
+  .lbl{box-sizing:border-box; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; text-align:center; background:#fff; color:#000; font-family:Arial,sans-serif; page-break-after:always; break-after:page;}
+  .lbl .nm{font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.05;}
+  .lbl .mid{flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+  .lbl svg{width:100%; display:block;}
+  .lbl .code{font-weight:800; letter-spacing:.4px; line-height:1;}
+  .prev{display:flex; gap:12px; overflow-x:auto; padding:6px 2px 10px;} .prev .lbl{zoom:2.6; box-shadow:0 0 0 1px #d1d5db; border-radius:2px; flex:0 0 auto;}
+  @media print{ @page{margin:0} body *{visibility:hidden} #printArea, #printArea *{visibility:visible} #printArea{display:block; position:absolute; left:0; top:0} .lbl:last-child{page-break-after:auto; break-after:auto} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Barcodes</h1><div class="sub" style="margin-top:2px;">One 6-digit number on every bottle: stock in → out to a shop → find any bottle by its number</div></div></div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="bc-tabs" id="tabs">
+        <button data-t="find" class="on">🔎 Find a bottle</button>
+        <button data-t="make">⬆ Stock in · make labels</button>
+        <button data-t="out">⬇ Out to a shop</button>
+        <button data-t="ret">↩ Return</button>
+        <button data-t="all">📋 All numbers</button>
+      </div>
+
+      <!-- FIND -->
+      <div class="bc-pane on" id="p-find">
+        <div class="bc-card">
+          <h2>Scan or type the 6-digit number</h2>
+          <div class="sub" style="margin-bottom:10px;">A barcode scanner types the number and presses Enter by itself.</div>
+          <input class="bc-scan" id="fCode" inputmode="numeric" maxlength="9" placeholder="000000" autocomplete="off">
+          <div id="fOut"></div>
+        </div>
+      </div>
+
+      <!-- MAKE -->
+      <div class="bc-pane" id="p-make">
+        <div class="bc-card">
+          <h2>Make numbers and print labels</h2>
+          <div class="sub" style="margin-bottom:12px;">One number per bottle. Stick the label on the bottle.</div>
+          <div class="bc-row">
+            <div class="field" style="flex:2; min-width:220px;"><label>Perfume</label><input id="mName" list="mNames" placeholder="Search or type the perfume" autocomplete="off"><datalist id="mNames"></datalist></div>
+            <div class="field" style="max-width:130px;"><label>Size</label><select id="mMl"><option value="20">20 ml</option><option value="50">50 ml</option><option value="100">100 ml</option></select></div>
+            <div class="field" style="max-width:120px;"><label>Bottles</label><input id="mQty" type="number" min="1" max="500" inputmode="numeric" value="10"></div>
+            <div class="field" style="max-width:170px;"><label>City</label><select id="mCity"></select></div>
+          </div>
+          <div style="margin-top:12px;"><span class="bc-seg" id="mMode"><button type="button" data-m="add" class="on">New stock came in (+ add to stock)</button><button type="button" data-m="label">Label stock I already have</button></span></div>
+          <div class="sub" id="mHint" style="margin-top:6px;"></div>
+          <div class="field" style="margin-top:10px;"><label>Note (optional)</label><input id="mNote" placeholder="e.g. batch from production"></div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;"><button class="btn" id="mGo" style="width:auto;">Make numbers</button>
+            <span class="sub">Label size <input id="lw" type="number" style="width:60px; min-height:0; padding:4px 6px;"> × <input id="lh" type="number" style="width:60px; min-height:0; padding:4px 6px;"> mm</span></div>
+          <div class="bc-msg" id="mMsg"></div>
+        </div>
+        <div class="bc-card" id="labCard" style="display:none;">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"><h2 id="labTitle" style="margin:0;"></h2><button class="btn" id="btnPrint" style="width:auto; margin-left:auto;">🖨 Print labels</button></div>
+          <div class="sub" style="margin:4px 0 6px;">When printing: Scale 100%, margins None, paper = the label size.</div>
+          <div class="prev" id="labPrev"></div>
+        </div>
+      </div>
+
+      <!-- OUT -->
+      <div class="bc-pane" id="p-out">
+        <div class="bc-card">
+          <h2>Bottles going to a shop</h2>
+          <div class="field bc-pick" style="max-width:460px;"><label>Shop</label><input id="oShopQ" placeholder="Search shop / area / owner…" autocomplete="off"><div class="bc-sug" id="oSug"></div></div>
+          <div id="oShopBox" class="sub"></div>
+          <div id="oOrders"></div>
+          <div class="field" style="margin-top:12px;"><label>Scan the bottles</label><input class="bc-scan" id="oCode" inputmode="numeric" maxlength="9" placeholder="000000" autocomplete="off"></div>
+          <div class="bc-list" id="oList"></div>
+          <div style="display:flex; gap:10px; margin-top:12px; align-items:center; flex-wrap:wrap;"><button class="btn" id="oSave" style="width:auto;">Save</button><button class="btn secondary" id="oClear" style="width:auto;">Clear list</button><span class="sub" id="oNote"></span></div>
+          <div class="bc-msg" id="oMsg"></div>
+        </div>
+      </div>
+
+      <!-- RETURN -->
+      <div class="bc-pane" id="p-ret">
+        <div class="bc-card">
+          <h2>Bottles coming back from a shop</h2>
+          <div class="sub" style="margin-bottom:10px;">Each bottle goes back in stock (+1). Do not also make a Return order for these bottles, or the stock is counted twice.</div>
+          <input class="bc-scan" id="rCode" inputmode="numeric" maxlength="9" placeholder="000000" autocomplete="off">
+          <div class="bc-list" id="rList"></div>
+          <div class="field" style="margin-top:10px; max-width:460px;"><label>Note (optional)</label><input id="rNote" placeholder="e.g. not selling"></div>
+          <div style="display:flex; gap:10px;"><button class="btn" id="rSave" style="width:auto;">Back in stock</button><button class="btn secondary" id="rClear" style="width:auto;">Clear list</button></div>
+          <div class="bc-msg" id="rMsg"></div>
+        </div>
+      </div>
+
+      <!-- ALL -->
+      <div class="bc-pane" id="p-all">
+        <div class="bc-card">
+          <div class="bc-row">
+            <div class="field"><label>Search</label><input id="aQ" placeholder="number, perfume or order no" autocomplete="off"></div>
+            <div class="field bc-pick"><label>Shop</label><input id="aShopQ" placeholder="All shops" autocomplete="off"><div class="bc-sug" id="aSug"></div></div>
+            <div class="field" style="max-width:170px;"><label>Where</label><select id="aSt"><option value="">In stock + at shops</option><option value="stock">In stock</option><option value="shop">At shops</option><option value="void">Cancelled</option></select></div>
+            <div class="field" style="max-width:170px;"><label>City</label><select id="aCity"></select></div>
+          </div>
+          <div class="stat-grid" id="aKp" style="margin-top:12px;"></div>
+          <h3 style="font-size:14px; margin:6px 0;">By perfume and size</h3>
+          <div class="tscroll"><table class="bc-tbl no-stack"><thead><tr><th>Perfume</th><th>Size</th><th class="n">In stock</th><th class="n">At shops</th><th class="n">Cancelled</th></tr></thead><tbody id="aSum"></tbody></table></div>
+          <div style="display:flex; align-items:center; gap:10px; margin:16px 0 6px;"><h3 style="font-size:14px; margin:0;">Numbers</h3><button class="btn secondary" id="aPrint" style="width:auto; margin-left:auto; min-height:0; padding:7px 12px; font-size:12.5px;">🖨 Reprint these labels</button></div>
+          <div class="tscroll"><table class="bc-tbl no-stack"><thead><tr><th>Number</th><th>Perfume</th><th>Where</th><th>Order</th><th>Since</th><th></th></tr></thead><tbody id="aRows"><tr><td colspan="6" class="sub">Loading…</td></tr></tbody></table></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div id="printArea"></div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js?v=14"></script>
+<script src="assets/js/layout.js?v=33"></script>
+<script src="assets/js/jsbarcode.code128.min.js"></script>
+<script>
+  guardPage();
+  renderSidebar('retail_barcodes');
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtDT = (d) => d ? new Date(String(d).replace(' ', 'T')).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  const clean = (v) => String(v || '').replace(/\D/g, '');
+  function showAlert(msg, type = 'success') { $('alertBox').innerHTML = `<div class="alert ${type}">${esc(msg)}</div>`; setTimeout(() => { $('alertBox').innerHTML = ''; }, 4000); }
+  const msg = (id, t, bad) => { $(id).className = 'bc-msg ' + (bad ? 'err' : 'ok'); $(id).textContent = t || ''; };
+  const ST = { stock: 'In stock', shop: 'At shop', void: 'Cancelled' };
+  const ACT = { in: '⬆ Made + added to stock', label: '🏷 Label made (stock already counted)', out: '⬇ Out to shop', return: '↩ Back in stock', void: '✕ Cancelled' };
+  let curCity = ''; try { curCity = localStorage.getItem('retail_city') || ''; } catch (e) {}
+  let label = { w: 31, h: 21 }; try { const l = JSON.parse(localStorage.getItem('rbc_label') || 'null'); if (l && l.w > 5 && l.h > 5) label = l; } catch (e) {}
+  $('lw').value = label.w; $('lh').value = label.h;
+  ['lw', 'lh'].forEach(id => $(id).addEventListener('change', () => { label = { w: Math.max(10, +$('lw').value || 31), h: Math.max(10, +$('lh').value || 21) }; try { localStorage.setItem('rbc_label', JSON.stringify(label)); } catch (e) {} if (lastBatch) drawLabels(lastBatch); }));
+
+  // tabs
+  function tab(t) {
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+    document.querySelectorAll('.bc-pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + t));
+    const f = { find: 'fCode', out: 'oCode', ret: 'rCode' }[t]; if (f) setTimeout(() => $(f).focus(), 50);
+    if (t === 'all') aLoad();
+  }
+  $('tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) tab(b.dataset.t); });
+  // a scanner types the digits and Enter; a person types 6 digits (Enter not needed)
+  function scanBox(inp, fn) {
+    let t = null;
+    const go = () => { const c = clean(inp.value); if (c.length !== 6) return; inp.value = ''; fn(c); };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const c = clean(inp.value); if (c.length && c.length !== 6) { showAlert('A number has 6 digits.', 'error'); inp.select(); return; } go(); } });
+    inp.addEventListener('input', () => { clearTimeout(t); if (clean(inp.value).length === 6) t = setTimeout(go, 350); });
+  }
+
+  // cities + perfumes + shops
+  let cities = [], shops = [];
+  async function loadBase() {
+    try { const d = await api.get('retail.stock', {}); cities = d.cities || []; } catch (e) {}
+    if (!curCity && cities.length) curCity = cities[0];
+    $('mCity').innerHTML = cities.map(c => `<option${c === curCity ? ' selected' : ''}>${esc(c)}</option>`).join('');
+    $('aCity').innerHTML = '<option value="">All cities</option>' + cities.map(c => `<option${c === curCity ? ' selected' : ''}>${esc(c)}</option>`).join('');
+    try { const d = await api.get('retail.perfumes', {}); const names = new Set((d.perfumes || []).map(n => n.replace(/\s*\d+(\.\d+)?\s*ml\b/i, '').trim()).filter(Boolean)); $('mNames').innerHTML = [...names].map(n => `<option value="${esc(n)}">`).join(''); } catch (e) {}
+    try { const d = await api.get('retail.shops', {}); shops = (d.shops || []).filter(s => (s.status || 'active') !== 'inactive').map(s => ({ id: Number(s.shop_id), name: s.shop_name || '', area: s.area || '', owner: s.owner_name || '', city: s.city || '' })); } catch (e) {}
+  }
+  function shopPicker(inp, box, onPick) {
+    const draw = () => { const q = inp.value.trim().toLowerCase(); const rows = shops.filter(s => !q || (s.name + ' ' + s.area + ' ' + s.owner + ' ' + s.city).toLowerCase().includes(q)).slice(0, 40);
+      box.innerHTML = rows.map(s => `<div data-id="${s.id}">${esc(s.name)}<small>${esc([s.area, s.city].filter(Boolean).join(' · '))}</small></div>`).join('') || '<div>No shop found</div>'; box.style.display = 'block'; };
+    inp.addEventListener('focus', draw); inp.addEventListener('input', draw);
+    inp.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 200));
+    box.addEventListener('mousedown', (e) => { const r = e.target.closest('[data-id]'); if (!r) return; e.preventDefault(); const s = shops.find(x => x.id === Number(r.dataset.id)); if (s) { inp.value = s.name; box.style.display = 'none'; onPick(s); } });
+  }
+
+  // ---- FIND
+  scanBox($('fCode'), async (c) => {
+    $('fOut').innerHTML = '<div class="sub" style="margin-top:12px;">Looking…</div>';
+    try {
+      const d = await api.get('retail.bc_scan', { code: c }), p = d.piece;
+      const where = p.status === 'shop' ? `At <b>${esc(p.shop_name)}</b>${p.shop_area ? ' · ' + esc(p.shop_area) : ''}${p.order_no ? ' · order <b>' + esc(p.order_no) + '</b>' + (p.order ? ' (' + esc(p.order.order_type) + ', ' + esc(p.order.order_date) + ')' : '') : ' · no order (taken off stock by barcode)'}` : (p.status === 'stock' ? `In stock · ${esc(p.city)}` : 'Cancelled number');
+      $('fOut').innerHTML = `<div class="bc-piece"><div><div class="bc-big">${esc(p.code)}</div><span class="bc-st ${p.status}">${ST[p.status] || p.status}</span></div>
+        <div style="flex:1; min-width:220px;"><div style="font-size:18px; font-weight:800;">${esc(p.product_name)} · ${esc(p.ml)} ml</div><div style="margin-top:4px; font-size:14px;">${where}</div><div class="sub" style="margin-top:4px;">Made ${esc(fmtDT(p.created_at))} · batch ${esc(p.batch)} · ${esc(p.city)}</div></div></div>
+        <div class="bc-hist">${d.history.map(h => `<div><small>${esc(fmtDT(h.at))}</small><span>${ACT[h.action] || esc(h.action)}${h.shop_name ? ' · ' + esc(h.shop_name) : ''}${h.order_no ? ' · order ' + esc(h.order_no) : ''}${h.note ? ' · ' + esc(h.note) : ''}${h.by_name ? ' · by ' + esc(h.by_name) : ''}</span></div>`).join('')}</div>`;
+    } catch (e) { $('fOut').innerHTML = `<div class="bc-msg err">${esc(e.message)}</div>`; }
+  });
+
+  // ---- MAKE
+  let mMode = 'add', lastBatch = null;
+  const mHint = () => { $('mHint').textContent = mMode === 'add' ? 'The bottles are added to the Stock page too (+ pieces in the city you pick).' : 'Only labels: the Stock page is not changed (these bottles are already counted there).'; };
+  mHint();
+  $('mMode').addEventListener('click', (e) => { const b = e.target.closest('[data-m]'); if (!b) return; mMode = b.dataset.m; $('mMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); mHint(); });
+  $('mGo').addEventListener('click', async () => {
+    const b = $('mGo'); b.disabled = true; msg('mMsg', '');
+    try {
+      const d = await api.post('retail.bc_make', { product_name: $('mName').value, ml: $('mMl').value, qty: +$('mQty').value || 0, city: $('mCity').value, add_stock: mMode === 'add' ? 1 : 0, note: $('mNote').value });
+      msg('mMsg', d.message + (d.warning ? ' ⚠ ' + d.warning : ''), !!d.warning);
+      lastBatch = d.codes.map(c => ({ code: c, name: d.product_name, ml: d.ml })); drawLabels(lastBatch);
+    } catch (e) { msg('mMsg', e.message, true); }
+    b.disabled = false;
+  });
+  function labelNode(x) {
+    const k = label.h / 21, d = document.createElement('div'); d.className = 'lbl'; d.style.width = label.w + 'mm'; d.style.height = label.h + 'mm'; d.style.padding = `${0.6 * k}mm ${1.6 * k}mm ${0.5 * k}mm`;
+    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = x.name; nm.style.fontSize = Math.max(4.4, Math.min(7.4, 130 / Math.max(1, x.name.length))) * k + 'pt';
+    const ml = document.createElement('div'); ml.className = 'nm'; ml.textContent = x.ml + ' ml'; ml.style.fontSize = 6 * k + 'pt';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    JsBarcode(svg, x.code, { format: 'CODE128C', width: 3, height: 80, margin: 0, displayValue: false });   // 6 digits in Code 128-C = few, thick bars
+    svg.setAttribute('viewBox', '0 0 ' + String(svg.getAttribute('width')).replace('px', '') + ' 80'); svg.removeAttribute('width'); svg.removeAttribute('height');
+    svg.setAttribute('preserveAspectRatio', 'none'); svg.style.height = (label.h * 0.45) + 'mm';
+    const code = document.createElement('div'); code.className = 'code'; code.style.fontSize = Math.min(20, 6 * k) + 'pt'; code.textContent = x.code;
+    const mid = document.createElement('div'); mid.className = 'mid'; mid.append(svg, code);
+    d.append(nm, ml, mid); return d;
+  }
+  let toPrint = [];
+  function drawLabels(list) {
+    toPrint = list; $('labCard').style.display = '';
+    $('labTitle').textContent = list.length + ' label' + (list.length === 1 ? '' : 's') + ' · ' + list[0].name + ' ' + list[0].ml + ' ml';
+    const p = $('labPrev'); p.innerHTML = ''; list.slice(0, 12).forEach(x => p.appendChild(labelNode(x)));
+  }
+  async function printList(list) {
+    if (!list.length) return; const pa = $('printArea'); pa.innerHTML = ''; list.forEach(x => pa.appendChild(labelNode(x)));
+    const st = document.createElement('style'); st.textContent = `@page{size:${label.w}mm ${label.h}mm; margin:0}`; pa.appendChild(st);
+    await new Promise(r => setTimeout(r, 100)); window.print();
+  }
+  $('btnPrint').addEventListener('click', () => printList(toPrint));
+
+  // ---- OUT
+  let oShop = null, oOrder = 0, oCodes = [];
+  shopPicker($('oShopQ'), $('oSug'), async (s) => {
+    oShop = s; oOrder = 0; $('oShopBox').textContent = [s.area, s.owner, s.city].filter(Boolean).join(' · ');
+    $('oOrders').innerHTML = '<div class="sub">Loading orders…</div>';
+    try {
+      const d = await api.get('retail.bc_orders', { shop_id: s.id });
+      $('oOrders').innerHTML = `<div class="field" style="margin-top:10px;"><label>Which order are these bottles for?</label><div class="bc-ord" id="oOrdList">
+        <label class="on"><input type="radio" name="oo" value="0" checked><span><b>No order</b> · the bottles come off stock here</span></label>
+        ${d.orders.map(o => `<label><input type="radio" name="oo" value="${o.order_id}"><span><b>${esc(o.order_no)}</b> · ${esc(o.order_type)} · ${esc(o.order_date)} · ${o.qty} pcs · ${o.linked}/${o.qty} have a number<br><small class="sub">${esc(o.items.map(i => i.qty + ' × ' + i.product_name + ' ' + i.ml + ' ml').join(', '))}</small></span></label>`).join('')}</div></div>`;
+      $('oOrdList').addEventListener('change', (e) => { oOrder = Number(e.target.value) || 0; $('oOrdList').querySelectorAll('label').forEach(l => l.classList.toggle('on', l.querySelector('input').checked)); oHint(); });
+      oHint();
+    } catch (e) { $('oOrders').innerHTML = `<div class="bc-msg err">${esc(e.message)}</div>`; }
+    $('oCode').focus();
+  });
+  const oHint = () => { $('oNote').textContent = oOrder ? 'Linked to the order: stock is not changed again (the order already took it).' : 'No order: each bottle is taken off stock.'; };
+  async function addCode(list, c, drawFn, wantStatus) {
+    if (list.some(x => x.code === c)) { showAlert(c + ' is already in the list.', 'error'); return; }
+    const x = { code: c, txt: 'checking…', bad: false }; list.push(x); drawFn();
+    try { const d = await api.get('retail.bc_scan', { code: c }), p = d.piece; x.txt = p.product_name + ' · ' + p.ml + ' ml' + (p.status === 'shop' ? ' · at ' + p.shop_name : ' · ' + (ST[p.status] || p.status));
+      if (p.status !== wantStatus) { x.bad = true; x.txt += wantStatus === 'stock' ? ' — not in stock' : ' — not at a shop'; } }
+    catch (e) { x.bad = true; x.txt = e.message; }
+    drawFn();
+  }
+  const listHtml = (list) => list.map((x, i) => `<div class="bc-li${x.bad ? ' bad' : ''}"><b>${esc(x.code)}</b><span>${esc(x.txt)}</span><button class="x" data-i="${i}" aria-label="Remove">×</button></div>`).join('');
+  const oDraw = () => { $('oList').innerHTML = listHtml(oCodes) + (oCodes.length ? `<div class="sub">${oCodes.filter(x => !x.bad).length} bottle(s) ready</div>` : ''); };
+  scanBox($('oCode'), (c) => addCode(oCodes, c, oDraw, 'stock'));
+  $('oList').addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (b) { oCodes.splice(+b.dataset.i, 1); oDraw(); } });
+  $('oClear').addEventListener('click', () => { oCodes = []; oDraw(); msg('oMsg', ''); });
+  $('oSave').addEventListener('click', async () => {
+    if (!oShop) { msg('oMsg', 'Pick the shop first.', true); return; }
+    const codes = oCodes.filter(x => !x.bad).map(x => x.code); if (!codes.length) { msg('oMsg', 'Scan the bottles first.', true); return; }
+    const b = $('oSave'); b.disabled = true;
+    try { const d = await api.post('retail.bc_out', { codes, shop_id: oShop.id, order_id: oOrder }); msg('oMsg', d.message); oCodes = []; oDraw(); }
+    catch (e) { msg('oMsg', e.message, true); }
+    b.disabled = false;
+  });
+
+  // ---- RETURN
+  let rCodes = [];
+  const rDraw = () => { $('rList').innerHTML = listHtml(rCodes); };
+  scanBox($('rCode'), (c) => addCode(rCodes, c, rDraw, 'shop'));
+  $('rList').addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (b) { rCodes.splice(+b.dataset.i, 1); rDraw(); } });
+  $('rClear').addEventListener('click', () => { rCodes = []; rDraw(); msg('rMsg', ''); });
+  $('rSave').addEventListener('click', async () => {
+    const codes = rCodes.filter(x => !x.bad).map(x => x.code); if (!codes.length) { msg('rMsg', 'Scan the bottles first.', true); return; }
+    const b = $('rSave'); b.disabled = true;
+    try { const d = await api.post('retail.bc_return', { codes, note: $('rNote').value }); msg('rMsg', d.message); rCodes = []; rDraw(); } catch (e) { msg('rMsg', e.message, true); }
+    b.disabled = false;
+  });
+
+  // ---- ALL
+  let aShop = null, aRows = [], aT = null;
+  shopPicker($('aShopQ'), $('aSug'), (s) => { aShop = s; aLoad(); });
+  $('aShopQ').addEventListener('input', () => { if (!$('aShopQ').value.trim() && aShop) { aShop = null; aLoad(); } });
+  $('aQ').addEventListener('input', () => { clearTimeout(aT); aT = setTimeout(aLoad, 300); });
+  ['aSt', 'aCity'].forEach(id => $(id).addEventListener('change', aLoad));
+  async function aLoad() {
+    const p = { status: $('aSt').value, q: $('aQ').value.trim() }; if ($('aCity').value) p.city = $('aCity').value; if (aShop) p.shop_id = aShop.id;
+    try {
+      const d = await api.get('retail.bc_list', p); aRows = d.rows;
+      $('aKp').innerHTML = `<div class="stat-card"><div class="label">In stock (with a number)</div><div class="value">${d.totals.stock}</div></div><div class="stat-card"><div class="label">At shops</div><div class="value">${d.totals.shop}</div></div><div class="stat-card"><div class="label">Cancelled</div><div class="value">${d.totals.void}</div></div>`;
+      $('aSum').innerHTML = d.summary.map(s => `<tr><td>${esc(s.product_name)}</td><td>${esc(s.ml)} ml</td><td class="n">${s.stock}</td><td class="n">${s.shop}</td><td class="n">${s.void}</td></tr>`).join('') || '<tr><td colspan="5" class="sub">No numbers yet. Make them in “Stock in · make labels”.</td></tr>';
+      $('aRows').innerHTML = d.rows.map(r => `<tr><td><b style="letter-spacing:1px;">${esc(r.code)}</b></td><td>${esc(r.product_name)} · ${esc(r.ml)} ml</td><td><span class="bc-st ${r.status}">${r.status === 'shop' ? esc(r.shop_name) : (ST[r.status] || r.status)}</span>${r.status === 'stock' ? ' <span class="sub">' + esc(r.city) + '</span>' : ''}</td><td>${esc(r.order_no || '')}</td><td class="sub">${esc(fmtDT(r.moved_at || r.created_at))}</td><td>${r.status === 'stock' ? `<button class="btn secondary" data-void="${esc(r.code)}" style="width:auto; min-height:0; padding:4px 10px; font-size:12px;">Cancel</button>` : ''}</td></tr>`).join('') + (d.more ? '<tr><td colspan="6" class="sub">Showing the latest 600 — search to narrow.</td></tr>' : '') || '<tr><td colspan="6" class="sub">Nothing found.</td></tr>';
+    } catch (e) { $('aRows').innerHTML = `<tr><td colspan="6" class="bc-msg err">${esc(e.message)}</td></tr>`; }
+  }
+  $('aRows').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-void]'); if (!b) return;
+    if (!confirm('Cancel number ' + b.dataset.void + '? (a label printed by mistake or a broken bottle — stock is not changed)')) return;
+    try { const d = await api.post('retail.bc_void', { code: b.dataset.void }); showAlert(d.message); aLoad(); } catch (er) { showAlert(er.message, 'error'); }
+  });
+  $('aPrint').addEventListener('click', () => { const l = aRows.filter(r => r.status !== 'void').map(r => ({ code: r.code, name: r.product_name, ml: r.ml })); if (!l.length) return; if (l.length > 50 && !confirm('Print ' + l.length + ' labels?')) return; printList(l); });
+
+  // opened from the Stock page (+ Add stock): Stock in with the perfume filled in
+  const QS = new URLSearchParams(location.search);
+  loadBase().then(() => {
+    if (QS.get('t') !== 'make') return;
+    if (QS.get('city')) { const c = QS.get('city'); if (![...$('mCity').options].some(o => o.value === c)) $('mCity').insertAdjacentHTML('beforeend', `<option>${esc(c)}</option>`); $('mCity').value = c; }
+  });
+  if (QS.get('t') === 'make') {
+    tab('make'); if (QS.get('name')) $('mName').value = QS.get('name');
+    const ml = String(parseFloat(QS.get('ml') || '')); if (['20', '50', '100'].includes(ml)) $('mMl').value = ml; else if (ml !== 'NaN') $('mMl').insertAdjacentHTML('beforeend', `<option value="${esc(ml)}" selected>${esc(ml)} ml</option>`);
+    if (QS.get('qty')) $('mQty').value = QS.get('qty');
+    setTimeout(() => (QS.get('name') ? $('mQty') : $('mName')).focus(), 300);
+  } else setTimeout(() => $('fCode').focus(), 300);
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

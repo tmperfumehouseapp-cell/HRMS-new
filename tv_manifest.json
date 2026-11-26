@@ -1,0 +1,14 @@
+{
+  "name": "TM Perfume House – Store TV",
+  "short_name": "Store TV",
+  "start_url": "store_display_tv.html",
+  "scope": "store_display_tv.html",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#FAF1E2",
+  "theme_color": "#FAF1E2",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

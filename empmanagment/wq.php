@@ -185,6 +185,24 @@ function wq_campaign_before(PDO $pdo, string $phone, int $ts, int $days): ?array
     } catch (Throwable $e) { }
     return null;
 }
+/** WE WROTE FIRST (owner, 26 Nov): the last campaign / follow-up / win-back template of ours that reached this customer before $ts — any day, ['ts','who'] or null. Used only for a customer who had never
+ *  written to us: their first message is then an answer to OUR message (a Campaign query), not a fresh query. wq_campaign_before() only knows the campaign engine's own sends of the last few days; the
+ *  follow-up module (who = 'followup') sends as many messages as the campaigns do and its replies were all typed "New". */
+function wq_we_wrote_first(PDO $pdo, string $phone, int $ts): ?array
+{
+    try {
+        $q = $pdo->prepare("SELECT who, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id = 0 AND who IN ('campaign', 'followup', 'recover') AND mtype = 'template' AND status <> 'failed' AND ts <= ? ORDER BY id DESC LIMIT 1");
+        $q->execute([$phone, wq_dt($ts)]); $r = $q->fetch();
+        return $r && wq_ts($r['ts']) > 0 ? ['ts' => wq_ts($r['ts']), 'who' => (string)$r['who']] : null;
+    } catch (Throwable $e) { return null; }
+}
+/** True when the query's first message is an ad's / a promotion link's ready-made text ("I want to buy 7 × 20 ml in 2170", "Hey TMPerfumehouse, I need the …") and NOT an answer (swipe / button) to a message of ours:
+ *  that customer tapped an ad or a link — a fresh query even when a campaign reached them before (same rule as wa_more.php). */
+function wq_came_by_link(PDO $pdo, array $ctx): bool
+{
+    $b = (string)($ctx['body'] ?? ''); if ($b === '' || !function_exists('wa_is_ad_text') || !(wa_is_ad_text($b) || preg_match('/^\s*hey\s+tm\s*perfume/iu', $b))) return false;
+    try { $q = $pdo->prepare("SELECT reply_to FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id LIMIT 1"); $q->execute([(string)$ctx['phone'], wq_dt((int)$ctx['T'] - 120)]); return trim((string)$q->fetchColumn()) === ''; } catch (Throwable $e) { return true; }
+}
 /** True when the customer had written to us in the 30 hours BEFORE $ts (a query stays a New query for 30 hours): their query was still open, so a campaign we send then does not turn it into a Campaign. */
 function wq_chat_was_live(PDO $pdo, string $phone, int $ts): bool
 {
@@ -256,6 +274,12 @@ function wq_decide(PDO $pdo, array $ctx): array
     if (!isset($sig['campaign'])) {
         foreach ($ctx['tags'] as $t) if ((string)$t['tag'] === 'campaign' && wq_ts($t['at']) > 0 && wq_ts($t['at']) <= $T) { $sig['campaign'] = ['ts' => wq_ts($t['at']), 'reason' => 'campaign customer: chat window had closed / imported for campaigns']; break; }
         if (!isset($sig['campaign']) && $ctx['prev_in'] > 0 && $T - $ctx['prev_in'] >= 86400) { $sig['campaign'] = ['ts' => $ctx['prev_in'] + 86400, 'reason' => 'campaign customer: wrote again after the 24-hour chat window closed']; wq_tag_put($pdo, (string)$ctx['phone'], 'campaign', $ctx['prev_in'] + 86400); }
+    }
+    // we wrote first: this customer had never written to us and a campaign / follow-up / win-back message of ours reached them before (any day) → an answer to OUR message, never a fresh query.
+    // Not when they came by an ad / promotion link with its ready-made text (and did not answer a message of ours): that stays fresh.
+    if (!isset($sig['campaign']) && $ctx['prev_in'] === 0 && ($w = wq_we_wrote_first($pdo, (string)$ctx['phone'], $T)) && !wq_came_by_link($pdo, $ctx)) {
+        $sig['campaign'] = ['ts' => (int)$w['ts'], 'reason' => 'campaign customer: we wrote first (' . ($w['who'] === 'followup' ? 'follow-up message' : ($w['who'] === 'recover' ? 'win-back message' : 'campaign')) . ', sent ' . wq_today_label((int)$w['ts']) . ')'];
+        wq_tag_put($pdo, (string)$ctx['phone'], 'campaign', (int)$w['ts']);
     }
     if ($sig) {
         $best = null; $rank = ['meta' => 3, 'campaign' => 2, 'community' => 1];
@@ -498,9 +522,32 @@ function wq_send_guard(PDO $pdo, array $c, string $text, array $in): string
 // ------------------------------------------------------------------------------------------------------------------ orders (indexed copy of recent Shopify orders, by last 10 digits)
 function wq_phone10($p): string { $d = preg_replace('/\D+/', '', (string)$p); return strlen($d) >= 10 ? substr($d, -10) : ''; }
 /** Copies recent shop_orders into wq_ord (phone10, name, total, time). Incremental by created_at with a 2-day overlap; idempotent. */
-function wq_ord_sync(PDO $pdo, float $deadline, int $max = 4000): int
+/** 🛍 owner (24 Nov): the WEBSITE orders (new TM Perfume House shop, saved in manual_orders with channel 'TM Store' once paid) go into the same order copy,
+ *  so the WhatsApp Sales board counts them in orders, revenue and ticket size (the 🎁 gift perfume is in their total). Last 40 days, every 2 minutes; the key is 'tms|<shop order number>'. */
+function wq_ord_sync_web(PDO $pdo): int
 {
     $n = 0;
+    try {
+        if (wq_ts(wq_meta_get($pdo, 'ord_web_at', '')) > wq_now() - 120) return 0;
+        wq_meta_put($pdo, 'ord_web_at', wq_dt());
+        if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE 'mp_no'")->fetch()) return 0;
+        $q = $pdo->prepare("SELECT mp_no, phone, total, order_date FROM manual_orders WHERE channel = 'TM Store' AND mp_no <> '' AND payment_status <> 'pending' AND total > 0 AND order_date >= ? LIMIT 5000");
+        $q->execute([wq_dt(wq_now() - 40 * 86400)]);
+        $ins = $pdo->prepare("INSERT INTO wq_ord (okey, phone, order_name, total, created_at) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE phone = VALUES(phone), total = VALUES(total), created_at = VALUES(created_at)");
+        $touched = [];
+        foreach ($q->fetchAll() as $r) {
+            $p = wq_phone10($r['phone']); if ($p === '') continue;
+            $ins->execute([mb_substr('tms|' . $r['mp_no'], 0, 90), $p, mb_substr((string)$r['mp_no'], 0, 40), (float)$r['total'], $r['order_date']]);
+            if ($ins->rowCount() > 0) { $touched[$p] = 1; $n++; }   // new, or its total / time changed
+        }
+        if ($touched) { foreach (array_chunk(array_keys($touched), 300) as $ch) $pdo->prepare("UPDATE wq_qstat SET stat_at = NULL WHERE final = 0 AND phone IN (" . wq_in($ch) . ")")->execute($ch); }
+    } catch (Throwable $e) { error_log('wq_ord_sync_web: ' . $e->getMessage()); }
+    return $n;
+}
+
+function wq_ord_sync(PDO $pdo, float $deadline, int $max = 4000): int
+{
+    $n = wq_ord_sync_web($pdo);
     try {
         $cur = wq_meta_get($pdo, 'ord_cursor', ''); $first = $cur === '';
         if ($cur === '') $cur = wq_dt(wq_now() - 100 * 86400);
@@ -1254,6 +1301,28 @@ function wq_status(PDO $pdo): array
 /**
  * One tick: idempotent, chunked, time-boxed (~8 s), never throws, GET_LOCK('wq_tick', 0). $opt['light'] = only the latency-critical steps (used by wa_tick, which runs every few seconds).
  */
+/** One-time correction (26 Nov; second pass from 24 Nov 10:00 — owner: "it has been like this for 3 days, correct it"): queries opened from 24 Nov 10:00 that were typed "New — first message ever" although a campaign / follow-up / win-back message of ours had reached the customer first
+ *  (wq_decide did not know the follow-up module) become Campaign queries, as new ones now do. Hand-set types are not touched. A few per round; done once (wq_meta 'wrote_first_fix2'; the first pass, from 26 Nov, was 'wrote_first_fix'). */
+function wq_wrote_first_fix(PDO $pdo, float $deadline): int
+{
+    $cur = wq_meta_get($pdo, 'wrote_first_fix2', '0'); if ($cur === 'done') return 0; $n = 0;
+    try {
+        $st = $pdo->prepare("SELECT q.* FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id WHERE q.id > ? AND q.opened_at >= '2026-11-24 10:00:00' AND t.type = 'new' AND t.auto = 1 AND t.reason LIKE 'first message ever%' ORDER BY q.id LIMIT 400");
+        $st->execute([(int)$cur]); $rows = $st->fetchAll(); if (!$rows) { wq_meta_put($pdo, 'wrote_first_fix2', 'done'); return 0; }
+        foreach ($rows as $q) {
+            $ctx = wq_ctx($pdo, $q);
+            if ($ctx['prev_in'] === 0 && ($w = wq_we_wrote_first($pdo, (string)$q['phone'], (int)$ctx['T'])) && !wq_came_by_link($pdo, $ctx)) {
+                $camp = $ctx['camp'] ?: [];
+                wq_qtype_set($pdo, $q, ['type' => 'campaign', 'reason' => 'campaign customer: we wrote first (' . ($w['who'] === 'followup' ? 'follow-up message' : ($w['who'] === 'recover' ? 'win-back message' : 'campaign')) . ', sent ' . wq_today_label((int)$w['ts']) . ') - was New, corrected', 'rule_id' => 0, 'camp_id' => (int)($camp['camp_id'] ?? 0), 'camp_emp' => (int)($camp['emp'] ?? 0), 'st' => 'ok'], 0, true);
+                wq_tag_put($pdo, (string)$q['phone'], 'campaign', (int)$w['ts']); wq_retag_after_change($pdo, (string)$q['phone'], 'new'); $n++;
+            }
+            wq_meta_put($pdo, 'wrote_first_fix2', (string)(int)$q['id']);
+            if (microtime(true) > $deadline) break;
+        }
+        if ($n) wq_log($pdo, 'we wrote first: ' . $n . ' queries typed New became Campaign (one-time correction)');
+    } catch (Throwable $e) { error_log('wq_wrote_first_fix: ' . $e->getMessage()); }
+    return $n;
+}
 function wq_tick(PDO $pdo, array $opt = []): array
 {
     $t0 = microtime(true); $r = [];
@@ -1265,6 +1334,7 @@ function wq_tick(PDO $pdo, array $opt = []): array
             $GLOBALS['__wq_memo'] = []; wq_deps($pdo);
             $r['noans'] = wq_noans_scan($pdo, $deadline);
             $bf = wq_backfill_chunk($pdo, $deadline, !empty($opt['light']) ? 20 : 100); $r['typed'] = $bf['typed']; $r['untyped_left'] = $bf['left'];
+            if (microtime(true) < $deadline) $r['wrote_first_fix'] = wq_wrote_first_fix($pdo, min($deadline, microtime(true) + 3));   // one-time: answers to our own follow-up messages that were typed "New". Here (also in the light round, 3 s at most) and not with the heavy jobs below: those often use up the whole budget, so it never ran
             if (empty($opt['light'])) {
                 if (microtime(true) < $deadline) $r['orders'] = wq_ord_sync($pdo, $deadline);
                 if (microtime(true) < $deadline) $r['stats'] = wq_stat_chunk($pdo, $deadline);

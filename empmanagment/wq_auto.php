@@ -23,7 +23,7 @@ function waa_tables(PDO $pdo): bool
     catch (Throwable $e) { error_log('waa_tables: ' . $e->getMessage()); return $ok = false; }
 }
 /** The master switch. OFF until the owner starts it (setting waa_off = 0): the table and the buttons work, but nothing is given out and no overnight limit applies. */
-function waa_engine_on(PDO $pdo): bool { if ((string)setting_get($pdo, 'wag_open_market', '') === '1') return false; /* 🏪 OPEN MARKET (owner, 21 Nov): nobody is given a chat; set wag_open_market = 0 to allow automatic assignment again */ return (string)setting_get($pdo, 'waa_off', '1') === '0' && (string)setting_get($pdo, 'waa_on_day', '') === waa_day($pdo); }   // started for THIS business day (10 am → 10 am): it must be started again every morning
+function waa_engine_on(PDO $pdo): bool { if (function_exists('wa_query_mode')) return wa_query_mode($pdo) === 'aa'; return (string)setting_get($pdo, 'wag_open_market', '') !== '1' && (string)setting_get($pdo, 'waa_off', '1') === '0'; }   // 🔀 the Query mode decides (Team performance → Query mode); it stays on until an Admin changes it
 function waa_dt(int $t): string { return date('Y-m-d H:i:s', $t); }
 function waa_day(PDO $pdo): string { return function_exists('biz_today') ? (string)biz_today($pdo) : date('Y-m-d'); }
 /** Start of the business day (10 am by the panel's day timing). */
@@ -172,7 +172,16 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
     if ((int)$c['optout'] === 1 || (int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') { $dbg['optout_cx']++; return false; }
     if (!$c['last_in_at'] || strtotime((string)$c['last_in_at']) < $now - 86400 + 600) { $dbg['old']++; return false; }
     static $hq = null, $bq = null; if ($hq === null) { $humanSql = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0"; $hq = $pdo->prepare("SELECT 1 FROM wa_contacts c JOIN wa_messages h ON h.phone = c.phone WHERE c.phone = ? AND $humanSql LIMIT 1"); $bq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1"); }
-    $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; return false; } $bq->execute([$ph]); if ($bq->fetchColumn()) { $dbg['biz']++; return false; }
+    $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; return false; }
+    $bq->execute([$ph]); if ($bq->fetchColumn()) {
+        // owner (25 Nov, "why are these queries not given?"): 19 of the 22 waiting chats were skipped only because the customer's phone ONCE sent a business auto-reply — the mark stayed for ever, also after the
+        // person really wrote (the bot was already talking to him). The mark now blocks only while the customer's LAST message is still an automatic reply; a real message (a tap, a photo, a typed text that is
+        // not an auto-reply) takes the mark off and the query is given like any other.
+        $real = false; try { $lm = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $lm->execute([$ph]); $l = $lm->fetch(PDO::FETCH_ASSOC);
+            if ($l) { $mt = (string)$l['mtype']; $real = !in_array($mt, ['reaction', 'system', 'unsupported'], true) && ($mt !== 'text' || !(function_exists('wa_autoreply_text') && wa_autoreply_text((string)$l['body']))); } } catch (Throwable $e) { $real = false; }
+        if (!$real) { $dbg['biz']++; return false; }
+        try { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply'")->execute([$ph]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = 'business_autoreply'")->execute([$ph]); } catch (Throwable $e) { }
+    }
     // ONE decision at a time over the whole server: the webhook and the engine pass both give queries; without this lock they both saw "nobody was given a query a moment ago" and gave the same person two at once (Shivam V. twice in one second)
     $gl = 0; try { $gl = (int)$pdo->query("SELECT GET_LOCK('waa_pick', 5)")->fetchColumn(); } catch (Throwable $e) { }
     if ($gl !== 1) return false;   // the next pass tries again
@@ -188,16 +197,17 @@ function waa_give_pick(PDO $pdo, array $r, array $c, array &$V, array &$T, int $
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
         else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
         $gap = max(0, (int)setting_get($pdo, 'waa_gap', '90')); $rest = !$camp && $gap > 0 && (int)($T[$e]['last_fresh'] ?? 0) > $now - $gap;   // given a fresh query in the last 90 s: one at a time
-        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => $camp ? (int)$p['tier'] : waa_tier_now($p, (float)$V['team_ratio'] / 100), 'full' => ((int)$p['waiting'] >= WAA_MAX_WAIT && empty($p['force'])) || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest, 'last' => (int)($T[$e]['last_fresh'] ?? 0)];
+        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => $camp ? (int)$p['tier'] : waa_tier_now($p, (float)$V['team_ratio'] / 100), 'full' => ((int)$p['waiting'] >= WAA_MAX_WAIT && empty($p['force'])) || !empty($p['tkhold']) || !empty($p['shold']), 'rest' => $rest, 'last' => (int)($T[$e]['last_fresh'] ?? 0), 'force' => !$camp && !empty($p['force'])];
     }
     if ($vip) { $good = []; foreach ($cand as $e => $x) if (!$x['full'] && (float)($V['people'][$e]['ticket'] ?? 0) >= (float)$tkc['goal'] && (int)($V['people'][$e]['orders'] ?? 0) >= (int)$tkc['min']) $good[$e] = $x; if ($good) $cand = $good; else $vip = false; }
     $pos = $camp ? 0 : (int)setting_get($pdo, 'waa_cyc', '0');   // green, green, yellow: how many green / yellow queries were given before
     $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q, $pos); if ($to <= 0) { $dbg['nobody']++; return false; }
+    $turn = false; if (!$camp) { $t2 = waa_pick_force($cand, $to); if ($t2 !== $to) { $to = $t2; $turn = true; } }   // 🔓 a "No rules" person takes his turn in the line, whatever group is being served (he got nothing for hours while the under-5 group was served first)
     $lk = 0; try { $lk = (int)$pdo->query("SELECT GET_LOCK(" . $pdo->quote('waa_p_' . $ph) . ", 0)")->fetchColumn(); } catch (Throwable $e) { } if ($lk !== 1) return false;
     try {
         $chk = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ?"); $chk->execute([$ph]); if ((int)$chk->fetchColumn() > 0) { $dbg['held']++; return false; }   // somebody just took it
         wa_assign_to($pdo, $ph, $to, 0, 'auto');
-        $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt($now), $ph, $to, $camp ? 'camp' : 'fresh', mb_substr(($vip ? '⭐ big-order customer · ' : '') . ($camp ? 'campaign query' : 'fresh query') . ' · weight ' . round($cand[$to]['w']) . ' · so far ' . $cand[$to]['cnt'], 0, 160)]);
+        $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt($now), $ph, $to, $camp ? 'camp' : 'fresh', mb_substr(($vip ? '⭐ big-order customer · ' : '') . ($camp ? 'campaign query' : 'fresh query') . ' · weight ' . round($cand[$to]['w']) . ' · so far ' . $cand[$to]['cnt'] . ($turn ? ' · No rules: his turn in the line' : ''), 0, 160)]);
         $T[$to][$camp ? 'camp' : 'fresh'] = (int)($T[$to][$camp ? 'camp' : 'fresh'] ?? 0) + 1; if (!$camp) $T[$to]['last_fresh'] = $now; if (!$camp) $V['people'][$to]['q']++; else $V['people'][$to]['cq']++;
         if (!$camp && in_array((int)($cand[$to]['tier'] ?? 2), [1, 2], true)) setting_set($pdo, 'waa_cyc', (string)($pos + 1));
         waa_cp_bump($pdo, $to, $camp); waa_typed($pdo, $to, $camp); return true;
@@ -299,16 +309,33 @@ function waa_pick_block(PDO $pdo, int $emp): string
 
 // ---------------------------------------------------------------------------------------------------------------- actions
 $__waa = (string)($action ?? ($_GET['action'] ?? ''));
+if ($__waa === 'wq.aa_cx') {   // 🎫 the complaints that left ONE person's query count today: customer, ticket, problem, when, who raised it. Admin / HR / Sales Head. Read-only.
+    $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+    if (!$adm && function_exists('wa_boss_ok') && wa_boss_ok($pdo, $auth)) $adm = true;
+    if (!$adm) json_response(['error' => 'Only Admin, HR or a Sales Head can open this.'], 403);
+    $emp = (int)($_GET['emp'] ?? 0); $out = [];
+    try { if (function_exists('wag_cxm_table') && wag_cxm_table($pdo)) {
+        $q = $pdo->prepare("SELECT m.phone, m.kind, m.at, c.name FROM wq_cx_minus m LEFT JOIN wa_contacts c ON c.phone = m.phone WHERE m.day = ? AND m.emp_id = ? ORDER BY m.at DESC LIMIT 200"); $q->execute([waa_day($pdo), $emp]);
+        $cq = $pdo->prepare("SELECT id, problem, raised_by, raised_at, summary FROM cx_cases WHERE phone = ? ORDER BY id DESC LIMIT 1"); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $P = function_exists('cx_problems') ? cx_problems() : [];
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $cs = null; try { $cq->execute([(string)$r['phone']]); $cs = $cq->fetch(PDO::FETCH_ASSOC) ?: null; } catch (Throwable $e) { }
+            $by = !$cs ? '' : (strpos((string)$cs['summary'], 'raised by the bot') !== false ? 'the bot' : ((int)$cs['raised_by'] > 0 ? (string)($nm[(int)$cs['raised_by']] ?? 'a person') : 'the customer'));
+            $out[] = ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? ''), 'kind' => (string)$r['kind'], 'at' => (string)$r['at'], 'ticket' => $cs ? 'C-' . str_pad((string)$cs['id'], 4, '0', STR_PAD_LEFT) : '', 'problem' => $cs ? (string)($P[(string)$cs['problem']][0] ?? $cs['problem']) : '', 'by' => $by]; } } } catch (Throwable $e) { error_log('wq.aa_cx: ' . $e->getMessage()); }
+    json_response(['ok' => true, 'day' => waa_day($pdo), 'rows' => $out]);
+}
 if ($__waa === 'wq.aa_get' || $__waa === 'wq.aa_set' || $__waa === 'wq.aa_engine') {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!waa_tables($pdo)) json_response(['error' => 'Storage for Auto assign is not available.'], 500);
     $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
     if (!$adm && function_exists('wa_boss_ok') && wa_boss_ok($pdo, $auth)) $adm = true;   // Sales Heads too
     if (!$adm) json_response(['error' => 'Only Admin, HR or a Sales Head can open Auto assign.'], 403);
-    if ($__waa === 'wq.aa_engine') {   // Start / Stop the whole engine
+    if ($__waa === 'wq.aa_engine') {   // 🔀 the Query mode: aa (Auto assign) · om (Open market) · no (both off, no rules). The old Start / Stop still works: on = aa, off = no.
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
-        $in = json_input(); setting_set($pdo, 'waa_off', !empty($in['on']) ? '0' : '1'); setting_set($pdo, 'waa_on_day', !empty($in['on']) ? waa_day($pdo) : ''); setting_set($pdo, 'waa_run_at', '0');
-        if (function_exists('wa_log')) { $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; wa_log($pdo, 'engine', true, 'auto assign engine ' . (!empty($in['on']) ? 'STARTED' : 'STOPPED') . ' by ' . ($nm[$me] ?? $me)); }
+        $isAdm0 = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin'], true); if (!$isAdm0) json_response(['error' => 'Only an Admin can change the Query mode.'], 403);
+        $in = json_input(); $md = (string)($in['mode'] ?? ''); if (!in_array($md, ['aa', 'om', 'no'], true)) $md = !empty($in['on']) ? 'aa' : 'no';
+        $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        setting_set($pdo, 'wq_mode', $md); setting_set($pdo, 'wag_open_market', $md === 'om' ? '1' : '0'); setting_set($pdo, 'waa_off', $md === 'aa' ? '0' : '1'); setting_set($pdo, 'waa_on_day', $md === 'aa' ? waa_day($pdo) : ''); setting_set($pdo, 'waa_run_at', '0');
+        setting_set($pdo, 'wq_mode_by', json_encode(['by' => (string)($nm[$me] ?? $me), 'at' => date('Y-m-d H:i:s')])); if (function_exists('hrms_settings_bump')) hrms_settings_bump();
+        if (function_exists('wa_log')) wa_log($pdo, 'engine', true, 'query mode set to ' . ['aa' => 'AUTO ASSIGN', 'om' => 'OPEN MARKET', 'no' => 'NO RULES (both off)'][$md] . ' by ' . ($nm[$me] ?? $me));
     }
     if ($__waa === 'wq.aa_set') {
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
@@ -327,6 +354,9 @@ if ($__waa === 'wq.aa_get' || $__waa === 'wq.aa_set' || $__waa === 'wq.aa_engine
     $H = []; try { $hs = date('Y-m-d H:00:00'); $hq = $pdo->prepare("SELECT emp_id, kind, COUNT(*) c FROM waa_log WHERE at >= ? AND at < ? GROUP BY emp_id, kind"); $hq->execute([$hs, date('Y-m-d H:00:00', strtotime($hs) + 3600)]); foreach ($hq->fetchAll(PDO::FETCH_ASSOC) as $r) $H[(int)$r['emp_id']][(string)$r['kind']] = (int)$r['c']; } catch (Throwable $e) { }   // given by Auto assign in this clock hour
     foreach ($V['people'] as $e => $p) { $why = ['not_in' => 'Not punched in', 'admin_off' => 'Turned off by Admin / Sales Head', 'admin_on' => 'ON by Admin / Sales Head — no rule applies', 'ratio' => 'Auto OFF: ratio ' . ($p['ratio'] === null ? '–' : $p['ratio'] . '%') . ' is below ' . $V['floor'] . '% · campaign queries only', 'on' => ''][$p['why']] ?? '';
         $rows[] = ['emp_id' => $e, 'name' => $p['name'], 'on' => $p['on'], 'present' => $p['present'], 'why' => $why, 'note' => $p['present'] && $p['why'] === 'on' ? ($p['wk'] && $p['punch'] === '' ? 'Working · ON by Admin / Sales Head (rules apply)' : 'Punched in' . ($p['punch'] !== '' ? ' ' . $p['punch'] : '')) : '', 'force' => !empty($p['force']), 'wk' => !empty($p['wk']), 'target' => $p['t'], 'q' => $p['q'], 'o' => $p['qo'], 'ratio' => $p['ratio'], 'cq' => $p['cq'], 'co' => $p['co'], 'h_fresh' => (int)($H[$e]['fresh'] ?? 0), 'h_camp' => (int)($H[$e]['camp'] ?? 0), 'ticket' => (int)$p['ticket'], 'tk' => tk_status((float)$p['ticket'], (float)$tcfg['goal']), 'tkhold' => !empty($p['tkhold']), 'waiting' => (int)$p['waiting'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT && empty($p['force']), 'shold' => !empty($p['shold']), 'slow_warn' => !empty($p['slow']) && (int)$p['sw'] > 0 && empty($p['shold']), 'given_fresh' => (int)($T[$e]['fresh'] ?? 0), 'given_camp' => (int)($T[$e]['camp'] ?? 0), 'slow' => ($p['speed'] && $p['team_speed'] && $p['speed'] > $p['team_speed'] && $p['m'] !== 'on') ? round($p['team_speed'] / $p['speed'], 2) : 1, 'below' => $p['below'] || $p['ao']]; }
+    // 🎫 owner (25 Nov): how many of each person's queries of today were complaints and left his count (wq_cx_minus) — shown as "Fresh 7 − 3 = 4"
+    $CX = []; try { if (function_exists('wag_cxm_table') && wag_cxm_table($pdo)) { $cq0 = $pdo->prepare("SELECT emp_id, kind, COUNT(*) n FROM wq_cx_minus WHERE day = ? GROUP BY emp_id, kind"); $cq0->execute([waa_day($pdo)]); foreach ($cq0->fetchAll(PDO::FETCH_ASSOC) as $r0) $CX[(int)$r0['emp_id']][(string)$r0['kind']] = (int)$r0['n']; } } catch (Throwable $e) { }
+    foreach ($rows as &$__r) { $__r['cx_f'] = (int)($CX[(int)$__r['emp_id']]['fresh'] ?? 0); $__r['cx_c'] = (int)($CX[(int)$__r['emp_id']]['camp'] ?? 0); } unset($__r);
     usort($rows, function ($a, $b) { return [$b['present'] ? 1 : 0, $a['name']] <=> [$a['present'] ? 1 : 0, $b['name']]; });
-    json_response(['ok' => true, 'max_wait' => WAA_MAX_WAIT, 'is_admin' => (function_exists('wa_is_admin') ? (bool)wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin'], true)), 'tk_goal' => (int)$tcfg['goal'], 'tk_offer' => $tcfg['offer'], 'tk_cust' => $tcfg['cust'], 'tk_hold' => (bool)$tcfg['hold'], 'engine' => waa_engine_on($pdo), 'hour' => (int)date('G'), 'day' => $V['day'], 'team_ratio' => $V['team_ratio'], 'floor' => $V['floor'], 'team_speed' => $V['team_speed'], 'rows' => $rows]);
+    json_response(['ok' => true, 'max_wait' => WAA_MAX_WAIT, 'is_admin' => (function_exists('wa_is_admin') ? (bool)wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin'], true)), 'tk_goal' => (int)$tcfg['goal'], 'tk_offer' => $tcfg['offer'], 'tk_cust' => $tcfg['cust'], 'tk_hold' => (bool)$tcfg['hold'], 'engine' => waa_engine_on($pdo), 'mode' => (function_exists('wa_query_mode') ? wa_query_mode($pdo) : 'om'), 'mode_by' => (json_decode((string)setting_get($pdo, 'wq_mode_by', ''), true) ?: null), 'hour' => (int)date('G'), 'day' => $V['day'], 'team_ratio' => $V['team_ratio'], 'floor' => $V['floor'], 'team_speed' => $V['team_speed'], 'rows' => $rows]);
 }

@@ -81,6 +81,9 @@ function sku_match(string $text, string $shopSku = ''): string
     if (isset($ix['by'][$n])) return $ix['by'][$n];
     $pad = ' ' . $n . ' ';
     foreach ($ix['by'] as $k => $sku) { if (mb_strlen($k) >= 5 && mb_strpos($pad, ' ' . $k . ' ') !== false) return $sku; }
+    // a short name with its kind behind it ("BDC - Solid Perfume", "BDC Shower Gel"): the kind word is taken off and the name is looked up again, exact only
+    $n2 = trim(preg_replace('/\s+/', ' ', preg_replace('/\b(solid|wax|shower gel|showergel|body wash|beard balm|beard|soap|car perfume|attar|ittar|essential oil|roll on)\b/u', ' ', $n)));
+    if ($n2 !== '' && $n2 !== $n && isset($ix['by'][$n2])) return $ix['by'][$n2];
     return '';
 }
 
@@ -203,10 +206,11 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
     // 🕛 $noon (kept as the name of the switch) = one calendar day of 24 hours: 12:00 AM on $from to 12:00 AM the next day (not the 10 AM business day)
     $nw = $noon ? [$from . ' 00:00:00', $from . ' 23:59:59'] : null;
     $by = []; $nOrd = 0; $nManC = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
-    $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
+    $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order, string $store = '', string $pid = '') use (&$by) {
         $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
-        if ($name === '' || stripos($name, 'chain') === false) return;
-        $k = mb_strtolower($name); if (!isset($by[$k])) $by[$k] = ['name' => $name, 'sku' => $sku, 'qty' => 0, 'amount' => 0.0, 'orders' => []];
+        if ($name === '' || !preg_match('/chain|necklace|bracelet|pendant|signet|earring|anklet|bangle|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone|vanta ?crest|apex ?monolith)(?![a-z0-9])/i', $name)) return;      // every jewellery piece (the same words the SKU sheet leaves out as jewellery), not only names with "chain"
+        $k = mb_strtolower($name); if (!isset($by[$k])) $by[$k] = ['name' => $name, 'title' => $title, 'sku' => $sku, 'qty' => 0, 'amount' => 0.0, 'orders' => [], 'store' => '', 'pid' => ''];
+        if ($pid !== '' && $by[$k]['pid'] === '') { $by[$k]['pid'] = $pid; $by[$k]['store'] = $store; }      // the Shopify product of the chain: its photo and shop price are read from it
         $by[$k]['qty'] += $q; $by[$k]['amount'] += $amt; if ($sku !== '' && $by[$k]['sku'] === '') $by[$k]['sku'] = $sku; $by[$k]['orders'][$order] = 1;
     };
     [$orders, $errs] = sku_shopify_day($pdo, $from, $to, $nw);
@@ -214,7 +218,7 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
         if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) continue; $nOrd++;
         foreach ((array)($o['line_items'] ?? []) as $li) {
             $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;
-            $add((string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (float)($li['price'] ?? 0) * $q, (string)($o['name'] ?? ''));
+            $add((string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (float)($li['price'] ?? 0) * $q, (string)($o['name'] ?? ''), (string)$o['_store'], (string)($li['product_id'] ?? ''));
         }
     }
     try {   // the manual orders (WM-xxxxx) confirmed in the range
@@ -224,10 +228,52 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
             $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$r['order_no']);
         } }
     } catch (Throwable $e) { $errs[] = 'Manual orders: ' . $e->getMessage(); }
+    try {   // 🛍 the website orders (store_orders.php): paid or COD, on the day paid; an unpaid payment link and a cancelled order are left out
+        if (is_file(__DIR__ . '/store_orders.php')) { require_once __DIR__ . '/store_orders.php'; }
+        if (function_exists('tms_orders') && tms_cfg($pdo)['key'] !== '') {
+            $w2 = $nw ?: biz_window($pdo, $from, $to);
+            [$wo, $we] = tms_orders($pdo, date('Y-m-d', strtotime($from) - 7 * 86400), date('Y-m-d', strtotime($to) + 86400)); if ($we !== '') $errs[] = 'Website orders: ' . $we;
+            foreach ($wo as $w) {
+                $at = (string)($w['pay_time'] ?: $w['placed_at']); if ($at < $w2[0] || $at > $w2[1] || !empty($w['cancelled']) || !empty($w['temp'])) continue;
+                if ((string)$w['pay_status'] === 'pending' && (string)$w['pay_method'] !== 'cod') continue;
+                $nManC++;
+                foreach ((array)($w['lines'] ?? []) as $l) { $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)(($l['raw'] ?? '') !== '' ? $l['raw'] : ($l['title'] ?? '')), (string)($l['size'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$w['number']); }
+            }
+        }
+    } catch (Throwable $e) { $errs[] = 'Website orders: ' . $e->getMessage(); }
     $rows = []; $pieces = 0; $money = 0.0; $withChain = [];
-    foreach ($by as $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_keys($r['orders']), 0, 60)]; $pieces += $r['qty']; $money += $r['amount']; }
+    $info = []; try { $info = sku_chain_info($pdo, $by); } catch (Throwable $e) { $errs[] = 'Chain photos: ' . $e->getMessage(); }      // 🖼 photo + shop price of each chain (kept for 12 hours)
+    foreach ($by as $__k => $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'img' => (string)($info[$__k]['img'] ?? ''), 'price' => (float)(($info[$__k]['price'] ?? 0) ?: ($r['qty'] ? round($r['amount'] / $r['qty'], 2) : 0)), 'order_list' => array_slice(array_map('strval', array_keys($r['orders'])), 0, 400)]; $pieces += $r['qty']; $money += $r['amount']; }
     usort($rows, fn($a, $b) => $b['qty'] <=> $a['qty'] ?: strcmp($a['name'], $b['name']));
     return ['from' => $from, 'to' => $to, 'noon' => $noon, 'window' => $nw, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd + $nManC, 'orders_with' => count($withChain), 'errors' => $errs];
+}
+
+/** 🖼 The photo (a small Shopify picture) and the shop price of each chain of the report: [key => ['img', 'price']]. By the product of its order line; a chain sold only on the website / by hand
+ *  that day is looked up by its name. One answer per product is kept for 12 hours, so the report does not ask Shopify again on every open. Never throws for one product. */
+function sku_chain_info(PDO $pdo, array $by): array
+{
+    $out = []; $stores = shopify_stores(); $tok = [];
+    $get = function (string $key, string $path) use (&$tok, $stores) {
+        if (!isset($stores[$key])) return null; if (!array_key_exists($key, $tok)) { $t = shopify_get_token($key, $stores[$key]); $tok[$key] = is_array($t) ? '' : (string)$t; } if ($tok[$key] === '') return null;
+        $ch = curl_init('https://' . $stores[$key]['domain'] . '/admin/api/2024-10/' . $path); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 6, CURLOPT_HTTPHEADER => ['X-Shopify-Access-Token: ' . $tok[$key]]]);
+        $r = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch); return ($r !== false && $code === 200) ? json_decode((string)$r, true) : null;
+    };
+    $pick = function ($p) { if (!is_array($p)) return ['img' => '', 'price' => 0];
+        $src = (string)($p['image']['src'] ?? ''); if ($src !== '') $src .= (strpos($src, '?') === false ? '?' : '&') . 'width=240';      // a small copy of the photo
+        $pr = 0.0; foreach ((array)($p['variants'] ?? []) as $v) { $x = (float)($v['price'] ?? 0); if ($x > 0 && ($pr === 0.0 || $x < $pr)) $pr = $x; } return ['img' => $src, 'price' => $pr]; };
+    $n = 0; $firstStore = (string)(array_key_first($stores) ?? '');
+    foreach ($by as $k => $r) {
+        if ($n >= 60) break;      // a day has a few dozen chains at most
+        $pid = (string)($r['pid'] ?? ''); $store = (string)($r['store'] ?? ''); $title = trim((string)($r['title'] ?? ''));
+        $memoKey = 'sku_chain_info2:' . ($pid !== '' ? $store . ':' . $pid : 't:' . mb_strtolower($title)); if ($pid === '' && $title === '') continue; $n++;
+        $calc = function () use ($get, $pick, $pid, $store, $title, $stores, $firstStore) {
+            if ($pid !== '') { $d = $get($store, 'products/' . rawurlencode($pid) . '.json?fields=id,image,variants'); return $pick($d['product'] ?? null); }
+            foreach (array_keys($stores) as $key) { $d = $get($key, 'products.json?limit=1&fields=id,image,variants,title&title=' . rawurlencode($title)); if (!empty($d['products'][0])) return $pick($d['products'][0]); }
+            return ['img' => '', 'price' => 0];
+        };
+        try { $v = function_exists('hrms_memo') ? hrms_memo($memoKey, 43200, $calc) : $calc(); if (is_array($v)) $out[$k] = $v; } catch (Throwable $e) { }
+    }
+    return $out;
 }
 
 /** The whole sheet of one business day. */
@@ -256,6 +302,24 @@ function sku_sheet(PDO $pdo, string $day): array
             foreach ((array)(json_decode((string)$r['lines_json'], true) ?: []) as $l) { $nLines++; sku_take($grid, $bad, (string)$r['order_no'], (string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), max(1, (int)($l['qty'] ?? 1)), []); }
         }
     } catch (Throwable $e) { }
+    // 🛍 the WEBSITE orders (the new TM Perfume House shop, store_orders.php) of that day. Shopify is closed, so this is where the day's orders come from now. The product names are the Shopify names
+    //    (the shop was copied from Shopify), so the same SKU list matches them. Counted on the day the customer PAID (a COD order: the day it was placed); a payment link nobody paid yet and a cancelled order are left out.
+    $nWeb = 0;
+    try {
+        if (is_file(__DIR__ . '/store_orders.php')) { require_once __DIR__ . '/store_orders.php'; }
+        if (function_exists('tms_orders') && tms_cfg($pdo)['key'] !== '') {
+            [$wo, $we] = tms_orders($pdo, date('Y-m-d', strtotime($day) - 7 * 86400), $day);
+            if ($we !== '') $errs[] = 'Website orders: ' . $we;
+            foreach ($wo as $w) {
+                $at = (string)($w['pay_time'] ?: $w['placed_at']); if ($at < $cal[0] || $at > $cal[1]) continue;
+                if (!empty($w['temp'])) continue;      // 🔗 LINK-xxx: a temporary payment link, not an order yet
+                if (!empty($w['cancelled'])) { $nCancel++; continue; }
+                if ((string)$w['pay_status'] === 'pending' && (string)$w['pay_method'] !== 'cod') continue;      // a payment link not paid yet is not an order to pack
+                $nWeb++;
+                foreach ((array)($w['lines'] ?? []) as $l) { $nLines++; sku_take($grid, $bad, (string)$w['number'], (string)(($l['raw'] ?? '') !== '' ? $l['raw'] : ($l['title'] ?? '')), (string)($l['size'] ?? ''), (string)($l['sku'] ?? ''), max(1, (int)($l['qty'] ?? 1)), (array)($l['props'] ?? [])); }
+            }
+        }
+    } catch (Throwable $e) { $errs[] = 'Website orders: ' . $e->getMessage(); }
     $ix = sku_index(); $rows = [];
     foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : ($sku === 'NONAME' ? 'No Name (perfume sold without a name)' : ($sku === 'NOTFOUND' ? 'Not in SKU list (names are in the box above)' : (string)($ix['name'][$sku] ?? 'Not Found'))), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
     usort($rows, function ($a, $b) { $la = ['FREE' => 1, 'NONAME' => 1, 'NOTFOUND' => 2][$a['sku']] ?? 0; $lb = ['FREE' => 1, 'NONAME' => 1, 'NOTFOUND' => 2][$b['sku']] ?? 0; if ($la !== $lb) return $la <=> $lb; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
@@ -264,7 +328,7 @@ function sku_sheet(PDO $pdo, string $day): array
     $grp = [];
     foreach ($bad as $b) { $k = $b['kind'] . '|' . mb_strtolower($b['text']) . '|' . $b['why']; if (!isset($grp[$k])) $grp[$k] = ['text' => $b['text'], 'why' => $b['why'], 'kind' => $b['kind'], 'qty' => 0, 'orders' => []]; $grp[$k]['qty'] += $b['qty']; if (count($grp[$k]['orders']) < 12 && !in_array($b['order'], $grp[$k]['orders'], true)) $grp[$k]['orders'][] = $b['order']; }
     $un = array_values($grp); usort($un, fn($a, $b) => ($a['kind'] === 'left') <=> ($b['kind'] === 'left') ?: $b['qty'] <=> $a['qty']);
-    return ['day' => $day, 'cols' => sku_cols(), 'rows' => $rows, 'totals' => $tot, 'pieces' => array_sum($tot), 'orders' => $nOrd, 'manual' => $nMan, 'cancelled' => $nCancel, 'lines' => $nLines,
+    return ['day' => $day, 'cols' => sku_cols(), 'rows' => $rows, 'totals' => $tot, 'pieces' => array_sum($tot), 'orders' => $nOrd, 'manual' => $nMan, 'web' => $nWeb, 'cancelled' => $nCancel, 'lines' => $nLines,
         'oid' => (object)$oid, 'unmatched' => array_values(array_filter($un, fn($x) => !in_array($x['kind'], ['left', 'counted'], true))), 'left_out' => array_values(array_filter($un, fn($x) => $x['kind'] === 'left')), 'noted' => array_values(array_filter($un, fn($x) => $x['kind'] === 'counted')),
         'unmatched_pieces' => array_sum(array_map(fn($x) => !in_array($x['kind'], ['left', 'counted'], true) ? $x['qty'] : 0, $un)), 'errors' => $errs, 'sku_count' => count(sku_list())];
 }
@@ -285,6 +349,26 @@ function sku_can(PDO $pdo, array $auth): bool
     return false;
 }
 
+/** 🏷 The barcodes of ONLINE order bottles and chains (owner, 25 Nov). Their own table and their own 8-digit numbers (bottles 5xxxxxxx, chains 6xxxxxxx): nothing here touches the Store stock
+ *  (Store bottles have 6 digits, Store chains start at 2xxxxxxx), so a Store counter can never take one for a Store piece. */
+function sku_bc_table(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS sku_bc (id INT AUTO_INCREMENT PRIMARY KEY, code INT UNSIGNED NOT NULL, kind VARCHAR(8) NOT NULL, day DATE NOT NULL, sku VARCHAR(20) NOT NULL DEFAULT '', name VARCHAR(120) NOT NULL, size VARCHAR(12) NOT NULL DEFAULT '',
+        mrp INT NOT NULL DEFAULT 0, batch VARCHAR(12) NOT NULL DEFAULT '', mfg DATE NOT NULL, exp DATE NOT NULL, by_name VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL, UNIQUE KEY uq_code (code), KEY k_day (day, kind, sku, size)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if ((string)setting_get($pdo, 'sku_bc_sz20', '') !== '1') { $pdo->exec("ALTER TABLE sku_bc MODIFY size VARCHAR(20) NOT NULL DEFAULT ''"); setting_set($pdo, 'sku_bc_sz20', '1'); }      // 'Solid Perfume' is 13 letters: the first table had room for 12 (once)
+        $ok = true; }
+    catch (Throwable $e) { error_log('sku_bc table: ' . $e->getMessage()); $ok = false; }
+    return $ok;
+}
+/** MRP of a bottle by its size (the shop's prices; setting sku_bc_mrp = JSON {"10 ml":99,…} changes them without new code). */
+function sku_bc_mrp(PDO $pdo): array
+{
+    $d = ['10 ml' => 99, '20 ml' => 499, '50 ml' => 1199, '100 ml' => 1810, 'Shower Gel' => 0, 'Solid Perfume' => 0];      // 0 = no MRP printed until it is typed on the page (Label design)
+    try { $j = json_decode((string)setting_get($pdo, 'sku_bc_mrp', ''), true); if (is_array($j)) foreach ($d as $k => $v) if (isset($j[$k]) && (int)$j[$k] >= 0 && ((int)$j[$k] > 0 || $v === 0)) $d[$k] = (int)$j[$k]; } catch (Throwable $e) { }
+    return $d;
+}
+
 function sku_route(PDO $pdo, string $action): void
 {
     $auth = require_auth(); $role = (string)($auth['role'] ?? '');
@@ -300,6 +384,53 @@ function sku_route(PDO $pdo, string $action): void
         if ((strtotime($t) - strtotime($f)) / 86400 > 62) json_response(['error' => 'Pick at most 62 days.'], 422);
         $noon = !empty($_GET['noon']); if ($noon) $t = $f;
         @set_time_limit(240); json_response(sku_chain($pdo, $f, $t, $noon));
+    }
+    // ---------------------------------------------------------------- 🏷 barcodes for the bottles / chains of ONLINE orders (not Store stock)
+    if (strpos($action, 'sku.bc_') === 0) {
+        if (!sku_bc_table($pdo)) json_response(['error' => 'The barcode table could not be made (database rights).'], 500);
+        $today = gmdate('Y-m-d', time() + 19800); $by = (string)($auth['name'] ?? ($auth['username'] ?? '')); $in = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' ? json_input() : $_GET;
+        $day = (string)($in['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = $today;
+        $out = function (array $r) { return ['code' => (string)$r['code'], 'kind' => (string)$r['kind'], 'name' => (string)$r['name'], 'size' => (string)$r['size'], 'mrp' => (int)$r['mrp'], 'batch' => (string)$r['batch'], 'mfg' => (string)$r['mfg'], 'exp' => (string)$r['exp']]; };
+        if ($action === 'sku.bc_state') {      // how many labels of the day are made already, per perfume + size and per chain
+            $m = []; $c = []; $q = $pdo->prepare("SELECT kind, sku, name, size, COUNT(*) n FROM sku_bc WHERE day = ? AND kind IN ('bottle', 'chain') GROUP BY kind, sku, name, size"); $q->execute([$day]);
+            foreach ($q->fetchAll() as $r) { if ($r['kind'] === 'chain') $c[mb_strtolower((string)$r['name'])] = (int)$r['n']; else $m[(string)$r['sku'] . '|' . (string)$r['size']] = (int)$r['n']; }
+            json_response(['day' => $day, 'made' => (object)$m, 'made_chain' => (object)$c, 'mrp' => sku_bc_mrp($pdo)]);
+        }
+        if ($action === 'sku.bc_labels') {     // every label of the day again (same numbers), for a reprint
+            $k = (string)($in['kind'] ?? ''); $w = $k === 'chain' ? "kind = 'chain'" : ($k === 'manual' ? "kind = 'manual'" : "kind = 'bottle'");
+            $q = $pdo->prepare("SELECT * FROM sku_bc WHERE day = ? AND $w ORDER BY code LIMIT 6000"); $q->execute([$day]); json_response(['labels' => array_map($out, $q->fetchAll())]);
+        }
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        if ($action === 'sku.bc_mrp_save') {      // MRP of Shower Gel / Solid Perfume, typed on the page
+            if (!in_array($role, ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin / HR can change the MRP.'], 403);
+            $j = json_decode((string)setting_get($pdo, 'sku_bc_mrp', ''), true); if (!is_array($j)) $j = [];
+            foreach (['Shower Gel', 'Solid Perfume'] as $k) if (isset($in[$k])) $j[$k] = max(0, min(99999, (int)$in[$k]));
+            setting_set($pdo, 'sku_bc_mrp', json_encode($j)); json_response(['ok' => true, 'mrp' => sku_bc_mrp($pdo)]);
+        }
+        $mrp = sku_bc_mrp($pdo);
+        if ($action === 'sku.bc_make' || $action === 'sku.bc_manual') {
+            $kind = $action === 'sku.bc_manual' ? 'manual' : ((string)($in['kind'] ?? '') === 'chain' ? 'chain' : 'bottle'); if ($kind === 'manual') $day = $today;
+            $items = []; foreach ((array)($in['items'] ?? []) as $it) { if (!is_array($it)) continue; $nm = mb_substr(trim((string)($it['name'] ?? '')), 0, 120); $n = (int)($it['n'] ?? 0); if ($nm === '' || $n < 1) continue;
+                $sz = $kind === 'chain' ? 'Chain' : (string)($it['size'] ?? ''); if ($kind !== 'chain' && !isset($mrp[$sz])) json_response(['error' => 'Unknown size: ' . $sz], 422);
+                $items[] = ['sku' => mb_substr(trim((string)($it['sku'] ?? '')), 0, 20), 'name' => $nm, 'size' => $sz, 'n' => min(3000, $n), 'mrp' => $kind === 'chain' ? max(0, (int)round((float)($it['mrp'] ?? 0))) : (int)$mrp[$sz]]; }
+            if (!$items) json_response(['error' => 'Nothing to make.'], 422);
+            if ($kind === 'manual' && array_sum(array_column($items, 'n')) > 500) json_response(['error' => 'At most 500 labels at once.'], 422);
+            if (!(int)$pdo->query("SELECT GET_LOCK('sku_bc_make', 20)")->fetchColumn()) json_response(['error' => 'Somebody else is making barcodes right now. Try again in a moment.'], 409);
+            try {
+                $lo = $kind === 'chain' ? 60000000 : 50000000; $q = $pdo->prepare("SELECT COALESCE(MAX(code), ?) FROM sku_bc WHERE code > ? AND code < ?"); $q->execute([$lo, $lo, $lo + 10000000]); $next = (int)$q->fetchColumn() + 1;
+                $mfg = $day; $expOf = fn(string $sz) => date('Y-m-d', strtotime($day . (in_array($sz, ['Shower Gel', 'Solid Perfume'], true) ? ' +2 years' : ' +3 years'))); $exp = $expOf('');      // owner, 26 Nov: perfume 3 years, shower gel / solid perfume 2 years (labels made before this keep the date printed on them) $batch = ($kind === 'chain' ? 'C' : 'B') . date('dmy', strtotime($day));
+                $have = $pdo->prepare("SELECT COUNT(*) FROM sku_bc WHERE day = ? AND kind = ? AND sku = ? AND name = ? AND size = ?");
+                $ins = $pdo->prepare("INSERT INTO sku_bc (code, kind, day, sku, name, size, mrp, batch, mfg, exp, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"); $new = []; $pdo->beginTransaction();
+                foreach ($items as $it) {
+                    $need = $it['n']; if ($kind !== 'manual') { $have->execute([$day, $kind, $it['sku'], $it['name'], $it['size']]); $need = max(0, $it['n'] - (int)$have->fetchColumn()); }      // 'n' = how many the day has in all: only the missing ones are made, so nothing is ever made twice
+                    for ($i = 0; $i < $need; $i++) { if (count($new) >= 6000) break 2; $ex1 = $expOf($it['size']); $ins->execute([$next, $kind, $day, $it['sku'], $it['name'], $it['size'], $it['mrp'], $batch, $mfg, $ex1, $by]); $new[] = ['code' => $next, 'kind' => $kind, 'name' => $it['name'], 'size' => $it['size'], 'mrp' => $it['mrp'], 'batch' => $batch, 'mfg' => $mfg, 'exp' => $ex1]; $next++; }
+                }
+                $pdo->commit();
+            } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); try { $pdo->query("SELECT RELEASE_LOCK('sku_bc_make')"); } catch (Throwable $e2) { } json_response(['error' => 'The barcodes could not be saved: ' . $e->getMessage()], 500); }
+            try { $pdo->query("SELECT RELEASE_LOCK('sku_bc_make')"); } catch (Throwable $e) { }
+            json_response(['ok' => true, 'made' => count($new), 'labels' => array_map($out, $new)]);
+        }
+        json_response(['error' => 'Unknown action.'], 404);
     }
     if ($action === 'sku.list') json_response(['rows' => sku_list(), 'custom' => sku_list_file() !== '']);
     if ($action === 'sku.list_save') {

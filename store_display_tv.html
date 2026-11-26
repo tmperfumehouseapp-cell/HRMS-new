@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Store Report Card</title>
+<link rel="manifest" href="tv_manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  html,body{margin:0;height:100%;background:#fff;overflow:hidden;cursor:none}
+  body{font-family:Inter,'Segoe UI',system-ui,Roboto,Arial,'Noto Sans Gujarati',sans-serif;color:#0b0b0b}
+  #stage{position:absolute;left:0;top:0;width:720px;height:1280px;transform-origin:top left;background:#fff}
+  #stage *{box-sizing:border-box}
+  .h1{position:absolute;left:42px;top:50px;font-size:58px;font-weight:800;letter-spacing:-2px;white-space:nowrap}.h2{position:absolute;left:46px;top:114px;font-size:32px;font-weight:500}
+  .live{position:absolute;right:42px;top:62px;display:flex;align-items:center;gap:9px;font-size:24px;color:#16a34a;font-weight:800}.live i{width:15px;height:15px;border-radius:50%;background:#16a34a;animation:p 1.4s infinite}.live.off{color:#b45309}.live.off i{background:#b45309;animation:none}@keyframes p{50%{opacity:.2}}
+  .t{position:absolute;left:40px;top:196px;font-size:88px;font-weight:900;line-height:.92;letter-spacing:-3.5px}.per{position:absolute;left:44px;top:366px;font-size:34px;font-weight:500}
+  .line{position:absolute;left:44px;right:44px;top:430px;height:4px;background:#ff5a00}
+  .big{position:absolute;left:30px;top:430px;font-size:262px;font-weight:900;letter-spacing:-11px;line-height:1;font-variant-numeric:tabular-nums}.bl{position:absolute;left:44px;top:700px;font-size:48px;font-weight:800;color:#ff5a00}
+  .plus{position:absolute;left:470px;top:640px;font-size:74px;font-weight:900;color:#16a34a;opacity:0}.plus.go{animation:up 1.8s ease-out}@keyframes up{0%{opacity:0;transform:translateY(30px) scale(.6)}20%{opacity:1;transform:translateY(0) scale(1.1)}100%{opacity:0;transform:translateY(-60px)}}
+  .rows{position:absolute;left:44px;right:44px;top:768px}.r{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #d4d7e0;padding:10px 0;font-size:32px;font-weight:500}.r b{font-size:54px;font-weight:900;letter-spacing:-2px;font-variant-numeric:tabular-nums}.r small{display:block;font-size:32px;font-weight:500;line-height:1.1}
+  .cta{position:absolute;left:42px;right:42px;top:1132px;background:#ff5a00;color:#fff;font-size:56px;font-weight:900;text-align:center;padding:16px;border-radius:60px;letter-spacing:-1px}.url{position:absolute;left:0;right:0;top:1228px;text-align:center;font-size:40px;font-weight:500}
+  .flash{animation:fl 1s}@keyframes fl{0%{color:#16a34a;transform:scale(1.07)}100%{transform:scale(1)}}
+  .toast{position:absolute;left:44px;right:44px;top:1068px;background:#111;color:#fff;border-radius:14px;padding:12px 20px;font-size:30px;font-weight:700;opacity:0;transition:.3s;text-align:center}.toast.on{opacity:1}
+  #msg{position:absolute;left:0;right:0;top:0;height:1280px;padding-top:560px !important;box-sizing:border-box;text-align:center;font-size:30px;color:#b91c1c;padding:0 30px;z-index:5;background:#fff}
+  /* ---------- the looks (Store -> Display -> Look on the TV) and their slow live effects. Only transform / opacity move, so a cheap TV box keeps up. ---------- */
+  #fx{position:absolute;left:0;top:0;width:720px;height:1280px;overflow:hidden;z-index:0;pointer-events:none}
+  #stage > div:not(#fx){z-index:1}
+  .blob{position:absolute;width:760px;height:760px;border-radius:50%;opacity:.55;will-change:transform}
+  .b1{left:-300px;top:-260px;-webkit-animation:dr1 26s ease-in-out infinite alternate;animation:dr1 26s ease-in-out infinite alternate}
+  .b2{right:-340px;top:380px;-webkit-animation:dr2 32s ease-in-out infinite alternate;animation:dr2 32s ease-in-out infinite alternate}
+  .b3{left:-200px;bottom:-380px;-webkit-animation:dr3 29s ease-in-out infinite alternate;animation:dr3 29s ease-in-out infinite alternate}
+  @-webkit-keyframes dr1{to{-webkit-transform:translate(180px,160px) scale(1.15)}} @keyframes dr1{to{transform:translate(180px,160px) scale(1.15)}}
+  @-webkit-keyframes dr2{to{-webkit-transform:translate(-220px,-120px) scale(.9)}} @keyframes dr2{to{transform:translate(-220px,-120px) scale(.9)}}
+  @-webkit-keyframes dr3{to{-webkit-transform:translate(160px,-200px) scale(1.2)}} @keyframes dr3{to{transform:translate(160px,-200px) scale(1.2)}}
+  .sp{position:absolute;bottom:-20px;border-radius:50%;opacity:0;will-change:transform,opacity;-webkit-animation:rise linear infinite;animation:rise linear infinite}
+  @-webkit-keyframes rise{0%{opacity:0;-webkit-transform:translateY(0)}10%{opacity:.9}80%{opacity:.6}100%{opacity:0;-webkit-transform:translateY(-1320px)}} @keyframes rise{0%{opacity:0;transform:translateY(0)}10%{opacity:.9}80%{opacity:.6}100%{opacity:0;transform:translateY(-1320px)}}
+  .cta{overflow:hidden}
+  .cta:after{content:'';position:absolute;top:0;left:-40%;width:30%;height:100%;background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.55),rgba(255,255,255,0));-webkit-transform:skewX(-20deg);transform:skewX(-20deg);-webkit-animation:shine 4.5s ease-in-out infinite;animation:shine 4.5s ease-in-out infinite}
+  @-webkit-keyframes shine{0%,55%{left:-40%}100%{left:130%}} @keyframes shine{0%,55%{left:-40%}100%{left:130%}}
+  .cf{position:absolute;width:14px;height:22px;border-radius:3px;z-index:6;pointer-events:none;-webkit-animation:cf 1.9s cubic-bezier(.2,.7,.4,1) forwards;animation:cf 1.9s cubic-bezier(.2,.7,.4,1) forwards}
+  @-webkit-keyframes cf{0%{opacity:1;-webkit-transform:translate(0,0) rotate(0)}100%{opacity:0;-webkit-transform:translate(var(--x),var(--y)) rotate(var(--r))}} @keyframes cf{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:0;transform:translate(var(--x),var(--y)) rotate(var(--r))}}
+  .shim{background-size:220% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;-webkit-animation:shim 6s linear infinite;animation:shim 6s linear infinite}
+  @-webkit-keyframes shim{to{background-position:-220% 0}} @keyframes shim{to{background-position:-220% 0}}
+
+  /* Midnight Gold: deep night blue, gold light */
+  .th-gold{background:#07070f !important;color:#f6efe0}
+  .th-gold .b1{background:radial-gradient(circle,rgba(212,175,55,.55),rgba(212,175,55,0) 65%)} .th-gold .b2{background:radial-gradient(circle,rgba(110,60,200,.55),rgba(110,60,200,0) 65%)} .th-gold .b3{background:radial-gradient(circle,rgba(200,120,40,.45),rgba(200,120,40,0) 65%)}
+  .th-gold .sp{background:#f5d77a;box-shadow:0 0 10px #f5d77a}
+  .th-gold .h2,.th-gold .per,.th-gold .url,.th-gold .r{color:#d9cfbd} .th-gold .line{background:linear-gradient(90deg,#d4af37,#f9e08b,#d4af37)}
+  .th-gold .big{background-image:linear-gradient(100deg,#d4af37 20%,#fff6cf 40%,#d4af37 60%)} .th-gold .bl{color:#e8c463} .th-gold .r{border-color:rgba(246,239,224,.16)} .th-gold .r b{color:#fff7e1}
+  .th-gold .cta{background:linear-gradient(90deg,#c8992b,#f3d277,#c8992b);color:#1a1205} .th-gold .live{color:#4ade80} .th-gold .live i{background:#4ade80} .th-gold .toast{background:#d4af37;color:#1a1205}
+
+  /* Sunset: warm orange to pink to violet */
+  .th-sunset{background:#ff5a00 !important;background:linear-gradient(165deg,#ff8a00 0%,#ff3d6e 52%,#7b2ff7 100%) !important;color:#fff}
+  .th-sunset .b1{background:radial-gradient(circle,rgba(255,214,0,.55),rgba(255,214,0,0) 65%)} .th-sunset .b2{background:radial-gradient(circle,rgba(255,255,255,.35),rgba(255,255,255,0) 65%)} .th-sunset .b3{background:radial-gradient(circle,rgba(70,0,160,.5),rgba(70,0,160,0) 65%)}
+  .th-sunset .sp{background:#fff} .th-sunset .line{background:#fff} .th-sunset .bl{color:#fff3c4} .th-sunset .r{border-color:rgba(255,255,255,.35)} .th-sunset .live{color:#fff} .th-sunset .live i{background:#bbf7d0}
+  .th-sunset .cta{background:#fff;color:#ff3d6e} .th-sunset .cta:after{background:linear-gradient(100deg,rgba(255,61,110,0),rgba(255,61,110,.25),rgba(255,61,110,0))} .th-sunset .toast{background:#fff;color:#ff3d6e}
+
+  /* Rose Luxe: cream, blush and deep wine */
+  .th-rose{background:#fff6f2 !important;color:#3b0a1e}
+  .th-rose .b1{background:radial-gradient(circle,rgba(255,170,190,.7),rgba(255,170,190,0) 65%)} .th-rose .b2{background:radial-gradient(circle,rgba(255,205,160,.7),rgba(255,205,160,0) 65%)} .th-rose .b3{background:radial-gradient(circle,rgba(220,150,230,.55),rgba(220,150,230,0) 65%)}
+  .th-rose .sp{background:#e9739a;opacity:.6} .th-rose .line{background:#b0174f} .th-rose .bl{color:#b0174f} .th-rose .big{color:#5a0f2e} .th-rose .r{border-color:rgba(59,10,30,.14)} .th-rose .h2,.th-rose .per,.th-rose .url{color:#7a3a52}
+  .th-rose .cta{background:linear-gradient(90deg,#8a0f3d,#c2185b);color:#fff} .th-rose .toast{background:#8a0f3d}
+
+  /* Emerald: deep green with mint and gold */
+  .th-emerald{background:#03201b !important;color:#eafff8}
+  .th-emerald .b1{background:radial-gradient(circle,rgba(45,212,191,.5),rgba(45,212,191,0) 65%)} .th-emerald .b2{background:radial-gradient(circle,rgba(16,185,129,.5),rgba(16,185,129,0) 65%)} .th-emerald .b3{background:radial-gradient(circle,rgba(234,179,8,.35),rgba(234,179,8,0) 65%)}
+  .th-emerald .sp{background:#a7f3d0;box-shadow:0 0 8px #5eead4} .th-emerald .line{background:linear-gradient(90deg,#2dd4bf,#facc15)} .th-emerald .bl{color:#5eead4} .th-emerald .big{background-image:linear-gradient(100deg,#5eead4 20%,#ffffff 40%,#5eead4 60%)}
+  .th-emerald .h2,.th-emerald .per,.th-emerald .url,.th-emerald .r{color:#bfe9dd} .th-emerald .r{border-color:rgba(234,255,248,.15)} .th-emerald .r b{color:#fff} .th-emerald .cta{background:linear-gradient(90deg,#14b8a6,#2dd4bf);color:#042f2a} .th-emerald .toast{background:#14b8a6;color:#042f2a}
+
+  /* TM Perfume House: the logo's own colours. Cream, the logo orange, chunky letters with a dark brown outline */
+  .tmlogo{display:none;position:absolute;right:34px;top:30px;width:116px;height:116px;-webkit-animation:bob 3.2s ease-in-out infinite alternate;animation:bob 3.2s ease-in-out infinite alternate}
+  @-webkit-keyframes bob{from{-webkit-transform:translateY(0) rotate(-3deg)}to{-webkit-transform:translateY(-10px) rotate(3deg)}} @keyframes bob{from{transform:translateY(0) rotate(-3deg)}to{transform:translateY(-10px) rotate(3deg)}}
+  .th-brand{background:#faf1e2 !important;color:#2b1a10}
+  .th-brand .tmlogo{display:block} .th-brand .live{top:158px;right:44px;color:#16a34a}
+  .th-brand .b1{background:radial-gradient(circle,rgba(255,145,74,.42),rgba(255,145,74,0) 65%)} .th-brand .b2{background:radial-gradient(circle,rgba(255,196,140,.55),rgba(255,196,140,0) 65%)} .th-brand .b3{background:radial-gradient(circle,rgba(255,145,74,.3),rgba(255,145,74,0) 65%)}
+  .th-brand .sp{background:#ff914a;opacity:.7}
+  .th-brand .h1{color:#2b1a10;font-size:48px;top:58px;letter-spacing:-1.5px} .th-brand .h2{top:116px} .th-brand .h2,.th-brand .per,.th-brand .url{color:#6b4a35}
+  .th-brand .t{color:#ff914a;-webkit-text-stroke:3px #2b1a10;text-shadow:5px 5px 0 #2b1a10}
+  .th-brand .line{height:7px;border-radius:7px;background:#2b1a10}
+  .th-brand .big{color:#ff914a;-webkit-text-stroke:6px #2b1a10;text-shadow:9px 9px 0 #2b1a10}
+  .th-brand .bl{color:#2b1a10} .th-brand .r{border-color:#ead9c1} .th-brand .r b{color:#2b1a10}
+  .th-brand .cta{background:#ff914a;color:#2b1a10;border:5px solid #2b1a10;box-shadow:0 8px 0 #2b1a10;padding:11px}
+  /* the website as a badge at the top (the bottom of the store TV is under Android's own buttons) */
+  .th-brand .url{left:42px;right:auto;top:160px;font-size:24px;font-weight:900;color:#2b1a10;background:#fff;border:3px solid #2b1a10;border-radius:30px;padding:6px 18px 6px 14px;box-shadow:0 4px 0 #ff914a;letter-spacing:-.3px}
+  .th-brand .url:before{content:'\25B6';margin-right:8px;font-size:18px;color:#ff914a;position:relative;top:-2px}
+  .th-brand .t{top:222px} .th-brand .per{top:388px} .th-brand .line{top:440px}
+  .th-brand .cta{top:1118px}
+  .th-brand .toast{background:#2b1a10;color:#ffd3b0} .th-brand .big.flash{-webkit-animation:flb .9s;animation:flb .9s} @-webkit-keyframes flb{0%{-webkit-transform:scale(1.08)}100%{-webkit-transform:scale(1)}} @keyframes flb{0%{transform:scale(1.08)}100%{transform:scale(1)}} .th-brand .plus{color:#ff914a;-webkit-text-stroke:3px #2b1a10}
+
+  /* live bits of the TM Perfume House look: a clock, a strip of changing lines, the logo's little jump with a perfume puff */
+  .clk,.tick,.puff{display:none}
+  .th-brand .clk{display:block;position:absolute;right:44px;top:190px;font-size:24px;font-weight:800;color:#6b4a35;font-variant-numeric:tabular-nums}
+  .th-brand .tick{display:block;position:absolute;left:250px;right:44px;top:700px;height:58px;border:3px solid #2b1a10;border-radius:30px;background:#fff;overflow:hidden;box-shadow:0 4px 0 #2b1a10}
+  .tick span{position:absolute;left:0;right:0;top:0;height:52px;line-height:52px;text-align:center;font-size:22px;font-weight:800;color:#2b1a10;white-space:nowrap;-webkit-transition:-webkit-transform .5s,opacity .5s;transition:transform .5s,opacity .5s}
+  .tick span.out{-webkit-transform:translateY(-52px);transform:translateY(-52px);opacity:0} .tick span.in{-webkit-transform:translateY(52px);transform:translateY(52px);opacity:0}
+  .tmlogo.jump{-webkit-animation:ljump 1.1s ease-in-out;animation:ljump 1.1s ease-in-out}
+  @-webkit-keyframes ljump{0%{-webkit-transform:translateY(0) rotate(0)}30%{-webkit-transform:translateY(-40px) rotate(-12deg) scale(1.08)}60%{-webkit-transform:translateY(0) rotate(360deg)}75%{-webkit-transform:scale(1.12,.88)}100%{-webkit-transform:rotate(360deg)}}
+  @keyframes ljump{0%{transform:translateY(0) rotate(0)}30%{transform:translateY(-40px) rotate(-12deg) scale(1.08)}60%{transform:translateY(0) rotate(360deg)}75%{transform:scale(1.12,.88)}100%{transform:rotate(360deg)}}
+  .th-brand .puff{display:block;position:absolute;width:26px;height:26px;border-radius:50%;background:#ffd3b0;opacity:0;z-index:2}
+  .puff.go{-webkit-animation:pf 1.4s ease-out forwards;animation:pf 1.4s ease-out forwards}
+  @-webkit-keyframes pf{0%{opacity:.95;-webkit-transform:translate(0,0) scale(.4)}100%{opacity:0;-webkit-transform:translate(var(--x),var(--y)) scale(2.6)}} @keyframes pf{0%{opacity:.95;transform:translate(0,0) scale(.4)}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(2.6)}}
+
+  /* Classic (white) keeps its look: only a few soft orange sparkles */
+  .th-classic .blob{display:none} .th-classic .sp{background:#ff5a00;opacity:.35}
+  #fsb{position:fixed;left:50%;bottom:6%;-webkit-transform:translateX(-50%);transform:translateX(-50%);z-index:99;font:900 26px/1 Inter,Arial,sans-serif;white-space:nowrap;padding:20px 32px;border-radius:50px;border:5px solid #2b1a10;background:#ff914a;color:#2b1a10;box-shadow:0 8px 0 #2b1a10;cursor:pointer;outline:none}
+  #fsb:focus{box-shadow:0 0 0 8px #fff,0 8px 0 #2b1a10} #fsb.off{display:none}
+</style>
+</head>
+<body>
+<div id="stage" class="th-brand"><div id="fx"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+  <img class="tmlogo" src="assets/img/tmph-logo.png" alt=""><div class="h1" id="title">TM Perfume House</div><div class="h2" id="place">Vesu, Surat</div><div class="live" id="live"><i></i><span id="livet">LIVE</span></div><div class="clk" id="clk"></div><div class="tick" id="tick"><span id="tk"></span></div>
+  <div class="t">Store<br>Report Card</div><div class="per" id="per">Last 2 months</div><div class="line"></div>
+  <div class="big" id="ord">–</div><div class="bl">Orders</div><div class="plus" id="pl">+1</div>
+  <div class="rows">
+    <div class="r"><span>Bottles sold</span><b id="bt">–</b></div>
+    <div class="r"><span>WhatsApp<small>community members</small></span><b id="cm">–</b></div>
+    <div class="r"><span>Google reviews</span><b id="gr">–</b></div>
+    <div class="r"><span>Average Google rating</span><b id="rt">–</b></div>
+  </div>
+  <div class="toast" id="ts"></div>
+  <div class="cta" id="cta">Order it now</div><div class="url" id="url">tmperfumehouse.com</div>
+  <div id="msg" style="color:#555">Loading…</div>
+</div>
+<button id="fsb" type="button" autofocus>&#x26F6; Full screen &ndash; press OK</button>
+<script src="assets/js/config.js?v=4"></script>
+<script>
+/* written in plain old JavaScript so it also runs in the old Chrome of cheap Android TV boxes */
+(function () {
+  function $(id) { return document.getElementById(id); }
+  var API = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : 'api.php';      // the real address of the API (from config.js, like every other page)
+  var st = $('stage'), m = /[?&]k=([^&]*)/.exec(location.search), key = m ? decodeURIComponent(m[1]) : '', fromStore = false;
+  function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k) || ''; if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return ''; } return ''; }
+  if (key) ls('sd_key', key); else { key = ls('sd_key'); fromStore = !!key; }
+  function fit() {
+    var w = window.innerWidth || document.documentElement.clientWidth, h = window.innerHeight || document.documentElement.clientHeight, s = Math.min(w / 720, h / 1280);
+    var tf = 'scale(' + s + ')'; st.style.webkitTransform = tf; st.style.transform = tf;
+    st.style.left = Math.max(0, (w - 720 * s) / 2) + 'px'; st.style.top = Math.max(0, (h - 1280 * s) / 2) + 'px';
+  }
+  window.addEventListener('resize', fit); fit();
+  function f(n) { n = Number(n || 0); try { return n.toLocaleString('en-IN'); } catch (e) { return String(n); } }
+  var last = null, audio = null;
+  function restart(el, cls) { el.className = el.className.replace(' ' + cls, '').replace(cls, ''); void el.offsetWidth; el.className += ' ' + cls; }
+  function flash(id) { restart($(id), 'flash'); }
+  function toast(t) { var e = $('ts'); e.textContent = t; e.className = 'toast on'; setTimeout(function () { e.className = 'toast'; }, 2600); }
+  function ding() { try { var AC = window.AudioContext || window.webkitAudioContext; audio = audio || new AC(); var o = audio.createOscillator(), g = audio.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(0.0001, audio.currentTime); g.gain.exponentialRampToValueAtTime(0.4, audio.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.7); o.connect(g); g.connect(audio.destination); o.start(0); o.stop(audio.currentTime + 0.75); } catch (e) { /* no sound on this screen */ } }
+  // the look: from the settings (d.theme), or ?theme= in the link (used by the previews in Store -> Display)
+  var tm = /[?&]theme=([a-z]+)/.exec(location.search), themeLock = tm ? tm[1] : '', theme = '';
+  var COL = { brand: ['#ff914a', '#2b1a10', '#ffd3b0'], classic: ['#ff5a00', '#ffb020', '#16a34a'], gold: ['#d4af37', '#f9e08b', '#ffffff'], sunset: ['#ffffff', '#ffd400', '#ff3d6e'], rose: ['#c2185b', '#f48fb1', '#ffcc80'], emerald: ['#2dd4bf', '#facc15', '#ffffff'] };
+  function setTheme(t) {
+    t = COL[t] ? t : 'brand'; if (t === theme) return; theme = t; st.className = 'th-' + t;
+    var big = $('ord'); big.className = (t === 'gold' || t === 'emerald') ? 'big shim' : 'big';
+  }
+  (function sparkles() {   // tiny dots rising slowly, like perfume mist
+    var fx = $('fx'); for (var i = 0; i < 16; i++) { var d = document.createElement('div'), z = 4 + Math.round(Math.random() * 7), dur = 12 + Math.random() * 14;
+      d.className = 'sp'; d.style.left = Math.round(Math.random() * 700) + 'px'; d.style.width = z + 'px'; d.style.height = z + 'px';
+      d.style.webkitAnimationDuration = d.style.animationDuration = dur + 's'; d.style.webkitAnimationDelay = d.style.animationDelay = (-Math.random() * dur) + 's'; fx.appendChild(d); }
+  })();
+  function confetti() {   // a burst from the big number when a new bill comes
+    var c = COL[theme] || COL.classic; for (var i = 0; i < 26; i++) { var e = document.createElement('div'), a = Math.random() * Math.PI * 2, r = 160 + Math.random() * 260;
+      e.className = 'cf'; e.style.left = (260 + Math.random() * 120) + 'px'; e.style.top = (560 + Math.random() * 60) + 'px'; e.style.background = c[i % c.length];
+      e.style.setProperty('--x', Math.round(Math.cos(a) * r) + 'px'); e.style.setProperty('--y', Math.round(Math.sin(a) * r - 120) + 'px'); e.style.setProperty('--r', Math.round(Math.random() * 720 - 360) + 'deg');
+      st.appendChild(e); (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 2100); })(e); }
+  }
+  setTheme(themeLock || 'brand');
+  // a changed number counts up to the new one (like a meter), then flashes
+  function setNum(id, v, old) {
+    if (old === undefined || old === null || v === old || v < old || v - old > 500) { $(id).textContent = f(v); if (old !== undefined && old !== null && v !== old) flash(id); return; }
+    var t0 = new Date().getTime(), dur = 1200; (function go() { var k = Math.min(1, (new Date().getTime() - t0) / dur); $(id).textContent = f(Math.round(old + (v - old) * k)); if (k < 1) setTimeout(go, 40); else flash(id); })();
+  }
+  // the live clock (seconds), and the strip of lines that change every 4 seconds
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+  setInterval(function () { var d = new Date(), h = d.getHours(), ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; $('clk').textContent = h + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()) + ' ' + ap; }, 1000);
+  var TK = [], tki = 0;
+  function lines(d) { TK = [];
+    if (d.rating !== '') TK.push('\u2605 ' + d.rating + ' on Google \u2014 thanks, Surat!');
+    if (d.community) TK.push('\u2665 ' + f(d.community) + ' happy people in our family');
+    if (d.bottles) TK.push(f(d.bottles) + ' bottles of happiness sold');
+    TK.push('Smell it. Love it. Take it home.');
+    if (d.reviews) TK.push('\u2605 ' + f(d.reviews) + ' Google reviews & counting'); }
+  function nextLine() { if (!TK.length) return; var o = $('tk'), n = document.createElement('span'); n.className = 'in'; n.textContent = TK[tki++ % TK.length]; o.parentNode.appendChild(n);
+    o.className = 'out'; o.removeAttribute('id'); n.id = 'tk'; setTimeout(function () { n.className = ''; }, 30); setTimeout(function () { if (o.parentNode) o.parentNode.removeChild(o); }, 600); }
+  setInterval(nextLine, 4000);
+  // the logo: now and then a jump and a spin, with a little perfume puff
+  function puff() { var L = document.querySelector('.tmlogo'); if (!L || theme !== 'brand') return; restart(L, 'jump'); setTimeout(function () { L.className = 'tmlogo'; }, 1200);
+    for (var i = 0; i < 6; i++) { var p = document.createElement('div'); p.className = 'puff'; p.style.left = (560 + Math.random() * 40) + 'px'; p.style.top = (90 + Math.random() * 30) + 'px';
+      p.style.setProperty('--x', Math.round(-60 - Math.random() * 120) + 'px'); p.style.setProperty('--y', Math.round(-20 + Math.random() * 90) + 'px'); st.appendChild(p);
+      (function (el, dl) { setTimeout(function () { restart(el, 'go'); }, dl); setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, dl + 1500); })(p, 350 + i * 90); } }
+  setTimeout(puff, 3000); setInterval(puff, 14000);
+  function show(d) {
+    setTheme(themeLock || d.theme || 'brand'); var firstLines = !TK.length; lines(d); if (firstLines) { $('tk').textContent = TK[0]; tki = 1; }
+    $('title').textContent = d.title; $('place').textContent = d.place; $('per').textContent = d.period; $('cta').textContent = d.cta; $('url').textContent = d.url;
+    $('rt').textContent = d.rating !== '' ? d.rating + '/5' : '–'; $('gr').textContent = f(d.reviews);
+    setNum('ord', d.orders, last && last.orders); setNum('bt', d.bottles, last && last.bottles); setNum('cm', d.community, last && last.community);
+    if (last && d.orders > last.orders) {
+      var p = $('pl'); p.textContent = '+' + (d.orders - last.orders); restart(p, 'go');
+      var nb = Math.max(0, d.bottles - last.bottles);
+      confetti(); puff(); toast('New bill · ' + nb + ' bottle' + (nb === 1 ? '' : 's') + (d.community > last.community ? ' · +' + (d.community - last.community) + ' community' : '')); if (d.sound) ding();
+    }
+    last = d; $('msg').style.display = 'none'; $('live').className = 'live'; $('livet').textContent = 'LIVE';
+  }
+  function offline(text) {
+    if (!last) { $('msg').textContent = text; $('msg').style.display = 'block'; } else { $('live').className = 'live off'; $('livet').textContent = 'OFFLINE'; }
+  }
+  function tick() {
+    try {
+      var x = new XMLHttpRequest(); x.open('GET', API + '?action=st_disp.feed&k=' + encodeURIComponent(key) + '&_t=' + new Date().getTime(), true);
+      x.timeout = 15000;
+      x.onload = function () {
+        var d = null; try { d = JSON.parse(x.responseText); } catch (e) { d = null; }
+        if (x.status === 403 && fromStore) { ls('sd_key', null); location.reload(); return; }
+        if (x.status !== 200 || !d || d.error) { offline((d && d.error) || 'The screen could not start (code ' + x.status + ').'); return; }
+        try { show(d); } catch (e) { offline('Display error: ' + e.message); }
+      };
+      x.onerror = x.ontimeout = function () { offline('No internet connection.'); };
+      x.send();
+    } catch (e) { offline('Display error: ' + e.message); }
+  }
+  window.onerror = function (msg) { try { $('msg').textContent = 'Display error: ' + msg; $('msg').style.display = 'block'; } catch (e) { /* ok */ } };
+  function pairMode() {
+    var code = ls('sd_code'); if (!/^\d{6}$/.test(code)) { code = String(100000 + Math.floor(Math.random() * 900000)); ls('sd_code', code); }
+    $('msg').style.color = '#111'; $('msg').style.fontSize = '34px'; $('msg').style.display = 'block';
+    $('msg').innerHTML = 'Connect this screen<br><span style="font-size:130px;font-weight:900;letter-spacing:8px;color:#ff5a00;line-height:1.3">' + code + '</span><br><span style="font-size:28px;color:#444">On the computer or phone open HRMS<br>Store → Display → <b>Connect a TV</b><br>and type this number</span>';
+    $('livet').textContent = 'WAITING';
+    function poll() {
+      try { var x = new XMLHttpRequest(); x.open('GET', API + '?action=st_disp.pair&c=' + code + '&_t=' + new Date().getTime(), true); x.timeout = 15000;
+        x.onload = function () { var d = null; try { d = JSON.parse(x.responseText); } catch (e) { d = null; } if (d && d.key) { ls('sd_key', d.key); ls('sd_code', null); location.replace('store_display_tv.html'); } };
+        x.send(); } catch (e) { /* try again */ }
+    }
+    poll(); setInterval(poll, 3000);
+  }
+  if (!key) { pairMode(); } else { tick(); setInterval(tick, 8000); }
+  setTimeout(function () { location.reload(); }, 6 * 3600 * 1000);
+  // one tap on the screen = full screen (the address bar and tabs of Chrome go away); a browser allows it only after a tap
+  function full() { var e = document.documentElement, f = e.requestFullscreen || e.webkitRequestFullscreen || e.webkitRequestFullScreen || e.mozRequestFullScreen || e.msRequestFullscreen;
+    var on = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement; if (f && !on) { try { var r = f.call(e); if (r && r.catch) r.catch(function () { /* not allowed here */ }); } catch (x) { /* old browser */ } } }
+  document.addEventListener('click', full); document.addEventListener('touchend', full); document.addEventListener('keydown', full);
+  // a big button: OK on the remote presses it (a press is what the browser needs). It hides in full screen, and after 30 s; any key or tap brings it back.
+  var fsb = $('fsb'), fsT = null;
+  function isFull() { return !!(document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement); }
+  function fsShow() { if (isFull() || (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches)) { fsb.className = 'off'; return; } fsb.className = ''; try { fsb.focus(); } catch (e) { /* ok */ } clearTimeout(fsT); fsT = setTimeout(function () { fsb.className = 'off'; }, 30000); }
+  fsb.onclick = function (e) { e.stopPropagation(); full(); setTimeout(fsShow, 600); };
+  document.addEventListener('fullscreenchange', fsShow); document.addEventListener('webkitfullscreenchange', fsShow);
+  document.addEventListener('keydown', function () { if (fsb.className === 'off' && !isFull()) fsShow(); }); document.addEventListener('touchstart', function () { if (fsb.className === 'off' && !isFull()) fsShow(); });
+  fsShow();
+  document.addEventListener('click', function () { try { var AC = window.AudioContext || window.webkitAudioContext; audio = audio || new AC(); if (audio.resume) audio.resume(); } catch (e) { /* ok */ } });
+})();
+</script>
+</body>
+</html>

@@ -63,6 +63,10 @@ function wa_wabas(PDO $pdo): array
 {
     $o = []; $d = wa_cfg_val('WA_WABA_ID'); if ($d !== '') $o[$d] = true;
     foreach ($pdo->query("SELECT waba_id FROM wa_numbers")->fetchAll() as $r) { $w = trim((string)$r['waba_id']); if ($w !== '') $o[$w] = true; }
+    // 🏪 the STORE's own WhatsApp account takes no sales pre-made message (nothing of the sales flows goes there): left out here unless a sales number uses the same account.
+    try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'swa'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; $sid = is_array($j) ? (int)($j['number_id'] ?? 0) : 0;
+        if ($sid > 0) { $sw = ''; $other = []; foreach ($pdo->query("SELECT id, waba_id FROM wa_numbers")->fetchAll() as $r) { $wb = trim((string)$r['waba_id']) !== '' ? trim((string)$r['waba_id']) : $d; if ((int)$r['id'] === $sid) $sw = $wb; else $other[$wb] = true; }
+            if ($sw !== '' && empty($other[$sw])) unset($o[$sw]); } } catch (Throwable $e) { }
     return array_keys($o);
 }
 
@@ -317,9 +321,15 @@ function wa_tpl_needs(array $t): array
         'coupon' => $has('COPY_CODE'), 'url_suffix' => $has('URL', fn($b) => (bool)preg_match('/\{\{\s*1\s*\}\}/', (string)($b['url'] ?? ''))),
         'location' => $hf === 'LOCATION', 'expires' => wa_tpl_type($t) === 'LTO', 'media' => in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)];
 }
+/** 🚫 A message that promises the OLD "2% on prepaid / full payment" (owner, 25 Nov 2026: that discount does not exist any more — "that message must not go at all"). Such a template is never sendable, whoever picks it. */
+function wa_tpl_prepaid2(string $body): bool
+{
+    return $body !== '' && (bool)preg_match('/(prepaid|pre\s*paid|full\s*pay(ment)?|online\s*pay(ment)?|advance\s*pay(ment)?)[^\n]{0,60}(?<![\d.])2\s*(%|percent)|(?<![\d.])2\s*(%|percent)[^\n]{0,60}(prepaid|pre\s*paid|full\s*pay(ment)?|online\s*pay(ment)?|advance\s*pay(ment)?)/iu', $body);
+}
 /** True when everything the message needs (a photo / video / PDF on top, only button kinds we can fill) exists. */
 function wa_tpl_sendable(array $t, ?PDO $pdo = null): bool
 {
+    if (wa_tpl_prepaid2((string)($t['body'] ?? ''))) return false;   // the old prepaid 2% offer: never sent again
     $ex = wa_tpl_arr($t['extra'] ?? []); if (!empty($ex['unsupported'])) return false;
     foreach (wa_tpl_arr($t['buttons'] ?? []) as $b) if (is_array($b) && !in_array(strtoupper((string)($b['type'] ?? 'QUICK_REPLY')), ['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE'], true)) return false;
     $hf = (string)($t['header_format'] ?? '');
@@ -356,6 +366,7 @@ function wa_tpl_send_components(PDO $pdo, array $t, array $vars, string $phoneId
     $fail = fn(string $m) => ['ok' => false, 'components' => null, 'error' => $m];
     $t['buttons'] = wa_tpl_arr($t['buttons'] ?? []); $t['lto'] = wa_tpl_arr($t['lto'] ?? []); $t['extra'] = wa_tpl_arr($t['extra'] ?? []);
     $hf = (string)($t['header_format'] ?? ''); $nm = ['IMAGE' => 'photo', 'VIDEO' => 'video', 'DOCUMENT' => 'PDF'];
+    if (wa_tpl_prepaid2((string)($t['body'] ?? ''))) return $fail('This message promises the old 2% prepaid discount, which does not exist any more. It is not sent.');
     if (!wa_tpl_sendable($t)) return $fail(wa_tpl_media_kind($hf) !== '' && (int)($t['header_lib_id'] ?? 0) <= 0
         ? 'This message has a ' . $nm[$hf] . ' on top, but none is chosen yet. Pick it in Pre-made messages.' : 'This kind of message cannot be sent from here yet.');
     $comp = []; $ty = wa_tpl_type($t);
@@ -1000,6 +1011,7 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
             $vars = array_map(fn($x) => mb_substr(trim((string)$x), 0, 300), (array)($in['vars'] ?? [])); $need = count(wa_tpl_vars((string)$t['body']));
             for ($i = 0; $i < $need; $i++) if (($vars[$i] ?? '') === '') json_response(['error' => 'Fill the variable {{' . ($i + 1) . '}} first.'], 422);
             $hvar = trim((string)($in['header_var'] ?? '')); if ($t['header_format'] === 'TEXT' && wa_tpl_vars((string)$t['header_text']) && $hvar === '') json_response(['error' => 'Fill the heading variable first.'], 422);
+            if (wa_tpl_prepaid2((string)($t['body'] ?? ''))) json_response(['error' => 'This message promises the old 2% prepaid discount, which does not exist any more. It cannot be sent.'], 422);
             if (!wa_tpl_sendable($t, $pdo)) json_response(['error' => wa_tpl_media_kind((string)$t['header_format']) !== '' ? 'This message has a ' . ['IMAGE' => 'photo', 'VIDEO' => 'video', 'DOCUMENT' => 'PDF'][$t['header_format']] . ' on top, but none is chosen yet. An admin must pick it in Pre-made messages.' : 'This kind of message cannot be sent from a chat yet.'], 422);
             // the number: the one the customer last used — if it has no approval for this message, any number that has
             // ⚡ which numbers have this message approved: the same answer for every customer of a bulk send → looked up once per 20 seconds, not 3-4 queries per message
@@ -1028,7 +1040,7 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
             $shown = wa_tpl_shown_text($t, $vars, $hvar); $now = date('Y-m-d H:i:s');
             $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'template', ?, 'sent', 'emp', ?, ?)")->execute([$wamid, $key, (int)$use['id'], $shown, $me, $now]);
             // a pre-made message to a CLOSED chat whose 24-hour window is over (the 🕘 History list) must NOT put it back in Requests — it comes back only when the customer replies (wa.php re-opens it then)
-            $histChat = (string)($c['status'] ?? '') === 'closed' && (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400);
+            $histChat = function_exists('wa_is_history_chat') ? wa_is_history_chat($pdo, $c) : ((string)($c['status'] ?? '') === 'closed' && (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400));   // the History list's own rule: also a chat closed by Stop / Not now in the last 24 hours
             if ($histChat) $pdo->prepare("UPDATE wa_contacts SET last_out_at = ? WHERE phone = ?")->execute([$now, $key]);
             else $pdo->prepare("UPDATE wa_contacts SET last_out_at = ?, state = 'human', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$now, $key]);
             $pdo->prepare("UPDATE wa_templates SET used = used + 1 WHERE id = ?")->execute([$t['id']]);

@@ -54,7 +54,7 @@
   <main class="main">
     <div class="topbar"><h1>📦 SKU sheet</h1></div>
     <div class="content dm">
-      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">How many of each perfume and size were ordered on one day, read live from the orders (every Shopify order and every manual order from 12 AM to 12 AM of that day — 24 hours — cancelled ones left out). Combos are opened into their perfumes. <b>Download Excel</b> gives this sheet in your format.</p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">How many of each perfume and size were ordered on one day, read live from the orders (every Shopify order, every website order and every manual order from 12 AM to 12 AM of that day — 24 hours — cancelled ones left out). Combos are opened into their perfumes. <b>Download Excel</b> gives this sheet in your format.</p>
       <div class="bar">
         <div><label>Day · 12 AM – 12 AM</label><input type="date" id="dDay"></div>
         <button class="btn" type="button" id="bToday" style="background:#fff;color:#111;border:1px solid var(--line)">Today</button>
@@ -63,15 +63,20 @@
         <button class="btn" type="button" id="bRef" style="background:#fff;color:#111;border:1px solid var(--line)">🔄 Refresh</button>
         <span style="flex:1"></span>
         <button class="btn" type="button" id="bUp" style="background:#fff;color:#111;border:1px solid var(--line);display:none" title="Replace the SKU list: an Excel whose first three columns are SKU · original name · shop name">⬆ Upload SKU file</button>
+        <button class="btn" type="button" id="bList" style="background:#fff;color:#111;border:1px solid var(--line)" title="The SKU list as Excel: SKU NO · ORIGINAL NAME · TM NAME">⬇ Download SKU list</button>
         <input type="file" id="fUp" accept=".xlsx,.xls,.csv" style="display:none">
         <button class="btn" type="button" id="bXlsx" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
       </div>
-      <div id="chBox" style="margin:0 0 12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin:0 0 12px">
+      <div id="chBox" style="flex:1 1 440px;min-width:0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b id="chTitle">⛓ Chain report</b>
-          <span style="display:inline-flex;align-items:center;gap:6px;background:#f4f4f4;border-radius:10px;padding:4px 8px;font-size:13px">🕛 Day <button type="button" class="btn" id="chPrev" style="background:#fff;color:#111;border:1px solid var(--line);padding:3px 9px">◀</button><input type="date" id="chDay"><button type="button" class="btn" id="chNext" style="background:#fff;color:#111;border:1px solid var(--line);padding:3px 9px">▶</button> <b id="chWin"></b></span><span style="flex:1"></span>
-          <button class="btn" type="button" id="chGo" style="background:#fff;color:#111;border:1px solid var(--line)">🔄 Recount chains</button>
-          <button class="btn" type="button" id="chXl" style="background:#15803d;border-color:#15803d" disabled>⬇ Chain Excel</button></div>
+          <span style="display:inline-flex;align-items:center;gap:6px;background:#f4f4f4;border-radius:10px;padding:4px 8px;font-size:13px"><span hidden><button type="button" class="btn" id="chPrev">◀</button><input type="date" id="chDay"><button type="button" class="btn" id="chNext">▶</button></span>🕛 <b id="chWin"></b></span><span style="flex:1"></span>
+          <button class="btn" type="button" id="chGo" style="display:none">🔄 Recount chains</button>
+          <button class="btn" type="button" id="chXl" style="background:#15803d;border-color:#15803d" disabled>⬇ Chain Excel</button>
+          <button class="btn" type="button" id="chPdf" style="background:#b91c1c;border-color:#b91c1c" disabled>⬇ Chain PDF</button></div>
         <div id="chOut" style="margin-top:8px;font-size:13px"></div>
+      </div>
+      <div id="bcBox" style="flex:1 1 440px;min-width:0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px"></div>      <!-- 🏷 barcode generator: assets/js/sku_barcode.js -->
       </div>
       <div class="sk-sr"><input type="search" id="skQ" placeholder="Search an order number or a perfume name…" autocomplete="off" aria-label="Search the SKU sheet"></div>
       <div id="skFound"></div>
@@ -116,7 +121,7 @@
   }
   let skT = 0; $('skQ').addEventListener('input', () => { clearTimeout(skT); skT = setTimeout(renderRows, 200); });
   function draw(d) {
-    D = d; $('bXlsx').disabled = !d.rows.length;
+    D = d; $('bXlsx').disabled = !d.rows.length; if (window.SkuBC) window.SkuBC.refresh();
     // ---- on top: everything that could not be put in the sheet
     let top = '';
     (d.errors || []).forEach((e) => { top += '<div class="box bad"><b>Some orders could not be read.</b> ' + esc(e) + ' — the sheet below is NOT complete. Press Refresh.</div>'; });
@@ -126,7 +131,7 @@
     if ((d.noted || []).length) top += '<div class="box info" style="background:#fff7e0;border-color:#f3d48a;color:#7a5200"><b>ℹ ' + num(d.noted.reduce((a, x) => a + x.qty, 0)) + ' box item' + (d.noted.reduce((a, x) => a + x.qty, 0) === 1 ? '' : 's') + ' are not in the SKU list.</b> They ARE counted in the sheet below, on the row <b>"Not in SKU list"</b>, in their size column. To count them as the right perfume, add these names in the third column of the SKU file: '
       + d.noted.map((u) => '<b>' + esc(u.text.replace(/\s*\(inside:.*$/, '')) + '</b> ×' + u.qty + ' (' + esc((u.orders || []).join(', ')) + ')').join(' · ') + '</div>';
     else if (d.rows.length) top += '<div class="box ok"><b>✓ Every product of the day was matched to a SKU.</b></div>';
-    top += '<div class="box info"><b>' + dmy(d.day) + '</b> · ' + num(d.orders) + ' Shopify order' + (d.orders === 1 ? '' : 's') + ' + ' + num(d.manual) + ' manual order' + (d.manual === 1 ? '' : 's') + ' read · ' + num(d.lines) + ' product lines · <b>' + num(d.pieces) + ' pieces</b> in the sheet · ' + d.rows.length + ' SKUs' + (d.cancelled ? ' · ' + d.cancelled + ' cancelled order' + (d.cancelled === 1 ? '' : 's') + ' left out' : '')
+    top += '<div class="box info"><b>' + dmy(d.day) + '</b> · ' + num(d.orders) + ' Shopify order' + (d.orders === 1 ? '' : 's') + ' + ' + num(d.manual) + ' manual order' + (d.manual === 1 ? '' : 's') + ' + ' + num(d.web || 0) + ' website order' + (d.web === 1 ? '' : 's') + ' read · ' + num(d.lines) + ' product lines · <b>' + num(d.pieces) + ' pieces</b> in the sheet · ' + d.rows.length + ' SKUs' + (d.cancelled ? ' · ' + d.cancelled + ' cancelled order' + (d.cancelled === 1 ? '' : 's') + ' left out' : '')
       + ((d.left_out || []).length ? ' · left out on purpose: ' + d.left_out.map((u) => esc(u.text) + ' ×' + u.qty).join(', ') : '') + '</div>';
     $('skTop').innerHTML = top;
     $('skHead').innerHTML = '<tr><th>SKU</th><th style="text-align:left;max-width:none">Perfume Name (Original)</th>' + d.cols.map((c) => '<th>' + esc(c) + '</th>').join('') + '<th>Total</th></tr>';
@@ -134,7 +139,7 @@
   }
   async function load() {
     const my = ++seq; $('bRef').disabled = true; $('skRows').innerHTML = '<tr><td colspan="13" style="padding:20px">Reading the orders of the day from Shopify…</td></tr>'; $('skTop').innerHTML = ''; $('bXlsx').disabled = true;
-    try { const d = await api.get('sku.sheet', { day: $('dDay').value }); if (my !== seq) return; if (!$('dDay').value) $('dDay').value = d.day; TODAY = d.today; draw(d); if (!window.__chOnce) { window.__chOnce = 1; chainRun(); } }      // the chain report has its own 12 PM – 12 PM day: counted once when the page opens, then by its own ◀ ▶ / date
+    try { const d = await api.get('sku.sheet', { day: $('dDay').value }); if (my !== seq) return; if (!$('dDay').value) $('dDay').value = d.day; TODAY = d.today; draw(d); $('chDay').value = $('dDay').value || d.day; chainRun(); }      // ⛓ ONE filter for both: the day picked at the top (date, Today / Yesterday / Tomorrow, Refresh) is the day of the chain report too — it has no date buttons of its own any more      // the chain report has its own 12 PM – 12 PM day: counted once when the page opens, then by its own ◀ ▶ / date
     catch (e) { if (my !== seq) return; $('skRows').innerHTML = ''; $('skTop').innerHTML = '<div class="box bad"><b>The SKU sheet could not be made.</b> ' + esc(e.message) + '</div>'; }
     $('bRef').disabled = false;
   }
@@ -178,23 +183,57 @@
     b.disabled = false; b.textContent = old;
   };
 
+  // ---- ⬇ the SKU list itself as Excel, in the owner's format: SKU NO · ORIGINAL NAME · TM NAME (one sheet, bold head, thin borders)
+  $('bList').onclick = async function () {
+    const b = this, old = b.textContent; b.disabled = true; b.textContent = 'Preparing…';
+    try {
+      const r = await api.get('sku.list'), rows = (r && r.rows) || []; if (!rows.length) throw new Error('The SKU list is empty.');
+      await lib('assets/js/exceljs.min.js?v=440', () => !!window.ExcelJS);
+      const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Sheet1'), thin = { style: 'thin' }, box = { top: thin, left: thin, bottom: thin, right: thin };
+      const put = (vals, head) => { const row = ws.addRow(vals); for (let i = 1; i <= 3; i++) { const c = row.getCell(i); c.border = box; if (head) c.font = { bold: true }; if (i === 1) c.alignment = { horizontal: 'center' }; } };
+      put(['SKU NO', 'ORIGINAL NAME', 'TM NAME'], true);
+      rows.forEach((x) => { const k = String(x[0] == null ? '' : x[0]).trim(); put([/^\d+$/.test(k) ? Number(k) : k, String(x[1] == null ? '' : x[1]), String(x[2] == null ? '' : x[2]) || null], false); });
+      ws.getColumn(1).width = 7.4; ws.getColumn(2).width = 57.4; ws.getColumn(3).width = 39.3;
+      const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'og_sku_' + rows.length + '_perfumes.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { alert('The SKU list could not be downloaded: ' + e.message); }
+    b.disabled = false; b.textContent = old;
+  };
+
   // ---- ⛓ chain report: every product line with "chain" in its name
   let CH = null; const chE = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   let chSeq = 0;
   async function chainRun() {
     if (!$('chDay').value) $('chDay').value = new Date(Date.now() + 19800000).toISOString().slice(0, 10);      // today (India time)
-    const day = $('chDay').value, nxt = new Date(new Date(day + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10), my = ++chSeq; $('chXl').disabled = true; $('chGo').disabled = true; $('chTitle').textContent = '⛓ Chain report'; $('chWin').textContent = dmy(day) + ' 12:00 AM → ' + dmy(nxt) + ' 12:00 AM (24 hours)'; $('chOut').textContent = 'Counting the chains of this 12 AM – 12 AM day…';
+    const day = $('chDay').value, nxt = new Date(new Date(day + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10), my = ++chSeq; $('chXl').disabled = true; $('chPdf').disabled = true; $('chGo').disabled = true; $('chTitle').textContent = '⛓ Chain report'; $('chWin').textContent = dmy(day) + ' 12:00 AM → ' + dmy(nxt) + ' 12:00 AM (24 hours)'; $('chOut').textContent = 'Counting the chains of this 12 AM – 12 AM day…';
     try {
-      const r = await api.get('sku.chain', { from: day, to: day, noon: 1 }); if (my !== chSeq) return; CH = r;
+      const r = await api.get('sku.chain', { from: day, to: day, noon: 1 }); if (my !== chSeq) return; CH = r; if (window.SkuBC) window.SkuBC.refresh();
       $('chOut').innerHTML = '<div style="margin-bottom:8px;font-size:14px"><b>' + r.pieces + ' chain pieces</b> in <b>' + r.orders_with + '</b> orders (of ' + r.orders_read + ' orders in these 24 hours) · ₹' + Number(r.amount).toLocaleString('en-IN') + (r.errors.length ? ' · <span style="color:#b91c1c">' + chE(r.errors.join(' | ')) + '</span>' : '') + '</div>' +
-        (r.rows.length ? '<table class="sk" style="width:auto;min-width:420px"><thead><tr><th style="text-align:left">Chain</th><th>SKU</th><th>Pieces</th><th>Orders</th><th>Amount</th></tr></thead><tbody>' + r.rows.map((x) => '<tr><td style="text-align:left">' + chE(x.name) + '</td><td>' + chE(x.sku) + '</td><td><b>' + x.qty + '</b></td><td>' + x.orders + '</td><td>₹' + Number(x.amount).toLocaleString('en-IN') + '</td></tr>').join('') + '<tr style="font-weight:800;background:#f4f4f4"><td style="text-align:left">TOTAL</td><td></td><td>' + r.pieces + '</td><td>' + r.orders_with + '</td><td>₹' + Number(r.amount).toLocaleString('en-IN') + '</td></tr></tbody></table>' : '<div>No chain product in the orders of these 24 hours.</div>');
-      $('chXl').disabled = !r.rows.length;
+        (r.rows.length ? '<table class="sk" style="width:auto;min-width:420px"><thead><tr><th style="text-align:left">Chain</th><th>SKU</th><th>Pieces</th><th>Orders</th><th>Amount</th></tr></thead><tbody>' + r.rows.map((x, i) => '<tr class="chRow" data-i="' + i + '" style="cursor:pointer" title="Click: show the order numbers"><td style="text-align:left">▸ ' + chE(x.name) + '</td><td>' + chE(x.sku) + '</td><td><b>' + x.qty + '</b></td><td>' + x.orders + '</td><td>₹' + Number(x.amount).toLocaleString('en-IN') + '</td></tr>').join('') + '<tr style="font-weight:800;background:#f4f4f4"><td style="text-align:left">TOTAL</td><td></td><td>' + r.pieces + '</td><td>' + r.orders_with + '</td><td>₹' + Number(r.amount).toLocaleString('en-IN') + '</td></tr></tbody></table>' : '<div>No chain product in the orders of these 24 hours.</div>');
+      // 👆 a click on a chain row opens the order numbers of that chain under it (click again to close)
+      $('chOut').querySelectorAll('tr.chRow').forEach((tr) => { tr.onclick = () => {
+        const nx = tr.nextElementSibling; if (nx && nx.classList.contains('chOrd')) { nx.remove(); tr.firstChild.textContent = tr.firstChild.textContent.replace('▾', '▸'); return; }
+        const x = CH.rows[+tr.dataset.i], list = (x && x.order_list) || [], d = document.createElement('tr'); d.className = 'chOrd';
+        d.innerHTML = '<td colspan="5" style="text-align:left;background:#fffbeb;color:#111;line-height:1.9;white-space:normal;max-width:640px"><b>' + list.length + ' order' + (list.length === 1 ? '' : 's') + ':</b> ' + (list.length ? list.map((o) => '<span style="display:inline-block;border:1px solid #e5d9a8;border-radius:8px;padding:0 7px;margin:2px 3px 2px 0;background:#fff;font-weight:700">' + chE(o) + '</span>').join('') : '—') + '</td>';
+        tr.after(d); tr.firstChild.textContent = tr.firstChild.textContent.replace('▸', '▾'); }; });
+      $('chXl').disabled = !r.rows.length; $('chPdf').disabled = !r.rows.length;
     } catch (e) { if (my === chSeq) $('chOut').textContent = 'Error: ' + e.message; }
     if (my === chSeq) $('chGo').disabled = false;
   }
   $('chGo').onclick = chainRun; $('chDay').onchange = chainRun;
   $('chPrev').onclick = () => { if (!$('chDay').value) return; $('chDay').value = new Date(new Date($('chDay').value + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10); chainRun(); };
   $('chNext').onclick = () => { if (!$('chDay').value) return; $('chDay').value = new Date(new Date($('chDay').value + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10); chainRun(); };
+  // ⬇ Chain PDF: a clean page for Dispatch (chain, pieces, the order numbers) — the browser's own "Save as PDF"
+  $('chPdf').onclick = function () {
+    if (!CH || !CH.rows.length) return;
+    const w = window.open('', '_blank'); if (!w) { alert('Allow pop-ups for this page, then press Chain PDF again.'); return; }
+    const rows = CH.rows.map((x, i) => '<tr><td>' + (i + 1) + '</td><td class="p">' + (x.img ? '<img src="' + chE(x.img) + '" alt="">' : '<span class="np">no photo</span>') + '</td><td><b>' + chE(x.name) + '</b></td><td class="n">' + (x.price ? '₹' + Number(x.price).toLocaleString('en-IN') : '') + '</td><td class="n"><b>' + x.qty + '</b></td><td class="n">' + x.orders + '</td><td class="o">' + chE(x.order_list.join(', ')) + '</td><td class="t"></td></tr>').join('');
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>chain_dispatch_' + chE(CH.from) + '</title><style>body{font-family:Arial,sans-serif;margin:14px;color:#111}h2{margin:0 0 2px;font-size:18px}p{margin:0 0 10px;font-size:12px;color:#444}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #999;padding:5px 6px;vertical-align:top;text-align:left}th{background:#1f4e78;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}.n{text-align:center;white-space:nowrap}.o{font-size:10.5px;word-break:break-word}.t{width:46px}.p{width:74px;text-align:center}.p img{width:70px;height:70px;object-fit:cover;border-radius:6px;display:block}.np{font-size:9.5px;color:#888}td{vertical-align:middle}tr{page-break-inside:avoid}@page{size:A4;margin:10mm}</style></head><body><h2>Chain dispatch list · ' + chE(dmy(CH.from)) + '</h2><p>12:00 AM to 12:00 AM (24 hours) · <b>' + CH.pieces + ' pieces</b> in <b>' + CH.orders_with + '</b> orders · Shopify + website + manual orders, cancelled left out</p><table><thead><tr><th>#</th><th>Photo</th><th>Chain</th><th>Price</th><th>Pieces</th><th>Orders</th><th>Order numbers</th><th>Packed ✓</th></tr></thead><tbody>' + rows + '<tr><td></td><td></td><td><b>TOTAL</b></td><td></td><td class="n"><b>' + CH.pieces + '</b></td><td class="n"><b>' + CH.orders_with + '</b></td><td></td><td></td></tr></tbody></table></body></html>');
+    w.document.close(); w.focus();
+    // the print window opens only after the photos have arrived (or after 6 s at most), so no picture is missing in the PDF
+    const imgs = Array.from(w.document.images), go = () => { try { w.print(); } catch (e) { } }; let left = imgs.filter((im) => !im.complete).length, done = false; const fire = () => { if (done) return; done = true; setTimeout(go, 200); };
+    if (!left) fire(); else { imgs.forEach((im) => { if (!im.complete) im.onload = im.onerror = () => { if (--left <= 0) fire(); }; }); setTimeout(fire, 6000); }
+  };
   $('chXl').onclick = async function () {
     if (!CH || !CH.rows.length) return;
     try {
@@ -246,6 +285,8 @@
   });
   load();
 </script>
+<script src="assets/js/jsbarcode.code128.min.js"></script>
+<script src="assets/js/sku_barcode.js?v=5"></script>
 <script src="assets/js/min_text.js?v=3"></script>
 </body>
 </html>

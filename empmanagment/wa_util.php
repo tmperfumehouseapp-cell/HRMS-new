@@ -169,6 +169,14 @@ function wa_util_auto(PDO $pdo): int
  *  (inside the window the owner picks). No offers, no prices — each states true facts about THAT customer. Any reply opens the free 24-hour chat. */
 function wa_util_pool_defs(): array
 {
+    $d = wa_util_pool_defs_raw();
+    // owner 24 Nov 2026: a SPACED twin (a blank line between the thoughts) of every warm Hinglish message that was made line by line (the first version stays in rotation; they are compared by reply rate)
+    if (!function_exists('wa_space_body') && is_file(__DIR__ . '/wa_space.php')) { try { require_once __DIR__ . '/wa_space.php'; } catch (Throwable $e) { } }
+    if (function_exists('wa_space_body')) { foreach ($d as $k => $x) { if (strpos($k, '_hi_') === false || substr($k, -2) === '_s') continue; $sb = wa_space_body((string)$x['body']); if ($sb !== (string)$x['body']) { $x['body'] = $sb; $d[$k . '_s'] = $x; } } }
+    return $d;
+}
+function wa_util_pool_defs_raw(): array
+{
     $qr = fn(array $l) => array_map(fn($t) => ['type' => 'QUICK_REPLY', 'text' => $t], $l);
     return [
         'ask_followup' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Yes, I need it', 'Not now']),
@@ -221,6 +229,86 @@ function wa_util_pool_defs(): array
             'body' => "Hi {{1}}, a reminder from TM Perfume House: our team can help you with your perfume or any order. Reply with a button below."],
         'open_rem_chat' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Chat with us', 'Not now']),
             'body' => "Hello {{1}}, a quick reminder that you can chat with TM Perfume House any time for help with a perfume or an order. Tap a button to reply."],
+        // 💬 owner, 24 Nov 2026: the warm Hinglish style the customers like (name, emoji, one clear choice by button) - for people who never wrote: no offer, no deal word, no claim of an enquiry or an order
+        'open_hi_1' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Apne liye', 'Gift ke liye']),
+            'body' => "Hi {{1}} 🤩\n\nTM Perfume House me is season ki sabse zyada pasand ki jaane wali khushbuyein aa gayi hain 🔥\n\nAap apne liye dekhna chahenge ya kisi ko gift dene ke liye ? Button dabake dekhiye 👇"],
+        'open_hi_2' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Halki', 'Tez', 'Mix']),
+            'body' => "Hello {{1}} 😍\n\nShaadi aur winter season ki khaas khushbuyein tayaar hain ✨\n\nAapko kaisi pasand hai ? Button dabake apni pasand batayein 👇"],
+        'open_hi_3' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 🎁\n\nGift season shuru ho gaya he, aur humne aapke liye ek khaas pick tayaar rakha he 👀\n\nDekhna chahenge ? Button dabaiye 👇"],
+        // ✨ owner, 25 Nov 2026: utility messages that are exciting but still ABOUT THE CUSTOMER'S OWN earlier chat / enquiry / order (so Meta keeps them utility): season, curiosity, spacing, one choice by button, no deal words
+        'open_ex_1' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 🤩\n\nAapne pehle TM Perfume House se baat ki thi, aur is shaadi-season ke liye ek khaas khushbu ki list aapke liye taiyaar he ✨\n\nDekhna chahenge ? Button dabaiye 👇"],
+        'open_ex_2' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['20ML', '50ML', '100ML']),
+            'body' => "Hello {{1}} 😍\n\nSardi shuru ho gayi he, aur aapki pasand ki khushbuyein aapke ek message ka intezaar kar rahi hain 🔥\n\nKaunsa size dekhna chahenge ? 👇"],
+        'open_ex_3' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Apne liye', 'Gift ke liye']),
+            'body' => "Hi {{1}} 🎁\n\nAapke pichhle sawal ke baad humne gift-season ke liye ek khaas surprise taiyaar kiya he 👀\n\nBatayein, apne liye ya kisi ko gift dene ke liye ? 👇"],
+        'open_ex_4' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Baad me']),
+            'body' => "Hello {{1}} 🌟\n\nAapse baat hone ke baad humare paas kuch nayi khushbuyein aayi hain, jo aapko pasand aa sakti hain 🤩\n\nDekhna chahenge ? 👇"],
+        'open_ex_5' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Zaroor', 'Abhi nahi']),
+            'body' => "Hi {{1}} 💫\n\nWinter wedding-season me aapke liye ek chhota sa secret humne bachake rakha he 🤫\n\nJaanna chahenge ? Button dabaiye 👇"],
+        'ask_ex_1' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 😊\n\nAapne {{3}} ko {{2}} ke bare me poocha tha 🌸\n\nAb uske jaisi hi ek khaas khushbu humare paas he 🤩 Dekhna chahenge ? 👇"],
+        'ask_ex_2' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['20ML', '50ML', '100ML']),
+            'body' => "Hello {{1}} 😍\n\n{{2}} ke liye aapka sawal ({{3}}) humein yaad he, aur ab uska ek naya size aapke liye taiyaar he ✨\n\nKaunsa size dekhna chahenge ? 👇"],
+        'order_ex_1' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Dikhao', 'Baad me']),
+            'body' => "Hi {{1}} 🤩\n\nAapka order {{2}} ({{3}}) kaisa laga ? Isi khushbu jaisi ek aur khaas khushbu aapke liye taiyaar he 🔥\n\nJaanna chahenge ? 👇"],
+        // ✨ owner, 25 Nov 2026 (hand-written, replacing the 36 failed twins): more exciting utility wordings, each about the customer's own chat / enquiry / order, no deal words
+        'open_ex_6' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} ❄️\n\nSardi me aapko kaunsi khushbu chahiye, ye humne aapki pichhli baat se samjha he 🌸\n\nEk khaas list aapke liye taiyaar he. Dekhna chahenge ? 👇"],
+        'open_ex_7' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Baad me']),
+            'body' => "Hello {{1}} 🎊\n\nShaadi ka season he, aur aapse pehle baat hui thi 😊\n\nHumne aapke liye kuch khaas khushbuyein chun ke rakhi hain. Jaanna chahenge ? 👇"],
+        'open_ex_8' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 🔥\n\nAapki pichhli chat ke baad ek nayi khushbu aayi he, jo aapko pasand aa sakti he 😍\n\nTap karke dekhiye 👇"],
+        'open_ex_9' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hello {{1}} 🎁\n\nNew Year se pehle aapke liye gift-ready perfumes ki ek khaas list banayi he 🤩\n\nKya dekhna chahenge ? 👇"],
+        'ask_ex_3' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['20ML', '50ML', '100ML']),
+            'body' => "Hi {{1}} 😍\n\nAapne {{3}} ko {{2}} ke bare me poocha tha, aur ab sardi ke liye uska ek perfect size aapka intezaar kar raha he ❄️\n\nKaunsa size dekhna chahenge ? 👇"],
+        'ask_ex_4' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hello {{1}} 🌸\n\n{{2}} ke bare me aapka {{3}} wala sawal humein yaad he, aur humne aapke liye ek khaas pick rakha he 🤫\n\nJaanna chahenge ? 👇"],
+        'ask_ex_5' => ['kind' => 'ask', 'labels' => ['name', 'date'], 'ex' => ['Rahul', '28 Oct'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 🤩\n\nAapne {{2}} ko pooch-taach ki thi, aur is season ki sabse khaas khushbu ab aapke liye ready he ✨\n\nDekhna chahenge ? 👇"],
+        'order_ex_2' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Dikhao', 'Baad me']),
+            'body' => "Hello {{1}} 😊\n\nAapka order {{2}} ({{3}}) ab tak pahunch gaya hoga 📦 Kaisa laga ?\n\nAapke liye isi khushbu jaisi ek aur khaas pick taiyaar he 🌟 Dekhna chahenge ? 👇"],
+        'order_ex_3' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Bahut badhiya', 'Madad chahiye']),
+            'body' => "Hi {{1}} 🤩\n\nAapka order {{2}} ({{3}}) kaisa raha ? Batayein, uske baad hum aapko ek khaas surprise pick dikhayenge 🎁 👇"],
+        'order_ex_4' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hello {{1}} 🌸\n\nOrder {{2}} ({{3}}) ki khushbu aapko pasand aayi ? Sardi me uske saath achhi lagne wali ek aur khushbu humne chun li he 🔥\n\nDekhna chahenge ? 👇"],
+        // ✨ owner, 25 Nov 2026: the "thank you / how was your purchase" pattern (the utility message that brought the most orders from customers: 20 in 15 days) in six exciting wordings, each about the customer's own earlier purchase, no deal words
+        'open_ex_10' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Bahut badhiya', 'Dikhao']),
+            'body' => "Hi {{1}} 😊\n\nTM Perfume House se aapki pichhli khareedi kaisi rahi ? Batayiye 🌟\n\nSardi ke liye ek naya perfume bhi dikhana chahenge ? 👇"],
+        'open_ex_11' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Mast raha', 'Dikhao']),
+            'body' => "Hello {{1}} 🤩\n\nAapne pehle TM Perfume House se khareedi ki thi, humein jaanna he wo khushbu kaisi lagi 🌸\n\nAur aisi hi ek khaas pick aapke liye taiyaar he 👇"],
+        'open_ex_12' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 🌟\n\nShukriya ki aapne TM Perfume House chuna 🙏\n\nSardi + shaadi season ke liye aapke jaise pasand wali nayi khushbuyein aayi hain ✨ Dekhna chahenge ? 👇"],
+        'open_ex_13' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Bahut pasand aaya', 'Naya dikhao']),
+            'body' => "Hello {{1}} 💫\n\nAapka perfume kaisa laga ? Aapka jawab humein bahut khaas lagta he 🌸\n\nBatayiye, phir aapke liye ek naya secret pick kholte hain 🤫"],
+        'open_ex_14' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Dikhao', 'Baad me']),
+            'body' => "Hi {{1}} 🎁\n\nAapki pichhli khareedi ke baad humne gift-season ke liye kuch khaas tayyar kiya he 👀\n\nApne liye ya kisi ko gift dene ke liye ? Tap kijiye 👇"],
+        'open_ex_15' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan', 'Abhi nahi']),
+            'body' => "Hello {{1}} ❄️\n\nSardi me aapka perfume kaisa lag raha he ? 😍\n\nAapki pasand ke jaisi ek aur khushbu abhi humare paas aayi he, dekhna chahenge ? 👇"],
+        // 💬 owner, 24 Nov 2026: the same warm Hinglish style for the enquiry / order follow-ups (they join the rotation, so they are tested against the older wording by reply rate)
+        'ask_hi_followup' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Haan, chahiye', 'Abhi nahi']),
+            'body' => "Hi {{1}} 😊 aapne {{3}} ko {{2}} ke bare me poocha tha... abhi bhi chahiye ? Neeche button dabaiye 👇"],
+        'ask_hi_size' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['20ML', '50ML', '100ML']),
+            'body' => "Hi {{1}} 🌸 {{2}} ke liye aapka sawal ({{3}}) humein yaad he... kaunsa size chahiye ? Button dabaiye 👇"],
+        'ask_hi_checked' => ['kind' => 'ask', 'labels' => ['name', 'date'], 'ex' => ['Rahul', '28 Oct'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hello {{1}} 😊\n\nAapne {{2}} ko TM Perfume House se baat ki thi, aur ab ek nayi khushbu aapka intezaar kar rahi he 🤩\n\nDekhna chahenge ? Button dabaiye 👇"],
+        'order_hi_check' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Sab badhiya', 'Madad chahiye']),
+            'body' => "Hi {{1}} 😊 aapka order {{2}} ({{3}}) sahi se pahunch gaya na ? Koi dikkat ho to button dabaiye 👇"],
+        'order_hi_exp' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Bahut badhiya', 'Thoda alag']),
+            'body' => "Hello {{1}} 🌸 order {{2}} ({{3}}) ka perfume aapko kaisa laga ? Apna experience button se batayein 👇"],
+        'open_hi_4' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['20ML', '50ML', '100ML']),
+            'body' => "Hi {{1}} 🌟\n\nAapki pasand jaisi hi kuch nayi khushbuyein abhi aayi hain 🤩\n\nKaunsa size dekhna chahenge ? Button dabaiye 👇"],
+        // 📦 owner, 24 Nov 2026: ORDER-CENTRIC utility: each one is about the customer's OWN enquiry or order and ends with an order step (a button); the offer goes free after the reply (wa_util_offer_reply). No price, no offer, no urgency word.
+        'ask_ord_complete' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Order banana he', 'Abhi nahi']),
+            'body' => "Hi {{1}} 😊\n\n{{3}} ko aapne {{2}} ke bare me poocha tha.\n\nOrder complete karna he ? Size aur address bata dijiye, hum order bana denge 📦"],
+        'ask_ord_address' => ['kind' => 'ask', 'labels' => ['name', 'perfume'], 'ex' => ['Rahul', 'Dior Sauvage'], 'buttons' => $qr(['Address bhejta hoon', 'Abhi nahi']),
+            'body' => "Hello {{1}} 📦\n\nAapki {{2}} ki request ke liye delivery address aur pincode bhej dijiye, hum order process kar denge 🙏"],
+        'order_ord_reorder' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Dobara order', 'Sab badhiya']),
+            'body' => "Hi {{1}} 😊\n\nAapka order {{2}} ({{3}}) kaisa raha ?\n\nDobara order karna ho to neeche tap kijiye, hum turant order bana denge 📦"],
+        'order_ord_more' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Aur chahiye', 'Abhi nahi']),
+            'body' => "Hello {{1}} ✨\n\nOrder {{2}} ({{3}}) ke baad aur koi perfume chahiye to bataiye, hum aapka naya order bana denge 📦"],
         'order_exp_how' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['It was great', 'I had an issue']),
             'body' => "Hi {{1}}, your order {{2}} placed on {{3}} should have reached you by now. How was your experience with it? Tap a button to share."],
         'order_exp_share' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Share experience', 'All good']),
@@ -236,15 +324,15 @@ function wa_util_pool_defs(): array
     ];
 }
 /** The pool rows that exist: key => template row (+ kind). */
-function wa_util_pool_rows(PDO $pdo): array
+function wa_util_pool_rows(PDO $pdo, bool $withRetired = false): array
 {
-    $o = []; foreach ($pdo->query("SELECT * FROM wa_templates WHERE extra LIKE '%util_pool%' ORDER BY id")->fetchAll() as $r) { $x = json_decode((string)($r['extra'] ?? ''), true); $k = is_array($x) ? (string)($x['util_pool'] ?? '') : ''; if ($k !== '' && !isset($o[$k])) { $r['pool_kind'] = (string)($x['util_kind'] ?? 'ask'); $o[$k] = $r; } }
+    $o = []; foreach ($pdo->query("SELECT * FROM wa_templates WHERE extra LIKE '%util_pool%' ORDER BY id")->fetchAll() as $r) { $x = json_decode((string)($r['extra'] ?? ''), true); if (!$withRetired && is_array($x) && !empty($x['retired'])) continue;   /* replaced by an approved, more exciting twin (owner 25 Nov 2026) */ $k = is_array($x) ? (string)($x['util_pool'] ?? '') : ''; if ($k !== '' && !isset($o[$k])) { $r['pool_kind'] = (string)($x['util_kind'] ?? 'ask'); $o[$k] = $r; } }
     return $o;
 }
 /** Creates the missing pool messages and sends them to Meta on every WhatsApp account. */
 function wa_util_pool_make(PDO $pdo, int $by): array
 {
-    $have = wa_util_pool_rows($pdo); $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 6 * max(1, count($wabas))]; $made = []; $err = [];
+    $have = wa_util_pool_rows($pdo, true); $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 6 * max(1, count($wabas))]; $made = []; $err = [];
     foreach (wa_util_pool_defs() as $k => $d) {
         if (isset($have[$k])) continue;
         [$t, $e] = wa_tpl_clean(['name' => 'tmph_fu_' . $k, 'language' => 'en', 'category' => 'UTILITY', 'body' => $d['body'], 'footer' => '', 'buttons' => $d['buttons'], 'examples' => ['body' => $d['ex'], 'labels' => $d['labels']], 'folder' => 'utility']);
@@ -362,7 +450,8 @@ function wa_util_pool_view(PDO $pdo): array
 /** The pool messages a campaign may send now (approved somewhere, not moved to marketing by Meta). */
 function wa_util_pool_usable(PDO $pdo, bool $behaviour = false): array
 {
-    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING') continue; $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
+    $o = []; $__blk = (string)setting_get($pdo, 'wa_block_dull', '1') !== '0'; if ($__blk && !function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) { try { require_once __DIR__ . '/wa_restyle.php'; } catch (Throwable $e) { } }
+    foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || strtoupper((string)($r['category'] ?? 'UTILITY')) !== 'UTILITY') continue;   /* owner 26 Nov 2026: a pool message whose category IS marketing (the new-style twins of the welcome messages Meta had moved to marketing: rs971_…) is not a utility message: Module B sent 510 of them in a day to people whose marketing had just failed, 70% failed again (131049) and that tripped B's failure brake every round */ if ($__blk && function_exists('wa_rs_dull') && wa_rs_dull((string)($r['body'] ?? ''))) continue;   /* a basic message is not picked (owner 25 Nov) */ $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
         $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; if ($claims) { $t['claims'] = true; $t['body'] = (string)$r['body']; }
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;
@@ -371,7 +460,7 @@ function wa_util_pool_usable(PDO $pdo, bool $behaviour = false): array
  *  Only the 'open' (name-only) pool kind; the other pool messages are never sent once they are relabelled. */
 function wa_util_pool_fallback(PDO $pdo): array
 {
-    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body'])) continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING') continue;
+    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body'])) continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING' && strtoupper((string)($r['category'] ?? 'UTILITY')) === 'UTILITY') continue;
         $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = 'open'; $t['as_marketing'] = true; $o[] = $t; }
     return $o;
 }

@@ -130,9 +130,40 @@
       <div class="per" style="background:#fff;border-radius:12px;padding:8px 12px;box-shadow:inset 0 0 0 2px var(--sx-ink)"><span class="sx-mut">Day starting</span>
         <button id="nPrev" aria-label="Previous day">◀</button><input class="sx-in" type="date" id="nDay" value="${esc(NOON)}" max="${esc(TODAY || ymd(istNow()))}"><button id="nNext" aria-label="Next day">▶</button>
         <span class="sp"></span><b style="font-size:14px">${esc(dLong(NOON))} 12:00 AM → ${esc(dLong(addDays(NOON, 1)))} 12:00 AM</b> <span class="sx-mut">(24 hours)</span></div>${kp}`;
-    $('root2').innerHTML = '';
+    $('root2').innerHTML = '<div id="spHost"></div>'; drawSplit();
     showCards(addDays(NOON, -1), NOON, true);      // the business days around it (a day starts at 10 AM): the page then keeps only 12 AM – 12 AM of NOON
     if (!z && NZ_REQ !== NOON) { const d = NOON; NZ_REQ = d; api.get('fi.noon', { day: d }).then((r) => { r.__for = d; NZ = r; if (P === 'noon' && NOON === d) drawNoon(); }).catch((e) => { NZ_REQ = ''; if (P === 'noon' && NOON === d) $('root').insertAdjacentHTML('beforeend', `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`); }); }
+  }
+  /* 💳 Prepaid / COD by gateway (fi.split): the window can be switched between 12 AM – 12 AM and the 10 AM business day to compare; 🩺 Diagnose = the same as text to copy. */
+  let SPW = 'cal', SP = null, SP_REQ = '';
+  const dmy = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+  function drawSplit() {
+    const h = $('spHost'); if (!h) return; const key = NOON + '|' + SPW, z = SP && SP.__k === key ? SP : null;
+    const tg = `<span class="ptn" style="margin-left:auto"><button type="button" data-spw="cal" class="sx-pill ${SPW === 'cal' ? 'info' : ''}" style="border:0;cursor:pointer">12 AM – 12 AM</button><button type="button" data-spw="biz" class="sx-pill ${SPW === 'biz' ? 'info' : ''}" style="border:0;cursor:pointer">10 AM day</button><button type="button" id="spDg" class="sx-pill" style="border:0;cursor:pointer">🩺 Diagnose</button></span>`;
+    let body = '<div class="sx-mut">Counting…</div>';
+    if (z) { const t = z.totals;
+      body = `<div class="sx-mut" style="font-size:12px;margin-bottom:8px">${esc(z.from.slice(5, 16))} → ${esc(z.to.slice(5, 16))}</div>
+        <table class="tb"><tr><th></th><th>Orders</th><th>Total</th><th>Prepaid</th><th>COD</th></tr>
+          <tr><td><b>Website (TM Store)</b><small>prepaid = Cashfree checkout${t.web_unpaid ? ' · not paid yet ' + m2(t.web_unpaid) + ' (not a sale)' : ''}</small></td><td>${t.web_orders}</td><td>${m2(t.web_total)}</td><td>${m2(t.web_pre)}</td><td>${m2(t.web_cod)}</td></tr>
+          <tr><td><b>WhatsApp manual orders</b><small>QR / Razorpay / GoKwik link / COD (and any old Shopify order)</small></td><td>${t.app_orders}</td><td>${m2(t.app_total)}</td><td>${m2(t.app_pre)}</td><td>${m2(t.app_cod)}</td></tr>
+          <tr class="tot"><td>Online total</td><td>${t.orders}</td><td>${m2(t.sales)}</td><td>${m2(t.pre)}</td><td>${m2(t.cod)}</td></tr>
+          <tr><td><b>Store</b></td><td>${t.store_bills}</td><td>${m2(t.store)}</td><td colspan="2" class="sx-mut">see the rows below</td></tr></table>
+        <div class="sx-f" style="margin:12px 0 4px">By gateway · when it should land</div>
+        <table class="tb"><tr><th>Gateway</th><th>Orders</th><th>Amount</th><th>Lands</th></tr>
+          ${z.groups.map((g) => `<tr><td><b>${esc(g.label)}</b><small>${esc(g.rule)}${g.web_orders ? ' · website ' + g.web_orders + ' / ' + m2(g.web_amount) : ''}</small></td><td>${g.orders}</td><td>${m2(g.amount)}</td><td>${g.settle_day ? esc(dmy(g.settle_day)) + (g.settle_time ? ' · ' + esc(g.settle_time) : '') : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="sx-mut">No orders in this window.</td></tr>'}</table>
+        ${z.notes.length ? `<div class="sx-mut" style="font-size:11.5px;margin-top:6px">${z.notes.slice(0, 5).map(esc).join('<br>')}</div>` : ''}
+        <div class="sx-mut" style="font-size:11.5px;margin-top:6px">The "lands" day is counted from the order day by the gateway's cycle (T+1 / T+2); Sundays and bank holidays are not skipped yet.</div>`; }
+    h.innerHTML = `<div class="sx-card" style="margin-top:12px"><h3 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${sxi('box')} Prepaid / COD by gateway ${tg}</h3>${body}</div>`;
+    if (!z && SP_REQ !== key) { SP_REQ = key; api.get('fi.split', { day: NOON, win: SPW }).then((r) => { r.__k = key; SP = r; drawSplit(); }).catch((e) => { SP_REQ = ''; const b = $('spHost'); if (b) b.insertAdjacentHTML('beforeend', `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`); }); }
+  }
+  async function splitDiag(btn) {
+    btn.disabled = true; btn.textContent = '🩺 Making…';
+    try { const r = await api.get('fi.split_diag', { day: NOON, win: SPW }); let ok = false; try { await navigator.clipboard.writeText(r.text); ok = true; } catch (e) { }
+      const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px';
+      d.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:900px;width:100%;padding:14px;display:flex;flex-direction:column;gap:8px"><b>${ok ? '✓ Copied. Paste it to Claude.' : 'Select all and copy, then paste it to Claude.'}</b><textarea readonly style="width:100%;height:60vh;font:12px monospace">${esc(r.text)}</textarea><button type="button" class="sx-pill info" style="border:0;cursor:pointer;align-self:flex-end">Close</button></div>`;
+      d.querySelector('button').onclick = () => d.remove(); document.body.appendChild(d);
+    } catch (e) { alert(e.message); }
+    btn.disabled = false; btn.textContent = '🩺 Diagnose';
   }
   function showCards(from, to, noon) {
     const fr = $('cardsFr'), host = $('cardsHost'), src = 'orders.html?embed=cards&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + (noon ? '&win=day&wday=' + encodeURIComponent(NOON) : '') + '&v=6';
@@ -144,6 +175,8 @@
     if (e.target.id === 'nPrev') { NOON = addDays(NOON, -1); drawNoon(); loadCtx(); return; }
     if (e.target.id === 'nNext') { if (addDays(NOON, 1) <= (TODAY || ymd(istNow()))) { NOON = addDays(NOON, 1); drawNoon(); loadCtx(); } return; }
     if (e.target.id === 'nDay') return;
+    const sw = e.target.closest('[data-spw]'); if (sw) { SPW = sw.dataset.spw; drawSplit(); return; }
+    if (e.target.id === 'spDg') { splitDiag(e.target); return; }
     if (e.target.id === 'cGo') { FROM = $('cF').value; TO = $('cT').value; load(); }
   });
   document.addEventListener('change', (e) => { if (e.target.id === 'nDay' && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { NOON = e.target.value; drawNoon(); loadCtx(); } });

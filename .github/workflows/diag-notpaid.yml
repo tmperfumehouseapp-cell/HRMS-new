@@ -1,0 +1,50 @@
+# READ-ONLY: the unpaid website orders of the last 5 days and whether the same customer has another order in HRMS (manual / Shopify) around or after it. Order numbers only, no customer details.
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Not paid list check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Not paid list
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/np_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php"; date_default_timezone_set("Asia/Kolkata");
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $set = function ($k) use ($d) { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); return trim((string)$q->fetchColumn()); };
+          $base = rtrim($set("tms_api_base") ?: "https://test.tmperfumehouse.store/api/v1", "/"); $key = $set("tms_api_key");
+          $get = function ($path) use ($base, $key) { $ch = curl_init($base . $path); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_HTTPHEADER => ["Authorization: Bearer " . $key, "Accept: application/json"]]); $o = curl_exec($ch); curl_close($ch); $j = json_decode((string)$o, true); return is_array($j) ? ($j["data"] ?? $j) : []; };
+          $cut = date("Y-m-d H:i:s", time() - 5 * 86400); $from = date("Y-m-d", time() - 5 * 86400); $un = []; $n = 0;
+          for ($p = 1; $p <= 20; $p++) { $x = $get("/orders?" . http_build_query(["page" => $p, "limit" => 100, "since" => $from])); foreach ((array)($x["items"] ?? []) as $o) { $n++; $total = (float)($o["total"] ?? 0); $paid = (float)($o["amount_paid"] ?? 0); $ps = strtolower((string)($o["payment_status"] ?? "")); $pend = !($ps === "paid" || ($total > 0 && $paid >= $total)) && $paid <= 0;
+              $cu = (array)($o["customer"] ?? []); $sh = (array)($o["shipping_address"] ?? []); $ph = substr(preg_replace('/\D+/', '', (string)(($cu["phone"] ?? "") ?: ($sh["phone"] ?? ""))), -10);
+              if ($pend && strlen($ph) === 10 && (string)($o["placed_at"] ?? "") >= $cut) $un[] = [(string)$o["number"], $ph, (string)$o["placed_at"], $total, strtolower((string)($o["fulfillment_status"] ?? ""))]; } if (empty($x["has_more"])) break; }
+          echo "IST " . date("Y-m-d H:i:s") . " · website orders read $n · unpaid in 5 days " . count($un) . "\n";
+          $mq = $d->prepare("SELECT order_no, channel, payment_status, order_date FROM manual_orders WHERE RIGHT(REPLACE(REPLACE(phone, ' ', ''), '-', ''), 10) = ? AND order_date >= ? AND COALESCE(fulfillment_status, '') NOT LIKE '%cancel%' AND NOT (COALESCE(channel, '') = 'TM Store' AND COALESCE(payment_status, '') = 'pending') ORDER BY order_date DESC LIMIT 1");
+          $sq = $d->prepare("SELECT order_name, created_at FROM shop_orders WHERE phone LIKE ? AND created_at >= ? ORDER BY created_at DESC LIMIT 1"); $hide = 0;
+          foreach ($un as $u) { $near = date("Y-m-d H:i:s", strtotime($u[2]) - 43200); $mq->execute([$u[1], $near]); $m = $mq->fetch(PDO::FETCH_ASSOC); $s = null; try { $sq->execute(["%" . $u[1], $near]); $s = $sq->fetch(PDO::FETCH_ASSOC); } catch (Throwable $e) { }
+            $st = $m ? "HIDDEN: manual order " . $m["order_no"] . " [" . $m["channel"] . "/" . $m["payment_status"] . "] at " . $m["order_date"] : ($s ? "HIDDEN: Shopify order " . $s["order_name"] . " at " . $s["created_at"] : ($u[3] < 50 ? "HIDDEN: under Rs 50 (test)" : "shown")); if ($st !== "shown") $hide++;
+            echo "  " . $u[0] . " · Rs " . $u[3] . " · placed " . $u[2] . " · ship [" . $u[4] . "] · " . $st . "\n"; }
+          echo "SUMMARY unpaid " . count($un) . " · hidden by the new rule " . $hide . " · still shown " . (count($un) - $hide) . "\n";
+          PHP
+          php /tmp/np_check.php "$P"; rm -f /tmp/np_check.php
+          REMOTE

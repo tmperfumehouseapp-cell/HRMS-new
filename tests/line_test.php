@@ -50,7 +50,7 @@ foreach (array_keys(wl_topics()) as $t) { if ($t === 'campaign') continue; for (
 // 30-day ladder: day 1,2,3,4,6,8,10,15,18,22,26,30
 ok(wl_steps() === 12 && array_values(wl_days()) === [1, 2, 3, 4, 6, 8, 10, 15, 18, 22, 26, 30], 'the ladder is 12 steps on day 1,2,3,4,6,8,10,15,18,22,26,30');
 ok(wl_gap(1) === 1 && wl_gap(5) === 2 && wl_gap(8) === 5 && wl_gap(12) === 4, 'gaps between steps'); ok(wl_gap_sum(0, 12) === 30 && wl_gap_sum(4, 8) === 11 && wl_gap_sum(8, 8) === 0, 'gap sums');
-ok(wln_pref_key(5) === 'ln_px_5' && wln_pref_key(6) === 'ln_pp_6' && wln_pref_key(8) === '', 'price / prepaid steps');
+ok(wln_pref_key(5) === 'ln_px_5' && wln_pref_key(6) === '' && wln_pref_key(8) === '', 'price / prepaid steps');
 foreach (['ln_px_5', 'ln_px_7', 'ln_px_9', 'ln_px_11', 'ln_pp_6'] as $k) ok(($P[$k]['cat'] ?? '') === 'MARKETING' && !empty($P[$k]['pref']), "$k is a preferred marketing message");
 // stop-loss: a wording with no order in 150+ delivered is not used while the best of its step has 3+ orders
 $okk = ['ln_price_1', 'ln_price_1b']; $sc1 = ['ln_price_1' => [400, 0.05, 6], 'ln_price_1b' => [200, 0.01, 0]]; $only = []; for ($i = 0; $i < 60; $i++) $only[wl_pick('ln_price_1', '98' . str_pad((string)$i, 8, '0', STR_PAD_LEFT), $sc1, $okk)] = 1;

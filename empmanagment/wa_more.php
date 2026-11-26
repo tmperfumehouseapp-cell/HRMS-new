@@ -259,6 +259,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('waa_tick') && !defined('WA_IN_WEBHOOK')) $o['auto'] = waa_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto assign (new): ' . $e->getMessage()); } $__mk('waa_tick');   // 🏪 new queries → salespeople by the rules
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); } $__mk('wa_auto_alloc');   // 🤖 orders → the salesperson of the chat
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && is_file(__DIR__ . '/store_orders.php')) { require_once __DIR__ . '/store_orders.php'; if (function_exists('tms_auto_tick')) $o['tms'] = tms_auto_tick($pdo); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'website orders: ' . $e->getMessage()); }   // 🛍 new website orders go to the salesperson who holds the customer's chat (same rules as a Shopify order)
+    if (!$__late()) try { if (function_exists('wag_cx_btn_close') && !defined('WA_IN_WEBHOOK')) $o['cxbtn'] = wag_cx_btn_close($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'experience buttons: ' . $e->getMessage()); }   // ✅ a button tap under our experience message resolves the chat by itself
     if (!$__late()) try { if (function_exists('must3_push_tick') && !defined('WA_IN_WEBHOOK')) $o['m3n'] = must3_push_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'must-send reminder: ' . $e->getMessage()); }   // 📲 20 minutes after an order: its salesperson is told what is still missing
     try { if (function_exists('must3_photo_tick') && !defined('WA_IN_WEBHOOK')) $o['m3p'] = must3_photo_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain photos: ' . $e->getMessage()); }   // 📷 chain photos sent without words are looked at for the must-send check — its OWN engine step (inside wa_auto_alloc it was never reached: 8 photos waited, none read)
     if (!$__late()) try { if (function_exists('ora_catchup') && !defined('WA_IN_WEBHOOK')) $o['ora'] = ora_catchup($pdo); } catch (Throwable $e) { } $__mk('ora_catchup');   // 📈 today's unread orders are read by themselves (growth effort): nobody has to press Read chats now
@@ -383,6 +384,7 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
 {
     if (function_exists('wa_seg_touch')) { try { wa_seg_touch($pdo, $key, $prevIn, $now); } catch (Throwable $e) { } }
     if (function_exists('wa_util_offer_reply')) wa_util_offer_reply($pdo, $key, $text);
+    try { if (!function_exists('wof_tap') && is_file(__DIR__ . '/wa_offer.php')) require_once __DIR__ . '/wa_offer.php'; if (function_exists('wof_tap')) wof_tap($pdo, $key, $text); } catch (Throwable $e) { }   // a button tap on an automatic message: the price offer answers, not the bot
     if (function_exists('wa_bday_hook')) { try { if (wa_bday_hook($pdo, $key, $text)) return; } catch (Throwable $e) { error_log('wa_bday: ' . $e->getMessage()); } }   // 🎂 the customer answered our birthday question
     if (function_exists('wa_review_hook')) { try { if (wa_review_hook($pdo, $key, $text)) return; } catch (Throwable $e) { error_log('wa_review: ' . $e->getMessage()); } }   // ⭐ the 1-5 answer to our rating request
     if (function_exists('wa_cxself_hook')) { try { wa_cxself_hook($pdo, $key, $text); } catch (Throwable $e) { error_log('wa_cxself: ' . $e->getMessage()); } }   // 🎫 "complaint" → issue list → description → ticket   // 🎁 a reply to a utility follow-up → the campaign's offer goes free in the open chat
@@ -418,6 +420,13 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
             // a campaign we sent while their query was still inside its 24 hours does not turn it into a Campaign chat: it stays a Query
             $live = wa_camp_in_live_chat($pdo, $key, wa_camp_sent_ts($pdo, $key));
             $pdo->prepare("UPDATE wa_contacts SET source = ? WHERE phone = ?")->execute([$live ? 'query' : 'campaign', $key]);
+            return;
+        }
+        // WE WROTE FIRST (owner, 26 Nov): a customer who had never written to us answers a campaign / follow-up / win-back message of ours (any day) → a Campaign chat, given through the campaign line and
+        // counted as a Campaign query (wq_decide has the same rule). The follow-up module's replies used to come in as fresh queries. An ad's ready-made text was already handled above (stays a fresh query).
+        if ($prevIn === null || $prevIn === '') {
+            if (!function_exists('wq_we_wrote_first') && is_file(__DIR__ . '/wq.php')) require_once __DIR__ . '/wq.php';
+            if (function_exists('wq_we_wrote_first') && !preg_match('/^\s*hey\s+tm\s*perfume/iu', $text) && wq_we_wrote_first($pdo, $key, time())) $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]);
         }
     } catch (Throwable $e) { }
 }
@@ -705,6 +714,7 @@ require_once __DIR__ . '/wa_plan.php';   // 🎯 Daily budget planner (wa.plan_g
 require_once __DIR__ . '/wa_drip.php';   // 🔁 7-Day Drip: a pre-made message per day for new queries / campaign repliers (wa.drip_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_line.php';   // 🧵 Lineup: the 7-day follow-up by topic (replaces the 7-Day Drip when started; wa.line_*) - AFTER wa_drip.php (uses wd_send), BEFORE wa_seg.php
 require_once __DIR__ . '/wa_after.php';   // 🛍 After-Order plan: delivered customers get a 365-day ladder (care, soft offers, reorder); runs from wa.cron_send
+require_once __DIR__ . '/wso.php';        // 🛒 Website order from a chat: the website's Create order + payment link, sent in the chat (wso.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
 

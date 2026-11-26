@@ -433,6 +433,37 @@
   .vp-pk{display:flex; gap:12px; align-items:center; padding:10px 14px; border-bottom:1px solid #f3f4f6; cursor:pointer;} .vp-pk:last-child{border-bottom:none;}
   .vp-pk .cb{width:24px; height:24px; border:2px solid #c7cbd1; border-radius:7px; display:grid; place-items:center; color:#fff; font-size:14px; flex:none;}
   .vp-pk.on{background:#fff4ec;} .vp-pk.on .cb{background:var(--accent); border-color:var(--accent);}
+
+  /* ===== Routes: every shop on a 10-day route, one column per day (drag a card to another day) ===== */
+  .rt-top{display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .rt-nav{display:flex; gap:6px; align-items:center; flex-wrap:wrap;} .rt-nav b{font-size:15px;} .rt-nav .sub{font-size:12px;}
+  .rt-nav button.sq{width:36px; height:36px; min-height:0; border:1px solid var(--line); background:#fff; border-radius:50%; font-size:18px; line-height:1; cursor:pointer; padding:0;}
+  .rt-nav button.sq:disabled{opacity:.35; cursor:default;}
+  .rt-kp{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;} .rt-kp div{flex:1; min-width:110px; background:#fff; border-radius:12px; padding:8px 12px; font-size:11.5px; color:var(--muted); box-shadow:var(--shadow);} .rt-kp b{display:block; font-size:17px; color:var(--ink);}
+  .rt-leg{display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-bottom:10px; align-items:center;} .rt-leg i{display:inline-block; width:12px; height:12px; border-radius:4px; margin-right:5px; vertical-align:-2px; border:1px solid transparent;}
+  .rt-board{display:flex; gap:10px; overflow-x:auto; padding-bottom:12px; align-items:flex-start; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch;}
+  .rt-col{flex:0 0 250px; background:#f3f4f6; border-radius:16px; padding:8px; scroll-snap-align:start; max-height:calc(100vh - 230px); display:flex; flex-direction:column; border:2px solid transparent;}
+  .rt-col.today{border-color:#f59e0b; background:#fffbeb;} .rt-col.over{border-color:#2563eb; background:#eff6ff;}
+  .rt-ch{padding:4px 6px 8px;} .rt-ch .d{font-weight:800; font-size:14px;} .rt-ch .d small{font-weight:600; color:var(--muted); margin-left:4px;}
+  .rt-ch .s{font-size:11.5px; color:var(--muted); margin-top:2px;} .rt-ch .bar{height:5px; border-radius:5px; background:#e5e7eb; overflow:hidden; margin-top:6px;} .rt-ch .bar i{display:block; height:100%; background:#16a34a;}
+  .rt-cards{overflow-y:auto; display:flex; flex-direction:column; gap:6px; min-height:40px; flex:1;}
+  .rt-card{background:#fff; border-radius:12px; padding:8px 9px; border:1.5px solid #e5e7eb; border-left-width:5px; cursor:grab; font-size:12px; position:relative; user-select:none;}
+  .rt-card.dragging{opacity:.4;} .rt-card .nm{font-weight:700; font-size:13px; line-height:1.25; padding-right:22px;} .rt-card .nm .n{color:var(--muted); font-weight:600; margin-right:3px;}
+  .rt-card .ar{color:var(--muted); font-size:11.5px; margin-top:1px;}
+  .rt-card .fx{display:flex; gap:4px; flex-wrap:wrap; margin-top:5px;} .rt-card .fx span{background:#f3f4f6; border-radius:6px; padding:1px 6px; font-size:11px; font-weight:600; white-space:nowrap;}
+  .rt-card .fx .o{background:#dbeafe; color:#1d4ed8;} .rt-card .fx .due{background:#fee2e2; color:#b91c1c;} .rt-card .fx .pd{background:#e7f7ee; color:#0f7a41;} .rt-card .fx .mi{background:#dc2626; color:#fff;} .rt-card .fx .dp{background:#ede9fe; color:#6d28d9;}
+  .rt-card .vt{font-size:11px; margin-top:4px; font-weight:600;}
+  .rt-card .star{position:absolute; top:5px; right:5px; border:none; background:none; font-size:15px; cursor:pointer; padding:0; min-height:0; width:auto; line-height:1; filter:grayscale(1); opacity:.35;} .rt-card .star.on{filter:none; opacity:1;}
+  .rt-card.s-done{border-color:#86efac; border-left-color:#16a34a; background:#f0fdf4;} .rt-card.s-done .vt{color:#15803d;}
+  .rt-card.s-disp{border-color:#c4b5fd; border-left-color:#8b5cf6; background:#f5f3ff;} .rt-card.s-disp .vt{color:#6d28d9;}
+  .rt-card.s-missed{border-color:#fca5a5; border-left-color:#dc2626; background:#fef2f2;} .rt-card.s-missed .vt{color:#b91c1c;}
+  .rt-card.s-today{border-left-color:#f59e0b;} .rt-card.s-next{border-left-color:#d1d5db;}
+  .rt-card.pri{box-shadow:0 0 0 2px #fbbf24 inset;}
+  .rt-drop{height:4px; border-radius:4px; background:#2563eb; margin:-2px 0;}
+  .rt-empty{text-align:center; background:#fff; border-radius:20px; padding:36px 20px; color:var(--muted); max-width:640px;} .rt-empty b{display:block; color:var(--ink); font-size:18px; margin-bottom:6px;}
+  .rt-acts{display:flex; flex-direction:column; gap:8px;} .rt-acts .btn{width:100%;}
+  .rt-mi{background:#fef2f2; color:#b91c1c; border-radius:10px; padding:8px 10px; font-size:12.5px; margin:8px 0;}
+  @media (max-width:820px){ .rt-col{flex-basis:82vw; max-height:none;} .rt-cards{overflow:visible;} }
   .vp-pk .m{flex:1; min-width:0;} .vp-pk .m b{display:block; font-size:14.5px;} .vp-pk .m small{color:var(--muted); font-size:12px;}
   /* history */
   .vp-fil{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px;}
@@ -529,6 +560,7 @@
       <div><h1>Retail Shops</h1><div class="sub" style="margin-top:2px;">Partner shops that keep our perfumes on display — shop, contact, pinned location and their orders</div></div>
       <div class="view-toggle" style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn secondary" id="btnVisits">🗓 Visits</button>
+        <button class="btn secondary" id="btnRoutes">🛣 Routes</button>
         <button class="btn secondary" id="btnRegister">📋 Orders</button>
         <button class="btn secondary" id="btnLedgerAll">📒 Ledger</button>
         <button class="btn secondary" id="btnCash">💰 Cash box</button>
@@ -844,6 +876,17 @@
        </div>
       </div>
 
+      <!-- ===== ROUTES (every shop on a 10-day route, one column per day) ===== -->
+      <div id="viewRoutes" style="display:none;">
+        <div class="rt-top">
+          <div class="rt-nav"><button type="button" class="sq" id="rtPrev" aria-label="Previous 10 days">‹</button><div><b id="rtRange">Routes</b><div class="sub" id="rtSub"></div></div><button type="button" class="sq" id="rtNext" aria-label="Next 10 days">›</button><button type="button" class="link" id="rtNow" style="margin-left:6px;">This cycle</button></div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn secondary" id="rtMakeBtn" style="width:auto;">⚙ Make routes again</button></div>
+        </div>
+        <div class="rt-kp" id="rtKp"></div>
+        <div class="rt-leg"><span><i style="background:#16a34a"></i>Visited</span><span><i style="background:#8b5cf6"></i>Visited, display pending</span><span><i style="background:#dc2626"></i>Day passed, not visited</span><span><i style="background:#f59e0b"></i>Today</span><span><i style="background:#fff;border-color:#d1d5db"></i>Coming</span><span>⭐ = top priority (visited first)</span><span style="background:#dc2626;color:#fff;border-radius:6px;padding:0 6px;font-weight:700;">missing</span><span>= a perfume of the shop's list is not on its display</span></div>
+        <div id="rtBoard"><div class="rt-empty">Loading…</div></div>
+      </div>
+
       <div id="viewMap" style="display:none;">
         <div class="card">
           <div class="card-head"><h2>All shops on the map</h2><span class="sub" id="mapNote">tap a pin to open the shop · grey = no order for 60+ days</span></div>
@@ -852,6 +895,39 @@
       </div>
     </div>
   </main>
+</div>
+
+<!-- Routes: make the routes -->
+<div class="modal-overlay" id="rtMakeModal">
+  <div class="modal" style="max-width:460px;">
+    <h3 id="rtMakeTitle">Make the routes</h3>
+    <div class="sub" style="margin-bottom:12px;">Every active shop of the city is put on one route, area by area (nearest area next, nearest shop next). One route a day; after the last day it starts again with route 1.</div>
+    <label>How many days (routes)</label><input type="number" id="rtDays" min="1" max="31" value="10">
+    <label style="margin-top:10px;">First day</label><input type="date" id="rtStart">
+    <label style="display:flex; gap:8px; align-items:center; margin-top:12px; text-transform:none; letter-spacing:0; font-weight:600;"><input type="checkbox" id="rtKeep" checked style="width:16px; height:16px; min-height:0;"> Keep ⭐ priority and display flags</label>
+    <div id="rtMakeWarn" class="sub" style="margin-top:10px; color:#b45309;"></div>
+    <div class="actions" style="flex-wrap:wrap;">
+      <button type="button" class="btn secondary" id="rtClear" style="width:auto; margin-right:auto; color:#b91c1c;">Remove routes</button>
+      <button type="button" class="btn secondary" id="rtMakeClose" style="width:auto;">Cancel</button>
+      <button type="button" class="btn" id="rtMakeGo" style="width:auto;">Make routes</button>
+    </div>
+  </div>
+</div>
+<!-- Routes: one shop (move to another day, ⭐, display pending, open) -->
+<div class="modal-overlay" id="rtCardModal">
+  <div class="modal" style="max-width:420px;">
+    <h3 id="rtCName">Shop</h3>
+    <div class="sub" id="rtCMeta"></div>
+    <div id="rtCFacts"></div>
+    <label style="margin-top:10px;">Move to day</label><select id="rtCDay"></select>
+    <div class="rt-acts" style="margin-top:12px;">
+      <button type="button" class="btn secondary" id="rtCStar">⭐ Top priority</button>
+      <button type="button" class="btn secondary" id="rtCDisp">🧴 Display pending</button>
+      <button type="button" class="btn secondary" id="rtCOpen">Open shop</button>
+      <a class="btn secondary" id="rtCDir" target="_blank" rel="noopener" style="text-decoration:none; text-align:center;">📍 Directions</a>
+    </div>
+    <div class="actions"><button type="button" class="btn secondary" id="rtCClose" style="width:auto;">Close</button><button type="button" class="btn" id="rtCSave" style="width:auto;">Move</button></div>
+  </div>
 </div>
 
 <!-- Visit plan: choose the shops -->
@@ -956,6 +1032,12 @@
       <div class="field"><label>Date</label><input type="date" id="oDate"></div>
     </div>
     <div id="oLegacyPay" class="sub" style="display:none; margin:-4px 0 10px;"></div>
+    <div id="oBcBox" style="background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:0 0 12px;">
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"><label for="oBc" style="font-weight:700; margin:0; font-size:13px; text-transform:none; letter-spacing:0;">🏷 Scan barcode</label>
+        <input id="oBc" inputmode="numeric" maxlength="9" placeholder="6-digit number — the perfume fills itself" autocomplete="off" style="flex:1; min-width:200px; font-size:17px; letter-spacing:2px; font-weight:700; padding:8px 12px;"></div>
+      <div id="oBcList" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;"></div>
+      <div class="sub" id="oBcNote" style="margin-top:4px;">Scan every bottle you send: the line, size and price fill themselves.</div>
+    </div>
     <div class="ol h"><span>Perfume name</span><span>Qty</span><span>Price/pc ₹</span><span style="text-align:right;">Total</span><span></span></div>
     <div id="oLines"></div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin:4px 0 8px; font-size:13px; flex-wrap:wrap;"><button type="button" class="link" id="btnAddLine">+ Add line</button><span><span id="oQty">0</span> pcs · <b style="font-size:15px;" id="oTotal">₹0</b></span></div>
@@ -1317,7 +1399,7 @@
   // ---------- cities: the bar at the top picks "All" or one city; every list below is for that choice ----------
   let curCity = ''; try { curCity = localStorage.getItem('retail_city') || ''; } catch (e) {}
   let cityList = [], defaultCity = '';
-  const CITY_ACTIONS = new Set(['retail.cash_get', 'retail.cash_breakdown', 'retail.demo_get', 'retail.shops', 'retail.outstanding', 'retail.totals', 'retail.map', 'retail.visit_plan', 'retail.visit_history', 'retail.register', 'retail.daybook', 'retail.visit_plan_save', 'retail.visit_plan_mark', 'retail.visit_plan_move', 'retail.visit_plan_remove']);
+  const CITY_ACTIONS = new Set(['retail.cash_get', 'retail.cash_breakdown', 'retail.demo_get', 'retail.shops', 'retail.outstanding', 'retail.totals', 'retail.map', 'retail.visit_plan', 'retail.visit_history', 'retail.register', 'retail.daybook', 'retail.visit_plan_save', 'retail.visit_plan_mark', 'retail.visit_plan_move', 'retail.visit_plan_remove', 'retail.route_board', 'retail.route_make', 'retail.route_move', 'retail.route_flag', 'retail.route_clear']);
   const _apiRequest = api.request.bind(api);
   api.request = (action, options, params) => _apiRequest(action, options || {}, curCity && CITY_ACTIONS.has(action) ? Object.assign({ city: curCity }, params || {}) : (params || {}));
   const cityCount = () => cityList.reduce((n, c) => n + (c.shops || 0), 0);
@@ -1346,6 +1428,7 @@
     else if (view === 'ledgerAll') loadLedgerAll();
     else if (view === 'register') { rg.page = 1; loadRegister(); }
     else if (view === 'visits') { if (vp.tab === 'hist') vhLoad(); else vpLoad(); }
+    else if (view === 'routes') { rt.c = 0; rtLoad(); }
     else if (view === 'map') renderAllMap();
     else loadShops();
   }
@@ -1497,6 +1580,8 @@
     document.getElementById('viewLedgerAll').style.display = v === 'ledgerAll' ? '' : 'none';
     document.getElementById('viewRegister').style.display = v === 'register' ? '' : 'none';
     document.getElementById('viewVisits').style.display = v === 'visits' ? '' : 'none';
+    document.getElementById('viewRoutes').style.display = v === 'routes' ? '' : 'none';
+    document.getElementById('btnRoutes').textContent = v === 'routes' ? '☰ List view' : '🛣 Routes';
     document.getElementById('btnVisits').textContent = v === 'visits' ? '☰ List view' : '🗓 Visits';
     document.getElementById('btnRegister').textContent = v === 'register' ? '☰ List view' : '📋 Orders';
     document.getElementById('btnLedgerAll').textContent = v === 'ledgerAll' ? '☰ List view' : '📒 Ledger';
@@ -1762,6 +1847,7 @@
     const r = shopReturn; shopReturn = null;
     if (!r) { showView('list'); return; }
     history.replaceState(null, '', location.pathname);
+    if (r.view === 'routes') { showView('routes'); rtDraw(); return; }
     showView('cash'); if (!cb.data) cbLoad();
     bdOpen(r.what, r.mode, r);
   }
@@ -1897,7 +1983,7 @@
     vpEl('vpDueTxt').textContent = c.pending && due > 0.5 ? `${inr(due)} to collect from the pending shops` : '';
     let rows = d.rows.slice();
     if (vp.st === 'pending') rows = rows.filter(r => r.status !== 'done'); else if (vp.st === 'done') rows = rows.filter(r => r.status === 'done'); else if (vp.st === 'waiting') rows = rows.filter(r => r.status === 'done' && r.approval === 'waiting');
-    rows.sort((a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0) || (vp.grp ? String(a.area).localeCompare(String(b.area)) : 0));
+    rows.sort((a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0) || (vp.grp ? String(a.area).localeCompare(String(b.area)) : 0) || ((b.route_pri || 0) - (a.route_pri || 0)) || ((a.route_pos || 9999) - (b.route_pos || 9999)));   // 🛣 in route order (⭐ first)
     const L = vpEl('vpList');
     if (!d.rows.length) L.innerHTML = `<div class="vp-empty"><b>Plan ${vpIsToday() ? "today's" : 'this'} route</b>Choose the shops you want to visit. You will see the count here and tick each one when it is done.<div style="margin-top:14px;"><button type="button" class="btn" data-vp="open" style="width:auto;">+ Add shops</button></div></div>`;
     else if (!rows.length) L.innerHTML = `<div class="vp-empty"><b>${vp.st === 'pending' ? 'Nothing pending 🎉' : vp.st === 'waiting' ? 'Nothing waiting for approval' : 'Nothing done yet'}</b>${vp.st === 'pending' ? 'Every planned shop is visited.' : vp.st === 'waiting' ? 'Visits done with a photo wait here till someone approves them.' : 'Tap “Mark visit done” on a shop and take a photo there.'}</div>`;
@@ -1920,7 +2006,7 @@
     const visitsHtml = (r.visits || []).length > 1 || extra.length ? `<div class="vp-meta2" style="margin:6px 0 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:#6b7280"><b style="color:#111827">${(r.visits || []).length} visit${(r.visits || []).length === 1 ? '' : 's'} this day:</b>${(r.visits || []).map((v) => `<a href="${fileUrl(v.photo)}" data-iv="${esc(r.shop_name)}" data-ivs="${esc([vpTime(v.at), v.by, v.note].filter(Boolean).join(' · '))}" title="${esc([vpTime(v.at), v.by, v.note].filter(Boolean).join(' · '))}" style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;color:inherit">${v.photo ? `<img src="${fileUrl(v.photo)}" alt="visit" style="width:34px;height:34px;object-fit:cover;border-radius:6px">` : ''}${esc(vpTime(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</a>`).join('')}</div>` : '';
     return `<div class="vp-shop${done ? (wait ? ' done wait' : ' done') : (rej ? ' rej' : '')}" data-pid="${r.plan_id}" data-sid="${r.shop_id}">
       <div class="vp-tl"><button type="button" class="vp-chk" data-vp="${done ? 'toggle' : 'done'}" aria-label="${done ? 'Mark pending' : 'Mark done'}">${done ? (wait ? '⏳' : '✓') : (rej ? '✕' : '')}</button>
-        <div class="vp-info"><div class="nm" data-vp="shop">${esc(r.shop_name)}</div><div class="meta">${esc([r.area, r.owner_name].filter(Boolean).join(' · ') || '—')} · ${lv}</div>${stamp}${visitsHtml}</div>${done || rej ? thumb : dueB}</div>
+        <div class="vp-info"><div class="nm" data-vp="shop">${r.route_pos ? `<span style="color:var(--muted); font-weight:600;">${r.route_pri ? '⭐' : ''}#${r.route_pos}</span> ` : ''}${esc(r.shop_name)}</div><div class="meta">${esc([r.area, r.owner_name].filter(Boolean).join(' · ') || '—')} · ${lv}</div>${stamp}${visitsHtml}</div>${done || rej ? thumb : dueB}</div>
       ${wait && canApr ? `<div class="vp-apr"><span>Approve this visit?</span><button type="button" class="vp-pill ok" data-vp="approve">✓ Approve</button><button type="button" class="vp-pill no" data-vp="reject">✕ Reject</button></div>` : ''}
       ${done ? `<div class="vp-after"><span>Add:</span><button type="button" class="vp-pill" data-vp="photo">📷 Photo</button><button type="button" class="vp-pill" data-vp="order">🧾 Order</button><button type="button" class="vp-pill" data-vp="pay">₹ Payment</button><button type="button" class="vp-pill undo" data-vp="toggle">Undo</button></div>`
         : `<div class="vp-acts">${r.mobile ? `<a class="vp-pill" href="tel:${esc(String(r.mobile).replace(/[^\d+]/g, ''))}">📞 Call</a>` : ''}${pin ? `<a class="vp-pill go" href="${dirUrl(r)}" target="_blank" rel="noopener">📍 Directions</a>` : ''}<div class="vp-links"><button type="button" data-vp="tmr">Tomorrow</button><button type="button" data-vp="rm">Remove</button></div></div>
@@ -2071,6 +2157,125 @@
     if (view === 'visits') { showView('list'); return; }
     showView('visits'); if (!vp.date) vp.date = todayStr(); vpTab('today'); vpLoad();
   });
+
+  // ---------- 🛣 Routes: every shop on a 10-day route, area by area; one column per day; drag a card to another day ----------
+  const rt = { c: 0, data: null, busy: false, drag: 0, card: null, seq: 0 };
+  const rtEl = (id) => document.getElementById(id);
+  const rtDay = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+  const rtTime = (t) => t ? new Date(String(t).replace(' ', 'T')).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+  async function rtLoad() {
+    const my = ++rt.seq;
+    try { const d = await withRetry(() => api.get('retail.route_board', { c: rt.c })); if (my !== rt.seq) return; rt.data = d; rtDraw(); }
+    catch (err) { if (my === rt.seq) rtEl('rtBoard').innerHTML = `<div class="rt-empty"><b>Could not load the routes</b>${esc(err.message)}</div>`; }
+  }
+  function rtFacts(x, long) {
+    const f = [];
+    if (x.orders) f.push(`<span class="o" title="Orders in these 10 days">🧾 ${x.orders} · ${inr(x.order_amt)}</span>`);
+    if (x.paid > 0.5) f.push(`<span class="pd" title="Money received in these 10 days">₹ ${inr(x.paid)} in</span>`);
+    if (x.balance > 0.5) f.push(`<span class="due" title="Outstanding">${inr(x.balance)} due</span>`);
+    if (x.disp_pcs) f.push(`<span title="Pieces on the display">🧴 ${x.disp_pcs}</span>`);
+    if (x.disp_todo > 0 || x.disp_flag) f.push(`<span class="dp" title="Display still to give / set">display ${x.disp_todo > 0 ? x.disp_todo + ' pcs ' : ''}pending</span>`);
+    if (x.missing && x.missing.length) f.push(`<span class="mi" title="${esc(x.missing.join(', '))}">❗ ${x.missing.length} missing</span>`);
+    return f.length ? `<div class="fx">${f.join('')}</div>` + (long && x.missing && x.missing.length ? `<div class="rt-mi"><b>Missing from the display:</b> ${esc(x.missing.join(', '))}</div>` : '') : '';
+  }
+  function rtCard(x) {
+    const vt = x.visited_at ? `✓ ${esc(rtTime(x.visited_at))}${x.visited_by ? ' · ' + esc(x.visited_by) : ''}${x.early ? ' (on ' + esc(fmtDS(x.early)) + ')' : ''}` : (x.status === 'missed' ? '✕ Not visited' : (x.status === 'today' ? 'To visit today' : ''));
+    return `<div class="rt-card s-${x.status}${x.priority ? ' pri' : ''}" draggable="true" data-sid="${x.shop_id}"><button type="button" class="star${x.priority ? ' on' : ''}" data-rt="star" title="Top priority">⭐</button>
+      <div class="nm"><span class="n">${x.pos}.</span>${esc(x.name)}</div><div class="ar">${esc([x.area, x.owner].filter(Boolean).join(' · ') || '—')}</div>${rtFacts(x)}${vt ? `<div class="vt">${vt}</div>` : ''}</div>`;
+  }
+  function rtDraw() {
+    const d = rt.data; if (!d) return;
+    const city = d.city || 'this city';
+    if (!d.has_route) {
+      rtEl('rtRange').textContent = 'Routes · ' + city; rtEl('rtSub').textContent = ''; rtEl('rtKp').innerHTML = ''; rtEl('rtMakeBtn').style.display = 'none';
+      ['rtPrev', 'rtNext', 'rtNow'].forEach(id => rtEl(id).style.display = 'none');
+      rtEl('rtBoard').innerHTML = `<div class="rt-empty"><b>No route for ${esc(city)} yet</b>${d.active_shops} active shop${d.active_shops === 1 ? '' : 's'} in ${esc(city)}. They will be put on 10 routes area by area, one route a day from tomorrow, and it repeats every 10 days.<div style="margin-top:14px;"><button type="button" class="btn" data-rt="make" style="width:auto;">🛣 Make 10 routes</button></div><div class="sub" style="margin-top:10px;">Change the city at the top to make the route of another city (Vadodara …).</div></div>`;
+      return;
+    }
+    ['rtPrev', 'rtNext', 'rtNow'].forEach(id => rtEl(id).style.display = ''); rtEl('rtMakeBtn').style.display = '';
+    rtEl('rtPrev').disabled = !d.can_prev; rtEl('rtNow').style.display = rt.c === 0 ? 'none' : '';
+    rtEl('rtRange').textContent = `${city} · ${fmtDS(d.cycle_from)} – ${fmtDS(d.cycle_to)}`;
+    rtEl('rtSub').textContent = `Cycle ${d.cycle} · ${d.days_n} days · started ${fmtDS(d.start_date)}${d.today_cycle ? ' · this cycle' : (d.cycle_from > d.today ? ' · coming' : ' · past')}`;
+    const t = d.totals;
+    rtEl('rtKp').innerHTML = [['Shops', t.shops], ['Visited', t.visited + ' / ' + t.shops], ['Not visited (day passed)', t.missed], ['New orders', t.orders + ' · ' + inr(t.order_amt)], ['Money received', inr(t.paid)], ['Outstanding', inr(t.balance)]]
+      .map(k => `<div><b>${k[1]}</b>${k[0]}</div>`).join('');
+    rtEl('rtBoard').innerHTML = `<div class="rt-board">${d.days.map(day => {
+      const s = day.sum, pct = s.shops ? Math.round(s.visited * 100 / s.shops) : 0;
+      return `<div class="rt-col${day.is_today ? ' today' : ''}" data-route="${day.route_no}"><div class="rt-ch"><div class="d">Day ${day.route_no}<small>${esc(rtDay(day.date))}${day.is_today ? ' · today' : ''}</small></div>
+        <div class="s">${s.shops} shop${s.shops === 1 ? '' : 's'} · ${s.visited} visited${s.missed ? ` · <b style="color:#b91c1c">${s.missed} missed</b>` : ''}${s.disp ? ` · ${s.disp} display` : ''}${s.missing ? ` · <b style="color:#dc2626">${s.missing} missing</b>` : ''}</div>
+        <div class="s">${s.orders ? `🧾 ${inr(s.order_amt)} · ` : ''}${s.balance > 0.5 ? `${inr(s.balance)} due` : 'no dues'}</div><div class="bar"><i style="width:${pct}%"></i></div></div>
+        <div class="rt-cards">${day.cards.map(rtCard).join('') || '<div class="sub" style="text-align:center; padding:12px;">Drop shops here</div>'}</div></div>`;
+    }).join('')}</div>`;
+    if (rt.c === 0) { const col = rtEl('rtBoard').querySelector('.rt-col.today'); if (col && col.offsetLeft > 600) col.parentElement.scrollLeft = col.offsetLeft - 280; }   /* yesterday stays in sight (its red cards) */
+  }
+  const rtFind = (sid) => { for (const day of (rt.data ? rt.data.days : [])) for (const x of day.cards) if (x.shop_id === sid) return { x, day }; return null; };
+  async function rtCall(action, body, msg) {
+    if (rt.busy) return; rt.busy = true;
+    try { const d = await api.post(action, Object.assign({ c: rt.c }, body)); rt.data = d; rtDraw(); if (msg !== false) showAlert(msg || d.message); return d; }
+    catch (err) { showAlert(err.message, 'error'); rtDraw(); }
+    finally { rt.busy = false; }
+  }
+  // drag and drop (computer): drop on a column; the place is where the card is dropped
+  const rtBoardEl = rtEl('rtBoard'); let rtMark = null;
+  const rtClearMark = () => { if (rtMark) rtMark.remove(); rtMark = null; document.querySelectorAll('.rt-col.over').forEach(c => c.classList.remove('over')); };
+  function rtIndexAt(list, y) { const cards = [...list.querySelectorAll('.rt-card:not(.dragging)')]; let i = 0; for (const c of cards) { const r = c.getBoundingClientRect(); if (y > r.top + r.height / 2) i++; } return { i, cards }; }
+  rtBoardEl.addEventListener('dragstart', (e) => { const c = e.target.closest('.rt-card'); if (!c) return; rt.drag = Number(c.dataset.sid); c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(rt.drag)); } catch (er) {} });
+  rtBoardEl.addEventListener('dragend', (e) => { const c = e.target.closest('.rt-card'); if (c) c.classList.remove('dragging'); rtClearMark(); });
+  rtBoardEl.addEventListener('dragover', (e) => {
+    const col = e.target.closest('.rt-col'); if (!col || !rt.drag) return; e.preventDefault();
+    document.querySelectorAll('.rt-col.over').forEach(c => { if (c !== col) c.classList.remove('over'); }); col.classList.add('over');
+    const list = col.querySelector('.rt-cards'), { i, cards } = rtIndexAt(list, e.clientY);
+    if (!rtMark) { rtMark = document.createElement('div'); rtMark.className = 'rt-drop'; }
+    if (cards[i]) list.insertBefore(rtMark, cards[i]); else list.appendChild(rtMark);
+  });
+  rtBoardEl.addEventListener('drop', async (e) => {
+    const col = e.target.closest('.rt-col'); if (!col || !rt.drag) return; e.preventDefault();
+    const list = col.querySelector('.rt-cards'), { i } = rtIndexAt(list, e.clientY), sid = rt.drag; rt.drag = 0; rtClearMark();
+    const f = rtFind(sid), route = Number(col.dataset.route); if (!f) return;
+    const nm = f.x.name; await rtCall('retail.route_move', { shop_id: sid, route_no: route, index: i }, route === f.day.route_no ? nm + ' moved.' : `${nm} → Day ${route}.`);
+  });
+  rtBoardEl.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-rt="make"]')) { rtOpenMake(); return; }
+    const c = e.target.closest('.rt-card'); if (!c) return; const sid = Number(c.dataset.sid), f = rtFind(sid); if (!f) return;
+    if (e.target.closest('[data-rt="star"]')) { await rtCall('retail.route_flag', { shop_id: sid, priority: f.x.priority ? 0 : 1 }, f.x.priority ? f.x.name + ' is no longer on top.' : '⭐ ' + f.x.name + ' is visited first now.'); return; }
+    rtOpenCard(f);
+  });
+  // one shop (phone: move it here, since dragging needs a mouse)
+  function rtOpenCard(f) {
+    rt.card = f; const x = f.x;
+    rtEl('rtCName').textContent = (x.priority ? '⭐ ' : '') + x.name;
+    rtEl('rtCMeta').textContent = [x.area, x.owner, x.mobile].filter(Boolean).join(' · ') + ` · Day ${f.day.route_no}, stop ${x.pos}` + (x.visited_at ? ' · visited ' + rtTime(x.visited_at) : '');
+    rtEl('rtCFacts').innerHTML = rtFacts(x, true) || '<div class="sub" style="margin-top:6px;">No orders, dues or display yet.</div>';
+    rtEl('rtCDay').innerHTML = rt.data.days.map(d => `<option value="${d.route_no}"${d.route_no === f.day.route_no ? ' selected' : ''}>Day ${d.route_no} · ${esc(rtDay(d.date))} (${d.sum.shops})</option>`).join('');
+    rtEl('rtCStar').textContent = x.priority ? '☆ Remove top priority' : '⭐ Top priority (visit first)';
+    rtEl('rtCDisp').textContent = x.disp_flag ? '✓ Display done (remove the flag)' : '🧴 Mark display pending';
+    const dir = rtEl('rtCDir'); dir.style.display = x.lat != null && x.lng != null ? '' : 'none'; if (x.lat != null) dir.href = dirUrl(x);
+    modalScrollY = window.scrollY; rtEl('rtCardModal').classList.add('open');
+  }
+  const rtCloseCard = () => { rtEl('rtCardModal').classList.remove('open'); window.scrollTo(0, modalScrollY); };
+  rtEl('rtCClose').addEventListener('click', rtCloseCard);
+  rtEl('rtCardModal').addEventListener('click', (e) => { if (e.target === rtEl('rtCardModal')) rtCloseCard(); });
+  rtEl('rtCSave').addEventListener('click', async () => { const f = rt.card; if (!f) return; const r = Number(rtEl('rtCDay').value); if (r === f.day.route_no) { rtCloseCard(); return; } rtCloseCard(); await rtCall('retail.route_move', { shop_id: f.x.shop_id, route_no: r, index: 9999 }, `${f.x.name} → Day ${r}.`); });
+  rtEl('rtCStar').addEventListener('click', async () => { const f = rt.card; if (!f) return; rtCloseCard(); await rtCall('retail.route_flag', { shop_id: f.x.shop_id, priority: f.x.priority ? 0 : 1 }); });
+  rtEl('rtCDisp').addEventListener('click', async () => { const f = rt.card; if (!f) return; rtCloseCard(); await rtCall('retail.route_flag', { shop_id: f.x.shop_id, disp_flag: f.x.disp_flag ? 0 : 1 }); });
+  rtEl('rtCOpen').addEventListener('click', () => { const f = rt.card; if (!f) return; rtCloseCard(); openShop(f.x.shop_id, { view: 'routes', label: 'Routes' }); });
+  // make the routes (again)
+  function rtOpenMake() {
+    const d = rt.data || {}; rtEl('rtMakeTitle').textContent = (d.has_route ? 'Make the routes again · ' : 'Make the routes · ') + (d.city || '');
+    rtEl('rtStart').value = d.tomorrow || todayStr(); rtEl('rtDays').value = d.days_n || 10; rtEl('rtClear').style.display = d.has_route ? '' : 'none';
+    rtEl('rtMakeWarn').textContent = d.has_route ? 'The shops are shared out again from the start (moves you made by hand are lost). Visits already done stay.' : '';
+    modalScrollY = window.scrollY; rtEl('rtMakeModal').classList.add('open');
+  }
+  const rtCloseMake = () => { rtEl('rtMakeModal').classList.remove('open'); window.scrollTo(0, modalScrollY); };
+  rtEl('rtMakeBtn').addEventListener('click', rtOpenMake);
+  rtEl('rtMakeClose').addEventListener('click', rtCloseMake);
+  rtEl('rtMakeModal').addEventListener('click', (e) => { if (e.target === rtEl('rtMakeModal')) rtCloseMake(); });
+  rtEl('rtMakeGo').addEventListener('click', async () => { const b = rtEl('rtMakeGo'); b.disabled = true; rt.c = 0; const d = await rtCall('retail.route_make', { days: Number(rtEl('rtDays').value) || 10, start_date: rtEl('rtStart').value, keep_priority: rtEl('rtKeep').checked ? 1 : 0 }); b.disabled = false; if (d) rtCloseMake(); });
+  rtEl('rtClear').addEventListener('click', async () => { if (!confirm('Remove all the routes of ' + ((rt.data || {}).city || 'this city') + '?')) return; rtCloseMake(); rt.c = 0; await rtCall('retail.route_clear', {}); });
+  rtEl('rtPrev').addEventListener('click', () => { rt.c--; rtLoad(); });
+  rtEl('rtNext').addEventListener('click', () => { rt.c++; rtLoad(); });
+  rtEl('rtNow').addEventListener('click', () => { rt.c = 0; rtLoad(); });
+  rtEl('btnRoutes').addEventListener('click', () => { if (view === 'routes') { showView('list'); return; } showView('routes'); rt.c = 0; rtLoad(); });
 
   // ---------- party picker: a dropdown with search + tick list, so several parties can be chosen at once ----------
   const PP = {};
@@ -3034,9 +3239,54 @@
       if (ex.length > o.items.length) document.getElementById('orderAlert').innerHTML = `<div class="alert success">This order had several perfumes in one line. They are now ${ex.length} separate lines, 1 piece each at the price for their size. Check the total and tap Save to fix the order.</div>`;
     } else { addLine(); addLine(); }
     STK = null; recalc(); loadStock(o);
+    oCodes = []; oBcDraw();
+    if (o) api.get('retail.bc_order_codes', { order_id: o.order_id }).then(d => { if (document.getElementById('oId').value == o.order_id) { oCodes = (d.rows || []).map(r => ({ code: r.code, name: r.product_name, ml: r.ml })); oBcDraw(); } }).catch(() => {});
     modalScrollY = window.scrollY; orderModal.classList.add('open');
+    setTimeout(() => { if (!o) document.getElementById('oBc').focus(); }, 150);
     setTimeout(() => { const f = document.querySelector('#oLines .l-name'); if (f && !o) f.focus(); }, 100);
   }
+
+  // ---- 🏷 barcodes on the order: scanning a bottle fills its line (perfume, size, price); a new order needs one number per piece
+  let oCodes = [];   // {code, name, ml}
+  const oBcKey = (name, ml) => stkKey(name, ml);
+  function oBcLine(name, ml) { return [...document.querySelectorAll('#oLines .ol')].find(r => { const v = splitMl(r.querySelector('.l-name').value); return v.name && oBcKey(v.name, v.ml) === oBcKey(name, ml); }); }
+  function oBcDraw() {
+    const pcs = [...document.querySelectorAll('#oLines .ol')].reduce((a, r) => a + (Number(r.querySelector('.l-qty').value) || 0), 0), isRet = document.getElementById('oType').value === 'return';
+    document.getElementById('oBcList').innerHTML = oCodes.map((c, i) => `<span class="pchip" title="${esc(c.name)} ${esc(c.ml)} ml"><b style="letter-spacing:1px;">${esc(c.code)}</b>&nbsp;${esc(c.name)} ${esc(c.ml)} ml<button type="button" data-bcrm="${i}" title="Remove">×</button></span>`).join('');
+    document.getElementById('oBcNote').innerHTML = oCodes.length || pcs ? `<b>${oCodes.length}</b> of <b>${pcs}</b> piece${pcs === 1 ? '' : 's'} scanned${!isRet && oCodes.length < pcs ? ' — <span style="color:#b45f06;">scan the rest</span>' : (oCodes.length >= pcs && pcs ? ' ✓' : '')}` : (isRet ? 'Scan the bottles that come back.' : 'Scan every bottle you send: the line, size and price fill themselves.');
+  }
+  async function oBcAdd(code) {
+    const al = document.getElementById('orderAlert'); al.innerHTML = '';
+    if (oCodes.some(c => c.code === code)) { al.innerHTML = `<div class="alert error">${code} is already scanned.</div>`; return; }
+    let p; try { p = (await api.get('retail.bc_scan', { code })).piece; } catch (e) { al.innerHTML = `<div class="alert error">${esc(e.message)}</div>`; return; }
+    const shopId = Number(document.getElementById('oShop').value), oid = Number(document.getElementById('oId').value) || 0, isRet = document.getElementById('oType').value === 'return';
+    const ok = isRet ? (p.status === 'shop' && p.shop_id === shopId) : (p.status === 'stock' || (p.status === 'shop' && oid && p.order_id === oid));
+    if (!ok) { al.innerHTML = `<div class="alert error">${esc(code)} · ${esc(p.product_name)} ${esc(p.ml)} ml — ${p.status === 'shop' ? 'already at ' + esc(p.shop_name) : (p.status === 'void' ? 'cancelled number' : (isRet ? 'not at this shop' : 'not in stock'))}.</div>`; return; }
+    oCodes.push({ code, name: p.product_name, ml: p.ml });
+    const n = oCodes.filter(c => oBcKey(c.name, c.ml) === oBcKey(p.product_name, p.ml)).length;
+    let row = oBcLine(p.product_name, p.ml);
+    if (row) { const q = row.querySelector('.l-qty'); if ((Number(q.value) || 0) < n) q.value = n; }
+    else {
+      const empty = [...document.querySelectorAll('#oLines .ol')].find(r => !r.querySelector('.l-name').value.trim());
+      const pr = mlPrices[mlKey(p.ml)];
+      if (empty) { empty.querySelector('.l-name').value = joinMl(p.product_name, p.ml); empty.querySelector('.l-qty').value = 1; if (!empty.querySelector('.l-price').value && pr !== undefined) empty.querySelector('.l-price').value = pr; }
+      else addLine({ product_name: p.product_name, ml: p.ml, qty: 1, price: pr === undefined ? '' : pr });
+    }
+    recalc(); oBcDraw();
+  }
+  (function () {
+    const inp = document.getElementById('oBc'); let t = null;
+    const go = () => { const c = String(inp.value).replace(/\D/g, ''); if (c.length !== 6) return; inp.value = ''; oBcAdd(c); };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    inp.addEventListener('input', () => { clearTimeout(t); if (String(inp.value).replace(/\D/g, '').length === 6) t = setTimeout(go, 350); });
+  })();
+  document.getElementById('oBcList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-bcrm]'); if (!b) return; const c = oCodes.splice(Number(b.dataset.bcrm), 1)[0]; if (!c) return;
+    const row = oBcLine(c.name, c.ml); if (row) { const q = row.querySelector('.l-qty'), v = (Number(q.value) || 0) - 1; if (v <= 0) { row.remove(); if (!document.querySelector('#oLines .ol')) addLine(); } else q.value = v; }
+    recalc(); oBcDraw();
+  });
+  document.getElementById('oLines').addEventListener('input', () => setTimeout(oBcDraw, 0));
+  document.getElementById('oType').addEventListener('change', oBcDraw);
   function closeOrderModal() { orderModal.classList.remove('open'); const y = modalScrollY; window.scrollTo(0, y); requestAnimationFrame(() => window.scrollTo(0, y)); }
   document.getElementById('btnOrderCancel').addEventListener('click', closeOrderModal);
   orderModal.addEventListener('click', (e) => { if (e.target === orderModal) closeOrderModal(); });
@@ -3051,16 +3301,23 @@
         order_id: document.getElementById('oId').value || 0, shop_id: Number(document.getElementById('oShop').value),
         order_type: document.getElementById('oType').value, payment: isRet ? 'free' : (oKeepPay || 'pending'), pay_mode: money ? oKeepMode : '', order_date: document.getElementById('oDate').value,
         paid_amount: money ? oKeepPaid : 0, dues, discount_type: isRet ? '' : oDiscT, discount_value: isRet ? 0 : (Number(document.getElementById('oDiscVal').value) || 0), note: document.getElementById('oNote').value.trim(),
-        bill_delivered: document.getElementById('oBillDel').checked ? 1 : 0, items,
+        bill_delivered: document.getElementById('oBillDel').checked ? 1 : 0, items, codes: oCodes.map(c => c.code),
       };
       let d;
-      try { d = await api.post('retail.order_save', payload); }
-      catch (e) {
-        const sh = e.data && e.data.short;
-        if (sh && sh.length && e.data.can_override) {
-          if (!confirm('Not enough stock:\n' + sh.map(x => `• ${x.product_name} ${x.ml_text}: need ${x.need}, have ${x.have}`).join('\n') + '\n\nSave this order anyway? Stock will show minus until you add stock.')) { btn.disabled = false; return; }
-          payload.allow_short = 1; d = await api.post('retail.order_save', payload);
-        } else throw e;
+      for (let tries = 0; ; tries++) {   // Admin may save without every barcode / with too little stock, after a yes
+        try { d = await api.post('retail.order_save', payload); break; }
+        catch (e) {
+          const sh = e.data && e.data.short, nb = e.data && e.data.no_barcode;
+          if (tries < 3 && nb && nb.length && e.data.can_override_bc && !payload.allow_no_barcode) {
+            if (!confirm('Not every bottle is scanned:\n' + nb.map(x => '• ' + x).join('\n') + '\n\nSave this order without those barcodes?')) { btn.disabled = false; return; }
+            payload.allow_no_barcode = 1; continue;
+          }
+          if (tries < 3 && sh && sh.length && e.data.can_override && !payload.allow_short) {
+            if (!confirm('Not enough stock:\n' + sh.map(x => `• ${x.product_name} ${x.ml_text}: need ${x.need}, have ${x.have}`).join('\n') + '\n\nSave this order anyway? Stock will show minus until you add stock.')) { btn.disabled = false; return; }
+            payload.allow_short = 1; continue;
+          }
+          throw e;
+        }
       }
       closeOrderModal(); showAlert(d.message);
       const sid = Number(document.getElementById('oShop').value);

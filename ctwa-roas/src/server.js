@@ -5,6 +5,7 @@ import { openDb } from './db.js';
 import { verifyChallenge, verifySignature, extractClicks, saveClicks } from './whatsapp.js';
 import { verifyHmac, processOrder, tagOrder } from './shopify.js';
 import { sendPurchase, retryPending, syncSpend } from './meta.js';
+import { syncTmph } from './tmph.js';
 import crypto from 'node:crypto';
 import { dailyReport, toCsv, todayIn, shiftDay, diagDay, diagPhone } from './report.js';
 import { last10 } from './phone.js';
@@ -123,6 +124,12 @@ export function main() {
     };
     setInterval(tick, cfg.syncIntervalMin * 60000).unref();
     setTimeout(tick, 5000).unref();   // also once right after a start
+    // the new store's orders: read every 2 minutes (only when TMPH_API_KEY is set)
+    if (cfg.tmphKey && cfg.tmphBase) {
+      const orderTick = async () => { try { const r = await syncTmph(db, cfg); if (r.read) console.log('[tmph]', JSON.stringify(r)); } catch (e) { console.error('[tmph]', e.message); } };
+      setInterval(orderTick, 2 * 60000).unref();
+      setTimeout(orderTick, 8000).unref();
+    }
   }
 }
 

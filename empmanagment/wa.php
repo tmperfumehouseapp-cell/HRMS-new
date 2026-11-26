@@ -268,6 +268,22 @@ function wa_parse_msg(array $m): array
 
 /** Owner (9 Nov): chats are given to salespeople BY HAND only (Waiting → Choose person, the chat's Assign button). While this is on (the default; setting wa_manual_assign = 0 turns the robots back on),
  *  no engine — routing, hot chats, flows, re-assignment — gives a chat to anybody by itself. */
+/** 🔀 QUERY MODE (owner, 24 Nov): 'aa' = Auto assign gives the queries by its rules · 'om' = Open market, people take from Requests (query lock, equal share) · 'no' = both off: no rule at all, anybody takes any query.
+ *  One setting (wq_mode), changed by an Admin on Team performance; it stays until it is changed (no daily start). Before it was ever set: the old switches decide. */
+function wa_query_mode(PDO $pdo): string
+{
+    try { $m = (string)setting_get($pdo, 'wq_mode', ''); if (in_array($m, ['aa', 'om', 'no'], true)) return $m;
+        if ((string)setting_get($pdo, 'wag_open_market', '') === '1') return 'om';
+        return (string)setting_get($pdo, 'waa_off', '1') === '0' ? 'aa' : 'no'; } catch (Throwable $e) { return 'om'; }
+}
+/** 🕘 Is this a HISTORY chat (the same rule as the History list)? Closed AND (the customer's last message is over 24 hours old, OR he opted out, OR he said Stop / Not now — tag 'declined').
+ *  A message WE send to such a chat (a pre-made message, a bulk send) must not put it back in Requests: it comes back only when the customer writes (owner, 25 Nov: 277 "Not now" chats came back into Requests after one bulk pre-made message). */
+function wa_is_history_chat(PDO $pdo, array $c): bool
+{
+    if ((string)($c['status'] ?? '') !== 'closed') return false;
+    if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400 || (int)($c['optout'] ?? 0) === 1) return true;
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'declined' LIMIT 1"); $q->execute([(string)($c['phone'] ?? '')]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+}
 function wa_manual_assign(PDO $pdo): bool { try { return (string)setting_get($pdo, 'wa_manual_assign', '1') !== '0'; } catch (Throwable $e) { return true; } }
 /** 🔀 Owner (9 Nov): a customer who writes to a number that has the Meta payment problem (131042) is answered from another number — the chat is switched to it at once.
  *  The new number has no 24-hour window with this customer yet, so the first message from it must be a pre-made message (the chat opens the list by itself). Returns the new number id or 0. */
@@ -371,11 +387,19 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
     elseif ($ex && (int)($ex['optout'] ?? 0) === 1 && !in_array($t, ['reaction', 'system', 'unsupported'], true) && !preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) {   // owner (13 Nov): a customer who said Stop and then WRITES to us again wants to talk: the conversation starts again
         $pdo->prepare("UPDATE wa_contacts SET optout = 0, camp_optout = 1 WHERE phone = ?")->execute([$key]); if (function_exists('wa_event')) wa_event($pdo, $key, '↩ The customer wrote again after Stop — you can chat with them again. Campaigns / promotional messages stay OFF for this customer.');
     }
-    // 🎫 a customer whose complaint was SOLVED writes again (to order, to complain again, anything): the chat goes back into Requests (nobody holds it) so the whole team sees it
+    // 🎫 a customer whose complaint was SOLVED writes again (to order, to complain again, anything): the chat opens again with the person who holds it (Requests only when nobody does)
     try { if ($ex && (string)setting_get($pdo, 'cxres_' . $key, '') !== '') {
         setting_set($pdo, 'cxres_' . $key, '');
         $open = $pdo->prepare("SELECT 1 FROM cx_cases WHERE phone = ? AND status IN ('open', 'reopened') LIMIT 1"); $open->execute([$key]);
-        if (!$open->fetchColumn()) { $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0, assigned_at = NULL, state = 'unassigned', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, '↩ The customer wrote again after the complaint was solved — the chat is back in Requests'); }
+        if (!$open->fetchColumn()) {
+            // owner (25 Nov): a chat that was resolved / whose complaint was solved comes back to the SAME person when the customer writes again — not into Requests for somebody else
+            //   (it used to be unassigned here and Auto assign gave it to another salesperson). Only when that person has left, or nobody held it, does it go to Requests.
+            $__hq = $pdo->prepare("SELECT c.assigned_emp, e.full_name FROM wa_contacts c LEFT JOIN employees e ON e.employee_id = c.assigned_emp AND e.status != 'ex' WHERE c.phone = ?"); $__hq->execute([$key]); $__h = $__hq->fetch(); $__he = (int)($__h['assigned_emp'] ?? 0);
+            if ($__he > 0 && (string)($__h['full_name'] ?? '') !== '') {
+                $pdo->prepare("UPDATE wa_contacts SET status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, '↩ The customer wrote again after the complaint was solved — the chat is back with ' . (string)$__h['full_name']);
+                if (function_exists('ct_push')) { try { ct_push($pdo, [$__he], 'Customer wrote again', 'A customer whose complaint was solved wrote again — the chat is back with you.', '/my_chats.html?phone=' . $key, 'wa-cxback-' . $key); } catch (Throwable $e2) { } }
+            } else { $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0, assigned_at = NULL, state = 'unassigned', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, '↩ The customer wrote again after the complaint was solved — the chat is back in Requests'); }
+        }
     } } catch (Throwable $e) { }
     // 🙅 "Not now" (the campaign button, or typed): nothing to answer — if NOBODY holds the chat it is resolved at once, so it never fills Requests and never goes to a salesperson (switch off: setting wa_notnow_auto = 0)
     try { if ($t !== 'reaction' && (string)setting_get($pdo, 'wa_notnow_auto', '1') !== '0' && preg_match('/^\s*(not\s*now|abhi\s*nahi|abhi\s*nahin|hamna\s*nahi|अभी\s*नहीं|હમણાં\s*નહીં|હમણાં\s*નહિ)\s*[.!]*\s*$/iu', $body)) {
@@ -1066,7 +1090,7 @@ function wa_contact_row(array $r, array $names): array
 
 // ------------------------------------------------------------------------------------------------------------------------ router
 $__wa = (string)($action ?? ($_GET['action'] ?? ''));
-if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
+if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     require_once __DIR__ . '/wa_tpl.php';   // pre-made messages (templates): defines its helpers and answers the wa.tpl_* actions
     require_once __DIR__ . '/wa_console.php';   // the WhatsApp console: wa.overview (counters + number health) and wa.send_media (photo / video / document from a chat)
@@ -1095,12 +1119,15 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 if (($ch['field'] ?? '') === 'template_category_update') { if (wa_tpl_tables($pdo)) wa_tpl_category_event($pdo, $v); continue; }   // Meta changed the category of a pre-made message (Utility → Marketing: the mix stops using it as Utility)
                 if (($ch['field'] ?? '') === 'message_template_quality_update') { if (wa_tpl_tables($pdo)) wa_tpl_quality_event($pdo, $v); continue; }   // the quality rating of a pre-made message changed
                 $nid = wa_number_id($pdo, (string)($md['phone_number_id'] ?? ''), (string)($md['display_phone_number'] ?? ''));
+                $__swNum = false; try { if (is_file(__DIR__ . '/store_wa.php')) { require_once __DIR__ . '/store_wa.php'; $__swNum = sw_is_number($pdo, $nid); } } catch (Throwable $e) { $__swNum = false; }   // 🏪 the STORE's own number: its chats belong to the Store team only and never go through the sales pipeline (no bot, no assignment)
+                if ($__swNum && in_array((string)($ch['field'] ?? ''), ['smb_message_echoes', 'history'], true)) continue;
                 // 📱 the WhatsApp Business APP on the phone (coexistence): messages a salesperson types in the app (echoes) and the chat history Meta shares — kept like any other message
                 if (($ch['field'] ?? '') === 'smb_message_echoes') { foreach ((array)($v['message_echoes'] ?? []) as $m) { $k = wa_store_phone_msg($pdo, (array)$m, wa_key($m['to'] ?? ''), $nid, 'out', false); if ($k !== '') { $n++; } } continue; }
                 if (($ch['field'] ?? '') === 'history') { foreach ((array)($v['history'] ?? []) as $hh) foreach ((array)($hh['threads'] ?? []) as $th) { $ck = wa_key($th['id'] ?? ''); if ($ck === '') continue;
                     foreach ((array)($th['messages'] ?? []) as $m) { $out = wa_key($m['from'] ?? '') !== $ck; if (wa_store_phone_msg($pdo, (array)$m, $ck, $nid, $out ? 'out' : 'in', true) !== '') $n++; } } continue; }
                 $names = []; foreach ((array)($v['contacts'] ?? []) as $ct) $names[wa_key($ct['wa_id'] ?? '')] = (string)($ct['profile']['name'] ?? '');
-                foreach ((array)($v['messages'] ?? []) as $m) { $k = wa_store_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); if ($k !== '') { $n++; $__keys[$k] = true; } }
+                foreach ((array)($v['messages'] ?? []) as $m) { if ($__swNum) { try { sw_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); } catch (Throwable $e) { error_log('sw_in: ' . $e->getMessage()); } continue; } $k = wa_store_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); if ($k !== '') { $n++; $__keys[$k] = true; } }
+                if ($__swNum) { foreach ((array)($v['statuses'] ?? []) as $s) { try { $st += sw_status($pdo, (array)$s); } catch (Throwable $e) { error_log('sw_status: ' . $e->getMessage()); } } continue; }   // the Store's receipts stay in the Store's own table
                 $__pend = []; foreach ((array)($v['statuses'] ?? []) as $s) { if ((string)(((array)$s)['status'] ?? '') === 'failed') $st += wa_webhook_status($pdo, (array)$s); else $__pend[] = (array)$s; }   // a FAILED receipt is handled at once, as before
                 if ($__pend) $st += wa_status_intake($pdo, $__pend);   // sent / delivered / read receipts: queued and applied as one block (every 7 s when busy, at once when quiet)
             }
@@ -1165,6 +1192,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $wb = $nr ? wa_waba_of($nr) : wa_cfg_val('WA_WABA_ID'); if ($wb === '') json_response(['error' => 'No WhatsApp Business Account ID — set WA_WABA_ID in config.php or fill it for this number.'], 422);
             [$c, $d] = wa_api('POST', '/' . $wb . '/subscribed_apps', []);
             if ($c < 200 || $c >= 300) { $e = wa_err($d); wa_log($pdo, 'subscribe', false, $e); if ($nr && ($wb === (string)$nr['phone_id'] || stripos($e, 'nonexisting field') !== false || stripos($e, 'does not exist') !== false)) $e = 'The WhatsApp Business Account ID saved for this number (' . $wb . ') is not an account. Fix the second box: it must be the account ID from Meta (Business settings → Messaging accounts), not the Phone number ID. (Meta said: ' . mb_substr($e, 0, 120) . ')'; json_response(['error' => $e], 502); }
+            try { $__hc = json_decode((string)setting_get($pdo, 'wa_health', ''), true); if (is_array($__hc) && $nid > 0 && isset($__hc[$nid])) { unset($__hc[$nid]); setting_set($pdo, 'wa_health', json_encode($__hc, JSON_UNESCAPED_UNICODE)); } } catch (Throwable $e) { }   // the card must not keep showing the OLD red answer for up to 10 minutes after "Connect"
             wa_log($pdo, 'subscribe', true, 'This WhatsApp account is now connected to the webhook.'); json_response(['ok' => true, 'message' => 'Connected. Messages to this number now reach the HRMS.']);
         }
         case 'wa.register': {
@@ -1174,6 +1202,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if ($pid === '') json_response(['error' => 'WA_PHONE_ID is missing in config.php.'], 422);
             [$c, $d] = wa_api('POST', '/' . $pid . '/register', ['messaging_product' => 'whatsapp', 'pin' => $pin]);
             if ($c < 200 || $c >= 300) { $e = wa_err($d); wa_log($pdo, 'register', false, $e); json_response(['error' => $e], 502); }
+            try { $__hc = json_decode((string)setting_get($pdo, 'wa_health', ''), true); if (is_array($__hc) && $nid > 0 && isset($__hc[$nid])) { unset($__hc[$nid]); setting_set($pdo, 'wa_health', json_encode($__hc, JSON_UNESCAPED_UNICODE)); } } catch (Throwable $e) { }
             wa_log($pdo, 'register', true, 'Number registered on the Cloud API.'); json_response(['ok' => true, 'message' => 'Number registered. Press “Check now” to see its status.']);
         }
         case 'wa.number_save': {
@@ -1269,6 +1298,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $rescueFeed = $srcQ === 'rescue' && function_exists('wq_rescue_chat_phones') ? wq_rescue_chat_phones($pdo, $emp, $adm) : null;   // 🛟 the Rescue chip: interested customers nobody followed up
             if ($rescueFeed !== null) { if ($rescueFeed) { $w[] = 'c.phone IN (' . implode(',', array_fill(0, count($rescueFeed), '?')) . ')'; foreach ($rescueFeed as $rp) $p[] = $rp; } else $w[] = '1 = 0'; }
             elseif ($numFeed) { $w[] = 'c.phone IN (SELECT m0.phone FROM wa_messages m0 WHERE m0.dir = \'in\' AND m0.number_id = ?)'; $p[] = $numFeed; }   // 📱 everybody who ever wrote to this number (since it was deployed), open or closed
+            elseif ($q !== '' && !empty($_GET['wide']) && in_array($scope, ['mine', 'unassigned', 'closed', 'history', 'all', 'open', ''], true)) { if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; } }   // 🔎 owner (25 Nov): a search looks in EVERY list at once — open, closed and History — whichever tab is open (a customer in History was "not found" from the open tab). A salesperson still finds only their own chats. Only the list asks for it (wide=1): a bulk send keeps its tab.
             elseif ($scope === 'unans') {   // 🚨 Not replied: open or closed, inside or past the 24 hours — everybody who wrote last in these days and got no answer. A salesperson sees only their own chats.
                 [$uf, $ut] = wa_unans_range((string)($_GET['ud'] ?? '7'), (string)($_GET['uf'] ?? ''), (string)($_GET['ut'] ?? '')); [$uc, $up] = wa_unans_cond($uf, $ut); $w[] = $uc; foreach ($up as $x) $p[] = $x;
                 $uw = (string)($_GET['uw'] ?? ''); if ($uw === 'now') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); } elseif ($uw === 'past') { $w[] = 'c.last_in_at < ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); }
@@ -1447,7 +1477,8 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             wa_send_claim_done($pdo, $cid, (string)$r);
             if ($__cxFirst) { try { $pdo->prepare("UPDATE cx_cases SET first_reply_at = ?, updated_at = ? WHERE id = ? AND first_reply_at IS NULL")->execute([date('Y-m-d H:i:s'), date('Y-m-d H:i:s'), $__cxFirst]); } catch (Throwable $e) { } }
             if (empty($in['auto']) && function_exists('wq_tag_drop')) { try { wq_tag_drop($pdo, $key, 'orange'); } catch (Throwable $e) { } }   // a person answered: the orange mark is done
-            if (empty($in['auto'])) $pdo->prepare("UPDATE wa_contacts SET state = 'human', status = 'open', closed_at = NULL, remind_at = NULL WHERE phone = ?")->execute([$key]);   // replied → the reminder is done   // a person replied → the bot stays quiet, a closed chat re-opens
+            if (empty($in['auto']) && strpos($cid, 'bk') === 0 && wa_is_history_chat($pdo, $c)) { /* 📨 a BULK message to a History chat (Stop / Not now, closed): it stays in History until the customer writes */ }
+            elseif (empty($in['auto'])) $pdo->prepare("UPDATE wa_contacts SET state = 'human', status = 'open', closed_at = NULL, remind_at = NULL WHERE phone = ?")->execute([$key]);   // replied → the reminder is done   // a person replied → the bot stays quiet, a closed chat re-opens
             else $pdo->prepare("UPDATE wa_contacts SET status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]);
             wa_reply_early(['ok' => true, 'wamid' => $r]);   // the phone gets its answer now; the bookkeeping below runs after
             if (empty($in['auto']) && function_exists('wa_learn_log')) wa_learn_log($pdo, $c, $text, (int)($auth['employee_id'] ?? 0));   // used / edited / own reply → the Learning queue
@@ -1607,7 +1638,15 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             $nm0 = employee_names_by_id($pdo)[(int)($auth['employee_id'] ?? 0)] ?? 'Admin';
             if ($__wa === 'wa.close' && empty(json_input()['quick']) && function_exists('wag_close_guard') && ($why = wag_close_guard($pdo, $auth, $c)) !== '') json_response(['error' => $why, 'need_result' => true], 422);   // every chat ends with a result
-            if ($__wa === 'wa.close') { $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s'), $key]); wa_event($pdo, $key, 'Resolved by ' . $nm0); }
+            if ($__wa === 'wa.close') {
+                // owner (25 Nov): the person who RESOLVES a chat gets it back when the customer writes again. A chat nobody held (resolved straight from Requests by a salesperson) is therefore kept under that
+                // salesperson's name while it sleeps in History — it used to come back into Requests and go to somebody else. Not for Admin / HR (they clean lists) and not for complaint chats.
+                $__me = (int)($auth['employee_id'] ?? 0); $__keep = false;
+                try { $__keep = $__me > 0 && (int)($c['assigned_emp'] ?? 0) === 0 && (int)($c['cx_id'] ?? 0) === 0 && (string)($c['tag'] ?? '') !== 'complaint' && !wa_is_admin($pdo, $auth) && in_array($__me, wa_sales_ids($pdo), true); } catch (Throwable $e) { $__keep = false; }
+                if ($__keep) $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ?, assigned_emp = ?, assigned_at = ?, state = 'human' WHERE phone = ? AND assigned_emp = 0")->execute([date('Y-m-d H:i:s'), $__me, date('Y-m-d H:i:s'), $key]);
+                else $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s'), $key]);
+                wa_event($pdo, $key, 'Resolved by ' . $nm0 . ($__keep ? ' — if the customer writes again, the chat comes back to ' . $nm0 : ''));
+            }
             else { $pdo->prepare("UPDATE wa_contacts SET status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, 'Re-opened by ' . $nm0); }
             json_response(['ok' => true]);
         }

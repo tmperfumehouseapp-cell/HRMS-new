@@ -199,9 +199,21 @@ function brain_last_error() { return (string)($GLOBALS['brain_last_error'] ?? ''
 function brain_claude_call($system, $user, $max, array $o = []) {
     $GLOBALS['brain_last_error'] = '';
     if (function_exists('brain_ai_stub')) { $r = brain_ai_stub($system, $user, $o); return $r === null ? [false, '', 'stub: no answer'] : [true, is_string($r) ? $r : json_encode($r), '']; }
-    $key = brain_key(); if ($key === '') { $GLOBALS['brain_last_error'] = 'Claude is switched off: no Anthropic key in config.php (ANTHROPIC_API_KEY).'; return [false, '', $GLOBALS['brain_last_error']]; }
-    if (!empty($GLOBALS['ai_feature']) && function_exists('ai_feature_cap_hit') && ai_feature_cap_hit((string)$GLOBALS['ai_feature'])) { $GLOBALS['brain_last_error'] = 'Daily limit of this feature is reached — it continues tomorrow.'; return [false, '', $GLOBALS['brain_last_error']]; }
-    if (function_exists('tmph_over_budget') && tmph_over_budget()) { $GLOBALS['brain_last_error'] = 'The monthly AI budget is used up.'; return [false, '', $GLOBALS['brain_last_error']]; }
+    $__fb = (function_exists('ai_fb_key') && empty($GLOBALS['ai_fb_skip'])) ? ai_fb_key() : '';   // 🆘 EMERGENCY BACKUP (owner, Admin -> AI usage, 24 Nov 2026): while it is ON, this door uses it too (it did not: the customer replies, complaints, learners and the new-message maker kept failing at Anthropic's limit while the bot, which uses the other door, was answered by the backup)
+    if ($__fb !== '' && strpos($__fb, 'sk-ant-') !== 0 && is_string($user) && function_exists('tmph_call_gemini') && function_exists('tmph_gem_clean')) {   // a Google key: Gemini answers instead of Claude
+        $__old = $GLOBALS['tmph_force_gemini'] ?? null; $GLOBALS['tmph_force_gemini'] = 1; $__txt = ''; $__why = 'The backup AI gave no answer.';
+        $__body = ['systemInstruction' => ['parts' => [['text' => (string)$system]]], 'contents' => [['role' => 'user', 'parts' => [['text' => (string)$user]]]], 'generationConfig' => ['maxOutputTokens' => max(400, (int)$max * 2 + 1000), 'temperature' => 0.7]];
+        foreach (tmph_gem_clean([]) as $__gm) { $__o = tmph_call_gemini($__fb, $__gm, $__body, false, function ($t) { }); if (trim((string)($__o['text'] ?? '')) !== '') { $__txt = (string)$__o['text']; break; } $__why = 'Backup AI: ' . ((string)($__o['detail'] ?? '') !== '' ? mb_substr((string)$__o['detail'], 0, 120) : 'status ' . (int)($__o['status'] ?? 0)); if (!in_array((int)($__o['status'] ?? 0), [404, 429, 500, 503], true)) break; }
+        if ($__old === null) unset($GLOBALS['tmph_force_gemini']); else $GLOBALS['tmph_force_gemini'] = $__old;
+        if ($__txt !== '') return [true, $__txt, '']; $GLOBALS['brain_last_error'] = $__why; return [false, '', $__why];
+    }
+    if ($__fb !== '' && strpos($__fb, 'sk-ant-') === 0 && empty($o['__fbm']) && function_exists('tmph_chat_models')) {   // a second Claude key (the owner's backup from another Anthropic organization): the same call with the chat models (the main one, then haiku), like the other door
+        $__last = [false, '', 'The backup Claude key gave no answer.']; foreach (tmph_chat_models() as $__cm) { $__r = brain_claude_call($system, $user, $max, ['model' => (string)$__cm, '__fbm' => 1] + $o); if ($__r[0]) return $__r; $__last = $__r; } return $__last;
+    }
+    $key = brain_key(); if ($__fb !== '' && strpos($__fb, 'sk-ant-') === 0) $key = $__fb;   // a second Claude key: the same call, paid from that key
+    if ($key === '') { $GLOBALS['brain_last_error'] = 'Claude is switched off: no Anthropic key in config.php (ANTHROPIC_API_KEY).'; return [false, '', $GLOBALS['brain_last_error']]; }
+    if ($__fb === '' && !empty($GLOBALS['ai_feature']) && function_exists('ai_feature_cap_hit') && ai_feature_cap_hit((string)$GLOBALS['ai_feature'])) { $GLOBALS['brain_last_error'] = 'Daily limit of this feature is reached — it continues tomorrow.'; return [false, '', $GLOBALS['brain_last_error']]; }
+    if ($__fb === '' && function_exists('tmph_over_budget') && tmph_over_budget()) { $GLOBALS['brain_last_error'] = 'The monthly AI budget is used up.'; return [false, '', $GLOBALS['brain_last_error']]; }
     $model = function_exists('tmph_cfg') ? (string)tmph_cfg('TMPH_MODEL', 'claude-sonnet-5-5') : 'claude-sonnet-5-5'; if (strpos($model, 'claude') !== 0) $model = 'claude-sonnet-5-5';
     if (!empty($o['model']) && strpos((string)$o['model'], 'claude') === 0) $model = (string)$o['model'];   // a job that needs a faster / stronger model
     // $user = a text, OR a list of content blocks (photos), OR a whole conversation [{role, content}, ...]

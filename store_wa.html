@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f0f2f5">
+<title>Store WhatsApp — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=8">
+<style>
+ html,body{height:100%;margin:0;overflow:hidden;background:#eef0f3;font-size:14px}
+ .wa{height:100vh;height:100dvh}
+ .lh{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f0f2f5;flex:none;min-height:52px;box-sizing:border-box}
+ .lh .bk,.lh .gb{border:0;background:#fff;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:18px;line-height:1}
+ .lt{flex:1;min-width:0}.lt b{font-size:15.5px;display:block}.lt small{display:flex;align-items:center;gap:6px;color:#667781;font-size:12px}.lt i{width:8px;height:8px;border-radius:50%;background:#16a34a;display:inline-block}.lt i.off{background:#d9423b}
+ #root{height:100%}
+ .sw{height:100%;display:grid;grid-template-columns:340px minmax(0,1fr);background:#fff}.sw.inf{grid-template-columns:340px minmax(0,1fr) 320px}
+ .pane{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid #e6e8ec}
+ .sw-sr{padding:8px 10px 4px}.sw-sr input{width:100%;box-sizing:border-box;border:0;border-radius:12px;padding:8px 12px;font:inherit;background:#f0f2f5;font-size:13.5px}
+ .sw-f{display:flex;gap:6px;padding:2px 10px 6px;flex-wrap:wrap}.sw-f button{border:0;border-radius:999px;padding:4px 11px;font:inherit;font-weight:700;font-size:12px;background:#f0f2f5;cursor:pointer}.sw-f button.on{background:#d9fdd3;color:#0b6b3a}
+ .sw-list{overflow:auto;flex:1}
+ .sw-it{display:flex;gap:10px;padding:8px 12px;cursor:pointer;align-items:center}.sw-it:hover{background:#f5f6f6}.sw-it.on{background:#f0f2f5}
+ .av{width:40px;height:40px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;color:#fff;font-size:14px}
+ .sw-it .t{flex:1;min-width:0;border-bottom:1px solid #f0f2f5;padding-bottom:8px;margin-bottom:-8px}.sw-it b{font-size:14.5px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sw-it small{display:block;color:#667781;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+ .sw-it .m{text-align:right;font-size:12px;color:#667781;display:flex;flex-direction:column;align-items:flex-end;gap:5px;align-self:flex-start;padding-top:2px}
+ .un{background:#25d366;color:#fff;border-radius:999px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11.5px;padding:0 6px}
+ .win{font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;white-space:nowrap}.win.ok{background:#e3f7ef;color:#0f7a4d}.win.no{background:#fff4e0;color:#b45309}
+ .ch{display:flex;flex-direction:column;min-width:0;min-height:0;background:#efeae2}
+ .ch-h{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#f0f2f5;flex:none;min-height:48px;box-sizing:border-box}
+ .ch-h .back{display:none;border:0;background:transparent;font-size:26px;cursor:pointer;padding:0 4px}
+ .ch-h .av{width:34px;height:34px;font-size:13px}.ch-h .nm{flex:1;min-width:0;cursor:pointer}.ch-h b{font-size:15px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}.ch-h small{display:block;color:#667781;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .ibtn{border:0;background:#fff;border-radius:50%;width:34px;height:34px;cursor:pointer;font-weight:900}
+ .msgs{flex:1;overflow:auto;padding:8px clamp(10px,4%,60px) 6px;background-image:radial-gradient(#e2dccf 1px,transparent 1px);background-size:20px 20px;display:flex;flex-direction:column;gap:3px}
+ .day{align-self:center;background:#fff;border-radius:10px;padding:2px 11px;font-size:11.5px;font-weight:700;color:#667781;box-shadow:0 1px 1px rgba(0,0,0,.06);margin:3px 0}
+ .bub{max-width:min(78%,640px);border-radius:10px;padding:5px 9px 3px;font-size:14px;line-height:1.36;box-shadow:0 1px 1px rgba(0,0,0,.1);white-space:pre-wrap;word-break:break-word}
+ .bub.in{background:#fff;align-self:flex-start;border-top-left-radius:2px}.bub.out{background:#d9fdd3;align-self:flex-end;border-top-right-radius:2px}
+ .bub .tm{display:block;text-align:right;font-size:10.5px;color:#667781}.bub .tk{color:#667781;margin-left:3px}.bub .tk.r{color:#53bdeb}.bub .tk.f{color:#d9423b}
+ .bub .by{display:block;font-size:11.5px;font-weight:800;color:#6250d6}
+ .bub .tag{display:inline-block;font-size:10.5px;font-weight:800;color:#0f7a4d;background:#e3f7ef;border-radius:6px;padding:1px 7px;margin-bottom:2px}
+ .bub img,.bub video{max-width:100%;max-height:340px;border-radius:8px;display:block;margin:2px 0}.bub audio{width:240px;max-width:100%}
+ .cmp{padding:6px 10px 8px;background:#f0f2f5;flex:none;position:relative}
+ .cmp .row{display:flex;gap:6px;align-items:flex-end}.cmp textarea{flex:1;border:0;border-radius:22px;padding:10px 14px;font:inherit;resize:none;min-height:42px;max-height:130px;background:#fff;box-sizing:border-box}
+ .cmp .tb{border:0;background:transparent;font-size:22px;cursor:pointer;width:36px;height:42px;flex:none;color:#54656f}
+ .cmp .send{border:0;background:#00a884;color:#fff;border-radius:50%;width:42px;height:42px;font-size:18px;cursor:pointer;flex:none}.cmp .send:disabled{opacity:.5}
+ .warnb{background:#fff4e0;color:#8a5a00;border-radius:12px;padding:7px 12px;font-size:12.5px;font-weight:700}
+ .tpl{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.tpl button{border:0;background:#fff;border-radius:12px;padding:7px 12px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 1px 1px rgba(0,0,0,.08)}
+ .pop{position:absolute;left:10px;right:10px;bottom:58px;background:#fff;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.18);max-height:300px;overflow:auto;z-index:15}
+ .pop .ph{padding:7px 14px;font-size:11.5px;font-weight:800;color:#667781;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #f0f2f5}
+ .pop .qi{display:flex;gap:10px;padding:8px 14px;cursor:pointer;border-bottom:1px solid #f6f7f8}.pop .qi:hover,.pop .qi.on{background:#f0f2f5}.pop .qi b{font-size:13.5px;min-width:90px;color:#0b6b3a}.pop .qi span{color:#3b4a54;font-size:13px}
+ .am{left:10px;right:auto;min-width:230px;padding:8px;display:grid;gap:2px}.am div{display:flex;gap:12px;align-items:center;padding:7px 12px;border-radius:10px;cursor:pointer;font-weight:700;font-size:14px}.am div:hover{background:#f0f2f5}.am i{font-style:normal;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff}
+ .info{background:#fff;overflow:auto;border-right:0}.info .ih{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f0f2f5;font-weight:800}.info .ib{padding:14px}
+ .info h4{margin:14px 0 6px;font-size:12px;color:#667781;text-transform:uppercase;letter-spacing:.04em}.info .cd{text-align:center}.info .cd .av{width:72px;height:72px;font-size:26px;margin:0 auto 8px}
+ .bl{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid #f0f2f5;font-size:13.5px}.bl a{color:#027eb5;font-weight:700;cursor:pointer}
+ .note{background:#fff8d6;border-radius:10px;padding:7px 10px;font-size:13px;margin-bottom:6px}.note small{display:block;color:#8a7a2a;font-size:11px}
+ .chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800;background:#eeecfb;color:#6250d6;margin:0 4px 4px 0}.chip b{cursor:pointer;opacity:.6}
+ .empty{margin:auto;text-align:center;color:#667781;padding:30px}.empty .ic{font-size:56px}
+ .setup{height:calc(100% - 52px);overflow:auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;align-content:start;box-sizing:border-box}
+ .setup .sx-card{display:grid;gap:10px;align-content:start}.setup label{display:grid;gap:3px;font-size:11.5px;font-weight:700;color:#6f7480}
+ .setup input,.setup select,.setup textarea{border:1.5px solid #e6e8ec;border-radius:14px;padding:9px 12px;font:inherit;color:#14161a}
+ .setup label.ck{display:flex;flex-direction:row;align-items:center;gap:10px;padding:6px 0;font-size:14px;font-weight:600;color:#14161a}
+ .tp{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:60;display:flex;align-items:center;justify-content:center}.tp .box{background:#fff;border-radius:20px;width:min(860px,96vw);max-height:90vh;display:grid;grid-template-columns:290px 1fr;overflow:hidden}
+ .tp .tl{border-right:1px solid #f0f2f5;overflow:auto}.tp .tl h3{margin:0;padding:12px 16px;font-size:15px}.tp .ti{padding:9px 16px;cursor:pointer;border-top:1px solid #f6f7f8}.tp .ti.on{background:#eefbf4}.tp .ti b{font-size:13.5px}.tp .ti small{display:block;color:#667781;font-size:12px}
+ .tp .tr{padding:14px;overflow:auto;display:grid;gap:9px;align-content:start}.tp .tr label{display:grid;gap:3px;font-size:11.5px;font-weight:700;color:#667781}.tp .tr input{border:1.5px solid #e6e8ec;border-radius:12px;padding:8px 12px;font:inherit}
+ .tp .pv{background:#efeae2;border-radius:14px;padding:12px}
+ .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#14161a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:700;z-index:80;max-width:90vw}
+ @media(max-width:1100px){.sw.inf{grid-template-columns:340px minmax(0,1fr)}.sw.inf .info{position:fixed;right:0;top:0;bottom:0;width:340px;box-shadow:-8px 0 24px rgba(0,0,0,.12);z-index:20}}
+ @media(max-width:760px){.sw,.sw.inf{grid-template-columns:1fr}.sw.chat .p-list{display:none}.sw:not(.chat) .ch{display:none}.ch-h .back{display:block}.bub{max-width:88%}.sw.inf .info{width:100%}
+  .msgs{padding:8px 8px 6px}.cmp{padding:6px 8px calc(8px + env(safe-area-inset-bottom))}.cmp .tb{width:30px;font-size:20px}.tp .box{grid-template-columns:1fr;max-height:92vh}.tp .tl{max-height:26vh;border-right:0}.pop{bottom:54px}}
+</style>
+</head>
+<body>
+<div class="wa" id="app"><div style="padding:30px;color:#667781">Loading…</div></div>
+<input type="file" id="fileIn" multiple style="display:none">
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=14"></script>
+<script>
+(function () {
+  guardPage();
+  // inside the HRMS frame this page opens on the whole screen (it needs it, like WhatsApp Web)
+  try { if (window.top !== window.self) { window.top.location.replace(location.href); return; } } catch (e) { /* same site: fine */ }
+  const $ = (id) => document.getElementById(id), esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const COL = ['#e0603f', '#2a78d6', '#16945a', '#6250d6', '#b45309', '#d1478c'];
+  const S = { cfg: null, chats: [], unread: 0, unans: 0, cur: '', chat: null, filt: 'all', q: '', tab: 'chats', info: false, pop: '', lastId: 0, tpl: null, tplSel: 0, tplOpen: false, busy: false, err: '' };
+  const first = (n) => String(n || '').trim().split(/\s+/)[0] || 'ji';
+  const ini = (n, p) => { const w = String(n || '').trim().split(/\s+/).filter(Boolean); return w.length ? w.slice(0, 2).map((x) => x[0]).join('').toUpperCase() : String(p || '?').slice(-2); };
+  const av = (n, p) => `<span class="av" style="background:${COL[(parseInt(String(p).slice(-3), 10) || 0) % 6]}">${esc(ini(n, p))}</span>`;
+  const toast = (t) => { const e = document.createElement('div'); e.className = 'toast'; e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 3200); };
+  const hm = (ts) => { const d = new Date(String(ts).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); };
+  const dayLb = (ts) => { const d = new Date(String(ts).replace(' ', 'T')), n = new Date(); if (isNaN(d)) return ''; const dd = (a) => a.toDateString(); const y = new Date(n.getTime() - 864e5); return dd(d) === dd(n) ? 'Today' : dd(d) === dd(y) ? 'Yesterday' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  const short = (ts) => { const d = new Date(String(ts).replace(' ', 'T')), n = new Date(); if (isNaN(d)) return ''; return d.toDateString() === n.toDateString() ? hm(ts) : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
+  const fmtPhone = (p) => '+91 ' + String(p).slice(-10);
+  const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+  const backToHrms = () => { if (history.length > 1 && document.referrer) history.back(); else location.href = 'hub.html?w=store'; };
+
+  /* ---------- data ---------- */
+  async function loadCfg() { S.cfg = await api.get('st_wa.cfg'); }
+  async function loadChats() { try { const r = await api.get('st_wa.chats', { f: S.filt, q: S.q }); S.chats = r.chats || []; S.unread = r.unread || 0; S.unans = r.unanswered || 0; } catch (e) { S.err = e.message; } }
+  async function openChat(phone) {
+    S.cur = phone; S.chat = null; S.pop = ''; render();
+    try { const r = await api.get('st_wa.chat', { phone }); S.chat = r; S.lastId = r.last_id || 0; } catch (e) { toast(e.message); }
+    render(); try { const row = S.chats.find((c) => c.phone === phone); if (row) row.unread = 0; } catch (e) { /* fine */ }
+  }
+  async function pollChat() {
+    if (!S.cur || !S.chat) return; try { const r = await api.get('st_wa.chat', { phone: S.cur, after: S.lastId });
+      if (r.messages && r.messages.length) { S.chat.messages = S.chat.messages.concat(r.messages); S.lastId = r.last_id; S.chat.window_open = r.window_open; S.chat.window_hours = r.window_hours; renderMsgs(true); } } catch (e) { /* next time */ }
+  }
+  let lastPoll = -1;
+  async function tick() {
+    if (document.hidden || !S.cfg || !S.cfg.number || S.tab !== 'chats') return;
+    try { const p = await api.get('st_wa.poll'); if (p.last_id !== lastPoll) { lastPoll = p.last_id; await loadChats(); renderList(); await pollChat(); } } catch (e) { /* offline: next time */ }
+  }
+
+  /* ---------- views ---------- */
+  const LH = (setup) => `<div class="lh"><button class="bk" id="bkBtn" title="Back to HRMS">‹</button><div class="lt"><b>${esc((S.cfg.number && S.cfg.number.label) || 'Store WhatsApp')}</b><small><i class="${S.cfg.number ? '' : 'off'}"></i>${S.cfg.number ? esc(S.cfg.number.display || '') + ' · connected number' : 'no number chosen yet'}</small></div>${S.cfg.manager ? `<button class="gb" data-tab="${setup ? 'chats' : 'setup'}" title="${setup ? 'Chats' : 'Setup'}">${setup ? '💬' : '⚙'}</button>` : ''}</div>`;
+  function listHtml() {
+    return S.chats.map((c) => `<div class="sw-it ${c.phone === S.cur ? 'on' : ''}" data-c="${esc(c.phone)}">${av(c.name, c.phone)}<div class="t"><b>${esc(c.name || fmtPhone(c.phone))}</b><small>${c.dir === 'out' ? '<span style="color:#53bdeb">✓✓</span> ' : ''}${esc(c.last)}</small></div><div class="m"><span>${esc(short(c.ts))}</span>${c.unread ? `<span class="un">${c.unread}</span>` : `<span class="win ${c.window_open ? 'ok' : 'no'}">${c.window_open ? 'open' : 'template'}</span>`}</div></div>`).join('') || '<div class="empty"><div class="ic">💬</div>No chats here yet.<br><small>When a bill is sent, or a customer writes, the chat appears.</small></div>';
+  }
+  function renderList() { const l = document.querySelector('.sw-list'); if (l) l.innerHTML = listHtml(); const u = $('fUn'); if (u) u.textContent = 'Unanswered' + (S.unans ? ' · ' + S.unans : ''); }
+  function bubHtml(m, prev) {
+    const day = (!prev || dayLb(prev.ts) !== dayLb(m.ts)) ? `<div class="day">${esc(dayLb(m.ts))}</div>` : '';
+    let inner = '';
+    if (m.media_id && ['image', 'video', 'audio', 'document', 'sticker'].indexOf(m.mtype) > -1) inner += `<div class="mm" data-media="${esc(m.media_id)}" data-kind="${esc(m.mtype)}"><span style="color:#667781">${m.mtype === 'image' ? '📷 Photo' : m.mtype === 'video' ? '🎥 Video' : m.mtype === 'audio' ? '🎙 Voice note' : '📄 ' + esc(m.body || 'Document')} · loading…</span></div>`;
+    if (m.body && !(m.mtype === 'document' && !m.media_id)) inner += esc(m.body); else if (m.body && m.mtype === 'document') inner += esc(m.body);
+    const out = m.dir === 'out'; const auto = out && m.who === 'store'; const tk = m.status === 'read' ? '<span class="tk r">✓✓</span>' : m.status === 'delivered' ? '<span class="tk">✓✓</span>' : m.status === 'failed' ? '<span class="tk f">failed</span>' : '<span class="tk">✓</span>';
+    return day + `<div class="bub ${out ? 'out' : 'in'}">${auto ? '<span class="tag">sent automatically</span><br>' : (out && m.emp_name ? `<span class="by">${esc(m.emp_name)}</span>` : '')}${m.mtype === 'template' && !auto ? '<span class="tag">template</span><br>' : ''}${inner}<span class="tm">${esc(hm(m.ts))} ${out ? tk : ''}</span></div>`;
+  }
+  async function loadMedia(root) {
+    root.querySelectorAll('.mm[data-media]').forEach(async (el) => {
+      if (el.dataset.done) return; el.dataset.done = '1'; const id = el.dataset.media, kind = el.dataset.kind;
+      try { const d = await api.get('st_wa.media_link', { id }); const url = api.buildUrl('wa.mfile', { id: d.id, e: d.e, s: d.s });
+        el.innerHTML = kind === 'image' || kind === 'sticker' ? `<a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="photo"></a>` : kind === 'video' ? `<video controls preload="metadata" src="${esc(url)}"></video>` : kind === 'audio' ? `<audio controls preload="none" src="${esc(url)}"></audio>` : `<a href="${esc(url)}" target="_blank" rel="noopener">📄 Open the file</a>`;
+      } catch (e) { el.innerHTML = '<span style="color:#b45309">file not available</span>'; }
+    });
+  }
+  function renderMsgs(keepBottom) {
+    const el = $('msgs'); if (!el || !S.chat) return; const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    el.innerHTML = S.chat.messages.map((m, i) => bubHtml(m, S.chat.messages[i - 1])).join(''); loadMedia(el); if (!keepBottom || near) el.scrollTop = el.scrollHeight;
+  }
+  function cmpHtml() {
+    const c = S.chat; if (!c) return '';
+    if (c.optout) return '<div class="warnb">This customer asked us to stop. Do not message them.</div>';
+    if (!c.window_open) return `<div class="warnb">The customer has not written in the last 24 hours. WhatsApp allows only an approved <b>template</b> now. When they reply, you can type freely.</div><div class="tpl"><button data-open="tpl">🧾 Send a template</button></div>`;
+    return `${S.pop === 'slash' ? quickHtml() : ''}${S.pop === 'attach' ? `<div class="pop am"><div data-att="image/*,video/*"><i style="background:#7f66ff">🖼</i>Photo or video</div><div data-att=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt"><i style="background:#5157ae">📄</i>Document</div><div data-att="audio/*"><i style="background:#02a698">🎙</i>Audio file</div></div>` : ''}<div class="row"><button class="tb" data-pop="attach" title="Attach">📎</button><button class="tb" data-open="tpl" title="Template">🧾</button><textarea id="tx" rows="1" placeholder="${innerWidth < 760 ? 'Type a message' : 'Type a message · / for quick replies'}"></textarea><button class="send" id="sendBtn" title="Send">➤</button></div>`;
+  }
+  const quickList = (q) => (S.cfg.quick || []).filter((x) => !q || x.shortcut.toLowerCase().indexOf(q.toLowerCase()) === 0);
+  function quickHtml(q) { const L = quickList(q || ''); return `<div class="pop"><div class="ph">Quick replies · type to filter</div>${L.map((x, i) => `<div class="qi ${i === 0 ? 'on' : ''}" data-q="${x.id}"><b>${esc(x.shortcut)}</b><span>${esc(x.body)}</span></div>`).join('') || '<div class="qi"><span>No quick reply with that name. Add them in Setup.</span></div>'}</div>`; }
+  function chatHtml() {
+    if (!S.cur) return `<div class="ch"><div class="empty"><div class="ic">💬</div><b style="font-size:20px">Store WhatsApp</b><br>Choose a chat. Customers who reply to the store number appear here.</div></div>`;
+    const c = S.chat; if (!c) return `<div class="ch"><div class="empty">Loading…</div></div>`;
+    return `<div class="ch"><div class="ch-h"><button class="back" id="back">‹</button>${av(c.name, c.phone)}<div class="nm" id="nm"><b>${esc(c.name || fmtPhone(c.phone))}</b><small>${esc(fmtPhone(c.phone))}${c.returning ? ' · returning customer' : ''}</small></div><span class="win ${c.window_open ? 'ok' : 'no'}">${c.window_open ? 'window open · ' + Math.floor(c.window_hours) + ' h left' : 'window closed'}</span><button class="ibtn" id="ibtn" title="Customer">i</button></div><div class="msgs" id="msgs"></div><div class="cmp" id="cmp">${cmpHtml()}</div></div>`;
+  }
+  function infoHtml() {
+    const c = S.chat; if (!c) return '';
+    return `<div class="ih"><button class="ibtn" id="ix">✕</button>Customer</div><div class="ib"><div class="cd">${av(c.name, c.phone)}<b style="font-size:17px">${esc(c.name || fmtPhone(c.phone))}</b><div style="color:#667781">${esc(fmtPhone(c.phone))}</div></div>
+     <h4>Bills</h4>${(c.bills || []).map((b) => `<div class="bl"><span><b>${esc(b.bill_no)}</b><br><span style="color:#667781">${esc(b.date)}${b.status !== 'ok' ? ' · cancelled' : ''}</span></span><span style="text-align:right"><b>${inr(b.total)}</b><br>${b.link ? `<a href="${esc(b.link)}" target="_blank" rel="noopener">Open bill</a>` : ''}</span></div>`).join('') || '<div style="color:#667781">No bill with this number.</div>'}
+     <h4>Tags</h4><div id="tgs">${(c.tags || []).map((t) => `<span class="chip">${esc(t)} <b data-untag="${esc(t)}">✕</b></span>`).join('')}<span class="chip" style="background:#f0f2f5;color:#3b4a54;cursor:pointer" id="addTag">+ tag</span></div>
+     <h4>Private notes <small style="text-transform:none">(the customer never sees these)</small></h4>${(c.notes || []).map((n) => `<div class="note">${esc(n.txt)}<small>${esc(n.emp_name)} · ${esc(String(n.at).slice(0, 16))}</small></div>`).join('')}<button class="sx-btn ghost" id="addNote" style="width:100%">Add a note</button>
+     <h4>Chat</h4><div class="bl"><span>Handled by</span><b>${esc(c.assigned_name || 'the Store team')}</b></div><div class="bl"><span>Hand over to</span><select id="asg" style="border:1.5px solid #e6e8ec;border-radius:10px;padding:4px 8px"><option value="0">the whole team</option>${(c.team || []).map((t) => `<option value="${t.id}" ${t.id === c.assigned_emp ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+     <div style="margin-top:12px;display:grid;gap:8px"><button class="sx-btn ghost" id="doneBtn">${c.status === 'done' ? 'Reopen this chat' : 'Mark as done'}</button></div></div>`;
+  }
+  function chatsView() {
+    return `<div class="sw ${S.cur ? 'chat' : ''} ${S.info && S.cur ? 'inf' : ''}"><div class="pane p-list">${LH(false)}<div class="sw-sr"><input id="srch" placeholder="Search a name or number" value="${esc(S.q)}"></div><div class="sw-f"><button data-f="all" class="${S.filt === 'all' ? 'on' : ''}">All</button><button data-f="unanswered" id="fUn" class="${S.filt === 'unanswered' ? 'on' : ''}">Unanswered${S.unans ? ' · ' + S.unans : ''}</button><button data-f="mine" class="${S.filt === 'mine' ? 'on' : ''}">Mine</button><button data-f="done" class="${S.filt === 'done' ? 'on' : ''}">Done</button></div><div class="sw-list">${listHtml()}</div></div>${chatHtml()}${S.info && S.cur ? `<div class="pane info">${infoHtml()}</div>` : ''}</div>`;
+  }
+  /* ---------- setup (Admin / HR) ---------- */
+  function setupView() {
+    const c = S.cfg; const nums = c.numbers || [], staff = c.staff || [];
+    return LH(true) + `<div class="setup">
+     <div class="sx-card"><h3>📱 The Store's WhatsApp number</h3><div style="color:#6f7480;font-size:13px;line-height:1.5">First add the number in <b>WhatsApp → Numbers</b> (Phone number ID + the WhatsApp Business Account ID from Meta). Then choose it here.</div>
+      <label>Store number<select id="numSel"><option value="0">— not chosen —</option>${nums.map((n) => `<option value="${n.id}" ${c.number && c.number.id === n.id ? 'selected' : ''}>${esc(n.label || n.display || 'Number ' + n.id)}${n.display ? ' · ' + esc(n.display) : ''}</option>`).join('')}</select></label>
+      ${c.number ? `<div class="bl" style="border:0"><span>WhatsApp Business Account</span><b>${esc(c.number.waba_id || '— missing —')}</b></div><div class="bl" style="border:0"><span>Phone number ID</span><b>${esc(c.number.phone_id)}</b></div><div id="chk" style="font-size:13px"></div><button class="sx-btn ghost" id="chkBtn" style="justify-self:start">Check with Meta</button>` : ''}<button class="sx-btn" id="saveNum" style="justify-self:start">Save</button></div>
+     <div class="sx-card"><h3>👥 Who sees these chats</h3><div style="color:#6f7480;font-size:13px">Only these people (and Admin / HR) can open this screen. The sales team never sees it.</div>${staff.map((s) => `<label class="ck"><input type="checkbox" data-h="${s.id}" ${(c.handlers || []).indexOf(s.id) > -1 ? 'checked' : ''}> ${esc(s.name)}</label>`).join('')}<button class="sx-btn" id="saveHan" style="justify-self:start">Save people</button></div>
+     <div class="sx-card"><h3>⚡ Quick replies (type / in a chat)</h3>${(c.quick || []).map((q) => `<div class="bl"><span><b>${esc(q.shortcut)}</b><br><span style="color:#667781">${esc(q.body)}</span></span><span><a data-qe="${q.id}">edit</a> · <a data-qd="${q.id}">delete</a></span></div>`).join('')}<label>Short name<input id="qsc" placeholder="/address"></label><label>Message (you can use {name})<textarea id="qbd" rows="3"></textarea></label><input type="hidden" id="qid" value="0"><button class="sx-btn" id="saveQ" style="justify-self:start">Save quick reply</button></div>
+     <div class="sx-card"><h3>📝 Store messages (templates)</h3>${(c.templates || []).map((t) => `<div class="bl"><span><b>${esc(t.name)}</b><br><span style="color:#667781">${esc(t.category)}</span></span><span class="sx-pill ${t.status === 'APPROVED' ? 'good' : t.status === 'REJECTED' ? 'bad' : 'warn'}">${esc(t.status === 'APPROVED' ? 'Approved' : t.status === 'REJECTED' ? 'Rejected' : 'Waiting for Meta')}</span></div>`).join('') || '<div style="color:#667781">None yet. They are sent to Meta for this number\'s account after you save the number.</div>'}</div></div>`;
+  }
+  function render() {
+    const app = $('app'); if (!S.cfg) return;
+    if (S.tab === 'setup' && S.cfg.manager) { app.innerHTML = setupView(); return bind(); }
+    if (!S.cfg.number) { app.innerHTML = LH(false) + `<div class="empty" style="margin-top:12vh"><div class="ic">📵</div><b style="font-size:19px">No Store WhatsApp number yet</b><br>${S.cfg.manager ? 'Open Setup (⚙) and choose the number.' : 'Ask the Admin to set it up.'}</div>`; return bind(); }
+    const keep = $('srch') && document.activeElement === $('srch'); const tx = $('tx') ? $('tx').value : '';
+    app.innerHTML = chatsView(); renderMsgs(); if ($('tx')) { $('tx').value = tx; } if (keep && $('srch')) { $('srch').focus(); $('srch').setSelectionRange(99, 99); } bind();
+  }
+  /* ---------- events ---------- */
+  function bind() { const t = $('tx'); if (t) { t.oninput = () => { t.style.height = 'auto'; t.style.height = Math.min(130, t.scrollHeight) + 'px'; const v = t.value; if (/^\/\S*$/.test(v) && S.cfg.quick.length) { S.pop = 'slash'; const c = $('cmp'); const old = c.querySelector('.pop'); if (old) old.remove(); c.insertAdjacentHTML('afterbegin', quickHtml(v)); } else { const old = $('cmp').querySelector('.pop'); if (old && S.pop === 'slash') { old.remove(); S.pop = ''; } } };
+      t.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && innerWidth > 760) { e.preventDefault(); sendText(); } }; }
+    const sr = $('srch'); if (sr) sr.oninput = () => { clearTimeout(bind.t); bind.t = setTimeout(async () => { S.q = sr.value.trim(); await loadChats(); renderList(); }, 250); }; }
+  async function sendText() {
+    const t = $('tx'); if (!t || S.busy) return; const text = t.value.trim(); if (!text) return; S.busy = true; $('sendBtn').disabled = true;
+    try { await api.post('st_wa.send', { phone: S.cur, text }); t.value = ''; t.style.height = 'auto'; S.pop = ''; lastPoll = -1; await pollChat(); await loadChats(); renderList(); }
+    catch (e) { toast(e.message); if (/window/i.test(e.message)) { await openChat(S.cur); } } finally { S.busy = false; const b = $('sendBtn'); if (b) b.disabled = false; }
+  }
+  async function sendFiles(files) {
+    if (!files.length) return; let n = 0; for (const f of files) { n++; toast('Sending ' + n + ' of ' + files.length + '…'); const fd = new FormData(); fd.append('phone', S.cur); fd.append('file', f); try { await api.upload('st_wa.send_media', fd); } catch (e) { toast(f.name + ': ' + e.message); break; } }
+    lastPoll = -1; await pollChat(); await loadChats(); renderList();
+  }
+  const prefill = (t) => { const c = S.chat, b = (c.bills || []).find((x) => x.status === 'ok') || {}; const v = []; const n = t.vars || 0;
+    if (/^tmph_store_bill/.test(t.name)) return [first(c.name), b.bill_no || '', b.total ? String(Math.round(b.total)) : '', b.link || ''].slice(0, n); for (let i = 0; i < n; i++) v.push(i === 0 ? first(c.name) : ''); return v; };
+  async function openTpl() {
+    S.tplOpen = true; S.pop = ''; if (!S.tpl) { try { S.tpl = (await api.get('st_wa.tpl_list')).templates || []; } catch (e) { toast(e.message); S.tpl = []; } } S.tplSel = Math.max(0, S.tpl.findIndex((t) => t.sendable)); drawTpl();
+  }
+  function drawTpl() {
+    const old = $('tp'); if (old) old.remove(); if (!S.tplOpen) return; const T = S.tpl || [], t = T[S.tplSel]; const vals = t ? (S.tplVals && S.tplVals[t.id]) || prefill(t) : [];
+    const body = t ? t.body.replace(/\{\{\s*(\d+)\s*\}\}/g, (m, i) => esc(vals[i - 1] || '{{' + i + '}}')) : '';
+    document.body.insertAdjacentHTML('beforeend', `<div class="tp" id="tp"><div class="box"><div class="tl"><h3>Store messages</h3>${T.map((x, i) => `<div class="ti ${i === S.tplSel ? 'on' : ''}" data-t="${i}"><b>${esc(x.name)}</b><small>${esc(x.category)} · ${x.sendable ? 'ready' : esc(x.status === 'APPROVED' ? 'ready' : 'waiting for Meta')}</small></div>`).join('') || '<div style="padding:16px;color:#667781">No Store message yet.</div>'}</div>
+      <div class="tr">${t ? `<b style="font-size:15px">${esc(t.name)}</b>${Array.from({ length: t.vars }, (_, i) => `<label>Variable ${i + 1}<input data-v="${i}" value="${esc(vals[i] || '')}"></label>`).join('')}<div class="pv"><div class="bub out" style="max-width:100%"><span class="tag">Preview</span><br>${body}<span class="tm">now</span></div></div>${t.header && t.header !== 'TEXT' ? '<div class="warnb">This message has a photo / video / PDF on top. Set it in WhatsApp → Pre-made messages first.</div>' : ''}<div style="display:flex;gap:8px;justify-content:flex-end"><button class="sx-btn ghost" id="tpX">Cancel</button><button class="sx-btn" id="tpGo" ${t.sendable && !(t.header && t.header !== 'TEXT') ? '' : 'disabled'}>Send</button></div>` : ''}</div></div></div>`);
+    const tp = $('tp'); tp.onclick = async (e) => {
+      if (e.target === tp || e.target.id === 'tpX') { S.tplOpen = false; drawTpl(); return; } const ti = e.target.closest('[data-t]'); if (ti) { S.tplSel = +ti.dataset.t; drawTpl(); return; }
+      if (e.target.id === 'tpGo') { const vv = Array.from(tp.querySelectorAll('[data-v]')).map((x) => x.value.trim()); e.target.disabled = true; try { await api.post('st_wa.tpl_send', { phone: S.cur, id: t.id, vars: vv }); S.tplOpen = false; drawTpl(); toast('Sent ✓'); lastPoll = -1; await openChat(S.cur); await loadChats(); renderList(); } catch (er) { toast(er.message); e.target.disabled = false; } }
+    };
+    tp.oninput = (e) => { const i = e.target.dataset && e.target.dataset.v; if (i == null) return; S.tplVals = S.tplVals || {}; S.tplVals[t.id] = Array.from(tp.querySelectorAll('[data-v]')).map((x) => x.value); const pv = tp.querySelector('.pv .bub'); if (pv) pv.innerHTML = '<span class="tag">Preview</span><br>' + t.body.replace(/\{\{\s*(\d+)\s*\}\}/g, (m, k) => esc(S.tplVals[t.id][k - 1] || '{{' + k + '}}')) + '<span class="tm">now</span>'; };
+  }
+  document.addEventListener('click', async (e) => {
+    const g = (s) => e.target.closest(s);
+    if (g('#bkBtn')) return backToHrms();
+    let x = g('[data-tab]'); if (x) { S.tab = x.dataset.tab; if (S.tab === 'chats') { await loadCfg(); } return render(); }
+    x = g('[data-f]'); if (x) { S.filt = x.dataset.f; await loadChats(); return render(); }
+    x = g('[data-c]'); if (x) return openChat(x.dataset.c);
+    if (g('#back')) { S.cur = ''; S.chat = null; S.info = false; return render(); }
+    if (g('#ibtn') || g('#nm')) { S.info = !S.info; return render(); } if (g('#ix')) { S.info = false; return render(); }
+    x = g('[data-pop]'); if (x) { S.pop = S.pop === x.dataset.pop ? '' : x.dataset.pop; const c = $('cmp'); if (c) c.innerHTML = cmpHtml(), bind(); return; }
+    x = g('[data-att]'); if (x) { const fi = $('fileIn'); fi.accept = x.dataset.att; S.pop = ''; const c = $('cmp'); if (c) c.innerHTML = cmpHtml(), bind(); fi.value = ''; fi.onchange = () => sendFiles(Array.from(fi.files)); fi.click(); return; }
+    if (g('[data-open="tpl"]')) return openTpl();
+    x = g('[data-q]'); if (x) { const q = (S.cfg.quick || []).find((y) => String(y.id) === x.dataset.q), t = $('tx'); if (q && t) { t.value = q.body.replace(/\{name\}/g, first(S.chat.name)).replace(/\{bill_link\}/g, ((S.chat.bills || [])[0] || {}).link || ''); S.pop = ''; const p = $('cmp').querySelector('.pop'); if (p) p.remove(); t.focus(); t.dispatchEvent(new Event('input')); } return; }
+    if (g('#sendBtn')) return sendText();
+    if (g('#addNote')) { const t = prompt('Private note about this customer (they never see it):'); if (t && t.trim()) { try { await api.post('st_wa.note_add', { phone: S.cur, text: t }); await openChat(S.cur); S.info = true; render(); } catch (er) { toast(er.message); } } return; }
+    if (g('#addTag')) { const t = prompt('Tag (like VIP, Exchange, Gift):'); if (t && t.trim()) { try { await api.post('st_wa.tag_set', { phone: S.cur, tag: t, on: 1 }); await openChat(S.cur); S.info = true; render(); } catch (er) { toast(er.message); } } return; }
+    x = g('[data-untag]'); if (x) { try { await api.post('st_wa.tag_set', { phone: S.cur, tag: x.dataset.untag, on: 0 }); await openChat(S.cur); S.info = true; render(); } catch (er) { toast(er.message); } return; }
+    if (g('#doneBtn')) { try { await api.post('st_wa.status', { phone: S.cur, done: S.chat.status === 'done' ? 0 : 1 }); toast(S.chat.status === 'done' ? 'Reopened' : 'Marked as done'); await loadChats(); await openChat(S.cur); } catch (er) { toast(er.message); } return; }
+    // setup
+    if (g('#saveNum')) { try { await api.post('st_wa.cfg_save', { number_id: +$('numSel').value }); toast('Saved ✓'); await loadCfg(); render(); } catch (er) { toast(er.message); } return; }
+    if (g('#chkBtn')) { const o = $('chk'); o.textContent = 'Asking Meta…'; try { const r = (await api.get('st_wa.check')).check || {}; const i = r.info || {}; o.innerHTML = r.error ? `<span style="color:#b91c1c">${esc(r.error)}</span>` : `<b>${esc(i.verified_name || '')}</b> · ${esc(i.display_phone_number || '')} · quality ${esc(i.quality_rating || '?')} · ${esc(i.status || '')}<br>${r.subscribed ? '<span style="color:#15803d">✓ connected to the webhook (customer replies arrive)</span>' : '<span style="color:#b91c1c">✗ not connected to the webhook yet: in WhatsApp → Numbers press “Connect” for this number.</span>'}`; } catch (er) { o.textContent = er.message; } return; }
+    if (g('#saveHan')) { const h = Array.from(document.querySelectorAll('[data-h]')).filter((c) => c.checked).map((c) => +c.dataset.h); try { await api.post('st_wa.cfg_save', { handlers: h }); toast('Saved ✓'); await loadCfg(); render(); } catch (er) { toast(er.message); } return; }
+    x = g('[data-qe]'); if (x) { const q = S.cfg.quick.find((y) => String(y.id) === x.dataset.qe); if (q) { $('qsc').value = q.shortcut; $('qbd').value = q.body; $('qid').value = q.id; $('qsc').focus(); } return; }
+    x = g('[data-qd]'); if (x) { if (confirm('Delete this quick reply?')) { try { await api.post('st_wa.quick_del', { id: +x.dataset.qd }); await loadCfg(); render(); } catch (er) { toast(er.message); } } return; }
+    if (g('#saveQ')) { try { await api.post('st_wa.quick_save', { id: +$('qid').value, shortcut: $('qsc').value, body: $('qbd').value }); toast('Saved ✓'); await loadCfg(); render(); } catch (er) { toast(er.message); } return; }
+  });
+  document.addEventListener('change', async (e) => { if (e.target.id === 'asg') { try { await api.post('st_wa.assign', { phone: S.cur, emp_id: +e.target.value }); toast('Handed over'); await openChat(S.cur); S.info = true; render(); } catch (er) { toast(er.message); } } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (S.tplOpen) { S.tplOpen = false; drawTpl(); } else if (S.pop) { S.pop = ''; const c = $('cmp'); if (c) c.innerHTML = cmpHtml(), bind(); } } });
+  (async function init() {
+    try { await loadCfg(); } catch (e) { $('app').innerHTML = `<div class="empty" style="margin-top:14vh"><div class="ic">🔒</div><b style="font-size:18px">${esc(e.message)}</b><br><br><button class="sx-btn" onclick="location.href='hub.html?w=store'">‹ Back to HRMS</button></div>`; return; }
+    if (S.cfg.number) { await loadChats(); const p = new URLSearchParams(location.search).get('phone'); if (p) { render(); await openChat(p.replace(/\D/g, '').slice(-10)); } }
+    render(); setInterval(tick, 6000); document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  })();
+})();
+</script>
+</body>
+</html>
