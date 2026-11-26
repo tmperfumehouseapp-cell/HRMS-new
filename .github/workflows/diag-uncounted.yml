@@ -38,44 +38,23 @@ jobs:
           require $f;
           try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
           date_default_timezone_set("Asia/Kolkata"); $d->exec("SET time_zone = '+05:30'"); echo "U now " . date("Y-m-d H:i:s") . "\n";
-          $cd = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wq_camp_days'")->fetchColumn(); echo "U setting wq_camp_days = " . ($cd === false ? "(default 3)" : $cd) . "\n";
-          $t0 = strtotime(date("Y-m-d", time() - 10 * 3600) . " 10:00:00"); $arg = [date("Y-m-d H:i:s", $t0), date("Y-m-d H:i:s", $t0 + 86400)];
-          $q = $d->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, COALESCE(t.type, 'unclear') type, COALESCE(t.reason, '') reason FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ?"); $q->execute($arg); $Q = $q->fetchAll(PDO::FETCH_ASSOC);
-          $ty = []; foreach ($Q as $r) $ty[$r["type"]] = ($ty[$r["type"]] ?? 0) + 1; arsort($ty); echo "U today queries by type: " . json_encode($ty) . " · all " . count($Q) . "\n";
-          $gap = function ($s) { return $s <= 3600 ? "a<=1h" : ($s <= 86400 ? "b<=24h" : ($s <= 3 * 86400 ? "c<=3d" : ($s <= 7 * 86400 ? "d<=7d" : ($s <= 30 * 86400 ? "e<=30d" : "f>30d")))); };
-          $lo = $d->prepare("SELECT who, mtype, ts, emp_id, wamid FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts < ? AND status <> 'failed' ORDER BY id DESC LIMIT 1");
-          $lm = $d->prepare("SELECT who, mtype, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts < ? AND status <> 'failed' AND emp_id = 0 AND who NOT IN ('emp','person','phone','bot','auto') ORDER BY id DESC LIMIT 1");
+          $t0 = strtotime(date("Y-m-d", time() - 10 * 3600) . " 10:00:00");
+          $adt = function ($t) { $t = mb_strtolower(trim((string)$t)); if ($t === "" || mb_strlen($t) > 300) return false; return (bool)(preg_match("/more info(rmation)? (on|about) this|interested in this|saw (your|this) ad|\\btmph\\b|tm\\s*perfume\\s*house|\\bwant to (buy|order)\\b|placing my first order|free\\s*10\\s*ml|extra discount|\\bi\\s*want\\b.*\\bml\\b/u", $t) || preg_match("/\\d+\\s*ml\\b.*\\b(in|at|for|@|rs\\.?|₹)\\s*\\d{3,5}\\b/u", $t) || preg_match("/^\\s*hey\\s+tm\\s*perfume/iu", $t)); };
           $pi = $d->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts < ?");
-          $fi = $d->prepare("SELECT id, mtype, reply_to, LEFT(body, 20) b FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id LIMIT 1");
-          $rt = $d->prepare("SELECT who, mtype FROM wa_messages WHERE wamid = ? LIMIT 1");
-          $ci = $d->prepare("SELECT MAX(sent_at) FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at < ?");
-          $M = []; $R = []; $S = ["fresh" => 0, "never_wrote_before" => 0, "we_wrote_first_never_in" => 0, "module_last_3d_never_in" => 0, "module_last_3d_any" => 0, "reply_to_module" => 0, "prefilled_hey" => 0, "button" => 0, "camp_item_before" => 0, "camp_item_older_than_setting" => 0, "should_be_campaign" => 0];
-          $emp = []; $empAll = []; $byType = []; $hours = [];
-          foreach ($Q as $r) { if (in_array($r["type"], ["campaign", "community"], true)) continue; $S["fresh"]++; $T = strtotime($r["opened_at"]); $ph = $r["phone"]; $cut = date("Y-m-d H:i:s", $T - 120);
-            $pi->execute([$ph, $cut]); $pin = (string)$pi->fetchColumn(); $lo->execute([$ph, $r["opened_at"]]); $o = $lo->fetch(PDO::FETCH_ASSOC); $lm->execute([$ph, $r["opened_at"]]); $m = $lm->fetch(PDO::FETCH_ASSOC);
-            $fi->execute([$ph, $cut]); $f = $fi->fetch(PDO::FETCH_ASSOC) ?: []; $ci->execute([$ph, $r["opened_at"]]); $cs = (string)$ci->fetchColumn();
-            $rw = ""; if (!empty($f["reply_to"])) { $rt->execute([$f["reply_to"]]); $x = $rt->fetch(PDO::FETCH_ASSOC); $rw = $x ? $x["who"] : "?"; }
-            $never = $pin === ""; if ($never) $S["never_wrote_before"]++;
-            $k = $r["type"] . " | last out before: " . ($o ? $o["who"] . "/" . $o["mtype"] . " " . $gap($T - strtotime($o["ts"])) : "none") . " | " . ($never ? "customer never wrote before" : "wrote before " . $gap($T - strtotime($pin)) . " ago"); $M[$k] = ($M[$k] ?? 0) + 1;
-            $rs = preg_replace("/\d/", "#", (string)preg_replace("/^(ad|campaign|your rule):.*$/u", "$1: …", $r["reason"])); $rk = $r["type"] . " · " . mb_substr($rs, 0, 70); $R[$rk] = ($R[$rk] ?? 0) + 1;
-            $mod3 = $m && ($T - strtotime($m["ts"])) <= 3 * 86400; $isMod = false;
-            if ($o && $never) $S["we_wrote_first_never_in"]++;
-            if ($mod3) $S["module_last_3d_any"]++; if ($mod3 && $never) $S["module_last_3d_never_in"]++;
-            if ($rw !== "" && !in_array($rw, ["emp", "person", "phone", "bot", "auto"], true)) { $S["reply_to_module"]++; $isMod = true; }
-            if (stripos((string)($f["b"] ?? ""), "Hey TMPerfume") === 0) $S["prefilled_hey"]++;
-            if (in_array((string)($f["mtype"] ?? ""), ["button", "interactive"], true)) $S["button"]++;
-            if ($cs !== "") { $S["camp_item_before"]++; if ($T - strtotime($cs) > max(1, (int)($cd ?: 3)) * 86400) $S["camp_item_older_than_setting"]++; }
-            $wasLive = $pin !== "" && $m && strtotime($pin) >= strtotime($m["ts"]) - 30 * 3600 && strtotime($pin) <= strtotime($m["ts"]);
-            $should = ($mod3 && !$wasLive) || $isMod;
-            if ($should) { $S["should_be_campaign"]++; $emp[(int)$r["emp_id"]] = ($emp[(int)$r["emp_id"]] ?? 0) + 1; $byType[$r["type"]] = ($byType[$r["type"]] ?? 0) + 1; $w = $m ? $m["who"] . "/" . $m["mtype"] : "reply"; $hours[$w] = ($hours[$w] ?? 0) + 1; }
-            $empAll[(int)$r["emp_id"]] = ($empAll[(int)$r["emp_id"]] ?? 0) + 1; }
-          echo "U summary " . json_encode($S) . "\n"; arsort($M); foreach (array_slice($M, 0, 45, true) as $k => $n) echo "U mix " . $n . " · " . $k . "\n";
-          arsort($R); foreach (array_slice($R, 0, 14, true) as $k => $n) echo "U reason " . $n . " · " . $k . "\n";
-          arsort($byType); arsort($hours); echo "U should-be-campaign by present type " . json_encode($byType) . " · by the module message before it " . json_encode($hours) . "\n";
-          unset($emp[0]); unset($empAll[0]); arsort($emp); $sh = []; foreach ($emp as $e => $n) $sh[] = $n . " of " . ($empAll[$e] ?? 0); echo "U per salesperson (wrongly fresh of his fresh, no names): " . implode(", ", $sh) . " · people " . count($emp) . " of " . count($empAll) . "\n";
-          foreach ([1, 2, 3, 4, 5, 6] as $back) { $a0 = date("Y-m-d H:i:s", $t0 - $back * 86400); $a1 = date("Y-m-d H:i:s", $t0 - ($back - 1) * 86400);
-            $q = $d->prepare("SELECT COALESCE(t.type, 'unclear') type, COUNT(*) n FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? GROUP BY 1"); $q->execute([$a0, $a1]); $o = []; foreach ($q->fetchAll(PDO::FETCH_NUM) as $x) $o[$x[0]] = (int)$x[1]; arsort($o); echo "U day " . substr($a0, 0, 10) . " types " . json_encode($o) . "\n"; }
-          foreach ($d->query("SELECT who, mtype, COUNT(*) n, COUNT(DISTINCT phone) u FROM wa_messages WHERE dir = 'out' AND ts >= '" . $arg[0] . "' AND emp_id = 0 AND who NOT IN ('emp','person','phone') GROUP BY who, mtype ORDER BY n DESC LIMIT 14")->fetchAll(PDO::FETCH_NUM) as $x) echo "U today automatic out " . $x[0] . "/" . $x[1] . " · " . $x[2] . " messages · " . $x[3] . " customers\n";
+          $ww = $d->prepare("SELECT who, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id = 0 AND who IN ('campaign', 'followup', 'recover') AND mtype = 'template' AND status <> 'failed' AND ts <= ? ORDER BY id DESC LIMIT 1");
+          $fi = $d->prepare("SELECT reply_to, LEFT(body, 320) b, mtype FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id LIMIT 1");
+          $gap = function ($s) { return $s <= 3600 ? "a<=1h" : ($s <= 86400 ? "b<=24h" : ($s <= 3 * 86400 ? "c<=3d" : ($s <= 7 * 86400 ? "d<=7d" : ($s <= 30 * 86400 ? "e<=30d" : "f>30d")))); };
+          for ($back = 0; $back <= 6; $back++) { $a0 = date("Y-m-d H:i:s", $t0 - $back * 86400); $a1 = date("Y-m-d H:i:s", $t0 - ($back - 1) * 86400);
+            $q = $d->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, COALESCE(t.type, 'unclear') type, COALESCE(s.orders, 0) orders FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? AND q.opened_at < ? AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community')"); $q->execute([$a0, $a1]);
+            $n = 0; $o = 0; $mv = 0; $mo = 0; $keep = 0; $link = 0; $linkNoOut = 0; $who = []; $age = []; $emp = []; $empAll = []; $wrote = 0; $typ = [];
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $n++; $ord = (int)$r["orders"] > 0 ? 1 : 0; $o += $ord; $T = strtotime($r["opened_at"]); $cut = date("Y-m-d H:i:s", $T - 120); $e = (int)$r["emp_id"]; if ($e) $empAll[$e] = ($empAll[$e] ?? 0) + 1;
+              $fi->execute([$r["phone"], $cut]); $f = $fi->fetch(PDO::FETCH_ASSOC) ?: []; $isLink = $adt($f["b"] ?? "") && trim((string)($f["reply_to"] ?? "")) === ""; if ($isLink) $link++;
+              $pi->execute([$r["phone"], $cut]); if ((string)$pi->fetchColumn() !== "") { $wrote++; continue; }
+              $ww->execute([$r["phone"], $r["opened_at"]]); $w = $ww->fetch(PDO::FETCH_ASSOC); if (!$w) { if ($isLink) $linkNoOut++; continue; }
+              if ($isLink) { $keep++; continue; }
+              $mv++; $mo += $ord; $who[$w["who"]] = ($who[$w["who"]] ?? 0) + 1; $g = $gap($T - strtotime($w["ts"])); $age[$g] = ($age[$g] ?? 0) + 1; if ($e) $emp[$e] = ($emp[$e] ?? 0) + 1; $typ[$r["type"]] = ($typ[$r["type"]] ?? 0) + 1; }
+            ksort($age); arsort($emp); $mx = $emp ? max($emp) : 0; $share = []; foreach (array_slice($emp, 0, 5, true) as $e => $x) $share[] = $x . "/" . ($empAll[$e] ?? 0);
+            echo "U day " . substr($a0, 0, 10) . " · counted fresh " . $n . " (orders " . $o . ") · would become campaign " . $mv . " (orders " . $mo . ") · stays fresh " . ($n - $mv) . " (orders " . ($o - $mo) . ") · by message " . json_encode($who) . " · age " . json_encode($age) . " · present type " . json_encode($typ) . " · link text kept fresh though we wrote first " . $keep . " · link text in all " . $link . " (no message of ours before " . $linkNoOut . ") · had written before " . $wrote . " · people touched " . count($emp) . " of " . count($empAll) . " · top " . implode(" ", $share) . "\n"; }
           PHP
           php /tmp/ql_check.php "$P" "$CH"; rm -f /tmp/ql_check.php
           REMOTE
