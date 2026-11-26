@@ -24,7 +24,9 @@ function sw_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_note (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, emp_name VARCHAR(120) NOT NULL DEFAULT '', txt TEXT NULL, at DATETIME NULL, KEY k_p (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_tag (phone VARCHAR(12) NOT NULL, tag VARCHAR(30) NOT NULL, PRIMARY KEY (phone, tag)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_read (emp_id INT NOT NULL, phone VARCHAR(12) NOT NULL, last_id BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (emp_id, phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_view (emp_id INT NOT NULL, phone VARCHAR(12) NOT NULL, at DATETIME NULL, PRIMARY KEY (emp_id, phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_quick (id INT AUTO_INCREMENT PRIMARY KEY, shortcut VARCHAR(30) NOT NULL, body TEXT NULL, sort_no INT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        try { $pdo->exec("UPDATE st_wa_msg SET who = 'emp' WHERE dir = 'out' AND who = 'store' AND mtype <> 'template'"); } catch (Throwable $e) { }      // an earlier build marked a person's own text / photo as "automatic"
         if ((int)$pdo->query("SELECT COUNT(*) FROM st_wa_quick")->fetchColumn() === 0 && (string)setting_get($pdo, 'sw_quick_seed', '') === '') {      // only neutral ones: the owner writes the rest (address, exchange, offers ...)
             $ins = $pdo->prepare("INSERT INTO st_wa_quick (shortcut, body, sort_no) VALUES (?, ?, ?)");
             foreach ([['/hello', 'Hello {name}, thank you for writing to TM Perfume House. How can we help you?'], ['/thanks', 'Thank you for shopping at TM Perfume House! We hope to see you again 🙏'], ['/bill', 'Your bill link: {bill_link}']] as $i => $q) $ins->execute([$q[0], $q[1], $i + 1]);
@@ -122,8 +124,8 @@ function sw_chat_touch(PDO $pdo, string $phone, string $field, string $now): voi
 }
 function sw_log_out(PDO $pdo, string $wamid, string $phone, int $nid, string $type, string $body, string $mediaId, string $mime, int $emp): void
 {
-    $pdo->prepare("INSERT INTO st_wa_msg (wamid, phone, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts) VALUES (?, ?, 'out', ?, ?, ?, ?, 'sent', ?, ?, ?)")
-        ->execute([$wamid, $phone, mb_substr($type, 0, 16), $body, $mediaId, mb_substr($mime, 0, 60), $emp > 0 ? 'emp' : 'store', $emp, date('Y-m-d H:i:s')]);
+    $pdo->prepare("INSERT INTO st_wa_msg (wamid, phone, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts) VALUES (?, ?, 'out', ?, ?, ?, ?, 'sent', 'emp', ?, ?)")
+        ->execute([$wamid, $phone, mb_substr($type, 0, 16), $body, $mediaId, mb_substr($mime, 0, 60), $emp, date('Y-m-d H:i:s')]);      // typed / sent by a PERSON (an Admin without an employee card has emp 0): never shown as "sent automatically"
 }
 /** The "to" of a Cloud API call: 91 + the 10 digits. */
 function sw_to(string $phone): string { return '91' . substr(preg_replace('/\D/', '', $phone), -10); }
@@ -190,30 +192,33 @@ function sw_handle(PDO $pdo, string $action): void
 
     if ($action === 'st_wa.chats') {
         $need(); $f = (string)($_GET['f'] ?? 'all'); $s = trim((string)($_GET['q'] ?? ''));
-        $rows = $pdo->prepare("SELECT phone, MAX(id) mid FROM st_wa_msg GROUP BY phone ORDER BY mid DESC LIMIT 400"); $rows->execute(); $L = $rows->fetchAll(); if (!$L) json_response(['chats' => [], 'unread' => 0, 'unanswered' => 0]);
+        $rows = $pdo->prepare("SELECT phone, MAX(id) mid FROM st_wa_msg GROUP BY phone ORDER BY mid DESC LIMIT 400"); $rows->execute(); $L = $rows->fetchAll(); if (!$L) json_response(['chats' => [], 'unread' => 0, 'unanswered' => 0, 'counts' => ['all' => 0, 'unanswered' => 0, 'mine' => 0, 'done' => 0]]);
         $ph = array_map(fn($r) => (string)$r['phone'], $L); $ids = array_map(fn($r) => (int)$r['mid'], $L); $in = implode(',', array_fill(0, count($ph), '?'));
         $last = []; $q = $pdo->prepare("SELECT id, phone, dir, mtype, body, ts, status FROM st_wa_msg WHERE id IN (" . implode(',', $ids) . ")"); $q->execute(); foreach ($q->fetchAll() as $r) $last[(string)$r['phone']] = $r;
         $un = []; $q = $pdo->prepare("SELECT m.phone, COUNT(*) c FROM st_wa_msg m LEFT JOIN st_wa_read r ON r.emp_id = ? AND r.phone = m.phone WHERE m.dir = 'in' AND m.phone IN ($in) AND m.id > COALESCE(r.last_id, 0) GROUP BY m.phone"); $q->execute(array_merge([$me], $ph)); foreach ($q->fetchAll() as $r) $un[(string)$r['phone']] = (int)$r['c'];
         $meta = []; $q = $pdo->prepare("SELECT * FROM st_wa_chat WHERE phone IN ($in)"); $q->execute($ph); foreach ($q->fetchAll() as $r) $meta[(string)$r['phone']] = $r;
         $tags = []; $q = $pdo->prepare("SELECT phone, tag FROM st_wa_tag WHERE phone IN ($in)"); $q->execute($ph); foreach ($q->fetchAll() as $r) $tags[(string)$r['phone']][] = (string)$r['tag'];
         $names = sw_names($pdo, $ph); $win = []; $q = $pdo->prepare("SELECT phone, MAX(ts) t FROM st_wa_msg WHERE dir = 'in' AND phone IN ($in) GROUP BY phone"); $q->execute($ph); foreach ($q->fetchAll() as $r) $win[(string)$r['phone']] = strtotime((string)$r['t']);
-        $out = []; $unread = 0; $unans = 0;
+        $out = []; $unread = 0; $unans = 0; $cnt = ['all' => 0, 'unanswered' => 0, 'mine' => 0, 'done' => 0];
         foreach ($ph as $p) {
             $m = $last[$p] ?? null; if (!$m) continue; $mt = $meta[$p] ?? null; $status = $mt ? (string)$mt['status'] : 'open'; $name = $names[$p] ?? ''; $c = $un[$p] ?? 0; $answered = $m['dir'] === 'out'; $w = $win[$p] ?? 0;
             if ($status !== 'done') { $unread += $c; if (!$answered) $unans++; }
+            if ($status === 'done') $cnt['done']++; else { $cnt['all']++; if (!$answered) $cnt['unanswered']++; if ((int)($mt['assigned_emp'] ?? 0) === $me) $cnt['mine']++; }
             $show = $f === 'done' ? $status === 'done' : ($status !== 'done' && ($f === 'unanswered' ? !$answered : ($f === 'mine' ? (int)($mt['assigned_emp'] ?? 0) === $me : true))); if (!$show) continue;
             if ($s !== '' && stripos($name, $s) === false && strpos($p, preg_replace('/\D/', '', $s) ?: "\x01") === false) continue;
             $body = (string)$m['body']; if ($body === '' || $m['mtype'] !== 'text') $body = ['image' => '📷 Photo', 'video' => '🎥 Video', 'audio' => '🎙 Voice note', 'document' => '📄 Document', 'template' => $body !== '' ? $body : '🧾 Template', 'sticker' => 'Sticker', 'location' => '📍 Location'][$m['mtype']] ?? ($body !== '' ? $body : '…');
             $out[] = ['phone' => $p, 'name' => $name, 'last' => mb_substr($body, 0, 90), 'dir' => (string)$m['dir'], 'ts' => (string)$m['ts'], 'unread' => $c, 'status' => $status, 'window_open' => $w > time() - 86400, 'tags' => $tags[$p] ?? [], 'mine' => (int)($mt['assigned_emp'] ?? 0) === $me, 'ticks' => (string)$m['status']];
         }
-        json_response(['chats' => $out, 'unread' => $unread, 'unanswered' => $unans]);
+        json_response(['chats' => $out, 'unread' => $unread, 'unanswered' => $unans, 'counts' => $cnt]);
     }
     if ($action === 'st_wa.chat') {
         $need(); $p = wa_key($_GET['phone'] ?? ''); if ($p === '') json_response(['error' => 'No customer.'], 422); $after = max(0, (int)($_GET['after'] ?? 0));
         $q = $pdo->prepare("SELECT id, wamid, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts, reply_to FROM st_wa_msg WHERE phone = ? AND id > ? ORDER BY id DESC LIMIT 300"); $q->execute([$p, $after]); $msgs = array_reverse($q->fetchAll());
-        $emps = []; foreach ($msgs as &$m) { $m['id'] = (int)$m['id']; $m['emp_id'] = (int)$m['emp_id']; if ($m['dir'] === 'out' && $m['emp_id'] > 0) { if (!isset($emps[$m['emp_id']])) $emps[$m['emp_id']] = sw_empname($pdo, $m['emp_id']); $m['emp_name'] = $emps[$m['emp_id']]; } } unset($m);
+        $emps = []; foreach ($msgs as &$m) { $m['id'] = (int)$m['id']; $m['emp_id'] = (int)$m['emp_id']; if ($m['dir'] === 'out' && $m['who'] === 'emp') { if ($m['emp_id'] > 0) { if (!isset($emps[$m['emp_id']])) $emps[$m['emp_id']] = sw_empname($pdo, $m['emp_id']); $m['emp_name'] = $emps[$m['emp_id']] !== '' ? $emps[$m['emp_id']] : 'Store team'; } else $m['emp_name'] = 'Admin'; } } unset($m);
         $maxId = $msgs ? (int)end($msgs)['id'] : $after; if ($maxId > 0) $pdo->prepare("INSERT INTO st_wa_read (emp_id, phone, last_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE last_id = GREATEST(last_id, VALUES(last_id))")->execute([$me, $p, $maxId]);
         $o = ['messages' => $msgs, 'last_id' => $maxId]; [$wo, $wl] = sw_window($pdo, $p, $nid); $o['window_open'] = $wo; $o['window_hours'] = $wl;
+        $pdo->prepare("INSERT INTO st_wa_view (emp_id, phone, at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE at = NOW()")->execute([$me, $p]);      // who is looking at this chat right now (a colleague opening the same chat sees it)
+        $vq = $pdo->prepare("SELECT emp_id FROM st_wa_view WHERE phone = ? AND emp_id <> ? AND at > DATE_SUB(NOW(), INTERVAL 25 SECOND)"); $vq->execute([$p, $me]); $o['viewers'] = array_values(array_filter(array_map(fn($id) => $id > 0 ? sw_empname($pdo, (int)$id) : 'Admin', $vq->fetchAll(PDO::FETCH_COLUMN))));
         if ($after === 0) {
             $c = sw_chat_row($pdo, $p); $nm = sw_names($pdo, [$p])[$p] ?? (string)$c['name']; $bills = sw_bills($pdo, $p);
             $notes = $pdo->prepare("SELECT emp_name, txt, at FROM st_wa_note WHERE phone = ? ORDER BY id DESC LIMIT 20"); $notes->execute([$p]); $tg = $pdo->prepare("SELECT tag FROM st_wa_tag WHERE phone = ? ORDER BY tag"); $tg->execute([$p]);

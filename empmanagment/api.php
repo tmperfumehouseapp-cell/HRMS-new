@@ -1200,8 +1200,8 @@ function order_is_repeat_customer(PDO $pdo, string $phone, int $t): bool
 function order_got_campaign(PDO $pdo, string $key, string $before, int $days = 30): bool
 {
     if ($key === '') return false; $from = date('Y-m-d H:i:s', strtotime($before) - $days * 86400);
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status <> 'failed' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }   // a failed send never reached the customer
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND COALESCE(last_status, '') <> 'failed' AND sent_at BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
     return false;
 }
 /** 🔁 The robot's own "Query" allocations of the last $days days are checked again with the current rule; the ones that are really Campaign become Campaign. Allocations made by a person are never changed.
@@ -1221,9 +1221,27 @@ function order_retype_robot(PDO $pdo, int $days = 30): int
     } catch (Throwable $e) { error_log('order_retype_robot: ' . $e->getMessage()); }
     return $n;
 }
+/** The query an order came from: the customer's latest query that opened up to the order time and not more than 7 days before it — ['type', 'opened_at'] or null. */
+function order_query_row(PDO $pdo, string $phone, int $t): ?array
+{
+    if ($phone === '') return null;
+    try { $q = $pdo->prepare("SELECT type, opened_at FROM wq_qtype WHERE phone = ? AND opened_at <= ? AND opened_at >= ? ORDER BY opened_at DESC LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $t + 60), date('Y-m-d H:i:s', $t - 7 * 86400)]); $r = $q->fetch(PDO::FETCH_ASSOC); return $r ?: null; }
+    catch (Throwable $e) { return null; }
+}
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
     if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
+    // 🧭 THE ORDER FOLLOWS THE QUERY IT CAME FROM (owner, 26 Nov: "an order that came from a query is counted in Query"). The fresh ratio is Query orders ÷ fresh queries, so both sides must be counted the same way:
+    //    a Campaign / Community query → Campaign order; a fresh query (New / Meta / …) → Query order — also when a campaign was sent while that query was open, or an older send to him failed.
+    //    One exception (owner, 23 Nov): he went quiet for 30 hours AFTER that query and got the Campaign tag before ordering → Campaign. With no query in the 7 days before the order the older rules below decide.
+    try {
+        $ph0 = (string)($c['phone'] ?? ''); $T0 = $t ?: time(); $qr = order_query_row($pdo, $ph0, $T0);
+        if ($qr) {
+            if (in_array((string)$qr['type'], ['campaign', 'community'], true)) return 'campaign';
+            if ($T0 >= (int)strtotime((string)setting_get($pdo, 'camp_tag_from', '2026-11-23 00:00:00'))) { $tq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'campaign' AND src = 'wq' AND at > ? AND at <= ? LIMIT 1"); $tq->execute([$ph0, (string)$qr['opened_at'], date('Y-m-d H:i:s', $T0 + 60)]); if ($tq->fetchColumn()) return 'campaign'; }
+            return 'query';
+        }
+    } catch (Throwable $e) { }
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '' && ($t ?: time()) >= (int)strtotime((string)setting_get($pdo, 'camp_tag_from', '2026-11-23 00:00:00'))) { $tq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'campaign' AND src = 'wq' AND at <= ? LIMIT 1"); $tq->execute([$ph, date('Y-m-d H:i:s', ($t ?: time()) + 60)]); if ($tq->fetchColumn()) return 'campaign'; } } catch (Throwable $e) { }   // owner (23 Nov): a customer who went quiet for 30 hours carries the Campaign tag FOR EVER (wq_window_tag) — an order 10 days or 5 months later is a Campaign order. Only for orders made FROM TODAY (setting camp_tag_from, default 23 Nov 00:00): older orders keep the type they have
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || order_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30)) ? 'campaign' : 'query';
@@ -16029,6 +16047,23 @@ function team_range_targets(PDO $pdo, array $emps, string $from, string $to, boo
                         $hist[$k][$day] = ($hist[$k][$day] ?? 0) + (float)$od['total'];
                         if ($combine && in_array((string)$od['house'], ['tmph'], true)) { $kc = (int)$od['emp_id'] . '|*'; $hist[$kc][$day] = ($hist[$kc][$day] ?? 0) + (float)$od['total']; }
                     }
+                    // 🛍 Website orders (TM Store) and the other manual / quick-entry orders that carry a sales person are COLLECTION too (owner, 26 Nov: "the target is the average of 3 days' collection + 10%").
+                    //    They live in manual_orders, not in the Shopify cache, so the look-back missed them: from 24 Nov 76–99% of the day's sales came through the website and the automatic target fell
+                    //    to half (a person who collected 58,744 / 60,645 / 48,991 got 29,610 instead of 61,739) or to the minimum. Same rows the Commission page counts: not cancelled, not a Direct order,
+                    //    credited to the allocation's person when there is one.
+                    try {
+                        $cancelM = order_cancels_map($pdo);
+                        $mq = $pdo->prepare("SELECT manual_order_id, order_date, total, employee_id, house FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0 AND total > 0"); $mq->execute(biz_window($pdo, $minDay, $to));
+                        foreach ($mq->fetchAll() as $m) {
+                            $mk2 = 'manual|' . (string)$m['manual_order_id']; if (isset($cancelM[$mk2])) continue;
+                            $a = $allocMap[$mk2] ?? null; if ($a && !empty($a['direct'])) continue;
+                            $who = ($a && !empty($a['emp'])) ? (int)$a['emp'] : (int)$m['employee_id']; if (!$who) continue;
+                            $hs = (string)(($a['house'] ?? '') !== '' ? $a['house'] : ($m['house'] ?? '')); if ($hs === '') $hs = 'tmph';
+                            $day = biz_day_of($pdo, strtotime((string)$m['order_date']));
+                            $k = $who . '|' . $hs; $hist[$k][$day] = ($hist[$k][$day] ?? 0) + (float)$m['total'];
+                            if ($combine && $hs === 'tmph') { $kc = $who . '|*'; $hist[$kc][$day] = ($hist[$kc][$day] ?? 0) + (float)$m['total']; }
+                        }
+                    } catch (Throwable $e) { error_log('target history (manual orders): ' . $e->getMessage()); }
                     $out['rule_used'] = true;
                 } else {
                     $rule = null;
