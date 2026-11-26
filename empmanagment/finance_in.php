@@ -262,7 +262,7 @@ function fi_web_orders(PDO $pdo, string $w0, string $w1): array
     $out = [];
     foreach ((array)$all as $r) {
         $pt = (string)($r['pay_time'] ?: $r['placed_at']); if ($pt < $w0 || $pt >= $w1 || !empty($r['temp']) || !empty($r['cancelled'])) continue;
-        $tot = fi_p($r['total']); $paid = max(0, min($tot, fi_p($r['paid']))); $due = $tot - $paid; $pm = (string)$r['pay_method']; $isCod = (bool)preg_match('/cod|cash/i', $pm);
+        $tot = fi_p($r['total']); $paid = max(0, min($tot, fi_p($r['paid']))); $due = $tot - $paid; $pm = (string)$r['pay_method']; $isCod = (bool)preg_match('/cod|cash/i', $pm) || $paid > 0;      // owner's data 25 Nov: a payment link paid in part (advance) is dispatched and the rest is collected on delivery = COD
         $out[] = ['no' => (string)$r['number'], 'at' => $pt, 'tot' => $tot, 'pre' => $paid, 'cod' => $isCod ? $due : 0, 'unpaid' => $isCod ? 0 : $due, 'pm' => $pm, 'st' => (string)$r['pay_status'], 'src' => (string)$r['source']];
     }
     return [$out, ''];
@@ -421,7 +421,7 @@ function fi_split_rows(PDO $pdo, string $w0, string $w1): array
     $rows = []; $notes = [];
     try {
         $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
-        $q = $pdo->prepare("SELECT shopify_id, store_key, order_name, created_at, total, financial_status, outstanding, pay_ref, tags FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]); $so = $q->fetchAll();
+        $q = $pdo->prepare("SELECT shopify_id, store_key, order_name, created_at, total, financial_status, outstanding, pay_ref, tags, phone FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]); $so = $q->fetchAll();
         $man = []; $ids = array_map(fn($o) => (int)$o['shopify_id'], $so);
         foreach (array_chunk($ids, 400) as $part) { if (!$part) continue; try { $mq = $pdo->prepare("SELECT shop_id, gateway, pay, shot_json FROM wmo_order WHERE status = 'confirmed' AND shop_id IN (" . implode(',', array_fill(0, count($part), '?')) . ")"); $mq->execute($part); foreach ($mq->fetchAll() as $m) $man[(int)$m['shop_id']] = $m; } catch (Throwable $e) { $notes[] = 'manual orders table not readable: ' . $e->getMessage(); break; } }
         foreach ($so as $o) {
@@ -432,16 +432,16 @@ function fi_split_rows(PDO $pdo, string $w0, string $w1): array
                 $gw = fi_gw_of((string)$m['gateway']); if ($gw === '' && stripos((string)$m['gateway'], 'cash') === false) $gw = fi_gw_of($raw); $how = $gw !== '' ? 'manual order gateway' : ''; }
             if ($gw === '') { foreach (explode(',', (string)$o['pay_ref']) as $r0) { $g = fi_gw_of(trim($r0)); if ($g !== '') { $gw = $g; $how = 'payment id ' . substr(trim($r0), 0, 6) . '…'; break; } } if ($raw === '') $raw = 'pay_ref ' . ((string)$o['pay_ref'] !== '' ? substr((string)$o['pay_ref'], 0, 40) : '(none)'); }
             if ($pre > 0 && $gw === '') { $gw = 'unknown'; $how = $m ? 'manual order without a gateway' : 'Shopify order: no payment id saved'; }
-            $rows[] = ['src' => $m ? 'wa_manual' : 'shop', 'no' => (string)$o['order_name'], 'at' => (string)$o['created_at'], 'total' => $tot, 'pre' => $pre, 'cod' => $cod, 'gw' => $pre > 0 ? $gw : '', 'how' => $how, 'raw' => $raw, 'fs' => $fs, 'in_sales' => true];
+            $rows[] = ['ph' => substr(preg_replace('/\D+/', '', (string)($o['phone'] ?? '')), -10), 'src' => $m ? 'wa_manual' : 'shop', 'no' => (string)$o['order_name'], 'at' => (string)$o['created_at'], 'total' => $tot, 'pre' => $pre, 'cod' => $cod, 'gw' => $pre > 0 ? $gw : '', 'how' => $how, 'raw' => $raw, 'fs' => $fs, 'in_sales' => true];
         }
     } catch (Throwable $e) { $notes[] = 'shop_orders not readable: ' . $e->getMessage(); }
     // 🛍 the website (TM Store, the PHP shop): the day of a paid order is its payment time; a paid part with no other gateway named is Cashfree (every website checkout goes there)
     [$web, $werr] = fi_web_orders($pdo, $w0, $w1); if ($werr !== '') $notes[] = 'website not read: ' . $werr;
     foreach ($web as $w) { $g = fi_gw_of($w['pm']); $gw = $w['pre'] > 0 ? ($g !== '' ? $g : 'cashfree') : ''; $sale = !($w['unpaid'] > 0 && $w['pre'] === 0);
         $rows[] = ['src' => 'website', 'no' => $w['no'], 'at' => $w['at'], 'total' => $w['tot'] - $w['unpaid'], 'pre' => $w['pre'], 'cod' => $w['cod'], 'unpaid' => $w['unpaid'], 'gw' => $gw, 'how' => $w['pre'] > 0 ? ($g !== '' ? 'website payment method' : 'website checkout = Cashfree') : '', 'raw' => 'method ' . ($w['pm'] ?: '(empty)') . ' / ' . $w['st'] . ' / src ' . $w['src'], 'fs' => $w['st'], 'in_sales' => $sale]; }
-    try { $q = $pdo->prepare("SELECT id, created_at, pay_mode, total, cash_amt, online_amt FROM st_bills WHERE status = 'ok' AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]);
+    try { $q = $pdo->prepare("SELECT bill_id, bill_no, created_at, pay_mode, total, cash_amt, online_amt FROM st_bills WHERE status = 'ok' AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]);
         foreach ($q->fetchAll() as $b) { $t = fi_p($b['total']); $c = $b['pay_mode'] === 'cash' ? $t : ($b['pay_mode'] === 'split' ? fi_p($b['cash_amt']) : 0); $on = $b['pay_mode'] === 'split' ? fi_p($b['online_amt']) : $t - $c;
-            $rows[] = ['src' => 'store', 'no' => 'bill ' . $b['id'], 'at' => (string)$b['created_at'], 'total' => $t, 'pre' => $on, 'cod' => 0, 'cash' => $c, 'gw' => $on > 0 ? 'st_online' : '', 'how' => 'store bill ' . $b['pay_mode'], 'raw' => (string)$b['pay_mode'], 'fs' => '', 'in_sales' => true]; } } catch (Throwable $e) { $notes[] = 'store bills not readable: ' . $e->getMessage(); }
+            $rows[] = ['src' => 'store', 'no' => 'bill ' . ((string)$b['bill_no'] !== '' ? $b['bill_no'] : $b['bill_id']), 'at' => (string)$b['created_at'], 'total' => $t, 'pre' => $on, 'cod' => 0, 'cash' => $c, 'gw' => $on > 0 ? 'st_online' : '', 'how' => 'store bill ' . $b['pay_mode'], 'raw' => (string)$b['pay_mode'], 'fs' => '', 'in_sales' => true]; } } catch (Throwable $e) { $notes[] = 'store bills not readable: ' . $e->getMessage(); }
     usort($rows, fn($a, $b) => strcmp($a['at'], $b['at']));
     return [$rows, $notes];
 }
@@ -481,6 +481,10 @@ function fi_split_diag(PDO $pdo, string $day, string $win): string
     }
     [$w0, $w1] = fi_win($pdo, $day, $win); [$rows] = fi_split_rows($pdo, $w0, $w1);
     $cnt = []; foreach ($rows as $r) { $k = $r['src'] . ' | ' . ($r['gw'] ?: '-') . ' | ' . preg_replace('/\d{4,}.*/', '…', $r['raw']); $cnt[$k] = ($cnt[$k] ?? 0) + 1; } arsort($cnt);
+    $sh = array_filter($rows, fn($r) => $r['src'] === 'shop'); $wa = array_filter($rows, fn($r) => $r['src'] === 'wa_manual');
+    $T[] = ''; $T[] = 'SHOPIFY ORDERS STILL ARRIVING (Shopify is closed; a GoKwik link may still make one): ' . count($sh);
+    foreach ($sh as $r) { $twin = ''; foreach ($wa as $w) if ($w['total'] === $r['total'] && ($r['ph'] === '' || $w['ph'] === $r['ph'])) { $twin = $w['no'] . ' at ' . substr($w['at'], 11, 5) . ($w['ph'] === $r['ph'] && $r['ph'] !== '' ? ' same phone' : ' same amount'); break; }
+        $T[] = '  ' . $r['no'] . ' ' . substr($r['at'], 11, 5) . ' ' . $m($r['total']) . ' ' . $r['raw'] . ($twin !== '' ? '  <- POSSIBLE DOUBLE with ' . $twin : ''); }
     $T[] = ''; $T[] = 'GATEWAY CLUES (source | gateway | what it was read from : orders)'; foreach (array_slice($cnt, 0, 60, true) as $k => $n) $T[] = '  ' . $k . ' : ' . $n;
     try { $q = $pdo->prepare("SELECT channel, account_name, COUNT(*) n, SUM(amount) a FROM fi_receipts WHERE status = 'ok' AND created_at >= ? AND created_at < ? GROUP BY channel, account_name"); $q->execute([$w0, $w1]);
         $T[] = ''; $T[] = 'RECEIPTS RECORDED IN THIS WINDOW (Incoming)'; foreach ($q->fetchAll() as $x) $T[] = '  ' . $x['channel'] . ' | ' . $x['account_name'] . ' | ' . $x['n'] . ' | ' . $x['a']; } catch (Throwable $e) { $T[] = 'receipts: ' . $e->getMessage(); }
