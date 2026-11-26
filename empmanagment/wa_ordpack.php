@@ -166,12 +166,19 @@ if (!function_exists('wa_ordpack_defs')) {
         ];
         $r = []; foreach ($o as $k => $v) $r[$k] = ['body' => $v[0], 'buttons' => $v[1]]; return $r;
     }
-    /** 🖤 BLACK FRIDAY PACK (owner 26 Nov 2026: "Black Friday is on — make proper messages and add them to the module"): 10 MARKETING messages in the owner's style (name, emoji, blank-line spacing, curiosity,
-     *  ONE choice by button) that say Black Friday by name. NO price, percentage, quantity or deadline is written (none was given for Black Friday): the button tap brings the live price chart, as for the other
-     *  packs. Made at Meta only inside Black Friday week (wa_bf_on) and sent by the Cold funnel only inside it (wcd_style_ids). Names tmph_bf_NN; the buttons are ones the tap handler already knows. */
+    /** 🖤 BLACK FRIDAY PACK (owner 26 Nov 2026: "Black Friday is on — make proper messages and add them to the module"): MARKETING messages in the owner's style (name, emoji, blank-line spacing, curiosity,
+     *  ONE choice by button) that say Black Friday by name. tmph_bf_11-16 carry the owner's own Black Friday offer; tmph_bf_01-10 have NO price, percentage, quantity or deadline (written before the offer was
+     *  given): the button tap brings the price, as for the other packs. Made at Meta only inside Black Friday week (wa_bf_on) and sent by the Cold funnel only inside it (wcd_style_ids). Names tmph_bf_NN; the buttons are ones the tap handler already knows. */
     function wa_bf_defs(): array
     {
         $o = [
+            /* 🖤 THE OWNER'S BLACK FRIDAY OFFER (26 Nov 2026, his own words): any 3 x 100 ml for Rs 2,999 + 2 x 20 ml FREE, limited time (till 11:59 PM), limited stock, first come first served. These six go to Meta first. */
+            'tmph_bf_11' => ["Hello {{1}} 👋\n\n🖤 *BLACK FRIDAY SALE IS LIVE!* 🔥\n\n🛍️ Get ANY 3 × 100ml Perfumes\n💰 Only ₹2,999/-\n\n🎁 PLUS 2 × 20ml Perfumes ABSOLUTELY FREE!\n\n⏳ Limited time — only till 11:59 PM\n📦 Limited stock, first come, first served!", ['Order Now', 'Send Details']],
+            'tmph_bf_12' => ["Hello {{1}} 🖤\n\n*BLACK FRIDAY SALE* shuru ho gayi he 🔥\n\n🛍️ Koi bhi 3 × 100ml perfumes sirf ₹2,999 me\n\n🎁 Saath me 2 × 20ml perfumes bilkul FREE!\n\n⏳ Sirf aaj raat 11:59 PM tak\n\nAbhi order karne ke liye tap kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_bf_13' => ["Hi {{1}} 🤩\n\nBlack Friday ka sabse bada dhamaka 🖤💥\n\nApni pasand ke 3 × 100ml perfumes — sirf ₹2,999\n\n🎁 Aur 2 × 20ml FREE, hamari taraf se!\n\n📦 Stock limited he, jo pehle order karega usi ko milega 🏃\n\nTap kijiye 👇", ['BOOK MY COMBO', 'Show more combos']],
+            'tmph_bf_14' => ["Hello {{1}} 🎁\n\n300 ML perfume + 40 ML FREE 😍\n\n🖤 Black Friday deal: ANY 3 × 100ml sirf ₹2,999, saath me 2 × 20ml FREE\n\n⏳ Aaj raat 11:59 PM ke baad ye deal nahi milegi\n\nOrder pakka karne ke liye tap kijiye 👇", ['Yes, Order', 'Show Offer']],
+            'tmph_bf_15' => ["Hi {{1}} 🖤\n\nEk chhoti si baat batani thi...\n\nBlack Friday par 3 × 100ml perfumes ₹2,999 me mil rahe hain, aur 2 × 20ml FREE 🎁🔥\n\nAapko kaunsi khushbu chahiye ? 👇", ['Men', 'Women', 'Unisex']],
+            'tmph_bf_16' => ["Hello {{1}} 💍\n\nShaadi ka season + Black Friday 🖤🎊\n\nApne liye ya gift ke liye: ANY 3 × 100ml sirf ₹2,999 + 2 × 20ml FREE 🎁\n\n⏳ Limited time, limited stock!\n\nAbhi order kijiye 👇", ['For me', 'As a gift']],
             'tmph_bf_01' => ["Hello {{1}} 🖤\n\n*BLACK FRIDAY* shuru ho gaya he TM Perfume House par 🔥\n\nAapke liye ek *special Black Friday deal* unlock hui he 🔓\n\nApna size chuniye aur dekhiye 👇", ['20ML', '50ML', '100ML']],
             'tmph_bf_02' => ["Hi {{1}} 🛍️\n\nBlack Friday week chal raha he... aur hamne perfumes par ek *surprise deal* rakhi he 🎁\n\n*Wo kya he ?* 🤔\n\nJaanne ke liye button dabaiye 👇", ['Yes, Order', 'Show Offer']],
             'tmph_bf_03' => ["Hello {{1}} 🔥\n\n*Black Friday Combo* ready he 🖤\n\nApni pasand ke perfumes mix karke apna combo banaiye ✨\n\nCombo dekhne ke liye tap kijiye 👇", ['BOOK MY COMBO', 'Show more combos']],
