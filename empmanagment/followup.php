@@ -586,6 +586,27 @@ function fup_clear_questions(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_clear_questions: ' . $e->getMessage()); }
 }
 
+/** Once: Website → "Community: which are running and how many numbers saved": the box "Numbers saved" becomes "Members added today" (same box, the old values stay) and a new box
+ *  "Total members in the community" is put before it. Everything else of the topic is left as it is. */
+function fup_website_community_fields(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_web_comm_v1', '') === '1') return;
+        $rows = $pdo->query("SELECT t.id, t.`fields` FROM fu_topics t JOIN fu_sections s ON s.id = t.section_id WHERE t.title LIKE 'Community: which are running%' AND LOWER(s.name) LIKE '%website%' AND LOWER(REPLACE(s.name, ' ', '')) NOT LIKE '%tm4u%'")->fetchAll();
+        foreach ($rows as $r) {
+            $f = json_decode((string)$r['fields'], true); if (!is_array($f)) continue; $has = false; $max = 0; $out = [];
+            foreach ($f as $x) { if (preg_match('/^f(\d+)$/', (string)($x['k'] ?? ''), $m)) $max = max($max, (int)$m[1]); if (mb_strtolower((string)($x['label'] ?? '')) === 'total members in the community') $has = true; }
+            if ($has) continue;
+            foreach ($f as $x) {
+                if (mb_strtolower((string)($x['label'] ?? '')) === 'numbers saved') { $out[] = ['k' => 'f' . (++$max), 'label' => 'Total members in the community', 'type' => 'num', 'opts' => [], 'req' => 1]; $x['label'] = 'Members added today'; }
+                $out[] = $x;
+            }
+            $pdo->prepare("UPDATE fu_topics SET `fields` = ?, note = 'Write which communities are running, the total members in the community, and how many members were added today.' WHERE id = ?")->execute([json_encode($out, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
+        }
+        setting_set($pdo, 'fup_web_comm_v1', '1');
+    } catch (Throwable $e) { error_log('fup_website_community_fields: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order "no summary box": a topic that has its own boxes to fill (links, numbers, yes / no, files ...) no longer also asks for a written summary. The boxes are the update.
  *  Topics without boxes (a summary-only topic, or system numbers + the person's words) keep it. Nothing written is changed. */
 function fup_no_summary_with_fields(PDO $pdo): void
@@ -1474,6 +1495,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_office_pickup_clean($pdo);
     fup_clear_questions($pdo);
     fup_no_summary_with_fields($pdo);
+    fup_website_community_fields($pdo);
     fup_all_day_before($pdo);
     fup_dispatch_manual($pdo);
     fup_feedback_owner($pdo);
