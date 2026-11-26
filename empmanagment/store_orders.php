@@ -58,26 +58,71 @@ if (!function_exists('tms_cfg')) {
         //    not packed (the payment is that change); an order paid at once has the same time as placed. Never before the placing time, never in the future.
         $pl = (string)($o['placed_at'] ?? ''); $up = (string)($o['updated_at'] ?? ''); $shp = strtolower((string)($o['fulfillment_status'] ?? '')); $rx = '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/';
         $payT = $pl;   // 26 Nov, from the shop itself: a payment link (LINK-xxx) becomes the TM order in the SAME row when it is paid and placed_at is set to the payment time, so placed_at IS the day of the sale. updated_at changes on every edit (AWB, invoice, note), so it is not used any more.
-        return ['temp' => stripos((string)($o['number'] ?? ''), 'LINK-') === 0 ? 1 : 0, 'number' => (string)($o['number'] ?? ''), 'placed_at' => (string)($o['placed_at'] ?? ''), 'pay_time' => $payT, 'customer' => (string)(($cu['name'] ?? '') ?: ($sh['name'] ?? '')), 'phone' => substr(preg_replace('/\D+/', '', (string)(($cu['phone'] ?? '') ?: ($sh['phone'] ?? ''))), -10),
+        return ['sid' => (int)($o['id'] ?? 0), 'temp' => stripos((string)($o['number'] ?? ''), 'LINK-') === 0 ? 1 : 0, 'number' => (string)($o['number'] ?? ''), 'placed_at' => (string)($o['placed_at'] ?? ''), 'pay_time' => $payT, 'customer' => (string)(($cu['name'] ?? '') ?: ($sh['name'] ?? '')), 'phone' => substr(preg_replace('/\D+/', '', (string)(($cu['phone'] ?? '') ?: ($sh['phone'] ?? ''))), -10),
             'city' => (string)($sh['city'] ?? ''), 'pieces' => $pcs, 'ml' => $ml, 'items' => implode(', ', $names), 'total' => $total, 'paid' => $paid, 'due' => max(0, round($total - $paid, 2)), 'pay_method' => $pm, 'pay_status' => $fs,
             'cancelled' => (!empty($o['cancelled_at']) || stripos((string)($o['status'] ?? '') . ' ' . (string)($o['fulfillment_status'] ?? '') . ' ' . (string)($o['payment_status'] ?? ''), 'cancel') !== false) ? 1 : 0, 'ship_status' => strtolower((string)($o['fulfillment_status'] ?? '')), 'awb' => (string)($o['awb'] ?? ''), 'source' => (string)($o['source'] ?? ''), 'note' => (string)($o['note'] ?? ''), 'lines' => $lines,
             'addr' => ['name' => (string)($sh['name'] ?? ''), 'phone' => (string)($sh['phone'] ?? ''), 'address1' => (string)($sh['address1'] ?? ''), 'address2' => (string)($sh['address2'] ?? ''), 'city' => (string)($sh['city'] ?? ''), 'state' => (string)($sh['state'] ?? ''), 'pincode' => (string)($sh['pincode'] ?? '')],
             'money' => ['subtotal' => round((float)($o['subtotal'] ?? 0), 2), 'discount' => round((float)($o['discount_total'] ?? 0), 2), 'code' => (string)($o['discount_code'] ?? ''), 'shipping' => round((float)($o['shipping_total'] ?? 0), 2), 'cod_fee' => round((float)($o['cod_fee'] ?? 0), 2)], 'courier' => (string)($o['courier'] ?? '')];
     }
-    /** every order placed in [from, to] (dates), newest first. [rows, error] — kept for 45 s so the page does not ask the shop on every click */
+    /** 🚦 The shop lets the HRMS key ask 120 times a minute, and EVERY salesperson shares that key (product search, checkout links). So the orders are read ONCE for everybody:
+     *  the last 9 days, kept 2 minutes under one name; every page (Website orders, the robot, Not paid yet, SKU sheet, chain report, Diagnose, Dispatch, Finance) cuts its own days out of it.
+     *  ['rows' => [...], 'err' => '', 'at' => time] */
+    function tms_orders_shared(PDO $pdo): array
+    {
+        static $mem = null; if ($mem !== null && time() - (int)$mem['at'] < 120) return $mem;
+        // its own file (the general memo refuses anything over 2 MB, and nine days of orders are bigger: they were then read from the shop again on EVERY call — that is what used up the 120 a minute)
+        $f = rtrim(sys_get_temp_dir(), '/') . '/hrms_tmsall_' . substr(md5(__DIR__ . tms_cfg($pdo)['base']), 0, 10) . '.json.gz'; $now = time(); $old = null;
+        $raw = @file_get_contents($f); if ($raw !== false && $raw !== '') { $j = json_decode((string)@gzdecode($raw), true); if (is_array($j) && isset($j['rows'], $j['at'])) $old = $j; }
+        if ($old && $now - (int)$old['at'] < 120) return $mem = ['rows' => $old['rows'], 'err' => '', 'at' => (int)$old['at']];
+        $lk = $f . '.busy'; $busy = (int)@filemtime($lk);
+        if ($old && $now - $busy < 25) return $mem = ['rows' => $old['rows'], 'err' => '', 'at' => (int)$old['at']];   // another request is reading the shop right now: use the copy we have
+        @touch($lk);
+        $full = !$old || $now - (int)($old['full_at'] ?? 0) > 1800;   // everything (9 days) every 30 minutes; in between only what CHANGED since yesterday (the shop's "since" looks at the last change)
+        $since = date('Y-m-d', $now - ($full ? 9 : 1) * 86400); $got = []; $err = '';
+        for ($p = 1; $p <= 60; $p++) {
+            [$d, $e] = tms_get($pdo, '/orders', ['page' => $p, 'limit' => 100, 'since' => $since]); if ($e !== '') { $err = $e; break; }
+            foreach ((array)($d['items'] ?? []) as $o) { if (!is_array($o)) continue; $r = tms_row($o); if ($r['number'] !== '') $got[] = $r; }
+            if (empty($d['has_more'])) break;
+        }
+        @unlink($lk);
+        if ($err !== '') {   // the shop said no (busy, 120 a minute...): a copy up to 20 minutes old is still shown, so the pages keep working
+            if ($old && $now - (int)$old['at'] < 1200) return $mem = ['rows' => $old['rows'], 'err' => '', 'at' => (int)$old['at']];
+            return ['rows' => [], 'err' => $err, 'at' => $now];
+        }
+        $by = []; if (!$full) { foreach ($old['rows'] as $r) $by[$r['sid'] ?: $r['number']] = $r; }
+        foreach ($got as $r) $by[$r['sid'] ?: $r['number']] = $r;   // by the shop's own id: a LINK-xxx that became a TM order is the same row, so the old name does not stay behind
+        $cut = date('Y-m-d H:i:s', $now - 10 * 86400); $rows = array_values(array_filter($by, fn($r) => $r['placed_at'] >= $cut));
+        usort($rows, fn($a, $b) => strcmp($b['placed_at'], $a['placed_at']));
+        $tmp = $f . '.' . getmypid(); $enc = gzencode((string)json_encode(['at' => $now, 'full_at' => $full ? $now : (int)($old['full_at'] ?? 0), 'rows' => $rows], JSON_INVALID_UTF8_SUBSTITUTE), 3);
+        if ($enc !== false && @file_put_contents($tmp, $enc) !== false) { @chmod($tmp, 0600); @rename($tmp, $f); }
+        return $mem = ['rows' => $rows, 'err' => '', 'at' => $now];
+    }
+    /** read the shop again on the next call — but never more often than every 30 s (a Refresh button pressed by many people must not use up the 120 a minute) */
+    function tms_orders_fresh(PDO $pdo): void
+    {
+        $f = rtrim(sys_get_temp_dir(), '/') . '/hrms_tmsall_' . substr(md5(__DIR__ . tms_cfg($pdo)['base']), 0, 10) . '.json.gz'; $raw = @file_get_contents($f); if ($raw === false || $raw === '') return;
+        $j = json_decode((string)@gzdecode($raw), true); if (!is_array($j) || !isset($j['at']) || time() - (int)$j['at'] < 30) return;
+        $j['at'] = 0; $tmp = $f . '.' . getmypid(); $enc = gzencode((string)json_encode($j, JSON_INVALID_UTF8_SUBSTITUTE), 3); if ($enc !== false && @file_put_contents($tmp, $enc) !== false) { @chmod($tmp, 0600); @rename($tmp, $f); }   // marked old: the next call reads what changed (the copy itself stays for a busy shop)
+    }
+    /** every order placed in [from, to] (dates), newest first. [rows, error] */
     function tms_orders(PDO $pdo, string $from, string $to): array
     {
-        $run = function () use ($pdo, $from, $to) {
-            $out = []; $end = $to . ' 23:59:59';
+        $a = $from . ' 00:00:00'; $end = $to . ' 23:59:59';
+        if ($from >= date('Y-m-d', time() - 9 * 86400)) {   // the usual case: cut out of the shared read
+            $sh = tms_orders_shared($pdo); if ((string)$sh['err'] !== '') return [[], (string)$sh['err']];
+            return [array_values(array_filter($sh['rows'], fn($r) => $r['placed_at'] >= $a && $r['placed_at'] <= $end)), ''];
+        }
+        $run = function () use ($pdo, $from, $a, $end) {   // older days (a long date range on the page): their own read, kept 5 minutes
+            $out = [];
             for ($p = 1; $p <= 20; $p++) {
                 [$d, $e] = tms_get($pdo, '/orders', ['page' => $p, 'limit' => 100, 'since' => $from]); if ($e !== '') return [[], $e];
-                foreach ((array)($d['items'] ?? []) as $o) { if (!is_array($o)) continue; $r = tms_row($o); if ($r['number'] === '' || $r['placed_at'] < $from . ' 00:00:00' || $r['placed_at'] > $end) continue; $out[] = $r; }
+                foreach ((array)($d['items'] ?? []) as $o) { if (!is_array($o)) continue; $r = tms_row($o); if ($r['number'] === '' || $r['placed_at'] < $a || $r['placed_at'] > $end) continue; $out[] = $r; }
                 if (empty($d['has_more'])) break;
             }
-            usort($out, fn($a, $b) => strcmp($b['placed_at'], $a['placed_at'])); return [$out, ''];
+            usort($out, fn($a2, $b2) => strcmp($b2['placed_at'], $a2['placed_at'])); return [$out, ''];
         };
         if (!function_exists('hrms_memo')) return $run();
-        $r = hrms_memo('tms_orders6:' . $from . ':' . $to, 45, $run); if (is_array($r) && ($r[1] ?? '') !== '' && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders6:' . $from . ':' . $to);   // an error is not kept
+        $r = hrms_memo('tms_orders6:' . $from . ':' . $to, 300, $run); if (is_array($r) && ($r[1] ?? '') !== '' && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders6:' . $from . ':' . $to);   // an error is not kept
         return is_array($r) ? $r : [[], 'Could not read the shop.'];
     }
     /** save ONE shop order as a manual_orders row for $emp (a new row; the caller checked there is none). Returns the HRMS order number (M0123). */
@@ -180,7 +225,7 @@ if (!function_exists('tms_cfg')) {
                 if (function_exists('wa_event')) { try { wa_event($pdo, (string)$c['phone'], '🧾 Website order ' . $no . ' allocated to ' . ($names[$emp] ?? 'the salesperson') . ' · ' . ucfirst($type) . ' (automatic)'); } catch (Throwable $e) { } }
             } catch (Throwable $e) { error_log('tms_auto_tick ' . $no . ': ' . $e->getMessage()); }
         }
-        if ($n && function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_orders6:' . $from . ':' . $to); } catch (Throwable $e) { } }
+        // (the shop's orders did not change by giving them here: the shared read is kept)
         return $n;
     }
 }
@@ -331,7 +376,7 @@ switch ((string)$action) {
     }
     case 'tms.diag': {   // 🩺 one day of website orders, the shop beside the HRMS, as plain text to copy (read-only). No names, no phone numbers.
         $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['day'] ?? '')) ? (string)$in['day'] : date('Y-m-d');
-        if (function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_orders6:' . date('Y-m-d', strtotime($day) - 7 * 86400) . ':' . $day); } catch (Throwable $e) { } }
+        try { tms_orders_fresh($pdo); } catch (Throwable $e) { }
         [$all, $err] = tms_orders($pdo, date('Y-m-d', strtotime($day) - 7 * 86400), $day);
         $T = []; $T[] = 'HRMS WEBSITE-ORDERS DIAGNOSE'; $T[] = 'day ' . $day . ' | made ' . date('Y-m-d H:i:s') . ' | shop ' . tms_cfg($pdo)['base'];
         if ($err !== '') { $T[] = 'SHOP ERROR: ' . $err; json_response(['ok' => true, 'text' => implode("\n", $T)]); }
@@ -374,7 +419,7 @@ switch ((string)$action) {
     case 'tms.list': {
         $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['to'] ?? '')) ? (string)$in['to'] : date('Y-m-d'); $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['from'] ?? '')) ? (string)$in['from'] : date('Y-m-d', time() - 6 * 86400);
         if ($from > $to) { $x = $from; $from = $to; $to = $x; } if ($from < date('Y-m-d', time() - 120 * 86400)) $from = date('Y-m-d', time() - 120 * 86400);
-        if (!empty($in['fresh']) && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders6:' . $from . ':' . $to);
+        if (!empty($in['fresh'])) { try { tms_orders_fresh($pdo); } catch (Throwable $e) { } }
         try { tms_auto_tick($pdo, 60); } catch (Throwable $e) { error_log('tms auto: ' . $e->getMessage()); }   // 🤖 new orders go to the chat's salesperson before the list is drawn
         [$rows, $err] = tms_orders($pdo, $from, $to); if ($err !== '') json_response(['error' => $err, 'code' => tms_cfg($pdo)['key'] === '' ? 'no_key' : 'shop'], 422);
         tms_cols($pdo); $given = []; $names = employee_names_by_id($pdo);
