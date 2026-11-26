@@ -906,6 +906,14 @@ function st_wa_vars(array $t, string $first, string $billNo, float $total, strin
     $out = []; for ($i = 1; $i <= $n; $i++) $out[] = (string)($val[$kind[$i] ?? 'bill_link'] ?? '');
     return $out;
 }
+/** WhatsApp said a bill message did not arrive: the latest "sent" mark of that customer (last 3 days) is taken away, so the bill shows as NOT sent and the cashier's own Send button works again. */
+function st_wa_bill_failed(PDO $pdo, string $key): void
+{
+    $q = $pdo->prepare("SELECT p.person_id, p.bill_id FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id WHERE RIGHT(p.phone, 10) = ? AND b.created_at > ? ORDER BY p.person_id DESC LIMIT 1");
+    $q->execute([substr($key, -10), date('Y-m-d H:i:s', time() - 3 * 86400)]); $r = $q->fetch(); if (!$r) return;
+    $pdo->prepare("DELETE FROM st_bill_events WHERE person_id = ? AND kind = 'sent' AND who = 'auto WhatsApp'")->execute([(int)$r['person_id']]);
+    st_event($pdo, (int)$r['person_id'], (int)$r['bill_id'], 'send_failed', 'auto WhatsApp');
+}
 /** One bill → one customer, as a template message from the shop's own WhatsApp number. Returns [ok, note]. */
 function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array $cs): array
 {
