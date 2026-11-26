@@ -324,15 +324,17 @@ function sku_bc_table(PDO $pdo): bool
 {
     static $ok = null; if ($ok !== null) return $ok;
     try { $pdo->exec("CREATE TABLE IF NOT EXISTS sku_bc (id INT AUTO_INCREMENT PRIMARY KEY, code INT UNSIGNED NOT NULL, kind VARCHAR(8) NOT NULL, day DATE NOT NULL, sku VARCHAR(20) NOT NULL DEFAULT '', name VARCHAR(120) NOT NULL, size VARCHAR(12) NOT NULL DEFAULT '',
-        mrp INT NOT NULL DEFAULT 0, batch VARCHAR(12) NOT NULL DEFAULT '', mfg DATE NOT NULL, exp DATE NOT NULL, by_name VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL, UNIQUE KEY uq_code (code), KEY k_day (day, kind, sku, size)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $ok = true; }
+        mrp INT NOT NULL DEFAULT 0, batch VARCHAR(12) NOT NULL DEFAULT '', mfg DATE NOT NULL, exp DATE NOT NULL, by_name VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NOT NULL, UNIQUE KEY uq_code (code), KEY k_day (day, kind, sku, size)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if ((string)setting_get($pdo, 'sku_bc_sz20', '') !== '1') { $pdo->exec("ALTER TABLE sku_bc MODIFY size VARCHAR(20) NOT NULL DEFAULT ''"); setting_set($pdo, 'sku_bc_sz20', '1'); }      // 'Solid Perfume' is 13 letters: the first table had room for 12 (once)
+        $ok = true; }
     catch (Throwable $e) { error_log('sku_bc table: ' . $e->getMessage()); $ok = false; }
     return $ok;
 }
 /** MRP of a bottle by its size (the shop's prices; setting sku_bc_mrp = JSON {"10 ml":99,…} changes them without new code). */
 function sku_bc_mrp(PDO $pdo): array
 {
-    $d = ['10 ml' => 99, '20 ml' => 499, '50 ml' => 1199, '100 ml' => 1810];
-    try { $j = json_decode((string)setting_get($pdo, 'sku_bc_mrp', ''), true); if (is_array($j)) foreach ($d as $k => $v) if (isset($j[$k]) && (int)$j[$k] > 0) $d[$k] = (int)$j[$k]; } catch (Throwable $e) { }
+    $d = ['10 ml' => 99, '20 ml' => 499, '50 ml' => 1199, '100 ml' => 1810, 'Shower Gel' => 0, 'Solid Perfume' => 0];      // 0 = no MRP printed until it is typed on the page (Label design)
+    try { $j = json_decode((string)setting_get($pdo, 'sku_bc_mrp', ''), true); if (is_array($j)) foreach ($d as $k => $v) if (isset($j[$k]) && (int)$j[$k] >= 0 && ((int)$j[$k] > 0 || $v === 0)) $d[$k] = (int)$j[$k]; } catch (Throwable $e) { }
     return $d;
 }
 
@@ -368,6 +370,12 @@ function sku_route(PDO $pdo, string $action): void
             $q = $pdo->prepare("SELECT * FROM sku_bc WHERE day = ? AND $w ORDER BY code LIMIT 6000"); $q->execute([$day]); json_response(['labels' => array_map($out, $q->fetchAll())]);
         }
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        if ($action === 'sku.bc_mrp_save') {      // MRP of Shower Gel / Solid Perfume, typed on the page
+            if (!in_array($role, ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin / HR can change the MRP.'], 403);
+            $j = json_decode((string)setting_get($pdo, 'sku_bc_mrp', ''), true); if (!is_array($j)) $j = [];
+            foreach (['Shower Gel', 'Solid Perfume'] as $k) if (isset($in[$k])) $j[$k] = max(0, min(99999, (int)$in[$k]));
+            setting_set($pdo, 'sku_bc_mrp', json_encode($j)); json_response(['ok' => true, 'mrp' => sku_bc_mrp($pdo)]);
+        }
         $mrp = sku_bc_mrp($pdo);
         if ($action === 'sku.bc_make' || $action === 'sku.bc_manual') {
             $kind = $action === 'sku.bc_manual' ? 'manual' : ((string)($in['kind'] ?? '') === 'chain' ? 'chain' : 'bottle'); if ($kind === 'manual') $day = $today;
@@ -379,12 +387,12 @@ function sku_route(PDO $pdo, string $action): void
             if (!(int)$pdo->query("SELECT GET_LOCK('sku_bc_make', 20)")->fetchColumn()) json_response(['error' => 'Somebody else is making barcodes right now. Try again in a moment.'], 409);
             try {
                 $lo = $kind === 'chain' ? 60000000 : 50000000; $q = $pdo->prepare("SELECT COALESCE(MAX(code), ?) FROM sku_bc WHERE code > ? AND code < ?"); $q->execute([$lo, $lo, $lo + 10000000]); $next = (int)$q->fetchColumn() + 1;
-                $mfg = $day; $exp = date('Y-m-d', strtotime($day . ' +4 years')); $batch = ($kind === 'chain' ? 'C' : 'B') . date('dmy', strtotime($day));
+                $mfg = $day; $expOf = fn(string $sz) => date('Y-m-d', strtotime($day . (in_array($sz, ['Shower Gel', 'Solid Perfume'], true) ? ' +2 years' : ' +3 years'))); $exp = $expOf('');      // owner, 26 Nov: perfume 3 years, shower gel / solid perfume 2 years (labels made before this keep the date printed on them) $batch = ($kind === 'chain' ? 'C' : 'B') . date('dmy', strtotime($day));
                 $have = $pdo->prepare("SELECT COUNT(*) FROM sku_bc WHERE day = ? AND kind = ? AND sku = ? AND name = ? AND size = ?");
                 $ins = $pdo->prepare("INSERT INTO sku_bc (code, kind, day, sku, name, size, mrp, batch, mfg, exp, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"); $new = []; $pdo->beginTransaction();
                 foreach ($items as $it) {
                     $need = $it['n']; if ($kind !== 'manual') { $have->execute([$day, $kind, $it['sku'], $it['name'], $it['size']]); $need = max(0, $it['n'] - (int)$have->fetchColumn()); }      // 'n' = how many the day has in all: only the missing ones are made, so nothing is ever made twice
-                    for ($i = 0; $i < $need; $i++) { if (count($new) >= 6000) break 2; $ins->execute([$next, $kind, $day, $it['sku'], $it['name'], $it['size'], $it['mrp'], $batch, $mfg, $exp, $by]); $new[] = ['code' => $next, 'kind' => $kind, 'name' => $it['name'], 'size' => $it['size'], 'mrp' => $it['mrp'], 'batch' => $batch, 'mfg' => $mfg, 'exp' => $exp]; $next++; }
+                    for ($i = 0; $i < $need; $i++) { if (count($new) >= 6000) break 2; $ex1 = $expOf($it['size']); $ins->execute([$next, $kind, $day, $it['sku'], $it['name'], $it['size'], $it['mrp'], $batch, $mfg, $ex1, $by]); $new[] = ['code' => $next, 'kind' => $kind, 'name' => $it['name'], 'size' => $it['size'], 'mrp' => $it['mrp'], 'batch' => $batch, 'mfg' => $mfg, 'exp' => $ex1]; $next++; }
                 }
                 $pdo->commit();
             } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); try { $pdo->query("SELECT RELEASE_LOCK('sku_bc_make')"); } catch (Throwable $e2) { } json_response(['error' => 'The barcodes could not be saved: ' . $e->getMessage()], 500); }
