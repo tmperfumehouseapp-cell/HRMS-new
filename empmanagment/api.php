@@ -23981,6 +23981,42 @@ switch ($action) {
         break;
     }
 
+    case 'qb.hour_chats': {
+        // Give queries → "By hour": the customers behind one chip — one person in one hour (emp + hour), a whole hour (hour only) or his whole day (emp only). Read-only. The same rows the chips count:
+        // wa_queries by the hour a query opened, campaign / community left out. The window shows each customer's chat on the right (wa_one.html).
+        $auth = require_auth();
+        if (!qb_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
+        $date = trim((string)($_GET['date'] ?? '')); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) $date = biz_today($pdo);
+        $hour = isset($_GET['hour']) && $_GET['hour'] !== '' ? max(0, min(23, (int)$_GET['hour'])) : null; $emp = max(0, (int)($_GET['emp'] ?? 0));
+        if (!(function_exists('qa_cut') && ($__cut = qa_cut($pdo)) !== '' && $__cut <= $date)) { json_response(['live' => false, 'date' => $date, 'hours' => [], 'rows' => [], 'count' => 0, 'more' => false]); break; }   // before WhatsApp Sales the counts were typed by hand: there is no customer behind them
+        $t0 = function_exists('wq_day_start') ? (int)wq_day_start($pdo, $date) : 0; $t1 = function_exists('wq_day_start') && function_exists('wq_day_add') ? (int)wq_day_start($pdo, wq_day_add($date, 1)) : 0; if (!$t0 || $t1 <= $t0) { $t0 = strtotime($date . ' 10:00:00'); $t1 = $t0 + 86400; }
+        $w = "q.opened_at >= ? AND q.opened_at < ? AND COALESCE(t.type, 'unclear') NOT IN ('campaign', 'community')" . ($emp > 0 ? ' AND q.emp_id = ' . $emp : ''); $arg = [date('Y-m-d H:i:s', $t0), date('Y-m-d H:i:s', $t1)];
+        $hn = []; $rows = []; $LIM = 600;
+        try {
+            $q = $pdo->prepare("SELECT HOUR(q.opened_at) h, COUNT(*) n FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE $w GROUP BY HOUR(q.opened_at)"); $q->execute($arg);
+            foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $hn[(int)$r[0]] = (int)$r[1];
+            $wh = $w . ($hour !== null ? ' AND HOUR(q.opened_at) = ' . (int)$hour : ''); $raw = null;
+            foreach ([["s.first_person_at fpa, COALESCE(s.orders, 0) orders, COALESCE(s.revenue, 0) rev", " LEFT JOIN wq_qstat s ON s.query_id = q.id"], ["NULL fpa, 0 orders, 0 rev", ""]] as $v) {   // second form: the stats table is not there yet
+                try { $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, COALESCE(t.type, 'unclear') type, {$v[0]} FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id{$v[1]} WHERE $wh ORDER BY q.opened_at, q.id LIMIT " . ($LIM + 1)); $q->execute($arg); $raw = $q->fetchAll(PDO::FETCH_ASSOC); break; } catch (PDOException $e) { }
+            }
+            $raw = $raw ?: []; $more = count($raw) > $LIM; if ($more) $raw = array_slice($raw, 0, $LIM);
+            $phs = []; foreach ($raw as $r) $phs[(string)$r['phone']] = 1; $phs = array_map('strval', array_keys($phs)); $info = []; $outs = [];
+            $from = $raw ? (string)$raw[0]['opened_at'] : '';
+            foreach (array_chunk($phs, 400) as $ch) { $in = implode(',', array_fill(0, count($ch), '?'));
+                $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, last_out_at, status FROM wa_contacts WHERE phone IN ($in)"); $c->execute($ch); foreach ($c->fetchAll(PDO::FETCH_ASSOC) as $r) $info[(string)$r['phone']] = $r;
+                try { $m = $pdo->prepare("SELECT phone, ts FROM wa_messages WHERE dir = 'out' AND (emp_id > 0 OR who IN ('emp', 'person', 'phone')) AND ts >= ? AND phone IN ($in) ORDER BY ts LIMIT 40000"); $m->execute(array_merge([$from], $ch)); foreach ($m->fetchAll(PDO::FETCH_NUM) as $r) $outs[(string)$r[0]][] = (string)$r[1]; } catch (PDOException $e) { }   // a person's own answers (not the bot), oldest first
+            }
+            $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $tl = function_exists('wq_type_label') ? 'wq_type_label' : 'ucfirst';
+            foreach ($raw as $r) { $ph = (string)$r['phone']; $c = $info[$ph] ?? []; $op = (string)$r['opened_at']; $fp = (string)($r['fpa'] ?? '');
+                if ($fp === '') foreach (($outs[$ph] ?? []) as $ts) if ($ts >= $op) { $fp = $ts; break; }   // the first answer of a person after this query opened
+                $li = (string)($c['last_in_at'] ?? ''); $lo = (string)($c['last_out_at'] ?? ''); $e = (int)$r['emp_id'];
+                $rows[] = ['id' => (int)$r['id'], 'phone' => $ph, 'name' => (string)($c['name'] ?? ''), 'at' => $op, 'type' => (string)$r['type'], 'type_label' => (string)$tl((string)$r['type']), 'emp' => $e, 'holder' => $e > 0 ? (string)($nm[$e] ?? ('#' . $e)) : '',
+                    'fm' => $fp !== '' ? max(0, (int)round((strtotime($fp) - strtotime($op)) / 60)) : null, 'wait' => $li !== '' && ($lo === '' || $lo < $li), 'orders' => (int)$r['orders'], 'amt' => (float)$r['rev'], 'closed' => ((string)($c['status'] ?? '') === 'closed')]; }
+        } catch (Throwable $e) { error_log('qb.hour_chats: ' . $e->getMessage()); json_response(['error' => 'Could not read the queries.'], 500); break; }
+        $hs = []; foreach (biz_hour_sequence($pdo, $date) as $hr) if (($hn[$hr] ?? 0) > 0) $hs[] = ['hour' => (int)$hr, 'n' => (int)$hn[$hr]];
+        json_response(['live' => true, 'date' => $date, 'hour' => $hour, 'emp' => $emp, 'hours' => $hs, 'day' => array_sum($hn), 'rows' => $rows, 'count' => $hour !== null ? (int)($hn[$hour] ?? 0) : array_sum($hn), 'more' => !empty($more), 'at' => date('h:i A')]);
+        break;
+    }
     case 'qb.list': {
         // Query Boost → "Give queries": one count per person (shower gel + normal queries together), the hour strip and the By-hour list. Query orders only — no campaign.
         $auth = require_auth();
