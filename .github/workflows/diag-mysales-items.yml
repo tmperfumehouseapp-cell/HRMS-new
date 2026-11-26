@@ -1,0 +1,47 @@
+# READ-ONLY: where the MySales panel keeps the perfumes of an order (product, ML, quantity), so the Orders page can count bottle colours,
+# Dress to Impress and commission slabs for panel orders. Prints table / column names, row counts and, for tables that point at an order,
+# 3 recent rows WITHOUT any name, phone, address or e-mail column. Changes nothing. Run by hand: Actions -> "MySales order items (read-only)".
+name: MySales order items (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Panel tables and order lines (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          php -r '
+            require $argv[1] . "empmanagment/config.php";
+            $u = defined("SALES_DB_USER") ? SALES_DB_USER : "u897577217_sales"; $pw = defined("SALES_DB_PASS") ? SALES_DB_PASS : (preg_match("/\\? SALES_DB_PASS : \x27([^\x27]*)\x27/", (string)file_get_contents($argv[1] . "empmanagment/api.php"), $m) ? $m[1] : "");
+            try { $d = new PDO("mysql:host=" . DB_HOST . ";dbname=u897577217_sales;charset=utf8mb4", $u, $pw, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); }
+            catch (Throwable $e) { echo "cannot open the panel database: " . $e->getMessage() . "\n"; exit; }
+            $priv = "/name|phone|mobile|contact|number|address|addr|email|mail|pin|city|state|landmark|street|token|pass|otp|utr|upi|account|ifsc|image|img|photo|screenshot|awb/i";
+            $last = (int)$d->query("SELECT MAX(id) FROM `order`")->fetchColumn(); echo "newest order id: $last\n\n";
+            foreach ($d->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN) as $t) {
+              $cols = $d->query("SHOW COLUMNS FROM `$t`")->fetchAll(PDO::FETCH_ASSOC); $n = "?"; try { $n = $d->query("SELECT COUNT(*) FROM `$t`")->fetchColumn(); } catch (Throwable $e) { }
+              echo "== $t ($n rows): " . implode(", ", array_map(fn($c) => $c["Field"] . ":" . $c["Type"], $cols)) . "\n";
+              $ref = null; foreach ($cols as $c) if (preg_match("/^(order_?id|orderid|order4p_?id|oid)$/i", $c["Field"])) $ref = $c["Field"];
+              $safe = array_values(array_filter(array_map(fn($c) => $c["Field"], $cols), fn($f) => !preg_match($priv, $f)));
+              if ($ref && $safe) { try { $q = $d->query("SELECT `" . implode("`,`", $safe) . "` FROM `$t` ORDER BY `$ref` DESC LIMIT 3"); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { foreach ($r as $k => $v) if (is_string($v) && mb_strlen($v) > 120) $r[$k] = mb_substr($v, 0, 120) . "..."; echo "   sample: " . json_encode($r, JSON_UNESCAPED_UNICODE) . "\n"; } } catch (Throwable $e) { echo "   sample failed: " . substr($e->getMessage(), 0, 120) . "\n"; } }
+            }
+            $oc = array_values(array_filter(array_map(fn($c) => $c["Field"], $d->query("SHOW COLUMNS FROM `order`")->fetchAll(PDO::FETCH_ASSOC)), fn($f) => !preg_match($priv, $f)));
+            echo "\n--- 3 newest orders, safe columns only ---\n"; foreach ($d->query("SELECT `" . implode("`,`", $oc) . "` FROM `order` ORDER BY id DESC LIMIT 3")->fetchAll(PDO::FETCH_ASSOC) as $r) { foreach ($r as $k => $v) if (is_string($v) && mb_strlen($v) > 160) $r[$k] = mb_substr($v, 0, 160) . "..."; echo json_encode($r, JSON_UNESCAPED_UNICODE) . "\n"; }
+          ' "$P"
+          REMOTE
