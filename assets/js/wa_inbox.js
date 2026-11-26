@@ -1322,7 +1322,7 @@
     }
     const firstName = (c) => { const w = ((c && c.name) || '').trim().split(/\s+/)[0].replace(/[^\p{L}\p{N}'.\-]/gu, ''); return w.length > 1 ? w.charAt(0).toUpperCase() + w.slice(1) : ''; };
     const fill = (t, v) => String(t || '').replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => (v[+n - 1] || m));
-    const sendable = (t) => (t.status === 'approved' || t.status === 'partial') && !t.media_header && !t.auto;   // 🎫 complaint / follow-up messages are sent by the system itself
+    const sendable = (t) => (t.status === 'approved' || t.status === 'partial') && (!t.media_header || t.chat_ok === true) && !t.auto;   // 🖼 a photo message goes out once its photo is chosen in Pre-made messages (chat_ok)   // 🎫 complaint / follow-up messages are sent by the system itself
     let TP = null;
     async function openTpl() {
       if (!S.cur) return; const c = S.cur.contact, box = sheet('Pre-made messages'); box.innerHTML = '<div class="wi-empty">Loading…</div>';
@@ -1351,7 +1351,7 @@
         const q = TP.q.trim().toLowerCase(); let rows = TP.list.filter((t) => !t.auto && (TP.all || sendable(t)) && (!q || (t.name + ' ' + t.body).toLowerCase().includes(q)));
         h += `<input class="wi-in" id="wiTpQ" type="search" placeholder="Search messages…" value="${esc(TP.q)}">`;
         if (TP.can) h += `<label style="display:flex;gap:8px;align-items:center;margin:8px 0;font-size:12.5px"><input type="checkbox" id="wiTpA" ${TP.all ? 'checked' : ''}> Also show messages that are waiting for Meta or were rejected</label>`;
-        h += '<div style="margin-top:8px">' + (rows.length ? rows.map((t) => `<div class="wi-card ${sendable(t) ? 'tap' : 'off'}" data-id="${t.id}"><div class="tt"><span>${t.star ? '⭐ ' : ''}${esc(t.name.replace(/_/g, ' '))}</span><span class="wi-p ${t.status === 'approved' ? 'g' : (t.status === 'rejected' ? 'r' : 'y')}">${t.status === 'approved' ? 'Approved' : (t.status === 'partial' ? 'Approved' : (t.status === 'pending' ? 'Waiting for Meta' : esc(t.status)))}</span></div><div class="bd">${esc(fill(t.body, [firstName(c) || 'ji']).slice(0, 220))}</div>${t.media_header ? '<div class="ft">Has a photo on top — not available here yet.</div>' : ''}</div>`).join('') : '<div class="wi-empty">No pre-made message yet.<br>The admin creates them in WhatsApp → Pre-made messages.</div>') + '</div>';
+        h += '<div style="margin-top:8px">' + (rows.length ? rows.map((t) => `<div class="wi-card ${sendable(t) ? 'tap' : 'off'}" data-id="${t.id}"><div class="tt"><span>${t.star ? '⭐ ' : ''}${esc(t.name.replace(/_/g, ' '))}</span><span class="wi-p ${t.status === 'approved' ? 'g' : (t.status === 'rejected' ? 'r' : 'y')}">${t.status === 'approved' ? 'Approved' : (t.status === 'partial' ? 'Approved' : (t.status === 'pending' ? 'Waiting for Meta' : esc(t.status)))}</span></div><div class="bd">${esc(fill(t.body, [firstName(c) || 'ji']).slice(0, 220))}</div>${t.media_header && !sendable(t) ? '<div class="ft">Has a photo on top, but no photo is chosen yet (Pre-made messages).</div>' : ''}</div>`).join('') : '<div class="wi-empty">No pre-made message yet.<br>The admin creates them in WhatsApp → Pre-made messages.</div>') + '</div>';
       }
       box.innerHTML = h;
       box.querySelectorAll('.wi-seg button').forEach((b) => { b.onclick = () => { TP.tab = b.dataset.t; if (TP.tab === 'sug' && !TP.sug && !TP.loading) loadTplSug(false); drawTpl(); }; });
