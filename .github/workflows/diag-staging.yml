@@ -81,6 +81,16 @@ jobs:
             try { foreach ($d->query("SELECT m.mp_no, m.employee_id, m.created_by, m.total, m.payment_status, m.order_date FROM manual_orders m WHERE m.channel = \"TM Store\" AND m.mp_no LIKE \"LINK-%\" ORDER BY m.manual_order_id DESC LIMIT 60") as $r) echo "  LINKROW " . json_encode($r) . "\n"; echo "  LINKROWS total: " . $d->query("SELECT COUNT(*) FROM manual_orders WHERE channel = \"TM Store\" AND mp_no LIKE \"LINK-%\"")->fetchColumn() . "\n"; } catch (Throwable $e) { echo "  linkrows: " . $e->getMessage() . "\n"; }
             echo "  counts " . json_encode($cnt) . "\n  source " . json_encode($src) . "\n"; foreach ($list as $l) echo $l . "\n"; echo "  (end)\n";
           ' "$P" 2>&1 | head -400
+          echo "=== OTHER ORDERS OF THE DAY (manual WM, marketplaces; read-only) ==="
+          php -r '
+            $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; } require $f;
+            try { $d = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]); } catch (Throwable $e) { echo "db: " . $e->getMessage() . "\n"; exit; }
+            foreach (["2026-11-24", "2026-11-25", "2026-11-26"] as $day) { $a = $day . " 00:00:00"; $b = $day . " 23:59:59"; echo "  DAY " . $day . "\n";
+              try { $q = $d->prepare("SELECT status, pay, channel, COUNT(*) n, ROUND(SUM(total_p)/100) total, ROUND(SUM(paid_p)/100) paid, ROUND(SUM(cod_p)/100) cod FROM wmo_order WHERE COALESCE(confirmed_at, created_at) BETWEEN ? AND ? GROUP BY status, pay, channel ORDER BY status, pay"); $q->execute([$a, $b]); foreach ($q as $r) echo "    WM " . json_encode($r) . "\n"; } catch (Throwable $e) { echo "    wm: " . $e->getMessage() . "\n"; }
+              try { $q = $d->prepare("SELECT channel, payment_status, IF(employee_id > 0, \"given\", \"no salesperson\") who, COUNT(*) n, ROUND(SUM(total)) total, ROUND(SUM(COALESCE(outstanding, 0))) due FROM manual_orders WHERE order_date BETWEEN ? AND ? GROUP BY channel, payment_status, who ORDER BY channel"); $q->execute([$a, $b]); foreach ($q as $r) echo "    MO " . json_encode($r) . "\n"; } catch (Throwable $e) { echo "    mo: " . $e->getMessage() . "\n"; }
+            }
+            try { echo "  biz day setting: " . json_encode($d->query("SELECT setting_key, LEFT(setting_value, 40) v FROM hrms_settings WHERE setting_key LIKE \"%biz%\" OR setting_key LIKE \"%day_start%\" LIMIT 8")->fetchAll()) . "\n"; } catch (Throwable $e) { }
+          ' "$P" 2>&1 | head -150
           echo "=== database activity (SHOW FULL PROCESSLIST, no passwords) ==="
           php -r '
             $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
