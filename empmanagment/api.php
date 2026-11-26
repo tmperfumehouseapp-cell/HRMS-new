@@ -2317,6 +2317,17 @@ function shop_order_row(PDO $pdo, array $r): array
  * 🧾 Orders made in HRMS itself (WhatsApp Manual order, WM-00001 …) live only in shop_orders — Shopify never has them. A list read live from Shopify
  * (Order allocation for up to 7 days, Targets, Commission …) adds them here, so they are seen everywhere a Shopify order is.
  */
+/** 🎨 What a manual order (manual_orders row) knows of its perfumes, in the shape of a Shopify order row: total ML, 10 ml pieces, bottle colours, Dress to Impress.
+ *  Website orders (channel 'TM Store') carry them from the shop's lines; a quick entry without perfumes gives nothing (the boxes leave it out, as before). */
+function manual_order_details(array $m): array
+{
+    $o = [];
+    if (isset($m['ml']) && $m['ml'] !== null && (int)$m['ml'] > 0) $o['ml'] = (int)$m['ml'];
+    $c = isset($m['colors']) && $m['colors'] !== null && $m['colors'] !== '' ? json_decode((string)$m['colors'], true) : null;
+    if (is_array($c)) { $o['colors'] = $c; $o['ml10'] = (int)($c['ml10'] ?? 0); }
+    if (array_key_exists('dti', $m) && $m['dti'] !== null) $o['dti'] = $m['dti'] === '' ? 0 : (json_decode((string)$m['dti'], true) ?: 0);   // null = not known (not sent), 0 = none
+    return $o;
+}
 /** The quick-entry orders ("Add orders": 10 orders, ₹24,500 …) are shown on the home page of ONE person only: the Sales Head Pradip Chauhan (or the employee ids in setting qe_viewers). */
 function qe_viewer_ok(PDO $pdo, array $auth): bool
 {
@@ -31607,6 +31618,7 @@ switch ($action) {
                     'house' => (string)($m['house'] ?? ''),   // a quick entry is counted in this panel's boxes (Query / Campaign / collection)
                     'outstanding' => (isset($m['outstanding']) && $m['outstanding'] !== null) ? (float)$m['outstanding'] : null,
                     'batch' => (string)($m['batch'] ?? ''),
+                ] + manual_order_details($m) + [
                     'remarks' => $m['remarks'] ?: '',
                     'created_by' => $m['created_by'] ?: '',
                 ];
