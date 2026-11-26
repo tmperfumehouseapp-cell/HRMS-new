@@ -127,12 +127,12 @@ function wj_tpl_state(PDO $pdo, string $k): string { return function_exists('fa_
 /** [name, date, theme]. Dates are the usual ones — check the year's exact date for moving festivals; add or remove your own in the Festivals tab. */
 function wj_fest_builtin(): array
 {
-    return [['Bhai Dooj', '2026-11-11', 'Bhai Dooj — a gift for a brother or sister'], ['Wedding season', '2026-11-20', 'Wedding season — perfumes for the bride, groom and guests'], ['Christmas', '2026-12-25', 'Christmas — gifts and party fragrances'],
+    return [['Bhai Dooj', '2026-11-11', 'Bhai Dooj — a gift for a brother or sister'], ['Wedding season', '2026-11-20', 'Wedding season — perfumes for the bride, groom and guests'], ['Black Friday', '2026-11-27', 'Black Friday week — the Black Friday deal, combos and gifts (until Cyber Monday)'], ['Christmas', '2026-12-25', 'Christmas — gifts and party fragrances'],
         ['New Year', '2027-01-01', 'New Year — start the year with a new signature scent'], ['Makar Sankranti', '2027-01-14', 'Makar Sankranti / Uttarayan'], ['Republic Day', '2027-01-26', 'Republic Day'],
         ['Valentine\'s Day', '2027-02-14', 'Valentine\'s Day — a fragrance gift for someone you love'], ['Eid al-Fitr', '2027-03-10', 'Eid — attar and perfume gifting'], ['Holi', '2027-03-22', 'Holi'], ['Gudi Padwa / Ugadi', '2027-04-07', 'New Year festivals'],
         ['Mother\'s Day', '2027-05-09', 'Mother\'s Day — a gift for mom'], ['Eid al-Adha', '2027-05-17', 'Eid al-Adha'], ['Father\'s Day', '2027-06-20', 'Father\'s Day — a gift for dad'], ['Independence Day', '2027-08-15', 'Independence Day'],
         ['Raksha Bandhan', '2027-08-17', 'Raksha Bandhan — a gift for your sibling'], ['Ganesh Chaturthi', '2027-09-05', 'Ganesh Chaturthi'], ['Navratri', '2027-10-08', 'Navratri'], ['Dussehra', '2027-10-17', 'Dussehra'],
-        ['Karwa Chauth', '2027-10-20', 'Karwa Chauth — a gift for your partner'], ['Diwali', '2027-10-29', 'Diwali — the gifting season'], ['New Year', '2028-01-01', 'New Year — start the year with a new signature scent']];
+        ['Karwa Chauth', '2027-10-20', 'Karwa Chauth — a gift for your partner'], ['Diwali', '2027-10-29', 'Diwali — the gifting season'], ['Black Friday', '2027-11-26', 'Black Friday week — the Black Friday deal, combos and gifts (until Cyber Monday)'], ['New Year', '2028-01-01', 'New Year — start the year with a new signature scent']];
 }
 function wj_fest_all(PDO $pdo): array
 {

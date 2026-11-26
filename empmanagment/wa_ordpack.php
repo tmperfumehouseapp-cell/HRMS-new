@@ -166,6 +166,25 @@ if (!function_exists('wa_ordpack_defs')) {
         ];
         $r = []; foreach ($o as $k => $v) $r[$k] = ['body' => $v[0], 'buttons' => $v[1]]; return $r;
     }
+    /** 🖤 BLACK FRIDAY PACK (owner 26 Nov 2026: "Black Friday is on — make proper messages and add them to the module"): 10 MARKETING messages in the owner's style (name, emoji, blank-line spacing, curiosity,
+     *  ONE choice by button) that say Black Friday by name. NO price, percentage, quantity or deadline is written (none was given for Black Friday): the button tap brings the live price chart, as for the other
+     *  packs. Made at Meta only inside Black Friday week (wa_bf_on) and sent by the Cold funnel only inside it (wcd_style_ids). Names tmph_bf_NN; the buttons are ones the tap handler already knows. */
+    function wa_bf_defs(): array
+    {
+        $o = [
+            'tmph_bf_01' => ["Hello {{1}} 🖤\n\n*BLACK FRIDAY* shuru ho gaya he TM Perfume House par 🔥\n\nAapke liye ek *special Black Friday deal* unlock hui he 🔓\n\nApna size chuniye aur dekhiye 👇", ['20ML', '50ML', '100ML']],
+            'tmph_bf_02' => ["Hi {{1}} 🛍️\n\nBlack Friday week chal raha he... aur hamne perfumes par ek *surprise deal* rakhi he 🎁\n\n*Wo kya he ?* 🤔\n\nJaanne ke liye button dabaiye 👇", ['Yes, Order', 'Show Offer']],
+            'tmph_bf_03' => ["Hello {{1}} 🔥\n\n*Black Friday Combo* ready he 🖤\n\nApni pasand ke perfumes mix karke apna combo banaiye ✨\n\nCombo dekhne ke liye tap kijiye 👇", ['BOOK MY COMBO', 'Show more combos']],
+            'tmph_bf_04' => ["Hi {{1}} 🎁\n\nBlack Friday par gift lene ka achha mauka he 🖤\n\nShaadi, birthday ya New Year — kiske liye perfume chahiye ?\n\nBatayiye, hum Black Friday combo dikhayenge 👇", ['For me', 'As a gift']],
+            'tmph_bf_05' => ["Hello {{1}} ❄️\n\nBlack Friday + sardi ka season 🖤\n\nGehri, lambi chalne wali khushboo — oud, musk, amber 😍\n\nAapko kaunsi pasand he ? Batayiye, Black Friday deal ke saath dikhate hain 👇", ['Men', 'Women', 'Unisex']],
+            'tmph_bf_06' => ["Hi {{1}} 👋\n\nEk chhoti si baat batani thi...\n\nBlack Friday ke liye aapka *special price* ready he 🖤🔥\n\nKaunsa size chahiye ? 👇", ['20ML', '50ML', '100ML']],
+            'tmph_bf_07' => ["Hello {{1}} 💍\n\nShaadi ka season aur Black Friday ek saath 🖤🎊\n\nApne liye ya gift ke liye — Black Friday combo taiyaar he ✨\n\nOrder karne ke liye tap kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_bf_08' => ["Hi {{1}} 🤩\n\n*BLACK FRIDAY DEAL* aapke naam unlock ho gayi he 🔓🖤\n\nPerfumes aur combos — apni pasand se chuniye 🎁\n\nDekhna chahenge ? 👇", ['Yes, Order', 'Show Offer']],
+            'tmph_bf_09' => ["Hello {{1}} 🖤\n\nBlack Friday week me TM Perfume House ke best-seller perfumes par khaas deal he 🔥\n\nAap apne liye dekhna chahenge ya kisi ko gift dene ke liye ? 👇", ['For me', 'As a gift']],
+            'tmph_bf_10' => ["Hi {{1}} ⚡\n\nBlack Friday chal raha he 🖤\n\nAapka pasandida perfume abhi Black Friday deal me mil sakta he 😍\n\nApna size chuniye aur dekhiye 👇", ['20ML', '50ML', '100ML']],
+        ];
+        $r = []; foreach ($o as $k => $v) $r[$k] = ['body' => $v[0], 'buttons' => $v[1]]; return $r;
+    }
     function wa_ordpack_tick(PDO $pdo): array
     {
         $res = ['made' => 0, 'failed' => []];
@@ -183,7 +202,9 @@ if (!function_exists('wa_ordpack_defs')) {
         try { wa_hand_tick($pdo); } catch (Throwable $e) { }
         try { wa_undeliv_tick($pdo); } catch (Throwable $e) { }
         try { wa_ordattr_tick($pdo); } catch (Throwable $e) { }
-        $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs() + wa_cp_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
+        $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); if (!function_exists('wa_bf_on') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
+        $all = (function_exists('wa_bf_on') && wa_bf_on() ? wa_bf_defs() : []) + wa_ordpack_defs() + wa_cp_defs();   /* 🖤 in Black Friday week its pack is made first (5 messages a round) */
+        foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
         foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;
             try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? OR body = ? LIMIT 1"); $q->execute([$name, $m['body']]); if ($q->fetchColumn()) continue; } catch (Throwable $e) { continue; }
