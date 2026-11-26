@@ -1127,6 +1127,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
                     foreach ((array)($th['messages'] ?? []) as $m) { $out = wa_key($m['from'] ?? '') !== $ck; if (wa_store_phone_msg($pdo, (array)$m, $ck, $nid, $out ? 'out' : 'in', true) !== '') $n++; } } continue; }
                 $names = []; foreach ((array)($v['contacts'] ?? []) as $ct) $names[wa_key($ct['wa_id'] ?? '')] = (string)($ct['profile']['name'] ?? '');
                 foreach ((array)($v['messages'] ?? []) as $m) { if ($__swNum) { try { sw_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); } catch (Throwable $e) { error_log('sw_in: ' . $e->getMessage()); } continue; } $k = wa_store_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); if ($k !== '') { $n++; $__keys[$k] = true; } }
+                if ($__swNum) { foreach ((array)($v['statuses'] ?? []) as $s) { try { $st += sw_status($pdo, (array)$s); } catch (Throwable $e) { error_log('sw_status: ' . $e->getMessage()); } } continue; }   // the Store's receipts stay in the Store's own table
                 $__pend = []; foreach ((array)($v['statuses'] ?? []) as $s) { if ((string)(((array)$s)['status'] ?? '') === 'failed') $st += wa_webhook_status($pdo, (array)$s); else $__pend[] = (array)$s; }   // a FAILED receipt is handled at once, as before
                 if ($__pend) $st += wa_status_intake($pdo, $__pend);   // sent / delivered / read receipts: queued and applied as one block (every 7 s when busy, at once when quiet)
             }
@@ -1191,6 +1192,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
             $wb = $nr ? wa_waba_of($nr) : wa_cfg_val('WA_WABA_ID'); if ($wb === '') json_response(['error' => 'No WhatsApp Business Account ID — set WA_WABA_ID in config.php or fill it for this number.'], 422);
             [$c, $d] = wa_api('POST', '/' . $wb . '/subscribed_apps', []);
             if ($c < 200 || $c >= 300) { $e = wa_err($d); wa_log($pdo, 'subscribe', false, $e); if ($nr && ($wb === (string)$nr['phone_id'] || stripos($e, 'nonexisting field') !== false || stripos($e, 'does not exist') !== false)) $e = 'The WhatsApp Business Account ID saved for this number (' . $wb . ') is not an account. Fix the second box: it must be the account ID from Meta (Business settings → Messaging accounts), not the Phone number ID. (Meta said: ' . mb_substr($e, 0, 120) . ')'; json_response(['error' => $e], 502); }
+            try { $__hc = json_decode((string)setting_get($pdo, 'wa_health', ''), true); if (is_array($__hc) && $nid > 0 && isset($__hc[$nid])) { unset($__hc[$nid]); setting_set($pdo, 'wa_health', json_encode($__hc, JSON_UNESCAPED_UNICODE)); } } catch (Throwable $e) { }   // the card must not keep showing the OLD red answer for up to 10 minutes after "Connect"
             wa_log($pdo, 'subscribe', true, 'This WhatsApp account is now connected to the webhook.'); json_response(['ok' => true, 'message' => 'Connected. Messages to this number now reach the HRMS.']);
         }
         case 'wa.register': {
@@ -1200,6 +1202,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
             if ($pid === '') json_response(['error' => 'WA_PHONE_ID is missing in config.php.'], 422);
             [$c, $d] = wa_api('POST', '/' . $pid . '/register', ['messaging_product' => 'whatsapp', 'pin' => $pin]);
             if ($c < 200 || $c >= 300) { $e = wa_err($d); wa_log($pdo, 'register', false, $e); json_response(['error' => $e], 502); }
+            try { $__hc = json_decode((string)setting_get($pdo, 'wa_health', ''), true); if (is_array($__hc) && $nid > 0 && isset($__hc[$nid])) { unset($__hc[$nid]); setting_set($pdo, 'wa_health', json_encode($__hc, JSON_UNESCAPED_UNICODE)); } } catch (Throwable $e) { }
             wa_log($pdo, 'register', true, 'Number registered on the Cloud API.'); json_response(['ok' => true, 'message' => 'Number registered. Press “Check now” to see its status.']);
         }
         case 'wa.number_save': {

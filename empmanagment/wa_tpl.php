@@ -63,6 +63,10 @@ function wa_wabas(PDO $pdo): array
 {
     $o = []; $d = wa_cfg_val('WA_WABA_ID'); if ($d !== '') $o[$d] = true;
     foreach ($pdo->query("SELECT waba_id FROM wa_numbers")->fetchAll() as $r) { $w = trim((string)$r['waba_id']); if ($w !== '') $o[$w] = true; }
+    // 🏪 the STORE's own WhatsApp account takes no sales pre-made message (nothing of the sales flows goes there): left out here unless a sales number uses the same account.
+    try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'swa'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; $sid = is_array($j) ? (int)($j['number_id'] ?? 0) : 0;
+        if ($sid > 0) { $sw = ''; $other = []; foreach ($pdo->query("SELECT id, waba_id FROM wa_numbers")->fetchAll() as $r) { $wb = trim((string)$r['waba_id']) !== '' ? trim((string)$r['waba_id']) : $d; if ((int)$r['id'] === $sid) $sw = $wb; else $other[$wb] = true; }
+            if ($sw !== '' && empty($other[$sw])) unset($o[$sw]); } } catch (Throwable $e) { }
     return array_keys($o);
 }
 

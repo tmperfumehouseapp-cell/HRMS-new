@@ -808,7 +808,7 @@ function st_wa_seed(PDO $pdo, ?array $only = null): array
     $res = ['created' => [], 'submitted' => [], 'skipped' => [], 'failed' => []];
     try {
         if (!st_wa_load() || !wa_tpl_tables($pdo) || !function_exists('wa_tpl_clean') || !function_exists('wa_tpl_insert') || !function_exists('wa_tpl_create_at')) { $res['error'] = 'The WhatsApp template module is not available.'; return $res; }
-        $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : [];
+        $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $sw = st_store_waba($pdo); if ($sw !== '' && !in_array($sw, $wabas, true)) $wabas[] = $sw;      // the Store's own account is not in the sales list (wa_wabas leaves it out) but its bill messages are made there
         foreach (st_wa_defs() as $name => $d) {
             if ($only === null ? $name === 'tmph_store_bday' : !in_array($name, $only, true)) continue;
             $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$name]); $id = (int)$q->fetchColumn();
@@ -862,6 +862,18 @@ function st_wa_number_for(PDO $pdo, array $t): array
     foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) if (in_array(wa_waba_of($n), $t['ok_wabas'], true)) return [$n, false, ''];
     return [null, false, 'no WhatsApp number can send this template'];
 }
+/** Keeps a sent Store template in the chat list: in the Store's own table when it went out of the Store number, else in wa_messages as before. */
+function st_wa_log_out(PDO $pdo, bool $own, string $wamid, string $key, int $numberId, string $shown): void
+{
+    if ($own) { require_once __DIR__ . '/store_wa.php'; if (sw_tables($pdo)) $pdo->prepare("INSERT INTO st_wa_msg (wamid, phone, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, 'out', 'template', ?, 'sent', 'store', 0, ?)")->execute([$wamid, $key, $shown, date('Y-m-d H:i:s')]); return; }
+    $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'template', ?, 'sent', 'store', 0, ?)")->execute([$wamid, $key, $numberId, $shown, date('Y-m-d H:i:s')]);
+}
+/** The Store number's WhatsApp Business Account id (or ''), read straight from the setting. */
+function st_store_waba(PDO $pdo): string
+{
+    try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'swa'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; $id = is_array($j) ? (int)($j['number_id'] ?? 0) : 0; if ($id <= 0) return '';
+        $q = $pdo->prepare("SELECT * FROM wa_numbers WHERE id = ?"); $q->execute([$id]); $n = $q->fetch(); return $n && function_exists('wa_waba_of') ? wa_waba_of($n) : ''; } catch (Throwable $e) { return ''; }
+}
 /** One bill → one customer, as a template message from the shop's own WhatsApp number. Returns [ok, note]. */
 function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array $cs): array
 {
@@ -882,7 +894,7 @@ function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array 
     if (!empty($r['components'])) $pl['template']['components'] = $r['components'];
     [$code, $d] = wa_api('POST', '/' . $num['phone_id'] . '/messages', $pl); $wamid = (string)($d['messages'][0]['id'] ?? '');
     if ($code < 200 || $code >= 300 || $wamid === '') return [false, function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'WhatsApp did not accept the message'];
-    try { $shown = function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vars) : $billNo; $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'template', ?, 'sent', 'store', 0, ?)")->execute([$wamid, $key, (int)$num['id'], $shown, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+    try { $shown = function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vars) : $billNo; st_wa_log_out($pdo, $own, $wamid, $key, (int)$num['id'], $shown); } catch (Throwable $e) { }
     return [true, 'sent'];
 }
 /** After a bill is saved: send it to every customer with a number. Marks each one "sent". Never throws; returns a short note per person for the screen. */
@@ -1531,7 +1543,7 @@ function st_bday_send(PDO $pdo, array $v): array
         if (!empty($r['components'])) $pl['template']['components'] = $r['components'];
         [$code, $d] = wa_api('POST', '/' . $num['phone_id'] . '/messages', $pl); $wamid = (string)($d['messages'][0]['id'] ?? '');
         if ($code < 200 || $code >= 300 || $wamid === '') return $note(false, function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'WhatsApp did not accept the message', 'failed');
-        try { $shown = function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vars) : (string)$v['code']; $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'template', ?, 'sent', 'store', 0, ?)")->execute([$wamid, $key, (int)$num['id'], $shown, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+        try { $shown = function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vars) : (string)$v['code']; st_wa_log_out($pdo, $own, $wamid, $key, (int)$num['id'], $shown); } catch (Throwable $e) { }
         return $note(true, 'sent', 'sent');
     } catch (Throwable $e) { return $note(false, mb_substr($e->getMessage(), 0, 150), 'failed'); }
 }
