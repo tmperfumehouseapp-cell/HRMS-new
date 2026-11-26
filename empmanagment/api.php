@@ -2739,7 +2739,7 @@ function hrms_settings_load(PDO $pdo): array
 function hrms_setting_volatile(string $key): bool
 {
     return strpos($key, 'lock') !== false || substr($key, -3) === '_lk' || substr($key, -3) === '_at' || $key === 'wq_needs' || strpos($key, 'wa_lim_') === 0 || $key === 'wa_tag_cache' || strpos($key, 'wq_pace_') === 0
-        || strpos($key, 'wag_bfu_') === 0 || substr($key, -4) === '_dbg' || $key === 'wa_cron_start';   // follow-up counters / debug notes and the engine start stamp are written many times a minute: each write made every web process reload the whole settings table (query 1)
+        || strpos($key, 'wag_bfu_') === 0 || in_array($key, ['wa_ru_hourly', 'wa_dq_stat', 'wa_dq_step_last', 'wa_dq_hourly', 'wa_ru_freeze_n', 'wa_dq_freeze_n', 'wa_dq_good_n', 'wa_ru_cursor', 'wa_ru_brake_since', 'wa_ru_ramp_max'], true) || substr($key, -4) === '_dbg' || $key === 'wa_cron_start';   // follow-up counters / debug notes and the engine start stamp are written many times a minute: each write made every web process reload the whole settings table (query 1)
 }
 function setting_get(PDO $pdo, string $key, $default = null)
 {
