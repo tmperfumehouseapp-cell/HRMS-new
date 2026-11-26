@@ -1185,12 +1185,15 @@ function fup_covered(?array $u, array $t): bool
     return fup_has_text($u) || (empty($t['need_text']) && (string)$t['source'] !== '' && $u !== null && $u['val'] !== null);
 }
 
-/** Has the PERSON finished this topic for the day? Words written = finished (it is saved and the punch-out opens). A required field left empty is NOT the person's block any more:
+/** Has the PERSON finished this topic for the day? Anything the person wrote (words, a box, a number, a %) = finished (it is saved and the punch-out opens). A required field left empty is NOT the person's block any more:
  *  the owner still sees "not complete, still to fill" in the checks, but nobody is kept from punching out because of a box they could not fill. */
 function fup_person_done(?array $u, array $t): bool
 {
     if (fup_covered($u, $t)) return true;
-    return $u !== null && fup_has_text($u);
+    if ($u === null) return false;
+    if (fup_has_text($u)) return true;
+    foreach ((array)($u['f'] ?? []) as $v) if (fup_fval_set($v)) return true;      // any box the person filled by hand
+    return ($u['val'] !== null && empty($u['auto'])) || $u['pct'] !== null;      // a number or a % typed by the person (not one the HRMS put there by itself)
 }
 
 /**
