@@ -234,7 +234,7 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
             $w2 = $nw ?: biz_window($pdo, $from, $to);
             [$wo, $we] = tms_orders($pdo, date('Y-m-d', strtotime($from) - 7 * 86400), date('Y-m-d', strtotime($to) + 86400)); if ($we !== '') $errs[] = 'Website orders: ' . $we;
             foreach ($wo as $w) {
-                $at = (string)($w['pay_time'] ?: $w['placed_at']); if ($at < $w2[0] || $at > $w2[1] || !empty($w['cancelled'])) continue;
+                $at = (string)($w['pay_time'] ?: $w['placed_at']); if ($at < $w2[0] || $at > $w2[1] || !empty($w['cancelled']) || !empty($w['temp'])) continue;
                 if ((string)$w['pay_status'] === 'pending' && (string)$w['pay_method'] !== 'cod') continue;
                 $nManC++;
                 foreach ((array)($w['lines'] ?? []) as $l) { $qq = max(1, (int)($l['qty'] ?? 1)); $add((string)(($l['raw'] ?? '') !== '' ? $l['raw'] : ($l['title'] ?? '')), (string)($l['size'] ?? ''), (string)($l['sku'] ?? ''), $qq, (float)($l['price'] ?? 0) * $qq, (string)$w['number']); }
@@ -312,6 +312,7 @@ function sku_sheet(PDO $pdo, string $day): array
             if ($we !== '') $errs[] = 'Website orders: ' . $we;
             foreach ($wo as $w) {
                 $at = (string)($w['pay_time'] ?: $w['placed_at']); if ($at < $cal[0] || $at > $cal[1]) continue;
+                if (!empty($w['temp'])) continue;      // 🔗 LINK-xxx: a temporary payment link, not an order yet
                 if (!empty($w['cancelled'])) { $nCancel++; continue; }
                 if ((string)$w['pay_status'] === 'pending' && (string)$w['pay_method'] !== 'cod') continue;      // a payment link not paid yet is not an order to pack
                 $nWeb++;

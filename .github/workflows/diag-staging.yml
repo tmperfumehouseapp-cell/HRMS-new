@@ -78,6 +78,7 @@ jobs:
               if ($r && (int)$r["employee_id"] > 0) { $cnt["given"]++; continue; } if ($r && (int)$r["is_direct"] === 1) { $cnt["direct"]++; continue; }
               $st = $r ? "waiting" : "not_in_hrms"; $cnt[$st]++;
               $list[] = "  " . $st . " | " . $no . " | " . ($x["placed_at"] ?? "") . " | Rs " . ($x["total"] ?? "") . " | " . $pm . "/" . $ps . " | " . substr((string)(($x["customer"]["name"] ?? "")), 0, 22) . " | ph .." . substr(preg_replace("/\D+/", "", (string)($x["customer"]["phone"] ?? "")), -4) . " | why: " . (($why[$no]["why"] ?? "") ?: "-") . " | shop: " . trim($sp); }
+            try { foreach ($d->query("SELECT m.mp_no, m.employee_id, m.created_by, m.total, m.payment_status, m.order_date FROM manual_orders m WHERE m.channel = \"TM Store\" AND m.mp_no LIKE \"LINK-%\" ORDER BY m.manual_order_id DESC LIMIT 60") as $r) echo "  LINKROW " . json_encode($r) . "\n"; echo "  LINKROWS total: " . $d->query("SELECT COUNT(*) FROM manual_orders WHERE channel = \"TM Store\" AND mp_no LIKE \"LINK-%\"")->fetchColumn() . "\n"; } catch (Throwable $e) { echo "  linkrows: " . $e->getMessage() . "\n"; }
             echo "  counts " . json_encode($cnt) . "\n  source " . json_encode($src) . "\n"; foreach ($list as $l) echo $l . "\n"; echo "  (end)\n";
           ' "$P" 2>&1 | head -400
           echo "=== database activity (SHOW FULL PROCESSLIST, no passwords) ==="
