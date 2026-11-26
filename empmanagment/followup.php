@@ -1185,6 +1185,14 @@ function fup_covered(?array $u, array $t): bool
     return fup_has_text($u) || (empty($t['need_text']) && (string)$t['source'] !== '' && $u !== null && $u['val'] !== null);
 }
 
+/** Has the PERSON finished this topic for the day? Words written = finished (it is saved and the punch-out opens). A required field left empty is NOT the person's block any more:
+ *  the owner still sees "not complete, still to fill" in the checks, but nobody is kept from punching out because of a box they could not fill. */
+function fup_person_done(?array $u, array $t): bool
+{
+    if (fup_covered($u, $t)) return true;
+    return $u !== null && fup_has_text($u);
+}
+
 /**
  * The checks that need no AI (always shown): no update today, silent for days, deadline close / late, the same words copied again.
  * Returns a list of [level red|amber, topic_id, text, type late|due|nobody|empty|copy|ai, who, days].
@@ -1267,10 +1275,10 @@ function fup_mine(PDO $pdo, array $w): array
         $ups = fup_updates($pdo, array_column($rows, 'id'), date('Y-m-d', strtotime($today . ' -2 day')), $today); $src = fup_sources();
         foreach ($rows as $t) {
             $dd = fup_due_day($t, $today); $created = fup_start_day($t);
-            $u = $ups[(int)$t['id']][$dd] ?? null; $y = $ups[(int)$t['id']][date('Y-m-d', strtotime($dd . ' -1 day'))] ?? null; $done = fup_covered($u, $t) || ($created !== '' && $dd < $created); if (!$done) $due++;
+            $u = $ups[(int)$t['id']][$dd] ?? null; $y = $ups[(int)$t['id']][date('Y-m-d', strtotime($dd . ' -1 day'))] ?? null; $done = fup_person_done($u, $t) || ($created !== '' && $dd < $created); if (!$done) $due++;
             $out[] = ['id' => (int)$t['id'], 'section_id' => (int)$s['id'], 'section' => (string)$s['name'], 'title' => (string)$t['title'], 'kind' => (string)$t['kind'], 'due_date' => $t['due_date'] ? (string)$t['due_date'] : null,
                 'days_left' => ((string)$t['kind'] === 'deadline' && fup_is_day((string)$t['due_date'])) ? (int)round((strtotime((string)$t['due_date']) - strtotime($today)) / 86400) : null,
-                'note' => (string)$t['note'], 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'today' => $u, 'yesterday' => $y, 'done_today' => $done, 'day' => $dd, 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'nums' => fup_nums($t, $u), 'fields' => count(fup_fields($t)), 'missing' => fup_fields_missing($t, $u ?: ['f' => []])];
+                'note' => (string)$t['note'], 'source' => (string)$t['source'], 'unit' => fup_unit($t), 'today' => $u, 'yesterday' => $y, 'done_today' => $done, 'missing' => ($done && $u !== null && !fup_covered($u, $t)) ? array_slice(fup_fields_missing($t, ['f' => (array)($u['f'] ?? [])]), 0, 4) : [], 'day' => $dd, 'lag' => !empty($t['lag']), 'need_text' => !empty($t['need_text']), 'nums' => fup_nums($t, $u), 'fields' => count(fup_fields($t)), 'missing' => fup_fields_missing($t, $u ?: ['f' => []])];
         }
     }
     return ['today' => $today, 'topics' => $out, 'due' => $due];
