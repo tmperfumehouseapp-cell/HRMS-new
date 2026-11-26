@@ -37,6 +37,12 @@ jobs:
           $p("SELECT store_key, shopify_id >= 7000000000000000 hrms_made, LEFT(order_name, 3) pfx, COUNT(*) n, SUM(ml_total > 0) has_ml, SUM(colors IS NOT NULL AND colors <> '') has_colors, SUM(dti IS NOT NULL) dti_checked, ROUND(SUM(total)) amt FROM shop_orders WHERE created_at >= ? GROUP BY store_key, hrms_made, pfx", [$from]);
           echo "manual_orders: by kind (channel / quick-entry batch / marketplace)\n";
           $p("SELECT channel, batch <> '' quick_entry, COUNT(*) n, ROUND(SUM(total)) amt, SUM(items) items FROM manual_orders WHERE order_date >= ? GROUP BY channel, quick_entry", [$from]);
+          echo "TM Store website orders today: colours / DTI saved\n";
+          $p("SELECT COUNT(*) n, SUM(ml > 0) has_ml, SUM(colors IS NOT NULL) has_colors, SUM(dti IS NOT NULL) has_dti FROM manual_orders WHERE channel = 'TM Store' AND order_date >= ?", [$from]);
+          $p("SELECT colors, COUNT(*) n FROM manual_orders WHERE channel = 'TM Store' AND order_date >= ? GROUP BY colors ORDER BY n DESC LIMIT 6", [$from]);
+          echo "deployed code: colours saved " . substr_count((string)@file_get_contents($argv[1] . "empmanagment/store_orders.php"), "colors = ?") . " · api helper " . substr_count((string)@file_get_contents($argv[1] . "empmanagment/api.php"), "function manual_order_details") . " · DG rule " . substr_count((string)@file_get_contents($argv[1] . "empmanagment/api.php"), "ALWAYS Dark green") . "\n";
+          try { echo "robot last run: " . date("H:i:s", (int)$d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'tms_auto_at'")->fetchColumn()) . "\n"; } catch (Throwable $e) { echo "robot: n/a\n"; }
+          foreach (glob(sys_get_temp_dir() . "/hrms_tmsall_*.json.gz") ?: [] as $f) { $j = json_decode((string)@gzdecode((string)@file_get_contents($f)), true); $rows = (array)($j["rows"] ?? []); $wc = 0; foreach ($rows as $r) if (array_key_exists("colors", $r)) $wc++; echo "shared shop copy: " . count($rows) . " rows, $wc with colours, read at " . date("H:i:s", (int)($j["at"] ?? 0)) . ", full read at " . date("H:i:s", (int)($j["full_at"] ?? 0)) . "\n"; }
           echo "wmo_order (WhatsApp manual order): by status, with lines\n";
           $p("SELECT status, COUNT(*) n, SUM(lines_json IS NOT NULL AND lines_json <> '' AND lines_json <> '[]') has_lines, SUM(ml > 0) has_ml FROM wmo_order WHERE created_at >= ? GROUP BY status", [$from]);
           echo "order_allocations today: by source\n";
