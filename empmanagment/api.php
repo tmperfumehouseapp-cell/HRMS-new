@@ -16029,6 +16029,23 @@ function team_range_targets(PDO $pdo, array $emps, string $from, string $to, boo
                         $hist[$k][$day] = ($hist[$k][$day] ?? 0) + (float)$od['total'];
                         if ($combine && in_array((string)$od['house'], ['tmph'], true)) { $kc = (int)$od['emp_id'] . '|*'; $hist[$kc][$day] = ($hist[$kc][$day] ?? 0) + (float)$od['total']; }
                     }
+                    // 🛍 Website orders (TM Store) and the other manual / quick-entry orders that carry a sales person are COLLECTION too (owner, 26 Nov: "the target is the average of 3 days' collection + 10%").
+                    //    They live in manual_orders, not in the Shopify cache, so the look-back missed them: from 24 Nov 76–99% of the day's sales came through the website and the automatic target fell
+                    //    to half (a person who collected 58,744 / 60,645 / 48,991 got 29,610 instead of 61,739) or to the minimum. Same rows the Commission page counts: not cancelled, not a Direct order,
+                    //    credited to the allocation's person when there is one.
+                    try {
+                        $cancelM = order_cancels_map($pdo);
+                        $mq = $pdo->prepare("SELECT manual_order_id, order_date, total, employee_id, house FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0 AND total > 0"); $mq->execute(biz_window($pdo, $minDay, $to));
+                        foreach ($mq->fetchAll() as $m) {
+                            $mk2 = 'manual|' . (string)$m['manual_order_id']; if (isset($cancelM[$mk2])) continue;
+                            $a = $allocMap[$mk2] ?? null; if ($a && !empty($a['direct'])) continue;
+                            $who = ($a && !empty($a['emp'])) ? (int)$a['emp'] : (int)$m['employee_id']; if (!$who) continue;
+                            $hs = (string)(($a['house'] ?? '') !== '' ? $a['house'] : ($m['house'] ?? '')); if ($hs === '') $hs = 'tmph';
+                            $day = biz_day_of($pdo, strtotime((string)$m['order_date']));
+                            $k = $who . '|' . $hs; $hist[$k][$day] = ($hist[$k][$day] ?? 0) + (float)$m['total'];
+                            if ($combine && $hs === 'tmph') { $kc = $who . '|*'; $hist[$kc][$day] = ($hist[$kc][$day] ?? 0) + (float)$m['total']; }
+                        }
+                    } catch (Throwable $e) { error_log('target history (manual orders): ' . $e->getMessage()); }
                     $out['rule_used'] = true;
                 } else {
                     $rule = null;
