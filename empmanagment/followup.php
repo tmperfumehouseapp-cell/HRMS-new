@@ -1208,13 +1208,20 @@ function fup_fields_clean($in, array $old = []): array
     }
     return $out;
 }
+/** The files of an upload box: a box holds as many files as the person adds (a day's review photos can be 50 or 100). Old rows hold one file as {f, n}; new ones also hold {list: [{f, n}, ...]}. */
+function fup_file_list($v): array
+{
+    if (!is_array($v)) return [];
+    if (isset($v['list']) && is_array($v['list'])) { $o = []; foreach ($v['list'] as $x) if (is_array($x) && !empty($x['f'])) $o[] = ['f' => (string)$x['f'], 'n' => (string)($x['n'] ?? 'file')]; return $o; }
+    return !empty($v['f']) ? [['f' => (string)$v['f'], 'n' => (string)($v['n'] ?? 'file')]] : [];
+}
 /** Is a field's value there? */
 function fup_fval_set($v): bool { return is_array($v) ? !empty($v['f']) : trim((string)$v) !== ''; }
 /** The filled fields of a day's row as words, for Claude and for the checks: "Post link: https://… · Website changed: yes". */
 function fup_fvals_text(array $t, ?array $u): string
 {
     $b = []; $fv = (array)($u['f'] ?? []);
-    foreach (fup_fields($t) as $f) { $v = $fv[$f['k']] ?? null; $b[] = $f['label'] . ': ' . (!fup_fval_set($v) ? '(not filled' . ($f['req'] ? ', REQUIRED' : '') . ')' : (is_array($v) ? 'file attached (' . ($v['n'] ?? 'file') . ')' : mb_substr((string)$v, 0, 300))); }
+    foreach (fup_fields($t) as $f) { $v = $fv[$f['k']] ?? null; $b[] = $f['label'] . ': ' . (!fup_fval_set($v) ? '(not filled' . ($f['req'] ? ', REQUIRED' : '') . ')' : (is_array($v) ? (count(fup_file_list($v)) > 1 ? count(fup_file_list($v)) . ' files attached' : 'file attached (' . ($v['n'] ?? 'file') . ')') : mb_substr((string)$v, 0, 300))); }
     return implode(' · ', $b);
 }
 /** The required fields that are still empty on a row (labels). */
@@ -1773,15 +1780,32 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
             $name = 'fu_' . (int)$t['id'] . '_' . str_replace('-', '', $day) . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
             if (!@move_uploaded_file((string)$up['tmp_name'], $dir . $name) && !@copy((string)$up['tmp_name'], $dir . $name)) json_response(['error' => 'Could not save the file on the server.'], 500);
             $q1 = $pdo->prepare("SELECT fvals FROM fu_updates WHERE topic_id = ? AND day = ?"); $q1->execute([(int)$t['id'], $day]); $fv = json_decode((string)$q1->fetchColumn(), true); if (!is_array($fv)) $fv = [];
-            $fv[$k] = ['f' => $name, 'n' => mb_substr(basename((string)$up['name']), 0, 120)];
+            $list = fup_file_list($fv[$k] ?? null); if (count($list) >= 1000) json_response(['error' => 'That is 1000 files on this box for the day. Enough!'], 422);
+            $list[] = ['f' => $name, 'n' => mb_substr(basename((string)$up['name']), 0, 120)];      // added to the others, never replacing them
+            $fv[$k] = ['f' => $list[0]['f'], 'n' => $list[0]['n'], 'list' => $list];
             fup_put($pdo, (int)$t['id'], $day, ['fvals' => json_encode($fv, JSON_UNESCAPED_UNICODE), 'emp_id' => $w['emp'], 'emp_name' => mb_substr($w['name'], 0, 120), 'updated_at' => fup_now()]);
-            json_response(['ok' => true, 'file' => $fv[$k]]);
+            json_response(['ok' => true, 'file' => $fv[$k], 'count' => count($list)]);
+        }
+        case 'fup.file_del': {   // take ONE attached file off a box (a wrong photo); the others stay
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); $t = $topicRow((int)($in['topic_id'] ?? 0)); $sec = $secRow((int)$t['section_id']);
+            if (!fup_owns($sec, $w) && !($w['emp'] > 0 && (int)$t['assignee_emp'] === $w['emp'])) json_response(['error' => 'This topic is not given to you.'], 403);
+            $today = fup_today($pdo); $day = (string)($in['day'] ?? ''); if (!fup_is_day($day) || $day > $today) json_response(['error' => 'Choose a day up to today.'], 422);
+            if (!$w['manager'] && $day < date('Y-m-d', strtotime($today . (!empty($t['lag']) ? ' -2 day' : ' -1 day')))) json_response(['error' => 'Only today and yesterday can be changed.'], 422);
+            $k = (string)($in['key'] ?? ''); $i = (int)($in['i'] ?? -1);
+            $q1 = $pdo->prepare("SELECT fvals FROM fu_updates WHERE topic_id = ? AND day = ?"); $q1->execute([(int)$t['id'], $day]); $fv = json_decode((string)$q1->fetchColumn(), true); if (!is_array($fv)) $fv = [];
+            $list = fup_file_list($fv[$k] ?? null); if (!isset($list[$i])) json_response(['error' => 'That file is not there any more.'], 404);
+            $gone = $list[$i]['f']; array_splice($list, $i, 1);
+            if ($list) $fv[$k] = ['f' => $list[0]['f'], 'n' => $list[0]['n'], 'list' => $list]; else unset($fv[$k]);
+            $pdo->prepare("UPDATE fu_updates SET fvals = ? WHERE topic_id = ? AND day = ?")->execute([json_encode($fv, JSON_UNESCAPED_UNICODE), (int)$t['id'], $day]);
+            @unlink(fup_file_dir() . basename($gone));
+            json_response(['ok' => true, 'count' => count($list), 'files' => $list]);
         }
         case 'fup.file': {   // open an attached file: only the people who may see the topic
             $t = $topicRow((int)($_GET['topic_id'] ?? 0)); $sec = $secRow((int)$t['section_id']);
             if (!fup_owns($sec, $w) && !($w['emp'] > 0 && (int)$t['assignee_emp'] === $w['emp'])) json_response(['error' => 'Not found.'], 404);
             $q1 = $pdo->prepare("SELECT fvals FROM fu_updates WHERE topic_id = ? AND day = ?"); $q1->execute([(int)$t['id'], (string)($_GET['day'] ?? '')]); $fv = json_decode((string)$q1->fetchColumn(), true);
-            $v = is_array($fv) ? ($fv[(string)($_GET['key'] ?? '')] ?? null) : null; $fn = is_array($v) ? basename((string)($v['f'] ?? '')) : '';
+            $v = is_array($fv) ? ($fv[(string)($_GET['key'] ?? '')] ?? null) : null; $fl = fup_file_list($v); $fi = max(0, (int)($_GET['i'] ?? 0)); $v = $fl[$fi] ?? null; $fn = is_array($v) ? basename((string)($v['f'] ?? '')) : '';
             if ($fn === '' || !is_file(fup_file_dir() . $fn)) json_response(['error' => 'The file is not there.'], 404);
             $ct = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'pdf' => 'application/pdf', 'mp4' => 'video/mp4', 'm4v' => 'video/mp4', 'mov' => 'video/quicktime', 'webm' => 'video/webm', '3gp' => 'video/3gpp', 'heic' => 'image/heic', 'txt' => 'text/plain; charset=utf-8', 'csv' => 'text/csv; charset=utf-8'][strtolower(pathinfo($fn, PATHINFO_EXTENSION))] ?? 'application/octet-stream';
             header('Content-Type: ' . $ct); header('X-Content-Type-Options: nosniff'); header('Cache-Control: private, max-age=3600'); header('Content-Length: ' . filesize(fup_file_dir() . $fn));

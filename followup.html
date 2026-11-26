@@ -173,14 +173,19 @@ guardPage(); renderSidebar('followup');
   const missing = (t, u) => t.fields.filter((f) => f.req && !fset(u && u.f ? u.f[f.k] : null));
   const covered = (t, d) => { const u = t.updates[d]; if (!u) return false; if (t.fields.some((f) => f.req)) return !missing(t, u).length && !u.q && (!t.need_text || !!u.text);
     return !!((u.text && !u.q) || (!t.need_text && t.source && u.val != null)); };
-  const fileUrl = (t, d, k) => api.buildUrl('fup.file', { topic_id: t.id, day: d, key: k, token: api.token() });
+  const fileUrl = (t, d, k, i) => api.buildUrl('fup.file', { topic_id: t.id, day: d, key: k, i: i || 0, token: api.token() });
+  const filesOf = (v) => (v && Array.isArray(v.list) && v.list.length ? v.list : (v && v.f ? [{ f: v.f, n: v.n || 'file' }] : []));
+  const upIcon = (ty) => (ty === 'photo' ? '📷' : ty === 'video' ? '🎥' : '📎');
   // the owner's own fields of a row: label on the left, what was filled on the right (a link opens, a file opens, yes / no is coloured)
   const isList = (t) => t.fields.filter((f) => f.type === 'yesno').length >= 5;
   const listSum = (t, u) => { const yn = t.fields.filter((f) => f.type === 'yesno'), ok = yn.filter((f) => u.f && u.f[f.k] === 'yes'), no = yn.filter((f) => !(u.f && u.f[f.k] === 'yes'));
     return '<div class="fu-num" style="color:' + (no.length ? '#b45309' : '#16945a') + '">✓ ' + ok.length + ' <small>of ' + yn.length + ' done</small></div><div class="fu-bar"><i style="width:' + Math.round(ok.length * 100 / yn.length) + '%"></i></div>'
       + (no.length ? '<div class="fu-vals" style="grid-template-columns:1fr">' + no.slice(0, 8).map((f) => '<span style="color:#b42318">✗ ' + esc(f.label) + '</span>').join('') + (no.length > 8 ? '<span>+ ' + (no.length - 8) + ' more not done</span>' : '') + '</div>' : '<div class="fu-by" style="color:#16945a">All done</div>'); };
+  // the files already on a box, each with its own ✕ (a wrong photo can be taken off; the others stay)
+  const attList = (t, d, f, v) => { const fl = filesOf(v); if (!fl.length) return ''; return '<div class="bd-sub" style="margin-bottom:6px"><b>' + fl.length + ' attached</b> · add more below' + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-height:150px;overflow:auto">' + fl.map((x, i) => '<span style="display:inline-flex;align-items:center;gap:4px;background:#f3f4f6;border-radius:999px;padding:2px 4px 2px 9px;font-size:12px"><a href="' + esc(fileUrl(t, d, f.k, i)) + '" target="_blank" rel="noopener">' + upIcon(f.type) + ' ' + (i + 1) + '</a><button type="button" data-fdel="' + esc(f.k) + '|' + i + '" title="Remove this file" style="border:0;background:#e5e7eb;border-radius:50%;width:20px;height:20px;cursor:pointer;line-height:1">✕</button></span>').join('') + '</div></div>'; };
   const fvals = (t, d, u) => { if (!t.fields.length || !u) return ''; if (isList(t) && u.f && Object.keys(u.f).length) return listSum(t, u) + ((tx) => (tx.length ? '<div class="fu-vals fu-fv">' + tx.join('') + '</div>' : ''))(t.fields.filter((f) => f.type !== 'yesno' && u.f && fset(u.f[f.k])).map((f) => '<span>' + esc(f.label) + '</span><b>' + (isUp(f.type) ? '📎' : esc(String(u.f[f.k]))) + '</b>')); const rows = t.fields.map((f) => { const v = u.f ? u.f[f.k] : null; if (!fset(v)) return f.req ? '<span>' + esc(f.label) + '</span><b style="color:#b45309">not filled</b>' : '';
-      const show = isUp(f.type) ? '<a href="' + esc(fileUrl(t, d, f.k)) + '" target="_blank" rel="noopener" data-stop="1">' + (f.type === 'photo' ? '📷 photo' : f.type === 'video' ? '🎥 video' : '📎 ' + esc(v.n || 'file')) + '</a>' : f.type === 'link' ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer" data-stop="1">🔗 open</a>' : f.type === 'yesno' ? '<b style="color:' + (v === 'yes' ? '#16945a' : '#d9423b') + '">' + (v === 'yes' ? 'Yes' : 'No') + '</b>' : f.type === 'num' ? '<b>' + Number(v).toLocaleString('en-IN') + '</b>' : '<b style="font-weight:600;white-space:normal">' + esc(v) + '</b>';
+      const show = isUp(f.type) ? ((fl) => (fl.length < 2 ? '<a href="' + esc(fileUrl(t, d, f.k)) + '" target="_blank" rel="noopener" data-stop="1">' + (f.type === 'photo' ? '📷 photo' : f.type === 'video' ? '🎥 video' : '📎 ' + esc(v.n || 'file')) + '</a>'
+          : '<span style="white-space:normal"><b>' + upIcon(f.type) + ' ' + fl.length + '</b> ' + fl.slice(0, 12).map((x, i) => '<a href="' + esc(fileUrl(t, d, f.k, i)) + '" target="_blank" rel="noopener" data-stop="1" style="margin-right:4px">' + (i + 1) + '</a>').join('') + (fl.length > 12 ? '<a href="#" data-allfiles="' + t.id + '|' + d + '|' + esc(f.k) + '" data-stop="1">… all ' + fl.length + '</a>' : '') + '</span>'))(filesOf(v)) : f.type === 'link' ? '<a href="' + esc(v) + '" target="_blank" rel="noopener noreferrer" data-stop="1">🔗 open</a>' : f.type === 'yesno' ? '<b style="color:' + (v === 'yes' ? '#16945a' : '#d9423b') + '">' + (v === 'yes' ? 'Yes' : 'No') + '</b>' : f.type === 'num' ? '<b>' + Number(v).toLocaleString('en-IN') + '</b>' : '<b style="font-weight:600;white-space:normal">' + esc(v) + '</b>';
       return '<span>' + esc(f.label) + '</span>' + show; }).join(''); return rows ? '<div class="fu-vals fu-fv">' + rows + '</div>' : ''; };
   // who to call: name (+ title) with a Call and a WhatsApp button when the phone is recorded on the employee
   const person = (id) => (D.people && D.people[id]) || null;
@@ -511,8 +516,8 @@ guardPage(); renderSidebar('followup');
         if (f.type === 'yesno' && isList(t)) return '<label class="fu-cl"><input type="checkbox" id="' + id + '"' + (v === 'yes' ? ' checked' : '') + '><span>' + esc(f.label) + '</span></label>';
         if (f.type === 'yesno') return '<div class="bd-f">' + lab + '<select class="bd-in" id="' + id + '"><option value="">Choose…</option><option value="yes"' + (v === 'yes' ? ' selected' : '') + '>Yes</option><option value="no"' + (v === 'no' ? ' selected' : '') + '>No</option></select></div>';
         if (f.type === 'choice') return '<div class="bd-f">' + lab + '<select class="bd-in" id="' + id + '"><option value="">Choose…</option>' + f.opts.map((o) => '<option' + (v === o ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></div>';
-        if (isUp(f.type)) return '<div class="bd-f">' + lab + (fset(v) ? '<div class="bd-sub" style="margin-bottom:4px">Attached: <a href="' + esc(fileUrl(t, q('#uD').value, f.k)) + '" target="_blank" rel="noopener">' + (f.type === 'photo' ? '📷 ' : f.type === 'video' ? '🎥 ' : '📎 ') + esc(v.n || 'file') + '</a> — choose another to replace it</div>' : '')
-          + '<input class="bd-in" id="' + id + '" type="file" accept="' + (f.type === 'photo' ? 'image/*' : f.type === 'video' ? 'video/*' : 'image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.mp4') + '">' + (f.type === 'video' ? '<div class="hint">A video up to 100 MB (MP4, MOV, WEBM, 3GP). A short clip sends faster.</div>' : f.type === 'photo' ? '<div class="hint">Take a photo or choose one from the gallery.</div>' : '') + '</div>';
+        if (isUp(f.type)) return '<div class="bd-f">' + lab + '<div id="' + id + '_l">' + attList(t, q('#uD').value, f, v) + '</div>'
+          + '<input class="bd-in" id="' + id + '" type="file" multiple accept="' + (f.type === 'photo' ? 'image/*' : f.type === 'video' ? 'video/*' : 'image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.mp4') + '">' + (f.type === 'video' ? '<div class="hint">A video up to 100 MB (MP4, MOV, WEBM, 3GP). A short clip sends faster.</div>' : f.type === 'photo' ? '<div class="hint">Choose as many photos as you have (select many at once). They are added to the ones already attached.</div>' : '<div class="hint">You can choose many files at once. They are added to the ones already attached.</div>') + '</div>';
         if (f.type === 'text') return '<div class="bd-f">' + lab + '<textarea class="bd-in" id="' + id + '" maxlength="2000" rows="' + (f.min ? 4 : 2) + '" data-min="' + (f.min || 0) + '">' + esc(fset(v) ? v : '') + '</textarea>' + (f.min ? '<div class="hint" data-wc="' + id + '"></div>' : '') + '</div>';
         return '<div class="bd-f">' + lab + '<input class="bd-in" id="' + id + '"' + (f.type === 'num' ? ' inputmode="decimal" placeholder="Number"' : f.type === 'link' ? ' inputmode="url" placeholder="https://…"' : ' maxlength="500"') + ' value="' + esc(fset(v) ? v : '') + '"></div>'; })(f); }).join('');
       m.querySelectorAll('#uF textarea[data-min]').forEach((ta) => { const mn = Number(ta.dataset.min) || 0, el = m.querySelector('[data-wc="' + ta.id + '"]'); if (!mn || !el) return;
@@ -531,10 +536,16 @@ guardPage(); renderSidebar('followup');
     q('#uT').addEventListener('input', wcShow);
     fill(); wcShow(); q('#uTop').onchange = () => { fill(); wcShow(); }; q('#uD').onchange = () => { fill(); wcShow(); };
     q('#uX').onclick = () => BD.close();
+    q('#uF').addEventListener('click', async (e) => {      // ✕ on an attached file: take that one off, keep the others
+      const b = e.target.closest('[data-fdel]'); if (!b) return; e.preventDefault(); const [k, i] = b.dataset.fdel.split('|'), f = t.fields.find((x) => x.k === k); if (!f) return;
+      if (!confirm('Remove this file?')) return; b.disabled = true;
+      try { const r = await api.post('fup.file_del', { topic_id: t.id, day: q('#uD').value, key: k, i: Number(i) }); const u2 = t.updates[q('#uD').value] || (t.updates[q('#uD').value] = {}); u2.f = u2.f || {}; if (r.files && r.files.length) u2.f[k] = { f: r.files[0].f, n: r.files[0].n, list: r.files }; else delete u2.f[k]; q('#uf_' + k + '_l').innerHTML = attList(t, q('#uD').value, f, u2.f[k]); toast('Removed.'); }
+      catch (x) { b.disabled = false; toast(x.message || 'Could not remove.', true); }
+    });
     q('#uOk').onclick = () => run(q('#uOk'), async () => {
       const d = q('#uD').value, text = q('#uT').value.trim(), v = q('#uV').value.trim(), p = q('#uP').value.trim();
       if (!d) { toast('Choose the date.'); return; }
-      const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (isUp(f.type)) { if (el.files && el.files[0]) files.push([f.k, el.files[0]]); } else fv[f.k] = el.type === 'checkbox' ? (el.checked ? 'yes' : 'no') : el.value.trim(); });
+      const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (isUp(f.type)) { if (el.files) for (let n = 0; n < el.files.length; n++) files.push([f.k, el.files[n]]); } else fv[f.k] = el.type === 'checkbox' ? (el.checked ? 'yes' : 'no') : el.value.trim(); });
       const anyF = files.length || Object.keys(fv).some((k) => fv[k] !== '');
       if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
       // a required box left empty is told at once (it used to save only the words, and the day stayed "not filled" with no word about why)
@@ -545,7 +556,7 @@ guardPage(); renderSidebar('followup');
       if (need.length) { toast('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
-      for (const [k, file] of files) { q('#uOk').textContent = 'Sending the file…'; const fd = new FormData(); fd.append('topic_id', t.id); fd.append('day', d); fd.append('key', k); fd.append('file', file); await api.upload('fup.file_put', fd); }
+      let sent = 0; for (const [k, file] of files) { sent++; q('#uOk').textContent = 'Sending file ' + sent + ' of ' + files.length + '…'; const fd = new FormData(); fd.append('topic_id', t.id); fd.append('day', d); fd.append('key', k); fd.append('file', file); await api.upload('fup.file_put', fd); }
       BD.close(); toast('Saved.'); await load(true);
       if (d !== D.today) toast('Saved for ' + dayName(d, D.today) + ' — today is still empty.');
       else if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
@@ -683,6 +694,12 @@ guardPage(); renderSidebar('followup');
 
   load();
 })();
+  document.addEventListener('click', (e) => {      // "… all 57" on the board: every file of that box, one tap each
+    const a = e.target.closest('[data-allfiles]'); if (!a) return; e.preventDefault(); const [tid, d, k] = a.dataset.allfiles.split('|');
+    const T = (D.topics || []).find((x) => String(x.id) === tid); const f = T && T.fields.find((x) => x.k === k), u = T && T.updates[d], fl = filesOf(u && u.f ? u.f[k] : null); if (!T || !f) return;
+    const m = BD.modal('<h3>' + esc(T.title) + ' · ' + esc(f.label) + '</h3><div class="bd-sub" style="margin-bottom:8px">' + fl.length + ' files on ' + esc(d) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px;max-height:55vh;overflow:auto">' + fl.map((x, i) => '<a class="bd-btn sm" style="text-decoration:none" href="' + esc(fileUrl(T, d, k, i)) + '" target="_blank" rel="noopener">' + upIcon(f.type) + ' ' + (i + 1) + '</a>').join('') + '</div><div class="acts"><button class="bd-btn" id="afX">Close</button></div>');
+    m.querySelector('#afX').onclick = () => BD.close(m);
+  });
 </script>
 </body>
 </html>
