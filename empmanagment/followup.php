@@ -586,6 +586,17 @@ function fup_clear_questions(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_clear_questions: ' . $e->getMessage()); }
 }
 
+/** Once: the owner's order "no summary box": a topic that has its own boxes to fill (links, numbers, yes / no, files ...) no longer also asks for a written summary. The boxes are the update.
+ *  Topics without boxes (a summary-only topic, or system numbers + the person's words) keep it. Nothing written is changed. */
+function fup_no_summary_with_fields(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_no_summary_v1', '') === '1') return;
+        $pdo->exec("UPDATE fu_topics SET need_text = 0 WHERE need_text = 1 AND `fields` IS NOT NULL AND `fields` <> '' AND `fields` <> '[]'");
+        setting_set($pdo, 'fup_no_summary_v1', '1');
+    } catch (Throwable $e) { error_log('fup_no_summary_with_fields: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's order "make every topic about the day before": all open daily topics are filled the next day (the day asked for is yesterday; yesterday and the day before can be written). Nothing written is changed. A topic can still be ticked back off in Edit topic. Deadline topics are left alone. */
 function fup_all_day_before(PDO $pdo): void
 {
@@ -1462,6 +1473,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_sachin_topics($pdo);
     fup_office_pickup_clean($pdo);
     fup_clear_questions($pdo);
+    fup_no_summary_with_fields($pdo);
     fup_all_day_before($pdo);
     fup_dispatch_manual($pdo);
     fup_feedback_owner($pdo);
