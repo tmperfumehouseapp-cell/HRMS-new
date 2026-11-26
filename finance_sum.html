@@ -144,8 +144,9 @@
     if (z) { const t = z.totals;
       body = `<div class="sx-mut" style="font-size:12px;margin-bottom:8px">${esc(z.from.slice(5, 16))} → ${esc(z.to.slice(5, 16))}</div>
         <table class="tb"><tr><th></th><th>Orders</th><th>Total</th><th>Prepaid</th><th>COD</th></tr>
-          <tr><td><b>Online · in the Sales number</b><small>Shopify + WhatsApp manual orders</small></td><td>${t.orders}</td><td>${m2(t.sales)}</td><td>${m2(t.pre)}</td><td>${m2(t.cod)}</td></tr>
-          <tr><td><b>Website (TM Store)</b><small style="color:#b45309">not in the Sales number yet${t.web_unpaid ? ' · not paid ' + m2(t.web_unpaid) : ''}</small></td><td>${t.web_orders}</td><td>${m2(t.web_total)}</td><td>${m2(t.web_pre)}</td><td>${m2(t.web_cod)}</td></tr>
+          <tr><td><b>Website (TM Store)</b><small>prepaid = Cashfree checkout${t.web_unpaid ? ' · not paid yet ' + m2(t.web_unpaid) + ' (not a sale)' : ''}</small></td><td>${t.web_orders}</td><td>${m2(t.web_total)}</td><td>${m2(t.web_pre)}</td><td>${m2(t.web_cod)}</td></tr>
+          <tr><td><b>WhatsApp manual orders</b><small>QR / Razorpay / GoKwik link / COD (and any old Shopify order)</small></td><td>${t.app_orders}</td><td>${m2(t.app_total)}</td><td>${m2(t.app_pre)}</td><td>${m2(t.app_cod)}</td></tr>
+          <tr class="tot"><td>Online total</td><td>${t.orders}</td><td>${m2(t.sales)}</td><td>${m2(t.pre)}</td><td>${m2(t.cod)}</td></tr>
           <tr><td><b>Store</b></td><td>${t.store_bills}</td><td>${m2(t.store)}</td><td colspan="2" class="sx-mut">see the rows below</td></tr></table>
         <div class="sx-f" style="margin:12px 0 4px">By gateway · when it should land</div>
         <table class="tb"><tr><th>Gateway</th><th>Orders</th><th>Amount</th><th>Lands</th></tr>
