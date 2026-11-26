@@ -25,6 +25,14 @@
     d.rows.forEach((r) => { if (SKIP[r.sku]) return; SIZES.forEach((s, i) => { const n = Number((r.q || [])[i] || 0); if (n > 0) o.push({ sku: String(r.sku), name: String(r.name || ''), size: s, n }); }); });
     return o;
   }
+  /** why "Perfume bottles" is smaller than the TOTAL of the sheet: every piece that gets no label is named and counted, so the two numbers always add up */
+  function gapNote(labels) {
+    const d = sheetD(); if (!d || !d.rows) return ''; let free = 0, nn = 0, nf = 0, other = 0, total = 0;
+    d.rows.forEach((r) => { const q = r.q || []; let b = 0, o = 0; q.forEach((v, i) => { v = Number(v || 0); total += v; if (i < 4) b += v; else o += v; }); other += o; if (r.sku === 'FREE') free += b; else if (r.sku === 'NONAME') nn += b; else if (r.sku === 'NOTFOUND') nf += b; });
+    const parts = [[free, 'free gift'], [nn, 'No Name'], [nf, 'not in the SKU list'], [other, 'other products (shower gel, solid perfume, balm, attar, soap, car perfume)']].filter((x) => x[0] > 0), gap = total - labels;
+    return '<div style="margin-top:8px;font-size:12px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;line-height:1.5"><b>' + total.toLocaleString('en-IN') + '</b> pieces in the sheet'
+      + (gap > 0 ? ' − <b>' + gap.toLocaleString('en-IN') + '</b> without a label (' + parts.map((x) => x[0] + ' ' + x[1]).join(' · ') + ')' : '') + ' = <b>' + labels.toLocaleString('en-IN') + '</b> perfume bottles with a label.</div>';
+  }
   function needChains() { const c = chainD(), o = []; if (!c || !c.rows || c.from !== day()) return o; c.rows.forEach((r) => { const n = Number(r.qty || 0); if (n > 0) o.push({ sku: String(r.sku || ''), name: String(r.name || ''), size: 'Chain', n, mrp: n ? Math.round(Number(r.amount || 0) / n) : 0 }); }); return o; }
   const madeOf = (it) => Math.min(it.n, Number(((ST || {}).made || {})[it.sku + '|' + it.size] || 0));
   const madeCh = (it) => Math.min(it.n, Number(((ST || {}).made_chain || {})[it.name.toLowerCase()] || 0));
@@ -52,7 +60,7 @@
         + [[ch ? 'Chain pieces' : 'Perfume bottles', all], [ch ? 'Different chains' : 'Perfume + size lines', items.length], ['Already made', done], ['New to make', left]].map((k) => '<div style="border:1px solid var(--line);border-radius:9px;padding:6px 9px">' + k[0] + '<b style="display:block;font-size:18px;color:#111">' + k[1] + '</b></div>').join('') + '</div>'
         + (ready ? '' : '<div style="margin-top:8px;font-size:12.5px;color:var(--muted)">Waiting for the ' + (ch ? 'chain report' : 'SKU sheet') + ' of this day…</div>')
         + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' + btn('bcGo', left ? '🏷 Make ' + left + ' new barcodes' : (all ? '✓ All barcodes of this day are made' : 'Nothing to make'), '#0f766e', !left || busy || !ST) + btn('bcAll', 'Show all labels of the day', '', !done || busy) + '</div>'
-        + (ch ? '' : '<div style="margin-top:6px;font-size:11.5px;color:var(--muted)">One label for every bottle in the 10 / 20 / 50 / 100 ml columns. Rows without a perfume name (free gift, No Name, not in the SKU list) get none.</div>');
+        + (ch ? '' : gapNote(all));
       $('bcGo').onclick = () => make(ch ? 'chain' : 'bottle', items);
       $('bcAll').onclick = () => reprint(ch ? 'chain' : 'bottle');
     } else {
