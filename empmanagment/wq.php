@@ -175,12 +175,12 @@ function wq_campaign_before(PDO $pdo, string $phone, int $ts, int $days): ?array
 {
     $from = wq_dt($ts - $days * 86400); $to = wq_dt($ts + 60);
     try {
-        $q = $pdo->prepare("SELECT i.camp_id, i.sent_at, k.name, k.created_by FROM wa_camp_items i LEFT JOIN wa_campaigns k ON k.id = i.camp_id WHERE i.phone = ? AND i.status = 'sent' AND i.sent_at BETWEEN ? AND ? ORDER BY i.sent_at DESC LIMIT 1");
+        $q = $pdo->prepare("SELECT i.camp_id, i.sent_at, k.name, k.created_by FROM wa_camp_items i LEFT JOIN wa_campaigns k ON k.id = i.camp_id WHERE i.phone = ? AND i.status = 'sent' AND COALESCE(i.last_status, '') <> 'failed' AND i.sent_at BETWEEN ? AND ? ORDER BY i.sent_at DESC LIMIT 1");   // a send Meta could not deliver never reached the customer: it is not a campaign he answers (owner, 26 Nov)
         $q->execute([$phone, $from, $to]); $r = $q->fetch();
         if ($r) { if (wq_chat_was_live($pdo, $phone, wq_ts($r['sent_at']))) return null; return ['ts' => wq_ts($r['sent_at']), 'camp_id' => (int)$r['camp_id'], 'name' => (string)($r['name'] ?? ''), 'emp' => (int)($r['created_by'] ?? 0)]; }
     } catch (Throwable $e) { }
     try {
-        $q = $pdo->prepare("SELECT ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts BETWEEN ? AND ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone, $from, $to]); $r = $q->fetch();
+        $q = $pdo->prepare("SELECT ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND mtype = 'template' AND status <> 'failed' AND ts BETWEEN ? AND ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone, $from, $to]); $r = $q->fetch();
         if ($r) { if (wq_chat_was_live($pdo, $phone, wq_ts($r['ts']))) return null; return ['ts' => wq_ts($r['ts']), 'camp_id' => 0, 'name' => 'a broadcast', 'emp' => 0]; }
     } catch (Throwable $e) { }
     return null;
@@ -195,13 +195,6 @@ function wq_we_wrote_first(PDO $pdo, string $phone, int $ts): ?array
         $q->execute([$phone, wq_dt($ts)]); $r = $q->fetch();
         return $r && wq_ts($r['ts']) > 0 ? ['ts' => wq_ts($r['ts']), 'who' => (string)$r['who']] : null;
     } catch (Throwable $e) { return null; }
-}
-/** True when the query's first message is an ad's / a promotion link's ready-made text ("I want to buy 7 × 20 ml in 2170", "Hey TMPerfumehouse, I need the …") and NOT an answer (swipe / button) to a message of ours:
- *  that customer tapped an ad or a link — a fresh query even when a campaign reached them before (same rule as wa_more.php). */
-function wq_came_by_link(PDO $pdo, array $ctx): bool
-{
-    $b = (string)($ctx['body'] ?? ''); if ($b === '' || !function_exists('wa_is_ad_text') || !(wa_is_ad_text($b) || preg_match('/^\s*hey\s+tm\s*perfume/iu', $b))) return false;
-    try { $q = $pdo->prepare("SELECT reply_to FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id LIMIT 1"); $q->execute([(string)$ctx['phone'], wq_dt((int)$ctx['T'] - 120)]); return trim((string)$q->fetchColumn()) === ''; } catch (Throwable $e) { return true; }
 }
 /** True when the customer had written to us in the 30 hours BEFORE $ts (a query stays a New query for 30 hours): their query was still open, so a campaign we send then does not turn it into a Campaign. */
 function wq_chat_was_live(PDO $pdo, string $phone, int $ts): bool
@@ -272,12 +265,14 @@ function wq_decide(PDO $pdo, array $ctx): array
     if (!isset($sig['community']) && (string)($c['source'] ?? '') === 'community' && $ctx['first_query']) $sig['community'] = ['ts' => $T - 1, 'reason' => 'community: came through the community link'];
     // campaign customer: the chat window had closed (24h+ since their last message) or they were imported from Excel for campaigns -> every new query is a campaign query
     if (!isset($sig['campaign'])) {
-        foreach ($ctx['tags'] as $t) if ((string)$t['tag'] === 'campaign' && wq_ts($t['at']) > 0 && wq_ts($t['at']) <= $T) { $sig['campaign'] = ['ts' => wq_ts($t['at']), 'reason' => 'campaign customer: chat window had closed / imported for campaigns']; break; }
+        // a customer who never wrote to us and whom NO message of ours reached (imported for campaigns, but every send failed or none went yet) is a new customer: the import tag alone does not make the query a Campaign (owner, 26 Nov)
+        $unreached = $ctx['prev_in'] === 0 && !wq_we_wrote_first($pdo, (string)$ctx['phone'], $T);
+        if (!$unreached) foreach ($ctx['tags'] as $t) if ((string)$t['tag'] === 'campaign' && wq_ts($t['at']) > 0 && wq_ts($t['at']) <= $T) { $sig['campaign'] = ['ts' => wq_ts($t['at']), 'reason' => 'campaign customer: chat window had closed / imported for campaigns']; break; }
         if (!isset($sig['campaign']) && $ctx['prev_in'] > 0 && $T - $ctx['prev_in'] >= 86400) { $sig['campaign'] = ['ts' => $ctx['prev_in'] + 86400, 'reason' => 'campaign customer: wrote again after the 24-hour chat window closed']; wq_tag_put($pdo, (string)$ctx['phone'], 'campaign', $ctx['prev_in'] + 86400); }
     }
     // we wrote first: this customer had never written to us and a campaign / follow-up / win-back message of ours reached them before (any day) → an answer to OUR message, never a fresh query.
-    // Not when they came by an ad / promotion link with its ready-made text (and did not answer a message of ours): that stays fresh.
-    if (!isset($sig['campaign']) && $ctx['prev_in'] === 0 && ($w = wq_we_wrote_first($pdo, (string)$ctx['phone'], $T)) && !wq_came_by_link($pdo, $ctx)) {
+    // Also when they come with a website button's ready-made text (owner, 26 Nov: "a campaign went to him above → Campaign, not fresh"). When every send to him FAILED nothing reached him: he is a new customer, fresh.
+    if (!isset($sig['campaign']) && $ctx['prev_in'] === 0 && ($w = wq_we_wrote_first($pdo, (string)$ctx['phone'], $T))) {
         $sig['campaign'] = ['ts' => (int)$w['ts'], 'reason' => 'campaign customer: we wrote first (' . ($w['who'] === 'followup' ? 'follow-up message' : ($w['who'] === 'recover' ? 'win-back message' : 'campaign')) . ', sent ' . wq_today_label((int)$w['ts']) . ')'];
         wq_tag_put($pdo, (string)$ctx['phone'], 'campaign', (int)$w['ts']);
     }
@@ -1311,7 +1306,7 @@ function wq_wrote_first_fix(PDO $pdo, float $deadline): int
         $st->execute([(int)$cur]); $rows = $st->fetchAll(); if (!$rows) { wq_meta_put($pdo, 'wrote_first_fix2', 'done'); return 0; }
         foreach ($rows as $q) {
             $ctx = wq_ctx($pdo, $q);
-            if ($ctx['prev_in'] === 0 && ($w = wq_we_wrote_first($pdo, (string)$q['phone'], (int)$ctx['T'])) && !wq_came_by_link($pdo, $ctx)) {
+            if ($ctx['prev_in'] === 0 && ($w = wq_we_wrote_first($pdo, (string)$q['phone'], (int)$ctx['T']))) {
                 $camp = $ctx['camp'] ?: [];
                 wq_qtype_set($pdo, $q, ['type' => 'campaign', 'reason' => 'campaign customer: we wrote first (' . ($w['who'] === 'followup' ? 'follow-up message' : ($w['who'] === 'recover' ? 'win-back message' : 'campaign')) . ', sent ' . wq_today_label((int)$w['ts']) . ') - was New, corrected', 'rule_id' => 0, 'camp_id' => (int)($camp['camp_id'] ?? 0), 'camp_emp' => (int)($camp['emp'] ?? 0), 'st' => 'ok'], 0, true);
                 wq_tag_put($pdo, (string)$q['phone'], 'campaign', (int)$w['ts']); wq_retag_after_change($pdo, (string)$q['phone'], 'new'); $n++;

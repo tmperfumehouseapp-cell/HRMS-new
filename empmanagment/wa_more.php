@@ -200,8 +200,8 @@ function wa_auto_alloc(PDO $pdo): int
 function wa_got_campaign(PDO $pdo, string $key, string $before, int $days = 7): bool
 {
     $from = date('Y-m-d H:i:s', strtotime($before) - $days * 86400);
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status <> 'failed' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }   // a failed send never reached the customer
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND COALESCE(last_status, '') <> 'failed' AND sent_at BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
     return false;
 }
 /** Undo "every chat on the campaign number = Campaign" (6 Nov): the switch goes off; a chat it marked Campaign WITHOUT a real campaign sent to it goes back to a New query,
@@ -319,7 +319,7 @@ function wa_camp_mark(PDO $pdo, string $key, string $now): void
 /** The latest campaign template we sent this customer in the last 3 days: its time, or '' when none. */
 function wa_camp_sent_ts(PDO $pdo, string $key): string
 {
-    try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]); return (string)$q->fetchColumn(); } catch (Throwable $e) { return ''; }
+    try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]); return (string)$q->fetchColumn(); } catch (Throwable $e) { return ''; }
 }
 /** True when the customer wrote in the 30 hours before that campaign (a query stays a New query for 30 hours): their query was still open, so the campaign does not make it a Campaign chat. */
 function wa_camp_in_live_chat(PDO $pdo, string $key, string $campTs): bool
@@ -404,18 +404,17 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
         $fresh = $prevIn === null || $prevIn === '' || strtotime((string)$prevIn) < time() - 86400;
         if ($fresh && in_array((string)$c['source'], ['', 'query'], true) && wa_prior_buyer($pdo, $key, time())) { $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]); return; }   // owner (12 Nov): a customer who already ORDERED is never a New query — counted as Campaign (same rule as the order allocation)
         if ($fresh && (string)$c['source'] !== 'query' && wa_is_ad_text($text)) {
-            $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]);
-            $sentCamp = (int)$q->fetchColumn() > 0;
-            // a customer who tapped our promotion/ad link arrives with the ready-made text and is NOT swiping a reply to our template → a fresh query, never "Campaign",
-            // even if we sent them a campaign in the last 3 days. Only a real reply (swipe-reply to a message of ours) stays Campaign.
-            $isReply = false;
-            if ($sentCamp) { $r = $pdo->prepare("SELECT reply_to FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $r->execute([$key]); $isReply = trim((string)$r->fetchColumn()) !== ''; }
-            if (!$sentCamp || !$isReply) { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ?")->execute([$key]); return; }
+            // An ad's / a website button's ready-made text. Owner (26 Nov): when a campaign / follow-up of ours really REACHED this customer it is a Campaign chat, ready-made text or not; when nothing reached him
+            // (no send, or every send failed) he is a new customer → a fresh query. (Before: fresh unless he swiped a reply — and a failed send counted as "sent".)
+            if (!function_exists('wq_we_wrote_first') && is_file(__DIR__ . '/wq.php')) require_once __DIR__ . '/wq.php';
+            $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]);
+            $reached = (int)$q->fetchColumn() > 0 || (($prevIn === null || $prevIn === '') && function_exists('wq_we_wrote_first') && wq_we_wrote_first($pdo, $key, time()));
+            if (!$reached) { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ?")->execute([$key]); return; }
         }
         if ((string)$c['source'] !== '') return;
         $kw = trim((string)wa_team_cfg($pdo)['community_kw']);
         if ($kw !== '' && stripos($text, $kw) !== false) { $pdo->prepare("UPDATE wa_contacts SET source = 'community' WHERE phone = ?")->execute([$key]); return; }
-        $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]);
+        $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]);
         if ((int)$q->fetchColumn() > 0) {
             // a campaign we sent while their query was still inside its 24 hours does not turn it into a Campaign chat: it stays a Query
             $live = wa_camp_in_live_chat($pdo, $key, wa_camp_sent_ts($pdo, $key));
@@ -423,10 +422,10 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
             return;
         }
         // WE WROTE FIRST (owner, 26 Nov): a customer who had never written to us answers a campaign / follow-up / win-back message of ours (any day) → a Campaign chat, given through the campaign line and
-        // counted as a Campaign query (wq_decide has the same rule). The follow-up module's replies used to come in as fresh queries. An ad's ready-made text was already handled above (stays a fresh query).
+        // counted as a Campaign query (wq_decide has the same rule). The follow-up module's replies used to come in as fresh queries. A send that failed never reached him and does not count.
         if ($prevIn === null || $prevIn === '') {
             if (!function_exists('wq_we_wrote_first') && is_file(__DIR__ . '/wq.php')) require_once __DIR__ . '/wq.php';
-            if (function_exists('wq_we_wrote_first') && !preg_match('/^\s*hey\s+tm\s*perfume/iu', $text) && wq_we_wrote_first($pdo, $key, time())) $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]);
+            if (function_exists('wq_we_wrote_first') && wq_we_wrote_first($pdo, $key, time())) $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]);
         }
     } catch (Throwable $e) { }
 }
