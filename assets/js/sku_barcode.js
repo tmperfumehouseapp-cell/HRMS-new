@@ -3,13 +3,13 @@
  *   ① From the day's orders  one label for every bottle of the SKU sheet of the day picked at the top (10 / 20 / 50 / 100 ml columns). Pressing again makes only the missing ones.
  *   ② Manual                 any perfume of the SKU list, a size, how many.
  *   ③ Chains                 one label for every chain piece of the chain report.
- * Label: name · size · MRP · batch (one a day: B + ddmmyy) · barcode + number · MFG · EXP (4 years). Size 2 × 4 inch by default (kept in this browser).
+ * Label: name · size · MRP · batch (one a day: B + ddmmyy) · barcode + number · MFG · EXP (perfume 3 years, shower gel / solid perfume 2 years). Size 2 × 4 inch by default (kept in this browser).
  * Reads the page's own D (the sheet) and CH (the chain report); the page calls SkuBC.refresh() after each of them is drawn. Needs assets/js/jsbarcode.code128.min.js. */
 (function () {
   const box = document.getElementById('bcBox'); if (!box || typeof api === 'undefined') return;      // api.js declares `const api`: it is a global name but NOT window.api
   const $ = (id) => document.getElementById(id);
   const E = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const SIZES = ['10 ml', '20 ml', '50 ml', '100 ml'];                      // the first four columns of the sheet (50/60 ml is one column)
+  const SIZES = ['10 ml', '20 ml', '50 ml', '100 ml', 'Shower Gel', 'Solid Perfume'];      // the first six columns of the sheet, in its order (50/60 ml is one column)
   const SKIP = { FREE: 1, NONAME: 1, NOTFOUND: 1 };                          // rows without a perfume name get no label
   const DIM = { in24: [101.6, 50.8, '2 × 4 inch'], cm24: [40, 20, '2 × 4 cm'], st: [31, 21, '31 × 21 mm (Store label)'] };
   let O = { size: 'in24', mfg: 1, exp: 1, bat: 1, mrp: 1 }; try { O = Object.assign(O, JSON.parse(localStorage.getItem('sku_bc_opts') || '{}')); } catch (e) { } if (!DIM[O.size]) O.size = 'in24';
@@ -25,13 +25,19 @@
     d.rows.forEach((r) => { if (SKIP[r.sku]) return; SIZES.forEach((s, i) => { const n = Number((r.q || [])[i] || 0); if (n > 0) o.push({ sku: String(r.sku), name: String(r.name || ''), size: s, n }); }); });
     return o;
   }
-  /** why "Perfume bottles" is smaller than the TOTAL of the sheet: every piece that gets no label is named and counted, so the two numbers always add up */
+  /** MRP of Shower Gel / Solid Perfume: typed once here (the shop has no fixed price for them); until it is typed their label prints no MRP */
+  function mrpRow() {
+    const r = $('bcMrpRow'); if (!r || !ST) return; const m = ST.mrp || {};
+    r.innerHTML = ['Shower Gel', 'Solid Perfume'].map((k, i) => '<label>MRP ' + k + ' ₹<input id="bcMx' + i + '" type="number" min="0" max="99999" value="' + (Number(m[k] || 0) || '') + '" placeholder="not set" style="width:90px"></label>').join('') + '<button type="button" class="btn" id="bcMxS" style="background:#fff;color:#111;border:1px solid var(--line);padding:6px 12px">Save MRP</button>';
+    $('bcMxS').onclick = async () => { try { const x = await api.post('sku.bc_mrp_save', { 'Shower Gel': +$('bcMx0').value || 0, 'Solid Perfume': +$('bcMx1').value || 0 }); ST.mrp = x.mrp; say('MRP saved. New labels use it.'); pane(); } catch (e) { say(e.message, true); } };
+  }
+  /** why "Pieces to label" is smaller than the TOTAL of the sheet: every piece that gets no label is named and counted, so the two numbers always add up */
   function gapNote(labels) {
     const d = sheetD(); if (!d || !d.rows) return ''; let free = 0, nn = 0, nf = 0, other = 0, total = 0;
-    d.rows.forEach((r) => { const q = r.q || []; let b = 0, o = 0; q.forEach((v, i) => { v = Number(v || 0); total += v; if (i < 4) b += v; else o += v; }); other += o; if (r.sku === 'FREE') free += b; else if (r.sku === 'NONAME') nn += b; else if (r.sku === 'NOTFOUND') nf += b; });
-    const parts = [[free, 'free gift'], [nn, 'No Name'], [nf, 'not in the SKU list'], [other, 'other products (shower gel, solid perfume, balm, attar, soap, car perfume)']].filter((x) => x[0] > 0), gap = total - labels;
+    d.rows.forEach((r) => { const q = r.q || []; let b = 0, o = 0; q.forEach((v, i) => { v = Number(v || 0); total += v; if (i < SIZES.length) b += v; else o += v; }); other += o; if (r.sku === 'FREE') free += b; else if (r.sku === 'NONAME') nn += b; else if (r.sku === 'NOTFOUND') nf += b; });
+    const parts = [[free, 'free gift'], [nn, 'No Name'], [nf, 'not in the SKU list'], [other, 'other products (balm, attar, soap, car perfume)']].filter((x) => x[0] > 0), gap = total - labels;
     return '<div style="margin-top:8px;font-size:12px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;line-height:1.5"><b>' + total.toLocaleString('en-IN') + '</b> pieces in the sheet'
-      + (gap > 0 ? ' − <b>' + gap.toLocaleString('en-IN') + '</b> without a label (' + parts.map((x) => x[0] + ' ' + x[1]).join(' · ') + ')' : '') + ' = <b>' + labels.toLocaleString('en-IN') + '</b> perfume bottles with a label.</div>';
+      + (gap > 0 ? ' − <b>' + gap.toLocaleString('en-IN') + '</b> without a label (' + parts.map((x) => x[0] + ' ' + x[1]).join(' · ') + ')' : '') + ' = <b>' + labels.toLocaleString('en-IN') + '</b> pieces with a label.</div>';
   }
   function needChains() { const c = chainD(), o = []; if (!c || !c.rows || c.from !== day()) return o; c.rows.forEach((r) => { const n = Number(r.qty || 0); if (n > 0) o.push({ sku: String(r.sku || ''), name: String(r.name || ''), size: 'Chain', n, mrp: n ? Math.round(Number(r.amount || 0) / n) : 0 }); }); return o; }
   const madeOf = (it) => Math.min(it.n, Number(((ST || {}).made || {})[it.sku + '|' + it.size] || 0));
@@ -43,7 +49,9 @@
       + '<div id="bcMsg" style="display:none;margin-top:8px;border:1px solid;border-radius:9px;padding:7px 10px;font-size:12.5px"></div>'
       + '<details style="margin-top:10px" id="bcDes"><summary style="cursor:pointer;font-weight:700;font-size:13px">Label design</summary><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:13px">'
       + '<label>Sticker size <select id="bcSz">' + Object.keys(DIM).map((k) => '<option value="' + k + '"' + (O.size === k ? ' selected' : '') + '>' + DIM[k][2] + '</option>').join('') + '</select></label>'
-      + [['mrp', 'MRP'], ['bat', 'Batch code'], ['mfg', 'MFG date'], ['exp', 'EXP date (4 years)']].map((x) => '<label><input type="checkbox" data-o="' + x[0] + '"' + (O[x[0]] ? ' checked' : '') + '> ' + x[1] + '</label>').join('') + '</div></details>'
+      + [['mrp', 'MRP'], ['bat', 'Batch code'], ['mfg', 'MFG date'], ['exp', 'EXP date']].map((x) => '<label><input type="checkbox" data-o="' + x[0] + '"' + (O[x[0]] ? ' checked' : '') + '> ' + x[1] + '</label>').join('') + '</div></details>'
+      + '<div id="bcMrpRow" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px;font-size:12.5px"></div>'
+      + '<div style="margin-top:6px;font-size:11.5px;color:var(--muted)">EXP: perfume 3 years after MFG · Shower Gel and Solid Perfume 2 years.</div>'
       + '<div id="bcSheet" style="margin-top:10px"></div>';
     $('bcSz').onchange = (e) => { O.size = e.target.value; keep(); drawSheet(); };
     box.querySelectorAll('[data-o]').forEach((c) => { c.onchange = () => { O[c.dataset.o] = c.checked ? 1 : 0; keep(); drawSheet(); }; });
@@ -57,7 +65,7 @@
       const ch = tab === 'ch', items = ch ? needChains() : needBottles(), all = items.reduce((a, x) => a + x.n, 0), done = items.reduce((a, x) => a + (ch ? madeCh(x) : madeOf(x)), 0), left = all - done;
       const ready = ch ? !!(chainD() && chainD().from === day()) : !!sheetD();
       p.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;font-size:11.5px;color:var(--muted)">'
-        + [[ch ? 'Chain pieces' : 'Perfume bottles', all], [ch ? 'Different chains' : 'Perfume + size lines', items.length], ['Already made', done], ['New to make', left]].map((k) => '<div style="border:1px solid var(--line);border-radius:9px;padding:6px 9px">' + k[0] + '<b style="display:block;font-size:18px;color:#111">' + k[1] + '</b></div>').join('') + '</div>'
+        + [[ch ? 'Chain pieces' : 'Pieces to label', all], [ch ? 'Different chains' : 'Perfume + size lines', items.length], ['Already made', done], ['New to make', left]].map((k) => '<div style="border:1px solid var(--line);border-radius:9px;padding:6px 9px">' + k[0] + '<b style="display:block;font-size:18px;color:#111">' + k[1] + '</b></div>').join('') + '</div>'
         + (ready ? '' : '<div style="margin-top:8px;font-size:12.5px;color:var(--muted)">Waiting for the ' + (ch ? 'chain report' : 'SKU sheet') + ' of this day…</div>')
         + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' + btn('bcGo', left ? '🏷 Make ' + left + ' new barcodes' : (all ? '✓ All barcodes of this day are made' : 'Nothing to make'), '#0f766e', !left || busy || !ST) + btn('bcAll', 'Show all labels of the day', '', !done || busy) + '</div>'
         + (ch ? '' : gapNote(all));
@@ -69,7 +77,7 @@
         + '<label style="grid-column:1/-1">Perfume<input id="bcMq" list="bcMl" placeholder="Type a name or SKU…" autocomplete="off" style="width:100%;box-sizing:border-box"><datalist id="bcMl"></datalist></label>'
         + '<label>Size<select id="bcMs" style="width:100%">' + SIZES.map((s) => '<option' + (s === '20 ml' ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></label>'
         + '<label>How many<input id="bcMn" type="number" min="1" max="500" value="1" style="width:100%;box-sizing:border-box"></label>' + '<div>' + btn('bcMg', '🏷 Make barcodes', '#0f766e', busy) + '</div></div>'
-        + '<div style="margin-top:6px;font-size:11.5px;color:var(--muted)">MRP by size: ' + SIZES.map((s) => s + ' ₹' + Number(mrp[s] || 0).toLocaleString('en-IN')).join(' · ') + '. Manual labels are dated today.</div>'
+        + '<div style="margin-top:6px;font-size:11.5px;color:var(--muted)">MRP: ' + SIZES.map((s) => s + ' ' + (Number(mrp[s] || 0) ? '₹' + Number(mrp[s]).toLocaleString('en-IN') : 'not set')).join(' · ') + '. Manual labels are dated today.</div>'
         + '<div style="margin-top:8px">' + btn('bcMa', 'Show today\'s manual labels', '', busy) + '</div>';
       const fill = () => { $('bcMl').innerHTML = (skuList || []).map((r) => '<option value="' + E(r[1]) + '">SKU ' + E(r[0]) + '</option>').join(''); };
       if (skuList) fill(); else api.get('sku.list').then((r) => { skuList = (r.rows || []).filter((x) => x[1]); if ($('bcMl')) fill(); }).catch(() => { });
@@ -140,6 +148,6 @@
   // the dark mode of the HRMS flips the colours of the whole page: a label is turned back, so it always shows as white paper with black bars (small stickers are shown enlarged on the screen, the PDF has the true size)
   { const st = document.createElement('style'); st.textContent = 'html.hrms-dk .bc-keep,html.hrms-dkf .bc-keep{filter:invert(1) hue-rotate(180deg)}'; document.head.appendChild(st); }
   shell(); pane();
-  window.SkuBC = { refresh: async function () { if (!$('bcPane')) return; await state(); pane(); } };
+  window.SkuBC = { refresh: async function () { if (!$('bcPane')) return; await state(); pane(); mrpRow(); } };
   window.SkuBC.refresh();
 })();
