@@ -76,8 +76,6 @@
 <script>
 (function () {
   guardPage();
-  // inside the HRMS frame this page opens on the whole screen (it needs it, like WhatsApp Web)
-  try { if (window.top !== window.self) { window.top.location.replace(location.href); return; } } catch (e) { /* same site: fine */ }
   const $ = (id) => document.getElementById(id), esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const COL = ['#e0603f', '#2a78d6', '#16945a', '#6250d6', '#b45309', '#d1478c'];
   const S = { cfg: null, chats: [], unread: 0, unans: 0, cur: '', chat: null, filt: 'all', q: '', tab: 'chats', info: false, pop: '', lastId: 0, tpl: null, tplSel: 0, tplOpen: false, busy: false, err: '' };
@@ -90,7 +88,7 @@
   const short = (ts) => { const d = new Date(String(ts).replace(' ', 'T')), n = new Date(); if (isNaN(d)) return ''; return d.toDateString() === n.toDateString() ? hm(ts) : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
   const fmtPhone = (p) => '+91 ' + String(p).slice(-10);
   const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
-  const backToHrms = () => { if (history.length > 1 && document.referrer) history.back(); else location.href = 'hub.html?w=store'; };
+  const backToHrms = () => { if (document.referrer && /\/hub\.html/.test(document.referrer) && history.length > 1) history.back(); else location.href = 'hub.html?w=store&t=store_billing'; };
 
   /* ---------- data ---------- */
   async function loadCfg() { S.cfg = await api.get('st_wa.cfg'); }
@@ -236,7 +234,7 @@
   document.addEventListener('change', async (e) => { if (e.target.id === 'asg') { try { await api.post('st_wa.assign', { phone: S.cur, emp_id: +e.target.value }); toast('Handed over'); await openChat(S.cur); S.info = true; render(); } catch (er) { toast(er.message); } } });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (S.tplOpen) { S.tplOpen = false; drawTpl(); } else if (S.pop) { S.pop = ''; const c = $('cmp'); if (c) c.innerHTML = cmpHtml(), bind(); } } });
   (async function init() {
-    try { await loadCfg(); } catch (e) { $('app').innerHTML = `<div class="empty" style="margin-top:14vh"><div class="ic">🔒</div><b style="font-size:18px">${esc(e.message)}</b><br><br><button class="sx-btn" onclick="location.href='hub.html?w=store'">‹ Back to HRMS</button></div>`; return; }
+    try { await loadCfg(); } catch (e) { $('app').innerHTML = `<div class="empty" style="margin-top:14vh"><div class="ic">🔒</div><b style="font-size:18px">${esc(e.message)}</b><br><br><button class="sx-btn" onclick="location.href='hub.html?w=store&t=store_billing'">‹ Back to HRMS</button></div>`; return; }
     if (S.cfg.number) { await loadChats(); const p = new URLSearchParams(location.search).get('phone'); if (p) { render(); await openChat(p.replace(/\D/g, '').slice(-10)); } }
     render(); setInterval(tick, 6000); document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
   })();
