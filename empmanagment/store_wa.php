@@ -156,11 +156,12 @@ function sw_handle(PDO $pdo, string $action): void
     // the WhatsApp helpers (wa_waba_of, wa_api, the template and media functions) are not loaded for an st_* action: load them the same way the billing's automatic WhatsApp does
     if (!function_exists('st_wa_load') || !st_wa_load()) json_response(['error' => 'The WhatsApp module is not available on this server.'], 500);
     if (!function_exists('wa_media_rules') && is_file(__DIR__ . '/wa_console.php')) { try { require_once __DIR__ . '/wa_console.php'; } catch (Throwable $e) { error_log('sw: wa_console ' . $e->getMessage()); } }
-    if (function_exists('wa_tpl_tables')) { try { wa_tpl_tables($pdo); } catch (Throwable $e) { } } [$me, $mgr] = sw_auth($pdo, $auth, in_array($action, ['st_wa.cfg_save', 'st_wa.quick_save', 'st_wa.quick_del', 'st_wa.tpl_all', 'st_wa.tpl_seed', 'st_wa.tpl_save', 'st_wa.tpl_check', 'st_wa.tpl_submit', 'st_wa.tpl_sync', 'st_wa.tpl_test', 'st_wa.photo_store', 'st_wa.photo_upload'], true));
+    if (function_exists('wa_tpl_tables')) { try { wa_tpl_tables($pdo); } catch (Throwable $e) { } } [$me, $mgr] = sw_auth($pdo, $auth, in_array($action, ['st_wa.cfg_save', 'st_wa.quick_save', 'st_wa.quick_del', 'st_wa.fu_cfg_save', 'st_wa.fu_tpls', 'st_wa.fu_tpl_seed', 'st_wa.fu_tpl_submit', 'st_wa.fu_tpl_sync', 'st_wa.tpl_all', 'st_wa.tpl_seed', 'st_wa.tpl_save', 'st_wa.tpl_check', 'st_wa.tpl_submit', 'st_wa.tpl_sync', 'st_wa.tpl_test', 'st_wa.photo_store', 'st_wa.photo_upload'], true));
     if (!sw_tables($pdo)) json_response(['error' => 'The Store WhatsApp tables could not be made.'], 500);
     $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $num = sw_number($pdo); $cfg = sw_cfg($pdo);
     $need = function () use ($num) { if (!$num) json_response(['error' => 'No Store WhatsApp number is chosen yet. The Admin sets it in the Setup tab.'], 409); return $num; };
     $nid = $num ? (int)$num['id'] : 0;
+    if (strpos($action, 'st_wa.fu_') === 0) { require_once __DIR__ . '/store_wa_follow.php'; sr_tables($pdo); swf_handle($pdo, $action, $me, $post); }      // follow-ups 7 / 30 / 60 days after a purchase
     if (strpos($action, 'st_wa.photo_') === 0 || (strpos($action, 'st_wa.tpl_') === 0 && !in_array($action, ['st_wa.tpl_list', 'st_wa.tpl_send'], true))) { require_once __DIR__ . '/store_wa_tpl.php'; swt_handle($pdo, $action, $me, $post); }      // the Store's own pre-made messages (Admin / HR)
 
     if ($action === 'st_wa.cfg') {

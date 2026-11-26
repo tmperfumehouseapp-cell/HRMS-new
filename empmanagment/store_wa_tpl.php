@@ -91,6 +91,7 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
     if ($action === 'st_wa.tpl_all') {
         $rows = $pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = [];
         foreach ($rows as $r) {
+            if (strpos((string)$r['name'], 'tmph_store_followup_') === 0) continue;      // the follow-ups are looked after on their own screen (Follow-ups → Messages)
             if (in_array((string)$r['name'], ['tmph_store_bill', 'tmph_store_bill_back', 'tmph_store_bday'], true)) { $hq = $pdo->prepare("SELECT 1 FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $hq->execute([(int)$r['id'], $waba]); if (!$hq->fetchColumn()) continue; }      // the older plain-text versions (made for the other accounts) are not the Store's to see
             $o = swt_out($pdo, $r, $waba); if ($o) $out[] = $o;
         }

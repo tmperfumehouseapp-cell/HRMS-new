@@ -845,9 +845,9 @@ function st_wa_status(PDO $pdo): array
     return $out;
 }
 /** The template as it can be sent now (approved on at least one WhatsApp account), or null. */
-function st_wa_tpl(PDO $pdo, string $name): ?array
+function st_wa_tpl(PDO $pdo, string $name, string $lang = 'en'): ?array
 {
-    $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$name]); $id = (int)$q->fetchColumn(); if (!$id) return null;
+    $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = ?"); $q->execute([$name, $lang]); $id = (int)$q->fetchColumn(); if (!$id) return null;
     $t = wa_tpl_row($pdo, $id); if (!$t) return null;
     $w = $pdo->prepare("SELECT waba_id FROM wa_tpl_waba WHERE tpl_id = ? AND status = 'APPROVED'"); $w->execute([$id]); $t['ok_wabas'] = array_column($w->fetchAll(), 'waba_id');
     return $t['ok_wabas'] ? $t : null;
