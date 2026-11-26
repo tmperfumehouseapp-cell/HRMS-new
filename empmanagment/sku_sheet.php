@@ -206,10 +206,11 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
     // 🕛 $noon (kept as the name of the switch) = one calendar day of 24 hours: 12:00 AM on $from to 12:00 AM the next day (not the 10 AM business day)
     $nw = $noon ? [$from . ' 00:00:00', $from . ' 23:59:59'] : null;
     $by = []; $nOrd = 0; $nManC = 0; $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
-    $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order) use (&$by) {
+    $add = function (string $title, string $var, string $sku, int $q, float $amt, string $order, string $store = '', string $pid = '') use (&$by) {
         $name = trim($title . ($var !== '' && stripos($title, $var) === false && strcasecmp($var, 'Default Title') !== 0 ? ' - ' . $var : ''));
         if ($name === '' || !preg_match('/chain|necklace|bracelet|pendant|signet|earring|anklet|bangle|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone|vanta ?crest|apex ?monolith)(?![a-z0-9])/i', $name)) return;      // every jewellery piece (the same words the SKU sheet leaves out as jewellery), not only names with "chain"
-        $k = mb_strtolower($name); if (!isset($by[$k])) $by[$k] = ['name' => $name, 'sku' => $sku, 'qty' => 0, 'amount' => 0.0, 'orders' => []];
+        $k = mb_strtolower($name); if (!isset($by[$k])) $by[$k] = ['name' => $name, 'title' => $title, 'sku' => $sku, 'qty' => 0, 'amount' => 0.0, 'orders' => [], 'store' => '', 'pid' => ''];
+        if ($pid !== '' && $by[$k]['pid'] === '') { $by[$k]['pid'] = $pid; $by[$k]['store'] = $store; }      // the Shopify product of the chain: its photo and shop price are read from it
         $by[$k]['qty'] += $q; $by[$k]['amount'] += $amt; if ($sku !== '' && $by[$k]['sku'] === '') $by[$k]['sku'] = $sku; $by[$k]['orders'][$order] = 1;
     };
     [$orders, $errs] = sku_shopify_day($pdo, $from, $to, $nw);
@@ -217,7 +218,7 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
         if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) continue; $nOrd++;
         foreach ((array)($o['line_items'] ?? []) as $li) {
             $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;
-            $add((string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (float)($li['price'] ?? 0) * $q, (string)($o['name'] ?? ''));
+            $add((string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (float)($li['price'] ?? 0) * $q, (string)($o['name'] ?? ''), (string)$o['_store'], (string)($li['product_id'] ?? ''));
         }
     }
     try {   // the manual orders (WM-xxxxx) confirmed in the range
@@ -241,9 +242,38 @@ function sku_chain(PDO $pdo, string $from, string $to, bool $noon = false): arra
         }
     } catch (Throwable $e) { $errs[] = 'Website orders: ' . $e->getMessage(); }
     $rows = []; $pieces = 0; $money = 0.0; $withChain = [];
-    foreach ($by as $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'order_list' => array_slice(array_map('strval', array_keys($r['orders'])), 0, 400)]; $pieces += $r['qty']; $money += $r['amount']; }
+    $info = []; try { $info = sku_chain_info($pdo, $by); } catch (Throwable $e) { $errs[] = 'Chain photos: ' . $e->getMessage(); }      // 🖼 photo + shop price of each chain (kept for 12 hours)
+    foreach ($by as $__k => $r) { foreach ($r['orders'] as $__on => $__v) $withChain[$__on] = 1; $rows[] = ['name' => $r['name'], 'sku' => $r['sku'], 'qty' => $r['qty'], 'orders' => count($r['orders']), 'amount' => round($r['amount'], 2), 'img' => (string)($info[$__k]['img'] ?? ''), 'price' => (float)(($info[$__k]['price'] ?? 0) ?: ($r['qty'] ? round($r['amount'] / $r['qty'], 2) : 0)), 'order_list' => array_slice(array_map('strval', array_keys($r['orders'])), 0, 400)]; $pieces += $r['qty']; $money += $r['amount']; }
     usort($rows, fn($a, $b) => $b['qty'] <=> $a['qty'] ?: strcmp($a['name'], $b['name']));
     return ['from' => $from, 'to' => $to, 'noon' => $noon, 'window' => $nw, 'rows' => $rows, 'pieces' => $pieces, 'amount' => round($money, 2), 'orders_read' => $nOrd + $nManC, 'orders_with' => count($withChain), 'errors' => $errs];
+}
+
+/** 🖼 The photo (a small Shopify picture) and the shop price of each chain of the report: [key => ['img', 'price']]. By the product of its order line; a chain sold only on the website / by hand
+ *  that day is looked up by its name. One answer per product is kept for 12 hours, so the report does not ask Shopify again on every open. Never throws for one product. */
+function sku_chain_info(PDO $pdo, array $by): array
+{
+    $out = []; $stores = shopify_stores(); $tok = [];
+    $get = function (string $key, string $path) use (&$tok, $stores) {
+        if (!isset($stores[$key])) return null; if (!array_key_exists($key, $tok)) { $t = shopify_get_token($key, $stores[$key]); $tok[$key] = is_array($t) ? '' : (string)$t; } if ($tok[$key] === '') return null;
+        $ch = curl_init('https://' . $stores[$key]['domain'] . '/admin/api/2024-10/' . $path); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 6, CURLOPT_HTTPHEADER => ['X-Shopify-Access-Token: ' . $tok[$key]]]);
+        $r = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch); return ($r !== false && $code === 200) ? json_decode((string)$r, true) : null;
+    };
+    $pick = function ($p) { if (!is_array($p)) return ['img' => '', 'price' => 0];
+        $src = (string)($p['image']['src'] ?? ''); if ($src !== '') $src .= (strpos($src, '?') === false ? '?' : '&') . 'width=240';      // a small copy of the photo
+        $pr = 0.0; foreach ((array)($p['variants'] ?? []) as $v) { $x = (float)($v['price'] ?? 0); if ($x > 0 && ($pr === 0.0 || $x < $pr)) $pr = $x; } return ['img' => $src, 'price' => $pr]; };
+    $n = 0; $firstStore = (string)(array_key_first($stores) ?? '');
+    foreach ($by as $k => $r) {
+        if ($n >= 60) break;      // a day has a few dozen chains at most
+        $pid = (string)($r['pid'] ?? ''); $store = (string)($r['store'] ?? ''); $title = trim((string)($r['title'] ?? ''));
+        $memoKey = 'sku_chain_info2:' . ($pid !== '' ? $store . ':' . $pid : 't:' . mb_strtolower($title)); if ($pid === '' && $title === '') continue; $n++;
+        $calc = function () use ($get, $pick, $pid, $store, $title, $stores, $firstStore) {
+            if ($pid !== '') { $d = $get($store, 'products/' . rawurlencode($pid) . '.json?fields=id,image,variants'); return $pick($d['product'] ?? null); }
+            foreach (array_keys($stores) as $key) { $d = $get($key, 'products.json?limit=1&fields=id,image,variants,title&title=' . rawurlencode($title)); if (!empty($d['products'][0])) return $pick($d['products'][0]); }
+            return ['img' => '', 'price' => 0];
+        };
+        try { $v = function_exists('hrms_memo') ? hrms_memo($memoKey, 43200, $calc) : $calc(); if (is_array($v)) $out[$k] = $v; } catch (Throwable $e) { }
+    }
+    return $out;
 }
 
 /** The whole sheet of one business day. */
