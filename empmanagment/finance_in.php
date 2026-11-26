@@ -259,13 +259,15 @@ function fi_web_orders(PDO $pdo, string $w0, string $w1): array
     if (!function_exists('tms_orders') && is_file(__DIR__ . '/store_orders.php')) { try { require_once __DIR__ . '/store_orders.php'; } catch (Throwable $e) { } }
     if (!function_exists('tms_orders')) return [[], 'the Website orders module is not installed'];
     [$all, $err] = tms_orders($pdo, date('Y-m-d', strtotime(substr($w0, 0, 10) . ' -1 day')), substr($w1, 0, 10)); if ($err !== '') return [[], $err];
-    $out = [];
+    $out = []; $bad = [];
     foreach ((array)$all as $r) {
-        $pt = (string)($r['pay_time'] ?: $r['placed_at']); if ($pt < $w0 || $pt >= $w1 || !empty($r['temp']) || !empty($r['cancelled'])) continue;
-        $tot = fi_p($r['total']); $paid = max(0, min($tot, fi_p($r['paid']))); $due = $tot - $paid; $pm = (string)$r['pay_method']; $isCod = (bool)preg_match('/cod|cash/i', $pm) || $paid > 0;      // owner's data 25 Nov: a payment link paid in part (advance) is dispatched and the rest is collected on delivery = COD
+        $pt = (string)($r['pay_time'] ?: $r['placed_at']); if ($pt < $w0 || $pt >= $w1 || !empty($r['temp'])) continue;
+        $tot = fi_p($r['total']); $paid = max(0, min($tot, fi_p($r['paid'])));
+        $failed = $paid === 0 && (strpos((string)($r['pay_raw'] ?? ''), 'fail') !== false || strpos((string)($r['st_raw'] ?? ''), 'fail') !== false);
+        if (!empty($r['cancelled']) || $failed) { $bad[] = ['no' => (string)$r['number'], 'at' => $pt, 'tot' => $tot, 'paid' => $paid, 'kind' => !empty($r['cancelled']) ? 'Cancelled' : 'Failed', 'pm' => (string)$r['pay_method'], 'st' => trim((string)($r['st_raw'] ?? '') . ' / ' . (string)($r['pay_raw'] ?? ''), ' /')]; continue; } $due = $tot - $paid; $pm = (string)$r['pay_method']; $isCod = (bool)preg_match('/cod|cash/i', $pm) || $paid > 0;      // owner's data 25 Nov: a payment link paid in part (advance) is dispatched and the rest is collected on delivery = COD
         $out[] = ['no' => (string)$r['number'], 'at' => $pt, 'tot' => $tot, 'pre' => $paid, 'cod' => $isCod ? $due : 0, 'unpaid' => $isCod ? 0 : $due, 'pm' => $pm, 'st' => (string)$r['pay_status'], 'src' => (string)$r['source']];
     }
-    return [$out, ''];
+    return [$out, '', $bad];
 }
 
 function fi_summary(PDO $pdo, string $from, string $to): array
@@ -465,12 +467,45 @@ function fi_split(PDO $pdo, string $day, string $win): array
     foreach ($t as $k => $v) if (!in_array($k, ['orders', 'web_orders', 'app_orders', 'store_bills'], true)) $t[$k] = fi_m($v);
     return ['day' => $day, 'win' => $win === 'biz' ? 'biz' : 'cal', 'from' => $w0, 'to' => $w1, 'totals' => $t, 'groups' => $groups, 'notes' => array_slice($notes, 0, 40)];
 }
+/** 📋 The simple summary the owner reads first (26 Nov): per source (website / WhatsApp manual / Shopify / store) the orders, total, prepaid, COD, then the prepaid per gateway,
+ *  then the cancelled / failed website orders and the cancelled manual orders with their numbers. Lines of text. */
+function fi_simple_summary(PDO $pdo, string $day, string $win): array
+{
+    [$w0, $w1] = fi_win($pdo, $day, $win); [$rows] = fi_split_rows($pdo, $w0, $w1); $R = fi_gw_rules($pdo); $r2 = fn($p) => 'Rs ' . number_format($p / 100, 0, '.', ',');
+    $src = ['website' => 'WEBSITE (TM Store)', 'wa_manual' => 'MANUAL (WhatsApp)', 'shop' => 'SHOPIFY (GoKwik link)', 'store' => 'STORE'];
+    $S = []; $all = ['n' => 0, 't' => 0, 'p' => 0, 'c' => 0];
+    foreach ($rows as $r) { if (empty($r['in_sales'])) continue; $k = $r['src']; if (!isset($S[$k])) $S[$k] = ['n' => 0, 't' => 0, 'p' => 0, 'c' => 0, 'g' => [], 'codonly' => 0];
+        $c = $k === 'store' ? (int)($r['cash'] ?? 0) : $r['cod'];
+        $S[$k]['n']++; $S[$k]['t'] += $r['total']; $S[$k]['p'] += $r['pre']; $S[$k]['c'] += $c; foreach (['n' => 1, 't' => $r['total'], 'p' => $r['pre'], 'c' => $c] as $f => $v) $all[$f] += $v;
+        if ($r['pre'] > 0) { $g = $r['gw'] ?: 'unknown'; if (!isset($S[$k]['g'][$g])) $S[$k]['g'][$g] = [0, 0]; $S[$k]['g'][$g][0]++; $S[$k]['g'][$g][1] += $r['pre']; } else $S[$k]['codonly']++; }
+    $L = []; $L[] = '================ SIMPLE SUMMARY ================';
+    $L[] = date('d M Y', strtotime($day)) . ' | ' . ($win === 'biz' ? '10 AM to 10 AM next day' : '12 AM to 12 AM') . ' (' . substr($w0, 5, 11) . ' -> ' . substr($w1, 5, 11) . ')';
+    foreach ($src as $k => $label) { if (!isset($S[$k])) continue; $x = $S[$k];
+        $L[] = ''; $L[] = $label . ': ' . $x['n'] . ' orders | total ' . $r2($x['t']) . ' | PREPAID ' . $r2($x['p']) . ' | ' . ($k === 'store' ? 'CASH ' : 'COD ') . $r2($x['c']);
+        uasort($x['g'], fn($a, $b) => $b[1] <=> $a[1]);
+        foreach ($x['g'] as $g => $v) $L[] = '   - ' . ($R[$g]['label'] ?? $g) . ': ' . $v[0] . ' orders | ' . $r2($v[1]) . ((($R[$g]['days'] ?? -1) >= 0) ? ' | lands ' . date('d M', strtotime($day . ' +' . (int)$R[$g]['days'] . ' day')) . ($R[$g]['time'] !== '' ? ' ' . $R[$g]['time'] : '') : '');
+        if ($x['codonly']) $L[] = '   - ' . ($k === 'store' ? 'cash only' : 'COD only (nothing paid before)') . ': ' . $x['codonly'] . ' orders'; }
+    $L[] = ''; $L[] = 'ALL TOGETHER: ' . $all['n'] . ' orders | total ' . $r2($all['t']) . ' | PREPAID ' . $r2($all['p']) . ' | COD / cash ' . $r2($all['c']);
+    $np = array_filter($rows, fn($r) => empty($r['in_sales'])); $npT = array_sum(array_map(fn($r) => $r['unpaid'] ?? 0, $np));
+    $L[] = 'Payment links sent but NOT paid (not counted): ' . count($np) . ' | ' . $r2($npT);
+    [, , $bad] = fi_web_orders($pdo, $w0, $w1) + [null, null, []];
+    $L[] = ''; $L[] = 'CANCELLED / FAILED on the website (not counted): ' . count($bad);
+    foreach (['Cancelled', 'Failed'] as $kind) { $b = array_values(array_filter($bad, fn($x) => $x['kind'] === $kind)); if (!$b) continue;
+        $L[] = '   ' . $kind . ': ' . count($b) . ' | ' . $r2(array_sum(array_column($b, 'tot'))) . ' (money that had come in: ' . $r2(array_sum(array_column($b, 'paid'))) . ')';
+        foreach ($b as $x) $L[] = '      ' . $x['no'] . ' | ' . substr($x['at'], 11, 5) . ' | ' . $r2($x['tot']) . ' | paid ' . $r2($x['paid']) . ' | ' . ($x['pm'] ?: '-') . ' | ' . $x['st']; }
+    try { $q = $pdo->prepare("SELECT order_no, id, total_p, paid_p, gateway, cancelled_at FROM wmo_order WHERE status = 'cancelled' AND cancelled_at >= ? AND cancelled_at < ? ORDER BY cancelled_at"); $q->execute([$w0, $w1]); $mc = $q->fetchAll();
+        $L[] = 'CANCELLED manual (WhatsApp) orders: ' . count($mc);
+        foreach ($mc as $x) $L[] = '      ' . ((string)$x['order_no'] !== '' ? $x['order_no'] : 'draft #' . $x['id']) . ' | ' . substr((string)$x['cancelled_at'], 11, 5) . ' | ' . $r2((int)$x['total_p']) . ' | paid ' . $r2((int)$x['paid_p']) . ' | ' . ($x['gateway'] ?: '-'); } catch (Throwable $e) { $L[] = 'cancelled manual orders: not readable'; }
+    $L[] = '================================================';
+    return $L;
+}
 /** 🩺 the same window as plain text to copy: both windows side by side, every order line (no names, no phones), the gateway clues, the receipts recorded in the window. */
 function fi_split_diag(PDO $pdo, string $day, string $win): string
 {
     $m = fn($p) => number_format($p / 100, 2, '.', ''); $T = [];
     $T[] = 'HRMS FINANCE PREPAID / COD DIAGNOSE'; $T[] = 'day ' . $day . ' | window shown ' . ($win === 'biz' ? 'business day' : '12 AM-12 AM') . ' | made ' . date('Y-m-d H:i:s') . ' | server tz ' . date_default_timezone_get();
     $T[] = 'business day start: ' . (function_exists('day_start_for') ? day_start_for($pdo, $day) . ' (next day ' . day_start_for($pdo, date('Y-m-d', strtotime($day . ' +1 day'))) . ')' : 'n/a');
+    $T = array_merge($T, fi_simple_summary($pdo, $day, $win), ['', '---------------- DETAILS ----------------']);
     foreach (['cal', 'biz'] as $w) { $s = fi_split($pdo, $day, $w); $x = $s['totals'];
         $T[] = ''; $T[] = '== ' . ($w === 'cal' ? '12 AM-12 AM' : 'BUSINESS DAY') . ' ' . $s['from'] . ' -> ' . $s['to'];
         $T[] = 'SALES NUMBER: online ' . $x['orders'] . ' / ' . $x['sales'] . ' (prepaid ' . $x['pre'] . ', COD ' . $x['cod'] . ') | store ' . $x['store_bills'] . ' / ' . $x['store'] . ' | total ' . round($x['sales'] + $x['store'], 2);
