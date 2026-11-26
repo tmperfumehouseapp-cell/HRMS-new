@@ -420,6 +420,13 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
             // a campaign we sent while their query was still inside its 24 hours does not turn it into a Campaign chat: it stays a Query
             $live = wa_camp_in_live_chat($pdo, $key, wa_camp_sent_ts($pdo, $key));
             $pdo->prepare("UPDATE wa_contacts SET source = ? WHERE phone = ?")->execute([$live ? 'query' : 'campaign', $key]);
+            return;
+        }
+        // WE WROTE FIRST (owner, 26 Nov): a customer who had never written to us answers a campaign / follow-up / win-back message of ours (any day) → a Campaign chat, given through the campaign line and
+        // counted as a Campaign query (wq_decide has the same rule). The follow-up module's replies used to come in as fresh queries. An ad's ready-made text was already handled above (stays a fresh query).
+        if ($prevIn === null || $prevIn === '') {
+            if (!function_exists('wq_we_wrote_first') && is_file(__DIR__ . '/wq.php')) require_once __DIR__ . '/wq.php';
+            if (function_exists('wq_we_wrote_first') && !preg_match('/^\s*hey\s+tm\s*perfume/iu', $text) && wq_we_wrote_first($pdo, $key, time())) $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]);
         }
     } catch (Throwable $e) { }
 }
