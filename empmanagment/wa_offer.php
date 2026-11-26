@@ -88,12 +88,13 @@ if (!function_exists('wof_run')) {
             if ((string)setting_get($pdo, 'wo_tap', '1') === '0' || (string)setting_get($pdo, 'wo_mode', 'live') !== 'live') return;
             $t = trim(preg_replace('/\s+/u', ' ', $text)); if ($t === '' || mb_strlen($t) > 30) return;
             if (preg_match('/(not now|\bno\b|nope|stop|unsubscribe|don.?t|nahi|nahin|abhi nahi|baad me|नहीं|ના)/iu', $t)) return;
+            if (preg_match('/(parcel|courier|deliver|tracking|\btrack|return|refund|replace|damage|leak|complain|cancel|order status|पार्सल|પાર્સલ|રિફંડ)/iu', $t) || !preg_match('/[\p{L}\p{N}]/u', $t)) return;   // a parcel / return question or only an emoji: the bot (or a person) answers at once, no offer
             $h = (int)(new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('G'); if ($h < 9 || $h >= 22) return;   // the offer run sleeps: the bot answers
             $q = $pdo->prepare("SELECT who, mtype, ts FROM wa_messages WHERE phone = ? AND dir = 'out' ORDER BY id DESC LIMIT 1"); $q->execute([$key]); $m = $q->fetch(PDO::FETCH_ASSOC);
             if (!$m || (string)$m['mtype'] !== 'template' || !in_array((string)$m['who'], ['followup', 'campaign', 'recover'], true) || (string)$m['ts'] < date('Y-m-d H:i:s', time() - 72 * 3600)) return;
             $k = substr(preg_replace('/\D+/', '', $key), -10); if (strlen($k) < 10) return;
             $pdo->prepare("INSERT INTO wq_meta (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")->execute(['offerhold:' . $k, (string)(time() + 240)]);
-        } catch (Throwable $e) { }
+        } catch (Throwable $e) { try { setting_set($pdo, 'wo_tap_err', date('H:i:s') . ' ' . mb_substr($e->getMessage(), 0, 120)); } catch (Throwable $e2) { } }
     }
     /** One run (about a minute): up to $cap customers. Returns [candidates looked at, offers made, sent, notes]. */
     function wof_run(PDO $pdo, int $cap = 30, ?array &$samples = null, bool $simulate = false): array
