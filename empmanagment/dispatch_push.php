@@ -389,6 +389,31 @@ function dpx_web_rows(PDO $pdo, string $from, string $to): array
     return dpx_shop_rows($orders, []);
 }
 
+/** GET api.php?action=dpx.chain_info&n[]=Lunelle%20Chain&n[]=… — the photo and the shop price of chain (jewellery) products, by the name written on the order. For the Dispatch page (owner, 26 Nov:
+ *  "chain with price and photo", also for orders already in the dispatch database) — it asks here when an order is opened, so nothing is stored there and n8n does not change.
+ *  No key: the answer is only what the shop's own website shows (a product photo and its price). Only jewellery names are looked up, at most 20 a call; each answer is kept 12 hours. */
+function dpx_chain_info(PDO $pdo): void
+{
+    $names = $_GET['n'] ?? []; if (!is_array($names)) $names = [$names];
+    if (!function_exists('sku_chain_info') && is_file(__DIR__ . '/sku_sheet.php')) require_once __DIR__ . '/sku_sheet.php';
+    if (!function_exists('sku_chain_info')) json_response(['items' => (object)[]]);
+    $rx = '/chain|necklace|bracelet|pendant|signet|earring|anklet|bangle|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone|vanta ?crest|apex ?monolith)(?![a-z0-9])/i';
+    $by = []; $orig = [];
+    foreach (array_slice($names, 0, 20) as $n) { if (!is_string($n)) continue; $n = trim(mb_substr($n, 0, 120)); if ($n === '' || !preg_match($rx, $n)) continue; $k = mb_strtolower($n); $by[$k] = ['title' => $n, 'pid' => '', 'store' => '']; $orig[$k] = $n; }
+    $out = [];
+    if ($by) {
+        try {
+            $info = sku_chain_info($pdo, $by);
+            // "Lunelle Chain - Silver / 20 inch": when the whole name is not a product title, the part before " - " is tried
+            $again = []; foreach ($by as $k => $r) if (empty($info[$k]['img']) && empty($info[$k]['price']) && preg_match('/^(.+?)\s+[-–—]\s+.+$/u', $r['title'], $m)) $again[$k] = ['title' => trim($m[1]), 'pid' => '', 'store' => ''];
+            if ($again) foreach (sku_chain_info($pdo, $again) as $k => $v) $info[$k] = $v;
+            foreach ($info as $k => $v) if (!empty($v['img']) || !empty($v['price'])) $out[$orig[$k]] = ['img' => (string)($v['img'] ?? ''), 'price' => (float)($v['price'] ?? 0)];
+        } catch (Throwable $e) { error_log('dpx chain info: ' . $e->getMessage()); }
+    }
+    header('Cache-Control: public, max-age=600');
+    json_response(['items' => (object)$out]);
+}
+
 /** GET api.php?action=dpx.feed_web&from=&to= — ONLY the website orders (the new TM Perfume House shop), as the same CSV the n8n workflow of the manual orders reads (same key as dpx.feed).
  *  Default: yesterday + today. For a NEW n8n workflow that sends the website orders to dispatch. */
 function dpx_feed_web(PDO $pdo): void
