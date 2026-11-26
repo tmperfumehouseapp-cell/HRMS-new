@@ -1312,7 +1312,7 @@ function wq_reach_fix(PDO $pdo, float $deadline): array
                     (t.type = 'new' AND t.reason LIKE 'first message ever%')
                  OR (t.type = 'campaign' AND (t.reason LIKE 'campaign customer: chat window had closed%' OR t.reason LIKE 'campaign: %')
                      AND NOT EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = q.phone AND m.dir = 'in' AND m.ts < DATE_SUB(q.opened_at, INTERVAL 120 SECOND))))
-                ORDER BY q.id LIMIT 500");
+                ORDER BY q.id LIMIT 2500");   // about 6,500 rows in all: three or four rounds
             $st->execute([(int)$cur]); $rows = $st->fetchAll(); if (!$rows) { wq_meta_put($pdo, 'reach_fix_q', 'done'); $cur = 'done'; }
             foreach ($rows as $q) {
                 $T = wq_ts($q['opened_at']); $w = wq_we_wrote_first($pdo, (string)$q['phone'], $T);
