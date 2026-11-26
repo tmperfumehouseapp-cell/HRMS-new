@@ -598,10 +598,10 @@ function fup_website_community_fields(PDO $pdo): void
             foreach ($f as $x) { if (preg_match('/^f(\d+)$/', (string)($x['k'] ?? ''), $m)) $max = max($max, (int)$m[1]); if (mb_strtolower((string)($x['label'] ?? '')) === 'total members in the community') $has = true; }
             if ($has) continue;
             foreach ($f as $x) {
-                if (mb_strtolower((string)($x['label'] ?? '')) === 'numbers saved') { $out[] = ['k' => 'f' . (++$max), 'label' => 'Total members in the community', 'type' => 'num', 'opts' => [], 'req' => 1]; $x['label'] = 'Members added today'; }
+                if (mb_strtolower((string)($x['label'] ?? '')) === 'numbers saved') { $out[] = ['k' => 'f' . (++$max), 'label' => 'Total members in the community', 'type' => 'num', 'opts' => [], 'req' => 1]; $x['label'] = 'Members added'; }
                 $out[] = $x;
             }
-            $pdo->prepare("UPDATE fu_topics SET `fields` = ?, note = 'Write which communities are running, the total members in the community, and how many members were added today.' WHERE id = ?")->execute([json_encode($out, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
+            $pdo->prepare("UPDATE fu_topics SET `fields` = ?, note = 'Write which communities are running, the total members in the community, and how many members were added.' WHERE id = ?")->execute([json_encode($out, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
         }
         setting_set($pdo, 'fup_web_comm_v1', '1');
     } catch (Throwable $e) { error_log('fup_website_community_fields: ' . $e->getMessage()); }
