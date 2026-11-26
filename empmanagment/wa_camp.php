@@ -1748,7 +1748,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $hf = strtoupper((string)$r['header_format']); $special = !in_array($hf, ['', 'TEXT'], true);
             if (in_array($p['status'], ['approved', 'partial'], true) && (!$special || $media)) {
                 $row = ['id' => $p['id'], 'name' => $p['name'], 'body' => $p['body'], 'vars' => $p['vars'], 'category' => $p['category'], 'status' => $p['status']];
-                if ($forCamp) $row += ['header_format' => $hf === 'TEXT' ? '' : $hf, 'footer' => (string)$r['footer'], 'buttons' => $r['buttons'], 'folder' => (string)($r['folder'] ?? ''), 'examples' => array_values((array)($r['examples']['body'] ?? [])), 'language' => (string)$r['language'], 'purpose' => (string)$r['purpose']];
+                if ($forCamp) $row += ['header_format' => $hf === 'TEXT' ? '' : $hf, 'footer' => (string)$r['footer'], 'buttons' => $r['buttons'], 'folder' => (string)($r['folder'] ?? ''), 'examples' => array_values((array)($r['examples']['body'] ?? [])), 'language' => (string)$r['language'], 'purpose' => (string)$r['purpose'], 'own_media' => in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && (int)($r['header_lib_id'] ?? 0) > 0 && !empty($p['sendable'])];   // 🖼 the message has its own photo chosen (Pre-made messages): it can go out without picking a file
                 $o[] = $row;
             }
         }
