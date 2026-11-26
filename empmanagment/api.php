@@ -1200,8 +1200,8 @@ function order_is_repeat_customer(PDO $pdo, string $phone, int $t): bool
 function order_got_campaign(PDO $pdo, string $key, string $before, int $days = 30): bool
 {
     if ($key === '') return false; $from = date('Y-m-d H:i:s', strtotime($before) - $days * 86400);
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status <> 'failed' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }   // a failed send never reached the customer
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND COALESCE(last_status, '') <> 'failed' AND sent_at BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
     return false;
 }
 /** 🔁 The robot's own "Query" allocations of the last $days days are checked again with the current rule; the ones that are really Campaign become Campaign. Allocations made by a person are never changed.
