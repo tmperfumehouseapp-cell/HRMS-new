@@ -102,7 +102,7 @@
   const payChip = (r) => r.pay_status === 'paid' ? '<span class="wo-p ok">Paid ' + inr(r.paid || r.total) + '</span>' : r.pay_status === 'partially_paid' ? '<span class="wo-p pt">Paid ' + inr(r.paid) + ' · due ' + inr(r.due) + '</span>' : (r.pay_method === 'cod' ? '<span class="wo-p pt">COD ' + inr(r.total) + '</span>' : '<span class="wo-p no">Not paid yet</span>');
   const opts = (sel) => '<option value="0">Choose salesperson…</option>' + S.people.map((p) => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
   const isPaid = (r) => r.pay_status !== 'pending';   // a payment received, full or part
-  const view = () => { const q = S.q.trim().toLowerCase(); return S.rows.filter((r) => (S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)) && (!S.pay || S.pay === 'all' || (S.pay === 'paid') === isPaid(r)) && (!q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1)); };
+  const view = () => { const q = S.q.trim().toLowerCase(); if (S.pay === 'links') return (S.links || []).filter((r) => !q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1); return S.rows.filter((r) => (S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)) && (!S.pay || S.pay === 'all' || (S.pay === 'paid') === isPaid(r)) && (!q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1)); };
 
   // 🔎 one order opened: every product (size, pieces, price), the money lines and the delivery address
   function openInfo(no) {
@@ -127,7 +127,7 @@
     $('woShow').innerHTML = [['open', 'Not given yet', n - g], ['done', 'Given', g], ['all', 'All', n]].map((x) => '<button type="button" class="wo-chip' + (S.show === x[0] ? ' on' : '') + '" data-s="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
     $('woDays').querySelectorAll('[data-d]').forEach((b) => { b.onclick = () => { S.d = b.dataset.d; const d = DAYS.find((x) => x[0] === S.d); if (d) { S.from = ago(d[2]); S.to = ago(d[3]); load(); } else drawBars(); }; });
     { const inShow = S.rows.filter((r) => S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)), pd = inShow.filter(isPaid).length;   // 💰 Paid / Not paid yet — counted inside the Show filter chosen above
-      $('woPay').innerHTML = [['all', 'All', inShow.length], ['paid', 'Paid', pd], ['unpaid', 'Not paid yet', inShow.length - pd]].map((x) => '<button type="button" class="wo-chip' + ((S.pay || 'all') === x[0] ? ' on' : '') + '" data-p="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
+      $('woPay').innerHTML = [['all', 'All', inShow.length], ['paid', 'Paid', pd], ['unpaid', 'Not paid yet', inShow.length - pd]].concat((S.links || []).length ? [['links', '🔗 Payment links · not counted', S.links.length]] : []).map((x) => '<button type="button" class="wo-chip' + ((S.pay || 'all') === x[0] ? ' on' : '') + '" data-p="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
       $('woPay').querySelectorAll('[data-p]').forEach((b) => { b.onclick = () => { S.pay = b.dataset.p; S.sel.clear(); drawBars(); drawList(); }; }); }
     $('woShow').querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { S.show = b.dataset.s; S.sel.clear(); drawBars(); drawList(); }; });
     const s = S.sum || { orders: 0, amount: 0, given: 0, given_amount: 0 };
@@ -184,8 +184,8 @@
     if (S.busy) return; S.busy = true; S.sel.clear(); drawBars(); $('woL').innerHTML = '<div class="wo-e">Reading the shop…</div>';
     try {
       const d = await api.get('tms.list', Object.assign({ from: S.from, to: S.to }, fresh ? { fresh: 1 } : {}));
-      S.rows = d.rows || []; S.sum = d.sum; S.admin = !!d.admin; msg('');
-    } catch (e) { S.rows = []; S.sum = null; $('woL').innerHTML = '<div class="wo-e">The orders could not be read.</div>'; msg(esc(e.message) + ($('woCfg').hidden ? '' : ' Press <b>⚙ Connection</b>.'), 'bad'); S.busy = false; drawBars(); return; }
+      S.links = (d.rows || []).filter((r) => r.temp); S.rows = (d.rows || []).filter((r) => !r.temp); resum(); if (S.pay === 'links' && !S.links.length) S.pay = 'all'; S.admin = !!d.admin; msg('');   // 🔗 owner (26 Nov): LINK-xxx payment links are temporary — kept apart, never in the counts or the money
+    } catch (e) { S.rows = []; S.links = []; S.sum = null; $('woL').innerHTML = '<div class="wo-e">The orders could not be read.</div>'; msg(esc(e.message) + ($('woCfg').hidden ? '' : ' Press <b>⚙ Connection</b>.'), 'bad'); S.busy = false; drawBars(); return; }
     S.busy = false; drawBars(); drawList();
   }
   function cfgOpen(c) {
