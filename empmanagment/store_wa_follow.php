@@ -23,7 +23,7 @@ function swf_cfg(PDO $pdo): array
 {
     $d = ['limit' => 50, 'gap' => 6, 'lang' => 'gu'];
     try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'swfu'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; if (is_array($j)) foreach ($d as $k => $x) if (isset($j[$k])) $d[$k] = $j[$k]; } catch (Throwable $e) { }
-    $d['limit'] = max(5, min(250, (int)$d['limit'])); $d['gap'] = max(3, min(30, (int)$d['gap'])); if (!isset(swf_langs()[$d['lang']])) $d['lang'] = 'gu';
+    $d['limit'] = max(5, min(1000, (int)$d['limit'])); $d['gap'] = max(3, min(30, (int)$d['gap'])); if (!isset(swf_langs()[$d['lang']])) $d['lang'] = 'gu';
     return $d;
 }
 /** The nine messages (3 follow-ups × 3 languages): name, language, body (WhatsApp *bold* is allowed), footer, two reply buttons. {{1}} = first name, {{2}} = the perfume. */
@@ -129,7 +129,7 @@ function swf_handle(PDO $pdo, string $action, int $me, bool $post): void
     if ($action === 'st_wa.fu_lang') { $ph = wa_key($in['phone'] ?? ''); $lg = (string)($in['lang'] ?? ''); if (strlen($ph) !== 10 || !isset(swf_langs()[$lg])) json_response(['error' => 'Wrong number or language.'], 422); $pdo->prepare("INSERT INTO st_wa_lang (phone, lang) VALUES (?, ?) ON DUPLICATE KEY UPDATE lang = VALUES(lang)")->execute([$ph, $lg]); json_response(['ok' => true]); }
     if ($action === 'st_wa.fu_cfg_save') {
         $c = $cfg; foreach (['limit', 'gap', 'lang'] as $k) if (array_key_exists($k, $in)) $c[$k] = $in[$k];
-        $c['limit'] = max(5, min(250, (int)$c['limit'])); $c['gap'] = max(3, min(30, (int)$c['gap'])); if (!isset(swf_langs()[$c['lang']])) $c['lang'] = 'gu';
+        $c['limit'] = max(5, min(1000, (int)$c['limit'])); $c['gap'] = max(3, min(30, (int)$c['gap'])); if (!isset(swf_langs()[$c['lang']])) $c['lang'] = 'gu';
         $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('swfu', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($c)]); json_response(['ok' => true, 'cfg' => $c]);
     }
     if ($action === 'st_wa.fu_send') {
