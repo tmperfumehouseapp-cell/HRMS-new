@@ -121,7 +121,7 @@ if (!function_exists('wa_strip_money')) {
      *  re-sent = for Module A the utility follow-ups (Module B) that went today to people whose marketing failed; delivered = of those, the ones Meta confirmed. Kept 10 minutes. */
     function wa_strip_money(PDO $pdo, string $mod): array
     {
-        $ck = 'wa_strip_money3_' . preg_replace('/\W/', '', $mod); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
+        $ck = 'wa_strip_money4_' . preg_replace('/\W/', '', $mod); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
         if (is_array($c) && !empty($c['t']) && time() - (int)$c['t'] < 600) return $c;
         try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 9000"); } catch (Throwable $e) { }
         $t0 = wa_strip_t0($pdo); $P = ['MARKETING' => 1.09, 'UTILITY' => 0.15];
@@ -164,6 +164,15 @@ if (!function_exists('wa_strip_money')) {
             elseif ($mod === 'line' || $mod === 'after') { $tb = $mod === 'line' ? 'wa_line_plan' : 'wa_aft_plan'; $rows = $all("SELECT t.category, COUNT(*), SUM(m.status = 'failed') FROM $tb l JOIN wa_templates t ON t.id = l.tpl_id $J WHERE l.id > (SELECT MAX(id) - 800000 FROM $tb) AND l.status = 'sent' AND l.sent_at >= ? GROUP BY t.category", [$t0]); }
             if (is_array($rows)) { $bill = ['m_n' => 0, 'u_n' => 0, 'free_n' => 0]; foreach ($rows as $r) { $ok = max(0, (int)$r[1] - (int)$r[2]); $bill[strtoupper((string)$r[0]) === 'MARKETING' ? 'm_n' : 'u_n'] += $ok; $bill['free_n'] += (int)$r[2]; } $bill['m_rs'] = round($bill['m_n'] * $P['MARKETING']); $bill['u_rs'] = round($bill['u_n'] * $P['UTILITY']); $spent = $bill['m_rs'] + $bill['u_rs']; }
         } catch (Throwable $e) { $bill = null; }
+        /* owner 26 Nov: the card said "Failed 0 · Re-sent –" for Cold while 1,000 had failed on Meta's receipt and gone again as utility: Failed = refused at sending + failed on the receipt, Re-sent = the utility rescues of this module, Re-sent ✓ = those Meta confirmed */
+        try { $Jm = " LEFT JOIN wa_messages m ON l.wamid <> '' AND (m.wamid COLLATE utf8mb4_unicode_ci) = (l.wamid COLLATE utf8mb4_unicode_ci) ";
+            if (is_array($bill) && in_array($mod, ['modb', 'modc', 'cold', 'line', 'after'], true)) $failed = (int)$failed + (int)$bill['free_n'];
+            $rr = null;
+            if ($mod === 'cold') $rr = $one("SELECT COUNT(*), SUM(m.status IN ('delivered','read')) FROM wa_cold_log l $Jm WHERE l.id > (SELECT MAX(id) - 400000 FROM wa_cold_log) AND l.ok = 1 AND l.why LIKE 'utility rescue%' AND l.at >= ?", [$t0]);
+            elseif ($mod === 'line' || $mod === 'after') { $tb = $mod === 'line' ? 'wa_line_plan' : 'wa_aft_plan'; $rr = $one("SELECT COUNT(*), SUM(m.status IN ('delivered','read')) FROM $tb l $Jm WHERE l.id > (SELECT MAX(id) - 800000 FROM $tb) AND l.status = 'sent' AND l.why LIKE '%utility rescue%' AND l.sent_at >= ?", [$t0]); }
+            elseif ($mod === 'moda') { $rr = $one("SELECT COUNT(*), SUM(m.status IN ('delivered','read')) FROM wa_arsc l $Jm WHERE l.ok = 1 AND l.at >= ?", [$t0]); if ($rr) { $rr[0] = (int)$rr[0] + (int)$resent; $rr[1] = (int)$rr[1] + (int)$resentOk; } }
+            if ($rr) { $resent = (int)$rr[0]; $resentOk = (int)$rr[1]; }
+        } catch (Throwable $e) { }
         /* owner 25 Nov: the delivery plan inside the card: what the rescue and the speeds are doing right now ([label, value, hint]) */
         $dl = []; $g = function ($k, $d = '0') use ($pdo) { try { return (string)setting_get($pdo, $k, $d); } catch (Throwable $e) { return $d; } }; $nowT = time(); $nf = function ($v) { return number_format((int)$v); };
         $fp = (int)$g('wa_flag_pause_until') - $nowT; $dl[] = ['Flag watch', $fp > 0 ? 'PAUSED ' . ceil($fp / 60) . ' min' : 'ok', 'a spam flag (131048) stops everything for 2 hours'];
