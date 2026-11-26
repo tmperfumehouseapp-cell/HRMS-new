@@ -156,7 +156,7 @@
     let inner = '';
     if (m.media_id && ['image', 'video', 'audio', 'document', 'sticker'].indexOf(m.mtype) > -1) inner += `<div class="mm" data-media="${esc(m.media_id)}" data-kind="${esc(m.mtype)}"><span style="color:#667781">${m.mtype === 'image' ? '📷 Photo' : m.mtype === 'video' ? '🎥 Video' : m.mtype === 'audio' ? '🎙 Voice note' : '📄 ' + esc(m.body || 'Document')} · loading…</span></div>`;
     if (m.body && !(m.mtype === 'document' && !m.media_id)) inner += esc(m.body); else if (m.body && m.mtype === 'document') inner += esc(m.body);
-    const out = m.dir === 'out'; const auto = out && m.who === 'store'; const tk = m.status === 'read' ? '<span class="tk r">✓✓</span>' : m.status === 'delivered' ? '<span class="tk">✓✓</span>' : m.status === 'failed' ? '<span class="tk f">failed</span>' : '<span class="tk">✓</span>';
+    const out = m.dir === 'out'; const auto = out && m.who === 'store'; const tk = m.status === 'read' ? '<span class="tk r">✓✓</span>' : m.status === 'delivered' ? '<span class="tk">✓✓</span>' : m.status === 'failed' ? '<span class="tk f" title="'+esc(m.err||'')+'">failed</span>' : '<span class="tk">✓</span>';
     return day + `<div class="bub ${out ? 'out' : 'in'}">${auto ? '<span class="tag">sent automatically</span><br>' : (out && m.emp_name ? `<span class="by">${esc(m.emp_name)}</span>` : '')}${m.mtype === 'template' && !auto ? '<span class="tag">template</span><br>' : ''}${inner}<span class="tm">${esc(hm(m.ts))} ${out ? tk : ''}</span></div>`;
   }
   async function loadMedia(root) {
