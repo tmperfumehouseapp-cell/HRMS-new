@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="assets/css/store.css?v=8">
 <style>
  html,body{height:100%;margin:0;overflow:hidden;background:#eef0f3;font-size:14px}
- .wa{height:100vh;height:100dvh}
+ 
  .lh{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f0f2f5;flex:none;min-height:52px;box-sizing:border-box}
  .lh .bk,.lh .gb{border:0;background:#fff;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:18px;line-height:1}
  .lt{flex:1;min-width:0}.lt b{font-size:15.5px;display:block}.lt small{display:flex;align-items:center;gap:6px;color:#667781;font-size:12px}.lt i{width:8px;height:8px;border-radius:50%;background:#16a34a;display:inline-block}.lt i.off{background:#d9423b}
@@ -76,13 +76,32 @@
  .tpl button{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;font-size:14px;border-radius:14px}.tpl button svg{width:18px;height:18px;stroke:#0b6b3a;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
  .view{display:inline-flex;align-items:center;gap:6px;background:#fff3cd;color:#8a5a00;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:800;white-space:nowrap}.view i{width:8px;height:8px;border-radius:50%;background:#f59e0b;animation:pl 1.2s infinite}@keyframes pl{50%{opacity:.25}}
  .sw-it{transition:background .12s}.sw-it.on{box-shadow:inset 3px 0 0 #25d366;background:#f0f2f5}
+ .app2{height:100vh;height:100dvh;display:grid;grid-template-columns:78px minmax(0,1fr)}.main2{min-width:0;min-height:0;overflow:hidden;background:#fff}
+ .rail{background:#f0f2f5;border-right:1px solid #e1e4e8;display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0}
+ .rail .bk{width:38px;height:38px;border-radius:50%;background:#fff;border:0;font-size:18px;margin-bottom:8px;cursor:pointer}
+ .rail a{width:64px;padding:8px 0;border-radius:14px;display:flex;flex-direction:column;align-items:center;gap:4px;color:#54656f;font-size:11px;font-weight:800;cursor:pointer;position:relative;text-decoration:none}
+ .rail a svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.rail a.on{background:#d9fdd3;color:#0b6b3a}.rail a:hover{background:#e6e9ec}.rail a.on:hover{background:#d9fdd3}
+ .rail a b{position:absolute;top:2px;right:8px;background:#ef4444;color:#fff;border-radius:99px;font-size:10px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 4px}
+ .brow{display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:6px;margin-bottom:6px}.brow input{min-width:0;border:1.5px solid #e6e8ec;border-radius:10px;padding:8px 10px;font:inherit}.tg .e{grid-template-columns:minmax(0,1fr)}
+ .tg{display:grid;grid-template-columns:330px minmax(0,1fr) 310px;height:100%}.tg>div{min-width:0;overflow:auto}.tg .l{border-right:1px solid #e6e8ec}.tg .e{padding:16px;display:grid;gap:10px;align-content:start}.tg .p{background:#efeae2;background-image:radial-gradient(#e2dccf 1px,transparent 1px);background-size:18px 18px;padding:16px;border-left:1px solid #e6e8ec}
+ .ti2{padding:10px 14px;border-top:1px solid #f1f3f6;cursor:pointer}.ti2.on{background:#eefbf4;box-shadow:inset 3px 0 0 #25d366}.ti2 b{font-size:14px;display:block}.ti2 small{color:#667781;font-size:12px}.ti2 .r{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap}
+ .kp{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800}.kp.g{background:#e3f7ef;color:#0f7a4d}.kp.w{background:#fff4e0;color:#b45309}.kp.b{background:#e8f1fd;color:#2a62c9}.kp.v{background:#eeecfb;color:#6250d6}.kp.r{background:#fdecea;color:#d9423b}.kp.n{background:#f1f3f6;color:#3a3f4a}
+ label.f2{display:grid;gap:3px;font-size:11.5px;font-weight:700;color:#6f7480}label.f2 input,label.f2 select,label.f2 textarea{border:1.5px solid #e6e8ec;border-radius:12px;padding:9px 12px;font:inherit;color:#14161a;background:#fff;box-sizing:border-box;width:100%}
+ .chk{background:#eefbf4;border:1px solid #bfe9cf;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.5}.chk.w{background:#fff8e6;border-color:#f3dba0}.chk.bad{background:#fdecea;border-color:#f3b4af}
+ .pb{background:#d9fdd3;border-radius:10px;border-top-right-radius:2px;box-shadow:0 1px 1px rgba(0,0,0,.12);overflow:hidden;font-size:13.5px;line-height:1.38;max-width:290px;margin-left:auto}.pb .hd{height:120px;background:#ff7a2f center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:16px}
+ .pb .tx{padding:8px 11px 3px;white-space:pre-wrap}.pb .ft{padding:0 11px 3px;color:#667781;font-size:11px}.pb .tm{display:block;text-align:right;padding:0 11px 4px;font-size:10px;color:#667781}.pb .bt{border-top:1px solid #cfe9c8;padding:7px;text-align:center;color:#027eb5;font-weight:700;font-size:13px}
+ .sx2{border:0;border-radius:12px;padding:10px 16px;font:inherit;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#ff7a2f,#e8651a)}.sx2.g{background:#fff;color:#14161a;box-shadow:inset 0 0 0 1.5px #e6e8ec}.sx2:disabled{opacity:.5;cursor:default}
+ .spics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.sp{background:#f7f8fa;border:2px solid transparent;border-radius:16px;padding:8px;cursor:pointer;text-align:center}.sp:hover{background:#eef0f3}.sp.on{border-color:#25d366;background:#eefbf4}.sp .im{height:120px;border-radius:12px;background:#e9ecef center/cover no-repeat;margin-bottom:6px}.sp b{display:block;font-size:13.5px}.sp small{display:block;color:#667781;font-size:11.5px}.sp.up{border:2px dashed #cfd4da;background:#fff}
+ .phs{display:flex;gap:8px;flex-wrap:wrap}.phs .ph1{width:62px;text-align:center;font-size:10.5px;color:#667781;cursor:pointer;border-radius:10px;padding:3px}.phs .ph1.on{background:#d9fdd3;box-shadow:inset 0 0 0 2px #25d366}.phs .ph1 img{width:56px;height:56px;object-fit:cover;border-radius:8px;display:block}
+ @media(max-width:900px){.brow{grid-template-columns:1fr 1fr}.brow input:nth-child(2){grid-column:1/-1;order:3}.brow button{order:2}.app2{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) 60px}.rail{order:2;flex-direction:row;justify-content:space-around;padding:4px 6px;border-right:0;border-top:1px solid #e1e4e8}.rail .bk{display:none}.rail a{width:auto;padding:5px 8px;flex:1;font-size:10.5px}
+  body.inchat .app2{grid-template-rows:minmax(0,1fr) 0}body.inchat .rail{display:none}.tg{grid-template-columns:1fr;display:block}.tg .l,.tg .e,.tg .p{border:0}.tg .p{display:none}.tg.edit .l{display:none}.tg:not(.edit) .e{display:none}}
  @media(max-width:1100px){.sw.inf{grid-template-columns:340px minmax(0,1fr)}.sw.inf .info{position:fixed;right:0;top:0;bottom:0;width:340px;box-shadow:-8px 0 24px rgba(0,0,0,.12);z-index:20}}
  @media(max-width:760px){.sw,.sw.inf{grid-template-columns:1fr}.sw.chat .p-list{display:none}.sw:not(.chat) .ch{display:none}.ch-h .back{display:block}.bub{max-width:88%}.sw.inf .info{width:100%}
   .msgs{padding:8px 8px 6px}.cmp{padding:6px 8px calc(8px + env(safe-area-inset-bottom))}.cmp .tb{width:30px;font-size:20px}.tp .box{grid-template-columns:1fr;max-height:92vh}.tp .tl{max-height:26vh;border-right:0}.pop{bottom:54px}}
 </style>
 </head>
 <body>
-<div class="wa" id="app"><div style="padding:30px;color:#667781">Loading…</div></div>
+<div class="app2"><nav class="rail" id="rail"></nav><div class="main2" id="app"><div style="padding:30px;color:#667781">Loading…</div></div></div>
 <input type="file" id="fileIn" multiple style="display:none">
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=14"></script>
@@ -126,7 +145,7 @@
   }
 
   /* ---------- views ---------- */
-  const LH = (setup) => `<div class="lh"><button class="bk" id="bkBtn" title="Back to HRMS">‹</button><div class="lt"><b>${esc((S.cfg.number && S.cfg.number.label) || 'Store WhatsApp')}</b><small><i class="${S.cfg.number ? '' : 'off'}"></i>${S.cfg.number ? esc(S.cfg.number.display || '') + ' · connected number' : 'no number chosen yet'}</small></div>${S.cfg.manager ? `<button class="gb" data-tab="${setup ? 'chats' : 'setup'}" title="${setup ? 'Chats' : 'Setup'}">${setup ? '💬' : '⚙'}</button>` : ''}</div>`;
+  const LH = (setup) => `<div class="lh"><div class="lt"><b>${esc((S.cfg.number && S.cfg.number.label) || 'Store WhatsApp')}</b><small><i class="${S.cfg.number ? '' : 'off'}"></i>${S.cfg.number ? esc(S.cfg.number.display || '') + ' · connected number' : 'no number chosen yet'}</small></div></div>`;
   function listHtml() {
     return S.chats.map((c) => `<div class="sw-it ${c.phone === S.cur ? 'on' : ''}" data-c="${esc(c.phone)}">${av(c.name, c.phone)}<div class="t"><b>${esc(c.name || fmtPhone(c.phone))}</b><small>${c.dir === 'out' ? '<span style="color:#53bdeb">✓✓</span> ' : ''}${esc(c.last)}</small></div><div class="m"><span>${esc(short(c.ts))}</span>${c.unread ? `<span class="un">${c.unread}</span>` : `<span class="win ${c.window_open ? 'ok' : 'no'}">${c.window_open ? 'open' : 'template'}</span>`}</div></div>`).join('') || '<div class="empty"><div class="ic">💬</div>No chats here yet.<br><small>When a bill is sent, or a customer writes, the chat appears.</small></div>';
   }
@@ -188,8 +207,87 @@
      <div class="sx-card"><h3>⚡ Quick replies (type / in a chat)</h3>${(c.quick || []).map((q) => `<div class="bl"><span><b>${esc(q.shortcut)}</b><br><span style="color:#667781">${esc(q.body)}</span></span><span><a data-qe="${q.id}">edit</a> · <a data-qd="${q.id}">delete</a></span></div>`).join('')}<label>Short name<input id="qsc" placeholder="/address"></label><label>Message (you can use {name})<textarea id="qbd" rows="3"></textarea></label><input type="hidden" id="qid" value="0"><button class="sx-btn" id="saveQ" style="justify-self:start">Save quick reply</button></div>
      <div class="sx-card"><h3>📝 Store messages (templates)</h3>${(c.templates || []).map((t) => `<div class="bl"><span><b>${esc(t.name)}</b><br><span style="color:#667781">${esc(t.category)}</span></span><span class="sx-pill ${t.status === 'APPROVED' ? 'good' : t.status === 'REJECTED' ? 'bad' : 'warn'}">${esc(t.status === 'APPROVED' ? 'Approved' : t.status === 'REJECTED' ? 'Rejected' : 'Waiting for Meta')}</span></div>`).join('') || '<div style="color:#667781">None yet. They are sent to Meta for this number\'s account after you save the number.</div>'}</div></div>`;
   }
+  /* ---------- the left rail ---------- */
+  const RI = { chat: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.5 7.2L4 20l1-4.5A8 8 0 1121 12z"/></svg>', tpl: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>', set: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>' };
+  function renderRail() {
+    const r = $('rail'); if (!r || !S.cfg) return; const items = [['chats', 'Chats', RI.chat, S.unread]]; if (S.cfg.manager) { items.push(['tpl', 'Templates', RI.tpl, 0]); items.push(['setup', 'Setup', RI.set, 0]); }
+    r.innerHTML = '<button class="bk" id="bkBtn" title="Back to HRMS">‹</button>' + items.map((n) => `<a class="${S.tab === n[0] ? 'on' : ''}" data-nav="${n[0]}">${n[2]}${n[3] ? `<b>${n[3] > 99 ? '99+' : n[3]}</b>` : ''}${n[1]}</a>`).join('');
+  }
+  /* ---------- Templates (Admin / HR): the Store's own pre-made messages ---------- */
+  const T = { list: [], photos: [], sel: -1, f: null, chk: null, busy: false, loaded: false, appOk: true, edit: false };
+  const catCls = (c) => (c === 'UTILITY' ? 'b' : 'v');
+  const stChip = (t) => { const x = t.status; return x === 'APPROVED' ? '<span class="kp g">✓ Approved</span>' : x === 'REJECTED' ? '<span class="kp r">✗ Rejected</span>' : x === 'DRAFT' || x === 'draft' ? '<span class="kp n">✎ Draft</span>' : x === 'PAUSED' || x === 'DISABLED' ? '<span class="kp r">' + esc(x.toLowerCase()) + '</span>' : '<span class="kp w">⏳ ' + (x === 'PENDING' || x === 'IN_APPEAL' ? 'Waiting for Meta' : esc(x.toLowerCase())) + '</span>'; };
+  async function loadTpl() { try { const r = await api.get('st_wa.tpl_all'); T.list = r.templates || []; T.photos = r.photos || []; T.store = r.store_pics || []; T.appOk = r.app_id_ok !== false; T.loaded = true; } catch (e) { T.loaded = true; toast(e.message); } }
+  function pickTpl(i) { T.sel = i; T.chk = null; T.edit = true; const t = T.list[i]; T.f = t ? { id: t.id, name: t.name, category: t.category, header_format: t.header_format, header_lib_id: t.header_lib_id, body: t.body, footer: t.footer, buttons: (t.buttons || []).map((b) => ({ type: b.type || 'URL', text: b.text || '', url: b.url || '', example: b.example || '' })), examples: (t.examples || []).slice(), labels: (t.labels || []).slice(), status: t.status, locked: t.locked, photo: t.photo, reason: t.reason } : null; }
+  const varsOf = (b) => { const m = String(b || '').match(/\{\{\s*(\d+)\s*\}\}/g) || []; return Array.from(new Set(m.map((x) => +x.replace(/\D/g, '')))).sort((a, b2) => a - b2); };
+  const fillEx = (body, ex) => String(body || '').replace(/\{\{\s*(\d+)\s*\}\}/g, (m, i) => esc(ex[i - 1] || '{{' + i + '}}'));
+  function pvHtml() {
+    const f = T.f; if (!f) return ''; let ph = T.photos.find((x) => x.id === f.header_lib_id); if ((!ph || !ph.thumb) && f.photo) { const sp = (T.store || []).find((q) => f.photo.indexOf(q.name) > -1); if (sp && sp.thumb) ph = { thumb: sp.thumb }; }
+    return `<div class="pb">${f.header_format === 'IMAGE' ? `<div class="hd" style="${ph && ph.thumb ? 'background-image:url(' + esc(ph.thumb) + ')' : ''}">${ph && ph.thumb ? '' : esc(f.photo || 'photo on top')}</div>` : ''}<div class="tx">${fillEx(f.body, f.examples)}</div>${f.footer ? `<div class="ft">${esc(f.footer)}</div>` : ''}<span class="tm">now</span>${(f.buttons || []).filter((b) => b.text).map((b) => `<div class="bt">${esc(b.text)}</div>`).join('')}</div>`;
+  }
+  function tplView() {
+    const f = T.f, L = T.list; const empty = T.loaded && !L.length;
+    const left = `<div class="l"><div style="padding:12px 14px;display:flex;align-items:center;gap:8px"><b style="font-size:15px">Store messages</b><span style="flex:1"></span><button class="sx2 g" id="tSync" title="Ask Meta for the newest status" style="padding:7px 10px;font-size:12.5px">↻ Meta</button><button class="sx2" id="tNew" style="padding:7px 12px;font-size:12.5px">+ New</button></div>
+      ${empty ? `<div style="padding:16px;color:#667781;font-size:13.5px;line-height:1.5">No Store message yet. Press the button to make the <b>6 first drafts</b> (bill with the Store photo, birthday, 2 reminders, offer). Nothing goes to Meta until you press "Send to Meta".<br><br><button class="sx2" id="tSeed">Make the 6 drafts</button></div>` : ''}
+      ${L.map((t, i) => `<div class="ti2 ${i === T.sel ? 'on' : ''}" data-ti="${i}"><b>${esc(t.name)}</b><small>${esc(t.title || '')}</small><div class="r"><span class="kp ${catCls(t.category)}">${t.category === 'UTILITY' ? 'Utility' : 'Marketing'}</span>${stChip(t)}${t.header_format === 'IMAGE' ? `<span class="kp n">🖼 ${t.header_lib_id ? 'photo' : 'no photo yet'}</span>` : ''}${t.version > 1 ? `<span class="kp n">v${t.version}</span>` : ''}</div></div>`).join('')}</div>`;
+    if (!f) return `<div class="tg ${T.edit ? 'edit' : ''}">${left}<div class="e"><div class="empty"><div class="ic">📝</div>Choose a message on the left, or make a new one.</div></div><div class="p"></div></div>`;
+    const ro = f.status !== 'draft' && f.status !== 'DRAFT'; const vs = varsOf(f.body);
+    const cur = T.photos.find((p) => p.id === f.header_lib_id);
+    const photoBox = f.header_format === 'IMAGE' ? `<div><div style="font-size:11.5px;font-weight:700;color:#6f7480;margin-bottom:6px">Photo on top ${f.photo ? '· <span style="color:#0f7a4d">' + esc(f.photo) + '</span>' : '<span style="color:#b45309">· choose one below</span>'}</div>
+      <div class="spics">${(T.store || []).map((sp) => `<div class="sp ${f.photo && f.photo.indexOf(sp.name) > -1 ? 'on' : ''}" data-pst="${sp.kind}"><div class="im" style="${sp.thumb ? 'background-image:url(' + esc(sp.thumb) + ')' : ''}"></div><b>${esc(sp.name)}</b><small>${esc(sp.title)}</small>${sp.custom ? '' : '<small style="color:#b45309">default picture</small>'}</div>`).join('')}<div class="sp up" id="tUp"><div class="im" style="display:flex;align-items:center;justify-content:center;font-size:30px;color:#6f7480">⬆</div><b>Upload</b><small>a different photo (JPG / PNG)</small></div></div>
+      ${T.photos.length ? `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12.5px;color:#027eb5;font-weight:700">Other photos already in the media library (${T.photos.length})</summary><div class="phs" style="margin-top:8px">${T.photos.map((p) => `<div class="ph1 ${p.id === f.header_lib_id ? 'on' : ''}" data-ph="${p.id}">${p.thumb ? `<img src="${esc(p.thumb)}" alt="">` : '<div style="width:56px;height:56px;background:#eee;border-radius:8px"></div>'}${esc(String(p.title).slice(0, 12))}</div>`).join('')}</div></details>` : ''}</div>` : '';
+    const right = `<div class="e"><button class="sx2 g" id="tBack" style="display:none;justify-self:start;padding:6px 10px">‹ All messages</button>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:16px">${esc(f.name || 'New message')}</b>${stChip(f)}<span class="kp ${catCls(f.category)}">${f.category === 'UTILITY' ? 'Utility' : 'Marketing'}</span></div>
+      ${f.reason ? `<div class="chk bad"><b>Meta said no:</b> ${esc(f.reason)}</div>` : ''}${ro ? `<div class="chk w">This message is already at Meta. Changes are saved as a <b>new version</b>; the old one keeps working until the new one is approved.</div>` : ''}${!T.appOk && f.header_format === 'IMAGE' ? '<div class="chk bad">The Meta app id is not found yet, so a photo cannot go to Meta. It is found from the token automatically; if sending fails, tell me.</div>' : ''}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px"><label class="f2">Name at Meta<input data-k="name" value="${esc(f.name)}" ${f.id ? 'readonly' : ''}></label><label class="f2">Category<select data-k="category"><option value="UTILITY" ${f.category === 'UTILITY' ? 'selected' : ''}>Utility (about a purchase)</option><option value="MARKETING" ${f.category === 'MARKETING' ? 'selected' : ''}>Marketing (offers, reminders)</option></select></label></div>
+      <label class="f2">Photo on top<select data-k="header_format"><option value="" ${!f.header_format ? 'selected' : ''}>— none —</option><option value="IMAGE" ${f.header_format === 'IMAGE' ? 'selected' : ''}>Photo</option></select></label>${photoBox}
+      <label class="f2">Text (the customer's name, bill, perfume … go in {{1}} {{2}} {{3}})<textarea data-k="body" rows="5">${esc(f.body)}</textarea></label>
+      <div id="tEx">${exHtml()}</div>
+      <label class="f2">Footer<input data-k="footer" value="${esc(f.footer)}"></label>
+      <div><div style="font-size:11.5px;font-weight:700;color:#6f7480;margin-bottom:4px">Buttons (up to 3)</div>${(f.buttons || []).map((b, i) => `<div class="brow"><input class="bi" data-bt="${i}" data-bf="text" placeholder="Button name" value="${esc(b.text)}"><input class="bi" data-bt="${i}" data-bf="url" placeholder="https://…" value="${esc(b.url)}"><input class="bi" data-bt="${i}" data-bf="example" placeholder="example (if {{1}} at the end)" value="${esc(b.example)}"><button class="sx2 g" data-bdel="${i}" style="padding:6px 10px">✕</button></div>`).join('')}${(f.buttons || []).length < 3 ? '<button class="sx2 g" id="bAdd" style="padding:6px 10px;font-size:12px">+ Add a button</button>' : ''}</div>
+      <div id="tChk">${chkHtml()}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sx2" id="tSend" ${T.busy ? 'disabled' : ''}>${ro ? (f.status === 'REJECTED' ? 'Save as a new version' : 'Save as a new version (v' + ((T.list[T.sel] || {}).version + 1 || 2) + ')') : 'Save &amp; send to Meta'}</button><button class="sx2 g" id="tChkBtn">Check</button>${ro ? '' : '<button class="sx2 g" id="tSave">Save draft</button>'}${f.status === 'APPROVED' ? '<button class="sx2 g" id="tTest">Send a test to my phone</button>' : ''}</div>
+      <div style="color:#667781;font-size:12.5px">Meta usually answers in 15 minutes to 24 hours. The status here changes by itself.</div></div>`;
+    return `<div class="tg ${T.edit ? 'edit' : ''}">${left}${right}<div class="p"><div style="text-align:center;font-size:11.5px;color:#667781;margin-bottom:8px">How the customer sees it</div><div id="tPv">${pvHtml()}</div></div></div>`;
+  }
+  function exHtml() { const vs = varsOf(T.f.body); return vs.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">${vs.map((n) => `<label class="f2">Example for {{${n}}}<input data-ex="${n - 1}" value="${esc(T.f.examples[n - 1] || '')}"></label>`).join('')}</div>` : ''; }
+  function chkHtml() { const c = T.chk; if (!c) return ''; if (!c.ok) return `<div class="chk bad"><b>✗ Fix this first:</b> ${esc(c.problem)}</div>`; return `<div class="chk ${(c.warnings && c.warnings.length) || (c.promo && c.promo.length && T.f.category === 'UTILITY') ? 'w' : ''}"><b>✓ Follows Meta's rules.</b>${(c.warnings || []).map((w) => '<br>⚠ ' + esc(w)).join('')}${c.hint ? '<br>' + esc(c.hint) : ''}</div>`; }
+  const payload = () => { const f = T.f; return { id: f.id || 0, name: f.name, category: f.category, header_format: f.header_format, header_lib_id: f.header_format === 'IMAGE' ? f.header_lib_id : 0, body: f.body, footer: f.footer, buttons: (f.buttons || []).filter((b) => b.text.trim()).map((b) => ({ type: 'URL', text: b.text.trim(), url: b.url.trim(), example: (b.example || '').trim() })), examples: varsOf(f.body).map((n) => f.examples[n - 1] || ''), labels: f.labels || [] }; };
+  async function tplSave(andSend) {
+    const f = T.f; if (!f || T.busy) return; T.busy = true; renderTpl(true);
+    try { let id = f.id; const r = await api.post('st_wa.tpl_save', payload()); id = r.id; if (r.new_version) toast('Saved as a new version: ' + r.name);
+      if (andSend) { await api.post('st_wa.tpl_submit', { id }); toast('Sent to Meta ✓ Waiting for approval'); } else if (!r.new_version) toast('Draft saved ✓');
+      await loadTpl(); const i = T.list.findIndex((t) => t.id === id); pickTpl(i); } catch (e) { toast(e.message); await loadTpl(); const i = T.list.findIndex((t) => t.id === f.id); if (i > -1) { const keep = T.f; pickTpl(i); T.f = keep; T.sel = i; } }
+    T.busy = false; renderTpl();
+  }
+  function renderTpl(keep) { const app = $('app'); const y = keep && app.querySelector('.tg .e') ? app.querySelector('.tg .e').scrollTop : 0; app.innerHTML = tplView(); const e = app.querySelector('.tg .e'); if (e && y) e.scrollTop = y; const b = $('tBack'); if (b && innerWidth <= 900) b.style.display = ''; }
+  async function tplClick(e) {
+    const g = (q) => e.target.closest(q); let x;
+    if (g('#tSeed')) { try { const r = await api.post('st_wa.tpl_seed', {}); toast('Made ' + r.made.length + ' drafts ✓'); await loadTpl(); pickTpl(0); renderTpl(); } catch (er) { toast(er.message); } return true; }
+    if (g('#tSync')) { try { const r = await api.post('st_wa.tpl_sync', {}); toast('Checked with Meta ✓'); await loadTpl(); if (T.sel > -1) { const keep = T.f; const id = keep && keep.id; pickTpl(T.list.findIndex((t) => t.id === id)); } renderTpl(); } catch (er) { toast(er.message); } return true; }
+    if (g('#tNew')) { T.sel = -1; T.edit = true; T.chk = null; T.f = { id: 0, name: 'tmph_store_', category: 'MARKETING', header_format: '', header_lib_id: 0, body: '', footer: 'Reply STOP to stop messages', buttons: [], examples: [], labels: [], status: 'draft', locked: false, photo: '', reason: '' }; renderTpl(); return true; }
+    if (g('#tBack')) { T.edit = false; renderTpl(); return true; }
+    x = g('[data-ti]'); if (x) { pickTpl(+x.dataset.ti); renderTpl(); return true; }
+    x = g('[data-ph]'); if (x && T.f) { T.f.header_lib_id = +x.dataset.ph; const p = T.photos.find((q) => q.id === T.f.header_lib_id); T.f.photo = p ? p.title : ''; renderTpl(true); return true; }
+    x = g('[data-pst]'); if (x) { try { const r = await api.post('st_wa.photo_store', { kind: x.dataset.pst }); await loadTpl(); T.f.header_lib_id = r.id; const p = T.photos.find((q) => q.id === r.id); T.f.photo = p ? p.title : ''; toast('Photo ready ✓'); renderTpl(true); } catch (er) { toast(er.message); } return true; }
+    if (g('#tUp')) { const fi = $('fileIn'); fi.accept = 'image/jpeg,image/png'; fi.multiple = false; fi.value = ''; fi.onchange = async () => { const file = fi.files[0]; if (!file) return; const fd = new FormData(); fd.append('file', file); try { toast('Uploading…'); const r = await api.upload('st_wa.photo_upload', fd); await loadTpl(); T.f.header_lib_id = r.id; const p = T.photos.find((q) => q.id === r.id); T.f.photo = p ? p.title : ''; renderTpl(true); } catch (er) { toast(er.message); } fi.multiple = true; }; fi.click(); return true; }
+    if (g('#bAdd')) { T.f.buttons.push({ type: 'URL', text: '', url: 'https://', example: '' }); renderTpl(true); return true; }
+    x = g('[data-bdel]'); if (x) { T.f.buttons.splice(+x.dataset.bdel, 1); renderTpl(true); return true; }
+    if (g('#tChkBtn')) { try { T.chk = await api.post('st_wa.tpl_check', Object.assign(payload(), { for_send: 1 })); } catch (er) { T.chk = { ok: false, problem: er.message }; } $('tChk').innerHTML = chkHtml(); return true; }
+    if (g('#tSave')) { await tplSave(false); return true; }
+    if (g('#tSend')) { try { const c = await api.post('st_wa.tpl_check', Object.assign(payload(), { for_send: 1 })); T.chk = c; $('tChk').innerHTML = chkHtml(); if (!c.ok) return true; } catch (er) { toast(er.message); return true; } if (T.f.header_format === 'IMAGE' && !T.f.header_lib_id) { toast('Choose the photo that goes on top first.'); return true; } if (!confirm('Send "' + T.f.name + '" to Meta for approval? It cannot be changed in place after this (a change becomes a new version).')) return true; await tplSave(true); return true; }
+    if (g('#tTest')) { const ph = prompt('Your own 10-digit mobile number (the test goes there):'); if (!ph) return true; try { await api.post('st_wa.tpl_test', { id: T.f.id, phone: ph, vars: varsOf(T.f.body).map((n) => T.f.examples[n - 1] || 'Test') }); toast('Test sent ✓'); } catch (er) { toast(er.message); } return true; }
+    return false;
+  }
+  document.addEventListener('input', (e) => {
+    if (S.tab !== 'tpl' || !T.f) return; const t = e.target; if (t.dataset.k) { T.f[t.dataset.k] = t.value; if (t.dataset.k === 'body') { const x = $('tEx'); if (x && varsOf(T.f.body).join() !== (x.dataset.v || '')) { x.dataset.v = varsOf(T.f.body).join(); const act = document.activeElement; x.innerHTML = exHtml(); if (act) act.focus(); } } if (t.dataset.k === 'category' || t.dataset.k === 'header_format') renderTpl(true); }
+    else if (t.dataset.ex != null) T.f.examples[+t.dataset.ex] = t.value; else if (t.dataset.bt != null) T.f.buttons[+t.dataset.bt][t.dataset.bf] = t.value; else return;
+    const pv = $('tPv'); if (pv) pv.innerHTML = pvHtml();
+  });
+  document.addEventListener('change', (e) => { if (S.tab === 'tpl' && e.target.dataset && e.target.dataset.k === 'body') { const x = $('tEx'); if (x) x.innerHTML = exHtml(); } });
   function render() {
-    const app = $('app'); if (!S.cfg) return;
+    const app = $('app'); if (!S.cfg) return; renderRail(); document.body.classList.toggle('inchat', !!S.cur && S.tab === 'chats');
+    if (S.tab === 'tpl' && S.cfg.manager) { if (!T.loaded) { app.innerHTML = '<div style="padding:30px;color:#667781">Loading…</div>'; loadTpl().then(() => { if (T.sel < 0 && T.list.length && !T.f) pickTpl(0), T.edit = false; render(); }); return; } return renderTpl(); }
     if (S.tab === 'setup' && S.cfg.manager) { app.innerHTML = setupView(); return bind(); }
     if (!S.cfg.number) { app.innerHTML = LH(false) + `<div class="empty" style="margin-top:12vh"><div class="ic">📵</div><b style="font-size:19px">No Store WhatsApp number yet</b><br>${S.cfg.manager ? 'Open Setup (⚙) and choose the number.' : 'Ask the Admin to set it up.'}</div>`; return bind(); }
     const keep = $('srch') && document.activeElement === $('srch'); const tx = $('tx') ? $('tx').value : '';
@@ -227,6 +325,8 @@
   document.addEventListener('click', async (e) => {
     const g = (s) => e.target.closest(s);
     if (g('#bkBtn')) return backToHrms();
+    { const nv = g('[data-nav]'); if (nv) { S.tab = nv.dataset.nav; if (S.tab !== 'chats') { S.cur = ''; } else { await loadCfg(); await loadChats(); } return render(); } }
+    if (S.tab === 'tpl' && await tplClick(e)) return;
     let x = g('[data-tab]'); if (x) { S.tab = x.dataset.tab; if (S.tab === 'chats') { await loadCfg(); } return render(); }
     x = g('[data-f]'); if (x) { S.filt = x.dataset.f; await loadChats(); return render(); }
     x = g('[data-c]'); if (x) return openChat(x.dataset.c);
