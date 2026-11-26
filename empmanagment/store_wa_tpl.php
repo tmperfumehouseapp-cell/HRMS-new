@@ -34,6 +34,15 @@ function swt_photo_from_store(PDO $pdo, string $kind, int $me): array
     $raw = base64_decode($m[2], true); if ($raw === false || $raw === '') return [0, 'The saved picture could not be read.'];
     return swt_lib_save($pdo, $raw, $m[1], ['new' => 'Store Picture 1 (new customer)', 'back' => 'Store Picture 2 (returning customer)', 'bday' => 'Store Picture 3 (birthday)'][$kind] ?? 'Store picture', 'store_' . $kind . '.jpg', $me);
 }
+/** The owner's three Store pictures as they are saved in Store → Messages (small, already compressed): [kind, title, data URL, custom?]. */
+function swt_store_pics(PDO $pdo): array
+{
+    $get = function (string $k) use ($pdo): string { try { $x = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = '" . $k . "'")->fetchColumn(); $j = $x ? json_decode((string)$x, true) : null; return is_array($j) ? (string)($j['photo'] ?? '') : ''; } catch (Throwable $e) { return ''; } };
+    $df = ''; $d = dirname(__DIR__) . '/assets/img/store_bill_default.jpg'; if (is_file($d)) $df = 'data:image/jpeg;base64,' . base64_encode((string)file_get_contents($d));
+    $new = $get('bill_image'); $back = $get('bill_image_back'); $bd = function_exists('st_bday_msg') ? (string)(st_bday_msg($pdo, true)['photo'] ?? '') : '';
+    $o = [['new', 'Picture 1', 'New customer (bill thank-you)', $new !== '' ? $new : $df, $new !== ''], ['back', 'Picture 2', 'Returning customer (welcome back)', $back !== '' ? $back : ($new !== '' ? $new : $df), $back !== ''], ['bday', 'Picture 3', 'Birthday gift', $bd !== '' ? $bd : $df, $bd !== '']];
+    return array_map(fn($x) => ['kind' => $x[0], 'name' => $x[1], 'title' => $x[2], 'thumb' => strlen($x[3]) < 400000 ? $x[3] : '', 'custom' => $x[4]], $o);
+}
 /** Saves image bytes into the media library (photos are made smaller first, like everywhere else). Returns [library id, error]. */
 function swt_lib_save(PDO $pdo, string $raw, string $mime, string $title, string $name, int $me): array
 {
@@ -42,6 +51,7 @@ function swt_lib_save(PDO $pdo, string $raw, string $mime, string $title, string
     $shr = function_exists('wa_lib_shrink') ? wa_lib_shrink($raw, $mime) : null; if ($shr) { $raw = $shr[0]; $mime = $shr[1]; }
     if (!in_array($mime, ['image/jpeg', 'image/png'], true)) return [0, 'Meta takes only JPG or PNG photos on top of a message.'];
     if (strlen($raw) > 5 * 1048576) return [0, 'This photo is over 5 MB. Use a smaller one.'];
+    try { $q = $pdo->prepare("SELECT id FROM wa_media_lib WHERE title = ? AND size = ? AND kind = 'image' LIMIT 1"); $q->execute([mb_substr($title, 0, 80), strlen($raw)]); $ex = (int)$q->fetchColumn(); if ($ex > 0) return [$ex, '']; } catch (Throwable $e) { }      // the same picture is not saved twice
     $dir = wa_lib_dir(); if (!is_dir($dir) || !is_writable($dir)) return [0, 'The server cannot save files in the wa_files folder.'];
     $stored = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . ($mime === 'image/png' ? '.png' : '.jpg'); if (@file_put_contents($dir . '/' . $stored, $raw) === false) return [0, 'Could not save the photo on the server.'];
     $pdo->prepare("INSERT INTO wa_media_lib (title, kind, mime, filename, size, path, mids, created_by, created_at) VALUES (?, 'image', ?, ?, ?, ?, '{}', ?, ?)")->execute([mb_substr($title, 0, 80), $mime, mb_substr($name, 0, 120), strlen($raw), $stored, $me, date('Y-m-d H:i:s')]);
@@ -79,9 +89,13 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
     if (!function_exists('wa_app_id') && is_file(__DIR__ . '/wa_more.php')) { try { require_once __DIR__ . '/wa_more.php'; } catch (Throwable $e) { error_log('swt: wa_more ' . $e->getMessage()); } }      // the Meta app id (needed to put a photo on top) is found there
     if (function_exists('wa_tpl_need_media')) wa_tpl_need_media();
     if ($action === 'st_wa.tpl_all') {
-        $rows = $pdo->query("SELECT id FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = []; foreach ($rows as $r) { $o = swt_out($pdo, $r, $waba); if ($o) $out[] = $o; }
+        $rows = $pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = [];
+        foreach ($rows as $r) {
+            if (in_array((string)$r['name'], ['tmph_store_bill', 'tmph_store_bill_back', 'tmph_store_bday'], true)) { $hq = $pdo->prepare("SELECT 1 FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $hq->execute([(int)$r['id'], $waba]); if (!$hq->fetchColumn()) continue; }      // the older plain-text versions (made for the other accounts) are not the Store's to see
+            $o = swt_out($pdo, $r, $waba); if ($o) $out[] = $o;
+        }
         $photos = []; try { foreach ($pdo->query("SELECT * FROM wa_media_lib WHERE kind = 'image' AND mime IN ('image/jpeg','image/png') ORDER BY id DESC LIMIT 40")->fetchAll() as $r) $photos[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'thumb' => swt_thumb($r)]; } catch (Throwable $e) { }
-        json_response(['templates' => $out, 'photos' => $photos, 'waba' => $waba, 'app_id_ok' => (function_exists('wa_app_id') ? wa_app_id($pdo) : wa_cfg_val('WA_APP_ID')) !== '']);
+        json_response(['templates' => $out, 'photos' => $photos, 'store_pics' => swt_store_pics($pdo), 'waba' => $waba, 'app_id_ok' => (function_exists('wa_app_id') ? wa_app_id($pdo) : wa_cfg_val('WA_APP_ID')) !== '']);
     }
     if (!$post) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
     if ($action === 'st_wa.tpl_seed') {
