@@ -1512,6 +1512,7 @@ function wag_holder_busy(PDO $pdo, int $emp, int $secs = 120): bool
 /** True while a salesperson has pressed "Take over" on this chat (36 h) or has written to the customer in the last 20 minutes: the bot never talks over a person. */
 function wag_bot_off(PDO $pdo, string $key, bool $ignoreHand = false): bool
 {
+    try { $__oh = (int)wag_meta_get($pdo, 'offerhold:' . substr(preg_replace('/\D+/', '', $key), -10), '0'); if ($__oh > time()) return true; } catch (Throwable $e) { }   // owner 26 Nov: he tapped a button of an automatic message: the price offer answers him (wof_tap), the bot waits 4 minutes
     if (function_exists('wa_bot_paused') && wa_bot_paused($pdo, $key) !== null) return true;   // ⏸ the salesperson stopped bot messages for this customer for a time (also beats the 'person is busy, bot may help' exception)
     try { if (false) return false; $t = wag_meta_get($pdo, 'botoff:' . $key, ''); if ($t !== '' && strtotime($t) > time() - 36 * 3600) return true; $h = wag_meta_get($pdo, 'bothand:' . $key, ''); return !$ignoreHand && $h !== '' && strtotime($h) > time() - 2 * 3600; } catch (Throwable $e) { return false; }   // taken by a person (36 h) or handed to a person by the bot (2 h)
 }

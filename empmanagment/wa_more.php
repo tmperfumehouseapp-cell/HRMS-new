@@ -384,6 +384,7 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
 {
     if (function_exists('wa_seg_touch')) { try { wa_seg_touch($pdo, $key, $prevIn, $now); } catch (Throwable $e) { } }
     if (function_exists('wa_util_offer_reply')) wa_util_offer_reply($pdo, $key, $text);
+    try { if (!function_exists('wof_tap') && is_file(__DIR__ . '/wa_offer.php')) require_once __DIR__ . '/wa_offer.php'; if (function_exists('wof_tap')) wof_tap($pdo, $key, $text); } catch (Throwable $e) { }   // a button tap on an automatic message: the price offer answers, not the bot
     if (function_exists('wa_bday_hook')) { try { if (wa_bday_hook($pdo, $key, $text)) return; } catch (Throwable $e) { error_log('wa_bday: ' . $e->getMessage()); } }   // 🎂 the customer answered our birthday question
     if (function_exists('wa_review_hook')) { try { if (wa_review_hook($pdo, $key, $text)) return; } catch (Throwable $e) { error_log('wa_review: ' . $e->getMessage()); } }   // ⭐ the 1-5 answer to our rating request
     if (function_exists('wa_cxself_hook')) { try { wa_cxself_hook($pdo, $key, $text); } catch (Throwable $e) { error_log('wa_cxself: ' . $e->getMessage()); } }   // 🎫 "complaint" → issue list → description → ticket   // 🎁 a reply to a utility follow-up → the campaign's offer goes free in the open chat
