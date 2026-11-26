@@ -1334,6 +1334,7 @@ function wq_tick(PDO $pdo, array $opt = []): array
             $GLOBALS['__wq_memo'] = []; wq_deps($pdo);
             $r['noans'] = wq_noans_scan($pdo, $deadline);
             $bf = wq_backfill_chunk($pdo, $deadline, !empty($opt['light']) ? 20 : 100); $r['typed'] = $bf['typed']; $r['untyped_left'] = $bf['left'];
+            if (microtime(true) < $deadline) $r['wrote_first_fix'] = wq_wrote_first_fix($pdo, min($deadline, microtime(true) + 3));   // one-time: answers to our own follow-up messages that were typed "New". Here (also in the light round, 3 s at most) and not with the heavy jobs below: those often use up the whole budget, so it never ran
             if (empty($opt['light'])) {
                 if (microtime(true) < $deadline) $r['orders'] = wq_ord_sync($pdo, $deadline);
                 if (microtime(true) < $deadline) $r['stats'] = wq_stat_chunk($pdo, $deadline);
@@ -1344,7 +1345,6 @@ function wq_tick(PDO $pdo, array $opt = []): array
                 }
                 if (microtime(true) < $deadline) { wq_boss_seed($pdo); $r['cq'] = wq_cq_mirror($pdo); }
                 if (microtime(true) < $deadline) $r['campaign_tag'] = wq_window_tag($pdo);
-                if (microtime(true) < $deadline) $r['wrote_first_fix'] = wq_wrote_first_fix($pdo, $deadline);   // one-time: replies to our own follow-up messages that were typed "New"
                 if (microtime(true) < $deadline && function_exists('wq_pace_tick')) { try { $r['pace'] = wq_pace_tick($pdo); } catch (Throwable $e) { } }   // ⚡ waiting-customer nudges / admin alerts
                 if (microtime(true) < $deadline && function_exists('wqm_tick')) { try { $r['mgr'] = wqm_tick($pdo); } catch (Throwable $e) { } }
                 if (microtime(true) < $deadline && function_exists('tb_tick')) { try { $r['tb'] = tb_tick($pdo); } catch (Throwable $e) { } }   // 👥 keep the Team table ready (today + this month)   // 🧭 Team manager: Claude looks at the whole team every 10 minutes
