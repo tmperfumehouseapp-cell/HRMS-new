@@ -7,7 +7,7 @@
  *    (no bot, no auto-assign, no growth flows, no wa_contacts row): the sales team never sees these chats.
  *  - Only the "handlers" (the Store staff the Admin ticks) and Admin / HR open this inbox (sw_auth).
  *  - The bill message, the birthday message and the reminders of the Store go out from this number (store_lib.php picks it with sw_cfg()).
- *  - Messages live in wa_messages (number_id = the Store number) so delivery / read ticks from the webhook apply as they do everywhere.
+ *  - Messages live in their OWN table st_wa_msg (never in wa_messages), so no sales / complaint / AI code can read them. Delivery / read ticks come through sw_status() from the webhook.
  * Actions (all st_wa.*): cfg, cfg_save, check, chats, chat, poll, send, tpl_list, tpl_send, send_media, media_link, note_add, tag_set, assign, status, quick_save, quick_del.
  * Own tables: st_wa_chat, st_wa_note, st_wa_tag, st_wa_read, st_wa_quick.
  */
@@ -18,6 +18,9 @@ function sw_tables(PDO $pdo): bool
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_chat (phone VARCHAR(12) NOT NULL PRIMARY KEY, name VARCHAR(120) NOT NULL DEFAULT '', assigned_emp INT NOT NULL DEFAULT 0, status VARCHAR(8) NOT NULL DEFAULT 'open',
             last_in_at DATETIME NULL, last_out_at DATETIME NULL, optout TINYINT NOT NULL DEFAULT 0, updated_at DATETIME NULL, KEY k_st (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_msg (id BIGINT AUTO_INCREMENT PRIMARY KEY, wamid VARCHAR(120) NOT NULL DEFAULT '', phone VARCHAR(12) NOT NULL, dir VARCHAR(3) NOT NULL, mtype VARCHAR(16) NOT NULL DEFAULT 'text', body TEXT NULL,
+            media_id VARCHAR(80) NOT NULL DEFAULT '', media_mime VARCHAR(60) NOT NULL DEFAULT '', status VARCHAR(12) NOT NULL DEFAULT '', who VARCHAR(12) NOT NULL DEFAULT '', emp_id INT NOT NULL DEFAULT 0, ts DATETIME NULL, reply_to VARCHAR(120) NULL,
+            UNIQUE KEY uq_wamid (wamid), KEY k_phone (phone, id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_note (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0, emp_name VARCHAR(120) NOT NULL DEFAULT '', txt TEXT NULL, at DATETIME NULL, KEY k_p (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_tag (phone VARCHAR(12) NOT NULL, tag VARCHAR(30) NOT NULL, PRIMARY KEY (phone, tag)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_read (emp_id INT NOT NULL, phone VARCHAR(12) NOT NULL, last_id BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (emp_id, phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -65,9 +68,9 @@ function sw_in(PDO $pdo, array $m, string $name, int $numberId): string
     $key = wa_key($m['from'] ?? ''); if ($key === '' || !sw_tables($pdo)) return '';
     $now = wa_ts($m['timestamp'] ?? 0); [$t, $body, $mid, $mime] = wa_parse_msg($m);
     try {
-        $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, media_id, media_mime, status, who, ts) VALUES (?, ?, ?, 'in', ?, ?, ?, ?, 'received', 'customer', ?)")
-            ->execute([(string)($m['id'] ?? ''), $key, $numberId, mb_substr($t, 0, 16), $body, $mid, mb_substr($mime, 0, 60), $now]);
-        $ctx = (string)($m['context']['id'] ?? ''); if ($ctx !== '') { try { $pdo->prepare("UPDATE wa_messages SET reply_to = ? WHERE wamid = ?")->execute([mb_substr($ctx, 0, 120), (string)($m['id'] ?? '')]); } catch (PDOException $e) { } }
+        $pdo->prepare("INSERT INTO st_wa_msg (wamid, phone, dir, mtype, body, media_id, media_mime, status, who, ts) VALUES (?, ?, 'in', ?, ?, ?, ?, 'received', 'customer', ?)")
+            ->execute([(string)($m['id'] ?? ''), $key, mb_substr($t, 0, 16), $body, $mid, mb_substr($mime, 0, 60), $now]);
+        $ctx = (string)($m['context']['id'] ?? ''); if ($ctx !== '') { try { $pdo->prepare("UPDATE st_wa_msg SET reply_to = ? WHERE wamid = ?")->execute([mb_substr($ctx, 0, 120), (string)($m['id'] ?? '')]); } catch (PDOException $e) { } }
     } catch (PDOException $e) { return ''; }      // the same wamid twice (Meta retries): already stored
     $stop = $t === 'text' && preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body) ? 1 : 0;
     $ex = $pdo->prepare("SELECT phone FROM st_wa_chat WHERE phone = ?"); $ex->execute([$key]);
@@ -79,11 +82,20 @@ function sw_in(PDO $pdo, array $m, string $name, int $numberId): string
     return $key;
 }
 
+/** Delivery / read / failed receipts of the Store number's messages (called by the webhook for the Store number only). */
+function sw_status(PDO $pdo, array $s): int
+{
+    $id = (string)($s['id'] ?? ''); $st = strtolower((string)($s['status'] ?? '')); if ($id === '' || !sw_tables($pdo)) return 0;
+    $rank = ['sent' => 1, 'delivered' => 2, 'read' => 3]; if ($st === 'failed') { $pdo->prepare("UPDATE st_wa_msg SET status = 'failed' WHERE wamid = ?")->execute([$id]); try { wa_log($pdo, 'send', false, 'store · ' . (string)($s['recipient_id'] ?? '') . ' · ' . mb_substr(json_encode($s['errors'] ?? ''), 0, 160)); } catch (Throwable $e) { } return 1; }
+    if (!isset($rank[$st])) return 0; $q = $pdo->prepare("SELECT status FROM st_wa_msg WHERE wamid = ?"); $q->execute([$id]); $cur = $q->fetchColumn(); if ($cur === false) return 0;
+    if (($rank[(string)$cur] ?? 0) >= $rank[$st] && $cur !== 'failed') return 0; $pdo->prepare("UPDATE st_wa_msg SET status = ? WHERE wamid = ?")->execute([$st, $id]); return 1;
+}
+
 /* ============================== helpers ============================== */
 /** [open?, hours left] for the 24-hour reply window of one customer on the Store number. */
 function sw_window(PDO $pdo, string $phone, int $nid): array
 {
-    $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE number_id = ? AND phone = ? AND dir = 'in'"); $q->execute([$nid, $phone]); $t = $q->fetchColumn();
+    $q = $pdo->prepare("SELECT MAX(ts) FROM st_wa_msg WHERE phone = ? AND dir = 'in'"); $q->execute([$phone]); $t = $q->fetchColumn();
     if (!$t) return [false, 0.0]; $left = strtotime((string)$t) + 86400 - time(); return [$left > 0, $left > 0 ? round($left / 3600, 1) : 0.0];
 }
 function sw_names(PDO $pdo, array $phones): array
@@ -110,8 +122,8 @@ function sw_chat_touch(PDO $pdo, string $phone, string $field, string $now): voi
 }
 function sw_log_out(PDO $pdo, string $wamid, string $phone, int $nid, string $type, string $body, string $mediaId, string $mime, int $emp): void
 {
-    $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', ?, ?, ?, ?, 'sent', 'emp', ?, ?)")
-        ->execute([$wamid, $phone, $nid, mb_substr($type, 0, 16), $body, $mediaId, mb_substr($mime, 0, 60), $emp, date('Y-m-d H:i:s')]);
+    $pdo->prepare("INSERT INTO st_wa_msg (wamid, phone, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts) VALUES (?, ?, 'out', ?, ?, ?, ?, 'sent', ?, ?, ?)")
+        ->execute([$wamid, $phone, mb_substr($type, 0, 16), $body, $mediaId, mb_substr($mime, 0, 60), $emp > 0 ? 'emp' : 'store', $emp, date('Y-m-d H:i:s')]);
 }
 /** The "to" of a Cloud API call: 91 + the 10 digits. */
 function sw_to(string $phone): string { return '91' . substr(preg_replace('/\D/', '', $phone), -10); }
@@ -174,13 +186,13 @@ function sw_handle(PDO $pdo, string $action): void
 
     if ($action === 'st_wa.chats') {
         $need(); $f = (string)($_GET['f'] ?? 'all'); $s = trim((string)($_GET['q'] ?? ''));
-        $rows = $pdo->prepare("SELECT phone, MAX(id) mid FROM wa_messages WHERE number_id = ? GROUP BY phone ORDER BY mid DESC LIMIT 400"); $rows->execute([$nid]); $L = $rows->fetchAll(); if (!$L) json_response(['chats' => [], 'unread' => 0, 'unanswered' => 0]);
+        $rows = $pdo->prepare("SELECT phone, MAX(id) mid FROM st_wa_msg GROUP BY phone ORDER BY mid DESC LIMIT 400"); $rows->execute(); $L = $rows->fetchAll(); if (!$L) json_response(['chats' => [], 'unread' => 0, 'unanswered' => 0]);
         $ph = array_map(fn($r) => (string)$r['phone'], $L); $ids = array_map(fn($r) => (int)$r['mid'], $L); $in = implode(',', array_fill(0, count($ph), '?'));
-        $last = []; $q = $pdo->prepare("SELECT id, phone, dir, mtype, body, ts, status FROM wa_messages WHERE id IN (" . implode(',', $ids) . ")"); $q->execute(); foreach ($q->fetchAll() as $r) $last[(string)$r['phone']] = $r;
-        $un = []; $q = $pdo->prepare("SELECT m.phone, COUNT(*) c FROM wa_messages m LEFT JOIN st_wa_read r ON r.emp_id = ? AND r.phone = m.phone WHERE m.number_id = ? AND m.dir = 'in' AND m.phone IN ($in) AND m.id > COALESCE(r.last_id, 0) GROUP BY m.phone"); $q->execute(array_merge([$me, $nid], $ph)); foreach ($q->fetchAll() as $r) $un[(string)$r['phone']] = (int)$r['c'];
+        $last = []; $q = $pdo->prepare("SELECT id, phone, dir, mtype, body, ts, status FROM st_wa_msg WHERE id IN (" . implode(',', $ids) . ")"); $q->execute(); foreach ($q->fetchAll() as $r) $last[(string)$r['phone']] = $r;
+        $un = []; $q = $pdo->prepare("SELECT m.phone, COUNT(*) c FROM st_wa_msg m LEFT JOIN st_wa_read r ON r.emp_id = ? AND r.phone = m.phone WHERE m.dir = 'in' AND m.phone IN ($in) AND m.id > COALESCE(r.last_id, 0) GROUP BY m.phone"); $q->execute(array_merge([$me], $ph)); foreach ($q->fetchAll() as $r) $un[(string)$r['phone']] = (int)$r['c'];
         $meta = []; $q = $pdo->prepare("SELECT * FROM st_wa_chat WHERE phone IN ($in)"); $q->execute($ph); foreach ($q->fetchAll() as $r) $meta[(string)$r['phone']] = $r;
         $tags = []; $q = $pdo->prepare("SELECT phone, tag FROM st_wa_tag WHERE phone IN ($in)"); $q->execute($ph); foreach ($q->fetchAll() as $r) $tags[(string)$r['phone']][] = (string)$r['tag'];
-        $names = sw_names($pdo, $ph); $win = []; $q = $pdo->prepare("SELECT phone, MAX(ts) t FROM wa_messages WHERE number_id = ? AND dir = 'in' AND phone IN ($in) GROUP BY phone"); $q->execute(array_merge([$nid], $ph)); foreach ($q->fetchAll() as $r) $win[(string)$r['phone']] = strtotime((string)$r['t']);
+        $names = sw_names($pdo, $ph); $win = []; $q = $pdo->prepare("SELECT phone, MAX(ts) t FROM st_wa_msg WHERE dir = 'in' AND phone IN ($in) GROUP BY phone"); $q->execute($ph); foreach ($q->fetchAll() as $r) $win[(string)$r['phone']] = strtotime((string)$r['t']);
         $out = []; $unread = 0; $unans = 0;
         foreach ($ph as $p) {
             $m = $last[$p] ?? null; if (!$m) continue; $mt = $meta[$p] ?? null; $status = $mt ? (string)$mt['status'] : 'open'; $name = $names[$p] ?? ''; $c = $un[$p] ?? 0; $answered = $m['dir'] === 'out'; $w = $win[$p] ?? 0;
@@ -194,7 +206,7 @@ function sw_handle(PDO $pdo, string $action): void
     }
     if ($action === 'st_wa.chat') {
         $need(); $p = wa_key($_GET['phone'] ?? ''); if ($p === '') json_response(['error' => 'No customer.'], 422); $after = max(0, (int)($_GET['after'] ?? 0));
-        $q = $pdo->prepare("SELECT id, wamid, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts, reply_to FROM wa_messages WHERE number_id = ? AND phone = ? AND id > ? ORDER BY id DESC LIMIT 300"); $q->execute([$nid, $p, $after]); $msgs = array_reverse($q->fetchAll());
+        $q = $pdo->prepare("SELECT id, wamid, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts, reply_to FROM st_wa_msg WHERE phone = ? AND id > ? ORDER BY id DESC LIMIT 300"); $q->execute([$p, $after]); $msgs = array_reverse($q->fetchAll());
         $emps = []; foreach ($msgs as &$m) { $m['id'] = (int)$m['id']; $m['emp_id'] = (int)$m['emp_id']; if ($m['dir'] === 'out' && $m['emp_id'] > 0) { if (!isset($emps[$m['emp_id']])) $emps[$m['emp_id']] = sw_empname($pdo, $m['emp_id']); $m['emp_name'] = $emps[$m['emp_id']]; } } unset($m);
         $maxId = $msgs ? (int)end($msgs)['id'] : $after; if ($maxId > 0) $pdo->prepare("INSERT INTO st_wa_read (emp_id, phone, last_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE last_id = GREATEST(last_id, VALUES(last_id))")->execute([$me, $p, $maxId]);
         $o = ['messages' => $msgs, 'last_id' => $maxId]; [$wo, $wl] = sw_window($pdo, $p, $nid); $o['window_open'] = $wo; $o['window_hours'] = $wl;
@@ -207,7 +219,7 @@ function sw_handle(PDO $pdo, string $action): void
         json_response($o);
     }
     if ($action === 'st_wa.poll') {
-        $need(); $q = $pdo->prepare("SELECT COALESCE(MAX(id), 0) FROM wa_messages WHERE number_id = ?"); $q->execute([$nid]); json_response(['last_id' => (int)$q->fetchColumn()]);
+        $need(); $q = $pdo->prepare("SELECT COALESCE(MAX(id), 0) FROM st_wa_msg"); $q->execute(); json_response(['last_id' => (int)$q->fetchColumn()]);
     }
     if ($action === 'st_wa.send') {
         if (!$post) json_response(['error' => 'Method not allowed.'], 405); $need(); $in = json_input(); $p = wa_key($in['phone'] ?? ''); $text = trim(mb_substr((string)($in['text'] ?? ''), 0, 4000));
@@ -251,7 +263,7 @@ function sw_handle(PDO $pdo, string $action): void
         sw_log_out($pdo, $wamid, $p, $nid, $r['kind'], $cap !== '' ? $cap : ($r['kind'] === 'document' ? $name : ''), $mid, $r['mime'], $me); sw_chat_touch($pdo, $p, 'last_out_at', date('Y-m-d H:i:s')); json_response(['ok' => true, 'kind' => $r['kind']]);
     }
     if ($action === 'st_wa.media_link') {
-        $need(); $id = preg_replace('/[^0-9]/', '', (string)($_GET['id'] ?? '')); $q = $pdo->prepare("SELECT media_mime FROM wa_messages WHERE media_id = ? AND number_id = ? LIMIT 1"); $q->execute([$id, $nid]); $mm = $q->fetch();
+        $need(); $id = preg_replace('/[^0-9]/', '', (string)($_GET['id'] ?? '')); $q = $pdo->prepare("SELECT media_mime FROM st_wa_msg WHERE media_id = ? LIMIT 1"); $q->execute([$id]); $mm = $q->fetch();
         if ($id === '' || !$mm) json_response(['error' => 'File not found.'], 404); $e = time() + 3 * 3600; json_response(['id' => $id, 'e' => $e, 's' => wa_mfile_sig($pdo, $id, $e), 'mime' => (string)$mm['media_mime']]);
     }
     if ($action === 'st_wa.note_add') {
