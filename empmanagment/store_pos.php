@@ -511,6 +511,8 @@ try {
         // ---- suggested order: what to make next, from what REALLY sold (per perfume AND size), not from guesses
         case 'st_disp.feed': { require_once __DIR__ . '/store_display.php'; sd_feed($pdo); break; }      // PUBLIC: the store screen (secret key in its link), totals only
         case 'st_disp.pair': { require_once __DIR__ . '/store_display.php'; sd_pair_poll($pdo); break; }      // PUBLIC: a TV waiting to be linked (gets the key only for a code the owner typed)
+        case 'st_wa.cfg': case 'st_wa.cfg_save': case 'st_wa.check': case 'st_wa.chats': case 'st_wa.chat': case 'st_wa.poll': case 'st_wa.send': case 'st_wa.tpl_list': case 'st_wa.tpl_send': case 'st_wa.send_media': case 'st_wa.media_link':
+        case 'st_wa.note_add': case 'st_wa.tag_set': case 'st_wa.assign': case 'st_wa.status': case 'st_wa.quick_save': case 'st_wa.quick_del': { require_once __DIR__ . '/store_wa.php'; sw_handle($pdo, $action); break; }      // Store → WhatsApp inbox (the Store's own number; only the Store team)
         case 'st_disp.get': case 'st_disp.save': case 'st_disp.newkey': case 'st_disp.link': { require_once __DIR__ . '/store_display.php'; sd_handle($pdo, $action); break; }
         case 'st_since.get': { require_once __DIR__ . '/store_since.php'; ss_handle($pdo); break; }      // Store → Since the start (orders, bottles, ml, ₹ by month)
         case 'st_rm.list': case 'st_rm.done': case 'st_rm.skip': case 'st_rm.stop': {          // Store → Messages → Customer reminders (sent by hand, nothing goes out by itself)

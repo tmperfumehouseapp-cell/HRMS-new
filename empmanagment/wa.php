@@ -1119,12 +1119,14 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
                 if (($ch['field'] ?? '') === 'template_category_update') { if (wa_tpl_tables($pdo)) wa_tpl_category_event($pdo, $v); continue; }   // Meta changed the category of a pre-made message (Utility → Marketing: the mix stops using it as Utility)
                 if (($ch['field'] ?? '') === 'message_template_quality_update') { if (wa_tpl_tables($pdo)) wa_tpl_quality_event($pdo, $v); continue; }   // the quality rating of a pre-made message changed
                 $nid = wa_number_id($pdo, (string)($md['phone_number_id'] ?? ''), (string)($md['display_phone_number'] ?? ''));
+                $__swNum = false; try { if (is_file(__DIR__ . '/store_wa.php')) { require_once __DIR__ . '/store_wa.php'; $__swNum = sw_is_number($pdo, $nid); } } catch (Throwable $e) { $__swNum = false; }   // 🏪 the STORE's own number: its chats belong to the Store team only and never go through the sales pipeline (no bot, no assignment)
+                if ($__swNum && in_array((string)($ch['field'] ?? ''), ['smb_message_echoes', 'history'], true)) continue;
                 // 📱 the WhatsApp Business APP on the phone (coexistence): messages a salesperson types in the app (echoes) and the chat history Meta shares — kept like any other message
                 if (($ch['field'] ?? '') === 'smb_message_echoes') { foreach ((array)($v['message_echoes'] ?? []) as $m) { $k = wa_store_phone_msg($pdo, (array)$m, wa_key($m['to'] ?? ''), $nid, 'out', false); if ($k !== '') { $n++; } } continue; }
                 if (($ch['field'] ?? '') === 'history') { foreach ((array)($v['history'] ?? []) as $hh) foreach ((array)($hh['threads'] ?? []) as $th) { $ck = wa_key($th['id'] ?? ''); if ($ck === '') continue;
                     foreach ((array)($th['messages'] ?? []) as $m) { $out = wa_key($m['from'] ?? '') !== $ck; if (wa_store_phone_msg($pdo, (array)$m, $ck, $nid, $out ? 'out' : 'in', true) !== '') $n++; } } continue; }
                 $names = []; foreach ((array)($v['contacts'] ?? []) as $ct) $names[wa_key($ct['wa_id'] ?? '')] = (string)($ct['profile']['name'] ?? '');
-                foreach ((array)($v['messages'] ?? []) as $m) { $k = wa_store_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); if ($k !== '') { $n++; $__keys[$k] = true; } }
+                foreach ((array)($v['messages'] ?? []) as $m) { if ($__swNum) { try { sw_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); } catch (Throwable $e) { error_log('sw_in: ' . $e->getMessage()); } continue; } $k = wa_store_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); if ($k !== '') { $n++; $__keys[$k] = true; } }
                 $__pend = []; foreach ((array)($v['statuses'] ?? []) as $s) { if ((string)(((array)$s)['status'] ?? '') === 'failed') $st += wa_webhook_status($pdo, (array)$s); else $__pend[] = (array)$s; }   // a FAILED receipt is handled at once, as before
                 if ($__pend) $st += wa_status_intake($pdo, $__pend);   // sent / delivered / read receipts: queued and applied as one block (every 7 s when busy, at once when quiet)
             }
