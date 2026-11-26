@@ -63,6 +63,19 @@
  .tp .tr{padding:14px;overflow:auto;display:grid;gap:9px;align-content:start}.tp .tr label{display:grid;gap:3px;font-size:11.5px;font-weight:700;color:#667781}.tp .tr input{border:1.5px solid #e6e8ec;border-radius:12px;padding:8px 12px;font:inherit}
  .tp .pv{background:#efeae2;border-radius:14px;padding:12px}
  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#14161a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:700;z-index:80;max-width:90vw}
+ .sw-f{gap:4px;padding:4px 10px 8px;flex-wrap:nowrap}.sw-f button{display:inline-flex;align-items:center;gap:4px;padding:5px 9px;font-size:12px;border-radius:999px;background:#f0f2f5;color:#3b4a54;transition:background .15s}
+ .sw-f button:hover{background:#e6e9ec}.sw-f button.on{background:#d9fdd3;color:#0b6b3a;box-shadow:inset 0 0 0 1.5px #25d366}
+ .sw-f button em{font-style:normal;font-size:11px;font-weight:900;min-width:18px;height:18px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:#fff;color:#3b4a54;padding:0 5px}
+ .sw-f button#fUn em{background:#ef4444;color:#fff}.sw-f button em.z{background:#e5e7eb;color:#8a94a0}
+ .cmp{padding:8px 12px 10px;background:#f0f2f5}.cmp .row{align-items:center;gap:8px}
+ .cmp .tb{width:42px;height:42px;border-radius:50%;background:#fff;color:#54656f;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(0,0,0,.08);font-size:0;transition:transform .1s,background .15s}.cmp .tb:hover{background:#e9edef}.cmp .tb:active{transform:scale(.94)}
+ .cmp .tb svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+ .cmp textarea{border-radius:24px;padding:12px 18px;min-height:46px;box-shadow:0 1px 2px rgba(0,0,0,.08);font-size:14.5px}
+ .cmp .send{width:46px;height:46px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,168,132,.4);font-size:0}.cmp .send svg{width:22px;height:22px;fill:#fff}
+ .am div{padding:9px 12px}.am i svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+ .tpl button{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;font-size:14px;border-radius:14px}.tpl button svg{width:18px;height:18px;stroke:#0b6b3a;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+ .view{display:inline-flex;align-items:center;gap:6px;background:#fff3cd;color:#8a5a00;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:800;white-space:nowrap}.view i{width:8px;height:8px;border-radius:50%;background:#f59e0b;animation:pl 1.2s infinite}@keyframes pl{50%{opacity:.25}}
+ .sw-it{transition:background .12s}.sw-it.on{box-shadow:inset 3px 0 0 #25d366;background:#f0f2f5}
  @media(max-width:1100px){.sw.inf{grid-template-columns:340px minmax(0,1fr)}.sw.inf .info{position:fixed;right:0;top:0;bottom:0;width:340px;box-shadow:-8px 0 24px rgba(0,0,0,.12);z-index:20}}
  @media(max-width:760px){.sw,.sw.inf{grid-template-columns:1fr}.sw.chat .p-list{display:none}.sw:not(.chat) .ch{display:none}.ch-h .back{display:block}.bub{max-width:88%}.sw.inf .info{width:100%}
   .msgs{padding:8px 8px 6px}.cmp{padding:6px 8px calc(8px + env(safe-area-inset-bottom))}.cmp .tb{width:30px;font-size:20px}.tp .box{grid-template-columns:1fr;max-height:92vh}.tp .tl{max-height:26vh;border-right:0}.pop{bottom:54px}}
@@ -79,6 +92,8 @@
   const $ = (id) => document.getElementById(id), esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const COL = ['#e0603f', '#2a78d6', '#16945a', '#6250d6', '#b45309', '#d1478c'];
   const S = { cfg: null, chats: [], unread: 0, unans: 0, cur: '', chat: null, filt: 'all', q: '', tab: 'chats', info: false, pop: '', lastId: 0, tpl: null, tplSel: 0, tplOpen: false, busy: false, err: '' };
+  const IC = { clip: '<svg viewBox="0 0 24 24"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 01-7.8-7.8l9-9a3.7 3.7 0 015.2 5.2l-9 9a1.8 1.8 0 01-2.6-2.6l8.2-8.2"/></svg>', tpl: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>', send: '<svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>',
+    img: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>', doc: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg>', mic: '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>' };
   const first = (n) => String(n || '').trim().split(/\s+/)[0] || 'ji';
   const ini = (n, p) => { const w = String(n || '').trim().split(/\s+/).filter(Boolean); return w.length ? w.slice(0, 2).map((x) => x[0]).join('').toUpperCase() : String(p || '?').slice(-2); };
   const av = (n, p) => `<span class="av" style="background:${COL[(parseInt(String(p).slice(-3), 10) || 0) % 6]}">${esc(ini(n, p))}</span>`;
@@ -92,20 +107,22 @@
 
   /* ---------- data ---------- */
   async function loadCfg() { S.cfg = await api.get('st_wa.cfg'); }
-  async function loadChats() { try { const r = await api.get('st_wa.chats', { f: S.filt, q: S.q }); S.chats = r.chats || []; S.unread = r.unread || 0; S.unans = r.unanswered || 0; } catch (e) { S.err = e.message; } }
+  async function loadChats() { try { const r = await api.get('st_wa.chats', { f: S.filt, q: S.q }); S.chats = r.chats || []; S.unread = r.unread || 0; S.unans = r.unanswered || 0; S.counts = r.counts || {}; } catch (e) { S.err = e.message; } }
   async function openChat(phone) {
     S.cur = phone; S.chat = null; S.pop = ''; render();
     try { const r = await api.get('st_wa.chat', { phone }); S.chat = r; S.lastId = r.last_id || 0; } catch (e) { toast(e.message); }
-    render(); try { const row = S.chats.find((c) => c.phone === phone); if (row) row.unread = 0; } catch (e) { /* fine */ }
+    render(); if (S.chat) setViewers(S.chat.viewers); try { const row = S.chats.find((c) => c.phone === phone); if (row) row.unread = 0; } catch (e) { /* fine */ }
   }
   async function pollChat() {
     if (!S.cur || !S.chat) return; try { const r = await api.get('st_wa.chat', { phone: S.cur, after: S.lastId });
-      if (r.messages && r.messages.length) { S.chat.messages = S.chat.messages.concat(r.messages); S.lastId = r.last_id; S.chat.window_open = r.window_open; S.chat.window_hours = r.window_hours; renderMsgs(true); } } catch (e) { /* next time */ }
+      if (r.messages && r.messages.length) { S.chat.messages = S.chat.messages.concat(r.messages); S.lastId = r.last_id; S.chat.window_open = r.window_open; S.chat.window_hours = r.window_hours; renderMsgs(true); }
+      setViewers(r.viewers); } catch (e) { /* next time */ }
   }
+  function setViewers(v) { const el = $('viewers'); if (!el) return; const a = (v || []).filter(Boolean); el.innerHTML = a.length ? `<span class="view"><i></i>${esc(a.join(', '))} ${a.length > 1 ? 'are' : 'is'} also in this chat</span>` : ''; }
   let lastPoll = -1;
   async function tick() {
     if (document.hidden || !S.cfg || !S.cfg.number || S.tab !== 'chats') return;
-    try { const p = await api.get('st_wa.poll'); if (p.last_id !== lastPoll) { lastPoll = p.last_id; await loadChats(); renderList(); await pollChat(); } } catch (e) { /* offline: next time */ }
+    try { const p = await api.get('st_wa.poll'); if (p.last_id !== lastPoll) { lastPoll = p.last_id; await loadChats(); renderList(); } await pollChat(); } catch (e) { /* offline: next time */ }
   }
 
   /* ---------- views ---------- */
@@ -113,7 +130,8 @@
   function listHtml() {
     return S.chats.map((c) => `<div class="sw-it ${c.phone === S.cur ? 'on' : ''}" data-c="${esc(c.phone)}">${av(c.name, c.phone)}<div class="t"><b>${esc(c.name || fmtPhone(c.phone))}</b><small>${c.dir === 'out' ? '<span style="color:#53bdeb">✓✓</span> ' : ''}${esc(c.last)}</small></div><div class="m"><span>${esc(short(c.ts))}</span>${c.unread ? `<span class="un">${c.unread}</span>` : `<span class="win ${c.window_open ? 'ok' : 'no'}">${c.window_open ? 'open' : 'template'}</span>`}</div></div>`).join('') || '<div class="empty"><div class="ic">💬</div>No chats here yet.<br><small>When a bill is sent, or a customer writes, the chat appears.</small></div>';
   }
-  function renderList() { const l = document.querySelector('.sw-list'); if (l) l.innerHTML = listHtml(); const u = $('fUn'); if (u) u.textContent = 'Unanswered' + (S.unans ? ' · ' + S.unans : ''); }
+  const filtHtml = () => { const C = S.counts || {}; const b = (k, l, id) => `<button data-f="${k}" ${id ? 'id="' + id + '"' : ''} class="${S.filt === k ? 'on' : ''}">${l}<em class="${C[k] ? '' : 'z'}">${C[k] || 0}</em></button>`; return b('all', 'All') + b('unanswered', 'Unanswered', 'fUn') + b('mine', 'Mine') + b('done', 'Done'); };
+  function renderList() { const fr = $('fRow'); if (fr) fr.innerHTML = filtHtml(); const l = document.querySelector('.sw-list'); if (l) l.innerHTML = listHtml(); }
   function bubHtml(m, prev) {
     const day = (!prev || dayLb(prev.ts) !== dayLb(m.ts)) ? `<div class="day">${esc(dayLb(m.ts))}</div>` : '';
     let inner = '';
@@ -137,15 +155,15 @@
   function cmpHtml() {
     const c = S.chat; if (!c) return '';
     if (c.optout) return '<div class="warnb">This customer asked us to stop. Do not message them.</div>';
-    if (!c.window_open) return `<div class="warnb">The customer has not written in the last 24 hours. WhatsApp allows only an approved <b>template</b> now. When they reply, you can type freely.</div><div class="tpl"><button data-open="tpl">🧾 Send a template</button></div>`;
-    return `${S.pop === 'slash' ? quickHtml() : ''}${S.pop === 'attach' ? `<div class="pop am"><div data-att="image/*,video/*"><i style="background:#7f66ff">🖼</i>Photo or video</div><div data-att=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt"><i style="background:#5157ae">📄</i>Document</div><div data-att="audio/*"><i style="background:#02a698">🎙</i>Audio file</div></div>` : ''}<div class="row"><button class="tb" data-pop="attach" title="Attach">📎</button><button class="tb" data-open="tpl" title="Template">🧾</button><textarea id="tx" rows="1" placeholder="${innerWidth < 760 ? 'Type a message' : 'Type a message · / for quick replies'}"></textarea><button class="send" id="sendBtn" title="Send">➤</button></div>`;
+    if (!c.window_open) return `<div class="warnb">The customer has not written in the last 24 hours. WhatsApp allows only an approved <b>template</b> now. When they reply, you can type freely.</div><div class="tpl"><button data-open="tpl">${IC.tpl} Send a template message</button></div>`;
+    return `${S.pop === 'slash' ? quickHtml() : ''}${S.pop === 'attach' ? `<div class="pop am"><div data-att="image/*,video/*"><i style="background:#7f66ff">${IC.img}</i>Photo or video</div><div data-att=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt"><i style="background:#5157ae">${IC.doc}</i>Document</div><div data-att="audio/*"><i style="background:#02a698">${IC.mic}</i>Audio file</div></div>` : ''}<div class="row"><button class="tb" data-pop="attach" title="Attach a photo, video or document">${IC.clip}</button><button class="tb" data-open="tpl" title="Send a template message">${IC.tpl}</button><textarea id="tx" rows="1" placeholder="${innerWidth < 760 ? 'Type a message' : 'Type a message · / for quick replies'}"></textarea><button class="send" id="sendBtn" title="Send">${IC.send}</button></div>`;
   }
   const quickList = (q) => (S.cfg.quick || []).filter((x) => !q || x.shortcut.toLowerCase().indexOf(q.toLowerCase()) === 0);
   function quickHtml(q) { const L = quickList(q || ''); return `<div class="pop"><div class="ph">Quick replies · type to filter</div>${L.map((x, i) => `<div class="qi ${i === 0 ? 'on' : ''}" data-q="${x.id}"><b>${esc(x.shortcut)}</b><span>${esc(x.body)}</span></div>`).join('') || '<div class="qi"><span>No quick reply with that name. Add them in Setup.</span></div>'}</div>`; }
   function chatHtml() {
     if (!S.cur) return `<div class="ch"><div class="empty"><div class="ic">💬</div><b style="font-size:20px">Store WhatsApp</b><br>Choose a chat. Customers who reply to the store number appear here.</div></div>`;
     const c = S.chat; if (!c) return `<div class="ch"><div class="empty">Loading…</div></div>`;
-    return `<div class="ch"><div class="ch-h"><button class="back" id="back">‹</button>${av(c.name, c.phone)}<div class="nm" id="nm"><b>${esc(c.name || fmtPhone(c.phone))}</b><small>${esc(fmtPhone(c.phone))}${c.returning ? ' · returning customer' : ''}</small></div><span class="win ${c.window_open ? 'ok' : 'no'}">${c.window_open ? 'window open · ' + Math.floor(c.window_hours) + ' h left' : 'window closed'}</span><button class="ibtn" id="ibtn" title="Customer">i</button></div><div class="msgs" id="msgs"></div><div class="cmp" id="cmp">${cmpHtml()}</div></div>`;
+    return `<div class="ch"><div class="ch-h"><button class="back" id="back">‹</button>${av(c.name, c.phone)}<div class="nm" id="nm"><b>${esc(c.name || fmtPhone(c.phone))}</b><small>${esc(fmtPhone(c.phone))}${c.returning ? ' · returning customer' : ''}</small></div><span id="viewers"></span><span class="win ${c.window_open ? 'ok' : 'no'}">${c.window_open ? 'window open · ' + Math.floor(c.window_hours) + ' h left' : 'window closed'}</span><button class="ibtn" id="ibtn" title="Customer">i</button></div><div class="msgs" id="msgs"></div><div class="cmp" id="cmp">${cmpHtml()}</div></div>`;
   }
   function infoHtml() {
     const c = S.chat; if (!c) return '';
@@ -157,7 +175,7 @@
      <div style="margin-top:12px;display:grid;gap:8px"><button class="sx-btn ghost" id="doneBtn">${c.status === 'done' ? 'Reopen this chat' : 'Mark as done'}</button></div></div>`;
   }
   function chatsView() {
-    return `<div class="sw ${S.cur ? 'chat' : ''} ${S.info && S.cur ? 'inf' : ''}"><div class="pane p-list">${LH(false)}<div class="sw-sr"><input id="srch" placeholder="Search a name or number" value="${esc(S.q)}"></div><div class="sw-f"><button data-f="all" class="${S.filt === 'all' ? 'on' : ''}">All</button><button data-f="unanswered" id="fUn" class="${S.filt === 'unanswered' ? 'on' : ''}">Unanswered${S.unans ? ' · ' + S.unans : ''}</button><button data-f="mine" class="${S.filt === 'mine' ? 'on' : ''}">Mine</button><button data-f="done" class="${S.filt === 'done' ? 'on' : ''}">Done</button></div><div class="sw-list">${listHtml()}</div></div>${chatHtml()}${S.info && S.cur ? `<div class="pane info">${infoHtml()}</div>` : ''}</div>`;
+    return `<div class="sw ${S.cur ? 'chat' : ''} ${S.info && S.cur ? 'inf' : ''}"><div class="pane p-list">${LH(false)}<div class="sw-sr"><input id="srch" placeholder="Search a name or number" value="${esc(S.q)}"></div><div class="sw-f" id="fRow">${filtHtml()}</div><div class="sw-list">${listHtml()}</div></div>${chatHtml()}${S.info && S.cur ? `<div class="pane info">${infoHtml()}</div>` : ''}</div>`;
   }
   /* ---------- setup (Admin / HR) ---------- */
   function setupView() {
