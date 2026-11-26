@@ -347,6 +347,130 @@ function fi_noon(PDO $pdo, string $day): array
     return $out;
 }
 
+/* ============================== 💳 PREPAID / COD split by gateway + when the money should land (owner, 26 Nov) ==============================
+ * Read-only. One window (12 AM – 12 AM of a calendar day, or the 10 AM business day), every online order of it split into the part paid in advance (and through
+ * which gateway) and the part to be collected on delivery, plus the website (TM Store) orders, which the Sales number does NOT count yet, shown apart.
+ * The settlement cycle of each gateway is the owner's word (setting fi_settle_rules = JSON {key: {days, time, note}} can change it). */
+const FI_GW = [
+    'cashfree' => ['Cashfree', 2, '', 'T+2'],
+    'razorpay' => ['Razorpay', 2, '', 'T+2 (comes at random times)'],
+    'payu'     => ['GoKwik / PayU (payment link)', 1, '3–4 PM', 'T+1, next day 3–4 PM'],
+    'qr'       => ['Merchant QR (HDFC / ICICI / Neel)', 1, '8 AM', 'often instant, most by 8 AM next day'],
+    'bank'     => ['Bank transfer', 0, '', 'already in the bank'],
+    'unknown'  => ['Prepaid · gateway not known', -1, '', 'not known: see Diagnose'],
+    'cod'      => ['COD (cash on delivery)', -1, '', 'when the courier remits, after delivery'],
+    'unpaid'   => ['Website · not paid yet (not COD)', -1, '', 'nothing to come until it is paid'],
+    'st_cash'  => ['Store · cash', 0, '', 'in the cash box'],
+    'st_online'=> ['Store · UPI / card', 1, '', 'store machine / QR settlement'],
+];
+function fi_gw_rules(PDO $pdo): array
+{
+    $r = []; foreach (FI_GW as $k => $v) $r[$k] = ['label' => $v[0], 'days' => $v[1], 'time' => $v[2], 'note' => $v[3]];
+    try { $q = $pdo->prepare("SELECT v FROM fi_settings WHERE k = 'settle_rules'"); $q->execute(); $j = json_decode((string)$q->fetchColumn(), true);
+        if (is_array($j)) foreach ($j as $k => $v) if (isset($r[$k]) && is_array($v)) { if (isset($v['days']) && is_numeric($v['days'])) $r[$k]['days'] = (int)$v['days']; foreach (['time', 'note'] as $f) if (isset($v[$f])) $r[$k][$f] = mb_substr((string)$v[$f], 0, 80); } } catch (Throwable $e) { }
+    return $r;
+}
+/** The gateway key of a free text (a manual order's gateway, the website's payment method, a payment id). '' = no clue in it. */
+function fi_gw_of(string $s): string
+{
+    $s = strtolower(trim($s)); if ($s === '') return '';
+    if (strpos($s, 'cashfree') !== false || strpos($s, 'cf_') === 0) return 'cashfree';
+    if (strpos($s, 'razor') !== false || strpos($s, 'pay_') === 0) return 'razorpay';
+    if (strpos($s, 'kwik') !== false || strpos($s, 'quick') !== false || strpos($s, 'payu') !== false) return 'payu';
+    if (strpos($s, 'qr') !== false || strpos($s, 'upi') !== false || strpos($s, 'phonepe') !== false || strpos($s, 'hdfc') !== false || strpos($s, 'icici') !== false || strpos($s, 'paytm') !== false || strpos($s, 'gpay') !== false) return 'qr';
+    if (strpos($s, 'bank') !== false || strpos($s, 'neft') !== false || strpos($s, 'imps') !== false || strpos($s, 'rtgs') !== false) return 'bank';
+    return '';
+}
+/** The window [from, to) of a day: cal = 12 AM → 12 AM, biz = the HRMS business day (10 AM → 10 AM, or the start set for that date). */
+function fi_win(PDO $pdo, string $day, string $win): array
+{
+    $nx = date('Y-m-d', strtotime($day . ' +1 day'));
+    if ($win !== 'biz') return [$day . ' 00:00:00', $nx . ' 00:00:00'];
+    $s0 = function_exists('day_start_for') ? day_start_for($pdo, $day) : '10:00'; $s1 = function_exists('day_start_for') ? day_start_for($pdo, $nx) : '10:00';
+    return [$day . ' ' . $s0 . ':00', $nx . ' ' . $s1 . ':00'];
+}
+/** Every order line of the window: [rows, notes]. A row: src (shop | wa_manual | website | store), no, at, total, pre, cod, gw (key), how (why that gateway), raw (the text it was read from), in_sales (counted in the Sales number). Paise. */
+function fi_split_rows(PDO $pdo, string $w0, string $w1): array
+{
+    $rows = []; $notes = [];
+    try {
+        $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
+        $q = $pdo->prepare("SELECT shopify_id, store_key, order_name, created_at, total, financial_status, outstanding, pay_ref, tags FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]); $so = $q->fetchAll();
+        $man = []; $ids = array_map(fn($o) => (int)$o['shopify_id'], $so);
+        foreach (array_chunk($ids, 400) as $part) { if (!$part) continue; try { $mq = $pdo->prepare("SELECT shop_id, gateway, pay, shot_json FROM wmo_order WHERE status = 'confirmed' AND shop_id IN (" . implode(',', array_fill(0, count($part), '?')) . ")"); $mq->execute($part); foreach ($mq->fetchAll() as $m) $man[(int)$m['shop_id']] = $m; } catch (Throwable $e) { $notes[] = 'manual orders table not readable: ' . $e->getMessage(); break; } }
+        foreach ($so as $o) {
+            $fs = strtolower((string)$o['financial_status']); if (in_array($fs, ['voided', 'refunded'], true) || isset($cancel[$o['store_key'] . '|' . $o['shopify_id']])) continue;
+            $tot = fi_p($o['total']); $cod = $o['outstanding'] !== null ? fi_p($o['outstanding']) : (in_array($fs, ['paid', 'partially_refunded'], true) ? 0 : $tot); $cod = max(0, min($tot, $cod)); $pre = $tot - $cod;
+            $m = $man[(int)$o['shopify_id']] ?? null; $gw = ''; $how = ''; $raw = '';
+            if ($m) { $sj = json_decode((string)($m['shot_json'] ?? ''), true) ?: []; $raw = trim((string)$m['gateway'] . (($sj['app'] ?? '') !== '' ? ' · app ' . $sj['app'] : '') . (($sj['paid_to'] ?? '') !== '' ? ' · to ' . $sj['paid_to'] : ''));
+                $gw = fi_gw_of((string)$m['gateway']); if ($gw === '' && stripos((string)$m['gateway'], 'cash') === false) $gw = fi_gw_of($raw); $how = $gw !== '' ? 'manual order gateway' : ''; }
+            if ($gw === '') { foreach (explode(',', (string)$o['pay_ref']) as $r0) { $g = fi_gw_of(trim($r0)); if ($g !== '') { $gw = $g; $how = 'payment id ' . substr(trim($r0), 0, 6) . '…'; break; } } if ($raw === '') $raw = 'pay_ref ' . ((string)$o['pay_ref'] !== '' ? substr((string)$o['pay_ref'], 0, 40) : '(none)'); }
+            if ($pre > 0 && $gw === '') { $gw = 'unknown'; $how = $m ? 'manual order without a gateway' : 'Shopify order: no payment id saved'; }
+            $rows[] = ['src' => $m ? 'wa_manual' : 'shop', 'no' => (string)$o['order_name'], 'at' => (string)$o['created_at'], 'total' => $tot, 'pre' => $pre, 'cod' => $cod, 'gw' => $pre > 0 ? $gw : '', 'how' => $how, 'raw' => $raw, 'fs' => $fs, 'in_sales' => true];
+        }
+    } catch (Throwable $e) { $notes[] = 'shop_orders not readable: ' . $e->getMessage(); }
+    // 🛍 the website (TM Store): read from the shop itself; the day of a paid order is its payment time (placed_at)
+    if (is_file(__DIR__ . '/store_orders.php')) { try { require_once __DIR__ . '/store_orders.php'; } catch (Throwable $e) { } }
+    if (function_exists('tms_orders')) {
+        [$all, $err] = tms_orders($pdo, substr($w0, 0, 10), substr($w1, 0, 10));
+        if ($err !== '') $notes[] = 'website not read: ' . $err;
+        foreach ((array)$all as $r) {
+            $pt = (string)($r['pay_time'] ?: $r['placed_at']); if ($pt < $w0 || $pt >= $w1) continue;
+            if (!empty($r['temp'])) { $notes[] = 'website ' . $r['number'] . ' is a LINK (not paid, not counted) ' . $r['total']; continue; }
+            if (!empty($r['cancelled'])) continue;
+            $tot = fi_p($r['total']); $paid = min($tot, fi_p($r['paid'])); $due = $tot - $paid; $pm = (string)$r['pay_method']; $isCod = strpos(strtolower($pm), 'cod') !== false;
+            $gw = $paid > 0 ? (fi_gw_of($pm) ?: 'unknown') : '';
+            $rows[] = ['src' => 'website', 'no' => (string)$r['number'], 'at' => $pt, 'total' => $tot, 'pre' => $paid, 'cod' => $isCod ? $due : 0, 'unpaid' => $isCod ? 0 : $due, 'gw' => $gw, 'how' => $paid > 0 ? ($gw === 'unknown' ? 'website payment method "' . $pm . '" names no gateway' : 'website payment method') : '', 'raw' => 'method ' . ($pm ?: '(empty)') . ' / ' . $r['pay_status'] . ' / src ' . $r['source'], 'fs' => (string)$r['pay_status'], 'in_sales' => false];
+        }
+    } else $notes[] = 'website module not installed here';
+    try { $q = $pdo->prepare("SELECT id, created_at, pay_mode, total, cash_amt, online_amt FROM st_bills WHERE status = 'ok' AND created_at >= ? AND created_at < ?"); $q->execute([$w0, $w1]);
+        foreach ($q->fetchAll() as $b) { $t = fi_p($b['total']); $c = $b['pay_mode'] === 'cash' ? $t : ($b['pay_mode'] === 'split' ? fi_p($b['cash_amt']) : 0); $on = $b['pay_mode'] === 'split' ? fi_p($b['online_amt']) : $t - $c;
+            $rows[] = ['src' => 'store', 'no' => 'bill ' . $b['id'], 'at' => (string)$b['created_at'], 'total' => $t, 'pre' => $on, 'cod' => 0, 'cash' => $c, 'gw' => $on > 0 ? 'st_online' : '', 'how' => 'store bill ' . $b['pay_mode'], 'raw' => (string)$b['pay_mode'], 'fs' => '', 'in_sales' => true]; } } catch (Throwable $e) { $notes[] = 'store bills not readable: ' . $e->getMessage(); }
+    usort($rows, fn($a, $b) => strcmp($a['at'], $b['at']));
+    return [$rows, $notes];
+}
+/** The day the money of $gw paid on $day should land, '' when not known. */
+function fi_settle_day(array $rule, string $day): string { return $rule['days'] >= 0 ? date('Y-m-d', strtotime($day . ' +' . (int)$rule['days'] . ' day')) : ''; }
+function fi_split(PDO $pdo, string $day, string $win): array
+{
+    [$w0, $w1] = fi_win($pdo, $day, $win); [$rows, $notes] = fi_split_rows($pdo, $w0, $w1); $R = fi_gw_rules($pdo);
+    $g = []; $add = function ($k, $amt, $web) use (&$g) { if ($amt <= 0) return; if (!isset($g[$k])) $g[$k] = ['n' => 0, 'p' => 0, 'web_n' => 0, 'web_p' => 0]; $g[$k]['n']++; $g[$k]['p'] += $amt; if ($web) { $g[$k]['web_n']++; $g[$k]['web_p'] += $amt; } };
+    $t = ['sales' => 0, 'pre' => 0, 'cod' => 0, 'orders' => 0, 'web_orders' => 0, 'web_total' => 0, 'web_pre' => 0, 'web_cod' => 0, 'web_unpaid' => 0, 'store' => 0, 'store_bills' => 0];
+    foreach ($rows as $r) {
+        $web = $r['src'] === 'website';
+        if ($r['src'] === 'store') { $t['store'] += $r['total']; $t['store_bills']++; $add('st_cash', $r['cash'] ?? 0, false); $add('st_online', $r['pre'], false); continue; }
+        if ($web) { $t['web_orders']++; $t['web_total'] += $r['total']; $t['web_pre'] += $r['pre']; $t['web_cod'] += $r['cod']; $t['web_unpaid'] += $r['unpaid'] ?? 0; }
+        else { $t['orders']++; $t['sales'] += $r['total']; $t['pre'] += $r['pre']; $t['cod'] += $r['cod']; }
+        $add($r['gw'] ?: 'unknown', $r['pre'], $web); $add('cod', $r['cod'], $web); $add('unpaid', $r['unpaid'] ?? 0, $web);
+    }
+    $groups = []; foreach ($R as $k => $rule) { if (!isset($g[$k])) continue; $sd = fi_settle_day($rule, $day);
+        $groups[] = ['key' => $k, 'label' => $rule['label'], 'orders' => $g[$k]['n'], 'amount' => fi_m($g[$k]['p']), 'web_orders' => $g[$k]['web_n'], 'web_amount' => fi_m($g[$k]['web_p']), 'rule' => $rule['note'], 'settle_day' => $sd, 'settle_time' => $rule['time']]; }
+    foreach ($t as $k => $v) if ($k !== 'orders' && $k !== 'web_orders' && $k !== 'store_bills') $t[$k] = fi_m($v);
+    return ['day' => $day, 'win' => $win === 'biz' ? 'biz' : 'cal', 'from' => $w0, 'to' => $w1, 'totals' => $t, 'groups' => $groups, 'notes' => array_slice($notes, 0, 40)];
+}
+/** 🩺 the same window as plain text to copy: both windows side by side, every order line (no names, no phones), the gateway clues, the receipts recorded in the window. */
+function fi_split_diag(PDO $pdo, string $day, string $win): string
+{
+    $m = fn($p) => number_format($p / 100, 2, '.', ''); $T = [];
+    $T[] = 'HRMS FINANCE PREPAID / COD DIAGNOSE'; $T[] = 'day ' . $day . ' | window shown ' . ($win === 'biz' ? 'business day' : '12 AM-12 AM') . ' | made ' . date('Y-m-d H:i:s') . ' | server tz ' . date_default_timezone_get();
+    $T[] = 'business day start: ' . (function_exists('day_start_for') ? day_start_for($pdo, $day) . ' (next day ' . day_start_for($pdo, date('Y-m-d', strtotime($day . ' +1 day'))) . ')' : 'n/a');
+    foreach (['cal', 'biz'] as $w) { $s = fi_split($pdo, $day, $w); $x = $s['totals'];
+        $T[] = ''; $T[] = '== ' . ($w === 'cal' ? '12 AM-12 AM' : 'BUSINESS DAY') . ' ' . $s['from'] . ' -> ' . $s['to'];
+        $T[] = 'SALES NUMBER (shop_orders + store): online ' . $x['orders'] . ' / ' . $x['sales'] . ' (prepaid ' . $x['pre'] . ', COD ' . $x['cod'] . ') | store ' . $x['store_bills'] . ' / ' . $x['store'] . ' | total ' . round($x['sales'] + $x['store'], 2);
+        $T[] = 'WEBSITE (NOT in the sales number): ' . $x['web_orders'] . ' / ' . $x['web_total'] . ' (paid ' . $x['web_pre'] . ', COD due ' . $x['web_cod'] . ', not paid ' . $x['web_unpaid'] . ')';
+        foreach ($s['groups'] as $gr) $T[] = '  ' . str_pad($gr['label'], 36) . ' ' . str_pad((string)$gr['orders'], 4, ' ', STR_PAD_LEFT) . ' | ' . str_pad(number_format($gr['amount'], 2, '.', ''), 12, ' ', STR_PAD_LEFT) . ($gr['web_orders'] ? ' (website ' . $gr['web_orders'] . ' / ' . $gr['web_amount'] . ')' : '') . ' | lands ' . ($gr['settle_day'] ?: '-') . ' ' . $gr['settle_time'];
+        foreach ($s['notes'] as $n) $T[] = '  note: ' . $n;
+    }
+    [$w0, $w1] = fi_win($pdo, $day, $win); [$rows] = fi_split_rows($pdo, $w0, $w1);
+    $cnt = []; foreach ($rows as $r) { $k = $r['src'] . ' | ' . ($r['gw'] ?: '-') . ' | ' . preg_replace('/\d{4,}.*/', '…', $r['raw']); $cnt[$k] = ($cnt[$k] ?? 0) + 1; } arsort($cnt);
+    $T[] = ''; $T[] = 'GATEWAY CLUES (source | gateway | what it was read from : orders)'; foreach (array_slice($cnt, 0, 60, true) as $k => $n) $T[] = '  ' . $k . ' : ' . $n;
+    try { $q = $pdo->prepare("SELECT channel, account_name, COUNT(*) n, SUM(amount) a FROM fi_receipts WHERE status = 'ok' AND created_at >= ? AND created_at < ? GROUP BY channel, account_name"); $q->execute([$w0, $w1]);
+        $T[] = ''; $T[] = 'RECEIPTS RECORDED IN THIS WINDOW (Incoming)'; foreach ($q->fetchAll() as $x) $T[] = '  ' . $x['channel'] . ' | ' . $x['account_name'] . ' | ' . $x['n'] . ' | ' . $x['a']; } catch (Throwable $e) { $T[] = 'receipts: ' . $e->getMessage(); }
+    $T[] = ''; $T[] = 'ORDERS ' . $w0 . ' -> ' . $w1 . ': ' . count($rows) . ' (time | source | number | total | prepaid | COD | not paid | gateway | how | raw | status)';
+    foreach (array_slice($rows, 0, 2500) as $r) $T[] = substr($r['at'], 5, 11) . ' | ' . $r['src'] . ' | ' . $r['no'] . ' | ' . $m($r['total']) . ' | ' . $m($r['pre']) . ' | ' . $m($r['cod']) . ' | ' . $m($r['unpaid'] ?? 0) . ' | ' . ($r['gw'] ?: '-') . ' | ' . $r['how'] . ' | ' . $r['raw'] . ' | ' . $r['fs'];
+    $T[] = 'END'; return implode("\n", $T);
+}
+
 /** Claude's one-line understanding of a receipt, from what it is and what came before from the same payer. Empty when Claude is off: never blocks saving. */
 function fi_claude_note(PDO $pdo, array $r): string
 {
@@ -843,6 +967,16 @@ switch ($action) {
         $to = fi_day($_GET['to'] ?? '') ?: fi_today($pdo); $from = fi_day($_GET['from'] ?? '') ?: $to; if ($from > $to) { $t = $from; $from = $to; $to = $t; }
         if ((strtotime($to) - strtotime($from)) > 366 * 86400) fi_err('Choose a period of at most one year.');
         json_response(fi_summary($pdo, $from, $to));
+        break;
+    }
+    case 'fi.split': {      // 💳 prepaid / COD by gateway for one window (cal = 12 AM-12 AM, biz = the business day). Read-only.
+        $d = fi_day($_GET['day'] ?? '') ?: fi_today($pdo); @set_time_limit(60);
+        json_response(fi_split($pdo, $d, (string)($_GET['win'] ?? 'cal')));
+        break;
+    }
+    case 'fi.split_diag': {   // 🩺 the same as text to copy (no names, no phones). Read-only.
+        $d = fi_day($_GET['day'] ?? '') ?: fi_today($pdo); @set_time_limit(90);
+        json_response(['ok' => true, 'day' => $d, 'text' => fi_split_diag($pdo, $d, (string)($_GET['win'] ?? 'cal'))]);
         break;
     }
     case 'fi.noon': {
