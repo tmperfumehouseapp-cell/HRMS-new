@@ -63,6 +63,7 @@
         <div class="wo-h">
           <div class="t"><h1>🛍 Website orders</h1><p>Orders of the new TM Perfume House shop. Choose the salesperson for an order and press <b>Give</b>: it then counts in that person's sales and target. Nothing is changed in the shop.</p></div>
           <button type="button" class="wo-b" id="woRef">↻ Refresh</button>
+          <button type="button" class="wo-b" id="woDg" title="One day of website orders, the shop beside the HRMS, as text to copy">🩺 Diagnose</button>
           <button type="button" class="wo-b" id="woCfg" hidden>⚙ Connection</button>
         </div>
         <div id="woMsg"></div>
@@ -201,6 +202,18 @@
   }
   (async function init() {
     drawBars();
+    $('woDg').onclick = () => {   // 🩺 the day's orders, shop beside HRMS, as text the owner copies and sends
+      const today = new Date(Date.now() + 19800000).toISOString().slice(0, 10), ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:10px';
+      ov.innerHTML = '<div style="background:#fff;border-radius:14px;padding:12px;width:100%;max-width:760px;max-height:92vh;display:flex;flex-direction:column;gap:8px"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b style="font-size:15px">🩺 Diagnose</b><input type="date" id="dgDay" class="wo-in" style="width:auto" value="' + today + '"><button type="button" class="wo-b g" id="dgRun">Run</button><span style="flex:1"></span><button type="button" class="wo-b" id="dgCopy" disabled>📋 Copy</button><button type="button" class="wo-b" id="dgSave" disabled>⬇ File</button><button type="button" class="wo-b" id="dgX">✕</button></div><small id="dgMsg" style="color:#64748b">Reads the shop and the HRMS for one day. Changes nothing. No names or phone numbers inside.</small><textarea id="dgOut" readonly style="flex:1;min-height:52vh;width:100%;box-sizing:border-box;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;border:1px solid #cbd5e1;border-radius:8px;padding:8px;white-space:pre;overflow:auto"></textarea></div>';
+      document.body.appendChild(ov); const q = (i) => ov.querySelector(i);
+      q('#dgX').onclick = () => ov.remove(); ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+      const run = async () => { q('#dgRun').disabled = true; q('#dgMsg').textContent = 'Reading…'; try { const r = await api.get('tms.diag', { day: q('#dgDay').value }); q('#dgOut').value = r.text || ''; q('#dgCopy').disabled = q('#dgSave').disabled = !r.text; q('#dgMsg').textContent = 'Done. Press Copy and paste it in the chat.'; } catch (e) { q('#dgMsg').textContent = 'Could not read: ' + e.message; } q('#dgRun').disabled = false; };
+      q('#dgRun').onclick = run;
+      q('#dgCopy').onclick = async () => { const t = q('#dgOut'); try { await navigator.clipboard.writeText(t.value); } catch (e) { t.focus(); t.select(); try { document.execCommand('copy'); } catch (e2) { } } q('#dgMsg').textContent = 'Copied ✓'; };
+      q('#dgSave').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([q('#dgOut').value], { type: 'text/plain' })); a.download = 'hrms_website_orders_diagnose_' + q('#dgDay').value + '.txt'; document.body.appendChild(a); a.click(); a.remove(); };
+      run();
+    };
     try { const c = await api.get('tms.cfg_get'); if (c.can_edit) { $('woCfg').hidden = false; $('woCfg').onclick = async () => { try { cfgOpen(await api.get('tms.cfg_get')); } catch (e) { msg(esc(e.message), 'bad'); } }; }
       if (!c.key_set) { $('woL').innerHTML = '<div class="wo-e">The shop is not connected yet.</div>'; msg(c.can_edit ? 'The shop key is not saved yet. Press <b>⚙ Connection</b>, paste the key and press Save.' : 'The shop is not connected yet. Ask Admin to open this page and save the key.', 'in'); return; } }
     catch (e) { $('woL').innerHTML = '<div class="wo-e">This page could not open.</div>'; msg(esc(e.message), 'bad'); return; }

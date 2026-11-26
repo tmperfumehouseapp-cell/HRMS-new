@@ -326,6 +326,44 @@ switch ((string)$action) {
         usort($rows, function ($a, $b) { return strcmp($b['at'], $a['at']); });
         json_response(['ok' => true, 'ready' => true, 'days' => $days, 'count' => $c, 'rows' => array_slice($rows, 0, 2000)]);
     }
+    case 'tms.diag': {   // 🩺 one day of website orders, the shop beside the HRMS, as plain text to copy (read-only). No names, no phone numbers.
+        $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['day'] ?? '')) ? (string)$in['day'] : date('Y-m-d');
+        if (function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_orders5:' . date('Y-m-d', strtotime($day) - 7 * 86400) . ':' . $day); } catch (Throwable $e) { } }
+        [$all, $err] = tms_orders($pdo, date('Y-m-d', strtotime($day) - 7 * 86400), $day);
+        $T = []; $T[] = 'HRMS WEBSITE-ORDERS DIAGNOSE'; $T[] = 'day ' . $day . ' | made ' . date('Y-m-d H:i:s') . ' | shop ' . tms_cfg($pdo)['base'];
+        if ($err !== '') { $T[] = 'SHOP ERROR: ' . $err; json_response(['ok' => true, 'text' => implode("\n", $T)]); }
+        $d0 = $day . ' 00:00:00'; $d1 = $day . ' 23:59:59'; tms_cols($pdo); $h = [];
+        try { $q = $pdo->prepare("SELECT mp_no, total, employee_id, order_type, payment_status, order_date, created_by, is_direct, ml FROM manual_orders WHERE channel = 'TM Store' AND (order_date BETWEEN ? AND ? OR order_date >= ?)"); $q->execute([$d0, $d1, date('Y-m-d', strtotime($day) - 8 * 86400)]); foreach ($q->fetchAll() as $x) $h[(string)$x['mp_no']] = $x; } catch (Throwable $e) { $T[] = 'HRMS rows error: ' . $e->getMessage(); }
+        $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        $c = ['tm' => 0, 'tm_amt' => 0.0, 'paid' => 0, 'paid_amt' => 0.0, 'part' => 0, 'part_amt' => 0.0, 'cod' => 0, 'cod_amt' => 0.0, 'unpaid' => 0, 'unpaid_amt' => 0.0, 'link' => 0, 'link_amt' => 0.0, 'cancel' => 0, 'received' => 0.0, 'given' => 0, 'given_amt' => 0.0, 'wait' => 0, 'wait_amt' => 0.0, 'none' => 0, 'none_amt' => 0.0];
+        $lines = []; $bad = []; $seen = [];
+        foreach ($all as $r) {
+            $pl = (string)$r['placed_at']; $pt = (string)($r['pay_time'] ?: $pl); $inP = $pl >= $d0 && $pl <= $d1; $inH = $pt >= $d0 && $pt <= $d1; if (!$inP && !$inH) continue;
+            $no = (string)$r['number']; $seen[$no] = 1; $x = $h[$no] ?? null;
+            if (!empty($r['temp'])) { if ($inP) { $c['link']++; $c['link_amt'] += $r['total']; } if ($x) $bad[] = $no . ' is a LINK but has an HRMS row'; continue; }
+            if (!empty($r['cancelled'])) { $c['cancel']++; if ($x) $bad[] = $no . ' is cancelled in the shop but has an HRMS row (' . (float)$x['total'] . ')'; continue; }
+            $kind = $r['pay_status'] === 'paid' ? 'paid' : ($r['pay_status'] === 'partially_paid' ? 'part' : ($r['pay_method'] === 'cod' ? 'cod' : 'unpaid'));
+            $c['tm']++; $c['tm_amt'] += $r['total']; $c[$kind]++; $c[$kind . '_amt'] += $r['total']; $c['received'] += $r['paid'];
+            $st = !$x ? 'none' : ((int)$x['employee_id'] > 0 ? 'given' : 'wait'); $c[$st]++; $c[$st . '_amt'] += $r['total'];
+            if ($x && abs((float)$x['total'] - (float)$r['total']) > 0.5) $bad[] = $no . ' amount differs: shop ' . $r['total'] . ' / HRMS ' . (float)$x['total'];
+            if (!$x && $kind !== 'unpaid' && $kind !== 'cod') $bad[] = $no . ' has a payment (' . $kind . ' ' . $r['paid'] . ') but is NOT in the HRMS';
+            if ($x && substr((string)$x['order_date'], 0, 10) !== substr($pt, 0, 10)) $bad[] = $no . ' day differs: shop pay-day ' . substr($pt, 0, 10) . ' / HRMS ' . substr((string)$x['order_date'], 0, 10);
+            $lines[] = $no . ' | placed ' . substr($pl, 5, 11) . ' | paid-at ' . substr($pt, 5, 11) . ' | total ' . $r['total'] . ' | got ' . $r['paid'] . ' | ' . $r['pay_method'] . '/' . $r['pay_status'] . ' | src ' . $r['source'] . ' | ml ' . $r['ml'] . ' | HRMS: ' . ($st === 'none' ? 'NOT THERE' : ($st === 'wait' ? 'waiting (no salesperson)' : 'emp ' . (int)$x['employee_id'] . ' ' . mb_substr((string)($names[(int)$x['employee_id']] ?? ''), 0, 18) . ' ' . (string)$x['order_type'] . ' total ' . (float)$x['total'] . ' by ' . (string)$x['created_by']));
+        }
+        foreach ($h as $no => $x) { $od = (string)$x['order_date']; if ($od >= $d0 && $od <= $d1 && !isset($seen[$no])) $bad[] = $no . ' is in the HRMS for this day (' . (float)$x['total'] . ', emp ' . (int)$x['employee_id'] . ') but the shop did not send it for this day'; }
+        $hc = 0; $ha = 0.0; $hg = 0; $hga = 0.0; foreach ($h as $x) { $od = (string)$x['order_date']; if ($od >= $d0 && $od <= $d1) { $hc++; $ha += (float)$x['total']; if ((int)$x['employee_id'] > 0) { $hg++; $hga += (float)$x['total']; } } }
+        $m = function ($v) { return number_format((float)$v, 2, '.', ''); };
+        $T[] = ''; $T[] = 'SHOP (orders placed or paid on this day)';
+        $T[] = 'TM orders: ' . $c['tm'] . ' | value ' . $m($c['tm_amt']) . ' | money received ' . $m($c['received']);
+        $T[] = '  paid full: ' . $c['paid'] . ' / ' . $m($c['paid_amt']) . ' | part paid: ' . $c['part'] . ' / ' . $m($c['part_amt']) . ' | COD nothing paid: ' . $c['cod'] . ' / ' . $m($c['cod_amt']) . ' | not paid (not COD): ' . $c['unpaid'] . ' / ' . $m($c['unpaid_amt']);
+        $T[] = 'LINK (temporary, placed this day, NOT counted): ' . $c['link'] . ' / ' . $m($c['link_amt']) . ' | cancelled: ' . $c['cancel'];
+        $T[] = ''; $T[] = 'HRMS (same orders)';
+        $T[] = 'given to a salesperson: ' . $c['given'] . ' / ' . $m($c['given_amt']) . ' | waiting: ' . $c['wait'] . ' / ' . $m($c['wait_amt']) . ' | not in HRMS: ' . $c['none'] . ' / ' . $m($c['none_amt']);
+        $T[] = 'HRMS rows dated this day: ' . $hc . ' / ' . $m($ha) . ' | of them given: ' . $hg . ' / ' . $m($hga);
+        $T[] = ''; $T[] = 'PROBLEMS: ' . count($bad); foreach (array_slice($bad, 0, 200) as $b) $T[] = '  ! ' . $b;
+        $T[] = ''; $T[] = 'ORDERS: ' . count($lines); foreach (array_slice($lines, 0, 1500) as $l) $T[] = $l; $T[] = 'END';
+        json_response(['ok' => true, 'day' => $day, 'text' => implode("\n", $T)]);
+    }
     case 'tms.people': {
         $o = []; foreach ($pdo->query("SELECT employee_id, employee_code, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll() as $e) $o[] = ['id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'code' => (string)$e['employee_code']];
         json_response(['people' => $o]);
