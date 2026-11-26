@@ -249,6 +249,52 @@ function cx_time(array $r) {
     if (!$open || empty($r['due_at'])) return ['late' => false, 'label' => '', 'secs' => 0];
     $d = strtotime($r['due_at']) - $now; return ['late' => $d < 0, 'label' => $d < 0 ? cx_span($d) . ' late' : cx_span($d), 'secs' => $d];
 }
+/** 🧑‍💼 The SALES EMPLOYEE of the order a complaint is about (owner, 26 Nov): [case id => ['emp', 'name', 'order', 'date', 'total', 'type']].
+ *  By the order number written on the ticket: a Shopify order → the person it is allocated to (the same one who is paid for it; a "direct" order has nobody), a website order → the person it was
+ *  given to, a manual WM- order → its salesperson. $byPhone (one open ticket only): a ticket with no order number takes the customer's latest order. Never throws. */
+function cx_sales_map(PDO $pdo, array $rows, bool $byPhone = false): array
+{
+    $out = []; if (!$rows) return $out;
+    try {
+        $want = []; foreach ($rows as $r) { $n = ltrim(trim((string)($r['order_name'] ?? '')), '#'); if ($n !== '') $want[mb_strtolower($n)][] = (int)$r['id']; }
+        $found = [];      // lower order number => ['emp', 'order', 'date', 'total', 'type']
+        $marks = fn(array $a) => implode(',', array_fill(0, count($a), '?'));
+        $alloc = function (array $ords) use ($pdo, $marks) {      // [[store, shopify id, name, date, total]] → the allocation of each
+            $o = []; $byS = []; foreach ($ords as $x) $byS[$x[0]][] = (string)$x[1];
+            foreach ($byS as $store => $ids) foreach (array_chunk(array_values(array_unique($ids)), 300) as $ch) {
+                try { $q = $pdo->prepare("SELECT order_id, employee_id, order_type, is_direct FROM order_allocations WHERE source = ? AND order_id IN (" . $marks($ch) . ")"); $q->execute(array_merge([$store], $ch)); foreach ($q->fetchAll() as $a) $o[$store . '|' . $a['order_id']] = [(int)$a['employee_id'], (string)$a['order_type'], (int)($a['is_direct'] ?? 0)]; }
+                catch (Throwable $e) { try { $q = $pdo->prepare("SELECT order_id, employee_id, order_type FROM order_allocations WHERE source = ? AND order_id IN (" . $marks($ch) . ")"); $q->execute(array_merge([$store], $ch)); foreach ($q->fetchAll() as $a) $o[$store . '|' . $a['order_id']] = [(int)$a['employee_id'], (string)$a['order_type'], 0]; } catch (Throwable $e2) { } }
+            }
+            return $o;
+        };
+        if ($want) {
+            if ((string)setting_get($pdo, 'cx_idx_so_name', '') !== '1') { setting_set($pdo, 'cx_idx_so_name', '1'); try { $pdo->exec("ALTER TABLE shop_orders ADD INDEX k_order_name (order_name)"); } catch (Throwable $e) { } }      // the look-up below is by order number (once)
+            $names = array_keys($want); $ords = [];
+            foreach (array_chunk($names, 200) as $ch) {
+                $in = []; foreach ($ch as $n) { $in[] = $n; $in[] = '#' . $n; }
+                try { $q = $pdo->prepare("SELECT order_name, shopify_id, store_key, created_at, total FROM shop_orders WHERE order_name IN (" . $marks($in) . ")"); $q->execute($in); foreach ($q->fetchAll() as $o) $ords[] = [(string)$o['store_key'], (string)$o['shopify_id'], (string)$o['order_name'], (string)$o['created_at'], (float)$o['total']]; } catch (Throwable $e) { }
+                try { $q = $pdo->prepare("SELECT mp_no, employee_id, order_type, total, order_date FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN (" . $marks($ch) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $m) if ((int)$m['employee_id'] > 0) $found[mb_strtolower((string)$m['mp_no'])] = ['emp' => (int)$m['employee_id'], 'order' => (string)$m['mp_no'], 'date' => (string)$m['order_date'], 'total' => (float)$m['total'], 'type' => (string)$m['order_type']]; } catch (Throwable $e) { }
+                try { $q = $pdo->prepare("SELECT order_no, emp_id, assign_emp, otype, total_p, COALESCE(confirmed_at, created_at) AS at FROM wmo_order WHERE order_no IN (" . $marks($ch) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $m) { $e = (int)$m['assign_emp'] ?: (int)$m['emp_id']; if ($e > 0) $found[mb_strtolower((string)$m['order_no'])] = ['emp' => $e, 'order' => (string)$m['order_no'], 'date' => (string)$m['at'], 'total' => round((int)$m['total_p'] / 100, 2), 'type' => (string)($m['otype'] ?? '')]; } } catch (Throwable $e) { }
+            }
+            $al = $alloc($ords);
+            foreach ($ords as $x) { $k = mb_strtolower(ltrim($x[2], '#')); if (isset($found[$k])) continue; $a = $al[$x[0] . '|' . $x[1]] ?? null; $found[$k] = ['emp' => ($a && !$a[2]) ? $a[0] : 0, 'order' => $x[2], 'date' => $x[3], 'total' => $x[4], 'type' => $a ? $a[1] : '']; }
+            foreach ($want as $k => $ids) if (isset($found[$k])) foreach ($ids as $id) $out[$id] = $found[$k];
+        }
+        if ($byPhone) foreach ($rows as $r) {
+            $id = (int)$r['id']; if (isset($out[$id])) continue; $k10 = substr(preg_replace('/\D/', '', (string)($r['phone'] ?? '')), -10); if (strlen($k10) !== 10) continue;
+            try { $q = $pdo->prepare("SELECT order_name, shopify_id, store_key, created_at, total FROM shop_orders WHERE created_at >= ? AND phone LIKE ? ORDER BY created_at DESC LIMIT 1"); $q->execute([date('Y-m-d H:i:s', time() - 90 * 86400), '%' . $k10]); $o = $q->fetch();
+                if ($o) { $a = $alloc([[(string)$o['store_key'], (string)$o['shopify_id']]])[$o['store_key'] . '|' . $o['shopify_id']] ?? null; $out[$id] = ['emp' => ($a && !$a[2]) ? $a[0] : 0, 'order' => (string)$o['order_name'], 'date' => (string)$o['created_at'], 'total' => (float)$o['total'], 'type' => $a ? $a[1] : '', 'guess' => 1]; } } catch (Throwable $e) { }
+        }
+        foreach ($out as $id => $v) $out[$id]['name'] = $v['emp'] > 0 ? cx_name($pdo, $v['emp']) : '';
+    } catch (Throwable $e) { error_log('cx sales map: ' . $e->getMessage()); }
+    return $out;
+}
+/** complaints raised this month per sales employee (by the order on the ticket): [emp id => n]. Counted once in 10 minutes. */
+function cx_sales_month(PDO $pdo): array
+{
+    $calc = function () use ($pdo) { $n = []; try { $rows = $pdo->query("SELECT id, order_name, phone FROM cx_cases WHERE raised_at >= '" . date('Y-m-01') . "' AND order_name <> '' ORDER BY id DESC LIMIT 3000")->fetchAll(); foreach (cx_sales_map($pdo, $rows) as $v) if ($v['emp'] > 0) $n[$v['emp']] = ($n[$v['emp']] ?? 0) + 1; } catch (Throwable $e) { } return $n; };
+    $r = function_exists('hrms_memo') ? hrms_memo('cx_sales_month:' . date('Y-m'), 600, $calc) : $calc(); return is_array($r) ? $r : [];
+}
 function cx_views(PDO $pdo, array $rows, $full = false) {
     if (!$rows) return [];
     $names = cx_names($pdo); $P = cx_problems(); $D = cx_desks(); $S = cx_sources();
@@ -258,6 +304,7 @@ function cx_views(PDO $pdo, array $rows, $full = false) {
     $ids = array_map('intval', array_column($rows, 'id')); $rep = [];
     if ($keys) { $in = implode(',', array_map(function ($k) use ($pdo) { return $pdo->quote($k); }, $keys)); try { foreach ($pdo->query("SELECT phone, COUNT(*) n FROM cx_cases WHERE phone IN ($in) AND raised_at >= '" . date('Y-m-d', strtotime('-90 days')) . "' GROUP BY phone")->fetchAll() as $x) $rep[$x['phone']] = (int)$x['n']; } catch (Throwable $e) {} }
     $last = []; if ($ids) { try { foreach ($pdo->query("SELECT e.case_id, e.text FROM cx_events e JOIN (SELECT case_id, MAX(id) mid FROM cx_events WHERE kind IN ('desk','note','link','resolve') AND case_id IN (" . implode(',', $ids) . ") GROUP BY case_id) m ON m.mid = e.id")->fetchAll() as $x) $last[(int)$x['case_id']] = $x['text']; } catch (Throwable $e) {} }
+    $sales = cx_sales_map($pdo, $rows, (bool)$full); $salesMon = $full ? cx_sales_month($pdo) : [];      // 🧑‍💼 whose order each complaint is about
     $out = [];
     foreach ($rows as $r) {
         $t = cx_time($r); $c = $wa[$r['phone']] ?? null; $pb = $P[$r['problem']] ?? $P['other'];
@@ -269,6 +316,7 @@ function cx_views(PDO $pdo, array $rows, $full = false) {
             'first_reply' => !empty($r['first_reply_at']), 'waiting' => (bool)$waiting, 'closed_num' => (bool)($c && !empty($retN[(int)($c['last_number_id'] ?? 0)])), 'last' => isset($last[(int)$r['id']]) ? cx_short($last[(int)$r['id']], 70) : '', 'repeat' => max(0, ($rep[$r['phone']] ?? 0) - 1),
             'res' => $r['resolution'], 'res_label' => cx_resolutions()[$r['resolution']] ?? '', 'cost' => (float)$r['res_cost'] + ((int)$r['refund_ok'] === 1 ? (float)$r['refund_amt'] : 0), 'refund_amt' => (float)$r['refund_amt'], 'refund_ok' => (int)$r['refund_ok'], 'happy' => $r['happy'] === null ? null : (int)$r['happy'],
             'resolved_at' => $r['resolved_at'], 'reopen_n' => (int)$r['reopen_n']];
+        $sl = $sales[(int)$r['id']] ?? null; $v['sales'] = $sl ? ['emp' => (int)$sl['emp'], 'name' => (string)$sl['name'], 'order' => (string)$sl['order'], 'date' => substr((string)$sl['date'], 0, 10), 'total' => (float)$sl['total'], 'type' => (string)$sl['type'], 'guess' => !empty($sl['guess']), 'month' => $full && $sl['emp'] > 0 ? (int)($salesMon[(int)$sl['emp']] ?? ($salesMon[(string)$sl['emp']] ?? 0)) : null] : null;
         if (function_exists('cx2_view')) $v = array_merge($v, cx2_view($r));
         $out[] = $v;
     }
