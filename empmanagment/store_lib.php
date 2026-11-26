@@ -879,7 +879,7 @@ function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array 
 {
     $phone = (string)$p['phone']; $key = wa_key($phone); if ($key === '' || strlen($key) !== 10) return [false, 'not an Indian mobile number'];
     $back = !empty($p['returning_c']) && !empty($cs['skip_returning']);
-    $t = st_wa_tpl($pdo, $back ? 'tmph_store_bill_back' : 'tmph_store_bill'); if (!$t) return [false, 'template not approved yet'];
+    $t = st_wa_tpl($pdo, $back ? 'tmph_store_bill_back_v2' : 'tmph_store_bill_v2') ?: st_wa_tpl($pdo, $back ? 'tmph_store_bill_back' : 'tmph_store_bill'); if (!$t) return [false, 'template not approved yet'];      // the version with the Store picture on top once Meta approved it, else the plain one
     [$num, $own, $why] = st_wa_number_for($pdo, $t);
     if (!$num) return [false, $why];
     $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
@@ -1528,7 +1528,7 @@ function st_bday_send(PDO $pdo, array $v): array
     try {
         if (!st_wa_load() || !wa_tpl_tables($pdo)) return $note(false, 'WhatsApp is not available on this server', 'pending');
         $key = wa_key((string)$v['phone']); if ($key === '' || strlen($key) !== 10) return $note(false, 'not an Indian mobile number', 'failed');
-        $t = st_wa_tpl($pdo, 'tmph_store_bday'); if (!$t) return $note(false, 'birthday template not approved yet', 'pending');
+        $t = st_wa_tpl($pdo, 'tmph_store_bday_v2') ?: st_wa_tpl($pdo, 'tmph_store_bday'); if (!$t) return $note(false, 'birthday template not approved yet', 'pending');
         [$num, $own, $why] = st_wa_number_for($pdo, $t);
         if (!$num) return $note(false, $why, 'pending');
         $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
