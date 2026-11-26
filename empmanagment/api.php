@@ -7807,6 +7807,7 @@ function order_product_colors(array $lineItems): array
         $qty = max(1, (int)($li['quantity'] ?? 1));
         $k = 'other';
         if (preg_match('/(?<![A-Za-z0-9])(DG|LG|WH)(?![A-Za-z0-9])/i', (string)($li['title'] ?? ''), $m)) $k = strtolower($m[1]);
+        if (preg_match('/dress\s*to\s*impress|(?<![a-z0-9])tm\s*-?\s*o\.?g\.?(?![a-z0-9])|tm\s*originals?/i', $nm)) $k = 'dg';   // 🟢 owner (26 Nov): the TM OG bottles (Dress to Impress) are ALWAYS Dark green
         $c[$k] += $qty;
     }
     return $c;
