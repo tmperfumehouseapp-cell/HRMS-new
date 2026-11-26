@@ -586,6 +586,24 @@ function fup_clear_questions(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_clear_questions: ' . $e->getMessage()); }
 }
 
+/** Once: Shop wholesale → "Total Order" and "New Display Order" are COUNTS of orders, not rupees. "Total Order" reads the number of orders from the HRMS (it can be corrected by typing);
+ *  "New Display Order" is typed by the person (the system had no number of its own for it). The old rupee numbers the system had put there are taken off so no old rupee value shows as an order count.
+ *  Anything a person wrote or typed is kept. */
+function fup_wholesale_order_counts(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_ws_orders_v1', '') === '1') return;
+        $rows = $pdo->query("SELECT t.id, LOWER(TRIM(t.title)) ttl FROM fu_topics t JOIN fu_sections s ON s.id = t.section_id WHERE t.active = 1 AND LOWER(s.name) LIKE '%wholesale%' AND LOWER(TRIM(t.title)) IN ('total order', 'new display order')")->fetchAll();
+        foreach ($rows as $r) {
+            $id = (int)$r['id']; $total = $r['ttl'] === 'total order';
+            $pdo->prepare("UPDATE fu_topics SET source = ?, metrics = '', unit = ? WHERE id = ?")->execute([$total ? 'ws_orders' : '', $total ? '' : 'orders', $id]);
+            $pdo->prepare("DELETE FROM fu_updates WHERE topic_id = ? AND auto = 1 AND TRIM(COALESCE(txt, '')) = '' AND (fvals IS NULL OR fvals = '')")->execute([$id]);
+            $pdo->prepare("UPDATE fu_updates SET val = NULL, vals = NULL, auto = 0 WHERE topic_id = ? AND auto = 1")->execute([$id]);
+        }
+        setting_set($pdo, 'fup_ws_orders_v1', '1');
+    } catch (Throwable $e) { error_log('fup_wholesale_order_counts: ' . $e->getMessage()); }
+}
+
 /** Once: Website → "Community: which are running and how many numbers saved": the box "Numbers saved" becomes "Members added today" (same box, the old values stay) and a new box
  *  "Total members in the community" is put before it. Everything else of the topic is left as it is. */
 function fup_website_community_fields(PDO $pdo): void
@@ -1496,6 +1514,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_clear_questions($pdo);
     fup_no_summary_with_fields($pdo);
     fup_website_community_fields($pdo);
+    fup_wholesale_order_counts($pdo);
     fup_all_day_before($pdo);
     fup_dispatch_manual($pdo);
     fup_feedback_owner($pdo);
