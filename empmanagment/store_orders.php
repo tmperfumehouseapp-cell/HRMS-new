@@ -129,10 +129,11 @@ if (!function_exists('tms_cfg')) {
                 if (function_exists('bd_log')) { try { bd_log('order', 'website', 'website orders moved to the time of the payment: ' . $fx, 'system'); } catch (Throwable $e) { } }
             } catch (Throwable $e) { error_log('tms paytime fix: ' . $e->getMessage()); }
         }
-        tms_cols($pdo); $nos = array_column($rows, 'number'); $given = []; $done = [];
+        tms_cols($pdo); $nos = array_column($rows, 'number'); $given = []; $done = []; $waited = [];
         foreach (array_chunk($nos, 400) as $part) { $in = implode(',', array_fill(0, count($part), '?'));
             $q = $pdo->prepare("SELECT mp_no, created_by, employee_id, manual_order_id, is_direct, total, payment_status, outstanding, ml FROM manual_orders WHERE channel = 'TM Store' AND mp_no IN ($in)"); $q->execute($part); foreach ($q->fetchAll() as $x) $given[(string)$x['mp_no']] = ['by' => (string)$x['created_by'], 'emp' => (int)$x['employee_id'], 'id' => (int)$x['manual_order_id'], 'direct' => (int)$x['is_direct'], 'total' => (float)$x['total'], 'ps' => (string)$x['payment_status'], 'due' => (float)$x['outstanding'], 'ml' => (int)$x['ml']];
-            $q = $pdo->prepare("SELECT number FROM tms_auto WHERE done = 1 AND number IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; }
+            $q = $pdo->prepare("SELECT number FROM tms_auto WHERE done = 1 AND number IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1;
+            $q = $pdo->prepare("SELECT number FROM tms_auto WHERE done = 0 AND why = 'payment not received yet' AND number IN ($in)"); $q->execute($part); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $waited[(string)$x] = 1; }
         try { $qc = $pdo->prepare("SELECT c.phone, c.assigned_emp, c.source, c.last_in_at, COALESCE(n.camp_tag, 0) AS camp_tag FROM wa_contacts c LEFT JOIN wa_numbers n ON n.id = c.last_number_id WHERE c.phone = ?"); $qc->execute(['0']); }
         catch (Throwable $e) { try { $qc = $pdo->prepare("SELECT phone, assigned_emp, source, last_in_at, 0 AS camp_tag FROM wa_contacts WHERE phone = ?"); $qc->execute(['0']); } catch (Throwable $e2) { return 0; } }   // no WhatsApp tables here: nothing to do
         $mark = $pdo->prepare("INSERT INTO tms_auto (number, done, why, at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE done = VALUES(done), why = VALUES(why), at = VALUES(at)");
@@ -141,6 +142,8 @@ if (!function_exists('tms_cfg')) {
         foreach ($rows as $r) {
             $no = (string)$r['number'];
             // owner (24 Nov): an order with NO payment received (a payment link the customer has not paid yet) is not given to anybody. One the robot already gave is taken back; it is given when the payment comes.
+            // ⏱ a TM order that was here UNPAID earlier and has its payment now (an order typed in the shop's admin, paid a day later): the shop has no "paid at" in its feed, so the sale counts at the moment the HRMS sees the payment (this runs every few minutes). An order paid at once keeps the shop's own time.
+            if (isset($waited[$no]) && (string)$r['pay_status'] !== 'pending' && empty($given[$no])) $r['pay_time'] = date('Y-m-d H:i:s');
             $row = $given[$no] ?? null; $unpaid = (string)$r['pay_status'] === 'pending';
             if ($unpaid && $row && $row['direct'] !== 1 && ($row['emp'] === 0 || $row['by'] === 'auto (WhatsApp)')) { try { $pdo->prepare("DELETE FROM manual_orders WHERE manual_order_id = ?")->execute([$row['id']]); $mark->execute([$no, 0, 'payment not received yet', $now]); } catch (Throwable $e) { } continue; }
             // 🔄 owner (24 Nov): the shop order changed after it was saved here (the 🎁 gift perfume is added when the customer pays, a balance was paid...): the saved row follows it, so the totals and the ticket size stay right
