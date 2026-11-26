@@ -215,6 +215,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=14"></script>
 <script src="assets/js/layout.js?v=33"></script>
+<script src="assets/js/qb_chats.js?v=1"></script>
 <script>
   guardPage();
   renderSidebar('control_tower');
@@ -673,13 +674,13 @@
       <div class="gq-st"><button type="button" data-a="m" data-id="${p.id}" ${val(p) <= 0 ? 'disabled' : ''} aria-label="One less">−</button><input type="number" inputmode="numeric" min="0" max="9999" value="${val(p)}" data-a="s" data-id="${p.id}" aria-label="Queries for ${esc(p.name)}"><button type="button" class="pl" data-a="p" data-id="${p.id}" aria-label="One more">+</button></div></div>`).join('');
     const plLine = PL ? `<div class="gq-pl">🧭 <b>${hFull(PL.hour)}: suggest ${PL.total}</b> · given ${PL.given}${PL.carried ? ' · carried +' + PL.carried : ''} · expect ~${PL.pred_hour} order${PL.pred_hour === 1 ? '' : 's'}${PL.pred_day != null ? ' · day ≈ ' + PL.pred_day + ' orders' : ''}${PL.flow != null ? ' · flow ' + (PL.flow > 0 ? '+' : '') + PL.flow + '% vs usual' + (PL.adjusted ? ' → suggestions ' + (PL.adjusted > 0 ? '+' : '') + PL.adjusted + '%' : '') : ''}</div>`
       : (D.plan && GQH !== D.plan.hour ? `<div class="gq-pl">🧭 Tap <b>${hFull(D.plan.hour)}</b> above to see how many queries to give each person this hour.</div>` : '');
-    const byHour = (D.hours || []).filter(h => h.n > 0).map(h => `<div class="gq-bh"><b>${hFull(h.hour)}</b><div class="who"><b>${h.n} quer${h.n === 1 ? 'y' : 'ies'}</b><br>${((D.by_emp || {})[String(h.hour)] || []).map(x => `<i>${esc(x.name.split(' ')[0])} ${x.n}</i>`).join('')}</div></div>`).join('')
+    const byHour = (D.hours || []).filter(h => h.n > 0).map(h => `<div class="gq-bh"><b>${hFull(h.hour)}</b><div class="who"><b>${h.n} quer${h.n === 1 ? 'y' : 'ies'}</b>${D.live ? `<i class="qbc-all" data-qbc data-d="${esc(D.date)}" data-h="${h.hour}" role="button" tabindex="0">👁 See all ${h.n}</i>` : ''}<br>${((D.by_emp || {})[String(h.hour)] || []).map(x => `<i${D.live ? ` data-qbc data-d="${esc(D.date)}" data-h="${h.hour}" data-e="${x.employee_id}" data-n="${esc(x.name)}" role="button" tabindex="0" title="See these ${x.n} customers and their chats"` : ''}>${esc(x.name.split(' ')[0])} ${x.n}</i>`).join('')}</div></div>`).join('')
       + (D.earlier > 0 ? `<div class="gq-bh"><b>Earlier</b><div class="who"><b>${D.earlier} quer${D.earlier === 1 ? 'y' : 'ies'}</b><br><span class="sub">given before the hour log existed — no time saved</span></div></div>` : '');
     box.innerHTML = `<div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>📋 Give queries</h2><div class="sub">One count per person — <b>shower gel and normal queries are the same</b>. Pick an hour to give for that hour, or <b>Whole day</b>. ${D.date !== D.biz_today ? '<b style="color:#b45309;">Editing ' + esc(D.date) + '</b>' : ''}</div></div></div>
       <div class="gq-hrs"><button type="button" class="gq-h${GQH == null ? ' on' : ''}" data-h=""><b>Whole day</b><small>${D.total}</small></button>${hrs}</div>
       ${plLine}${rows || '<div class="empty">No sales people found.</div>'}
       <div class="gq-tot"><span>Total queries given${GQH != null ? ' in ' + hFull(GQH) : ''}</span><b>${GQH == null ? D.total : ppl.reduce((x, p) => x + (p.hour || 0), 0)}</b></div></div>
-      <div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>🕐 By hour — queries given</h2><div class="sub">Queries only · tap an hour above to give for it</div></div></div>${byHour || '<div class="empty">Nothing given yet today.</div>'}</div>`;
+      <div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>🕐 By hour — queries given</h2><div class="sub">Queries only · tap an hour above to give for it${D.live ? ' · <b>tap a name</b> to see those customers and their chats' : ''}</div></div></div>${byHour || '<div class="empty">Nothing given yet today.</div>'}</div>`;
   }
   function gqSync() { clearTimeout(GQT); GQT = setTimeout(() => { loadGive(); loadTower(false); }, 900); }     // re-read the numbers + refresh the board above
   async function gqDo(id, how, v) {
