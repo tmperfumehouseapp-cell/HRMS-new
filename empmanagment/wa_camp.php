@@ -1736,7 +1736,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.ru_make', 'wa.ru_restart', 'wa.ru_msg', 'wa.ru_learn', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_query_counts', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_newdays', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.ru_make', 'wa.ru_restart', 'wa.ru_msg', 'wa.ru_learn', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_query_counts', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -2124,6 +2124,27 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                 try { @set_time_limit(60); if (function_exists('cfun_fast')) cfun_fast($pdo, 3000, 15, 0); if (function_exists('cfun_tick')) { setting_set($pdo, 'wa_cfun_at', '1970-01-01 00:00:00'); cfun_tick($pdo, true, 20); } if (function_exists('wa_cpc_table') && wa_cpc_table($pdo)) $pdo->prepare("DELETE FROM wa_cp_cache WHERE k = 'cust_sum2'")->execute(); } catch (Throwable $e) { }
             }
             json_response(['ok' => true] + wa_cust_summary($pdo)); }   // 👥 the customer numbers card (Customers screen + Campaigns)
+        case 'wa.cust_newdays': {   // 📅 new customers day by day (?from=&to= YYYY-MM-DD, calendar days, at most 92): all new · Query (Meta ad) · Community · CSV / Excel · Other
+            $to = (string)($_GET['to'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || strtotime($to) === false) $to = date('Y-m-d');
+            $from = (string)($_GET['from'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || strtotime($from) === false) $from = date('Y-m-d', strtotime($to . ' -6 day'));
+            if ($from > $to) [$from, $to] = [$to, $from];
+            if ((strtotime($to) - strtotime($from)) / 86400 > 91) $from = date('Y-m-d', strtotime($to . ' -91 day'));   // one query over at most ~3 months
+            $ck = 'newd:' . $from . ':' . $to; $hit = wa_cpc_get($pdo, $ck);
+            if ($hit && empty($_GET['fresh']) && $hit['age'] < ($to >= date('Y-m-d') ? 300 : 3600)) json_response($hit['v']);   // today in the range: counted again after 5 min, older days after an hour
+            // one customer = one row of wa_contacts, counted on the day of first_seen, under ONE place:
+            //   source 'query' = came from a Meta ad · 'community' = community link · 'campaign' = first wrote by replying to a campaign (an imported number) or no source but the number came in a CSV / Excel file = CSV / Excel · anything else = Other (wrote to us directly, added by hand)
+            $days = []; for ($t = strtotime($from); $t <= strtotime($to); $t += 86400) { $k = date('Y-m-d', $t); $days[$k] = ['day' => $k, 'all' => 0, 'query' => 0, 'community' => 0, 'csv' => 0, 'other' => 0]; }
+            try {
+                $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(25000) */ DATE(c.first_seen) d, COUNT(*) n, SUM(c.source = 'query') q, SUM(c.source = 'community') cm,
+                        SUM(c.source = 'campaign' OR (c.source NOT IN ('query', 'community', 'campaign') AND EXISTS (SELECT 1 FROM wa_ctags t WHERE t.phone = c.phone AND t.src = 'import'))) cs
+                    FROM wa_contacts c WHERE c.first_seen >= ? AND c.first_seen < ? GROUP BY d");
+                $q->execute([$from . ' 00:00:00', date('Y-m-d', strtotime($to . ' +1 day')) . ' 00:00:00']);
+                foreach ($q->fetchAll() as $r) { $k = (string)$r['d']; if (!isset($days[$k])) continue; $n = (int)$r['n']; $qq = (int)$r['q']; $cm = (int)$r['cm']; $cs = (int)$r['cs'];
+                    $days[$k] = ['day' => $k, 'all' => $n, 'query' => $qq, 'community' => $cm, 'csv' => $cs, 'other' => max(0, $n - $qq - $cm - $cs)]; }
+            } catch (Throwable $e) { json_response(['error' => 'The count took too long. Try a shorter date range.'], 503); }
+            $o = ['ok' => true, 'from' => $from, 'to' => $to, 'today' => date('Y-m-d'), 'days' => array_values(array_reverse($days)), 'at' => date('Y-m-d H:i:s')];
+            wa_cpc_put($pdo, $ck, $o); json_response($o);
+        }
         case 'wa.camp_hourly': {   // ⏱ spend and queries hour by hour for one business day (?day=YYYY-MM-DD, default today)
             $dy = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dy)) { try { $dy = function_exists('wq_day_of') && function_exists('wq_now') ? (string)wq_day_of($pdo, wq_now()) : date('Y-m-d'); } catch (Throwable $e) { $dy = date('Y-m-d'); } }
             json_response(['ok' => true] + wa_camp_hourly($pdo, $dy));
