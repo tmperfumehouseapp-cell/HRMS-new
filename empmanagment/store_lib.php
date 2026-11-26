@@ -852,17 +852,28 @@ function st_wa_tpl(PDO $pdo, string $name): ?array
     $w = $pdo->prepare("SELECT waba_id FROM wa_tpl_waba WHERE tpl_id = ? AND status = 'APPROVED'"); $w->execute([$id]); $t['ok_wabas'] = array_column($w->fetchAll(), 'waba_id');
     return $t['ok_wabas'] ? $t : null;
 }
+/** The number a Store message goes out from. When the Store has its OWN WhatsApp number (Store → WhatsApp → Setup) it is that number, and only that one (if its account has no approval yet the message
+ *  is not sent and the cashier's button stays). Without a chosen number: the first number that has the message approved, as before. Returns [number row or null, store_own?, why]. */
+function st_wa_number_for(PDO $pdo, array $t): array
+{
+    $own = null; try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'swa'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; $id = is_array($j) ? (int)($j['number_id'] ?? 0) : 0;
+        if ($id > 0) { $q = $pdo->prepare("SELECT * FROM wa_numbers WHERE id = ?"); $q->execute([$id]); $own = $q->fetch() ?: null; } } catch (Throwable $e) { }
+    if ($own) return in_array(wa_waba_of($own), $t['ok_wabas'], true) ? [$own, true, ''] : [null, true, 'template not approved on the Store number yet'];
+    foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) if (in_array(wa_waba_of($n), $t['ok_wabas'], true)) return [$n, false, ''];
+    return [null, false, 'no WhatsApp number can send this template'];
+}
 /** One bill → one customer, as a template message from the shop's own WhatsApp number. Returns [ok, note]. */
 function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array $cs): array
 {
     $phone = (string)$p['phone']; $key = wa_key($phone); if ($key === '' || strlen($key) !== 10) return [false, 'not an Indian mobile number'];
     $back = !empty($p['returning_c']) && !empty($cs['skip_returning']);
     $t = st_wa_tpl($pdo, $back ? 'tmph_store_bill_back' : 'tmph_store_bill'); if (!$t) return [false, 'template not approved yet'];
-    $num = null; foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) if (in_array(wa_waba_of($n), $t['ok_wabas'], true)) { $num = $n; break; }
-    if (!$num) return [false, 'no WhatsApp number can send this template'];
+    [$num, $own, $why] = st_wa_number_for($pdo, $t);
+    if (!$num) return [false, $why];
     $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
     if ($c && (int)($c['optout'] ?? 0) === 1) return [false, 'customer opted out of WhatsApp'];
-    if (!$c) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$key, '91' . $key, mb_substr((string)$p['name'], 0, 120), date('Y-m-d H:i:s')]); }
+    if ($own) { try { $q = $pdo->prepare("SELECT optout FROM st_wa_chat WHERE phone = ?"); $q->execute([$key]); if ((int)$q->fetchColumn() === 1) return [false, 'customer asked the store to stop']; } catch (Throwable $e) { } }
+    if (!$c && !$own) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$key, '91' . $key, mb_substr((string)$p['name'], 0, 120), date('Y-m-d H:i:s')]); }
     $name = trim((string)$p['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($name);
     $vars = [$first, $billNo, number_format($total), st_bill_link((string)$p['token'])];
     $r = wa_tpl_send_components($pdo, $t, $vars, (string)$num['phone_id'], ['url_suffix' => (string)$p['token']]);
@@ -1506,11 +1517,11 @@ function st_bday_send(PDO $pdo, array $v): array
         if (!st_wa_load() || !wa_tpl_tables($pdo)) return $note(false, 'WhatsApp is not available on this server', 'pending');
         $key = wa_key((string)$v['phone']); if ($key === '' || strlen($key) !== 10) return $note(false, 'not an Indian mobile number', 'failed');
         $t = st_wa_tpl($pdo, 'tmph_store_bday'); if (!$t) return $note(false, 'birthday template not approved yet', 'pending');
-        $num = null; foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) if (in_array(wa_waba_of($n), $t['ok_wabas'], true)) { $num = $n; break; }
-        if (!$num) return $note(false, 'no WhatsApp number can send this template', 'pending');
+        [$num, $own, $why] = st_wa_number_for($pdo, $t);
+        if (!$num) return $note(false, $why, 'pending');
         $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
         if ($c && (int)($c['optout'] ?? 0) === 1) return $note(false, 'customer opted out of WhatsApp', 'failed');
-        if (!$c) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$key, '91' . $key, mb_substr((string)$v['name'], 0, 120), date('Y-m-d H:i:s')]); }
+        if (!$c && !$own) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$key, '91' . $key, mb_substr((string)$v['name'], 0, 120), date('Y-m-d H:i:s')]); }
         $nm = trim((string)$v['name']); $first = $nm !== '' ? explode(' ', $nm)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($nm);
         $dt = st_bday_next((string)$v['bday'], strtotime((string)$v['valid_from'])) ?: strtotime((string)$v['valid_to']);
         $vars = [$first, date('j M', $dt), date('j M', strtotime((string)$v['valid_from'])), date('j M', strtotime((string)$v['valid_to'])), (string)$v['code']];
