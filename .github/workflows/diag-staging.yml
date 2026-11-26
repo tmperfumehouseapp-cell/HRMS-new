@@ -54,15 +54,32 @@ jobs:
             }
           ' "$P" 2>&1 | head -60
           echo "php error log (analytics lines):"; for L in "${P}analytics/error_log" "${P}error_log" /home/*/logs/php/error.log /home/*/logs/nginx/error.log; do [ -f "$L" ] && { echo "-- $L"; grep -i "analytics" "$L" 2>/dev/null | tail -8 | cut -c1-300; }; done
-          echo "=== WEBSITE ORDERS (given to salespeople) ==="
+          echo "=== WEBSITE ORDERS vs HRMS (last 7 days, read-only) ==="
           php -r '
             $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; } require $f;
             try { $d = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]); } catch (Throwable $e) { echo "db: " . $e->getMessage() . "\n"; exit; }
-            try { foreach ($d->query("SELECT manual_order_id, order_no, mp_no, employee_id, order_type, house, batch, total, payment_status, order_date, created_by, ml FROM manual_orders WHERE channel = \"TM Store\" ORDER BY manual_order_id DESC LIMIT 10") as $r) echo "  row " . json_encode($r) . "\n"; echo "  (end of TM Store rows)\n"; } catch (Throwable $e) { echo "  rows: " . $e->getMessage() . "\n"; }
-            try { foreach ($d->query("SELECT at, actor, ref, detail FROM bd_log WHERE kind = \"order\" AND (detail LIKE \"website order%\" OR ref LIKE \"TM1%\") ORDER BY at DESC LIMIT 15") as $r) echo "  log " . $r["at"] . " | " . $r["actor"] . " | " . $r["ref"] . " | " . $r["detail"] . "\n"; echo "  (end of log)\n"; } catch (Throwable $e) { echo "  log: " . $e->getMessage() . "\n"; }
-            try { $x = $d->query("SELECT setting_key, LEFT(setting_value, 60) v FROM hrms_settings WHERE setting_key IN (\"tms_api_base\", \"tms_commission\")")->fetchAll(); echo "  settings " . json_encode($x) . "\n"; $k = $d->query("SELECT LENGTH(setting_value) FROM hrms_settings WHERE setting_key = \"tms_api_key\"")->fetchColumn(); echo "  key saved: " . ($k ? "yes (" . $k . " chars)" : "no") . "\n"; } catch (Throwable $e) { echo "  settings: " . $e->getMessage() . "\n"; }
-            try { foreach ($d->query("SELECT employee_id, full_name FROM employees WHERE full_name LIKE \"%Ankit%\"") as $r) echo "  emp " . json_encode($r) . "\n"; } catch (Throwable $e) { }
-          ' "$P" 2>&1 | head -50
+            $g = function ($k) use ($d) { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); return (string)$q->fetchColumn(); };
+            $base = rtrim($g("tms_api_base") ?: "https://test.tmperfumehouse.store/api/v1", "/"); $key = trim($g("tms_api_key")); echo "  shop address: " . $base . " | key saved: " . ($key !== "" ? "yes" : "NO") . "\n"; if ($key === "") exit;
+            $since = date("Y-m-d", time() - 7 * 86400); $all = []; $shown = 0;
+            for ($p = 1; $p <= 20; $p++) { $ch = curl_init($base . "/orders?" . http_build_query(["page" => $p, "limit" => 100, "since" => $since])); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_HTTPHEADER => ["Authorization: Bearer " . $key, "Accept: application/json"]]); $o = curl_exec($ch); $c = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch); $j = json_decode((string)$o, true);
+              if ($c !== 200 || empty($j["ok"])) { echo "  shop answered HTTP " . $c . " " . substr((string)$o, 0, 120) . "\n"; break; }
+              foreach ((array)($j["data"]["items"] ?? []) as $x) { if (!$shown++) { $kk = array_keys($x); echo "  order fields: " . implode(",", $kk) . "\n"; } $all[] = $x; } if (empty($j["data"]["has_more"])) break; }
+            echo "  shop orders since " . $since . ": " . count($all) . "\n";
+            $rows = []; foreach ($d->query("SELECT mp_no, employee_id, created_by, is_direct FROM manual_orders WHERE channel = \"TM Store\"") as $r) $rows[(string)$r["mp_no"]] = $r;
+            $why = []; try { foreach ($d->query("SELECT number, done, why FROM tms_auto") as $r) $why[(string)$r["number"]] = $r; } catch (Throwable $e) { }
+            $nm = []; foreach ($d->query("SELECT employee_id, full_name FROM employees") as $r) $nm[(int)$r["employee_id"]] = $r["full_name"];
+            $cnt = ["given" => 0, "direct" => 0, "waiting" => 0, "not_in_hrms" => 0, "unpaid_link" => 0, "cancelled" => 0]; $list = []; $src = [];
+            foreach ($all as $x) { $no = (string)($x["number"] ?? ""); $ps = strtolower((string)($x["payment_status"] ?? "")); $pm = strtolower((string)($x["payment_method"] ?? "")); $paid = (float)($x["amount_paid"] ?? 0);
+              $sp = ""; foreach (["salesperson", "salesperson_name", "sales_person", "assigned_to", "staff", "created_by", "reference", "source"] as $k) { if (isset($x[$k]) && $x[$k] !== "" && $x[$k] !== null) $sp .= $k . "=" . (is_array($x[$k]) ? json_encode($x[$k]) : $x[$k]) . " "; }
+              $s = (string)($x["source"] ?? ""); $src[$s] = ($src[$s] ?? 0) + 1;
+              if (!empty($x["cancelled_at"]) || stripos(($x["status"] ?? "") . " " . ($x["fulfillment_status"] ?? "") . " " . $ps, "cancel") !== false) { $cnt["cancelled"]++; continue; }
+              if ($ps !== "paid" && $paid <= 0 && $pm !== "cod") { $cnt["unpaid_link"]++; continue; }
+              $r = $rows[$no] ?? null;
+              if ($r && (int)$r["employee_id"] > 0) { $cnt["given"]++; continue; } if ($r && (int)$r["is_direct"] === 1) { $cnt["direct"]++; continue; }
+              $st = $r ? "waiting" : "not_in_hrms"; $cnt[$st]++;
+              $list[] = "  " . $st . " | " . $no . " | " . ($x["placed_at"] ?? "") . " | Rs " . ($x["total"] ?? "") . " | " . $pm . "/" . $ps . " | " . substr((string)(($x["customer"]["name"] ?? "")), 0, 22) . " | ph .." . substr(preg_replace("/\D+/", "", (string)($x["customer"]["phone"] ?? "")), -4) . " | why: " . (($why[$no]["why"] ?? "") ?: "-") . " | shop: " . trim($sp); }
+            echo "  counts " . json_encode($cnt) . "\n  source " . json_encode($src) . "\n"; foreach ($list as $l) echo $l . "\n"; echo "  (end)\n";
+          ' "$P" 2>&1 | head -400
           echo "=== database activity (SHOW FULL PROCESSLIST, no passwords) ==="
           php -r '
             $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
