@@ -18,11 +18,14 @@ function swf_tables(PDO $pdo): bool
         return $ok = true;
     } catch (Throwable $e) { error_log('swf_tables: ' . $e->getMessage()); return $ok = false; }
 }
+/** What a {{n}} of a chosen message can be filled with. */
+function swf_kinds(): array { return ['name' => 'Customer name', 'perfume' => 'Perfume (name + ml)', 'days' => 'Days since purchase', 'bill_no' => 'Bill number', 'amount' => 'Bill amount (₹)']; }
 function swf_langs(): array { return ['gu' => 'Gujarati', 'hi' => 'Hindi', 'en' => 'English']; }
 function swf_cfg(PDO $pdo): array
 {
-    $d = ['limit' => 500, 'gap' => 3, 'lang' => 'gu'];
+    $d = ['limit' => 500, 'gap' => 3, 'lang' => 'gu', 'tpl' => [7 => 0, 30 => 0, 60 => 0], 'map' => [7 => ['name', 'perfume', 'days', 'bill_no'], 30 => ['name', 'perfume', 'days', 'bill_no'], 60 => ['name', 'perfume', 'days', 'bill_no']]];
     try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'swfu'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; if (is_array($j)) foreach ($d as $k => $x) if (isset($j[$k])) $d[$k] = $j[$k]; } catch (Throwable $e) { }
+    foreach ([7, 30, 60] as $st) { $d['tpl'][$st] = (int)($d['tpl'][$st] ?? ($d['tpl'][(string)$st] ?? 0)); $m = (array)($d['map'][$st] ?? ($d['map'][(string)$st] ?? [])); $d['map'][$st] = array_values(array_map(fn($k) => isset(swf_kinds()[(string)$k]) ? (string)$k : 'perfume', $m ?: ['name', 'perfume', 'days', 'bill_no'])); }
     $d['limit'] = max(5, min(100000, (int)$d['limit'])); $d['gap'] = max(1, min(30, (int)$d['gap'])); if (!isset(swf_langs()[$d['lang']])) $d['lang'] = 'gu';
     return $d;
 }
@@ -67,8 +70,8 @@ function swf_queue(PDO $pdo, array $cfg): array
     $stop = []; try { foreach ($pdo->query("SELECT phone FROM st_rm_stop")->fetchAll(PDO::FETCH_COLUMN) as $p) $stop[substr(sr_phone((string)$p), -10)] = 1; } catch (Throwable $e) { }
     try { foreach ($pdo->query("SELECT phone FROM st_wa_chat WHERE optout = 1")->fetchAll(PDO::FETCH_COLUMN) as $p) $stop[substr(sr_phone((string)$p), -10)] = 1; } catch (Throwable $e) { }
     $last = [];
-    $q = $pdo->query("SELECT p.phone, p.name, b.bill_id, b.biz_date FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.phone <> '' AND p.declined = 0 AND p.person_no = 1 AND b.biz_date >= DATE_SUB(CURDATE(), INTERVAL 70 DAY) ORDER BY b.biz_date, b.bill_id");
-    foreach ($q->fetchAll() as $r) { $ph = sr_phone((string)$r['phone']); $nm = trim((string)$r['name']); $prev = $last[$ph] ?? null; $last[$ph] = ['phone' => $ph, 'name' => $nm !== '' ? $nm : ($prev['name'] ?? ''), 'bill_id' => (int)$r['bill_id'], 'day' => (string)$r['biz_date']]; }
+    $q = $pdo->query("SELECT p.phone, p.name, b.bill_id, b.biz_date, b.bill_no, b.total FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.phone <> '' AND p.declined = 0 AND p.person_no = 1 AND b.biz_date >= DATE_SUB(CURDATE(), INTERVAL 70 DAY) ORDER BY b.biz_date, b.bill_id");
+    foreach ($q->fetchAll() as $r) { $ph = sr_phone((string)$r['phone']); $nm = trim((string)$r['name']); $prev = $last[$ph] ?? null; $last[$ph] = ['phone' => $ph, 'name' => $nm !== '' ? $nm : ($prev['name'] ?? ''), 'bill_id' => (int)$r['bill_id'], 'day' => (string)$r['biz_date'], 'bill_no' => (string)($r['bill_no'] ?? ''), 'total' => (float)($r['total'] ?? 0)]; }
     $items = []; $ids = array_values(array_unique(array_map(fn($x) => $x['bill_id'], $last)));
     foreach (array_chunk($ids, 500) as $ch) { $in = implode(',', array_map('intval', $ch)); if ($in === '') continue;
         foreach ($pdo->query("SELECT i.bill_id, i.ml, COALESCE(pr.title, '') title FROM st_bill_items i LEFT JOIN st_bottles bt ON bt.bottle_id = i.bottle_id LEFT JOIN st_products pr ON pr.product_id = bt.product_id WHERE i.kind = 'sale' AND i.bill_id IN ($in)")->fetchAll() as $r) { $b = (int)$r['bill_id']; $items[$b][(string)$r['title']] = ($items[$b][(string)$r['title']] ?? 0) + (int)$r['ml']; } }
@@ -89,7 +92,7 @@ function swf_queue(PDO $pdo, array $cfg): array
             elseif ($f['status'] === 'fail' && (int)$f['stage'] === $stage && $f['day'] === $today && $state === 'ready') { $state = 'failed'; $err = (string)$f['err']; }
         }
         $run = ''; if ($state === 'sent') { $ms = $mst[$wamid] ?? 'sent'; $run = in_array($ms, ['delivered', 'read', 'failed'], true) ? $ms : 'sent'; }
-        $rows[] = ['phone' => $key, 'name' => $c['name'], 'perfume' => $label, 'days' => $days, 'stage' => $stage, 'lang' => $langs[$key] ?? $cfg['lang'], 'state' => $state, 'note' => $note, 'run' => $run, 'err' => $err, 'bill_id' => $c['bill_id']];
+        $rows[] = ['phone' => $key, 'name' => $c['name'], 'perfume' => $label, 'days' => $days, 'stage' => $stage, 'lang' => $langs[$key] ?? $cfg['lang'], 'state' => $state, 'note' => $note, 'run' => $run, 'err' => $err, 'bill_id' => $c['bill_id'], 'bill_no' => $c['bill_no'], 'total' => $c['total']];
     }
     usort($rows, fn($a, $b) => [$a['stage'], $a['state'] === 'ready' ? 0 : 1, $a['days']] <=> [$b['stage'], $b['state'] === 'ready' ? 0 : 1, $b['days']]);
     return $rows;
@@ -114,21 +117,47 @@ function swf_tpl_state(PDO $pdo, string $waba): array
     return $out;
 }
 
+/** The messages the Store may pick for a follow-up: approved at the Store's own account, not the bill / birthday ones. */
+function swf_options(PDO $pdo, string $waba): array
+{
+    $out = [];
+    foreach ($pdo->query("SELECT t.id FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id AND w.waba_id = " . $pdo->quote($waba) . " AND w.status = 'APPROVED' WHERE t.name LIKE 'tmph\\_store\\_%' ORDER BY t.id DESC")->fetchAll() as $r) {
+        $t = wa_tpl_row($pdo, (int)$r['id']); if (!$t) continue; $n = (string)$t['name']; if (preg_match('/^tmph_store_(bill|order|bday|birthday)/', $n)) continue;
+        $out[] = ['id' => (int)$t['id'], 'name' => $n, 'language' => (string)$t['language'], 'category' => (string)$t['category'], 'body' => (string)$t['body'], 'footer' => (string)($t['footer'] ?? ''), 'header' => (string)($t['header_format'] ?? ''), 'buttons' => array_values(array_map(fn($b) => (string)($b['text'] ?? ''), (array)($t['buttons'] ?? []))), 'vars' => count(wa_tpl_vars((string)$t['body']))];
+    }
+    return $out;
+}
+/** The message for one stage: the one the Store picked (if it is still approved), else the ready-made one in the customer's language. Returns [template, note]. */
+function swf_chosen(PDO $pdo, array $cfg, int $stage, string $lang, array $opts): array
+{
+    $id = (int)($cfg['tpl'][$stage] ?? 0); if ($id > 0) foreach ($opts as $o) if ($o['id'] === $id) { $t = wa_tpl_row($pdo, $id); if ($t) { $w = $pdo->prepare("SELECT waba_id FROM wa_tpl_waba WHERE tpl_id = ? AND status = 'APPROVED'"); $w->execute([$id]); $t['ok_wabas'] = array_column($w->fetchAll(), 'waba_id'); return [$t, 'chosen']; } }
+    [$t, $lg] = swf_pick($pdo, $stage, $lang); return [$t, $t ? 'ready-made' : ''];
+}
+function swf_vars(array $t, array $kinds, array $row): array
+{
+    $n = count(wa_tpl_vars((string)$t['body'])); $out = [];
+    $first = trim((string)$row['name']) !== '' ? explode(' ', trim((string)$row['name']))[0] : 'there'; if (function_exists('wa_first_name') && trim((string)$row['name']) !== '') $first = wa_first_name((string)$row['name']);
+    for ($i = 0; $i < $n; $i++) { $k = $kinds[$i] ?? 'perfume';
+        $out[] = $k === 'name' ? $first : ($k === 'days' ? (string)$row['days'] : ($k === 'bill_no' ? ((string)($row['bill_no'] ?? '') ?: '-') : ($k === 'amount' ? number_format((float)($row['total'] ?? 0)) : (string)$row['perfume']))); }
+    return $out;
+}
+
 function swf_handle(PDO $pdo, string $action, int $me, bool $post): void
 {
     if (!swf_tables($pdo)) json_response(['error' => 'The follow-up tables could not be made.'], 500);
     $num = sw_number($pdo); $cfg = swf_cfg($pdo);
     if ($action === 'st_wa.fu_list') {
         $rows = swf_queue($pdo, $cfg); $cnt = [7 => 0, 30 => 0, 60 => 0]; foreach ($rows as $r) if ($r['state'] === 'ready') $cnt[$r['stage']]++;
-        $tp = []; foreach ([7, 30, 60] as $s) { [$t, $lg] = swf_pick($pdo, $s, $cfg['lang']); $tp[$s] = $t ? $lg : ''; }      // the language that would really go out for each stage ('' = no approved message yet)
+        $wb = $num ? wa_waba_of($num) : ''; $opts = $wb !== '' ? swf_options($pdo, $wb) : []; $tp = []; foreach ([7, 30, 60] as $s) { [$t, $why] = swf_chosen($pdo, $cfg, $s, $cfg['lang'], $opts); $tp[$s] = $t ? ($why === 'chosen' ? 'chosen' : (string)$t['language']) : ''; }      // the language that would really go out for each stage ('' = no approved message yet)
         $defs = []; foreach (swf_defs() as $d) $defs[$d['stage']][$d['language']] = ['body' => $d['body'], 'footer' => $d['footer'], 'buttons' => array_column($d['buttons'], 'text')];
-        json_response(['defs' => $defs, 'rows' => $rows, 'counts' => $cnt, 'cfg' => $cfg, 'sent_today' => swf_sent_today($pdo), 'ready_langs' => $tp, 'number' => $num ? true : false, 'yesterday' => swf_report($pdo, date('Y-m-d', strtotime('-1 day'))), 'today' => swf_report($pdo, date('Y-m-d'))]);
+        json_response(['options' => $opts, 'kinds' => swf_kinds(), 'defs' => $defs, 'rows' => $rows, 'counts' => $cnt, 'cfg' => $cfg, 'sent_today' => swf_sent_today($pdo), 'ready_langs' => $tp, 'number' => $num ? true : false, 'yesterday' => swf_report($pdo, date('Y-m-d', strtotime('-1 day'))), 'today' => swf_report($pdo, date('Y-m-d'))]);
     }
     if (!$post && $action !== 'st_wa.fu_tpls') json_response(['error' => 'Method not allowed.'], 405);
     $in = $post ? json_input() : [];
     if ($action === 'st_wa.fu_lang') { $ph = wa_key($in['phone'] ?? ''); $lg = (string)($in['lang'] ?? ''); if (strlen($ph) !== 10 || !isset(swf_langs()[$lg])) json_response(['error' => 'Wrong number or language.'], 422); $pdo->prepare("INSERT INTO st_wa_lang (phone, lang) VALUES (?, ?) ON DUPLICATE KEY UPDATE lang = VALUES(lang)")->execute([$ph, $lg]); json_response(['ok' => true]); }
     if ($action === 'st_wa.fu_cfg_save') {
-        $c = $cfg; foreach (['limit', 'gap', 'lang'] as $k) if (array_key_exists($k, $in)) $c[$k] = $in[$k];
+        $c = $cfg; foreach (['limit', 'gap', 'lang', 'tpl', 'map'] as $k) if (array_key_exists($k, $in)) { if (is_array($in[$k])) { foreach ($in[$k] as $kk => $vv) $c[$k][(int)$kk] = $vv; } else $c[$k] = $in[$k]; }
+        foreach ([7, 30, 60] as $st) { $c['tpl'][$st] = (int)($c['tpl'][$st] ?? 0); $c['map'][$st] = array_values(array_map(fn($k) => isset(swf_kinds()[(string)$k]) ? (string)$k : 'perfume', (array)($c['map'][$st] ?? ['name', 'perfume']))); }
         $c['limit'] = max(5, min(100000, (int)$c['limit'])); $c['gap'] = max(1, min(30, (int)$c['gap'])); if (!isset(swf_langs()[$c['lang']])) $c['lang'] = 'gu';
         $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('swfu', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($c)]); json_response(['ok' => true, 'cfg' => $c]);
     }
@@ -139,10 +168,9 @@ function swf_handle(PDO $pdo, string $action, int $me, bool $post): void
         $row = null; foreach (swf_queue($pdo, $cfg) as $r) if ($r['phone'] === $ph && $r['stage'] === $stage) { $row = $r; break; }
         if (!$row) json_response(['ok' => false, 'error' => 'This customer is not due for this message today.']);
         if ($row['state'] !== 'ready' && $row['state'] !== 'failed') json_response(['ok' => false, 'error' => $row['state'] === 'sent' ? 'Already sent.' : ($row['note'] ?: 'Skipped.')]);
-        [$t, $lg] = swf_pick($pdo, $stage, (string)$row['lang']); if (!$t) json_response(['ok' => false, 'stop' => true, 'error' => 'No follow-up message is approved by Meta yet. Open "Messages" and send them to Meta.']);
+        $wb0 = wa_waba_of($num); [$t, $why0] = swf_chosen($pdo, $cfg, $stage, (string)$row['lang'], $wb0 !== '' ? swf_options($pdo, $wb0) : []); $lg = $t ? (string)$t['language'] : ''; if (!$t) json_response(['ok' => false, 'stop' => true, 'error' => 'No message is chosen for this stage, or it is not approved by Meta yet. Choose one above the list (or open "Messages").']);
         [$nm, $own, $why] = st_wa_number_for($pdo, $t); if (!$nm || !$own) json_response(['ok' => false, 'stop' => true, 'error' => $nm ? 'The Store number is not the one chosen for this message.' : (string)$why]);
-        $first = trim((string)$row['name']) !== '' ? explode(' ', trim((string)$row['name']))[0] : ($lg === 'en' ? 'there' : 'જી'); if (function_exists('wa_first_name') && trim((string)$row['name']) !== '') $first = wa_first_name((string)$row['name']);
-        $vars = [$first, (string)$row['perfume']];
+        $vars = swf_vars($t, $why0 === 'chosen' ? (array)($cfg['map'][$stage] ?? []) : ['name', 'perfume'], $row);
         $b = wa_tpl_send_components($pdo, $t, $vars, (string)$nm['phone_id'], []); if (empty($b['ok'])) json_response(['ok' => false, 'stop' => true, 'error' => (string)($b['error'] ?? 'Could not build the message.')]);
         $pl = ['messaging_product' => 'whatsapp', 'to' => '91' . $ph, 'type' => 'template', 'template' => ['name' => $t['name'], 'language' => ['code' => $t['language']]]]; if (!empty($b['components'])) $pl['template']['components'] = $b['components'];
         [$code, $d] = wa_api('POST', '/' . $nm['phone_id'] . '/messages', $pl); $wamid = (string)($d['messages'][0]['id'] ?? ''); $now = date('Y-m-d H:i:s'); $day = date('Y-m-d');
