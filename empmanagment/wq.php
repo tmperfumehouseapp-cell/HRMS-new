@@ -1301,14 +1301,14 @@ function wq_status(PDO $pdo): array
 /**
  * One tick: idempotent, chunked, time-boxed (~8 s), never throws, GET_LOCK('wq_tick', 0). $opt['light'] = only the latency-critical steps (used by wa_tick, which runs every few seconds).
  */
-/** One-time correction (26 Nov): queries opened from 26 Nov 10:00 that were typed "New — first message ever" although a campaign / follow-up / win-back message of ours had reached the customer first
- *  (wq_decide did not know the follow-up module) become Campaign queries, as new ones now do. Hand-set types are not touched. A few per round; done once (wq_meta 'wrote_first_fix'). */
+/** One-time correction (26 Nov; second pass from 24 Nov 10:00 — owner: "it has been like this for 3 days, correct it"): queries opened from 24 Nov 10:00 that were typed "New — first message ever" although a campaign / follow-up / win-back message of ours had reached the customer first
+ *  (wq_decide did not know the follow-up module) become Campaign queries, as new ones now do. Hand-set types are not touched. A few per round; done once (wq_meta 'wrote_first_fix2'; the first pass, from 26 Nov, was 'wrote_first_fix'). */
 function wq_wrote_first_fix(PDO $pdo, float $deadline): int
 {
-    $cur = wq_meta_get($pdo, 'wrote_first_fix', '0'); if ($cur === 'done') return 0; $n = 0;
+    $cur = wq_meta_get($pdo, 'wrote_first_fix2', '0'); if ($cur === 'done') return 0; $n = 0;
     try {
-        $st = $pdo->prepare("SELECT q.* FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id WHERE q.id > ? AND q.opened_at >= '2026-11-26 10:00:00' AND t.type = 'new' AND t.auto = 1 AND t.reason LIKE 'first message ever%' ORDER BY q.id LIMIT 150");
-        $st->execute([(int)$cur]); $rows = $st->fetchAll(); if (!$rows) { wq_meta_put($pdo, 'wrote_first_fix', 'done'); return 0; }
+        $st = $pdo->prepare("SELECT q.* FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id WHERE q.id > ? AND q.opened_at >= '2026-11-24 10:00:00' AND t.type = 'new' AND t.auto = 1 AND t.reason LIKE 'first message ever%' ORDER BY q.id LIMIT 400");
+        $st->execute([(int)$cur]); $rows = $st->fetchAll(); if (!$rows) { wq_meta_put($pdo, 'wrote_first_fix2', 'done'); return 0; }
         foreach ($rows as $q) {
             $ctx = wq_ctx($pdo, $q);
             if ($ctx['prev_in'] === 0 && ($w = wq_we_wrote_first($pdo, (string)$q['phone'], (int)$ctx['T'])) && !wq_came_by_link($pdo, $ctx)) {
@@ -1316,7 +1316,7 @@ function wq_wrote_first_fix(PDO $pdo, float $deadline): int
                 wq_qtype_set($pdo, $q, ['type' => 'campaign', 'reason' => 'campaign customer: we wrote first (' . ($w['who'] === 'followup' ? 'follow-up message' : ($w['who'] === 'recover' ? 'win-back message' : 'campaign')) . ', sent ' . wq_today_label((int)$w['ts']) . ') - was New, corrected', 'rule_id' => 0, 'camp_id' => (int)($camp['camp_id'] ?? 0), 'camp_emp' => (int)($camp['emp'] ?? 0), 'st' => 'ok'], 0, true);
                 wq_tag_put($pdo, (string)$q['phone'], 'campaign', (int)$w['ts']); wq_retag_after_change($pdo, (string)$q['phone'], 'new'); $n++;
             }
-            wq_meta_put($pdo, 'wrote_first_fix', (string)(int)$q['id']);
+            wq_meta_put($pdo, 'wrote_first_fix2', (string)(int)$q['id']);
             if (microtime(true) > $deadline) break;
         }
         if ($n) wq_log($pdo, 'we wrote first: ' . $n . ' queries typed New became Campaign (one-time correction)');
