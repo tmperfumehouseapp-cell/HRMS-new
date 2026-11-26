@@ -121,7 +121,7 @@ if (!function_exists('wa_strip_money')) {
      *  re-sent = for Module A the utility follow-ups (Module B) that went today to people whose marketing failed; delivered = of those, the ones Meta confirmed. Kept 10 minutes. */
     function wa_strip_money(PDO $pdo, string $mod): array
     {
-        $ck = 'wa_strip_money_' . preg_replace('/\W/', '', $mod); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
+        $ck = 'wa_strip_money3_' . preg_replace('/\W/', '', $mod); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
         if (is_array($c) && !empty($c['t']) && time() - (int)$c['t'] < 600) return $c;
         try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 9000"); } catch (Throwable $e) { }
         $t0 = wa_strip_t0($pdo); $P = ['MARKETING' => 1.09, 'UTILITY' => 0.15];
