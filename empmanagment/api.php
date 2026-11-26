@@ -1221,9 +1221,27 @@ function order_retype_robot(PDO $pdo, int $days = 30): int
     } catch (Throwable $e) { error_log('order_retype_robot: ' . $e->getMessage()); }
     return $n;
 }
+/** The query an order came from: the customer's latest query that opened up to the order time and not more than 7 days before it — ['type', 'opened_at'] or null. */
+function order_query_row(PDO $pdo, string $phone, int $t): ?array
+{
+    if ($phone === '') return null;
+    try { $q = $pdo->prepare("SELECT type, opened_at FROM wq_qtype WHERE phone = ? AND opened_at <= ? AND opened_at >= ? ORDER BY opened_at DESC LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $t + 60), date('Y-m-d H:i:s', $t - 7 * 86400)]); $r = $q->fetch(PDO::FETCH_ASSOC); return $r ?: null; }
+    catch (Throwable $e) { return null; }
+}
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
     if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
+    // 🧭 THE ORDER FOLLOWS THE QUERY IT CAME FROM (owner, 26 Nov: "an order that came from a query is counted in Query"). The fresh ratio is Query orders ÷ fresh queries, so both sides must be counted the same way:
+    //    a Campaign / Community query → Campaign order; a fresh query (New / Meta / …) → Query order — also when a campaign was sent while that query was open, or an older send to him failed.
+    //    One exception (owner, 23 Nov): he went quiet for 30 hours AFTER that query and got the Campaign tag before ordering → Campaign. With no query in the 7 days before the order the older rules below decide.
+    try {
+        $ph0 = (string)($c['phone'] ?? ''); $T0 = $t ?: time(); $qr = order_query_row($pdo, $ph0, $T0);
+        if ($qr) {
+            if (in_array((string)$qr['type'], ['campaign', 'community'], true)) return 'campaign';
+            if ($T0 >= (int)strtotime((string)setting_get($pdo, 'camp_tag_from', '2026-11-23 00:00:00'))) { $tq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'campaign' AND src = 'wq' AND at > ? AND at <= ? LIMIT 1"); $tq->execute([$ph0, (string)$qr['opened_at'], date('Y-m-d H:i:s', $T0 + 60)]); if ($tq->fetchColumn()) return 'campaign'; }
+            return 'query';
+        }
+    } catch (Throwable $e) { }
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '' && ($t ?: time()) >= (int)strtotime((string)setting_get($pdo, 'camp_tag_from', '2026-11-23 00:00:00'))) { $tq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'campaign' AND src = 'wq' AND at <= ? LIMIT 1"); $tq->execute([$ph, date('Y-m-d H:i:s', ($t ?: time()) + 60)]); if ($tq->fetchColumn()) return 'campaign'; } } catch (Throwable $e) { }   // owner (23 Nov): a customer who went quiet for 30 hours carries the Campaign tag FOR EVER (wq_window_tag) — an order 10 days or 5 months later is a Campaign order. Only for orders made FROM TODAY (setting camp_tag_from, default 23 Nov 00:00): older orders keep the type they have
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || order_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30)) ? 'campaign' : 'query';
