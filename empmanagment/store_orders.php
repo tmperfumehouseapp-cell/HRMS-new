@@ -57,7 +57,7 @@ if (!function_exists('tms_cfg')) {
         // ⏱ owner (24 Nov): an order counts at the time the customer PAID, not when the payment link was made. The shop has no "paid at", so it is the order's last change while it is still
         //    not packed (the payment is that change); an order paid at once has the same time as placed. Never before the placing time, never in the future.
         $pl = (string)($o['placed_at'] ?? ''); $up = (string)($o['updated_at'] ?? ''); $shp = strtolower((string)($o['fulfillment_status'] ?? '')); $rx = '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/';
-        $payT = (preg_match($rx, $pl) && preg_match($rx, $up) && $up > $pl && in_array($shp, ['', 'unfulfilled'], true) && (string)($o['awb'] ?? '') === '' && $up <= date('Y-m-d H:i:s', time() + 600)) ? $up : $pl;
+        $payT = $pl;   // 26 Nov, from the shop itself: a payment link (LINK-xxx) becomes the TM order in the SAME row when it is paid and placed_at is set to the payment time, so placed_at IS the day of the sale. updated_at changes on every edit (AWB, invoice, note), so it is not used any more.
         return ['temp' => stripos((string)($o['number'] ?? ''), 'LINK-') === 0 ? 1 : 0, 'number' => (string)($o['number'] ?? ''), 'placed_at' => (string)($o['placed_at'] ?? ''), 'pay_time' => $payT, 'customer' => (string)(($cu['name'] ?? '') ?: ($sh['name'] ?? '')), 'phone' => substr(preg_replace('/\D+/', '', (string)(($cu['phone'] ?? '') ?: ($sh['phone'] ?? ''))), -10),
             'city' => (string)($sh['city'] ?? ''), 'pieces' => $pcs, 'ml' => $ml, 'items' => implode(', ', $names), 'total' => $total, 'paid' => $paid, 'due' => max(0, round($total - $paid, 2)), 'pay_method' => $pm, 'pay_status' => $fs,
             'cancelled' => (!empty($o['cancelled_at']) || stripos((string)($o['status'] ?? '') . ' ' . (string)($o['fulfillment_status'] ?? '') . ' ' . (string)($o['payment_status'] ?? ''), 'cancel') !== false) ? 1 : 0, 'ship_status' => strtolower((string)($o['fulfillment_status'] ?? '')), 'awb' => (string)($o['awb'] ?? ''), 'source' => (string)($o['source'] ?? ''), 'note' => (string)($o['note'] ?? ''), 'lines' => $lines,
@@ -77,7 +77,7 @@ if (!function_exists('tms_cfg')) {
             usort($out, fn($a, $b) => strcmp($b['placed_at'], $a['placed_at'])); return [$out, ''];
         };
         if (!function_exists('hrms_memo')) return $run();
-        $r = hrms_memo('tms_orders5:' . $from . ':' . $to, 45, $run); if (is_array($r) && ($r[1] ?? '') !== '' && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders5:' . $from . ':' . $to);   // an error is not kept
+        $r = hrms_memo('tms_orders6:' . $from . ':' . $to, 45, $run); if (is_array($r) && ($r[1] ?? '') !== '' && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders6:' . $from . ':' . $to);   // an error is not kept
         return is_array($r) ? $r : [[], 'Could not read the shop.'];
     }
     /** save ONE shop order as a manual_orders row for $emp (a new row; the caller checked there is none). Returns the HRMS order number (M0123). */
@@ -177,7 +177,7 @@ if (!function_exists('tms_cfg')) {
                 if (function_exists('wa_event')) { try { wa_event($pdo, (string)$c['phone'], '🧾 Website order ' . $no . ' allocated to ' . ($names[$emp] ?? 'the salesperson') . ' · ' . ucfirst($type) . ' (automatic)'); } catch (Throwable $e) { } }
             } catch (Throwable $e) { error_log('tms_auto_tick ' . $no . ': ' . $e->getMessage()); }
         }
-        if ($n && function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_orders5:' . $from . ':' . $to); } catch (Throwable $e) { } }
+        if ($n && function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_orders6:' . $from . ':' . $to); } catch (Throwable $e) { } }
         return $n;
     }
 }
@@ -328,7 +328,7 @@ switch ((string)$action) {
     }
     case 'tms.diag': {   // 🩺 one day of website orders, the shop beside the HRMS, as plain text to copy (read-only). No names, no phone numbers.
         $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['day'] ?? '')) ? (string)$in['day'] : date('Y-m-d');
-        if (function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_orders5:' . date('Y-m-d', strtotime($day) - 7 * 86400) . ':' . $day); } catch (Throwable $e) { } }
+        if (function_exists('hrms_memo_drop')) { try { hrms_memo_drop('tms_orders6:' . date('Y-m-d', strtotime($day) - 7 * 86400) . ':' . $day); } catch (Throwable $e) { } }
         [$all, $err] = tms_orders($pdo, date('Y-m-d', strtotime($day) - 7 * 86400), $day);
         $T = []; $T[] = 'HRMS WEBSITE-ORDERS DIAGNOSE'; $T[] = 'day ' . $day . ' | made ' . date('Y-m-d H:i:s') . ' | shop ' . tms_cfg($pdo)['base'];
         if ($err !== '') { $T[] = 'SHOP ERROR: ' . $err; json_response(['ok' => true, 'text' => implode("\n", $T)]); }
@@ -371,7 +371,7 @@ switch ((string)$action) {
     case 'tms.list': {
         $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['to'] ?? '')) ? (string)$in['to'] : date('Y-m-d'); $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['from'] ?? '')) ? (string)$in['from'] : date('Y-m-d', time() - 6 * 86400);
         if ($from > $to) { $x = $from; $from = $to; $to = $x; } if ($from < date('Y-m-d', time() - 120 * 86400)) $from = date('Y-m-d', time() - 120 * 86400);
-        if (!empty($in['fresh']) && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders5:' . $from . ':' . $to);
+        if (!empty($in['fresh']) && function_exists('hrms_memo_drop')) hrms_memo_drop('tms_orders6:' . $from . ':' . $to);
         try { tms_auto_tick($pdo, 60); } catch (Throwable $e) { error_log('tms auto: ' . $e->getMessage()); }   // 🤖 new orders go to the chat's salesperson before the list is drawn
         [$rows, $err] = tms_orders($pdo, $from, $to); if ($err !== '') json_response(['error' => $err, 'code' => tms_cfg($pdo)['key'] === '' ? 'no_key' : 'shop'], 422);
         tms_cols($pdo); $given = []; $names = employee_names_by_id($pdo);
