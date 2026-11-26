@@ -63,6 +63,7 @@
         <div class="wo-h">
           <div class="t"><h1>🛍 Website orders</h1><p>Orders of the new TM Perfume House shop. Choose the salesperson for an order and press <b>Give</b>: it then counts in that person's sales and target. Nothing is changed in the shop.</p></div>
           <button type="button" class="wo-b" id="woRef">↻ Refresh</button>
+          <button type="button" class="wo-b" id="woDg" title="One day of website orders, the shop beside the HRMS, as text to copy">🩺 Diagnose</button>
           <button type="button" class="wo-b" id="woCfg" hidden>⚙ Connection</button>
         </div>
         <div id="woMsg"></div>
@@ -102,7 +103,7 @@
   const payChip = (r) => r.pay_status === 'paid' ? '<span class="wo-p ok">Paid ' + inr(r.paid || r.total) + '</span>' : r.pay_status === 'partially_paid' ? '<span class="wo-p pt">Paid ' + inr(r.paid) + ' · due ' + inr(r.due) + '</span>' : (r.pay_method === 'cod' ? '<span class="wo-p pt">COD ' + inr(r.total) + '</span>' : '<span class="wo-p no">Not paid yet</span>');
   const opts = (sel) => '<option value="0">Choose salesperson…</option>' + S.people.map((p) => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
   const isPaid = (r) => r.pay_status !== 'pending';   // a payment received, full or part
-  const view = () => { const q = S.q.trim().toLowerCase(); return S.rows.filter((r) => (S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)) && (!S.pay || S.pay === 'all' || (S.pay === 'paid') === isPaid(r)) && (!q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1)); };
+  const view = () => { const q = S.q.trim().toLowerCase(); if (S.pay === 'links') return (S.links || []).filter((r) => !q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1); return S.rows.filter((r) => (S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)) && (!S.pay || S.pay === 'all' || (S.pay === 'paid') === isPaid(r)) && (!q || (r.number + ' ' + r.customer + ' ' + r.phone).toLowerCase().indexOf(q) > -1)); };
 
   // 🔎 one order opened: every product (size, pieces, price), the money lines and the delivery address
   function openInfo(no) {
@@ -127,7 +128,7 @@
     $('woShow').innerHTML = [['open', 'Not given yet', n - g], ['done', 'Given', g], ['all', 'All', n]].map((x) => '<button type="button" class="wo-chip' + (S.show === x[0] ? ' on' : '') + '" data-s="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
     $('woDays').querySelectorAll('[data-d]').forEach((b) => { b.onclick = () => { S.d = b.dataset.d; const d = DAYS.find((x) => x[0] === S.d); if (d) { S.from = ago(d[2]); S.to = ago(d[3]); load(); } else drawBars(); }; });
     { const inShow = S.rows.filter((r) => S.show === 'all' || (S.show === 'open' ? !r.emp : !!r.emp)), pd = inShow.filter(isPaid).length;   // 💰 Paid / Not paid yet — counted inside the Show filter chosen above
-      $('woPay').innerHTML = [['all', 'All', inShow.length], ['paid', 'Paid', pd], ['unpaid', 'Not paid yet', inShow.length - pd]].map((x) => '<button type="button" class="wo-chip' + ((S.pay || 'all') === x[0] ? ' on' : '') + '" data-p="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
+      $('woPay').innerHTML = [['all', 'All', inShow.length], ['paid', 'Paid', pd], ['unpaid', 'Not paid yet', inShow.length - pd]].concat((S.links || []).length ? [['links', '🔗 Payment links · not counted', S.links.length]] : []).map((x) => '<button type="button" class="wo-chip' + ((S.pay || 'all') === x[0] ? ' on' : '') + '" data-p="' + x[0] + '">' + x[1] + '<i>' + x[2] + '</i></button>').join('');
       $('woPay').querySelectorAll('[data-p]').forEach((b) => { b.onclick = () => { S.pay = b.dataset.p; S.sel.clear(); drawBars(); drawList(); }; }); }
     $('woShow').querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { S.show = b.dataset.s; S.sel.clear(); drawBars(); drawList(); }; });
     const s = S.sum || { orders: 0, amount: 0, given: 0, given_amount: 0 };
@@ -138,7 +139,7 @@
     const L = $('woL'), R = view();
     if (!R.length) { L.innerHTML = '<div class="wo-e">' + (S.rows.length ? (S.show === 'open' ? '🎉 Every order of these days is given to a salesperson.' : 'No order matches.') : 'The shop has no orders in these days.') + '</div>'; drawBulk(); return; }
     L.innerHTML = '<div class="wo-th"><span></span><span>Order</span><span>Customer</span><span>Items</span><span>Amount</span><span>Payment</span><span>Salesperson</span></div>' + R.map((r) => '<div class="wo-r' + (r.emp ? ' done' : '') + '" data-n="' + esc(r.number) + '">'
-      + '<div class="ck">' + (r.emp ? '' : '<input type="checkbox" data-ck="1"' + (S.sel.has(r.number) ? ' checked' : '') + ' aria-label="Select">') + '</div>'
+      + '<div class="ck">' + (r.emp || r.temp ? '' : '<input type="checkbox" data-ck="1"' + (S.sel.has(r.number) ? ' checked' : '') + ' aria-label="Select">') + '</div>'
       + '<div class="no"><b><a href="#" data-a="info" style="color:inherit;text-decoration:underline dotted;" title="See the products and the address">' + esc(r.number) + '</a></b><small>' + esc(when(r.placed_at)) + '</small></div>'
       + '<div class="cu"><b>' + esc(r.customer || '—') + '</b><small>' + (r.phone ? '<a href="#" data-a="chat" title="Open this customer\'s WhatsApp chat beside the list" style="color:inherit;text-decoration:underline dotted;">+91 ' + esc(r.phone) + ' 💬</a>' : '') + (r.city ? ' · ' + esc(r.city) : '') + '</small></div>'
       + '<div class="it">' + esc(r.items || '—') + (r.ml ? ' <small>· ' + r.ml + ' ml</small>' : '') + '</div>'
@@ -146,6 +147,7 @@
       + '<div class="py">' + payChip(r) + (r.ship_status && r.ship_status !== 'unfulfilled' ? ' <span class="wo-p gy">' + esc(r.ship_status) + '</span>' : '') + '</div>'
       + '<div class="as">' + (r.emp
           ? '<div class="wo-as gv"><span class="wo-who" title="' + esc(r.emp_name || '') + '">👤 ' + esc(r.emp_name || 'Given') + '</span><small>' + esc(r.type === 'campaign' ? 'Campaign' : 'Query') + (r.hrms_no ? ' · #' + esc(r.hrms_no) : '') + (r.auto ? ' · 🤖 automatic' : '') + '</small><span style="flex:1"></span><button type="button" class="wo-b" data-a="move">Change</button><button type="button" class="wo-b r" data-a="back">Take back</button></div>'
+          : r.temp ? '<small style="display:block;color:#92400e">🔗 Payment link (temporary). It is not counted. It becomes an order, with its TM number, when the customer pays.</small>'
           : '<div class="wo-as"><select class="wo-in" data-e="1">' + opts(r.sug_emp || 0) + '</select><select class="wo-in ty" data-t="1"><option value="query">Query</option><option value="campaign"' + (r.sug_type === 'campaign' ? ' selected' : '') + '>Campaign</option></select><button type="button" class="wo-b g" data-a="give">Give</button></div>' + (r.sug_emp ? '<small style="display:block;margin-top:4px;color:#1e40af;font-size:11.5px;">👤 Name filled in: ' + esc(r.sug_how || 'from the WhatsApp chat') + '. Check Query / Campaign and press Give.</small>' : '') + (r.auto_why ? '<small style="display:block;margin-top:4px;color:#92400e;font-size:11.5px;">🤖 Not given automatically: ' + esc(r.auto_why) + '</small>' : '')) + '</div></div>').join('');
     drawBulk();
   }
@@ -183,8 +185,8 @@
     if (S.busy) return; S.busy = true; S.sel.clear(); drawBars(); $('woL').innerHTML = '<div class="wo-e">Reading the shop…</div>';
     try {
       const d = await api.get('tms.list', Object.assign({ from: S.from, to: S.to }, fresh ? { fresh: 1 } : {}));
-      S.rows = d.rows || []; S.sum = d.sum; S.admin = !!d.admin; msg('');
-    } catch (e) { S.rows = []; S.sum = null; $('woL').innerHTML = '<div class="wo-e">The orders could not be read.</div>'; msg(esc(e.message) + ($('woCfg').hidden ? '' : ' Press <b>⚙ Connection</b>.'), 'bad'); S.busy = false; drawBars(); return; }
+      S.links = (d.rows || []).filter((r) => r.temp); S.rows = (d.rows || []).filter((r) => !r.temp); resum(); if (S.pay === 'links' && !S.links.length) S.pay = 'all'; S.admin = !!d.admin; msg('');   // 🔗 owner (26 Nov): LINK-xxx payment links are temporary — kept apart, never in the counts or the money
+    } catch (e) { S.rows = []; S.links = []; S.sum = null; $('woL').innerHTML = '<div class="wo-e">The orders could not be read.</div>'; msg(esc(e.message) + ($('woCfg').hidden ? '' : ' Press <b>⚙ Connection</b>.'), 'bad'); S.busy = false; drawBars(); return; }
     S.busy = false; drawBars(); drawList();
   }
   function cfgOpen(c) {
@@ -200,6 +202,18 @@
   }
   (async function init() {
     drawBars();
+    $('woDg').onclick = () => {   // 🩺 the day's orders, shop beside HRMS, as text the owner copies and sends
+      const today = new Date(Date.now() + 19800000).toISOString().slice(0, 10), ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:10px';
+      ov.innerHTML = '<div style="background:#fff;border-radius:14px;padding:12px;width:100%;max-width:760px;max-height:92vh;display:flex;flex-direction:column;gap:8px"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b style="font-size:15px">🩺 Diagnose</b><input type="date" id="dgDay" class="wo-in" style="width:auto" value="' + today + '"><button type="button" class="wo-b g" id="dgRun">Run</button><span style="flex:1"></span><button type="button" class="wo-b" id="dgCopy" disabled>📋 Copy</button><button type="button" class="wo-b" id="dgSave" disabled>⬇ File</button><button type="button" class="wo-b" id="dgX">✕</button></div><small id="dgMsg" style="color:#64748b">Reads the shop and the HRMS for one day. Changes nothing. No names or phone numbers inside.</small><textarea id="dgOut" readonly style="flex:1;min-height:52vh;width:100%;box-sizing:border-box;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;border:1px solid #cbd5e1;border-radius:8px;padding:8px;white-space:pre;overflow:auto"></textarea></div>';
+      document.body.appendChild(ov); const q = (i) => ov.querySelector(i);
+      q('#dgX').onclick = () => ov.remove(); ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+      const run = async () => { q('#dgRun').disabled = true; q('#dgMsg').textContent = 'Reading…'; try { const r = await api.get('tms.diag', { day: q('#dgDay').value }); q('#dgOut').value = r.text || ''; q('#dgCopy').disabled = q('#dgSave').disabled = !r.text; q('#dgMsg').textContent = 'Done. Press Copy and paste it in the chat.'; } catch (e) { q('#dgMsg').textContent = 'Could not read: ' + e.message; } q('#dgRun').disabled = false; };
+      q('#dgRun').onclick = run;
+      q('#dgCopy').onclick = async () => { const t = q('#dgOut'); try { await navigator.clipboard.writeText(t.value); } catch (e) { t.focus(); t.select(); try { document.execCommand('copy'); } catch (e2) { } } q('#dgMsg').textContent = 'Copied ✓'; };
+      q('#dgSave').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([q('#dgOut').value], { type: 'text/plain' })); a.download = 'hrms_website_orders_diagnose_' + q('#dgDay').value + '.txt'; document.body.appendChild(a); a.click(); a.remove(); };
+      run();
+    };
     try { const c = await api.get('tms.cfg_get'); if (c.can_edit) { $('woCfg').hidden = false; $('woCfg').onclick = async () => { try { cfgOpen(await api.get('tms.cfg_get')); } catch (e) { msg(esc(e.message), 'bad'); } }; }
       if (!c.key_set) { $('woL').innerHTML = '<div class="wo-e">The shop is not connected yet.</div>'; msg(c.can_edit ? 'The shop key is not saved yet. Press <b>⚙ Connection</b>, paste the key and press Save.' : 'The shop is not connected yet. Ask Admin to open this page and save the key.', 'in'); return; } }
     catch (e) { $('woL').innerHTML = '<div class="wo-e">This page could not open.</div>'; msg(esc(e.message), 'bad'); return; }

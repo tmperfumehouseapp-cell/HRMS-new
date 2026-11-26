@@ -274,6 +274,19 @@ function wa_util_pool_defs_raw(): array
             'body' => "Hi {{1}} 🤩\n\nAapka order {{2}} ({{3}}) kaisa raha ? Batayein, uske baad hum aapko ek khaas surprise pick dikhayenge 🎁 👇"],
         'order_ex_4' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
             'body' => "Hello {{1}} 🌸\n\nOrder {{2}} ({{3}}) ki khushbu aapko pasand aayi ? Sardi me uske saath achhi lagne wali ek aur khushbu humne chun li he 🔥\n\nDekhna chahenge ? 👇"],
+        // ✨ owner, 25 Nov 2026: the "thank you / how was your purchase" pattern (the utility message that brought the most orders from customers: 20 in 15 days) in six exciting wordings, each about the customer's own earlier purchase, no deal words
+        'open_ex_10' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Bahut badhiya', 'Dikhao']),
+            'body' => "Hi {{1}} 😊\n\nTM Perfume House se aapki pichhli khareedi kaisi rahi ? Batayiye 🌟\n\nSardi ke liye ek naya perfume bhi dikhana chahenge ? 👇"],
+        'open_ex_11' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Mast raha', 'Dikhao']),
+            'body' => "Hello {{1}} 🤩\n\nAapne pehle TM Perfume House se khareedi ki thi, humein jaanna he wo khushbu kaisi lagi 🌸\n\nAur aisi hi ek khaas pick aapke liye taiyaar he 👇"],
+        'open_ex_12' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, dikhao', 'Abhi nahi']),
+            'body' => "Hi {{1}} 🌟\n\nShukriya ki aapne TM Perfume House chuna 🙏\n\nSardi + shaadi season ke liye aapke jaise pasand wali nayi khushbuyein aayi hain ✨ Dekhna chahenge ? 👇"],
+        'open_ex_13' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Bahut pasand aaya', 'Naya dikhao']),
+            'body' => "Hello {{1}} 💫\n\nAapka perfume kaisa laga ? Aapka jawab humein bahut khaas lagta he 🌸\n\nBatayiye, phir aapke liye ek naya secret pick kholte hain 🤫"],
+        'open_ex_14' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Dikhao', 'Baad me']),
+            'body' => "Hi {{1}} 🎁\n\nAapki pichhli khareedi ke baad humne gift-season ke liye kuch khaas tayyar kiya he 👀\n\nApne liye ya kisi ko gift dene ke liye ? Tap kijiye 👇"],
+        'open_ex_15' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan', 'Abhi nahi']),
+            'body' => "Hello {{1}} ❄️\n\nSardi me aapka perfume kaisa lag raha he ? 😍\n\nAapki pasand ke jaisi ek aur khushbu abhi humare paas aayi he, dekhna chahenge ? 👇"],
         // 💬 owner, 24 Nov 2026: the same warm Hinglish style for the enquiry / order follow-ups (they join the rotation, so they are tested against the older wording by reply rate)
         'ask_hi_followup' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Haan, chahiye', 'Abhi nahi']),
             'body' => "Hi {{1}} 😊 aapne {{3}} ko {{2}} ke bare me poocha tha... abhi bhi chahiye ? Neeche button dabaiye 👇"],
@@ -438,7 +451,7 @@ function wa_util_pool_view(PDO $pdo): array
 function wa_util_pool_usable(PDO $pdo, bool $behaviour = false): array
 {
     $o = []; $__blk = (string)setting_get($pdo, 'wa_block_dull', '1') !== '0'; if ($__blk && !function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) { try { require_once __DIR__ . '/wa_restyle.php'; } catch (Throwable $e) { } }
-    foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING') continue; if ($__blk && function_exists('wa_rs_dull') && wa_rs_dull((string)($r['body'] ?? ''))) continue;   /* a basic message is not picked (owner 25 Nov) */ $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
+    foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || strtoupper((string)($r['category'] ?? 'UTILITY')) !== 'UTILITY') continue;   /* owner 26 Nov 2026: a pool message whose category IS marketing (the new-style twins of the welcome messages Meta had moved to marketing: rs971_…) is not a utility message: Module B sent 510 of them in a day to people whose marketing had just failed, 70% failed again (131049) and that tripped B's failure brake every round */ if ($__blk && function_exists('wa_rs_dull') && wa_rs_dull((string)($r['body'] ?? ''))) continue;   /* a basic message is not picked (owner 25 Nov) */ $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
         $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; if ($claims) { $t['claims'] = true; $t['body'] = (string)$r['body']; }
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;
@@ -447,7 +460,7 @@ function wa_util_pool_usable(PDO $pdo, bool $behaviour = false): array
  *  Only the 'open' (name-only) pool kind; the other pool messages are never sent once they are relabelled. */
 function wa_util_pool_fallback(PDO $pdo): array
 {
-    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body'])) continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING') continue;
+    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body'])) continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING' && strtoupper((string)($r['category'] ?? 'UTILITY')) === 'UTILITY') continue;
         $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = 'open'; $t['as_marketing'] = true; $o[] = $t; }
     return $o;
 }

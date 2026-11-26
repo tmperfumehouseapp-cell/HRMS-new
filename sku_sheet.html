@@ -227,9 +227,12 @@
   $('chPdf').onclick = function () {
     if (!CH || !CH.rows.length) return;
     const w = window.open('', '_blank'); if (!w) { alert('Allow pop-ups for this page, then press Chain PDF again.'); return; }
-    const rows = CH.rows.map((x, i) => '<tr><td>' + (i + 1) + '</td><td>' + chE(x.name) + '</td><td class="n"><b>' + x.qty + '</b></td><td class="n">' + x.orders + '</td><td class="o">' + chE(x.order_list.join(', ')) + '</td><td class="t"></td></tr>').join('');
-    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>chain_dispatch_' + chE(CH.from) + '</title><style>body{font-family:Arial,sans-serif;margin:14px;color:#111}h2{margin:0 0 2px;font-size:18px}p{margin:0 0 10px;font-size:12px;color:#444}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #999;padding:5px 6px;vertical-align:top;text-align:left}th{background:#1f4e78;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}.n{text-align:center;white-space:nowrap}.o{font-size:10.5px;word-break:break-word}.t{width:46px}tr{page-break-inside:avoid}@page{size:A4;margin:10mm}</style></head><body><h2>Chain dispatch list · ' + chE(dmy(CH.from)) + '</h2><p>12:00 AM to 12:00 AM (24 hours) · <b>' + CH.pieces + ' pieces</b> in <b>' + CH.orders_with + '</b> orders · Shopify + website + manual orders, cancelled left out</p><table><thead><tr><th>#</th><th>Chain</th><th>Pieces</th><th>Orders</th><th>Order numbers</th><th>Packed ✓</th></tr></thead><tbody>' + rows + '<tr><td></td><td><b>TOTAL</b></td><td class="n"><b>' + CH.pieces + '</b></td><td class="n"><b>' + CH.orders_with + '</b></td><td></td><td></td></tr></tbody></table></body></html>');
-    w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch (e) { } }, 300);
+    const rows = CH.rows.map((x, i) => '<tr><td>' + (i + 1) + '</td><td class="p">' + (x.img ? '<img src="' + chE(x.img) + '" alt="">' : '<span class="np">no photo</span>') + '</td><td><b>' + chE(x.name) + '</b></td><td class="n">' + (x.price ? '₹' + Number(x.price).toLocaleString('en-IN') : '') + '</td><td class="n"><b>' + x.qty + '</b></td><td class="n">' + x.orders + '</td><td class="o">' + chE(x.order_list.join(', ')) + '</td><td class="t"></td></tr>').join('');
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>chain_dispatch_' + chE(CH.from) + '</title><style>body{font-family:Arial,sans-serif;margin:14px;color:#111}h2{margin:0 0 2px;font-size:18px}p{margin:0 0 10px;font-size:12px;color:#444}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #999;padding:5px 6px;vertical-align:top;text-align:left}th{background:#1f4e78;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}.n{text-align:center;white-space:nowrap}.o{font-size:10.5px;word-break:break-word}.t{width:46px}.p{width:74px;text-align:center}.p img{width:70px;height:70px;object-fit:cover;border-radius:6px;display:block}.np{font-size:9.5px;color:#888}td{vertical-align:middle}tr{page-break-inside:avoid}@page{size:A4;margin:10mm}</style></head><body><h2>Chain dispatch list · ' + chE(dmy(CH.from)) + '</h2><p>12:00 AM to 12:00 AM (24 hours) · <b>' + CH.pieces + ' pieces</b> in <b>' + CH.orders_with + '</b> orders · Shopify + website + manual orders, cancelled left out</p><table><thead><tr><th>#</th><th>Photo</th><th>Chain</th><th>Price</th><th>Pieces</th><th>Orders</th><th>Order numbers</th><th>Packed ✓</th></tr></thead><tbody>' + rows + '<tr><td></td><td></td><td><b>TOTAL</b></td><td></td><td class="n"><b>' + CH.pieces + '</b></td><td class="n"><b>' + CH.orders_with + '</b></td><td></td><td></td></tr></tbody></table></body></html>');
+    w.document.close(); w.focus();
+    // the print window opens only after the photos have arrived (or after 6 s at most), so no picture is missing in the PDF
+    const imgs = Array.from(w.document.images), go = () => { try { w.print(); } catch (e) { } }; let left = imgs.filter((im) => !im.complete).length, done = false; const fire = () => { if (done) return; done = true; setTimeout(go, 200); };
+    if (!left) fire(); else { imgs.forEach((im) => { if (!im.complete) im.onload = im.onerror = () => { if (--left <= 0) fire(); }; }); setTimeout(fire, 6000); }
   };
   $('chXl').onclick = async function () {
     if (!CH || !CH.rows.length) return;
@@ -283,7 +286,7 @@
   load();
 </script>
 <script src="assets/js/jsbarcode.code128.min.js"></script>
-<script src="assets/js/sku_barcode.js?v=3"></script>
+<script src="assets/js/sku_barcode.js?v=5"></script>
 <script src="assets/js/min_text.js?v=3"></script>
 </body>
 </html>

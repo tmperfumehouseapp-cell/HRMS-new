@@ -117,6 +117,55 @@ if (!function_exists('wa_ordpack_defs')) {
             foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) { $ins->execute([(string)$r[0], (int)$r[1], (int)$r[2], (string)$r[3], (string)$r[4]]); $k++; }
             return $k; } catch (Throwable $e) { return 0; }
     }
+    /** ORDER LEDGER (owner 25 Nov 2026: "every order must be attached to a campaign; 100% tracking"): every order of the last 15 days (website orders of shop_orders and the orders typed in HRMS: manual_orders, every panel / channel) gets ONE row in
+     *  wa_order_attr: the module and the message (template) of the LAST WhatsApp message we sent to that phone in the 72 hours before the order (Module A, B, C, Cold, Lineup, After-Order), or 'none' (no message of ours in those 72 hours)
+     *  or 'no phone'. Nothing is skipped: the ledger holds one row per order. 40 orders per round, newest first (so a new order is attached within minutes, the old ones fill in behind). It records only; it sends and changes nothing. Off: wa_ordattr = 0. */
+    function wa_ordattr_tick(PDO $pdo): int
+    {
+        if ((string)setting_get($pdo, 'wa_ordattr', '1') === '0') return 0; if ((int)setting_get($pdo, 'wa_ordattr_at', '0') > time() - 60) return 0; setting_set($pdo, 'wa_ordattr_at', (string)time());
+        try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_order_attr (okey VARCHAR(48) NOT NULL PRIMARY KEY, src VARCHAR(24) NOT NULL DEFAULT '', phone VARCHAR(20) NOT NULL DEFAULT '', order_at DATETIME NOT NULL, total DECIMAL(12,2) NOT NULL DEFAULT 0, module VARCHAR(10) NOT NULL DEFAULT '', tpl_id INT NOT NULL DEFAULT 0, msg_at DATETIME NULL, gap_min INT NOT NULL DEFAULT 0, noted_at DATETIME NOT NULL, KEY k_at (order_at), KEY k_mod (module)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { return 0; }
+        $from = date('Y-m-d 00:00:00', time() - 15 * 86400); $cand = [];
+        try { $q = $pdo->prepare("SELECT CONCAT('w', shopify_id, '_', store_key), 'web', phone, created_at, total FROM shop_orders WHERE created_at >= ? ORDER BY created_at DESC LIMIT 700"); $q->execute([$from]); foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $cand[(string)$r[0]] = $r; } catch (Throwable $e) { }
+        try { $q = $pdo->prepare("SELECT CONCAT('m', manual_order_id), CONCAT('panel:', COALESCE(NULLIF(channel, ''), 'HRMS')), phone, order_date, total FROM manual_orders WHERE order_date >= ? ORDER BY order_date DESC LIMIT 700"); $q->execute([$from]); foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $cand[(string)$r[0]] = $r; } catch (Throwable $e) { }
+        if (!$cand) return 0; $have = []; try { foreach (array_chunk(array_keys($cand), 400) as $ch) { $x = $pdo->prepare("SELECT okey FROM wa_order_attr WHERE okey IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $x->execute($ch); foreach ($x->fetchAll(PDO::FETCH_COLUMN) as $k) $have[(string)$k] = 1; } } catch (Throwable $e) { return 0; }
+        $todo = array_values(array_filter($cand, function ($r) use ($have) { return !isset($have[(string)$r[0]]); })); usort($todo, function ($a, $b) { return strcmp((string)$b[3], (string)$a[3]); }); $todo = array_slice($todo, 0, 40); if (!$todo) return 0;
+        $LT = ['A' => "SELECT i.sent_at, c.tpl_id FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.id > (SELECT MAX(id) - 2000000 FROM wa_camp_items) AND i.phone IN (?, ?) AND i.status IN ('sent','delivered','read') AND i.sent_at BETWEEN ? AND ? ORDER BY i.sent_at DESC LIMIT 1",
+            'B' => "SELECT l.at, l.tpl_id FROM wa_ru_log l WHERE l.id > (SELECT MAX(id) - 600000 FROM wa_ru_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.kind <> 'cnev' AND l.at BETWEEN ? AND ? ORDER BY l.at DESC LIMIT 1",
+            'C' => "SELECT l.at, l.tpl_id FROM wa_ru_log l WHERE l.id > (SELECT MAX(id) - 600000 FROM wa_ru_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.kind = 'cnev' AND l.at BETWEEN ? AND ? ORDER BY l.at DESC LIMIT 1",
+            'Cold' => "SELECT l.at, l.tpl_id FROM wa_cold_log l WHERE l.id > (SELECT MAX(id) - 700000 FROM wa_cold_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.at BETWEEN ? AND ? ORDER BY l.at DESC LIMIT 1",
+            'Lineup' => "SELECT l.sent_at, l.tpl_id FROM wa_line_plan l WHERE l.id > (SELECT MAX(id) - 2000000 FROM wa_line_plan) AND l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ? ORDER BY l.sent_at DESC LIMIT 1",
+            'After' => "SELECT l.sent_at, l.tpl_id FROM wa_aft_plan l WHERE l.id > (SELECT MAX(id) - 1000000 FROM wa_aft_plan) AND l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ? ORDER BY l.sent_at DESC LIMIT 1"];
+        $ps = []; foreach ($LT as $k => $sql) $ps[$k] = $pdo->prepare($sql); $ins = $pdo->prepare("INSERT IGNORE INTO wa_order_attr (okey, src, phone, order_at, total, module, tpl_id, msg_at, gap_min, noted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"); $n = 0; $t0 = microtime(true);
+        try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 6000"); } catch (Throwable $e) { }
+        foreach ($todo as $o) { if (microtime(true) - $t0 > 25) break; $p = substr(preg_replace('/\D+/', '', (string)$o[2]), -10); $to = (string)$o[3];
+            if (strlen($p) < 10) { $ins->execute([(string)$o[0], (string)$o[1], mb_substr((string)$o[2], 0, 20), $to, (float)$o[4], 'no phone', 0, null, 0, date('Y-m-d H:i:s')]); $n++; continue; }
+            $fr = date('Y-m-d H:i:s', strtotime($to) - 72 * 3600); $best = ''; $bt = ''; $btpl = 0; $fail = false;
+            foreach ($ps as $k => $st) { try { $st->execute([$p, '91' . $p, $fr, $to]); $r = $st->fetch(PDO::FETCH_NUM); } catch (Throwable $e) { $fail = true; continue; } if ($r && $r[0] && (string)$r[0] > $bt) { $bt = (string)$r[0]; $best = $k; $btpl = (int)$r[1]; } }
+            if ($fail && $best === '') continue;   // a query failed and nothing was found: try again next round (never a wrong 'none')
+            $ins->execute([(string)$o[0], (string)$o[1], $p, $to, (float)$o[4], $best !== '' ? $best : 'none', $btpl, $bt !== '' ? $bt : null, $bt !== '' ? (int)round((strtotime($to) - strtotime($bt)) / 60) : 0, date('Y-m-d H:i:s')]); $n++; }
+        try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 0"); } catch (Throwable $e) { }
+        return $n;
+    }
+    /** COLD PACK 2 (owner 25 Nov 2026: "apply the changes you suggested"): the patterns that brought orders from customers who were not coming anyway, in 12 new MARKETING messages for the Cold funnel: the owner's own PROVEN offers (160 ml at Rs 1,999 in five combos, flat Rs 2,099, 3 x 50 ml Rs 2,140 + FREE 20 ml, 8 x 20 ml Rs 1,899, 5 x 50 ml Rs 2,750), each with a one-tap order button,
+     *  and four that START with a question (men / women / unisex, for me / a gift, which size) because the question message of the Cold funnel brought orders. No prepaid 2% (it is gone). Names tmph_cp_NN. */
+    function wa_cp_defs(): array
+    {
+        $o = [
+            'tmph_cp_01' => ["Hello {{1}} 🥳\n\n*160 ML @ JUST ₹1,999* 🔥\n\nApni marzi ka combo banao 🤩\n\n8 × 20ml  ·  3 × 50ml + 1 × 10ml  ·  1 × 100ml + 3 × 20ml\n\nSab combo ek hi price ₹1,999 💥\n\nOrder karne ke liye tap kijiye 👇", ['BOOK MY COMBO', 'Show more combos']],
+            'tmph_cp_02' => ["Hi {{1}} 🎁\n\nEk combo, flat ₹2,099 💥\n\n4 × 50ml  ya  2 × 100ml  ya  10 × 20ml\n\nApne pasand ke perfumes mix karo ✨\n\nAbhi order karne ke liye tap kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_03' => ["Hello {{1}} 🔥\n\n3 × 50ml sirf ₹2,140 🎁\n\nSaath me 1 × 20ml FREE\n\nSardi ke perfumes ki khaas offer ❄️\n\nOrder Now 👇", ['Order Now', 'Show Offer']],
+            'tmph_cp_04' => ["Hi {{1}} ❄️\n\n8 × 20ml sirf ₹1,899 💥\n\nSardi + shaadi season ke liye 8 alag khushbu\n\nTap karke order kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_05' => ["Hello {{1}} 🎉\n\n5 × 50ml sirf ₹2,750 💥\n\nApni pasand ke 5 perfumes chuniye\n\nShaadi aur winter ke liye perfect 💍❄️\n\nOrder Now 👇", ['Order Now', 'Show Combos']],
+            'tmph_cp_06' => ["Hi {{1}} 🎁\n\nGift dene ka season aa gaya! 3 × 50ml ₹2,140 me 1 × 20ml FREE 🔥\n\nShaadi, birthday ya New Year — sab ke liye perfect ✨\n\nAbhi order kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_07' => ["Hello {{1}} 🤩\n\n160 ML sirf ₹1,999 me! 5 combo me se koi ek chuniye 💥\n\nAaj hi order karoge to hi ye price 🔥\n\nTap kijiye 👇", ['BOOK MY COMBO', 'Show more combos']],
+            'tmph_cp_08' => ["Hi {{1}} 💍\n\nShaadi season special 🎊\n\nFlat ₹2,099 me ek combo: 4 × 50ml ya 2 × 100ml ya 10 × 20ml\n\nAapki pasand, aapka mix ✨ Order Now 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_09' => ["Hi {{1}} 👋\n\nEk chhota sa sawal 🤔 Aapko kaunsi khushbu pasand hai?\n\nMen, women ya unisex — batayiye, aapke liye ek khaas combo ready he 🎁💥\n\nNiche tap kijiye 👇", ['Men', 'Women', 'Unisex']],
+            'tmph_cp_10' => ["Hello {{1}} ❄️\n\nSardi ka season he! Aap apne liye dhundh rahe hain ya gift ke liye? 🎁\n\nBatayiye, hum 3 best combo dikhayenge — sirf ₹1,999 se 🔥", ['For me', 'As a gift']],
+            'tmph_cp_11' => ["Hi {{1}} 🌸\n\nAapko kaunsa size chahiye? 20ml, 50ml ya 100ml?\n\nHar size par ek crazy combo ready he 💥 Tap kijiye 👇", ['20ML', '50ML', '100ML']],
+            'tmph_cp_12' => ["Hello {{1}} 🎊\n\nShaadi ka season — kisi ke liye perfume chahiye? 💍\n\nBatayiye kiske liye, hum best combo bata denge 🔥", ['Men', 'Women', 'Gift set']],
+        ];
+        $r = []; foreach ($o as $k => $v) $r[$k] = ['body' => $v[0], 'buttons' => $v[1]]; return $r;
+    }
     function wa_ordpack_tick(PDO $pdo): array
     {
         $res = ['made' => 0, 'failed' => []];
@@ -126,12 +175,15 @@ if (!function_exists('wa_ordpack_defs')) {
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
         try { if ((string)setting_get($pdo, 'wa_arsc_l25_2511', '') !== '1') { setting_set($pdo, 'wa_arsc_l25_2511', '1'); setting_set($pdo, 'wa_arsc_level', '2500'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Module A rescue: starts at 2,500 an hour (was 1,000; the Lineup rescue runs ~5,000 with 3 failures in 5,000); the hourly step keeps checking the failures (owner 25 Nov)'); } } catch (Throwable $e) { }
         try { if ((string)setting_get($pdo, 'wa_ru_b2500_2511', '') !== '1') { setting_set($pdo, 'wa_ru_b2500_2511', '1'); setting_set($pdo, 'wa_ru_ramp_base', '1200'); setting_set($pdo, 'wa_ru_ramp_step', '200'); setting_set($pdo, 'wa_ru_ramp_max', '2500'); if ((int)setting_get($pdo, 'wa_ru_hourly', '0') < 1200) setting_set($pdo, 'wa_ru_hourly', '1200'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): restart level 1,200 an hour (was 500), steps of 200 up to 2,500 (owner 25 Nov)'); } } catch (Throwable $e) { }
+        try { if ((string)setting_get($pdo, 'wa_ru_unbrake_2611b', '') !== '1') { setting_set($pdo, 'wa_ru_unbrake_2611b', '1'); setting_set($pdo, 'wa_ru_pause_until', '0'); setting_set($pdo, 'wa_ru_ramp_hold', '0'); setting_set($pdo, 'wa_ru_freeze_n', '0'); setting_set($pdo, 'wa_ru_brake_since', (string)time()); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): the brake is released once (owner 26 Nov): it was caused by marketing-category pool messages, which Module B no longer sends; the failure brake counts only from now on'); } } catch (Throwable $e) { }
+        try { if ((string)setting_get($pdo, 'wa_ru_2000_2611', '') !== '1') { setting_set($pdo, 'wa_ru_2000_2611', '1'); setting_set($pdo, 'wa_ru_ramp_base', '2000'); setting_set($pdo, 'wa_ru_ramp_max', '2000'); setting_set($pdo, 'wa_ru_hourly', '2000'); setting_set($pdo, 'wa_ru_freeze_n', '0'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility follow-up (Module B): 2,000 an hour (owner 26 Nov 2026)'); } } catch (Throwable $e) { }
         try { if ((string)setting_get($pdo, 'wa_cap20b_2511', '') !== '1') { setting_set($pdo, 'wa_cap20b_2511', '1'); if ((int)setting_get($pdo, 'wa_rc_level', '0') >= 1000) setting_set($pdo, 'wa_rc_level', '1200'); } } catch (Throwable $e) { }   // Module C now runs at 1,200 an hour (owner 25 Nov)
         try { if ((string)setting_get($pdo, 'wa_cap20_2511', '') !== '1') { setting_set($pdo, 'wa_cap20_2511', '1'); setting_set($pdo, 'wcd_cap', '48000'); setting_set($pdo, 'wcd_mkt_cap_day', '24000'); setting_set($pdo, 'wa_aft_cap', '12000'); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Caps +20% (owner 25 Nov 2026): Cold 48,000 a day (marketing 24,000), After-Order 12,000 a day, Module C top step 1,200 an hour'); } } catch (Throwable $e) { }
         try { wa_ordpack_learn($pdo); } catch (Throwable $e) { }
         try { wa_hand_tick($pdo); } catch (Throwable $e) { }
         try { wa_undeliv_tick($pdo); } catch (Throwable $e) { }
-        $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
+        try { wa_ordattr_tick($pdo); } catch (Throwable $e) { }
+        $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); $all = wa_ordpack_defs() + wa_cp_defs(); foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
         foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;
             try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? OR body = ? LIMIT 1"); $q->execute([$name, $m['body']]); if ($q->fetchColumn()) continue; } catch (Throwable $e) { continue; }
