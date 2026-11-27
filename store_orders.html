@@ -63,6 +63,7 @@
         <div class="wo-h">
           <div class="t"><h1>🛍 Website orders</h1><p>Orders of the new TM Perfume House shop. Choose the salesperson for an order and press <b>Give</b>: it then counts in that person's sales and target. Nothing is changed in the shop.</p></div>
           <button type="button" class="wo-b" id="woRef">↻ Refresh</button>
+          <button type="button" class="wo-b" id="woXl" title="Every order of the dates chosen, with all its details, as an Excel file">⬇ Export Excel</button>
           <button type="button" class="wo-b" id="woDg" title="One day of website orders, the shop beside the HRMS, as text to copy">🩺 Diagnose</button>
           <button type="button" class="wo-b" id="woCfg" hidden>⚙ Connection</button>
         </div>
@@ -202,6 +203,33 @@
   }
   (async function init() {
     drawBars();
+    // ⬇ Export: every order of the list as it is filtered now (dates, Show, Payment, search) — one line per order, and a second sheet with one line per product
+    $('woXl').onclick = async function () {
+      const rows = (S.rows || []).slice(), links = (S.links || []).slice(); if (!rows.length && !links.length) { msg('There is no order to export for these dates.', 'bad'); return; }   // EVERY order of the dates chosen (owner: "all orders, all data") — not only what the Show / Payment chips leave on the screen; Excel has its own filter on every column
+      const b = this, old = b.textContent; b.disabled = true; b.textContent = 'Preparing…';
+      try {
+        if (!window.ExcelJS) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'assets/js/exceljs.min.js?v=440'; sc.onload = ok; sc.onerror = () => no(new Error('The Excel helper could not be loaded.')); document.head.appendChild(sc); });
+        const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Website orders'), n = (v) => Number(v || 0);
+        const payTxt = (r) => r.temp ? 'Payment link (not counted)' : r.pay_status === 'paid' ? 'Paid' : r.pay_status === 'partially_paid' ? 'Part paid' : (r.pay_method === 'cod' ? 'COD (nothing paid)' : 'Not paid yet');
+        const H = ['Order no', 'Date', 'Time', 'Customer', 'Mobile', 'Address 1', 'Address 2', 'City', 'State', 'Pincode', 'Products', 'Pieces', 'ML', 'Subtotal', 'Discount', 'Discount code', 'Shipping', 'COD fee', 'Total', 'Paid', 'To collect', 'Payment method', 'Payment', 'Shipping status', 'Courier', 'AWB', 'Came from', 'Salesperson', 'Query / Campaign', 'HRMS no', 'Given by', 'Why not given', 'Note'];
+        const hr = ws.addRow(H); hr.eachCell((c) => { c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; c.alignment = { vertical: 'middle', wrapText: true }; });
+        rows.forEach((r) => { const a = r.addr || {}, m = r.money || {}, at = String(r.placed_at || '');
+          ws.addRow([r.number, at.slice(0, 10), at.slice(11, 16), r.customer || a.name || '', r.phone || '', a.address1 || '', a.address2 || '', a.city || r.city || '', a.state || '', a.pincode || '', r.items || '', n(r.pieces), n(r.ml), n(m.subtotal), n(m.discount), m.code || '', n(m.shipping), n(m.cod_fee), n(r.total), n(r.paid), n(r.due), r.pay_method || '', payTxt(r), r.ship_status || '', r.courier || '', r.awb || '', r.source || '', r.emp_name || '', r.emp ? (r.type === 'campaign' ? 'Campaign' : 'Query') : '', r.hrms_no || '', r.emp ? (r.auto ? 'Automatic' : (r.by || '')) : '', r.emp ? '' : (r.temp ? 'Payment link (temporary)' : (r.auto_why || '')), r.note || '']); });
+        const last = rows.length + 1, t = ws.addRow(['TOTAL', '', '', rows.length + ' orders']); t.font = { bold: true };
+        [12, 13, 14, 15, 17, 18, 19, 20, 21].forEach((c) => { const L = ws.getColumn(c).letter; t.getCell(c).value = { formula: 'SUM(' + L + '2:' + L + last + ')' }; });
+        [12, 11, 7, 22, 13, 30, 22, 14, 14, 9, 60, 7, 7, 10, 10, 14, 9, 9, 10, 10, 10, 12, 20, 14, 14, 16, 10, 20, 12, 10, 16, 34, 30].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+        ws.views = [{ state: 'frozen', ySplit: 1 }]; ws.autoFilter = { from: 'A1', to: { row: 1, column: H.length } };
+        const w2 = wb.addWorksheet('Products'), h2 = w2.addRow(['Order no', 'Date', 'Customer', 'Product', 'Size', 'Qty', 'Price', 'Discount', 'SKU', 'Gift', 'Salesperson']); h2.eachCell((c) => { c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; });
+        rows.forEach((r) => (r.lines || []).forEach((l) => w2.addRow([r.number, String(r.placed_at || '').slice(0, 10), r.customer || '', l.title || '', l.size || '', n(l.qty), n(l.price), n(l.discount), l.sku || '', l.gift ? 'Yes' : '', r.emp_name || ''])));
+        [12, 11, 22, 44, 18, 6, 9, 9, 14, 6, 20].forEach((w, i) => { w2.getColumn(i + 1).width = w; }); w2.views = [{ state: 'frozen', ySplit: 1 }];
+        if (links.length) { const w3 = wb.addWorksheet('Payment links (not counted)'), h3 = w3.addRow(['Link no', 'Date', 'Time', 'Customer', 'Mobile', 'City', 'Products', 'ML', 'Total', 'Payment method']); h3.eachCell((c) => { c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF92400E' } }; });
+          links.forEach((r) => { const at = String(r.placed_at || ''); w3.addRow([r.number, at.slice(0, 10), at.slice(11, 16), r.customer || '', r.phone || '', r.city || '', r.items || '', n(r.ml), n(r.total), r.pay_method || '']); }); [12, 11, 7, 22, 13, 14, 60, 7, 10, 12].forEach((w, i) => { w3.getColumn(i + 1).width = w; }); }
+        const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a'), ds = rows.map((r) => String(r.placed_at || '').slice(0, 10)).filter(Boolean).sort(), fd = ds[0] || '', td = ds[ds.length - 1] || '';
+        a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'website_orders' + (fd ? '_' + fd : '') + (td && td !== fd ? '_to_' + td : '') + '.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+        msg(rows.length + ' orders exported' + (links.length ? ' (+ ' + links.length + ' payment links on their own sheet)' : '') + '.', 'ok');
+      } catch (e) { msg('The Excel file could not be made: ' + esc(e.message), 'bad'); }
+      b.disabled = false; b.textContent = old;
+    };
     $('woDg').onclick = () => {   // 🩺 the day's orders, shop beside HRMS, as text the owner copies and sends
       const today = new Date(Date.now() + 19800000).toISOString().slice(0, 10), ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:10px';
