@@ -139,6 +139,16 @@
 label.f2,div.f2>span{font-weight:600!important;font-size:12.5px!important;color:#4b5563!important;letter-spacing:.1px}
 .ti2 b{font-weight:600;font-size:13.5px;color:#1f2328}.kp{font-weight:600!important;font-size:11px!important;letter-spacing:.1px}
 .tg .e{font-size:13.5px;line-height:1.45}.chk{font-size:13px}.tf{font-weight:500}.tf b{font-weight:700}
+.au{display:grid;grid-template-columns:270px minmax(0,1fr);height:100%}.au>div{min-width:0;overflow:auto}.au-l{border-right:1px solid #e6e8ec;background:#fff}.au-r{padding:14px;display:grid;gap:10px;align-content:start}
+.au-kp{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:12px}.au-kp div{background:#f6f8fa;border-radius:10px;padding:8px}.au-kp b{display:block;font-size:16px}.au-kp small{color:#667781;font-size:11.5px}
+.au-g{padding:10px 14px 4px;font-size:11px;font-weight:700;color:#8a919c;text-transform:uppercase;letter-spacing:.5px}.au-s{display:flex;justify-content:space-between;gap:8px;padding:6px 14px;cursor:pointer;font-size:13px}.au-s:hover{background:#f6f8fa}.au-s.on{background:#eefbf4;box-shadow:inset 3px 0 0 #25d366}.au-s b{color:#4b5563;font-weight:600}
+.au-box{background:#fff;border:1px solid #e6e8ec;border-radius:12px;padding:12px;display:grid;gap:10px}.au-rg{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.au-bars{display:flex;gap:6px;align-items:flex-end;height:90px}.au-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}.au-bar i{display:block;width:100%;background:#25d366;border-radius:4px 4px 0 0;min-height:2px}.au-bar small{font-size:10.5px;color:#667781;margin-top:3px}
+.au-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.au-h input,.au-h select,.au-bk input{border:1.5px solid #e6e8ec;border-radius:10px;padding:6px 10px;font:inherit;font-size:13px}.au-h input{width:240px}
+.au-bk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;background:#fff;border:1px solid #e6e8ec;border-radius:10px;padding:8px 10px}
+.au-t{width:100%;border-collapse:collapse;font-size:13px;background:#fff}.au-t th{text-align:left;font-size:11.5px;color:#667781;font-weight:600;padding:7px 8px;border-bottom:1px solid #e6e8ec;position:sticky;top:0;background:#fff}.au-t td{padding:7px 8px;border-bottom:1px solid #f1f3f6;vertical-align:top}.au-t .sm{color:#667781;font-size:11.5px}.au-t tr.stp td{opacity:.55}
+.au-pg{display:flex;gap:8px;align-items:center;font-size:12.5px;color:#667781}
+@media (max-width:900px){.au{grid-template-columns:1fr;display:block}.au-l{border:0}}
 </style>
 </head>
 <body>
@@ -249,9 +259,9 @@ label.f2,div.f2>span{font-weight:600!important;font-size:12.5px!important;color:
      <div class="sx-card"><h3>📝 Store messages (templates)</h3>${(c.templates || []).map((t) => `<div class="bl"><span><b>${esc(t.name)}</b><br><span style="color:#667781">${esc(t.category)}</span></span><span class="sx-pill ${t.status === 'APPROVED' ? 'good' : t.status === 'REJECTED' ? 'bad' : 'warn'}">${esc(t.status === 'APPROVED' ? 'Approved' : t.status === 'REJECTED' ? 'Rejected' : 'Waiting for Meta')}</span></div>`).join('') || '<div style="color:#667781">None yet. They are sent to Meta for this number\'s account after you save the number.</div>'}</div></div>`;
   }
   /* ---------- the left rail ---------- */
-  const RI = { fu: '<svg viewBox="0 0 24 24"><path d="M3 11l16-7v16L3 13z"/><path d="M7 14v5a2 2 0 002 2h1l-1-6"/></svg>', chat: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.5 7.2L4 20l1-4.5A8 8 0 1121 12z"/></svg>', tpl: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>', set: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>' };
+  const RI = { aud: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 13.6c2.9-.3 5.5 1.5 5.5 4.6"/></svg>', fu: '<svg viewBox="0 0 24 24"><path d="M3 11l16-7v16L3 13z"/><path d="M7 14v5a2 2 0 002 2h1l-1-6"/></svg>', chat: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.5 7.2L4 20l1-4.5A8 8 0 1121 12z"/></svg>', tpl: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>', set: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>' };
   function renderRail() {
-    const r = $('rail'); if (!r || !S.cfg) return; const items = [['chats', 'Chats', RI.chat, S.unread]]; if (S.cfg.number) items.push(['fu', 'Follow-ups', RI.fu, 0]); if (S.cfg.manager) { items.push(['tpl', 'Templates', RI.tpl, 0]); items.push(['setup', 'Setup', RI.set, 0]); }
+    const r = $('rail'); if (!r || !S.cfg) return; const items = [['chats', 'Chats', RI.chat, S.unread]]; if (S.cfg.number) items.push(['fu', 'Follow-ups', RI.fu, 0]); if (S.cfg.manager) { items.push(['aud', 'Contacts', RI.aud, 0]); items.push(['tpl', 'Templates', RI.tpl, 0]); items.push(['setup', 'Setup', RI.set, 0]); }
     r.innerHTML = '<button class="bk" id="bkBtn" title="Back to HRMS">‹</button>' + items.map((n) => `<a class="${S.tab === n[0] ? 'on' : ''}" data-nav="${n[0]}">${n[2]}${n[3] ? `<b>${n[3] > 99 ? '99+' : n[3]}</b>` : ''}${n[1]}</a>`).join('');
   }
   /* ---------- Templates (Admin / HR): the Store's own pre-made messages ---------- */
@@ -385,6 +395,7 @@ label.f2,div.f2>span{font-weight:600!important;font-size:12.5px!important;color:
     const app = $('app'); if (!S.cfg) return; renderRail(); document.body.classList.toggle('inchat', !!S.cur && S.tab === 'chats');
     if (S.tab === 'fu') { document.body.classList.remove('inchat'); return renderFu(); }
     if (S.tab === 'tpl' && S.cfg.manager) { if (!T.loaded) { app.innerHTML = '<div style="padding:30px;color:#667781">Loading…</div>'; loadTpl().then(() => { if (T.sel < 0 && T.list.length && !T.f) pickTpl(0), T.edit = false; render(); }); return; } return renderTpl(); }
+    if (S.tab === 'aud' && S.cfg.manager) { if (!AU.loaded) { app.innerHTML = '<div style="padding:30px;color:#667781">Loading contacts…</div>'; loadAud().then(render); return; } app.innerHTML = audView(); return; }
     if (S.tab === 'setup' && S.cfg.manager) { app.innerHTML = setupView(); return bind(); }
     if (!S.cfg.number) { app.innerHTML = LH(false) + `<div class="empty" style="margin-top:12vh"><div class="ic">📵</div><b style="font-size:19px">No Store WhatsApp number yet</b><br>${S.cfg.manager ? 'Open Setup (⚙) and choose the number.' : 'Ask the Admin to set it up.'}</div>`; return bind(); }
     const keep = $('srch') && document.activeElement === $('srch'); const tx = $('tx') ? $('tx').value : '';
@@ -526,6 +537,57 @@ label.f2,div.f2>span{font-weight:600!important;font-size:12.5px!important;color:
     if (!out.length && x.bad) out.push('Meta gave no clear reason. Copy the text below and give it to Claude.');
     return out;
   }
+
+  /* ---------- Contacts (Admin / HR): the Store audience and its segments ---------- */
+  const AU = { loaded: false, seg: 'all', tag: '', q: '', sort: 'last', pg: 0, ps: 50, sel: {}, selAll: false, d: null, rules: false, months: false };
+  const rup = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+  async function loadAud() { try { AU.d = await api.get('st_wa.aud_list', { seg: AU.seg, tag: AU.tag, q: AU.q, sort: AU.sort, page: AU.pg, ps: AU.ps }); } catch (e) { toast(e.message); AU.d = AU.d || { segs: [], rows: [], tags: {}, totals: {}, months: [], cfg: {}, total: 0, sendable: 0 }; } AU.loaded = true; }
+  const SEGN = { all: 'All', rel: 'Relationship', time: 'Time', taste: 'Taste', price: 'Average bill', wa: 'WhatsApp' };
+  function audView() {
+    const d = AU.d, t = d.totals || {}, segs = d.segs || [], segName = {}; segs.forEach((x) => { segName[x.id] = x.name; });
+    const grp = {}; segs.forEach((x) => { (grp[x.group] = grp[x.group] || []).push(x); });
+    const cur = segs.find((x) => x.id === AU.seg) || segs[0] || { name: 'All', rule: '' };
+    const selN = AU.selAll ? d.sendable : Object.keys(AU.sel).length; const pages = Math.max(1, Math.ceil(d.total / AU.ps));
+    const mx = Math.max(1, ...(d.months || []).map((m) => m.money));
+    const left = `<div class="au-l"><div class="au-kp"><div><b>${(t.contacts || 0).toLocaleString('en-IN')}</b><small>Contacts</small></div><div><b>${rup(t.spent)}</b><small>Total billing</small></div><div><b>${t.repeat_share || 0}%</b><small>Came back 2+ times</small></div><div><b style="color:#b42318">${t.stop || 0}</b><small>STOP</small></div></div>
+      ${Object.keys(grp).map((g) => `<div class="au-g">${SEGN[g] || g}</div>` + grp[g].map((x) => `<div class="au-s ${AU.seg === x.id && !AU.tag ? 'on' : ''}" data-aseg="${x.id}" title="${esc(x.rule)}"><span>${esc(x.name)}</span><b>${x.n.toLocaleString('en-IN')}</b></div>`).join('')).join('')}
+      ${Object.keys(d.tags || {}).length ? `<div class="au-g">Tags</div>${Object.entries(d.tags).map(([k, n]) => `<div class="au-s ${AU.tag === k ? 'on' : ''}" data-atag="${esc(k)}"><span>🏷 ${esc(k)}</span><b>${n}</b></div>`).join('')}` : ''}
+      <div style="padding:10px 14px"><button class="sx2 g" id="auRules" style="width:100%;font-size:12.5px">⚙ Segment rules</button></div></div>`;
+    const rules = AU.rules ? `<div class="au-box"><b>Segment rules</b> <span style="color:#667781;font-size:12.5px">(days and ₹ - change and Save, segments update at once)</span><div class="au-rg">${[['new_days', 'New: first purchase within (days)'], ['one_lo', 'Came once: from (days)'], ['one_hi', 'Came once: to (days)'], ['loyal', 'Loyal: purchases'], ['vip', 'VIP: total spent ₹'], ['risk', 'At risk: no visit from (days)'], ['sleep', 'Sleeping: no visit from (days)'], ['refill_lo', 'Refill due: from (days)'], ['refill_hi', 'Refill due: to (days)'], ['low', 'Average bill: low up to ₹'], ['high', 'Average bill: high above ₹']].map(([k, l]) => `<label class="f2">${l}<input type="number" min="0" data-ar="${k}" value="${d.cfg[k]}"></label>`).join('')}</div><div style="display:flex;gap:8px"><button class="sx2" id="auRulesSave">Save rules</button><button class="sx2 g" id="auRules">Close</button></div></div>` : '';
+    const months = `<div class="au-box"><div style="display:flex;align-items:center;gap:8px"><b>Billing by month</b><span style="flex:1"></span><button class="sx2 g" id="auMonths" style="padding:4px 10px;font-size:12px">${AU.months ? 'Hide table' : 'Show table'}</button></div>
+      <div class="au-bars">${(d.months || []).map((m) => `<div class="au-bar" title="${esc(m.label)}: ${rup(m.money)} · ${m.bills} bills · ${m.customers} customers (${m.new} new, ${m.repeat} repeat)"><i style="height:${Math.round(100 * m.money / mx)}%"></i><small>${esc(m.label.split(' ')[0])}</small></div>`).join('')}</div>
+      ${AU.months ? `<table class="au-t"><tr><th>Month</th><th>Bills</th><th>Billing</th><th>Customers</th><th>New</th><th>Repeat</th></tr>${(d.months || []).slice().reverse().map((m) => `<tr><td>${esc(m.label)}</td><td>${m.bills}</td><td>${rup(m.money)}</td><td>${m.customers}</td><td>${m.new}</td><td>${m.repeat}</td></tr>`).join('')}</table>` : ''}</div>`;
+    const head = `<div class="au-h"><div><b style="font-size:17px">${esc(AU.tag ? '🏷 ' + AU.tag : cur.name)}</b> <span class="kp n">${d.total.toLocaleString('en-IN')}</span><div style="color:#667781;font-size:12.5px">${esc(AU.tag ? 'Customers with this tag' : cur.rule || '')} · ${d.sendable.toLocaleString('en-IN')} can get WhatsApp (STOP left out)</div></div><span style="flex:1"></span>
+      <input id="auQ" placeholder="Search name, number, perfume, tag…" value="${esc(AU.q)}"><select id="auSort"><option value="last" ${AU.sort === 'last' ? 'selected' : ''}>Latest visit</option><option value="spent" ${AU.sort === 'spent' ? 'selected' : ''}>Most spent</option><option value="visits" ${AU.sort === 'visits' ? 'selected' : ''}>Most visits</option><option value="name" ${AU.sort === 'name' ? 'selected' : ''}>Name</option></select></div>`;
+    const bulk = `<div class="au-bk"><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="auAll" ${AU.selAll ? 'checked' : ''}> Select all ${d.sendable.toLocaleString('en-IN')}</label><span style="color:#667781">${selN ? selN.toLocaleString('en-IN') + ' selected' : ''}</span><span style="flex:1"></span>
+      ${selN ? `<input id="auTagIn" placeholder="tag name" style="width:130px"><button class="sx2 g" id="auTagAdd" style="padding:5px 10px;font-size:12px">+ Add tag</button><button class="sx2 g" id="auTagDel" style="padding:5px 10px;font-size:12px">− Remove tag</button>` : ''}
+      <button class="sx2" disabled title="Campaigns come next: pick this segment, a template, send" style="padding:5px 12px;font-size:12.5px;opacity:.55">📣 Campaign (next step)</button></div>`;
+    const rows = (d.rows || []).map((x) => `<tr class="${x.stop ? 'stp' : ''}"><td><input type="checkbox" data-asel="${x.phone}" ${AU.selAll || AU.sel[x.phone] ? 'checked' : ''} ${x.stop ? 'disabled' : ''}></td><td><b>${esc(x.name || '—')}</b><div class="sm">${esc(x.phone)}${x.lang ? ' · ' + esc(x.lang.toUpperCase()) : ''}${x.bday ? ' · 🎂 ' + esc(x.bday) : ''}</div></td>
+      <td>${x.visits}</td><td>${rup(x.spent)}<div class="sm">avg ${rup(x.avg)}</div></td><td>${x.days === 0 ? 'today' : x.days + ' d ago'}<div class="sm">${esc(x.last)}</div></td><td class="sm">${x.top.map(esc).join('<br>') || '—'}</td>
+      <td>${x.segs.filter((s) => !['p_low', 'p_mid', 'p_high'].includes(s)).map((s) => `<span class="kp ${s === 'stop' ? 'r' : s === 'vip' ? 'v' : 'n'}">${esc(segName[s] || s)}</span>`).join(' ')}${x.tags.map((g) => ` <span class="kp use">🏷 ${esc(g)}</span>`).join('')}</td>
+      <td><button class="sx2 g" data-achat="${x.phone}" style="padding:4px 9px;font-size:12px" title="Open the chat">💬</button></td></tr>`).join('');
+    const pager = `<div class="au-pg"><span>Page ${AU.pg + 1} of ${pages}</span><button class="sx2 g" data-apg="-1" ${AU.pg ? '' : 'disabled'}>‹</button><button class="sx2 g" data-apg="1" ${AU.pg + 1 < pages ? '' : 'disabled'}>›</button><select id="auPs">${[50, 100, 200, 500].map((n) => `<option ${AU.ps === n ? 'selected' : ''}>${n}</option>`).join('')}</select> per page</div>`;
+    return `<div class="au">${left}<div class="au-r">${rules}${months}${head}${bulk}<div style="overflow:auto"><table class="au-t au-c"><tr><th></th><th>Customer</th><th>Visits</th><th>Spent</th><th>Last visit</th><th>Perfumes</th><th>Segments · tags</th><th></th></tr>${rows || '<tr><td colspan="8" style="padding:24px;color:#667781;text-align:center">Nobody in this segment.</td></tr>'}</table></div>${pager}</div></div>`;
+  }
+  const audReload = async () => { await loadAud(); if (S.tab === 'aud') { const keep = document.activeElement && document.activeElement.id; const pos = keep === 'auQ' ? $('auQ').selectionStart : 0; render(); if (keep === 'auQ') { const n = $('auQ'); n.focus(); n.setSelectionRange(pos, pos); } } };
+  async function audPhones() { if (!AU.selAll) return Object.keys(AU.sel); const r = await api.get('st_wa.aud_list', { seg: AU.seg, tag: AU.tag, q: AU.q, phones: 1 }); return r.phones || []; }
+  async function audClick(e) {
+    const g = (q) => e.target.closest(q); let x;
+    if ((x = g('[data-aseg]'))) { AU.seg = x.dataset.aseg; AU.tag = ''; AU.pg = 0; AU.sel = {}; AU.selAll = false; await audReload(); return true; }
+    if ((x = g('[data-atag]'))) { AU.tag = x.dataset.atag; AU.seg = 'all'; AU.pg = 0; AU.sel = {}; AU.selAll = false; await audReload(); return true; }
+    if ((x = g('[data-apg]'))) { AU.pg = Math.max(0, AU.pg + +x.dataset.apg); await audReload(); return true; }
+    if (g('#auRules')) { AU.rules = !AU.rules; render(); return true; }
+    if (g('#auMonths')) { AU.months = !AU.months; render(); return true; }
+    if (g('#auRulesSave')) { const o = {}; document.querySelectorAll('[data-ar]').forEach((i) => { o[i.dataset.ar] = +i.value; }); try { await api.post('st_wa.aud_cfg_save', o); toast('Rules saved ✓'); await audReload(); } catch (er) { toast(er.message); } return true; }
+    if ((x = g('[data-asel]'))) { if (AU.selAll) { AU.selAll = false; (AU.d.rows || []).forEach((r) => { if (!r.stop) AU.sel[r.phone] = 1; }); } if (x.checked) AU.sel[x.dataset.asel] = 1; else delete AU.sel[x.dataset.asel]; render(); return true; }
+    if (g('#auAll')) { AU.selAll = !AU.selAll; AU.sel = {}; render(); return true; }
+    if (g('#auTagAdd') || g('#auTagDel')) { const tag = ($('auTagIn') || {}).value || ''; if (!tag.trim()) { toast('Write the tag name'); return true; } try { const phones = await audPhones(); const r = await api.post('st_wa.aud_tag', { tag, phones, on: !!g('#auTagAdd') }); toast((g('#auTagAdd') ? 'Tag added to ' : 'Tag removed from ') + r.n + ' ✓'); AU.sel = {}; AU.selAll = false; await audReload(); } catch (er) { toast(er.message); } return true; }
+    if ((x = g('[data-achat]'))) { S.tab = 'chats'; await loadCfg(); await loadChats(); render(); await openChat(x.dataset.achat); render(); return true; }
+    return false;
+  }
+  let auT = 0;
+  document.addEventListener('input', (e) => { if (S.tab !== 'aud') return; if (e.target.id === 'auQ') { AU.q = e.target.value; AU.pg = 0; clearTimeout(auT); auT = setTimeout(audReload, 350); } });
+  document.addEventListener('change', (e) => { if (S.tab !== 'aud') return; if (e.target.id === 'auSort') { AU.sort = e.target.value; audReload(); } if (e.target.id === 'auPs') { AU.ps = +e.target.value; AU.pg = 0; audReload(); } });
   function dgReport(title, r) {
     const bg = document.createElement('div'); bg.className = 'dg-bg'; bg.addEventListener('click', (e) => { if (e.target === bg || e.target.closest('.dgX')) bg.remove(); });
     const li = (a, f) => (a || []).map((x) => `<div class="it">${f(x)}</div>`).join('');
@@ -555,6 +617,7 @@ label.f2,div.f2>span{font-weight:600!important;font-size:12.5px!important;color:
     if (g('.dgBtn')) return dgOpen();
     if (g('#bkBtn')) return backToHrms();
     { const nv = g('[data-nav]'); if (nv) { S.tab = nv.dataset.nav; if (S.tab !== 'chats') { S.cur = ''; } else { await loadCfg(); await loadChats(); } return render(); } }
+    if (S.tab === 'aud' && await audClick(e)) return;
     if (S.tab === 'fu' && await fuClick(e)) return;
     if (S.tab === 'tpl' && await tplClick(e)) return;
     let x = g('[data-tab]'); if (x) { S.tab = x.dataset.tab; if (S.tab === 'chats') { await loadCfg(); } return render(); }
