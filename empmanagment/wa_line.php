@@ -515,7 +515,7 @@ function wln_send_any(PDO $pdo, array $c, int $tid, string $v2 = ''): array
 {
     $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
     /* owner 27 Nov 2026: a message Meta PAUSED for low quality (132015) is not tried again for 6 hours by any rescue (the same list Module B keeps); the rescues tried it for every customer and each refusal counted as a failure */
-    if (empty($res[0]) && preg_match('/\b132015\b|paused/i', (string)($res[1] ?? ''))) { try { $pp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $pp = is_array($pp) ? $pp : []; if ((int)($pp[$tid] ?? 0) < time()) { $pp[$tid] = time() + 6 * 3600; setting_set($pdo, 'wa_ru_tpl_pause', json_encode($pp)); } } catch (Throwable $e) { } }
+    if (empty($res[0]) && preg_match('/\b132015\b|low quality/i', (string)($res[1] ?? '')) && !preg_match('/bot messages are paused/i', (string)($res[1] ?? ''))) {   /* 27 Nov 16:00: the word "paused" alone also matched "Bot messages are paused for this customer", which took two good new messages out for 6 hours */ try { $pp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $pp = is_array($pp) ? $pp : []; if ((int)($pp[$tid] ?? 0) < time()) { $pp[$tid] = time() + 6 * 3600; setting_set($pdo, 'wa_ru_tpl_pause', json_encode($pp)); } } catch (Throwable $e) { } }
     return $res;
 }
 /** THE UTILITY TWIN (owner, 21 Nov: "not one message may fail — if it fails as marketing, send it again as utility on the spot, within one hour"): the utility messages that can say the same thing as this step —

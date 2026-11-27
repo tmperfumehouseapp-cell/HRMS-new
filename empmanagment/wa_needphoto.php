@@ -46,10 +46,10 @@ if (!function_exists('wnp_defs')) {
         try { $q = $pdo->prepare("SELECT UPPER(status) FROM wa_tpl_waba WHERE tpl_id = ?"); $q->execute([$id]); $s = $q->fetchAll(PDO::FETCH_COLUMN); } catch (Throwable $e) { return 'not known'; }
         if (!$s) return 'in the line for Meta'; if (in_array('APPROVED', $s, true)) return 'approved'; if (in_array('PENDING', $s, true) || in_array('IN_APPEAL', $s, true)) return 'waiting at Meta'; if (in_array('REJECTED', $s, true)) return 'rejected by Meta'; return 'in the line for Meta';
     }
-    /** Approved messages that should carry a photo but have none in the library (at most 12). */
+    /** Approved MARKETING messages that should carry a photo but have none in the library (at most 12). Owner 27 Nov: the utility ones (complaint, raise a ticket, sizes of a ticket ...) are not asked for. */
     function wnp_missing(PDO $pdo): array
     {
-        $o = []; try { $rows = $pdo->query("SELECT t.id, t.name, t.category, LEFT(t.body, 160) b FROM wa_templates t LEFT JOIN wa_media_lib l ON l.id = t.header_lib_id WHERE t.header_format = 'IMAGE' AND (t.header_lib_id = 0 OR l.id IS NULL) AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED') ORDER BY t.id DESC LIMIT 12")->fetchAll(PDO::FETCH_ASSOC);
+        $o = []; try { $rows = $pdo->query("SELECT t.id, t.name, t.category, LEFT(t.body, 160) b FROM wa_templates t LEFT JOIN wa_media_lib l ON l.id = t.header_lib_id WHERE t.header_format = 'IMAGE' AND (t.header_lib_id = 0 OR l.id IS NULL) AND UPPER(t.category) = 'MARKETING' AND t.name NOT REGEXP 'compl|ticket|raise|cx_|support|care' AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED') ORDER BY t.id DESC LIMIT 12")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as $r) $o['tpl:' . (int)$r['id']] = ['title' => 'Photo of message ' . (string)$r['name'], 'brief' => 'This approved message should have a photo on top, but its photo is not in the library, so it cannot be sent. Upload the photo that belongs to it: "' . trim(preg_replace('/\s+/u', ' ', (string)$r['b'])) . '…"', 'use' => (string)$r['category'] . ' message, already approved', 'fix' => (int)$r['id']]; } catch (Throwable $e) { }
         return $o;
     }
