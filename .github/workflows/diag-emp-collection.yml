@@ -1,0 +1,66 @@
+# READ-ONLY: every salesperson's collection (orders + rupees) per sales day, for setting targets (avg + 10%).
+# Same rules as the Commission page / tower (coach_sales_load): allocated Shopify / WhatsApp-manual orders + manual / website / quick-entry orders with a salesperson,
+# cancelled and Direct orders left out, the day from the Day timing start (weekday table + date overrides). Prints a tab-separated table. Changes nothing.
+name: Salesperson collection per day (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Sales days, comma separated (YYYY-MM-DD)"
+        required: true
+        default: "2026-11-24,2026-11-25,2026-11-26"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Collection per person and day
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          DAYS: ${{ github.event.inputs.days }}
+        run: |
+          D=$(printf '%s' "$DAYS" | tr -cd '0-9,-' | cut -c1-200)
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$D" <<'REMOTE' || true
+          P="$1"; D="$2"
+          cat > /tmp/ec_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          date_default_timezone_set("Asia/Kolkata");
+          $days = array_values(array_filter(explode(",", (string)$argv[2]), fn($x) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $x))); sort($days); if (!$days) { echo "no days\n"; exit; }
+          $wd = array_fill(0, 7, '10:00'); try { foreach ($d->query("SELECT weekday, start_time FROM day_timing")->fetchAll() as $r) if (preg_match('/^\d{2}:\d{2}$/', (string)$r['start_time'])) $wd[(int)$r['weekday']] = (string)$r['start_time']; } catch (Throwable $e) { }
+          $ov = []; for ($t = strtotime('2026-11-08'); $t <= strtotime('2026-11-15'); $t += 86400) $ov[date('Y-m-d', $t)] = '12:00';
+          try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = 'day_timing_overrides'"); $q->execute(); $j = json_decode((string)$q->fetchColumn(), true); if (is_array($j)) { $ov = []; foreach ($j as $k => $v) if (preg_match('/^\d{2}:\d{2}$/', (string)$v)) $ov[(string)$k] = (string)$v; } } catch (Throwable $e) { }
+          $ov['2026-11-21'] = '12:25';
+          $start = fn(string $dt) => $ov[$dt] ?? $wd[(int)date('w', strtotime($dt))];
+          $bday = function (string $ts) use ($start) { $t = strtotime($ts); $dt = date('Y-m-d', $t); if (date('H:i', $t) < $start($dt)) $dt = date('Y-m-d', $t - 86400); return $dt; };
+          foreach ($days as $x) echo "day $x starts " . $start($x) . "\n";
+          $from = $days[0] . ' 00:00:00'; $to = date('Y-m-d', strtotime(end($days) . ' +2 day')) . ' 00:00:00';
+          $alloc = []; foreach ($d->query("SELECT source, order_id, employee_id, is_direct FROM order_allocations")->fetchAll() as $r) $alloc[$r['source'] . '|' . $r['order_id']] = [(int)$r['employee_id'], (int)$r['is_direct']];
+          $canc = []; try { foreach ($d->query("SELECT source, order_id FROM order_cancels")->fetchAll() as $r) $canc[$r['source'] . '|' . $r['order_id']] = 1; } catch (Throwable $e) { }
+          $S = []; $add = function ($emp, $day, $amt) use (&$S, $days) { if ($emp <= 0 || !in_array($day, $days, true)) return; $S[$emp][$day]['n'] = ($S[$emp][$day]['n'] ?? 0) + 1; $S[$emp][$day]['a'] = ($S[$emp][$day]['a'] ?? 0) + $amt; };
+          $q = $d->prepare("SELECT store_key, shopify_id, created_at, total, tags FROM shop_orders WHERE created_at >= ? AND created_at < ? AND total > 0"); $q->execute([$from, $to]);
+          foreach ($q->fetchAll() as $o) { $k = $o['store_key'] . '|' . $o['shopify_id']; if (isset($canc[$k]) || stripos((string)$o['tags'], 'cancel') !== false) continue; $a = $alloc[$k] ?? null; if (!$a || $a[1] || $a[0] <= 0) continue; $add($a[0], $bday((string)$o['created_at']), (float)$o['total']); }
+          $q = $d->prepare("SELECT manual_order_id, order_date, total, employee_id, COALESCE(is_direct, 0) is_direct FROM manual_orders WHERE order_date >= ? AND order_date < ?"); $q->execute([$from, $to]);
+          foreach ($q->fetchAll() as $m) { $k = 'manual|' . $m['manual_order_id']; if (isset($canc[$k])) continue; $a = $alloc[$k] ?? null; if (($a && $a[1]) || (int)$m['is_direct'] === 1) continue; $who = ($a && $a[0] > 0) ? $a[0] : (int)$m['employee_id']; $add($who, $bday((string)$m['order_date']), (float)$m['total']); }
+          $emp = []; foreach ($d->query("SELECT employee_id, full_name, status FROM employees")->fetchAll() as $r) $emp[(int)$r['employee_id']] = [(string)$r['full_name'], (string)$r['status']];
+          echo "\nTABLE\nid\tname\tstatus"; foreach ($days as $x) echo "\t" . $x . " orders\t" . $x . " Rs"; echo "\n";
+          $tot = []; uksort($S, fn($a, $b) => strcmp($emp[$a][0] ?? '', $emp[$b][0] ?? ''));
+          foreach ($S as $e => $byDay) { echo $e . "\t" . ($emp[$e][0] ?? '#' . $e) . "\t" . ($emp[$e][1] ?? ''); foreach ($days as $x) { $n = $byDay[$x]['n'] ?? 0; $a = round($byDay[$x]['a'] ?? 0); $tot[$x] = ($tot[$x] ?? 0) + $a; echo "\t$n\t$a"; } echo "\n"; }
+          echo "TOTAL"; foreach ($days as $x) echo "\t" . $x . "=" . $tot[$x]; echo "\nEND\n";
+          PHP
+          php /tmp/ec_check.php "$P" "$D"; rm -f /tmp/ec_check.php
+          REMOTE

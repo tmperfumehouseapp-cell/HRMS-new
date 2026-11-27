@@ -73,13 +73,13 @@ function swt_out(PDO $pdo, array $r, string $waba): array
     $sentAnywhere = false; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ?"); $q->execute([(int)$r['id']]); $sentAnywhere = (int)$q->fetchColumn() > 0; } catch (Throwable $e) { }
     $photo = ''; if ((int)($t['header_lib_id'] ?? 0) > 0) { $lr = wa_tpl_lib_row($pdo, (int)$t['header_lib_id']); if ($lr) $photo = (string)$lr['title']; }
     $ex = is_array($t['examples'] ?? null) ? $t['examples'] : [];
-    return ['id' => (int)$t['id'], 'name' => (string)$t['name'], 'category' => (string)$t['category'], 'header_format' => (string)($t['header_format'] ?? ''), 'header_lib_id' => (int)($t['header_lib_id'] ?? 0), 'photo' => $photo, 'body' => (string)$t['body'], 'footer' => (string)($t['footer'] ?? ''),
+    return ['id' => (int)$t['id'], 'language' => (string)($t['language'] ?? 'en'), 'name' => (string)$t['name'], 'category' => (string)$t['category'], 'header_format' => (string)($t['header_format'] ?? ''), 'header_lib_id' => (int)($t['header_lib_id'] ?? 0), 'photo' => $photo, 'body' => (string)$t['body'], 'footer' => (string)($t['footer'] ?? ''),
         'buttons' => array_values((array)($t['buttons'] ?? [])), 'examples' => array_values((array)($ex['body'] ?? [])), 'labels' => array_values((array)($ex['labels'] ?? [])), 'status' => $st, 'reason' => $why, 'meta_id' => $meta, 'locked' => $sentAnywhere, 'version' => (int)($t['version'] ?? 1), 'title' => (string)($t['purpose'] ?? '')];
 }
 function swt_draft_in(array $in): array
 {
     $ex = []; foreach ((array)($in['examples'] ?? []) as $x) $ex[] = (string)$x; $lab = []; foreach ((array)($in['labels'] ?? []) as $x) $lab[] = (string)$x;
-    return ['name' => (string)($in['name'] ?? ''), 'language' => 'en', 'category' => (string)($in['category'] ?? 'MARKETING'), 'header_format' => (string)($in['header_format'] ?? ''), 'header_lib_id' => (int)($in['header_lib_id'] ?? 0), 'body' => (string)($in['body'] ?? ''), 'footer' => (string)($in['footer'] ?? ''),
+    return ['name' => (string)($in['name'] ?? ''), 'language' => in_array((string)($in['language'] ?? 'en'), ['en', 'gu', 'hi'], true) ? (string)$in['language'] : 'en', 'category' => (string)($in['category'] ?? 'MARKETING'), 'header_format' => (string)($in['header_format'] ?? ''), 'header_lib_id' => (int)($in['header_lib_id'] ?? 0), 'body' => (string)($in['body'] ?? ''), 'footer' => (string)($in['footer'] ?? ''),
         'buttons' => is_array($in['buttons'] ?? null) ? $in['buttons'] : [], 'folder' => 'Store', 'examples' => ['body' => $ex, 'labels' => $lab]];
 }
 
@@ -91,6 +91,7 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
     if ($action === 'st_wa.tpl_all') {
         $rows = $pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = [];
         foreach ($rows as $r) {
+            if (strpos((string)$r['name'], 'tmph_store_followup_') === 0) continue;      // the follow-ups are looked after on their own screen (Follow-ups → Messages)
             if (in_array((string)$r['name'], ['tmph_store_bill', 'tmph_store_bill_back', 'tmph_store_bday'], true)) { $hq = $pdo->prepare("SELECT 1 FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $hq->execute([(int)$r['id'], $waba]); if (!$hq->fetchColumn()) continue; }      // the older plain-text versions (made for the other accounts) are not the Store's to see
             $o = swt_out($pdo, $r, $waba); if ($o) $out[] = $o;
         }
@@ -127,7 +128,7 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
             $row = wa_tpl_row($pdo, $id); if (!$row || strpos((string)$row['name'], 'tmph_store_') !== 0) json_response(['error' => 'Message not found.'], 404);
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ?"); $q->execute([$id]);
             if ((int)$q->fetchColumn() > 0) {      // already at Meta: a NEW version, the old one keeps working
-                $base = preg_replace('/_v\d+$/', '', (string)$row['name']); $v = max(2, (int)($row['version'] ?? 1) + 1); $nm = $base . '_v' . $v; $c = $pdo->prepare("SELECT 1 FROM wa_templates WHERE name = ? AND language = 'en'"); $c->execute([$nm]); while ($c->fetchColumn()) { $v++; $nm = $base . '_v' . $v; $c->execute([$nm]); }
+                $base = preg_replace('/_v\d+$/', '', (string)$row['name']); $v = max(2, (int)($row['version'] ?? 1) + 1); $nm = $base . '_v' . $v; $c = $pdo->prepare("SELECT 1 FROM wa_templates WHERE name = ? AND language = ?"); $lgc = (string)($row['language'] ?? 'en'); $c->execute([$nm, $lgc]); while ($c->fetchColumn()) { $v++; $nm = $base . '_v' . $v; $c->execute([$nm, $lgc]); }
                 $t['name'] = $nm; $t['family_id'] = (int)($row['family_id'] ?? 0); $t['version'] = $v; $nid = wa_tpl_insert($pdo, $t, $me, (string)($row['purpose'] ?? 'Store message'), 'Store message (new version)'); json_response(['ok' => true, 'id' => $nid, 'new_version' => true, 'name' => $nm]);
             }
             $pdo->prepare("UPDATE wa_templates SET category = ?, header_format = ?, header_text = ?, header_lib_id = ?, body = ?, footer = ?, buttons = ?, examples = ? WHERE id = ?")->execute([$t['category'], $t['header_format'], $t['header_text'], (int)$t['header_lib_id'], $t['body'], $t['footer'], json_encode($t['buttons'], JSON_UNESCAPED_UNICODE), json_encode($t['examples'], JSON_UNESCAPED_UNICODE), $id]);

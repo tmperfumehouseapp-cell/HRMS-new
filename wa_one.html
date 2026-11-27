@@ -12,7 +12,7 @@
   [hidden]{display:none !important;}
   html,body{margin:0; height:100%; background:#fff; overflow:hidden;}
   #wi{height:100%;}
-  .wi.one > *:not(.wi-box){display:none !important;}
+  .wi.one > *:not(.wi-box):not(.wi-sh):not(.wi-call){display:none !important;}   /* the ⚡ Pre-made / File / Quick sheets and the Call box are layers on top of the chat: they must show here too */
   .wi.one .wi-box,.wi.one.mine .wi-box{position:static !important; display:grid; grid-template-columns:minmax(0,1fr); height:100vh; height:100dvh; min-height:0; border:0; border-radius:0; gap:0;}
   .wi.one .wi-col.list{display:none !important;}
   .wi.one .wi-col.chat{display:flex !important; border:0; border-radius:0;}
@@ -50,7 +50,7 @@
 <script src="assets/js/api.js?v=14"></script>
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx10"></script>
-<script src="assets/js/wa_inbox.js?v=wa101"></script>
+<script src="assets/js/wa_inbox.js?v=wa103"></script>
 <script>
   if (!api.token()) { parent.postMessage({ wa: 'close' }, location.origin); }
   else WaInbox.start({ mode: 'admin', root: 'wi', one: true });

@@ -403,6 +403,12 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
         //    even when this customer came from a campaign / an ad before; a campaign reply (our template in the last 3 days) stays Campaign
         $fresh = $prevIn === null || $prevIn === '' || strtotime((string)$prevIn) < time() - 86400;
         if ($fresh && in_array((string)$c['source'], ['', 'query'], true) && wa_prior_buyer($pdo, $key, time())) { $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]); return; }   // owner (12 Nov): a customer who already ORDERED is never a New query — counted as Campaign (same rule as the order allocation)
+        // 🔁 owner (27 Nov 2026, Kamal: tapped "Share feedback" on a Module B message and showed as New query): a chat that was QUIET for 24 h+ and an OLD 'query' mark, where the customer now answers
+        //    an AUTOMATIC message of ours (Campaign / Follow-up / Module B, not failed, last 3 days, sent after his query had closed) and NOT with an ad's ready-made text → a Campaign chat, not a New query.
+        if ($fresh && $prevIn !== null && $prevIn !== '' && (string)$c['source'] === 'query' && !wa_is_ad_text($text)) {
+            $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND emp_id = 0 AND who IN ('campaign', 'followup', 'recover') AND status <> 'failed' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]); $ours = (string)$q->fetchColumn();
+            if ($ours !== '' && !wa_camp_in_live_chat($pdo, $key, $ours)) { $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]); return; }
+        }
         if ($fresh && (string)$c['source'] !== 'query' && wa_is_ad_text($text)) {
             // An ad's / a website button's ready-made text. Owner (26 Nov): when a campaign / follow-up of ours really REACHED this customer it is a Campaign chat, ready-made text or not; when nothing reached him
             // (no send, or every send failed) he is a new customer → a fresh query. (Before: fresh unless he swiped a reply — and a failed send counted as "sent".)

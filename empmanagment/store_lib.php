@@ -845,9 +845,9 @@ function st_wa_status(PDO $pdo): array
     return $out;
 }
 /** The template as it can be sent now (approved on at least one WhatsApp account), or null. */
-function st_wa_tpl(PDO $pdo, string $name): ?array
+function st_wa_tpl(PDO $pdo, string $name, string $lang = 'en'): ?array
 {
-    $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$name]); $id = (int)$q->fetchColumn(); if (!$id) return null;
+    $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = ?"); $q->execute([$name, $lang]); $id = (int)$q->fetchColumn(); if (!$id) return null;
     $t = wa_tpl_row($pdo, $id); if (!$t) return null;
     $w = $pdo->prepare("SELECT waba_id FROM wa_tpl_waba WHERE tpl_id = ? AND status = 'APPROVED'"); $w->execute([$id]); $t['ok_wabas'] = array_column($w->fetchAll(), 'waba_id');
     return $t['ok_wabas'] ? $t : null;
@@ -874,20 +874,64 @@ function st_store_waba(PDO $pdo): string
     try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'swa'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; $id = is_array($j) ? (int)($j['number_id'] ?? 0) : 0; if ($id <= 0) return '';
         $q = $pdo->prepare("SELECT * FROM wa_numbers WHERE id = ?"); $q->execute([$id]); $n = $q->fetch(); return $n && function_exists('wa_waba_of') ? wa_waba_of($n) : ''; } catch (Throwable $e) { return ''; }
 }
+/** Names of the order-confirmation messages in the order they are tried (the owner's own wording first, the built-in ones last). */
+function st_wa_order_names(bool $back): array
+{
+    return $back ? ['tmph_store_order_back_v2', 'tmph_store_order_back_v1', 'tmph_store_order_back', 'tmph_store_bill_back_v2', 'tmph_store_bill_back']
+                 : ['tmph_store_order_confirmation_v3', 'tmph_store_order_confirmation_v2', 'tmph_store_order_confirmation', 'tmph_store_order_v2', 'tmph_store_order_v1', 'tmph_store_bill_v2', 'tmph_store_bill'];
+}
+/** What each {{n}} of a bill message gets. The owner writes the message by hand, so the meaning of every {{n}} is read from the words just before it:
+ *  "Hi {{1}}" = name, "Your bill {{2}}" = bill number, "see it here: {{3}}" = bill link, "Save all our numbers: {{4}}" = numbers link, "join our community: {{5}}" = community link,
+ *  "review on Google: {{6}}" = review link, "Came with friends? {{7}}" = friends link, "₹{{3}}" = amount, "b.php?t={{4}}" = the bare token. The built-in (older) messages keep their fixed order. */
+function st_wa_vars(array $t, string $first, string $billNo, float $total, string $token): array
+{
+    $name = (string)($t['name'] ?? ''); $body = (string)($t['body'] ?? '');
+    if (strpos($name, 'tmph_store_bill') === 0 || $body === '') return [$first, $billNo, number_format($total), st_bill_link($token)];      // the original four, as before
+    preg_match_all('/\{\{(\d+)\}\}/', $body, $m); $n = $m[1] ? max(array_map('intval', $m[1])) : 0;
+    $parts = preg_split('/\{\{\d+\}\}/', $body); $order = $m[1];       // $parts[i] is the text just before the i-th placeholder in reading order
+    $kind = []; foreach ($order as $i => $num) {
+        $num = (int)$num; $seg = mb_strtolower(trim((string)($parts[$i] ?? ''))); $seg = mb_substr($seg, -110);
+        if ($num === 1 && $i === 0) $k = 'name';
+        elseif (preg_match('/[?&]t=$/', $seg)) $k = 'token';
+        elseif (preg_match('/(₹|rs\.?|amount|total)\s*$/u', $seg)) $k = 'amount';
+        elseif (preg_match('/bill( no\.?| number)?\s*$/u', $seg)) $k = 'bill_no';
+        elseif (strpos($seg, 'friend') !== false) $k = 'friends';
+        elseif (strpos($seg, 'review') !== false) $k = 'review';
+        elseif (strpos($seg, 'communit') !== false || strpos($seg, 'channel') !== false) $k = 'community';
+        elseif (strpos($seg, 'save') !== false || strpos($seg, 'number') !== false || strpos($seg, 'contact') !== false) $k = 'numbers';
+        else $k = 'bill_link';
+        $kind[$num] = $kind[$num] ?? $k;
+    }
+    $val = ['name' => $first, 'bill_no' => $billNo, 'amount' => number_format($total), 'token' => $token, 'bill_link' => st_short_link($token), 'numbers' => st_short_link($token, 's'), 'community' => st_short_link($token, 'c'), 'review' => st_short_link($token, 'r'), 'friends' => st_short_link($token, 'g')];
+    $out = []; for ($i = 1; $i <= $n; $i++) $out[] = (string)($val[$kind[$i] ?? 'bill_link'] ?? '');
+    return $out;
+}
+/** WhatsApp said a bill message did not arrive: the latest "sent" mark of that customer (last 3 days) is taken away, so the bill shows as NOT sent and the cashier's own Send button works again. */
+function st_wa_bill_failed(PDO $pdo, string $key): void
+{
+    $q = $pdo->prepare("SELECT p.person_id, p.bill_id FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id WHERE RIGHT(p.phone, 10) = ? AND b.created_at > ? ORDER BY p.person_id DESC LIMIT 1");
+    $q->execute([substr($key, -10), date('Y-m-d H:i:s', time() - 3 * 86400)]); $r = $q->fetch(); if (!$r) return;
+    $pdo->prepare("DELETE FROM st_bill_events WHERE person_id = ? AND kind = 'sent' AND who = 'auto WhatsApp'")->execute([(int)$r['person_id']]);
+    st_event($pdo, (int)$r['person_id'], (int)$r['bill_id'], 'send_failed', 'auto WhatsApp');
+}
 /** One bill → one customer, as a template message from the shop's own WhatsApp number. Returns [ok, note]. */
 function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array $cs): array
 {
     $phone = (string)$p['phone']; $key = wa_key($phone); if ($key === '' || strlen($key) !== 10) return [false, 'not an Indian mobile number'];
     $back = !empty($p['returning_c']) && !empty($cs['skip_returning']);
-    $t = st_wa_tpl($pdo, $back ? 'tmph_store_bill_back_v2' : 'tmph_store_bill_v2') ?: st_wa_tpl($pdo, $back ? 'tmph_store_bill_back' : 'tmph_store_bill'); if (!$t) return [false, 'template not approved yet'];      // the version with the Store picture on top once Meta approved it, else the plain one
-    [$num, $own, $why] = st_wa_number_for($pdo, $t);
-    if (!$num) return [false, $why];
+    // the first message that can really go out of the Store number: the "welcome back" ones first for a returning customer, and when none of them is approved on the Store number yet, the new-customer message, so the bill always goes
+    $t = null; $num = null; $own = false; $why = 'template not approved yet';
+    foreach (array_values(array_unique(array_merge(st_wa_order_names($back), $back ? st_wa_order_names(false) : []))) as $nm) {
+        $t0 = st_wa_tpl($pdo, $nm); if (!$t0) continue; [$n0, $o0, $w0] = st_wa_number_for($pdo, $t0);
+        if ($n0) { $t = $t0; $num = $n0; $own = $o0; break; } $why = $w0;
+    }
+    if (!$t || !$num) return [false, $why];
     $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
     if ($c && (int)($c['optout'] ?? 0) === 1) return [false, 'customer opted out of WhatsApp'];
     if ($own) { try { $q = $pdo->prepare("SELECT optout FROM st_wa_chat WHERE phone = ?"); $q->execute([$key]); if ((int)$q->fetchColumn() === 1) return [false, 'customer asked the store to stop']; } catch (Throwable $e) { } }
     if (!$c && !$own) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$key, '91' . $key, mb_substr((string)$p['name'], 0, 120), date('Y-m-d H:i:s')]); }
     $name = trim((string)$p['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($name);
-    $vars = [$first, $billNo, number_format($total), st_bill_link((string)$p['token'])];
+    $vars = st_wa_vars($t, $first, $billNo, $total, (string)$p['token']);
     $r = wa_tpl_send_components($pdo, $t, $vars, (string)$num['phone_id'], ['url_suffix' => (string)$p['token']]);
     if (empty($r['ok'])) return [false, (string)($r['error'] ?? 'could not build the message')];
     $pl = ['messaging_product' => 'whatsapp', 'to' => '91' . $key, 'type' => 'template', 'template' => ['name' => $t['name'], 'language' => ['code' => $t['language']]]];
@@ -906,12 +950,16 @@ function st_wa_auto(PDO $pdo, int $billId, string $billNo, float $total, array $
         $q = $pdo->prepare("SELECT person_id, name, phone, token, returning_c FROM st_bill_people WHERE bill_id = ? AND declined = 0 AND phone <> '' ORDER BY person_no"); $q->execute([$billId]);
         $people = $q->fetchAll(); if (!$people) return $notes;
         // the first bill ever (or after a failed try): make the templates and send them to Meta, at most once an hour
-        $need = !st_wa_tpl($pdo, 'tmph_store_bill') || !st_wa_tpl($pdo, 'tmph_store_bill_back');
+        $have = false; foreach (st_wa_order_names(false) as $nm) if (st_wa_tpl($pdo, $nm)) { $have = true; break; }      // the owner's own approved message is enough: do not make the built-in ones at Meta again
+        $need = !$have && (!st_wa_tpl($pdo, 'tmph_store_bill') || !st_wa_tpl($pdo, 'tmph_store_bill_back'));
         if ($need && (int)setting_get($pdo, 'st_wa_seed_at', '0') < time() - 3600) { setting_set($pdo, 'st_wa_seed_at', (string)time()); st_wa_seed($pdo); }
         foreach ($people as $p) {
             try { [$ok, $why] = st_wa_send_one($pdo, $p, $billNo, $total, $cs); } catch (Throwable $e) { $ok = false; $why = mb_substr($e->getMessage(), 0, 120); }
             if ($ok) st_event($pdo, (int)$p['person_id'], $billId, 'sent', 'auto WhatsApp');
-            elseif (function_exists('wa_log')) { try { wa_log($pdo, 'store', false, $billNo . ' · ' . $p['phone'] . ' · ' . mb_substr($why, 0, 150)); } catch (Throwable $e) { } }
+            else {
+                try { st_event($pdo, (int)$p['person_id'], $billId, 'auto_failed', mb_substr((string)$why, 0, 78)); } catch (Throwable $e) { }      // why the automatic message did not go: the billing list shows it
+                if (function_exists('wa_log')) { try { wa_log($pdo, 'store', false, $billNo . ' · ' . $p['phone'] . ' · ' . mb_substr($why, 0, 150)); } catch (Throwable $e) { } }
+            }
             $notes[(int)$p['person_id']] = $ok ? 'sent' : $why;
         }
     } catch (Throwable $e) { error_log('st_wa_auto: ' . $e->getMessage()); }
@@ -923,14 +971,17 @@ function st_people_status(PDO $pdo, array $billIds): array
 {
     if (!$billIds) return [];
     $in = implode(',', array_fill(0, count($billIds), '?'));
-    $st = $pdo->prepare("SELECT p.person_id, p.bill_id, p.person_no, p.name, p.phone, p.token, p.declined, p.reason, p.returning_c, p.visit_no,
+    $st = $pdo->prepare("SELECT p.person_id, p.bill_id, p.person_no, p.name, p.phone, p.token, p.declined, p.reason, p.returning_c, p.visit_no, p.created_at,
             MIN(CASE WHEN e.kind = 'sent' THEN e.at END) sent_at, MIN(CASE WHEN e.kind = 'opened' THEN e.at END) opened_at, MIN(CASE WHEN e.kind = 'contact' THEN e.at END) contact_at,
             MIN(CASE WHEN e.kind = 'community' THEN e.at END) community_at, MIN(CASE WHEN e.kind = 'review' THEN e.at END) review_at
         FROM st_bill_people p LEFT JOIN st_bill_events e ON e.person_id = p.person_id WHERE p.bill_id IN ($in) GROUP BY p.person_id ORDER BY p.bill_id, p.person_no");
     $st->execute(array_values($billIds));
-    $out = [];
-    foreach ($st->fetchAll() as $r) $out[(int)$r['bill_id']][] = ['person_id' => (int)$r['person_id'], 'no' => (int)$r['person_no'], 'name' => $r['name'], 'phone' => $r['phone'], 'declined' => (int)$r['declined'], 'reason' => $r['reason'], 'returning' => (int)$r['returning_c'], 'visit_no' => (int)$r['visit_no'],
-        'sent_at' => $r['sent_at'], 'opened_at' => $r['opened_at'], 'contact_at' => $r['contact_at'], 'community_at' => $r['community_at'], 'review_at' => $r['review_at'], 'link' => st_bill_link((string)$r['token'])];
+    $out = []; $rowsP = $st->fetchAll();
+    $why = []; try { $q = $pdo->prepare("SELECT person_id, who FROM st_bill_events WHERE kind = 'auto_failed' AND bill_id IN ($in) ORDER BY id"); $q->execute(array_values($billIds)); foreach ($q->fetchAll() as $x) $why[(int)$x['person_id']] = (string)$x['who']; } catch (Throwable $e) { }
+    $ws = []; try { $mq = $pdo->prepare("SELECT status, err FROM st_wa_msg WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND ts >= ? ORDER BY id DESC LIMIT 1");
+        foreach ($rowsP as $r) { $ph = substr(preg_replace('/\D/', '', (string)$r['phone']), -10); if (strlen($ph) !== 10 || (int)$r['declined']) continue; $mq->execute([$ph, date('Y-m-d H:i:s', strtotime((string)$r['created_at'] ?: 'now') - 120)]); $m = $mq->fetch(); if ($m) $ws[(int)$r['person_id']] = $m; } } catch (Throwable $e) { }      // what WhatsApp said about the message sent from the Store number (sent / delivered / read / failed + the reason)
+    foreach ($rowsP as $r) $out[(int)$r['bill_id']][] = ['person_id' => (int)$r['person_id'], 'no' => (int)$r['person_no'], 'name' => $r['name'], 'phone' => $r['phone'], 'declined' => (int)$r['declined'], 'reason' => $r['reason'], 'returning' => (int)$r['returning_c'], 'visit_no' => (int)$r['visit_no'],
+        'sent_at' => $r['sent_at'], 'opened_at' => $r['opened_at'], 'contact_at' => $r['contact_at'], 'community_at' => $r['community_at'], 'review_at' => $r['review_at'], 'link' => st_bill_link((string)$r['token']), 'wa_status' => (string)($ws[(int)$r['person_id']]['status'] ?? ''), 'wa_err' => (string)($ws[(int)$r['person_id']]['err'] ?? ''), 'auto_err' => (string)($why[(int)$r['person_id']] ?? '')];
     return $out;
 }
 

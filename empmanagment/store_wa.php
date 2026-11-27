@@ -26,6 +26,7 @@ function sw_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_read (emp_id INT NOT NULL, phone VARCHAR(12) NOT NULL, last_id BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (emp_id, phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_view (emp_id INT NOT NULL, phone VARCHAR(12) NOT NULL, at DATETIME NULL, PRIMARY KEY (emp_id, phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_quick (id INT AUTO_INCREMENT PRIMARY KEY, shortcut VARCHAR(30) NOT NULL, body TEXT NULL, sort_no INT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        try { $pdo->exec("ALTER TABLE st_wa_msg ADD COLUMN err VARCHAR(220) NOT NULL DEFAULT ''"); } catch (Throwable $e) { }      // why WhatsApp could not deliver a message (shown in the chat)
         try { $pdo->exec("UPDATE st_wa_msg SET who = 'emp' WHERE dir = 'out' AND who = 'store' AND mtype <> 'template'"); } catch (Throwable $e) { }      // an earlier build marked a person's own text / photo as "automatic"
         if ((int)$pdo->query("SELECT COUNT(*) FROM st_wa_quick")->fetchColumn() === 0 && (string)setting_get($pdo, 'sw_quick_seed', '') === '') {      // only neutral ones: the owner writes the rest (address, exchange, offers ...)
             $ins = $pdo->prepare("INSERT INTO st_wa_quick (shortcut, body, sort_no) VALUES (?, ?, ?)");
@@ -88,7 +89,8 @@ function sw_in(PDO $pdo, array $m, string $name, int $numberId): string
 function sw_status(PDO $pdo, array $s): int
 {
     $id = (string)($s['id'] ?? ''); $st = strtolower((string)($s['status'] ?? '')); if ($id === '' || !sw_tables($pdo)) return 0;
-    $rank = ['sent' => 1, 'delivered' => 2, 'read' => 3]; if ($st === 'failed') { $pdo->prepare("UPDATE st_wa_msg SET status = 'failed' WHERE wamid = ?")->execute([$id]); try { wa_log($pdo, 'send', false, 'store · ' . (string)($s['recipient_id'] ?? '') . ' · ' . mb_substr(json_encode($s['errors'] ?? ''), 0, 160)); } catch (Throwable $e) { } return 1; }
+    $rank = ['sent' => 1, 'delivered' => 2, 'read' => 3]; if ($st === 'failed') { $e0 = is_array($s['errors'][0] ?? null) ? $s['errors'][0] : []; $why = trim((string)($e0['code'] ?? '') . ' ' . (string)($e0['title'] ?? '') . ' ' . (string)($e0['error_data']['details'] ?? $e0['message'] ?? '')); $pdo->prepare("UPDATE st_wa_msg SET status = 'failed', err = ? WHERE wamid = ?")->execute([mb_substr($why, 0, 215), $id]);
+        try { $ph = $pdo->prepare("SELECT phone, mtype, who FROM st_wa_msg WHERE wamid = ?"); $ph->execute([$id]); $mm = $ph->fetch(); if ($mm && $mm['mtype'] === 'template' && $mm['who'] === 'store' && function_exists('st_wa_bill_failed')) st_wa_bill_failed($pdo, (string)$mm['phone']); } catch (Throwable $e) { } /* a bill that did not arrive must not stay marked sent: the cashier's button comes back */ try { wa_log($pdo, 'send', false, 'store · ' . (string)($s['recipient_id'] ?? '') . ' · ' . mb_substr(json_encode($s['errors'] ?? ''), 0, 160)); } catch (Throwable $e) { } return 1; }
     if (!isset($rank[$st])) return 0; $q = $pdo->prepare("SELECT status FROM st_wa_msg WHERE wamid = ?"); $q->execute([$id]); $cur = $q->fetchColumn(); if ($cur === false) return 0;
     if (($rank[(string)$cur] ?? 0) >= $rank[$st] && $cur !== 'failed') return 0; $pdo->prepare("UPDATE st_wa_msg SET status = ? WHERE wamid = ?")->execute([$st, $id]); return 1;
 }
@@ -154,11 +156,12 @@ function sw_handle(PDO $pdo, string $action): void
     // the WhatsApp helpers (wa_waba_of, wa_api, the template and media functions) are not loaded for an st_* action: load them the same way the billing's automatic WhatsApp does
     if (!function_exists('st_wa_load') || !st_wa_load()) json_response(['error' => 'The WhatsApp module is not available on this server.'], 500);
     if (!function_exists('wa_media_rules') && is_file(__DIR__ . '/wa_console.php')) { try { require_once __DIR__ . '/wa_console.php'; } catch (Throwable $e) { error_log('sw: wa_console ' . $e->getMessage()); } }
-    if (function_exists('wa_tpl_tables')) { try { wa_tpl_tables($pdo); } catch (Throwable $e) { } } [$me, $mgr] = sw_auth($pdo, $auth, in_array($action, ['st_wa.cfg_save', 'st_wa.quick_save', 'st_wa.quick_del', 'st_wa.tpl_all', 'st_wa.tpl_seed', 'st_wa.tpl_save', 'st_wa.tpl_check', 'st_wa.tpl_submit', 'st_wa.tpl_sync', 'st_wa.tpl_test', 'st_wa.photo_store', 'st_wa.photo_upload'], true));
+    if (function_exists('wa_tpl_tables')) { try { wa_tpl_tables($pdo); } catch (Throwable $e) { } } [$me, $mgr] = sw_auth($pdo, $auth, in_array($action, ['st_wa.cfg_save', 'st_wa.quick_save', 'st_wa.quick_del', 'st_wa.fu_cfg_save', 'st_wa.fu_tpls', 'st_wa.fu_tpl_seed', 'st_wa.fu_tpl_submit', 'st_wa.fu_tpl_sync', 'st_wa.tpl_all', 'st_wa.tpl_seed', 'st_wa.tpl_save', 'st_wa.tpl_check', 'st_wa.tpl_submit', 'st_wa.tpl_sync', 'st_wa.tpl_test', 'st_wa.photo_store', 'st_wa.photo_upload'], true));
     if (!sw_tables($pdo)) json_response(['error' => 'The Store WhatsApp tables could not be made.'], 500);
     $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $num = sw_number($pdo); $cfg = sw_cfg($pdo);
     $need = function () use ($num) { if (!$num) json_response(['error' => 'No Store WhatsApp number is chosen yet. The Admin sets it in the Setup tab.'], 409); return $num; };
     $nid = $num ? (int)$num['id'] : 0;
+    if (strpos($action, 'st_wa.fu_') === 0) { require_once __DIR__ . '/store_wa_follow.php'; sr_tables($pdo); swf_handle($pdo, $action, $me, $post); }      // follow-ups 7 / 30 / 60 days after a purchase
     if (strpos($action, 'st_wa.photo_') === 0 || (strpos($action, 'st_wa.tpl_') === 0 && !in_array($action, ['st_wa.tpl_list', 'st_wa.tpl_send'], true))) { require_once __DIR__ . '/store_wa_tpl.php'; swt_handle($pdo, $action, $me, $post); }      // the Store's own pre-made messages (Admin / HR)
 
     if ($action === 'st_wa.cfg') {
@@ -214,7 +217,7 @@ function sw_handle(PDO $pdo, string $action): void
     }
     if ($action === 'st_wa.chat') {
         $need(); $p = wa_key($_GET['phone'] ?? ''); if ($p === '') json_response(['error' => 'No customer.'], 422); $after = max(0, (int)($_GET['after'] ?? 0));
-        $q = $pdo->prepare("SELECT id, wamid, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts, reply_to FROM st_wa_msg WHERE phone = ? AND id > ? ORDER BY id DESC LIMIT 300"); $q->execute([$p, $after]); $msgs = array_reverse($q->fetchAll());
+        $q = $pdo->prepare("SELECT id, wamid, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts, reply_to, err FROM st_wa_msg WHERE phone = ? AND id > ? ORDER BY id DESC LIMIT 300"); $q->execute([$p, $after]); $msgs = array_reverse($q->fetchAll());
         $emps = []; foreach ($msgs as &$m) { $m['id'] = (int)$m['id']; $m['emp_id'] = (int)$m['emp_id']; if ($m['dir'] === 'out' && $m['who'] === 'emp') { if ($m['emp_id'] > 0) { if (!isset($emps[$m['emp_id']])) $emps[$m['emp_id']] = sw_empname($pdo, $m['emp_id']); $m['emp_name'] = $emps[$m['emp_id']] !== '' ? $emps[$m['emp_id']] : 'Store team'; } else $m['emp_name'] = 'Admin'; } } unset($m);
         $maxId = $msgs ? (int)end($msgs)['id'] : $after; if ($maxId > 0) $pdo->prepare("INSERT INTO st_wa_read (emp_id, phone, last_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE last_id = GREATEST(last_id, VALUES(last_id))")->execute([$me, $p, $maxId]);
         $o = ['messages' => $msgs, 'last_id' => $maxId]; [$wo, $wl] = sw_window($pdo, $p, $nid); $o['window_open'] = $wo; $o['window_hours'] = $wl;
