@@ -107,7 +107,7 @@
       PO = po; OPL = opl && Array.isArray(opl.places) ? opl : null; ME = me; DP = dp || { items: [], done: [], penalties: [], mode: 'shadow' }; BDD = bdd || { tasks: [], penalties: [], week: { done: 0, missed: 0 }, mode: DP.mode }; PF = pf; ATT = att; FLAGS = fl || {};
       if (!ME) throw new Error('Your login is not linked to an employee.');
       render(); records();
-      fuLoad();
+      fuLoad(); rxLoad();
       api.get('lh.mine').then((r) => { if (r && r.helper) { LH = r; render(); } }).catch(() => { /* not a Leaders Helper: no card */ });
       api.get('salary.detail').then((r) => { if (r && r.detail) { SAL = r.detail; render(); } }).catch(() => { /* commission-only staff have no monthly salary: no card */ });
     } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open My Day</b>' + esc(e.message) + '</div></div>'; }
@@ -209,6 +209,19 @@
   /* ---------------- 📌 Follow-up: the topics given to me. One update a day on each; the full sheet is on the Follow-up page. ---------------- */
   try { api.swrAdd('fup.mine', 0); } catch (e) { /* older api.js */ }
   function fuLoad() { api.get('fup.mine').then((r) => { if (r && Array.isArray(r.topics)) { FU = r; render(); } }).catch(() => { /* no follow-up topics: no card */ }); }
+  /* ---------- ↩ RTO resend / 🔁 Exchange given to me by Admin ---------- */
+  let RXM = null;
+  function rxLoad() { api.get('wmo.rx_mine').then((r) => { if (r && Array.isArray(r.orders)) { RXM = r.orders; render(); } }).catch(() => { /* nothing given: no card */ }); }
+  function rxCard() {
+    if (!RXM || !RXM.length) return '';
+    const open = RXM.filter((o) => !o.done), done = RXM.filter((o) => o.done), wa = (p) => 'https://wa.me/91' + String(p).replace(/\D/g, '').slice(-10);
+    const one = (o) => '<div style="border:1.5px solid #f1e3d3;border-radius:14px;padding:12px 13px;margin-top:10px;background:' + (o.done ? '#f7faf8' : '#fffdfb') + ';' + (o.done ? 'opacity:.6' : '') + '">'
+      + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:14.5px">' + (o.kind === 'rto' ? '↩ RTO resend' : '🔁 Exchange') + ' · ' + esc(o.order_no) + '</b><span style="font-size:11.5px;font-weight:800;border-radius:99px;padding:1px 9px;' + (o.done ? 'background:#dcfce7;color:#166534' : 'background:#ffedd5;color:#9a3412') + '">' + (o.done ? 'Done ✓' : 'To do') + '</span></div>'
+      + '<div class="bd-sub">Old order ' + esc(o.old_order) + '</div><div style="margin-top:6px;font-weight:800">' + esc(o.customer || 'Customer') + ' · ' + esc(o.phone) + '</div><div class="bd-sub">' + esc(o.address) + '</div>'
+      + '<div style="margin-top:8px;border:1px dashed #e8d8c6;border-radius:10px;padding:7px 9px;font-size:13px;color:#5b4a3e">📦 ' + esc(o.items || '—') + '<br>❓ ' + esc(o.reason || '—') + '<br>🚚 ' + esc(o.parcel) + (o.tracking_no ? ' · ' + esc(o.tracking_no) + (o.courier ? ' · ' + esc(o.courier) : '') : '') + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px"><a class="bd-btn sm" href="tel:' + esc(String(o.phone).replace(/\D/g, '').slice(-10)) + '" style="text-decoration:none">📞 Call</a><a class="bd-btn sm" href="' + wa(o.phone) + '" target="_blank" rel="noopener" style="text-decoration:none">💬 WhatsApp</a><button class="bd-btn sm ' + (o.done ? '' : 'pri') + '" data-rxd="' + o.id + '|' + (o.done ? 0 : 1) + '" style="margin-left:auto">' + (o.done ? 'Undo' : '✓ Mark done') + '</button></div></div>';
+    return '<div class="md-card"><div class="md-h">↩ RTO / Exchange for you <span style="font-weight:600;font-size:12.5px;opacity:.7">· ' + open.length + ' to do</span></div>' + open.map(one).join('') + (done.length ? '<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;font-size:13px;color:#16a34a">✓ ' + done.length + ' done · tap to see</summary>' + done.map(one).join('') + '</details>' : '') + '</div>';
+  }
   function fuCard() {
     if (!FU || !FU.topics.length) return '';
     const left = FU.topics.filter((t) => !t.done_today).length, n = FU.topics.length;
@@ -346,8 +359,8 @@
     const pin = punchedIn(), redo = !!(PF && PF.redo);
     // Before punch in the day is only the punch-in steps and the Punch In button. Work, penalties and the rest open after it.
     let body = pin && !redo
-      ? dayCard() + fuCard() + lhCard() + '<div id="dinoSlot" style="margin-top:6px"></div>' + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
-      : punchCard() + '<div class="md-wait">Your work for today opens after you punch in.</div>' + (pin ? dayCard() + fuCard() + tasks() : '');
+      ? dayCard() + rxCard() + fuCard() + lhCard() + '<div id="dinoSlot" style="margin-top:6px"></div>' + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
+      : punchCard() + '<div class="md-wait">Your work for today opens after you punch in.</div>' + (pin ? dayCard() + rxCard() + fuCard() + tasks() : '');
     body = body.replace('class="md-card', 'class="md-card pull');   // the first card slides up over the orange header
     $('root').innerHTML = hero() + body;
     if (window.DINO && $('dinoSlot')) $('dinoSlot').appendChild(window.DINO);   // Dino Run sits above Salary so far, only here
@@ -403,6 +416,7 @@
     const b = e.target.closest('button,[data-bd]'); if (!b) return;
     if (b.dataset.bd) { const t = (BDD.tasks || []).find((x) => x.id === Number(b.dataset.bd)); if (t) openTask(t); return; }
     if (b.id === 'punchGo' || b.id === 'punchOutGo') { if (b.id === 'punchOutGo' && PO && PO.locked) { toast('Finish your jobs first.', true); return; } openPunch(); return; }
+    if (b.dataset.rxd) { const [id, dn] = b.dataset.rxd.split('|'); try { b.disabled = true; await api.post('wmo.rx_done', { id: Number(id), done: dn === '1' }); toast(dn === '1' ? 'Marked done ✓' : 'Back to your list.'); rxLoad(); } catch (er) { b.disabled = false; toast(er.message, true); } return; }
     if (b.id === 'poAsk') return askPunchOut();
     if (b.dataset.file) { $('fi' + b.dataset.file).click(); return; }
     if (b.dataset.cam) { const it = PF.items.find((x) => x.rule_id === Number(b.dataset.cam)); return camera('Take a live photo', it.instruction, (blob) => uploadProof(it, blob)); }
