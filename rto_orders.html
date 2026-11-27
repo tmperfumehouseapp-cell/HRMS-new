@@ -20,6 +20,7 @@
   .rx input[type=text],.rx input[type=tel],.rx input[type=number],.rx input[type=date],.rx input[type=search]{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:14px;background:#fff;color:#111;}
   .rx .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .rx .hint{font-size:12.5px;color:var(--muted);margin:5px 0 0;line-height:1.45;}
+  .rx-free{display:flex;gap:14px;align-items:center;border:2px dashed #7ac79a;background:#f0fbf4;border-radius:14px;padding:12px 14px;} .rx-free b{font-size:26px;font-weight:900;color:#0f7a4d;} .rx-free small{display:block;color:#3b6b54;font-weight:500;margin-top:2px;} .rx-tg{display:flex;gap:10px;align-items:center;margin-top:12px;font-weight:700;cursor:pointer;} .rx-sw{width:44px;height:25px;border-radius:99px;background:#cbd5d1;position:relative;flex:none;transition:.2s;} .rx-sw::after{content:'';position:absolute;left:3px;top:3px;width:19px;height:19px;border-radius:50%;background:#fff;transition:.2s;} .rx-sw.on{background:#d97706;} .rx-sw.on::after{left:22px;} .rx-extra{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;}
   .rx .note{background:#fffbeb;border:1px solid #fcd34d;border-radius:11px;padding:9px 12px;font-size:12.5px;color:#92400e;margin-top:10px;line-height:1.45;}
   .rx .ok{background:#e7f8ee;border:1px solid #8fd6a8;color:#14532d;border-radius:12px;padding:12px;margin:0 0 12px;font-size:14px;}
   .rx .err{background:#fdecec;border:1px solid #f1a5a5;color:#7f1d1d;border-radius:12px;padding:12px;margin:0 0 12px;font-size:14px;}
@@ -63,8 +64,9 @@
   const inr = (n) => '₹' + Math.round(+n || 0).toLocaleString('en-IN');
   const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const KIND = { rto: '↩ RTO resend', exchange: '🔁 Exchange' };
+  const WHY = { exchange: ['Damaged perfume', 'Wrong perfume sent', 'Customer did not like it', 'Other'], rto: ['Courier could not deliver', 'Customer not reachable', 'Address corrected', 'Other'] };      // why the parcel goes again: saved with the order and counted in the report
   let A = { ok: false, admin: false, report: false }, TAB = '';
-  const F = { kind: '', old: '', phone: '', name: '', addr1: '', landmark: '', pin: '', city: '', state: '', pay: 'cod', paid: '', cod: '', items: new Map(), cat: 'perfume', q: '', draft: 0, busy: false, msg: '' };
+  const F = { kind: '', old: '', phone: '', name: '', addr1: '', landmark: '', pin: '', city: '', state: '', pay: 'cod', paid: '', cod: '', why: '', extra: false, items: new Map(), cat: 'perfume', q: '', draft: 0, busy: false, msg: '' };
   const R = { range: 'today', from: '', to: '', data: null };
 
   function tabs() {
@@ -83,22 +85,25 @@
     const seg = (id, opts, cur) => '<div class="rx-seg" id="' + id + '">' + opts.map(([k, l]) => '<button type="button" data-v="' + k + '" class="' + (cur === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
     $('rxBody').innerHTML = '<div class="rx-card">' + (F.msg || '')
       + '<label style="margin-top:0">1. What is it? *</label>' + seg('fKind', [['rto', KIND.rto], ['exchange', KIND.exchange]], F.kind)
-      + '<label>2. Old order number * <span style="font-weight:500">(the parcel that came back, or the order being exchanged)</span></label><input type="text" id="fOld" maxlength="40" placeholder="e.g. #67567 or WM-00012" value="' + v(F.old) + '">'
-      + '<label>3. Customer *</label><div class="row"><input type="tel" id="fPhone" inputmode="numeric" maxlength="14" placeholder="10-digit mobile number" value="' + v(F.phone) + '"><input type="text" id="fName" placeholder="Full name" value="' + v(F.name) + '"></div>'
-      + '<label>4. Address * <span style="font-weight:500">(no link goes to the customer: type it here)</span></label><input type="text" id="fAddr" placeholder="House, street, area" value="' + v(F.addr1) + '">'
+      + '<label>2. Why? * <span style="font-weight:500">(helps the report)</span></label>' + (F.kind ? seg('fWhy', WHY[F.kind].map((x) => [x, x]), F.why) : '<div class="hint">Choose what it is first.</div>')
+      + '<label>3. Old order number * <span style="font-weight:500">(the parcel that came back, or the order being exchanged)</span></label><input type="text" id="fOld" maxlength="40" placeholder="e.g. #67567 or WM-00012" value="' + v(F.old) + '">'
+      + '<label>4. Customer *</label><div class="row"><input type="tel" id="fPhone" inputmode="numeric" maxlength="14" placeholder="10-digit mobile number" value="' + v(F.phone) + '"><input type="text" id="fName" placeholder="Full name" value="' + v(F.name) + '"></div>'
+      + '<label>5. Address * <span style="font-weight:500">(no link goes to the customer: type it here)</span></label><input type="text" id="fAddr" placeholder="House, street, area" value="' + v(F.addr1) + '">'
       + '<div class="row" style="margin-top:8px"><input type="text" id="fLm" placeholder="Landmark (optional)" value="' + v(F.landmark) + '"><input type="tel" id="fPin" inputmode="numeric" maxlength="6" placeholder="Pincode" value="' + v(F.pin) + '"></div>'
       + '<div class="row" style="margin-top:8px"><input type="text" id="fCity" placeholder="City" value="' + v(F.city) + '"><input type="text" id="fState" placeholder="State" value="' + v(F.state) + '"></div>'
-      + '<label>5. Payment *</label>' + seg('fPay', [['cod', 'Full COD'], ['partial', 'Part prepaid + COD'], ['prepaid', 'Full prepaid']], F.pay)
-      + '<div class="row" style="margin-top:8px">' + (F.pay !== 'cod' ? '<div><div class="hint" style="margin:0 0 3px">Prepaid amount (₹0 or ₹1 is fine)</div><input type="number" id="fPaid" inputmode="decimal" min="0" step="1" placeholder="0" value="' + v(F.paid) + '"></div>' : '')
-      + (F.pay !== 'prepaid' ? '<div><div class="hint" style="margin:0 0 3px">COD the courier must collect</div><input type="number" id="fCod" inputmode="decimal" min="1" step="1" placeholder="e.g. 1850" value="' + v(F.cod) + '"></div>' : '') + '</div>'
-      + '<div class="note">No payment screenshot is needed here. These amounts are only for the courier — the order is <b>not</b> counted as a sale, in the daily collection or in commission.</div>'
-      + '<label>6. Perfumes / products *</label>' + seg('fCat', [['perfume', 'Perfume'], ['chain', 'Chain'], ['other', 'Other product']], F.cat)
+      + '<label>6. Payment</label><div class="rx-free"><b>₹0</b><div><strong>Free order — the customer pays nothing</strong><small>The courier collects ₹0. Not counted as a sale, in the daily collection or in commission. No screenshot needed.</small></div></div>'
+      + '<label class="rx-tg" id="fExtra"><span class="rx-sw ' + (F.extra ? 'on' : '') + '"></span><span>The customer has to pay something extra <span style="font-weight:500;color:var(--muted)">(for example, he takes a costlier perfume)</span></span></label>'
+      + (F.extra ? '<div class="rx-extra">' + seg('fPay', [['cod', 'Full COD'], ['partial', 'Part prepaid + COD'], ['prepaid', 'Full prepaid']], F.pay)
+      + '<div class="row" style="margin-top:8px">' + (F.pay !== 'cod' ? '<div><div class="hint" style="margin:0 0 3px">Prepaid amount</div><input type="number" id="fPaid" inputmode="decimal" min="0" step="1" placeholder="0" value="' + v(F.paid) + '"></div>' : '')
+      + (F.pay !== 'prepaid' ? '<div><div class="hint" style="margin:0 0 3px">COD the courier must collect</div><input type="number" id="fCod" inputmode="decimal" min="1" step="1" placeholder="e.g. 300" value="' + v(F.cod) + '"></div>' : '') + '</div>'
+      + '<div class="note">No payment screenshot is needed here. These amounts are only for the courier — the order is <b>not</b> counted as a sale, in the daily collection or in commission.</div></div>' : '')
+      + '<label>7. Perfumes / products *</label>' + seg('fCat', [['perfume', 'Perfume'], ['chain', 'Chain'], ['other', 'Other product']], F.cat)
       + '<input type="search" id="fQ" placeholder="Search the name…" autocomplete="off" style="margin-top:8px" value="' + v(F.q) + '"><div class="rx-res" id="fRes"></div><div id="fItems"></div>'
       + '<button class="btn go" id="fGo" type="button">✅ Create the order</button>'
       + '<p class="hint" style="text-align:center;margin-top:8px">The order gets the next number in the same series (WM-…), goes to Dispatch and Shiprocket, and the perfumes are counted in the SKU sheet.</p></div>';
     drawItems();
-    const pick = (id, key, redraw) => { $(id).onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; keepForm(); F[key] = b.dataset.v; F.msg = ''; if (key === 'cat') F.q = ''; drawNew(); if (redraw) redraw(); }; };
-    pick('fKind', 'kind'); pick('fPay', 'pay'); pick('fCat', 'cat', () => { $('fQ').focus(); search(); });
+    const pick = (id, key, redraw) => { const el = $(id); if (!el) return; el.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; keepForm(); if (key === 'kind' && F.kind !== b.dataset.v) F.why = ''; F[key] = b.dataset.v; F.msg = ''; if (key === 'cat') F.q = ''; drawNew(); if (redraw) redraw(); }; };
+    pick('fKind', 'kind'); pick('fWhy', 'why'); pick('fPay', 'pay'); if ($('fExtra')) $('fExtra').onclick = () => { keepForm(); F.extra = !F.extra; if (F.extra && F.pay === 'prepaid' && !F.paid) F.pay = 'cod'; drawNew(); }; pick('fCat', 'cat', () => { $('fQ').focus(); search(); });
     let deb = 0; $('fQ').oninput = () => { clearTimeout(deb); deb = setTimeout(search, 280); };
     $('fPin').oninput = async () => { const p = $('fPin').value.replace(/\D+/g, ''); if (p.length !== 6) return; try { const g = await api.get('wmo.pin', { pin: p }); if ($('fPin') && $('fPin').value.replace(/\D+/g, '') === p) { if (g.city && !$('fCity').value) $('fCity').value = g.city; if (g.state && !$('fState').value) $('fState').value = g.state; } } catch (e) { /* typed by hand */ } };
     $('fGo').onclick = create;
@@ -128,15 +133,16 @@
   function fail(m) { F.msg = '<div class="err">' + esc(m) + '</div>'; drawNew(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   async function create() {
     if (F.busy) return; keepForm(); F.msg = '';
-    const phone = F.phone.replace(/\D+/g, '').slice(-10), pin = F.pin.replace(/\D+/g, ''), paid = F.pay === 'cod' ? 0 : Math.max(0, +F.paid || 0), cod = F.pay === 'prepaid' ? 0 : Math.max(0, +F.cod || 0);
+    const phone = F.phone.replace(/\D+/g, '').slice(-10), pin = F.pin.replace(/\D+/g, ''), pay = F.extra ? F.pay : 'prepaid', paid = !F.extra || F.pay === 'cod' ? 0 : Math.max(0, +F.paid || 0), cod = !F.extra || F.pay === 'prepaid' ? 0 : Math.max(0, +F.cod || 0);      // a free order: the courier collects nothing
     if (!F.kind) return fail('Choose RTO resend or Exchange.');
+    if (!F.why) return fail('Choose why (the reason).');
     if (F.old.replace(/^#/, '').trim().length < 3) return fail('Type the old order number. It is required.');
     if (!/^[6-9]\d{9}$/.test(phone)) return fail('Type the customer\'s 10-digit mobile number.');
     if (F.name.trim().length < 2) return fail('Type the customer\'s full name.');
     if (F.addr1.trim().length < 5) return fail('Type the house / flat and street.');
     if (!/^[1-9]\d{5}$/.test(pin)) return fail('Type the 6-digit pincode.');
     if (!F.city.trim() || !F.state.trim()) return fail('Type the city and the state.');
-    if (F.pay !== 'prepaid' && cod < 1) return fail('Type the COD amount the courier must collect (or choose Full prepaid).');
+    if (F.extra && pay !== 'prepaid' && cod < 1) return fail('Type the COD amount the courier must collect (or choose Full prepaid).');
     if (!F.items.size) return fail('Add at least one perfume or product.');
     const its = Array.from(F.items.values()), pk = (c) => its.filter((x) => x.cat === c).map((x) => ({ vid: x.vid, qty: x.qty }));
     F.busy = true; const b = $('fGo'); b.disabled = true; b.textContent = 'Creating…';
@@ -144,11 +150,11 @@
       await api.post('wmo.start', { phone, name: F.name.trim(), rx: 1 });
       if (F.draft) { try { await api.post('wmo.cancel', { id: F.draft }); } catch (e) { /* the old try is left as it is */ } F.draft = 0; }
       const cust = { name: F.name.trim(), phone, addr1: F.addr1.trim(), landmark: F.landmark.trim(), pin, city: F.city.trim(), state: F.state.trim() };
-      const c = await api.post('wmo.create', { phone, otype: F.kind, old_order: F.old.trim(), pay: F.pay, paid, cod, total: paid + cod, lines: pk('perfume'), chains: pk('chain'), singles: pk('other'), cust });
+      const c = await api.post('wmo.create', { phone, otype: F.kind, old_order: F.old.trim(), reason: F.why, pay, paid, cod, total: paid + cod, lines: pk('perfume'), chains: pk('chain'), singles: pk('other'), cust });
       F.draft = c.order.id;
       const done = await api.post('wmo.confirm', { id: F.draft, cust });
       const no = done.order_no || c.order.order_no;
-      Object.assign(F, { kind: '', old: '', phone: '', name: '', addr1: '', landmark: '', pin: '', city: '', state: '', pay: 'cod', paid: '', cod: '', q: '', draft: 0 }); F.items = new Map();
+      Object.assign(F, { kind: '', old: '', phone: '', name: '', addr1: '', landmark: '', pin: '', city: '', state: '', pay: 'cod', paid: '', cod: '', why: '', extra: false, q: '', draft: 0 }); F.items = new Map();
       F.msg = '<div class="ok">✅ <b>' + esc(no) + '</b> is created. It is in Dispatch now and the Shiprocket order is being made. The customer gets the “order received” message.</div>';
     } catch (e) { F.msg = '<div class="err">' + esc(e.message) + '</div>'; }
     F.busy = false; drawNew(); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -176,9 +182,10 @@
     else {
       h += '<div class="rx-tiles"><div class="rx-tile"><b>' + (s.rto || 0) + '</b><small>RTO resend made</small></div><div class="rx-tile"><b>' + (s.exchange || 0) + '</b><small>Exchange made</small></div><div class="rx-tile"><b>' + inr(s.cod) + '</b><small>COD to collect</small></div><div class="rx-tile"><b>' + (s.tracked || 0) + ' / ' + (s.count || 0) + '</b><small>tracking ID given</small></div></div>';
       if ((D.by || []).length) h += '<p class="hint" style="margin:0 0 10px"><b>Made by:</b> ' + D.by.map((x) => esc(x.name || '—') + ' — ' + x.rto + ' RTO, ' + x.exchange + ' exchange').join(' · ') + '</p>';
+      { const cnt = {}; rows.forEach((r) => { const k = (r.kind === 'rto' ? 'RTO resend' : 'Exchange') + ' — ' + (r.reason || 'no reason'); cnt[k] = (cnt[k] || 0) + 1; }); const ks = Object.keys(cnt).sort(); if (ks.length) h += '<p class="hint" style="margin:0 0 10px"><b>By reason:</b> ' + ks.map((k) => esc(k) + ' ' + cnt[k]).join(' · ') + '</p>'; }
       if ((D.days || []).length > 1) h += '<p class="hint" style="margin:0 0 10px"><b>Day by day:</b> ' + D.days.map((x) => esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + ': ' + x.rto + ' RTO, ' + x.exchange + ' exch').join(' · ') + '</p>';
-      h += rows.length ? '<div class="rx-tw"><table><tr><th>Order</th><th>Kind</th><th>Old order</th><th>Made at</th><th>Customer</th><th>Perfumes</th><th>Prepaid</th><th>COD</th><th>Made by</th><th>Tracking</th><th>Status</th></tr>'
-        + rows.map((r) => '<tr><td><b>' + esc(r.order_no) + '</b></td><td><span class="rx-p ' + esc(r.kind) + '">' + (r.kind === 'rto' ? 'RTO resend' : 'Exchange') + '</span></td><td>' + esc(r.old_order) + '</td><td>' + esc(r.created_at.slice(5, 16)) + '</td><td>' + esc(r.customer || '—') + ' · ' + esc(r.phone) + (r.city ? '<br><small style="color:var(--muted)">' + esc(r.city) + '</small>' : '') + '</td><td class="w">' + esc(r.items) + '</td><td>' + inr(r.prepaid) + '</td><td>' + inr(r.cod) + '</td><td>' + esc(r.by) + '</td><td>' + (r.tracking_no ? esc(r.tracking_no) + '<br><small style="color:var(--muted)">' + esc(r.courier) + '</small>' : '—') + '</td><td>' + esc(r.status) + (r.sr_status ? '<br><small style="color:var(--muted)">' + esc(r.sr_status) + '</small>' : '') + '</td></tr>').join('') + '</table></div>'
+      h += rows.length ? '<div class="rx-tw"><table><tr><th>Order</th><th>Kind</th><th>Old order</th><th>Why</th><th>Made at</th><th>Customer</th><th>Perfumes</th><th>Prepaid</th><th>COD</th><th>Made by</th><th>Tracking</th><th>Status</th></tr>'
+        + rows.map((r) => '<tr><td><b>' + esc(r.order_no) + '</b></td><td><span class="rx-p ' + esc(r.kind) + '">' + (r.kind === 'rto' ? 'RTO resend' : 'Exchange') + '</span></td><td>' + esc(r.old_order) + '</td><td>' + esc(r.reason || '—') + '</td><td>' + esc(r.created_at.slice(5, 16)) + '</td><td>' + esc(r.customer || '—') + ' · ' + esc(r.phone) + (r.city ? '<br><small style="color:var(--muted)">' + esc(r.city) + '</small>' : '') + '</td><td class="w">' + esc(r.items) + '</td><td>' + inr(r.prepaid) + '</td><td>' + inr(r.cod) + '</td><td>' + esc(r.by) + '</td><td>' + (r.tracking_no ? esc(r.tracking_no) + '<br><small style="color:var(--muted)">' + esc(r.courier) + '</small>' : '—') + '</td><td>' + esc(r.status) + (r.sr_status ? '<br><small style="color:var(--muted)">' + esc(r.sr_status) + '</small>' : '') + '</td></tr>').join('') + '</table></div>'
         : '<p class="hint">No RTO resend or Exchange order was made in these days.</p>';
     }
     $('rxBody').innerHTML = '<div class="rx-card wide">' + h + '</div>';
@@ -191,7 +198,7 @@
   }
   function excel() {
     const rows = (R.data && R.data.rows) || []; if (!rows.length) return alert('Nothing to download for these days.');
-    const cols = [['Order', 'order_no'], ['Kind', 'kind'], ['Old order', 'old_order'], ['Made at', 'created_at'], ['Customer', 'customer'], ['Mobile', 'phone'], ['City', 'city'], ['Perfumes', 'items'], ['Payment', 'pay'], ['Prepaid', 'prepaid'], ['COD', 'cod'], ['Made by', 'by'], ['Tracking ID', 'tracking_no'], ['Courier', 'courier'], ['Status', 'status'], ['Shiprocket says', 'sr_status']];
+    const cols = [['Order', 'order_no'], ['Kind', 'kind'], ['Old order', 'old_order'], ['Why', 'reason'], ['Made at', 'created_at'], ['Customer', 'customer'], ['Mobile', 'phone'], ['City', 'city'], ['Perfumes', 'items'], ['Payment', 'pay'], ['Prepaid', 'prepaid'], ['COD', 'cod'], ['Made by', 'by'], ['Tracking ID', 'tracking_no'], ['Courier', 'courier'], ['Status', 'status'], ['Shiprocket says', 'sr_status']];
     const c = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     const txt = [cols.map((x) => c(x[0])).join(',')].concat(rows.map((r) => cols.map((x) => c(x[1] === 'kind' ? (r.kind === 'rto' ? 'RTO resend' : 'Exchange') : r[x[1]])).join(','))).join('\r\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + txt], { type: 'text/csv;charset=utf-8' })); a.download = 'rto_exchange_' + rangeOf().join('_to_') + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
