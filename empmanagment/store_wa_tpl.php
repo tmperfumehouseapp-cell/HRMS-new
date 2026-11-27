@@ -72,7 +72,7 @@ function swt_thumb(array $r): string
 function swt_out(PDO $pdo, array $r, string $waba): array
 {
     $t = wa_tpl_row($pdo, (int)$r['id']); if (!$t) return [];
-    $st = 'draft'; $why = ''; $meta = ''; try { $q = $pdo->prepare("SELECT status, reason, meta_id FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $q->execute([(int)$r['id'], $waba]); $x = $q->fetch(); if ($x) { $st = strtoupper((string)$x['status']) ?: 'PENDING'; $why = (string)$x['reason']; $meta = (string)$x['meta_id']; } } catch (Throwable $e) { }
+    $st = 'draft'; $why = ''; $meta = ''; try { $q = $pdo->prepare("SELECT status, reason, meta_id FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $q->execute([(int)$r['id'], $waba]); $x = $q->fetch(); if ($x) { $st = strtoupper((string)$x['status']) ?: 'PENDING'; $why = (string)$x['reason']; if (strtoupper($why) === 'NONE') $why = ''; $meta = (string)$x['meta_id']; } } catch (Throwable $e) { }
     $sentAnywhere = false; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ?"); $q->execute([(int)$r['id']]); $sentAnywhere = (int)$q->fetchColumn() > 0; } catch (Throwable $e) { }
     $photo = ''; if ((int)($t['header_lib_id'] ?? 0) > 0) { $lr = wa_tpl_lib_row($pdo, (int)$t['header_lib_id']); if ($lr) $photo = (string)$lr['title']; }
     $ex = is_array($t['examples'] ?? null) ? $t['examples'] : [];
