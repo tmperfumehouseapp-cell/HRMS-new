@@ -436,8 +436,26 @@ function wa_tpl_budget(PDO $pdo, string $waba): array
     return ['ok' => $why === '', 'why' => $why, 'hour' => $h, 'day' => $d, 'total' => $t, 'hour_cap' => $hc, 'day_cap' => $dc, 'total_cap' => $tc];
 }
 /** One submission with all the guards. Returns [ok, note]. $budget['left'] counts the submissions this run may still make. */
+/** owner 27 Nov 2026: a WhatsApp account that REJECTS every new message (20+ rejected and none approved in 24 hours) is skipped for new messages for 6 hours; then it is tried again for an hour, and skipped again if it still rejects ("wait until it is green, then switch it on again"). [account id => skipped until]. Off: wa_waba_skip_on = 0. */
+function wa_waba_skip(PDO $pdo): array
+{
+    static $c = null, $at = 0; if ($c !== null && time() - $at < 120) return $c; $at = time(); $c = [];
+    try { if ((string)setting_get($pdo, 'wa_waba_skip_on', '1') === '0') return $c;
+        $j = json_decode((string)setting_get($pdo, 'wa_waba_skip', ''), true); if (!is_array($j)) $j = []; $sk = is_array($j['skip'] ?? null) ? $j['skip'] : []; $now = time();
+        if ((int)($j['at'] ?? 0) < $now - 1800) {
+            foreach ($pdo->query("SELECT waba_id, SUM(UPPER(status) = 'REJECTED'), SUM(UPPER(status) = 'APPROVED') FROM wa_tpl_waba WHERE updated_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "' GROUP BY waba_id")->fetchAll(PDO::FETCH_NUM) as $r) {
+                $w = (string)$r[0]; $until = (int)($sk[$w] ?? 0); if ($until > $now) continue; if ($until > 0 && $until > $now - 3600) continue;   // its trial hour after a skip
+                if ((int)$r[1] >= 20 && (int)$r[2] === 0) { $sk[$w] = $now + 6 * 3600; if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'WhatsApp account ' . $w . ' rejected ' . (int)$r[1] . ' new messages in 24 hours and approved none: no new message is sent to it for 6 hours, then it is tried again'); } elseif ($until > 0 && (int)$r[2] > 0) unset($sk[$w]);
+            }
+            setting_set($pdo, 'wa_waba_skip', json_encode(['at' => $now, 'skip' => $sk]));
+        }
+        foreach ($sk as $w => $u) if ((int)$u > $now) $c[(string)$w] = (int)$u;
+    } catch (Throwable $e) { }
+    return $c;
+}
 function wa_tpl_try_create(PDO $pdo, array $tpl, string $waba, array &$budget): array
 {
+    $__sk = function_exists('wa_waba_skip') ? wa_waba_skip($pdo) : []; if (isset($__sk[$waba])) return [false, 'this WhatsApp account rejects every new message now: skipped until ' . date('d M H:i', $__sk[$waba])];
     $queue = function () use ($pdo, $tpl) { try { if (empty(wa_mix_extra($tpl)['queued'])) wa_mix_extra_set($pdo, (int)$tpl['id'], ['queued' => 1]); } catch (Throwable $e) { } };   // not sent for lack of room: the engine picks it up later
     if (($budget['left'] ?? 0) <= 0) { $queue(); return [false, 'over the limit for one run - continues in the next minute']; }
     $b = wa_tpl_budget($pdo, $waba); if (!$b['ok']) { $queue(); return [false, $b['why']]; }
@@ -558,7 +576,9 @@ function wa_fam_market_rewrite(array $t, int $ver, string $reason): array
 /** Why a message needs an alternative right now ('' = fine). */
 function wa_fam_trouble(array $r, array $have): string
 {
-    foreach ($have as $w) { $s = strtoupper((string)$w['status']);
+    /* owner 27 Nov 2026: a message that is APPROVED on another account is not in trouble because one account rejected it (one account rejects every new message: each of the day's messages got a calmer _v2 and _v3 that nobody needs) */
+    $__okAny = false; foreach ($have as $w) if (strtoupper((string)$w['status']) === 'APPROVED') { $__okAny = true; break; }
+    foreach ($have as $w) { $s = strtoupper((string)$w['status']); if ($s === 'REJECTED' && $__okAny) continue;
         if ($s === 'REJECTED' && (string)$w['meta_id'] !== '' ) return 'rejected by Meta' . ((string)$w['reason'] !== '' ? ' (' . mb_substr((string)$w['reason'], 0, 60) . ')' : '');
         if ($s === 'REJECTED' && (string)$w['reason'] !== '' && !preg_match('/reach|answer|WA_APP_ID|WA_TOKEN|photo|video|PDF|file|library|sample|upload|limit/i', (string)$w['reason'])) return 'rejected by Meta (' . mb_substr((string)$w['reason'], 0, 60) . ')';
         if (in_array($s, ['PAUSED', 'DISABLED', 'FLAGGED'], true)) return 'paused by Meta';
