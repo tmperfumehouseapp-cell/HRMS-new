@@ -92,7 +92,7 @@ function wag_adleads_chat(PDO $pdo, array $phones, string $from): array
     // manual orders (wmo_order): who made it, how it is paid, proof
     $man = [];
     try { foreach (array_chunk($phones, 300) as $ch) {
-        $q = $pdo->prepare("SELECT order_no, phone, emp_id, assign_emp, status, pay, total_p, paid_p, utr, shot_mime, created_at FROM wmo_order WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND created_at >= ? AND status <> 'cancelled'");
+        $q = $pdo->prepare("SELECT order_no, phone, emp_id, assign_emp, status, pay, total_p, paid_p, utr, shot_mime, created_at FROM wmo_order WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND created_at >= ? AND status <> 'cancelled' AND COALESCE(otype, '') NOT IN ('rto','exchange')");
         $q->execute(array_merge($ch, [$from])); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $man[(string)$r['order_no']] = $r; } } catch (Throwable $e) { }
     // every order of those days (Shopify + manual), matched on the last 10 digits
     $ords = []; $keys = [];

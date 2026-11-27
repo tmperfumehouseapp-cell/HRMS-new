@@ -493,7 +493,7 @@ function fi_simple_summary(PDO $pdo, string $day, string $win): array
     foreach (['Cancelled', 'Failed'] as $kind) { $b = array_values(array_filter($bad, fn($x) => $x['kind'] === $kind)); if (!$b) continue;
         $L[] = '   ' . $kind . ': ' . count($b) . ' | ' . $r2(array_sum(array_column($b, 'tot'))) . ' (money that had come in: ' . $r2(array_sum(array_column($b, 'paid'))) . ')';
         foreach ($b as $x) $L[] = '      ' . $x['no'] . ' | ' . substr($x['at'], 11, 5) . ' | ' . $r2($x['tot']) . ' | paid ' . $r2($x['paid']) . ' | ' . ($x['pm'] ?: '-') . ' | ' . $x['st']; }
-    try { $q = $pdo->prepare("SELECT order_no, id, total_p, paid_p, gateway, cancelled_at FROM wmo_order WHERE status = 'cancelled' AND cancelled_at >= ? AND cancelled_at < ? ORDER BY cancelled_at"); $q->execute([$w0, $w1]); $mc = $q->fetchAll();
+    try { $q = $pdo->prepare("SELECT order_no, id, total_p, paid_p, gateway, cancelled_at FROM wmo_order WHERE status = 'cancelled' AND COALESCE(otype, '') NOT IN ('rto','exchange') AND cancelled_at >= ? AND cancelled_at < ? ORDER BY cancelled_at"); $q->execute([$w0, $w1]); $mc = $q->fetchAll();
         $L[] = 'CANCELLED manual (WhatsApp) orders: ' . count($mc);
         foreach ($mc as $x) $L[] = '      ' . ((string)$x['order_no'] !== '' ? $x['order_no'] : 'draft #' . $x['id']) . ' | ' . substr((string)$x['cancelled_at'], 11, 5) . ' | ' . $r2((int)$x['total_p']) . ' | paid ' . $r2((int)$x['paid_p']) . ' | ' . ($x['gateway'] ?: '-'); } catch (Throwable $e) { $L[] = 'cancelled manual orders: not readable'; }
     $L[] = '================================================';
