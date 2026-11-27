@@ -104,6 +104,27 @@ if (!function_exists('wof_run')) {
             if ($sent > 0 || (string)setting_get($pdo, 'wo_now', '1') === '0') $pdo->prepare("INSERT INTO wq_meta (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")->execute(['offerhold:' . $k, (string)(time() + 240)]);
         } catch (Throwable $e) { try { setting_set($pdo, 'wo_tap_err', date('H:i:s') . ' ' . mb_substr($e->getMessage(), 0, 120)); } catch (Throwable $e2) { } }
     }
+    /** owner 27 Nov 2026: "after the offer ONE follow-up, very light, when no answer comes". 2 hours after an offer that he did not answer (no message of his, no person of ours wrote, no order), one short free text goes inside his 24-hour window: the price is still ready, a 'haan' is enough. One per offer, 09:00-21:30, at most 40 a minute. A night offer is followed up in the morning. Off: wo_follow = 0; the wait in minutes: wo_follow_min (120). Kept in wa_offer as kind 'follow', ok = 2 (so the offer counts stay what they were). Returns the number sent. */
+    function wof_follow(PDO $pdo, int $now): int
+    {
+        if ((string)setting_get($pdo, 'wo_follow', '1') === '0') return 0; $hm = (int)date('G', $now) * 60 + (int)date('i', $now); if ($hm < 9 * 60 || $hm >= 21 * 60 + 30) return 0;
+        $wait = max(30, (int)setting_get($pdo, 'wo_follow_min', '120')) * 60; $n = 0; $t0 = microtime(true);
+        $q = $pdo->prepare("SELECT o.id, o.phone, o.at FROM wa_offer o WHERE o.ok = 1 AND o.mode = 'live' AND o.kind <> 'follow' AND o.at >= ? AND o.at <= ? AND NOT EXISTS (SELECT 1 FROM wa_offer f WHERE f.phone = o.phone AND f.kind = 'follow' AND f.at >= o.at) ORDER BY o.at DESC LIMIT 200");
+        $q->execute([date('Y-m-d H:i:s', $now - 13 * 3600), date('Y-m-d H:i:s', $now - $wait)]); $rows = $q->fetchAll(PDO::FETCH_ASSOC); if (!$rows) return 0;   // an offer older than 13 hours is not followed up (13 h covers a late-evening offer followed up at 09:00)
+        $emp = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'emp' AND ts > ? LIMIT 1"); $ord = $pdo->prepare("SELECT 1 FROM wa_order_attr WHERE phone IN (?, ?) AND order_at >= ? LIMIT 1");
+        $ins = $pdo->prepare("INSERT INTO wa_offer (phone, reply_at, kind, pct, qty, ml, price, asked, mode, ok, why, body, at) VALUES (?, ?, 'follow', 0, 0, 0, 0, 0, 'live', ?, ?, ?, ?)"); $seen = [];
+        $T = ["Sir 😊 upar jo price bheja he wo aapke liye abhi bhi ready he.\n\nKoi sawal ho to bataiye, ya bas *haan* likh dijiye — order hum bana denge ✅", "Ji 🙏 bas yaad dila rahe hain: upar wala price aaj aapke liye ready he.\n\nPerfume chunne me madad chahiye to bataiye, ya *haan* likh dijiye ✅"];
+        foreach ($rows as $r) { if ($n >= 40 || microtime(true) - $t0 > 12) break; $ph = (string)$r['phone']; if (isset($seen[$ph])) continue; $seen[$ph] = 1; $at = (string)$r['at'];
+            $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c || !empty($c['optout']) || !empty($c['camp_optout'])) { $ins->execute([$ph, $at, 0, 'no contact / opted out', '', date('Y-m-d H:i:s')]); continue; }
+            $li = (string)($c['last_in_at'] ?? ''); if ($li === '' || (int)strtotime($li) < $now - 23 * 3600) { $ins->execute([$ph, $at, 0, 'his 24-hour window is over', '', date('Y-m-d H:i:s')]); continue; }
+            if ((int)strtotime($li) > (int)strtotime($at) + 60) { $ins->execute([$ph, $at, 0, 'he wrote after the offer', '', date('Y-m-d H:i:s')]); continue; }
+            $emp->execute([$ph, $at]); if ($emp->fetchColumn()) { $ins->execute([$ph, $at, 0, 'a person of ours wrote after the offer', '', date('Y-m-d H:i:s')]); continue; }
+            $k10 = substr(preg_replace('/\D+/', '', $ph), -10); $ord->execute([$k10, '91' . $k10, $at]); if ($ord->fetchColumn()) { $ins->execute([$ph, $at, 0, 'ordered', '', date('Y-m-d H:i:s')]); continue; }
+            if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $ph)) { $ins->execute([$ph, $at, 0, 'muted (order / ticket)', '', date('Y-m-d H:i:s')]); continue; }
+            $body = $T[abs(crc32($ph)) % count($T)]; $s = wa_send_text($pdo, $c, $body, 'offer', 0);
+            if (!empty($s[0])) { $n++; $ins->execute([$ph, $at, 2, 'follow-up sent', $body, date('Y-m-d H:i:s')]); } else $ins->execute([$ph, $at, 0, 'not sent: ' . mb_substr((string)($s[1] ?? ''), 0, 100), '', date('Y-m-d H:i:s')]); }
+        return $n;
+    }
     /** One run (about a minute): up to $cap customers. Returns [candidates looked at, offers made, sent, notes]. */
     function wof_run(PDO $pdo, int $cap = 30, ?array &$samples = null, bool $simulate = false): array
     {
@@ -154,6 +175,7 @@ if (!function_exists('wof_run')) {
             if ($simulate || $mode !== 'live') continue;
             $s = wa_send_text($pdo, $c, $body, 'offer', 0); if (!empty($s[0])) { $res[2]++; $note('sent ' . (string)($s[1] ?? ''), 1, $o, $body, (int)$asked); if (function_exists('wa_event')) { try { wa_event($pdo, $ph, '🎯 Price offer sent (' . $o['kind'] . ', ' . $o['pct'] . '% column, ' . $o['qty'] . ' x ' . $o['ml'] . ' ml)'); } catch (Throwable $e) { } } } else $note('not sent: ' . (string)($s[1] ?? ''), 0, $o, $body, (int)$asked);
         }
+        if (!$simulate && $only === '' && $mode === 'live') { try { wof_follow($pdo, $now); } catch (Throwable $e) { } }
         if (!$simulate) { try { setting_set($pdo, 'wo_last_res', json_encode(['at' => date('Y-m-d H:i:s'), 'looked' => $res[0], 'made' => $res[1], 'sent' => $res[2]])); } catch (Throwable $e) { } }
         return $res;
     }
