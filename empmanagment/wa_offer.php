@@ -44,15 +44,18 @@ if (!function_exists('wof_run')) {
         $why = ''; $cols = $ch['cols']; $lvl = wof_level($pdo, (string)$c['phone'], $ch);
         [$qty, $size] = wof_want($in, $out);
         if ($lvl !== null && $lvl <= 6.0 + 0.001) {   // he has seen 6% or lower: the NEXT LOWER column (only for the one who asked; an offer that goes lower for nobody who asked is not made)
-            if (!$asked) { $why = 'seen 6% already, did not ask'; return []; }
-            $tc = -1; $tp = -1.0; foreach ($cols as $i => $cv) if ($cv < $lvl - 0.001 && $cv > $tp) { $tp = $cv; $tc = $i; }
-            if ($tc < 0) { $why = 'already at the last column'; return []; } $kind = 'lower';
+            /* owner 27 Nov 2026: EVERY customer who answers gets an offer. The one who did not ask for less, and the one who is at the last column already, get the price they saw ONCE MORE (kind 'again'); a lower price is still only for the one who asked */
+            $same = -1; $sd0 = 1e9; foreach ($cols as $i => $cv) { $d = abs($cv - $lvl); if ($d < $sd0) { $sd0 = $d; $same = $i; } }
+            $tc = -1; $tp = -1.0; if ($asked) foreach ($cols as $i => $cv) if ($cv < $lvl - 0.001 && $cv > $tp) { $tp = $cv; $tc = $i; }
+            if ($tc >= 0) $kind = 'lower'; else { if ($same < 0) { $why = $asked ? 'already at the last column' : 'seen 6% already, did not ask'; return []; } $tc = $same; $kind = 'again'; }
         } elseif ($lvl !== null && $asked) { $tc = -1; $tp = -1.0; foreach ($cols as $i => $cv) if ($cv < $lvl - 0.001 && $cv > $tp) { $tp = $cv; $tc = $i; } if ($tc < 0) { $why = 'no lower column'; return []; } $kind = 'lower'; }
         else { $tc = -1; $bd = 1e9; foreach ($cols as $i => $cv) { $d = abs($cv - 6.0); if ($d < $bd) { $bd = $d; $tc = $i; } } if ($tc < 0) { $why = 'no 6% column'; return []; } $kind = 'six'; }
         $pct = (float)$cols[$tc];
         if ($qty < 1 || $size < 20) {   // nothing named: a combo of his size (else 50 ml) that reaches Rs 2,700+ at this price
             $sz = $size >= 20 ? $size : 50; $qty = 0;
             for ($q = 3; $q <= 12; $q++) { $t = $q * $sz; if (isset($ch['rows'][$t]) && (int)($ch['rows'][$t][$tc] ?? 0) >= 2700) { $qty = $q; break; } }
+            /* owner 27 Nov 2026: the 20 ml customer (25-35 a day tap "20ML") got nothing because no 20 ml combo reaches Rs 2,700: he gets the 160 ml combo (8 x 20 ml, the campaign that sells) or the biggest combo of his size the chart has */
+            if ($qty < 1) { foreach ([8, 12, 10, 6, 5] as $q) { $t = $q * $sz; if (isset($ch['rows'][$t]) && (int)($ch['rows'][$t][$tc] ?? 0) > 0) { $qty = $q; break; } } }
             if ($qty < 1) { $why = 'no combo reaches 2700'; return []; } $size = $sz;
         }
         if ($qty * $size < 100) $qty = (int)ceil(100 / $size);   // our combo minimum (5 x 20 ml = 100 ml): never an offer below 100 ml
@@ -75,9 +78,11 @@ if (!function_exists('wof_run')) {
         elseif (preg_match('/(unisex)/iu', $sd)) $op = 'Ji, unisex perfumes isi offer mein mil jayenge ✨';
         elseif (preg_match('/(\bmen\b|\bmens\b|gents|male|husband|\bboy|पुरुष|જેન્ટ્સ)/iu', $sd)) $op = 'Ji, gents ke liye hamare best perfumes isi offer mein hain 👔';
         elseif (preg_match('/\b(20|30|50|100)\s*ml\b/iu', $sd)) $op = 'Ji, aapne jo size bataya usi ka best price ye raha 👇';
+        elseif (preg_match('/(order|book|kharid|lena h|leni h|\bbuy\b|mangwa|mangana|chahiye|ऑर्डर|ઓર્ડર)/iu', $sd)) $op = 'Ji bilkul, aapka order abhi bana dete hain ✅';
         elseif (!empty($o['asked'])) $op = 'Ji, aapne price pucha tha, ye raha aaj ka best price 👇';
         elseif ($sd !== '') $op = 'Ji, aapke reply ke liye shukriya 🙏 Ye raha aapke liye 👇';
         $op = $op !== '' ? $op . "\n\n" : '';
+        if ($o['kind'] === 'again') return $op . "Sir, aapka khaas price abhi bhi aapke liye ready hai 🎉\n\n" . $hook . "\n\n" . $line . "\n\n⏰ Aaj order karoge to yahi price pakka.\n\nKaunse perfumes chahiye? Bata dijiye, order abhi bana deta hoon 😊✅";
         if ($o['kind'] === 'lower') return $op . "Sir, aapke liye aur bhi khaas price 🎉\n\n" . $hook . "\n\n" . $line . "\n\n⏰ Ye price abhi aapke liye lock hai — aaj hi order karoge to hi.\n\nOrder bana dun? ✅";
         return $op . $season . "\n\n" . $hook . "\n\n" . $line . "\n\n⏰ Ye price aaj ke liye hi — abhi order karoge to hi milega.\n\nKaunse perfumes chahiye? Bata dijiye, order abhi bana deta hoon 😊✅";
     }
@@ -127,9 +132,10 @@ if (!function_exists('wof_run')) {
         /* owner 25 Nov 2026: a customer who answers a Module B / Module C utility message gets the price offer too (they were never looked at: 4,400 wrote a day, ~80 were looked at) */ try { foreach (array_chunk(array_column($cont, 'phone'), 400) as $chk) { $x = $pdo->prepare("SELECT l.phone, MAX(l.at) FROM wa_ru_log l JOIN wa_contacts cc ON cc.phone COLLATE utf8mb4_unicode_ci = l.phone COLLATE utf8mb4_unicode_ci WHERE l.ok = 1 AND l.at >= ? AND l.at < cc.last_in_at AND l.phone IN (" . implode(',', array_fill(0, count($chk), '?')) . ") GROUP BY l.phone"); $x->execute(array_merge([date('Y-m-d H:i:s', $now - $maxAge - 2 * 86400)], $chk)); foreach ($x->fetchAll(PDO::FETCH_NUM) as $r) if (!isset($lp[(string)$r[0]]) || (string)$r[1] > $lp[(string)$r[0]]) $lp[(string)$r[0]] = (string)$r[1]; } } catch (Throwable $e) { /* no utility log yet */ }
         /* owner 25 Nov 2026: and a customer who answers a Module A campaign message (or a recovery message) gets it too */ try { foreach (array_chunk(array_column($cont, 'phone'), 400) as $chk) { $x = $pdo->prepare("SELECT l.phone, MAX(l.ts) FROM wa_messages l JOIN wa_contacts cc ON cc.phone = l.phone WHERE l.dir = 'out' AND l.who IN ('campaign', 'recover', 'followup') AND l.mtype = 'template' AND l.ts >= ? AND l.ts < cc.last_in_at AND l.phone IN (" . implode(',', array_fill(0, count($chk), '?')) . ") GROUP BY l.phone"); $x->execute(array_merge([date('Y-m-d H:i:s', $now - $maxAge - 2 * 86400)], $chk)); foreach ($x->fetchAll(PDO::FETCH_NUM) as $r) if (!isset($lp[(string)$r[0]]) || (string)$r[1] > $lp[(string)$r[0]]) $lp[(string)$r[0]] = (string)$r[1]; } } catch (Throwable $e) { /* nothing to add */ }
         /* owner 25 Nov 2026: and the After-Order messages too (his chat is read the same way; a customer who ordered in the last 2 days still gets no lower price) */ try { foreach (array_chunk(array_column($cont, 'phone'), 400) as $chk) { $x = $pdo->prepare("SELECT l.phone, MAX(l.sent_at) FROM wa_aft_plan l JOIN wa_contacts cc ON cc.phone COLLATE utf8mb4_unicode_ci = l.phone COLLATE utf8mb4_unicode_ci WHERE l.status = 'sent' AND l.sent_at >= ? AND l.sent_at < cc.last_in_at AND l.phone IN (" . implode(',', array_fill(0, count($chk), '?')) . ") GROUP BY l.phone"); $x->execute(array_merge([date('Y-m-d H:i:s', $now - $maxAge - 2 * 86400)], $chk)); foreach ($x->fetchAll(PDO::FETCH_NUM) as $r) if (!isset($lp[(string)$r[0]]) || (string)$r[1] > $lp[(string)$r[0]]) $lp[(string)$r[0]] = (string)$r[1]; } } catch (Throwable $e) { /* no After-Order table yet */ }
-        $done = []; try { $d = $pdo->prepare("SELECT DISTINCT phone FROM wa_offer WHERE at >= ? AND mode = 'live'"); $d->execute([date('Y-m-d H:i:s', $now - 86400)]); foreach ($d->fetchAll(PDO::FETCH_COLUMN) as $p) $done[(string)$p] = 1; } catch (Throwable $e) { }
+        /* owner 27 Nov 2026: one offer in 24 hours stays; but a customer whose earlier reply got only a note ('thanks', 'no combo' …) is read AGAIN when he writes something new (he was skipped for a whole day: "not looked at by the offer run") */
+        $done = []; try { $d = $pdo->prepare("SELECT phone, MAX(ok), MAX(reply_at) FROM wa_offer WHERE at >= ? AND mode = 'live' GROUP BY phone"); $d->execute([date('Y-m-d H:i:s', $now - 86400)]); foreach ($d->fetchAll(PDO::FETCH_NUM) as $p) $done[(string)$p[0]] = (int)$p[1] > 0 ? '9' : (string)$p[2]; } catch (Throwable $e) { }
         foreach ($cont as $r) {
-            if ($res[0] >= $cap || microtime(true) - $t0 > 40) break; $ph = (string)$r['phone']; if (isset($done[$ph]) || !isset($lp[$ph]) || $lp[$ph] >= (string)$r['last_in_at']) continue;
+            if ($res[0] >= $cap || microtime(true) - $t0 > 40) break; $ph = (string)$r['phone']; if ((isset($done[$ph]) && ($done[$ph] === '9' || $done[$ph] >= (string)$r['last_in_at'])) || !isset($lp[$ph]) || $lp[$ph] >= (string)$r['last_in_at']) continue;
             if (!$simulate && $only === '' && (string)setting_get($pdo, 'wo_fast', '1') !== '0' && $now - (int)strtotime((string)$r['last_in_at']) < 60 + (int)(abs(crc32($ph)) % 121)) continue;   // each customer has his own wait between 1 and 3 minutes (so they do not all go at the same second)
             if (!$simulate) { $__t1 = (int)strtotime((string)$r['last_in_at']); if ($now - $__t1 > $fastMax) { $__hm = (int)date('G', $__t1) * 60 + (int)date('i', $__t1); if (!($__hm < 9 * 60 || $__hm >= 21 * 60 + 40)) continue; } }   // older than 2 h and it came in the daytime: too late (a lowered price after hours is no longer 'the same conversation'); a night reply is not too late
             $res[0]++;

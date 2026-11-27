@@ -508,7 +508,10 @@ function wl_calendar(PDO $pdo): array
 /** Send one Lineup message through whatever sender exists (the campaign engine, or the stub of the tests). [ok, reason, number id, wamid]. */
 function wln_send_any(PDO $pdo, array $c, int $tid, string $v2 = ''): array
 {
-    return function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
+    $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
+    /* owner 27 Nov 2026: a message Meta PAUSED for low quality (132015) is not tried again for 6 hours by any rescue (the same list Module B keeps); the rescues tried it for every customer and each refusal counted as a failure */
+    if (empty($res[0]) && preg_match('/\b132015\b|paused/i', (string)($res[1] ?? ''))) { try { $pp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $pp = is_array($pp) ? $pp : []; if ((int)($pp[$tid] ?? 0) < time()) { $pp[$tid] = time() + 6 * 3600; setting_set($pdo, 'wa_ru_tpl_pause', json_encode($pp)); } } catch (Throwable $e) { } }
+    return $res;
 }
 /** THE UTILITY TWIN (owner, 21 Nov: "not one message may fail — if it fails as marketing, send it again as utility on the spot, within one hour"): the utility messages that can say the same thing as this step —
  *  the lineup's own wordings of the step (made as utility) and the shop's utility message #386 — that Meta still counts as UTILITY, are not the message that failed and were not sent to him yet. [[template id, key]]. */
@@ -528,6 +531,9 @@ function wln_twins(PDO $pdo, string $phone, string $topic, int $step, int $faile
     try { if ($o && (string)setting_get($pdo, 'wa_block_dull', '1') !== '0') { if (!function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php';
         if (function_exists('wa_rs_dull')) { $bd = []; foreach ($pdo->query("SELECT id, name, body FROM wa_templates WHERE id IN (" . implode(',', array_map(function ($x) { return (int)$x[0]; }, $o)) . ")")->fetchAll(PDO::FETCH_NUM) as $r) $bd[(int)$r[0]] = [(string)$r[1], (string)$r[2]];
             $good = []; $first = []; foreach ($o as $x) { $b = $bd[(int)$x[0]] ?? null; if ($b && wa_rs_dull($b[1])) continue; if ($b && preg_match('/(_ex_|^tmph_hm_|^rs\d+_|_tw[0-9a-f]+$|^tmph_ord_)/', $b[0])) $first[] = $x; else $good[] = $x; } $o = array_merge($first, $good); } } } catch (Throwable $e) { }
+    /* owner 27 Nov 2026: "5-6 utility messages in turn in every rescue". The first message of the list went to everybody, so one message carried the whole load and Meta paused it (132015); now the paused ones are left out and each customer starts at his own place in the list, so the load is shared by all the usable messages */
+    try { if (count($o) > 1 && (string)setting_get($pdo, 'wln_rotate', '1') !== '0') { $pp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); if (is_array($pp)) { $o2 = array_values(array_filter($o, function ($x) use ($pp) { return (int)($pp[(int)$x[0]] ?? 0) < time(); })); if ($o2) $o = $o2; }
+        $n = count($o); if ($n > 1) { $st = abs(crc32($phone . date('Ymd'))) % $n; $o = array_merge(array_slice($o, $st), array_slice($o, 0, $st)); } } } catch (Throwable $e) { }
     return $o;
 }
 /** How much of what we sent a customer he actually OPENED: [messages sent, messages read]. A customer who never opened 3+ messages does not get the paid (marketing) price steps — the plain utility message goes instead (cheaper, and it protects the numbers' quality); one who read but did not answer gets the price step. */
