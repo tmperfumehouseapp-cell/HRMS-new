@@ -589,7 +589,8 @@ function cx_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
         $r = $load(); $v = cx_views($pdo, [$r], true)[0]; $team = cx_can_work($role, $r);
         $steps = bd_unjson($r['steps_done'], []); $pb = []; foreach (cx_playbook($r['problem']) as $i => $t) $pb[] = ['i' => $i, 'text' => $t, 'done' => isset($steps[(string)$i]) || in_array($i, $steps, true) || isset($steps[$i])];
         $evs = []; $st = $pdo->prepare("SELECT id, at, emp_id, kind, text FROM cx_events WHERE case_id = ? ORDER BY id"); $st->execute([(int)$r['id']]); foreach ($st->fetchAll() as $e) $evs[] = ['id' => (int)$e['id'], 'at' => $e['at'], 'by' => cx_name($pdo, $e['emp_id']), 'kind' => $e['kind'], 'text' => $e['text']];
-        $links = []; $st = $pdo->prepare("SELECT * FROM cx_links WHERE case_id = ? ORDER BY id"); $st->execute([(int)$r['id']]); foreach ($st->fetchAll() as $l) $links[] = ['id' => (int)$l['id'], 'kind' => $l['kind'], 'awb' => $l['awb'], 'courier' => $l['courier'], 'note' => $l['note'], 'plan_date' => $l['plan_date'], 'status' => $l['status'], 'live' => cx_parcel($pdo, '', $l['awb']), 'by' => cx_name($pdo, $l['by_emp'])];
+        $links = []; $wmP = []; $st = $pdo->prepare("SELECT * FROM cx_links WHERE case_id = ? ORDER BY id"); $st->execute([(int)$r['id']]); $lrows = $st->fetchAll(); foreach ($lrows as $l) if ($l['awb'] === '' && preg_match('/\bWM-\d+/', (string)$l['note'], $mm)) { $pp = cx_parcel($pdo, $mm[0], ''); if ($pp) $wmP[(int)$l['id']] = $pp; }      // an order made from this complaint: its parcel (tracking) comes from Dispatch by itself
+        foreach ($lrows as $l) $links[] = ['id' => (int)$l['id'], 'kind' => $l['kind'], 'awb' => $l['awb'] !== '' ? $l['awb'] : (string)($wmP[(int)$l['id']]['awb'] ?? ''), 'courier' => $l['courier'] !== '' ? $l['courier'] : (string)($wmP[(int)$l['id']]['courier'] ?? ''), 'note' => $l['note'], 'plan_date' => $l['plan_date'], 'status' => $l['status'], 'live' => $l['awb'] !== '' ? cx_parcel($pdo, '', $l['awb']) : ($wmP[(int)$l['id']] ?? null), 'by' => cx_name($pdo, $l['by_emp'])];
         $ord = cx_orders($pdo, $r['phone']); $limit = (float)cx_cfg($pdo, 'refund_limit');
         $d = ['case' => $v, 'steps' => $pb, 'events' => $team || $role['mgr'] ? $evs : array_values(array_filter($evs, function ($e) { return in_array($e['kind'], ['raised', 'desk', 'resolve'], true); })), 'links' => $links, 'orders' => $ord, 'parcel' => cx_parcel($pdo, $r['order_name'], $r['awb']), 'can_work' => $team, 'mgr' => $role['mgr'], 'me' => $me,
             'is_owner' => $me && (int)$r['owner_emp'] === $me, 'refund_limit' => $limit, 'desks' => array_map(function ($k, $x) { return ['k' => $k, 'label' => $x[0], 'icon' => $x[1]]; }, array_keys(cx_desks()), cx_desks()), 'resolutions' => cx_resolutions(), 'raised_phone' => $r['phone']];
@@ -695,6 +696,23 @@ function cx_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
         if (function_exists('cx2_restage')) { cx2_restage($pdo, (int)$r['id'], $me); cx2_flag($pdo, (int)$r['id'], false, true); }
         if (function_exists('cx7_auto')) cx7_auto($pdo);   // 📨 pickup booked / replacement shipped → the customer is told now
         json_response(['ok' => true, 'message' => $lab . ' saved.']);
+    }
+    case 'bd.cx_xo_form': {   // 🔁 "Make the exchange order" from a complaint: what the ticket already knows (name, mobile, old order, the last address of this customer, a reason guessed from the problem)
+        $r = $load(true); $v = cx_views($pdo, [$r], true)[0]; $ad = []; $ph10 = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10);
+        if ($ph10 !== '') { try { $q = $pdo->prepare("SELECT addr_json FROM wmo_order WHERE phone = ? AND addr_json IS NOT NULL AND addr_json <> '' ORDER BY id DESC LIMIT 1"); $q->execute([$ph10]); $x = $q->fetchColumn(); if ($x) $ad = json_decode((string)$x, true) ?: []; } catch (Throwable $e) { } }
+        $why = ['leak' => 'Leakage', 'wrong' => 'Wrong perfume sent', 'notliked' => 'Did not like the fragrance', 'quality' => 'Fragrance does not last', 'missing' => 'Item missing / short', 'rto' => 'Courier could not deliver', 'ndr' => 'Courier could not deliver', 'notdelivered' => 'Courier could not deliver'][(string)$r['problem']] ?? '';
+        $kind = in_array((string)$r['problem'], ['rto', 'ndr', 'notdelivered', 'notdispatched'], true) || (string)$r['desk'] === 'resend' ? 'rto' : 'exchange';
+        json_response(['ok' => true, 'case_id' => (int)$r['id'], 'code' => $v['code'] ?? '', 'name' => (string)($r['cust_name'] ?? ''), 'phone' => $ph10, 'old_order' => (string)$r['order_name'], 'address' => ['addr1' => (string)($ad['addr1'] ?? ''), 'landmark' => (string)($ad['landmark'] ?? ''), 'pin' => (string)($ad['pin'] ?? ''), 'city' => (string)($ad['city'] ?? ''), 'state' => (string)($ad['state'] ?? '')], 'why' => $why, 'kind' => $kind, 'me' => $me]);
+    }
+    case 'bd.cx_xo_link': {   // 🔗 the order that was just made from this complaint: written on the ticket (and the ticket on the order); the order is the maker's own work
+        $post(); $r = $load(true); $on = trim((string)($in['order_no'] ?? '')); $q = $pdo->prepare("SELECT id, otype, order_no FROM wmo_order WHERE order_no = ? AND otype IN ('rto','exchange')"); $q->execute([$on]); $o = $q->fetch(); if (!$o) json_response(['error' => 'That order was not found.'], 404);
+        $kind = $o['otype'] === 'rto' ? 'resend' : 'replacement'; $now = bd_now();
+        try { $pdo->prepare("UPDATE wmo_order SET cx_case = ? WHERE id = ?")->execute([(int)$r['id'], (int)$o['id']]); } catch (Throwable $e) { }
+        try { $pdo->prepare("INSERT IGNORE INTO wmo_rx_hand (order_id, emp_id, given_at) VALUES (?,?,?)")->execute([(int)$o['id'], $me, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+        $pdo->prepare("INSERT INTO cx_links (case_id, kind, awb, courier, note, plan_date, status, by_emp, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)")->execute([(int)$r['id'], $kind, '', '', 'Order ' . $o['order_no'], null, 'planned', $me, $now, $now]);
+        cx_ev($pdo, (int)$r['id'], $me, 'link', ($kind === 'resend' ? 'RTO resend order ' : 'Exchange order ') . $o['order_no'] . ' made from this complaint');
+        if (function_exists('cx2_restage')) { cx2_restage($pdo, (int)$r['id'], $me); cx2_flag($pdo, (int)$r['id'], false, true); }
+        json_response(['ok' => true, 'message' => $o['order_no'] . ' is written on this complaint.']);
     }
     case 'bd.cx_link_status': {
         $post(); $r = $load(true); $lid = (int)($in['link_id'] ?? 0); $s = (string)($in['status'] ?? ''); if (!in_array($s, ['booked', 'picked', 'transit', 'received', 'qc_ok', 'shipped', 'delivered', 'cancelled'], true)) json_response(['error' => 'Unknown status.'], 422);
