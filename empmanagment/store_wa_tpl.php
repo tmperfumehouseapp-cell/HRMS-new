@@ -78,6 +78,7 @@ function swt_out(PDO $pdo, array $r, string $waba): array
 }
 function swt_draft_in(array $in): array
 {
+    if (is_array($in['buttons'] ?? null)) $in['buttons'] = st_wa_btns_clean($in['buttons']);      // Meta refuses emoji in buttons
     $ex = []; foreach ((array)($in['examples'] ?? []) as $x) $ex[] = (string)$x; $lab = []; foreach ((array)($in['labels'] ?? []) as $x) $lab[] = (string)$x;
     return ['name' => (string)($in['name'] ?? ''), 'language' => in_array((string)($in['language'] ?? 'en'), ['en', 'gu', 'hi'], true) ? (string)$in['language'] : 'en', 'category' => (string)($in['category'] ?? 'MARKETING'), 'header_format' => (string)($in['header_format'] ?? ''), 'header_lib_id' => (int)($in['header_lib_id'] ?? 0), 'body' => (string)($in['body'] ?? ''), 'footer' => (string)($in['footer'] ?? ''),
         'buttons' => is_array($in['buttons'] ?? null) ? $in['buttons'] : [], 'folder' => 'Store', 'examples' => ['body' => $ex, 'labels' => $lab]];
@@ -139,20 +140,14 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
     }
     if ($action === 'st_wa.tpl_submit') {
         $id = (int)($in['id'] ?? 0); $row = wa_tpl_row($pdo, $id); if (!$row || strpos((string)$row['name'], 'tmph_store_') !== 0) json_response(['error' => 'Message not found.'], 404);
+        $nb = st_wa_btns_clean(array_values((array)($row['buttons'] ?? []))); if ($nb !== array_values((array)($row['buttons'] ?? []))) { $pdo->prepare("UPDATE wa_templates SET buttons = ? WHERE id = ?")->execute([json_encode($nb, JSON_UNESCAPED_UNICODE), $id]); $row['buttons'] = $nb; }      // Meta refuses emoji in buttons
         $d = ['name' => $row['name'], 'language' => $row['language'], 'category' => $row['category'], 'header_format' => $row['header_format'], 'header_text' => $row['header_text'] ?? '', 'header_lib_id' => (int)($row['header_lib_id'] ?? 0), 'body' => $row['body'], 'footer' => $row['footer'], 'buttons' => $row['buttons'], 'examples' => $row['examples']];
         [$t, $err] = wa_tpl_clean($d, false); if ($err !== '') json_response(['error' => $err], 422); $me2 = wa_tpl_media_check($pdo, $row); if ($me2 !== '') json_response(['error' => $me2], 422);
         $q = $pdo->prepare("SELECT status FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $q->execute([$id, $waba]); $cur = $q->fetchColumn(); if ($cur !== false && strtoupper((string)$cur) !== 'REJECTED') json_response(['error' => 'This message is already at Meta (' . strtolower((string)$cur) . ').'], 409);
         [$ok, $why] = wa_tpl_create_at($pdo, $row, $waba); if (!$ok) json_response(['error' => (string)$why], 422); json_response(['ok' => true]);
     }
-    if ($action === 'st_wa.tpl_sync') {
-        $n = 0; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason'; $err = '';
-        for ($page = 0; $page < 5 && $url; $page++) {
-            [$c, $d] = wa_api('GET', $url); if ($c < 200 || $c >= 300 || !is_array($d)) { $err = wa_err(is_array($d) ? $d : null); break; }
-            foreach ((array)($d['data'] ?? []) as $x) { $nm = (string)($x['name'] ?? ''); if (strpos($nm, 'tmph_store_') !== 0) continue; $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = ?"); $q->execute([$nm, (string)($x['language'] ?? 'en')]); $tid = (int)$q->fetchColumn(); if (!$tid) continue;
-                $pdo->prepare("UPDATE wa_tpl_waba SET status = ?, reason = ?, meta_id = ?, updated_at = ?, category = ? WHERE tpl_id = ? AND waba_id = ?")->execute([strtoupper((string)($x['status'] ?? 'PENDING')), mb_substr((string)($x['rejected_reason'] ?? ''), 0, 300), (string)($x['id'] ?? ''), date('Y-m-d H:i:s'), strtoupper((string)($x['category'] ?? '')), $tid, $waba]); $n += 1; }
-            $url = ''; $nx = (string)($d['paging']['next'] ?? ''); if ($nx !== '' && preg_match('#graph\.facebook\.com/[^/]+(/.+)$#', $nx, $m)) $url = $m[1];
-        }
-        if ($err !== '') json_response(['error' => 'Meta did not answer: ' . $err], 502); json_response(['ok' => true, 'updated' => $n]);
+    if ($action === 'st_wa.tpl_sync') {      // also saves messages HRMS still thinks are drafts but Meta has (approved / pending / rejected)
+        [$n, $err] = st_wa_tpl_sync($pdo, $waba); if ($err !== '' && $n === 0) json_response(['error' => 'Meta did not answer: ' . $err], 502); json_response(['ok' => true, 'updated' => $n]);
     }
     if ($action === 'st_wa.tpl_test') {
         $t = wa_tpl_row($pdo, (int)($in['id'] ?? 0)); $p = wa_key($in['phone'] ?? ''); if (!$t || strlen($p) !== 10) json_response(['error' => 'Write your 10-digit mobile number.'], 422); if (!sw_tpl_ok($pdo, $num, (int)$t['id'])) json_response(['error' => 'Meta has not approved this message yet.'], 422);
@@ -179,7 +174,7 @@ function swt_lint(array $t): array
     if (mb_strlen($b) > 1024) $o[] = 'Body is longer than 1024 letters.';
     if (preg_match("/\n\s*\n\s*\n/u", $b)) $o[] = 'Three or more line breaks in a row.';
     if (mb_strlen((string)($t['footer'] ?? '')) > 60) $o[] = 'Footer is longer than 60 letters.';
-    foreach ((array)($t['buttons'] ?? []) as $bt) { if (mb_strlen((string)($bt['text'] ?? '')) > 25) $o[] = 'Button "' . $bt['text'] . '" is longer than 25 letters.'; }
+    foreach ((array)($t['buttons'] ?? []) as $bt) { if (mb_strlen((string)($bt['text'] ?? '')) > 25) $o[] = 'Button "' . $bt['text'] . '" is longer than 25 letters.'; if (function_exists('st_wa_btn_text') && st_wa_btn_text((string)($bt['text'] ?? '')) !== trim((string)($bt['text'] ?? ''))) $o[] = 'Button "' . $bt['text'] . '" has emoji / formatting (Meta refuses this).'; }
     $gu = preg_match_all('/[\x{0A80}-\x{0AFF}]/u', $b); $hi = preg_match_all('/[\x{0900}-\x{097F}]/u', $b); $la = preg_match_all('/[A-Za-z]/u', preg_replace('/\{\{\s*\d+\s*\}\}|TM Perfume House|STOP/u', '', $b));
     if ($lg === 'gu' && $gu < 10) $o[] = 'Language is Gujarati but the body is not in Gujarati letters.';
     if ($lg === 'hi' && $hi < 10) $o[] = 'Language is Hindi but the body is not in Hindi letters.';
@@ -199,7 +194,7 @@ function swt_diag(PDO $pdo, array $num, string $waba): array
         $url = ''; $nx = (string)($d['paging']['next'] ?? ''); if ($nx !== '' && preg_match('#graph\.facebook\.com/[^/]+(/.+)$#', $nx, $m)) $url = $m[1];
     }
     $appOk = (function_exists('wa_app_id') ? wa_app_id($pdo) : (function_exists('wa_cfg_val') ? wa_cfg_val('WA_APP_ID') : '')) !== '';
-    $L = ['STORE TEMPLATE DIAGNOSE · ' . date('d-m-Y H:i'), 'Store number: ' . (string)($num['phone'] ?? '') . ' · WABA ' . $waba . ' · Meta app id for photos: ' . ($appOk ? 'found' : 'NOT FOUND') . ($lerr !== '' ? ' · Meta list error: ' . $lerr : ' · Meta has ' . count($live) . ' Store templates')];
+    $L = ['STORE TEMPLATE DIAGNOSE · ' . date('d-m-Y H:i'), 'Store number: ' . (string)(($num['display'] ?? '') ?: ($num['label'] ?? '')) . ' · WABA ' . $waba . ' · Meta app id for photos: ' . ($appOk ? 'found' : 'NOT FOUND') . ($lerr !== '' ? ' · Meta list error: ' . $lerr : ' · Meta has ' . count($live) . ' Store templates')];
     $items = []; $seen = [];
     foreach ($pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll() as $r) {
         $t = wa_tpl_row($pdo, (int)$r['id']); if (!$t) continue; $lg = (string)($t['language'] ?? 'en');

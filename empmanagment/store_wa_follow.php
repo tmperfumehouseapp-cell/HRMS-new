@@ -43,9 +43,9 @@ function swf_defs(): array
                  2 => "⏳ *Hello {{1}}!*\n\nIt has been a month since you took *{{2}}* 😊\nBy now it may be running low.\n\n🌿 Visit TM Perfume House to refill it before it ends.\nWe would love to see you at the store 🙏",
                  3 => "🌸 *Hello {{1}}!*\n\nYour *{{2}}* must be finished by now 💭\n\n✨ Visit TM Perfume House to refill it or to smell something new.\nWe will be happy to help you choose 🙏"]];
     $foot = ['gu' => 'સંદેશા બંધ કરવા STOP લખો', 'hi' => 'बंद करने के लिए STOP लिखें', 'en' => 'Reply STOP to stop messages'];
-    $btn = ['gu' => [1 => ['😍 ખૂબ ગમ્યું', '🤔 મદદ જોઈએ છે'], 2 => ['📍 હું આવીશ', '⏰ પછી યાદ અપાવો'], 3 => ['😊 હું આવીશ', '🛍️ નવી સુગંધ બતાવો']],
-            'hi' => [1 => ['😍 बहुत पसंद आया', '🤔 मदद चाहिए'], 2 => ['📍 मैं आऊंगा', '⏰ बाद में याद दिलाएं'], 3 => ['😊 मैं आऊंगा', '🛍️ नई खुशबू दिखाएं']],
-            'en' => [1 => ['😍 Loved it', '🤔 Need help'], 2 => ['📍 I will visit', '⏰ Remind me later'], 3 => ['😊 I will visit', '🛍️ Show me something new']]];
+    $btn = ['gu' => [1 => ['ખૂબ ગમ્યું', 'મદદ જોઈએ છે'], 2 => ['હું આવીશ', 'પછી યાદ અપાવો'], 3 => ['હું આવીશ', 'નવી સુગંધ બતાવો']],      // Meta refuses emoji in buttons
+            'hi' => [1 => ['बहुत पसंद आया', 'मदद चाहिए'], 2 => ['मैं आऊंगा', 'बाद में याद दिलाएं'], 3 => ['मैं आऊंगा', 'नई खुशबू दिखाएं']],
+            'en' => [1 => ['Loved it', 'Need help'], 2 => ['I will visit', 'Remind me later'], 3 => ['I will visit', 'Show me something new']]];
     $title = [1 => 'Follow-up · how do you like it (7 days)', 2 => 'Follow-up · running low, refill (30 days)', 3 => 'Follow-up · finished, come back (60 days)'];
     $out = [];
     foreach (['gu', 'hi', 'en'] as $lg) foreach ([1, 2, 3] as $n) {
@@ -201,6 +201,7 @@ function swf_handle(PDO $pdo, string $action, int $me, bool $post): void
         foreach (swf_tpl_state($pdo, $waba) as $s) {
             if ($s['id'] <= 0 || $s['status'] !== 'DRAFT') { if ($s['status'] !== 'REJECTED') continue; }
             $row = wa_tpl_row($pdo, $s['id']); if (!$row) continue;
+            $nb = st_wa_btns_clean(array_values((array)($row['buttons'] ?? []))); if ($nb !== array_values((array)($row['buttons'] ?? []))) { $pdo->prepare("UPDATE wa_templates SET buttons = ? WHERE id = ?")->execute([json_encode($nb, JSON_UNESCAPED_UNICODE), (int)$row['id']]); $row['buttons'] = $nb; }      // the first 9 had emoji in the buttons and Meta refused them
             [$t, $err] = wa_tpl_clean(['name' => $row['name'], 'language' => $row['language'], 'category' => $row['category'], 'header_format' => $row['header_format'], 'header_text' => $row['header_text'] ?? '', 'header_lib_id' => (int)($row['header_lib_id'] ?? 0), 'body' => $row['body'], 'footer' => $row['footer'], 'buttons' => $row['buttons'], 'examples' => $row['examples']], false);
             if ($err !== '') { $fail[] = $s['name'] . ': ' . $err; continue; } $me2 = wa_tpl_media_check($pdo, $row); if ($me2 !== '') { $fail[] = $s['name'] . ': ' . $me2; continue; }
             [$ok, $why] = wa_tpl_create_at($pdo, $row, $waba); if ($ok) $sent[] = $s['name']; else $fail[] = $s['name'] . ': ' . $why;
