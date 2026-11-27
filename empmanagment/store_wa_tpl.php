@@ -141,6 +141,7 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
         $d = ['name' => $nm, 'language' => $lg, 'category' => (string)$r['category'], 'header_format' => (string)($r['header_format'] ?? ''), 'header_text' => (string)($r['header_text'] ?? ''), 'header_lib_id' => (int)($r['header_lib_id'] ?? 0), 'body' => (string)$r['body'], 'footer' => (string)($r['footer'] ?? ''), 'buttons' => st_wa_btns_clean(array_values((array)($r['buttons'] ?? []))), 'examples' => is_array($r['examples'] ?? null) ? $r['examples'] : [], 'folder' => 'Store'];
         [$t, $err] = wa_tpl_clean($d, true); if ($err !== '') json_response(['error' => $err], 422); $id = wa_tpl_insert($pdo, $t, $me, (string)($r['purpose'] ?? 'Store message'), 'Copy of ' . $r['name']); json_response(['ok' => true, 'id' => $id, 'name' => $nm]);
     }
+    if ($action === 'st_wa.tpl_fix') json_response(swt_fix_all($pdo, $waba, $me, !empty($in['dry'])));      // 🔧 every rejected Store message: fix what rules can fix and send it to Meta again
     if ($action === 'st_wa.tpl_ai') { [$ok, $d] = swt_ai($in); if (!$ok) json_response(['error' => $d], 502); json_response(['ok' => true] + $d); }
     if ($action === 'st_wa.tpl_check') {
         $d = swt_draft_in($in); $full = !empty($in['for_send']); [$t, $err] = wa_tpl_clean($d, !$full); $body = (string)$d['body'];
@@ -249,7 +250,8 @@ function swt_diag(PDO $pdo, array $num, string $waba): array
 function swt_ai(array $in): array
 {
     if (!function_exists('wa_tpl_model')) return [false, 'Claude is not available on this server.'];
-    $about = trim(mb_substr((string)($in['about'] ?? ''), 0, 600)); if ($about === '') return [false, 'Write in a few words what the message should say.'];
+    $about = trim(mb_substr((string)($in['about'] ?? ''), 0, 600));
+    if (!empty($in['rewrite'])) $about = "REWRITE this message so that Meta approves it. Keep the same meaning, the same number of variables ({{1}} = first name) and the same language. Meta's reason for rejecting it: " . mb_substr((string)($in['reason'] ?? 'not given'), 0, 200) . "\nTHE MESSAGE:\n" . mb_substr((string)$in['rewrite'], 0, 1024); if ($about === '') return [false, 'Write in a few words what the message should say.'];
     $cat = strtoupper((string)($in['category'] ?? 'UTILITY')) === 'MARKETING' ? 'MARKETING' : 'UTILITY'; $lg = in_array((string)($in['language'] ?? 'en'), ['gu', 'hi', 'en'], true) ? (string)$in['language'] : 'en';
     $lname = ['gu' => 'Gujarati, written in Gujarati script', 'hi' => 'Hindi, written in Devanagari script', 'en' => 'simple English'][$lg]; $hf = (string)($in['header_format'] ?? '');
     $sys = "You write ONE WhatsApp message template for TM Perfume House, a perfume shop (store in Vesu, Surat, open 11 am to 11 pm). The owner tells you what the message is about. Follow Meta's template rules exactly:\n"
@@ -288,4 +290,44 @@ function swt_used(PDO $pdo): array
         if (function_exists('swf_cfg')) { $c = swf_cfg($pdo); foreach ([7, 30, 60] as $st) { $id = (int)($c['tpl'][$st] ?? 0); if ($id > 0) $u[$id][] = 'Follow-up · ' . $st . ' days'; else foreach (['gu', 'hi', 'en'] as $lg) { $t = st_wa_tpl($pdo, 'tmph_store_followup_' . ($st === 7 ? 1 : ($st === 30 ? 2 : 3)) . '_' . $lg, $lg); if ($ok($t)) $add($t, 'Follow-up · ' . $st . ' days (' . $lg . ')'); } } }
     } catch (Throwable $e) { }
     return $memo = $u;
+}
+
+/**
+ * 🔧 Fix rejected: for every Store message whose latest version is rejected (or refused) on the Store account, fixes what the rules can fix and sends it to Meta again:
+ * emoji / marks out of buttons; Utility → Marketing when Meta said the category is wrong or it is promotional; the STOP line on Marketing.
+ * Never at Meta → sent again under the same name. Already at Meta → a new version (_vN). Messages with problems only a person can fix (language, variables) are listed, not sent.
+ * A family that already has an approved or waiting version is left alone. Returns ['sent' => [...], 'skipped' => [[name, why]], 'failed' => [[name, why]]].
+ */
+function swt_fix_all(PDO $pdo, string $waba, int $me, bool $dry = false): array
+{
+    $rows = []; foreach ($pdo->query("SELECT t.id, t.name, t.language, w.status, w.reason, w.meta_id FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id AND w.waba_id = " . $pdo->quote($waba) . " WHERE t.name LIKE 'tmph\\_store\\_%' ORDER BY t.id")->fetchAll() as $r) $rows[] = $r;
+    $fam = []; foreach ($rows as $r) { if (preg_match('/_\d{6,}(_v\d+)?$/', (string)$r['name'])) continue; $fam[swt_family((string)$r['name']) . '|' . $r['language']][] = $r; }
+    $out = ['sent' => [], 'skipped' => [], 'failed' => []];
+    foreach ($fam as $members) {
+        $live = array_filter($members, fn($m) => in_array(strtoupper((string)$m['status']), ['APPROVED', 'PENDING', 'IN_APPEAL'], true)); if ($live) continue;
+        $bad = array_values(array_filter($members, fn($m) => in_array(strtoupper((string)$m['status']), ['REJECTED', 'ERROR'], true))); if (!$bad) continue;
+        $m = end($bad); $t = wa_tpl_row($pdo, (int)$m['id']); if (!$t) continue; $nm = (string)$t['name']; $why = strtoupper((string)$m['reason']);
+        $buttons = st_wa_btns_clean(array_values((array)($t['buttons'] ?? []))); $cat = strtoupper((string)$t['category']); $footer = (string)($t['footer'] ?? ''); $changes = [];
+        if ($buttons !== array_values((array)($t['buttons'] ?? []))) $changes[] = 'buttons cleaned';
+        if ($cat === 'UTILITY' && preg_match('/INCORRECT_CATEGORY|PROMOTIONAL|TAG_CONTENT_MISMATCH|MARKETING/', $why)) { $cat = 'MARKETING'; $changes[] = 'made Marketing'; }
+        if ($cat === 'MARKETING' && stripos($footer . ' ' . $t['body'], 'STOP') === false) { $footer = ['gu' => 'સંદેશા બંધ કરવા STOP લખો', 'hi' => 'बंद करने के लिए STOP लिखें'][(string)$t['language']] ?? 'Reply STOP to stop messages'; $changes[] = 'STOP line added'; }
+        $hard = array_values(array_filter(swt_lint(['body' => $t['body'], 'language' => $t['language'], 'category' => $cat, 'footer' => $footer, 'buttons' => $buttons, 'examples' => $t['examples'] ?? [], 'header_format' => $t['header_format'] ?? '', 'header_lib_id' => $t['header_lib_id'] ?? 0]),
+            fn($x) => preg_match('/STARTS|ENDS|side by side|Language is|no example|no photo is chosen|not 1,2,3/', $x)));
+        if ($hard) { $out['skipped'][] = [$nm, 'needs a person: ' . implode(' ', $hard)]; continue; }
+        if (!$changes && !preg_match('/INCORRECT_CATEGORY/', $why)) { $out['skipped'][] = [$nm, 'nothing the rules can fix (' . ($m['reason'] ?: 'no reason') . ') - open it and press Fix with Claude']; continue; }
+        if ($dry) { $out['sent'][] = $nm . ' (' . implode(', ', $changes) . ')'; continue; }
+        $atMeta = trim((string)$m['meta_id']) !== '';
+        $d = ['name' => $nm, 'language' => (string)$t['language'], 'category' => $cat, 'header_format' => (string)($t['header_format'] ?? ''), 'header_text' => (string)($t['header_text'] ?? ''), 'header_lib_id' => (int)($t['header_lib_id'] ?? 0), 'body' => (string)$t['body'], 'footer' => $footer, 'buttons' => $buttons, 'examples' => is_array($t['examples'] ?? null) ? $t['examples'] : [], 'folder' => 'Store'];
+        if ($atMeta) {      // Meta keeps the rejected one under its name: a new version
+            $base = preg_replace('/_v\d+$/', '', $nm); $v = max(2, (int)($t['version'] ?? 1) + 1); $c = $pdo->prepare("SELECT 1 FROM wa_templates WHERE name = ? AND language = ?"); do { $d['name'] = substr($base, 0, 56) . '_v' . $v; $c->execute([$d['name'], $d['language']]); $v++; } while ($c->fetchColumn());
+            [$ct, $err] = wa_tpl_clean($d, false); if ($err !== '') { $out['failed'][] = [$nm, $err]; continue; } $ct['family_id'] = (int)($t['family_id'] ?? 0) ?: (int)$t['id']; $ct['version'] = $v - 1;
+            $id = wa_tpl_insert($pdo, $ct, $me, (string)($t['purpose'] ?? 'Store message'), 'Fixed version of ' . $nm);
+        } else {
+            [$ct, $err] = wa_tpl_clean($d, false); if ($err !== '') { $out['failed'][] = [$nm, $err]; continue; } $id = (int)$t['id'];
+            $pdo->prepare("UPDATE wa_templates SET category = ?, footer = ?, buttons = ? WHERE id = ?")->execute([$ct['category'], $ct['footer'], json_encode($ct['buttons'], JSON_UNESCAPED_UNICODE), $id]);
+        }
+        $row = wa_tpl_row($pdo, $id); $me2 = $row ? wa_tpl_media_check($pdo, $row) : 'not saved'; if ($me2 !== '') { $out['failed'][] = [$nm, $me2]; continue; }
+        [$ok, $w] = wa_tpl_create_at($pdo, $row, $waba); if ($ok) $out['sent'][] = (string)$row['name'] . ' (' . implode(', ', $changes ?: ['sent again']) . ')'; else $out['failed'][] = [(string)$row['name'], (string)$w];
+    }
+    return ['ok' => true] + $out;
 }

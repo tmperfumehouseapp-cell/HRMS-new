@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f0f2f5">
 <title>Store WhatsApp — HRMS</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="assets/css/style.css?v=260928b">
 <link rel="stylesheet" href="assets/css/store.css?v=8">
 <style>
@@ -133,6 +135,10 @@
 .tfl{padding:0 14px 8px;display:grid;gap:6px}.tfl input:not([type=checkbox]),.tfl select{border:1.5px solid #e6e8ec;border-radius:10px;padding:6px 10px;font:inherit;font-size:12.5px;box-sizing:border-box;width:100%}
 .tfr{display:flex;gap:5px;flex-wrap:wrap;align-items:center}.tfr select{width:auto;flex:1}.tf{border:1px solid #dde2e7;background:#fff;border-radius:14px;padding:3px 9px;font-size:11.5px;cursor:pointer}.tf.on{background:#0f7a4d;color:#fff;border-color:#0f7a4d}
 .ti2.sub{padding-left:28px;background:#fafbfc}.vt{padding:4px 14px 8px 28px;font-size:11.5px;color:#027eb5;cursor:pointer;border-bottom:1px solid #eef0f2}.kp.use{background:#e7f6ee;color:#0f7a4d}
+.tg input,.tg select,.tg textarea,.tfl input,.tfl select{font-weight:400!important;font-size:13.5px!important;color:#1f2328}
+label.f2,div.f2>span{font-weight:600!important;font-size:12.5px!important;color:#4b5563!important;letter-spacing:.1px}
+.ti2 b{font-weight:600;font-size:13.5px;color:#1f2328}.kp{font-weight:600!important;font-size:11px!important;letter-spacing:.1px}
+.tg .e{font-size:13.5px;line-height:1.45}.chk{font-size:13px}.tf{font-weight:500}.tf b{font-weight:700}
 </style>
 </head>
 <body>
@@ -273,7 +279,7 @@
     const junkN = L.filter((t) => t.machine).length; const junkDel = L.filter((t) => t.machine && !t.at_meta && !(t.used || []).length).length;
     const row = (o, sub) => { const t = o.t; return `<div class="ti2 ${o.i === T.sel ? 'on' : ''} ${sub ? 'sub' : ''}" data-ti="${o.i}"><b>${esc(t.name)}</b>${(t.used || []).length ? `<div class="r">${t.used.map((u) => `<span class="kp use">▶ ${esc(u)}</span>`).join('')}</div>` : ''}<div class="r"><span class="kp ${catCls(t.category)}">${t.category === 'UTILITY' ? 'Utility' : 'Marketing'}</span>${t.meta_category && t.meta_category !== t.category ? `<span class="kp r" title="Meta changed the category">Meta: ${t.meta_category === 'UTILITY' ? 'Utility' : 'Marketing'}</span>` : ''}${stChip(t)}<span class="kp n">${esc((t.language || 'en').toUpperCase())}</span>${['IMAGE', 'VIDEO', 'DOCUMENT'].includes(t.header_format) ? `<span class="kp n">${t.header_format === 'IMAGE' ? '🖼' : t.header_format === 'VIDEO' ? '🎬' : '📄'} ${t.header_lib_id ? '' : 'none chosen'}</span>` : ''}${t.machine ? '<span class="kp n" title="Made automatically, never checked by a person">auto draft</span>' : ''}</div></div>`; };
     const chip = (k, lbl, n) => `<button class="tf ${F.st === k ? 'on' : ''}" data-tf="st:${k}">${lbl} <b>${n}</b></button>`;
-    const left = `<div class="l"><div style="padding:12px 14px 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:15px">Store messages</b><span style="flex:1"></span><button class="sx2 g" id="tSync" title="Ask Meta for the newest status" style="padding:7px 10px;font-size:12.5px">↻ Meta</button><button class="sx2 g dgBtn" title="Why did Meta reject? (copy and give it to Claude)" style="padding:7px 10px;font-size:12.5px">🩺 Diagnose</button><button class="sx2" id="tNew" style="padding:7px 12px;font-size:12.5px">+ New</button></div>
+    const left = `<div class="l"><div style="padding:12px 14px 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:15px">Store messages</b><span style="flex:1"></span><button class="sx2 g" id="tSync" title="Ask Meta for the newest status" style="padding:7px 10px;font-size:12.5px">↻ Meta</button><button class="sx2 g dgBtn" title="Why did Meta reject? (copy and give it to Claude)" style="padding:7px 10px;font-size:12.5px">🩺 Diagnose</button>${cnt.no ? `<button class="sx2 g" id="tFixAll" title="Fix every rejected message and send it to Meta again" style="padding:7px 10px;font-size:12.5px;color:#b42318">🔧 Fix ${cnt.no} rejected</button>` : ''}<button class="sx2" id="tNew" style="padding:7px 12px;font-size:12.5px">+ New</button></div>
       <div class="tfl"><input id="tQ" placeholder="Search name, text or use…" value="${esc(F.q)}">
         <div class="tfr">${chip('all', 'All', cnt.all)}${chip('ok', '✓ Approved', cnt.ok)}${chip('wt', '⏳ Waiting', cnt.wt)}${chip('no', '✗ Rejected', cnt.no)}${chip('dr', '✎ Draft', cnt.dr)}</div>
         <div class="tfr"><select data-tfs="cat"><option value="all">Utility + Marketing</option><option value="UTILITY" ${F.cat === 'UTILITY' ? 'selected' : ''}>Utility only</option><option value="MARKETING" ${F.cat === 'MARKETING' ? 'selected' : ''}>Marketing only</option></select><select data-tfs="lg"><option value="all">All languages</option><option value="en" ${F.lg === 'en' ? 'selected' : ''}>English</option><option value="gu" ${F.lg === 'gu' ? 'selected' : ''}>Gujarati</option><option value="hi" ${F.lg === 'hi' ? 'selected' : ''}>Hindi</option></select></div>
@@ -295,7 +301,7 @@
       ${T.ai.tips.length || T.ai.lint.length ? `<div style="font-size:12.5px">${T.ai.tips.map((t) => '💡 ' + esc(t)).join('<br>')}${T.ai.lint.map((t) => '<br>⚠ ' + esc(t)).join('')}</div>` : ''}</div>`;
     const right = `<div class="e"><button class="sx2 g" id="tBack" style="display:none;justify-self:start;padding:6px 10px">‹ All messages</button>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:16px">${esc(f.name || 'New message')}</b>${stChip(f)}<span class="kp ${catCls(f.category)}">${f.category === 'UTILITY' ? 'Utility' : 'Marketing'}</span></div>
-      ${f.reason && f.reason !== 'NONE' && f.status !== 'APPROVED' ? `<div class="chk bad"><b>Meta said no:</b> ${esc(f.reason)}</div>` : ''}${ro ? `<div class="chk w">This message is already at Meta. Changes are saved as a <b>new version</b>; the old one keeps working until the new one is approved.</div>` : ''}${!T.appOk && f.header_format === 'IMAGE' ? '<div class="chk bad">The Meta app id is not found yet, so a photo cannot go to Meta. It is found from the token automatically; if sending fails, tell me.</div>' : ''}
+      ${f.reason && f.reason !== 'NONE' && f.status !== 'APPROVED' ? `<div class="chk bad" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:200px"><b>Meta said no:</b> ${esc(f.reason)}</span><button class="sx2" id="tFixAi" ${T.ai.busy ? 'disabled' : ''} style="padding:6px 12px;font-size:12.5px">${T.ai.busy ? 'Rewriting…' : '🔧 Fix with Claude'}</button></div>` : ''}${ro ? `<div class="chk w">This message is already at Meta. Changes are saved as a <b>new version</b>; the old one keeps working until the new one is approved.</div>` : ''}${!T.appOk && f.header_format === 'IMAGE' ? '<div class="chk bad">The Meta app id is not found yet, so a photo cannot go to Meta. It is found from the token automatically; if sending fails, tell me.</div>' : ''}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px"><label class="f2">Name at Meta<input data-k="name" value="${esc(f.name)}" ${f.id ? 'readonly' : ''}></label><label class="f2">Language<select data-k="language" ${f.id ? 'disabled' : ''}><option value="en" ${(f.language || 'en') === 'en' ? 'selected' : ''}>English</option><option value="gu" ${f.language === 'gu' ? 'selected' : ''}>ગુજરાતી (Gujarati)</option><option value="hi" ${f.language === 'hi' ? 'selected' : ''}>हिन्दी (Hindi)</option></select></label><label class="f2">Category<select data-k="category"><option value="UTILITY" ${f.category === 'UTILITY' ? 'selected' : ''}>Utility (about a purchase)</option><option value="MARKETING" ${f.category === 'MARKETING' ? 'selected' : ''}>Marketing (offers, reminders)</option><option disabled>Authentication (OTP codes only - not for the Store)</option></select></label></div>
       <label class="f2">On top of the message<select data-k="header_format"><option value="" ${!f.header_format ? 'selected' : ''}>— nothing —</option><option value="TEXT" ${f.header_format === 'TEXT' ? 'selected' : ''}>Words (a heading)</option><option value="IMAGE" ${f.header_format === 'IMAGE' ? 'selected' : ''}>Photo</option><option value="VIDEO" ${f.header_format === 'VIDEO' ? 'selected' : ''}>Video (MP4)</option><option value="DOCUMENT" ${f.header_format === 'DOCUMENT' ? 'selected' : ''}>PDF</option></select></label>${photoBox}${f.header_format === 'TEXT' ? `<label class="f2">Heading (max 60 letters, no emoji)<input data-k="header_text" maxlength="60" value="${esc(f.header_text || '')}"></label>` : ''}${mediaBox}
       ${aiBox}
@@ -332,6 +338,15 @@
     if (g('#tJunkDel')) { const ids = T.list.filter((t) => t.machine && !t.at_meta && !(t.used || []).length).map((t) => t.id); if (!confirm('Delete ' + ids.length + ' auto drafts? They were never sent to Meta. This cannot be undone.')) return true; try { const r = await api.post('st_wa.tpl_del', { ids }); toast('Deleted ' + r.deleted + (r.kept.length ? ' · kept ' + r.kept.length : '') + ' ✓'); T.f = null; T.sel = -1; await loadTpl(); renderTpl(); } catch (er) { toast(er.message); } return true; }
     if (g('#tDel') && T.f) { if (!confirm('Delete ' + T.f.name + '? It was never sent to Meta.')) return true; try { const r = await api.post('st_wa.tpl_del', { ids: [T.f.id] }); toast(r.deleted ? 'Deleted ✓' : 'Not deleted: it is at Meta or in use'); T.f = null; T.sel = -1; await loadTpl(); renderTpl(); } catch (er) { toast(er.message); } return true; }
     if (g('#tCopy') && T.f) { try { const r = await api.post('st_wa.tpl_copy', { id: T.f.id }); toast('Copied as ' + r.name + ' ✓'); await loadTpl(); pickTpl(T.list.findIndex((t) => t.id === r.id)); renderTpl(); } catch (er) { toast(er.message); } return true; }
+    if (g('#tFixAll')) {
+      try { const d = await api.post('st_wa.tpl_fix', { dry: 1 }); const todo = d.sent || [];
+        if (!todo.length) { dgReport('Nothing to send', d); return true; }
+        if (!confirm('These will be fixed and sent to Meta again:\n\n' + todo.join('\n') + (d.skipped.length ? '\n\nLeft for a person: ' + d.skipped.length : '') + '\n\nGo on?')) return true;
+        toast('Fixing and sending…'); const r = await api.post('st_wa.tpl_fix', {}); await loadTpl(); renderTpl(true); dgReport('Fix rejected: done', r); } catch (er) { toast(er.message); } return true; }
+    if (g('#tFixAi') && T.f) { T.ai.busy = true; renderTpl(true);
+      try { const r = await api.post('st_wa.tpl_ai', { about: 'rewrite', rewrite: T.f.body, reason: T.f.reason, category: T.f.category, language: T.f.language || 'en', header_format: T.f.header_format, header_lib_id: T.f.header_lib_id || 0 });
+        T.f.body = r.body; if (r.footer) T.f.footer = r.footer; if (r.buttons && r.buttons.length) T.f.buttons = (T.f.buttons || []).filter((b) => b.type !== 'QUICK_REPLY').concat(r.buttons.map((b) => ({ type: 'QUICK_REPLY', text: b.text, url: '', example: '' }))).slice(0, 10); if (r.examples && r.examples.length) T.f.examples = r.examples; T.ai.tips = r.tips || []; T.ai.lint = r.lint || []; toast('Rewritten ✓ Check it, then press Save as a new version');
+      } catch (er) { toast(er.message); } T.ai.busy = false; renderTpl(true); return true; }
     if (g('#bAddP') && T.f) { T.f.buttons = (T.f.buttons || []).concat([{ type: 'PHONE_NUMBER', text: 'Call the store', phone: '', url: '', example: '' }]); renderTpl(true); return true; }
     x = g('[data-ti]'); if (x) { pickTpl(+x.dataset.ti); renderTpl(); return true; }
     x = g('[data-ph]'); if (x && T.f) { T.f.header_lib_id = +x.dataset.ph; const p = T.photos.find((q) => q.id === T.f.header_lib_id); T.f.photo = p ? p.title : ''; renderTpl(true); return true; }
@@ -510,6 +525,15 @@
     if (/handle|upload|media|sample|photo|app id/i.test(r)) out.push('The photo on top did not reach Meta (photo upload / App ID problem). Make a version without the photo, or give this text to Claude.');
     if (!out.length && x.bad) out.push('Meta gave no clear reason. Copy the text below and give it to Claude.');
     return out;
+  }
+  function dgReport(title, r) {
+    const bg = document.createElement('div'); bg.className = 'dg-bg'; bg.addEventListener('click', (e) => { if (e.target === bg || e.target.closest('.dgX')) bg.remove(); });
+    const li = (a, f) => (a || []).map((x) => `<div class="it">${f(x)}</div>`).join('');
+    bg.innerHTML = `<div class="dg"><h3>🔧 ${esc(title)}</h3>
+      ${(r.sent || []).length ? `<b style="color:#1a7f37">Sent to Meta (${r.sent.length})</b>${li(r.sent, (x) => esc(x))}` : ''}
+      ${(r.failed || []).length ? `<b style="color:#b42318">Meta refused (${r.failed.length})</b>${li(r.failed, (x) => '<b class="n">' + esc(x[0]) + '</b><div class="gu">' + esc(x[1]) + '</div>')}` : ''}
+      ${(r.skipped || []).length ? `<b>Left for a person (${r.skipped.length})</b>${li(r.skipped, (x) => '<b class="n">' + esc(x[0]) + '</b><div class="ck">' + esc(x[1]) + '</div>')}` : ''}
+      <div class="row"><button class="sx2 dgX">Close</button></div></div>`; document.body.appendChild(bg);
   }
   async function dgOpen() {
     const bg = document.createElement('div'); bg.className = 'dg-bg'; bg.innerHTML = '<div class="dg"><h3>🩺 Diagnose</h3>Asking Meta…</div>'; document.body.appendChild(bg);
