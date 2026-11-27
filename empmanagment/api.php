@@ -31611,6 +31611,7 @@ switch ($action) {
                     'store_key' => 'manual',
                     'store' => ((string)($m['channel'] ?? '') !== '' ? (string)$m['channel'] : 'Manual'),
                     'channel' => (string)($m['channel'] ?? ''),
+                    'mp_no' => (string)($m['mp_no'] ?? ''),   // the shop's / marketplace's own order number (TM10xxx): shown on the salesperson's own sheet
                     'manual_order_id' => (int)$m['manual_order_id'],
                     'salesman' => !empty($m['employee_id']) ? (string)($mNames[(int)$m['employee_id']] ?? '') : '',
                     'employee_id' => (int)($m['employee_id'] ?? 0),
