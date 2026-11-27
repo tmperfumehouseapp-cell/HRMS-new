@@ -14,16 +14,28 @@ if (!function_exists('wocc_defs')) {
     /** key => [title, from (first day of sending), to (last day), emoji, what the photo should look like, approx (the date moves every year)]. */
     function wocc_defs(): array
     {
+        /* owner 27 Nov 2026 (night): "these are too few - something must run the whole year". 20 occasions, in the order of the calendar; a season counts as an occasion (wedding season, summer, monsoon). approx = 1: the date moves every year and is the owner's to confirm. */
         return [
-            'xmas'   => ['t' => 'Christmas',     'from' => '2026-12-18', 'to' => '2026-12-25', 'e' => '🎄', 'deco' => 'Christmas decoration (red and green, small lights, a little tree)', 'approx' => 0],
-            'ny'     => ['t' => 'New Year',      'from' => '2026-12-26', 'to' => '2027-01-02', 'e' => '🎊', 'deco' => 'New Year decoration (golden, sparkle, "2027")', 'approx' => 0],
-            'uttar'  => ['t' => 'Uttarayan',     'from' => '2027-01-08', 'to' => '2027-01-14', 'e' => '🪁', 'deco' => 'kites and a firki', 'approx' => 0],
+            'shaadi' => ['t' => 'Shaadi season',  'from' => '2026-12-01', 'to' => '2026-12-12', 'e' => '💍', 'deco' => 'wedding decoration (marigold flowers, a gift tray)', 'approx' => 0],
+            'xmas'   => ['t' => 'Christmas',      'from' => '2026-12-18', 'to' => '2026-12-25', 'e' => '🎄', 'deco' => 'Christmas decoration (red and green, small lights, a little tree)', 'approx' => 0],
+            'ny'     => ['t' => 'New Year',       'from' => '2026-12-26', 'to' => '2027-01-02', 'e' => '🎊', 'deco' => 'New Year decoration (golden, sparkle, "2027")', 'approx' => 0],
+            'uttar'  => ['t' => 'Uttarayan',      'from' => '2027-01-08', 'to' => '2027-01-14', 'e' => '🪁', 'deco' => 'kites and a firki', 'approx' => 0],
+            'repub'  => ['t' => 'Republic Day',   'from' => '2027-01-21', 'to' => '2027-01-26', 'e' => '🇮🇳', 'deco' => 'the tricolour (saffron, white, green)', 'approx' => 0],
             'val'    => ['t' => 'Valentine week', 'from' => '2027-02-07', 'to' => '2027-02-14', 'e' => '❤️', 'deco' => 'red roses and hearts', 'approx' => 0],
-            'women'  => ['t' => 'Women\'s Day',  'from' => '2027-03-04', 'to' => '2027-03-08', 'e' => '🌸', 'deco' => 'flowers, soft pink', 'approx' => 0],
-            'holi'   => ['t' => 'Holi',          'from' => '2027-03-16', 'to' => '2027-03-22', 'e' => '🎨', 'deco' => 'gulal colours', 'approx' => 1],
+            'women'  => ['t' => 'Women\'s Day',   'from' => '2027-03-01', 'to' => '2027-03-08', 'e' => '🌸', 'deco' => 'flowers, soft pink', 'approx' => 0],
+            'eid'    => ['t' => 'Eid',            'from' => '2027-03-09', 'to' => '2027-03-13', 'e' => '🌙', 'deco' => 'a crescent moon and lanterns', 'approx' => 1],
+            'holi'   => ['t' => 'Holi',           'from' => '2027-03-16', 'to' => '2027-03-22', 'e' => '🎨', 'deco' => 'gulal colours', 'approx' => 1],
+            'summer' => ['t' => 'Summer',         'from' => '2027-04-08', 'to' => '2027-04-20', 'e' => '☀️', 'deco' => 'a fresh summer look (light blue, lemon, water drops)', 'approx' => 0],
+            'mother' => ['t' => 'Mother\'s Day',  'from' => '2027-05-03', 'to' => '2027-05-09', 'e' => '💐', 'deco' => 'flowers and a "for Maa" card', 'approx' => 0],
+            'father' => ['t' => 'Father\'s Day',  'from' => '2027-06-14', 'to' => '2027-06-20', 'e' => '👔', 'deco' => 'a tie or a watch, dark background', 'approx' => 0],
+            'monsoon' => ['t' => 'Monsoon',       'from' => '2027-07-05', 'to' => '2027-07-15', 'e' => '🌧️', 'deco' => 'rain drops, an umbrella', 'approx' => 0],
+            'friend' => ['t' => 'Friendship Day', 'from' => '2027-07-27', 'to' => '2027-08-01', 'e' => '🤝', 'deco' => 'friendship bands', 'approx' => 0],
             'rakhi'  => ['t' => 'Raksha Bandhan', 'from' => '2027-08-09', 'to' => '2027-08-17', 'e' => '🎀', 'deco' => 'a rakhi and a small gift thali', 'approx' => 1],
-            'navrat' => ['t' => 'Navratri',      'from' => '2027-09-27', 'to' => '2027-10-08', 'e' => '💃', 'deco' => 'garba colours, dandiya', 'approx' => 1],
-            'diwali' => ['t' => 'Diwali',        'from' => '2027-10-19', 'to' => '2027-10-29', 'e' => '🪔', 'deco' => 'diyas and rangoli', 'approx' => 1],
+            'janm'   => ['t' => 'Janmashtami',    'from' => '2027-08-20', 'to' => '2027-08-25', 'e' => '🦚', 'deco' => 'a peacock feather and a flute', 'approx' => 1],
+            'ganesh' => ['t' => 'Ganesh Chaturthi', 'from' => '2027-08-30', 'to' => '2027-09-04', 'e' => '🙏', 'deco' => 'modak and marigold flowers', 'approx' => 1],
+            'navrat' => ['t' => 'Navratri',       'from' => '2027-09-27', 'to' => '2027-10-08', 'e' => '💃', 'deco' => 'garba colours, dandiya', 'approx' => 1],
+            'diwali' => ['t' => 'Diwali',         'from' => '2027-10-19', 'to' => '2027-10-29', 'e' => '🪔', 'deco' => 'diyas and rangoli', 'approx' => 1],
+            'shaadi2' => ['t' => 'Shaadi season', 'from' => '2027-11-06', 'to' => '2027-11-18', 'e' => '💍', 'deco' => 'wedding decoration (marigold flowers, a gift tray)', 'approx' => 0],
         ];
     }
     function wocc_on(): bool { try { return !isset($GLOBALS['pdo']) || (string)setting_get($GLOBALS['pdo'], 'wa_occ_on', '1') !== '0'; } catch (Throwable $e) { return true; } }
@@ -40,7 +52,7 @@ if (!function_exists('wocc_defs')) {
     /** Is this message name an occasion message that may go today? (not an occasion message at all = true) */
     function wocc_name_ok(string $name, ?int $ts = null): bool
     {
-        if (!preg_match('/^tmph_oc_([a-z]+)_/', $name, $m)) return true; return isset(wocc_active($ts)[$m[1]]);
+        if (!preg_match('/^tmph_oc_([a-z0-9]+)_/', $name, $m)) return true; return isset(wocc_active($ts)[$m[1]]);
     }
     /** The two TEXT messages of an occasion (marketing, the name is the only blank): name => [body, buttons]. */
     function wocc_text_defs(int $lead = 7): array
