@@ -940,8 +940,28 @@ function st_wa_bill_failed(PDO $pdo, string $key): void
 {
     $q = $pdo->prepare("SELECT p.person_id, p.bill_id FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id WHERE RIGHT(p.phone, 10) = ? AND b.created_at > ? ORDER BY p.person_id DESC LIMIT 1");
     $q->execute([substr($key, -10), date('Y-m-d H:i:s', time() - 3 * 86400)]); $r = $q->fetch(); if (!$r) return;
-    $pdo->prepare("DELETE FROM st_bill_events WHERE person_id = ? AND kind = 'sent' AND who = 'auto WhatsApp'")->execute([(int)$r['person_id']]);
+    $pdo->prepare("DELETE FROM st_bill_events WHERE person_id = ? AND kind = 'sent' AND who IN ('auto WhatsApp', 'auto WhatsApp (utility)')")->execute([(int)$r['person_id']]);
     st_event($pdo, (int)$r['person_id'], (int)$r['bill_id'], 'send_failed', 'auto WhatsApp');
+    try { st_wa_util_retry($pdo, (int)$r['person_id']); } catch (Throwable $e) { error_log('st_wa_util_retry: ' . $e->getMessage()); }
+}
+/** The plain UTILITY bill message (no links to review / community): sent ONCE to a customer whose bill message failed (a Marketing message Meta did not deliver, e.g. 131049). */
+const ST_WA_UTIL_BILL = 'tmph_store_order_confirmation_v4_utility';
+function st_wa_util_retry(PDO $pdo, int $personId): void
+{
+    $q = $pdo->prepare("SELECT COUNT(*) FROM st_bill_events WHERE person_id = ? AND kind = 'util_retry'"); $q->execute([$personId]); if ((int)$q->fetchColumn() > 0) return;      // once per customer per bill - also when the utility one fails
+    $q = $pdo->prepare("SELECT p.person_id, p.bill_id, p.name, p.phone, p.token, b.bill_no, b.total FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id WHERE p.person_id = ?"); $q->execute([$personId]); $p = $q->fetch(); if (!$p) return;
+    $t = st_wa_tpl($pdo, ST_WA_UTIL_BILL); if (!$t) { st_event($pdo, $personId, (int)$p['bill_id'], 'util_none', 'utility bill message not approved yet'); return; }
+    [$num, $own] = st_wa_number_for($pdo, $t); if (!$num) return;
+    $key = wa_key((string)$p['phone']); if (strlen($key) !== 10) return;
+    $name = trim((string)$p['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($name);
+    $vars = st_wa_vars($t, $first, (string)$p['bill_no'], (float)$p['total'], (string)$p['token']);
+    $r = wa_tpl_send_components($pdo, $t, $vars, (string)$num['phone_id'], ['url_suffix' => (string)$p['token']]);
+    st_event($pdo, $personId, (int)$p['bill_id'], 'util_retry', 'utility bill message');
+    if (empty($r['ok'])) return;
+    $pl = ['messaging_product' => 'whatsapp', 'to' => '91' . $key, 'type' => 'template', 'template' => ['name' => $t['name'], 'language' => ['code' => $t['language']]]]; if (!empty($r['components'])) $pl['template']['components'] = $r['components'];
+    [$code, $d] = wa_api('POST', '/' . $num['phone_id'] . '/messages', $pl); $wamid = (string)($d['messages'][0]['id'] ?? ''); if ($code < 200 || $code >= 300 || $wamid === '') return;
+    try { $shown = function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vars) : (string)$p['bill_no']; st_wa_log_out($pdo, $own, $wamid, $key, (int)$num['id'], $shown); } catch (Throwable $e) { }
+    st_event($pdo, $personId, (int)$p['bill_id'], 'sent', 'auto WhatsApp (utility)');
 }
 /** One bill → one customer, as a template message from the shop's own WhatsApp number. Returns [ok, note]. */
 function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array $cs): array
