@@ -1,7 +1,7 @@
 # Owner, 27 Nov 2026 (Kamal): today's queries counted as FRESH although the customer, quiet for 24 h+, only answered an AUTOMATIC message of ours
 # (campaign / follow-up / Module B, not failed, last 3 days, sent after his last query had closed) -> they are Campaign queries.
 # mode=dry: counts only (per salesperson, no phones). mode=apply: moves exactly those queries to Campaign (wa_queries.src, wq_qtype + its log, the chat's source,
-# the type tag) and drops today's cached query day so the counts are rebuilt. Real ad clicks (ad_id / ad_head on the query) and an ad's ready-made text are never moved.
+# the type tag) and drops today's cached query day so the counts are rebuilt. A first message that is an ad's ready-made text is never moved.
 name: Fresh queries that answered our message -> Campaign (today)
 
 on:
@@ -45,16 +45,15 @@ jobs:
           $ad = function (string $t): bool { $t = mb_strtolower(trim($t)); if ($t === '' || mb_strlen($t) > 300) return false;
             return (bool)(preg_match('/more info(rmation)? (on|about) this|interested in this|saw (your|this) ad|\btmph\b|tm\s*perfume\s*house|\bwant to (buy|order)\b|placing my first order|free\s*10\s*ml|extra discount|\bi\s*want\b.*\bml\b/u', $t) || preg_match('/\d+\s*ml\b.*\b(in|at|for|@|rs\.?|₹)\s*\d{3,5}\b/u', $t)); };
           $names = []; foreach ($d->query("SELECT employee_id, full_name FROM employees")->fetchAll(PDO::FETCH_NUM) as $r) $names[(int)$r[0]] = (string)$r[1];
-          $Q = $d->prepare("SELECT q.id, q.phone, q.opened_at, q.src, q.emp_id, q.ad_id, q.ad_head, t.type FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND (q.src = 'query' OR t.type IN ('meta', 'new')) ORDER BY q.id");
+          $Q = $d->prepare("SELECT q.id, q.phone, q.opened_at, q.src, q.emp_id, t.type FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND (q.src = 'query' OR t.type IN ('meta', 'new')) ORDER BY q.id");
           $Q->execute([$from]); $rows = $Q->fetchAll(PDO::FETCH_ASSOC); echo "fresh queries today: " . count($rows) . "\n";
           $prevQ = $d->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts < ?");
           $firstQ = $d->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id LIMIT 1");
           $oursQ = $d->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND emp_id = 0 AND who IN ('campaign', 'followup', 'recover') AND status <> 'failed' AND ts >= ? AND ts <= ?");
           $liveQ = $d->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1");
-          $hit = []; $why = ['ad click' => 0, 'first ever message' => 0, 'wrote within 24 h' => 0, 'ad text' => 0, 'no message of ours reached him' => 0, 'ours went while his query was open' => 0];
+          $hit = []; $why = ['first ever message' => 0, 'wrote within 24 h' => 0, 'ad text' => 0, 'no message of ours reached him' => 0, 'ours went while his query was open' => 0];
           foreach ($rows as $r) {
             $op = (string)$r['opened_at']; $ot = strtotime($op);
-            if (trim((string)$r['ad_id']) !== '' || trim((string)$r['ad_head']) !== '') { $why['ad click']++; continue; }
             $prevQ->execute([$r['phone'], date("Y-m-d H:i:s", $ot - 5)]); $pv = (string)$prevQ->fetchColumn();
             if ($pv === '') { $why['first ever message']++; continue; } if (strtotime($pv) > $ot - 86400) { $why['wrote within 24 h']++; continue; }
             $firstQ->execute([$r['phone'], date("Y-m-d H:i:s", $ot - 5)]); if ($ad((string)$firstQ->fetchColumn())) { $why['ad text']++; continue; }
