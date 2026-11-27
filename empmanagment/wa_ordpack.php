@@ -268,6 +268,7 @@ if (!function_exists('wa_ordpack_defs')) {
         try { wa_ordattr_tick($pdo); } catch (Throwable $e) { }
         $ex = json_decode((string)setting_get($pdo, 'wa_ordl_new', '[]'), true); if (!function_exists('wa_bf_on') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
         $all = (function_exists('wa_bf_on') && wa_bf_on() ? wa_bf_defs() : []) + wa_ordpack_defs() + wa_cp_defs();   /* 🖤 in Black Friday week its pack is made first (5 messages a round) */
+        try { if (!function_exists('wocc_text_defs') && is_file(__DIR__ . '/wa_occasion.php')) require_once __DIR__ . '/wa_occasion.php'; if (function_exists('wocc_text_defs')) $all = wocc_text_defs() + $all; } catch (Throwable $e) { }   /* 📅 the two text messages of an occasion are made 7 days before it (owner 27 Nov 2026) */
         foreach ((array)$ex as $x) if (!empty($x['name']) && !empty($x['body'])) $all[(string)$x['name']] = ['body' => (string)$x['body'], 'buttons' => (array)($x['buttons'] ?? ['Order Now', 'Send Details', 'Not Now'])];
         foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;

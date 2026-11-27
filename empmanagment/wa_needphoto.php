@@ -51,6 +51,12 @@ if (!function_exists('wnp_defs')) {
                 'tpls' => ['tmph_cp_p14' => ["Hi {{1}} ⭐\n\nYe hain hamare 5 best sellers 👆\n\n*Paanchon sirf ₹2,750 me ?* Haan ji, 5 × 50ml ka combo 🔥\n\nYa apni pasand ke 5 chuniye ✨\n\nOrder ke liye tap kijiye 👇", ['Order Now', 'Send Details']]]],
         ];
     }
+    /** The fixed photos + the photos of the occasions that start within 21 days (wa_occasion.php). */
+    function wnp_all_defs(): array
+    {
+        $d = wnp_defs(); try { if (!function_exists('wocc_photo_needs') && is_file(__DIR__ . '/wa_occasion.php')) require_once __DIR__ . '/wa_occasion.php'; if (function_exists('wocc_photo_needs')) $d = wocc_photo_needs() + $d; } catch (Throwable $e) { }   // the occasion photos come first: they have a date
+        return $d;
+    }
     function wnp_state(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wa_needphoto', ''), true); return is_array($j) ? $j : []; }
     /** Meta's answer for a message: approved / waiting / rejected / not sent yet. */
     function wnp_tpl_state(PDO $pdo, int $id): string
@@ -70,13 +76,14 @@ if (!function_exists('wnp_defs')) {
     function wnp_list(PDO $pdo): array
     {
         $st = wnp_state($pdo); $items = []; $open = 0;
-        foreach (wnp_defs() + wnp_missing($pdo) as $k => $d) {
+        foreach (wnp_all_defs() + wnp_missing($pdo) as $k => $d) {
             $s = $st[$k] ?? []; $lib = (int)($s['lib'] ?? 0); $msgs = [];
             foreach ((array)($d['tpls'] ?? []) as $name => $m) { $id = (int)($s['tpls'][$name] ?? 0); $msgs[] = ['name' => $name, 'body' => (string)$m[0], 'buttons' => (array)$m[1], 'state' => $lib > 0 ? wnp_tpl_state($pdo, $id) : 'waits for the photo']; }
             $done = $lib > 0; if (!$done) $open++;
             $items[] = ['key' => $k, 'title' => (string)$d['title'], 'brief' => (string)$d['brief'], 'use' => (string)$d['use'], 'done' => $done, 'at' => (string)($s['at'] ?? ''), 'lib' => $lib, 'fix' => (int)($d['fix'] ?? 0), 'msgs' => $msgs, 'note' => (string)($s['note'] ?? '')];
         }
-        return ['items' => $items, 'open' => $open];
+        $cal = []; try { if (function_exists('wocc_calendar')) $cal = wocc_calendar(6); } catch (Throwable $e) { }
+        return ['items' => $items, 'open' => $open, 'occasions' => $cal];
     }
     /** Saves the uploaded picture in the media library. [library id, error]. */
     function wnp_lib_save(PDO $pdo, array $f, string $title, int $me): array
@@ -102,7 +109,7 @@ if (!function_exists('wnp_defs')) {
             $id = (int)substr($key, 4); try { $pdo->prepare("UPDATE wa_templates SET header_lib_id = ? WHERE id = ? AND header_format = 'IMAGE'")->execute([$lib, $id]); $res['made'] = 1; } catch (Throwable $e) { $res['failed'][] = 'could not put the photo on the message'; }
             $st[$key] = $s; setting_set($pdo, 'wa_needphoto', json_encode($st)); return $res;
         }
-        $d = wnp_defs()[$key] ?? null; if (!$d) return ['made' => 0, 'failed' => ['unknown photo']];
+        $d = wnp_all_defs()[$key] ?? null; if (!$d) return ['made' => 0, 'failed' => ['unknown photo']];
         foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row'] as $f) if (!function_exists($f)) return ['made' => 0, 'failed' => ['The message maker is not loaded.']];
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
         foreach ($d['tpls'] as $name => $m) {
@@ -158,7 +165,7 @@ if (in_array($__wnp, ['wa.need_photos', 'wa.need_photo_add'], true)) {
     if ($__wnp === 'wa.need_photos') json_response(['ok' => true] + wnp_list($pdo));
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
     @set_time_limit(180);
-    $key = trim((string)($_POST['key'] ?? '')); $all = wnp_defs() + wnp_missing($pdo); if ($key === '' || !isset($all[$key])) json_response(['error' => 'This photo is not on the list any more. Refresh the page.'], 422);
+    $key = trim((string)($_POST['key'] ?? '')); $all = wnp_all_defs() + wnp_missing($pdo); if ($key === '' || !isset($all[$key])) json_response(['error' => 'This photo is not on the list any more. Refresh the page.'], 422);
     $st0 = wnp_state($pdo); if (!empty($st0[$key]['lib']) && empty($_POST['again'])) json_response(['error' => 'A photo was already uploaded for this one.'], 422);
     $f = $_FILES['file'] ?? null; if (!$f || !isset($f['tmp_name'])) json_response(['error' => 'Pick a photo first.'], 422);
     $me = (int)($auth['employee_id'] ?? 0);
