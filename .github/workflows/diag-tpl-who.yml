@@ -1,0 +1,61 @@
+# READ-ONLY: which part of the system (module) sends a pre-made message. Give a few words of the message; it finds the templates with those words
+# and counts, for the last 2 days, the sends of each module's own log (After-Order, Lineup, Cold, Module A rescue / B / C, 7-Day Drip, follow-up rules,
+# campaigns) and the chat messages by sender. Counts only: no phone numbers or names. Changes nothing. Run by hand: Actions -> "Who sends this message (read-only)".
+name: Who sends this message (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: "A few words from the message (e.g. parcel kahan pahonch)"
+        required: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Look up the message
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          WORDS: ${{ github.event.inputs.text }}
+        run: |
+          W=$(printf '%s' "$WORDS" | tr -cd '[:alnum:] ' | cut -c1-60)
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$W" <<'REMOTE' || true
+          P="$1"; W="$2"
+          cat > /tmp/tw_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php"; $w = trim((string)$argv[2]); if (strlen($w) < 4) { echo "give at least 4 letters\n"; exit; }
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          date_default_timezone_set("Asia/Kolkata"); $since = date("Y-m-d H:i:s", time() - 2 * 86400); echo "words: $w · since $since\n";
+          $q = $d->prepare("SELECT id, name, category, extra FROM wa_templates WHERE body LIKE ? ORDER BY id"); $q->execute(["%" . $w . "%"]); $T = $q->fetchAll(PDO::FETCH_ASSOC);
+          if (!$T) { echo "no template has these words\n"; }
+          foreach ($T as $t) { $x = json_decode((string)$t["extra"], true) ?: []; echo "template #" . $t["id"] . " " . $t["name"] . " [" . $t["category"] . "]" . (!empty($x["utility_of"]) ? " = utility version of #" . $x["utility_of"] : "") . "\n"; }
+          $ids = array_map(fn($t) => (int)$t["id"], $T); $in = $ids ? implode(",", $ids) : "0";
+          $one = function ($label, $sql) use ($d, $since) { try { $q = $d->prepare($sql); $q->execute([$since]); $n = $q->fetchColumn(); if ((int)$n > 0) echo "  $label: $n\n"; } catch (Throwable $e) { } };
+          echo "sends in the last 2 days by module (only the ones with any):\n";
+          $one("After-Order (wa_aft_plan)", "SELECT COUNT(*) FROM wa_aft_plan WHERE status = 'sent' AND tpl_id IN ($in) AND sent_at >= ?");
+          $one("30-Day Lineup (wa_line_plan)", "SELECT COUNT(*) FROM wa_line_plan WHERE status = 'sent' AND tpl_id IN ($in) AND sent_at >= ?");
+          $one("Cold funnel (wa_cold_log, normal)", "SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND why NOT LIKE 'rescue%' AND tpl_id IN ($in) AND at >= ?");
+          $one("Cold / Module A rescue (wa_cold_log, rescue)", "SELECT COUNT(*) FROM wa_cold_log WHERE ok = 1 AND why LIKE 'rescue%' AND tpl_id IN ($in) AND at >= ?");
+          $one("Module B (wa_ru_log)", "SELECT COUNT(*) FROM wa_ru_log WHERE ok = 1 AND kind <> 'cnev' AND tpl_id IN ($in) AND at >= ?");
+          $one("Module C (wa_ru_log cnev)", "SELECT COUNT(*) FROM wa_ru_log WHERE ok = 1 AND kind = 'cnev' AND tpl_id IN ($in) AND at >= ?");
+          $one("7-Day Drip (wa_drip_ev)", "SELECT COUNT(*) FROM wa_drip_ev WHERE status = 'sent' AND tpl_id IN ($in) AND at >= ?");
+          $one("Module A campaigns (wa_camp_items)", "SELECT COUNT(*) FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.tpl_id IN ($in) AND i.sent_at >= ?");
+          try { $q = $d->prepare("SELECT kind, COUNT(*) n FROM wa_ru_log WHERE ok = 1 AND tpl_id IN ($in) AND at >= ? GROUP BY kind"); $q->execute([$since]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  wa_ru_log kind '" . $r["kind"] . "': " . $r["n"] . "\n"; } catch (Throwable $e) { }
+          echo "chat messages with these words in the last 2 days, by sender:\n";
+          try { $q = $d->prepare("SELECT who, mtype, COUNT(*) n FROM wa_messages WHERE dir = 'out' AND ts >= ? AND body LIKE ? GROUP BY who, mtype"); $q->execute([$since, "%" . $w . "%"]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . $r["who"] . " / " . $r["mtype"] . ": " . $r["n"] . "\n"; } catch (Throwable $e) { echo "  n/a\n"; }
+          PHP
+          php /tmp/tw_check.php "$P" "$W"; rm -f /tmp/tw_check.php
+          REMOTE
