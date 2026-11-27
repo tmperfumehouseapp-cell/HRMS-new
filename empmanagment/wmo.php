@@ -870,6 +870,7 @@ if (strpos($__wmo, 'wmo.') === 0) {
                 $paid = $pay === 'cod' ? 0 : max(0, wmo_p($in['paid'] ?? 0)); $codA = $pay === 'prepaid' ? 0 : max(0, wmo_p($in['cod'] ?? 0));
                 if ($paid > 50000000 || $codA > 50000000) json_response(['error' => 'The amount is too large.'], 422);
                 if ($pay !== 'prepaid' && $codA < 100) json_response(['error' => 'Type the COD amount the courier must collect (or choose Full prepaid).'], 422);
+                if ($paid + $codA < 100) $paid = 100;   // a free order is priced ₹1 (the courier needs a value); the COD stays 0
                 $total = $paid + $codA; $utr = '';
             } else {
             if ($total < 10000 || $total > 50000000) json_response(['error' => 'The order total must be between ₹100 and ₹500000.'], 422);
