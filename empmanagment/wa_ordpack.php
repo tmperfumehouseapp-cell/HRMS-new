@@ -163,6 +163,13 @@ if (!function_exists('wa_ordpack_defs')) {
             'tmph_cp_10' => ["Hello {{1}} ❄️\n\nSardi ka season he! Aap apne liye dhundh rahe hain ya gift ke liye? 🎁\n\nBatayiye, hum 3 best combo dikhayenge — sirf ₹1,999 se 🔥", ['For me', 'As a gift']],
             'tmph_cp_11' => ["Hi {{1}} 🌸\n\nAapko kaunsa size chahiye? 20ml, 50ml ya 100ml?\n\nHar size par ek crazy combo ready he 💥 Tap kijiye 👇", ['20ML', '50ML', '100ML']],
             'tmph_cp_12' => ["Hello {{1}} 🎊\n\nShaadi ka season — kisi ke liye perfume chahiye? 💍\n\nBatayiye kiske liye, hum best combo bata denge 🔥", ['Men', 'Women', 'Gift set']],
+            /* owner 27 Nov 2026: "rebuild the message patterns by what brings orders". The messages that sold most to new customers in 15 days open with a PRICE AS A QUESTION ("1×50ML perfume sirf ₹400 ka? Kya? Haan sirji!": 24 orders) and let him choose his own combo ("160ML @ ₹1999": 15 orders). Six more in that shape, with the same proven prices as tmph_cp_01-08 (no new price). */
+            'tmph_cp_13' => ["Hello {{1}} 😳\n\n*1 × 50ml perfume sirf ₹550 ka ?*\n\nKya ? 👀\n\nHaan ji ! 5 × 50ml ka combo sirf ₹2,750 🔥\n\nApni pasand ke 5 perfumes chuniye ✨\n\nOrder ke liye tap kijiye 👇", ['Order Now', 'Send Details']],
+            'tmph_cp_14' => ["Hi {{1}} 🤔\n\n*20ml perfume ₹250 se bhi kam me ?*\n\nKya sach me ? 👀\n\nHaan ji ! 8 × 20ml (160 ML) sirf ₹1,999 💥\n\n8 alag khushbu, aapki pasand ki 🌸\n\nTap kijiye 👇", ['BOOK MY COMBO', 'Show more combos']],
+            'tmph_cp_15' => ["Hello {{1}} 👋\n\nEk sawal 🤔 160 ML perfume ke liye aap kitna dete ho ?\n\nHamare yahan *sirf ₹1,999* 😍\n\nAur combo aapki marzi ka: 8 × 20ml  ·  3 × 50ml + 1 × 10ml  ·  1 × 100ml + 3 × 20ml\n\nKaunsa size chahiye ? 👇", ['20ML', '50ML', '100ML']],
+            'tmph_cp_16' => ["Hi {{1}} 🎁\n\n*3 × 50ml liya to 1 × 20ml FREE ?* 😳\n\nHaan ji ! 3 × 50ml sirf ₹2,140 aur saath me 1 × 20ml FREE 🔥\n\nApne liye chahiye ya gift ke liye ? 👇", ['For me', 'As a gift']],
+            'tmph_cp_17' => ["Hello {{1}} 💥\n\n*4 × 50ml ya 2 × 100ml — dono ek hi price me ?*\n\nHaan ji, flat ₹2,099 😍\n\n10 × 20ml bhi isi price me ✨\n\nAapko kaunsi khushbu chahiye ? 👇", ['Men', 'Women', 'Unisex']],
+            'tmph_cp_18' => ["Hi {{1}} 🙋‍♂️ TM Perfume House se bol rahe hain.\n\nEk chhota sa sawal 🤔 20ml, 50ml ya 100ml — aap kaunsa size use karte ho ?\n\nHar size par ek khaas combo ready he, 160 ML sirf ₹1,999 se 🔥\n\nApna size dabaiye 👇", ['20ML', '50ML', '100ML']],
         ];
         $r = []; foreach ($o as $k => $v) $r[$k] = ['body' => $v[0], 'buttons' => $v[1]]; return $r;
     }
