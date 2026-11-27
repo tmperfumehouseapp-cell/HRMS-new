@@ -469,15 +469,31 @@ function wln_price_text(PDO $pdo, string $phone, int $ml = 200): string
     return $t;
 }
 /** [text, pct] of the next price step, or null (see wln_price_text). */
+/** owner 28 Nov 2026 ("the offer by his ML"): the size he spoke of in the chat -> [qty, size, total ml] of the combo the price is given for: 20 ml = 8 x 20 (160 ml), 50 ml = 4 x 50 (200 ml), 100 ml = 2 x 100 (200 ml); his own "N x S ml" when the chart has that row; [4, 50, 200] when nothing is known. */
+function wln_want_combo(PDO $pdo, string $phone, array $rows): array
+{
+    $def = [4, 50, 200]; if ((string)setting_get($pdo, 'wl_px_by_ml', '1') !== '1') return $def;
+    try { if (!function_exists('wof_want') && is_file(__DIR__ . '/wa_offer.php')) require_once __DIR__ . '/wa_offer.php'; if (!function_exists('wof_want')) return $def;
+        $f = date('Y-m-d H:i:s', time() - 30 * 86400); $in = []; $out = [];
+        $q = $pdo->prepare("SELECT dir, body FROM wa_messages WHERE phone = ? AND mtype IN ('text','interactive','button') AND ts >= ? ORDER BY id DESC LIMIT 40"); $q->execute([$phone, $f]);
+        foreach (array_reverse($q->fetchAll(PDO::FETCH_NUM)) as $r) { if ((string)$r[0] === 'in') $in[] = (string)$r[1]; else $out[] = (string)$r[1]; }
+        [$qty, $size] = wof_want($in, []); if ($size < 20) return $def;   // only what HE wrote (our own quotes do not decide his size)
+        $has = []; foreach ($rows as $r) if (!empty($r['p'])) $has[(int)($r['ml'] ?? 0)] = 1;
+        if ($qty >= 1 && $qty * $size >= 100 && isset($has[$qty * $size])) return [$qty, $size, $qty * $size];
+        foreach (([20 => [8, 10, 5], 30 => [5, 4, 10], 50 => [4, 3, 5], 100 => [2, 3]][$size] ?? []) as $n) if (isset($has[$n * $size])) return [$n, $size, $n * $size];
+    } catch (Throwable $e) { }
+    return $def;
+}
 function wln_price_info(PDO $pdo, string $phone, int $ml = 200): ?array
 {
     $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return null;
-    $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $ml) { $row = $r; break; } if (!$row || empty($row['p'])) return null;
+    $cols = array_values(array_map('floatval', (array)$j['cols'])); $cq = 4; $cs = 50; if ($ml === 200) { [$cq, $cs, $ml] = wln_want_combo($pdo, $phone, (array)$j['rows']); }   // owner 28 Nov: the combo of HIS size
+    $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $ml) { $row = $r; break; } if (!$row || empty($row['p'])) return null;
     $base = 0; $bb = 1e9; foreach ($cols as $i => $cv) { $d = abs($cv - 7.0); if ($d < $bb) { $bb = $d; $base = $i; } }   // owner, 21 Nov: the first price is the 7% column; the Lineup's price steps then go 6.5% (day 1 evening / night), 6% (next day), 5% (day 5-6), then the deeper columns - one column per price step
     if (function_exists('pc_chat_level')) { try { $lv = pc_chat_level($pdo, $phone); if (empty($lv['default'])) foreach ($cols as $i => $cv) if (abs($cv - (float)$lv['pct']) < 0.01) $base = max($base, $i); } catch (Throwable $e) { } }
-    $k = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone = ? AND status = 'sent' AND SUBSTR(tpl_key, 1, 6) = 'ln_px_'"); $q->execute([$phone]); $k = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    $k = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone = ? AND status = 'sent' AND SUBSTR(tpl_key, 1, 6) = 'ln_px_' AND step >= 5"); $q->execute([$phone]); $k = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     $idx = min(count($cols) - 1, $base + 1 + $k); $v = (int)($row['p'][$idx] ?? 0); if ($v <= 0) return null;
-    return ['text' => '4 x 50 ml (' . $ml . ' ml) combo sirf Rs ' . number_format($v), 'pct' => (float)$cols[$idx]];
+    return ['text' => $cq . ' x ' . $cs . ' ml (' . $ml . ' ml) combo sirf Rs ' . number_format($v), 'pct' => (float)$cols[$idx]];
 }
 /** One time per customer (idempotent): the old seven-step ladder becomes the 30-day one. The planned steps keep their next time, every later step is re-timed by the new gaps and the missing steps 8-12 are added. 300 customers a round. */
 function wln_ladder30(PDO $pdo): int
@@ -698,8 +714,11 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
                     $rq0 = $pdo->prepare("SELECT id, phone, step, tpl_key, due_at FROM wa_line_plan WHERE phone = ? AND status = 'planned' ORDER BY step LIMIT 1"); $rq0->execute([$phone]); $nr = $rq0->fetch(); if (!$nr) continue; $row = $nr + ['anchor_at' => $row['anchor_at'], 'topic' => $nt]; }
             } catch (Throwable $e) { }
         }
-        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $v2 = ''; $pxPct = ''; $pk = wln_pref_key((int)$row['step']); if ($pk !== '') { [$es, $er] = wln_engagement($pdo, (string)$phone); if ($es >= 3 && $er === 0) $pk = ''; }   // never opened 3+ messages: no paid price step for him
-        if ($pk !== '' && isset($ids[$pk]) && in_array($pk, $okKeys, true)) { if ($pk === 'ln_pp_6') $key = $pk; else { $pi = wln_price_info($pdo, (string)$phone); $v2 = $pi ? $pi['text'] : ''; if ($v2 !== '') { $key = wl_pick($pk, (string)$phone, $scores, $okKeys); $pxPct = (string)$pi['pct']; } } }   // the price / prepaid message of this step when Meta approved it everywhere; no chart or no price = the plain message of the step
+        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $v2 = ''; $pxPct = ''; $pk = wln_pref_key((int)$row['step']);
+        /* owner 28 Nov 2026: "everyone who wrote to us today gets the offer message the next day, by his ML" - the first message of the Lineup (24 h after he wrote) is the price message with the combo of the size he spoke of; no price / not approved = the plain message of the step as before. Switch: wl_day1_offer (1). */
+        if ($pk === '' && (int)$row['step'] === 1 && (string)setting_get($pdo, 'wl_day1_offer', '1') === '1') $pk = 'ln_px_5';
+        if ($pk !== '') { [$es, $er] = wln_engagement($pdo, (string)$phone); if ($es >= 3 && $er === 0) $pk = ''; }   // never opened 3+ messages: no paid price step for him
+        if ($pk !== '' && isset($ids[$pk]) && in_array($pk, $okKeys, true)) { if ($pk === 'ln_pp_6') $key = $pk; else { $pi = wln_price_info($pdo, (string)$phone); $v2 = $pi ? (wln_price_text($pdo, (string)$phone) ?: $pi['text']) : '';   /* the text with the occasion's name in its days */ if ($v2 !== '') { $key = wl_pick($pk, (string)$phone, $scores, $okKeys); $pxPct = (string)$pi['pct']; } } }   // the price / prepaid message of this step when Meta approved it everywhere; no chart or no price = the plain message of the step
         $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send'))) { $o['waiting']++; continue; }
         $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
         if ($res[0]) { $tn = time(); $rq = $pdo->prepare("SELECT id FROM wa_line_plan WHERE phone = ? AND status = 'planned' AND step > ? ORDER BY step"); $rq->execute([$phone, (int)$row['step']]); $rq = $pdo->prepare("SELECT id, step FROM wa_line_plan WHERE phone = ? AND status = 'planned' AND step > ? ORDER BY step"); $rq->execute([$phone, (int)$row['step']]); foreach ($rq->fetchAll() as $rr) $pdo->prepare("UPDATE wa_line_plan SET due_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s', wl_due_ts($tn, wl_gap_sum((int)$row['step'], (int)$rr['step']), $cfg['from'], $cfg['to'])), $rr['id']]);   // the next steps: 24 h after THIS message, 24 h after that…
