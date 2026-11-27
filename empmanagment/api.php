@@ -19747,7 +19747,7 @@ if ($action !== 'login' && $action !== '' && (int)date('G') >= (int)setting_get(
 }
 
 // Store perfumes from Shopify, once a day by itself (first request after 5 AM; syncs after the answer is out; retries every 30 min if it failed).
-if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); st_bday_daily($pdo); } catch (Throwable $e) {} }
+if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); st_bday_daily($pdo); if (function_exists('st_camp_kick')) st_camp_kick($pdo); } catch (Throwable $e) {} }
 
 // Campaign heartbeat: while a WhatsApp campaign is running, any request from the HRMS wakes the sending engine (at most every 30 seconds), so campaigns never wait for a cron job or an open Campaigns page.
 if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') !== 0 && function_exists('curl_init')) {
