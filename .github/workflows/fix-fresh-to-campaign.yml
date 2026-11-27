@@ -1,0 +1,82 @@
+# Owner, 27 Nov 2026 (Kamal): today's queries counted as FRESH although the customer, quiet for 24 h+, only answered an AUTOMATIC message of ours
+# (campaign / follow-up / Module B, not failed, last 3 days, sent after his last query had closed) -> they are Campaign queries.
+# mode=dry: counts only (per salesperson, no phones). mode=apply: moves exactly those queries to Campaign (wa_queries.src, wq_qtype + its log, the chat's source,
+# the type tag) and drops today's cached query day so the counts are rebuilt. Real ad clicks (ad_id / ad_head on the query) and an ad's ready-made text are never moved.
+name: Fresh queries that answered our message -> Campaign (today)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry = only count, apply = move them to Campaign"
+        required: true
+        default: dry
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Find (and move) them
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          M=dry; [ "$MODE" = "apply" ] && M=apply
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$M" <<'REMOTE' || true
+          P="$1"; M="$2"
+          cat > /tmp/fq_fix.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php"; $apply = ($argv[2] ?? '') === 'apply';
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          date_default_timezone_set("Asia/Kolkata"); $from = date("G") >= 10 ? date("Y-m-d 10:00:00") : date("Y-m-d 10:00:00", time() - 86400); $now = date("Y-m-d H:i:s");
+          echo ($apply ? "APPLY" : "DRY RUN (nothing changed)") . " · business day from $from · now $now\n";
+          $ad = function (string $t): bool { $t = mb_strtolower(trim($t)); if ($t === '' || mb_strlen($t) > 300) return false;
+            return (bool)(preg_match('/more info(rmation)? (on|about) this|interested in this|saw (your|this) ad|\btmph\b|tm\s*perfume\s*house|\bwant to (buy|order)\b|placing my first order|free\s*10\s*ml|extra discount|\bi\s*want\b.*\bml\b/u', $t) || preg_match('/\d+\s*ml\b.*\b(in|at|for|@|rs\.?|₹)\s*\d{3,5}\b/u', $t)); };
+          $names = []; foreach ($d->query("SELECT employee_id, full_name FROM employees")->fetchAll(PDO::FETCH_NUM) as $r) $names[(int)$r[0]] = (string)$r[1];
+          $Q = $d->prepare("SELECT q.id, q.phone, q.opened_at, q.src, q.emp_id, q.ad_id, q.ad_head, t.type FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? AND (q.src = 'query' OR t.type IN ('meta', 'new')) ORDER BY q.id");
+          $Q->execute([$from]); $rows = $Q->fetchAll(PDO::FETCH_ASSOC); echo "fresh queries today: " . count($rows) . "\n";
+          $prevQ = $d->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts < ?");
+          $firstQ = $d->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id LIMIT 1");
+          $oursQ = $d->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND emp_id = 0 AND who IN ('campaign', 'followup', 'recover') AND status <> 'failed' AND ts >= ? AND ts <= ?");
+          $liveQ = $d->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1");
+          $hit = []; $why = ['ad click' => 0, 'first ever message' => 0, 'wrote within 24 h' => 0, 'ad text' => 0, 'no message of ours reached him' => 0, 'ours went while his query was open' => 0];
+          foreach ($rows as $r) {
+            $op = (string)$r['opened_at']; $ot = strtotime($op);
+            if (trim((string)$r['ad_id']) !== '' || trim((string)$r['ad_head']) !== '') { $why['ad click']++; continue; }
+            $prevQ->execute([$r['phone'], date("Y-m-d H:i:s", $ot - 5)]); $pv = (string)$prevQ->fetchColumn();
+            if ($pv === '') { $why['first ever message']++; continue; } if (strtotime($pv) > $ot - 86400) { $why['wrote within 24 h']++; continue; }
+            $firstQ->execute([$r['phone'], date("Y-m-d H:i:s", $ot - 5)]); if ($ad((string)$firstQ->fetchColumn())) { $why['ad text']++; continue; }
+            $oursQ->execute([$r['phone'], date("Y-m-d H:i:s", $ot - 3 * 86400), $op]); $ou = (string)$oursQ->fetchColumn(); if ($ou === '') { $why['no message of ours reached him']++; continue; }
+            $liveQ->execute([$r['phone'], date("Y-m-d H:i:s", strtotime($ou) - 30 * 3600), $ou]); if ($liveQ->fetchColumn()) { $why['ours went while his query was open']++; continue; }
+            $hit[] = $r;
+          }
+          echo "kept as fresh: " . json_encode($why) . "\n";
+          echo "to move to Campaign: " . count($hit) . "\n"; $per = []; foreach ($hit as $r) { $k = $names[(int)$r['emp_id']] ?? ((int)$r['emp_id'] ? '#' . $r['emp_id'] : 'nobody'); $per[$k] = ($per[$k] ?? 0) + 1; } arsort($per); foreach ($per as $k => $n) echo "  $k: $n\n";
+          if (!$apply || !$hit) exit;
+          $n = 0;
+          foreach ($hit as $r) { try {
+            $d->beginTransaction(); $why2 = 'owner 27 Nov: answered our automatic message after 24 h quiet (not a fresh query)';
+            if ((string)$r['src'] === 'query') $d->prepare("UPDATE wa_queries SET src = 'campaign' WHERE id = ?")->execute([$r['id']]);
+            $d->prepare("INSERT INTO wq_qtype (query_id, phone, type, reason, auto, rule_id, camp_id, camp_emp, set_by, at, opened_at, st) VALUES (?, ?, 'campaign', ?, 0, 0, 0, 0, 0, ?, ?, 'ok') ON DUPLICATE KEY UPDATE type = 'campaign', reason = VALUES(reason), auto = 0, set_by = 0, at = VALUES(at), st = 'ok'")->execute([$r['id'], $r['phone'], $why2, $now, $r['opened_at']]);
+            $d->prepare("INSERT INTO wq_tlog (query_id, type, reason, set_by, auto, at) VALUES (?, 'campaign', ?, 0, 0, ?)")->execute([$r['id'], $why2, $now]);
+            $d->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ? AND source = 'query'")->execute([$r['phone']]);
+            if ((string)$r['type'] !== '') $d->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = ?")->execute([$r['phone'], $r['type'] . '_query']);
+            $d->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, 'campaign_query', 'wq', ?)")->execute([$r['phone'], $r['opened_at']]);
+            $d->commit(); $n++; } catch (Throwable $e) { if ($d->inTransaction()) $d->rollBack(); echo "  query " . $r['id'] . " not moved: " . substr($e->getMessage(), 0, 120) . "\n"; } }
+          try { $d->prepare("DELETE FROM wq_daily WHERE day = ?")->execute([substr($from, 0, 10)]); } catch (Throwable $e) { }
+          echo "MOVED to Campaign: $n\n";
+          PHP
+          php /tmp/fq_fix.php "$P" "$M"; rm -f /tmp/fq_fix.php
+          REMOTE
