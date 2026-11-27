@@ -1162,6 +1162,9 @@ function bd_badge_data(PDO $pdo, array $w): array
         $my += $dpOpen; if ($dpHas) $has += 1;
         $beN = 0; if (function_exists('b2_badge_boss') && $w['manager']) { $beN = (int)b2_badge_boss($pdo, $w); }
         $b2Mine = false; if (function_exists('b2_badge_my') && $w['emp']) { $b2 = b2_badge_my($pdo, $w['emp']); $my += (int)$b2[0]; if (!empty($b2[1])) $has += 1; $b2Mine = (int)$b2[0] > 0 || !empty($b2[1]); }
+        // ↩ RTO resend / 🔁 Exchange orders given to this person (Dispatch → RTO resend & Exchange): they come as a card in My Day, so My Day must be in his menu too (even with no other task)
+        $rxOpen = 0; if ($w['emp']) { try { $q = $pdo->prepare("SELECT COUNT(*) FROM wmo_rx_hand h JOIN wmo_order o ON o.id = h.order_id WHERE h.emp_id = ? AND h.done_at IS NULL AND o.status <> 'cancelled'"); $q->execute([$w['emp']]); $rxOpen = (int)$q->fetchColumn(); } catch (Throwable $e) { /* no such table yet: nothing given */ } }
+        if ($rxOpen > 0) { $my += $rxOpen; $has += 1; $b2Mine = true; }
         // piggy-back: keep the engine ticking even without a cron job
         bd_tick_after($pdo);
     return ['show' => ($has > 0 || $w['manager']) && ($w['manager'] || bd_mode() !== 'shadow' || $b2Mine), 'manager' => $w['manager'], 'admin' => $w['admin'], 'my_open' => $my, 'inbox' => $inbox, 'be' => $beN, 'mode' => bd_mode(), 'has_tasks' => $has > 0 && (bd_mode() !== 'shadow' || $b2Mine)];
