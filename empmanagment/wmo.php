@@ -37,7 +37,7 @@ function wmo_tables(PDO $pdo): bool
             utr VARCHAR(40) NOT NULL DEFAULT '', ml INT NOT NULL DEFAULT 0, lines_json MEDIUMTEXT NULL, shot_mime VARCHAR(20) NOT NULL DEFAULT '', shot_b64 MEDIUMTEXT NULL, shot_json TEXT NULL, src VARCHAR(12) NOT NULL DEFAULT '',
             cust_json TEXT NULL, phone_match TINYINT NOT NULL DEFAULT 1, shop_id BIGINT NULL, note VARCHAR(255) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, sent_at DATETIME NULL, opened_at DATETIME NULL, confirmed_at DATETIME NULL,
             cancelled_at DATETIME NULL, UNIQUE KEY uq_wmo_tok (token), KEY k_wmo_phone (phone, status), KEY k_wmo_utr (utr)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        foreach (['channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL', 'gateway' => "VARCHAR(24) NOT NULL DEFAULT ''", 'shot2_mime' => "VARCHAR(20) NOT NULL DEFAULT ''", 'shot2_b64' => 'MEDIUMTEXT NULL', 'proof_json' => 'TEXT NULL', 'trk_no' => "VARCHAR(40) NOT NULL DEFAULT ''", 'trk_courier' => "VARCHAR(30) NOT NULL DEFAULT ''", 'trk_adm' => 'TINYINT NOT NULL DEFAULT 0', 'edits_json' => 'TEXT NULL', 'old_order' => "VARCHAR(40) NOT NULL DEFAULT ''", 'rx_reason' => "VARCHAR(200) NOT NULL DEFAULT ''"] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
+        foreach (['channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL', 'gateway' => "VARCHAR(24) NOT NULL DEFAULT ''", 'shot2_mime' => "VARCHAR(20) NOT NULL DEFAULT ''", 'shot2_b64' => 'MEDIUMTEXT NULL', 'proof_json' => 'TEXT NULL', 'trk_no' => "VARCHAR(40) NOT NULL DEFAULT ''", 'trk_courier' => "VARCHAR(30) NOT NULL DEFAULT ''", 'trk_adm' => 'TINYINT NOT NULL DEFAULT 0', 'edits_json' => 'TEXT NULL', 'old_order' => "VARCHAR(40) NOT NULL DEFAULT ''", 'rx_reason' => "VARCHAR(200) NOT NULL DEFAULT ''", 'handler_emp' => 'INT NOT NULL DEFAULT 0', 'handler_at' => 'DATETIME NULL', 'handler_done' => 'DATETIME NULL'] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
         try { $rc = $pdo->query("SHOW COLUMNS FROM wmo_order LIKE 'rx_reason'")->fetch(); if ($rc && stripos((string)$rc['Type'], 'varchar(200)') === false) $pdo->exec("ALTER TABLE wmo_order MODIFY rx_reason VARCHAR(200) NOT NULL DEFAULT ''"); } catch (Throwable $e) { }      // the reason can hold several choices and typed words
         return $ok = true;
     } catch (PDOException $e) { error_log('wmo_tables: ' . $e->getMessage()); return $ok = false; }
@@ -417,10 +417,27 @@ function wmo_pin_lookup(string $pin): array
 }
 /** Checks what the customer typed. Returns [clean, error]. */
 /** ↩ the RTO resend / Exchange report: every such order made in the days asked, with who made it, the customer, the amounts and where the parcel is now */
+/** The RTO resend / Exchange orders given to one person (open ones, and the ones he finished since yesterday): customer, address, perfumes, reason, parcel state. */
+function wmo_rx_mine(PDO $pdo, int $emp): array
+{
+    if ($emp <= 0) return [];
+    $st = $pdo->prepare("SELECT id, order_no, otype, old_order, rx_reason, phone, lines_json, cust_json, addr_json, handler_at, handler_done FROM wmo_order WHERE otype IN ('rto','exchange') AND status <> 'cancelled' AND handler_emp = ? AND (handler_done IS NULL OR handler_done >= ?) ORDER BY (handler_done IS NULL) DESC, id DESC LIMIT 100");
+    $st->execute([$emp, date('Y-m-d 00:00:00', strtotime('-1 day'))]); $rows = $st->fetchAll(); $par = [];
+    if ($rows) { try { $nos = []; foreach ($rows as $r) { $nos[] = (string)$r['order_no']; $nos[] = '#' . $r['order_no']; } $q = $pdo->prepare("SELECT order_name, tracking_no, courier, status, sr_status FROM dp_dsp_parcels WHERE order_name IN (" . implode(',', array_fill(0, count($nos), '?')) . ")"); $q->execute($nos); foreach ($q->fetchAll() as $p) $par[ltrim((string)$p['order_name'], '#')] = $p; } catch (Throwable $e) { } }
+    $lab = ['placed' => 'No tracking ID yet', 'tracked' => 'Tracking ID given', 'transit' => 'In transit', 'delivered' => 'Delivered', 'rto' => 'Returned again', 'cancelled' => 'Cancelled'];
+    $out = [];
+    foreach ($rows as $r) {
+        $cu = json_decode((string)($r['cust_json'] ?? ''), true) ?: []; $ad = json_decode((string)($r['addr_json'] ?? ''), true) ?: []; $L = json_decode((string)$r['lines_json'], true) ?: []; $p = $par[(string)$r['order_no']] ?? null;
+        $addr = trim(implode(', ', array_filter([(string)($ad['addr1'] ?? ''), (string)($ad['landmark'] ?? ''), (string)($ad['city'] ?? ''), (string)($ad['state'] ?? ''), (string)($ad['pin'] ?? '')])));
+        $out[] = ['id' => (int)$r['id'], 'order_no' => (string)$r['order_no'], 'kind' => (string)$r['otype'], 'old_order' => (string)$r['old_order'], 'reason' => (string)($r['rx_reason'] ?? ''), 'customer' => (string)($cu['name'] ?? ($ad['name'] ?? '')), 'phone' => (string)$r['phone'], 'address' => $addr,
+            'items' => wmo_lines_text($L), 'tracking_no' => $p ? (string)$p['tracking_no'] : '', 'courier' => $p ? (string)$p['courier'] : '', 'parcel' => $p ? ($lab[(string)$p['status']] ?? (string)$p['status']) : 'Not in Dispatch yet', 'given_at' => (string)($r['handler_at'] ?? ''), 'done' => !empty($r['handler_done'])];
+    }
+    return $out;
+}
 function wmo_rx_report(PDO $pdo, string $from, string $to): array
 {
     [$ws, $we] = biz_window($pdo, $from, $to);
-    $st = $pdo->prepare("SELECT id, order_no, otype, old_order, rx_reason, phone, emp_id, status, pay, total_p, paid_p, cod_p, lines_json, cust_json, addr_json, created_at, confirmed_at FROM wmo_order WHERE otype IN ('rto','exchange') AND status <> 'cancelled' AND created_at >= ? AND created_at <= ? ORDER BY id DESC LIMIT 2000"); $st->execute([$ws, $we]); $rows = $st->fetchAll();
+    $st = $pdo->prepare("SELECT id, order_no, otype, old_order, rx_reason, handler_emp, handler_done, phone, emp_id, status, pay, total_p, paid_p, cod_p, lines_json, cust_json, addr_json, created_at, confirmed_at FROM wmo_order WHERE otype IN ('rto','exchange') AND status <> 'cancelled' AND created_at >= ? AND created_at <= ? ORDER BY id DESC LIMIT 2000"); $st->execute([$ws, $we]); $rows = $st->fetchAll();
     $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $par = [];
     if ($rows) { try { $nos = []; foreach ($rows as $r) { $nos[] = (string)$r['order_no']; $nos[] = '#' . $r['order_no']; } $q = $pdo->prepare("SELECT order_name, tracking_no, courier, status, sr_status FROM dp_dsp_parcels WHERE order_name IN (" . implode(',', array_fill(0, count($nos), '?')) . ")"); $q->execute($nos); foreach ($q->fetchAll() as $p) $par[ltrim((string)$p['order_name'], '#')] = $p; } catch (Throwable $e) { } }
     $lab = ['placed' => 'No tracking ID yet', 'tracked' => 'Tracking ID given', 'transit' => 'In transit', 'delivered' => 'Delivered', 'rto' => 'Returned again', 'cancelled' => 'Cancelled'];
@@ -431,7 +448,7 @@ function wmo_rx_report(PDO $pdo, string $from, string $to): array
         $sum['count']++; $sum[$k]++; $sum['cod'] += $r['cod_p'] / 100; $sum['prepaid'] += $r['paid_p'] / 100; if ($p && (string)$p['tracking_no'] !== '') $sum['tracked']++; if (!$conf) $sum['waiting']++;
         if (!isset($by[$who])) $by[$who] = ['name' => $who, 'rto' => 0, 'exchange' => 0]; $by[$who][$k]++;
         if (!isset($days[$d])) $days[$d] = ['date' => $d, 'rto' => 0, 'exchange' => 0]; $days[$d][$k]++;
-        $out[] = ['id' => (int)$r['id'], 'order_no' => (string)$r['order_no'], 'kind' => $k, 'old_order' => (string)$r['old_order'], 'reason' => (string)($r['rx_reason'] ?? ''), 'created_at' => (string)$r['created_at'], 'customer' => (string)($cu['name'] ?? ($ad['name'] ?? '')), 'phone' => (string)$r['phone'],
+        $out[] = ['id' => (int)$r['id'], 'order_no' => (string)$r['order_no'], 'kind' => $k, 'old_order' => (string)$r['old_order'], 'reason' => (string)($r['rx_reason'] ?? ''), 'handler_id' => (int)($r['handler_emp'] ?? 0), 'handler' => (int)($r['handler_emp'] ?? 0) > 0 ? (string)($names[(int)$r['handler_emp']] ?? ('#' . (int)$r['handler_emp'])) : '', 'handler_done' => !empty($r['handler_done']), 'created_at' => (string)$r['created_at'], 'customer' => (string)($cu['name'] ?? ($ad['name'] ?? '')), 'phone' => (string)$r['phone'],
             'city' => (string)($cu['city'] ?? ($ad['city'] ?? '')), 'items' => wmo_lines_text($L), 'pay' => (string)$r['pay'], 'prepaid' => $r['paid_p'] / 100, 'cod' => $r['cod_p'] / 100, 'by' => $who,
             'tracking_no' => $p ? (string)$p['tracking_no'] : '', 'courier' => $p ? (string)$p['courier'] : '', 'status' => !$conf ? 'Address not saved yet' : ($p ? ($lab[(string)$p['status']] ?? (string)$p['status']) : 'Not in Dispatch yet'), 'sr_status' => $p ? (string)($p['sr_status'] ?? '') : ''];
     }
@@ -767,11 +784,32 @@ if (strpos($__wmo, 'wmo.') === 0) {
             setting_set($pdo, 'wmo_rto_emps', json_encode($ids));
             json_response(['ok' => true, 'emps' => $ids, 'message' => $ids ? count($ids) . ' ' . (count($ids) === 1 ? 'person' : 'people') . ' can make RTO / Exchange orders now.' : 'Only Admin and HR can make RTO / Exchange orders now.']);
         }
+        case 'wmo.rx_assign': {   // 👤 give an RTO resend / Exchange order to a person (Admin / HR): it comes to his My Day. Nothing about sales, collection or commission changes.
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin or HR can give these orders to a person.'], 403);
+            $id = (int)($in['id'] ?? 0); $emp = (int)($in['emp_id'] ?? 0); $q = $pdo->prepare("SELECT id, otype, status FROM wmo_order WHERE id = ?"); $q->execute([$id]); $o = $q->fetch();
+            if (!$o || !wmo_is_rx($o['otype'] ?? '')) json_response(['error' => 'This is not an RTO resend / Exchange order.'], 404); if ($o['status'] === 'cancelled') json_response(['error' => 'This order is cancelled.'], 422);
+            $names = employee_names_by_id($pdo); if ($emp > 0 && !isset($names[$emp])) json_response(['error' => 'Choose a person from the list.'], 422);
+            $pdo->prepare("UPDATE wmo_order SET handler_emp = ?, handler_at = ?, handler_done = NULL WHERE id = ?")->execute([$emp, $emp > 0 ? date('Y-m-d H:i:s') : null, $id]);
+            json_response(['ok' => true, 'handler_id' => $emp, 'handler' => $emp > 0 ? (string)$names[$emp] : '', 'message' => $emp > 0 ? 'Given to ' . $names[$emp] . '. It is in his My Day now.' : 'Taken back: nobody has this order now.']);
+        }
+        case 'wmo.rx_done': {   // ✓ the person (or Admin / HR) marks his RTO resend / Exchange work done, or undoes it
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $id = (int)($in['id'] ?? 0); $me2 = (int)($auth['employee_id'] ?? 0); $adm = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+            $q = $pdo->prepare("SELECT id, handler_emp FROM wmo_order WHERE id = ? AND otype IN ('rto','exchange')"); $q->execute([$id]); $o = $q->fetch(); if (!$o) json_response(['error' => 'Order not found.'], 404);
+            if (!$adm && (int)$o['handler_emp'] !== $me2) json_response(['error' => 'This order is not given to you.'], 403);
+            $pdo->prepare("UPDATE wmo_order SET handler_done = ? WHERE id = ?")->execute([!empty($in['done']) ? date('Y-m-d H:i:s') : null, $id]);
+            json_response(['ok' => true]);
+        }
+        case 'wmo.rx_mine': {   // 🧰 what was given to me (shown in My Day)
+            json_response(['ok' => true, 'orders' => wmo_rx_mine($pdo, (int)($auth['employee_id'] ?? 0))]);
+        }
         case 'wmo.rx_report': {
             if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || wmo_rx_ok($pdo, $auth) || wmo_dsp_ok($pdo, $auth))) json_response(['error' => 'This report is for Admin, Dispatch and the people who make RTO / Exchange orders.'], 403);
             $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['from'] ?? '')) ? (string)$in['from'] : biz_today($pdo); $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['to'] ?? '')) ? (string)$in['to'] : $from; if ($to < $from) $to = $from;
             if ((strtotime($to) - strtotime($from)) > 120 * 86400) $from = date('Y-m-d', strtotime($to) - 120 * 86400);
-            json_response(['ok' => true] + wmo_rx_report($pdo, $from, $to));
+            $rep = wmo_rx_report($pdo, $from, $to); if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) { $nm = employee_names_by_id($pdo); asort($nm); $rep['staff'] = []; foreach ($nm as $i => $n) $rep['staff'][] = ['id' => (int)$i, 'name' => (string)$n]; }
+            json_response(['ok' => true] + $rep);
         }
         case 'wmo.dsp_list': case 'wmo.dsp_export': {
             if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'The manual orders list is for Admin, Dispatch, the Admin department and Sales Heads.'], 403);
