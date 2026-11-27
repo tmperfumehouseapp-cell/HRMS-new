@@ -577,8 +577,9 @@ function wa_fam_market_rewrite(array $t, int $ver, string $reason): array
 function wa_fam_trouble(array $r, array $have): string
 {
     /* owner 27 Nov 2026: a message that is APPROVED on another account is not in trouble because one account rejected it (one account rejects every new message: each of the day's messages got a calmer _v2 and _v3 that nobody needs) */
-    $__okAny = false; foreach ($have as $w) if (strtoupper((string)$w['status']) === 'APPROVED') { $__okAny = true; break; }
+    $__okAny = false; foreach ($have as $w) if (in_array(strtoupper((string)$w['status']), ['APPROVED', 'PENDING', 'IN_APPEAL'], true)) { $__okAny = true; break; }   /* PENDING counts too: the full account answers "rejected" at once, before the others have approved (the photo messages got a _v2 and _v3 that way) */
     foreach ($have as $w) { $s = strtoupper((string)$w['status']); if ($s === 'REJECTED' && $__okAny) continue;
+        if ($s === 'REJECTED' && preg_match('/maximum number|મહત્તમ સંખ્યા|English content|English કન્ટેન્ટ|already exists/iu', (string)$w['reason'])) continue;   /* the account is full, or the name is taken there: not the wording's fault */
         if ($s === 'REJECTED' && (string)$w['meta_id'] !== '' ) return 'rejected by Meta' . ((string)$w['reason'] !== '' ? ' (' . mb_substr((string)$w['reason'], 0, 60) . ')' : '');
         if ($s === 'REJECTED' && (string)$w['reason'] !== '' && !preg_match('/reach|answer|WA_APP_ID|WA_TOKEN|photo|video|PDF|file|library|sample|upload|limit/i', (string)$w['reason'])) return 'rejected by Meta (' . mb_substr((string)$w['reason'], 0, 60) . ')';
         if (in_array($s, ['PAUSED', 'DISABLED', 'FLAGGED'], true)) return 'paused by Meta';
