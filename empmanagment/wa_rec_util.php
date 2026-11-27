@@ -555,7 +555,7 @@ function wa_ru_tick_inner(PDO $pdo): array
                 $t = $j['t']; $hf = strtoupper((string)($t['header_format'] ?? ''));
                 $mk = !in_array(strtolower((string)($t['category'] ?? 'marketing')), ['utility', 'authentication'], true);   // the welcome message that Meta moved to marketing: never to a customer who said Stop to promotions
                 if ($mk && (int)$j['c']['camp_optout'] === 1) { $out[$k] = [false, 'This customer asked to stop promotional messages.', 0]; continue; }
-                if (!in_array($hf, ['', 'TEXT'], true) || !function_exists('wa_http_multi') || !function_exists('wa_tpl_request')) { $out[$k] = wa_send_tpl_one($pdo, $j['c'], $t, $j['num'], $j['vars'], 'recover'); continue; }   // photo / video / PDF on top: the old one-by-one way
+                if (!in_array($hf, ['', 'TEXT'], true) || !function_exists('wa_http_multi') || !function_exists('wa_tpl_request') || (function_exists('wa_tpl_is_parcel') && wa_tpl_is_parcel($t))) { $out[$k] = wa_send_tpl_one($pdo, $j['c'], $t, $j['num'], $j['vars'], 'recover'); continue; }   // photo / video / PDF on top: the old one-by-one way · 📦 a parcel / tracking message too (owner 27 Nov: no order = the ML-wise offer goes instead, decided in wa_send_tpl_one)
                 $rq = wa_tpl_request($t, $j['num'], (string)($j['c']['wa_id'] ?: '91' . $j['c']['phone']), $j['vars']); $reqs[$k] = ['path' => $rq['path'], 'json' => $rq['json']];
             }
             if ($reqs) { $ans = wa_http_multi(array_values($reqs)); $ks = array_keys($reqs); foreach ($ks as $n => $k) { [$code, $d] = $ans[$n] ?? [0, ['error' => ['message' => 'No answer from Meta.']]]; $j = $batch[$k]; $wamid = (string)(is_array($d) ? ($d['messages'][0]['id'] ?? '') : '');
