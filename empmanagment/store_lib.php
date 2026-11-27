@@ -919,10 +919,13 @@ function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array 
 {
     $phone = (string)$p['phone']; $key = wa_key($phone); if ($key === '' || strlen($key) !== 10) return [false, 'not an Indian mobile number'];
     $back = !empty($p['returning_c']) && !empty($cs['skip_returning']);
-    $t = null; foreach (st_wa_order_names($back) as $nm) { $t = st_wa_tpl($pdo, $nm); if ($t) break; }      // the owner's own order-confirmation message first (once Meta approved it), then the photo version, then the plain one
-    if (!$t) return [false, 'template not approved yet'];
-    [$num, $own, $why] = st_wa_number_for($pdo, $t);
-    if (!$num) return [false, $why];
+    // the first message that can really go out of the Store number: the "welcome back" ones first for a returning customer, and when none of them is approved on the Store number yet, the new-customer message, so the bill always goes
+    $t = null; $num = null; $own = false; $why = 'template not approved yet';
+    foreach (array_values(array_unique(array_merge(st_wa_order_names($back), $back ? st_wa_order_names(false) : []))) as $nm) {
+        $t0 = st_wa_tpl($pdo, $nm); if (!$t0) continue; [$n0, $o0, $w0] = st_wa_number_for($pdo, $t0);
+        if ($n0) { $t = $t0; $num = $n0; $own = $o0; break; } $why = $w0;
+    }
+    if (!$t || !$num) return [false, $why];
     $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
     if ($c && (int)($c['optout'] ?? 0) === 1) return [false, 'customer opted out of WhatsApp'];
     if ($own) { try { $q = $pdo->prepare("SELECT optout FROM st_wa_chat WHERE phone = ?"); $q->execute([$key]); if ((int)$q->fetchColumn() === 1) return [false, 'customer asked the store to stop']; } catch (Throwable $e) { } }
