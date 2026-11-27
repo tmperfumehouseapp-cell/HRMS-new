@@ -222,6 +222,29 @@ function wa_log_template_msg(PDO $pdo, string $wamid, string $key, int $numId, s
 {
     try { $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'template', ?, 'sent', ?, 0, ?)")->execute([$wamid, $key, $numId, $shown, $who, date('Y-m-d H:i:s')]); } catch (PDOException $e) { }
 }
+/** 📦 A parcel / order-tracking message (the tmph_cx_* / tmph_cxp_* family, or a utility message about the parcel, courier, tracking or AWB). */
+function wa_tpl_is_parcel(array $t): bool
+{
+    $nm = (string)($t['name'] ?? ''); if (preg_match('/^tmph_cxp?_/i', $nm)) return true;
+    return strtoupper((string)($t['category'] ?? '')) === 'UTILITY' && (bool)preg_match('/parcel|track|courier|shipment|awb|dispatch|पार्सल/iu', (string)($t['body'] ?? ''));
+}
+/** True when the customer has ever ordered: Shopify / WhatsApp-manual orders (wa_cust), website and manual orders (manual_orders), WhatsApp manual orders (wmo_order). Remembered per run. */
+function wa_cust_has_order(PDO $pdo, string $phone): bool
+{
+    static $m = []; $k = substr(preg_replace('/\D+/', '', $phone), -10); if ($k === '') return false; if (isset($m[$k])) return $m[$k]; if (count($m) > 5000) $m = [];
+    $one = function (string $sql) use ($pdo, $k) { try { $q = $pdo->prepare($sql); $q->execute([$k]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; } };
+    return $m[$k] = $one("SELECT 1 FROM wa_cust WHERE phone = ? AND n > 0 LIMIT 1") || $one("SELECT 1 FROM manual_orders WHERE phone = ? LIMIT 1") || $one("SELECT 1 FROM wmo_order WHERE phone = ? AND status = 'confirmed' LIMIT 1");
+}
+/** The ML-wise offer message to send on this number: the first of tmph_style_mlwise, ml_wise_v3, ml_wise_v2, ml_wise that Meta approved for the number's account. null = none. */
+function wa_mlwise_for(PDO $pdo, array $num): ?array
+{
+    static $c = []; $w = function_exists('wa_waba_of') ? wa_waba_of($num) : ''; if (array_key_exists($w, $c)) return $c[$w];
+    $c[$w] = null; try {
+        $q = $pdo->query("SELECT id, name FROM wa_templates WHERE name IN ('tmph_style_mlwise', 'ml_wise_v3', 'ml_wise_v2', 'ml_wise')"); $ids = []; foreach ($q->fetchAll() as $r) $ids[(string)$r['name']] = (int)$r['id'];
+        foreach (['tmph_style_mlwise', 'ml_wise_v3', 'ml_wise_v2', 'ml_wise'] as $nm) { if (empty($ids[$nm])) continue; $t = wa_camp_tpl($pdo, $ids[$nm]); if ($t && ($w === '' || in_array($w, (array)($t['ok_wabas'] ?? []), true))) { $c[$w] = $t; break; } }
+    } catch (Throwable $e) { }
+    return $c[$w];
+}
 /** One template to one customer (used by follow-ups). Returns [ok, wamid|error, errorCode]. */
 function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, string $who): array
 {
@@ -236,6 +259,15 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
     }
     if (in_array($who, ['bot', 'auto', 'flow', 'followup', 'recover', 'campaign'], true) && function_exists('wa_bot_paused') && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.', 0];   // ⏸ stopped by the salesperson
     if (in_array($who, ['flow', 'followup'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off until tomorrow night.', 0];
+    // 📦 owner (27 Nov 2026): a PARCEL / TRACKING message ("Aapka parcel kahan pahonch gaya?") goes only to a customer who has ORDERED. To anybody else an automatic module (Lineup, Cold, After-Order,
+    //    Module B / C, the rescue) sends the ML-WISE OFFER instead (tmph_style_mlwise, else ml_wise_v3 / v2 / ml_wise: marketing, approved on this number); none approved here = nothing goes. Switch off: wa_noorder_mlwise = 0.
+    if (in_array($who, ['followup', 'recover'], true) && wa_tpl_is_parcel($t) && (string)setting_get($pdo, 'wa_noorder_mlwise', '1') !== '0' && !wa_cust_has_order($pdo, (string)$c['phone'])) {
+        $alt = wa_mlwise_for($pdo, $num); if (!$alt) return [false, 'Parcel / tracking message not sent: this customer has no order, and no ML-wise offer message is approved on this number.', 0];
+        $co = (int)($c['camp_optout'] ?? -1); if ($co < 0) { try { $qq = $pdo->prepare("SELECT camp_optout FROM wa_contacts WHERE phone = ?"); $qq->execute([(string)$c['phone']]); $co = (int)$qq->fetchColumn(); } catch (Throwable $e0) { $co = 0; } }
+        if ($co === 1) return [false, 'Parcel / tracking message not sent: no order, and the customer asked to stop promotional messages (the ML-wise offer is promotional).', 0];
+        $fn = trim((string)preg_split('/\s+/u', trim((string)($c['name'] ?? '')))[0]); $fn = mb_strlen($fn) > 1 ? mb_convert_case($fn, MB_CASE_TITLE) : 'ji';
+        $t = $alt; $vars = (int)($alt['nvars'] ?? 0) > 0 ? [$fn] : [];
+    }
     $to = (string)($c['wa_id'] ?: '91' . $c['phone']);
     if (!in_array(strtoupper((string)($t['header_format'] ?? '')), ['', 'TEXT'], true)) {   // a photo / video / PDF on top needs its own parts
         [$okR, $rq] = wa_camp_request($pdo, $t, $num, $to, $vars, []); if (!$okR) return [false, (string)$rq, 0]; $req = $rq;
