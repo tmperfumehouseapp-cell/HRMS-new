@@ -455,7 +455,7 @@ function wa_waba_skip(PDO $pdo): array
 }
 function wa_tpl_try_create(PDO $pdo, array $tpl, string $waba, array &$budget): array
 {
-    $__sk = wa_waba_skip($pdo); if (isset($__sk[$waba])) return [false, 'this WhatsApp account rejects every new message now: skipped until ' . date('d M H:i', $__sk[$waba])];
+    $__sk = function_exists('wa_waba_skip') ? wa_waba_skip($pdo) : []; if (isset($__sk[$waba])) return [false, 'this WhatsApp account rejects every new message now: skipped until ' . date('d M H:i', $__sk[$waba])];
     $queue = function () use ($pdo, $tpl) { try { if (empty(wa_mix_extra($tpl)['queued'])) wa_mix_extra_set($pdo, (int)$tpl['id'], ['queued' => 1]); } catch (Throwable $e) { } };   // not sent for lack of room: the engine picks it up later
     if (($budget['left'] ?? 0) <= 0) { $queue(); return [false, 'over the limit for one run - continues in the next minute']; }
     $b = wa_tpl_budget($pdo, $waba); if (!$b['ok']) { $queue(); return [false, $b['why']]; }
