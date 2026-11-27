@@ -436,6 +436,12 @@ function wmo_rx_defaults(PDO $pdo): array
     $o = ['rto' => [], 'exchange' => []]; foreach (['rto', 'exchange'] as $k) if (is_array($j[$k] ?? null)) $o[$k] = array_values(array_unique(array_filter(array_map('intval', $j[$k]), fn($x) => $x > 0)));
     return $o;
 }
+/** The people an order can be given to: id, name, and whether he has a login (without a login he can never see My Day). */
+function wmo_rx_staff(PDO $pdo): array
+{
+    $nm = employee_names_by_id($pdo); asort($nm); $lg = []; try { foreach ($pdo->query("SELECT DISTINCT employee_id FROM users WHERE employee_id IS NOT NULL AND employee_id > 0")->fetchAll(PDO::FETCH_COLUMN) as $e) $lg[(int)$e] = 1; } catch (Throwable $e) { }
+    $out = []; foreach ($nm as $i => $n) $out[] = ['id' => (int)$i, 'name' => (string)$n, 'login' => isset($lg[(int)$i])]; return $out;
+}
 /** order id => [[id, name, done], ...] for the given orders. */
 function wmo_rx_handlers(PDO $pdo, array $ids, array $names): array
 {
@@ -802,7 +808,7 @@ if (strpos($__wmo, 'wmo.') === 0) {
         case 'wmo.rx_access': {   // ↩ may this person make RTO resend / Exchange orders? (Admin also gets the list of people who may)
             $adm = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true); $o = ['ok' => wmo_rx_ok($pdo, $auth), 'admin' => $adm, 'report' => $adm || wmo_rx_ok($pdo, $auth) || wmo_dsp_ok($pdo, $auth)];
             if ($adm) { $ids = wmo_rx_emps($pdo); $names = employee_names_by_id($pdo); asort($names); $o['emps'] = $ids; $o['people'] = []; foreach ($names as $i => $n) $o['people'][] = ['id' => (int)$i, 'name' => (string)$n, 'on' => in_array((int)$i, $ids, true)]; }
-            if ($adm || $o['ok']) { $nm0 = employee_names_by_id($pdo); asort($nm0); $o['staff'] = []; foreach ($nm0 as $i => $n) $o['staff'][] = ['id' => (int)$i, 'name' => (string)$n]; }      // the list for "give it to" on the new-order form
+            if ($adm || $o['ok']) $o['staff'] = wmo_rx_staff($pdo);      // the list for "give it to" on the new-order form
             if ($adm || $o['ok']) $o['defaults'] = wmo_rx_defaults($pdo);
             json_response($o);
         }
@@ -849,7 +855,7 @@ if (strpos($__wmo, 'wmo.') === 0) {
             if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || wmo_rx_ok($pdo, $auth) || wmo_dsp_ok($pdo, $auth))) json_response(['error' => 'This report is for Admin, Dispatch and the people who make RTO / Exchange orders.'], 403);
             $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['from'] ?? '')) ? (string)$in['from'] : biz_today($pdo); $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['to'] ?? '')) ? (string)$in['to'] : $from; if ($to < $from) $to = $from;
             if ((strtotime($to) - strtotime($from)) > 120 * 86400) $from = date('Y-m-d', strtotime($to) - 120 * 86400);
-            $rep = wmo_rx_report($pdo, $from, $to); if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) { $nm = employee_names_by_id($pdo); asort($nm); $rep['staff'] = []; foreach ($nm as $i => $n) $rep['staff'][] = ['id' => (int)$i, 'name' => (string)$n]; }
+            $rep = wmo_rx_report($pdo, $from, $to); if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) { $nm = employee_names_by_id($pdo); asort($nm); $rep['staff'] = wmo_rx_staff($pdo); }
             json_response(['ok' => true] + $rep);
         }
         case 'wmo.dsp_list': case 'wmo.dsp_export': {

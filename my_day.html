@@ -360,7 +360,7 @@
     // Before punch in the day is only the punch-in steps and the Punch In button. Work, penalties and the rest open after it.
     let body = pin && !redo
       ? dayCard() + rxCard() + fuCard() + lhCard() + '<div id="dinoSlot" style="margin-top:6px"></div>' + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
-      : punchCard() + '<div class="md-wait">Your work for today opens after you punch in.</div>' + (pin ? dayCard() + rxCard() + fuCard() + tasks() : '');
+      : punchCard() + rxCard() + '<div class="md-wait">Your work for today opens after you punch in.</div>' + (pin ? dayCard() + fuCard() + tasks() : '');
     body = body.replace('class="md-card', 'class="md-card pull');   // the first card slides up over the orange header
     $('root').innerHTML = hero() + body;
     if (window.DINO && $('dinoSlot')) $('dinoSlot').appendChild(window.DINO);   // Dino Run sits above Salary so far, only here
