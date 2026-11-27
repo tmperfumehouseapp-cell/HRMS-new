@@ -351,6 +351,15 @@ function wln_enroll_camp(PDO $pdo, int $since): int
 function wl_quiet(PDO $pdo): int { static $q = null; if ($q === null) $q = max(6, min(24, (int)setting_get($pdo, 'wl_quiet_h', '21'))) * 3600; return $q; }
 /** The exciting (order pattern) wordings of the price steps - the only ones that go since 28 Nov (owner: "the day 6-26 price messages too"). */
 function wl_px_exciting(int $step): array { return [1 => ['ln_px_5c', 'ln_px_5d', 'ln_px_5e', 'ln_px_5f'], 5 => ['ln_px_5c', 'ln_px_5d', 'ln_px_5e', 'ln_px_5f'], 7 => ['ln_px_7c'], 9 => ['ln_px_9c'], 11 => ['ln_px_11c']][$step] ?? []; }
+/** owner 28 Nov 2026 ("he already chose his perfume - why do we ask men / women / unisex ?"): what the chat already tells us: [the perfume he named ('' = none), true when he said men / women / unisex]. */
+function wl_knows_choice(PDO $pdo, string $phone): array
+{
+    $pf = ''; $g = false;
+    try { if (!function_exists('wa_prod_last_asked') && is_file(__DIR__ . '/wa_prod.php')) require_once __DIR__ . '/wa_prod.php'; if (function_exists('wa_prod_last_asked')) { $pf = trim((string)wa_prod_last_asked($pdo, $phone)); if (mb_strlen($pf) > 40 || preg_match('/[{}<>\\n]/u', $pf)) $pf = ''; } } catch (Throwable $e) { $pf = ''; }
+    try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype IN ('text','interactive','button') AND ts >= ? ORDER BY id DESC LIMIT 15"); $q->execute([$phone, date('Y-m-d H:i:s', time() - 30 * 86400)]);
+        foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $b) if (preg_match('/(unisex|women|woman|ladies|lady|female|\bmen\b|\bmens\b|\bman\b|gents|male|mahila|purush|महिला|पुरुष|લેડીઝ|જેન્ટ્સ)/iu', (string)$b)) { $g = true; break; } } catch (Throwable $e) { }
+    return [$pf, $g];
+}
 function wl_block(PDO $pdo, array $c, string $anchor, array $orders = [], bool $first = false, &$until = null): string
 {
     $phone = (string)$c['phone']; $now = time();
@@ -731,12 +740,16 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
         if ($pk === '' && (int)$row['step'] === 1 && (string)setting_get($pdo, 'wl_day1_offer', '1') === '1') $pk = 'ln_px_5';
         if ($pk !== '') { [$es, $er] = wln_engagement($pdo, (string)$phone); if ($es >= 3 && $er === 0) $pk = ''; }   // never opened 3+ messages: no paid price step for him
         if ($pk !== '' && isset($ids[$pk]) && in_array($pk, $okKeys, true)) { if ($pk === 'ln_pp_6') $key = $pk; else { $pi = wln_price_info($pdo, (string)$phone); $v2 = $pi ? (wln_price_text($pdo, (string)$phone) ?: $pi['text']) : '';   /* the text with the occasion's name in its days */ if ($v2 !== '') { $okX = array_values(array_intersect(wl_px_exciting((int)$row['step']), $okKeys));   /* only the exciting wordings (approved ones); none approved yet = the old pick */
+            if (count($okX) > 1) { $kc = wl_knows_choice($pdo, (string)$phone); if ($kc[0] !== '' || $kc[1]) { $okN = array_values(array_filter($okX, function ($k) { return stripos((string)(wl_pack()[$k]['body'] ?? ''), 'unisex') === false; })); if ($okN) $okX = $okN; } }   /* he chose already: not the wording that asks men / women / unisex */
             $key = $okX ? $okX[(int)(abs(crc32((string)$phone . '|px' . $row['step'])) % count($okX))] : wl_pick($pk, (string)$phone, $scores, $okKeys); $pxPct = (string)$pi['pct']; } } }   // the price / prepaid message of this step when Meta approved it everywhere; no chart or no price = the plain message of the step
         /* owner 28 Nov 2026: his 24-hour window is still open -> the day-1 offer goes as a PLAIN TEXT (free: no template, no marketing charge, no marketing limit). Any of the exciting wordings can go (no approval needed for a text). Not sent = the template as before. Switch: wl_day1_free (1). */
         $res = null; $freeSent = false;
         if ((int)$row['step'] === 1 && $v2 !== '' && function_exists('wa_send_text') && (string)setting_get($pdo, 'wl_day1_free', '1') === '1' && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > time() - 86400 + 300) {
-            try { $pkAll = wl_pack(); $fx = array_values(array_filter(wl_px_exciting(1), function ($k) use ($pkAll) { return isset($pkAll[$k]); })); if ($fx) { $fk = $fx[(int)(abs(crc32((string)$phone . '|free1')) % count($fx))];
-                $body = str_replace(['{{1}}', '{{2}}'], [function_exists('wd_name') ? wd_name($c) : 'ji', $v2], (string)$pkAll[$fk]['body']); $s1 = wa_send_text($pdo, $c, $body, 'offer', 0);
+            try { $pkAll = wl_pack(); $fx = array_values(array_filter(wl_px_exciting(1), function ($k) use ($pkAll) { return isset($pkAll[$k]); })); $kc = wl_knows_choice($pdo, (string)$phone);
+                if ($fx && ($kc[0] !== '' || $kc[1])) { $fxN = array_values(array_filter($fx, function ($k) use ($pkAll) { return stripos((string)$pkAll[$k]['body'], 'unisex') === false; })); if ($fxN) $fx = $fxN; }   /* he chose already: no "men, women ya unisex ?" */
+                if ($fx) { $fk = $fx[(int)(abs(crc32((string)$phone . '|free1')) % count($fx))];
+                $body = str_replace(['{{1}}', '{{2}}'], [function_exists('wd_name') ? wd_name($c) : 'ji', $v2], (string)$pkAll[$fk]['body']);
+                if ($kc[0] !== '') $body = 'Hi ' . ((function_exists('wd_name') && wd_name($c) !== 'ji') ? wd_name($c) . ' ji' : 'ji') . ' 😍 Aapne ' . $kc[0] . ' pasand kiya tha na ? 🔥 Aapke liye ' . $v2 . " !\n\nAaj order karenge to yahi rate pakka ✅\n\nIske saath aur kaunse perfumes jodne hain ? Naam bata dijiye, order abhi bana dete hain 😊";   /* the perfume he named is in the offer */ $s1 = wa_send_text($pdo, $c, $body, 'offer', 0);
                 if (!empty($s1[0])) { $res = [true, '', (int)($c['last_number_id'] ?? 0), (string)($s1[1] ?? '')]; $key = $fk; $freeSent = true; } } } catch (Throwable $e) { }
         }
         $tid = (int)($ids[$key] ?? ($ids[$pk] ?? 0)); if (!$freeSent && ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send')))) { $o['waiting']++; continue; }
