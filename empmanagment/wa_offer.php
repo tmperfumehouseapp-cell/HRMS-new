@@ -67,6 +67,8 @@ if (!function_exists('wof_run')) {
     {
         $n = function (int $v) { return '₹' . number_format($v); }; $total = $o['qty'] * $o['ml']; $pb = (int)round($o['price'] / max(1, $o['qty']));
         $dt = (int)date('md'); $season = ($dt >= 1115 || $dt <= 228) ? 'Shaadi season special 💍' : 'Special offer 🎁'; if ($dt >= 1205 || $dt <= 115) $season = 'New Year special 🎊';
+        /* owner 27 Nov 2026 (night): "Black Friday is on everywhere and our offer does not say so" - in Black Friday week the offer's heading says Black Friday (the price stays the chart's price) */
+        try { if (!function_exists('wa_bf_on') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php'; if (function_exists('wa_bf_on') && wa_bf_on()) $season = 'Black Friday special 🖤🔥'; } catch (Throwable $e) { }
         /* owner 25 Nov 2026: a proper "crazy pricing" message, shaped by his size (20 / 50 / 100 ml): spacing, emojis, the price per bottle, what he saves against the online price, and the lock-in; prices come from the chart only */
         $ml = (int)$o['ml']; $hook = $ml >= 100 ? '100 ml ki shaan 👑' : ($ml >= 50 ? '50 ml ki asli value 🔥' : '20 ml ki pocket-size khushboo 🌸');
         $save = $o['online'] > $o['price'] ? "\n💰 Online price " . $n($o['online']) . " — aapko seedha " . $n($o['online'] - $o['price']) . " ki bachat!" : '';
