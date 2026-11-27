@@ -48,13 +48,15 @@ function swt_lib_save(PDO $pdo, string $raw, string $mime, string $title, string
 {
     if (!function_exists('wa_lib_dir') && is_file(__DIR__ . '/wa_media.php')) require_once __DIR__ . '/wa_media.php';
     if (!function_exists('wa_lib_dir')) return [0, 'The media library is not available on this server.'];
-    $shr = function_exists('wa_lib_shrink') ? wa_lib_shrink($raw, $mime) : null; if ($shr) { $raw = $shr[0]; $mime = $shr[1]; }
-    if (!in_array($mime, ['image/jpeg', 'image/png'], true)) return [0, 'Meta takes only JPG or PNG photos on top of a message.'];
-    if (strlen($raw) > 5 * 1048576) return [0, 'This photo is over 5 MB. Use a smaller one.'];
-    try { $q = $pdo->prepare("SELECT id FROM wa_media_lib WHERE title = ? AND size = ? AND kind = 'image' LIMIT 1"); $q->execute([mb_substr($title, 0, 80), strlen($raw)]); $ex = (int)$q->fetchColumn(); if ($ex > 0) return [$ex, '']; } catch (Throwable $e) { }      // the same picture is not saved twice
+    $shr = function_exists('wa_lib_shrink') && strpos($mime, 'image/') === 0 ? wa_lib_shrink($raw, $mime) : null; if ($shr) { $raw = $shr[0]; $mime = $shr[1]; }
+    $kind = in_array($mime, ['image/jpeg', 'image/png'], true) ? 'image' : ($mime === 'video/mp4' ? 'video' : ($mime === 'application/pdf' ? 'document' : ''));
+    if ($kind === '') return [0, 'On top of a message Meta takes only a JPG / PNG photo, an MP4 video or a PDF.'];
+    if ($kind === 'image' && strlen($raw) > 5 * 1048576) return [0, 'This photo is over 5 MB. Use a smaller one.'];
+    if ($kind !== 'image' && strlen($raw) > 16 * 1048576) return [0, 'This ' . ($kind === 'video' ? 'video' : 'PDF') . ' is over 16 MB. Use a smaller one.'];
+    try { $q = $pdo->prepare("SELECT id FROM wa_media_lib WHERE title = ? AND size = ? AND kind = ? LIMIT 1"); $q->execute([mb_substr($title, 0, 80), strlen($raw), $kind]); $ex = (int)$q->fetchColumn(); if ($ex > 0) return [$ex, '']; } catch (Throwable $e) { }      // the same picture is not saved twice
     $dir = wa_lib_dir(); if (!is_dir($dir) || !is_writable($dir)) return [0, 'The server cannot save files in the wa_files folder.'];
-    $stored = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . ($mime === 'image/png' ? '.png' : '.jpg'); if (@file_put_contents($dir . '/' . $stored, $raw) === false) return [0, 'Could not save the photo on the server.'];
-    $pdo->prepare("INSERT INTO wa_media_lib (title, kind, mime, filename, size, path, mids, created_by, created_at) VALUES (?, 'image', ?, ?, ?, ?, '{}', ?, ?)")->execute([mb_substr($title, 0, 80), $mime, mb_substr($name, 0, 120), strlen($raw), $stored, $me, date('Y-m-d H:i:s')]);
+    $stored = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . ['image/png' => '.png', 'video/mp4' => '.mp4', 'application/pdf' => '.pdf'][$mime] ?? '.jpg'; if (@file_put_contents($dir . '/' . $stored, $raw) === false) return [0, 'Could not save the photo on the server.'];
+    $pdo->prepare("INSERT INTO wa_media_lib (title, kind, mime, filename, size, path, mids, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?)")->execute([mb_substr($title, 0, 80), $kind, $mime, mb_substr($name, 0, 120), strlen($raw), $stored, $me, date('Y-m-d H:i:s')]);
     return [(int)$pdo->lastInsertId(), ''];
 }
 function swt_thumb(array $r): string
@@ -73,14 +75,14 @@ function swt_out(PDO $pdo, array $r, string $waba): array
     $sentAnywhere = false; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ?"); $q->execute([(int)$r['id']]); $sentAnywhere = (int)$q->fetchColumn() > 0; } catch (Throwable $e) { }
     $photo = ''; if ((int)($t['header_lib_id'] ?? 0) > 0) { $lr = wa_tpl_lib_row($pdo, (int)$t['header_lib_id']); if ($lr) $photo = (string)$lr['title']; }
     $ex = is_array($t['examples'] ?? null) ? $t['examples'] : [];
-    return ['id' => (int)$t['id'], 'language' => (string)($t['language'] ?? 'en'), 'name' => (string)$t['name'], 'category' => (string)$t['category'], 'header_format' => (string)($t['header_format'] ?? ''), 'header_lib_id' => (int)($t['header_lib_id'] ?? 0), 'photo' => $photo, 'body' => (string)$t['body'], 'footer' => (string)($t['footer'] ?? ''),
+    return ['id' => (int)$t['id'], 'language' => (string)($t['language'] ?? 'en'), 'name' => (string)$t['name'], 'category' => (string)$t['category'], 'header_format' => (string)($t['header_format'] ?? ''), 'header_lib_id' => (int)($t['header_lib_id'] ?? 0), 'header_text' => (string)($t['header_text'] ?? ''), 'photo' => $photo, 'body' => (string)$t['body'], 'footer' => (string)($t['footer'] ?? ''),
         'buttons' => array_values((array)($t['buttons'] ?? [])), 'examples' => array_values((array)($ex['body'] ?? [])), 'labels' => array_values((array)($ex['labels'] ?? [])), 'status' => $st, 'reason' => $why, 'meta_id' => $meta, 'locked' => $sentAnywhere, 'version' => (int)($t['version'] ?? 1), 'title' => (string)($t['purpose'] ?? '')];
 }
 function swt_draft_in(array $in): array
 {
     if (is_array($in['buttons'] ?? null)) $in['buttons'] = st_wa_btns_clean($in['buttons']);      // Meta refuses emoji in buttons
     $ex = []; foreach ((array)($in['examples'] ?? []) as $x) $ex[] = (string)$x; $lab = []; foreach ((array)($in['labels'] ?? []) as $x) $lab[] = (string)$x;
-    return ['name' => (string)($in['name'] ?? ''), 'language' => in_array((string)($in['language'] ?? 'en'), ['en', 'gu', 'hi'], true) ? (string)$in['language'] : 'en', 'category' => (string)($in['category'] ?? 'MARKETING'), 'header_format' => (string)($in['header_format'] ?? ''), 'header_lib_id' => (int)($in['header_lib_id'] ?? 0), 'body' => (string)($in['body'] ?? ''), 'footer' => (string)($in['footer'] ?? ''),
+    return ['name' => (string)($in['name'] ?? ''), 'language' => in_array((string)($in['language'] ?? 'en'), ['en', 'gu', 'hi'], true) ? (string)$in['language'] : 'en', 'category' => (string)($in['category'] ?? 'MARKETING'), 'header_format' => in_array((string)($in['header_format'] ?? ''), ['', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'], true) ? (string)($in['header_format'] ?? '') : '', 'header_text' => mb_substr(trim((string)($in['header_text'] ?? '')), 0, 60), 'header_lib_id' => (int)($in['header_lib_id'] ?? 0), 'body' => (string)($in['body'] ?? ''), 'footer' => (string)($in['footer'] ?? ''),
         'buttons' => is_array($in['buttons'] ?? null) ? $in['buttons'] : [], 'folder' => 'Store', 'examples' => ['body' => $ex, 'labels' => $lab]];
 }
 
@@ -97,7 +99,8 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
             $o = swt_out($pdo, $r, $waba); if ($o) $out[] = $o;
         }
         $photos = []; try { foreach ($pdo->query("SELECT * FROM wa_media_lib WHERE kind = 'image' AND mime IN ('image/jpeg','image/png') ORDER BY id DESC LIMIT 40")->fetchAll() as $r) $photos[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'thumb' => swt_thumb($r)]; } catch (Throwable $e) { }
-        json_response(['templates' => $out, 'photos' => $photos, 'store_pics' => swt_store_pics($pdo), 'waba' => $waba, 'app_id_ok' => (function_exists('wa_app_id') ? wa_app_id($pdo) : wa_cfg_val('WA_APP_ID')) !== '']);
+        $media = []; try { foreach ($pdo->query("SELECT id, title, kind, size FROM wa_media_lib WHERE kind IN ('video','document') AND mime IN ('video/mp4','application/pdf') ORDER BY id DESC LIMIT 40")->fetchAll() as $r) $media[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'kind' => (string)$r['kind'], 'mb' => round((int)$r['size'] / 1048576, 1)]; } catch (Throwable $e) { }
+        json_response(['templates' => $out, 'photos' => $photos, 'media' => $media, 'store_pics' => swt_store_pics($pdo), 'waba' => $waba, 'app_id_ok' => (function_exists('wa_app_id') ? wa_app_id($pdo) : wa_cfg_val('WA_APP_ID')) !== '']);
     }
     if ($action === 'st_wa.tpl_diag') json_response(swt_diag($pdo, $num, $waba));
     if (!$post) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
@@ -118,6 +121,7 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
         $raw = (string)file_get_contents((string)$f['tmp_name']); $mime = ''; if (function_exists('finfo_open')) { $fi = finfo_open(FILEINFO_MIME_TYPE); if ($fi) { $mime = (string)finfo_file($fi, (string)$f['tmp_name']); finfo_close($fi); } }
         [$id, $err] = swt_lib_save($pdo, $raw, $mime, trim((string)($_POST['title'] ?? '')) ?: pathinfo((string)$f['name'], PATHINFO_FILENAME), (string)$f['name'], $me); if ($id <= 0) json_response(['error' => $err], 422); json_response(['ok' => true, 'id' => $id]);
     }
+    if ($action === 'st_wa.tpl_ai') { [$ok, $d] = swt_ai($in); if (!$ok) json_response(['error' => $d], 502); json_response(['ok' => true] + $d); }
     if ($action === 'st_wa.tpl_check') {
         $d = swt_draft_in($in); $full = !empty($in['for_send']); [$t, $err] = wa_tpl_clean($d, !$full); $body = (string)$d['body'];
         $warn = $t['warnings'] ?? []; $promo = wa_tpl_promo_hits($body . ' ' . $d['footer']); $hint = '';
@@ -219,4 +223,31 @@ function swt_diag(PDO $pdo, array $num, string $waba): array
     }
     foreach ($live as $k => $m) if (empty($seen[$k])) { $L[] = ''; $L[] = '■ ' . $m['name'] . ' [' . ($m['language'] ?? '') . '] · only at Meta (not in HRMS) · ' . ($m['status'] ?? '') . ' · ' . ($m['category'] ?? '') . (!empty($m['rejected_reason']) && $m['rejected_reason'] !== 'NONE' ? ' · rejected_reason ' . $m['rejected_reason'] : ''); }
     return ['ok' => true, 'text' => implode("\n", $L), 'items' => $items, 'meta_error' => $lerr, 'app_ok' => $appOk];
+}
+
+/** ✨ Claude writes a Store template from a short note ("ask how the perfume is, 7 days after the bill"), following Meta's rules for the chosen category and language. Returns [ok, fields or error]. */
+function swt_ai(array $in): array
+{
+    if (!function_exists('wa_tpl_model')) return [false, 'Claude is not available on this server.'];
+    $about = trim(mb_substr((string)($in['about'] ?? ''), 0, 600)); if ($about === '') return [false, 'Write in a few words what the message should say.'];
+    $cat = strtoupper((string)($in['category'] ?? 'UTILITY')) === 'MARKETING' ? 'MARKETING' : 'UTILITY'; $lg = in_array((string)($in['language'] ?? 'gu'), ['gu', 'hi', 'en'], true) ? (string)$in['language'] : 'gu';
+    $lname = ['gu' => 'Gujarati, written in Gujarati script', 'hi' => 'Hindi, written in Devanagari script', 'en' => 'simple English'][$lg]; $hf = (string)($in['header_format'] ?? '');
+    $sys = "You write ONE WhatsApp message template for TM Perfume House, a perfume shop (store in Vesu, Surat, open 11 am to 11 pm). The owner tells you what the message is about. Follow Meta's template rules exactly:\n"
+        . "- Language: " . $lname . " only (brand name, perfume names and STOP may stay in English letters).\n"
+        . "- Variables are {{1}}, {{2}} ... in order. {{1}} is always the customer's first name. Never start or end the text with a variable, never put two variables side by side, use at most 4 variables and keep plenty of words around them.\n"
+        . "- WhatsApp formatting is allowed in the text: *bold*, _italic_, ~strike~. Use it lightly. At most 3 emoji in the text.\n"
+        . ($cat === 'UTILITY'
+            ? "- Category UTILITY: the message must be about the customer's own purchase or bill (thank-you, bill, how is the perfume they bought, care / usage tip for it). NO offers, discounts, prices, 'visit again', 'new arrivals', review requests, community or anything that sells. Calm, short (2-4 short sentences). Footer: the shop name.\n"
+            : "- Category MARKETING: friendly, short (2-5 sentences), may invite the customer back or tell about something new. The footer MUST tell how to stop, e.g. 'Reply STOP to stop messages' in the same language.\n")
+        . "- Buttons: up to 2 quick-reply buttons, each at most 20 letters, plain words only - NO emoji, no *, no new line, no variables. Utility buttons must be neutral answers (e.g. 'Liked it', 'Need help').\n"
+        . ($hf === 'TEXT' ? "- Also write a short heading (header) of at most 50 letters, no emoji, no variables.\n" : '')
+        . "- Give a realistic example value for every variable (Indian first names, perfume names like 'Oud Royal 50 ml', bill numbers like 'TM-1042').\n"
+        . "- 'tips': 1-3 short notes in simple English for the owner (why this should pass Meta, or what to watch).";
+    $sch = ['type' => 'OBJECT', 'properties' => ['header' => ['type' => 'STRING'], 'body' => ['type' => 'STRING'], 'footer' => ['type' => 'STRING'], 'buttons' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']],
+        'examples' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']], 'labels' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']], 'tips' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']]], 'required' => ['body', 'examples']];
+    [$ok, $v] = wa_tpl_model($sys, "Category: " . $cat . "\nWhat the message is about (from the owner):\n" . $about, $sch, 1800);
+    if (!$ok || !is_array($v) || trim((string)($v['body'] ?? '')) === '') return [false, 'Claude could not write it now. Try again in a minute.'];
+    $body = trim((string)$v['body']); $n = count(wa_tpl_vars($body)); $ex = array_values(array_map('strval', (array)($v['examples'] ?? []))); for ($i = count($ex); $i < $n; $i++) $ex[] = $i === 0 ? 'Rahul' : ($i === 1 ? 'Oud Royal 50 ml' : 'TM-1042'); $ex = array_slice($ex, 0, $n);
+    $btn = []; foreach (array_slice((array)($v['buttons'] ?? []), 0, 3) as $b) { $t = function_exists('st_wa_btn_text') ? st_wa_btn_text((string)$b) : trim((string)$b); if ($t !== '') $btn[] = ['type' => 'QUICK_REPLY', 'text' => $t]; }
+    return [true, ['header_text' => mb_substr(trim((string)($v['header'] ?? '')), 0, 60), 'body' => $body, 'footer' => mb_substr(trim((string)($v['footer'] ?? '')), 0, 60), 'buttons' => $btn, 'examples' => $ex, 'labels' => array_slice(array_values(array_map('strval', (array)($v['labels'] ?? []))), 0, $n), 'tips' => array_values(array_map('strval', (array)($v['tips'] ?? []))), 'lint' => swt_lint(['body' => $body, 'language' => $lg, 'category' => $cat, 'footer' => (string)($v['footer'] ?? ''), 'buttons' => $btn, 'examples' => ['body' => $ex], 'header_format' => $hf, 'header_lib_id' => 1])]];
 }
