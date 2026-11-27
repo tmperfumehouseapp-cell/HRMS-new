@@ -242,7 +242,7 @@ function swt_ai(array $in): array
         . "- Buttons: up to 2 quick-reply buttons, each at most 20 letters, plain words only - NO emoji, no *, no new line, no variables. Utility buttons must be neutral answers (e.g. 'Liked it', 'Need help').\n"
         . ($hf === 'TEXT' ? "- Also write a short heading (header) of at most 50 letters, no emoji, no variables.\n" : '')
         . "- Give a realistic example value for every variable (Indian first names, perfume names like 'Oud Royal 50 ml', bill numbers like 'TM-1042').\n"
-        . "- 'tips': 1-3 short notes in simple Gujarati for the owner (why this should pass Meta, or what to watch).";
+        . "- 'tips': 1-3 short notes in simple English for the owner (why this should pass Meta, or what to watch).";
     $sch = ['type' => 'OBJECT', 'properties' => ['header' => ['type' => 'STRING'], 'body' => ['type' => 'STRING'], 'footer' => ['type' => 'STRING'], 'buttons' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']],
         'examples' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']], 'labels' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']], 'tips' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']]], 'required' => ['body', 'examples']];
     [$ok, $v] = wa_tpl_model($sys, "Category: " . $cat . "\nWhat the message is about (from the owner):\n" . $about, $sch, 1800);
