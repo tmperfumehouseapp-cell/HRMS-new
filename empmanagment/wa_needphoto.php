@@ -120,6 +120,18 @@ if (!function_exists('wnp_defs')) {
 }   // function_exists guard
 
 $__wnp = (string)($action ?? ($_GET['action'] ?? ''));
+/* 🚫 owner 27 Nov 2026: "a list on the Campaigns page of the people we never message". wa.never_list (GET): the customers who opted out (STOP / the Opted-in switch off / stopped campaigns) and the phones Meta says are not on WhatsApp. Read-only: every module already leaves them out (the campaign when it is built and again at sending). */
+if ($__wnp === 'wa.never_list') {
+    $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500); if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
+    $o = ['ok' => true, 'optout' => 0, 'camp_only' => 0, 'notwa' => 0, 'rows' => []]; $q = trim((string)($_GET['q'] ?? '')); $lim = 300;
+    try { $r = $pdo->query("SELECT SUM(optout = 1), SUM(optout = 0 AND camp_optout = 1) FROM wa_contacts WHERE optout = 1 OR camp_optout = 1")->fetch(PDO::FETCH_NUM); $o['optout'] = (int)($r[0] ?? 0); $o['camp_only'] = (int)($r[1] ?? 0); } catch (Throwable $e) { }
+    try { $o['notwa'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_undeliv")->fetchColumn(); } catch (Throwable $e) { }
+    try { $w = "(optout = 1 OR camp_optout = 1)"; $a = []; if ($q !== '') { $w .= " AND (phone LIKE ? OR name LIKE ?)"; $a = ['%' . preg_replace('/\D+/', '', $q) . '%', '%' . $q . '%']; if (preg_replace('/\D+/', '', $q) === '') { $w = "(optout = 1 OR camp_optout = 1) AND name LIKE ?"; $a = ['%' . $q . '%']; } }
+        $st = $pdo->prepare("SELECT phone, name, optout, camp_optout, last_in_at FROM wa_contacts WHERE $w ORDER BY last_in_at DESC LIMIT $lim"); $st->execute($a);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $o['rows'][] = ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? ''), 'why' => (int)$r['optout'] === 1 ? 'Opted out (no message at all)' : 'Stopped campaigns', 'last' => (string)($r['last_in_at'] ?? '')]; } catch (Throwable $e) { }
+    if ($q === '') { try { foreach ($pdo->query("SELECT phone, last_at, n FROM wa_undeliv ORDER BY last_at DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC) as $r) $o['rows'][] = ['phone' => (string)$r['phone'], 'name' => '', 'why' => 'Not on WhatsApp (Meta said so ' . (int)$r['n'] . ' times)', 'last' => (string)$r['last_at']]; } catch (Throwable $e) { } }
+    json_response($o);
+}
 if (in_array($__wnp, ['wa.need_photos', 'wa.need_photo_add'], true)) {
     $auth = require_auth();
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500);
