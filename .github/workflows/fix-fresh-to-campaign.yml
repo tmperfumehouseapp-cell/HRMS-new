@@ -11,6 +11,10 @@ on:
         description: "dry = only count, apply = move them to Campaign"
         required: true
         default: dry
+      days:
+        description: "1 = today's sales day, 2 = today and yesterday"
+        required: false
+        default: "1"
 
 jobs:
   check:
@@ -32,15 +36,16 @@ jobs:
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
           MODE: ${{ github.event.inputs.mode }}
+          DAYS: ${{ github.event.inputs.days }}
         run: |
-          M=dry; [ "$MODE" = "apply" ] && M=apply
-          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$M" <<'REMOTE' || true
-          P="$1"; M="$2"
+          M=dry; [ "$MODE" = "apply" ] && M=apply; D=1; [ "$DAYS" = "2" ] && D=2
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$M" "$D" <<'REMOTE' || true
+          P="$1"; M="$2"; D="$3"
           cat > /tmp/fq_fix.php <<'PHP'
           <?php
           require $argv[1] . "empmanagment/config.php"; $apply = ($argv[2] ?? '') === 'apply';
           $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-          date_default_timezone_set("Asia/Kolkata"); $from = date("G") >= 10 ? date("Y-m-d 10:00:00") : date("Y-m-d 10:00:00", time() - 86400); $now = date("Y-m-d H:i:s");
+          date_default_timezone_set("Asia/Kolkata"); $from = date("G") >= 10 ? date("Y-m-d 10:00:00") : date("Y-m-d 10:00:00", time() - 86400); if (($argv[3] ?? '1') === '2') $from = date("Y-m-d H:i:s", strtotime($from) - 86400); $now = date("Y-m-d H:i:s");
           echo ($apply ? "APPLY" : "DRY RUN (nothing changed)") . " · business day from $from · now $now\n";
           $ad = function (string $t): bool { $t = mb_strtolower(trim($t)); if ($t === '' || mb_strlen($t) > 300) return false;
             return (bool)(preg_match('/more info(rmation)? (on|about) this|interested in this|saw (your|this) ad|\btmph\b|tm\s*perfume\s*house|\bwant to (buy|order)\b|placing my first order|free\s*10\s*ml|extra discount|\bi\s*want\b.*\bml\b/u', $t) || preg_match('/\d+\s*ml\b.*\b(in|at|for|@|rs\.?|₹)\s*\d{3,5}\b/u', $t)); };
@@ -62,7 +67,7 @@ jobs:
             $hit[] = $r;
           }
           echo "kept as fresh: " . json_encode($why) . "\n";
-          echo "to move to Campaign: " . count($hit) . "\n"; $per = []; foreach ($hit as $r) { $k = $names[(int)$r['emp_id']] ?? ((int)$r['emp_id'] ? '#' . $r['emp_id'] : 'nobody'); $per[$k] = ($per[$k] ?? 0) + 1; } arsort($per); foreach ($per as $k => $n) echo "  $k: $n\n";
+          echo "to move to Campaign: " . count($hit) . "\n"; $per = []; foreach ($hit as $r) { $k = ($names[(int)$r['emp_id']] ?? ((int)$r['emp_id'] ? '#' . $r['emp_id'] : 'nobody')) . ' · sales day ' . (date("G", strtotime($r['opened_at'])) >= 10 ? substr($r['opened_at'], 0, 10) : date("Y-m-d", strtotime($r['opened_at']) - 86400)); $per[$k] = ($per[$k] ?? 0) + 1; } arsort($per); foreach ($per as $k => $n) echo "  $k: $n\n";
           if (!$apply || !$hit) exit;
           $n = 0;
           foreach ($hit as $r) { try {
@@ -74,8 +79,8 @@ jobs:
             if ((string)$r['type'] !== '') $d->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = ?")->execute([$r['phone'], $r['type'] . '_query']);
             $d->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, 'campaign_query', 'wq', ?)")->execute([$r['phone'], $r['opened_at']]);
             $d->commit(); $n++; } catch (Throwable $e) { if ($d->inTransaction()) $d->rollBack(); echo "  query " . $r['id'] . " not moved: " . substr($e->getMessage(), 0, 120) . "\n"; } }
-          try { $d->prepare("DELETE FROM wq_daily WHERE day = ?")->execute([substr($from, 0, 10)]); } catch (Throwable $e) { }
+          try { $d->prepare("DELETE FROM wq_daily WHERE day >= ?")->execute([substr($from, 0, 10)]); } catch (Throwable $e) { }
           echo "MOVED to Campaign: $n\n";
           PHP
-          php /tmp/fq_fix.php "$P" "$M"; rm -f /tmp/fq_fix.php
+          php /tmp/fq_fix.php "$P" "$M" "$D"; rm -f /tmp/fq_fix.php
           REMOTE
