@@ -128,6 +128,28 @@ if (!function_exists('wnp_defs')) {
 
 $__wnp = (string)($action ?? ($_GET['action'] ?? ''));
 /* 💤 owner 27 Nov 2026: "a section 'Did not reply for 30 days' under the After-Order card, with an Excel download, so we can put these people into Module A again". wa.noreply30 (GET): customers who DID write to us once, whose last message is 30+ days old, who did not order in the last 30 days, are not opted out and are in no running Lineup / After-Order ladder. Nobody messages them by itself any more (the Cold funnel is only for people who never wrote). ?csv=1 gives the whole list as a file Excel opens. Read-only. */
+/* 🎯 owner 28 Nov 2026: "a card: everybody who wrote to us gets one offer inside his 24 hours". wa.day1_offer (GET): today / yesterday - how many joined the Lineup (wrote to us), how many got the first offer FREE (plain text inside the window, 21st hour), how many got it as a paid message (window missed), how many wait now and how many ordered after it. Read-only, kept 5 minutes. */
+if ($__wnp === 'wa.day1_offer') {
+    $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500); if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
+    $now = time(); if (empty($_GET['fresh'])) { $cj = json_decode((string)setting_get($pdo, 'wa_day1_cache', ''), true); if (is_array($cj) && (int)($cj['t'] ?? 0) > $now - 300 && is_array($cj['d'] ?? null)) json_response($cj['d'] + ['cached' => 1]); }
+    $one = function (string $sql, array $a = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($a); return (int)$q->fetchColumn(); } catch (Throwable $e) { return 0; } };
+    $k10 = function ($p) { return substr(preg_replace('/\D+/', '', (string)$p), -10); }; $days = [];
+    foreach (['today' => 0, 'yesterday' => 1] as $lab => $back) { $f = date('Y-m-d 00:00:00', $now - $back * 86400); $t = date('Y-m-d 23:59:59', $now - $back * 86400);
+        $r = ['joined' => $one("SELECT COUNT(*) FROM wa_line_cust WHERE anchor_at BETWEEN ? AND ?", [$f, $t]), 'free' => 0, 'paid' => 0, 'other' => 0, 'orders' => 0, 'rev' => 0];
+        $sent = []; try { $q = $pdo->prepare("SELECT phone, sent_at, why, tpl_key FROM wa_line_plan WHERE step = 1 AND status = 'sent' AND sent_at BETWEEN ? AND ?"); $q->execute([$f, $t]);
+            foreach ($q->fetchAll(PDO::FETCH_NUM) as $x) { if (strpos((string)$x[2], 'free text') === 0) $r['free']++; elseif (strpos((string)$x[3], 'ln_px_') === 0 && strpos((string)$x[2], 'utility rescue') !== 0) $r['paid']++; else $r['other']++; if (strpos((string)$x[3], 'ln_px_') === 0) $sent[$k10($x[0])] = (string)$x[1]; } } catch (Throwable $e) { }
+        if ($sent) { try { $q = $pdo->prepare("SELECT phone, order_at, total FROM wa_order_attr WHERE order_at >= ?"); $q->execute([$f]); foreach ($q->fetchAll(PDO::FETCH_NUM) as $x) { $k = $k10($x[0]); if (isset($sent[$k]) && (string)$x[1] > $sent[$k]) { $r['orders']++; $r['rev'] += (int)round((float)$x[2]); unset($sent[$k]); } } } catch (Throwable $e) { } }
+        $r['instant'] = $one("SELECT COUNT(DISTINCT phone) FROM wa_offer WHERE ok = 1 AND kind <> 'follow' AND at BETWEEN ? AND ?", [$f, $t]); $r['follow'] = $one("SELECT COUNT(DISTINCT phone) FROM wa_offer WHERE ok = 2 AND kind = 'follow' AND at BETWEEN ? AND ?", [$f, $t]);   // the offer minutes after his reply, and its one light reminder
+        $days[$lab] = $r; }
+    $base = "FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone JOIN wa_contacts k ON (k.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) WHERE p.step = 1 AND p.status = 'planned' AND c.status = 'active'";
+    $qh = function_exists('wl_quiet') ? (int)round(wl_quiet($pdo) / 3600) : 21;
+    $res = ['ok' => true, 'hour' => $qh, 'days' => $days,
+        'waiting_open' => $one("SELECT COUNT(*) $base AND k.last_in_at >= ?", [date('Y-m-d H:i:s', $now - 86400)]),
+        'due_now' => $one("SELECT COUNT(*) $base AND k.last_in_at BETWEEN ? AND ?", [date('Y-m-d H:i:s', $now - 86400), date('Y-m-d H:i:s', $now - $qh * 3600)]),
+        'missed' => $one("SELECT COUNT(*) $base AND k.last_in_at < ?", [date('Y-m-d H:i:s', $now - 86400)])];
+    try { setting_set($pdo, 'wa_day1_cache', json_encode(['t' => $now, 'd' => $res])); } catch (Throwable $e) { }
+    json_response($res);
+}
 if ($__wnp === 'wa.noreply30') {
     $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500); if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
     @set_time_limit(120); $k10 = function ($p) { return substr(preg_replace('/\D+/', '', (string)$p), -10); }; $now = time(); $d30 = date('Y-m-d H:i:s', $now - 30 * 86400); $csv = !empty($_GET['csv']);
