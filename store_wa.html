@@ -123,6 +123,11 @@
  .fu-pane{padding:18px 22px;overflow:auto;flex:1}.fu-pane h3{margin:0 0 8px}.fu-pane .bl2{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f2f5}.fu-pane label{display:flex;gap:10px;align-items:center;margin:8px 0;font-weight:700;color:#54656f}.fu-pane input,.fu-pane select{font:inherit;border:1px solid #e6e8ec;border-radius:10px;padding:6px 9px}
  @media(max-width:1100px){.fu{grid-template-columns:minmax(0,1fr)}.fu-side{display:none}}
  @media(max-width:760px){.fu-seg{padding:10px 12px;gap:6px}.fu-sc{padding:8px}.fu-sc .s,.fu-sc .e{display:none}.fu-row{grid-template-columns:24px minmax(0,1fr) 110px;grid-template-rows:auto auto}.fu-row .av,.fu-row .fu-dy,.fu-row .fu-lg{display:none}.fu-row .pf{grid-column:2}.fu-row .fu-st{grid-column:3;grid-row:1/3}.fu-top{padding:10px 12px}.fu-bar,.fu-send{padding:8px 12px}.fu-tabs{margin-left:0;width:100%}.fu-tabs button{flex:1}}
+.dg-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px}
+.dg{background:#fff;border-radius:14px;max-width:820px;width:100%;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:14px;line-height:1.5}
+.dg h3{margin:0 0 6px;font-size:18px}.dg .it{border:1px solid #e3e7ea;border-radius:10px;padding:10px 12px;margin:8px 0}.dg .it.bad{border-color:#f3b4ad;background:#fff6f5}
+.dg .it b.n{font-family:monospace;font-size:13px}.dg .gu{color:#7a2e0e;margin-top:4px}.dg .ck{color:#8a5a00;font-size:13px}.dg textarea{width:100%;height:160px;font:12px monospace;border:1px solid #ccd;border-radius:8px;padding:8px;box-sizing:border-box}
+.dg .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.dg .pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;background:#eef2f5;margin-left:4px}
 </style>
 </head>
 <body>
@@ -252,7 +257,7 @@
   }
   function tplView() {
     const f = T.f, L = T.list; const empty = T.loaded && !L.length;
-    const left = `<div class="l"><div style="padding:12px 14px;display:flex;align-items:center;gap:8px"><b style="font-size:15px">Store messages</b><span style="flex:1"></span><button class="sx2 g" id="tSync" title="Ask Meta for the newest status" style="padding:7px 10px;font-size:12.5px">↻ Meta</button><button class="sx2" id="tNew" style="padding:7px 12px;font-size:12.5px">+ New</button></div>
+    const left = `<div class="l"><div style="padding:12px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:15px">Store messages</b><span style="flex:1"></span><button class="sx2 g" id="tSync" title="Ask Meta for the newest status" style="padding:7px 10px;font-size:12.5px">↻ Meta</button><button class="sx2 g dgBtn" title="Why did Meta reject? (copy and give it to Claude)" style="padding:7px 10px;font-size:12.5px">🩺 Diagnose</button><button class="sx2" id="tNew" style="padding:7px 12px;font-size:12.5px">+ New</button></div>
       ${empty ? `<div style="padding:16px;color:#667781;font-size:13.5px;line-height:1.5">No Store message yet. Press the button to make the <b>6 first drafts</b> (bill with the Store photo, birthday, 2 reminders, offer). Nothing goes to Meta until you press "Send to Meta".<br><br><button class="sx2" id="tSeed">Make the 6 drafts</button></div>` : ''}
       ${L.map((t, i) => `<div class="ti2 ${i === T.sel ? 'on' : ''}" data-ti="${i}"><b>${esc(t.name)}</b><small>${esc(t.title || '')}</small><div class="r"><span class="kp ${catCls(t.category)}">${t.category === 'UTILITY' ? 'Utility' : 'Marketing'}</span>${stChip(t)}${t.header_format === 'IMAGE' ? `<span class="kp n">🖼 ${t.header_lib_id ? 'photo' : 'no photo yet'}</span>` : ''}${t.version > 1 ? `<span class="kp n">v${t.version}</span>` : ''}</div></div>`).join('')}</div>`;
     if (!f) return `<div class="tg ${T.edit ? 'edit' : ''}">${left}<div class="e"><div class="empty"><div class="ic">📝</div>Choose a message on the left, or make a new one.</div></div><div class="p"></div></div>`;
@@ -363,7 +368,7 @@
     const T2 = FU.tpls; const chip = (x) => x === 'APPROVED' ? '<span class="kp g">✓ Approved</span>' : x === 'REJECTED' ? '<span class="kp r">✗ Rejected</span>' : x === 'MISSING' ? '<span class="kp n">not made</span>' : x === 'DRAFT' ? '<span class="kp n">✎ Draft</span>' : '<span class="kp w">⏳ Waiting for Meta</span>';
     return `<div class="fu-pane"><h3>Follow-up messages (9)</h3><div style="color:#667781;font-size:13px;margin-bottom:10px">3 messages × Gujarati / Hindi / English. Ready-made messages (optional). You can also write your own in the Templates tab (any language, any category), wait for Meta to approve it, and then pick it above the list. Meta usually answers in 15 minutes to 24 hours.</div>
       ${T2 ? T2.map((t) => `<div class="bl2"><span><b>${esc(t.name)}</b><br><span style="color:#667781;font-size:12px">${t.stage} days · ${LN[t.lang]}${t.reason ? ' · ' + esc(t.reason) : ''}</span></span>${chip(t.status)}</div>`).join('') : '<div style="padding:16px;color:#667781">Loading…</div>'}
-      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="fu-gh" id="fuSeed">1. Make the 9 messages</button><button class="fu-go" id="fuSub" style="padding:9px 16px;font-size:14px">2. Send them to Meta</button><button class="fu-gh" id="fuSync">↻ Ask Meta</button></div><div id="fuMsg" style="margin-top:10px;font-size:13px;color:#667781"></div></div>`;
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="fu-gh" id="fuSeed">1. Make the 9 messages</button><button class="fu-go" id="fuSub" style="padding:9px 16px;font-size:14px">2. Send them to Meta</button><button class="fu-gh" id="fuSync">↻ Ask Meta</button><button class="fu-gh dgBtn">🩺 Diagnose</button></div><div id="fuMsg" style="margin-top:10px;font-size:13px;color:#667781"></div></div>`;
   }
   function fuSet() {
     return `<div class="fu-pane"><h3>Settings</h3><label>Messages per day (limit) <input id="fuLim" type="number" min="5" max="100000" value="${FU.cfg.limit}" style="width:90px"></label><label>Seconds between two messages <input id="fuGap" type="number" min="1" max="30" value="${FU.cfg.gap}" style="width:90px"></label><label>Language for customers without a choice <select id="fuLg">${['gu', 'hi', 'en'].map((l) => `<option value="${l}" ${FU.cfg.lang === l ? 'selected' : ''}>${LN[l]}</option>`).join('')}</select></label><button class="fu-go" id="fuSave" style="padding:9px 18px;font-size:14px">Save</button><div style="color:#667781;font-size:13px;margin-top:14px">Nothing goes out by itself: a message leaves only when someone presses Send. People who wrote STOP, or got a follow-up in the last 20 days, are left out automatically.</div></div>`;
@@ -439,8 +444,41 @@
     };
     tp.oninput = (e) => { const i = e.target.dataset && e.target.dataset.v; if (i == null) return; S.tplVals = S.tplVals || {}; S.tplVals[t.id] = Array.from(tp.querySelectorAll('[data-v]')).map((x) => x.value); const pv = tp.querySelector('.pv .bub'); if (pv) pv.innerHTML = '<span class="tag">Preview</span><br>' + t.body.replace(/\{\{\s*(\d+)\s*\}\}/g, (m, k) => esc(S.tplVals[t.id][k - 1] || '{{' + k + '}}')) + '<span class="tm">now</span>'; };
   }
+
+  const DG_WHY = {
+    INVALID_FORMAT: 'લખાણનું ફોર્મેટ ખોટું છે: મોટાભાગે {{1}} શરૂઆતમાં કે છેલ્લે છે, બે variable સાથે છે, ભાષા ખોટી પસંદ થઈ છે, અથવા ફોટો/example ખૂટે છે.',
+    PROMOTIONAL: 'Utility તરીકે મોકલ્યો પણ તેમાં વેચાણ/offer ના શબ્દો છે. Marketing પસંદ કરો અથવા offer ના શબ્દો કાઢો.',
+    INCORRECT_CATEGORY: 'Category ખોટી છે (Utility ↔ Marketing). Meta ને આ Marketing લાગે છે.',
+    TAG_CONTENT_MISMATCH: 'પસંદ કરેલી Category અને લખાણ મેળ નથી ખાતાં.',
+    ABUSIVE_CONTENT: 'Meta ને કોઈ શબ્દ વાંધાજનક લાગ્યો.',
+    SCAM: 'Meta ને છેતરપિંડી જેવું લાગ્યું (link / પૈસાની વાત).'
+  };
+  function dgGu(x) {
+    const r = (x.meta_reason || '') + ' ' + (x.hrms_reason || ''); const out = [];
+    for (const k in DG_WHY) if (r.toUpperCase().includes(k)) out.push(DG_WHY[k]);
+    if (/already|exists|same name/i.test(r)) out.push('આ નામ અને ભાષાનો template Meta પાસે પહેલેથી છે. ફરી મોકલવા માટે નવું નામ (version) જોઈએ.');
+    if (/handle|upload|media|sample|photo|app id/i.test(r)) out.push('ઉપરનો ફોટો Meta સુધી પહોંચ્યો નહીં (photo upload / App ID ની તકલીફ). ફોટા વગરનું version બનાવો અથવા Claude ને આ text આપો.');
+    if (!out.length && x.bad) out.push('Meta એ ચોખ્ખું કારણ આપ્યું નથી. નીચેનું text કોપી કરીને Claude ને આપો.');
+    return out;
+  }
+  async function dgOpen() {
+    const bg = document.createElement('div'); bg.className = 'dg-bg'; bg.innerHTML = '<div class="dg"><h3>🩺 Diagnose</h3>Meta ને પૂછી રહ્યો છું…</div>'; document.body.appendChild(bg);
+    bg.addEventListener('click', (e) => { if (e.target === bg || e.target.closest('.dgX')) bg.remove(); });
+    let r; try { r = await api.get('st_wa.tpl_diag'); } catch (er) { bg.querySelector('.dg').innerHTML = '<h3>🩺 Diagnose</h3><div style="color:#b42318">' + esc(er.message) + '</div><div class="row"><button class="sx2 dgX">Close</button></div>'; return; }
+    const its = r.items || []; const bad = its.filter((x) => x.bad); const list = bad.concat(its.filter((x) => !x.bad));
+    bg.querySelector('.dg').innerHTML = `<h3>🩺 Store templates: Meta શું કહે છે</h3>
+      <div>કુલ <b>${its.length}</b> · રિજેક્ટ <b style="color:#b42318">${bad.length}</b> · Approved <b style="color:#1a7f37">${its.filter((x) => x.meta === 'APPROVED').length}</b>${r.meta_error ? ' · <span style="color:#b42318">Meta જવાબ ન આવ્યો: ' + esc(r.meta_error) + '</span>' : ''}</div>
+      <div class="row"><button class="sx2" id="dgCopy">📋 બધું કોપી કરો (Claude ને આપવા માટે)</button><button class="sx2 g dgX">Close</button></div>
+      <textarea id="dgTxt" readonly>${esc(r.text || '')}</textarea>
+      ${list.map((x) => `<div class="it${x.bad ? ' bad' : ''}"><b class="n">${esc(x.name)}</b><span class="pill">${esc(x.language)}</span><span class="pill">${esc(x.category)}${x.meta_category && x.meta_category !== x.category ? ' → Meta: ' + esc(x.meta_category) : ''}</span><span class="pill">${x.bad ? '❌ ' : ''}${esc(x.meta)}</span>
+        ${x.meta_reason ? `<div><b>Meta:</b> ${esc(x.meta_reason)}</div>` : ''}${x.hrms_reason ? `<div><b>કારણ:</b> ${esc(x.hrms_reason)}</div>` : ''}
+        ${dgGu(x).map((t) => `<div class="gu">👉 ${esc(t)}</div>`).join('')}
+        ${(x.checks || []).map((t) => `<div class="ck">⚠ ${esc(t)}</div>`).join('')}</div>`).join('')}`;
+    const c = bg.querySelector('#dgCopy'); c.onclick = async () => { const ta = bg.querySelector('#dgTxt'); try { await navigator.clipboard.writeText(ta.value); } catch (e) { ta.select(); document.execCommand('copy'); } toast('કોપી થઈ ગયું ✓ હવે Claude ની chat માં paste કરો'); };
+  }
   document.addEventListener('click', async (e) => {
     const g = (s) => e.target.closest(s);
+    if (g('.dgBtn')) return dgOpen();
     if (g('#bkBtn')) return backToHrms();
     { const nv = g('[data-nav]'); if (nv) { S.tab = nv.dataset.nav; if (S.tab !== 'chats') { S.cur = ''; } else { await loadCfg(); await loadChats(); } return render(); } }
     if (S.tab === 'fu' && await fuClick(e)) return;
