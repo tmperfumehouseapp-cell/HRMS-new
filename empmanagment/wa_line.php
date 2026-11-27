@@ -157,6 +157,11 @@ function wl_pack(): array
     $mv('ln_px_7b', 'ln_px_7', 7, "Hi {{1}} ji, aapki pasand ke perfume ke liye ye rate hai: {{2}}. Aaj order karenge to hum dispatch ki taiyari shuru kar dete hain.", 'Abhi book karein');
     $mv('ln_px_9b', 'ln_px_9', 9, "Hi {{1}} ji, aapke liye ek aur rate: {{2}}. Pasand ka perfume chun lein, hum aapki madad karenge.", 'Perfume chun leta hoon');
     $mv('ln_px_11b', 'ln_px_11', 11, "Hi {{1}} ji, ye aapke liye hamara sabse achha rate hai: {{2}}. Order karna ho to abhi bata dein, hum confirm kar dete hain.", 'Mujhe yahi chahiye');
+    /* owner 27 Nov 2026: a third wording of every price step in the shape that sells in the campaigns: the price AS A QUESTION ("... ka ? Haan ji !") and one easy question at the end. The picker splits the wordings and keeps the one that brings more orders. */
+    $mv('ln_px_5c', 'ln_px_5', 5, "Hi {{1}} ji 😳 Aapke liye {{2}} ? Kya sach me ? Haan ji ! 🔥 Apni pasand ke perfumes chuniye. Kaunsi khushbu chahiye - men, women ya unisex ?", 'Mujhe chahiye');
+    $mv('ln_px_7c', 'ln_px_7', 7, "Hi {{1}} ji 👋 Ek chhota sa sawal 🤔 Aapke liye {{2}} - chalega ? Aaj order karenge to dispatch ki taiyari abhi shuru. Order bana dein ?", 'Haan, order banao');
+    /* ln_px_9c was taken out the same day: its button 'Batata hoon' sits inside the button of ln_rescue_7, so a tap could be answered with the wrong text */
+    $mv('ln_px_11c', 'ln_px_11', 11, "Hi {{1}} ji 🔥 Aakhri baar pooch rahe hain: {{2}} - ye rate aapke naam lock kar dein ? Bas haan likhiye, order hum bana denge ✅", 'Haan, lock karo');
     $mk('ln_pp_6', 6, "{{1}} ji, prepaid karne par cart par 2% extra chhoot milti hai. Perfume aur bottle count bata dein to total bata dete hain.", 'Total bataiye', "Zaroor 🙏 Aapko kaunse perfume aur kitni bottle chahiye, bata dein, hum prepaid ke saath total bhej dete hain.");
     foreach (wl_extra_get() as $e) { if (!empty($e['newtopic']) && !empty($e['key']) && !isset($P[$e['key']])) { $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'auto' => 1, 'newtopic' => 1, 'cat' => 'MARKETING']; continue; } if (empty($e['key']) || isset($P[$e['key']]) || empty($e['of']) || !isset($P[$e['of']])) continue; $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'of' => (string)$e['of'], 'auto' => 1]; }
     return $P;
@@ -508,7 +513,10 @@ function wl_calendar(PDO $pdo): array
 /** Send one Lineup message through whatever sender exists (the campaign engine, or the stub of the tests). [ok, reason, number id, wamid]. */
 function wln_send_any(PDO $pdo, array $c, int $tid, string $v2 = ''): array
 {
-    return function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
+    $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);
+    /* owner 27 Nov 2026: a message Meta PAUSED for low quality (132015) is not tried again for 6 hours by any rescue (the same list Module B keeps); the rescues tried it for every customer and each refusal counted as a failure */
+    if (empty($res[0]) && preg_match('/\b132015\b|low quality/i', (string)($res[1] ?? '')) && !preg_match('/bot messages are paused/i', (string)($res[1] ?? ''))) {   /* 27 Nov 16:00: the word "paused" alone also matched "Bot messages are paused for this customer", which took two good new messages out for 6 hours */ try { $pp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $pp = is_array($pp) ? $pp : []; if ((int)($pp[$tid] ?? 0) < time()) { $pp[$tid] = time() + 6 * 3600; setting_set($pdo, 'wa_ru_tpl_pause', json_encode($pp)); } } catch (Throwable $e) { } }
+    return $res;
 }
 /** THE UTILITY TWIN (owner, 21 Nov: "not one message may fail — if it fails as marketing, send it again as utility on the spot, within one hour"): the utility messages that can say the same thing as this step —
  *  the lineup's own wordings of the step (made as utility) and the shop's utility message #386 — that Meta still counts as UTILITY, are not the message that failed and were not sent to him yet. [[template id, key]]. */
@@ -528,6 +536,9 @@ function wln_twins(PDO $pdo, string $phone, string $topic, int $step, int $faile
     try { if ($o && (string)setting_get($pdo, 'wa_block_dull', '1') !== '0') { if (!function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php';
         if (function_exists('wa_rs_dull')) { $bd = []; foreach ($pdo->query("SELECT id, name, body FROM wa_templates WHERE id IN (" . implode(',', array_map(function ($x) { return (int)$x[0]; }, $o)) . ")")->fetchAll(PDO::FETCH_NUM) as $r) $bd[(int)$r[0]] = [(string)$r[1], (string)$r[2]];
             $good = []; $first = []; foreach ($o as $x) { $b = $bd[(int)$x[0]] ?? null; if ($b && wa_rs_dull($b[1])) continue; if ($b && preg_match('/(_ex_|^tmph_hm_|^rs\d+_|_tw[0-9a-f]+$|^tmph_ord_)/', $b[0])) $first[] = $x; else $good[] = $x; } $o = array_merge($first, $good); } } } catch (Throwable $e) { }
+    /* owner 27 Nov 2026: "5-6 utility messages in turn in every rescue". The first message of the list went to everybody, so one message carried the whole load and Meta paused it (132015); now the paused ones are left out and each customer starts at his own place in the list, so the load is shared by all the usable messages */
+    try { if (count($o) > 1 && (string)setting_get($pdo, 'wln_rotate', '1') !== '0') { $pp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); if (is_array($pp)) { $o2 = array_values(array_filter($o, function ($x) use ($pp) { return (int)($pp[(int)$x[0]] ?? 0) < time(); })); if ($o2) $o = $o2; }
+        $n = count($o); if ($n > 1) { $st = abs(crc32($phone . date('Ymd'))) % $n; $o = array_merge(array_slice($o, $st), array_slice($o, 0, $st)); } } } catch (Throwable $e) { }
     return $o;
 }
 /** How much of what we sent a customer he actually OPENED: [messages sent, messages read]. A customer who never opened 3+ messages does not get the paid (marketing) price steps — the plain utility message goes instead (cheaper, and it protects the numbers' quality); one who read but did not answer gets the price step. */

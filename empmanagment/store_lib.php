@@ -919,10 +919,13 @@ function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array 
 {
     $phone = (string)$p['phone']; $key = wa_key($phone); if ($key === '' || strlen($key) !== 10) return [false, 'not an Indian mobile number'];
     $back = !empty($p['returning_c']) && !empty($cs['skip_returning']);
-    $t = null; foreach (st_wa_order_names($back) as $nm) { $t = st_wa_tpl($pdo, $nm); if ($t) break; }      // the owner's own order-confirmation message first (once Meta approved it), then the photo version, then the plain one
-    if (!$t) return [false, 'template not approved yet'];
-    [$num, $own, $why] = st_wa_number_for($pdo, $t);
-    if (!$num) return [false, $why];
+    // the first message that can really go out of the Store number: the "welcome back" ones first for a returning customer, and when none of them is approved on the Store number yet, the new-customer message, so the bill always goes
+    $t = null; $num = null; $own = false; $why = 'template not approved yet';
+    foreach (array_values(array_unique(array_merge(st_wa_order_names($back), $back ? st_wa_order_names(false) : []))) as $nm) {
+        $t0 = st_wa_tpl($pdo, $nm); if (!$t0) continue; [$n0, $o0, $w0] = st_wa_number_for($pdo, $t0);
+        if ($n0) { $t = $t0; $num = $n0; $own = $o0; break; } $why = $w0;
+    }
+    if (!$t || !$num) return [false, $why];
     $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
     if ($c && (int)($c['optout'] ?? 0) === 1) return [false, 'customer opted out of WhatsApp'];
     if ($own) { try { $q = $pdo->prepare("SELECT optout FROM st_wa_chat WHERE phone = ?"); $q->execute([$key]); if ((int)$q->fetchColumn() === 1) return [false, 'customer asked the store to stop']; } catch (Throwable $e) { } }
@@ -953,7 +956,10 @@ function st_wa_auto(PDO $pdo, int $billId, string $billNo, float $total, array $
         foreach ($people as $p) {
             try { [$ok, $why] = st_wa_send_one($pdo, $p, $billNo, $total, $cs); } catch (Throwable $e) { $ok = false; $why = mb_substr($e->getMessage(), 0, 120); }
             if ($ok) st_event($pdo, (int)$p['person_id'], $billId, 'sent', 'auto WhatsApp');
-            elseif (function_exists('wa_log')) { try { wa_log($pdo, 'store', false, $billNo . ' · ' . $p['phone'] . ' · ' . mb_substr($why, 0, 150)); } catch (Throwable $e) { } }
+            else {
+                try { st_event($pdo, (int)$p['person_id'], $billId, 'auto_failed', mb_substr((string)$why, 0, 78)); } catch (Throwable $e) { }      // why the automatic message did not go: the billing list shows it
+                if (function_exists('wa_log')) { try { wa_log($pdo, 'store', false, $billNo . ' · ' . $p['phone'] . ' · ' . mb_substr($why, 0, 150)); } catch (Throwable $e) { } }
+            }
             $notes[(int)$p['person_id']] = $ok ? 'sent' : $why;
         }
     } catch (Throwable $e) { error_log('st_wa_auto: ' . $e->getMessage()); }
@@ -965,14 +971,17 @@ function st_people_status(PDO $pdo, array $billIds): array
 {
     if (!$billIds) return [];
     $in = implode(',', array_fill(0, count($billIds), '?'));
-    $st = $pdo->prepare("SELECT p.person_id, p.bill_id, p.person_no, p.name, p.phone, p.token, p.declined, p.reason, p.returning_c, p.visit_no,
+    $st = $pdo->prepare("SELECT p.person_id, p.bill_id, p.person_no, p.name, p.phone, p.token, p.declined, p.reason, p.returning_c, p.visit_no, p.created_at,
             MIN(CASE WHEN e.kind = 'sent' THEN e.at END) sent_at, MIN(CASE WHEN e.kind = 'opened' THEN e.at END) opened_at, MIN(CASE WHEN e.kind = 'contact' THEN e.at END) contact_at,
             MIN(CASE WHEN e.kind = 'community' THEN e.at END) community_at, MIN(CASE WHEN e.kind = 'review' THEN e.at END) review_at
         FROM st_bill_people p LEFT JOIN st_bill_events e ON e.person_id = p.person_id WHERE p.bill_id IN ($in) GROUP BY p.person_id ORDER BY p.bill_id, p.person_no");
     $st->execute(array_values($billIds));
-    $out = [];
-    foreach ($st->fetchAll() as $r) $out[(int)$r['bill_id']][] = ['person_id' => (int)$r['person_id'], 'no' => (int)$r['person_no'], 'name' => $r['name'], 'phone' => $r['phone'], 'declined' => (int)$r['declined'], 'reason' => $r['reason'], 'returning' => (int)$r['returning_c'], 'visit_no' => (int)$r['visit_no'],
-        'sent_at' => $r['sent_at'], 'opened_at' => $r['opened_at'], 'contact_at' => $r['contact_at'], 'community_at' => $r['community_at'], 'review_at' => $r['review_at'], 'link' => st_bill_link((string)$r['token'])];
+    $out = []; $rowsP = $st->fetchAll();
+    $why = []; try { $q = $pdo->prepare("SELECT person_id, who FROM st_bill_events WHERE kind = 'auto_failed' AND bill_id IN ($in) ORDER BY id"); $q->execute(array_values($billIds)); foreach ($q->fetchAll() as $x) $why[(int)$x['person_id']] = (string)$x['who']; } catch (Throwable $e) { }
+    $ws = []; try { $mq = $pdo->prepare("SELECT status, err FROM st_wa_msg WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND ts >= ? ORDER BY id DESC LIMIT 1");
+        foreach ($rowsP as $r) { $ph = substr(preg_replace('/\D/', '', (string)$r['phone']), -10); if (strlen($ph) !== 10 || (int)$r['declined']) continue; $mq->execute([$ph, date('Y-m-d H:i:s', strtotime((string)$r['created_at'] ?: 'now') - 120)]); $m = $mq->fetch(); if ($m) $ws[(int)$r['person_id']] = $m; } } catch (Throwable $e) { }      // what WhatsApp said about the message sent from the Store number (sent / delivered / read / failed + the reason)
+    foreach ($rowsP as $r) $out[(int)$r['bill_id']][] = ['person_id' => (int)$r['person_id'], 'no' => (int)$r['person_no'], 'name' => $r['name'], 'phone' => $r['phone'], 'declined' => (int)$r['declined'], 'reason' => $r['reason'], 'returning' => (int)$r['returning_c'], 'visit_no' => (int)$r['visit_no'],
+        'sent_at' => $r['sent_at'], 'opened_at' => $r['opened_at'], 'contact_at' => $r['contact_at'], 'community_at' => $r['community_at'], 'review_at' => $r['review_at'], 'link' => st_bill_link((string)$r['token']), 'wa_status' => (string)($ws[(int)$r['person_id']]['status'] ?? ''), 'wa_err' => (string)($ws[(int)$r['person_id']]['err'] ?? ''), 'auto_err' => (string)($why[(int)$r['person_id']] ?? '')];
     return $out;
 }
 
