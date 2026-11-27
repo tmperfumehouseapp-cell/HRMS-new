@@ -1699,6 +1699,19 @@ function st_bday_public(array $v): array
         'valid_from' => (string)$v['valid_from'], 'valid_to' => (string)$v['valid_to'], 'status' => (string)$v['status'], 'wa_status' => (string)$v['wa_status'], 'wa_note' => (string)$v['wa_note'], 'wa_at' => $v['wa_at'], 'redeemed_at' => $v['redeemed_at']];
 }
 /** Once a day by itself (after 9 AM), like the daily sync: the first request claims the day and does the work after its own answer has gone out. */
+/** Store campaigns: when the next sending round may run (a small file, so the check on every request costs nothing). */
+function st_camp_next(int $sec): void { @file_put_contents(sys_get_temp_dir() . '/hrms_st_camp_next', (string)(time() + $sec)); }
+/** Called on every HRMS request: when a Store campaign round is due, it runs AFTER the answer has gone (the page that made the request does not wait). */
+function st_camp_kick(PDO $pdo): void
+{
+    $f = sys_get_temp_dir() . '/hrms_st_camp_next'; $nx = is_file($f) ? (int)@file_get_contents($f) : 0; if ($nx > time()) return;
+    if (!is_file(__DIR__ . '/store_wa_camp.php')) return; @file_put_contents($f, (string)(time() + 20));      // no second round starts while this one runs
+    register_shutdown_function(function () use ($pdo) {
+        if (function_exists('hrms_release')) hrms_release(); elseif (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
+        @ignore_user_abort(true); @set_time_limit(60);
+        try { require_once __DIR__ . '/store_wa_camp.php'; swc_tick($pdo); } catch (Throwable $e) { error_log('st_camp_kick: ' . $e->getMessage()); st_camp_next(60); }
+    });
+}
 function st_bday_daily(PDO $pdo): void
 {
     $day = sys_get_temp_dir() . '/hrms_st_bday_day'; $try = sys_get_temp_dir() . '/hrms_st_bday_try'; $today = date('Y-m-d');
