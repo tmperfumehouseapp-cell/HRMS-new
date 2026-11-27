@@ -246,7 +246,7 @@ if (!function_exists('wa_aft_days')) {
     {
         static $c = null, $at = 0; if ($c !== null && time() - $at < 600) return $c; $at = time(); $c = []; $ids = [];
         try { foreach ($pdo->query("SELECT a.tpl_id, COUNT(*) n FROM wa_order_attr a JOIN wa_templates t ON t.id = a.tpl_id WHERE a.order_at >= '" . date('Y-m-d H:i:s', time() - 20 * 86400) . "' AND UPPER(t.category) = 'MARKETING' AND a.module IN ('A', 'Cold', 'After') GROUP BY a.tpl_id HAVING n >= 3 ORDER BY n DESC LIMIT 12")->fetchAll(PDO::FETCH_NUM) as $r) $ids[(int)$r[0]] = 1; } catch (Throwable $e) { }
-        try { if (!function_exists('wcd_style_ids') && is_file(__DIR__ . '/wa_cold.php')) require_once __DIR__ . '/wa_cold.php'; if (function_exists('wcd_style_ids')) foreach (wcd_style_ids($pdo) as $nm => $id) if (preg_match('/^tmph_(cp|bf)_/', (string)$nm)) $ids[(int)$id] = 1; } catch (Throwable $e) { }
+        try { if (!function_exists('wcd_style_ids') && is_file(__DIR__ . '/wa_cold.php')) require_once __DIR__ . '/wa_cold.php'; if (function_exists('wcd_style_ids')) foreach (wcd_style_ids($pdo) as $nm => $id) if (preg_match('/^tmph_(cp|bf|oc)_/', (string)$nm)) $ids[(int)$id] = 1;   /* oc = the occasion of these days (wa_occasion.php) */ } catch (Throwable $e) { }
         if (!$ids) return $c;
         try { if (!function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) require_once __DIR__ . '/wa_restyle.php'; if (!function_exists('wa_bf_on') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php';
             $off = json_decode((string)setting_get($pdo, 'wa_ordl_off', '[]'), true); $off = is_array($off) ? array_flip(array_map('intval', $off)) : []; $bf = function_exists('wa_bf_on') && wa_bf_on();
