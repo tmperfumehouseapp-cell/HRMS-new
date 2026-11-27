@@ -459,7 +459,15 @@ function wln_wide_ok(PDO $pdo): array
 /** THE PRICE OF THIS CUSTOMER'S NEXT PRICE STEP, worked out from the shop's own price chart (setting ml_slab_chart: rows = total ml, columns = 7 / 6.5 / 6 / 5 / 4 / 3.5 / 3 %; a higher % is a HIGHER price).
  *  The quote is the 4 x 50 ml = 200 ml combo row. Start = the deepest column already quoted in his chat (never above 6.5%); every price step goes ONE column deeper than the one before (never higher than what he was told), the last column of the chart is the floor.
  *  Returns '' when there is no chart or no row (the plain message of the step goes then). */
-function wln_price_text(PDO $pdo, string $phone, int $ml = 200): string { $i = wln_price_info($pdo, $phone, $ml); return $i ? $i['text'] : ''; }
+function wln_price_text(PDO $pdo, string $phone, int $ml = 200): string
+{
+    $i = wln_price_info($pdo, $phone, $ml); if (!$i) return ''; $t = (string)$i['text'];
+    /* 📅 owner 27 Nov 2026 (night): "the Lineup too" - in an occasion's days (and in Black Friday week) the price of the Lineup's price steps names it: "Christmas special: 4 x 50 ml ... sirf Rs 2,280". The price itself is the chart's, unchanged. These steps are marketing messages; the utility steps are not touched. */
+    try { $oc = ''; if (!function_exists('wa_bf_on') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php'; if (function_exists('wa_bf_on') && wa_bf_on()) $oc = 'Black Friday';
+        if ($oc === '') { if (!function_exists('wocc_active') && is_file(__DIR__ . '/wa_occasion.php')) require_once __DIR__ . '/wa_occasion.php'; if (function_exists('wocc_active')) { $a = wocc_active(); if ($a) $oc = (string)reset($a)['t']; } }
+        if ($oc !== '') $t = $oc . ' special: ' . $t; } catch (Throwable $e) { }
+    return $t;
+}
 /** [text, pct] of the next price step, or null (see wln_price_text). */
 function wln_price_info(PDO $pdo, string $phone, int $ml = 200): ?array
 {
