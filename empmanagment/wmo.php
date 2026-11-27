@@ -811,8 +811,13 @@ if (strpos($__wmo, 'wmo.') === 0) {
             if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin or HR can choose this.'], 403);
             $names = employee_names_by_id($pdo); $d = [];
             foreach (['rto', 'exchange'] as $k) { $ids = []; foreach ((array)($in[$k] ?? []) as $e) { $e = (int)$e; if ($e > 0 && isset($names[$e])) $ids[$e] = $e; } $d[$k] = array_slice(array_values($ids), 0, 12); }
-            setting_set($pdo, 'wmo_rx_hand_def', json_encode($d));
-            json_response(['ok' => true, 'defaults' => $d, 'message' => 'Saved. Every new RTO resend goes to ' . ($d['rto'] ? count($d['rto']) . ' person(s)' : 'nobody') . ' and every new Exchange to ' . ($d['exchange'] ? count($d['exchange']) . ' person(s)' : 'nobody') . ' by itself.']);
+            setting_set($pdo, 'wmo_rx_hand_def', json_encode($d)); $moved = 0; $mk = (string)($in['kind'] ?? '');
+            if (!empty($in['apply_open']) && in_array($mk, ['rto', 'exchange'], true)) {   // also give the orders of this kind that are still open (nobody yet, or somebody has not finished) to the new people
+                $oq = $pdo->prepare("SELECT o.id FROM wmo_order o WHERE o.otype = ? AND o.status <> 'cancelled' AND o.created_at >= ? AND (NOT EXISTS (SELECT 1 FROM wmo_rx_hand h WHERE h.order_id = o.id) OR EXISTS (SELECT 1 FROM wmo_rx_hand h2 WHERE h2.order_id = o.id AND h2.done_at IS NULL)) ORDER BY o.id DESC LIMIT 500");
+                $oq->execute([$mk, date('Y-m-d H:i:s', time() - 30 * 86400)]);
+                foreach ($oq->fetchAll(PDO::FETCH_COLUMN) as $oid) { try { wmo_rx_set_handlers($pdo, (int)$oid, $d[$mk], $names); $moved++; } catch (Throwable $e) { } }
+            }
+            json_response(['ok' => true, 'defaults' => $d, 'moved' => $moved, 'message' => ($moved ? $moved . ' open order' . ($moved === 1 ? ' is' : 's are') . ' given to the new people now. ' : '') . 'Saved. Every new RTO resend goes to ' . ($d['rto'] ? count($d['rto']) . ' person(s)' : 'nobody') . ' and every new Exchange to ' . ($d['exchange'] ? count($d['exchange']) . ' person(s)' : 'nobody') . ' by itself.']);
         }
         case 'wmo.rx_access_save': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
