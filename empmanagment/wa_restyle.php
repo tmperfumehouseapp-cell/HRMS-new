@@ -10,7 +10,16 @@
  */
 if (!function_exists('wa_rs_tick')) {
     function wa_rs_state(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wa_rs_state', ''), true); return is_array($j) && isset($j['pairs']) && is_array($j['pairs']) ? $j : ['pairs' => [], 'day' => '', 'n' => 0]; }
-    function wa_rs_save(PDO $pdo, array $s): void { setting_set($pdo, 'wa_rs_state', json_encode($s)); }
+    /* 27 Nov 2026: the state grew past 65,535 bytes (the TEXT limit of the settings column) and every save failed with "Data too long": the engine did its round, could not save it, and did the same round again every minute — no new message was made since the morning. The waiting times that are over are dropped, and if the state still does not fit, the column is widened once (MEDIUMTEXT) and the save is tried again. */
+    function wa_rs_save(PDO $pdo, array $s): void
+    {
+        if (isset($s['next']) && is_array($s['next'])) { $now = time(); foreach ($s['next'] as $k => $u) if ((int)$u <= $now) unset($s['next'][$k]); }
+        $j = json_encode($s);
+        try { setting_set($pdo, 'wa_rs_state', $j); }
+        catch (Throwable $e) { if (strpos($e->getMessage(), '1406') === false && stripos($e->getMessage(), 'too long') === false) throw $e;
+            $pdo->exec("ALTER TABLE hrms_settings MODIFY setting_value MEDIUMTEXT NULL"); setting_set($pdo, 'wa_rs_state', $j);
+            if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'New-style messages: the saved state had outgrown the settings column (' . strlen($j) . ' bytes); the column is widened and the engine works again'); }
+    }
     /** The shop's own approved messages the Lineup really sends (wln_existing_map in wa_line.php, overridden by the setting wl_map). */
     function wa_rs_line_map(PDO $pdo): array
     {
