@@ -120,6 +120,23 @@ if (!function_exists('wnp_defs')) {
 }   // function_exists guard
 
 $__wnp = (string)($action ?? ($_GET['action'] ?? ''));
+/* 💤 owner 27 Nov 2026: "a section 'Did not reply for 30 days' under the After-Order card, with an Excel download, so we can put these people into Module A again". wa.noreply30 (GET): customers who DID write to us once, whose last message is 30+ days old, who did not order in the last 30 days, are not opted out and are in no running Lineup / After-Order ladder. Nobody messages them by itself any more (the Cold funnel is only for people who never wrote). ?csv=1 gives the whole list as a file Excel opens. Read-only. */
+if ($__wnp === 'wa.noreply30') {
+    $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500); if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
+    @set_time_limit(120); $k10 = function ($p) { return substr(preg_replace('/\D+/', '', (string)$p), -10); }; $now = time(); $d30 = date('Y-m-d H:i:s', $now - 30 * 86400); $csv = !empty($_GET['csv']);
+    if (!$csv && empty($_GET['fresh'])) { $cj = json_decode((string)setting_get($pdo, 'wa_noreply30_cache', ''), true); if (is_array($cj) && (int)($cj['t'] ?? 0) > $now - 900 && is_array($cj['d'] ?? null)) json_response($cj['d'] + ['cached' => 1]); }   // the count walks every customer who ever wrote: kept 15 minutes
+    $busy = []; foreach (["SELECT phone FROM wa_line_cust WHERE status = 'active'", "SELECT phone FROM wa_aft_cust WHERE status = 'active'"] as $sql) { try { foreach ($pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN) as $p) $busy[$k10($p)] = 1; } catch (Throwable $e) { } }
+    $ord = []; foreach (["SELECT phone FROM shop_orders WHERE created_at >= '$d30' AND phone IS NOT NULL AND phone <> ''", "SELECT phone FROM manual_orders WHERE order_date >= '$d30' AND phone IS NOT NULL AND phone <> ''"] as $sql) { try { foreach ($pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN) as $p) $ord[$k10($p)] = 1; } catch (Throwable $e) { } }
+    $st = $pdo->prepare("SELECT phone, name, last_in_at FROM wa_contacts WHERE last_in_at IS NOT NULL AND last_in_at < ? AND optout = 0 AND camp_optout = 0 ORDER BY last_in_at DESC"); $st->execute([$d30]);
+    if ($csv) { while (ob_get_level() > 0) @ob_end_clean(); header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="did-not-reply-30-days-' . date('Y-m-d') . '.csv"'); $out = fopen('php://output', 'w'); fwrite($out, "\xEF\xBB\xBF"); fputcsv($out, ['Phone', 'Name', 'Last wrote on', 'Days since']); }
+    $n = 0; $rows = []; $bands = ['30-60 days' => 0, '61-90 days' => 0, '91-180 days' => 0, 'over 180 days' => 0];
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) { $k = $k10($r['phone']); if (strlen($k) < 10 || isset($busy[$k]) || isset($ord[$k])) continue; $n++; $days = (int)floor(($now - (int)strtotime((string)$r['last_in_at'])) / 86400);
+        if ($csv) { fputcsv($out, ['91' . $k, (string)($r['name'] ?? ''), substr((string)$r['last_in_at'], 0, 10), $days]); continue; }
+        $bands[$days <= 60 ? '30-60 days' : ($days <= 90 ? '61-90 days' : ($days <= 180 ? '91-180 days' : 'over 180 days'))]++; if (count($rows) < 100) $rows[] = ['phone' => '91' . $k, 'name' => (string)($r['name'] ?? ''), 'last' => (string)$r['last_in_at'], 'days' => $days]; }
+    if ($csv) { fclose($out); exit; }
+    $res = ['ok' => true, 'total' => $n, 'bands' => $bands, 'rows' => $rows]; try { setting_set($pdo, 'wa_noreply30_cache', json_encode(['t' => $now, 'd' => $res], JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { }
+    json_response($res);
+}
 /* 🚫 owner 27 Nov 2026: "a list on the Campaigns page of the people we never message". wa.never_list (GET): the customers who opted out (STOP / the Opted-in switch off / stopped campaigns) and the phones Meta says are not on WhatsApp. Read-only: every module already leaves them out (the campaign when it is built and again at sending). */
 if ($__wnp === 'wa.never_list') {
     $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500); if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
