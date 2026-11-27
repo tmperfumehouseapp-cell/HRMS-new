@@ -93,6 +93,7 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
     if (!function_exists('wa_app_id') && is_file(__DIR__ . '/wa_more.php')) { try { require_once __DIR__ . '/wa_more.php'; } catch (Throwable $e) { error_log('swt: wa_more ' . $e->getMessage()); } }      // the Meta app id (needed to put a photo on top) is found there
     if (function_exists('wa_tpl_need_media')) wa_tpl_need_media();
     if ($action === 'st_wa.tpl_all') {
+        swt_seed_util_bill($pdo, $me);      // the plain Utility bill message (sent when the Marketing one fails) is ready as a draft once
         $rows = $pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = []; $used = swt_used($pdo);
         foreach ($rows as $r) {
             if (in_array((string)$r['name'], ['tmph_store_bill', 'tmph_store_bill_back', 'tmph_store_bday'], true)) { $hq = $pdo->prepare("SELECT 1 FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $hq->execute([(int)$r['id'], $waba]); if (!$hq->fetchColumn()) continue; }      // the older plain-text versions (made for the other accounts) are not the Store's to see
@@ -285,6 +286,7 @@ function swt_used(PDO $pdo): array
         if (function_exists('st_wa_order_names')) {
             foreach ([false => 'Bill · new customer', true => 'Bill · returning customer'] as $back => $lbl) foreach (st_wa_order_names((bool)$back) as $nm) { $t = st_wa_tpl($pdo, $nm); if ($ok($t)) { $add($t, $lbl); break; } }
         }
+        if (defined('ST_WA_UTIL_BILL')) { $ub = st_wa_tpl($pdo, ST_WA_UTIL_BILL); if ($ok($ub)) $add($ub, 'Bill · if the first one fails'); }
         $b = st_wa_tpl($pdo, 'tmph_store_bday_v2') ?: st_wa_tpl($pdo, 'tmph_store_bday'); if ($ok($b)) $add($b, 'Birthday');
         if (!function_exists('swf_cfg') && is_file(__DIR__ . '/store_wa_follow.php')) require_once __DIR__ . '/store_wa_follow.php';
         if (function_exists('swf_cfg')) { $c = swf_cfg($pdo); foreach ([7, 30, 60] as $st) { $id = (int)($c['tpl'][$st] ?? 0); if ($id > 0) $u[$id][] = 'Follow-up · ' . $st . ' days'; else foreach (['gu', 'hi', 'en'] as $lg) { $t = st_wa_tpl($pdo, 'tmph_store_followup_' . ($st === 7 ? 1 : ($st === 30 ? 2 : 3)) . '_' . $lg, $lg); if ($ok($t)) $add($t, 'Follow-up · ' . $st . ' days (' . $lg . ')'); } } }
@@ -330,4 +332,15 @@ function swt_fix_all(PDO $pdo, string $waba, int $me, bool $dry = false): array
         [$ok, $w] = wa_tpl_create_at($pdo, $row, $waba); if ($ok) $out['sent'][] = (string)$row['name'] . ' (' . implode(', ', $changes ?: ['sent again']) . ')'; else $out['failed'][] = [(string)$row['name'], (string)$w];
     }
     return ['ok' => true] + $out;
+}
+
+/** Makes the Utility bill message as a DRAFT, once (if the owner deletes it, it is not made again). Nothing goes to Meta until "Save & send to Meta". */
+function swt_seed_util_bill(PDO $pdo, int $me): void
+{
+    if (!defined('ST_WA_UTIL_BILL') || (string)setting_get($pdo, 'st_wa_util_seed', '') !== '') return; setting_set($pdo, 'st_wa_util_seed', date('Y-m-d H:i:s'));
+    $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([ST_WA_UTIL_BILL]); if ($q->fetchColumn()) return;
+    $d = ['name' => ST_WA_UTIL_BILL, 'language' => 'en', 'category' => 'UTILITY', 'header_format' => '', 'header_text' => '', 'header_lib_id' => 0,
+        'body' => "Hi {{1}}, thank you for your purchase at TM Perfume House.\n\nYour bill {{2}} is ready. You can view it here: {{3}}\n\nThank you for visiting us.",
+        'footer' => 'TM Perfume House', 'buttons' => [], 'examples' => ['body' => ['Rahul', 'TM-1042', 'https://fourpirates.space/b/1a2b3c4d5e'], 'labels' => ['Name', 'Bill no', 'Bill link']], 'folder' => 'Store'];
+    [$t, $err] = wa_tpl_clean($d, true); if ($err === '') wa_tpl_insert($pdo, $t, $me, 'Bill · Utility (sent when the bill message fails)', 'Store bill message, utility');
 }
