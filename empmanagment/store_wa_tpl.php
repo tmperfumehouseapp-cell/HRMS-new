@@ -98,6 +98,7 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
         $photos = []; try { foreach ($pdo->query("SELECT * FROM wa_media_lib WHERE kind = 'image' AND mime IN ('image/jpeg','image/png') ORDER BY id DESC LIMIT 40")->fetchAll() as $r) $photos[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'thumb' => swt_thumb($r)]; } catch (Throwable $e) { }
         json_response(['templates' => $out, 'photos' => $photos, 'store_pics' => swt_store_pics($pdo), 'waba' => $waba, 'app_id_ok' => (function_exists('wa_app_id') ? wa_app_id($pdo) : wa_cfg_val('WA_APP_ID')) !== '']);
     }
+    if ($action === 'st_wa.tpl_diag') json_response(swt_diag($pdo, $num, $waba));
     if (!$post) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
     if ($action === 'st_wa.tpl_seed') {
         $made = []; $skipped = [];
@@ -161,4 +162,66 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
         [$code, $d] = wa_api('POST', '/' . $num['phone_id'] . '/messages', $pl); if ($code < 200 || $code >= 300 || empty($d['messages'][0]['id'])) json_response(['error' => wa_err(is_array($d) ? $d : null)], 422); json_response(['ok' => true]);
     }
     json_response(['error' => 'Unknown action.'], 404);
+}
+
+/** Our own checks of one template against the rules Meta usually rejects for. Returns short English notes (for the copied report). */
+function swt_lint(array $t): array
+{
+    $o = []; $b = (string)($t['body'] ?? ''); $lg = (string)($t['language'] ?? 'en'); $cat = strtoupper((string)($t['category'] ?? '')); $hf = strtoupper((string)($t['header_format'] ?? ''));
+    $vars = wa_tpl_vars($b); $tb = trim($b);
+    if (preg_match('/^\{\{\s*\d+\s*\}\}/u', $tb)) $o[] = 'Body STARTS with a variable (Meta rejects this).';
+    if (preg_match('/\{\{\s*\d+\s*\}\}[\s.!?,]*$/u', $tb)) $o[] = 'Body ENDS with a variable (Meta rejects this).';
+    if (preg_match('/\}\}\s*\{\{/u', $b)) $o[] = 'Two variables side by side (Meta rejects this).';
+    if ($vars && $vars !== range(1, count($vars))) $o[] = 'Variables are not 1,2,3... in order.';
+    $words = count(preg_split('/\s+/u', trim(preg_replace('/\{\{\s*\d+\s*\}\}/u', ' ', $b)), -1, PREG_SPLIT_NO_EMPTY));
+    if ($vars && $words < 3 * count($vars) + 2) $o[] = 'Too many variables for so few words (' . count($vars) . ' variables, ' . $words . ' words).';
+    $ex = (array)(($t['examples']['body'] ?? null) ?? []); if (count($vars) > count(array_filter($ex, fn($x) => trim((string)$x) !== ''))) $o[] = 'A variable has no example value.';
+    if (mb_strlen($b) > 1024) $o[] = 'Body is longer than 1024 letters.';
+    if (preg_match("/\n\s*\n\s*\n/u", $b)) $o[] = 'Three or more line breaks in a row.';
+    if (mb_strlen((string)($t['footer'] ?? '')) > 60) $o[] = 'Footer is longer than 60 letters.';
+    foreach ((array)($t['buttons'] ?? []) as $bt) { if (mb_strlen((string)($bt['text'] ?? '')) > 25) $o[] = 'Button "' . $bt['text'] . '" is longer than 25 letters.'; }
+    $gu = preg_match_all('/[\x{0A80}-\x{0AFF}]/u', $b); $hi = preg_match_all('/[\x{0900}-\x{097F}]/u', $b); $la = preg_match_all('/[A-Za-z]/u', preg_replace('/\{\{\s*\d+\s*\}\}|TM Perfume House|STOP/u', '', $b));
+    if ($lg === 'gu' && $gu < 10) $o[] = 'Language is Gujarati but the body is not in Gujarati letters.';
+    if ($lg === 'hi' && $hi < 10) $o[] = 'Language is Hindi but the body is not in Hindi letters.';
+    if (strpos($lg, 'en') === 0 && ($gu + $hi) > $la) $o[] = 'Language is English but the body is in ' . ($gu > $hi ? 'Gujarati' : 'Hindi') . ' letters (choose the right language).';
+    if (in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && (int)($t['header_lib_id'] ?? 0) <= 0) $o[] = 'Photo on top is switched on but no photo is chosen.';
+    if ($cat === 'UTILITY' && function_exists('wa_tpl_promo_hits') && ($h = wa_tpl_promo_hits($b . ' ' . ($t['footer'] ?? '')))) $o[] = 'Set as Utility but has selling words (' . implode(', ', array_slice($h, 0, 4)) . ') - Meta makes it Marketing or rejects it.';
+    if ($cat === 'MARKETING' && stripos((string)($t['footer'] ?? '') . $b, 'STOP') === false) $o[] = 'Marketing without a "STOP" line.';
+    return $o;
+}
+/** 🩺 Diagnose: every Store template with HRMS status, the LIVE answer from Meta (status, category, rejected reason, quality), the last submit errors and our own checks - as one plain text to copy. Reads only, changes nothing. */
+function swt_diag(PDO $pdo, array $num, string $waba): array
+{
+    $live = []; $lerr = ''; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason,quality_score,previous_category';
+    for ($page = 0; $page < 8 && $url; $page++) {
+        [$c, $d] = wa_api('GET', $url); if ($c < 200 || $c >= 300 || !is_array($d)) { $lerr = wa_err(is_array($d) ? $d : null); break; }
+        foreach ((array)($d['data'] ?? []) as $x) { $nm = (string)($x['name'] ?? ''); if (strpos($nm, 'tmph_store_') === 0) $live[$nm . '|' . (string)($x['language'] ?? '')] = $x; }
+        $url = ''; $nx = (string)($d['paging']['next'] ?? ''); if ($nx !== '' && preg_match('#graph\.facebook\.com/[^/]+(/.+)$#', $nx, $m)) $url = $m[1];
+    }
+    $appOk = (function_exists('wa_app_id') ? wa_app_id($pdo) : (function_exists('wa_cfg_val') ? wa_cfg_val('WA_APP_ID') : '')) !== '';
+    $L = ['STORE TEMPLATE DIAGNOSE · ' . date('d-m-Y H:i'), 'Store number: ' . (string)($num['phone'] ?? '') . ' · WABA ' . $waba . ' · Meta app id for photos: ' . ($appOk ? 'found' : 'NOT FOUND') . ($lerr !== '' ? ' · Meta list error: ' . $lerr : ' · Meta has ' . count($live) . ' Store templates')];
+    $items = []; $seen = [];
+    foreach ($pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll() as $r) {
+        $t = wa_tpl_row($pdo, (int)$r['id']); if (!$t) continue; $lg = (string)($t['language'] ?? 'en');
+        $q = $pdo->prepare("SELECT status, reason, meta_id, category FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $q->execute([(int)$t['id'], $waba]); $h = $q->fetch() ?: [];
+        $m = $live[$t['name'] . '|' . $lg] ?? null; $seen[$t['name'] . '|' . $lg] = 1;
+        $subs = []; try { $s = $pdo->prepare("SELECT at, ok, note FROM wa_tpl_subs WHERE tpl_id = ? AND waba_id = ? ORDER BY id DESC LIMIT 3"); $s->execute([(int)$t['id'], $waba]); foreach ($s->fetchAll() as $x) $subs[] = substr((string)$x['at'], 0, 16) . ' ' . ((int)$x['ok'] ? 'sent OK' : 'REFUSED: ' . $x['note']); } catch (Throwable $e) { }
+        $hs = strtoupper((string)($h['status'] ?? '')) ?: 'DRAFT (never sent to Meta)'; $ms = $m ? strtoupper((string)($m['status'] ?? '')) : ($lerr !== '' ? '?' : 'NOT AT META');
+        $mr = $m ? (string)($m['rejected_reason'] ?? '') : ''; if ($mr === 'NONE') $mr = '';
+        $lint = swt_lint($t); $btn = implode(' | ', array_map(fn($b) => strtoupper((string)($b['type'] ?? '')) . ': ' . (string)($b['text'] ?? ''), (array)($t['buttons'] ?? [])));
+        $bad = $ms === 'REJECTED' || strpos($hs, 'REJECTED') === 0 || strpos($hs, 'ERROR') === 0;
+        $items[] = ['id' => (int)$t['id'], 'name' => (string)$t['name'], 'language' => $lg, 'category' => (string)$t['category'], 'meta_category' => $m ? (string)($m['category'] ?? '') : '', 'hrms' => $hs, 'meta' => $ms, 'meta_reason' => $mr, 'hrms_reason' => (string)($h['reason'] ?? ''), 'quality' => $m ? (string)($m['quality_score']['score'] ?? '') : '', 'subs' => $subs, 'checks' => $lint, 'bad' => $bad];
+        $L[] = ''; $L[] = '■ ' . $t['name'] . ' [' . $lg . '] · ' . ($bad ? '❌ ' : '') . 'HRMS: ' . $hs . ' · Meta: ' . $ms;
+        $L[] = '  Category: ours ' . $t['category'] . ($m ? ' / Meta ' . ($m['category'] ?? '?') . (!empty($m['previous_category']) ? ' (was ' . $m['previous_category'] . ')' : '') : '') . ' · Header: ' . (($t['header_format'] ?? '') ?: 'none') . (in_array(strtoupper((string)($t['header_format'] ?? '')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true) ? ' (photo id ' . (int)($t['header_lib_id'] ?? 0) . ')' : '') . ($m && !empty($m['quality_score']['score']) ? ' · Quality ' . $m['quality_score']['score'] : '');
+        if ($mr !== '') $L[] = '  Meta rejected_reason: ' . $mr;
+        if (trim((string)($h['reason'] ?? '')) !== '') $L[] = '  Saved reason: ' . $h['reason'];
+        foreach ($subs as $x) $L[] = '  Submit: ' . $x;
+        foreach ($lint as $x) $L[] = '  ⚠ ' . $x;
+        $L[] = '  Body: ' . str_replace("\n", ' ⏎ ', (string)$t['body']);
+        if (trim((string)($t['footer'] ?? '')) !== '') $L[] = '  Footer: ' . $t['footer'];
+        if ($btn !== '') $L[] = '  Buttons: ' . $btn;
+        $ex = (array)($t['examples']['body'] ?? []); if ($ex) $L[] = '  Examples: ' . implode(' | ', array_map('strval', $ex));
+    }
+    foreach ($live as $k => $m) if (empty($seen[$k])) { $L[] = ''; $L[] = '■ ' . $m['name'] . ' [' . ($m['language'] ?? '') . '] · only at Meta (not in HRMS) · ' . ($m['status'] ?? '') . ' · ' . ($m['category'] ?? '') . (!empty($m['rejected_reason']) && $m['rejected_reason'] !== 'NONE' ? ' · rejected_reason ' . $m['rejected_reason'] : ''); }
+    return ['ok' => true, 'text' => implode("\n", $L), 'items' => $items, 'meta_error' => $lerr, 'app_ok' => $appOk];
 }
