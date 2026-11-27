@@ -41,7 +41,8 @@ function swt_store_pics(PDO $pdo): array
     $df = ''; $d = dirname(__DIR__) . '/assets/img/store_bill_default.jpg'; if (is_file($d)) $df = 'data:image/jpeg;base64,' . base64_encode((string)file_get_contents($d));
     $new = $get('bill_image'); $back = $get('bill_image_back'); $bd = function_exists('st_bday_msg') ? (string)(st_bday_msg($pdo, true)['photo'] ?? '') : '';
     $o = [['new', 'Picture 1', 'New customer (bill thank-you)', $new !== '' ? $new : $df, $new !== ''], ['back', 'Picture 2', 'Returning customer (welcome back)', $back !== '' ? $back : ($new !== '' ? $new : $df), $back !== ''], ['bday', 'Picture 3', 'Birthday gift', $bd !== '' ? $bd : $df, $bd !== '']];
-    return array_map(fn($x) => ['kind' => $x[0], 'name' => $x[1], 'title' => $x[2], 'thumb' => strlen($x[3]) < 400000 ? $x[3] : '', 'custom' => $x[4]], $o);
+    $lt = ['new' => 'Store Picture 1 (new customer)', 'back' => 'Store Picture 2 (returning customer)', 'bday' => 'Store Picture 3 (birthday)'];
+    return array_map(fn($x) => ['kind' => $x[0], 'name' => $x[1], 'title' => $x[2], 'lib_title' => $lt[$x[0]], 'thumb' => strlen($x[3]) < 400000 ? $x[3] : '', 'custom' => $x[4]], $o);
 }
 /** Saves image bytes into the media library (photos are made smaller first, like everywhere else). Returns [library id, error]. */
 function swt_lib_save(PDO $pdo, string $raw, string $mime, string $title, string $name, int $me): array
@@ -92,11 +93,13 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
     if (!function_exists('wa_app_id') && is_file(__DIR__ . '/wa_more.php')) { try { require_once __DIR__ . '/wa_more.php'; } catch (Throwable $e) { error_log('swt: wa_more ' . $e->getMessage()); } }      // the Meta app id (needed to put a photo on top) is found there
     if (function_exists('wa_tpl_need_media')) wa_tpl_need_media();
     if ($action === 'st_wa.tpl_all') {
-        $rows = $pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = [];
+        $rows = $pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = []; $used = swt_used($pdo);
         foreach ($rows as $r) {
-            if (strpos((string)$r['name'], 'tmph_store_followup_') === 0) continue;      // the follow-ups are looked after on their own screen (Follow-ups → Messages)
             if (in_array((string)$r['name'], ['tmph_store_bill', 'tmph_store_bill_back', 'tmph_store_bday'], true)) { $hq = $pdo->prepare("SELECT 1 FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $hq->execute([(int)$r['id'], $waba]); if (!$hq->fetchColumn()) continue; }      // the older plain-text versions (made for the other accounts) are not the Store's to see
-            $o = swt_out($pdo, $r, $waba); if ($o) $out[] = $o;
+            $o = swt_out($pdo, $r, $waba); if (!$o) continue;
+            $o['used'] = $used[$o['id']] ?? []; $o['family'] = swt_family($o['name']); $o['machine'] = (bool)preg_match('/_\d{6,}(_v\d+)?$/', $o['name']) || (in_array($o['status'], ['draft', 'DRAFT'], true) && preg_match('/^tmph_store_followup_\d_(gu|hi|en)_v\d+$/', $o['name']));
+            $q2 = $pdo->prepare("SELECT category, COUNT(*) n, SUM(meta_id <> '') m FROM wa_tpl_waba WHERE tpl_id = ? GROUP BY category"); $q2->execute([$o['id']]); $o['meta_category'] = ''; $o['at_meta'] = false; foreach ($q2->fetchAll() as $x) { if ((string)$x['category'] !== '') $o['meta_category'] = strtoupper((string)$x['category']); if ((int)$x['m'] > 0) $o['at_meta'] = true; }
+            $out[] = $o;
         }
         $photos = []; try { foreach ($pdo->query("SELECT * FROM wa_media_lib WHERE kind = 'image' AND mime IN ('image/jpeg','image/png') ORDER BY id DESC LIMIT 40")->fetchAll() as $r) $photos[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'thumb' => swt_thumb($r)]; } catch (Throwable $e) { }
         $media = []; try { foreach ($pdo->query("SELECT id, title, kind, size FROM wa_media_lib WHERE kind IN ('video','document') AND mime IN ('video/mp4','application/pdf') ORDER BY id DESC LIMIT 40")->fetchAll() as $r) $media[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'kind' => (string)$r['kind'], 'mb' => round((int)$r['size'] / 1048576, 1)]; } catch (Throwable $e) { }
@@ -120,6 +123,23 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
         $f = $_FILES['file'] ?? null; if (!$f || (int)($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_file((string)$f['tmp_name'])) json_response(['error' => 'The photo did not arrive. Try a smaller one.'], 422);
         $raw = (string)file_get_contents((string)$f['tmp_name']); $mime = ''; if (function_exists('finfo_open')) { $fi = finfo_open(FILEINFO_MIME_TYPE); if ($fi) { $mime = (string)finfo_file($fi, (string)$f['tmp_name']); finfo_close($fi); } }
         [$id, $err] = swt_lib_save($pdo, $raw, $mime, trim((string)($_POST['title'] ?? '')) ?: pathinfo((string)$f['name'], PATHINFO_FILENAME), (string)$f['name'], $me); if ($id <= 0) json_response(['error' => $err], 422); json_response(['ok' => true, 'id' => $id]);
+    }
+    if ($action === 'st_wa.tpl_del') {      // only messages that never reached Meta (drafts, or refused before Meta made them)
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array)($in['ids'] ?? [$in['id'] ?? 0]))))); $del = 0; $kept = [];
+        foreach ($ids as $id) {
+            $r = wa_tpl_row($pdo, $id); if (!$r || strpos((string)$r['name'], 'tmph_store_') !== 0) continue;
+            $q = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ? AND (meta_id <> '' OR UPPER(status) IN ('APPROVED','PENDING','IN_APPEAL','PAUSED'))"); $q->execute([$id]); if ((int)$q->fetchColumn() > 0) { $kept[] = (string)$r['name']; continue; }
+            if (!empty(swt_used($pdo)[$id])) { $kept[] = (string)$r['name']; continue; }
+            $pdo->prepare("DELETE FROM wa_tpl_waba WHERE tpl_id = ?")->execute([$id]); $pdo->prepare("DELETE FROM wa_templates WHERE id = ?")->execute([$id]); $del++;
+        }
+        json_response(['ok' => true, 'deleted' => $del, 'kept' => $kept]);
+    }
+    if ($action === 'st_wa.tpl_copy') {      // a new draft from an existing message (any status): same text, photo, buttons; a free name
+        $r = wa_tpl_row($pdo, (int)($in['id'] ?? 0)); if (!$r || strpos((string)$r['name'], 'tmph_store_') !== 0) json_response(['error' => 'Message not found.'], 404);
+        $base = substr(preg_replace('/(_copy\d*)?(_v\d+)?$/', '', (string)$r['name']), 0, 50); $lg = (string)($r['language'] ?? 'en'); $n = 1; $c = $pdo->prepare("SELECT 1 FROM wa_templates WHERE name = ? AND language = ?");
+        do { $nm = $base . '_copy' . ($n > 1 ? $n : ''); $c->execute([$nm, $lg]); $n++; } while ($c->fetchColumn());
+        $d = ['name' => $nm, 'language' => $lg, 'category' => (string)$r['category'], 'header_format' => (string)($r['header_format'] ?? ''), 'header_text' => (string)($r['header_text'] ?? ''), 'header_lib_id' => (int)($r['header_lib_id'] ?? 0), 'body' => (string)$r['body'], 'footer' => (string)($r['footer'] ?? ''), 'buttons' => st_wa_btns_clean(array_values((array)($r['buttons'] ?? []))), 'examples' => is_array($r['examples'] ?? null) ? $r['examples'] : [], 'folder' => 'Store'];
+        [$t, $err] = wa_tpl_clean($d, true); if ($err !== '') json_response(['error' => $err], 422); $id = wa_tpl_insert($pdo, $t, $me, (string)($r['purpose'] ?? 'Store message'), 'Copy of ' . $r['name']); json_response(['ok' => true, 'id' => $id, 'name' => $nm]);
     }
     if ($action === 'st_wa.tpl_ai') { [$ok, $d] = swt_ai($in); if (!$ok) json_response(['error' => $d], 502); json_response(['ok' => true] + $d); }
     if ($action === 'st_wa.tpl_check') {
@@ -230,7 +250,7 @@ function swt_ai(array $in): array
 {
     if (!function_exists('wa_tpl_model')) return [false, 'Claude is not available on this server.'];
     $about = trim(mb_substr((string)($in['about'] ?? ''), 0, 600)); if ($about === '') return [false, 'Write in a few words what the message should say.'];
-    $cat = strtoupper((string)($in['category'] ?? 'UTILITY')) === 'MARKETING' ? 'MARKETING' : 'UTILITY'; $lg = in_array((string)($in['language'] ?? 'gu'), ['gu', 'hi', 'en'], true) ? (string)$in['language'] : 'gu';
+    $cat = strtoupper((string)($in['category'] ?? 'UTILITY')) === 'MARKETING' ? 'MARKETING' : 'UTILITY'; $lg = in_array((string)($in['language'] ?? 'en'), ['gu', 'hi', 'en'], true) ? (string)$in['language'] : 'en';
     $lname = ['gu' => 'Gujarati, written in Gujarati script', 'hi' => 'Hindi, written in Devanagari script', 'en' => 'simple English'][$lg]; $hf = (string)($in['header_format'] ?? '');
     $sys = "You write ONE WhatsApp message template for TM Perfume House, a perfume shop (store in Vesu, Surat, open 11 am to 11 pm). The owner tells you what the message is about. Follow Meta's template rules exactly:\n"
         . "- Language: " . $lname . " only (brand name, perfume names and STOP may stay in English letters).\n"
@@ -249,5 +269,23 @@ function swt_ai(array $in): array
     if (!$ok || !is_array($v) || trim((string)($v['body'] ?? '')) === '') return [false, 'Claude could not write it now. Try again in a minute.'];
     $body = trim((string)$v['body']); $n = count(wa_tpl_vars($body)); $ex = array_values(array_map('strval', (array)($v['examples'] ?? []))); for ($i = count($ex); $i < $n; $i++) $ex[] = $i === 0 ? 'Rahul' : ($i === 1 ? 'Oud Royal 50 ml' : 'TM-1042'); $ex = array_slice($ex, 0, $n);
     $btn = []; foreach (array_slice((array)($v['buttons'] ?? []), 0, 3) as $b) { $t = function_exists('st_wa_btn_text') ? st_wa_btn_text((string)$b) : trim((string)$b); if ($t !== '') $btn[] = ['type' => 'QUICK_REPLY', 'text' => $t]; }
-    return [true, ['header_text' => mb_substr(trim((string)($v['header'] ?? '')), 0, 60), 'body' => $body, 'footer' => mb_substr(trim((string)($v['footer'] ?? '')), 0, 60), 'buttons' => $btn, 'examples' => $ex, 'labels' => array_slice(array_values(array_map('strval', (array)($v['labels'] ?? []))), 0, $n), 'tips' => array_values(array_map('strval', (array)($v['tips'] ?? []))), 'lint' => swt_lint(['body' => $body, 'language' => $lg, 'category' => $cat, 'footer' => (string)($v['footer'] ?? ''), 'buttons' => $btn, 'examples' => ['body' => $ex], 'header_format' => $hf, 'header_lib_id' => 1])]];
+    return [true, ['header_text' => mb_substr(trim((string)($v['header'] ?? '')), 0, 60), 'body' => $body, 'footer' => mb_substr(trim((string)($v['footer'] ?? '')), 0, 60), 'buttons' => $btn, 'examples' => $ex, 'labels' => array_slice(array_values(array_map('strval', (array)($v['labels'] ?? []))), 0, $n), 'tips' => array_values(array_map('strval', (array)($v['tips'] ?? []))), 'lint' => swt_lint(['body' => $body, 'language' => $lg, 'category' => $cat, 'footer' => (string)($v['footer'] ?? ''), 'buttons' => $btn, 'examples' => ['body' => $ex], 'header_format' => $hf, 'header_lib_id' => (int)($in['header_lib_id'] ?? 0)])]];
+}
+
+/** The family of a message: its name without version / copy / machine suffixes (birthday_v3 → birthday). */
+function swt_family(string $name): string { $b = preg_replace('/(_\d{6,})?(_v\d+)?(_copy\d*)?$/', '', $name); $b = preg_replace('/(_\d{6,})?(_v\d+)?$/', '', (string)$b); return (string)$b; }
+/** Where each Store message is used right now: [template id => ['Bill · new customer', ...]]. Only the one that would really go is marked. */
+function swt_used(PDO $pdo): array
+{
+    static $memo = null; if ($memo !== null) return $memo; $u = []; $add = function (?array $t, string $what) use (&$u) { if ($t) $u[(int)$t['id']][] = $what; };
+    try {
+        $sw = function_exists('st_store_waba') ? st_store_waba($pdo) : ''; $ok = function (?array $t) use ($sw) { return $t && ($sw === '' || in_array($sw, (array)($t['ok_wabas'] ?? []), true)); };
+        if (function_exists('st_wa_order_names')) {
+            foreach ([false => 'Bill · new customer', true => 'Bill · returning customer'] as $back => $lbl) foreach (st_wa_order_names((bool)$back) as $nm) { $t = st_wa_tpl($pdo, $nm); if ($ok($t)) { $add($t, $lbl); break; } }
+        }
+        $b = st_wa_tpl($pdo, 'tmph_store_bday_v2') ?: st_wa_tpl($pdo, 'tmph_store_bday'); if ($ok($b)) $add($b, 'Birthday');
+        if (!function_exists('swf_cfg') && is_file(__DIR__ . '/store_wa_follow.php')) require_once __DIR__ . '/store_wa_follow.php';
+        if (function_exists('swf_cfg')) { $c = swf_cfg($pdo); foreach ([7, 30, 60] as $st) { $id = (int)($c['tpl'][$st] ?? 0); if ($id > 0) $u[$id][] = 'Follow-up · ' . $st . ' days'; else foreach (['gu', 'hi', 'en'] as $lg) { $t = st_wa_tpl($pdo, 'tmph_store_followup_' . ($st === 7 ? 1 : ($st === 30 ? 2 : 3)) . '_' . $lg, $lg); if ($ok($t)) $add($t, 'Follow-up · ' . $st . ' days (' . $lg . ')'); } } }
+    } catch (Throwable $e) { }
+    return $memo = $u;
 }
