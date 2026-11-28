@@ -47,7 +47,7 @@ if (!function_exists('wos_day')) {
         try { $q = $pdo->prepare("SELECT okey, src, phone, order_at, total, module, tpl_id, msg_at FROM wa_order_attr WHERE order_at >= ? AND order_at <= ? ORDER BY order_at"); $q->execute([$from, $to]); $rows = $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return $R + ['error' => 'The order ledger is not there yet.']; }
         $first = []; foreach (["SELECT RIGHT(REPLACE(REPLACE(phone, '+', ''), ' ', ''), 10) p, MIN(created_at) FROM shop_orders WHERE phone <> '' GROUP BY p", "SELECT RIGHT(REPLACE(REPLACE(phone, '+', ''), ' ', ''), 10) p, MIN(order_date) FROM manual_orders WHERE phone <> '' GROUP BY p"] as $sql) { try { foreach ($pdo->query($sql)->fetchAll(PDO::FETCH_NUM) as $r) { $k = (string)$r[0]; if (!isset($first[$k]) || (string)$r[1] < $first[$k]) $first[$k] = (string)$r[1]; } } catch (Throwable $e) { } }
         $qIn = $pdo->prepare("SELECT body, reply_to, ts FROM wa_messages WHERE phone IN (?, ?) AND dir = 'in' AND ts >= ? AND ts <= ? ORDER BY id DESC LIMIT 40");
-        $qOut = $pdo->prepare("SELECT ts, who, mtype FROM wa_messages WHERE wamid = ? LIMIT 1");
+        $qOut = $pdo->prepare("SELECT ts, who, mtype, body FROM wa_messages WHERE wamid = ? LIMIT 1");
         $qOf = $pdo->prepare("SELECT COUNT(*) FROM wa_offer WHERE phone IN (?, ?) AND ok > 0 AND at BETWEEN ? AND ?");
         $qFr = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone IN (?, ?) AND status = 'sent' AND why LIKE 'free text%' AND sent_at BETWEEN ? AND ?");
         $qEmp = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone IN (?, ?) AND dir = 'out' AND who IN ('emp','person','phone') AND ts BETWEEN ? AND ?");
@@ -62,10 +62,11 @@ if (!function_exists('wos_day')) {
                 if ($ins) $R['wrote']++;
                 $trig = null; $tried = 0;
                 foreach ($ins as $m) { if ((string)$m[1] === '' || $tried >= 6) continue; $tried++; try { $qOut->execute([(string)$m[1]]); $om = $qOut->fetch(PDO::FETCH_NUM); } catch (Throwable $e) { $om = null; } if (!$om) continue; [$mod, $tid, $extra] = wos_module($pdo, $k, (string)$om[0]); if ($mod === '' && (string)$om[2] !== 'template') continue;
-                    $trig = ['body' => (string)$m[0], 'ts' => (string)$m[2], 'msg_ts' => (string)$om[0], 'mod' => $mod, 'tid' => $tid, 'extra' => $extra, 'who' => (string)$om[1]]; break; }
+                    $trig = ['body' => (string)$m[0], 'ts' => (string)$m[2], 'msg_ts' => (string)$om[0], 'mod' => $mod, 'tid' => $tid, 'extra' => $extra, 'who' => (string)$om[1], 'obody' => (string)($om[3] ?? '')]; break; }
                 if ($trig) {
                     $o['how'] = 'tap'; $o['trigger'] = mb_substr(trim(preg_replace('/\s+/u', ' ', $trig['body'])), 0, 40); $o['sent'] = $trig['msg_ts']; $o['days'] = (int)floor((strtotime($oa) - strtotime($trig['msg_ts'])) / 86400); $o['gap'] = (int)round((strtotime($oa) - strtotime($trig['ts'])) / 60);
                     $o['msg'] = wos_tname($pdo, (int)$trig['tid']); $lab = $LM[$trig['mod']] ?? ($trig['mod'] !== '' ? $trig['mod'] : 'Other message of ours'); if ($trig['mod'] === 'Lineup' && $trig['extra'] === 'rescue') $lab = 'Rescue utility';
+                    if ($trig['mod'] === '') { $o['msg'] = '[' . $trig['who'] . '] ' . mb_substr(trim(preg_replace('/\s+/u', ' ', (string)$trig['obody'])), 0, 60); }   /* a message of ours that no module's log knows (a chat template, a keyword card, a flow): shown by who sent it and its first words */
                     if ($trig['mod'] === 'A') $o['camp'] = $trig['extra']; elseif ($trig['extra'] !== '') $o['msg'] .= ' (' . $trig['extra'] . ')'; $o['group'] = $lab;
                 } else {
                     $link = ''; $lb = ''; $lt = ''; foreach ($ins as $m) { $x = wos_link((string)$m[0]); if ($x !== '') { $link = $x; $lb = (string)$m[0]; $lt = (string)$m[2]; } }   // the oldest such sentence of the 5 days = how he came in
