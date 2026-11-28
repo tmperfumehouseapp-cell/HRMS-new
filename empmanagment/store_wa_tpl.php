@@ -94,17 +94,23 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
     if (function_exists('wa_tpl_need_media')) wa_tpl_need_media();
     if ($action === 'st_wa.tpl_all') {
         swt_seed_util_bill($pdo, $me);      // the plain Utility bill message (sent when the Marketing one fails) is ready as a draft once
-        $rows = $pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = []; $used = swt_used($pdo);
+        $rows = $pdo->query("SELECT id, name FROM wa_templates WHERE name LIKE 'tmph\\_store\\_%' ORDER BY id")->fetchAll(); $out = []; $used = swt_used($pdo); $stats = swt_stats($pdo);
         foreach ($rows as $r) {
             if (in_array((string)$r['name'], ['tmph_store_bill', 'tmph_store_bill_back', 'tmph_store_bday'], true)) { $hq = $pdo->prepare("SELECT 1 FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $hq->execute([(int)$r['id'], $waba]); if (!$hq->fetchColumn()) continue; }      // the older plain-text versions (made for the other accounts) are not the Store's to see
             $o = swt_out($pdo, $r, $waba); if (!$o) continue;
             $o['used'] = $used[$o['id']] ?? []; $o['family'] = swt_family($o['name']); $o['machine'] = (bool)preg_match('/_\d{6,}(_v\d+)?$/', $o['name']);
             $q2 = $pdo->prepare("SELECT category, COUNT(*) n, SUM(meta_id <> '') m FROM wa_tpl_waba WHERE tpl_id = ? GROUP BY category"); $q2->execute([$o['id']]); $o['meta_category'] = ''; $o['at_meta'] = false; foreach ($q2->fetchAll() as $x) { if ((string)$x['category'] !== '') $o['meta_category'] = strtoupper((string)$x['category']); if ((int)$x['m'] > 0) $o['at_meta'] = true; }
+            $qq = $pdo->prepare("SELECT quality FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); try { $qq->execute([$o['id'], $waba]); $o['quality'] = strtoupper((string)$qq->fetchColumn()); } catch (Throwable $e) { $o['quality'] = ''; }
+            $o['stats'] = $stats[$o['id']] ?? ['sent' => 0, 'read' => 0, 'replied' => 0];
+            $hm = in_array(strtoupper($o['header_format']), ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && (int)$o['header_lib_id'] <= 0;
+            $o['ready'] = strtoupper((string)$o['status']) === 'APPROVED' && !$hm ? 'yes' : (strtoupper((string)$o['status']) === 'APPROVED' ? 'photo' : (in_array(strtoupper((string)$o['status']), ['PENDING', 'IN_APPEAL'], true) ? 'wait' : (in_array(strtoupper((string)$o['status']), ['REJECTED', 'ERROR', 'PAUSED', 'DISABLED'], true) ? (preg_match('/weekly limit|rate limit/i', (string)$o['reason']) ? 'limit' : 'no') : 'draft')));
+            $o['updated'] = ''; try { $u = $pdo->prepare("SELECT updated_at FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $u->execute([$o['id'], $waba]); $o['updated'] = substr((string)$u->fetchColumn(), 0, 10); } catch (Throwable $e) { }
             $out[] = $o;
         }
+        $ub = ''; try { $u = $pdo->prepare("SELECT MAX(at) FROM wa_tpl_subs WHERE waba_id = ? AND ok = 0 AND note LIKE '%weekly limit%' AND at >= ?"); $u->execute([$waba, date('Y-m-d H:i:s', time() - 7 * 86400)]); $ub = (string)$u->fetchColumn(); } catch (Throwable $e) { }
         $photos = []; try { foreach ($pdo->query("SELECT * FROM wa_media_lib WHERE kind = 'image' AND mime IN ('image/jpeg','image/png') ORDER BY id DESC LIMIT 40")->fetchAll() as $r) $photos[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'thumb' => swt_thumb($r)]; } catch (Throwable $e) { }
         $media = []; try { foreach ($pdo->query("SELECT id, title, kind, size FROM wa_media_lib WHERE kind IN ('video','document') AND mime IN ('video/mp4','application/pdf') ORDER BY id DESC LIMIT 40")->fetchAll() as $r) $media[] = ['id' => (int)$r['id'], 'title' => (string)$r['title'], 'kind' => (string)$r['kind'], 'mb' => round((int)$r['size'] / 1048576, 1)]; } catch (Throwable $e) { }
-        json_response(['templates' => $out, 'photos' => $photos, 'media' => $media, 'store_pics' => swt_store_pics($pdo), 'waba' => $waba, 'app_id_ok' => (function_exists('wa_app_id') ? wa_app_id($pdo) : wa_cfg_val('WA_APP_ID')) !== '']);
+        json_response(['util_block' => $ub, 'templates' => $out, 'photos' => $photos, 'media' => $media, 'store_pics' => swt_store_pics($pdo), 'waba' => $waba, 'app_id_ok' => (function_exists('wa_app_id') ? wa_app_id($pdo) : wa_cfg_val('WA_APP_ID')) !== '']);
     }
     if ($action === 'st_wa.tpl_diag') json_response(swt_diag($pdo, $num, $waba));
     if (!$post) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
@@ -401,4 +407,16 @@ function swt_lineup_submit(PDO $pdo, string $waba): array
         $fail[] = [$d['name'], (string)$why];
     }
     return ['ok' => true, 'sent' => $sent, 'failed' => $fail, 'wait' => $wait];
+}
+
+/** Per template, last 30 days, from Store campaigns and the Lineup: [tpl id => sent, read, replied (wrote within 3 days)]. */
+function swt_stats(PDO $pdo): array
+{
+    $o = []; $from = date('Y-m-d H:i:s', time() - 30 * 86400);
+    $add = function (string $sql) use ($pdo, $from, &$o) { try { $q = $pdo->prepare($sql); $q->execute([$from]); foreach ($q->fetchAll() as $r) { $id = (int)$r['tid']; $x = $o[$id] ?? ['sent' => 0, 'read' => 0, 'replied' => 0]; $x['sent'] += (int)$r['s']; $x['read'] += (int)$r['rd']; $x['replied'] += (int)$r['rp']; $o[$id] = $x; } } catch (Throwable $e) { } };
+    $add("SELECT c.tpl_id tid, COUNT(*) s, COALESCE(SUM(m.status = 'read'), 0) rd, COALESCE(SUM(EXISTS (SELECT 1 FROM st_wa_msg x WHERE x.phone = i.phone AND x.dir = 'in' AND x.ts >= i.sent_at AND x.ts < DATE_ADD(i.sent_at, INTERVAL 3 DAY))), 0) rp
+          FROM st_wa_camp_item i JOIN st_wa_camp c ON c.id = i.camp_id LEFT JOIN st_wa_msg m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.status = 'sent' AND i.sent_at >= ? GROUP BY c.tpl_id");
+    $add("SELECT l.tpl_id tid, COUNT(*) s, COALESCE(SUM(m.status = 'read'), 0) rd, COALESCE(SUM(EXISTS (SELECT 1 FROM st_wa_msg x WHERE x.phone = l.phone AND x.dir = 'in' AND x.ts >= l.at AND x.ts < DATE_ADD(l.at, INTERVAL 3 DAY))), 0) rp
+          FROM st_wa_ln_log l LEFT JOIN st_wa_msg m ON m.wamid = l.wamid AND l.wamid <> '' WHERE l.status = 'sent' AND l.at >= ? GROUP BY l.tpl_id");
+    return $o;
 }
