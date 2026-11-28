@@ -172,6 +172,10 @@
       <div class="bscan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg><input id="scanIn" inputmode="numeric" autocomplete="off" placeholder="Scan barcode"></div>
       <div id="scanMsg"></div>
       <div class="chipbox" id="chips"></div>
+      <div id="xBox" style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:6px 0 2px;font-size:13px"><b>🧴 No barcode:</b>
+        <span>Shower gel <button type="button" class="x" data-xs="g" data-d="-1" aria-label="One shower gel less">−</button> <b id="xgN">0</b> <button type="button" class="x" data-xs="g" data-d="1" aria-label="One shower gel more">+</button></span>
+        <span>Attar <button type="button" class="x" data-xs="a" data-d="-1" aria-label="One attar less">−</button> <b id="xaN">0</b> <button type="button" class="x" data-xs="a" data-d="1" aria-label="One attar more">+</button></span>
+        <small class="sx-mut" id="xNote"></small></div>
       <div id="chainBox"></div>
       <div class="tot"><b id="totMl">0 ml</b><span id="totSub">Nothing scanned yet</span><span style="margin-left:auto"><button class="x" id="btnClear" style="color:#ffb3ae">Clear</button></span></div>
     </div>
@@ -226,7 +230,7 @@
   guardPage();
   renderSidebar('store_billing');
   const toast = (m, bad) => { $('billMsg').innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
-  let cart = [], chain = null, quote = null, pickedCol = null, isManager = false, open = false, needPhone = true, people = [{ name: '', phone: '', bd: '', bm: '', bday: '', declined: false, reason: '', lk: null }];
+  let xg = 0, xa = 0, cart = [], chain = null, quote = null, pickedCol = null, isManager = false, open = false, needPhone = true, people = [{ name: '', phone: '', bd: '', bm: '', bday: '', declined: false, reason: '', lk: null }];
   // ---------- customers on this bill (1-4 people; every one needs a mobile number, or a reason)
   const digits = (v) => String(v || '').replace(/\D/g, '').slice(-10);
   const phoneOk = (v) => /^[6-9]\d{9}$/.test(digits(v));
@@ -346,13 +350,13 @@
   function closeBill() { open = false; $('bc').classList.remove('on'); $('ov').classList.remove('on'); $('bc').setAttribute('aria-hidden', 'true'); }
   $('btnNew').onclick = openBill; $('bcX').onclick = closeBill; $('ov').onclick = closeBill;
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) closeBill(); });
-  $('btnClear').onclick = () => { cart = []; chain = null; quote = null; pickedCol = null; $('scanMsg').innerHTML = ''; renderCart(); renderQuote(); $('scanIn').focus(); };
+  $('btnClear').onclick = () => { xg = 0; xa = 0; cart = []; chain = null; quote = null; pickedCol = null; $('scanMsg').innerHTML = ''; renderCart(); renderQuote(); $('scanIn').focus(); };
 
   // ---------- scanning: ONE server call checks the bottle and returns the new total ml + prices
   async function addBottle(code) {
     if (cart.some((b) => b.code === code)) { $('scanMsg').innerHTML = `<div class="sx-msg warn">${sxi('alert')}<span>Already on this bill.</span></div>`; return false; }
     try {
-      const d = await api.post('st_bill.scan', { code, codes: cart.map((b) => b.code), emp_id: +$('emp').value || 0 });
+      const d = await api.post('st_bill.scan', { code, codes: cart.map((b) => b.code), gel: xg, attar: xa, emp_id: +$('emp').value || 0 });
       if (d.chain) {          // a CHAIN label: the staff chose the chain, the system splits the bill (chain at its price, perfumes get the rest)
         if (chain && chain.code === d.chain.code) { $('scanMsg').innerHTML = `<div class="sx-msg warn">${sxi('alert')}<span>Already on this bill.</span></div>`; return false; }
         if (chain) { $('scanMsg').innerHTML = `<div class="sx-msg warn">${sxi('alert')}<span>This bill already has a chain (${esc(chain.name)}). Remove it first to change it.</span></div>`; return false; }
@@ -367,28 +371,33 @@
   scanBox($('scanList'), async (code) => { if (!open) openBill(); return addBottle(code); });   // a scan on the LIST starts a new bill by itself
   $('chips').addEventListener('click', (e) => { const g = e.target.closest('[data-g]'); if (g) { const b = cart.find((x) => x.code === g.dataset.g); if (b) { b.gift = !b.gift; refresh(); } return; } if (e.target.closest('[data-xc]')) { chain = null; renderCart(); renderQuote(); return; } const x = e.target.closest('[data-x]'); if (!x) return; cart = cart.filter((b) => b.code !== x.dataset.x); refresh(); });
 
+  // 🧴 shower gel / attar have no barcode: + / − pieces. Priced on the same charts as online (one kind alone = its chart, with perfume / both = the combo row)
+  $('xBox').addEventListener('click', (e) => { const b = e.target.closest('[data-xs]'); if (!b) return; const d = +b.dataset.d;
+    if (b.dataset.xs === 'g') xg = Math.max(0, Math.min(50, xg + d)); else xa = Math.max(0, Math.min(50, xa + d)); pickedCol = null; refresh(); });
   function dropGifts() { let n = giftSlots(); cart.forEach((b) => { if (b.gift) { if (n > 0) n--; else b.gift = false; } }); }
   async function refresh() {          // only after removing a bottle / changing the salesperson (special-day chart is per person)
     dropGifts(); renderCart();
-    if (!cart.length) { quote = null; pickedCol = null; renderQuote(); return; }
-    try { quote = await api.post('st_bill.quote', { codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value || 0 }); } catch (e) { quote = null; toast(e.message, 1); }
+    if (!cart.length && !xg && !xa) { quote = null; pickedCol = null; renderQuote(); return; }
+    try { quote = await api.post('st_bill.quote', { gel: xg, attar: xa, codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value || 0 }); } catch (e) { quote = null; toast(e.message, 1); }
     if (quote && (pickedCol === null || !quote.columns[pickedCol])) pickedCol = null;
     renderQuote();
   }
   function renderCart() {
     $('chips').innerHTML = (chain ? `<span class="bchip"><span class="sz" style="background:#b8860b;color:#fff">CHAIN</span><span class="nm">${esc(chain.name)} · ${chain.split_pct || 50}% of bill</span><button data-xc="1" aria-label="Remove chain">×</button></span>` : '') + cart.map((b) => `<span class="bchip ${szClass(b)}"><span class="sz">${b.gift ? '🎁 ' : b.kind === 'tester' ? 'T ' : ''}${b.ml}</span><span class="nm">${esc(b.title)}</span>${b.kind !== 'tester' && b.ml === 50 && (b.gift || giftSlots() > cart.filter((x) => x.gift).length) ? `<button data-g="${b.code}" aria-label="Birthday gift" title="${b.gift ? 'Remove the birthday gift' : 'Give this 50 ml as the birthday gift (free)'}" style="font-size:12px;width:auto;padding:0 7px;border-radius:999px">${b.gift ? 'gift ✓' : '🎁 gift?'}</button>` : ''}<button data-x="${b.code}" aria-label="Remove">×</button></span>`).join('');
     const sale = cart.filter((b) => !free(b)), ml = sale.reduce((a, b) => a + b.ml, 0), t = cart.length - sale.length;
-    $('totMl').textContent = ml + ' ml';
-    $('totSub').textContent = cart.length || chain ? `${sale.length} bottle${sale.length === 1 ? '' : 's'}${t - cart.filter((b) => b.gift).length ? ' + ' + (t - cart.filter((b) => b.gift).length) + ' tester' + ((t - cart.filter((b) => b.gift).length) > 1 ? 's' : '') : ''}${cart.some((b) => b.gift) ? ' + 🎁 birthday gift' : ''}` : 'Nothing scanned yet';
+    $('totMl').textContent = ml + ' ml' + (xg ? ' + ' + xg + ' gel' : '') + (xa ? ' + ' + xa + ' attar' : '');
+    $('xgN').textContent = xg; $('xaN').textContent = xa; $('xNote').textContent = (quote && quote.note && (xg || xa)) ? quote.note : '';
+    $('totSub').textContent = cart.length || chain || xg || xa ? `${sale.length} bottle${sale.length === 1 ? '' : 's'}${t - cart.filter((b) => b.gift).length ? ' + ' + (t - cart.filter((b) => b.gift).length) + ' tester' + ((t - cart.filter((b) => b.gift).length) > 1 ? 's' : '') : ''}${cart.some((b) => b.gift) ? ' + 🎁 birthday gift' : ''}` : 'Nothing scanned yet';
     $('bcSub').textContent = cart.length ? ml + ' ml' : '';
   }
   const listPrice = () => (quote && pickedCol !== null && quote.columns[pickedCol]) ? quote.columns[pickedCol].price : ((!quote || !quote.in_chart) ? (+$('customPrice').value || 0) : 0);
   function renderQuote() {
-    const noChart = quote && cart.some((b) => !free(b)) && !quote.in_chart;
+    const noChart = quote && (cart.some((b) => !free(b)) || xg || xa) && !quote.in_chart;
+    $('xNote').textContent = (quote && quote.note && (xg || xa)) ? quote.note : '';
     $('customRow').style.display = noChart && isManager ? '' : 'none';
     $('prices').innerHTML = !quote ? '<span class="sx-mut" style="grid-column:1/-1">Scan a bottle to see prices.</span>'
       : quote.in_chart ? quote.columns.map((c) => `<button class="pr ${pickedCol === c.col ? 'on' : ''}" data-c="${c.col}" ${c.offer ? 'style="border-color:#f59e0b;background:#fff8e6" title="' + esc(c.note || 'Offer running now') + '"' : ''}><b>${inr(c.price)}</b><small>${c.offer ? '🎁 Offer · ' : ''}${c.pct == null ? '&nbsp;' : c.pct + '%'}</small></button>`).join('')
-      : `<span class="sx-mut" style="grid-column:1/-1">No price row for ${quote.total_ml} ml${isManager ? ' — type it below' : ' — ask a manager'}.</span>`;
+      : `<span class="sx-mut" style="grid-column:1/-1">No price row for ${quote.total_ml} ml${xg ? ' + ' + xg + ' shower gel' : ''}${xa ? ' + ' + xa + ' attar' : ''}${isManager ? ' — type it below' : ' — ask a manager'}.</span>`;
     updatePay();
   }
   $('prices').addEventListener('click', (e) => { const c = e.target.closest('[data-c]'); if (!c) return; pickedCol = +c.dataset.c; renderQuote(); });
@@ -409,7 +418,7 @@
     $('chainBox').innerHTML = chainInfo(t);
     $('splitRow').style.display = $('pay').value === 'split' ? '' : 'none';
     $('btnBill').textContent = t > 0 ? 'Make bill · ' + inr(t) : 'Make bill';
-    $('btnBill').disabled = !(cart.some((b) => !free(b)) && t > 0 && +$('emp').value && custOk() && !(chain && (chainShare(t) >= t || chainShare(t) <= 0 || (chain.mrp > 0 && chainShare(t) > chain.mrp))));
+    $('btnBill').disabled = !((cart.some((b) => !free(b)) || xg > 0 || xa > 0) && t > 0 && +$('emp').value && custOk() && !(chain && (chainShare(t) >= t || chainShare(t) <= 0 || (chain.mrp > 0 && chainShare(t) > chain.mrp))));
     $('btnBill').title = custOk() ? '' : 'Add each customer’s mobile number first';
   }
   // the Order code box fills itself with the next code of the person who bills (KC00061); the cashier can still type another one
@@ -441,13 +450,13 @@
   // ---------- make the bill: saved, the panel resets and stays open for the next customer
   $('btnBill').onclick = async () => {
     $('btnBill').disabled = true;
-    const body = { bday_code: bv ? bv.code : '', source, source_note: source ? $('srcNote').value.trim() : '', area: $('areaIn').value.trim(), codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, helper_emp_id: +$('emp2').value || 0, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: Math.max(0, +$('disc').value || 0), pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
+    const body = { bday_code: bv ? bv.code : '', source, source_note: source ? $('srcNote').value.trim() : '', area: $('areaIn').value.trim(), codes: cart.map((b) => b.code), gel: xg, attar: xa, gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, helper_emp_id: +$('emp2').value || 0, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: Math.max(0, +$('disc').value || 0), pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
     if (chain) body.chain_code = chain.code;
     if (pickedCol !== null) body.price_col = pickedCol; else body.custom_price = +$('customPrice').value || 0;
     try {
       const d = await api.post('st_bill.create', body); beep(true);
       showDone(d); resetCust(); bv = null; $('gcIn').value = ''; renderGc(); source = ''; $('srcNote').value = ''; $('areaIn').value = ''; renderSrc(); $('areaX').hidden = true;
-      cart = []; chain = null; quote = null; pickedCol = null; ['ocode', 'cash', 'online', 'customPrice'].forEach((i) => $(i).value = ''); $('emp2').value = ''; ocodeAuto = true; fillCode(); soldTouched = false; setSoldNow(); $('bizDay').value = storeToday; $('disc').value = 0; $('scanMsg').innerHTML = '';
+      xg = 0; xa = 0; cart = []; chain = null; quote = null; pickedCol = null; ['ocode', 'cash', 'online', 'customPrice'].forEach((i) => $(i).value = ''); $('emp2').value = ''; ocodeAuto = true; fillCode(); soldTouched = false; setSoldNow(); $('bizDay').value = storeToday; $('disc').value = 0; $('scanMsg').innerHTML = '';
       renderCart(); renderQuote();
       toast(d.message + (d.commission_pct != null ? ` Commission ≈ ${d.commission_pct}%${d.commission_amount != null ? ' (₹' + Math.round(d.commission_amount).toLocaleString('en-IN') + ')' : ''}.` : '') + (d.no_code && d.code_rule ? ` No order code on this bill: it pays ${d.code_rule.nocode}% of the commission unless ${d.code_rule.codepct}% of today’s bills have a code.` : '') + ' Scan the next customer’s bottles, or close.');
       loadBills(); $('scanIn').focus();
@@ -477,6 +486,10 @@
       $('prOffers').innerHTML = (offers || flash) ? `<div style="font-size:12.5px;margin-bottom:2px"><b>Offers running now</b> <span class="sx-mut">(a bill of exactly that size at about that price pays the offer’s %; pick the 🎁 price when billing)</span></div>${offers}${flash}` : '<div class="sx-mut" style="font-size:12.5px">No offer is running now — the normal price chart applies.</div>';
       const cols = d.cols || [], rows = d.rows || [];
       $('prChart').innerHTML = rows.length ? `<table style="border-collapse:collapse;font-size:12.5px;min-width:420px"><thead><tr><th style="text-align:left;padding:4px 8px">ML</th>${cols.map((c) => `<th style="padding:4px 8px;text-align:right">pays ${f(c)}%</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr style="border-top:1px solid var(--sx-line)"><td style="padding:4px 8px"><b>${r.ml}</b></td>${cols.map((c, i) => `<td style="padding:4px 8px;text-align:right">${r.p[i] > 0 ? inr(r.p[i]) : '–'}</td>`).join('')}</tr>`).join('')}</tbody></table><div class="sx-mut" style="font-size:12px;margin-top:6px">A price between two columns pays the nearer column’s %; below the last column it pays ${f(d.floor || 0)}%.</div>` : '<div class="sx-mut">The price chart is not available.</div>';
+      // 🧴 shower gel / attar / combos: the same charts as Budgeting → Commission
+      const xt = (title, head, X, lab) => (X && X.rows && X.rows.length) ? `<div style="margin-top:12px"><b>${title}</b><table style="border-collapse:collapse;font-size:12.5px;min-width:420px;margin-top:4px"><thead><tr><th style="text-align:left;padding:4px 8px">${head}</th>${X.cols.map((c) => `<th style="padding:4px 8px;text-align:right">pays ${f(c)}%</th>`).join('')}</tr></thead><tbody>${X.rows.map((r) => `<tr style="border-top:1px solid var(--sx-line)"><td style="padding:4px 8px"><b>${esc(lab(r))}</b></td>${X.cols.map((c, i) => `<td style="padding:4px 8px;text-align:right">${(r.p[i] || 0) > 0 ? inr(r.p[i]) : '–'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
+      const dx = d.x || {};
+      $('prChart').innerHTML += xt('Shower gel', 'Pieces', dx.gel, (r) => r.n + ' pc') + xt('Attar', 'Pieces', dx.attar, (r) => r.n + ' pc') + xt('Combos', 'Combo', dx.mix, (r) => r.label);
     } catch (e) { $('prOffers').innerHTML = '<div class="sx-mut" style="font-size:12.5px">The price chart could not be read.</div>'; }
   }
   async function loadBillImg() { try { { const r = await api.get('st_bill.image_get'); billImg = !!r.has_image; billCustom = !!r.custom; } billPhoto = {}; } catch (e) { billImg = false; } imgUi(); }

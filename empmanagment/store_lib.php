@@ -122,6 +122,39 @@ function st_code_for(int $bottleId): string
 }
 
 /** Digits only, the way a scanner or a typed code arrives. */
+/** 🧴 Shower gel / attar pieces on a store bill (billing is in store_pos.php; these are here so the commission pages see them too). */
+if (!function_exists('st_xpcs')) {
+function st_xpcs($v): int { return max(0, min(50, (int)$v)); }
+function st_pc_load(): bool { if (!function_exists('pc_prices') && is_file(__DIR__ . '/price_charts.php')) require_once __DIR__ . '/price_charts.php'; return function_exists('pc_prices') && function_exists('pc_mix_prices'); }
+/** The 4 bill columns for gel / attar (made once, before any transaction). */
+function st_x_cols(PDO $pdo): void
+{
+    static $ran = false; if ($ran) return; $ran = true;
+    $flag = sys_get_temp_dir() . '/hrms_st_xcols_v1'; if (is_file($flag)) return;
+    try {
+        foreach (['gel_pcs' => 'INT NOT NULL DEFAULT 0', 'attar_pcs' => 'INT NOT NULL DEFAULT 0', 'x_all' => 'TINYINT NOT NULL DEFAULT 0', 'x_gel_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0', 'x_attar_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0'] as $c => $def)
+            if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
+        @touch($flag);
+    } catch (Throwable $e) { error_log('st_x_cols: ' . $e->getMessage()); }
+}
+/** The commission of a bill with gel / attar: [pct of the whole bill, rule, commission]. */
+function st_x_com(PDO $pdo, array $ch, int $ml, int $gel, int $attar, float $gross, bool $all, float $xg, float $xa): array
+{
+    if (!st_pc_load() || $gross <= 0) return [null, 'gel / attar: no chart', 0.0];
+    if ($all) {
+        if (pc_mix_kinds($ml, $gel, $attar, 0) >= 2) { $pc = pc_mix_pct($pdo, $ml, $gel, $attar, 0, $gross); return $pc === null ? [null, 'combo price missing', 0.0] : [round($pc, 2), 'combo', $gross * $pc / 100]; }
+        $sg = $gel > 0 ? 'gel' : 'attar'; $pc = pc_pct($pdo, $sg, (float)($gel > 0 ? $gel : $attar), $gross);
+        return $pc === null ? [null, ($sg === 'gel' ? 'shower gel' : 'attar') . ': no price row', 0.0] : [round($pc, 2), $sg === 'gel' ? 'shower gel' : 'attar', $gross * $pc / 100];
+    }
+    $com = 0.0; $perf = max(0.0, $gross - $xg - $xa);
+    if ($ml > 0 && $perf > 0 && function_exists('cm_pct')) { $pc = cm_pct($ch, $ml, $perf); if ($pc !== null) $com += $perf * $pc / 100; }
+    if ($gel > 0 && $xg > 0) { $pc = pc_pct($pdo, 'gel', (float)$gel, $xg); if ($pc !== null) $com += $xg * $pc / 100; }
+    if ($attar > 0 && $xa > 0) { $pc = pc_pct($pdo, 'attar', (float)$attar, $xa); if ($pc !== null) $com += $xa * $pc / 100; }
+    return [round($com / $gross * 100, 2), 'parts (perfume + gel / attar)', $com];
+}
+
+}
+
 function st_clean_code($c): string
 {
     return preg_replace('/\D/', '', (string)$c);
@@ -1854,7 +1887,8 @@ if (!function_exists('budget_store_calc')) {
         $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0; $pool = array_flip(st_pool_ids($pdo));
         $flashList = []; try { if (function_exists('cm_is_live') && !cm_is_live($pdo) && function_exists('flash_offer_list_get')) $flashList = flash_offer_list_get($pdo); } catch (Throwable $e) { }     // a Flash Offer only counts while the old engine pays (the new engine has no flash offers)
         if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
-        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
+        $xc = function_exists('st_x_cols'); if ($xc) st_x_cols($pdo);      // 🧴 shower gel / attar pieces of a bill (store_pos.php)
+        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total" . ($xc ? ", b.gel_pcs, b.attar_pcs, b.x_all, b.x_gel_amt, b.x_attar_amt" : '') . ", e.employee_id AS real_id
             FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
         $q->execute([$from, $to]);
         $all = $q->fetchAll(); $newFrom = st_newpos_from($pdo);
@@ -1871,9 +1905,11 @@ if (!function_exists('budget_store_calc')) {
             foreach ($idx as $i) {
                 $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
                 $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
-                $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
-                $fl = (!$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
-                if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
+                $xg = (int)($b['gel_pcs'] ?? 0); $xa = (int)($b['attar_pcs'] ?? 0); $hasX = ($xg > 0 || $xa > 0) && function_exists('st_x_com');
+                $of = (!$hasX && $ml) ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
+                $fl = (!$hasX && !$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
+                if ($hasX) { [$pct, $rule, $com] = st_x_com($pdo, $ch, $ml, $xg, $xa, $gross, !empty($b['x_all']), (float)($b['x_gel_amt'] ?? 0), (float)($b['x_attar_amt'] ?? 0)); if ($pct === null) $unpriced++; }
+                elseif ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
                 elseif ($fl !== null) { $pct = (float)$fl['pct']; $rule = 'flash offer'; $com = $gross * $pct / 100; }
                 elseif (!$ml) { $noMl++; $rule = 'no ML'; }
                 else {
