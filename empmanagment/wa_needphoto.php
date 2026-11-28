@@ -114,6 +114,7 @@ if (!function_exists('wnp_defs')) {
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; $budget = ['left' => 12, 'made' => 0];
         foreach ($d['tpls'] as $name => $m) {
             $qr = array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, (array)$m[1]);
+            try { if (!function_exists('wa_btn_new_on') && is_file(__DIR__ . '/wa_ordpack.php')) require_once __DIR__ . '/wa_ordpack.php'; if (function_exists('wa_btn_new_on') && wa_btn_new_on($pdo)) $qr = wa_btn_two(); } catch (Throwable $e) { }   // owner 28 Nov: the two buttons
             [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'MARKETING', 'header_format' => 'IMAGE', 'header_lib_id' => $lib, 'body' => (string)$m[0], 'footer' => 'TM Perfume House', 'buttons' => $qr, 'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => 'Offers']);
             if ($err !== '') { $res['failed'][] = $name . ': ' . $err; continue; }
             $id = wa_tpl_insert($pdo, $t, $by, 'Photo message (owner, 27 Nov 2026): the photo "' . (string)$d['title'] . '" on top, the price as a question, one tap to order.', 'Marketing message with a photo.'); $r = wa_tpl_row($pdo, $id); if (!$r) { $res['failed'][] = $name . ': could not save'; continue; }
