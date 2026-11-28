@@ -220,7 +220,8 @@ function fn_file_rows(array $rows, int $headRow, array $cols, ?array &$stats = n
         if (($g < 0 && $n < 0) || ($gv == 0.0 && $nv == 0.0)) { $stats['no_amount']++; continue; }
         $net = $n >= 0 ? $nv : $gv - $fv; $gross = $g >= 0 ? $gv : ($n >= 0 ? $nv + $fv : 0.0);
         if ($sign < 0) { $net = -abs($net); $gross = -abs($gross); $fv = $gross - $net; foreach ($parts as $k => $v) $parts[$k] = 0.0; }
-        $oc0 = isset($cols['order']) ? (int)$cols['order'] : -1; $ok0 = $oc0 >= 0 ? fn_okey($r[$oc0] ?? '') : ''; $key = md5(($ok0 !== '' ? $ok0 : implode('|', array_map('strval', $r))) . '|' . round($gross, 2) . '|' . ($sign < 0 ? 'r' : 'p'));
+        $oc0 = isset($cols['order']) ? (int)$cols['order'] : -1; $ok0 = $oc0 >= 0 ? fn_okey($r[$oc0] ?? '') : ''; if ($ok0 === '') { $al0 = isset($cols['order_alt']) ? (int)$cols['order_alt'] : -1; if ($al0 >= 0) $ok0 = fn_okey($r[$al0] ?? ''); }
+        /* no order number in the row: its payment (KWIK…) id is the key */ $key = md5(($ok0 !== '' ? $ok0 : implode('|', array_map('strval', $r))) . '|' . round($gross, 2) . '|' . ($sign < 0 ? 'r' : 'p'));
         $other = 0.0; if ($g >= 0 && $n >= 0 && $sign > 0) { $tot = $gross - $net; $other = max(0.0, round($tot - $fv, 2)); $fv = $fv + $other; }      // everything PayU cut = gross - net; the charge columns explain only a part, the rest is shown as "other deductions"
         $rec = ['i' => $i, 'utr' => $utr, 'gross' => $gross, 'fee' => $fv, 'net' => $net, 'parts' => $parts, 'other' => $other, 'adj' => $sign < 0, 'key' => $key, 'already' => isset($skip[$key])];      // already = an earlier saved file added this same payment as income
         if ($u >= 0 && $utr === '') { $stats['no_utr']++; $stats['pending'][] = $rec; continue; }      // paid by the customer but not settled to the bank yet (PayU gives the UTR after it settles)
@@ -793,6 +794,29 @@ switch ($action) {
         $rows = []; foreach ($days as $d) { $cells = []; foreach ($d['cells'] as $k => $v) $cells[(string)$k] = fn_m($v); $rows[] = ['day' => $d['day'], 'cells' => $cells, 'total' => fn_m($d['total'])]; }
         $bl = []; arsort($bank); foreach ($bank as $k => $v) $bl[] = ['bank' => $k, 'amount' => fn_m($v)];
         json_response(['from' => $from, 'to' => $to, 'channels' => $cols, 'days' => $rows, 'banks' => $bl, 'total' => fn_m($grand)]);
+        break;
+    }
+    // ORDER BY ORDER: which gateway each order's money comes through, how much, which day it should arrive, into which bank, and whether it already came (a saved settlement file has it)
+    case 'fn.in_order_map': {
+        $today = fn_today($pdo); $to = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime($today . ' -1 day')); $nd = max(1, min(7, (int)($_GET['days'] ?? 1))); $from = date('Y-m-d', strtotime($to . ' -' . ($nd - 1) . ' day'));
+        $lag = ['GoKwik / PayU' => 1, 'Razorpay' => 2, 'UPI QR' => 0, 'Bank transfer' => 0]; $rate = []; $bank = [];
+        $bankOf = function ($pat) use ($pdo) { try { $q = $pdo->prepare("SELECT a.name FROM fn_entries e JOIN fn_in_channels c ON c.head_id = e.head_id JOIN fn_accounts a ON a.id = e.account_id WHERE e.status = 'ok' AND e.side = 'in' AND LOWER(c.name) LIKE ? GROUP BY a.name ORDER BY SUM(e.amount) DESC LIMIT 1"); $q->execute([$pat]); $v = $q->fetchColumn(); return $v === false ? '' : (string)$v; } catch (Throwable $e) { return ''; } };
+        $bank = ['GoKwik / PayU' => $bankOf('%payu%'), 'Razorpay' => $bankOf('%razor%')];
+        $added = []; try { foreach ($pdo->query("SELECT t.txn_key, u.day FROM fn_in_txn t JOIN fn_in_uploads u ON u.id = t.upload_id AND u.status = 'ok'")->fetchAll() as $r) $added[$r['txn_key']] = $r['day']; } catch (Throwable $e) {}
+        $list = []; $sum = []; $hasFile = [];
+        foreach (fn_range_days($from, $to) as $d) {
+            foreach (fn_day_orders($pdo, $d) as $o) {
+                $pre = $o['pre_p']; $cod = $o['cod_p']; $mode = $pre > 0 ? $o['mode'] : 'COD'; if (!isset($rate[$mode])) { $mr = fn_mode_rate($pdo, $pre > 0 ? $o['mode'] : 'COD'); $rate[$mode] = $mr['rate']; $hasFile[$mode] = strpos((string)$mr['src'], 'from your last') === 0; }
+                $ch = $pre > 0 ? (int)round($pre * $rate[$mode] / 100) : 0; $cal = substr((string)$o['at'], 0, 10); $known = $pre > 0 && isset($lag[$o['mode']]);
+                $came = ''; if ($pre > 0) { foreach (array_merge([$o['key']], array_slice($o['refs'], 0, 2)) as $idk) { $k = md5($idk . '|' . round(fn_m($pre), 2) . '|p'); if (isset($added[$k])) { $came = $added[$k]; break; } } }
+                $arrive = $came !== '' ? $came : ($known ? fn_workday_add($cal, (int)$lag[$o['mode']]) : '');
+                $status = $pre <= 0 ? 'cod' : ($came !== '' ? 'came' : (($known && $lag[$o['mode']] === 0) ? 'direct' : (empty($hasFile[$mode]) ? 'check' : (($arrive !== '' && $arrive < $today) ? 'late' : 'waiting'))));
+                $list[] = ['name' => $o['name'], 'day' => $d, 'customer' => $o['customer'], 'mode' => $mode, 'manual' => !empty($o['manual']), 'prepaid' => fn_m($pre), 'cod' => fn_m($cod), 'total' => fn_m($o['total_p']), 'charges' => fn_m($ch), 'net' => fn_m($pre - $ch), 'arrive' => $arrive, 'bank' => $pre > 0 ? ($bank[$o['mode']] ?? '') : '', 'status' => $status];
+                $k2 = $status; if (!isset($sum[$k2])) $sum[$k2] = ['orders' => 0, 'amount' => 0]; $sum[$k2]['orders']++; $sum[$k2]['amount'] += $status === 'cod' ? $cod : $pre;
+            }
+        }
+        $sm = []; foreach ($sum as $k => $v) $sm[$k] = ['orders' => $v['orders'], 'amount' => fn_m($v['amount'])];
+        json_response(['from' => $from, 'to' => $to, 'today' => $today, 'count' => count($list), 'summary' => $sm, 'orders' => array_slice($list, 0, 800), 'truncated' => count($list) > 800]);
         break;
     }
     case 'fn.in_upload_recon': {

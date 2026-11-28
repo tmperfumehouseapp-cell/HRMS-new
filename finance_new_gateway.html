@@ -90,11 +90,35 @@
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + L.join('\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'money-by-gateway-' + DW.from + '-to-' + DW.to + '.csv'; document.body.appendChild(a); a.click(); a.remove(); };
   }
 
+  // ---------- order by order: which gateway each order's money comes through, and whether it came
+  let OM = null, omDay = '', omDays = 1, omF = 'all', omG = '', omAll = false;
+  const ST = { came: ['came', '#e3f6ee', '#0d7a55'], waiting: ['will come', '#eef0f3', '#475467'], late: ['late: not in a saved file', '#fdecea', '#b42318'], direct: ['direct to bank', '#e3f6ee', '#0d7a55'], check: ['check in the gateway', '#fff4e0', '#b45309'], cod: ['COD: courier', '#eef0f3', '#475467'] };
+  async function loadOm(d, n) {
+    const el = $('omCard'); if (!el) return;
+    try { OM = await api.get('fn.in_order_map', { date: d || '', days: n || omDays }); omDay = OM.to; omDays = n || omDays; omAll = false; drawOm(); }
+    catch (e) { el.innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function drawOm() {
+    const el = $('omCard'); if (!el || !OM) return; const sd = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }) : '';
+    const modes = [...new Set(OM.orders.map((o) => o.mode))], rows = OM.orders.filter((o) => (omF === 'all' || o.status === omF) && (!omG || o.mode === omG)), shown = omAll ? rows : rows.slice(0, 80), S = OM.summary;
+    const kp = (k, l) => `<div class="k ${k === 'late' && S[k] ? 'bad' : ''}"><small>${l}</small><b style="font-size:18px">${S[k] ? S[k].orders : 0}</b><span>${m2(S[k] ? S[k].amount : 0)}</span></div>`;
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:15px">Order by order <small class="sx-mut">where each order's money comes: taken by itself from your orders (website and manual) and your saved settlement files</small></div>
+        <input class="sx-in" id="omD" type="date" value="${esc(omDay)}" max="${esc(OM.today)}" style="width:auto;min-height:32px"><select class="sx-in" id="omN" style="width:auto;min-height:32px"><option value="1" ${omDays === 1 ? 'selected' : ''}>that day</option><option value="3" ${omDays === 3 ? 'selected' : ''}>last 3 days</option><option value="7" ${omDays === 7 ? 'selected' : ''}>last 7 days</option></select><button class="sx-btn" id="omCsv" style="padding:2px 10px">Download CSV</button></div>
+      <div class="k3" style="grid-template-columns:repeat(3,1fr);margin:8px 0">${kp('came', 'Money came')}${kp('waiting', 'Will come (on time)')}${kp('late', 'Late: not in any saved file')}${kp('direct', 'Direct to the bank (QR / bank)')}${kp('check', 'Check in the gateway')}${kp('cod', 'COD (the courier)')}</div>
+      <div class="cap" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:0">${[['all', 'All ' + OM.count], ['came', 'Came'], ['waiting', 'Will come'], ['late', 'Late'], ['direct', 'Direct'], ['check', 'Check'], ['cod', 'COD']].map((x) => `<button class="sx-btn" data-omf="${x[0]}" style="padding:2px 10px;${omF === x[0] ? '' : 'opacity:.55'}">${x[1]}</button>`).join('')}<select class="sx-in" id="omG" style="width:auto;min-height:30px"><option value="">All gateways</option>${modes.map((m) => `<option value="${esc(m)}" ${omG === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
+      <div class="wrap">${shown.length ? `<table class="tb"><tr><th>Order</th><th>Sale day</th><th>Gateway</th><th>Prepaid</th><th>COD</th><th>Charges (est.)</th><th>Net</th><th>Status</th><th>Arrives / came</th><th>Into bank</th></tr>${shown.map((o) => { const s = ST[o.status] || ST.waiting; return `<tr><td><b>${esc(o.name)}</b>${o.manual ? '<small>manual order</small>' : ''}</td><td>${esc(sd(o.day))}</td><td style="text-align:left">${esc(o.mode)}</td><td>${o.prepaid ? m2(o.prepaid) : '—'}</td><td>${o.cod ? m2(o.cod) : '—'}</td><td>${o.charges ? m2(o.charges) : '—'}</td><td>${o.prepaid ? '<b>' + m2(o.net) + '</b>' : '—'}</td><td><span class="age" style="background:${s[1]};color:${s[2]}">${s[0]}</span></td><td>${o.arrive ? esc(sd(o.arrive)) : '—'}</td><td>${esc(o.bank || '—')}</td></tr>`; }).join('')}</table>${rows.length > 80 && !omAll ? `<div style="padding:8px 0"><button class="sx-btn" id="omAll">Show all ${rows.length}</button></div>` : ''}` : '<div class="sx-mut" style="padding:8px 0">No order.</div>'}</div>
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">“Came” = a saved settlement file already has this order. “Late” = PayU should have paid it by now but no saved file has it. Gateways whose settlement file you have not saved yet show “check in the gateway”. QR and bank-transfer orders go straight to your bank. The bank is learned from where each gateway's money was saved.</div>`;
+    el.querySelectorAll('[data-omf]').forEach((b) => { b.onclick = () => { omF = b.dataset.omf; omAll = false; drawOm(); }; });
+    $('omG').onchange = () => { omG = $('omG').value; omAll = false; drawOm(); }; const a = $('omAll'); if (a) a.onclick = () => { omAll = true; drawOm(); };
+    $('omD').onchange = () => { if ($('omD').value) loadOm($('omD').value, omDays); }; $('omN').onchange = () => loadOm(omDay, +$('omN').value);
+    $('omCsv').onclick = () => { const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"', L = [['Order', 'Sale day', 'Gateway', 'Prepaid', 'COD', 'Charges', 'Net', 'Status', 'Arrives or came', 'Bank'].map(q).join(',')]; OM.orders.forEach((o) => L.push([q(o.name), q(o.day), q(o.mode), o.prepaid, o.cod, o.charges, o.net, q((ST[o.status] || ST.waiting)[0]), q(o.arrive), q(o.bank)].join(',')));
+      const x = document.createElement('a'); x.href = URL.createObjectURL(new Blob(['﻿' + L.join('\n')], { type: 'text/csv;charset=utf-8' })); x.download = 'order-money-map-' + OM.from + '-to-' + OM.to + '.csv'; document.body.appendChild(x); x.click(); x.remove(); };
+  }
   async function init() {
     try {
       const o = await api.get('fi.settings_get'); TODAY = o.today;
-      $('root').innerHTML = `<div class="sx-card" id="expCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div><div class="sx-card" id="dwCard"><div class="sx-mut">Loading…</div></div>`;
-      loadExp(''); loadDw(monthStart(TODAY), TODAY);
+      $('root').innerHTML = `<div class="sx-card" id="expCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div><div class="sx-card" id="dwCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div><div class="sx-card" id="omCard"><div class="sx-mut">Loading…</div></div>`;
+      loadExp(''); loadDw(monthStart(TODAY), TODAY); loadOm('', 1);
     } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
   }
   init();
