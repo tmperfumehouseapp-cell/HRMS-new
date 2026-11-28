@@ -78,7 +78,7 @@ if (!function_exists('wos_day')) {
     /** One sales day: ['day', 'from', 'to', 'orders', 'rev', 'groups' => {label => [n, rs]}, 'modules' => {...}, 'camps' => [...], 'msgs' => [...], 'list' => [...]] */
     function wos_day(PDO $pdo, string $day, bool $fresh = false): array
     {
-        $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $isToday = $day >= $today; $file = rtrim(sys_get_temp_dir(), '/') . '/wa_osrc4_' . preg_replace('/[^0-9-]/', '', $day) . '.json';
+        $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $isToday = $day >= $today; $file = rtrim(sys_get_temp_dir(), '/') . '/wa_osrc5_' . preg_replace('/[^0-9-]/', '', $day) . '.json';
         $ovr = isset($GLOBALS['wos_win']) && is_array($GLOBALS['wos_win']);   /* the checkup may ask for another window (e.g. today from 10:00); then nothing is read from or written to the file */
         if (!$ovr && !$fresh && is_file($file) && filemtime($file) > time() - ($isToday ? 300 : 6 * 3600)) { $j = json_decode((string)@file_get_contents($file), true); if (is_array($j) && isset($j['orders'])) return $j + ['cached' => 1]; }
         [$from, $to] = $ovr ? $GLOBALS['wos_win'] : (function_exists('biz_window') ? biz_window($pdo, $day, $day) : [$day . ' 00:00:00', $day . ' 23:59:59']);
@@ -86,7 +86,7 @@ if (!function_exists('wos_day')) {
         try { $q = $pdo->prepare("SELECT okey, src, phone, order_at, total, module, tpl_id, msg_at FROM wa_order_attr WHERE order_at >= ? AND order_at <= ? ORDER BY order_at"); $q->execute([$from, $to]); $rows = $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return $R + ['error' => 'The order ledger is not there yet.']; }
         $first = []; foreach (["SELECT RIGHT(REPLACE(REPLACE(phone, '+', ''), ' ', ''), 10) p, MIN(created_at) FROM shop_orders WHERE phone <> '' GROUP BY p", "SELECT RIGHT(REPLACE(REPLACE(phone, '+', ''), ' ', ''), 10) p, MIN(order_date) FROM manual_orders WHERE phone <> '' GROUP BY p"] as $sql) { try { foreach ($pdo->query($sql)->fetchAll(PDO::FETCH_NUM) as $r) { $k = (string)$r[0]; if (!isset($first[$k]) || (string)$r[1] < $first[$k]) $first[$k] = (string)$r[1]; } } catch (Throwable $e) { } }
         $qIn = $pdo->prepare("SELECT body, reply_to, ts FROM wa_messages WHERE phone IN (?, ?) AND dir = 'in' AND ts >= ? AND ts <= ? ORDER BY id DESC LIMIT 40");
-        $qOut = $pdo->prepare("SELECT ts, who, mtype, body FROM wa_messages WHERE wamid = ? LIMIT 1");
+        $qOut = $pdo->prepare("SELECT ts, who, mtype, body FROM wa_messages WHERE wamid = ? LIMIT 1"); $qEv = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone IN (?, ?) AND dir = 'in'");
         $qOf = $pdo->prepare("SELECT COUNT(*) FROM wa_offer WHERE phone IN (?, ?) AND ok > 0 AND at BETWEEN ? AND ?");
         $qFr = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone IN (?, ?) AND status = 'sent' AND why LIKE 'free text%' AND sent_at BETWEEN ? AND ?");
         $qEmp = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone IN (?, ?) AND dir = 'out' AND who IN ('emp','person','phone') AND ts BETWEEN ? AND ?");
@@ -124,6 +124,8 @@ if (!function_exists('wos_day')) {
                 try { $qFr->execute([$k, '91' . $k, $f0, $oa]); if ((int)$qFr->fetchColumn() > 0) $o['fu'][] = '24 h offer'; } catch (Throwable $e) { }
                 try { $qEmp->execute([$k, '91' . $k, date('Y-m-d H:i:s', strtotime($oa) - 86400), $oa]); if ((int)$qEmp->fetchColumn() > 0) $o['fu'][] = 'Sales'; } catch (Throwable $e) { }
             } else { $o['group'] = 'No phone on the order'; }
+            /* owner 28 Nov: "how many customers never wrote to us, ever": fc = never (no message of his before the order) / after (his first message came AFTER our message: he answered it) / before (he had written to us before our message) */
+            $o['fc'] = 'never'; if (strlen($k) === 10) { try { $qEv->execute([$k, '91' . $k]); $ev = (string)$qEv->fetchColumn(); if ($ev !== '' && $ev <= $oa) $o['fc'] = ($o['sent'] !== '' && $ev >= $o['sent']) ? 'after' : 'before'; } catch (Throwable $e) { } }
             $R['list'][] = $o;
         }
         $R['wrote_all'] = $R['wrote']; if (!$R['partial'] && !$ovr) @file_put_contents($file, json_encode($R, JSON_UNESCAPED_UNICODE));
