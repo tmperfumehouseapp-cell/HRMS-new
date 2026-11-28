@@ -387,7 +387,9 @@ try {
                     SUM(b.status = 'stock' AND b.kind = 'sale') AS stock_sale, SUM(b.status = 'stock' AND b.kind = 'tester') AS stock_tester, SUM(b.status = 'generated') AS waiting
                 FROM st_products p LEFT JOIN st_bottles b ON b.product_id = p.product_id
                 WHERE p.active = 1 GROUP BY p.product_id ORDER BY p.title")->fetchAll();
-            $rows = array_values(array_filter($rows, fn($r) => st_x_seg_of((string)$r['title']) === '' || (int)$r['stock_sale'] + (int)$r['stock_tester'] + (int)$r['waiting'] > 0));      // 🧴 shower gel / attar are in their own tab (kept here only if perfume-style labels were already made)
+            // 🧴 shower gel / attar stay in this list, marked: their card makes one label per PIECE (no ml), with their own stock
+            $xs = []; try { st_xi_autosync($pdo); foreach ($pdo->query("SELECT i.product_id, i.seg, COALESCE(SUM(p.status='stock'),0) st, COALESCE(SUM(p.status='generated'),0) wt FROM st_xitems i LEFT JOIN st_xpieces p ON p.item_id = i.item_id WHERE i.active = 1 AND i.product_id > 0 GROUP BY i.item_id")->fetchAll() as $x) $xs[(int)$x['product_id']] = $x; } catch (Throwable $e) { }
+            foreach ($rows as &$r) { $x = $xs[(int)$r['product_id']] ?? null; if ($x) { $r['seg'] = (string)$x['seg']; $r['x_stock'] = (int)$x['st']; $r['x_waiting'] = (int)$x['wt']; } } unset($r);
             foreach ($rows as &$r) { $r['product_id'] = (int)$r['product_id']; $r['stock_sale'] = (int)$r['stock_sale']; $r['stock_tester'] = (int)$r['stock_tester']; $r['waiting'] = (int)$r['waiting']; }
             $rk = st_rank_cached($pdo); $srcOn = ['store' => 0, 'pos' => 0, 'online' => 0];
             foreach ($rows as &$r) { $x = $rk[$r['product_id']] ?? null; $r['score'] = $x ? $x['score'] : 0; $r['q30'] = $x ? $x['q30'] : 0; $r['q90'] = $x ? $x['q90'] : 0; $r['rank'] = $x ? $x['rank'] : 0; $r['badge'] = $x ? $x['badge'] : 'none'; $r['src'] = $x ? $x['src'] : $srcOn; if ($x) foreach ($x['src'] as $k => $v) $srcOn[$k] += $v; }
@@ -619,6 +621,23 @@ try {
             $pdo->commit();
             $q = $pdo->prepare("SELECT piece_id, code, status, print_count FROM st_xpieces WHERE batch = ? ORDER BY piece_id"); $q->execute([$batch]);
             json_response(['ok' => true, 'item' => ['item_id' => (int)$it['item_id'], 'seg' => $it['seg'], 'name' => $it['name']], 'pieces' => $q->fetchAll(), 'message' => $qty . ' label' . ($qty === 1 ? '' : 's') . ' made. Print and stick one on each piece.']);
+            break;
+        }
+        case 'st_xi.make_many': {          // from the Make & print grid: [{product_id, qty}] of shower gel / attar products -> one label per piece, all in one go
+            require_auth(); st_xi_autosync($pdo); $in = json_input(); $now = date('Y-m-d H:i:s'); $batch = 'X' . date('ymd-His'); $n = 0;
+            $find = $pdo->prepare("SELECT item_id FROM st_xitems WHERE product_id = ? AND active = 1 ORDER BY item_id LIMIT 1");
+            $ins = $pdo->prepare("INSERT INTO st_xpieces (item_id, code, status, batch, created_at) VALUES (?, ?, 'generated', ?, ?)");
+            $pdo->beginTransaction();
+            foreach (array_slice((array)($in['items'] ?? []), 0, 100) as $x) {
+                $pid = (int)($x['product_id'] ?? 0); $q = max(0, min(300, (int)($x['qty'] ?? 0))); if (!$pid || !$q) continue;
+                $find->execute([$pid]); $iid = (int)$find->fetchColumn(); if (!$iid) { $pdo->rollBack(); json_response(['error' => 'Product ' . $pid . ' is not a shower gel or attar.'], 400); }
+                for ($i = 0; $i < $q; $i++) $ins->execute([$iid, 'x' . bin2hex(random_bytes(5)), $batch, $now]); $n += $q;
+            }
+            if (!$n) { $pdo->rollBack(); json_response(['error' => 'Nothing to make.'], 400); }
+            $pdo->prepare("UPDATE st_xpieces SET code = CAST(piece_id + " . ST_X_CODE_BASE . " AS CHAR) WHERE batch = ? AND code LIKE 'x%'")->execute([$batch]);
+            $pdo->commit();
+            $q = $pdo->prepare("SELECT p.code, i.seg, i.name, i.product_id FROM st_xpieces p JOIN st_xitems i ON i.item_id = p.item_id WHERE p.batch = ? ORDER BY i.name, p.piece_id"); $q->execute([$batch]);
+            json_response(['ok' => true, 'batch' => $batch, 'pieces' => $q->fetchAll(), 'message' => $n . ' shower gel / attar label' . ($n === 1 ? '' : 's') . ' made. Stick one on each piece, then scan them in “3 · Scan into inventory”.']);
             break;
         }
         case 'st_xi.pieces': {
