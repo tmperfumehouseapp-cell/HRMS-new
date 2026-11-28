@@ -20,10 +20,23 @@ function swc_tables(PDO $pdo): bool
             done_at DATETIME NULL, retry_of INT NOT NULL DEFAULT 0, KEY k_st (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_wa_camp_item (id BIGINT AUTO_INCREMENT PRIMARY KEY, camp_id INT NOT NULL, phone VARCHAR(12) NOT NULL, data TEXT NULL, status VARCHAR(8) NOT NULL DEFAULT 'queued',
             wamid VARCHAR(120) NOT NULL DEFAULT '', err VARCHAR(220) NOT NULL DEFAULT '', sent_at DATETIME NULL, KEY k_cs (camp_id, status), KEY k_ph (phone, sent_at), KEY k_w (wamid)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $have = []; foreach ($pdo->query("SHOW COLUMNS FROM st_wa_camp")->fetchAll() as $c) $have[(string)$c['Field']] = 1;
+        if (empty($have['no_repeat'])) $pdo->exec("ALTER TABLE st_wa_camp ADD COLUMN no_repeat INT NOT NULL DEFAULT 30, ADD COLUMN tag_after VARCHAR(30) NOT NULL DEFAULT '', ADD COLUMN family VARCHAR(120) NOT NULL DEFAULT ''");
+        foreach ($pdo->query("SELECT id, tpl_name FROM st_wa_camp WHERE family = ''")->fetchAll() as $r) $pdo->prepare("UPDATE st_wa_camp SET family = ? WHERE id = ?")->execute([swc_family((string)$r['tpl_name']), (int)$r['id']]);      // older campaigns count as 'this message' too
         return $ok = true;
     } catch (Throwable $e) { error_log('swc_tables: ' . $e->getMessage()); return $ok = false; }
 }
-function swc_cfg_defaults(): array { return ['from' => 10, 'to' => 21, 'day_cap' => 5000, 'gap_days' => 3, 'per_round' => 25, 'price_mkt' => 0.86, 'price_utl' => 0.13]; }
+/** "The same message": one template in all its versions and languages (followup_1_gu, followup_1_gu_v3 and followup_1_en are one message). */
+function swc_family(string $name): string { $b = preg_replace('/(_\d{6,})?(_v\d+)?(_copy\d*)?$/', '', $name); $b = preg_replace('/(_\d{6,})?(_v\d+)?$/', '', (string)$b); return (string)preg_replace('/_(gu|hi|en)$/', '', (string)$b); }
+/** Numbers that got this message (any version / language) in the last $days days, from Store campaigns: [phone => date]. */
+function swc_got(PDO $pdo, string $family, int $days, int $notCamp = 0): array
+{
+    if ($days <= 0 || $family === '') return []; $o = [];
+    $q = $pdo->prepare("SELECT i.phone, MAX(i.sent_at) d FROM st_wa_camp_item i JOIN st_wa_camp c ON c.id = i.camp_id WHERE c.family = ? AND c.id <> ? AND i.status = 'sent' AND i.sent_at >= ? GROUP BY i.phone");
+    $q->execute([$family, $notCamp, date('Y-m-d H:i:s', time() - $days * 86400)]); foreach ($q->fetchAll() as $r) $o[(string)$r['phone']] = substr((string)$r['d'], 0, 10);
+    return $o;
+}
+function swc_cfg_defaults(): array { return ['from' => 10, 'to' => 21, 'day_cap' => 5000, 'any_gap_h' => 20, 'per_round' => 25, 'price_mkt' => 0.86, 'price_utl' => 0.13]; }
 function swc_cfg(PDO $pdo): array
 {
     $d = swc_cfg_defaults();
@@ -56,9 +69,9 @@ function swc_people(PDO $pdo, array $aud): array
 {
     require_once __DIR__ . '/store_wa_aud.php'; $P = swa_build($pdo, swa_cfg($pdo)); $o = [];
     $phones = array_values(array_filter(array_map(fn($p) => substr(preg_replace('/\D/', '', (string)$p), -10), (array)($aud['phones'] ?? []))));
-    $seg = (string)($aud['seg'] ?? 'all'); $tag = (string)($aud['tag'] ?? ''); $q = mb_strtolower(trim((string)($aud['q'] ?? '')));
+    $seg = (string)($aud['seg'] ?? 'all'); $tag = (string)($aud['tag'] ?? ''); $ex = (string)($aud['ex_tag'] ?? ''); $q = mb_strtolower(trim((string)($aud['q'] ?? '')));
     foreach ($P as $ph => $x) {
-        if ($x['stop']) continue;
+        if ($x['stop'] || ($ex !== '' && in_array($ex, $x['tags'], true))) continue;
         if ($phones) { if (!in_array($ph, $phones, true)) continue; }
         elseif (($seg !== 'all' && !in_array($seg, $x['segs'], true)) || ($tag !== '' && !in_array($tag, $x['tags'], true)) || ($q !== '' && strpos(mb_strtolower($x['name'] . ' ' . $x['phone'] . ' ' . implode(' ', $x['top']) . ' ' . implode(' ', $x['tags'])), $q) === false)) continue;
         $o[$ph] = ['name' => $x['name'], 'perfume' => (string)($x['top'][0] ?? ''), 'days' => $x['days'], 'visits' => $x['visits'], 'spent' => $x['spent']];
@@ -68,7 +81,7 @@ function swc_people(PDO $pdo, array $aud): array
 function swc_aud_label(array $aud): string
 {
     if (!empty($aud['phones'])) return count((array)$aud['phones']) . ' chosen customers'; $o = [];
-    if (($aud['seg'] ?? 'all') !== 'all') $o[] = 'segment ' . $aud['seg']; if (($aud['tag'] ?? '') !== '') $o[] = 'tag ' . $aud['tag']; if (($aud['q'] ?? '') !== '') $o[] = 'search "' . $aud['q'] . '"';
+    if (($aud['seg'] ?? 'all') !== 'all') $o[] = 'segment ' . $aud['seg']; if (($aud['tag'] ?? '') !== '') $o[] = 'tag ' . $aud['tag']; if (($aud['ex_tag'] ?? '') !== '') $o[] = 'without tag ' . $aud['ex_tag']; if (($aud['q'] ?? '') !== '') $o[] = 'search "' . $aud['q'] . '"';
     return $o ? implode(' · ', $o) : 'all contacts';
 }
 
@@ -98,22 +111,26 @@ function swc_tick(PDO $pdo, bool $force = false): int
         $waba = wa_waba_of($num); $today = date('Y-m-d');
         $q = $pdo->prepare("SELECT COUNT(*) FROM st_wa_camp_item WHERE status = 'sent' AND sent_at >= ?"); $q->execute([$today . ' 00:00:00']); $dayAll = (int)$q->fetchColumn();
         $left = min($c['per_round'], max(0, $c['day_cap'] - $dayAll)); $t0 = microtime(true);
+        $gotMemo = []; $gotOf = function (int $id) use (&$gotMemo, $pdo, $camps) { if (!isset($gotMemo[$id])) { $cp = null; foreach ($camps as $x) if ((int)$x['id'] === $id) $cp = $x; $gotMemo[$id] = $cp ? swc_got($pdo, (string)($cp['family'] ?: swc_family((string)$cp['tpl_name'])), (int)$cp['no_repeat'], $id) : []; } return $gotMemo[$id]; };
         foreach ($camps as $cp) {
             if ($left <= 0 || microtime(true) - $t0 > 35) break; if ($cp['start_at'] && $cp['start_at'] > $now) continue;
             $tpl = wa_tpl_row($pdo, (int)$cp['tpl_id']); $ok = $pdo->prepare("SELECT UPPER(status) FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $ok->execute([(int)$cp['tpl_id'], $waba]);
             if (!$tpl || $ok->fetchColumn() !== 'APPROVED') { $pdo->prepare("UPDATE st_wa_camp SET status = 'paused' WHERE id = ?")->execute([(int)$cp['id']]); continue; }      // the template stopped being approved: pause, the owner decides
             $lim = (int)$cp['day_limit']; if ($lim > 0) { $q = $pdo->prepare("SELECT COUNT(*) FROM st_wa_camp_item WHERE camp_id = ? AND status = 'sent' AND sent_at >= ?"); $q->execute([(int)$cp['id'], $today . ' 00:00:00']); if ((int)$q->fetchColumn() >= $lim) continue; }
             $map = json_decode((string)$cp['vars'], true) ?: [];
-            $items = $pdo->prepare("SELECT * FROM st_wa_camp_item WHERE camp_id = ? AND status = 'queued' ORDER BY id LIMIT " . (int)$left); $items->execute([(int)$cp['id']]); $rows = $items->fetchAll();
+            $items = $pdo->prepare("SELECT * FROM st_wa_camp_item WHERE camp_id = ? AND status = 'queued' ORDER BY id LIMIT " . (int)max($left * 4, 100)); $items->execute([(int)$cp['id']]); $rows = $items->fetchAll();
             if (!$rows) { $pdo->prepare("UPDATE st_wa_camp SET status = 'done', done_at = ? WHERE id = ? AND status = 'running'")->execute([$now, (int)$cp['id']]); continue; }
             foreach ($rows as $it) {
                 if ($left <= 0 || microtime(true) - $t0 > 35) break; $ph = (string)$it['phone'];
                 $st = $pdo->prepare("SELECT (SELECT COUNT(*) FROM st_rm_stop WHERE RIGHT(phone, 10) = ?) + (SELECT COUNT(*) FROM st_wa_chat WHERE phone = ? AND optout = 1)"); $stop = 0; try { $st->execute([$ph, $ph]); $stop = (int)$st->fetchColumn(); } catch (Throwable $e) { }
                 if ($stop > 0) { $pdo->prepare("UPDATE st_wa_camp_item SET status = 'skipped', err = 'STOP' WHERE id = ?")->execute([(int)$it['id']]); continue; }
-                if ($c['gap_days'] > 0 && !(int)$cp['retry_of']) { $g = $pdo->prepare("SELECT COUNT(*) FROM st_wa_camp_item WHERE phone = ? AND status = 'sent' AND camp_id <> ? AND sent_at >= ?"); $g->execute([$ph, (int)$cp['id'], date('Y-m-d H:i:s', time() - $c['gap_days'] * 86400)]);
-                    if ((int)$g->fetchColumn() > 0) { $pdo->prepare("UPDATE st_wa_camp_item SET status = 'skipped', err = ? WHERE id = ?")->execute(['got another campaign in the last ' . $c['gap_days'] . ' days', (int)$it['id']]); continue; } }
+                if (!(int)$cp['retry_of']) {      // a resend of failed ones skips these rules
+                    if ((int)$cp['no_repeat'] > 0) { $got = $gotOf((int)$cp['id']); if (isset($got[$ph])) { $pdo->prepare("UPDATE st_wa_camp_item SET status = 'skipped', err = ? WHERE id = ?")->execute(['already got this message on ' . $got[$ph], (int)$it['id']]); continue; } }
+                    if ($c['any_gap_h'] > 0) { $g = $pdo->prepare("SELECT COUNT(*) FROM st_wa_camp_item WHERE phone = ? AND status = 'sent' AND camp_id <> ? AND sent_at >= ?"); $g->execute([$ph, (int)$cp['id'], date('Y-m-d H:i:s', time() - $c['any_gap_h'] * 3600)]);
+                        if ((int)$g->fetchColumn() > 0) continue; }      // got another campaign in the last hours: it waits (stays queued) and goes in a later round
+                }
                 $data = json_decode((string)$it['data'], true) ?: []; [$ok2, $w] = swc_send($pdo, $tpl, $num, $ph, swc_vals($data, $map));
-                if ($ok2) { $pdo->prepare("UPDATE st_wa_camp_item SET status = 'sent', wamid = ?, sent_at = ? WHERE id = ?")->execute([$w, date('Y-m-d H:i:s'), (int)$it['id']]); $sent++; $left--; }
+                if ($ok2) { $pdo->prepare("UPDATE st_wa_camp_item SET status = 'sent', wamid = ?, sent_at = ? WHERE id = ?")->execute([$w, date('Y-m-d H:i:s'), (int)$it['id']]); $sent++; $left--; if (trim((string)$cp['tag_after']) !== '') { try { $pdo->prepare("INSERT IGNORE INTO st_wa_tag (phone, tag) VALUES (?, ?)")->execute([$ph, (string)$cp['tag_after']]); } catch (Throwable $e) { } } }
                 else $pdo->prepare("UPDATE st_wa_camp_item SET status = 'failed', err = ?, sent_at = ? WHERE id = ?")->execute([mb_substr($w, 0, 220), date('Y-m-d H:i:s'), (int)$it['id']]);
             }
         }
@@ -141,7 +158,7 @@ function swc_handle(PDO $pdo, string $action, int $me, bool $post): void
     $num = sw_number($pdo); if (!$num) json_response(['error' => 'Choose the Store number in Setup first.'], 409); $waba = wa_waba_of($num); $c = swc_cfg($pdo);
     if ($action === 'st_wa.camp_list') {
         $o = []; foreach ($pdo->query("SELECT * FROM st_wa_camp ORDER BY id DESC LIMIT 100")->fetchAll() as $r) { $a = json_decode((string)$r['audience'], true) ?: [];
-            $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'tpl' => (string)$r['tpl_name'], 'category' => (string)$r['category'], 'status' => (string)$r['status'], 'total' => (int)$r['total'], 'audience' => swc_aud_label($a), 'start_at' => (string)$r['start_at'], 'created_at' => (string)$r['created_at'], 'retry_of' => (int)$r['retry_of'], 'stats' => swc_stats($pdo, (int)$r['id'])]; }
+            $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'tpl' => (string)$r['tpl_name'], 'category' => (string)$r['category'], 'status' => (string)$r['status'], 'total' => (int)$r['total'], 'audience' => swc_aud_label($a), 'start_at' => (string)$r['start_at'], 'created_at' => (string)$r['created_at'], 'retry_of' => (int)$r['retry_of'], 'no_repeat' => (int)($r['no_repeat'] ?? 0), 'tag_after' => (string)($r['tag_after'] ?? ''), 'stats' => swc_stats($pdo, (int)$r['id'])]; }
         $q = $pdo->prepare("SELECT COUNT(*) FROM st_wa_camp_item WHERE status = 'sent' AND sent_at >= ?"); $q->execute([date('Y-m-d') . ' 00:00:00']);
         json_response(['camps' => $o, 'cfg' => $c, 'sent_today' => (int)$q->fetchColumn(), 'now_h' => (int)date('G')]);
     }
@@ -161,11 +178,12 @@ function swc_handle(PDO $pdo, string $action, int $me, bool $post): void
     if (!$post) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
     $tplOf = function (int $id) use ($pdo, $waba) { $all = swc_tpls($pdo, $waba); if (!isset($all[$id])) json_response(['error' => 'Choose an APPROVED Store template.'], 422); return $all[$id]; };
     $mapIn = function (array $t) use ($in) { $n = count(wa_tpl_vars((string)$t['body'])); $m = []; for ($i = 0; $i < $n; $i++) { $x = (array)(($in['vars'] ?? [])[$i] ?? []); $k = (string)($x['kind'] ?? ($i === 0 ? 'name' : 'perfume')); if (!isset(swc_kinds()[$k])) $k = 'name'; $m[] = ['kind' => $k, 'text' => mb_substr(trim((string)($x['text'] ?? '')), 0, 200)]; if ($k === 'fixed' && $m[$i]['text'] === '') json_response(['error' => 'Write the text for {{' . ($i + 1) . '}}.'], 422); } return $m; };
-    $audIn = function () use ($in) { $a = (array)($in['audience'] ?? []); return ['seg' => (string)($a['seg'] ?? 'all'), 'tag' => mb_substr((string)($a['tag'] ?? ''), 0, 30), 'q' => mb_substr((string)($a['q'] ?? ''), 0, 60), 'phones' => array_slice(array_values(array_filter(array_map(fn($p) => substr(preg_replace('/\D/', '', (string)$p), -10), (array)($a['phones'] ?? [])), fn($p) => strlen($p) === 10)), 0, 100000)]; };
+    $audIn = function () use ($in) { $a = (array)($in['audience'] ?? []); return ['seg' => (string)($a['seg'] ?? 'all'), 'tag' => mb_substr((string)($a['tag'] ?? ''), 0, 30), 'ex_tag' => mb_substr((string)($a['ex_tag'] ?? ''), 0, 30), 'q' => mb_substr((string)($a['q'] ?? ''), 0, 60), 'phones' => array_slice(array_values(array_filter(array_map(fn($p) => substr(preg_replace('/\D/', '', (string)$p), -10), (array)($a['phones'] ?? [])), fn($p) => strlen($p) === 10)), 0, 100000)]; };
     if ($action === 'st_wa.camp_preview') {
-        $t = $tplOf((int)($in['tpl_id'] ?? 0)); $map = $mapIn($t); $P = swc_people($pdo, $audIn()); $first = $P ? reset($P) : ['name' => 'Rahul', 'perfume' => 'Oud Royal 50 ml', 'days' => 30, 'visits' => 2, 'spent' => 2500];
+        $t = $tplOf((int)($in['tpl_id'] ?? 0)); $map = $mapIn($t); $P = swc_people($pdo, $audIn());
+        $nr = max(0, (int)($in['no_repeat'] ?? 30)); $got = swc_got($pdo, swc_family((string)$t['name']), $nr); $already = count(array_intersect_key($P, $got)); if ($nr > 0 && empty($in['retry_of'])) $P = array_diff_key($P, $got); $first = $P ? reset($P) : ['name' => 'Rahul', 'perfume' => 'Oud Royal 50 ml', 'days' => 30, 'visits' => 2, 'spent' => 2500];
         $vals = swc_vals($first, $map); $price = strtoupper((string)$t['meta_category']) === 'UTILITY' ? $c['price_utl'] : $c['price_mkt'];
-        json_response(['ok' => true, 'count' => count($P), 'cost' => round(count($P) * $price), 'price' => $price, 'category' => (string)$t['meta_category'], 'sample' => function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vals) : implode(' | ', $vals), 'sample_name' => (string)($first['name'] ?? ''), 'days' => (int)ceil(count($P) / max(1, (int)($in['day_limit'] ?? 0) ?: $c['day_cap']))]);
+        json_response(['ok' => true, 'count' => count($P), 'cost' => round(count($P) * $price), 'price' => $price, 'category' => (string)$t['meta_category'], 'sample' => function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vals) : implode(' | ', $vals), 'sample_name' => (string)($first['name'] ?? ''), 'already' => $already, 'no_repeat' => $nr, 'days' => (int)ceil(count($P) / max(1, (int)($in['day_limit'] ?? 0) ?: $c['day_cap']))]);
     }
     if ($action === 'st_wa.camp_test') {
         $t = $tplOf((int)($in['tpl_id'] ?? 0)); $map = $mapIn($t); $p = substr(preg_replace('/\D/', '', (string)($in['phone'] ?? '')), -10); if (strlen($p) !== 10) json_response(['error' => 'Write your 10-digit mobile number.'], 422);
@@ -174,8 +192,10 @@ function swc_handle(PDO $pdo, string $action, int $me, bool $post): void
     if ($action === 'st_wa.camp_save') {
         $t = $tplOf((int)($in['tpl_id'] ?? 0)); $map = $mapIn($t); $aud = $audIn(); $P = swc_people($pdo, $aud); if (!$P) json_response(['error' => 'Nobody to send to in this audience (STOP customers are left out).'], 422);
         $name = mb_substr(trim((string)($in['name'] ?? '')), 0, 120) ?: ($t['name'] . ' · ' . date('d M')); $start = trim((string)($in['start_at'] ?? '')); $start = $start !== '' && strtotime($start) ? date('Y-m-d H:i:s', strtotime($start)) : null;
-        $pdo->prepare("INSERT INTO st_wa_camp (name, tpl_id, tpl_name, category, vars, audience, status, total, day_limit, start_at, created_by, created_at, retry_of) VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)")
-            ->execute([$name, (int)$t['id'], (string)$t['name'], (string)$t['meta_category'], json_encode($map, JSON_UNESCAPED_UNICODE), json_encode($aud, JSON_UNESCAPED_UNICODE), count($P), max(0, (int)($in['day_limit'] ?? 0)), $start, $me, date('Y-m-d H:i:s'), max(0, (int)($in['retry_of'] ?? 0))]);
+        $nr = max(0, min(3650, (int)($in['no_repeat'] ?? 30))); $fam = swc_family((string)$t['name']); if ($nr > 0 && empty($in['retry_of'])) { $P = array_diff_key($P, swc_got($pdo, $fam, $nr)); if (!$P) json_response(['error' => 'Everybody here already got this message in the last ' . $nr . ' days.'], 422); }
+        $tagAfter = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($in['tag_after'] ?? ''))), 0, 30);
+        $pdo->prepare("INSERT INTO st_wa_camp (name, tpl_id, tpl_name, category, vars, audience, status, total, day_limit, start_at, created_by, created_at, retry_of, no_repeat, tag_after, family) VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            ->execute([$name, (int)$t['id'], (string)$t['name'], (string)$t['meta_category'], json_encode($map, JSON_UNESCAPED_UNICODE), json_encode($aud, JSON_UNESCAPED_UNICODE), count($P), max(0, (int)($in['day_limit'] ?? 0)), $start, $me, date('Y-m-d H:i:s'), max(0, (int)($in['retry_of'] ?? 0)), $nr, $tagAfter, $fam]);
         $cid = (int)$pdo->lastInsertId(); $ins = $pdo->prepare("INSERT INTO st_wa_camp_item (camp_id, phone, data) VALUES (?, ?, ?)");
         $pdo->beginTransaction(); foreach ($P as $ph => $d) $ins->execute([$cid, $ph, json_encode($d, JSON_UNESCAPED_UNICODE)]); $pdo->commit();
         st_camp_next(0); json_response(['ok' => true, 'id' => $cid, 'count' => count($P)]);
