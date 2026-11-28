@@ -494,7 +494,9 @@ guardPage(); renderSidebar('followup');
     if ($('addAny')) $('addAny').onclick = () => writeUp(0, '');
     if ($('flip')) $('flip').onclick = () => { SIDE = !SIDE; PREF = SIDE ? '1' : '0'; try { localStorage.setItem('fup_side', PREF); } catch (e) { /* private mode */ } render(); };
   }
-  const run = async (btn, fn) => { if (busy) return; busy = true; if (btn) btn.disabled = true; try { await fn(); } catch (e) { toast(e.message || 'Could not save.'); } busy = false; if (btn) btn.disabled = false; };
+  // a Save pressed while another one is still going used to do NOTHING (no word): now it says so; a stuck one frees itself after 40 s
+  let busyAt = 0;
+  const run = async (btn, fn) => { if (busy && Date.now() - busyAt < 40000) { toast('Still saving — wait a second and press again.', true); return; } busy = true; busyAt = Date.now(); if (btn) btn.disabled = true; try { await fn(); } catch (e) { toast(e.message || 'Could not save.'); } busy = false; if (btn) btn.disabled = false; };
 
   /* ---------------- one day's update of one topic. id = 0: choose the topic too (the "＋ Add update / number" button). The date can be chosen:
      the Admin / HR any earlier date, everybody else today or yesterday. ---------------- */
@@ -541,7 +543,11 @@ guardPage(); renderSidebar('followup');
     const wc = (x) => (String(x).trim() ? String(x).trim().split(/\s+/).length : 0);
     const wcShow = () => { const n = wc(q('#uT').value), mw = t.min_words || 0, el = q('#uWc'); if (!mw) { el.textContent = ''; return; } el.textContent = n + ' / ' + mw + ' words' + (n >= mw ? ' ✓' : ' — write it in detail, at least ' + mw + ' words'); el.style.color = n >= mw ? '#16945a' : '#b45309'; el.style.fontWeight = '700'; };
     q('#uT').addEventListener('input', wcShow);
-    fill(); wcShow(); q('#uTop').onchange = () => { fill(); wcShow(); }; q('#uD').onchange = () => { fill(); wcShow(); };
+    // ✍ what is typed is kept on this phone / computer until it is saved (a closed box, a lost connection or a sign-out does not lose it)
+    const dk = () => 'fup_draft_' + q('#uTop').value + '_' + q('#uD').value;
+    q('#uT').addEventListener('input', () => { try { const v = q('#uT').value; if (v.trim()) localStorage.setItem(dk(), v); else localStorage.removeItem(dk()); } catch (e) { /* fine */ } });
+    const draftBack = () => { try { const v = localStorage.getItem(dk()); if (v && v.trim() && v.trim() !== q('#uT').value.trim() && v.length > q('#uT').value.length) { q('#uT').value = v; wcShow(); toast('Your unsaved text is back — press Save.'); } } catch (e) { /* fine */ } };
+    fill(); wcShow(); draftBack(); q('#uTop').onchange = () => { fill(); wcShow(); draftBack(); }; q('#uD').onchange = () => { fill(); wcShow(); draftBack(); };
     q('#uX').onclick = () => BD.close();
     q('#uF').addEventListener('click', async (e) => {      // ✕ on an attached file: take that one off, keep the others
       const b = e.target.closest('[data-fdel]'); if (!b) return; e.preventDefault(); const [k, i] = b.dataset.fdel.split('|'), f = t.fields.find((x) => x.k === k); if (!f) return;
@@ -564,6 +570,7 @@ guardPage(); renderSidebar('followup');
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
       let sent = 0; for (const [k, file] of files) { sent++; q('#uOk').textContent = 'Sending file ' + sent + ' of ' + files.length + '…'; const fd = new FormData(); fd.append('topic_id', t.id); fd.append('day', d); fd.append('key', k); fd.append('file', file); await api.upload('fup.file_put', fd); }
+      try { localStorage.removeItem('fup_draft_' + t.id + '_' + d); } catch (e) { /* fine */ }
       BD.close(); toast('Saved.'); await load(true);
       if (d !== D.today) toast('Saved for ' + dayName(d, D.today) + ' — today is still empty.');
       else if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
