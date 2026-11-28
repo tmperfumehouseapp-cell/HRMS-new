@@ -2169,7 +2169,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $from = (string)($_GET['from'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || strtotime($from) === false) $from = date('Y-m-d', strtotime($to . ' -6 day'));
             if ($from > $to) [$from, $to] = [$to, $from];
             if ((strtotime($to) - strtotime($from)) / 86400 > 91) $from = date('Y-m-d', strtotime($to . ' -91 day'));   // one query over at most ~3 months
-            $ck = 'newd:' . $from . ':' . $to; $hit = wa_cpc_get($pdo, $ck);
+            $ck = 'newd2:' . $from . ':' . $to; $hit = wa_cpc_get($pdo, $ck);
             if ($hit && empty($_GET['fresh']) && $hit['age'] < ($to >= date('Y-m-d') ? 300 : 3600)) json_response($hit['v']);   // today in the range: counted again after 5 min, older days after an hour
             // one customer = one row of wa_contacts, counted on the day of first_seen, under ONE place:
             //   source 'query' = came from a Meta ad · 'community' = community link · 'campaign' = first wrote by replying to a campaign (an imported number) or no source but the number came in a CSV / Excel file = CSV / Excel · anything else = Other (wrote to us directly, added by hand)
@@ -2182,6 +2182,17 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                 foreach ($q->fetchAll() as $r) { $k = (string)$r['d']; if (!isset($days[$k])) continue; $n = (int)$r['n']; $qq = (int)$r['q']; $cm = (int)$r['cm']; $cs = (int)$r['cs'];
                     $days[$k] = ['day' => $k, 'all' => $n, 'query' => $qq, 'community' => $cm, 'csv' => $cs, 'other' => max(0, $n - $qq - $cm - $cs)]; }
             } catch (Throwable $e) { json_response(['error' => 'The count took too long. Try a shorter date range.'], 503); }
+            // 📁 owner (28 Nov 2026): numbers that came from a Campaign Planner / campaign FILE (the customer row is made when the campaign message goes, with no import mark) are CSV / Excel too, not Other
+            try {
+                $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(25000) */ c.phone, DATE(c.first_seen) d FROM wa_contacts c WHERE c.first_seen >= ? AND c.first_seen < ? AND c.source NOT IN ('query', 'community', 'campaign')
+                        AND NOT EXISTS (SELECT 1 FROM wa_ctags t WHERE t.phone = c.phone AND t.src = 'import')");
+                $q->execute([$from . ' 00:00:00', date('Y-m-d', strtotime($to . ' +1 day')) . ' 00:00:00']); $oth = [];
+                foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $oth[(string)$r[0]] = (string)$r[1];
+                foreach (array_chunk(array_keys($oth), 1000) as $ch) {
+                    $iq = $pdo->prepare("SELECT DISTINCT phone FROM wa_camp_items WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $iq->execute($ch);
+                    foreach ($iq->fetchAll(PDO::FETCH_COLUMN) as $ph) { $k = $oth[(string)$ph] ?? ''; if ($k !== '' && isset($days[$k]) && $days[$k]['other'] > 0) { $days[$k]['csv']++; $days[$k]['other']--; } }
+                }
+            } catch (Throwable $e) { error_log('newdays planner: ' . $e->getMessage()); }
             $o = ['ok' => true, 'from' => $from, 'to' => $to, 'today' => date('Y-m-d'), 'days' => array_values(array_reverse($days)), 'at' => date('Y-m-d H:i:s')];
             wa_cpc_put($pdo, $ck, $o); json_response($o);
         }
