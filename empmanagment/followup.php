@@ -603,9 +603,9 @@ function fup_seed_sachin_topics(PDO $pdo): void
 function fup_clear_questions(PDO $pdo): void
 {
     try {
-        if ((string)setting_get($pdo, 'fup_no_questions_v1', '') === '1') return;
+        if ((string)setting_get($pdo, 'fup_no_questions_v2', '') === '1') return;
         $pdo->exec("UPDATE fu_updates SET ai_q = '' WHERE ai_q <> ''");
-        setting_set($pdo, 'fup_no_questions_v1', '1');
+        setting_set($pdo, 'fup_no_questions_v2', '1');
     } catch (Throwable $e) { error_log('fup_clear_questions: ' . $e->getMessage()); }
 }
 
@@ -1448,7 +1448,7 @@ function fup_ai_check(PDO $pdo, array $t, array $sec, string $day, string $text,
     if (function_exists('ai_feat')) ai_feat((string)$old);
     if (!is_array($j) || !in_array((string)($j['verdict'] ?? ''), ['clear', 'vague', 'no_progress', 'mismatch'], true)) return ['', '', ''];
     // the owner's order: Claude never asks the staff a question (it kept asking one after another). He still reads the update and leaves his one-line note for the owner. Setting fup_ai_ask = 1 would bring the question back.
-    $v = (string)$j['verdict']; $q = ($v === 'vague' && !$final && (string)setting_get($pdo, 'fup_ai_ask', '0') === '1') ? trim(mb_substr((string)($j['question'] ?? ''), 0, 300)) : '';
+    $v = (string)$j['verdict']; $q = '';      // never a question to the staff (the old fup_ai_ask switch is gone): Claude's check can never make a saved update look unfilled
     return [$v, trim(mb_substr((string)($j['note'] ?? ''), 0, 300)), $q];
 }
 

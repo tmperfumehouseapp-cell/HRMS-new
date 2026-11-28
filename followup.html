@@ -171,8 +171,9 @@ guardPage(); renderSidebar('followup');
   const isUp = (ty) => ty === 'file' || ty === 'photo' || ty === 'video';   // fields that take an upload
   const fset = (v) => (v && typeof v === 'object' ? !!v.f : String(v == null ? '' : v).trim() !== '');
   const missing = (t, u) => t.fields.filter((f) => f.req && !fset(u && u.f ? u.f[f.k] : null));
-  const covered = (t, d) => { const u = t.updates[d]; if (!u) return false; if (t.fields.some((f) => f.req)) return !missing(t, u).length && !u.q && (!t.need_text || !!u.text);
-    return !!((u.text && !u.q) || (!t.need_text && t.source && u.val != null)); };
+  // Claude's check NEVER takes a saved update back: what the person saved counts as filled, whatever Claude thinks of it (his note is for the owner only)
+  const covered = (t, d) => { const u = t.updates[d]; if (!u) return false; if (t.fields.some((f) => f.req)) return !missing(t, u).length && (!t.need_text || !!u.text);
+    return !!(u.text || (!t.need_text && t.source && u.val != null)); };
   const fileUrl = (t, d, k, i) => api.buildUrl('fup.file', { topic_id: t.id, day: d, key: k, i: i || 0, token: api.token() });
   const filesOf = (v) => (v && Array.isArray(v.list) && v.list.length ? v.list : (v && v.f ? [{ f: v.f, n: v.n || 'file' }] : []));
   const upIcon = (ty) => (ty === 'photo' ? '📷' : ty === 'video' ? '🎥' : '📎');
@@ -242,7 +243,7 @@ guardPage(); renderSidebar('followup');
   }
   // Claude's check of this one update: a question that is still open, a remark, or a small tick
   function aiLine(u) {
-    if (u.q) return '<div class="fu-ai q">Claude asked: ' + esc(u.q) + ' <b>Not answered.</b></div>';
+    if (!D || !D.manager) return '';      // the staff never see Claude's check: nothing to answer, nothing to worry about
     if (u.ai === 'clear') return '<div class="fu-ai ok">✓ Claude: clear</div>';
     if (u.ai && u.ai_note) return '<div class="fu-ai ' + (u.ai === 'mismatch' ? 'q' : 'w') + '">Claude: ' + esc(u.ai_note) + '</div>';
     return '';
