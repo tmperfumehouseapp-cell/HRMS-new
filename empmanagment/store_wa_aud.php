@@ -42,6 +42,7 @@ function swa_segs(array $c): array
         ['gift', '🎁 Gift buyers', 'taste', '2+ perfumes in one bill'],
         ['p_low', '💰 Up to ₹' . $c['low'], 'price', 'Average bill up to ₹' . $c['low']], ['p_mid', '💰 ₹' . $c['low'] . '–' . $c['high'], 'price', 'Average bill ₹' . $c['low'] . '–' . $c['high']], ['p_high', '💰 ₹' . $c['high'] . '+', 'price', 'Average bill above ₹' . $c['high']],
         ['replied', '💬 Replied on WhatsApp', 'wa', 'Wrote to the Store number at least once'], ['readonly', '👀 Reads, no reply', 'wa', 'Read a message, never wrote'], ['unread', '📭 Never read', 'wa', 'Got messages, never read one'],
+        ['billfail', '📛 Bill message failed', 'wa', 'The bill WhatsApp did not reach them (last 30 days) - send the Utility bill message from Campaigns'],
         ['stop', '🚫 STOP', 'wa', 'Asked not to be messaged - never sent to'],
     ];
 }
@@ -55,13 +56,14 @@ function swa_taste(string $title): array
 /** Every customer with a number: [phone => row]. Built from the bills (person 1 pays; everybody on a bill counts as a visit). */
 function swa_build(PDO $pdo, array $c): array
 {
-    $P = []; $billOf = [];
-    $q = $pdo->query("SELECT p.phone, p.name, p.person_no, p.bday, b.bill_id, b.biz_date, b.total, b.bottles FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.phone <> '' AND p.declined = 0 ORDER BY b.biz_date, b.bill_id");
+    $P = []; $billOf = []; $personOf = [];
+    $q = $pdo->query("SELECT p.person_id, p.phone, p.name, p.person_no, p.bday, p.token, b.bill_id, b.bill_no, b.biz_date, b.total, b.bottles FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.phone <> '' AND p.declined = 0 ORDER BY b.biz_date, b.bill_id");
     foreach ($q->fetchAll() as $r) {
         $ph = substr(preg_replace('/\D/', '', (string)$r['phone']), -10); if (strlen($ph) !== 10) continue;
-        $x = $P[$ph] ?? ['phone' => $ph, 'name' => '', 'first' => (string)$r['biz_date'], 'last' => '', 'visits' => 0, 'spent' => 0.0, 'paid_bills' => 0, 'bday' => '', 'bills' => [], 'gift' => false, 'perfumes' => [], 'taste' => [], 'tags' => [], 'lang' => '', 'stop' => false, 'wa' => ''];
+        $x = $P[$ph] ?? ['phone' => $ph, 'name' => '', 'first' => (string)$r['biz_date'], 'last' => '', 'visits' => 0, 'spent' => 0.0, 'paid_bills' => 0, 'bday' => '', 'bills' => [], 'gift' => false, 'perfumes' => [], 'taste' => [], 'tags' => [], 'lang' => '', 'stop' => false, 'wa' => '', 'bill_no' => '', 'token' => '', 'billfail' => ''];
         $nm = trim((string)$r['name']); if ($nm !== '') $x['name'] = $nm; if (trim((string)($r['bday'] ?? '')) !== '') $x['bday'] = (string)$r['bday'];
         if (!in_array((int)$r['bill_id'], $x['bills'], true)) { $x['bills'][] = (int)$r['bill_id']; $x['visits']++; $x['last'] = (string)$r['biz_date']; }
+        $x['bill_no'] = (string)$r['bill_no']; $x['token'] = (string)$r['token']; $personOf[(int)$r['person_id']] = [$ph, (string)$r['bill_no'], (string)$r['token']];
         if ((int)$r['person_no'] === 1) { $x['spent'] += (float)$r['total']; $x['paid_bills']++; if ((int)$r['bottles'] >= 2) $x['gift'] = true; $billOf[(int)$r['bill_id']] = $ph; }
         $P[$ph] = $x;
     }
@@ -71,6 +73,10 @@ function swa_build(PDO $pdo, array $c): array
         try { foreach ($pdo->query("SELECT i.bill_id, COALESCE(pr.title, '') title FROM st_bill_items i LEFT JOIN st_bottles bt ON bt.bottle_id = i.bottle_id LEFT JOIN st_products pr ON pr.product_id = bt.product_id WHERE i.kind = 'sale' AND i.bill_id IN ($in)")->fetchAll() as $r) {
             $ph = $billOf[(int)$r['bill_id']] ?? ''; $t = trim((string)$r['title']); $full = $t; $t = function_exists('sr_short_title') ? sr_short_title($t) : $t; if ($ph === '' || $t === '') continue; $P[$ph]['perfumes'][$t] = ($P[$ph]['perfumes'][$t] ?? 0) + 1; foreach (swa_taste($full) as $k) $P[$ph]['taste'][$k] = 1; } } catch (Throwable $e) { }
     }
+    // the bill WhatsApp that did not reach them (last 30 days): the last event of that bill person is a failure, not 'sent'
+    try { $st = []; $q2 = $pdo->prepare("SELECT person_id, kind FROM st_bill_events WHERE kind IN ('sent','send_failed','auto_failed') AND at >= ? ORDER BY at, person_id"); $q2->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
+        foreach ($q2->fetchAll() as $r) $st[(int)$r['person_id']] = (string)$r['kind'];
+        foreach ($st as $pid => $k) { if ($k === 'sent' || !isset($personOf[$pid])) continue; [$ph, $bn, $tk] = $personOf[$pid]; if (!isset($P[$ph])) continue; $P[$ph]['billfail'] = $bn; $P[$ph]['bill_no'] = $bn; $P[$ph]['token'] = $tk; } } catch (Throwable $e) { }
     // tags, language, STOP, WhatsApp behaviour
     try { foreach ($pdo->query("SELECT phone, tag FROM st_wa_tag")->fetchAll() as $r) { $ph = substr((string)$r['phone'], -10); if (isset($P[$ph])) $P[$ph]['tags'][] = (string)$r['tag']; } } catch (Throwable $e) { }
     try { foreach ($pdo->query("SELECT phone, lang FROM st_wa_lang")->fetchAll() as $r) { $ph = substr((string)$r['phone'], -10); if (isset($P[$ph])) $P[$ph]['lang'] = (string)$r['lang']; } } catch (Throwable $e) { }
@@ -93,7 +99,7 @@ function swa_build(PDO $pdo, array $c): array
         if ($x['bday'] !== '' && substr($x['bday'], 0, 2) === $mon) $s[] = 'bday';
         foreach (array_keys($x['taste']) as $k) $s[] = $k; if ($x['gift']) $s[] = 'gift';
         if ($x['paid_bills'] > 0) $s[] = $x['avg'] <= $c['low'] ? 'p_low' : ($x['avg'] <= $c['high'] ? 'p_mid' : 'p_high');
-        if ($x['wa'] !== '') $s[] = $x['wa']; if ($x['stop']) $s[] = 'stop';
+        if ($x['wa'] !== '') $s[] = $x['wa']; if ($x['billfail'] !== '') $s[] = 'billfail'; if ($x['stop']) $s[] = 'stop';
         $x['segs'] = $s; arsort($x['perfumes']); $x['top'] = array_slice(array_keys($x['perfumes']), 0, 3); unset($x['bills'], $x['perfumes'], $x['taste']);
     }
     unset($x);

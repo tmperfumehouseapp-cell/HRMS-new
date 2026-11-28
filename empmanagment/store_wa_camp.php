@@ -44,14 +44,14 @@ function swc_cfg(PDO $pdo): array
     $d['from'] = max(0, min(23, $d['from'])); $d['to'] = max($d['from'] + 1, min(24, $d['to'])); $d['per_round'] = max(1, min(60, $d['per_round'])); return $d;
 }
 /** What a {{n}} can be filled with. */
-function swc_kinds(): array { return ['name' => 'Customer first name', 'perfume' => 'Perfume they bought most', 'days' => 'Days since last visit', 'visits' => 'Number of visits', 'spent' => 'Total spent (₹)', 'fixed' => 'Same text for everybody']; }
+function swc_kinds(): array { return ['name' => 'Customer first name', 'perfume' => 'Perfume they bought most', 'days' => 'Days since last visit', 'visits' => 'Number of visits', 'spent' => 'Total spent (₹)', 'bill_no' => 'Bill number (last bill, or the failed one)', 'bill_link' => 'Bill link (last bill, or the failed one)', 'fixed' => 'Same text for everybody']; }
 function swc_first(string $n): string { $n = trim($n); if ($n === '') return 'ji'; if (function_exists('wa_first_name')) return wa_first_name($n); return explode(' ', $n)[0]; }
 function swc_vals(array $data, array $map): array
 {
     $o = [];
     foreach ($map as $m) { $k = (string)($m['kind'] ?? 'name'); $v = '';
         if ($k === 'name') $v = swc_first((string)($data['name'] ?? '')); elseif ($k === 'perfume') $v = (string)($data['perfume'] ?? '') ?: 'perfume'; elseif ($k === 'days') $v = (string)(int)($data['days'] ?? 0);
-        elseif ($k === 'visits') $v = (string)(int)($data['visits'] ?? 1); elseif ($k === 'spent') $v = number_format((float)($data['spent'] ?? 0)); else $v = trim((string)($m['text'] ?? ''));
+        elseif ($k === 'visits') $v = (string)(int)($data['visits'] ?? 1); elseif ($k === 'bill_no') $v = (string)($data['bill_no'] ?? '') ?: '-'; elseif ($k === 'bill_link') $v = (string)($data['token'] ?? '') !== '' && function_exists('st_short_link') ? st_short_link((string)$data['token']) : '-'; elseif ($k === 'spent') $v = number_format((float)($data['spent'] ?? 0)); else $v = trim((string)($m['text'] ?? ''));
         $o[] = mb_substr($v !== '' ? $v : 'ji', 0, 200); }
     return $o;
 }
@@ -74,7 +74,7 @@ function swc_people(PDO $pdo, array $aud): array
         if ($x['stop'] || ($ex !== '' && in_array($ex, $x['tags'], true))) continue;
         if ($phones) { if (!in_array($ph, $phones, true)) continue; }
         elseif (($seg !== 'all' && !in_array($seg, $x['segs'], true)) || ($tag !== '' && !in_array($tag, $x['tags'], true)) || ($q !== '' && strpos(mb_strtolower($x['name'] . ' ' . $x['phone'] . ' ' . implode(' ', $x['top']) . ' ' . implode(' ', $x['tags'])), $q) === false)) continue;
-        $o[$ph] = ['name' => $x['name'], 'perfume' => (string)($x['top'][0] ?? ''), 'days' => $x['days'], 'visits' => $x['visits'], 'spent' => $x['spent']];
+        $o[$ph] = ['name' => $x['name'], 'perfume' => (string)($x['top'][0] ?? ''), 'days' => $x['days'], 'visits' => $x['visits'], 'spent' => $x['spent'], 'bill_no' => (string)($x['bill_no'] ?? ''), 'token' => (string)($x['token'] ?? '')];
     }
     return $o;
 }
