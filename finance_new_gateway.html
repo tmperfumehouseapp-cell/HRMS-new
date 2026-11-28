@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Finance New · Gateway Report — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.bar .sp{flex:1}
+  .nav{display:flex;gap:4px;align-items:center;background:#fff;border-radius:999px;padding:3px 6px;box-shadow:inset 0 0 0 1.5px var(--sx-line)}
+  .nav button{border:0;background:none;width:34px;height:34px;border-radius:12px;font-size:18px;font-weight:800;cursor:pointer}.nav button:hover{background:var(--sx-bg)}.nav button:disabled{opacity:.3;cursor:default}
+  .nav input{border:0;background:none;font:800 14px inherit;min-height:34px;padding:0 4px}
+  .sec{margin-bottom:16px}.sec>h2{font-size:17px;margin:0 0 2px}.sec>.hint{font-size:12.5px;color:var(--sx-mut);margin-bottom:10px}
+  .k3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}@media (max-width:760px){.k3{grid-template-columns:1fr}}
+  .k{background:#fff;border-radius:18px;box-shadow:0 0 0 1px var(--sx-line);padding:12px 14px}.k small{display:block;color:var(--sx-mut);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .k b{display:block;font-size:22px;margin-top:2px;font-variant-numeric:tabular-nums}.k span{font-size:12px;color:var(--sx-mut)}.k.bad b{color:#b42318}
+  .tb{width:100%;border-collapse:collapse;font-size:13px}.tb th{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--sx-mut);text-align:right;padding:4px 6px;white-space:nowrap}.tb th:first-child,.tb td:first-child{text-align:left}
+  .tb td{padding:7px 6px;border-top:1px solid var(--sx-line);text-align:right;white-space:nowrap}.tb td small{display:block;color:var(--sx-mut);font-size:11px}.tb tr.void td{opacity:.45;text-decoration:line-through}
+  .age{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;background:#eef0f3;color:#475467}.age.w{background:#fff4e0;color:#b45309}.age.b{background:#fdecea;color:#b42318}
+  .wrap{overflow-x:auto}.cap{font-weight:800;font-size:13px;margin:12px 0 4px}
+  .tb th small{display:block;margin-top:2px}
+  .tb tr.tot td{font-weight:800;border-top:2px solid var(--sx-ink);background:#eef0f6}.tb tr.off td{opacity:.5}
+  .drop{display:block;border:2px dashed var(--sx-line);border-radius:16px;padding:18px 12px;text-align:center;background:#fff;cursor:pointer;color:var(--sx-mut);font-weight:700;margin-top:10px}.drop:hover{border-color:var(--sx-accent);color:var(--sx-ink)}.drop small{display:block;font-weight:600;margin-top:3px}
+  .lnkb{border:0;background:none;font:800 13.5px inherit;color:var(--sx-ink);padding:0;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}.lnkb:hover{color:var(--sx-accent)}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Finance New · Gateway Report</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Money from every gateway and marketplace into the banks: date by date, and what will come from yesterday's sales <span style="margin-left:8px;padding:1px 8px;border-radius:999px;background:#e3f6ee;color:#0d7a55;font-weight:800;font-size:11px">version 28 Nov · Gateway Report</span></div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('fn_gw');
+  const m2 = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  let TODAY = '';
+  // ---------- what will come into the bank from a day's sales
+  let EXP = null, expDay = '';
+  async function loadExp(d) {
+    const el = $('expCard'); if (!el) return;
+    try { EXP = await api.get('fn.in_expected', d ? { date: d } : {}); expDay = EXP.day; drawExp(); }
+    catch (e) { el.innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function drawExp() {
+    const el = $('expCard'); if (!el || !EXP) return; const t = EXP.totals, wk = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }) : '';
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:15px">What will come into the bank <small class="sx-mut">from the sales of</small></div><input class="sx-in" id="expD" type="date" value="${esc(expDay)}" max="${esc(TODAY)}" style="width:auto;min-height:34px"></div>
+      <div class="k3" style="margin:8px 0"><div class="k"><small>Sales of the day</small><b style="font-size:19px">${m2(t.sales)}</b><span>${EXP.sales.orders} orders${EXP.sales.manual_orders ? ' · ' + EXP.sales.manual_orders + ' manual' : ''}</span></div><div class="k"><small>Prepaid: net into the bank</small><b style="font-size:19px">${m2(t.prepaid_net)}</b><span>gross ${m2(t.prepaid_gross)} − charges ${m2(t.charges)} (estimate)</span></div><div class="k"><small>COD: comes later</small><b style="font-size:19px">${m2(t.cod)}</b><span>${EXP.cod.orders} orders, the courier remits</span></div></div>
+      <table class="tb"><tr><th>Payment gateway</th><th>Orders</th><th>Gross</th><th>Charges</th><th>Net into the bank</th><th>Arrives</th></tr>${EXP.modes.map((m) => `<tr><td><b>${esc(m.mode)}</b><small>${esc(m.note)}</small></td><td>${m.orders}</td><td>${m2(m.gross)}</td><td>${m.rate ? m2(m.charges) + '<small>' + m.rate + '% · ' + esc(m.rate_src) + '</small>' : '—'}</td><td><b>${m2(m.net)}</b></td><td>${m.arrive ? '<b>' + esc(wk(m.arrive)) + '</b>' : '—'}</td></tr>`).join('')}
+        <tr><td><b>COD</b> (cash on delivery)<small>${esc(EXP.cod.note)}</small></td><td>${EXP.cod.orders}</td><td>${m2(EXP.cod.amount)}</td><td>—</td><td><b>${m2(EXP.cod.amount)}</b><small>before the courier's charges</small></td><td><b>${esc(wk(EXP.cod.arrive_from))} – ${esc(wk(EXP.cod.arrive_by))}</b></td></tr>
+        <tr class="tot"><td>TOTAL ${EXP.totals.tie ? '' : '<small style="color:#b42318">✗ gap ' + m2(EXP.totals.gap) + ' from the sales total</small>'}</td><td>${EXP.sales.orders}</td><td>${m2(t.sales)}</td><td>${m2(t.charges)}</td><td>${m2(Math.round((t.prepaid_net + t.cod) * 100) / 100)}</td><td></td></tr></table>
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">Charges are an estimate: PayU from your last saved settlement files, others by default. The exact amount comes from the settlement file. PayU / Razorpay do not settle on Saturday and Sunday, so a Friday sale arrives on Monday.</div>`;
+    $('expD').onchange = (e) => { if (e.target.value) loadExp(e.target.value); };
+  }
+  // ---------- date-wise money by gateway
+  let DW = null, dwFrom = '', dwTo = '';
+  const monthStart = (d) => d.slice(0, 8) + '01';
+  async function loadDw(f, t) {
+    const el = $('dwCard'); if (!el) return;
+    try { DW = await api.get('fn.in_datewise', { from: f, to: t }); dwFrom = DW.from; dwTo = DW.to; drawDw(); }
+    catch (e) { el.innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function drawDw() {
+    const el = $('dwCard'); if (!el || !DW) return; const ch = DW.channels, dShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }), cell = (v) => v ? m2(v) : '<span class="sx-mut">—</span>';
+    const per = [['This month', monthStart(TODAY), TODAY], ['Last 7 days', addDays(TODAY, -6), TODAY], ['Last 30 days', addDays(TODAY, -29), TODAY]];
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:15px">Date-wise money received <small class="sx-mut">by gateway / marketplace, from the day the money came</small></div>
+        ${per.map((x) => `<button class="sx-btn" data-dwp="${x[1]}|${x[2]}" style="padding:2px 10px;${dwFrom === x[1] && dwTo === x[2] ? '' : 'opacity:.55'}">${x[0]}</button>`).join('')}<input class="sx-in" id="dwF" type="date" value="${esc(dwFrom)}" max="${esc(TODAY)}" style="width:auto;min-height:32px"><input class="sx-in" id="dwT" type="date" value="${esc(dwTo)}" max="${esc(TODAY)}" style="width:auto;min-height:32px"><button class="sx-btn" id="dwCsv" style="padding:2px 10px">Download CSV</button></div>
+      <div class="k3" style="margin:8px 0"><div class="k"><small>Received in the period</small><b style="font-size:19px">${m2(DW.total)}</b><span>${esc(dShort(DW.from))} – ${esc(dShort(DW.to))}</span></div>${DW.banks.slice(0, 2).map((b) => `<div class="k"><small>Into ${esc(b.bank)}</small><b style="font-size:19px">${m2(b.amount)}</b></div>`).join('')}</div>
+      <div class="wrap"><table class="tb"><tr><th>Date</th>${ch.map((c) => `<th>${esc(c.name)}<small style="font-weight:600;text-transform:none;letter-spacing:0">${c.banks.length ? esc(c.banks.map((b) => b.bank).join(', ')) : 'no money yet'}</small></th>`).join('')}<th>Total</th></tr>
+        ${DW.days.filter((d) => d.total || DW.days.length <= 40).map((d) => `<tr><td><b>${esc(dShort(d.day))}</b></td>${ch.map((c) => `<td>${cell(d.cells[String(c.id)])}</td>`).join('')}<td><b>${cell(d.total)}</b></td></tr>`).join('')}
+        <tr class="tot"><td>TOTAL</td>${ch.map((c) => `<td>${m2(c.total)}<small style="font-weight:600">${c.entries} entr${c.entries === 1 ? 'y' : 'ies'}</small></td>`).join('')}<td>${m2(DW.total)}</td></tr></table></div>
+      ${ch.some((c) => c.hint) ? `<div class="sx-mut" style="font-size:12px;margin-top:6px">${ch.filter((c) => c.hint).map((c) => esc(c.name) + ': ' + esc(c.hint)).join(' · ')}</div>` : ''}
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">A column shows the money you saved for that channel (UTR files and receipts), by the day it came. A channel with no money has no entry yet in this period.</div>`;
+    el.querySelectorAll('[data-dwp]').forEach((b) => { b.onclick = () => { const [f, t] = b.dataset.dwp.split('|'); loadDw(f, t); }; });
+    $('dwF').onchange = () => { if ($('dwF').value && $('dwT').value) loadDw($('dwF').value, $('dwT').value); }; $('dwT').onchange = $('dwF').onchange;
+    $('dwCsv').onclick = () => { const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"', L = [[q('Date')].concat(ch.map((c) => q(c.name)), [q('Total')]).join(',')]; DW.days.forEach((d) => L.push([q(d.day)].concat(ch.map((c) => d.cells[String(c.id)] || 0), [d.total]).join(','))); L.push([q('TOTAL')].concat(ch.map((c) => c.total), [DW.total]).join(','));
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + L.join('\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'money-by-gateway-' + DW.from + '-to-' + DW.to + '.csv'; document.body.appendChild(a); a.click(); a.remove(); };
+  }
+
+  async function init() {
+    try {
+      const o = await api.get('fi.settings_get'); TODAY = o.today;
+      $('root').innerHTML = `<div class="sx-card" id="expCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div><div class="sx-card" id="dwCard"><div class="sx-mut">Loading…</div></div>`;
+      loadExp(''); loadDw(monthStart(TODAY), TODAY);
+    } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  init();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
