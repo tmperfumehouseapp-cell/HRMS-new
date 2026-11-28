@@ -1,0 +1,51 @@
+# ONE database change, run by hand: adds the index k_wamid (wamid) to wa_line_plan (the Lineup plan).
+# Why: the Lineup rescue (DB query 1, 7% of database work, 0.36 core) looks rows up by wamid with 400-value lists and nothing indexes wamid, so it reads every sent row (KEY k_due is only status, due_at).
+# Safe: online build (ALGORITHM=INPLACE, LOCK=NONE), gives up after 10 s if it cannot get its turn (so it never makes other queries queue behind it) and retries 5 times. Nothing is deleted or changed.
+# To undo: ALTER TABLE wa_line_plan DROP INDEX k_wamid;
+name: Add database index k_wamid on wa_line_plan
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Add the index
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/dbidx_add.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 20, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "database: " . $e->getMessage() . "\n"; exit; }
+          $has = function () use ($d) { foreach ($d->query("SHOW INDEX FROM wa_line_plan")->fetchAll(PDO::FETCH_ASSOC) as $x) if ($x["Key_name"] === "k_wamid") return true; return false; };
+          if ($has()) { echo "k_wamid already exists: nothing to do\n"; } else {
+            $d->exec("SET SESSION lock_wait_timeout = 10");
+            for ($i = 1; $i <= 5; $i++) {
+              $t = microtime(true);
+              try { $d->exec("ALTER TABLE wa_line_plan ADD INDEX k_wamid (wamid), ALGORITHM=INPLACE, LOCK=NONE"); echo "try $i: index added in " . round(microtime(true) - $t, 1) . " s\n"; break; }
+              catch (Throwable $e) { echo "try $i: " . substr($e->getMessage(), 0, 160) . " (after " . round(microtime(true) - $t, 1) . " s)\n"; if ($has()) { echo "the index is there\n"; break; } sleep(15); }
+            }
+          }
+          echo "k_wamid present now: " . ($has() ? "YES" : "NO") . "\n";
+          $q = $d->prepare("EXPLAIN SELECT id FROM wa_line_plan WHERE status = 'sent' AND why = '' AND wamid IN (?, ?)"); $q->execute(["x", "y"]);
+          foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) echo "EXPLAIN wamid lookup: type=" . $r["type"] . " key=" . ($r["key"] ?? "NONE") . " rows=" . $r["rows"] . "\n";
+          PHP
+          php /tmp/dbidx_add.php "$P"; rm -f /tmp/dbidx_add.php
+          REMOTE
