@@ -37,10 +37,32 @@ if (!function_exists('wos_day')) {
         return ['', 0, ''];
     }
     function wos_tname(PDO $pdo, int $id): string { static $c = []; if ($id <= 0) return ''; if (!isset($c[$id])) { try { $q = $pdo->prepare("SELECT name FROM wa_templates WHERE id = ?"); $q->execute([$id]); $c[$id] = (string)$q->fetchColumn(); } catch (Throwable $e) { $c[$id] = ''; } } return $c[$id] !== '' ? $c[$id] : 'message #' . $id; }
+    /** The sums of a list of orders (one kind or all): orders, rev, wrote, groups, modules, camps, msgs. */
+    function wos_agg(array $list): array
+    {
+        $R = ['orders' => 0, 'rev' => 0, 'wrote' => 0, 'groups' => [], 'modules' => [], 'camps' => [], 'msgs' => []];
+        $age = function (int $d) { return $d <= 0 ? 'today' : ($d <= 3 ? 'd1_3' : ($d <= 10 ? 'd4_10' : ($d <= 30 ? 'd11_30' : 'd30p'))); };
+        foreach ($list as $o) { $tot = (int)$o['rs']; $R['orders']++; $R['rev'] += $tot; if (!empty($o['w'])) $R['wrote']++;
+            $g = (string)$o['group']; if (!isset($R['groups'][$g])) $R['groups'][$g] = [0, 0]; $R['groups'][$g][0]++; $R['groups'][$g][1] += $tot;
+            if ($o['days'] !== null) { if (!isset($R['modules'][$g])) $R['modules'][$g] = ['n' => 0, 'rs' => 0, 'today' => 0, 'd1_3' => 0, 'd4_10' => 0, 'd11_30' => 0, 'd30p' => 0, 'fu' => 0, 'tap' => 0]; $R['modules'][$g]['n']++; $R['modules'][$g]['rs'] += $tot; $R['modules'][$g][$age((int)$o['days'])]++; if (!empty($o['fu'])) $R['modules'][$g]['fu']++; if ($o['how'] === 'tap') $R['modules'][$g]['tap']++; }
+            if ((string)$o['camp'] !== '') { $ck = $o['camp'] . '|' . $o['msg']; if (!isset($R['camps'][$ck])) $R['camps'][$ck] = ['camp' => $o['camp'], 'msg' => $o['msg'], 'sent' => substr((string)$o['sent'], 0, 10), 'days' => $o['days'], 'n' => 0, 'rs' => 0, 'taps' => []]; $R['camps'][$ck]['n']++; $R['camps'][$ck]['rs'] += $tot; if ($o['how'] === 'tap') $R['camps'][$ck]['taps'][(string)$o['trigger']] = ($R['camps'][$ck]['taps'][(string)$o['trigger']] ?? 0) + 1; }
+            if ((string)$o['msg'] !== '') { $mk = $g . '|' . $o['msg']; if (!isset($R['msgs'][$mk])) $R['msgs'][$mk] = ['group' => $g, 'msg' => $o['msg'], 'n' => 0, 'rs' => 0]; $R['msgs'][$mk]['n']++; $R['msgs'][$mk]['rs'] += $tot; } }
+        uasort($R['groups'], function ($a, $b) { return $b[0] <=> $a[0]; }); uasort($R['modules'], function ($a, $b) { return $b['n'] <=> $a['n']; });
+        $R['camps'] = array_values($R['camps']); usort($R['camps'], function ($a, $b) { return [$b['n'], $b['rs']] <=> [$a['n'], $a['rs']]; }); foreach ($R['camps'] as &$c) { arsort($c['taps']); $c['top'] = $c['taps'] ? (string)array_key_first($c['taps']) : ''; unset($c['taps']); } unset($c);
+        $R['msgs'] = array_values($R['msgs']); usort($R['msgs'], function ($a, $b) { return [$b['n'], $b['rs']] <=> [$a['n'], $a['rs']]; }); $R['msgs'] = array_slice($R['msgs'], 0, 40);
+        return $R;
+    }
+    /** A day's result for one kind of order ('campaign' / 'query' / 'all'). */
+    function wos_view(array $D, string $kind): array
+    {
+        $all = (array)($D['list'] ?? []); $cnt = ['all' => count($all), 'campaign' => 0, 'query' => 0, 'other' => 0]; foreach ($all as $o) { $k = (string)($o['kind'] ?? ''); $cnt[$k === 'campaign' || $k === 'query' ? $k : 'other']++; }
+        $list = $kind === 'all' ? $all : array_values(array_filter($all, function ($o) use ($kind) { return (string)($o['kind'] ?? '') === $kind; }));
+        return ['day' => $D['day'] ?? '', 'from' => $D['from'] ?? '', 'to' => $D['to'] ?? '', 'at' => $D['at'] ?? '', 'partial' => (int)($D['partial'] ?? 0), 'kind' => $kind, 'kinds' => $cnt, 'list' => $list] + wos_agg($list);
+    }
     /** One sales day: ['day', 'from', 'to', 'orders', 'rev', 'groups' => {label => [n, rs]}, 'modules' => {...}, 'camps' => [...], 'msgs' => [...], 'list' => [...]] */
     function wos_day(PDO $pdo, string $day, bool $fresh = false): array
     {
-        $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $isToday = $day >= $today; $file = rtrim(sys_get_temp_dir(), '/') . '/wa_osrc_' . preg_replace('/[^0-9-]/', '', $day) . '.json';
+        $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $isToday = $day >= $today; $file = rtrim(sys_get_temp_dir(), '/') . '/wa_osrc3_' . preg_replace('/[^0-9-]/', '', $day) . '.json';
         if (!$fresh && is_file($file) && filemtime($file) > time() - ($isToday ? 300 : 6 * 3600)) { $j = json_decode((string)@file_get_contents($file), true); if (is_array($j) && isset($j['orders'])) return $j + ['cached' => 1]; }
         [$from, $to] = function_exists('biz_window') ? biz_window($pdo, $day, $day) : [$day . ' 00:00:00', $day . ' 23:59:59'];
         $R = ['day' => $day, 'from' => $from, 'to' => $to, 'at' => date('Y-m-d H:i:s'), 'orders' => 0, 'rev' => 0, 'wrote' => 0, 'groups' => [], 'modules' => [], 'camps' => [], 'msgs' => [], 'list' => [], 'partial' => 0];
@@ -51,15 +73,18 @@ if (!function_exists('wos_day')) {
         $qOf = $pdo->prepare("SELECT COUNT(*) FROM wa_offer WHERE phone IN (?, ?) AND ok > 0 AND at BETWEEN ? AND ?");
         $qFr = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone IN (?, ?) AND status = 'sent' AND why LIKE 'free text%' AND sent_at BETWEEN ? AND ?");
         $qEmp = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone IN (?, ?) AND dir = 'out' AND who IN ('emp','person','phone') AND ts BETWEEN ? AND ?");
+        /* owner 28 Nov: "176 orders? the campaign orders are 80-82" - every order carries its kind (Campaign / Query, the same as the tabs of the Orders page: the panel order's own type, a website order's allocation) and the card counts the Campaign orders unless told otherwise */
+        $kind = []; try { $qk = $pdo->prepare("SELECT manual_order_id, order_type FROM manual_orders WHERE order_date >= ? AND order_date <= ?"); $qk->execute([$from, $to]); foreach ($qk->fetchAll(PDO::FETCH_NUM) as $x) $kind['m' . $x[0]] = strtolower(trim((string)$x[1])); } catch (Throwable $e) { }
+        try { $qa = $pdo->prepare("SELECT order_type FROM order_allocations WHERE source = ? AND order_id = ? LIMIT 1"); foreach ($rows as $x) { $ok = (string)$x[0]; if ($ok !== '' && $ok[0] === 'w' && preg_match('/^w(\d+)_(.+)$/', $ok, $mm)) { $qa->execute([$mm[2], $mm[1]]); $kind[$ok] = strtolower(trim((string)$qa->fetchColumn())); } } } catch (Throwable $e) { }
         $t0 = microtime(true); $age = function (int $d) { return $d <= 0 ? 'today' : ($d <= 3 ? 'd1_3' : ($d <= 10 ? 'd4_10' : ($d <= 30 ? 'd11_30' : 'd30p'))); };
         $LM = ['A' => 'Module A campaign', 'A-rescue' => 'Rescue utility', 'B' => 'Module B / C', 'C' => 'Module B / C', 'B / C' => 'Module B / C', 'Cold' => 'Cold funnel', 'Lineup' => '30-Day Lineup', 'After' => 'After-Order', 'After-Order' => 'After-Order'];
         foreach ($rows as $r) {
             if (microtime(true) - $t0 > 45) { $R['partial'] = 1; break; }
             $k = wos_k10($r[2]); $oa = (string)$r[3]; $tot = (int)round((float)$r[4]); $R['orders']++; $R['rev'] += $tot;
-            $o = ['t' => substr($oa, 11, 5), 'rs' => $tot, 'src' => (string)$r[1], 'cust' => (isset($first[$k]) && $first[$k] < $oa) ? 'Repeat' : 'New', 'how' => 'direct', 'group' => 'Direct, no trigger found', 'trigger' => '', 'msg' => '', 'camp' => '', 'sent' => '', 'days' => null, 'fu' => [], 'gap' => null];
+            $o = ['kind' => (string)($kind[(string)$r[0]] ?? ''), 't' => substr($oa, 11, 5), 'rs' => $tot, 'src' => (string)$r[1], 'cust' => (isset($first[$k]) && $first[$k] < $oa) ? 'Repeat' : 'New', 'how' => 'direct', 'group' => 'Direct, no trigger found', 'trigger' => '', 'msg' => '', 'camp' => '', 'sent' => '', 'days' => null, 'fu' => [], 'gap' => null];
             if (strlen($k) === 10) {
                 $ins = []; try { $qIn->execute([$k, '91' . $k, date('Y-m-d H:i:s', strtotime($oa) - 5 * 86400), $oa]); $ins = $qIn->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { }
-                if ($ins) $R['wrote']++;
+                if ($ins) { $R['wrote']++; $o['w'] = 1; }
                 $trig = null; $tried = 0;
                 foreach ($ins as $m) { if ((string)$m[1] === '' || $tried >= 6) continue; $tried++; try { $qOut->execute([(string)$m[1]]); $om = $qOut->fetch(PDO::FETCH_NUM); } catch (Throwable $e) { $om = null; } if (!$om) continue; [$mod, $tid, $extra] = wos_module($pdo, $k, (string)$om[0]); if ($mod === '' && (string)$om[2] !== 'template') continue;
                     $trig = ['body' => (string)$m[0], 'ts' => (string)$m[2], 'msg_ts' => (string)$om[0], 'mod' => $mod, 'tid' => $tid, 'extra' => $extra, 'who' => (string)$om[1], 'obody' => (string)($om[3] ?? '')]; break; }
@@ -80,33 +105,20 @@ if (!function_exists('wos_day')) {
                 try { $qFr->execute([$k, '91' . $k, $f0, $oa]); if ((int)$qFr->fetchColumn() > 0) $o['fu'][] = '24 h offer'; } catch (Throwable $e) { }
                 try { $qEmp->execute([$k, '91' . $k, date('Y-m-d H:i:s', strtotime($oa) - 86400), $oa]); if ((int)$qEmp->fetchColumn() > 0) $o['fu'][] = 'Sales'; } catch (Throwable $e) { }
             } else { $o['group'] = 'No phone on the order'; }
-            $g = $o['group']; if (!isset($R['groups'][$g])) $R['groups'][$g] = [0, 0]; $R['groups'][$g][0]++; $R['groups'][$g][1] += $tot;
-            if ($o['days'] !== null) { if (!isset($R['modules'][$g])) $R['modules'][$g] = ['n' => 0, 'rs' => 0, 'today' => 0, 'd1_3' => 0, 'd4_10' => 0, 'd11_30' => 0, 'd30p' => 0, 'fu' => 0, 'tap' => 0]; $M = &$R['modules'][$g]; $M['n']++; $M['rs'] += $tot; $M[$age((int)$o['days'])]++; if ($o['fu']) $M['fu']++; if ($o['how'] === 'tap') $M['tap']++; unset($M); }
-            if ($o['camp'] !== '') { $ck = $o['camp'] . '|' . $o['msg']; if (!isset($R['camps'][$ck])) $R['camps'][$ck] = ['camp' => $o['camp'], 'msg' => $o['msg'], 'sent' => substr($o['sent'], 0, 10), 'days' => $o['days'], 'n' => 0, 'rs' => 0, 'taps' => []]; $R['camps'][$ck]['n']++; $R['camps'][$ck]['rs'] += $tot; if ($o['how'] === 'tap') $R['camps'][$ck]['taps'][$o['trigger']] = ($R['camps'][$ck]['taps'][$o['trigger']] ?? 0) + 1; }
-            if ($o['msg'] !== '') { $mk = $g . '|' . $o['msg']; if (!isset($R['msgs'][$mk])) $R['msgs'][$mk] = ['group' => $g, 'msg' => $o['msg'], 'n' => 0, 'rs' => 0]; $R['msgs'][$mk]['n']++; $R['msgs'][$mk]['rs'] += $tot; }
             $R['list'][] = $o;
         }
-        uasort($R['groups'], function ($a, $b) { return $b[0] <=> $a[0]; }); uasort($R['modules'], function ($a, $b) { return $b['n'] <=> $a['n']; });
-        $R['camps'] = array_values($R['camps']); usort($R['camps'], function ($a, $b) { return [$b['n'], $b['rs']] <=> [$a['n'], $a['rs']]; }); foreach ($R['camps'] as &$c) { arsort($c['taps']); $c['top'] = $c['taps'] ? (string)array_key_first($c['taps']) : ''; unset($c['taps']); } unset($c);
-        $R['msgs'] = array_values($R['msgs']); usort($R['msgs'], function ($a, $b) { return [$b['n'], $b['rs']] <=> [$a['n'], $a['rs']]; }); $R['msgs'] = array_slice($R['msgs'], 0, 40);
-        if (!$R['partial']) @file_put_contents($file, json_encode($R, JSON_UNESCAPED_UNICODE));
+        $R['wrote_all'] = $R['wrote']; if (!$R['partial']) @file_put_contents($file, json_encode($R, JSON_UNESCAPED_UNICODE));
         return $R;
     }
 }
 if ((string)($action ?? ($_GET['action'] ?? '')) === 'wa.order_source') {
     $auth = require_auth(); if (!function_exists('wa_is_admin') || !wa_is_admin($pdo, $auth)) json_response(['error' => 'Only the owner / admin can see this.'], 403);
     @set_time_limit(180); $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $fresh = !empty($_GET['fresh']);
+    $kind = (string)($_GET['kind'] ?? 'campaign'); if (!in_array($kind, ['campaign', 'query', 'all'], true)) $kind = 'campaign';
     $days = max(0, min(31, (int)($_GET['days'] ?? 0)));
-    if ($days <= 1) { $day = (string)($_GET['day'] ?? $today); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = $today; json_response(['ok' => true, 'today' => $today] + wos_day($pdo, $day, $fresh)); }
+    if ($days <= 1) { $day = (string)($_GET['day'] ?? $today); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = $today; json_response(['ok' => true, 'today' => $today] + wos_view(wos_day($pdo, $day, $fresh), $kind)); }
+    $all = []; $by = []; $partial = 0; $cnt = ['all' => 0, 'campaign' => 0, 'query' => 0, 'other' => 0];
+    for ($i = $days - 1; $i >= 0; $i--) { $d = date('Y-m-d', strtotime($today . ' -' . $i . ' day')); $V = wos_view(wos_day($pdo, $d, $fresh && $i === 0), $kind); if ($V['partial']) $partial = 1; foreach ($V['kinds'] as $kk => $vv) $cnt[$kk] += $vv; $by[] = ['day' => $d, 'orders' => (int)$V['orders'], 'rev' => (int)$V['rev']]; foreach ($V['list'] as $o) $all[] = $o; }
     $w7 = function_exists('biz_window') ? biz_window($pdo, date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')), $today) : ['', ''];
-    $S = ['ok' => true, 'today' => $today, 'from' => $w7[0], 'to' => $w7[1], 'day' => date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')) . ' … ' . $today, 'orders' => 0, 'rev' => 0, 'wrote' => 0, 'groups' => [], 'modules' => [], 'camps' => [], 'msgs' => [], 'list' => [], 'partial' => 0, 'by_day' => []]; $cm = []; $mm = [];
-    for ($i = $days - 1; $i >= 0; $i--) { $d = date('Y-m-d', strtotime($today . ' -' . $i . ' day')); $D = wos_day($pdo, $d, $fresh && $i === 0); $S['orders'] += (int)$D['orders']; $S['rev'] += (int)$D['rev']; $S['wrote'] += (int)$D['wrote']; if (!empty($D['partial'])) $S['partial'] = 1; $S['by_day'][] = ['day' => $d, 'orders' => (int)$D['orders'], 'rev' => (int)$D['rev']];
-        foreach ((array)$D['groups'] as $g => $v) { if (!isset($S['groups'][$g])) $S['groups'][$g] = [0, 0]; $S['groups'][$g][0] += $v[0]; $S['groups'][$g][1] += $v[1]; }
-        foreach ((array)$D['modules'] as $g => $v) { if (!isset($S['modules'][$g])) $S['modules'][$g] = array_fill_keys(array_keys($v), 0); foreach ($v as $kk => $vv) $S['modules'][$g][$kk] = ($S['modules'][$g][$kk] ?? 0) + $vv; }
-        foreach ((array)$D['camps'] as $c) { $ck = $c['camp'] . '|' . $c['msg']; if (!isset($cm[$ck])) $cm[$ck] = $c; else { $cm[$ck]['n'] += $c['n']; $cm[$ck]['rs'] += $c['rs']; } }
-        foreach ((array)$D['msgs'] as $c) { $ck = $c['group'] . '|' . $c['msg']; if (!isset($mm[$ck])) $mm[$ck] = $c; else { $mm[$ck]['n'] += $c['n']; $mm[$ck]['rs'] += $c['rs']; } } }
-    uasort($S['groups'], function ($a, $b) { return $b[0] <=> $a[0]; }); uasort($S['modules'], function ($a, $b) { return $b['n'] <=> $a['n']; });
-    $S['camps'] = array_values($cm); usort($S['camps'], function ($a, $b) { return [$b['n'], $b['rs']] <=> [$a['n'], $a['rs']]; }); $S['camps'] = array_slice($S['camps'], 0, 60);
-    $S['msgs'] = array_values($mm); usort($S['msgs'], function ($a, $b) { return [$b['n'], $b['rs']] <=> [$a['n'], $a['rs']]; }); $S['msgs'] = array_slice($S['msgs'], 0, 40);
-    json_response($S);
+    json_response(['ok' => true, 'today' => $today, 'from' => $w7[0], 'to' => $w7[1], 'day' => $days . ' days', 'at' => date('Y-m-d H:i:s'), 'partial' => $partial, 'kind' => $kind, 'kinds' => $cnt, 'by_day' => $by, 'list' => []] + wos_agg($all));
 }
