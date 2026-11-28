@@ -275,7 +275,7 @@ function fn_day_orders(PDO $pdo, string $day): array
             $d = function_exists('biz_day_of') ? biz_day_of($pdo, strtotime((string)$o['created_at'])) : substr((string)$o['created_at'], 0, 10); if ($d !== $day) continue;
             $tot = fn_p($o['total']); $cod = $o['outstanding'] !== null ? fn_p($o['outstanding']) : (in_array($fs, ['paid', 'partially_refunded'], true) ? 0 : $tot); $cod = max(0, min($tot, $cod));
             $refs = array_values(array_filter(array_map('fn_okey', explode(',', (string)($o['pay_ref'] ?? '')))));
-            $out[] = ['sid' => (int)$o['shopify_id'], 'key' => fn_okey($o['order_name']), 'name' => (string)$o['order_name'], 'customer' => (string)$o['customer'], 'phone' => substr(preg_replace('/\D+/', '', (string)$o['phone']), -10), 'total_p' => $tot, 'pre_p' => $tot - $cod, 'cod_p' => $cod, 'refs' => $refs, 'at' => (string)$o['created_at']];
+            $out[] = ['sid' => (int)$o['shopify_id'], 'store' => (string)$o['store_key'], 'key' => fn_okey($o['order_name']), 'name' => (string)$o['order_name'], 'customer' => (string)$o['customer'], 'phone' => substr(preg_replace('/\D+/', '', (string)$o['phone']), -10), 'total_p' => $tot, 'pre_p' => $tot - $cod, 'cod_p' => $cod, 'refs' => $refs, 'at' => (string)$o['created_at']];
         }
     } catch (Throwable $e) { /* no Shopify copy here */ }
     // the payment mode: a MANUAL order (WhatsApp / QR / payment link) carries its gateway (Razorpay, Quick = GoKwik, UPI QR, Bank transfer, Cash / COD); a Shopify checkout order is told by its payment id (KWIK… = GoKwik → PayU, pay_… = Razorpay)
@@ -325,6 +325,21 @@ function fn_mode_rate(PDO $pdo, string $mode): array
     $pat = $mode === 'GoKwik / PayU' ? '%payu%' : ($mode === 'Razorpay' ? '%razor%' : ''); $est = ['GoKwik / PayU' => 2.1, 'Razorpay' => 2.0];
     if ($pat !== '') { try { $q = $pdo->prepare("SELECT u.gross, u.fee FROM fn_in_uploads u JOIN fn_in_channels c ON c.id = u.channel_id WHERE u.status = 'ok' AND u.gross > 0 AND LOWER(c.name) LIKE ? ORDER BY u.id DESC LIMIT 5"); $q->execute([$pat]); $g = 0; $f = 0; $n = 0; foreach ($q->fetchAll() as $r) { $g += (float)$r['gross']; $f += (float)$r['fee']; $n++; } if ($n && $g > 0) return ['rate' => round(100 * $f / $g, 2), 'src' => 'from your last ' . $n . ' saved file' . ($n === 1 ? '' : 's')]; } catch (Throwable $e) {} }
     return ['rate' => $est[$mode] ?? 0.0, 'src' => isset($est[$mode]) ? 'estimate: save a settlement file of this gateway to learn it' : 'no charge'];
+}
+/** THE SALES TAB'S OWN NUMBERS for a business day: the orders (and the amount of each) that the Sales page (Control Tower) adds up into its "total sales", read from the same function it uses (coach_day), so that the money below adds up to exactly that total. */
+function fn_sales_tab(PDO $pdo, string $day): array
+{
+    if (!function_exists('coach_day')) return ['ok' => false, 'why' => 'the sales function is not here'];
+    $cf = sys_get_temp_dir() . '/hrms_fn_st_' . substr(md5(__DIR__), 0, 8) . '_' . $day . '.json'; $ttl = $day === fn_today($pdo) ? 120 : 1800;      // the Sales page work is heavy: kept for a short while
+    if (is_file($cf) && time() - filemtime($cf) < $ttl) { $j = json_decode((string)@file_get_contents($cf), true); if (is_array($j) && !empty($j['ok'])) return $j; }
+    try {
+        @set_time_limit(120); coach_day($pdo, $day, false); $memo = $GLOBALS['coach_sale_memo'][$day . '0'] ?? null; if (!is_array($memo)) return ['ok' => false, 'why' => 'no sales list for this day'];
+        $orders = []; $sum = 0;
+        foreach ($memo as $k => $list) { if (strpos((string)$k, $day . '|') !== 0) continue; foreach ((array)$list as $o) { $key = (string)($o['key'] ?? ''); if ($key === '') continue; $orders[$key] = ($orders[$key] ?? 0) + (float)($o['amt'] ?? 0); } }
+        foreach ($orders as $a) $sum += $a;
+        $team = null; try { if (function_exists('ct_snapshot')) { $S = ct_snapshot($pdo, $day); if (isset($S['team']['sales'])) $team = (float)$S['team']['sales']; } } catch (Throwable $e) { $team = null; }
+        $res = ['ok' => true, 'orders' => $orders, 'sum' => round($sum, 2), 'team' => $team]; @file_put_contents($cf, json_encode($res)); return $res;
+    } catch (Throwable $e) { return ['ok' => false, 'why' => mb_substr($e->getMessage(), 0, 120)]; }
 }
 /** The sales of one day: all orders, the prepaid part and the COD part. */
 function fn_day_sales(PDO $pdo, string $day): array
@@ -761,17 +776,38 @@ switch ($action) {
     }
     // WHAT WILL COME INTO THE BANK from the sales of a day: per payment mode the gross, the estimated charges, the net, and the day it should arrive
     case 'fn.in_expected': {
-        $today = fn_today($pdo); $d = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime($today . ' -1 day')); $sl = fn_day_sales($pdo, $d);
-        $lag = ['GoKwik / PayU' => 1, 'Razorpay' => 2, 'UPI QR' => 0, 'Bank transfer' => 0, 'Cash / COD' => 0]; $rows = []; $gP = 0; $cP = 0; $nP = 0;
-        foreach ($sl['modes'] as $m) {
-            $rt = fn_mode_rate($pdo, $m['mode']); $gr = fn_p($m['amount']); $ch = (int)round($gr * $rt['rate'] / 100); $known = isset($lag[$m['mode']]);
-            $rows[] = ['mode' => $m['mode'], 'orders' => $m['orders'], 'gross' => $m['amount'], 'rate' => $rt['rate'], 'rate_src' => $rt['src'], 'charges' => fn_m($ch), 'net' => fn_m($gr - $ch), 'lag' => $known ? $lag[$m['mode']] : null, 'arrive' => $known ? fn_workday_add($d, (int)$lag[$m['mode']]) : '', 'note' => $known ? ($lag[$m['mode']] === 0 ? 'straight to the bank, no gateway charge' : 'T+' . $lag[$m['mode']] . ' working day' . ($lag[$m['mode']] === 1 ? '' : 's') . ' (no Saturday / Sunday)') : 'gateway not known: check these orders'];
+        $today = fn_today($pdo); $d = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime($today . ' -1 day')); $sl = fn_day_sales($pdo, $d); $st = fn_sales_tab($pdo, $d);
+        $lag = ['GoKwik / PayU' => 1, 'Razorpay' => 2, 'UPI QR' => 0, 'Bank transfer' => 0, 'Cash / COD' => 0];
+        // the money of the day, per payment mode. WITH the Sales tab's list: its orders and its amounts (prepaid part / COD part of each order from the order itself); an order the Sales tab counts but HRMS does not hold as a Shopify / manual order goes to "Other"
+        $agg = []; $codP = 0; $nCod = 0; $othP = 0; $nOth = 0; $nOrd = 0; $nMan = 0; $unl = ['orders' => 0, 'amount' => 0];
+        if ($st['ok']) {
+            $idx = []; foreach (fn_day_orders($pdo, $d) as $o) $idx[$o['store'] . '|' . $o['sid']] = $o; $seen = [];
+            foreach ($st['orders'] as $key => $amt) {
+                $ap = fn_p($amt); $nOrd++; $o = $idx[$key] ?? null; $seen[$key] = 1; if (!$o) { $othP += $ap; $nOth++; continue; }
+                $tp = max(1, (int)$o['total_p']); $pre = (int)round($ap * $o['pre_p'] / $tp); $cod = $ap - $pre; if (!empty($o['manual'])) $nMan++;
+                if ($pre > 0) { $k = $o['mode']; if (!isset($agg[$k])) $agg[$k] = [0, 0]; $agg[$k][0]++; $agg[$k][1] += $pre; } if ($cod > 0) { $codP += $cod; $nCod++; }
+            }
+            foreach ($idx as $key => $o) if (!isset($seen[$key])) { $unl['orders']++; $unl['amount'] += $o['total_p']; }
+            $headline = $st['team'] !== null ? fn_p($st['team']) : fn_p($st['sum']);
+        } else {
+            foreach ($sl['modes'] as $m) $agg[$m['mode']] = [$m['orders'], fn_p($m['amount'])]; $codP = fn_p($sl['cod']); $nCod = $sl['cod_orders']; $nOrd = $sl['orders']; $nMan = $sl['manual_orders']; $headline = fn_p($sl['total']);
+        }
+        $rows = []; $gP = 0; $cP = 0; $nP = 0;
+        uasort($agg, fn($a, $b) => $b[1] <=> $a[1]);
+        foreach ($agg as $mode => $v) {
+            $rt = fn_mode_rate($pdo, $mode); $gr = $v[1]; $ch = (int)round($gr * $rt['rate'] / 100); $known = isset($lag[$mode]);
+            $rows[] = ['mode' => $mode, 'orders' => $v[0], 'gross' => fn_m($gr), 'rate' => $rt['rate'], 'rate_src' => $rt['src'], 'charges' => fn_m($ch), 'net' => fn_m($gr - $ch), 'lag' => $known ? $lag[$mode] : null, 'arrive' => $known ? fn_workday_add($d, (int)$lag[$mode]) : '', 'note' => $known ? ($lag[$mode] === 0 ? 'straight to the bank, no gateway charge' : 'T+' . $lag[$mode] . ' working day' . ($lag[$mode] === 1 ? '' : 's') . ' (no Saturday / Sunday)') : 'gateway not known: check these orders'];
             $gP += $gr; $cP += $ch; $nP += $gr - $ch;
         }
+        // whatever the Sales tab total holds that is not itemised above (orders of another source, rounding) so the total is exactly the Sales tab total
+        $sumAll = $gP + $codP + $othP; $gap = $headline - $sumAll; $other = $othP + $gap;
+        if (abs($other) >= 1) $rows[] = ['mode' => 'Other / not itemised', 'orders' => $nOth, 'gross' => fn_m($other), 'rate' => 0, 'rate_src' => '', 'charges' => 0, 'net' => fn_m($other), 'lag' => null, 'arrive' => '', 'note' => $nOth ? 'orders the Sales tab counts that are not a Shopify / manual order in HRMS' : 'rounding / difference with the Sales tab'];
         $wd = 10; try { $w = $pdo->query("SELECT v FROM fi_settings WHERE k = 'wait_days'")->fetchColumn(); if ($w !== false && (int)$w > 0) $wd = (int)$w; } catch (Throwable $e) {}
-        $cod = ['orders' => $sl['cod_orders'], 'amount' => $sl['cod'], 'arrive_from' => date('Y-m-d', strtotime($d . ' +7 day')), 'arrive_by' => date('Y-m-d', strtotime($d . ' +' . $wd . ' day')), 'note' => 'cash on delivery: the courier sends it after delivery'];
-        $tot = fn_p($sl['total']); $sum = $gP + fn_p($sl['cod']);
-        json_response(['day' => $d, 'today' => $today, 'sales' => $sl, 'modes' => $rows, 'cod' => $cod, 'totals' => ['prepaid_gross' => fn_m($gP), 'charges' => fn_m($cP), 'prepaid_net' => fn_m($nP), 'cod' => $sl['cod'], 'sales' => $sl['total'], 'tie' => abs($tot - $sum) <= 5, 'gap' => fn_m($tot - $sum)]]);
+        $cod = ['orders' => $nCod, 'amount' => fn_m($codP), 'arrive_from' => date('Y-m-d', strtotime($d . ' +7 day')), 'arrive_by' => date('Y-m-d', strtotime($d . ' +' . $wd . ' day')), 'note' => 'cash on delivery: the courier sends it after delivery'];
+        $otherP = abs($other) >= 1 ? $other : 0; $tot = $headline;
+        json_response(['day' => $d, 'today' => $today, 'source' => $st['ok'] ? 'sales_tab' : 'orders', 'source_note' => $st['ok'] ? 'the orders and amounts of the Sales tab' : ('the orders in HRMS (the Sales tab list could not be read: ' . ($st['why'] ?? '') . ')'), 'sales_tab' => ['total' => fn_m($headline), 'sum' => $st['ok'] ? fn_m(fn_p($st['sum'])) : null, 'team' => $st['ok'] && $st['team'] !== null ? fn_m(fn_p($st['team'])) : null],
+            'sales' => ['orders' => $nOrd, 'manual_orders' => $nMan, 'total' => fn_m($tot), 'cod_orders' => $nCod, 'cod' => fn_m($codP), 'prepaid' => fn_m($gP)], 'modes' => $rows, 'cod' => $cod, 'unlisted' => ['orders' => $unl['orders'], 'amount' => fn_m($unl['amount'])],
+            'totals' => ['prepaid_gross' => fn_m($gP + $otherP), 'charges' => fn_m($cP), 'prepaid_net' => fn_m($nP + $otherP), 'cod' => fn_m($codP), 'sales' => fn_m($tot), 'tie' => abs(($gP + $otherP + $codP) - $tot) <= 100, 'gap' => fn_m($tot - ($gP + $otherP + $codP))]]);
         break;
     }
     // DATE-WISE money received per gateway / marketplace channel (Flipkart, Razorpay, PayU, Snapmint, Cashfree, Myntra, Easebuzz …) and per bank, for a period
