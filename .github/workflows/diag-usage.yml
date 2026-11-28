@@ -1,0 +1,59 @@
+# READ-ONLY check (changes nothing): which pages / server actions are used and which are not, how much time each one costs, and which database tables take the most room.
+# Reads: the hourly request files of the Server load recorder (last ~2 days), the web server's access log (page opens, if readable) and information_schema (table sizes).
+name: Usage and storage check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Look
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          echo "== server actions seen by the recorder (files of the last ~2 days)"
+          D=""; for c in /tmp/hrms_perf /var/tmp/hrms_perf $(ls -d /tmp/systemd-private-*/tmp/hrms_perf 2>/dev/null); do [ -d "$c" ] && D="$c" && break; done
+          if [ -z "$D" ]; then echo "recorder folder not readable from here"; else
+            echo "folder: $D · files: $(ls $D/*.log 2>/dev/null | wc -l)"
+            cat $D/*.log 2>/dev/null | awk -F'\t' 'NF>=4{c[$2]++; w[$2]+=$3; u[$2]+=$4} END{for(a in c) printf "%d\t%d\t%d\t%s\n", c[a], w[a]/1000, u[a]/1000, a}' > /tmp/act.tsv
+            echo "-- distinct actions: $(wc -l < /tmp/act.tsv)"
+            echo "-- 30 most TIME (calls · seconds waiting+work · cpu seconds · action):"; sort -t$'\t' -k2 -nr /tmp/act.tsv | head -30
+            echo "-- 30 LEAST called (calls · seconds · cpu s · action):"; sort -t$'\t' -k1 -n /tmp/act.tsv | head -30
+          fi
+          rm -f /tmp/act.tsv
+          echo; echo "== page opens in the web server access log"
+          L=""; for c in $(ls /home/*/logs/nginx/access.log 2>/dev/null) $(ls /var/log/nginx/access.log 2>/dev/null); do [ -r "$c" ] && L="$L $c"; done
+          if [ -z "$L" ]; then echo "access log not readable from here"; else
+            echo "logs:$L"
+            for f in $L; do echo "-- $f · lines: $(wc -l < $f) · first: $(head -1 $f | grep -o '\[[^]]*\]' | head -1)"; done
+            cat $L 2>/dev/null | awk '{p=$7; sub(/\?.*/,"",p); if (p ~ /\.html$/) c[p]++} END{for(p in c) printf "%d\t%s\n", c[p], p}' | sort -nr > /tmp/pg.tsv
+            echo "-- html pages opened at least once: $(wc -l < /tmp/pg.tsv)"; echo "-- top 25:"; head -25 /tmp/pg.tsv; echo "-- 40 least opened:"; tail -40 /tmp/pg.tsv; echo "-- ALL opened pages (names only):"; awk -F'\t' '{print $2}' /tmp/pg.tsv | tr '\n' ' '; echo
+            rm -f /tmp/pg.tsv
+          fi
+          echo; echo "== database: biggest tables"
+          cat > /tmp/sz.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; } require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 20, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "database: " . $e->getMessage() . "\n"; exit; }
+          $t = 0; $rows = $d->query("SELECT TABLE_NAME n, TABLE_ROWS r, ROUND(DATA_LENGTH/1048576) dm, ROUND(INDEX_LENGTH/1048576) im FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY DATA_LENGTH + INDEX_LENGTH DESC")->fetchAll(PDO::FETCH_ASSOC);
+          foreach ($rows as $r) $t += $r["dm"] + $r["im"]; echo "total " . $t . " MB in " . count($rows) . " tables\n";
+          foreach (array_slice($rows, 0, 30) as $r) echo str_pad($r["n"], 34) . str_pad($r["dm"] . " MB data", 14) . str_pad($r["im"] . " MB index", 15) . $r["r"] . " rows\n";
+          PHP
+          php /tmp/sz.php "$P"; rm -f /tmp/sz.php
+          REMOTE
