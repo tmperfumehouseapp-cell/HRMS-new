@@ -161,6 +161,19 @@ function wl_pack(): array
     $mv('ln_px_5c', 'ln_px_5', 5, "Hi {{1}} ji 😳 Aapke liye {{2}} ? Kya sach me ? Haan ji ! 🔥 Apni pasand ke perfumes chuniye. Kaunsi khushbu chahiye - men, women ya unisex ?", 'Mujhe chahiye');
     $mv('ln_px_7c', 'ln_px_7', 7, "Hi {{1}} ji 👋 Ek chhota sa sawal 🤔 Aapke liye {{2}} - chalega ? Aaj order karenge to dispatch ki taiyari abhi shuru. Order bana dein ?", 'Haan, order banao');
     /* ln_px_9c was taken out the same day: its button 'Batata hoon' sits inside the button of ln_rescue_7, so a tap could be answered with the wrong text */
+    /* owner 28 Nov 2026: the offer of the NEXT DAY (step 1) goes only in the exciting order pattern - three more wordings of it (the price is the chart's, one column below what he was quoted; the occasion's name comes with the price text) */
+    $mv('ln_px_5d', 'ln_px_5', 5, "Hi {{1}} ji 🎁 Aapke size ka best rate nikal aaya: {{2}} 😍 Itne me ? Haan ji, sirf aapke liye ! 🔥 Aaj order karenge to rate pakka. Kaunsi khushbu chahiye - men, women ya unisex ?", 'Haan, yahi rate do');
+    $mv('ln_px_5e', 'ln_px_5', 5, "Hi {{1}} ji 👋 Ek sawal 🤔 {{2}} - is rate par aapka order bana dein ? 🔥 COD available hai, parcel khol kar check karke payment kijiye. Bas perfumes ke naam bata dijiye - kaunse chahiye ?", 'Mera combo banao');
+    $mv('ln_px_5f', 'ln_px_5', 5, "Hi {{1}} ji 😍 Aapke liye rate ready hai: {{2}} ✅ Aaj book karenge to yahi rate lock 🔒 Strong khushbu chahiye ya soft ? Bata dijiye, combo hum bana dete hain.", 'Aaj hi mangwana hai');
+    $mv('ln_px_9c', 'ln_px_9', 9, "Hi {{1}} ji 😍 Aapke liye khaas rate: {{2}} - pasand aaya ? 🔥 Aaj order karenge to dispatch ki taiyari abhi shuru. Gift ke liye chahiye ya apne liye ?", 'Haan, ye rate chalega');
+    /* owner 28 Nov 2026 (morning): "SPACING too" - the same exciting price wordings with a blank line between the thoughts (the rest of the modules already have it). These go first: the free text of day 1 uses them at once, the paid steps as soon as Meta approves them. */
+    $mv('ln_px_5g', 'ln_px_5', 5, "Hi {{1}} ji 😳\n\nAapke liye {{2}} ?\n\nKya sach me ? 👀 Haan ji ! 🔥\n\nApni pasand ke perfumes chuniye ✨\n\nKaunsi khushbu chahiye - men, women ya unisex ?", 'Rate pakka karo');
+    $mv('ln_px_5h', 'ln_px_5', 5, "Hi {{1}} ji 👋\n\nEk sawal 🤔\n\n{{2}} - is rate par aapka order bana dein ? 🔥\n\nCOD available hai, parcel khol kar check karke payment kijiye ✅\n\nBas perfumes ke naam bata dijiye - kaunse chahiye ?", 'Combo bana do');
+    $mv('ln_px_5i', 'ln_px_5', 5, "Hi {{1}} ji 🎁\n\nAapke size ka best rate nikal aaya 😍\n\n{{2}}\n\nItne me ? Haan ji, sirf aapke liye ! 🔥\n\nAaj order karenge to rate pakka ✅\n\nKaunsi khushbu chahiye - men, women ya unisex ?", 'Best rate do');
+    $mv('ln_px_5j', 'ln_px_5', 5, "Hi {{1}} ji 😍\n\nAapke liye rate ready hai ✅\n\n{{2}}\n\nAaj book karenge to yahi rate lock 🔒\n\nStrong khushbu chahiye ya soft ? Bata dijiye, combo hum bana dete hain.", 'Aaj book karo');
+    $mv('ln_px_7d', 'ln_px_7', 7, "Hi {{1}} ji 👋\n\nEk chhota sa sawal 🤔\n\nAapke liye {{2}} - chalega ? 🔥\n\nAaj order karenge to dispatch ki taiyari abhi shuru ✅\n\nOrder bana dein ?", 'Ji haan, bana do');
+    $mv('ln_px_9d', 'ln_px_9', 9, "Hi {{1}} ji 😍\n\nAapke liye khaas rate 👇\n\n{{2}}\n\nPasand aaya ? 🔥 Aaj order karenge to dispatch ki taiyari abhi shuru.\n\nGift ke liye chahiye ya apne liye ?", 'Ye rate theek hai');
+    $mv('ln_px_11d', 'ln_px_11', 11, "Hi {{1}} ji 🔥\n\nAakhri baar pooch rahe hain 🙏\n\n{{2}}\n\nYe rate aapke naam lock kar dein ? 🔒\n\nBas haan likhiye, order hum bana denge ✅", 'Rate lock kar do');
     $mv('ln_px_11c', 'ln_px_11', 11, "Hi {{1}} ji 🔥 Aakhri baar pooch rahe hain: {{2}} - ye rate aapke naam lock kar dein ? Bas haan likhiye, order hum bana denge ✅", 'Haan, lock karo');
     $mk('ln_pp_6', 6, "{{1}} ji, prepaid karne par cart par 2% extra chhoot milti hai. Perfume aur bottle count bata dein to total bata dete hain.", 'Total bataiye', "Zaroor 🙏 Aapko kaunse perfume aur kitni bottle chahiye, bata dein, hum prepaid ke saath total bhej dete hain.");
     foreach (wl_extra_get() as $e) { if (!empty($e['newtopic']) && !empty($e['key']) && !isset($P[$e['key']])) { $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'auto' => 1, 'newtopic' => 1, 'cat' => 'MARKETING']; continue; } if (empty($e['key']) || isset($P[$e['key']]) || empty($e['of']) || !isset($P[$e['of']])) continue; $P[$e['key']] = ['topic' => (string)$e['topic'], 'step' => (int)$e['step'], 'body' => (string)$e['body'], 'button' => (string)$e['button'], 'free' => (string)$e['free'], 'of' => (string)$e['of'], 'auto' => 1]; }
@@ -264,7 +277,7 @@ function wln_plan(PDO $pdo, string $phone, string $topic, int $anchor, array $sk
     $cfg = wl_cfg($pdo); $now = $now ?: time(); $ins = $pdo->prepare("INSERT INTO wa_line_plan (phone, topic, step, tpl_key, due_at) VALUES (?, ?, ?, ?, ?)"); $n = 0; $day = 0; $last = 0;
     for ($s = 1; $s <= wl_steps(); $s++) {
         $k = wl_key($topic, $s); if (isset($skipKeys[$k]) || isset($skipKeys[wln_pref_key($s)])) continue; $day = $last === 0 ? 1 : $day + wl_gap_sum($last, $s); $last = $s;   // the first step still to go = 24 h after the end of his conversation, the rest by the 30-day gaps
-        $due = wl_due_ts($anchor, $day, $cfg['from'], $cfg['to']); if ($due < $now - 86400 * 2) $due = wl_due_ts($now, 0, $cfg['from'], $cfg['to']);
+        $due = wl_due_ts($anchor - (86400 - wl_quiet($pdo)), $day, $cfg['from'], $cfg['to']); if ($due < $now - 86400 * 2) $due = wl_due_ts($now, 0, $cfg['from'], $cfg['to']);
         $ins->execute([$phone, $topic, $s, $k, date('Y-m-d H:i:s', $due)]); $n++;
     }
     return $n;
@@ -342,6 +355,21 @@ function wln_enroll_camp(PDO $pdo, int $since): int
 /** Why this customer gets nothing now ('' = fine). 'wait…' = try again later; anything else takes him out of the lineup.
  *  Shop rules that already exist are used as they are: an order that just completed, a ticket, a birthday / review thank-you or a person in Rescue mute him (wa_auto_muted);
  *  a person who wrote in the last 36 h or a campaign in the last 2 days steps the plan aside (wq_plan_paused); a follow-up (Autopilot / Journey) in the last day too. */
+/** owner 28 Nov 2026: "the offer must go BEFORE his 24 hours are over, so it costs nothing" - the Lineup's first message goes wl_quiet_h (21) hours after the last message of the conversation: his reply window is still open, the offer goes as a plain text (free, no marketing limit). 24 = the old rule. */
+function wl_quiet(PDO $pdo): int { static $q = null; if ($q === null) $q = max(6, min(24, (int)setting_get($pdo, 'wl_quiet_h', '21'))) * 3600; return $q; }
+/** The exciting (order pattern) wordings of the price steps - the only ones that go since 28 Nov (owner: "the day 6-26 price messages too"). */
+function wl_px_exciting(int $step): array { return [1 => ['ln_px_5c', 'ln_px_5d', 'ln_px_5e', 'ln_px_5f', 'ln_px_5g', 'ln_px_5h', 'ln_px_5i', 'ln_px_5j'], 5 => ['ln_px_5c', 'ln_px_5d', 'ln_px_5e', 'ln_px_5f', 'ln_px_5g', 'ln_px_5h', 'ln_px_5i', 'ln_px_5j'], 7 => ['ln_px_7c', 'ln_px_7d'], 9 => ['ln_px_9c', 'ln_px_9d'], 11 => ['ln_px_11c', 'ln_px_11d']][$step] ?? []; }
+/** The SPACED ones among them (owner 28 Nov): when one of these can go, only these go. */
+function wl_px_spaced(array $keys): array { $sp = ['ln_px_5g' => 1, 'ln_px_5h' => 1, 'ln_px_5i' => 1, 'ln_px_5j' => 1, 'ln_px_7d' => 1, 'ln_px_9d' => 1, 'ln_px_11d' => 1]; $o = array_values(array_filter($keys, function ($k) use ($sp) { return isset($sp[$k]); })); return $o ?: $keys; }
+/** owner 28 Nov 2026 ("he already chose his perfume - why do we ask men / women / unisex ?"): what the chat already tells us: [the perfume he named ('' = none), true when he said men / women / unisex]. */
+function wl_knows_choice(PDO $pdo, string $phone): array
+{
+    $pf = ''; $g = false;
+    try { if (!function_exists('wa_prod_last_asked') && is_file(__DIR__ . '/wa_prod.php')) require_once __DIR__ . '/wa_prod.php'; if (function_exists('wa_prod_last_asked')) { $pf = trim((string)wa_prod_last_asked($pdo, $phone)); if (mb_strlen($pf) > 40 || preg_match('/[{}<>\\n]/u', $pf)) $pf = ''; } } catch (Throwable $e) { $pf = ''; }
+    try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype IN ('text','interactive','button') AND ts >= ? ORDER BY id DESC LIMIT 15"); $q->execute([$phone, date('Y-m-d H:i:s', time() - 30 * 86400)]);
+        foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $b) if (preg_match('/(unisex|women|woman|ladies|lady|female|\bmen\b|\bmens\b|\bman\b|gents|male|mahila|purush|महिला|पुरुष|લેડીઝ|જેન્ટ્સ)/iu', (string)$b)) { $g = true; break; } } catch (Throwable $e) { }
+    return [$pf, $g];
+}
 function wl_block(PDO $pdo, array $c, string $anchor, array $orders = [], bool $first = false, &$until = null): string
 {
     $phone = (string)$c['phone']; $now = time();
@@ -353,8 +381,9 @@ function wl_block(PDO $pdo, array $c, string $anchor, array $orders = [], bool $
         if ($last !== '' && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > strtotime($last)) return 'replied'; } catch (Throwable $e) { }
     if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $phone)) { $until = $now + 3600; return 'wait: muted (order / ticket / thank-you)'; }
     // the conversation ends with the last message of EITHER side: a PERSON (salesperson) who wrote in the last 24 hours is still working him: wait (24 h like the customer's own last message). Campaigns (Module A / B) and templates do NOT hold the Lineup any more (owner 21 Nov: it runs as its own module)
-    try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND status <> 'failed' AND ts >= ?"); $q->execute([$phone, date('Y-m-d H:i:s', $now - 24 * 3600)]); $pt = (string)$q->fetchColumn(); if ($pt !== '') { $until = (int)strtotime($pt) + 24 * 3600; return 'wait: a person wrote in the last 24 h'; } } catch (Throwable $e) { }
-    if ($first && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > $now - 24 * 3600) { $until = (int)strtotime((string)$c['last_in_at']) + 24 * 3600; return 'wait: conversation not over'; }   // owner 21 Nov: the 24 hours count from the END of the conversation (his last message); only then, with no order, the lineup starts
+    try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND status <> 'failed' AND ts >= ?"); $__ph = $first ? 2 * 3600 : wl_quiet($pdo);   /* owner 28 Nov: the first message counts from HIS message (the 21st hour of his 24-hour window), not from the end of the conversation - a person holds it only while really talking (the last 2 hours) */
+        $q->execute([$phone, date('Y-m-d H:i:s', $now - $__ph)]); $pt = (string)$q->fetchColumn(); if ($pt !== '') { $until = (int)strtotime($pt) + $__ph; return 'wait: a person wrote in the last 24 h'; } } catch (Throwable $e) { }
+    if ($first && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > $now - wl_quiet($pdo)) { $until = (int)strtotime((string)$c['last_in_at']) + wl_quiet($pdo); return 'wait: conversation not over'; }   // owner 21 Nov: the 24 hours count from the END of the conversation (his last message); only then, with no order, the lineup starts
     if (!$first && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > $now - 6 * 3600) { $until = (int)strtotime((string)$c['last_in_at']) + 6 * 3600; return 'wait: chatting now'; }   // he wrote in the last 6 hours: the chat answers him, not a template
     foreach (['wa_fu_ev', 'wa_wj_ev'] as $t) { try { $q = $pdo->prepare("SELECT 1 FROM $t WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$phone, date('Y-m-d H:i:s', $now - 86400)]); if ($q->fetchColumn()) return 'wait: got a follow-up today'; } catch (Throwable $e) { } }
     return '';
@@ -370,7 +399,7 @@ function wl_recheck(PDO $pdo, int $now): int
         $c = function_exists('wa_contact') ? wa_contact($pdo, $phone) : null; if (!$c) { $done('no contact'); continue; }
         if (wl_block($pdo, $c, date('Y-m-d H:i:s', $anchor)) === 'ordered') { $done('ordered'); continue; }
         $li = !empty($c['last_in_at']) ? (int)strtotime((string)$c['last_in_at']) : 0;
-        if ($li > $now - 86400) { $pdo->prepare("UPDATE wa_line_cust SET recheck_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s', $li + 86400), $phone]); continue; }   // he wrote again: the conversation is not over; the 24 hours count from his NEW last message
+        if ($li > $now - wl_quiet($pdo)) { $pdo->prepare("UPDATE wa_line_cust SET recheck_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s', $li + wl_quiet($pdo)), $phone]); continue; }   // he wrote again: the conversation is not over; the 24 hours count from his NEW last message
         $o = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $o->execute([$phone]); $bought = (int)$o->fetchColumn() > 0;
         $m = $pdo->prepare("SELECT body FROM wa_messages WHERE dir = 'in' AND mtype IN ('text','interactive','button') AND phone = ? AND ts >= ? ORDER BY id DESC LIMIT 12"); $m->execute([$phone, date('Y-m-d H:i:s', $anchor)]);
         $topic = wl_classify(array_reverse($m->fetchAll(PDO::FETCH_COLUMN)), $bought); $sw = (int)$r['switches'];
@@ -459,17 +488,41 @@ function wln_wide_ok(PDO $pdo): array
 /** THE PRICE OF THIS CUSTOMER'S NEXT PRICE STEP, worked out from the shop's own price chart (setting ml_slab_chart: rows = total ml, columns = 7 / 6.5 / 6 / 5 / 4 / 3.5 / 3 %; a higher % is a HIGHER price).
  *  The quote is the 4 x 50 ml = 200 ml combo row. Start = the deepest column already quoted in his chat (never above 6.5%); every price step goes ONE column deeper than the one before (never higher than what he was told), the last column of the chart is the floor.
  *  Returns '' when there is no chart or no row (the plain message of the step goes then). */
-function wln_price_text(PDO $pdo, string $phone, int $ml = 200): string { $i = wln_price_info($pdo, $phone, $ml); return $i ? $i['text'] : ''; }
+function wln_price_text(PDO $pdo, string $phone, int $ml = 200): string
+{
+    $i = wln_price_info($pdo, $phone, $ml); if (!$i) return ''; $t = (string)$i['text'];
+    /* 📅 owner 27 Nov 2026 (night): "the Lineup too" - in an occasion's days (and in Black Friday week) the price of the Lineup's price steps names it: "Christmas special: 4 x 50 ml ... sirf Rs 2,280". The price itself is the chart's, unchanged. These steps are marketing messages; the utility steps are not touched. */
+    try { $oc = ''; if (!function_exists('wa_bf_on') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php'; if (function_exists('wa_bf_on') && wa_bf_on()) $oc = 'Black Friday';
+        if ($oc === '') { if (!function_exists('wocc_active') && is_file(__DIR__ . '/wa_occasion.php')) require_once __DIR__ . '/wa_occasion.php'; if (function_exists('wocc_active')) { $a = wocc_active(); if ($a) $oc = (string)reset($a)['t']; } }
+        if ($oc !== '') $t = $oc . ' special: ' . $t; } catch (Throwable $e) { }
+    return $t;
+}
 /** [text, pct] of the next price step, or null (see wln_price_text). */
+/** owner 28 Nov 2026 ("the offer by his ML"): the size he spoke of in the chat -> [qty, size, total ml] of the combo the price is given for: 20 ml = 8 x 20 (160 ml), 50 ml = 4 x 50 (200 ml), 100 ml = 2 x 100 (200 ml); his own "N x S ml" when the chart has that row; [4, 50, 200] when nothing is known. */
+function wln_want_combo(PDO $pdo, string $phone, array $rows): array
+{
+    $def = [4, 50, 200]; if ((string)setting_get($pdo, 'wl_px_by_ml', '1') !== '1') return $def;
+    try { if (!function_exists('wof_want') && is_file(__DIR__ . '/wa_offer.php')) require_once __DIR__ . '/wa_offer.php'; if (!function_exists('wof_want')) return $def;
+        $f = date('Y-m-d H:i:s', time() - 30 * 86400); $in = []; $out = [];
+        $q = $pdo->prepare("SELECT dir, body FROM wa_messages WHERE phone = ? AND mtype IN ('text','interactive','button') AND ts >= ? ORDER BY id DESC LIMIT 40"); $q->execute([$phone, $f]);
+        foreach (array_reverse($q->fetchAll(PDO::FETCH_NUM)) as $r) { if ((string)$r[0] === 'in') $in[] = (string)$r[1]; else $out[] = (string)$r[1]; }
+        [$qty, $size] = wof_want($in, []); if ($size < 20) return $def;   // only what HE wrote (our own quotes do not decide his size)
+        $has = []; foreach ($rows as $r) if (!empty($r['p'])) $has[(int)($r['ml'] ?? 0)] = 1;
+        if ($qty >= 1 && $qty * $size >= 100 && isset($has[$qty * $size])) return [$qty, $size, $qty * $size];
+        foreach (([20 => [8, 10, 5], 30 => [5, 4, 10], 50 => [4, 3, 5], 100 => [2, 3]][$size] ?? []) as $n) if (isset($has[$n * $size])) return [$n, $size, $n * $size];
+    } catch (Throwable $e) { }
+    return $def;
+}
 function wln_price_info(PDO $pdo, string $phone, int $ml = 200): ?array
 {
     $j = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($j) || empty($j['cols']) || empty($j['rows'])) return null;
-    $cols = array_values(array_map('floatval', (array)$j['cols'])); $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $ml) { $row = $r; break; } if (!$row || empty($row['p'])) return null;
+    $cols = array_values(array_map('floatval', (array)$j['cols'])); $cq = 4; $cs = 50; if ($ml === 200) { [$cq, $cs, $ml] = wln_want_combo($pdo, $phone, (array)$j['rows']); }   // owner 28 Nov: the combo of HIS size
+    $row = null; foreach ((array)$j['rows'] as $r) if ((int)($r['ml'] ?? 0) === $ml) { $row = $r; break; } if (!$row || empty($row['p'])) return null;
     $base = 0; $bb = 1e9; foreach ($cols as $i => $cv) { $d = abs($cv - 7.0); if ($d < $bb) { $bb = $d; $base = $i; } }   // owner, 21 Nov: the first price is the 7% column; the Lineup's price steps then go 6.5% (day 1 evening / night), 6% (next day), 5% (day 5-6), then the deeper columns - one column per price step
     if (function_exists('pc_chat_level')) { try { $lv = pc_chat_level($pdo, $phone); if (empty($lv['default'])) foreach ($cols as $i => $cv) if (abs($cv - (float)$lv['pct']) < 0.01) $base = max($base, $i); } catch (Throwable $e) { } }
-    $k = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone = ? AND status = 'sent' AND SUBSTR(tpl_key, 1, 6) = 'ln_px_'"); $q->execute([$phone]); $k = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    $k = 0; try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_line_plan WHERE phone = ? AND status = 'sent' AND SUBSTR(tpl_key, 1, 6) = 'ln_px_' AND step >= 5"); $q->execute([$phone]); $k = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     $idx = min(count($cols) - 1, $base + 1 + $k); $v = (int)($row['p'][$idx] ?? 0); if ($v <= 0) return null;
-    return ['text' => '4 x 50 ml (' . $ml . ' ml) combo sirf Rs ' . number_format($v), 'pct' => (float)$cols[$idx]];
+    return ['text' => $cq . ' x ' . $cs . ' ml (' . $ml . ' ml) combo sirf Rs ' . number_format($v), 'pct' => (float)$cols[$idx]];
 }
 /** One time per customer (idempotent): the old seven-step ladder becomes the 30-day one. The planned steps keep their next time, every later step is re-timed by the new gaps and the missing steps 8-12 are added. 300 customers a round. */
 function wln_ladder30(PDO $pdo): int
@@ -628,7 +681,7 @@ function wl_tick(PDO $pdo, array $opt = []): array
     $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'waiting' => 0]; if (!wln_tables($pdo)) return $o; $cfg = wl_cfg($pdo); $force = !empty($opt['now']); $sendonly = !empty($opt['sendonly']);   // sendonly = the sending job (wa.cron_send): only the sending round, no bookkeeping
     if ($cfg['mode'] === 'off') return $o;
     if (!$force && function_exists('wa_quiet_hours') && wa_quiet_hours()) { $o['why'] = 'quiet hours 03:00-09:00'; return $o; }   // universal rule (owner, 21 Nov)
-    if (!$force) { try { if (is_file(__DIR__ . '/wa_offer.php')) { require_once __DIR__ . '/wa_offer.php'; setting_set($pdo, 'wo_hook', date('Y-m-d H:i:s') . ($sendonly ? ' cli' : ' web')); $__wo = wof_run($pdo, 30); $o['offers'] = (int)$__wo[2]; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup offer: ' . $e->getMessage()); } }   // 🎯 the price offer to the customers who answered (owner 22 Nov; wo_mode dry / live)   // failed as marketing -> sent again as utility on the spot
+    if (!$force) { try { if (is_file(__DIR__ . '/wa_offer.php')) { require_once __DIR__ . '/wa_offer.php'; setting_set($pdo, 'wo_hook', date('Y-m-d H:i:s') . ($sendonly ? ' cli' : ' web')); $__wo = wof_run($pdo, 60);   /* owner 27 Nov 2026: "the offer within 5 minutes" - 60 customers a minute (was 30), so nobody waits in the line */ $o['offers'] = (int)$__wo[2]; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup offer: ' . $e->getMessage()); } }   // 🎯 the price offer to the customers who answered (owner 22 Nov; wo_mode dry / live)   // failed as marketing -> sent again as utility on the spot
     // owner, 24 Nov (morning): while Cold runs (09-21) every sending copy was busy with Cold, so the utility rescue got only ~30 a minute-hour: four copies a minute first rescue for 16 s (a send takes ~4 s under load: two rescuers made only ~240 an hour) (10 s gave only ~350 an hour: Cold keeps 30 s, it is held by its own hourly limit) (the hourly rescue speed limit still decides how many), then Cold gets the rest of its time
     $__cbud = 46; if (!$force && $sendonly && function_exists('wa_lock')) { try { foreach ([0, 1, 2, 3] as $__rk) if (wa_lock($pdo, 'wlresc' . $__rk, 55)) { $o['rescued'] = (int)($o['rescued'] ?? 0) + wln_rescue($pdo, time(), 100, 16, $__rk); try { if (!function_exists('wa_arescue_tick') && is_file(__DIR__ . '/wa_arescue.php')) require_once __DIR__ . '/wa_arescue.php'; if (function_exists('wa_arescue_tick')) $o['arsc'] = (int)($o['arsc'] ?? 0) + wa_arescue_tick($pdo, time(), 60, 12); } catch (Throwable $e) { } $__resc = true; $__cbud = 30; break; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'lineup rescue first: ' . $e->getMessage()); } }
     if (!$force && ($sendonly || (string)setting_get($pdo, 'wcd_web', '0') === '1')) { try { if (is_file(__DIR__ . '/wa_cold.php')) { require_once __DIR__ . '/wa_cold.php'; setting_set($pdo, 'wcd_hook', date('Y-m-d H:i:s')); $__cr = wcd_tick($pdo, $__cbud); $__coldbusy = isset($__cr['mode']) && isset($__cr['shard']); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'cold funnel: ' . $e->getMessage()); } }   /* the cold funnel (owner 22 Nov): delivered, never wrote back */
@@ -659,6 +712,12 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
     $my = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; $shsql = ($shard >= 0 && $N > 1 && $my) ? ' AND MOD(CAST(RIGHT(p.phone, 6) AS UNSIGNED), ' . (int)$N . ') = ' . (int)$shard : '';
     $q = $pdo->prepare("SELECT p.id, p.phone, p.step, p.tpl_key, p.due_at, c.anchor_at, c.topic FROM wa_line_plan p JOIN wa_line_cust c ON c.phone = p.phone WHERE p.status = 'planned' AND p.due_at <= ? AND c.status = 'active'" . $shsql . " ORDER BY p.phone, p.step LIMIT 3000");
     $q->execute([date('Y-m-d H:i:s', $now)]); $rows = $q->fetchAll(); if ($shard >= 0 && $N > 1 && !$my) $rows = array_values(array_filter($rows, fn($r) => ((int)substr(preg_replace('/\\D/', '', (string)$r['phone']), -6)) % $N === $shard)); if (!$rows) return $o; $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r; $sent = 0;
+    /* one time (28 Nov): the first messages already planned for 24 h after his message move 3 hours earlier, so they also go while his window is open (free) */
+    try { if ((string)setting_get($pdo, 'wl_q21_done', '') !== '1') { setting_set($pdo, 'wl_q21_done', '1'); $sh = 86400 - wl_quiet($pdo); if ($sh > 0) { $nq = $pdo->exec("UPDATE wa_line_plan SET due_at = DATE_SUB(due_at, INTERVAL " . (int)$sh . " SECOND) WHERE step = 1 AND status = 'planned' AND due_at > '" . date('Y-m-d H:i:s', $now) . "'"); if (function_exists('wa_log')) wa_log($pdo, 'engine', true, 'Lineup: ' . (int)$nq . ' first messages moved ' . round($sh / 3600) . ' h earlier (free while the window is open)'); } } } catch (Throwable $e) { }
+    /* 28 Nov (night): the free offer stopped after 77 - the waiting first messages had been moved to "24 h after the salesperson's last message" by the old rule, which is after his window closes (1,714 of 4,005). Every 10 minutes: a first message whose customer's window is still open is never due later than the 21st hour after HIS last message. */
+    try { if ($my && (int)setting_get($pdo, 'wl_q21_at', '0') < $now - 600 && (string)setting_get($pdo, 'wl_day1_free', '1') === '1') { setting_set($pdo, 'wl_q21_at', (string)$now); $qs = (int)wl_quiet($pdo);
+        $nq = $pdo->exec("UPDATE wa_line_plan p JOIN wa_contacts k ON (k.phone COLLATE utf8mb4_unicode_ci) = (p.phone COLLATE utf8mb4_unicode_ci) SET p.due_at = DATE_ADD(k.last_in_at, INTERVAL " . $qs . " SECOND) WHERE p.step = 1 AND p.status = 'planned' AND k.last_in_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "' AND p.due_at > DATE_ADD(k.last_in_at, INTERVAL " . $qs . " SECOND)");
+        if ($nq && function_exists('wa_log')) wa_log($pdo, 'engine', true, 'Lineup: ' . (int)$nq . ' first messages brought back inside the open window'); } } catch (Throwable $e) { }
     $orders = wl_orders_since($pdo, $now - 16 * 86400); $scores = json_decode((string)setting_get($pdo, 'wl_scores', ''), true); if (!is_array($scores)) $scores = []; $okKeys = wln_wide_ok($pdo);
     $upd = $pdo->prepare("UPDATE wa_line_plan SET status = ?, why = ?, sent_at = ?, wamid = ?, tpl_key = ? WHERE id = ?");
     $wc = []; $wcn = function (string $k) use (&$wc) { $wc[$k] = ($wc[$k] ?? 0) + 1; };
@@ -678,7 +737,7 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
                 if ((int)strtotime((string)$row['due_at']) < $now - 30 * 3600) { $upd->execute(['skipped', 'too late (' . mb_substr($why, 6, 80) . ')', null, '', $row['tpl_key'], $row['id']]); $o['skipped']++; } else $o['waiting']++;   // waited more than 30 h past its time: dropped, not sent stale
                 continue; }
             if ($why === 'replied') { $pdo->prepare("UPDATE wa_line_plan SET status = 'cancelled', why = 'replied' WHERE phone = ? AND status = 'planned'")->execute([$phone]);
-                $pdo->prepare("UPDATE wa_line_cust SET status = 'replied', recheck_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s', strtotime((string)($c['last_in_at'] ?? 'now')) + 86400), $phone]); $o['skipped']++; continue; }
+                $pdo->prepare("UPDATE wa_line_cust SET status = 'replied', recheck_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s', strtotime((string)($c['last_in_at'] ?? 'now')) + wl_quiet($pdo)), $phone]); $o['skipped']++; continue; }
             $pdo->prepare("UPDATE wa_line_plan SET status = 'cancelled', why = ? WHERE phone = ? AND status = 'planned'")->execute([$why, $phone]);
             $pdo->prepare("UPDATE wa_line_cust SET status = 'done', left_why = ? WHERE phone = ?")->execute([$why, $phone]); $o['skipped']++; continue;
         }
@@ -690,12 +749,29 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
                     $rq0 = $pdo->prepare("SELECT id, phone, step, tpl_key, due_at FROM wa_line_plan WHERE phone = ? AND status = 'planned' ORDER BY step LIMIT 1"); $rq0->execute([$phone]); $nr = $rq0->fetch(); if (!$nr) continue; $row = $nr + ['anchor_at' => $row['anchor_at'], 'topic' => $nt]; }
             } catch (Throwable $e) { }
         }
-        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $v2 = ''; $pxPct = ''; $pk = wln_pref_key((int)$row['step']); if ($pk !== '') { [$es, $er] = wln_engagement($pdo, (string)$phone); if ($es >= 3 && $er === 0) $pk = ''; }   // never opened 3+ messages: no paid price step for him
-        if ($pk !== '' && isset($ids[$pk]) && in_array($pk, $okKeys, true)) { if ($pk === 'ln_pp_6') $key = $pk; else { $pi = wln_price_info($pdo, (string)$phone); $v2 = $pi ? $pi['text'] : ''; if ($v2 !== '') { $key = wl_pick($pk, (string)$phone, $scores, $okKeys); $pxPct = (string)$pi['pct']; } } }   // the price / prepaid message of this step when Meta approved it everywhere; no chart or no price = the plain message of the step
-        $tid = (int)($ids[$key] ?? 0); if ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send'))) { $o['waiting']++; continue; }
-        $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
+        $key = wl_pick((string)$row['tpl_key'], (string)$phone, $scores, $okKeys); $v2 = ''; $pxPct = ''; $pk = wln_pref_key((int)$row['step']);
+        /* owner 28 Nov 2026: "everyone who wrote to us today gets the offer message the next day, by his ML" - the first message of the Lineup (24 h after he wrote) is the price message with the combo of the size he spoke of; no price / not approved = the plain message of the step as before. Switch: wl_day1_offer (1). */
+        if ($pk === '' && (int)$row['step'] === 1 && (string)setting_get($pdo, 'wl_day1_offer', '1') === '1') $pk = 'ln_px_5';
+        if ($pk !== '') { [$es, $er] = wln_engagement($pdo, (string)$phone); if ($es >= 3 && $er === 0) $pk = ''; }   // never opened 3+ messages: no paid price step for him
+        if ($pk !== '' && isset($ids[$pk]) && in_array($pk, $okKeys, true)) { if ($pk === 'ln_pp_6') $key = $pk; else { $pi = wln_price_info($pdo, (string)$phone); $v2 = $pi ? (wln_price_text($pdo, (string)$phone) ?: $pi['text']) : '';   /* the text with the occasion's name in its days */ if ($v2 !== '') { $okX = wl_px_spaced(array_values(array_intersect(wl_px_exciting((int)$row['step']), $okKeys)));   /* only the exciting wordings (approved ones); none approved yet = the old pick */
+            if (count($okX) > 1) { $kc = wl_knows_choice($pdo, (string)$phone); if ($kc[0] !== '' || $kc[1]) { $okN = array_values(array_filter($okX, function ($k) { return stripos((string)(wl_pack()[$k]['body'] ?? ''), 'unisex') === false; })); if ($okN) $okX = $okN; } }   /* he chose already: not the wording that asks men / women / unisex */
+            $key = $okX ? $okX[(int)(abs(crc32((string)$phone . '|px' . $row['step'])) % count($okX))] : wl_pick($pk, (string)$phone, $scores, $okKeys); $pxPct = (string)$pi['pct']; } } }   // the price / prepaid message of this step when Meta approved it everywhere; no chart or no price = the plain message of the step
+        /* owner 28 Nov 2026: his 24-hour window is still open -> the day-1 offer goes as a PLAIN TEXT (free: no template, no marketing charge, no marketing limit). Any of the exciting wordings can go (no approval needed for a text). Not sent = the template as before. Switch: wl_day1_free (1). */
+        $res = null; $freeSent = false;
+        if ((int)$row['step'] === 1 && $v2 !== '' && function_exists('wa_send_text') && (string)setting_get($pdo, 'wl_day1_free', '1') === '1' && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > time() - 86400 + 300) {
+            try { $pkAll = wl_pack(); $fx = wl_px_spaced(array_values(array_filter(wl_px_exciting(1), function ($k) use ($pkAll) { return isset($pkAll[$k]); }))); $kc = wl_knows_choice($pdo, (string)$phone);
+                if ($fx && ($kc[0] !== '' || $kc[1])) { $fxN = array_values(array_filter($fx, function ($k) use ($pkAll) { return stripos((string)$pkAll[$k]['body'], 'unisex') === false; })); if ($fxN) $fx = $fxN; }   /* he chose already: no "men, women ya unisex ?" */
+                if ($fx) { $fk = $fx[(int)(abs(crc32((string)$phone . '|free1')) % count($fx))];
+                $body = str_replace(['{{1}}', '{{2}}'], [function_exists('wd_name') ? wd_name($c) : 'ji', $v2], (string)$pkAll[$fk]['body']);
+                if ($kc[0] !== '') $body = 'Hi ' . ((function_exists('wd_name') && wd_name($c) !== 'ji') ? wd_name($c) . ' ji' : 'ji') . " 😍\n\nAapne " . $kc[0] . " pasand kiya tha na ? 🔥\n\nAapke liye " . $v2 . " !\n\nAaj order karenge to yahi rate pakka ✅\n\nIske saath aur kaunse perfumes jodne hain ? Naam bata dijiye, order abhi bana dete hain 😊";   /* the perfume he named is in the offer */ $s1 = wa_send_text($pdo, $c, $body, 'offer', 0);
+                if (!empty($s1[0])) { $res = [true, '', (int)($c['last_number_id'] ?? 0), (string)($s1[1] ?? '')]; $key = $fk; $freeSent = true; } } } catch (Throwable $e) { }
+        }
+        $tid = (int)($ids[$key] ?? ($ids[$pk] ?? 0)); if (!$freeSent && ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send')))) { $o['waiting']++; continue; }
+        if ($res === null) $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
+        /* owner 28 Nov 2026: "the offer went inside the 24 hours - then start straight from the 3rd day": after the free offer the day-2 message is not sent (the next one goes on day 3). Switch: wl_day1_skip2 (1). */
+        if ($res[0] && $freeSent && (string)setting_get($pdo, 'wl_day1_skip2', '1') === '1') { try { $pdo->prepare("UPDATE wa_line_plan SET status = 'skipped', why = 'free offer went on day 1: day 2 is not needed' WHERE phone = ? AND status = 'planned' AND step = 2")->execute([$phone]); } catch (Throwable $e) { } }
         if ($res[0]) { $tn = time(); $rq = $pdo->prepare("SELECT id FROM wa_line_plan WHERE phone = ? AND status = 'planned' AND step > ? ORDER BY step"); $rq->execute([$phone, (int)$row['step']]); $rq = $pdo->prepare("SELECT id, step FROM wa_line_plan WHERE phone = ? AND status = 'planned' AND step > ? ORDER BY step"); $rq->execute([$phone, (int)$row['step']]); foreach ($rq->fetchAll() as $rr) $pdo->prepare("UPDATE wa_line_plan SET due_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s', wl_due_ts($tn, wl_gap_sum((int)$row['step'], (int)$rr['step']), $cfg['from'], $cfg['to'])), $rr['id']]);   // the next steps: 24 h after THIS message, 24 h after that…
-            $upd->execute(['sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ?, px = ? WHERE id = ?")->execute([$tid, $pxPct, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
+            $upd->execute(['sent', $freeSent ? 'free text (window open)' : '', date('Y-m-d H:i:s'), (string)($res[3] ?? ''), $key, $row['id']]); try { $pdo->prepare("UPDATE wa_line_plan SET tpl_id = ?, px = ? WHERE id = ?")->execute([$tid, $pxPct, $row['id']]); } catch (Throwable $e) { } $o['sent']++; $sent++; }
         elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; break; }   // no number can send now: try again next round, nothing is written
         elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1]; $o['waiting']++; }
         elseif (stripos((string)$res[1], 'No number can send') === 0) { $o['why'] = (string)$res[1]; $o['waiting']++; $wcn('no number can send message #' . $tid . ' (not approved on the numbers\' accounts)'); wln_push($pdo, (string)$phone, $now + 600); }   // a passing state, not a failure: the customer keeps his place and is tried again (before, he was marked failed for good and his next step went first)

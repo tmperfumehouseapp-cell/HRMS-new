@@ -548,7 +548,7 @@ label.f2,div.f2>span{font-weight:600!important;font-size:12.5px!important;color:
   const AU = { loaded: false, seg: 'all', tag: '', q: '', sort: 'last', pg: 0, ps: 50, sel: {}, selAll: false, d: null, rules: false, months: false };
   const rup = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
   async function loadAud() { try { AU.d = await api.get('st_wa.aud_list', { seg: AU.seg, tag: AU.tag, q: AU.q, sort: AU.sort, page: AU.pg, ps: AU.ps }); } catch (e) { toast(e.message); AU.d = AU.d || { segs: [], rows: [], tags: {}, totals: {}, months: [], cfg: {}, total: 0, sendable: 0 }; } AU.loaded = true; }
-  const SEGN = { all: 'All', rel: 'Relationship', time: 'Time', taste: 'Taste', price: 'Average bill', wa: 'WhatsApp' };
+  const SEGN = { all: 'All', rel: 'Relationship', time: 'Time', recent: 'Bought recently', taste: 'Taste', price: 'Average bill', wa: 'WhatsApp' };
   function audView() {
     const d = AU.d, t = d.totals || {}, segs = d.segs || [], segName = {}; segs.forEach((x) => { segName[x.id] = x.name; });
     const grp = {}; segs.forEach((x) => { (grp[x.group] = grp[x.group] || []).push(x); });

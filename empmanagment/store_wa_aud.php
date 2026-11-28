@@ -35,6 +35,8 @@ function swa_segs(array $c): array
         ['sleep', '😴 Sleeping', 'rel', 'Nothing for ' . $c['sleep'] . '+ days'],
         ['refill', '⏳ Refill due', 'time', 'Last purchase ' . $c['refill_lo'] . '–' . $c['refill_hi'] . ' days ago'],
         ['bday', '🎂 Birthday this month', 'time', 'Birthday saved on a bill, in this month'],
+        ['d7', '🛍 Bought 0–7 days ago', 'recent', 'Last purchase today up to 7 days ago'], ['d15', '🛍 Bought 8–15 days ago', 'recent', 'Last purchase 8–15 days ago'],
+        ['d30', '🛍 Bought 16–30 days ago', 'recent', 'Last purchase 16–30 days ago'], ['d50', '🛍 Bought 31–50 days ago', 'recent', 'Last purchase 31–50 days ago'],
         ['oud', '🪵 Oud lovers', 'taste', 'Bought an oud perfume'], ['attar', '🌿 Attar', 'taste', 'Bought an attar'], ['floral', '🌸 Floral', 'taste', 'Rose, jasmine, floral …'],
         ['fresh', '🌊 Fresh', 'taste', 'Aqua, citrus, fresh, blue …'], ['sweet', '🍬 Sweet', 'taste', 'Vanilla, amber, sweet …'], ['musk', '🤍 Musk', 'taste', 'White musk, musk …'],
         ['gift', '🎁 Gift buyers', 'taste', '2+ perfumes in one bill'],
@@ -87,6 +89,7 @@ function swa_build(PDO $pdo, array $c): array
         if ($x['visits'] >= 2 && $d >= $c['risk'] && $d < $c['sleep']) $s[] = 'risk';
         if ($d >= $c['sleep']) $s[] = 'sleep';
         if ($d >= $c['refill_lo'] && $d <= $c['refill_hi']) $s[] = 'refill';
+        if ($d <= 7) $s[] = 'd7'; elseif ($d <= 15) $s[] = 'd15'; elseif ($d <= 30) $s[] = 'd30'; elseif ($d <= 50) $s[] = 'd50';
         if ($x['bday'] !== '' && substr($x['bday'], 0, 2) === $mon) $s[] = 'bday';
         foreach (array_keys($x['taste']) as $k) $s[] = $k; if ($x['gift']) $s[] = 'gift';
         if ($x['paid_bills'] > 0) $s[] = $x['avg'] <= $c['low'] ? 'p_low' : ($x['avg'] <= $c['high'] ? 'p_mid' : 'p_high');
