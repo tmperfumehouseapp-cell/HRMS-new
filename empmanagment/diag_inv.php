@@ -439,7 +439,7 @@ try { $t0 = (function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('
         $Z['customers who ever bought (wa_cust n>0)'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cust WHERE n > 0")->fetchColumn();
         $B = []; foreach ($pdo->query("SELECT x.seg, COUNT(*), SUM(c.n > 0), SUM(c.n > 0 AND c.last_order >= '" . date('Y-m-d', time() - 90 * 86400) . "') FROM (SELECT phone, CASE WHEN last_in_at IS NULL AND last_out_at IS NULL THEN '1' WHEN last_in_at IS NULL THEN '2' WHEN last_in_at >= '$d7' THEN '3' WHEN last_in_at >= '$d30' THEN '4' ELSE '5' END seg FROM wa_contacts WHERE optout = 0 AND camp_optout = 0 AND MOD(CRC32(phone), 20) = 0) x LEFT JOIN wa_cust c ON c.phone = x.phone GROUP BY x.seg ORDER BY x.seg")->fetchAll(PDO::FETCH_NUM) as $r) $B['seg ' . $r[0]] = ['sample' => (int)$r[1], 'bought ever %' => $r[1] ? round($r[2] * 100 / $r[1], 1) : 0, 'bought in the last 90 days %' => $r[1] ? round($r[3] * 100 / $r[1], 1) : 0];
         $Z['buyers by segment (1 in 20 sample)'] = $B;
-        $Z['messages we sent per day (avg of the last 7 days, all modules)'] = (int)round((int)$pdo->query("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= '" . date('Y-m-d 00:00:00', time() - 7 * 86400) . "' AND ts < '" . date('Y-m-d 00:00:00') . "'")->fetchColumn() / 7);
+        /* (the count of 7 days of sent template messages was taken out: it scanned millions of rows and slowed the whole checkup) */
         echo "ASK SEG9 " . json_encode($Z, JSON_UNESCAPED_UNICODE) . " · " . round(microtime(true) - $tS, 1) . " s\n";
     } catch (Throwable $e) { echo "ASK SEG9 ERR " . substr($e->getMessage(), 0, 200) . "\n"; }
     echo "ASK V3DBG " . (string)setting_get($pdo, 'wa_rs_v3_dbg', '-') . "\n";
