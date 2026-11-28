@@ -1,0 +1,57 @@
+# READ-ONLY (counts only): where the "Other" new customers of the New-customers card come from, for today and yesterday (calendar days):
+# in a campaign's list (Campaign Planner file / pasted numbers - which campaigns), a WhatsApp manual order, wrote to us first, we wrote first, no message yet.
+name: New customers - where "Other" comes from (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Split the Other customers
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/os2.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          date_default_timezone_set("Asia/Kolkata");
+          $in = fn($a) => implode(',', array_fill(0, count($a), '?'));
+          foreach ([0, 1] as $back) {
+            $day = date('Y-m-d', time() - $back * 86400); $f = "$day 00:00:00"; $t = date('Y-m-d', strtotime("$day +1 day")) . " 00:00:00";
+            $q = $d->prepare("SELECT c.phone FROM wa_contacts c WHERE c.first_seen >= ? AND c.first_seen < ? AND c.source NOT IN ('query', 'community', 'campaign') AND NOT EXISTS (SELECT 1 FROM wa_ctags g WHERE g.phone = c.phone AND g.src = 'import')"); $q->execute([$f, $t]);
+            $ph = $q->fetchAll(PDO::FETCH_COLUMN); $n = count($ph); echo "\n== $day: Other = $n\n"; if (!$n) continue;
+            $left = array_flip($ph); $camp = []; $cn = [];
+            foreach (array_chunk($ph, 1000) as $ch) { $r = $d->prepare("SELECT i.phone, i.camp_id FROM wa_camp_items i WHERE i.phone IN (" . $in($ch) . ")"); $r->execute($ch); foreach ($r->fetchAll(PDO::FETCH_NUM) as $x) { if (isset($left[$x[0]])) { $camp[(int)$x[1]] = ($camp[(int)$x[1]] ?? 0) + 1; unset($left[$x[0]]); } } }
+            $inCamp = $n - count($left); echo "  in a campaign list (file / pasted numbers / Planner): $inCamp\n";
+            arsort($camp); $top = array_slice($camp, 0, 8, true); if ($top) { $r = $d->query("SELECT id, name, created_at FROM wa_campaigns WHERE id IN (" . implode(',', array_map('intval', array_keys($top))) . ")"); foreach ($r->fetchAll() as $x) $cn[(int)$x['id']] = $x['name'] . ' (' . substr((string)$x['created_at'], 0, 16) . ')'; foreach ($top as $id => $k) echo "     campaign #$id " . ($cn[$id] ?? '?') . ": $k\n"; }
+            $pl = 0; try { $ids = array_keys($camp); if ($ids) { $r = $d->query("SELECT COUNT(DISTINCT camp_id) FROM wa_pl_item WHERE camp_id IN (" . implode(',', array_map('intval', $ids)) . ")"); $pl = (int)$r->fetchColumn(); } echo "     of these campaigns made by the Campaign Planner: $pl of " . count($camp) . "\n"; } catch (Throwable $e) { }
+            $rest = array_keys($left); $wmo = 0; $win = 0; $wout = 0; $none = 0;
+            foreach (array_chunk($rest, 1000) as $ch) {
+              try { $r = $d->prepare("SELECT DISTINCT phone FROM wmo_order WHERE phone IN (" . $in($ch) . ")"); $r->execute($ch); foreach ($r->fetchAll(PDO::FETCH_COLUMN) as $p) { if (isset($left[$p])) { $wmo++; unset($left[$p]); } } } catch (Throwable $e) { }
+              $c2 = array_values(array_filter($ch, fn($p) => isset($left[$p]))); if (!$c2) continue;
+              $r = $d->prepare("SELECT m.phone, m.dir, m.who FROM wa_messages m JOIN (SELECT phone, MIN(id) mid FROM wa_messages WHERE phone IN (" . $in($c2) . ") GROUP BY phone) x ON x.mid = m.id"); $r->execute($c2); $seen = [];
+              foreach ($r->fetchAll(PDO::FETCH_ASSOC) as $x) { $seen[$x['phone']] = 1; if ($x['dir'] === 'in') $win++; else { $wout++; $wo[(string)$x['who']] = ($wo[(string)$x['who']] ?? 0) + 1; } }
+              $none += count($c2) - count($seen);
+            }
+            echo "  WhatsApp manual order: $wmo\n  wrote to us first (no ad / community words): $win\n  we wrote first (not a campaign list): $wout " . json_encode($wo ?? []) . "\n  no message at all yet: $none\n"; $wo = [];
+          }
+          PHP
+          php /tmp/os2.php "$P"; rm -f /tmp/os2.php
+          REMOTE
