@@ -105,7 +105,8 @@ function swc_tick(PDO $pdo, bool $force = false): int
     try {
         $c = swc_cfg($pdo); $h = (int)date('G'); $now = date('Y-m-d H:i:s');
         $camps = $pdo->query("SELECT * FROM st_wa_camp WHERE status = 'running' ORDER BY id")->fetchAll();
-        if (!$camps) { st_camp_next(300); return 0; }
+        $lnOn = false; if (is_file(__DIR__ . '/store_wa_line.php')) { require_once __DIR__ . '/store_wa_line.php'; $lnOn = swl_tables($pdo) && swl_cfg($pdo)['on']; }      // the Lineup sends in the same rounds
+        if (!$camps && !$lnOn) { st_camp_next(300); return 0; }
         if (!$force && ($h < $c['from'] || $h >= $c['to'])) { st_camp_next(120); return 0; }      // outside the send hours: nothing, look again in 2 minutes
         $num = sw_number($pdo); if (!$num) { st_camp_next(300); return 0; }
         $waba = wa_waba_of($num); $today = date('Y-m-d');
@@ -134,6 +135,7 @@ function swc_tick(PDO $pdo, bool $force = false): int
                 else $pdo->prepare("UPDATE st_wa_camp_item SET status = 'failed', err = ?, sent_at = ? WHERE id = ?")->execute([mb_substr($w, 0, 220), date('Y-m-d H:i:s'), (int)$it['id']]);
             }
         }
+        if ($lnOn && $left > 0 && microtime(true) - $t0 < 35) { try { $sent += swl_tick($pdo, $num, $c, $left); } catch (Throwable $e) { error_log('swl_tick: ' . $e->getMessage()); } }
         st_camp_next(15);
     } catch (Throwable $e) { error_log('swc_tick: ' . $e->getMessage()); st_camp_next(60); }
     finally { try { $pdo->query("SELECT RELEASE_LOCK('st_wa_camp')"); } catch (Throwable $e) { } }
