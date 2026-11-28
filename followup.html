@@ -533,6 +533,32 @@ guardPage(); renderSidebar('followup');
         const calc = () => { if (!auto) return; const c = val(E(col)), b = val(E(buy)); if (c == null || b == null) return; E(pro).value = (c - b).toLocaleString('en-IN'); };
         E(col).addEventListener('input', calc); E(buy).addEventListener('input', calc); E(pro).addEventListener('input', () => { auto = false; hint.textContent = 'Changed by hand. Clear the box to fill it by itself again.'; hint.style.color = '#b45309'; if (E(pro).value.trim() === '') { auto = true; hint.textContent = '✓ Fills itself: collection − buying. You can change it.'; hint.style.color = '#16945a'; calc(); } });
         if (val(E(pro)) == null) calc(); })();
+      // 🏷 ORDER IDs as chips: type an ID and press Enter / space / comma (or paste "56.57.58" or "56, 57, 58") — each becomes its own chip, a repeat or a non-number is
+      // refused at once, and the "Total order(s)" box counts them by itself. What is saved is plain text "56, 57, 58" in the same box (nothing changes on the server).
+      t.fields.filter((f) => f.type === 'text' && /order\s*_?-?\s*(id|no|number)s?\b/i.test(f.label)).forEach((f) => {
+        const ta = q('#uf_' + f.k); if (!ta || ta.dataset.chips) return; ta.dataset.chips = '1';
+        const totF = t.fields.find((x) => x.k !== f.k && /total\s*orders?\b/i.test(x.label) && !isUp(x.type)), tot = totF ? q('#uf_' + totF.k) : null;
+        let ids = [], totAuto = true;
+        const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1.5px solid #d6d9de;border-radius:12px;padding:6px 8px;min-height:44px;background:#fff';
+        const inp = document.createElement('input'); inp.type = 'text'; inp.inputMode = 'numeric'; inp.placeholder = 'Type an order ID, then Enter'; inp.style.cssText = 'border:none;outline:none;flex:1;min-width:140px;height:30px;font-size:15px;background:transparent';
+        const msg = document.createElement('div'); msg.className = 'fu-sub'; msg.style.cssText = 'margin:3px 0 8px;font-weight:700;min-height:16px';
+        const sync = () => {
+          ta.value = ids.join(', '); ta.dispatchEvent(new Event('input', { bubbles: true }));
+          if (tot && totAuto) { tot.value = ids.length ? String(ids.length) : ''; }
+          msg.style.color = '#16945a'; msg.textContent = ids.length ? '✓ ' + ids.length + ' order' + (ids.length === 1 ? '' : 's') + (tot ? ' · Total order fills itself' : '') : '';
+        };
+        const draw = () => { wrap.querySelectorAll('.fu-chip').forEach((c) => c.remove()); ids.forEach((x) => { const c = document.createElement('span'); c.className = 'fu-chip'; c.style.cssText = 'background:#e8f0fe;color:#1a4fb0;border-radius:10px;padding:4px 8px;font-size:14px;font-weight:700;display:inline-flex;gap:6px;align-items:center';
+          c.textContent = '#' + x; const b = document.createElement('button'); b.type = 'button'; b.textContent = '×'; b.setAttribute('aria-label', 'Remove ' + x); b.style.cssText = 'border:none;background:none;color:inherit;font-size:16px;padding:0 2px;cursor:pointer'; b.onclick = () => { ids = ids.filter((y) => y !== x); draw(); }; c.appendChild(b); wrap.insertBefore(c, inp); }); sync(); };
+        const add = (raw) => { let bad = ''; String(raw || '').split(/[\s,.;\/|]+/).forEach((x) => { x = x.replace(/^#/, '').trim(); if (!x) return; if (!/^[A-Za-z]{0,6}-?\d{1,10}$/.test(x)) { bad = '“' + x + '” is not an order ID.'; return; } if (ids.includes(x)) { bad = '#' + x + ' is already there.'; return; } ids.push(x); }); draw(); if (bad) { msg.style.color = '#b3261e'; msg.textContent = bad; } };
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === ',' || e.key === 'Tab' && inp.value.trim()) { e.preventDefault(); add(inp.value); inp.value = ''; } else if (e.key === 'Backspace' && !inp.value && ids.length) { ids.pop(); draw(); } });
+        inp.addEventListener('input', () => { if (/[\s,;\/|]/.test(inp.value)) { add(inp.value); inp.value = ''; } });      // phone keyboards (no Enter key event): a typed comma or space makes the chip; dots ("56.57.58") on Enter / leaving the box
+        inp.addEventListener('paste', (e) => { const tx = (e.clipboardData || window.clipboardData).getData('text'); if (tx) { e.preventDefault(); add(tx); } });
+        inp.addEventListener('blur', () => { if (inp.value.trim()) { add(inp.value); inp.value = ''; } });      // what was typed last is not lost when Save is pressed
+        if (tot) tot.addEventListener('input', (e) => { if (e.isTrusted) totAuto = tot.value.trim() === ''; });
+        ta.style.display = 'none'; ta.insertAdjacentElement('afterend', msg); ta.insertAdjacentElement('afterend', wrap); wrap.appendChild(inp); wrap.addEventListener('click', (e) => { if (e.target === wrap) inp.focus(); });
+        const had = ta.value.trim(); if (had) add(had); else draw();
+        if (tot && had && tot.value.trim() && tot.value.trim() !== String(ids.length)) totAuto = false;      // a Total typed by hand earlier is kept
+      });
       q('#uNote').textContent = t.note || ''; q('#uVl').textContent = 'Number' + (t.unit ? ' (' + t.unit + ')' : '');
       q('#uV').placeholder = t.source ? 'Comes by itself' + (u.val != null ? ': ' + u.val : '') : 'Type the number of this day'; q('#uV').value = u.val != null && !u.auto ? u.val : '';
       const many = t.metrics.length > 1; q('#uNums').innerHTML = many && (u.val != null || (u.vals && Object.keys(u.vals).length)) ? '<div class="fu-lb" style="margin-bottom:2px">Numbers of this day · from the HRMS</div>' + numTxt(t, u) + '<div style="height:10px"></div>' : (many ? '<div class="fu-sub" style="margin-bottom:10px">The numbers of this day are not in the HRMS yet.</div>' : '');
