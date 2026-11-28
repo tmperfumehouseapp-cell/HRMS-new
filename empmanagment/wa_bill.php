@@ -49,16 +49,21 @@ function wab_meta(PDO $pdo, string $from, string $to): array
     try { setting_set($pdo, $key, json_encode($o)); } catch (Throwable $e2) { }
     return $o;
 }
-function wab_src(string $who): string { return in_array($who, ['campaign', 'followup', 'order', 'flow'], true) ? $who : 'other'; }
+function wab_src(string $who): string { return in_array($who, ['campaign', 'followup', 'order', 'flow', 'bulk'], true) ? $who : 'other'; }   // 'bulk' = sent from Chats → Select chats (wa_bulk_log), owner 28 Nov 2026
 
 function wab_report(PDO $pdo, string $from, string $to, string $by = 'day', string $src = 'all'): array
 {
     $hasCols = wab_cols($pdo); $R = wab_rates($pdo); $by = $by === 'month' ? 'month' : 'day';
     $f0 = $from . ' 00:00:00'; $t0 = $to . ' 23:59:59';
-    $sql = "SELECT m.phone, m.status, m.who, m.ts, " . ($hasCols ? 'm.bill_cat, m.billable' : "'' AS bill_cat, NULL AS billable") . ", COALESCE(i.camp_id, 0) AS camp_id, COALESCE(i.variant, '') AS variant
+    $sql = "SELECT m.phone, m.wamid, m.status, m.who, m.ts, " . ($hasCols ? 'm.bill_cat, m.billable' : "'' AS bill_cat, NULL AS billable") . ", COALESCE(i.camp_id, 0) AS camp_id, COALESCE(i.variant, '') AS variant
             FROM wa_messages m LEFT JOIN wa_camp_items i ON i.wamid = m.wamid AND m.wamid <> '' WHERE m.dir = 'out' AND m.mtype = 'template' AND m.ts BETWEEN ? AND ? ORDER BY m.ts";
     try { $q = $pdo->prepare($sql); $q->execute([$f0, $t0]); $msgs = $q->fetchAll(); }
     catch (PDOException $e) { $q = $pdo->prepare(str_replace(["LEFT JOIN wa_camp_items i ON i.wamid = m.wamid AND m.wamid <> '' ", 'COALESCE(i.camp_id, 0)', "COALESCE(i.variant, '')"], ['', '0', "''"], $sql)); $q->execute([$f0, $t0]); $msgs = $q->fetchAll(); }
+    // 📨 owner (28 Nov 2026): the bulk sends from Chats → Select chats (wa_bulk_log) are their own source "Bulk send from Chats" instead of "Other templates"
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_bulk_log (wamid VARCHAR(120) NOT NULL PRIMARY KEY, phone VARCHAR(12) NOT NULL, tpl_id INT NOT NULL DEFAULT 0, emp_id INT NOT NULL DEFAULT 0, at DATETIME NOT NULL, KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $bq = $pdo->prepare("SELECT wamid FROM wa_bulk_log WHERE at BETWEEN ? AND ?"); $bq->execute([date('Y-m-d H:i:s', strtotime($f0) - 7200), $t0]); $bk = array_flip(array_map('strval', $bq->fetchAll(PDO::FETCH_COLUMN)));
+        if ($bk) foreach ($msgs as $i => $m) if ((string)$m['who'] === 'emp' && isset($bk[(string)($m['wamid'] ?? '')])) $msgs[$i]['who'] = 'bulk';
+    } catch (Throwable $e) { error_log('wab bulk: ' . $e->getMessage()); }
     if ($src !== 'all') $msgs = array_values(array_filter($msgs, fn($m) => wab_src((string)$m['who']) === $src));
     $exact = 0;
     // replies: the customer wrote within 2 days after the message
@@ -76,7 +81,7 @@ function wab_report(PDO $pdo, string $from, string $to, string $by = 'day', stri
             if ($best >= 0) { $credit[$best]['n'] = ($credit[$best]['n'] ?? 0) + 1; $credit[$best]['rev'] = ($credit[$best]['rev'] ?? 0) + (float)$o['total']; }
         }
     } catch (PDOException $e) { }
-    $blank = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'paid_m' => 0, 'paid_u' => 0, 'free' => 0, 'cost' => 0.0, 'cost_src' => ['campaign' => 0.0, 'followup' => 0.0, 'order' => 0.0, 'flow' => 0.0, 'other' => 0.0], 'replied' => 0, 'orders' => 0, 'revenue' => 0.0];
+    $blank = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'paid_m' => 0, 'paid_u' => 0, 'free' => 0, 'cost' => 0.0, 'cost_src' => ['campaign' => 0.0, 'followup' => 0.0, 'order' => 0.0, 'flow' => 0.0, 'bulk' => 0.0, 'other' => 0.0], 'replied' => 0, 'orders' => 0, 'revenue' => 0.0];
     $rows = []; $camps = []; $srcT = []; $tot = $blank;
     $add = function (array &$a, array $x) { foreach ($x as $k => $v) { if ($k === 'cost_src') { foreach ($v as $s => $c) $a['cost_src'][$s] += $c; } else $a[$k] += $v; } };
     foreach ($msgs as $i => $m) {
@@ -87,7 +92,7 @@ function wab_report(PDO $pdo, string $from, string $to, string $by = 'day', stri
         $rep = 0; foreach ($in[(string)$m['phone']] ?? [] as $t) { if ($t > $m['t'] && $t <= $m['t'] + 2 * 86400) { $rep = 1; break; } }
         $x = ['sent' => 1, 'delivered' => $dl ? 1 : 0, 'read' => $st === 'read' ? 1 : 0, 'failed' => $st === 'failed' ? 1 : 0, 'paid_m' => $paid && !in_array($cat, ['utility', 'authentication'], true) ? 1 : 0, 'paid_u' => $paid && in_array($cat, ['utility', 'authentication'], true) ? 1 : 0,
             'free' => $dl && !$paid ? 1 : 0, 'cost' => $cost, 'cost_src' => [$s => $cost], 'replied' => $rep, 'orders' => (int)($credit[$i]['n'] ?? 0), 'revenue' => (float)($credit[$i]['rev'] ?? 0)];
-        $x['cost_src'] += ['campaign' => 0.0, 'followup' => 0.0, 'order' => 0.0, 'flow' => 0.0, 'other' => 0.0];
+        $x['cost_src'] += ['campaign' => 0.0, 'followup' => 0.0, 'order' => 0.0, 'flow' => 0.0, 'bulk' => 0.0, 'other' => 0.0];
         $key = $by === 'month' ? substr((string)$m['ts'], 0, 7) : substr((string)$m['ts'], 0, 10);
         if (!isset($rows[$key])) $rows[$key] = $blank; $add($rows[$key], $x); $add($tot, $x);
         if (!isset($srcT[$s])) $srcT[$s] = $blank; $add($srcT[$s], $x);
@@ -113,7 +118,7 @@ function wab_report(PDO $pdo, string $from, string $to, string $by = 'day', stri
         foreach ($camps as $id => $c) $cl[] = ['id' => $id, 'name' => (string)($nm[$id]['name'] ?? ('Campaign #' . $id)), 'status' => (string)($nm[$id]['status'] ?? ''), 'first' => $c['first']] + $fin($c);
         usort($cl, fn($a, $b) => strcmp($b['first'], $a['first']));
     }
-    $sl = []; foreach (['campaign' => 'Campaigns', 'followup' => 'Follow-ups', 'order' => 'Order updates', 'flow' => 'Flows', 'other' => 'Other templates'] as $k => $t) if (isset($srcT[$k])) $sl[] = ['key' => $k, 'label' => $t] + $fin($srcT[$k]);
+    $sl = []; foreach (['campaign' => 'Campaigns', 'followup' => 'Follow-ups', 'order' => 'Order updates', 'flow' => 'Flows', 'bulk' => 'Bulk send from Chats', 'other' => 'Other templates'] as $k => $t) if (isset($srcT[$k])) $sl[] = ['key' => $k, 'label' => $t] + $fin($srcT[$k]);
     return ['ok' => true, 'from' => $from, 'to' => $to, 'by' => $by, 'src' => $src, 'rates' => $R, 'rows' => $list, 'total' => $fin($tot), 'best' => $best, 'worst' => $worst, 'campaigns' => $cl, 'sources' => $sl,
         'exact_share' => $msgs ? round(100 * $exact / count($msgs)) : 0];
 }
@@ -131,7 +136,7 @@ if ($__wab === 'wa.bill') {
     $to = $d($_GET['to'] ?? '', date('Y-m-d')); $from = $d($_GET['from'] ?? '', date('Y-m-01', strtotime($to)));
     if ($from > $to) [$from, $to] = [$to, $from];
     if (strtotime($to) - strtotime($from) > 731 * 86400) $from = date('Y-m-d', strtotime($to) - 731 * 86400);   // two years at most
-    $src = in_array($_GET['src'] ?? 'all', ['all', 'campaign', 'followup', 'order', 'flow', 'other'], true) ? (string)$_GET['src'] : 'all';
+    $src = in_array($_GET['src'] ?? 'all', ['all', 'campaign', 'followup', 'order', 'flow', 'bulk', 'other'], true) ? (string)$_GET['src'] : 'all';
     $r = wab_report($pdo, $from, $to, (string)($_GET['by'] ?? 'day'), $src);
     if (!empty($_GET['meta'])) { $m = wab_meta($pdo, $from, $to); $r['meta'] = ['error' => $m['error'], 'total' => round(array_sum($m['days']), 2), 'days' => $m['days']]; }
     json_response($r);

@@ -95,6 +95,8 @@ if ((string)($action ?? ($_GET['action'] ?? '')) === 'wa.tplo_get') {
     $win = []; foreach ($per as $k => $r) $win[$k] = biz_window($pdo, $r[0], $r[1]);
     $from = $win['7d'][0]; $to = $win['7d'][1]; $ords = [];
     try { $q = $pdo->prepare("SELECT created_at, phone, total FROM shop_orders WHERE created_at >= ? AND created_at <= ? AND financial_status NOT IN ('voided', 'refunded')"); $q->execute([$from, $to]); $ords = $q->fetchAll(); } catch (Throwable $e) { }
+    /* owner 28 Nov 2026: "the 7-day summary has not been tracking for days" - it counted the website orders only; the orders entered in the panel (HRMS) were never in it. The orders of the panel are added (the same two sources as the order ledger). */
+    try { $q = $pdo->prepare("SELECT order_date AS created_at, phone, total FROM manual_orders WHERE order_date >= ? AND order_date <= ?"); $q->execute([$from, $to]); foreach ($q->fetchAll() as $mo) $ords[] = $mo; } catch (Throwable $e) { }
     $l10 = function ($x) { return substr(preg_replace('/\D/', '', (string)$x), -10); };
     $phones = []; foreach ($ords as $o) { $p = $l10($o['phone']); if (strlen($p) === 10) $phones[$p] = 1; } $phones = array_keys($phones);
     $sends = [];   // phone => [[ts, tpl], ...] campaign messages in the 7 days before the window start … window end

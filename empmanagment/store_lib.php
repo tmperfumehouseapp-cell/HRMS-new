@@ -122,6 +122,84 @@ function st_code_for(int $bottleId): string
 }
 
 /** Digits only, the way a scanner or a typed code arrives. */
+/** 🧴 Shower gel / attar pieces on a store bill (billing is in store_pos.php; these are here so the commission pages see them too). */
+if (!function_exists('st_xpcs')) {
+function st_xpcs($v): int { return max(0, min(50, (int)$v)); }
+function st_pc_load(): bool { if (!function_exists('pc_prices') && is_file(__DIR__ . '/price_charts.php')) require_once __DIR__ . '/price_charts.php'; return function_exists('pc_prices') && function_exists('pc_mix_prices'); }
+/** The 4 bill columns for gel / attar (made once, before any transaction). */
+function st_x_cols(PDO $pdo): void
+{
+    static $ran = false; if ($ran) return; $ran = true;
+    $flag = sys_get_temp_dir() . '/hrms_st_xcols_v3'; if (is_file($flag)) return;
+    try {
+        foreach (['gel_pcs' => 'INT NOT NULL DEFAULT 0', 'attar_pcs' => 'INT NOT NULL DEFAULT 0', 'x_all' => 'TINYINT NOT NULL DEFAULT 0', 'x_gel_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0', 'x_attar_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0'] as $c => $def)
+            if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
+        // 🏷 shower gel / attar WITH barcodes: the items (name, gel or attar, photo) and one barcode per piece (8 digits from 40000001, like the chains)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_xitems (item_id INT AUTO_INCREMENT PRIMARY KEY, seg VARCHAR(8) NOT NULL, name VARCHAR(120) NOT NULL, photo MEDIUMTEXT NULL,
+            active TINYINT NOT NULL DEFAULT 1, created_at DATETIME NOT NULL, created_by VARCHAR(80) NOT NULL DEFAULT '') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_xpieces (piece_id INT AUTO_INCREMENT PRIMARY KEY, item_id INT NOT NULL, code VARCHAR(12) NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'generated',
+            batch VARCHAR(20) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, printed_at DATETIME NULL, print_count INT NOT NULL DEFAULT 0, stocked_at DATETIME NULL, sold_at DATETIME NULL, bill_id INT NULL,
+            UNIQUE KEY uq_st_xp_code (code), KEY idx_st_xp_item (item_id, status), KEY idx_st_xp_bill (bill_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if (!$pdo->query("SHOW COLUMNS FROM st_xitems LIKE 'product_id'")->fetch()) $pdo->exec("ALTER TABLE st_xitems ADD COLUMN product_id INT NOT NULL DEFAULT 0, ADD KEY idx_st_xi_prod (product_id)");
+        @touch($flag);
+    } catch (Throwable $e) { error_log('st_x_cols: ' . $e->getMessage()); }
+}
+/** Is this Shopify product a shower gel or an attar? (the same words the commission uses for online orders) '' = a perfume. */
+function st_x_seg_of(string $title): string
+{
+    $t = mb_strtolower($title);
+    if (preg_match('/\battar|\bittar|\boud oil|\broll[- ]?on\b/u', $t)) return 'attar';
+    if (preg_match('/shower ?gel|body ?wash|\bgel\b/u', $t)) return 'gel';
+    return '';
+}
+/** 🔄 The shower gel / attar list is made by itself from the products already synced from Shopify (nothing to add by hand): a new one appears,
+ *  one gone from Shopify is hidden (only when it has nothing in stock or waiting). */
+function st_xi_autosync(PDO $pdo): void
+{
+    static $ran = false; if ($ran) return; $ran = true; st_x_cols($pdo);
+    try {
+        $have = []; foreach ($pdo->query("SELECT item_id, product_id, active FROM st_xitems WHERE product_id > 0")->fetchAll() as $r) $have[(int)$r['product_id']] = $r;
+        $seen = []; $ins = $pdo->prepare("INSERT INTO st_xitems (seg, name, photo, active, created_at, created_by, product_id) VALUES (?,?,?,1,?,'shopify',?)");
+        $upd = $pdo->prepare("UPDATE st_xitems SET seg = ?, name = ?, photo = ?, active = 1 WHERE item_id = ?");
+        foreach ($pdo->query("SELECT product_id, title, image FROM st_products WHERE active = 1")->fetchAll() as $p) {
+            $seg = st_x_seg_of((string)$p['title']); if ($seg === '') continue; $pid = (int)$p['product_id']; $seen[$pid] = 1;
+            if (isset($have[$pid])) $upd->execute([$seg, mb_substr((string)$p['title'], 0, 120), (string)$p['image'], (int)$have[$pid]['item_id']]);
+            else $ins->execute([$seg, mb_substr((string)$p['title'], 0, 120), (string)$p['image'], date('Y-m-d H:i:s'), $pid]);
+        }
+        foreach ($have as $pid => $r) if (!isset($seen[$pid]) && (int)$r['active'] === 1) {
+            $n = $pdo->prepare("SELECT COUNT(*) FROM st_xpieces WHERE item_id = ? AND status IN ('generated','stock')"); $n->execute([(int)$r['item_id']]);
+            if (!(int)$n->fetchColumn()) $pdo->prepare("UPDATE st_xitems SET active = 0 WHERE item_id = ?")->execute([(int)$r['item_id']]);
+        }
+    } catch (Throwable $e) { error_log('st_xi_autosync: ' . $e->getMessage()); }
+}
+if (!defined('ST_X_CODE_BASE')) define('ST_X_CODE_BASE', 40000000);      // gel / attar label = piece_id + 40000000 (8 digits: CODE128C needs an even number of digits; chains are 20000000+, bottles 6 digits)
+/** Gel / attar pieces by code: [code => row with seg, name]. */
+function st_find_xpieces(PDO $pdo, array $codes, bool $lock = false): array
+{
+    $codes = array_values(array_unique(array_filter(array_map('st_clean_code', $codes), function ($c) { return strlen($c) === 8 && $c[0] === '4'; })));
+    if (!$codes) return []; st_x_cols($pdo); $in = implode(',', array_fill(0, count($codes), '?'));
+    try { $q = $pdo->prepare("SELECT p.piece_id, p.code, p.status, p.item_id, i.seg, i.name FROM st_xpieces p JOIN st_xitems i ON i.item_id = p.item_id WHERE p.code IN ($in)" . ($lock ? ' FOR UPDATE' : '')); $q->execute($codes); }
+    catch (Throwable $e) { return []; }
+    $o = []; foreach ($q->fetchAll() as $r) $o[(string)$r['code']] = $r; return $o;
+}
+/** The commission of a bill with gel / attar: [pct of the whole bill, rule, commission]. */
+function st_x_com(PDO $pdo, array $ch, int $ml, int $gel, int $attar, float $gross, bool $all, float $xg, float $xa): array
+{
+    if (!st_pc_load() || $gross <= 0) return [null, 'gel / attar: no chart', 0.0];
+    if ($all) {
+        if (pc_mix_kinds($ml, $gel, $attar, 0) >= 2) { $pc = pc_mix_pct($pdo, $ml, $gel, $attar, 0, $gross); return $pc === null ? [null, 'combo price missing', 0.0] : [round($pc, 2), 'combo', $gross * $pc / 100]; }
+        $sg = $gel > 0 ? 'gel' : 'attar'; $pc = pc_pct($pdo, $sg, (float)($gel > 0 ? $gel : $attar), $gross);
+        return $pc === null ? [null, ($sg === 'gel' ? 'shower gel' : 'attar') . ': no price row', 0.0] : [round($pc, 2), $sg === 'gel' ? 'shower gel' : 'attar', $gross * $pc / 100];
+    }
+    $com = 0.0; $perf = max(0.0, $gross - $xg - $xa);
+    if ($ml > 0 && $perf > 0 && function_exists('cm_pct')) { $pc = cm_pct($ch, $ml, $perf); if ($pc !== null) $com += $perf * $pc / 100; }
+    if ($gel > 0 && $xg > 0) { $pc = pc_pct($pdo, 'gel', (float)$gel, $xg); if ($pc !== null) $com += $xg * $pc / 100; }
+    if ($attar > 0 && $xa > 0) { $pc = pc_pct($pdo, 'attar', (float)$attar, $xa); if ($pc !== null) $com += $xa * $pc / 100; }
+    return [round($com / $gross * 100, 2), 'parts (perfume + gel / attar)', $com];
+}
+
+}
+
 function st_clean_code($c): string
 {
     return preg_replace('/\D/', '', (string)$c);
@@ -879,7 +957,7 @@ function st_store_waba(PDO $pdo): string
 function st_wa_tpl_sync(PDO $pdo, string $waba): array
 {
     if ($waba === '' || !function_exists('wa_api')) return [0, 'no Store account'];
-    $n = 0; $err = ''; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason,components';
+    $n = 0; $err = ''; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason,components,quality_score';
     for ($page = 0; $page < 8 && $url; $page++) {
         [$c, $d] = wa_api('GET', $url); if ($c < 200 || $c >= 300 || !is_array($d)) { $err = function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'Meta did not answer'; break; }
         foreach ((array)($d['data'] ?? []) as $x) {
@@ -889,6 +967,7 @@ function st_wa_tpl_sync(PDO $pdo, string $waba): array
             $e = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $e->execute([$tid, $waba]);
             if ((int)$e->fetchColumn() > 0) $pdo->prepare("UPDATE wa_tpl_waba SET status = ?, reason = ?, meta_id = ?, updated_at = ?, category = ? WHERE tpl_id = ? AND waba_id = ?")->execute([$st, mb_substr($why, 0, 300), (string)($x['id'] ?? ''), $now, $cat, $tid, $waba]);
             else $pdo->prepare("INSERT INTO wa_tpl_waba (tpl_id, waba_id, meta_id, status, reason, updated_at, category) VALUES (?, ?, ?, ?, ?, ?, ?)")->execute([$tid, $waba, (string)($x['id'] ?? ''), $st, mb_substr($why, 0, 300), $now, $cat]);
+            try { $ql = strtoupper((string)($x['quality_score']['score'] ?? '')); if ($ql !== '') $pdo->prepare("UPDATE wa_tpl_waba SET quality = ? WHERE tpl_id = ? AND waba_id = ?")->execute([mb_substr($ql, 0, 10), $tid, $waba]); } catch (Throwable $e2) { }      // GREEN / YELLOW / RED / UNKNOWN
             $n++;
         }
         $url = ''; $nx = (string)($d['paging']['next'] ?? ''); if ($nx !== '' && preg_match('#graph\.facebook\.com/[^/]+(/.+)$#', $nx, $m)) $url = $m[1];
@@ -923,6 +1002,14 @@ function st_wa_btn_text(string $t): string
     return mb_substr(trim(preg_replace('/\s+/u', ' ', $t) ?? $t), 0, 25);
 }
 function st_wa_btns_clean(array $b): array { foreach ($b as &$x) if (is_array($x) && isset($x['text'])) $x['text'] = st_wa_btn_text((string)$x['text']); unset($x); return $b; }
+/** The bill messages the owner made later (order_confirmation_v5, v6 … / order_back_v3 …): newest version first, so a new approved version (e.g. without the photo) is used by itself. */
+function st_wa_order_latest(PDO $pdo, bool $back): array
+{
+    $base = $back ? 'tmph_store_order_back_v' : 'tmph_store_order_confirmation_v'; $o = [];
+    try { $q = $pdo->prepare("SELECT name FROM wa_templates WHERE name LIKE ? AND language = 'en'"); $q->execute([str_replace('_', '\\_', $base) . '%']);
+        foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $n) if (preg_match('/^' . preg_quote($base, '/') . '(\d+)$/', (string)$n, $m)) $o[(int)$m[1]] = (string)$n; } catch (Throwable $e) { }
+    krsort($o); return array_values($o);
+}
 /** Names of the order-confirmation messages in the order they are tried (the owner's own wording first, the built-in ones last). */
 function st_wa_order_names(bool $back): array
 {
@@ -993,7 +1080,7 @@ function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array 
     $name = trim((string)$p['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($name);
     for ($round = 0; $round < 2 && !$t; $round++) {
         if ($round === 1) { $sw = st_store_waba($pdo); if ($sw === '' || (int)setting_get($pdo, 'st_wa_tsync_at', '0') > time() - 600) break; setting_set($pdo, 'st_wa_tsync_at', (string)time()); st_wa_tpl_sync($pdo, $sw); }      // nothing usable: Meta may have approved it without telling HRMS - ask Meta once (at most every 10 minutes) and try again
-        foreach (array_values(array_unique(array_merge(st_wa_order_names($back), $back ? st_wa_order_names(false) : []))) as $nm) {
+        foreach (array_values(array_unique(array_merge(st_wa_order_latest($pdo, $back), st_wa_order_names($back), $back ? array_merge(st_wa_order_latest($pdo, false), st_wa_order_names(false)) : []))) as $nm) {
             $t0 = st_wa_tpl($pdo, $nm); if (!$t0) continue; [$n0, $o0, $w0] = st_wa_number_for($pdo, $t0); if (!$n0) { $why = $w0; continue; }
             $v0 = st_wa_vars($t0, $first, $billNo, $total, (string)$p['token']); $r0 = wa_tpl_send_components($pdo, $t0, $v0, (string)$n0['phone_id'], ['url_suffix' => (string)$p['token']]);
             if (empty($r0['ok'])) { $why = $nm . ': ' . (string)($r0['error'] ?? 'could not build the message'); continue; }      // e.g. a photo message with no photo chosen: the next approved one is used
@@ -1845,7 +1932,8 @@ if (!function_exists('budget_store_calc')) {
         $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0; $pool = array_flip(st_pool_ids($pdo));
         $flashList = []; try { if (function_exists('cm_is_live') && !cm_is_live($pdo) && function_exists('flash_offer_list_get')) $flashList = flash_offer_list_get($pdo); } catch (Throwable $e) { }     // a Flash Offer only counts while the old engine pays (the new engine has no flash offers)
         if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
-        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
+        $xc = function_exists('st_x_cols'); if ($xc) st_x_cols($pdo);      // 🧴 shower gel / attar pieces of a bill (store_pos.php)
+        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total" . ($xc ? ", b.gel_pcs, b.attar_pcs, b.x_all, b.x_gel_amt, b.x_attar_amt" : '') . ", e.employee_id AS real_id
             FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
         $q->execute([$from, $to]);
         $all = $q->fetchAll(); $newFrom = st_newpos_from($pdo);
@@ -1862,9 +1950,11 @@ if (!function_exists('budget_store_calc')) {
             foreach ($idx as $i) {
                 $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
                 $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
-                $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
-                $fl = (!$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
-                if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
+                $xg = (int)($b['gel_pcs'] ?? 0); $xa = (int)($b['attar_pcs'] ?? 0); $hasX = ($xg > 0 || $xa > 0) && function_exists('st_x_com');
+                $of = (!$hasX && $ml) ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
+                $fl = (!$hasX && !$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
+                if ($hasX) { [$pct, $rule, $com] = st_x_com($pdo, $ch, $ml, $xg, $xa, $gross, !empty($b['x_all']), (float)($b['x_gel_amt'] ?? 0), (float)($b['x_attar_amt'] ?? 0)); if ($pct === null) $unpriced++; }
+                elseif ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
                 elseif ($fl !== null) { $pct = (float)$fl['pct']; $rule = 'flash offer'; $com = $gross * $pct / 100; }
                 elseif (!$ml) { $noMl++; $rule = 'no ML'; }
                 else {

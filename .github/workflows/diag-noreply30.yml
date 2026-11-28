@@ -1,0 +1,46 @@
+# READ-ONLY (counts only): why the "Did not reply for 30 days" card (wa.noreply30) shows 0 - how many customers each of its filters takes out.
+name: Did-not-reply-30-days filters (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Count the filters
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/nr_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          date_default_timezone_set("Asia/Kolkata"); $d30 = date("Y-m-d H:i:s", time() - 30 * 86400);
+          $one = function ($sql, $a = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($a); return $q->fetchColumn(); } catch (Throwable $e) { return "ERR " . substr($e->getMessage(), 0, 150); } };
+          echo "wrote ever: " . $one("SELECT COUNT(*) FROM wa_contacts WHERE last_in_at IS NOT NULL") . "\n";
+          echo "last wrote 30+ days ago: " . $one("SELECT COUNT(*) FROM wa_contacts WHERE last_in_at IS NOT NULL AND last_in_at < ?", [$d30]) . "\n";
+          echo "  + not opted out (optout = 0 AND camp_optout = 0): " . $one("SELECT COUNT(*) FROM wa_contacts WHERE last_in_at IS NOT NULL AND last_in_at < ? AND optout = 0 AND camp_optout = 0", [$d30]) . "\n";
+          echo "  oldest last_in_at: " . $one("SELECT MIN(last_in_at) FROM wa_contacts WHERE last_in_at IS NOT NULL") . "\n";
+          echo "wa_line_cust: " . $one("SELECT COUNT(*) FROM wa_line_cust") . " rows · active " . $one("SELECT COUNT(*) FROM wa_line_cust WHERE status = 'active'") . "\n";
+          echo "wa_aft_cust: " . $one("SELECT COUNT(*) FROM wa_aft_cust") . " rows · active " . $one("SELECT COUNT(*) FROM wa_aft_cust WHERE status = 'active'") . "\n";
+          echo "of the 30+ days not opted out - in ACTIVE Lineup: " . $one("SELECT COUNT(*) FROM wa_contacts c JOIN wa_line_cust l ON l.phone = c.phone AND l.status = 'active' WHERE c.last_in_at < ? AND c.optout = 0 AND c.camp_optout = 0", [$d30]) . "\n";
+          echo "of the 30+ days not opted out - in ACTIVE After-Order: " . $one("SELECT COUNT(*) FROM wa_contacts c JOIN wa_aft_cust a ON a.phone = c.phone AND a.status = 'active' WHERE c.last_in_at < ? AND c.optout = 0 AND c.camp_optout = 0", [$d30]) . "\n";
+          echo "wa_noreply30_cache: " . substr((string)$one("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_noreply30_cache'"), 0, 300) . "\n";
+          PHP
+          php /tmp/nr_check.php "$P"; rm -f /tmp/nr_check.php
+          REMOTE

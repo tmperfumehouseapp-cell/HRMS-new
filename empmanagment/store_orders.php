@@ -342,6 +342,7 @@ if ((string)$action === 'tms.detail') {   // 🔎 one shop order with every prod
     $no = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string)($in['number'] ?? ''))); if ($no === '') json_response(['error' => 'Which order?'], 422);
     $ok = tms_can($pdo, $auth) || (function_exists('user_can') && user_can($auth, 'orders'));
     if (!$ok) { try { tms_cols($pdo); $q = $pdo->prepare("SELECT employee_id FROM manual_orders WHERE channel = 'TM Store' AND mp_no = ? LIMIT 1"); $q->execute([$no]); $own = (int)$q->fetchColumn(); $ok = $own > 0 && $own === (int)($auth['employee_id'] ?? 0); } catch (Throwable $e) { } }
+    if (!$ok) { try { if (!function_exists('sku_can') && is_file(__DIR__ . '/sku_sheet.php')) require_once __DIR__ . '/sku_sheet.php'; $ok = function_exists('sku_can') && sku_can($pdo, $auth); } catch (Throwable $e) { } }      // the SKU sheet people (Dispatch …) open an order from the sheet
     if (!$ok) json_response(['error' => 'Full details are only available for your own orders.'], 403);
     $run = function () use ($pdo, $no) { [$d, $e] = tms_get($pdo, '/orders/' . rawurlencode($no)); return $e !== '' ? ['error' => $e] : ['order' => tms_row((array)$d)]; };
     $r = function_exists('hrms_memo') ? hrms_memo('tms_detail:' . $no, 60, $run) : $run();

@@ -147,11 +147,14 @@ function swl_handle(PDO $pdo, string $action, int $me, bool $post): void
         foreach ($cfg['steps'] as $s) { $row = ['day' => $s['day'], 'family' => $s['family'], 'on' => $s['on'], 'vars' => $s['vars'], 'langs' => []];
             foreach (['gu', 'hi', 'en'] as $lg) { $t = null; $q = $pdo->prepare("SELECT t.id, t.name, t.category, UPPER(COALESCE(w.status, '')) st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id AND w.waba_id = ? WHERE t.name LIKE ? ORDER BY t.id DESC"); $q->execute([$waba, $s['family'] . '_' . $lg . '%']);
                 foreach ($q->fetchAll() as $r) { if (!preg_match('/^' . preg_quote($s['family'], '/') . '_' . $lg . '(_v\d+)?$/', (string)$r['name'])) continue; if (!$t || ($r['st'] === 'APPROVED' && $t['st'] !== 'APPROVED')) $t = $r; }
-                $row['langs'][$lg] = $t ? ['name' => (string)$t['name'], 'status' => (string)$t['st'] ?: 'DRAFT', 'category' => (string)$t['category']] : null; }
+                $row['langs'][$lg] = $t ? ['name' => (string)$t['name'], 'status' => (string)$t['st'] ?: 'DRAFT', 'category' => (string)$t['category']] : null;
+                if ($t && !isset($row['preview'])) { $tr = wa_tpl_row($pdo, (int)$t['id']); if ($tr) { $row['preview'] = (string)$tr['body']; $row['category'] = strtoupper((string)$tr['category']); $row['buttons'] = array_values(array_filter(array_map(fn($b) => strtoupper((string)($b['type'] ?? '')) === 'QUICK_REPLY' ? (string)($b['text'] ?? '') : '', (array)($tr['buttons'] ?? [])))); } } }
+            $row['preview'] = $row['preview'] ?? ''; $row['buttons'] = $row['buttons'] ?? []; $row['category'] = $row['category'] ?? '';
             $fam[] = $row; }
+        $taps = []; try { $q = $pdo->prepare("SELECT body, COUNT(*) n FROM st_wa_msg WHERE dir = 'in' AND mtype IN ('button', 'interactive', 'text') AND ts >= ? AND CHAR_LENGTH(body) <= 40 GROUP BY body"); $q->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]); foreach ($q->fetchAll() as $r) $taps[mb_strtolower(trim((string)$r['body']))] = (int)$r['n']; } catch (Throwable $e) { }
         $cnt = ['active' => 0, 'help' => 0, 'stop' => 0]; foreach ($pdo->query("SELECT status, COUNT(*) n FROM st_wa_ln_cust GROUP BY status")->fetchAll() as $r) $cnt[(string)$r['status']] = (int)$r['n'];
         $q = $pdo->prepare("SELECT COUNT(*) FROM st_wa_ln_log WHERE status = 'sent' AND at >= ?"); $q->execute([date('Y-m-d') . ' 00:00:00']);
-        json_response(['on' => $cfg['on'], 'backfill' => $cfg['backfill'], 'steps' => $fam, 'replies' => $cfg['replies'], 'kinds' => swc_kinds(), 'counts' => $cnt, 'sent_today' => (int)$q->fetchColumn(), 'camp' => swc_cfg($pdo)]);
+        json_response(['taps' => $taps, 'on' => $cfg['on'], 'backfill' => $cfg['backfill'], 'steps' => $fam, 'replies' => $cfg['replies'], 'kinds' => swc_kinds(), 'counts' => $cnt, 'sent_today' => (int)$q->fetchColumn(), 'camp' => swc_cfg($pdo)]);
     }
     if ($action === 'st_wa.ln_plan') {      // who would get which step now (nothing is sent)
         swl_enrol($pdo, max(1, $cfg['backfill'])); $due = swl_due($pdo, ['steps' => $cfg['steps']] + $cfg); $by = []; $rows = []; $langs = []; try { foreach ($pdo->query("SELECT phone, lang FROM st_wa_lang")->fetchAll() as $r) $langs[(string)$r['phone']] = (string)$r['lang']; } catch (Throwable $e) { }

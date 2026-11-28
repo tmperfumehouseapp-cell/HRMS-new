@@ -970,6 +970,7 @@ html.emb .top-row { display: contents !important; } html.emb .top-row > .rs-card
 <script src="assets/js/ml_slab.js?v=261120c"></script>
 <script src="assets/js/addon_view.js?v=2"></script>
 <script src="assets/js/wmo_edit.js?v=1"></script>
+<script src="assets/js/order_source.js?v=4" defer></script>
 <script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
 <style>.wm-upd{display:inline-block;margin-left:6px;border:1px solid #16a34a;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 9px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}.wm-upd:hover{background:#dcfce7}</style>
 <script src="assets/js/convo.js?v=261024a"></script>
@@ -2167,7 +2168,7 @@ html.emb .top-row { display: contents !important; } html.emb .top-row > .rs-card
     const c = d.cfg || {}, so = d.so_far || {}, a = Object.assign({}, so.actual || {}), i = so.ideal || {}, dv = Object.assign({}, so.dev || {});
     { const n = idCnt((d.hourly || []).some((p) => p.cur) ? '9999-12-31 00:00:00' : (d.now ? String(d.now) : d.to)); if (n != null) { a.orders = n; dv.orders = idPc(n, i.orders); a.ratio = a.replies > 0 ? Math.round(1000 * n / a.replies) / 10 : null; } }
     let h = `<div class="idt">Day target: <b>${idR(c.spend)}</b> spend · <b>${idN(c.replies)}</b> replies · <b>${idN(c.orders)}</b> orders ${d.can_edit ? '<button type="button" class="idb" data-ide="1">✎ Edit</button>' : ''}</div>
-      <div class="idk"><div><small>Spend</small><b>${idR(a.spend)}</b><i>ideal ${idR(i.spend)}</i>${idChip(dv.spend)}</div><div><small>Delivered (campaigns + 7-day drip)</small><b>${idN(a.delivered)}</b><i>ideal ${idN(i.delivered)}</i>${d.drip_delivered ? `<i>incl. ${idN(d.drip_delivered)} from 7-day drip</i>` : ''}${idChip(dv.delivered)}</div><div><small>Replies</small><b>${idN(a.replies)}</b><i>ideal ${idN(i.replies)}</i>${idChip(dv.replies)}</div><div><small>Campaign orders</small><b>${idN(a.orders)}</b><i>ideal ${idN(i.orders)}</i>${idChip(dv.orders)}</div></div>
+      <div class="idk"><div><small>Spend</small><b>${idR(a.spend)}</b><i>ideal ${idR(i.spend)}</i>${idChip(dv.spend)}</div><div><small>Delivered (campaigns + 7-day drip + bulk)</small><b>${idN(a.delivered)}</b><i>ideal ${idN(i.delivered)}</i>${d.drip_delivered ? `<i>incl. ${idN(d.drip_delivered)} from 7-day drip</i>` : ''}${d.bulk_delivered ? `<i>incl. ${idN(d.bulk_delivered)} from bulk send (Chats)</i>` : ''}${idChip(dv.delivered)}</div><div><small>Replies</small><b>${idN(a.replies)}</b><i>ideal ${idN(i.replies)}</i>${idChip(dv.replies)}</div><div><small>Campaign orders</small><b>${idN(a.orders)}</b><i>ideal ${idN(i.orders)}</i>${idChip(dv.orders)}</div></div>
       <div class="idt" style="margin-top:6px">Campaign orders ÷ replies: <b>${a.ratio != null ? a.ratio + '%' : '—'}</b> <span style="color:var(--muted)">(ideal ${i.ratio != null ? i.ratio + '%' : '—'})</span></div>
       <div class="idtw"><table class="idtb"><thead><tr><th>Time</th><th>Spend<small>spent / ideal</small></th><th>Delivered<small>total delivered / ideal</small></th><th>Replies<small>replies / ideal</small></th><th>Campaign orders<small>total campaign orders / ideal</small></th></tr></thead><tbody>`;
     const K = (n) => { n = Math.round(+n || 0); return n >= 10000 ? '₹' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : '₹' + n.toLocaleString('en-IN'); };
@@ -2180,7 +2181,7 @@ html.emb .top-row { display: contents !important; } html.emb .top-row > .rs-card
     const pr = d.projection || {}, nd = d.need_per_hour || {};
     if (pr.orders != null && d.now && d.to && d.now < d.to) h += `<div class="idp">🔮 At this pace the day ends near <b>${idR(pr.spend)}</b> · <b>${idN(pr.replies)}</b> replies · <b>${idN(pr.orders)}</b> orders. To reach ${idN(c.orders)} orders you need about <b>${idN(nd.replies)}</b> replies and <b>${idN(nd.orders)}</b> orders every hour from now.</div>`;
     h += (d.analysis || []).length ? `<ul class="ida">${d.analysis.map((x) => `<li class="${x.k === 'ok' ? 'ok' : 'wn'}">${x.k === 'ok' ? '✅' : '⚠️'} ${x.text.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '';
-    return h + `<div class="idn">Replies = queries typed Campaign on the live board · Orders = Campaign orders only (same as the Campaign orders tab, cancelled left out) · Spend (campaigns + 7-day drip) = delivered × Meta rate · Delivered = campaign messages delivered or read (ideal = ideal spend ÷ Meta rate) · updated ${String(d.at || '').slice(11, 16)}</div>`;
+    return h + `<div class="idn">Replies = queries typed Campaign on the live board · Orders = Campaign orders only (same as the Campaign orders tab, cancelled left out) · Spend (campaigns + 7-day drip + bulk send from Chats) = delivered × Meta rate · Delivered = campaign messages delivered or read (ideal = ideal spend ÷ Meta rate) · updated ${String(d.at || '').slice(11, 16)}</div>`;
   }
   async function idealLoad(force) {
     const day = idDay(), box = document.getElementById('idealCard'); if (!box) return;

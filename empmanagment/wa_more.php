@@ -723,6 +723,7 @@ require_once __DIR__ . '/wso.php';        // 🛒 Website order from a chat: the
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 if (is_file(__DIR__ . '/wa_occasion.php')) require_once __DIR__ . '/wa_occasion.php';   // 📅 the occasion calendar (functions only; used by Needed photos, the Cold funnel, After-Order, the order pack and the offer)
 if (is_file(__DIR__ . '/wa_needphoto.php')) require_once __DIR__ . '/wa_needphoto.php';   // 📷 Needed photos on top of the Campaigns page (wa.need_photos, wa.need_photo_add) - BEFORE wa_seg.php
+if (is_file(__DIR__ . '/wa_ordersrc.php')) require_once __DIR__ . '/wa_ordersrc.php';   // 🧭 where the orders came from: trigger, module, campaign, message per order (wa.order_source) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
 
 // ---------------------------------------------------------------------------------------------------------------- router
