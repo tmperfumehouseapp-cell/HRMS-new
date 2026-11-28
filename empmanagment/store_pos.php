@@ -237,6 +237,38 @@ function st_quote(PDO $pdo, int $totalMl, int $empId, array $bottles = []): arra
     return ['total_ml' => $totalMl, 'in_chart' => $prices !== null || $offers, 'columns' => $cols, 'chart_on' => !empty($chart['on']), 'flash' => $flash];
 }
 
+/** 🧴 SHOWER GEL / ATTAR / COMBOS on a store bill. They have no barcode: the cashier sets how many pieces. The prices are the SAME charts as online
+ *  (Budgeting → Commission / Learn & Setup → Pricing): one kind alone = its own chart by pieces; perfume + gel / attar, or gel + attar = the COMBO row of exactly
+ *  those amounts (its price is the whole bill). A combo with no row yet is priced part by part (each part on its own chart, same % column). */
+/** The price options of a bill with gel / attar pieces (no pieces = the normal perfume quote). Every column carries x_all (the whole price is gel / attar / combo)
+ *  or the gel / attar money inside it (part by part). */
+function st_xquote(PDO $pdo, int $totalMl, int $gel, int $attar, int $empId, array $bottles = []): array
+{
+    if ($gel <= 0 && $attar <= 0) return st_quote($pdo, $totalMl, $empId, $bottles);
+    $base = ['total_ml' => $totalMl, 'gel' => $gel, 'attar' => $attar, 'chart_on' => true, 'flash' => null];
+    if (!st_pc_load()) return $base + ['in_chart' => false, 'columns' => [], 'kind' => 'none', 'note' => 'The shower gel / attar price chart is not available on this server.'];
+    $f = fn($c) => rtrim(rtrim(number_format((float)$c, 2, '.', ''), '0'), '.');
+    if (pc_mix_kinds($totalMl, $gel, $attar, 0) >= 2) {
+        $lab = pc_mix_label($totalMl, $gel, $attar, 0);
+        $m = pc_mix_prices($pdo, $totalMl, $gel, $attar, 0);
+        if ($m) { $cols = []; foreach ($m['p'] as $i => $v) if ($v > 0) $cols[] = ['col' => count($cols), 'price' => (float)$v, 'pct' => (float)($m['cols'][$i] ?? 0), 'label' => 'Combo', 'x_all' => 1];
+            return $base + ['in_chart' => (bool)$cols, 'columns' => $cols, 'kind' => 'combo', 'note' => 'Combo ' . $lab]; }
+        // no combo row for exactly these amounts: each part on its own chart, the same % column, added up
+        $parts = [];
+        if ($totalMl > 0) { $pq = st_quote($pdo, $totalMl, $empId, $bottles); $pp = []; foreach ($pq['columns'] as $c) if (empty($c['offer'])) $pp[] = (float)$c['price']; $parts['perfume'] = $pp; }
+        foreach (['gel' => $gel, 'attar' => $attar] as $sg => $n) if ($n > 0) { $x = pc_prices($pdo, $sg, (float)$n); $parts[$sg] = ($x && $x['exact']) ? array_map('floatval', $x['p']) : []; }
+        $len = min(array_map('count', $parts)); $cols = [];
+        for ($i = 0; $i < $len; $i++) {
+            $ok = true; foreach ($parts as $pp) if (($pp[$i] ?? 0) <= 0) $ok = false; if (!$ok) continue;
+            $sum = 0.0; foreach ($parts as $pp) $sum += $pp[$i];
+            $cols[] = ['col' => count($cols), 'price' => round($sum, 2), 'pct' => null, 'label' => 'Parts', 'x_all' => 0, 'x_gel' => (float)($parts['gel'][$i] ?? 0), 'x_attar' => (float)($parts['attar'][$i] ?? 0)];
+        }
+        return $base + ['in_chart' => (bool)$cols, 'columns' => $cols, 'kind' => 'parts', 'note' => 'No combo price for ' . $lab . ' yet (Budgeting → Commission → Combos): priced part by part.'];
+    }
+    $sg = $gel > 0 ? 'gel' : 'attar'; $n = $gel > 0 ? $gel : $attar; $x = pc_prices($pdo, $sg, (float)$n); $cols = [];
+    if ($x && $x['exact']) foreach ($x['p'] as $i => $v) if ($v > 0) $cols[] = ['col' => count($cols), 'price' => (float)$v, 'pct' => (float)($x['cols'][$i] ?? 0), 'label' => $f($x['cols'][$i] ?? 0) . '%', 'x_all' => 1];
+    return $base + ['in_chart' => (bool)$cols, 'columns' => $cols, 'kind' => $sg, 'note' => ($sg === 'gel' ? 'Shower gel' : 'Attar') . ' × ' . $n];
+}
 /** Commission % this bill pays on its final price — the SAME order the online sales use: a matching Offer (Commission Rules: size + price) → a Flash Offer (only while the old engine pays) → the price chart. */
 function st_pct_for(PDO $pdo, int $totalMl, float $amt, int $empId, bool $hasCode, ?string $day = null, ?int $ts = null): array
 {
@@ -915,7 +947,7 @@ try {
             }
             if ($b['status'] !== 'stock') json_response(['error' => ($b['status'] === 'sold' ? 'Already SOLD' : ($b['status'] === 'generated' ? 'Not in stock yet — scan it into inventory first' : 'Not available (' . $b['status'] . ')')) . ': ' . $b['title'] . ' ' . $b['ml'] . ' ml'], 409);
             $t = st_totals($found);
-            json_response(['bottle' => st_bottle_out($b), 'quote' => array_merge($t, st_quote($pdo, $t['total_ml'], (int)($in['emp_id'] ?? 0), array_values($found)))]);
+            json_response(['bottle' => st_bottle_out($b), 'quote' => array_merge($t, st_xquote($pdo, $t['total_ml'], st_xpcs($in['gel'] ?? 0), st_xpcs($in['attar'] ?? 0), (int)($in['emp_id'] ?? 0), array_values($found)))]);
             break;
         }
 
@@ -926,7 +958,7 @@ try {
             $giftWant = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['gift_codes'] ?? [])), 'strlen')));
             foreach ($giftWant as $gc) { if (isset($found[$gc])) $found[$gc]['kind'] = 'gift'; }
             $t = st_totals($found);
-            json_response(array_merge($t, st_quote($pdo, $t['total_ml'], (int)($in['emp_id'] ?? 0), array_values($found))));
+            json_response(array_merge($t, st_xquote($pdo, $t['total_ml'], st_xpcs($in['gel'] ?? 0), st_xpcs($in['attar'] ?? 0), (int)($in['emp_id'] ?? 0), array_values($found))));
             break;
         }
 
@@ -965,10 +997,12 @@ try {
             $chainCode = st_clean_code($in['chain_code'] ?? '');
             if ($chainCode !== '') { $gate = st_chain_gate($pdo); if ($gate !== '') json_response(['error' => $gate], 409); }      // never sell a chain we cannot give a GST invoice for
             st_engine_warm($pdo);
+            $xGel = st_xpcs($in['gel'] ?? 0); $xAtt = st_xpcs($in['attar'] ?? 0); $hasX = $xGel > 0 || $xAtt > 0;
+            if ($hasX) st_x_cols($pdo);      // before the transaction: an ALTER TABLE inside it would commit it
             $pdo->beginTransaction();
             $found = st_find_bottles($pdo, (array)($in['codes'] ?? []), true);
             $want = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['codes'] ?? [])), 'strlen')));
-            if (!$want) { $pdo->rollBack(); json_response(['error' => 'Scan at least one bottle.'], 400); }
+            if (!$want && !$hasX) { $pdo->rollBack(); json_response(['error' => 'Scan at least one bottle, or add shower gel / attar.'], 400); }
             foreach ($want as $c) {
                 $b = $found[$c] ?? null;
                 if (!$b) { $pdo->rollBack(); json_response(['error' => 'Code ' . $c . ' is not one of our barcodes.'], 400); }
@@ -997,10 +1031,10 @@ try {
                 if (count($giftFor) < count($giftWant)) { $pdo->rollBack(); json_response(['error' => 'No customer on this bill is eligible for a birthday gift (birthday must be today, saved earlier, and not gifted already this year).'], 400); }
             }
             $t = st_totals($found);
-            if ($t['sale_bottles'] < 1) { $pdo->rollBack(); json_response(['error' => 'A bill needs at least one bottle for sale (testers alone cannot be billed).'], 400); }
+            if ($t['sale_bottles'] < 1 && !$hasX) { $pdo->rollBack(); json_response(['error' => 'A bill needs at least one bottle for sale (testers alone cannot be billed).'], 400); }
 
-            // PRICE: from the chart by TOTAL ml. The cashier picks a chart column; a manager may type a price instead.
-            $q = st_quote($pdo, $t['total_ml'], $empId, array_values($found));
+            // PRICE: from the chart by TOTAL ml (+ shower gel / attar pieces: their own chart or the combo row). The cashier picks a chart column; a manager may type a price instead.
+            $q = st_xquote($pdo, $t['total_ml'], $xGel, $xAtt, $empId, array_values($found));
             $col = isset($in['price_col']) && $in['price_col'] !== '' && $in['price_col'] !== null ? (int)$in['price_col'] : null;
             $list = 0.0;
             if ($col !== null && isset($q['columns'][$col])) $list = (float)$q['columns'][$col]['price'];
@@ -1010,6 +1044,14 @@ try {
             } else { $pdo->rollBack(); json_response(['error' => $q['in_chart'] ? 'Pick a price column.' : ('The price chart has no row for ' . $t['total_ml'] . ' ml — a manager must type the price.')], 400); }
             if ($discount > $list) $discount = $list;
             $total = round($list - $discount, 2);
+            $xAll = 0; $xG = 0.0; $xA = 0.0;      // 🧴 how much of the bill is shower gel / attar (for the commission): all of it (one kind alone / combo) or its parts
+            if ($hasX) {
+                if (($q['kind'] ?? '') !== 'parts') $xAll = 1;
+                else { $src = ($col !== null && isset($q['columns'][$col])) ? $q['columns'][$col] : (end($q['columns']) ?: null); $k = ($src && (float)$src['price'] > 0) ? $list / (float)$src['price'] : 0;
+                    if ($src) { $xG = (float)($src['x_gel'] ?? 0) * $k; $xA = (float)($src['x_attar'] ?? 0) * $k; } }
+                if ($list > 0) { $xG = round($xG * $total / $list, 2); $xA = round($xA * $total / $list, 2); }
+                if ($chainCode !== '') { $pdo->rollBack(); json_response(['error' => 'A chain cannot be billed together with shower gel / attar. Make two bills.'], 400); }
+            }
             $chainRow = null; $chainSplit = null;
             if ($chainCode !== '') {      // a chain on the bill: it is billed at its own price, the perfumes get the rest of the SAME total
                 $cq = $pdo->prepare("SELECT p.piece_id, p.status, c.chain_id, c.name, c.price, c.mrp FROM st_chain_pieces p JOIN st_chains c ON c.chain_id = p.chain_id WHERE p.code = ? FOR UPDATE"); $cq->execute([$chainCode]); $chainRow = $cq->fetch();
@@ -1040,6 +1082,7 @@ try {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?)")
                 ->execute([$bizDay, $now, $empId, $empName, mb_substr($name, 0, 120), mb_substr($phone, 0, 20), $t['total_ml'], $t['sale_bottles'], $t['testers'], $col, $list, $discount, $total, mb_substr($code, 0, 20), $payMode, $cash, $online, (int)($auth['employee_id'] ?? 0) ?: null]);
             $billId = (int)$pdo->lastInsertId();
+            if ($hasX) $pdo->prepare("UPDATE st_bills SET gel_pcs = ?, attar_pcs = ?, x_all = ?, x_gel_amt = ?, x_attar_amt = ? WHERE bill_id = ?")->execute([$xGel, $xAtt, $xAll, $xG, $xA, $billId]);
             $billNo = 'ST-' . str_pad((string)$billId, 6, '0', STR_PAD_LEFT);
             $pdo->prepare("UPDATE st_bills SET bill_no = ? WHERE bill_id = ?")->execute([$billNo, $billId]);
             $srcKey = (string)($in['source'] ?? ''); if (!isset(ST_SOURCES[$srcKey])) $srcKey = '';      // where the customer came from (optional)
@@ -1095,7 +1138,7 @@ try {
             foreach ($ppl as &$x) { if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $m = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $billNo, 'total' => $total], $cs); $x['wa_url'] = $m['url']; $x['wa_url2'] = $m['url2']; } }
             unset($x);
             json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'commission_amount' => $cmx ? (float)$cmx['com'] : null, 'no_code' => $code === '', 'code_rule' => $codeRule, 'people' => $ppl] + $invOut + [
-                'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml, ₹' . number_format($total) . '.']);
+                'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml' . ($xGel ? ' + ' . $xGel . ' shower gel' : '') . ($xAtt ? ' + ' . $xAtt . ' attar' : '') . ', ₹' . number_format($total) . '.']);
             break;
         }
 
@@ -1376,6 +1419,10 @@ try {
                 try { $out['live'] = cm_is_live($pdo); if (!$out['live']) foreach (flash_offer_running(flash_offer_list_get($pdo)) as $x) $out['flash'][] = ['pct' => (float)$x['pct'], 'ends_at' => (string)$x['ends_at'], 'sizes' => array_values(array_map(fn($i) => (int)($i['ml'] ?? 0), (array)($x['items'] ?? [])))]; } catch (Throwable $e) { }
             }
             try { $ids = st_pool_ids($pdo); if ($ids) { $in = implode(',', array_map('intval', $ids)); $out['team'] = array_map(fn($r) => (string)$r['full_name'], $pdo->query("SELECT full_name FROM employees WHERE employee_id IN ($in) AND status != 'ex' ORDER BY full_name")->fetchAll()); } } catch (Throwable $e) { }
+            if (st_pc_load()) { try {      // 🧴 shower gel / attar / combos: the same charts as Budgeting → Commission
+                foreach (['gel', 'attar'] as $sg) { $C = pc_get($pdo, $sg); $out['x'][$sg] = ['cols' => array_map('floatval', $C['cols']), 'rows' => array_map(fn($r) => ['n' => (float)$r['ml'], 'p' => array_map('floatval', (array)$r['p'])], $C['rows'])]; }
+                $M = pc_mix_get($pdo); $out['x']['mix'] = ['cols' => array_map('floatval', $M['cols']), 'rows' => array_map(fn($r) => ['label' => pc_mix_label($r['perf'], $r['gel'], $r['attar'], $r['other']), 'perf' => $r['perf'], 'gel' => $r['gel'], 'attar' => $r['attar'], 'other' => $r['other'], 'p' => $r['p']], $M['rows'])];
+            } catch (Throwable $e) { error_log('st_price.card x: ' . $e->getMessage()); } }
             $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission'); $out['fixed'] = st_fixed_rules($pdo); $out['follow_from'] = st_follow_from($pdo); $out['today'] = st_day();
             json_response($out);
             break;
