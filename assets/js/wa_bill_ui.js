@@ -14,7 +14,7 @@
   const label = (k, long) => { if (k.length === 7) return MON[+k.slice(5) - 1] + ' ' + k.slice(0, 4); const d = new Date(k + 'T00:00:00'); return (long ? WD[d.getDay()] + ', ' : '') + d.getDate() + ' ' + MON[d.getMonth()] + (long ? ' ' + d.getFullYear() : ''); };
   const x = (v) => (v == null ? '—' : v + '×'), pct = (v) => (v == null ? '—' : v + '%');
   const PRE = [['yday', 'Yesterday'], ['today', 'Today'], ['7d', 'Last 7 days'], ['month', 'This month'], ['lmonth', 'Last month'], ['3m', 'Last 3 months'], ['year', 'This year'], ['custom', 'Pick dates']];
-  const SRC = [['all', 'All paid messages'], ['campaign', 'Campaigns'], ['followup', 'Follow-ups'], ['order', 'Order updates'], ['flow', 'Flows'], ['other', 'Other templates']];
+  const SRC = [['all', 'All paid messages'], ['campaign', 'Campaigns'], ['followup', 'Follow-ups'], ['order', 'Order updates'], ['flow', 'Flows'], ['bulk', 'Bulk send from Chats'], ['other', 'Other templates']];
   function range(p) {
     const t = new Date(); t.setHours(0, 0, 0, 0); const d = (n) => { const a = new Date(t); a.setDate(a.getDate() + n); return a; };
     if (p === 'yday') return [ymd(d(-1)), ymd(d(-1))]; if (p === 'today') return [ymd(t), ymd(t)]; if (p === '7d') return [ymd(d(-6)), ymd(t)];
@@ -61,9 +61,9 @@
     $('#wbF').onchange = $('#wbT').onchange = () => { if (!$('#wbF').value || !$('#wbT').value) return; S.pre = 'custom'; S.from = $('#wbF').value; S.to = $('#wbT').value; load(); };
     $('#wbS').onchange = () => { S.src = $('#wbS').value; load(); };
     $('#wbCsv').onclick = () => {
-      const d = S.d; if (!d) return; const m = metaFor(d); const head = ['Date', 'Sent', 'Delivered', 'Read', 'Failed', 'Paid marketing', 'Paid utility', 'Free', 'Spent ₹', 'Campaigns ₹', 'Follow-ups ₹', 'Order updates ₹', 'Flows ₹', 'Other ₹', 'Replies', 'Orders', 'Revenue ₹', 'Return per ₹1', 'Cost per order ₹'].concat(m ? ['Meta bill ₹'] : []);
-      const line = (r, k) => [k, r.sent, r.delivered, r.read, r.failed, r.paid_m, r.paid_u, r.free, r.cost, r.cost_src.campaign, r.cost_src.followup, r.cost_src.order, r.cost_src.flow, r.cost_src.other, r.replied, r.orders, r.revenue, r.roas ?? '', r.cpo ?? ''].concat(m ? [m[r.key] ?? ''] : []);
-      const csv = [head].concat(d.rows.map((r) => line(r, r.key)), [line(d.total, 'TOTAL').slice(0, 19).concat(m ? [d.meta.total] : [])]).map((a) => a.map((v) => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v).join(',')).join('\n');
+      const d = S.d; if (!d) return; const m = metaFor(d); const head = ['Date', 'Sent', 'Delivered', 'Read', 'Failed', 'Paid marketing', 'Paid utility', 'Free', 'Spent ₹', 'Campaigns ₹', 'Follow-ups ₹', 'Order updates ₹', 'Flows ₹', 'Bulk send ₹', 'Other ₹', 'Replies', 'Orders', 'Revenue ₹', 'Return per ₹1', 'Cost per order ₹'].concat(m ? ['Meta bill ₹'] : []);
+      const line = (r, k) => [k, r.sent, r.delivered, r.read, r.failed, r.paid_m, r.paid_u, r.free, r.cost, r.cost_src.campaign, r.cost_src.followup, r.cost_src.order, r.cost_src.flow, r.cost_src.bulk ?? 0, r.cost_src.other, r.replied, r.orders, r.revenue, r.roas ?? '', r.cpo ?? ''].concat(m ? [m[r.key] ?? ''] : []);
+      const csv = [head].concat(d.rows.map((r) => line(r, r.key)), [line(d.total, 'TOTAL').slice(0, 20).concat(m ? [d.meta.total] : [])]).map((a) => a.map((v) => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v).join(',')).join('\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = `whatsapp-billing-${d.from}-to-${d.to}-${d.by}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     };
     function metaFor(d) { if (!d.meta || d.meta.error || !d.meta.days) return null; const o = {}; Object.entries(d.meta.days).forEach(([k, v]) => { const kk = d.by === 'month' ? k.slice(0, 7) : k; o[kk] = Math.round(((o[kk] || 0) + v) * 100) / 100; }); return o; }
