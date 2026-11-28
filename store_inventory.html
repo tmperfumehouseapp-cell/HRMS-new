@@ -104,14 +104,9 @@
 
       <!-- SHOWER GEL / ATTAR: added by hand (name, gel or attar, photo). One barcode per piece; stock only after its label is scanned in (tab 3). Price = the shared price chart. -->
       <div class="pane" id="p-xi">
-        <div class="sx-card" style="margin-bottom:14px"><div class="sx-h"><span id="xiFormTitle">Add a shower gel or attar</span></div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
-            <label class="sx-f" style="width:84px">Photo<span id="xiPhotoBox" style="display:flex;align-items:center;justify-content:center;width:72px;height:72px;border:1.5px dashed var(--sx-line);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--sx-card,#fff);font-size:12px;color:var(--sx-mut)">+ photo</span><input type="file" id="xiPhoto" accept="image/*" style="display:none"></label>
-            <label class="sx-f" style="width:150px">Type<select class="sx-in" id="xiSeg"><option value="gel">Shower gel</option><option value="attar">Attar</option></select></label>
-            <label class="sx-f" style="flex:1;min-width:170px">Name<input class="sx-in" id="xiName" placeholder="e.g. Oud wood" maxlength="120"></label>
-            <button class="sx-btn" id="xiSave">Save</button><button class="sx-btn ghost" id="xiCancel" style="display:none">Cancel</button></div>
-          <div class="sx-mut" style="font-size:12px;margin-top:8px">No stock is added here. Next: <b>Make labels</b> (one barcode per piece), print, stick, then scan them in <b>3 · Scan into inventory</b> — only scanned pieces count as stock. At the counter scan the sticker: the price comes from the same chart as Budgeting → Commission (shower gel / attar by pieces, with perfume = the combo price).</div>
-          <div id="xiMsg"></div></div>
+        <div class="sx-card" style="margin-bottom:14px"><div class="sx-h">Shower gel &amp; Attar <small class="sx-mut" style="font-weight:600">· taken by itself from Shopify (the same products as online)</small></div>
+          <div class="sx-mut" style="font-size:12.5px;margin-top:4px">Type how many, press <b>Make labels</b> (they print), stick one on each piece, then scan them in <b>3 · Scan into inventory</b>. At the counter scan the sticker: the price comes from the same chart as Budgeting → Commission.</div>
+          <input id="xiQ" class="sx-in" placeholder="Search" style="margin-top:8px;max-width:260px"><div id="xiMsg"></div></div>
         <div id="xiList" class="sx-mut">Loading…</div>
       </div>
 
@@ -877,34 +872,22 @@
     } catch (err) { chNote(err.message, 1); await loadChains(); }
   });
   // ---- 🧴 shower gel / attar: the same steps as the chains (add, make labels, print, scan in)
-  let xiData = null, xiDirty = false, xiEdit = 0, xiPhotoData = '';
+  let xiData = null, xiDirty = false;
   const xiNote = (m, bad) => { $('xiMsg').innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}" style="margin-top:8px">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
   const xiSegName = (g) => g === 'gel' ? 'Shower gel' : 'Attar';
-  $('xiPhotoBox').onclick = () => $('xiPhoto').click();
-  $('xiPhoto').addEventListener('change', () => {
-    const f = $('xiPhoto').files[0]; if (!f) return; const img = new Image(), u = URL.createObjectURL(f);
-    img.onload = () => { const k = Math.min(1, 420 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); xiPhotoData = c.toDataURL('image/jpeg', 0.72); $('xiPhotoBox').innerHTML = `<img src="${xiPhotoData}" style="width:100%;height:100%;object-fit:cover">`; URL.revokeObjectURL(u); };
-    img.onerror = () => { xiNote('That file is not a picture.', 1); URL.revokeObjectURL(u); }; img.src = u;
-  });
-  function xiReset() { xiEdit = 0; xiPhotoData = ''; $('xiPhoto').value = ''; $('xiName').value = ''; $('xiPhotoBox').textContent = '+ photo'; $('xiFormTitle').textContent = 'Add a shower gel or attar'; $('xiCancel').style.display = 'none'; }
-  $('xiCancel').onclick = () => { xiReset(); xiNote(''); };
-  $('xiSave').onclick = async () => {
-    const b = $('xiSave'); b.disabled = true;
-    try { const d = await api.post('st_xi.save', { item_id: xiEdit, seg: $('xiSeg').value, name: $('xiName').value, photo: xiPhotoData }); xiReset(); xiNote(d.message); await loadXi(); }
-    catch (e) { xiNote(e.message, 1); } b.disabled = false;
-  };
+  $('xiQ').addEventListener('input', () => { if (xiData) renderXi(); });
   async function loadXi() {
     try { xiData = await api.get('st_xi.list'); xiDirty = false; renderXi(); } catch (e) { $('xiList').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
   }
   function renderXi() {
-    const L = xiData.items, tot = (g) => L.filter((x) => x.seg === g).reduce((a, x) => a + x.in_stock, 0);
+    const q = ($('xiQ').value || '').toLowerCase(), L = xiData.items.filter((x) => !q || x.name.toLowerCase().includes(q)), tot = (g) => L.filter((x) => x.seg === g).reduce((a, x) => a + x.in_stock, 0);
     $('xiList').innerHTML = (L.length ? `<div style="font-size:13px;margin-bottom:8px">In stock: <b>${tot('gel')}</b> shower gel · <b>${tot('attar')}</b> attar</div>` : '') + (L.length ? L.map((c) => `<div class="sx-card" style="margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
       ${c.photo ? `<img src="${esc(c.photo)}" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover">` : '<span style="width:64px;height:64px;border-radius:12px;background:var(--sx-line);display:inline-block"></span>'}
       <div style="flex:1;min-width:170px"><span class="sx-pill">${xiSegName(c.seg)}</span> <b>${esc(c.name)}</b>
         <div style="font-size:12.5px;margin-top:3px"><b>${c.in_stock}</b> in stock · ${c.waiting} label${c.waiting === 1 ? '' : 's'} waiting to be scanned · ${c.sold} sold</div></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input class="sx-in" type="number" min="1" max="300" value="1" data-xq="${c.item_id}" style="width:70px" aria-label="How many labels"><button class="sx-btn" data-xmk="${c.item_id}">Make labels</button>
-        ${c.waiting ? `<button class="sx-btn ghost" data-xpr="${c.item_id}">Print ${c.waiting} waiting</button>` : ''}<button class="sx-btn ghost" data-xed="${c.item_id}">Edit</button><button class="sx-btn ghost" data-xrm="${c.item_id}">Remove</button></div></div>`).join('')
-      : 'Nothing yet. Add the first shower gel or attar above.');
+        ${c.waiting ? `<button class="sx-btn ghost" data-xpr="${c.item_id}">Print ${c.waiting} waiting</button>` : ''}</div></div>`).join('')
+      : 'No shower gel or attar found in the products synced from Shopify (titles with "shower gel" or "attar"). Sync products on the Make &amp; print tab.');
   }
   async function printXi(it, pieces) {
     if (!pieces.length) return; const pa = $('printArea'); pa.innerHTML = '';
@@ -914,12 +897,10 @@
     try { await api.post('st_xi.mark_printed', { codes: pieces.map((x) => x.code) }); } catch (e) { /* a note only */ }
   }
   $('xiList').addEventListener('click', async (e) => {
-    const mk = e.target.closest('[data-xmk]'), pr = e.target.closest('[data-xpr]'), ed = e.target.closest('[data-xed]'), rm = e.target.closest('[data-xrm]');
+    const mk = e.target.closest('[data-xmk]'), pr = e.target.closest('[data-xpr]');
     try {
       if (mk) { const id = +mk.dataset.xmk, qty = +document.querySelector(`[data-xq="${id}"]`).value || 0; mk.disabled = true; const d = await api.post('st_xi.make', { item_id: id, qty }); xiNote(d.message + ' Scan them in “3 · Scan into inventory” once they are stuck on.'); await printXi(d.item, d.pieces); await loadXi(); }
       else if (pr) { const d = await api.get('st_xi.pieces', { item_id: +pr.dataset.xpr }); await printXi(d.item, d.pieces); await loadXi(); }
-      else if (ed) { const c = xiData.items.find((x) => x.item_id === +ed.dataset.xed); if (!c) return; xiEdit = c.item_id; xiPhotoData = ''; $('xiName').value = c.name; $('xiSeg').value = c.seg; $('xiPhotoBox').innerHTML = c.photo ? `<img src="${esc(c.photo)}" style="width:100%;height:100%;object-fit:cover">` : '+ photo'; $('xiFormTitle').textContent = 'Change “' + c.name + '”'; $('xiCancel').style.display = ''; xiNote(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-      else if (rm) { const c = xiData.items.find((x) => x.item_id === +rm.dataset.xrm); if (c && window.confirm('Remove “' + c.name + '” from the list? Old bills keep it.')) { await api.post('st_xi.remove', { item_id: c.item_id }); await loadXi(); } }
     } catch (err) { xiNote(err.message, 1); await loadXi(); }
   });
   $('ti1').innerHTML = sxi('print'); $('ti2').innerHTML = sxi('scan'); $('ti3').innerHTML = sxi('box');

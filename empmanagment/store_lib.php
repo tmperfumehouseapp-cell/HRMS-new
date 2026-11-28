@@ -130,7 +130,7 @@ function st_pc_load(): bool { if (!function_exists('pc_prices') && is_file(__DIR
 function st_x_cols(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_xcols_v2'; if (is_file($flag)) return;
+    $flag = sys_get_temp_dir() . '/hrms_st_xcols_v3'; if (is_file($flag)) return;
     try {
         foreach (['gel_pcs' => 'INT NOT NULL DEFAULT 0', 'attar_pcs' => 'INT NOT NULL DEFAULT 0', 'x_all' => 'TINYINT NOT NULL DEFAULT 0', 'x_gel_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0', 'x_attar_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0'] as $c => $def)
             if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
@@ -140,8 +140,37 @@ function st_x_cols(PDO $pdo): void
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_xpieces (piece_id INT AUTO_INCREMENT PRIMARY KEY, item_id INT NOT NULL, code VARCHAR(12) NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'generated',
             batch VARCHAR(20) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, printed_at DATETIME NULL, print_count INT NOT NULL DEFAULT 0, stocked_at DATETIME NULL, sold_at DATETIME NULL, bill_id INT NULL,
             UNIQUE KEY uq_st_xp_code (code), KEY idx_st_xp_item (item_id, status), KEY idx_st_xp_bill (bill_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if (!$pdo->query("SHOW COLUMNS FROM st_xitems LIKE 'product_id'")->fetch()) $pdo->exec("ALTER TABLE st_xitems ADD COLUMN product_id INT NOT NULL DEFAULT 0, ADD KEY idx_st_xi_prod (product_id)");
         @touch($flag);
     } catch (Throwable $e) { error_log('st_x_cols: ' . $e->getMessage()); }
+}
+/** Is this Shopify product a shower gel or an attar? (the same words the commission uses for online orders) '' = a perfume. */
+function st_x_seg_of(string $title): string
+{
+    $t = mb_strtolower($title);
+    if (preg_match('/\battar|\bittar|\boud oil|\broll[- ]?on\b/u', $t)) return 'attar';
+    if (preg_match('/shower ?gel|body ?wash|\bgel\b/u', $t)) return 'gel';
+    return '';
+}
+/** 🔄 The shower gel / attar list is made by itself from the products already synced from Shopify (nothing to add by hand): a new one appears,
+ *  one gone from Shopify is hidden (only when it has nothing in stock or waiting). */
+function st_xi_autosync(PDO $pdo): void
+{
+    static $ran = false; if ($ran) return; $ran = true; st_x_cols($pdo);
+    try {
+        $have = []; foreach ($pdo->query("SELECT item_id, product_id, active FROM st_xitems WHERE product_id > 0")->fetchAll() as $r) $have[(int)$r['product_id']] = $r;
+        $seen = []; $ins = $pdo->prepare("INSERT INTO st_xitems (seg, name, photo, active, created_at, created_by, product_id) VALUES (?,?,?,1,?,'shopify',?)");
+        $upd = $pdo->prepare("UPDATE st_xitems SET seg = ?, name = ?, photo = ?, active = 1 WHERE item_id = ?");
+        foreach ($pdo->query("SELECT product_id, title, image FROM st_products WHERE active = 1")->fetchAll() as $p) {
+            $seg = st_x_seg_of((string)$p['title']); if ($seg === '') continue; $pid = (int)$p['product_id']; $seen[$pid] = 1;
+            if (isset($have[$pid])) $upd->execute([$seg, mb_substr((string)$p['title'], 0, 120), (string)$p['image'], (int)$have[$pid]['item_id']]);
+            else $ins->execute([$seg, mb_substr((string)$p['title'], 0, 120), (string)$p['image'], date('Y-m-d H:i:s'), $pid]);
+        }
+        foreach ($have as $pid => $r) if (!isset($seen[$pid]) && (int)$r['active'] === 1) {
+            $n = $pdo->prepare("SELECT COUNT(*) FROM st_xpieces WHERE item_id = ? AND status IN ('generated','stock')"); $n->execute([(int)$r['item_id']]);
+            if (!(int)$n->fetchColumn()) $pdo->prepare("UPDATE st_xitems SET active = 0 WHERE item_id = ?")->execute([(int)$r['item_id']]);
+        }
+    } catch (Throwable $e) { error_log('st_xi_autosync: ' . $e->getMessage()); }
 }
 if (!defined('ST_X_CODE_BASE')) define('ST_X_CODE_BASE', 40000000);      // gel / attar label = piece_id + 40000000 (8 digits: CODE128C needs an even number of digits; chains are 20000000+, bottles 6 digits)
 /** Gel / attar pieces by code: [code => row with seg, name]. */

@@ -387,6 +387,7 @@ try {
                     SUM(b.status = 'stock' AND b.kind = 'sale') AS stock_sale, SUM(b.status = 'stock' AND b.kind = 'tester') AS stock_tester, SUM(b.status = 'generated') AS waiting
                 FROM st_products p LEFT JOIN st_bottles b ON b.product_id = p.product_id
                 WHERE p.active = 1 GROUP BY p.product_id ORDER BY p.title")->fetchAll();
+            $rows = array_values(array_filter($rows, fn($r) => st_x_seg_of((string)$r['title']) === '' || (int)$r['stock_sale'] + (int)$r['stock_tester'] + (int)$r['waiting'] > 0));      // 🧴 shower gel / attar are in their own tab (kept here only if perfume-style labels were already made)
             foreach ($rows as &$r) { $r['product_id'] = (int)$r['product_id']; $r['stock_sale'] = (int)$r['stock_sale']; $r['stock_tester'] = (int)$r['stock_tester']; $r['waiting'] = (int)$r['waiting']; }
             $rk = st_rank_cached($pdo); $srcOn = ['store' => 0, 'pos' => 0, 'online' => 0];
             foreach ($rows as &$r) { $x = $rk[$r['product_id']] ?? null; $r['score'] = $x ? $x['score'] : 0; $r['q30'] = $x ? $x['q30'] : 0; $r['q90'] = $x ? $x['q90'] : 0; $r['rank'] = $x ? $x['rank'] : 0; $r['badge'] = $x ? $x['badge'] : 'none'; $r['src'] = $x ? $x['src'] : $srcOn; if ($x) foreach ($x['src'] as $k => $v) $srcOn[$k] += $v; }
@@ -578,7 +579,7 @@ try {
         // ====================================================== CHAINS (added by hand, no stock at add; one barcode per piece; a piece is stock only after it is scanned in)
         // 🏷 SHOWER GEL / ATTAR with barcodes: add the item (name + gel or attar), make one label per piece, print, scan into stock (tab 3), scan at the counter.
         case 'st_xi.list': {
-            require_auth(); st_x_cols($pdo);
+            require_auth(); st_xi_autosync($pdo);
             $rows = $pdo->query("SELECT i.item_id, i.seg, i.name, i.photo, COUNT(p.piece_id) made, COALESCE(SUM(p.status='generated'),0) waiting, COALESCE(SUM(p.status='stock'),0) in_stock, COALESCE(SUM(p.status='sold'),0) sold
                 FROM st_xitems i LEFT JOIN st_xpieces p ON p.item_id = i.item_id AND p.status <> 'void' WHERE i.active = 1 GROUP BY i.item_id ORDER BY i.seg DESC, i.name")->fetchAll();
             foreach ($rows as &$r) { foreach (['item_id', 'made', 'waiting', 'in_stock', 'sold'] as $k) $r[$k] = (int)$r[$k]; $r['photo'] = (string)$r['photo']; } unset($r);
