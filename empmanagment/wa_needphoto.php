@@ -150,6 +150,24 @@ if ($__wnp === 'wa.day1_offer') {
     try { setting_set($pdo, 'wa_day1_cache', json_encode(['t' => $now, 'd' => $res])); } catch (Throwable $e) { }
     json_response($res);
 }
+/* ⏰ owner 28 Nov 2026: "when we make a campaign, give us a SUGGESTED TIME: the time that gives the most orders - the campaign should go 1-2 hours before the orders come". wa.best_hours (GET): from the order ledger of the last 7 days - the hours the orders come (peak), and for Module A the hours a campaign message went that brought the most orders per 10,000 sent (only hours with 15,000+ sent, 09:00-22:59). Read-only, kept 6 hours. */
+if ($__wnp === 'wa.best_hours') {
+    $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500);
+    $now = time(); if (empty($_GET['fresh'])) { $cj = json_decode((string)setting_get($pdo, 'wa_best_hours_cache', ''), true); if (is_array($cj) && (int)($cj['t'] ?? 0) > $now - 6 * 3600 && is_array($cj['d'] ?? null)) json_response($cj['d'] + ['cached' => 1]); }
+    $f7 = date('Y-m-d 00:00:00', $now - 7 * 86400); $ord = []; $sent = []; $got = [];
+    try { foreach ($pdo->query("SELECT HOUR(order_at) h, COUNT(*) FROM wa_order_attr WHERE order_at >= '$f7' GROUP BY h")->fetchAll(PDO::FETCH_NUM) as $r) $ord[(int)$r[0]] = (int)$r[1]; } catch (Throwable $e) { }
+    try { foreach ($pdo->query("SELECT HOUR(msg_at) h, COUNT(*) FROM wa_order_attr WHERE order_at >= '$f7' AND module = 'A' AND msg_at IS NOT NULL GROUP BY h")->fetchAll(PDO::FETCH_NUM) as $r) $got[(int)$r[0]] = (int)$r[1]; } catch (Throwable $e) { }
+    try { foreach ($pdo->query("SELECT HOUR(sent_at) h, COUNT(*) FROM wa_camp_items WHERE sent_at >= '$f7' GROUP BY h")->fetchAll(PDO::FETCH_NUM) as $r) $sent[(int)$r[0]] = (int)$r[1]; } catch (Throwable $e) { }
+    arsort($ord); $peak = array_slice(array_keys($ord), 0, 3); $rate = [];
+    for ($h = 9; $h <= 22; $h++) if (($sent[$h] ?? 0) >= 15000) $rate[$h] = round(($got[$h] ?? 0) * 10000 / $sent[$h], 1);
+    arsort($rate); $best = array_slice(array_keys($rate), 0, 3); $weak = array_slice(array_keys(array_reverse($rate, true)), 0, 2);
+    $before = []; foreach ($peak as $ph) { $b = ($ph + 22) % 24; if ($b >= 9 && $b <= 22) $before[] = $b; }   // 2 hours before a peak order hour (the owner's rule)
+    $slots = []; foreach (array_values(array_unique(array_merge(array_slice($best, 0, 2), array_slice($before, 0, 1)))) as $h) { $t = strtotime(date('Y-m-d', $now) . sprintf(' %02d:00:00', $h)); if ($t <= $now + 300) $t += 86400; $slots[] = ['h' => $h, 'at' => date('Y-m-d\\TH:i', $t), 'today' => date('Y-m-d', $t) === date('Y-m-d', $now), 'rate' => $rate[$h] ?? null]; }
+    usort($slots, function ($a, $b) { return strcmp($a['at'], $b['at']); });
+    $res = ['ok' => true, 'peak' => $peak, 'best' => $best, 'weak' => $weak, 'rate' => $rate, 'orders' => $ord, 'slots' => $slots, 'days' => 7];
+    try { setting_set($pdo, 'wa_best_hours_cache', json_encode(['t' => $now, 'd' => $res])); } catch (Throwable $e) { }
+    json_response($res);
+}
 if ($__wnp === 'wa.noreply30') {
     $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500); if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
     @set_time_limit(120); $k10 = function ($p) { return substr(preg_replace('/\D+/', '', (string)$p), -10); }; $now = time(); $d30 = date('Y-m-d H:i:s', $now - 30 * 86400); $csv = !empty($_GET['csv']);
