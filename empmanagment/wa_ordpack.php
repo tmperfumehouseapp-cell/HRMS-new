@@ -218,7 +218,7 @@ if (!function_exists('wa_ordpack_defs')) {
         $made = 0; $have = []; try { foreach ($pdo->query("SELECT name FROM wa_templates WHERE name LIKE '%\\_bt'")->fetchAll(PDO::FETCH_COLUMN) as $n) $have[(string)$n] = 1; } catch (Throwable $e) { }
         foreach ($rows as $r) {
             if ($made >= $max || count($done) >= $cap || $budget['left'] < max(1, count($wabas))) break; $id = (int)$r['id']; $name = (string)$r['name'];
-            if (isset($done[$id]) || !isset($okSt[$id])) continue; if (strpos($name, 'tmph_bf_') === 0 && function_exists('wa_bf_on') && !wa_bf_on()) continue; if (function_exists('wocc_name_ok') && !wocc_name_ok($name)) continue;
+            if (isset($done[$id]) || !isset($okSt[$id])) continue; if (strpos($name, 'tmph_bf_') === 0) continue;   /* Black Friday ends on 30 Nov: no twins of its messages (they would only use up the 80) */ if (function_exists('wocc_name_ok') && !wocc_name_ok($name)) continue;
             $tn = wa_mix_name($name, '_bt'); if (isset($have[$tn])) { $done[$id] = -1; continue; }
             $row = wa_tpl_row($pdo, $id); if (!$row) continue; $x = is_array($row['extra'] ?? null) ? $row['extra'] : []; if (!empty($x['util_pool']) || !empty($x['utility_of']) || !empty($x['unsupported'])) { $done[$id] = -1; continue; }
             if (count(function_exists('wa_tpl_vars') ? wa_tpl_vars((string)$row['body']) : [1]) !== 1) { $done[$id] = -1; continue; }   // the name is the only blank
