@@ -879,7 +879,7 @@ function st_store_waba(PDO $pdo): string
 function st_wa_tpl_sync(PDO $pdo, string $waba): array
 {
     if ($waba === '' || !function_exists('wa_api')) return [0, 'no Store account'];
-    $n = 0; $err = ''; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason,components';
+    $n = 0; $err = ''; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason,components,quality_score';
     for ($page = 0; $page < 8 && $url; $page++) {
         [$c, $d] = wa_api('GET', $url); if ($c < 200 || $c >= 300 || !is_array($d)) { $err = function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'Meta did not answer'; break; }
         foreach ((array)($d['data'] ?? []) as $x) {
@@ -889,6 +889,7 @@ function st_wa_tpl_sync(PDO $pdo, string $waba): array
             $e = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $e->execute([$tid, $waba]);
             if ((int)$e->fetchColumn() > 0) $pdo->prepare("UPDATE wa_tpl_waba SET status = ?, reason = ?, meta_id = ?, updated_at = ?, category = ? WHERE tpl_id = ? AND waba_id = ?")->execute([$st, mb_substr($why, 0, 300), (string)($x['id'] ?? ''), $now, $cat, $tid, $waba]);
             else $pdo->prepare("INSERT INTO wa_tpl_waba (tpl_id, waba_id, meta_id, status, reason, updated_at, category) VALUES (?, ?, ?, ?, ?, ?, ?)")->execute([$tid, $waba, (string)($x['id'] ?? ''), $st, mb_substr($why, 0, 300), $now, $cat]);
+            try { $ql = strtoupper((string)($x['quality_score']['score'] ?? '')); if ($ql !== '') $pdo->prepare("UPDATE wa_tpl_waba SET quality = ? WHERE tpl_id = ? AND waba_id = ?")->execute([mb_substr($ql, 0, 10), $tid, $waba]); } catch (Throwable $e2) { }      // GREEN / YELLOW / RED / UNKNOWN
             $n++;
         }
         $url = ''; $nx = (string)($d['paging']['next'] ?? ''); if ($nx !== '' && preg_match('#graph\.facebook\.com/[^/]+(/.+)$#', $nx, $m)) $url = $m[1];
