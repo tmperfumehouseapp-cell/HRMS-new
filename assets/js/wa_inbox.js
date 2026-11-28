@@ -1510,7 +1510,7 @@
     if (S.bulk.set.has(ph)) S.bulk.set.delete(ph); else { S.bulk.set.add(ph); const c = S.chats.find((x) => x.phone === ph); if (c) S.bulk.info[ph] = { name: c.name || '' }; } drawList(); }
     async function bkSelectAll() {
       const btn = $('bkAll'); if (btn) { btn.textContent = 'Selecting…'; btn.disabled = true; }
-      try { const d = await api.get('wa.chats', Object.assign(bkParams(), { ids: 1 })); (d.ids || []).forEach((x) => { S.bulk.set.add(x.phone); S.bulk.info[x.phone] = { name: x.name || '' }; }); S.bulk.note = d.optout_n ? '🚫 ' + bkFmt(d.optout_n) + ' customer' + (d.optout_n === 1 ? '' : 's') + ' who opted out (wrote STOP) were left out of the selection — they never get a bulk message.' : ''; }
+      try { const d = await api.get('wa.chats', Object.assign(bkParams(), { ids: 1 })); (d.ids || []).forEach((x) => { S.bulk.set.add(x.phone); S.bulk.info[x.phone] = { name: x.name || '' }; }); S.bulk.note = [d.optout_n ? '🚫 ' + bkFmt(d.optout_n) + ' customer' + (d.optout_n === 1 ? '' : 's') + ' who opted out (wrote STOP) were left out of the selection — they never get a bulk message.' : '', d.complaint_n ? '🎫 ' + bkFmt(d.complaint_n) + ' customer' + (d.complaint_n === 1 ? '' : 's') + ' with a complaint ' + (d.complaint_n === 1 ? 'was' : 'were') + ' left out of the selection — a complaint chat never gets a bulk message.' : ''].filter(Boolean).join(' '); }
       catch (e) { S.chats.forEach((c) => { if (!c.optout) { S.bulk.set.add(c.phone); S.bulk.info[c.phone] = { name: c.name || '' }; } }); }
       drawList();
     }
