@@ -488,8 +488,15 @@ try {
             $rest = array_values(array_filter($codes, fn($c) => !isset($found[$c])));
             if ($rest) { $cq = $pdo->prepare("SELECT p.*, c.name FROM st_chain_pieces p JOIN st_chains c ON c.chain_id = p.chain_id WHERE p.code IN (" . implode(',', array_fill(0, count($rest), '?')) . ")"); $cq->execute($rest); foreach ($cq->fetchAll() as $r) $chainFound[(string)$r['code']] = $r; }
             $cOut = fn(array $r) => ['bottle_id' => 0, 'code' => (string)$r['code'], 'product_id' => 0, 'title' => 'Chain: ' . $r['name'], 'ml' => 0, 'kind' => 'chain', 'status' => 'stock', 'is_chain' => true];
-            $cIds = [];
+            $cIds = []; $xFound = $rest ? st_find_xpieces($pdo, $rest) : []; $xIds = [];      // 🏷 shower gel / attar labels
+            $xOut = fn(array $r) => ['bottle_id' => 0, 'code' => (string)$r['code'], 'product_id' => 0, 'title' => ($r['seg'] === 'gel' ? 'Shower gel: ' : 'Attar: ') . $r['name'], 'ml' => 0, 'kind' => $r['seg'], 'status' => 'stock', 'is_chain' => true];
             foreach ($codes as $c) {
+                if (isset($xFound[$c])) {
+                    $r = $xFound[$c]; $nm = ($r['seg'] === 'gel' ? 'shower gel ' : 'attar ') . $r['name'];
+                    if ($r['status'] === 'stock') { $res[$c] = ['code' => (string)$c, 'ok' => false, 'dup' => true, 'bottle' => $xOut($r), 'message' => 'Already in stock: ' . $nm . '.']; continue; }
+                    if ($r['status'] !== 'generated') { $res[$c] = ['code' => (string)$c, 'ok' => false, 'bad' => true, 'message' => 'This ' . $nm . ' is ' . $r['status'] . ' — it cannot be added to stock.']; continue; }
+                    $xIds[] = (int)$r['piece_id']; $res[$c] = ['code' => (string)$c, 'ok' => true, 'bottle' => $xOut($r), 'message' => 'Added: ' . $nm]; continue;
+                }
                 if (isset($chainFound[$c])) {
                     $r = $chainFound[$c];
                     if ($r['status'] === 'stock') { $res[$c] = ['code' => (string)$c, 'ok' => false, 'dup' => true, 'bottle' => $cOut($r), 'message' => 'Already in stock: chain ' . $r['name'] . '.']; continue; }
@@ -503,6 +510,7 @@ try {
                 $ids[] = (int)$b['bottle_id']; $found[$c]['status'] = 'stock';
             }
             if ($cIds) $pdo->prepare("UPDATE st_chain_pieces SET status = 'stock', stocked_at = ? WHERE status = 'generated' AND piece_id IN (" . implode(',', $cIds) . ")")->execute([date('Y-m-d H:i:s')]);
+            if ($xIds) $pdo->prepare("UPDATE st_xpieces SET status = 'stock', stocked_at = ? WHERE status = 'generated' AND piece_id IN (" . implode(',', $xIds) . ")")->execute([date('Y-m-d H:i:s')]);
             if ($ids) {
                 $pdo->prepare("UPDATE st_bottles SET status = 'stock', stocked_at = ? WHERE status = 'generated' AND bottle_id IN (" . implode(',', $ids) . ")")->execute([date('Y-m-d H:i:s')]);
                 foreach ($codes as $c) if (!isset($res[$c])) { $b = $found[$c]; $res[$c] = ['code' => (string)$c, 'ok' => true, 'bottle' => st_bottle_out($b), 'message' => 'Added: ' . $b['title'] . ' ' . $b['ml'] . ' ml' . ($b['kind'] === 'tester' ? ' (tester)' : '')]; }
@@ -568,6 +576,68 @@ try {
         }
 
         // ====================================================== CHAINS (added by hand, no stock at add; one barcode per piece; a piece is stock only after it is scanned in)
+        // 🏷 SHOWER GEL / ATTAR with barcodes: add the item (name + gel or attar), make one label per piece, print, scan into stock (tab 3), scan at the counter.
+        case 'st_xi.list': {
+            require_auth(); st_x_cols($pdo);
+            $rows = $pdo->query("SELECT i.item_id, i.seg, i.name, i.photo, COUNT(p.piece_id) made, COALESCE(SUM(p.status='generated'),0) waiting, COALESCE(SUM(p.status='stock'),0) in_stock, COALESCE(SUM(p.status='sold'),0) sold
+                FROM st_xitems i LEFT JOIN st_xpieces p ON p.item_id = i.item_id AND p.status <> 'void' WHERE i.active = 1 GROUP BY i.item_id ORDER BY i.seg DESC, i.name")->fetchAll();
+            foreach ($rows as &$r) { foreach (['item_id', 'made', 'waiting', 'in_stock', 'sold'] as $k) $r[$k] = (int)$r[$k]; $r['photo'] = (string)$r['photo']; } unset($r);
+            json_response(['items' => $rows]);
+            break;
+        }
+        case 'st_xi.save': {
+            $auth = require_auth(); st_x_cols($pdo); $in = json_input();
+            $id = (int)($in['item_id'] ?? 0); $name = mb_substr(trim((string)($in['name'] ?? '')), 0, 120); $seg = (string)($in['seg'] ?? '');
+            if (!in_array($seg, ['gel', 'attar'], true)) json_response(['error' => 'Choose: Shower gel or Attar.'], 400);
+            if ($name === '') json_response(['error' => 'Give it a name (for example: Oud shower gel).'], 400);
+            $photo = (string)($in['photo'] ?? '');
+            if ($photo !== '' && (strpos($photo, 'data:image/') !== 0 || strlen($photo) > 400000)) json_response(['error' => 'The photo is not valid or too big. Choose it again.'], 400);
+            if ($id) $pdo->prepare("UPDATE st_xitems SET name = ?, seg = ?" . ($photo !== '' ? ", photo = ?" : "") . " WHERE item_id = ?")->execute(array_merge([$name, $seg], $photo !== '' ? [$photo] : [], [$id]));
+            else { $pdo->prepare("INSERT INTO st_xitems (seg, name, photo, active, created_at, created_by) VALUES (?,?,?,1,?,?)")->execute([$seg, $name, $photo, date('Y-m-d H:i:s'), (string)($auth['username'] ?? '')]); $id = (int)$pdo->lastInsertId(); }
+            json_response(['ok' => true, 'item_id' => $id, 'message' => 'Saved.']);
+            break;
+        }
+        case 'st_xi.remove': {
+            require_auth(); st_x_cols($pdo); $id = (int)(json_input()['item_id'] ?? 0);
+            $n = $pdo->prepare("SELECT COUNT(*) FROM st_xpieces WHERE item_id = ? AND status IN ('generated','stock')"); $n->execute([$id]);
+            if ((int)$n->fetchColumn()) json_response(['error' => 'It still has pieces in stock or labels waiting to be scanned.'], 409);
+            $pdo->prepare("UPDATE st_xitems SET active = 0 WHERE item_id = ?")->execute([$id]);
+            json_response(['ok' => true, 'message' => 'Removed from the list.']);
+            break;
+        }
+        case 'st_xi.make': {
+            require_auth(); st_x_cols($pdo); $in = json_input(); $id = (int)($in['item_id'] ?? 0); $qty = (int)($in['qty'] ?? 0);
+            if ($qty < 1 || $qty > 300) json_response(['error' => 'Type how many labels to make (1 to 300).'], 400);
+            $c = $pdo->prepare("SELECT item_id, seg, name FROM st_xitems WHERE item_id = ? AND active = 1"); $c->execute([$id]); $it = $c->fetch();
+            if (!$it) json_response(['error' => 'Item not found.'], 404);
+            $batch = 'X' . date('ymd-His'); $now = date('Y-m-d H:i:s');
+            $pdo->beginTransaction();
+            $ins = $pdo->prepare("INSERT INTO st_xpieces (item_id, code, status, batch, created_at) VALUES (?, ?, 'generated', ?, ?)");
+            for ($i = 0; $i < $qty; $i++) $ins->execute([$id, 'x' . bin2hex(random_bytes(5)), $batch, $now]);
+            $pdo->prepare("UPDATE st_xpieces SET code = CAST(piece_id + " . ST_X_CODE_BASE . " AS CHAR) WHERE batch = ? AND code LIKE 'x%'")->execute([$batch]);
+            $pdo->commit();
+            $q = $pdo->prepare("SELECT piece_id, code, status, print_count FROM st_xpieces WHERE batch = ? ORDER BY piece_id"); $q->execute([$batch]);
+            json_response(['ok' => true, 'item' => ['item_id' => (int)$it['item_id'], 'seg' => $it['seg'], 'name' => $it['name']], 'pieces' => $q->fetchAll(), 'message' => $qty . ' label' . ($qty === 1 ? '' : 's') . ' made. Print and stick one on each piece.']);
+            break;
+        }
+        case 'st_xi.pieces': {
+            require_auth(); st_x_cols($pdo); $id = (int)($_GET['item_id'] ?? 0);
+            $c = $pdo->prepare("SELECT item_id, seg, name FROM st_xitems WHERE item_id = ?"); $c->execute([$id]); $it = $c->fetch();
+            if (!$it) json_response(['error' => 'Item not found.'], 404);
+            $q = $pdo->prepare("SELECT piece_id, code, status, print_count FROM st_xpieces WHERE item_id = ? AND status = 'generated' ORDER BY piece_id"); $q->execute([$id]);
+            json_response(['item' => ['item_id' => (int)$it['item_id'], 'seg' => $it['seg'], 'name' => $it['name']], 'pieces' => $q->fetchAll()]);
+            break;
+        }
+        case 'st_xi.mark_printed': {
+            require_auth(); st_x_cols($pdo);
+            $codes = array_values(array_unique(array_filter(array_map('st_clean_code', (array)(json_input()['codes'] ?? [])), 'strlen')));
+            if (!$codes) json_response(['ok' => true, 'marked' => 0]);
+            $u = $pdo->prepare("UPDATE st_xpieces SET printed_at = COALESCE(printed_at, ?), print_count = print_count + 1 WHERE status <> 'void' AND code IN (" . implode(',', array_fill(0, count($codes), '?')) . ")");
+            $u->execute(array_merge([date('Y-m-d H:i:s')], $codes));
+            json_response(['ok' => true, 'marked' => $u->rowCount()]);
+            break;
+        }
+
         case 'st_chain.list': {
             require_auth();
             $rows = $pdo->query("SELECT c.chain_id, c.name, c.mrp, c.price, c.photo, c.active, COUNT(p.piece_id) made, COALESCE(SUM(p.status='generated'),0) waiting, COALESCE(SUM(p.status='stock'),0) in_stock, COALESCE(SUM(p.status='sold'),0) sold,
@@ -943,6 +1013,12 @@ try {
                     $gate = st_chain_gate($pdo); if ($gate !== '') json_response(['error' => $gate], 409);
                     json_response(['chain' => ['piece_id' => (int)$cp['piece_id'], 'chain_id' => (int)$cp['chain_id'], 'code' => (string)$cp['code'], 'name' => (string)$cp['name'], 'mrp' => (float)$cp['mrp'], 'price' => (float)$cp['price'], 'photo' => (string)$cp['photo'], 'split_pct' => st_chain_pct($pdo)]]);
                 }
+                $xp = st_find_xpieces($pdo, [$code])[$code] ?? null;      // 🏷 a shower gel / attar label
+                if ($xp) {
+                    $nm = ($xp['seg'] === 'gel' ? 'shower gel ' : 'attar ') . $xp['name'];
+                    if ($xp['status'] !== 'stock') json_response(['error' => ($xp['status'] === 'sold' ? 'Already SOLD' : ($xp['status'] === 'generated' ? 'Not in stock yet — scan it into inventory first' : 'Not available (' . $xp['status'] . ')')) . ': ' . $nm], 409);
+                    json_response(['xpiece' => ['code' => (string)$xp['code'], 'seg' => (string)$xp['seg'], 'name' => (string)$xp['name']]]);
+                }
                 json_response(['error' => 'Code ' . $code . ' is not one of our barcodes.'], 404);
             }
             if ($b['status'] !== 'stock') json_response(['error' => ($b['status'] === 'sold' ? 'Already SOLD' : ($b['status'] === 'generated' ? 'Not in stock yet — scan it into inventory first' : 'Not available (' . $b['status'] . ')')) . ': ' . $b['title'] . ' ' . $b['ml'] . ' ml'], 409);
@@ -997,9 +1073,19 @@ try {
             $chainCode = st_clean_code($in['chain_code'] ?? '');
             if ($chainCode !== '') { $gate = st_chain_gate($pdo); if ($gate !== '') json_response(['error' => $gate], 409); }      // never sell a chain we cannot give a GST invoice for
             st_engine_warm($pdo);
-            $xGel = st_xpcs($in['gel'] ?? 0); $xAtt = st_xpcs($in['attar'] ?? 0); $hasX = $xGel > 0 || $xAtt > 0;
+            $xGel = st_xpcs($in['gel'] ?? 0); $xAtt = st_xpcs($in['attar'] ?? 0);      // the pieces WITHOUT a label (+ / −)
+            $xCodes = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['x_codes'] ?? [])), 'strlen')));      // 🏷 the scanned gel / attar labels
+            $hasX = $xGel > 0 || $xAtt > 0 || $xCodes;
             if ($hasX) st_x_cols($pdo);      // before the transaction: an ALTER TABLE inside it would commit it
             $pdo->beginTransaction();
+            $xRows = [];
+            if ($xCodes) {
+                $xRows = st_find_xpieces($pdo, $xCodes, true);
+                foreach ($xCodes as $c) { $r = $xRows[$c] ?? null; if (!$r) { $pdo->rollBack(); json_response(['error' => 'Code ' . $c . ' is not one of our barcodes.'], 400); }
+                    if ($r['status'] !== 'stock') { $pdo->rollBack(); json_response(['error' => 'Code ' . $c . ' (' . $r['name'] . ') is ' . $r['status'] . ', not in stock.'], 409); }
+                    if ($r['seg'] === 'gel') $xGel++; else $xAtt++; }
+                $xGel = min(50, $xGel); $xAtt = min(50, $xAtt);
+            }
             $found = st_find_bottles($pdo, (array)($in['codes'] ?? []), true);
             $want = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['codes'] ?? [])), 'strlen')));
             if (!$want && !$hasX) { $pdo->rollBack(); json_response(['error' => 'Scan at least one bottle, or add shower gel / attar.'], 400); }
@@ -1083,6 +1169,8 @@ try {
                 ->execute([$bizDay, $now, $empId, $empName, mb_substr($name, 0, 120), mb_substr($phone, 0, 20), $t['total_ml'], $t['sale_bottles'], $t['testers'], $col, $list, $discount, $total, mb_substr($code, 0, 20), $payMode, $cash, $online, (int)($auth['employee_id'] ?? 0) ?: null]);
             $billId = (int)$pdo->lastInsertId();
             if ($hasX) $pdo->prepare("UPDATE st_bills SET gel_pcs = ?, attar_pcs = ?, x_all = ?, x_gel_amt = ?, x_attar_amt = ? WHERE bill_id = ?")->execute([$xGel, $xAtt, $xAll, $xG, $xA, $billId]);
+            if ($xRows) { $xs = $pdo->prepare("UPDATE st_xpieces SET status = 'sold', sold_at = ?, bill_id = ? WHERE piece_id = ? AND status = 'stock'");
+                foreach ($xRows as $r) { $xs->execute([date('Y-m-d H:i:s'), $billId, (int)$r['piece_id']]); if ($xs->rowCount() !== 1) { $pdo->rollBack(); json_response(['error' => $r['name'] . ' (' . $r['code'] . ') was just sold on another bill.'], 409); } } }
             $billNo = 'ST-' . str_pad((string)$billId, 6, '0', STR_PAD_LEFT);
             $pdo->prepare("UPDATE st_bills SET bill_no = ? WHERE bill_id = ?")->execute([$billNo, $billId]);
             $srcKey = (string)($in['source'] ?? ''); if (!isset(ST_SOURCES[$srcKey])) $srcKey = '';      // where the customer came from (optional)
@@ -1578,6 +1666,7 @@ try {
             $pdo->prepare("UPDATE st_bills SET status = 'void' WHERE bill_id = ?")->execute([$id]);
             $pdo->prepare("UPDATE st_bottles SET status = 'stock', sold_at = NULL, bill_id = NULL WHERE bill_id = ?")->execute([$id]);
             $pdo->prepare("UPDATE st_chain_pieces SET status = 'stock', sold_at = NULL, bill_id = NULL WHERE bill_id = ?")->execute([$id]);      // the chain piece goes back to stock
+            try { $pdo->prepare("UPDATE st_xpieces SET status = 'stock', sold_at = NULL, bill_id = NULL WHERE bill_id = ?")->execute([$id]); } catch (Throwable $e) { }      // 🏷 gel / attar pieces too
             $pdo->commit();
             if ((int)$row['inv_id'] > 0) st_chain_invoice_cancel($pdo, (int)$row['inv_id'], (string)$row['bill_no']);      // the invoice keeps its number and is marked CANCELLED
             json_response(['ok' => true, 'message' => 'Bill cancelled. Its bottles' . ((int)$row['inv_id'] > 0 ? ' and chain are' : ' are') . ' back in stock and the sale no longer counts.' . ((int)$row['inv_id'] > 0 ? ' GST invoice ' . $row['inv_no'] . ' is kept and marked CANCELLED.' : '')]);
