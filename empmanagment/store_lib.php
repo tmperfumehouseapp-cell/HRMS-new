@@ -130,12 +130,28 @@ function st_pc_load(): bool { if (!function_exists('pc_prices') && is_file(__DIR
 function st_x_cols(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_xcols_v1'; if (is_file($flag)) return;
+    $flag = sys_get_temp_dir() . '/hrms_st_xcols_v2'; if (is_file($flag)) return;
     try {
         foreach (['gel_pcs' => 'INT NOT NULL DEFAULT 0', 'attar_pcs' => 'INT NOT NULL DEFAULT 0', 'x_all' => 'TINYINT NOT NULL DEFAULT 0', 'x_gel_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0', 'x_attar_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0'] as $c => $def)
             if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
+        // 🏷 shower gel / attar WITH barcodes: the items (name, gel or attar, photo) and one barcode per piece (8 digits from 40000001, like the chains)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_xitems (item_id INT AUTO_INCREMENT PRIMARY KEY, seg VARCHAR(8) NOT NULL, name VARCHAR(120) NOT NULL, photo MEDIUMTEXT NULL,
+            active TINYINT NOT NULL DEFAULT 1, created_at DATETIME NOT NULL, created_by VARCHAR(80) NOT NULL DEFAULT '') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_xpieces (piece_id INT AUTO_INCREMENT PRIMARY KEY, item_id INT NOT NULL, code VARCHAR(12) NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'generated',
+            batch VARCHAR(20) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, printed_at DATETIME NULL, print_count INT NOT NULL DEFAULT 0, stocked_at DATETIME NULL, sold_at DATETIME NULL, bill_id INT NULL,
+            UNIQUE KEY uq_st_xp_code (code), KEY idx_st_xp_item (item_id, status), KEY idx_st_xp_bill (bill_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         @touch($flag);
     } catch (Throwable $e) { error_log('st_x_cols: ' . $e->getMessage()); }
+}
+if (!defined('ST_X_CODE_BASE')) define('ST_X_CODE_BASE', 40000000);      // gel / attar label = piece_id + 40000000 (8 digits: CODE128C needs an even number of digits; chains are 20000000+, bottles 6 digits)
+/** Gel / attar pieces by code: [code => row with seg, name]. */
+function st_find_xpieces(PDO $pdo, array $codes, bool $lock = false): array
+{
+    $codes = array_values(array_unique(array_filter(array_map('st_clean_code', $codes), function ($c) { return strlen($c) === 8 && $c[0] === '4'; })));
+    if (!$codes) return []; st_x_cols($pdo); $in = implode(',', array_fill(0, count($codes), '?'));
+    try { $q = $pdo->prepare("SELECT p.piece_id, p.code, p.status, p.item_id, i.seg, i.name FROM st_xpieces p JOIN st_xitems i ON i.item_id = p.item_id WHERE p.code IN ($in)" . ($lock ? ' FOR UPDATE' : '')); $q->execute($codes); }
+    catch (Throwable $e) { return []; }
+    $o = []; foreach ($q->fetchAll() as $r) $o[(string)$r['code']] = $r; return $o;
 }
 /** The commission of a bill with gel / attar: [pct of the whole bill, rule, commission]. */
 function st_x_com(PDO $pdo, array $ch, int $ml, int $gel, int $attar, float $gross, bool $all, float $xg, float $xa): array
