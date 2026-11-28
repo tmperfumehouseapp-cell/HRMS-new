@@ -34,7 +34,7 @@
   function render() {
     const c = D.cfg, n = D.numbers || {};
     $('root').innerHTML = `<div style="display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:14px;align-items:start" id="dg">
-      <div class="sx-card" style="padding:10px"><div style="width:100%;aspect-ratio:9/16;position:relative;overflow:hidden;border-radius:10px;border:1px solid #ddd"><iframe id="pv" src="${esc(link())}" style="position:absolute;left:0;top:0;width:100%;height:100%;border:0" title="Preview"></iframe></div><div class="sx-mut" style="font-size:12px;margin-top:6px;text-align:center">Preview, exactly what the TV shows</div></div>
+      <div class="sx-card" style="padding:10px"><div style="width:100%;aspect-ratio:9/16;position:relative;overflow:hidden;border-radius:10px;border:1px solid #ddd"><iframe id="pv" src="${esc(link())}" style="position:absolute;left:0;top:0;width:100%;height:100%;border:0" title="Preview"></iframe></div><div class="sx-mut" style="font-size:12px;margin-top:6px;text-align:center">Preview, exactly what the TV shows</div><button type="button" class="sx-btn ghost" style="width:100%;margin-top:8px" onclick="document.getElementById('pv').src='${esc(link())}&ty=1'">🙏 See the thank-you (shows on every new bill)</button></div>
       <div>
         <div class="sx-card"><h3>Put it on the TV</h3>
           <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sx-btn" id="bOpen">Open full screen</button><button class="sx-btn ghost" id="bCopy">Copy the screen link</button><button class="sx-btn ghost" id="bNew">Make a new link</button></div>
