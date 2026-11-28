@@ -418,7 +418,7 @@ function sku_route(PDO $pdo, string $action): void
             if (!(int)$pdo->query("SELECT GET_LOCK('sku_bc_make', 20)")->fetchColumn()) json_response(['error' => 'Somebody else is making barcodes right now. Try again in a moment.'], 409);
             try {
                 $lo = $kind === 'chain' ? 60000000 : 50000000; $q = $pdo->prepare("SELECT COALESCE(MAX(code), ?) FROM sku_bc WHERE code > ? AND code < ?"); $q->execute([$lo, $lo, $lo + 10000000]); $next = (int)$q->fetchColumn() + 1;
-                $mfg = $day; $expOf = fn(string $sz) => date('Y-m-d', strtotime($day . (in_array($sz, ['Shower Gel', 'Solid Perfume'], true) ? ' +2 years' : ' +3 years'))); $exp = $expOf('');      // owner, 26 Nov: perfume 3 years, shower gel / solid perfume 2 years (labels made before this keep the date printed on them) $batch = ($kind === 'chain' ? 'C' : 'B') . date('dmy', strtotime($day));
+                $mfg = $day; $expOf = fn(string $sz) => date('Y-m-d', strtotime($day . (in_array($sz, ['Shower Gel', 'Solid Perfume'], true) ? ' +2 years' : ' +3 years'))); $exp = $expOf(''); $batch = ($kind === 'chain' ? 'C' : 'B') . date('dmy', strtotime($day));      // owner, 26 Nov: perfume 3 years, shower gel / solid perfume 2 years (labels made before this keep the date printed on them)
                 $have = $pdo->prepare("SELECT COUNT(*) FROM sku_bc WHERE day = ? AND kind = ? AND sku = ? AND name = ? AND size = ?");
                 $ins = $pdo->prepare("INSERT INTO sku_bc (code, kind, day, sku, name, size, mrp, batch, mfg, exp, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"); $new = []; $pdo->beginTransaction();
                 foreach ($items as $it) {
