@@ -236,4 +236,10 @@ $byT = []; foreach ($b['topics'] as $x) $byT[$x['title']] = $x;
 ok(isset($byT['Dharmik — daily work'], $byT['Dhvanil — daily work'], $byT['Mehul — daily work'], $byT['Hemil — daily work'], $byT['Sachin — daily work']) && !isset($byT['Packing']) && !isset($byT['Remittance entry']), 'Dispatch: one topic for each of the 5, the old ones gone');
 ok(count($byT['Mehul — daily work']['fields']) === 17 && $byT['Mehul — daily work']['fields'][2]['type'] === 'num' && count($byT['Hemil — daily work']['fields']) === 7 && count($byT['Sachin — daily work']['fields']) === 15, 'Dispatch: a box a task (number where it counts) + a Note');
 $dv = $byT['Dhvanil — daily work']; $u = $dv['updates']['2026-11-22'] ?? null; ok($u && $u['f']['f2'] === '42' && strpos($u['f']['f' . count($dv['fields'])], 'Packing: late tempo') === 0, 'Dispatch: the old number and its note are copied in');
+// Review drive: one topic in the Amazon section and one in the Myntra section (each its own), made once
+$pdo->exec("INSERT INTO fu_sections (name, active) VALUES ('Amazon', 1), ('Myntra', 1)"); $GLOBALS['SET']['fup_review_drive_amazon_v1'] = ''; $GLOBALS['SET']['fup_review_drive_myntra_v1'] = '';
+[$c] = call('fup.board', $ADMIN); [$c] = call('fup.board', $ADMIN);
+foreach (['Amazon', 'Myntra'] as $pn) { $sid = (int)$pdo->query("SELECT id FROM fu_sections WHERE name = '$pn'")->fetchColumn(); $rt = $pdo->query("SELECT * FROM fu_topics WHERE section_id = $sid AND title LIKE 'Review drive%' AND active = 1")->fetchAll(); $rf = $rt ? json_decode((string)$rt[0]['fields'], true) : [];
+    $ph = 0; $nm = 0; $rq = 0; foreach ($rf as $f) { if ($f['type'] === 'photo') $ph++; if ($f['type'] === 'num') $nm++; if ($f['req']) $rq++; }
+    ok(count($rt) === 1 && count($rf) === 37 && $ph === 12 && $nm === 13 && $rq === 1 && $rf[1]['g'] === 'Product 1' && strpos($rt[0]['note'], $pn) !== false, "Review drive: $pn has one topic (total + 12 product slots with screenshots), made once"); }
 echo $bad ? "followup_test: $bad of $n FAILED\n" : "followup_test: all $n passed\n"; exit($bad ? 1 : 0);

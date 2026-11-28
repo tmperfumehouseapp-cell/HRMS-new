@@ -321,6 +321,53 @@ function wa_util_pool_defs_raw(): array
             'body' => "Hi {{1}}, do you have any request for TM Perfume House, such as an order change, a delivery question or a product query? Tap a button and we will help you."],
         'open_req_team' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Raise a request', 'Not now']),
             'body' => "Hello {{1}}, if you want to request anything from TM Perfume House, for example a return, a replacement or an invoice, reply here and our team will assist you."],
+        /* owner 27 Nov 2026: "5-6 utility messages in turn in every rescue and in Module B". The one message Meta delivers to everybody is the feedback question (rs3069: 10,884 sent, 2 failed, 25 orders from new customers after the reply + offer); it carried the whole load and Meta paused it. Eight more in that shape (a real service question, one tap answers, no price / deal word, true for every customer on our list), each with its own wording, and two more for customers with an order. */
+        'open_fb_star' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Bahut badhiya', 'Theek thaak']),
+            'body' => "Hello {{1}} 😊\n\nTM Perfume House ko aap 5 me se kitne star denge ? ⭐\n\n*Sirf ek tap* me bata dijiye, aapki raay ka humein intezaar he 🙏"],
+        'open_fb_better' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Sab badhiya he', 'Ek sujhav he']),
+            'body' => "Hi {{1}} 🌸\n\nTM Perfume House ki service me aapko kya behtar chahiye ? 💭\n\nAapki raay hamare liye *khaas* he.\n\nNeeche button dabaiye, sirf ek line me bata dijiye 👇"],
+        'open_fb_friend' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, zaroor', 'Abhi nahi']),
+            'body' => "Hello {{1}} 👋\n\n*Ek chhota sa sawal:* kya aap TM Perfume House ke baare me apne doston ko batayenge ? 😊\n\nSirf ek button dabaiye, humein aapke jawab ka intezaar he ✨"],
+        'open_fb_reply' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, mila', 'Nahi mila']),
+            'body' => "Hi {{1}} 🙏\n\nTM Perfume House ki team se aapko jawab time par mila ? 💬\n\nHum apni service dekh rahe hain, aapka ek tap humein *bahot kaam* aayega.\n\nNeeche dekhiye 👇"],
+        'open_fb_word' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Share feedback', 'Not now']),
+            'body' => "Hello {{1}} ✨\n\nTM Perfume House ke saath aapka anubhav *ek shabd me* kaisa raha ? 🌸\n\nSirf ek line likh dijiye, hum har jawab khud padhte hain 😊"],
+        'open_fb_pref' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Men', 'Women', 'Unisex']),
+            'body' => "Hi {{1}} 📝\n\nTM Perfume House me aapki pasand note karni he, taaki aapko sahi jaankari mile.\n\n*Aap kaunsi khushbu use karte ho ?* 🌸\n\nSirf ek button dabaiye 👇"],
+        'open_fb_size' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['20ML', '50ML', '100ML']),
+            'body' => "Hello {{1}} 😊\n\nTM Perfume House ke record me aapka pasandida size note karna he 📝\n\n*Aap kaunsa size use karte ho ?*\n\nNeeche se ek pick kijiye 👇"],
+        'open_fb_easy' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, aasaan', 'Thoda mushkil']),
+            'body' => "Hi {{1}} 👋\n\nTM Perfume House par perfume chunna aapko aasaan laga ? 🤔\n\nAapki raay se hum apni service behtar banate hain.\n\n*Sirf ek tap* me bataiye 👇"],
+        /* 27 Nov 16:00: of the eight messages above Meta kept only the two PURE rating questions as utility (fb_star, fb_word; the six that ask about service, friends, size or preference were turned into marketing within 30 minutes). Six more pure rating / experience questions, each in its own words. */
+        'open_fb_rate5' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['5 - Bahut achha', '3 - Theek', '1 - Kharab']),
+            'body' => "Hello {{1}} ⭐\n\nTM Perfume House ke saath aapka experience kaisa raha ?\n\n*1 se 5 me rating dijiye*, sirf ek tap 👇"],
+        'open_fb_happy' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Haan, khush hoon', 'Nahi']),
+            'body' => "Hi {{1}} 😊\n\nKya aap TM Perfume House ke experience se khush hain ?\n\nAapke jawab ka humein intezaar he, *sirf ek tap* 🙏"],
+        'open_fb_line' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Share feedback', 'Not now']),
+            'body' => "Hello {{1}} 🌸\n\nTM Perfume House ke baare me aapka feedback humein chahiye 💭\n\n*Sirf ek line* me bataiye, aapka experience kaisa raha ?"],
+        'open_fb_thumb' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Achha raha', 'Achha nahi raha']),
+            'body' => "Hi {{1}} 👋\n\nEk chhota sa sawal: TM Perfume House ke saath aapka anubhav achha raha ya nahi ? 🤔\n\nNeeche dekhiye aur sirf ek button dabaiye 👇"],
+        'open_fb_score' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['10 me se 10', '10 me se 5', 'Usse kam']),
+            'body' => "Hello {{1}} ✨\n\nTM Perfume House ko aap 10 me se kitne number denge ? 📝\n\nAapki rating ka intezaar he, sirf ek tap 👇"],
+        'open_fb_exp2' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Very good', 'Could be better']),
+            'body' => "Hi {{1}} 🙏\n\nTM Perfume House par aapka experience hamare liye *khaas* he.\n\nKaisa raha ? Sirf ek tap me bataiye 👇"],
+        /* owner 27 Nov 2026 (evening): "new utility messages, and this time only the kind Meta does not turn into marketing". Of 14 "anyone" messages Meta kept five: all five ask for a RATING / FEEDBACK of his EXPERIENCE with the words rating, star, feedback or experience. The nine it moved asked something else (friends, size, preference, happy, a score out of 10). Six more that stay strictly inside the kept shape. */
+        'open_fb_review' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Share feedback', 'Not now']),
+            'body' => "Hello {{1}} ⭐\n\nTM Perfume House ke saath aapke experience par aapka feedback chahiye.\n\n*Sirf ek line* me likh dijiye, experience kaisa raha ? 🙏"],
+        'open_fb_star5' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['5 star', '4 star', '3 ya kam']),
+            'body' => "Hi {{1}} 😊\n\nAapke experience ke hisaab se TM Perfume House ko kitne star ? ⭐\n\nSirf ek tap me rating dijiye 👇"],
+        'open_fb_rate3' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Bahut achha', 'Theek thaak', 'Achha nahi']),
+            'body' => "Hello {{1}} 🌸\n\nTM Perfume House ke saath aapka experience kaisa raha ?\n\nApni rating dijiye, *sirf ek tap* 👇"],
+        'open_fb_share' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Share experience', 'Not now']),
+            'body' => "Hi {{1}} 🙏\n\nTM Perfume House par aapka experience kaisa raha, ye feedback humein chahiye ⭐\n\nNeeche dekhiye aur ek tap me share kijiye 👇"],
+        'open_fb_stars' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Bahut badhiya', 'Theek thaak']),
+            'body' => "Hello {{1}} ✨\n\nAapka experience rating: TM Perfume House ko 5 me se kitne star ? ⭐\n\nAapke feedback ka intezaar he 🙏"],
+        'open_fb_exp3' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Very good', 'Could be better']),
+            'body' => "Hi {{1}} 💭\n\nEk feedback chahiye: TM Perfume House ke saath aapka experience kaisa raha ?\n\n*Sirf ek tap* me rating dijiye ⭐"],
+        'order_fb_pack' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Sab badhiya', 'Ek dikkat thi']),
+            'body' => "Hello {{1}} 📦\n\nAapke order {{2}} ({{3}}) ki packing aur delivery kaisi rahi ? 😊\n\n*Sirf ek tap* me bata dijiye, aapki raay ka intezaar he 🙏"],
+        'order_fb_star' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Bahut badhiya', 'Theek thaak']),
+            'body' => "Hi {{1}} ⭐\n\nOrder {{2}} ({{3}}) ke perfume ko aap 5 me se kitne star denge ? 🌸\n\nNeeche button dabaiye, sirf ek tap 👇"],
     ];
 }
 /** The pool rows that exist: key => template row (+ kind). */
@@ -349,6 +396,11 @@ function wa_util_pool_make(PDO $pdo, int $by): array
 function wa_util_claims_history(string $body): bool
 {
     return (bool)preg_match('/\b(recent|your (?:recent )?(?:enquiry|inquiry|order|purchase|catalogue)|on (?:file|record)|you (?:asked|enquired|inquired|bought|purchased|ordered|received)|(?:bought|received) from us)\b/i', $body);
+}
+/** A message that speaks of the customer's own order or parcel (English or Hinglish): only for a customer who has one. */
+function wa_util_claims_order(string $body): bool
+{
+    return (bool)preg_match('/((aapke|aapka|aapki|apke|apka|apki|your)\s+(order|parcel)|parcel\s+kahan|track\s+my\s+order|order\s+ke\s+baare)/iu', $body);
 }
 /** 🎯 owner, 18 Nov 2026 (night): a self-written message that names an enquiry or an order goes ONLY to a customer whose behaviour makes it true: wrote to us within the asked-days (enquiry) / ordered within the order-days (order). A claim about a catalogue is never made (we do not know what they asked). */
 function wa_util_claim_ok(string $body, bool $hasEnq, bool $hasOrd): bool
@@ -451,7 +503,7 @@ function wa_util_pool_view(PDO $pdo): array
 function wa_util_pool_usable(PDO $pdo, bool $behaviour = false): array
 {
     $o = []; $__blk = (string)setting_get($pdo, 'wa_block_dull', '1') !== '0'; if ($__blk && !function_exists('wa_rs_dull') && is_file(__DIR__ . '/wa_restyle.php')) { try { require_once __DIR__ . '/wa_restyle.php'; } catch (Throwable $e) { } }
-    foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || strtoupper((string)($r['category'] ?? 'UTILITY')) !== 'UTILITY') continue;   /* owner 26 Nov 2026: a pool message whose category IS marketing (the new-style twins of the welcome messages Meta had moved to marketing: rs971_…) is not a utility message: Module B sent 510 of them in a day to people whose marketing had just failed, 70% failed again (131049) and that tripped B's failure brake every round */ if ($__blk && function_exists('wa_rs_dull') && wa_rs_dull((string)($r['body'] ?? ''))) continue;   /* a basic message is not picked (owner 25 Nov) */ $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
+    foreach (wa_util_pool_rows($pdo) as $k => $r) { if (!empty($r['relabelled_at']) || strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || strtoupper((string)($r['category'] ?? 'UTILITY')) !== 'UTILITY') continue;   /* owner 26 Nov 2026: a pool message whose category IS marketing (the new-style twins of the welcome messages Meta had moved to marketing: rs971_…) is not a utility message: Module B sent 510 of them in a day to people whose marketing had just failed, 70% failed again (131049) and that tripped B's failure brake every round */ if ($__blk && function_exists('wa_rs_dull') && wa_rs_dull((string)($r['body'] ?? ''))) continue;   /* a basic message is not picked (owner 25 Nov) */ if (($r['pool_kind'] ?? '') === 'open' && wa_util_claims_order((string)($r['body'] ?? ''))) continue;   /* owner 27 Nov 2026: an 'anyone' message that speaks of HIS order / parcel ("Aapka parcel kahan pahonch gaya? Track my order", rs3085) went to people with no order at all: untrue, and Meta counts it as marketing (48% failed with 131049) */ $claims = ($r['pool_kind'] ?? '') === 'open' && strpos((string)($r['extra'] ?? ''), 'util_learned') !== false && wa_util_claims_history((string)$r['body']); if ($claims && !$behaviour) continue;   // a self-written message that claims a recent enquiry / order is only for Module B, which sends it to customers whose behaviour makes it true
         $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; if ($claims) { $t['claims'] = true; $t['body'] = (string)$r['body']; }
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;

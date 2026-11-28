@@ -55,7 +55,7 @@ function sr_cfg_save(PDO $pdo, array $in): array
     return $c;
 }
 function sr_phone(string $p): string { $d = preg_replace('/\D+/', '', $p); if (strlen($d) === 10) $d = '91' . $d; return $d; }
-function sr_short_title(string $t): string { $t = trim(preg_replace('/\s+/', ' ', $t)); $p = preg_split('/\s+[-–—]\s+/u', $t); $t = trim($p[0] ?? $t); return mb_substr($t, 0, 60); }
+function sr_short_title(string $t): string { $t = trim(preg_replace('/\s+/', ' ', $t)); $t = trim(preg_split('/\s*[|｜]\s*/u', $t)[0] ?? $t); $p = preg_split('/\s+[-–—]\s+/u', $t); $t = trim($p[0] ?? $t); return mb_substr($t, 0, 60); }
 function sr_text(string $tpl, string $name, string $perfume, int $ml): string
 {
     $first = trim($name) !== '' ? explode(' ', trim($name))[0] : 'ગ્રાહક';

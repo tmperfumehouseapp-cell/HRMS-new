@@ -227,6 +227,29 @@ function fup_tm4u_upload_topic(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_tm4u_upload_topic: ' . $e->getMessage()); }
 }
 
+/** Once per section (Amazon and Myntra, each its own topic): "Review drive". The staff get reviews from customers for the 10-12 products that have few reviews; each day they write the total, and for every product
+ *  the product name, how many reviews came and as many screenshots as they have (a photo box takes any number of files) - the proof that the customer really wrote the review.
+ *  12 product slots (a sub-topic each); only the total is required (0 = none). The owner renames / removes slots in the topic editor. Nobody is assigned. Same title is not made twice. */
+function fup_seed_review_drive(PDO $pdo): void
+{
+    try {
+        foreach ([['amazon', "LOWER(name) LIKE 'amazon%'", 'Amazon'], ['myntra', "LOWER(name) LIKE '%myntra%'", 'Myntra']] as $s) {
+            $key = 'fup_review_drive_' . $s[0] . '_v1'; if ((string)setting_get($pdo, $key, '') === '1') continue;
+            $q = $pdo->query("SELECT id FROM fu_sections WHERE " . $s[1] . " AND active = 1 ORDER BY id LIMIT 1"); $sid = (int)$q->fetchColumn(); $q->closeCursor(); if ($sid <= 0) continue;      // the section is made by the owner; this waits for it
+            $title = 'Review drive: reviews we got today (with screenshots)';
+            $has = $pdo->prepare("SELECT COUNT(*) FROM fu_topics WHERE section_id = ? AND active = 1 AND title = ?"); $has->execute([$sid, $title]);
+            if ((int)$has->fetchColumn() === 0) {
+                $fields = [['label' => 'Total reviews we got today (write 0 if none)', 'type' => 'num', 'req' => 1]];
+                for ($i = 1; $i <= 12; $i++) { $g = 'Product ' . $i; $fields[] = ['label' => 'Product name', 'type' => 'text', 'req' => 0, 'g' => $g]; $fields[] = ['label' => 'Reviews got', 'type' => 'num', 'req' => 0, 'g' => $g]; $fields[] = ['label' => 'Screenshots of the reviews', 'type' => 'photo', 'req' => 0, 'g' => $g]; }
+                $n = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fu_topics WHERE section_id = " . $sid)->fetchColumn();
+                $pdo->prepare("INSERT INTO fu_topics (section_id, title, kind, due_date, assignee_emp, source, note, unit, `lag`, metrics, need_text, `fields`, status, sort_no, active, created_by, created_at) VALUES (?, ?, 'progress', NULL, 0, '', ?, '', 0, '', 0, ?, 'open', ?, 1, 0, ?)")
+                    ->execute([$sid, $title, 'We ask customers of the products that have few reviews on ' . $s[2] . ' to write a review. Write the total, then for each product: its name, how many reviews came, and put ALL the screenshots of those reviews (select many photos at once). No screenshot = no proof.', json_encode(fup_fields_clean($fields), JSON_UNESCAPED_UNICODE), $n + 1, fup_now()]);
+            }
+            setting_set($pdo, $key, '1');      // only after the topic is there
+        }
+    } catch (Throwable $e) { error_log('fup_seed_review_drive: ' . $e->getMessage()); }
+}
+
 /** Once: the owner's four plain hand-written topics of the Myntra section (the section is made by the owner; this waits for it): yesterday's four numbers, how the products look in front, the reviews with the product name, and the Ads. Nothing is read from Myntra. Nobody is assigned. */
 function fup_seed_myntra_topics(PDO $pdo): void
 {
@@ -1499,6 +1522,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_store_topics4($pdo);
     fup_seed_amazon_topics($pdo);
     fup_seed_myntra_topics($pdo);
+    fup_seed_review_drive($pdo);
     fup_seed_tm4u_topics($pdo);
     fup_tm4u_numbers_update($pdo);
     fup_tm4u_upload_topic($pdo);

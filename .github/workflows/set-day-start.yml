@@ -1,0 +1,63 @@
+# Sets the start time of ONE weekday on the Day timing table (the same table the Day timing page saves), and writes the change into the Day timing log
+# with who asked for it. Run by hand: Actions -> "Set a weekday's day start" (weekday 0 = Sunday .. 6 = Saturday, time HH:MM).
+name: Set a weekday's day start
+
+on:
+  workflow_dispatch:
+    inputs:
+      weekday:
+        description: "0 = Sunday, 1 = Monday ... 6 = Saturday"
+        required: true
+      time:
+        description: "Start time HH:MM (e.g. 10:00)"
+        required: true
+        default: "10:00"
+      by:
+        description: "Who asked for it (goes into the Day timing log)"
+        required: true
+        default: "owner (via Claude)"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Set it
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          WD: ${{ github.event.inputs.weekday }}
+          TM: ${{ github.event.inputs.time }}
+          BY: ${{ github.event.inputs.by }}
+        run: |
+          W=$(printf '%s' "$WD" | tr -cd '0-6' | cut -c1); T=$(printf '%s' "$TM" | tr -cd '0-9:' | cut -c1-5); B=$(printf '%s' "$BY" | tr -cd '[:alnum:] ()' | cut -c1-40 | tr ' ' '_')
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$W" "$T" "$B" <<'REMOTE' || true
+          P="$1"; W="$2"; T="$3"; B="$4"
+          cat > /tmp/dt_set.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          date_default_timezone_set("Asia/Kolkata"); $w = $argv[2]; $t = $argv[3]; $by = str_replace('_', ' ', (string)$argv[4]);
+          if (!preg_match('/^[0-6]$/', $w) || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t)) { echo "bad weekday / time\n"; exit; }
+          $names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          $old = (string)$d->query("SELECT start_time FROM day_timing WHERE weekday = " . (int)$w)->fetchColumn(); if ($old === '') $old = '10:00';
+          if ($old === $t) { echo $names[$w] . " already starts at $t\n"; exit; }
+          $d->prepare("INSERT INTO day_timing (weekday, start_time) VALUES (?, ?) ON DUPLICATE KEY UPDATE start_time = VALUES(start_time)")->execute([(int)$w, $t]);
+          $q = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'day_timing_log'"); $lg = json_decode((string)$q->fetchColumn(), true); $lg = is_array($lg) ? $lg : [];
+          $lg[] = ['at' => date('Y-m-d H:i:s'), 'by' => $by, 'ip' => 'server job', 'ch' => [$names[$w] . ' ' . $old . '→' . $t]]; $lg = array_slice($lg, -60);
+          $d->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES ('day_timing_log', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([json_encode($lg, JSON_UNESCAPED_UNICODE)]);
+          echo "DONE: " . $names[$w] . " " . $old . " -> " . $t . "\n";
+          foreach ($d->query("SELECT weekday, start_time FROM day_timing ORDER BY weekday") as $r) echo "  " . $names[(int)$r['weekday']] . " " . $r['start_time'] . "\n";
+          PHP
+          php /tmp/dt_set.php "$P" "$W" "$T" "$B"; rm -f /tmp/dt_set.php
+          REMOTE

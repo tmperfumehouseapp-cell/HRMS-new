@@ -436,8 +436,26 @@ function wa_tpl_budget(PDO $pdo, string $waba): array
     return ['ok' => $why === '', 'why' => $why, 'hour' => $h, 'day' => $d, 'total' => $t, 'hour_cap' => $hc, 'day_cap' => $dc, 'total_cap' => $tc];
 }
 /** One submission with all the guards. Returns [ok, note]. $budget['left'] counts the submissions this run may still make. */
+/** owner 27 Nov 2026: a WhatsApp account that REJECTS every new message (20+ rejected and none approved in 24 hours) is skipped for new messages for 6 hours; then it is tried again for an hour, and skipped again if it still rejects ("wait until it is green, then switch it on again"). [account id => skipped until]. Off: wa_waba_skip_on = 0. */
+function wa_waba_skip(PDO $pdo): array
+{
+    static $c = null, $at = 0; if ($c !== null && time() - $at < 120) return $c; $at = time(); $c = [];
+    try { if ((string)setting_get($pdo, 'wa_waba_skip_on', '1') === '0') return $c;
+        $j = json_decode((string)setting_get($pdo, 'wa_waba_skip', ''), true); if (!is_array($j)) $j = []; $sk = is_array($j['skip'] ?? null) ? $j['skip'] : []; $now = time();
+        if ((int)($j['at'] ?? 0) < $now - 1800) {
+            foreach ($pdo->query("SELECT waba_id, SUM(UPPER(status) = 'REJECTED'), SUM(UPPER(status) = 'APPROVED') FROM wa_tpl_waba WHERE updated_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "' GROUP BY waba_id")->fetchAll(PDO::FETCH_NUM) as $r) {
+                $w = (string)$r[0]; $until = (int)($sk[$w] ?? 0); if ($until > $now) continue; if ($until > 0 && $until > $now - 3600) continue;   // its trial hour after a skip
+                if ((int)$r[1] >= 20 && (int)$r[2] === 0) { $sk[$w] = $now + 6 * 3600; if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'WhatsApp account ' . $w . ' rejected ' . (int)$r[1] . ' new messages in 24 hours and approved none: no new message is sent to it for 6 hours, then it is tried again'); } elseif ($until > 0 && (int)$r[2] > 0) unset($sk[$w]);
+            }
+            setting_set($pdo, 'wa_waba_skip', json_encode(['at' => $now, 'skip' => $sk]));
+        }
+        foreach ($sk as $w => $u) if ((int)$u > $now) $c[(string)$w] = (int)$u;
+    } catch (Throwable $e) { }
+    return $c;
+}
 function wa_tpl_try_create(PDO $pdo, array $tpl, string $waba, array &$budget): array
 {
+    $__sk = function_exists('wa_waba_skip') ? wa_waba_skip($pdo) : []; if (isset($__sk[$waba])) return [false, 'this WhatsApp account rejects every new message now: skipped until ' . date('d M H:i', $__sk[$waba])];
     $queue = function () use ($pdo, $tpl) { try { if (empty(wa_mix_extra($tpl)['queued'])) wa_mix_extra_set($pdo, (int)$tpl['id'], ['queued' => 1]); } catch (Throwable $e) { } };   // not sent for lack of room: the engine picks it up later
     if (($budget['left'] ?? 0) <= 0) { $queue(); return [false, 'over the limit for one run - continues in the next minute']; }
     $b = wa_tpl_budget($pdo, $waba); if (!$b['ok']) { $queue(); return [false, $b['why']]; }
@@ -558,7 +576,10 @@ function wa_fam_market_rewrite(array $t, int $ver, string $reason): array
 /** Why a message needs an alternative right now ('' = fine). */
 function wa_fam_trouble(array $r, array $have): string
 {
-    foreach ($have as $w) { $s = strtoupper((string)$w['status']);
+    /* owner 27 Nov 2026: a message that is APPROVED on another account is not in trouble because one account rejected it (one account rejects every new message: each of the day's messages got a calmer _v2 and _v3 that nobody needs) */
+    $__okAny = false; foreach ($have as $w) if (in_array(strtoupper((string)$w['status']), ['APPROVED', 'PENDING', 'IN_APPEAL'], true)) { $__okAny = true; break; }   /* PENDING counts too: the full account answers "rejected" at once, before the others have approved (the photo messages got a _v2 and _v3 that way) */
+    foreach ($have as $w) { $s = strtoupper((string)$w['status']); if ($s === 'REJECTED' && $__okAny) continue;
+        if ($s === 'REJECTED' && preg_match('/maximum number|મહત્તમ સંખ્યા|English content|English કન્ટેન્ટ|already exists/iu', (string)$w['reason'])) continue;   /* the account is full, or the name is taken there: not the wording's fault */
         if ($s === 'REJECTED' && (string)$w['meta_id'] !== '' ) return 'rejected by Meta' . ((string)$w['reason'] !== '' ? ' (' . mb_substr((string)$w['reason'], 0, 60) . ')' : '');
         if ($s === 'REJECTED' && (string)$w['reason'] !== '' && !preg_match('/reach|answer|WA_APP_ID|WA_TOKEN|photo|video|PDF|file|library|sample|upload|limit/i', (string)$w['reason'])) return 'rejected by Meta (' . mb_substr((string)$w['reason'], 0, 60) . ')';
         if (in_array($s, ['PAUSED', 'DISABLED', 'FLAGGED'], true)) return 'paused by Meta';
@@ -571,7 +592,7 @@ function wa_fam_scan(PDO $pdo, array &$budget): int
 {
     $max = wa_mix_cfg($pdo, 'wa_fam_max', 3); $made = 0; $wabas = wa_wabas($pdo); $by = [];
     foreach ($pdo->query("SELECT * FROM wa_tpl_waba")->fetchAll() as $w) $by[(int)$w['tpl_id']][(string)$w['waba_id']] = $w;
-    $all = $pdo->query("SELECT * FROM wa_templates ORDER BY id")->fetchAll(); $rows = []; foreach ($all as $r) { $r['ex'] = wa_mix_extra($r); $r['ver'] = (int)$r['version'] ?: (int)($r['ex']['utility_v'] ?? 1); $r['twin_of'] = (int)($r['ex']['utility_of'] ?? 0); $rows[(int)$r['id']] = $r; }
+    $all = $pdo->query("SELECT * FROM wa_templates ORDER BY id")->fetchAll(); $rows = []; foreach ($all as $r) { if (strpos((string)$r['name'], 'tmph_store_') === 0) continue;   /* the Store's own messages (Store → WhatsApp → Templates) are never rewritten by the sales engine */ $r['ex'] = wa_mix_extra($r); $r['ver'] = (int)$r['version'] ?: (int)($r['ex']['utility_v'] ?? 1); $r['twin_of'] = (int)($r['ex']['utility_of'] ?? 0); $rows[(int)$r['id']] = $r; }
     $busyNums = []; try { $q = $pdo->query("SELECT DISTINCT i.number_id, COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.status = 'sent' AND i.sent_at >= '" . date('Y-m-d H:i:s', wa_mix_now() - 3 * 86400) . "'");
         $env = wa_mix_env($pdo); foreach ($q->fetchAll() as $r) { $h = $env['health'][(int)$r['number_id']] ?? null; if ($h && in_array(strtoupper((string)$h['quality']), ['YELLOW', 'RED'], true)) $busyNums[(int)$r['tid']] = 'the number ' . wa_mix_numlabel($env, (int)$r['number_id']) . ' is at ' . wa_mix_q_name((string)$h['quality']) . ' quality'; } } catch (PDOException $e) { }
     // 🛟 a plain UTILITY message that a campaign uses gets a MARKETING alternative too when Meta pauses it (setting wa_fam_util_alt, on by default): the sender then uses the alternative on the accounts where the first one is paused

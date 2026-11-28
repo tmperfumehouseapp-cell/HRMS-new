@@ -102,7 +102,8 @@ function wa_ru_numbers(PDO $pdo, int $nowTs, bool $update = true): array
 {
     $rest = json_decode((string)setting_get($pdo, 'wa_ru_rest', ''), true); $rest = is_array($rest) ? $rest : []; $o = [];
     try {
-        $q = $pdo->prepare("SELECT r.number_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ? GROUP BY r.number_id");
+        /* owner 27 Nov 2026: a number is judged by the UTILITY messages that really WENT from it. Until now a refusal at sending (no message left: a paused message, a customer whose bot is paused) and the marketing last-resort messages (which fail with Meta's marketing limit, 131049) counted as the number's failures: 33% "failed" in an hour and every number rested for 2 hours, so Module B sent nothing while it had six usable utility messages */
+        $q = $pdo->prepare("SELECT r.number_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(m.status = 'failed') AS f FROM wa_ru_log r JOIN wa_templates tz ON tz.id = r.tpl_id AND UPPER(tz.category) = 'UTILITY' AND COALESCE(tz.category_now, '') <> 'MARKETING' LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ? AND r.ok = 1 GROUP BY r.number_id");
         $q->execute([date('Y-m-d H:i:s', max($nowTs - 3 * 3600, (int)setting_get($pdo, 'wa_ru_brake_since', '0'))), date('Y-m-d H:i:s', $nowTs - 900)]);
         foreach ($q->fetchAll() as $r) { $id = (int)$r['number_id']; $n = (int)$r['n']; $d = (int)$r['d']; $f = (int)$r['f'];
             if ($update && $n >= 40 && ((float)$d / $n < 0.35 || (float)$f / $n >= 0.3) && (int)($rest[$id] ?? 0) <= $nowTs) { $rest[$id] = $nowTs + 7200; wa_log($pdo, 'campaign', false, 'Utility follow-up: number #' . $id . ' rests for 2 hours (' . $d . ' of ' . $n . ' delivered, ' . $f . ' failed)'); }
