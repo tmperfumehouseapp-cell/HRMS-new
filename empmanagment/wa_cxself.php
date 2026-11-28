@@ -44,6 +44,12 @@ function wa_cxself_hook(PDO $pdo, string $key, string $text): bool
     if ($st['step'] === 'pick') {   // 2. the issue (the list tap shows its title; a number works too)
         $pick = ''; foreach (wa_cxself_items() as $i => $x) if ($low === mb_strtolower($x[1]) || $t === (string)($i + 1)) $pick = $x[0];
         if ($pick === '') { if (preg_match('/^(cancel|stop|no|nahi)\b/i', $t)) { wa_cxself_put($pdo, $key, null); wa_cxself_say($pdo, $c, 'Okay 🙏 No ticket was raised. Write to us any time.'); return true; } wa_cxself_say($pdo, $c, 'Please choose the issue from the list (or reply with its number). Reply CANCEL to stop.'); $st['at'] = time(); wa_cxself_put($pdo, $key, $st); return true; }
+        if ($pick === 'tracking') {   // 📦 owner (28 Nov 2026): "Tracking ID needed" is answered from the order data at once — no complaint ticket while the parcel is moving normally (late / failed / RTO still go on to a ticket)
+            if (!function_exists('wa_ord_track_reply') && is_file(__DIR__ . '/wa_orders.php')) { try { require_once __DIR__ . '/wa_orders.php'; } catch (Throwable $e) { } }
+            $tr = function_exists('wa_ord_track_reply') ? wa_ord_track_reply($pdo, $key) : null;
+            if ($tr !== null) { wa_cxself_put($pdo, $key, null); wa_cxself_say($pdo, $c, $tr . "\n\nIf something is still wrong, reply COMPLAINT and we will raise a ticket 🙏");
+                if (function_exists('wa_event')) { try { wa_event($pdo, $key, '📦 Tracking ID asked from the ticket menu: the status was sent — no complaint raised'); } catch (Throwable $e) { } } return true; }
+        }
         wa_cxself_put($pdo, $key, ['step' => 'text', 'problem' => $pick, 'at' => time()]);
         wa_cxself_say($pdo, $c, 'Thank you. Please describe the problem in ONE message' . (in_array($pick, ['leak', 'wrong', 'quality', 'missing'], true) ? ' — and send a photo or the unboxing video if you have it' : '') . ($pick !== 'other' ? ' (your order number helps too)' : '') . '.'); return true;
     }
