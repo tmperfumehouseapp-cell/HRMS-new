@@ -1,0 +1,42 @@
+# READ-ONLY check (changes nothing): can the database be moved to a second server with almost no stop? Reads MySQL settings only (version, binary log, memory, connections).
+name: Database move readiness (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Look
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/dbm.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; } require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 20, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "database: " . $e->getMessage() . "\n"; exit; }
+          echo "DB_HOST in config: " . (defined("DB_HOST") ? DB_HOST : "(default 127.0.0.1)") . "\n";
+          foreach (["version", "version_comment", "log_bin", "binlog_format", "server_id", "gtid_mode", "binlog_expire_logs_seconds", "innodb_buffer_pool_size", "innodb_flush_log_at_trx_commit", "max_connections", "max_allowed_packet", "bind_address", "innodb_file_per_table", "datadir"] as $v) { try { $r = $d->query("SHOW VARIABLES LIKE '" . $v . "'")->fetch(PDO::FETCH_NUM); echo str_pad($v, 34) . ($r[1] ?? "-") . "\n"; } catch (Throwable $e) { echo $v . ": " . substr($e->getMessage(), 0, 60) . "\n"; } }
+          try { foreach (["Threads_connected", "Max_used_connections", "Uptime", "Questions"] as $v) { $r = $d->query("SHOW GLOBAL STATUS LIKE '" . $v . "'")->fetch(PDO::FETCH_NUM); echo str_pad($v, 34) . ($r[1] ?? "-") . "\n"; } } catch (Throwable $e) { }
+          try { foreach ($d->query("SHOW GRANTS")->fetchAll(PDO::FETCH_NUM) as $g) echo "GRANT: " . substr($g[0], 0, 120) . "\n"; } catch (Throwable $e) { echo "grants: " . substr($e->getMessage(), 0, 80) . "\n"; }
+          try { $r = $d->query("SELECT ENGINE, COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() GROUP BY ENGINE")->fetchAll(PDO::FETCH_NUM); foreach ($r as $x) echo "engine " . $x[0] . ": " . $x[1] . " tables\n"; } catch (Throwable $e) { }
+          PHP
+          php /tmp/dbm.php "$P"; rm -f /tmp/dbm.php
+          echo; echo "memory / disk:"; free -m | head -2; df -h / | tail -1
+          echo; echo "mysql processes:"; ps -eo pid,etimes,rss,comm,args --sort=-rss | grep -E "mysqld|mariadbd" | grep -v grep | head -2 | cut -c1-160
+          REMOTE
