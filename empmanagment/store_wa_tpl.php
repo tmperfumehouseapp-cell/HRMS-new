@@ -148,6 +148,21 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
         if (!in_array(strtoupper((string)($r['header_format'] ?? '')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) json_response(['error' => 'This message has no photo on top.'], 422);
         $lr = wa_tpl_lib_row($pdo, $lib); if (!$lr) json_response(['error' => 'Photo not found.'], 404); $pdo->prepare("UPDATE wa_templates SET header_lib_id = ? WHERE id = ?")->execute([$lib, $id]); json_response(['ok' => true, 'title' => (string)$lr['title']]);
     }
+    if ($action === 'st_wa.tpl_nophoto') {      // a copy WITHOUT the photo on top, as the next version (draft): for approved messages whose photo is missing
+        $made = []; $skip = [];
+        foreach (array_values(array_unique(array_filter(array_map('intval', (array)($in['ids'] ?? []))))) as $id) {
+            $r = wa_tpl_row($pdo, $id); if (!$r || strpos((string)$r['name'], 'tmph_store_') !== 0) continue;
+            if (!in_array(strtoupper((string)($r['header_format'] ?? '')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) { $skip[] = (string)$r['name'] . ' (has no photo)'; continue; }
+            $lg = (string)($r['language'] ?? 'en'); $base = preg_replace('/_v\d+$/', '', (string)$r['name']); $c = $pdo->prepare("SELECT name FROM wa_templates WHERE (name = ? OR name LIKE ?) AND language = ?"); $c->execute([$base, $base . '\_v%', $lg]);
+            $v = 1; foreach ($c->fetchAll(PDO::FETCH_COLUMN) as $n) if (preg_match('/_v(\d+)$/', (string)$n, $m) && preg_replace('/_v\d+$/', '', (string)$n) === $base) $v = max($v, (int)$m[1]);
+            $nm = substr($base, 0, 56) . '_v' . ($v + 1);
+            $d = ['name' => $nm, 'language' => $lg, 'category' => (string)$r['category'], 'header_format' => '', 'header_text' => '', 'header_lib_id' => 0, 'body' => (string)$r['body'], 'footer' => (string)($r['footer'] ?? ''), 'buttons' => st_wa_btns_clean(array_values((array)($r['buttons'] ?? []))), 'examples' => is_array($r['examples'] ?? null) ? $r['examples'] : [], 'folder' => 'Store'];
+            [$t, $err] = wa_tpl_clean($d, true); if ($err !== '') { $skip[] = (string)$r['name'] . ' (' . $err . ')'; continue; }
+            $t['name'] = $nm; $t['family_id'] = (int)($r['family_id'] ?? 0) ?: (int)$r['id']; $t['version'] = $v + 1; $nid = wa_tpl_insert($pdo, $t, $me, (string)($r['purpose'] ?? 'Store message'), 'No-photo version of ' . $r['name']);
+            $c2 = $pdo->prepare("SELECT name FROM wa_templates WHERE id = ?"); $c2->execute([$nid]); if ((string)$c2->fetchColumn() !== $nm) $pdo->prepare("UPDATE wa_templates SET name = ? WHERE id = ?")->execute([$nm, $nid]); $made[] = $nm;
+        }
+        json_response(['ok' => true, 'made' => $made, 'skipped' => $skip]);
+    }
     if ($action === 'st_wa.tpl_copy') {      // a new draft from an existing message (any status): same text, photo, buttons; a free name
         $r = wa_tpl_row($pdo, (int)($in['id'] ?? 0)); if (!$r || strpos((string)$r['name'], 'tmph_store_') !== 0) json_response(['error' => 'Message not found.'], 404);
         $base = substr(preg_replace('/(_copy\d*)?(_v\d+)?$/', '', (string)$r['name']), 0, 50); $lg = (string)($r['language'] ?? 'en'); $n = 1; $c = $pdo->prepare("SELECT 1 FROM wa_templates WHERE name = ? AND language = ?");

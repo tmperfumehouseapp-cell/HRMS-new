@@ -924,6 +924,14 @@ function st_wa_btn_text(string $t): string
     return mb_substr(trim(preg_replace('/\s+/u', ' ', $t) ?? $t), 0, 25);
 }
 function st_wa_btns_clean(array $b): array { foreach ($b as &$x) if (is_array($x) && isset($x['text'])) $x['text'] = st_wa_btn_text((string)$x['text']); unset($x); return $b; }
+/** The bill messages the owner made later (order_confirmation_v5, v6 … / order_back_v3 …): newest version first, so a new approved version (e.g. without the photo) is used by itself. */
+function st_wa_order_latest(PDO $pdo, bool $back): array
+{
+    $base = $back ? 'tmph_store_order_back_v' : 'tmph_store_order_confirmation_v'; $o = [];
+    try { $q = $pdo->prepare("SELECT name FROM wa_templates WHERE name LIKE ? AND language = 'en'"); $q->execute([str_replace('_', '\\_', $base) . '%']);
+        foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $n) if (preg_match('/^' . preg_quote($base, '/') . '(\d+)$/', (string)$n, $m)) $o[(int)$m[1]] = (string)$n; } catch (Throwable $e) { }
+    krsort($o); return array_values($o);
+}
 /** Names of the order-confirmation messages in the order they are tried (the owner's own wording first, the built-in ones last). */
 function st_wa_order_names(bool $back): array
 {
@@ -994,7 +1002,7 @@ function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array 
     $name = trim((string)$p['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($name);
     for ($round = 0; $round < 2 && !$t; $round++) {
         if ($round === 1) { $sw = st_store_waba($pdo); if ($sw === '' || (int)setting_get($pdo, 'st_wa_tsync_at', '0') > time() - 600) break; setting_set($pdo, 'st_wa_tsync_at', (string)time()); st_wa_tpl_sync($pdo, $sw); }      // nothing usable: Meta may have approved it without telling HRMS - ask Meta once (at most every 10 minutes) and try again
-        foreach (array_values(array_unique(array_merge(st_wa_order_names($back), $back ? st_wa_order_names(false) : []))) as $nm) {
+        foreach (array_values(array_unique(array_merge(st_wa_order_latest($pdo, $back), st_wa_order_names($back), $back ? array_merge(st_wa_order_latest($pdo, false), st_wa_order_names(false)) : []))) as $nm) {
             $t0 = st_wa_tpl($pdo, $nm); if (!$t0) continue; [$n0, $o0, $w0] = st_wa_number_for($pdo, $t0); if (!$n0) { $why = $w0; continue; }
             $v0 = st_wa_vars($t0, $first, $billNo, $total, (string)$p['token']); $r0 = wa_tpl_send_components($pdo, $t0, $v0, (string)$n0['phone_id'], ['url_suffix' => (string)$p['token']]);
             if (empty($r0['ok'])) { $why = $nm . ': ' . (string)($r0['error'] ?? 'could not build the message'); continue; }      // e.g. a photo message with no photo chosen: the next approved one is used
