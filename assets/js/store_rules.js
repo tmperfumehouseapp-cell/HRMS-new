@@ -10,6 +10,12 @@ window.StoreRules = (function () {
     return (rows.length ? rows.map((r) => fixRow(r, ed)).join('') : '<div class="sx-mut" style="font-size:12.5px">None. Every perfume is priced from the price chart.</div>')
       + (ed ? '<div style="margin-top:6px"><button type="button" class="lnk" id="srAdd">＋ Add a fixed price</button> <button type="button" class="sx-btn" id="srSave" style="padding:7px 14px;margin-left:6px">Save</button> <span id="srMsg" class="sx-mut"></span></div><div class="sx-mut" style="font-size:11.5px;margin-top:4px">One scan of that perfume (that ml) shows its fixed price in Billing. A 🎁 Deal (for example 3 for ₹2,700) is charged for every full group of that many bottles; the rest are charged one by one. The commission % is the price chart’s % for that price (a price above the top column pays the top %).</div>' : '');
   }
+  // 🧴 the shower gel / attar / combo charts (the same ones Budgeting → Commission shows); the cashier adds them with + / − on the bill
+  function xcharts(X) {
+    const t = (title, head, C, lab) => (C && C.rows && C.rows.length) ? `<b>${title}</b><div style="overflow:auto;margin:4px 0 12px"><table style="border-collapse:collapse;font-size:12.5px;min-width:420px"><thead><tr><th style="text-align:left;padding:4px 8px">${head}</th>${C.cols.map((c) => `<th style="padding:4px 8px;text-align:right">pays ${f(c)}%</th>`).join('')}</tr></thead><tbody>${C.rows.map((r) => `<tr style="border-top:1px solid var(--sx-line)"><td style="padding:4px 8px"><b>${esc(lab(r))}</b></td>${C.cols.map((c, i) => `<td style="padding:4px 8px;text-align:right">${(r.p[i] || 0) > 0 ? inr(r.p[i]) : '–'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
+    const h = t('Shower gel', 'Pieces', X.gel, (r) => r.n + ' pc') + t('Attar', 'Pieces', X.attar, (r) => r.n + ' pc') + t('Combos', 'Combo', X.mix, (r) => r.label);
+    return h ? '<div class="sx-mut" style="font-size:12.5px;margin-bottom:8px">On the bill (Store → Billing) press + for Shower gel / Attar. One kind alone uses its own chart; with perfume, or gel + attar together, the Combo row of exactly those amounts is used.</div>' + h : '<div class="sx-mut">No shower gel / attar / combo prices yet.</div>';
+  }
   function draw(d) {
     const nd = (iso, n) => { const x = new Date(String(iso || new Date().toISOString().slice(0, 10)) + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
     const R = d.rules || {}, win = d.window || 20, team = (d.team || []);
@@ -30,7 +36,8 @@ window.StoreRules = (function () {
       ${offers ? `<div style="overflow:auto"><table style="border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left;padding:4px 8px">Size</th><th style="text-align:left;padding:4px 8px">Price</th><th style="text-align:left;padding:4px 8px">Pays</th><th style="text-align:left;padding:4px 8px">Runs</th><th style="text-align:left;padding:4px 8px">Note</th></tr></thead><tbody>${offers}</tbody></table></div>` : '<div class="sx-mut" style="font-size:12.5px">No offer is running now — the normal price chart applies.</div>'}${flash}
       <h4 style="margin:12px 0 4px">Fixed-price perfumes <small class="sx-mut" style="font-weight:600">(for example the OG perfumes: this size always sells at this price)</small></h4>
       <div id="srFix">${fixHtml(d)}</div>
-      <details class="sx-d" style="margin-top:10px"><summary>💰 The price chart (what each size pays)</summary><div style="margin-top:8px">${chart}</div></details>`;
+      <details class="sx-d" style="margin-top:10px"><summary>💰 The price chart (what each size pays)</summary><div style="margin-top:8px">${chart}</div></details>
+      <details class="sx-d" style="margin-top:10px" open><summary>🧴 Shower gel, attar &amp; combos (same prices as Budgeting → Commission)</summary><div style="margin-top:8px">${xcharts(d.x || {})}</div></details>`;
   }
   async function mount(el) {
     el.innerHTML = '<div class="sx-mut">Loading…</div>';
