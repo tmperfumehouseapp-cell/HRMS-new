@@ -116,6 +116,7 @@ if (!function_exists('wa_style_pack')) {
             if ($why !== '') { $o['note'] = 'rejected: ' . $why; return $o; }
             $btn = []; foreach (array_slice((array)($j['buttons'] ?? []), 0, 3) as $b) { $t = mb_substr(trim((string)$b), 0, 20); if ($t !== '') $btn[] = ['type' => 'QUICK_REPLY', 'text' => $t]; } if (!$btn) { $o['note'] = 'no button'; return $o; }
             $n = (int)$st[$cat === 'MARKETING' ? 'm' : 'u'] + 1; $slug = preg_replace('/[^a-z0-9]+/', '_', strtolower((string)($j['name'] ?? 'idea'))); $name = 'tmph_new_' . date('ymd') . '_' . ($cat === 'MARKETING' ? 'm' : 'u') . $n . '_' . substr(trim($slug, '_'), 0, 14);
+            try { if ($cat === 'MARKETING') { if (!function_exists('wa_btn_new_on') && is_file(__DIR__ . '/wa_ordpack.php')) require_once __DIR__ . '/wa_ordpack.php'; if (function_exists('wa_btn_new_on') && wa_btn_new_on($pdo)) $btn = wa_btn_two(); } } catch (Throwable $e) { }   /* owner 28 Nov: the two buttons */
             [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => $cat, 'body' => $body, 'footer' => 'TM Perfume House', 'buttons' => $btn, 'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => $cat === 'MARKETING' ? 'Offers' : 'utility']);
             if ($err !== '') { $o['note'] = 'template check: ' . mb_substr($err, 0, 80); return $o; }
             $t['extra'] = $cat === 'UTILITY' ? ['util_pool' => 'open_new_' . date('ymd') . '_' . $n, 'util_kind' => 'open'] : ['daily_new' => date('Y-m-d')];
