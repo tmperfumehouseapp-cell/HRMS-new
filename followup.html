@@ -8,7 +8,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Follow-up — HRMS</title>
 <link rel="stylesheet" href="assets/css/style.css?v=4">
-<link rel="stylesheet" href="assets/css/boss.css?v=2">
+<link rel="stylesheet" href="assets/css/boss.css?v=3">
 <style>
   .fu{max-width:1500px;margin:0 auto;padding-bottom:40px;}
   .fu *{box-sizing:border-box;}
@@ -511,6 +511,7 @@ guardPage(); renderSidebar('followup');
       + '<div class="fu-row2"><div class="bd-f"><label id="uVl">Number</label><input class="bd-in" id="uV" inputmode="decimal"><div class="hint" id="uVh"></div></div>'
       + '<div class="bd-f"><label>% done</label><input class="bd-in" id="uP" inputmode="numeric" placeholder="0 – 100, if it fits"></div></div>'
       + '<div id="uNums"></div><div id="uF"></div><div class="bd-f"><label id="uTl">Update</label><textarea class="bd-in" id="uT" maxlength="2000" rows="4" placeholder="What happened on this topic?"></textarea><div class="hint" id="uWc"></div></div>'
+      + '<div id="uErr" role="alert" style="display:none;margin-top:12px;background:#fdecea;color:#b3261e;border-radius:12px;padding:10px 12px;font-size:14px;font-weight:700;line-height:1.4"></div>'
       + '<div class="acts"><button class="bd-btn" id="uX">Cancel</button><button class="bd-btn go" id="uOk">Save</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i); let SUMONLY = false;
     const fill = () => {   // show what is already saved for this topic and date
@@ -556,18 +557,22 @@ guardPage(); renderSidebar('followup');
       try { const r = await api.post('fup.file_del', { topic_id: t.id, day: q('#uD').value, key: k, i: Number(i) }); const u2 = t.updates[q('#uD').value] || (t.updates[q('#uD').value] = {}); u2.f = u2.f || {}; if (r.files && r.files.length) u2.f[k] = { f: r.files[0].f, n: r.files[0].n, list: r.files }; else delete u2.f[k]; q('#uf_' + k + '_l').innerHTML = attList(t, q('#uD').value, f, u2.f[k]); toast('Removed.'); }
       catch (x) { b.disabled = false; toast(x.message || 'Could not remove.', true); }
     });
-    q('#uOk').onclick = () => run(q('#uOk'), async () => {
+    // ⚠ every message of this Save is shown IN the box, right above Save (the small black message at the bottom of the screen used to sit BEHIND the box on phones,
+    // so a Save that was refused — a word in a number box, a required box empty — looked like "nothing happened, not saved")
+    const uSay = (msg, bad) => { const e = q('#uErr'); if (e) { e.textContent = msg; e.style.display = msg ? '' : 'none'; try { e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (x) { /* fine */ } } toast(msg, bad); };
+    q('#uOk').onclick = () => run(q('#uOk'), async () => { q('#uErr').style.display = 'none'; try {
       const d = q('#uD').value, text = q('#uT').value.trim(), v = q('#uV').value.trim(), p = q('#uP').value.trim();
-      if (!d) { toast('Choose the date.'); return; }
+      if (!d) { uSay('Choose the date.'); return; }
       const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (isUp(f.type)) { if (el.files) for (let n = 0; n < el.files.length; n++) files.push([f.k, el.files[n]]); } else fv[f.k] = el.type === 'checkbox' ? (el.checked ? 'yes' : 'no') : el.value.trim(); });
+      for (const f of t.fields) if (f.type === 'num' && fv[f.k] !== undefined && fv[f.k] !== '') { const n = String(fv[f.k]).replace(/[,₹\s]/g, ''); if (!/^-?\d+(\.\d+)?$/.test(n)) { uSay('“' + f.label + '” takes ONE number only (you wrote “' + fv[f.k] + '”). Write the words in a text box.', true); try { q('#uf_' + f.k).focus(); } catch (e) { /* fine */ } return; } fv[f.k] = n; }
       const anyF = files.length || Object.keys(fv).some((k) => fv[k] !== '');
-      if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
+      if (!text && v === '' && p === '' && !anyF) { uSay(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
       // a required box left empty is told at once (it used to save only the words, and the day stayed "not filled" with no word about why)
       const u1 = t.updates[d] || {}, need = t.fields.filter((f) => f.req && !isUp(f.type) && String(fv[f.k] == null ? '' : fv[f.k]) === '' && !(u1.f && fset(u1.f[f.k])));
       const short = t.fields.find((f) => f.type === 'text' && f.min && String(fv[f.k] || '').trim() && wc(fv[f.k]) < f.min);
-      if (short) { toast('“' + short.label + '”: write at least ' + short.min + ' words. Now ' + wc(fv[short.k]) + '.', true); try { q('#uf_' + short.k).focus(); } catch (e) { /* fine */ } return; }
-      if ((t.min_words || 0) > 0 && wc(text) < t.min_words) { toast('Write the update in detail: at least ' + t.min_words + ' words. Now ' + wc(text) + '.', true); q('#uT').focus(); return; }
-      if (need.length) { toast('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
+      if (short) { uSay('“' + short.label + '”: write at least ' + short.min + ' words. Now ' + wc(fv[short.k]) + '.', true); try { q('#uf_' + short.k).focus(); } catch (e) { /* fine */ } return; }
+      if ((t.min_words || 0) > 0 && wc(text) < t.min_words) { uSay('Write the update in detail: at least ' + t.min_words + ' words. Now ' + wc(text) + '.', true); q('#uT').focus(); return; }
+      if (need.length) { uSay('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
       let sent = 0; for (const [k, file] of files) { sent++; q('#uOk').textContent = 'Sending file ' + sent + ' of ' + files.length + '…'; const fd = new FormData(); fd.append('topic_id', t.id); fd.append('day', d); fd.append('key', k); fd.append('file', file); await api.upload('fup.file_put', fd); }
@@ -575,6 +580,7 @@ guardPage(); renderSidebar('followup');
       BD.close(); toast('Saved.'); await load(true);
       if (d !== D.today) toast('Saved for ' + dayName(d, D.today) + ' — today is still empty.');
       else if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
+    } catch (er) { uSay(er.message || 'Could not save. Check the internet and press Save again.', true); }
     });
     setTimeout(() => { try { (t.source || SUMONLY || q('#uV').value ? q('#uT') : q('#uV')).focus(); } catch (e) { /* fine */ } }, 50);
   }
