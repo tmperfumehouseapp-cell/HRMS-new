@@ -309,10 +309,34 @@
       <div class="sx-mut" style="font-size:12px;margin-top:6px">Charges are an estimate: PayU from your last saved settlement files, others by default. The exact amount comes from the settlement file. PayU / Razorpay do not settle on Saturday and Sunday, so a Friday sale arrives on Monday.</div>`;
     $('expD').onchange = (e) => { if (e.target.value) loadExp(e.target.value); };
   }
+  // ---------- date-wise money by gateway
+  let DW = null, dwFrom = '', dwTo = '';
+  const monthStart = (d) => d.slice(0, 8) + '01';
+  async function loadDw(f, t) {
+    const el = $('dwCard'); if (!el) return;
+    try { DW = await api.get('fn.in_datewise', { from: f, to: t }); dwFrom = DW.from; dwTo = DW.to; drawDw(); }
+    catch (e) { el.innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function drawDw() {
+    const el = $('dwCard'); if (!el || !DW) return; const ch = DW.channels, dShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }), cell = (v) => v ? m2(v) : '<span class="sx-mut">—</span>';
+    const per = [['This month', monthStart(O.today), O.today], ['Last 7 days', addDays(O.today, -6), O.today], ['Last 30 days', addDays(O.today, -29), O.today]];
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:15px">Date-wise money received <small class="sx-mut">by gateway / marketplace, from the day the money came</small></div>
+        ${per.map((x) => `<button class="sx-btn" data-dwp="${x[1]}|${x[2]}" style="padding:2px 10px;${dwFrom === x[1] && dwTo === x[2] ? '' : 'opacity:.55'}">${x[0]}</button>`).join('')}<input class="sx-in" id="dwF" type="date" value="${esc(dwFrom)}" max="${esc(O.today)}" style="width:auto;min-height:32px"><input class="sx-in" id="dwT" type="date" value="${esc(dwTo)}" max="${esc(O.today)}" style="width:auto;min-height:32px"><button class="sx-btn" id="dwCsv" style="padding:2px 10px">Download CSV</button></div>
+      <div class="k3" style="margin:8px 0"><div class="k"><small>Received in the period</small><b style="font-size:19px">${m2(DW.total)}</b><span>${esc(dShort(DW.from))} – ${esc(dShort(DW.to))}</span></div>${DW.banks.slice(0, 2).map((b) => `<div class="k"><small>Into ${esc(b.bank)}</small><b style="font-size:19px">${m2(b.amount)}</b></div>`).join('')}</div>
+      <div class="wrap"><table class="tb"><tr><th>Date</th>${ch.map((c) => `<th>${esc(c.name)}<small style="font-weight:600;text-transform:none;letter-spacing:0">${c.banks.length ? esc(c.banks.map((b) => b.bank).join(', ')) : 'no money yet'}</small></th>`).join('')}<th>Total</th></tr>
+        ${DW.days.filter((d) => d.total || DW.days.length <= 40).map((d) => `<tr><td><b>${esc(dShort(d.day))}</b></td>${ch.map((c) => `<td>${cell(d.cells[String(c.id)])}</td>`).join('')}<td><b>${cell(d.total)}</b></td></tr>`).join('')}
+        <tr class="tot"><td>TOTAL</td>${ch.map((c) => `<td>${m2(c.total)}<small style="font-weight:600">${c.entries} entr${c.entries === 1 ? 'y' : 'ies'}</small></td>`).join('')}<td>${m2(DW.total)}</td></tr></table></div>
+      ${ch.some((c) => c.hint) ? `<div class="sx-mut" style="font-size:12px;margin-top:6px">${ch.filter((c) => c.hint).map((c) => esc(c.name) + ': ' + esc(c.hint)).join(' · ')}</div>` : ''}
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">A column shows the money you saved for that channel (UTR files and receipts), by the day it came. A channel with no money has no entry yet in this period.</div>`;
+    el.querySelectorAll('[data-dwp]').forEach((b) => { b.onclick = () => { const [f, t] = b.dataset.dwp.split('|'); loadDw(f, t); }; });
+    $('dwF').onchange = () => { if ($('dwF').value && $('dwT').value) loadDw($('dwF').value, $('dwT').value); }; $('dwT').onchange = $('dwF').onchange;
+    $('dwCsv').onclick = () => { const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"', L = [[q('Date')].concat(ch.map((c) => q(c.name)), [q('Total')]).join(',')]; DW.days.forEach((d) => L.push([q(d.day)].concat(ch.map((c) => d.cells[String(c.id)] || 0), [d.total]).join(','))); L.push([q('TOTAL')].concat(ch.map((c) => c.total), [DW.total]).join(','));
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + L.join('\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'money-by-gateway-' + DW.from + '-to-' + DW.to + '.csv'; document.body.appendChild(a); a.click(); a.remove(); };
+  }
   function draw() {
     const canNext = day < O.today;
-    $('root').innerHTML = `<div class="bar"><div class="nav"><button id="pv" aria-label="Previous day">‹</button><input type="date" id="dp" value="${esc(day)}" max="${esc(O.today)}"><button id="nx" ${canNext ? '' : 'disabled'} aria-label="Next day">›</button></div>${day !== O.today ? '<button class="sx-btn" id="tdy">Today</button>' : ''}<span class="sp"></span></div><div class="sx-card" id="expCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div>${SEC.map(section).join('')}`;
-    loadExp(expDay);
+    $('root').innerHTML = `<div class="bar"><div class="nav"><button id="pv" aria-label="Previous day">‹</button><input type="date" id="dp" value="${esc(day)}" max="${esc(O.today)}"><button id="nx" ${canNext ? '' : 'disabled'} aria-label="Next day">›</button></div>${day !== O.today ? '<button class="sx-btn" id="tdy">Today</button>' : ''}<span class="sp"></span></div><div class="sx-card" id="expCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div><div class="sx-card" id="dwCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div>${SEC.map(section).join('')}`;
+    loadExp(expDay); loadDw(dwFrom || monthStart(O.today), dwTo || O.today);
   }
   async function load(d) {
     try {

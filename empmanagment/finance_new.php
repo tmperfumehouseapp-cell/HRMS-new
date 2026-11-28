@@ -436,6 +436,16 @@ function fn_ensure7(PDO $pdo): bool
         @file_put_contents($flag, '1'); return true;
     } catch (Throwable $e) { error_log('fn_ensure7: ' . $e->getMessage()); return false; }
 }
+/** v8: the Cashfree channel (the owner's list: Flipkart, Razorpay, PayU, Snapmint, Cashfree, Myntra, Easebuzz). Added once, only if missing. */
+function fn_ensure8(PDO $pdo): bool
+{
+    $flag = sys_get_temp_dir() . '/hrms_fn_tables_v8_' . substr(md5(__DIR__), 0, 8);
+    if (is_file($flag)) return true;
+    try {
+        $f = $pdo->prepare("SELECT COUNT(*) FROM fn_in_channels WHERE section = 'prepaid' AND LOWER(name) = 'cashfree'"); $f->execute(); if (!(int)$f->fetchColumn()) { $mx = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fn_in_channels WHERE section = 'prepaid'")->fetchColumn(); $pdo->prepare("INSERT INTO fn_in_channels (section, name, head_id, sort_no, created_at) VALUES ('prepaid', 'Cashfree', 0, ?, ?)")->execute([$mx + 10, date('Y-m-d H:i:s')]); }
+        @file_put_contents($flag, '1'); return true;
+    } catch (Throwable $e) { error_log('fn_ensure8: ' . $e->getMessage()); return false; }
+}
 function fn_p($x): int { return (int)round(((float)$x) * 100); }      // rupees -> paise: all sums are integer paise
 function fn_m(int $p): float { return round($p / 100, 2); }
 function fn_day($s): string { $s = trim((string)$s); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return ''; $t = strtotime($s); return ($t && date('Y-m-d', $t) === $s) ? $s : ''; }
@@ -467,7 +477,7 @@ function fn_balances(PDO $pdo, string $day): array
     return $out;
 }
 
-if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo) || !fn_ensure4($pdo) || !fn_ensure5($pdo) || !fn_ensure6($pdo) || !fn_ensure7($pdo)) fn_err('Could not create the Finance New tables.', 500);
+if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo) || !fn_ensure4($pdo) || !fn_ensure5($pdo) || !fn_ensure6($pdo) || !fn_ensure7($pdo) || !fn_ensure8($pdo)) fn_err('Could not create the Finance New tables.', 500);
 $auth = require_auth();
 
 try {
@@ -761,6 +771,28 @@ switch ($action) {
         $cod = ['orders' => $sl['cod_orders'], 'amount' => $sl['cod'], 'arrive_from' => date('Y-m-d', strtotime($d . ' +7 day')), 'arrive_by' => date('Y-m-d', strtotime($d . ' +' . $wd . ' day')), 'note' => 'cash on delivery: the courier sends it after delivery'];
         $tot = fn_p($sl['total']); $sum = $gP + fn_p($sl['cod']);
         json_response(['day' => $d, 'today' => $today, 'sales' => $sl, 'modes' => $rows, 'cod' => $cod, 'totals' => ['prepaid_gross' => fn_m($gP), 'charges' => fn_m($cP), 'prepaid_net' => fn_m($nP), 'cod' => $sl['cod'], 'sales' => $sl['total'], 'tie' => abs($tot - $sum) <= 5, 'gap' => fn_m($tot - $sum)]]);
+        break;
+    }
+    // DATE-WISE money received per gateway / marketplace channel (Flipkart, Razorpay, PayU, Snapmint, Cashfree, Myntra, Easebuzz …) and per bank, for a period
+    case 'fn.in_datewise': {
+        $today = fn_today($pdo); $to = fn_day($_GET['to'] ?? '') ?: $today; $from = fn_day($_GET['from'] ?? '') ?: substr($to, 0, 8) . '01'; if ($from > $to) { $t = $from; $from = $to; $to = $t; } if ((strtotime($to) - strtotime($from)) > 92 * 86400) fn_err('Choose a period of at most 3 months.');
+        $chs = []; $byHead = []; foreach ($pdo->query("SELECT id, section, name, head_id, active FROM fn_in_channels ORDER BY section, active DESC, sort_no, name")->fetchAll() as $c) { $chs[(int)$c['id']] = ['id' => (int)$c['id'], 'name' => $c['name'], 'section' => $c['section'], 'active' => (int)$c['active'], 'total' => 0, 'n' => 0, 'banks' => []]; if ((int)$c['head_id']) $byHead[(int)$c['head_id']] = (int)$c['id']; }
+        $accN = []; foreach ($pdo->query("SELECT id, name FROM fn_accounts")->fetchAll() as $a) $accN[(int)$a['id']] = $a['name'];
+        $heads = []; foreach ($pdo->query("SELECT id, name FROM fn_heads WHERE side = 'in'")->fetchAll() as $h) $heads[(int)$h['id']] = $h['name'];
+        $q = $pdo->prepare("SELECT day, head_id, account_id, SUM(amount) a, COUNT(*) n FROM fn_entries WHERE status = 'ok' AND side = 'in' AND day BETWEEN ? AND ? GROUP BY day, head_id, account_id"); $q->execute([$from, $to]);
+        $days = []; $oth = ['id' => 0, 'name' => 'Other receipts', 'section' => 'other', 'active' => 1, 'total' => 0, 'n' => 0, 'banks' => [], 'lines' => []]; $bank = []; $grand = 0;
+        for ($d = $from, $g = 0; $d <= $to && $g < 100; $d = date('Y-m-d', strtotime($d . ' +1 day')), $g++) $days[$d] = ['day' => $d, 'cells' => [], 'total' => 0];
+        foreach ($q->fetchAll() as $r) {
+            $p = fn_p($r['a']); $cid = $byHead[(int)$r['head_id']] ?? 0; $an = $accN[(int)$r['account_id']] ?? ('bank #' . (int)$r['account_id']);
+            if (!isset($days[$r['day']])) continue; $days[$r['day']]['cells'][$cid] = ($days[$r['day']]['cells'][$cid] ?? 0) + $p; $days[$r['day']]['total'] += $p; $grand += $p; $bank[$an] = ($bank[$an] ?? 0) + $p;
+            if ($cid) { $chs[$cid]['total'] += $p; $chs[$cid]['n'] += (int)$r['n']; $chs[$cid]['banks'][$an] = ($chs[$cid]['banks'][$an] ?? 0) + $p; }
+            else { $oth['total'] += $p; $oth['n'] += (int)$r['n']; $oth['banks'][$an] = ($oth['banks'][$an] ?? 0) + $p; $ln = $heads[(int)$r['head_id']] ?? 'line #' . (int)$r['head_id']; $oth['lines'][$ln] = ($oth['lines'][$ln] ?? 0) + $p; }
+        }
+        $cols = []; foreach ($chs as $c) { if (!$c['active'] && !$c['total']) continue; $bk = []; arsort($c['banks']); foreach ($c['banks'] as $k => $v) $bk[] = ['bank' => $k, 'amount' => fn_m($v)]; $cols[] = ['id' => $c['id'], 'name' => $c['name'], 'section' => $c['section'], 'total' => fn_m($c['total']), 'entries' => $c['n'], 'banks' => $bk]; }
+        if ($oth['total']) { $bk = []; arsort($oth['banks']); foreach ($oth['banks'] as $k => $v) $bk[] = ['bank' => $k, 'amount' => fn_m($v)]; arsort($oth['lines']); $ol = []; foreach ($oth['lines'] as $k => $v) $ol[] = $k . ' ' . fn_m($v); $cols[] = ['id' => 0, 'name' => 'Other receipts', 'section' => 'other', 'total' => fn_m($oth['total']), 'entries' => $oth['n'], 'banks' => $bk, 'hint' => implode(' · ', $ol)]; }
+        $rows = []; foreach ($days as $d) { $cells = []; foreach ($d['cells'] as $k => $v) $cells[(string)$k] = fn_m($v); $rows[] = ['day' => $d['day'], 'cells' => $cells, 'total' => fn_m($d['total'])]; }
+        $bl = []; arsort($bank); foreach ($bank as $k => $v) $bl[] = ['bank' => $k, 'amount' => fn_m($v)];
+        json_response(['from' => $from, 'to' => $to, 'channels' => $cols, 'days' => $rows, 'banks' => $bl, 'total' => fn_m($grand)]);
         break;
     }
     case 'fn.in_upload_recon': {
