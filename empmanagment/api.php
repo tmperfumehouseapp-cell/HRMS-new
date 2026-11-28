@@ -4033,7 +4033,7 @@ function proof_emp_dept(PDO $pdo, int $empId): int
     } catch (PDOException $e) { return 0; }
 }
 
-/** The owners (Milan Gondaliya, Harsh Patel) and the General Manager: "direct" punch — one tap, no photo, no face, no location rule, no proofs, no checklist, no ID card, no shoes.
+/** The owners (Milan Gondaliya, Harsh Patel) and the General Manager Brahmbhatt: "direct" punch — one tap, no photo, no face, no location rule, no proofs, no checklist, no ID card, no shoes.
  *  The list is in settings 'punch_direct_ids' (employee ids); made once from the two names (only a name that matches exactly one working employee). */
 function punch_direct(PDO $pdo, int $empId): bool
 {
@@ -4047,9 +4047,7 @@ function punch_direct(PDO $pdo, int $empId): bool
             }
             setting_set($pdo, 'punch_direct_ids', json_encode($ids));
         } else { $j = json_decode((string)$raw, true); $ids = is_array($j) ? array_map('intval', $j) : []; }
-        // The General Manager (Brahmbhatt) punches directly too, same as the owners: anyone working whose Designation says "General Manager",
-        // and the one working employee whose name has "brahm" in it. Looked up live, so a new GM gets it as soon as the Designation is set.
-        try { foreach ($pdo->query("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(COALESCE(designation, '')) LIKE '%general%manager%'")->fetchAll(PDO::FETCH_COLUMN) as $g) $ids[] = (int)$g; } catch (Throwable $e) { }
+        // The General Manager Brahmbhatt punches directly too (only him: the one working employee whose name has "brahm" in it).
         try { $q = $pdo->prepare("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(TRIM(full_name)) LIKE ?"); $q->execute(['%brahm%']); $f = $q->fetchAll(PDO::FETCH_COLUMN); if (count($f) === 1) $ids[] = (int)$f[0]; } catch (Throwable $e) { }
         $ids = array_values(array_unique($ids));
     }
