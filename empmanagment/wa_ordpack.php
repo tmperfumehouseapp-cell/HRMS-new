@@ -203,6 +203,39 @@ if (!function_exists('wa_ordpack_defs')) {
         ];
         $r = []; foreach ($o as $k => $v) $r[$k] = ['body' => $v[0], 'buttons' => $v[1]]; return $r;
     }
+    /* 🔘 owner 28 Nov 2026 ("the two buttons are great - put them in all the new order-pattern messages and send them to Meta"): the buttons of the new marketing messages are "Haan, order karo" / "Dusra size dikhao" (the same two as under the offers). Off: wa_btn_new = 0 (new messages keep their own buttons), wa_btn_twins = 0 (no twins of the existing ones). */
+    function wa_btn_texts(): array { return ['Haan, order karo', 'Dusra size dikhao']; }
+    function wa_btn_two(): array { return array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, wa_btn_texts()); }
+    function wa_btn_new_on(PDO $pdo): bool { return (string)setting_get($pdo, 'wa_btn_new', '1') !== '0'; }
+    /** Two-button twins (name + '_bt') of the existing order-pattern MARKETING messages (the Cold pack tmph_cp_ / bf_ / oc_, the daily new_ and style_ messages): same body and photo, the two buttons instead. They go to Meta on every account; the Cold funnel / After-Order pick them up by their names and the learning compares them with the original. 4 a round, at most wa_btn_max (80) in all. Returns how many were made. */
+    function wa_btn_twins(PDO $pdo, array $wabas, array &$budget, int $max = 4): int
+    {
+        if ((string)setting_get($pdo, 'wa_btn_twins', '1') !== '1') return 0;
+        foreach (['wa_tpl_clean', 'wa_tpl_insert', 'wa_tpl_row', 'wa_tpl_media_check', 'wa_mix_name'] as $f) if (!function_exists($f)) return 0;
+        $done = json_decode((string)setting_get($pdo, 'wa_btn_done', '{}'), true); if (!is_array($done)) $done = []; $cap = max(0, (int)setting_get($pdo, 'wa_btn_max', '80')); if (count($done) >= $cap) return 0;
+        $okSt = []; try { foreach ($pdo->query("SELECT DISTINCT tpl_id FROM wa_tpl_waba WHERE UPPER(status) = 'APPROVED'")->fetchAll(PDO::FETCH_COLUMN) as $x) $okSt[(int)$x] = true; } catch (Throwable $e) { return 0; }
+        try { $rows = $pdo->query("SELECT * FROM wa_templates WHERE category = 'MARKETING' AND (name LIKE 'tmph\\_cp\\_%' OR name LIKE 'tmph\\_bf\\_%' OR name LIKE 'tmph\\_oc\\_%' OR name LIKE 'tmph\\_new\\_%' OR name LIKE 'tmph\\_style\\_%') AND name NOT LIKE '%\\_bt' AND name NOT REGEXP '_v[0-9]+$' ORDER BY used DESC, id DESC LIMIT 500")->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { return 0; }
+        /* owner 28 Nov 2026 ("do the same for the top 6 of Module A"): these exact messages get a twin too, first in the queue (setting wa_btn_names, JSON list of names). Module A itself is not touched: the twin is a new message in the library. */
+        $names = json_decode((string)setting_get($pdo, 'wa_btn_names', '["requested_combo_details_v3","weekend_sale","special_midnight_deal_order","perfume_sirf_500","limted","black_friday"]'), true); $why = json_decode((string)setting_get($pdo, 'wa_btn_why', '{}'), true); if (!is_array($why)) $why = []; $named = [];
+        if (is_array($names) && $names) { try { $in = implode(',', array_fill(0, count($names), '?')); $qn = $pdo->prepare("SELECT * FROM wa_templates WHERE name IN ($in)"); $qn->execute(array_values(array_map('strval', $names))); $ex = $qn->fetchAll(PDO::FETCH_ASSOC); foreach ($ex as $x) $named[(int)$x['id']] = 1; $rows = array_merge($ex, array_values(array_filter($rows, function ($r) use ($named) { return !isset($named[(int)$r['id']]); }))); } catch (Throwable $e) { } }
+        $made = 0; $have = []; try { foreach ($pdo->query("SELECT name FROM wa_templates WHERE name LIKE '%\\_bt'")->fetchAll(PDO::FETCH_COLUMN) as $n) $have[(string)$n] = 1; } catch (Throwable $e) { }
+        foreach ($rows as $r) {
+            if ($made >= $max || count($done) >= $cap || $budget['left'] < max(1, count($wabas))) break; $id = (int)$r['id']; $name = (string)$r['name'];
+            if (isset($done[$id])) continue; if (!isset($okSt[$id])) { if (isset($named[$id])) $why[$name] = 'not approved on any account yet'; continue; } if (strpos($name, 'tmph_bf_') === 0) continue;   /* Black Friday ends on 30 Nov: no twins of its messages (they would only use up the 80) */ if (function_exists('wocc_name_ok') && !wocc_name_ok($name)) continue;
+            $tn = wa_mix_name($name, '_bt'); if (isset($have[$tn])) { $done[$id] = -1; if (isset($named[$id])) $why[$name] = 'twin exists'; continue; }
+            $row = wa_tpl_row($pdo, $id); if (!$row) continue; $x = is_array($row['extra'] ?? null) ? $row['extra'] : []; if (!empty($x['util_pool']) || !empty($x['utility_of']) || !empty($x['unsupported'])) { $done[$id] = -1; if (isset($named[$id])) $why[$name] = 'utility / unsupported'; continue; }
+            if (count(function_exists('wa_tpl_vars') ? wa_tpl_vars((string)$row['body']) : [1]) !== 1) { $done[$id] = -1; if (isset($named[$id])) $why[$name] = 'more than one blank'; continue; }   // the name is the only blank
+            $bt = (array)($row['buttons'] ?? []); $only = true; $txt = []; foreach ($bt as $b) { if (strtoupper((string)($b['type'] ?? '')) !== 'QUICK_REPLY') $only = false; $txt[] = mb_strtolower((string)($b['text'] ?? '')); }
+            if (!$only || array_intersect($txt, array_map('mb_strtolower', wa_btn_texts()))) { $done[$id] = -1; if (isset($named[$id])) $why[$name] = !$only ? 'has a link / call button' : 'already has the two buttons'; continue; }
+            $d = $row; $d['examples'] = $row['examples'] ?? []; $d['buttons'] = wa_btn_two(); $d['name'] = $tn; $d['category'] = 'MARKETING'; unset($d['id']);
+            [$cd, $err] = wa_tpl_clean($d); if ($err === '') $err = wa_tpl_media_check($pdo, $cd); if ($err !== '') { $done[$id] = -1; if (isset($named[$id])) $why[$name] = mb_substr($err, 0, 80); continue; }
+            $cd['extra'] = array_merge(is_array($cd['extra']) ? $cd['extra'] : [], ['btn_of' => $id]);
+            $nid = wa_tpl_insert($pdo, $cd, 0, (string)($row['purpose'] ?? ''), 'Two-button twin of ' . $name . ' (owner 28 Nov 2026)'); $nrow = wa_tpl_row($pdo, $nid); if (!$nrow) continue; $made++; $done[$id] = $nid; if (isset($named[$id])) $why[$name] = 'twin made: ' . $tn;
+            foreach ($wabas as $w) { if (function_exists('wa_tpl_try_create')) wa_tpl_try_create($pdo, $nrow, $w, $budget); }
+        }
+        setting_set($pdo, 'wa_btn_why', json_encode($why)); setting_set($pdo, 'wa_btn_done', json_encode($done)); if ($made && function_exists('wa_log')) wa_log($pdo, 'template', true, 'Two-button twins: ' . $made . ' made and sent to Meta (' . count(array_filter($done, function ($v) { return $v > 0; })) . ' in all)');
+        return $made;
+    }
     function wa_ordpack_tick(PDO $pdo): array
     {
         $res = ['made' => 0, 'failed' => []];
@@ -273,13 +306,14 @@ if (!function_exists('wa_ordpack_defs')) {
         foreach ($all as $name => $m) {
             if ($res['made'] >= 5) break;
             try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? OR body = ? LIMIT 1"); $q->execute([$name, $m['body']]); if ($q->fetchColumn()) continue; } catch (Throwable $e) { continue; }
-            $qr = array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, $m['buttons']);
+            $qr = array_map(function ($t) { return ['type' => 'QUICK_REPLY', 'text' => $t]; }, $m['buttons']); if (wa_btn_new_on($pdo)) $qr = wa_btn_two();   // owner 28 Nov: the two buttons
             [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'MARKETING', 'body' => $m['body'], 'footer' => 'TM Perfume House', 'buttons' => $qr, 'examples' => ['body' => ['Rahul'], 'labels' => ['Name']], 'folder' => 'Offers']);
             if ($err !== '') { $res['failed'][] = $name . ': ' . $err; continue; }
             $id = wa_tpl_insert($pdo, $t, 0, 'Order pack (owner, 25 Nov 2026): season + price + offer + deadline in one message.', 'Order pack'); $r = wa_tpl_row($pdo, $id); if (!$r) { $res['failed'][] = $name . ': could not save'; continue; }
             $res['made']++;
             foreach ($wabas as $w) { if (function_exists('wa_tpl_try_create')) { [$ok, $why] = wa_tpl_try_create($pdo, $r, $w, $budget); if (!$ok) $res['failed'][] = $name . ' → ' . $why; } }
         }
+        try { $res['btn'] = wa_btn_twins($pdo, $wabas, $budget, 4); } catch (Throwable $e) { $res['btn'] = 0; }
         if ($res['made'] && function_exists('wa_log')) wa_log($pdo, 'template', !$res['failed'], 'Order pack: ' . $res['made'] . ' made' . ($res['failed'] ? ' — ' . $res['failed'][0] : ''));
         return $res;
     }

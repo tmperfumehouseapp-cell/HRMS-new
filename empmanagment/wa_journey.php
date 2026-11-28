@@ -429,7 +429,9 @@ function wj_run(PDO $pdo): array
     $today = 0; try { $today = (int)$pdo->query("SELECT COUNT(*) FROM wa_wj_ev WHERE status = 'sent' AND sent_at >= '" . date('Y-m-d 00:00:00', $now) . "'")->fetchColumn(); } catch (Throwable $e) { } if ($today >= $cfg['day_cap']) return $o + ['day_cap' => 1];
     $list = wj_collect($pdo, wj_plan_get($pdo), $cfg, $now, 300); if (!$list) return $o;
     $ins = $pdo->prepare("INSERT IGNORE INTO wa_wj_ev (phone, track, step_id, day, anchor, ref, status, why, sent_at) VALUES (?, ?, ?, ?, ?, ?, 'sending', '', ?)");
+    $__t0 = microtime(true);   // ⏱ time box (28 Nov: this loop ran 131 s inside the engine's minute - every message is written by Claude and then sent - so the engine's later steps were skipped and the server stayed loaded): 35 s a round, never past the engine's own deadline; what is left goes in the next minute
     foreach ($list as $x) {
+        if (microtime(true) - $__t0 > 35 || (!empty($GLOBALS['__wa_dl']) && microtime(true) > (float)$GLOBALS['__wa_dl'])) { $o['time_box'] = 1; break; }
         if ($o['sent'] >= $cap || $today + $o['sent'] >= $cfg['day_cap']) break; $c = $x['c']; $ph = (string)$c['phone'];
         if (wj_blocked($pdo, $c, $now) !== '') { $o['blocked']++; continue; }
         if (!function_exists('fa_tpl_pick') || !fa_tpl_pick($pdo, $x['step']['ref'])) { $o['waiting']++; continue; }

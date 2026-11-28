@@ -67,6 +67,8 @@ if (!function_exists('wcd_tick')) {
     {
         static $cache = []; $ck = $from . '|' . intdiv(time(), 120); if (isset($cache[$ck])) return $cache[$ck]; $cache = []; $o = [];
         try { foreach ($pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '" . $from . "' AND phone IS NOT NULL AND phone <> '' AND financial_status NOT IN ('voided', 'refunded')")->fetchAll(PDO::FETCH_NUM) as $r) { $k = wcd_k10($r[0]); if (strlen($k) === 10) $o[$k][] = [(int)strtotime((string)$r[1]), (int)$r[2]]; } } catch (Throwable $e) { }
+        /* 28 Nov 2026: since 24 Nov the orders are typed in the panel (manual_orders, ~285 a day) and no longer come from the website (3 a day) - this place read the website orders only, so it no longer saw who ordered. The panel orders are read too. */
+        try { foreach ($pdo->query("SELECT phone, order_date, total FROM manual_orders WHERE order_date >= '" . $from . "' AND phone IS NOT NULL AND phone <> ''")->fetchAll(PDO::FETCH_NUM) as $r) { $k = wcd_k10($r[0]); if (strlen($k) === 10) $o[$k][] = [(int)strtotime((string)$r[1]), (int)$r[2]]; } } catch (Throwable $e) { }
         return $cache[$ck] = $o;
     }
     /** THE COLD FUNNEL'S OWN MESSAGES (owner 22 Nov: "write new messages, decide marketing or utility yourself"): eight UTILITY wordings that ask ONE easy question and carry a quick-reply button, so a customer who never wrote answers with one tap

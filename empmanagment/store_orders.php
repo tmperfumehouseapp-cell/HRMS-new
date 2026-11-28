@@ -195,6 +195,7 @@ if (!function_exists('tms_cfg')) {
             // ⏱ a TM order that was here UNPAID earlier and has its payment now (an order typed in the shop's admin, paid a day later): the shop has no "paid at" in its feed, so the sale counts at the moment the HRMS sees the payment (this runs every few minutes). An order paid at once keeps the shop's own time.
             if (isset($waited[$no]) && (string)$r['pay_status'] !== 'pending' && empty($given[$no])) $r['pay_time'] = date('Y-m-d H:i:s');
             $row = $given[$no] ?? null; $unpaid = (string)$r['pay_status'] === 'pending';
+            if ($row && function_exists('order_cancels_map') && isset(order_cancels_map($pdo)['manual|' . $row['id']])) continue;   // ❌ cancelled on the Allocation page: the robot leaves it alone (not given, not removed) until somebody presses Undo
             if ($unpaid && $row && $row['direct'] !== 1 && ($row['emp'] === 0 || $row['by'] === 'auto (WhatsApp)')) { try { $pdo->prepare("DELETE FROM manual_orders WHERE manual_order_id = ?")->execute([$row['id']]); $mark->execute([$no, 0, 'payment not received yet', $now]); } catch (Throwable $e) { } continue; }
             // 🔄 owner (24 Nov): the shop order changed after it was saved here (the 🎁 gift perfume is added when the customer pays, a balance was paid...): the saved row follows it, so the totals and the ticket size stay right
             if ($row && !$unpaid && (abs($row['total'] - (float)$r['total']) > 0.004 || $row['ps'] !== (string)$r['pay_status'] || abs($row['due'] - (float)$r['due']) > 0.004 || $row['ml'] !== (int)$r['ml'] || (($r['colors'] ?? null) !== null && $row['col'] !== $r['colors']))) {   // 🎨 also a row whose saved colours are missing or out of date (fills / corrects the last 7 days by itself)
@@ -342,6 +343,7 @@ if ((string)$action === 'tms.detail') {   // 🔎 one shop order with every prod
     $no = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string)($in['number'] ?? ''))); if ($no === '') json_response(['error' => 'Which order?'], 422);
     $ok = tms_can($pdo, $auth) || (function_exists('user_can') && user_can($auth, 'orders'));
     if (!$ok) { try { tms_cols($pdo); $q = $pdo->prepare("SELECT employee_id FROM manual_orders WHERE channel = 'TM Store' AND mp_no = ? LIMIT 1"); $q->execute([$no]); $own = (int)$q->fetchColumn(); $ok = $own > 0 && $own === (int)($auth['employee_id'] ?? 0); } catch (Throwable $e) { } }
+    if (!$ok) { try { if (!function_exists('sku_can') && is_file(__DIR__ . '/sku_sheet.php')) require_once __DIR__ . '/sku_sheet.php'; $ok = function_exists('sku_can') && sku_can($pdo, $auth); } catch (Throwable $e) { } }      // the SKU sheet people (Dispatch …) open an order from the sheet
     if (!$ok) json_response(['error' => 'Full details are only available for your own orders.'], 403);
     $run = function () use ($pdo, $no) { [$d, $e] = tms_get($pdo, '/orders/' . rawurlencode($no)); return $e !== '' ? ['error' => $e] : ['order' => tms_row((array)$d)]; };
     $r = function_exists('hrms_memo') ? hrms_memo('tms_detail:' . $no, 60, $run) : $run();

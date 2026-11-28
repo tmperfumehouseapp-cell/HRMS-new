@@ -554,6 +554,34 @@ function wa_ord_bot_answer(PDO $pdo, $phone, string $text): ?array
         return ['text' => implode("\n", $lines), 'handover' => $hand];
     } catch (Throwable $e) { return $none; }
 }
+/**
+ * Pure: owner (28 Nov 2026) "where is my parcel" is a TRACKING question, not a complaint. True when this number (own phone match only) has an order
+ * still on its way and EVERY such order is moving normally: shipped / out for delivery (the courier date has not passed: that is 'delayed'),
+ * or received / packed in the last 3 days. False (= a real complaint, a person must look) when an order is delayed, failed, returning, lost, damaged,
+ * still not dispatched after 3 days, or there is no order on the way (a "delivered" order the customer says did not come is a real complaint).
+ */
+function wo_track_only(array $orders, int $now): bool
+{
+    $mine = array_values(array_filter($orders, function ($o) { return ($o['match'] ?? '') === 'phone'; })); if (!$mine) return false;
+    $active = array_values(array_filter($mine, function ($o) { return !in_array((string)$o['status'], ['delivered', 'cancelled'], true); })); if (!$active) return false;
+    foreach ($active as $o) {
+        $s = (string)$o['status'];
+        if (in_array($s, ['shipped', 'ofd'], true)) continue;
+        if (in_array($s, ['placed', 'fulfilled', 'packed'], true) && !empty($o['placed_at']) && strtotime((string)$o['placed_at']) >= $now - 3 * 86400) continue;
+        return false;
+    }
+    return true;
+}
+/** The bot's order-status text when the customer's question is only a tracking question (wo_track_only), else null (then a complaint / a person is right). */
+function wa_ord_track_reply(PDO $pdo, $phone): ?string
+{
+    try {
+        $key = wo_key($phone); if ($key === '') return null;
+        if (!wo_track_only(wa_ord_for($pdo, $key)['orders'], wo_now())) return null;
+        $a = wa_ord_bot_answer($pdo, $key, 'order status'); if (!$a || !empty($a['handover']) || trim((string)$a['text']) === '') return null;
+        return (string)$a['text'];
+    } catch (Throwable $e) { return null; }
+}
 /** Hands the chat to a person with the existing HOT helper (wa_hand.php). Returns true when the chat was newly flagged. */
 function wa_ord_bot_handover(PDO $pdo, $phone, string $why = 'order question — a person must check'): bool
 {

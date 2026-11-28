@@ -1092,6 +1092,15 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
             $__pk = function_exists('cx_text_problem') ? cx_text_problem($__t, true) : ''; if ($__pk === '') continue;   // 🛡 owner (25 Nov 2026): the customer's NEW words must name a real problem — whole words only ("fireplace" is not "replace"), and exchange / replace / quality alone do not count
             if (in_array($__pk, ['notdelivered', 'quality', 'refund'], true) && !$ans && !wag_cx_has_order($pdo, $key)) continue;   // "kab aayega", "refund milega?", "fake to nahi?" from somebody who never ordered is a sales question (a parcel that leaked / a wrong item needs no such check)
             $h = ['problem' => $__pk, 'label' => function_exists('cx_problems') ? cx_problems()[$__pk][0] : $h['label']];   // the ticket is named after the NEW words, not after an older message
+            if ($__pk === 'notdelivered') {   // 📦 owner (28 Nov 2026): "kab aayega / abhi tak nahi aaya" while the parcel is moving normally is a TRACKING question, not a complaint: the bot tells the status, no ticket (delayed / failed / RTO / delivered-but-not-received still become tickets)
+                if (!function_exists('wa_ord_track_reply') && is_file(__DIR__ . '/wa_orders.php')) { try { require_once __DIR__ . '/wa_orders.php'; } catch (Throwable $e) { } }
+                $__tr = function_exists('wa_ord_track_reply') ? wa_ord_track_reply($pdo, $key) : null;
+                if ($__tr !== null) {
+                    if (!$ans) { $__li = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__li->execute([$key]); $__mid = (int)$__li->fetchColumn();
+                        if ($__mid > 0 && (!function_exists('wq_guard') || wq_guard($pdo, $key, $__mid, 'reply', 'bot'))) { [$__ok] = wa_send_text($pdo, $c, $__tr, 'bot', 0);
+                            if ($__ok) wa_event($pdo, $key, '📦 Tracking question: the bot told the order status — no complaint raised (the parcel is moving normally)'); elseif (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, $__mid, 'reply'); } }
+                    continue; }
+            }
             if (preg_match('/(policy|agar|\bif\b|rahe (to|too)|hoti hai|hota hai|kya hai|kaise|how|can i|sakte|sakta)/u', $__t) && !preg_match('/(mila|aaya|aayi|hai mera|mere|my (order|parcel|bottle)|order (id|no)|#\d{4})/u', $__t)) continue;
             if (preg_match('/(\bcodes?\b|\bog\b|coupon|promo)/u', $__t)) {   // owner 22 Nov: "Code toh nahi aaya" is the talk about our OG code process, not a complaint - the bot never raises it by itself: it asks the salesperson once (a hint in the chat + a push to the holder), the person decides
                 $__li = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__li->execute([$key]); $__mid = (int)$__li->fetchColumn();
@@ -2116,16 +2125,23 @@ function wag_chat_info(PDO $pdo, array $c): array
 /** Every tag with how many customers carry it in total and how many were active in the last 30 / 60 / 90 days (a message, a reply or an order). */
 function wag_tag_counts(PDO $pdo): array
 {
-    wa_cust_ready($pdo); $at = (string)setting_get($pdo, 'wa_cust_at', ''); $c = null;
-    try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); if (!is_array($c) || (int)($c['v'] ?? 0) !== 2) $c = null; } catch (Throwable $e) { $c = null; }
-    if ($c && ($c['as_of'] ?? '') === $at && $at !== '') return $c;   // computed once per refresh
-    // ⚡ 18 Nov: this count takes 13-22 s on the big tables and, every time the customer table refreshed, EVERY open screen started it at once (4 copies seen running together, database at 200% CPU,
-    // the whole HRMS slow). Now only ONE request recounts; the others — and anything asked within 15 minutes of the last count — get the previous numbers at once.
-    if ($c && (time() - (int)($c['at'] ?? 0)) < 1800) return $c;   // ⚡ 15 → 30 minutes: the biggest count of the database (13-22 s) now runs half as often
+    wa_cust_ready($pdo); $at = (string)setting_get($pdo, 'wa_cust_at', ''); $c = null; $fresh = false;
+    try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); if (!is_array($c) || (int)($c['v'] ?? 0) !== 2) $c = null; else $fresh = true; } catch (Throwable $e) { $c = null; }
+    // ⚡ 28 Nov: the count grew to 30-65 s (8.6 million tag rows) and THREE copies ran together again (database at 200% CPU, every page slow). Two holes: (1) several jobs empty the saved numbers
+    //    (setting wa_tag_cache = '') to ask for a recount, and then nobody had "old numbers" to answer with; (2) a waiting request gave up after 25 s and started its own copy. Now a second copy of the
+    //    numbers is kept in a private temp file that is never emptied: it answers at once while ONE request recounts, and a request that finds no numbers at all and cannot count returns an empty list.
+    $f = rtrim(sys_get_temp_dir(), '/') . '/hrms_tagcount_' . substr(md5(__DIR__), 0, 6) . '.json';
+    if (!$c) { $raw = @file_get_contents($f); $j = $raw ? json_decode($raw, true) : null; if (is_array($j) && (int)($j['v'] ?? 0) === 2) $c = $j; }   // the saved numbers were emptied (a recount was asked) or never fitted the settings table: the file copy is the "old numbers"
+    if ($c && $fresh && ($c['as_of'] ?? '') === $at && $at !== '') return $c;   // computed once per refresh
+    if ($c && $fresh && (time() - (int)($c['at'] ?? 0)) < 1800) return $c;   // ⚡ at most every 30 minutes
+    if ($c && !$fresh && (time() - (int)($c['at'] ?? 0)) < 300) return $c;   // a recount was asked: never more often than every 5 minutes
     $got = 0; try { $got = (int)$pdo->query("SELECT GET_LOCK('wag_tags', 0)")->fetchColumn(); } catch (Throwable $e) { $got = 1; }
     if (!$got) { if ($c) return $c;   // somebody else is counting: use the old numbers
-        for ($i = 0; $i < 25; $i++) { sleep(1); try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); } catch (Throwable $e) { $c = null; } if (is_array($c) && (int)($c['v'] ?? 0) === 2) return $c; } }   // no old numbers at all: wait (up to 25 s) for the one that is counting instead of starting a 4th copy
-    try { $r = wag_tag_counts_calc($pdo); $r['at'] = time(); try { setting_set($pdo, 'wa_tag_cache', json_encode($r)); } catch (Throwable $e) { } return $r; }
+        for ($i = 0; $i < 20; $i++) { sleep(1); $raw = @file_get_contents($f); $j = $raw ? json_decode($raw, true) : null; if (is_array($j) && (int)($j['v'] ?? 0) === 2) return $j; }
+        return ['v' => 2, 'tags' => [], 'customers' => 0, 'as_of' => '', 'at' => 0, 'counting' => 1]; }   // no numbers anywhere and the count is still running: an empty list now, never a second copy of the count
+    try { $r = wag_tag_counts_calc($pdo); $r['at'] = time(); $enc = json_encode($r, JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($enc !== false) { $tmp = $f . '.' . getmypid(); if (@file_put_contents($tmp, $enc) !== false) { @chmod($tmp, 0600); @rename($tmp, $f); } try { setting_set($pdo, 'wa_tag_cache', $enc); } catch (Throwable $e) { } }
+        return $r; }
     finally { if ($got) { try { $pdo->query("SELECT RELEASE_LOCK('wag_tags')"); } catch (Throwable $e) { } } }
 }
 function wag_tag_counts_calc(PDO $pdo): array

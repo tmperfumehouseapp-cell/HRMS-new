@@ -27,7 +27,7 @@ function sd_label(string $p): string { return $p === 'month' ? 'This month' : ($
 /** the numbers of the screen; kept for 5 seconds so a screen asking again and again does not make the server count again and again */
 function sd_numbers(PDO $pdo, array $c): array
 {
-    $cache = sys_get_temp_dir() . '/hrms_disp_' . substr(md5(__DIR__ . $c['key'] . $c['period']), 0, 10);
+    $cache = sys_get_temp_dir() . '/hrms_disp_' . substr(md5(__DIR__ . $c['key'] . $c['period'] . '|' . sd_lastbill($pdo)), 0, 10);      // a new bill = new numbers at once (not a 5 s old copy)
     if (is_file($cache) && time() - (int)filemtime($cache) < 5) { $j = json_decode((string)@file_get_contents($cache), true); if (is_array($j)) return $j; }
     require_once __DIR__ . '/store_since.php';
     $r = ss_report($pdo, sd_period_from((string)$c['period']), null);
@@ -39,13 +39,40 @@ function sd_numbers(PDO $pdo, array $c): array
 }
 
 /** PUBLIC (no login): the screen asks with its key */
+/** ⚡ The newest bill number: one tiny query. The TV asks this every 2 s and loads the full card the moment it changes. */
+function sd_lastbill(PDO $pdo): int { try { return (int)$pdo->query("SELECT MAX(bill_id) FROM st_bills WHERE status = 'ok'")->fetchColumn(); } catch (Throwable $e) { return 0; } }
+function sd_key_ok(array $c, string $k): bool { return preg_match('/^[a-f0-9]{24}$/', (string)$c['key']) && (hash_equals((string)$c['key'], $k) || (strlen($k) === 8 && hash_equals(substr((string)$c['key'], 0, 8), $k))); }
+/** PUBLIC (secret key in the TV link): {b: newest bill id}. Nothing else. */
+function sd_ping(PDO $pdo): void
+{
+    $c = sd_cfg($pdo, false); if (!sd_key_ok($c, (string)($_GET['k'] ?? ''))) json_response(['error' => 'This screen link is not valid any more.'], 403);
+    header('Cache-Control: no-store'); json_response(['b' => sd_lastbill($pdo)]);
+}
 function sd_feed(PDO $pdo): void
 {
     $c = sd_cfg($pdo, false); $k = (string)($_GET['k'] ?? '');
     if (!preg_match('/^[a-f0-9]{24}$/', (string)$c['key']) || !(hash_equals((string)$c['key'], $k) || (strlen($k) === 8 && hash_equals(substr((string)$c['key'], 0, 8), $k)))) json_response(['error' => 'This screen link is not valid any more.'], 403);
     $n = sd_numbers($pdo, $c);
-    json_response(['orders' => $n['orders'], 'bottles' => $n['bottles'], 'community' => $n['community'], 'reviews' => (int)$c['google_reviews'], 'rating' => (string)$c['rating'], 'period' => sd_label((string)$c['period']),
+    json_response(['thanks' => sd_thanks($pdo), 'orders' => $n['orders'], 'bottles' => $n['bottles'], 'community' => $n['community'], 'reviews' => (int)$c['google_reviews'], 'rating' => (string)$c['rating'], 'period' => sd_label((string)$c['period']),
         'cta' => (string)$c['cta'], 'url' => (string)$c['url'], 'sound' => !empty($c['sound']) ? 1 : 0, 'title' => (string)$c['title'], 'place' => (string)$c['place'], 'theme' => sd_theme((string)($c['theme'] ?? ''))]);
+}
+
+/** 🙏 The newest bill of the last 3 minutes, for the "Thank you, Riya!" on the TV: ONLY the first name (the whole shop sees the TV — never the surname or the phone),
+ *  and the visit number for a returning customer. No name, or the customer said no to giving details = "our customer". [] when there is no new bill. */
+function sd_thanks(PDO $pdo): array
+{
+    try {
+        $q = $pdo->prepare("SELECT bill_id, customer_name FROM st_bills WHERE status = 'ok' AND created_at >= ? ORDER BY bill_id DESC LIMIT 1");      // the bill's time is written by PHP: compare with PHP's clock (not MySQL's, which may be UTC)
+        $q->execute([date('Y-m-d H:i:s', time() - 600)]); $b = $q->fetch();
+        if (!$b) return [];
+        $name = (string)$b['customer_name']; $visit = 1;
+        try { $p = $pdo->prepare("SELECT name, declined, visit_no FROM st_bill_people WHERE bill_id = ? ORDER BY person_no LIMIT 1"); $p->execute([(int)$b['bill_id']]); $r = $p->fetch();
+            if ($r) { $name = !empty($r['declined']) ? '' : ((string)$r['name'] !== '' ? (string)$r['name'] : $name); $visit = max(1, (int)$r['visit_no']); } } catch (Throwable $e) { }
+        $first = trim((string)preg_split('/\s+/u', trim(preg_replace('/[^\p{L}\p{M}\s.\']/u', ' ', $name)))[0]);
+        if (mb_strlen($first) < 2 || mb_strlen($first) > 14 || preg_match('/^(mr|mrs|ms|dr|sir|madam|customer|walk|na|n\/a)\.?$/i', $first)) $first = '';
+        if ($first !== '') $first = mb_strtoupper(mb_substr($first, 0, 1)) . mb_strtolower(mb_substr($first, 1));
+        return ['id' => (int)$b['bill_id'], 'name' => $first, 'visit' => $visit];
+    } catch (Throwable $e) { return []; }
 }
 
 /** the looks of the TV card (store_display_tv.html has the colours and the moving effects of each) */
