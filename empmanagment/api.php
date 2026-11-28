@@ -4033,7 +4033,7 @@ function proof_emp_dept(PDO $pdo, int $empId): int
     } catch (PDOException $e) { return 0; }
 }
 
-/** The owners (Milan Gondaliya, Harsh Patel) and the General Manager Brahmbhatt: "direct" punch — one tap, no photo, no face, no location rule, no proofs, no checklist, no ID card, no shoes.
+/** The owners (Milan Gondaliya, Harsh Patel) and the General Manager Parth Brahmbhatt: "direct" punch — one tap, no photo, no face, no location rule, no proofs, no checklist, no ID card, no shoes.
  *  The list is in settings 'punch_direct_ids' (employee ids); made once from the two names (only a name that matches exactly one working employee). */
 function punch_direct(PDO $pdo, int $empId): bool
 {
@@ -4047,8 +4047,15 @@ function punch_direct(PDO $pdo, int $empId): bool
             }
             setting_set($pdo, 'punch_direct_ids', json_encode($ids));
         } else { $j = json_decode((string)$raw, true); $ids = is_array($j) ? array_map('intval', $j) : []; }
-        // The General Manager Brahmbhatt punches directly too (only him: the one working employee whose name has "brahm" in it).
-        try { $q = $pdo->prepare("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND LOWER(TRIM(full_name)) LIKE ?"); $q->execute(['%brahm%']); $f = $q->fetchAll(PDO::FETCH_COLUMN); if (count($f) === 1) $ids[] = (int)$f[0]; } catch (Throwable $e) { }
+        // The General Manager Parth Brahmbhatt punches directly too (only him). His name may be typed in different ways (Brahmbhatt / Bramhbhatt /
+        // Brahmabhatt / Bhatt), so: first "Parth" + any of those; if that is not exactly one working employee, then any of those spellings alone.
+        $find = function (string $where) use ($pdo): array { try { return array_map('intval', $pdo->query("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND ($where)")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { return []; } };
+        $nm = "LOWER(REPLACE(COALESCE(full_name, ''), ' ', ''))";
+        $sp = "$nm LIKE '%brahm%' OR $nm LIKE '%bramh%' OR $nm LIKE '%brhm%' OR $nm LIKE '%bhatt%'";
+        $f = $find("$nm LIKE 'parth%' AND ($sp)");
+        if (count($f) !== 1) $f = $find("$nm LIKE '%brahm%' OR $nm LIKE '%bramh%' OR $nm LIKE '%brhm%'");
+        if (count($f) !== 1) $f = $find("$nm LIKE 'parth%'");      // only "Parth" typed, no surname
+        if (count($f) === 1) $ids[] = $f[0];
         $ids = array_values(array_unique($ids));
     }
     return $empId > 0 && in_array($empId, $ids, true);

@@ -1373,9 +1373,11 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|wso|team)\./', $__wa)) {
             { $dC = []; $d0 = date('Y-m-d 00:00:00'); $d1 = date('Y-m-d 00:00:00', strtotime('-1 day'));
               if (isset($flt['today'])) $dC[] = "c.last_in_at >= '$d0'"; if (isset($flt['yesterday'])) $dC[] = "(c.last_in_at >= '$d1' AND c.last_in_at < '$d0')"; if ($dC) $w[] = '(' . implode(' OR ', $dC) . ')'; }
             if (!empty($_GET['ids'])) {   // ☑ "Select all" in the bulk bar: EVERY chat of the view (up to 50,000), phone + name only — no last-message lookups, so it stays fast
-                $st = $pdo->prepare("SELECT c.phone, c.name, c.optout FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY c.last_in_at DESC LIMIT 50000"); $st->execute($p);
+                $st = $pdo->prepare("SELECT c.phone, c.name, c.optout, (c.cx_id > 0 OR c.tag = 'complaint') AS cx FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY c.last_in_at DESC LIMIT 50000"); $st->execute($p);
                 $__all = $st->fetchAll(); $__ids = array_values(array_filter($__all, fn($r) => (int)$r['optout'] !== 1));   // 🚫 a customer who opted out / wrote STOP is never part of a bulk selection
-                json_response(['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? '')], $__ids), 'total' => count($__ids), 'optout_n' => count($__all) - count($__ids)]);
+                $__on = count($__all) - count($__ids); $__cn = 0;
+                if (!isset($flt['complaint'])) { $__k = array_values(array_filter($__ids, fn($r) => (int)$r['cx'] !== 1)); $__cn = count($__ids) - count($__k); $__ids = $__k; }   // 🎫 owner (28 Nov): a customer with a complaint is left out of "Select all" by itself — everybody else can get the bulk message. (With the Complaint filter ticked the complaint chats ARE the view, e.g. to transfer them; a bulk message to them is still refused at sending.)
+                json_response(['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? '')], $__ids), 'total' => count($__ids), 'optout_n' => $__on, 'complaint_n' => $__cn]);
             }
             $sort = (string)($_GET['sort'] ?? '');
             $ord = ['new' => 'COALESCE(c.last_in_at, c.last_out_at) DESC', 'old' => 'COALESCE(c.last_in_at, c.last_out_at) ASC', 'az' => "(c.name = '') ASC, c.name ASC, c.phone ASC", 'za' => "(c.name = '') ASC, c.name DESC, c.phone DESC"][$sort] ?? null;
