@@ -29,7 +29,7 @@ ok(wl_due_ts(ist('2026-11-20 21:40:00'), 1) === ist('2026-11-22 10:00:00'), 'aft
 ok(wl_due_ts(ist('2026-11-20 19:59:00'), 1) === ist('2026-11-21 19:59:00'), '19:59 stays');
 ok(wl_yesterday_start(ist('2026-11-21 15:00:00')) === ist('2026-11-20 10:00:00'), 'yesterday 10:00 IST');
 // ---- the messages
-$P = wl_pack(); ok(count($P) === 66, 'day-18 question wording + 3 day-1 offer wordings + 6 topics x 4 + 8 shared + 6 extra wordings of step 1 + 5 price/prepaid + 4 second price wordings + 3 third (question) price wordings + 4 photo wordings = 66 messages, got ' . count($P));
+$P = wl_pack(); ok(count($P) === 73, '7 spaced price wordings + day-18 question wording + 3 day-1 offer wordings + 6 topics x 4 + 8 shared + 6 extra wordings of step 1 + 5 price/prepaid + 4 second price wordings + 3 third (question) price wordings + 4 photo wordings = 73 messages, got ' . count($P));
 $seen = [];
 foreach ($P as $k => $m) {
     ok(preg_match_all('/\{\{\d+\}\}/', $m['body']) === (int)($m['vars'] ?? 1) && strpos($m['body'], '{{1}}') !== false, "$k: the blanks are the name (and the price for the price messages)");
