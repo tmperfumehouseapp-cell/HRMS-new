@@ -1779,8 +1779,13 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                     try { $r = fup_ai_check($pdo, $t, $sec, $day, $text, $f['val'] ?? null, $f['pct'] ?? null, $final, $fvText); fup_put($pdo, (int)$t['id'], $day, ['ai_verdict' => $r[0], 'ai_note' => $r[1], 'ai_q' => $r[2]]); return $r; }
                     catch (Throwable $e) { error_log('fup ai check: ' . $e->getMessage()); return null; }
                 };
-                if (!empty($GLOBALS['__jr_cap']) || !function_exists('fastcgi_finish_request')) { $r = $runAi(); if ($r) $ai = ['verdict' => $r[0], 'note' => $r[1], 'question' => $r[2]]; }   // where the answer cannot be sent early (and in the tests) Claude is read at once
-                else register_shutdown_function(function () use ($runAi) { ignore_user_abort(true); @fastcgi_finish_request(); $runAi(); });
+                // Hostinger runs LiteSpeed: there is no fastcgi_finish_request, only litespeed_finish_request. The old check missed it, so EVERY save waited for
+                // Claude (up to ~30 s) before "Saved" came back: people closed the box or pressed Save again (which did nothing while the first was still going).
+                $early = function_exists('hrms_release') || function_exists('litespeed_finish_request') || function_exists('fastcgi_finish_request');
+                if (!empty($GLOBALS['__jr_cap']) || !$early) { $r = $runAi(); if ($r) $ai = ['verdict' => $r[0], 'note' => $r[1], 'question' => $r[2]]; }   // in the tests Claude is read at once
+                else register_shutdown_function(function () use ($runAi) { ignore_user_abort(true); @set_time_limit(90);
+                    if (function_exists('hrms_release')) hrms_release(); elseif (function_exists('litespeed_finish_request')) @litespeed_finish_request(); else @fastcgi_finish_request();
+                    $runAi(); });
             }
             json_response(['ok' => true, 'ai' => $ai]);
         }
