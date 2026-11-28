@@ -79,8 +79,9 @@ if (!function_exists('wos_day')) {
     function wos_day(PDO $pdo, string $day, bool $fresh = false): array
     {
         $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $isToday = $day >= $today; $file = rtrim(sys_get_temp_dir(), '/') . '/wa_osrc4_' . preg_replace('/[^0-9-]/', '', $day) . '.json';
-        if (!$fresh && is_file($file) && filemtime($file) > time() - ($isToday ? 300 : 6 * 3600)) { $j = json_decode((string)@file_get_contents($file), true); if (is_array($j) && isset($j['orders'])) return $j + ['cached' => 1]; }
-        [$from, $to] = function_exists('biz_window') ? biz_window($pdo, $day, $day) : [$day . ' 00:00:00', $day . ' 23:59:59'];
+        $ovr = isset($GLOBALS['wos_win']) && is_array($GLOBALS['wos_win']);   /* the checkup may ask for another window (e.g. today from 10:00); then nothing is read from or written to the file */
+        if (!$ovr && !$fresh && is_file($file) && filemtime($file) > time() - ($isToday ? 300 : 6 * 3600)) { $j = json_decode((string)@file_get_contents($file), true); if (is_array($j) && isset($j['orders'])) return $j + ['cached' => 1]; }
+        [$from, $to] = $ovr ? $GLOBALS['wos_win'] : (function_exists('biz_window') ? biz_window($pdo, $day, $day) : [$day . ' 00:00:00', $day . ' 23:59:59']);
         $R = ['day' => $day, 'from' => $from, 'to' => $to, 'at' => date('Y-m-d H:i:s'), 'orders' => 0, 'rev' => 0, 'wrote' => 0, 'groups' => [], 'modules' => [], 'camps' => [], 'msgs' => [], 'list' => [], 'partial' => 0];
         try { $q = $pdo->prepare("SELECT okey, src, phone, order_at, total, module, tpl_id, msg_at FROM wa_order_attr WHERE order_at >= ? AND order_at <= ? ORDER BY order_at"); $q->execute([$from, $to]); $rows = $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return $R + ['error' => 'The order ledger is not there yet.']; }
         $first = []; foreach (["SELECT RIGHT(REPLACE(REPLACE(phone, '+', ''), ' ', ''), 10) p, MIN(created_at) FROM shop_orders WHERE phone <> '' GROUP BY p", "SELECT RIGHT(REPLACE(REPLACE(phone, '+', ''), ' ', ''), 10) p, MIN(order_date) FROM manual_orders WHERE phone <> '' GROUP BY p"] as $sql) { try { foreach ($pdo->query($sql)->fetchAll(PDO::FETCH_NUM) as $r) { $k = (string)$r[0]; if (!isset($first[$k]) || (string)$r[1] < $first[$k]) $first[$k] = (string)$r[1]; } } catch (Throwable $e) { } }
@@ -125,7 +126,7 @@ if (!function_exists('wos_day')) {
             } else { $o['group'] = 'No phone on the order'; }
             $R['list'][] = $o;
         }
-        $R['wrote_all'] = $R['wrote']; if (!$R['partial']) @file_put_contents($file, json_encode($R, JSON_UNESCAPED_UNICODE));
+        $R['wrote_all'] = $R['wrote']; if (!$R['partial'] && !$ovr) @file_put_contents($file, json_encode($R, JSON_UNESCAPED_UNICODE));
         return $R;
     }
 }
