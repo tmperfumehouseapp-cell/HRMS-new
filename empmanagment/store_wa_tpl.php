@@ -98,7 +98,7 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
         foreach ($rows as $r) {
             if (in_array((string)$r['name'], ['tmph_store_bill', 'tmph_store_bill_back', 'tmph_store_bday'], true)) { $hq = $pdo->prepare("SELECT 1 FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $hq->execute([(int)$r['id'], $waba]); if (!$hq->fetchColumn()) continue; }      // the older plain-text versions (made for the other accounts) are not the Store's to see
             $o = swt_out($pdo, $r, $waba); if (!$o) continue;
-            $o['used'] = $used[$o['id']] ?? []; $o['family'] = swt_family($o['name']); $o['machine'] = (bool)preg_match('/_\d{6,}(_v\d+)?$/', $o['name']) || (in_array($o['status'], ['draft', 'DRAFT'], true) && preg_match('/^tmph_store_followup_\d_(gu|hi|en)_v\d+$/', $o['name']));
+            $o['used'] = $used[$o['id']] ?? []; $o['family'] = swt_family($o['name']); $o['machine'] = (bool)preg_match('/_\d{6,}(_v\d+)?$/', $o['name']);
             $q2 = $pdo->prepare("SELECT category, COUNT(*) n, SUM(meta_id <> '') m FROM wa_tpl_waba WHERE tpl_id = ? GROUP BY category"); $q2->execute([$o['id']]); $o['meta_category'] = ''; $o['at_meta'] = false; foreach ($q2->fetchAll() as $x) { if ((string)$x['category'] !== '') $o['meta_category'] = strtoupper((string)$x['category']); if ((int)$x['m'] > 0) $o['at_meta'] = true; }
             $out[] = $o;
         }
@@ -127,13 +127,20 @@ function swt_handle(PDO $pdo, string $action, int $me, bool $post): void
     }
     if ($action === 'st_wa.tpl_del') {      // only messages that never reached Meta (drafts, or refused before Meta made them)
         $ids = array_values(array_unique(array_filter(array_map('intval', (array)($in['ids'] ?? [$in['id'] ?? 0]))))); $del = 0; $kept = [];
+        $atMeta = []; $url = '/' . $waba . '/message_templates?limit=100&fields=name,language'; for ($pg = 0; $pg < 8 && $url; $pg++) { [$cc, $dd] = wa_api('GET', $url); if ($cc < 200 || $cc >= 300 || !is_array($dd)) json_response(['error' => 'Meta did not answer, so nothing was deleted (to be safe). Try again.'], 502); foreach ((array)($dd['data'] ?? []) as $x) $atMeta[(string)$x['name'] . '|' . (string)$x['language']] = 1; $url = ''; $nx = (string)($dd['paging']['next'] ?? ''); if ($nx !== '' && preg_match('#graph\.facebook\.com/[^/]+(/.+)$#', $nx, $mm)) $url = $mm[1]; }      // a message Meta has is never deleted here
         foreach ($ids as $id) {
             $r = wa_tpl_row($pdo, $id); if (!$r || strpos((string)$r['name'], 'tmph_store_') !== 0) continue;
+            if (isset($atMeta[(string)$r['name'] . '|' . (string)($r['language'] ?? 'en')])) { $kept[] = (string)$r['name'] . ' (it is at Meta)'; continue; }
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ? AND (meta_id <> '' OR UPPER(status) IN ('APPROVED','PENDING','IN_APPEAL','PAUSED'))"); $q->execute([$id]); if ((int)$q->fetchColumn() > 0) { $kept[] = (string)$r['name']; continue; }
             if (!empty(swt_used($pdo)[$id])) { $kept[] = (string)$r['name']; continue; }
             $pdo->prepare("DELETE FROM wa_tpl_waba WHERE tpl_id = ?")->execute([$id]); $pdo->prepare("DELETE FROM wa_templates WHERE id = ?")->execute([$id]); $del++;
         }
         json_response(['ok' => true, 'deleted' => $del, 'kept' => $kept]);
+    }
+    if ($action === 'st_wa.tpl_photo') {      // the photo / video / PDF on top is sent with each message, so it can change on an approved message without asking Meta again
+        $id = (int)($in['id'] ?? 0); $lib = (int)($in['lib_id'] ?? 0); $r = wa_tpl_row($pdo, $id); if (!$r || strpos((string)$r['name'], 'tmph_store_') !== 0) json_response(['error' => 'Message not found.'], 404);
+        if (!in_array(strtoupper((string)($r['header_format'] ?? '')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) json_response(['error' => 'This message has no photo on top.'], 422);
+        $lr = wa_tpl_lib_row($pdo, $lib); if (!$lr) json_response(['error' => 'Photo not found.'], 404); $pdo->prepare("UPDATE wa_templates SET header_lib_id = ? WHERE id = ?")->execute([$lib, $id]); json_response(['ok' => true, 'title' => (string)$lr['title']]);
     }
     if ($action === 'st_wa.tpl_copy') {      // a new draft from an existing message (any status): same text, photo, buttons; a free name
         $r = wa_tpl_row($pdo, (int)($in['id'] ?? 0)); if (!$r || strpos((string)$r['name'], 'tmph_store_') !== 0) json_response(['error' => 'Message not found.'], 404);

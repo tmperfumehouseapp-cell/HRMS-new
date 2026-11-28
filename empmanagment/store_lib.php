@@ -879,12 +879,12 @@ function st_store_waba(PDO $pdo): string
 function st_wa_tpl_sync(PDO $pdo, string $waba): array
 {
     if ($waba === '' || !function_exists('wa_api')) return [0, 'no Store account'];
-    $n = 0; $err = ''; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason';
+    $n = 0; $err = ''; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason,components';
     for ($page = 0; $page < 8 && $url; $page++) {
         [$c, $d] = wa_api('GET', $url); if ($c < 200 || $c >= 300 || !is_array($d)) { $err = function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'Meta did not answer'; break; }
         foreach ((array)($d['data'] ?? []) as $x) {
             $nm = (string)($x['name'] ?? ''); if (strpos($nm, 'tmph_store_') !== 0) continue;
-            $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = ?"); $q->execute([$nm, (string)($x['language'] ?? 'en')]); $tid = (int)$q->fetchColumn(); if (!$tid) continue;
+            $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = ?"); $q->execute([$nm, (string)($x['language'] ?? 'en')]); $tid = (int)$q->fetchColumn(); if (!$tid) $tid = st_wa_tpl_import($pdo, $x); if (!$tid) continue;
             $st = strtoupper((string)($x['status'] ?? 'PENDING')); $why = (string)($x['rejected_reason'] ?? ''); if ($why === 'NONE') $why = ''; $cat = strtoupper((string)($x['category'] ?? '')); $now = date('Y-m-d H:i:s');
             $e = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $e->execute([$tid, $waba]);
             if ((int)$e->fetchColumn() > 0) $pdo->prepare("UPDATE wa_tpl_waba SET status = ?, reason = ?, meta_id = ?, updated_at = ?, category = ? WHERE tpl_id = ? AND waba_id = ?")->execute([$st, mb_substr($why, 0, 300), (string)($x['id'] ?? ''), $now, $cat, $tid, $waba]);
@@ -894,6 +894,26 @@ function st_wa_tpl_sync(PDO $pdo, string $waba): array
         $url = ''; $nx = (string)($d['paging']['next'] ?? ''); if ($nx !== '' && preg_match('#graph\.facebook\.com/[^/]+(/.+)$#', $nx, $m)) $url = $m[1];
     }
     return [$n, $err];
+}
+/** A Store template that is at Meta but not in HRMS (made in WhatsApp Manager, or its HRMS row was deleted): copied into HRMS from Meta's own components so it can be used. Returns the new id or 0. */
+function st_wa_tpl_import(PDO $pdo, array $x): int
+{
+    if (!function_exists('wa_tpl_insert')) return 0;
+    $nm = (string)($x['name'] ?? ''); $lg = (string)($x['language'] ?? 'en'); $hf = ''; $ht = ''; $body = ''; $foot = ''; $btn = []; $ex = [];
+    foreach ((array)($x['components'] ?? []) as $c) { $ty = strtoupper((string)($c['type'] ?? ''));
+        if ($ty === 'HEADER') { $hf = strtoupper((string)($c['format'] ?? 'TEXT')); if ($hf === 'TEXT') $ht = (string)($c['text'] ?? ''); }
+        elseif ($ty === 'BODY') { $body = (string)($c['text'] ?? ''); $ex = array_values(array_map('strval', (array)($c['example']['body_text'][0] ?? []))); }
+        elseif ($ty === 'FOOTER') $foot = (string)($c['text'] ?? '');
+        elseif ($ty === 'BUTTONS') foreach ((array)($c['buttons'] ?? []) as $b) { $bt = strtoupper((string)($b['type'] ?? ''));
+            if ($bt === 'QUICK_REPLY') $btn[] = ['type' => 'QUICK_REPLY', 'text' => (string)($b['text'] ?? '')];
+            elseif ($bt === 'URL') $btn[] = ['type' => 'URL', 'text' => (string)($b['text'] ?? ''), 'url' => (string)($b['url'] ?? ''), 'example' => (string)(((array)($b['example'] ?? []))[0] ?? '')];
+            elseif ($bt === 'PHONE_NUMBER') $btn[] = ['type' => 'PHONE_NUMBER', 'text' => (string)($b['text'] ?? ''), 'phone' => preg_replace('/\D/', '', (string)($b['phone_number'] ?? ''))]; } }
+    if ($body === '') return 0;
+    $lib = 0; if (in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) { try { $base = preg_replace('/(_\d{6,})?(_v\d+)?$/', '', $nm); $q = $pdo->prepare("SELECT header_lib_id FROM wa_templates WHERE (name = ? OR name LIKE ?) AND header_format = ? AND header_lib_id > 0 ORDER BY id DESC LIMIT 1"); $q->execute([$base, $base . '\_%', $hf]); $lib = (int)$q->fetchColumn(); } catch (Throwable $e) { } }      // the photo of the same message family, when HRMS still has one
+    $d = ['name' => $nm, 'language' => $lg, 'category' => strtoupper((string)($x['category'] ?? 'MARKETING')), 'header_format' => $hf, 'header_text' => $ht, 'header_lib_id' => $lib, 'body' => $body, 'footer' => $foot, 'buttons' => $btn, 'examples' => ['body' => $ex], 'folder' => 'Store'];
+    try { [$t, $err] = wa_tpl_clean($d, true); if ($err !== '') { error_log('st_wa_tpl_import ' . $nm . ': ' . $err); return 0; } $t['name'] = $nm; $id = wa_tpl_insert($pdo, $t, 0, 'Store message (copied from Meta)', 'Copied from Meta: it was at Meta but not in HRMS');
+        $c = $pdo->prepare("SELECT name FROM wa_templates WHERE id = ?"); $c->execute([$id]); if ((string)$c->fetchColumn() !== $nm) { $pdo->prepare("UPDATE wa_templates SET name = ? WHERE id = ?")->execute([$nm, $id]); }
+        return (int)$id; } catch (Throwable $e) { error_log('st_wa_tpl_import: ' . $e->getMessage()); return 0; }
 }
 /** A button text Meta accepts: no emoji, no *bold* / _italic_ marks, no new lines (Meta refuses the whole message otherwise). */
 function st_wa_btn_text(string $t): string

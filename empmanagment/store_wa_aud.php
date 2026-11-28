@@ -12,6 +12,7 @@
  * Actions (st_wa.aud_*): aud_list, aud_cfg_save, aud_tag.
  */
 
+if (!function_exists('sr_short_title') && is_file(__DIR__ . '/store_remind.php')) require_once __DIR__ . '/store_remind.php';
 function swa_cfg_defaults(): array { return ['new_days' => 30, 'one_lo' => 30, 'one_hi' => 90, 'loyal' => 3, 'vip' => 25000, 'risk' => 60, 'sleep' => 120, 'refill_lo' => 25, 'refill_hi' => 40, 'low' => 500, 'high' => 1500]; }
 function swa_cfg(PDO $pdo): array
 {
@@ -68,7 +69,7 @@ function swa_build(PDO $pdo, array $c): array
     $ids = array_keys($billOf);
     foreach (array_chunk($ids, 800) as $ch) { $in = implode(',', array_map('intval', $ch)); if ($in === '') continue;
         try { foreach ($pdo->query("SELECT i.bill_id, COALESCE(pr.title, '') title FROM st_bill_items i LEFT JOIN st_bottles bt ON bt.bottle_id = i.bottle_id LEFT JOIN st_products pr ON pr.product_id = bt.product_id WHERE i.kind = 'sale' AND i.bill_id IN ($in)")->fetchAll() as $r) {
-            $ph = $billOf[(int)$r['bill_id']] ?? ''; $t = trim((string)$r['title']); if ($ph === '' || $t === '') continue; $P[$ph]['perfumes'][$t] = ($P[$ph]['perfumes'][$t] ?? 0) + 1; foreach (swa_taste($t) as $k) $P[$ph]['taste'][$k] = 1; } } catch (Throwable $e) { }
+            $ph = $billOf[(int)$r['bill_id']] ?? ''; $t = trim((string)$r['title']); $full = $t; $t = function_exists('sr_short_title') ? sr_short_title($t) : $t; if ($ph === '' || $t === '') continue; $P[$ph]['perfumes'][$t] = ($P[$ph]['perfumes'][$t] ?? 0) + 1; foreach (swa_taste($full) as $k) $P[$ph]['taste'][$k] = 1; } } catch (Throwable $e) { }
     }
     // tags, language, STOP, WhatsApp behaviour
     try { foreach ($pdo->query("SELECT phone, tag FROM st_wa_tag")->fetchAll() as $r) { $ph = substr((string)$r['phone'], -10); if (isset($P[$ph])) $P[$ph]['tags'][] = (string)$r['tag']; } } catch (Throwable $e) { }
