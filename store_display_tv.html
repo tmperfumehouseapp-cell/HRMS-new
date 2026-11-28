@@ -103,6 +103,32 @@
   .puff.go{-webkit-animation:pf 1.4s ease-out forwards;animation:pf 1.4s ease-out forwards}
   @-webkit-keyframes pf{0%{opacity:.95;-webkit-transform:translate(0,0) scale(.4)}100%{opacity:0;-webkit-transform:translate(var(--x),var(--y)) scale(2.6)}} @keyframes pf{0%{opacity:.95;transform:translate(0,0) scale(.4)}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(2.6)}}
 
+
+  /* 🙏 THANK YOU card: a new bill shows "Thank you, Riya!" over the whole screen for 7 s, in the colours of the chosen look */
+  #ty{position:absolute;left:0;top:0;width:720px;height:1280px;z-index:8;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px;background:#faf1e2;color:#2b1a10;overflow:hidden}
+  #ty.on{display:flex;-webkit-animation:tyin .6s ease both;animation:tyin .6s ease both} #ty.off{display:flex;-webkit-animation:tyout .7s ease both;animation:tyout .7s ease both}
+  @-webkit-keyframes tyin{from{opacity:0}to{opacity:1}} @keyframes tyin{from{opacity:0}to{opacity:1}} @-webkit-keyframes tyout{from{opacity:1}to{opacity:0}} @keyframes tyout{from{opacity:1}to{opacity:0}}
+  #ty .tyl{width:170px;height:170px;margin-bottom:34px;-webkit-animation:typop .9s .1s cubic-bezier(.2,1.4,.4,1) both;animation:typop .9s .1s cubic-bezier(.2,1.4,.4,1) both}
+  #ty .ty1{font-size:44px;font-weight:800;letter-spacing:-.5px;opacity:.85;-webkit-animation:tyup .6s .3s ease both;animation:tyup .6s .3s ease both}
+  #ty .ty2{font-size:132px;font-weight:900;line-height:1;letter-spacing:-5px;margin:14px 0 6px;-webkit-animation:typop .9s .45s cubic-bezier(.2,1.4,.4,1) both;animation:typop .9s .45s cubic-bezier(.2,1.4,.4,1) both}
+  #ty .ty3{font-size:96px;font-weight:900;line-height:1.05;letter-spacing:-3px;max-width:640px;word-break:break-word;-webkit-animation:typop .9s .7s cubic-bezier(.2,1.4,.4,1) both;animation:typop .9s .7s cubic-bezier(.2,1.4,.4,1) both}
+  #ty .ty4{font-size:36px;font-weight:700;margin-top:40px;opacity:.85;-webkit-animation:tyup .6s 1s ease both;animation:tyup .6s 1s ease both}
+  #ty .ty5{margin-top:46px;font-size:30px;font-weight:900;padding:14px 30px;border-radius:40px;-webkit-animation:tyup .6s 1.2s ease both;animation:tyup .6s 1.2s ease both}
+  @-webkit-keyframes typop{0%{opacity:0;-webkit-transform:scale(.5)}100%{opacity:1;-webkit-transform:scale(1)}} @keyframes typop{0%{opacity:0;transform:scale(.5)}100%{opacity:1;transform:scale(1)}}
+  @-webkit-keyframes tyup{from{opacity:0;-webkit-transform:translateY(30px)}to{opacity:1;-webkit-transform:none}} @keyframes tyup{from{opacity:0;transform:translateY(30px)}to{opacity:.85;transform:none}}
+  #ty .tyg{position:absolute;width:900px;height:900px;border-radius:50%;left:-90px;top:190px;opacity:.5;background:radial-gradient(circle,rgba(255,145,74,.55),rgba(255,145,74,0) 62%);-webkit-animation:dr1 9s ease-in-out infinite alternate;animation:dr1 9s ease-in-out infinite alternate;z-index:-1}
+  #ty .tyc{position:absolute;top:-30px;width:16px;height:26px;border-radius:4px;-webkit-animation:tyfall linear forwards;animation:tyfall linear forwards}
+  @-webkit-keyframes tyfall{to{-webkit-transform:translateY(1360px) rotate(720deg)}} @keyframes tyfall{to{transform:translateY(1360px) rotate(720deg)}}
+  /* the looks */
+  .th-brand #ty{background:#faf1e2;color:#2b1a10} .th-brand #ty .ty2,.th-brand #ty .ty3{color:#ff914a;-webkit-text-stroke:4px #2b1a10;text-shadow:7px 7px 0 #2b1a10} .th-brand #ty .ty3{-webkit-text-stroke:3px #2b1a10;text-shadow:5px 5px 0 #2b1a10;color:#fff}
+  .th-brand #ty .ty5{background:#ff914a;color:#2b1a10;border:4px solid #2b1a10;box-shadow:0 6px 0 #2b1a10}
+  .th-classic #ty{background:#fff;color:#0b0b0b} .th-classic #ty .ty2{color:#ff5a00} .th-classic #ty .ty5{background:#ff5a00;color:#fff} .th-classic #ty .tyl{display:none}
+  .th-gold #ty{background:#07070f;color:#f6efe0} .th-gold #ty .ty2{background-image:linear-gradient(100deg,#d4af37 20%,#fff6cf 40%,#d4af37 60%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;-webkit-animation:typop .9s .45s cubic-bezier(.2,1.4,.4,1) both,shim 6s linear infinite;animation:typop .9s .45s cubic-bezier(.2,1.4,.4,1) both,shim 6s linear infinite}
+  .th-gold #ty .ty5{background:linear-gradient(90deg,#c8992b,#f3d277,#c8992b);color:#1a1205} .th-gold #ty .tyg{background:radial-gradient(circle,rgba(212,175,55,.5),rgba(212,175,55,0) 62%)}
+  .th-sunset #ty{background:linear-gradient(165deg,#ff8a00 0%,#ff3d6e 52%,#7b2ff7 100%);color:#fff} .th-sunset #ty .ty2{color:#fff3c4} .th-sunset #ty .ty5{background:#fff;color:#ff3d6e} .th-sunset #ty .tyg{background:radial-gradient(circle,rgba(255,214,0,.45),rgba(255,214,0,0) 62%)}
+  .th-rose #ty{background:#fff6f2;color:#3b0a1e} .th-rose #ty .ty2{color:#b0174f} .th-rose #ty .ty3{color:#5a0f2e} .th-rose #ty .ty5{background:linear-gradient(90deg,#8a0f3d,#c2185b);color:#fff} .th-rose #ty .tyg{background:radial-gradient(circle,rgba(255,170,190,.6),rgba(255,170,190,0) 62%)}
+  .th-emerald #ty{background:#03201b;color:#eafff8} .th-emerald #ty .ty2{color:#5eead4} .th-emerald #ty .ty5{background:linear-gradient(90deg,#14b8a6,#2dd4bf);color:#042f2a} .th-emerald #ty .tyg{background:radial-gradient(circle,rgba(45,212,191,.45),rgba(45,212,191,0) 62%)}
+  #ty .tyl{display:none} .th-brand #ty .tyl,.th-rose #ty .tyl,.th-gold #ty .tyl{display:block}
   /* Classic (white) keeps its look: only a few soft orange sparkles */
   .th-classic .blob{display:none} .th-classic .sp{background:#ff5a00;opacity:.35}
   #fsb{position:fixed;left:50%;bottom:6%;-webkit-transform:translateX(-50%);transform:translateX(-50%);z-index:99;font:900 26px/1 Inter,Arial,sans-serif;white-space:nowrap;padding:20px 32px;border-radius:50px;border:5px solid #2b1a10;background:#ff914a;color:#2b1a10;box-shadow:0 8px 0 #2b1a10;cursor:pointer;outline:none}
@@ -122,6 +148,7 @@
   </div>
   <div class="toast" id="ts"></div>
   <div class="cta" id="cta">Order it now</div><div class="url" id="url">tmperfumehouse.com</div>
+  <div id="ty"><div class="tyg"></div><img class="tyl" src="assets/img/tmph-logo.png" alt=""><div class="ty1" id="ty1">Your order is ready</div><div class="ty2">Thank you</div><div class="ty3" id="ty3">Riya!</div><div class="ty4" id="ty4">for choosing TM Perfume House</div><div class="ty5">Smell it. Love it. Take it home.</div></div>
   <div id="msg" style="color:#555">Loading…</div>
 </div>
 <button id="fsb" type="button" autofocus>&#x26F6; Full screen &ndash; press OK</button>
@@ -189,8 +216,25 @@
       p.style.setProperty('--x', Math.round(-60 - Math.random() * 120) + 'px'); p.style.setProperty('--y', Math.round(-20 + Math.random() * 90) + 'px'); st.appendChild(p);
       (function (el, dl) { setTimeout(function () { restart(el, 'go'); }, dl); setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, dl + 1500); })(p, 350 + i * 90); } }
   setTimeout(puff, 3000); setInterval(puff, 14000);
+
+  // 🙏 a new bill: "Thank you, <first name>!" over the whole screen for 7 s (the first look after the TV starts only remembers the bill, it does not show an old one)
+  var tyLast = -1, tyT = 0;
+  function thanks(t) {
+    if (!t || !t.id) { if (tyLast < 0) tyLast = 0; return; }
+    if (tyLast < 0) { tyLast = t.id; return; } if (t.id <= tyLast) return; tyLast = t.id;
+    var y = $('ty'), nm = t.name || '';
+    $('ty1').textContent = t.visit > 1 ? 'Welcome back' : 'Your perfume is ready';
+    $('ty3').textContent = nm ? nm + '!' : 'for shopping with us!';
+    $('ty3').style.fontSize = nm ? Math.max(64, Math.min(120, 1100 / Math.max(5, nm.length + 1))) + 'px' : '60px';
+    $('ty4').textContent = t.visit > 1 ? 'Visit no. ' + t.visit + ' · we are so happy to see you again' : 'for choosing TM Perfume House';
+    var c = COL[theme] || COL.brand; for (var i = 0; i < 46; i++) { var e = document.createElement('div'); e.className = 'tyc'; e.style.left = Math.round(Math.random() * 700) + 'px'; e.style.background = c[i % c.length];
+      var d = 2.6 + Math.random() * 2.2; e.style.webkitAnimationDuration = e.style.animationDuration = d + 's'; e.style.webkitAnimationDelay = e.style.animationDelay = (Math.random() * 1.4) + 's'; y.appendChild(e);
+      (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 6500); })(e); }
+    clearTimeout(tyT); y.className = ''; void y.offsetWidth; y.className = 'on';
+    tyT = setTimeout(function () { y.className = 'off'; setTimeout(function () { if (y.className === 'off') y.className = ''; }, 750); }, 7000);
+  }
   function show(d) {
-    setTheme(themeLock || d.theme || 'brand'); var firstLines = !TK.length; lines(d); if (firstLines) { $('tk').textContent = TK[0]; tki = 1; }
+    setTheme(themeLock || d.theme || 'brand'); try { thanks(d.thanks); } catch (e) { /* the card itself must keep working */ } var firstLines = !TK.length; lines(d); if (firstLines) { $('tk').textContent = TK[0]; tki = 1; }
     $('title').textContent = d.title; $('place').textContent = d.place; $('per').textContent = d.period; $('cta').textContent = d.cta; $('url').textContent = d.url;
     $('rt').textContent = d.rating !== '' ? d.rating + '/5' : '–'; $('gr').textContent = f(d.reviews);
     setNum('ord', d.orders, last && last.orders); setNum('bt', d.bottles, last && last.bottles); setNum('cm', d.community, last && last.community);
@@ -231,6 +275,7 @@
     }
     poll(); setInterval(poll, 3000);
   }
+  if (/[?&]ty=1/.test(location.search)) setTimeout(function () { tyLast = 0; thanks({ id: 1, name: 'Riya', visit: 1 }); }, 1500);      // Store -> Display: the "See the thank-you" preview
   if (!key) { pairMode(); } else { tick(); setInterval(tick, 8000); }
   setTimeout(function () { location.reload(); }, 6 * 3600 * 1000);
   // one tap on the screen = full screen (the address bar and tabs of Chrome go away); a browser allows it only after a tap
