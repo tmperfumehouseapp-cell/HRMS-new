@@ -271,8 +271,33 @@
   });
   document.querySelector('.dm').addEventListener('click', async (e) => {
     const b = e.target.closest('.olist button'); if (!b) return;
-    const on = b.dataset.on, ref = (D && D.oid && D.oid[on]) || null; if (!ref) { alert('This order cannot be opened from here.'); return; }
+    const on = b.dataset.on, ref = (D && D.oid && D.oid[on]) || null;
     const back = $('pop') ? $('pop').innerHTML : ''; openPop('<p class="sub">Loading ' + esc(on) + '…</p>');
+    const kv0 = (k, v) => (v === '' || v == null) ? '' : '<div class="kv"><span>' + k + '</span><b>' + esc(v) + '</b></div>', inr0 = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+    const foot = () => '<div style="text-align:right;margin-top:10px">' + (back ? '<button class="btn" type="button" id="popB" style="background:#fff;color:#111;border:1px solid var(--line);margin-right:6px">← Back</button>' : '') + '<button class="btn" type="button" id="popX" style="background:#fff;color:#111;border:1px solid var(--line)">Close</button></div>';
+    const wireFoot = () => { $('popX').onclick = closePop; if ($('popB')) $('popB').onclick = () => { openPop(back.replace(/^<div class="md">|<\/div>$/g, '')); $('popX') && ($('popX').onclick = closePop); }; };
+    const tbl = (rows) => '<table><thead><tr><th>Product</th><th>Qty</th><th style="text-align:right">Total</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    if (!ref) {      // not a Shopify order: a WEBSITE order (TM…) is read from the shop, a MANUAL order (WM-…) from the manual orders list
+      try {
+        if (/^WM-/i.test(on)) {
+          const day = D.day || $('dDay').value, sh = (n) => new Date(new Date(day + 'T00:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10);
+          const r = ((await api.get('wmo.dsp_list', { from: sh(-120), to: sh(2), q: on, page: 1 })).rows || []).find((x) => String(x.order_no).toLowerCase() === on.toLowerCase()); if (!r) throw new Error('This manual order was not found.');
+          const c = r.cust || {};
+          openPop('<h3>' + esc(r.order_no) + ' — Manual order</h3><p class="sub">' + esc(String(r.confirmed_at || r.created_at || '').slice(0, 16)) + '</p>'
+            + kv0('Customer', c.name) + kv0('Mobile', c.phone || r.phone) + kv0('Address', [c.addr1, c.addr2, c.landmark, c.city, c.state, c.pin].filter(Boolean).join(', ')) + kv0('Payment', [r.pay, r.status].filter(Boolean).join(' · ')) + kv0('Salesperson', r.emp) + kv0('Note', r.note)
+            + tbl((r.lines || []).map((li) => '<tr><td>' + esc(li.title || li.short) + (li.label ? '<div style="color:#64748b">' + esc(li.label) + '</div>' : '') + '</td><td>' + esc(li.qty) + '</td><td style="text-align:right">' + esc(inr0(li.total)) + '</td></tr>').join(''))
+            + kv0('Total', inr0(r.total)) + kv0('Paid', inr0(r.paid)) + (r.cod ? kv0('Cash on delivery', inr0(r.cod)) : '') + foot());
+        } else {
+          const r = (await api.get('tms.detail', { number: on })).order, a = r.addr || {}, m = r.money || {};
+          openPop('<h3>' + esc(r.number || on) + ' — Website (TM Store)</h3><p class="sub">' + esc(String(r.pay_time || r.placed_at || '').slice(0, 16)) + '</p>'
+            + kv0('Customer', r.customer) + kv0('Mobile', r.phone) + kv0('Address', [a.name, a.address1, a.address2, a.city, a.state, a.pincode].filter(Boolean).join(', ')) + kv0('Payment', [r.pay_status, r.pay_method].filter(Boolean).join(' · ')) + kv0('Fulfillment', r.ship_status) + kv0('Tracking', r.awb ? r.awb + (r.courier ? ' (' + r.courier + ')' : '') : '') + kv0('Note', r.note)
+            + tbl((r.lines || []).map((li) => '<tr><td>' + esc(li.title) + (li.size ? '<div style="color:#64748b">' + esc(li.size) + '</div>' : '') + '</td><td>' + esc(li.qty) + '</td><td style="text-align:right">' + esc(inr0(li.price * li.qty - (li.discount || 0))) + '</td></tr>').join(''))
+            + kv0('Subtotal', m.subtotal != null ? inr0(m.subtotal) : '') + kv0('Discount', m.discount ? inr0(m.discount) + (m.code ? ' (' + m.code + ')' : '') : '') + kv0('Shipping', m.shipping ? inr0(m.shipping) : '') + kv0('Total', inr0(r.total)) + kv0('Paid', inr0(r.paid)) + kv0('To collect', r.due ? inr0(r.due) : '') + foot());
+        }
+        wireFoot();
+      } catch (err) { openPop('<p class="sub" style="color:#9a2620">' + esc(on) + ': ' + esc(err.message) + '</p>' + foot()); wireFoot(); }
+      return;
+    }
     try {
       const d = (await api.get('shopify.order_detail', { store: ref[0], id: ref[1] })).order, kv = (k, v) => (v === '' || v == null) ? '' : '<div class="kv"><span>' + k + '</span><b>' + esc(v) + '</b></div>';
       openPop('<h3>' + esc(d.order_name || on) + ' — ' + esc(d.store || '') + '</h3><p class="sub">' + esc(d.created_at ? new Date(d.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '') + '</p>'
