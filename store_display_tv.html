@@ -276,7 +276,15 @@
     poll(); setInterval(poll, 3000);
   }
   if (/[?&]ty=1/.test(location.search)) setTimeout(function () { tyLast = 0; thanks({ id: 1, name: 'Riya', visit: 1 }); }, 1500);      // Store -> Display: the "See the thank-you" preview
-  if (!key) { pairMode(); } else { tick(); setInterval(tick, 8000); }
+  // ⚡ a bill shows on the TV within ~2 s: a tiny "newest bill?" question every 2 s; the full card is loaded the moment the answer changes (and every 15 s anyway)
+  var pingB = -1, pingBusy = false;
+  function ping() {
+    if (pingBusy) return; pingBusy = true;
+    try { var x = new XMLHttpRequest(); x.open('GET', API + '?action=st_disp.ping&k=' + encodeURIComponent(key) + '&_t=' + new Date().getTime(), true); x.timeout = 6000;
+      x.onload = function () { pingBusy = false; var d = null; try { d = JSON.parse(x.responseText); } catch (e) { d = null; } if (!d || typeof d.b !== 'number') return; if (pingB >= 0 && d.b !== pingB) tick(); pingB = d.b; };
+      x.onerror = x.ontimeout = function () { pingBusy = false; }; x.send(); } catch (e) { pingBusy = false; }
+  }
+  if (!key) { pairMode(); } else { tick(); setInterval(tick, 15000); ping(); setInterval(ping, 2000); }
   setTimeout(function () { location.reload(); }, 6 * 3600 * 1000);
   // one tap on the screen = full screen (the address bar and tabs of Chrome go away); a browser allows it only after a tap
   function full() { var e = document.documentElement, f = e.requestFullscreen || e.webkitRequestFullscreen || e.webkitRequestFullScreen || e.mozRequestFullScreen || e.msRequestFullscreen;
