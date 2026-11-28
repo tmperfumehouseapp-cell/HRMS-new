@@ -59,7 +59,12 @@ function swf_stage_n(int $stage): int { return $stage === 7 ? 1 : ($stage === 30
 /** The approved template for a stage: the customer's language first, then Gujarati, Hindi, English. Returns [template row, language used] or [null, '']. */
 function swf_pick(PDO $pdo, int $stage, string $lang): array
 {
-    foreach (array_values(array_unique([$lang, 'gu', 'hi', 'en'])) as $lg) { $t = st_wa_tpl($pdo, 'tmph_store_followup_' . swf_stage_n($stage) . '_' . $lg, $lg); if ($t) return [$t, $lg]; }
+    foreach (array_values(array_unique([$lang, 'gu', 'hi', 'en'])) as $lg) {
+        $base = 'tmph_store_followup_' . swf_stage_n($stage) . '_' . $lg; $names = [];      // the newest approved version first (e.g. _v4 without the photo), then the first one
+        try { $q = $pdo->prepare("SELECT name FROM wa_templates WHERE name LIKE ? AND language = ?"); $q->execute([str_replace('_', '\\_', $base) . '\\_v%', $lg]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $n) if (preg_match('/^' . preg_quote($base, '/') . '_v(\d+)$/', (string)$n, $m)) $names[(int)$m[1]] = (string)$n; } catch (Throwable $e) { }
+        krsort($names); $names[] = $base;
+        foreach ($names as $nm) { $t = st_wa_tpl($pdo, $nm, $lg); if (!$t) continue; $hf = strtoupper((string)($t['header_format'] ?? '')); if (in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && (int)($t['header_lib_id'] ?? 0) <= 0) continue; return [$t, $lg]; }      // a photo message with no photo chosen cannot go
+    }
     return [null, ''];
 }
 
