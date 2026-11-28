@@ -36,6 +36,22 @@ if (!function_exists('wos_day')) {
         foreach ($ps as $m => $st) { try { $st->execute([$k, '91' . $k, $a, $b]); $r = $st->fetch(PDO::FETCH_NUM); if ($r) return [$m, (int)$r[0], (string)$r[1]]; } catch (Throwable $e) { } }
         return ['', 0, ''];
     }
+    /** owner 28 Nov ("the website / ad link orders: which campaign did he see last before he wrote"): the LAST message of ours the customer got in the $days days before $before, over every module. [module, tpl_id, campaign, sent at] or ['', 0, '', '']. */
+    function wos_last(PDO $pdo, string $k, string $before, int $days = 30): array
+    {
+        static $ps = null;
+        if ($ps === null) { $ps = [];
+            $Q = ['A' => "SELECT i.sent_at, c.tpl_id, c.name FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.phone IN (?, ?) AND i.status IN ('sent','delivered','read') AND i.sent_at BETWEEN ? AND ? ORDER BY i.sent_at DESC LIMIT 1",
+                'A-rescue' => "SELECT a.at, a.tpl_id, '' FROM wa_arsc a WHERE a.phone IN (?, ?) AND a.ok = 1 AND a.at BETWEEN ? AND ? ORDER BY a.at DESC LIMIT 1",
+                'B / C' => "SELECT l.at, l.tpl_id, '' FROM wa_ru_log l WHERE l.id > (SELECT MAX(id) - 1500000 FROM wa_ru_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.at BETWEEN ? AND ? ORDER BY l.at DESC LIMIT 1",
+                'Cold' => "SELECT l.at, l.tpl_id, '' FROM wa_cold_log l WHERE l.id > (SELECT MAX(id) - 1500000 FROM wa_cold_log) AND l.phone IN (?, ?) AND l.ok = 1 AND l.at BETWEEN ? AND ? ORDER BY l.at DESC LIMIT 1",
+                'Lineup' => "SELECT l.sent_at, l.tpl_id, '' FROM wa_line_plan l WHERE l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ? ORDER BY l.sent_at DESC LIMIT 1",
+                'After-Order' => "SELECT l.sent_at, l.tpl_id, '' FROM wa_aft_plan l WHERE l.phone IN (?, ?) AND l.status = 'sent' AND l.sent_at BETWEEN ? AND ? ORDER BY l.sent_at DESC LIMIT 1"];
+            foreach ($Q as $m => $sql) { try { $ps[$m] = $pdo->prepare($sql); } catch (Throwable $e) { } } }
+        $a = date('Y-m-d H:i:s', strtotime($before) - $days * 86400); $best = ['', 0, '', ''];
+        foreach ($ps as $m => $st) { try { $st->execute([$k, '91' . $k, $a, $before]); $r = $st->fetch(PDO::FETCH_NUM); if ($r && (string)$r[0] > $best[3]) $best = [$m, (int)$r[1], (string)$r[2], (string)$r[0]]; } catch (Throwable $e) { } }
+        return $best;
+    }
     function wos_tname(PDO $pdo, int $id): string { static $c = []; if ($id <= 0) return ''; if (!isset($c[$id])) { try { $q = $pdo->prepare("SELECT name FROM wa_templates WHERE id = ?"); $q->execute([$id]); $c[$id] = (string)$q->fetchColumn(); } catch (Throwable $e) { $c[$id] = ''; } } return $c[$id] !== '' ? $c[$id] : 'message #' . $id; }
     /** The sums of a list of orders (one kind or all): orders, rev, wrote, groups, modules, camps, msgs. */
     function wos_agg(array $list): array
@@ -44,7 +60,7 @@ if (!function_exists('wos_day')) {
         $age = function (int $d) { return $d <= 0 ? 'today' : ($d <= 3 ? 'd1_3' : ($d <= 10 ? 'd4_10' : ($d <= 30 ? 'd11_30' : 'd30p'))); };
         foreach ($list as $o) { $tot = (int)$o['rs']; $R['orders']++; $R['rev'] += $tot; if (!empty($o['w'])) $R['wrote']++;
             $g = (string)$o['group']; if (!isset($R['groups'][$g])) $R['groups'][$g] = [0, 0]; $R['groups'][$g][0]++; $R['groups'][$g][1] += $tot;
-            if ($o['days'] !== null) { if (!isset($R['modules'][$g])) $R['modules'][$g] = ['n' => 0, 'rs' => 0, 'today' => 0, 'd1_3' => 0, 'd4_10' => 0, 'd11_30' => 0, 'd30p' => 0, 'fu' => 0, 'tap' => 0]; $R['modules'][$g]['n']++; $R['modules'][$g]['rs'] += $tot; $R['modules'][$g][$age((int)$o['days'])]++; if (!empty($o['fu'])) $R['modules'][$g]['fu']++; if ($o['how'] === 'tap') $R['modules'][$g]['tap']++; }
+            if ($o['days'] !== null) { if (!isset($R['modules'][$g])) $R['modules'][$g] = ['n' => 0, 'rs' => 0, 'today' => 0, 'd1_3' => 0, 'd4_10' => 0, 'd11_30' => 0, 'd30p' => 0, 'fu' => 0, 'tap' => 0, 'seen' => 0]; $R['modules'][$g]['n']++; $R['modules'][$g]['rs'] += $tot; $R['modules'][$g][$age((int)$o['days'])]++; if (!empty($o['fu'])) $R['modules'][$g]['fu']++; if ($o['how'] === 'tap') $R['modules'][$g]['tap']++; if ($o['how'] === 'seen') $R['modules'][$g]['seen']++; }
             if ((string)$o['camp'] !== '') { $ck = $o['camp'] . '|' . $o['msg']; if (!isset($R['camps'][$ck])) $R['camps'][$ck] = ['camp' => $o['camp'], 'msg' => $o['msg'], 'sent' => substr((string)$o['sent'], 0, 10), 'days' => $o['days'], 'n' => 0, 'rs' => 0, 'taps' => []]; $R['camps'][$ck]['n']++; $R['camps'][$ck]['rs'] += $tot; if ($o['how'] === 'tap') $R['camps'][$ck]['taps'][(string)$o['trigger']] = ($R['camps'][$ck]['taps'][(string)$o['trigger']] ?? 0) + 1; }
             if ((string)$o['msg'] !== '') { $mk = $g . '|' . $o['msg']; if (!isset($R['msgs'][$mk])) $R['msgs'][$mk] = ['group' => $g, 'msg' => $o['msg'], 'n' => 0, 'rs' => 0]; $R['msgs'][$mk]['n']++; $R['msgs'][$mk]['rs'] += $tot; } }
         uasort($R['groups'], function ($a, $b) { return $b[0] <=> $a[0]; }); uasort($R['modules'], function ($a, $b) { return $b['n'] <=> $a['n']; });
@@ -62,7 +78,7 @@ if (!function_exists('wos_day')) {
     /** One sales day: ['day', 'from', 'to', 'orders', 'rev', 'groups' => {label => [n, rs]}, 'modules' => {...}, 'camps' => [...], 'msgs' => [...], 'list' => [...]] */
     function wos_day(PDO $pdo, string $day, bool $fresh = false): array
     {
-        $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $isToday = $day >= $today; $file = rtrim(sys_get_temp_dir(), '/') . '/wa_osrc3_' . preg_replace('/[^0-9-]/', '', $day) . '.json';
+        $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $isToday = $day >= $today; $file = rtrim(sys_get_temp_dir(), '/') . '/wa_osrc4_' . preg_replace('/[^0-9-]/', '', $day) . '.json';
         if (!$fresh && is_file($file) && filemtime($file) > time() - ($isToday ? 300 : 6 * 3600)) { $j = json_decode((string)@file_get_contents($file), true); if (is_array($j) && isset($j['orders'])) return $j + ['cached' => 1]; }
         [$from, $to] = function_exists('biz_window') ? biz_window($pdo, $day, $day) : [$day . ' 00:00:00', $day . ' 23:59:59'];
         $R = ['day' => $day, 'from' => $from, 'to' => $to, 'at' => date('Y-m-d H:i:s'), 'orders' => 0, 'rev' => 0, 'wrote' => 0, 'groups' => [], 'modules' => [], 'camps' => [], 'msgs' => [], 'list' => [], 'partial' => 0];
@@ -95,7 +111,9 @@ if (!function_exists('wos_day')) {
                     if ($trig['mod'] === 'A') $o['camp'] = $trig['extra']; elseif ($trig['extra'] !== '') $o['msg'] .= ' (' . $trig['extra'] . ')'; $o['group'] = $lab;
                 } else {
                     $link = ''; $lb = ''; $lt = ''; foreach ($ins as $m) { $x = wos_link((string)$m[0]); if ($x !== '') { $link = $x; $lb = (string)$m[0]; $lt = (string)$m[2]; } }   // the oldest such sentence of the 5 days = how he came in
-                    if ($link !== '') { $o['how'] = 'link'; $o['group'] = $link; $o['trigger'] = mb_substr(trim(preg_replace('/\s+/u', ' ', $lb)), 0, 40); $o['gap'] = (int)round((strtotime($oa) - strtotime($lt)) / 60); }
+                    if ($link !== '') { $o['how'] = 'link'; $o['group'] = $link; $o['trigger'] = mb_substr(trim(preg_replace('/\s+/u', ' ', $lb)), 0, 40); $o['gap'] = (int)round((strtotime($oa) - strtotime($lt)) / 60);
+                        if ($link === 'Website / ad link' && (string)setting_get($pdo, 'wos_link_last', '1') === '1') { [$lm, $ltid, $lcamp, $lat] = wos_last($pdo, $k, $lt, 30);   /* he came by the website / ad link AFTER a message of ours: that last message (30 days) is what woke him up */
+                            if ($lm !== '') { $o['how'] = 'seen'; $o['via'] = 'website / ad link'; $o['group'] = $LM[$lm] ?? $lm; $o['msg'] = wos_tname($pdo, $ltid); $o['camp'] = $lm === 'A' ? $lcamp : ''; $o['sent'] = $lat; $o['days'] = (int)floor((strtotime($oa) - strtotime($lat)) / 86400); } } }
                     elseif (!in_array((string)$r[5], ['none', 'no phone', ''], true)) { $o['how'] = 'last'; $o['group'] = $LM[(string)$r[5]] ?? (string)$r[5]; $o['msg'] = wos_tname($pdo, (int)$r[6]); $o['sent'] = (string)($r[7] ?? ''); if ($o['sent'] !== '') { $o['days'] = (int)floor((strtotime($oa) - strtotime($o['sent'])) / 86400); $o['gap'] = (int)round((strtotime($oa) - strtotime($o['sent'])) / 60); } $o['trigger'] = $ins ? mb_substr(trim(preg_replace('/\s+/u', ' ', (string)end($ins)[0])), 0, 40) : '(did not write)';
                         if ((string)$r[5] === 'A' && $o['sent'] !== '') { [$mm, $tt, $cc] = wos_module($pdo, $k, $o['sent']); if ($mm === 'A') $o['camp'] = $cc; } }
                     elseif ($ins) { $o['trigger'] = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)end($ins)[0])), 0, 40); $o['group'] = 'Wrote to us himself'; $o['how'] = 'self'; }
