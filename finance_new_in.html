@@ -292,9 +292,27 @@
         <div class="cap">Orders still waiting for the money <small class="sx-mut">${w.orders ? w.orders.waiting + ' orders · ' + m2(w.orders.waiting_amount) : ''}</small></div>
         ${list.length ? `<table class="tb"><tr><th>Order</th><th>Customer</th><th>Placed</th><th>Waiting</th><th>Amount</th></tr>${list.slice(0, 40).map((o) => { const a = Math.max(0, Math.round((new Date(O.today + 'T00:00:00') - new Date(o.day + 'T00:00:00')) / 86400000)); return `<tr><td><b>${esc(o.name)}</b></td><td style="text-align:left">${esc(o.customer || '')}</td><td>${esc(dFmt(o.day))}</td><td><span class="age ${ageCls(a)}">${a} d</span></td><td><b>${m2(o.amount)}</b></td></tr>`; }).join('')}</table>${list.length > 40 ? `<div class="sx-mut" style="margin-top:6px;font-size:12px">Showing the oldest 40 of ${w.orders.waiting}.</div>` : ''}` : '<div class="sx-mut">Nothing is waiting. 🎉</div>'}</div></div>`;
   }
+  // ---------- what will come into the bank from a day's sales
+  let EXP = null, expDay = '';
+  async function loadExp(d) {
+    const el = $('expCard'); if (!el) return;
+    try { EXP = await api.get('fn.in_expected', d ? { date: d } : {}); expDay = EXP.day; drawExp(); }
+    catch (e) { el.innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function drawExp() {
+    const el = $('expCard'); if (!el || !EXP) return; const t = EXP.totals, wk = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }) : '';
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:15px">What will come into the bank <small class="sx-mut">from the sales of</small></div><input class="sx-in" id="expD" type="date" value="${esc(expDay)}" max="${esc(O.today)}" style="width:auto;min-height:34px"></div>
+      <div class="k3" style="margin:8px 0"><div class="k"><small>Sales of the day</small><b style="font-size:19px">${m2(t.sales)}</b><span>${EXP.sales.orders} orders${EXP.sales.manual_orders ? ' · ' + EXP.sales.manual_orders + ' manual' : ''}</span></div><div class="k"><small>Prepaid: net into the bank</small><b style="font-size:19px">${m2(t.prepaid_net)}</b><span>gross ${m2(t.prepaid_gross)} − charges ${m2(t.charges)} (estimate)</span></div><div class="k"><small>COD: comes later</small><b style="font-size:19px">${m2(t.cod)}</b><span>${EXP.cod.orders} orders, the courier remits</span></div></div>
+      <table class="tb"><tr><th>Payment gateway</th><th>Orders</th><th>Gross</th><th>Charges</th><th>Net into the bank</th><th>Arrives</th></tr>${EXP.modes.map((m) => `<tr><td><b>${esc(m.mode)}</b><small>${esc(m.note)}</small></td><td>${m.orders}</td><td>${m2(m.gross)}</td><td>${m.rate ? m2(m.charges) + '<small>' + m.rate + '% · ' + esc(m.rate_src) + '</small>' : '—'}</td><td><b>${m2(m.net)}</b></td><td>${m.arrive ? '<b>' + esc(wk(m.arrive)) + '</b>' : '—'}</td></tr>`).join('')}
+        <tr><td><b>COD</b> (cash on delivery)<small>${esc(EXP.cod.note)}</small></td><td>${EXP.cod.orders}</td><td>${m2(EXP.cod.amount)}</td><td>—</td><td><b>${m2(EXP.cod.amount)}</b><small>before the courier's charges</small></td><td><b>${esc(wk(EXP.cod.arrive_from))} – ${esc(wk(EXP.cod.arrive_by))}</b></td></tr>
+        <tr class="tot"><td>TOTAL ${EXP.totals.tie ? '' : '<small style="color:#b42318">✗ gap ' + m2(EXP.totals.gap) + ' from the sales total</small>'}</td><td>${EXP.sales.orders}</td><td>${m2(t.sales)}</td><td>${m2(t.charges)}</td><td>${m2(Math.round((t.prepaid_net + t.cod) * 100) / 100)}</td><td></td></tr></table>
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">Charges are an estimate: PayU from your last saved settlement files, others by default. The exact amount comes from the settlement file. PayU / Razorpay do not settle on Saturday and Sunday, so a Friday sale arrives on Monday.</div>`;
+    $('expD').onchange = (e) => { if (e.target.value) loadExp(e.target.value); };
+  }
   function draw() {
     const canNext = day < O.today;
-    $('root').innerHTML = `<div class="bar"><div class="nav"><button id="pv" aria-label="Previous day">‹</button><input type="date" id="dp" value="${esc(day)}" max="${esc(O.today)}"><button id="nx" ${canNext ? '' : 'disabled'} aria-label="Next day">›</button></div>${day !== O.today ? '<button class="sx-btn" id="tdy">Today</button>' : ''}<span class="sp"></span></div>${SEC.map(section).join('')}`;
+    $('root').innerHTML = `<div class="bar"><div class="nav"><button id="pv" aria-label="Previous day">‹</button><input type="date" id="dp" value="${esc(day)}" max="${esc(O.today)}"><button id="nx" ${canNext ? '' : 'disabled'} aria-label="Next day">›</button></div>${day !== O.today ? '<button class="sx-btn" id="tdy">Today</button>' : ''}<span class="sp"></span></div><div class="sx-card" id="expCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div>${SEC.map(section).join('')}`;
+    loadExp(expDay);
   }
   async function load(d) {
     try {

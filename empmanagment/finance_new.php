@@ -316,6 +316,15 @@ function fn_day_sales_r(PDO $pdo, string $from, string $to): array
     foreach ($m as $k => $v) $t['modes'][] = ['mode' => $k, 'orders' => $v['orders'], 'amount' => $v['amount']]; usort($t['modes'], fn($a, $b) => $b['amount'] <=> $a['amount']); return $t;
 }
 function fn_other_prepaid_r(PDO $pdo, string $from, string $to): array { $n = 0; $a = 0; foreach (fn_range_days($from, $to) as $d) { $x = fn_other_prepaid($pdo, $d); $n += $x['orders']; $a += $x['amount']; } return ['orders' => $n, 'amount' => round($a, 2)]; }
+/** The date n WORKING days after $d: PayU and the other gateways do not settle on Saturday and Sunday, so a Friday sale settles on Monday (T+1). */
+function fn_workday_add(string $d, int $n): string { $t = strtotime($d); $c = 0; $g = 0; while ($c < $n && $g < 30) { $t = strtotime('+1 day', $t); $g++; if ((int)date('N', $t) < 6) $c++; } return date('Y-m-d', $t); }
+/** The charge rate of a payment mode: learned from the last saved settlement files of its channel (charges / gross), else an estimate. */
+function fn_mode_rate(PDO $pdo, string $mode): array
+{
+    $pat = $mode === 'GoKwik / PayU' ? '%payu%' : ($mode === 'Razorpay' ? '%razor%' : ''); $est = ['GoKwik / PayU' => 2.1, 'Razorpay' => 2.0];
+    if ($pat !== '') { try { $q = $pdo->prepare("SELECT u.gross, u.fee FROM fn_in_uploads u JOIN fn_in_channels c ON c.id = u.channel_id WHERE u.status = 'ok' AND u.gross > 0 AND LOWER(c.name) LIKE ? ORDER BY u.id DESC LIMIT 5"); $q->execute([$pat]); $g = 0; $f = 0; $n = 0; foreach ($q->fetchAll() as $r) { $g += (float)$r['gross']; $f += (float)$r['fee']; $n++; } if ($n && $g > 0) return ['rate' => round(100 * $f / $g, 2), 'src' => 'from your last ' . $n . ' saved file' . ($n === 1 ? '' : 's')]; } catch (Throwable $e) {} }
+    return ['rate' => $est[$mode] ?? 0.0, 'src' => isset($est[$mode]) ? 'estimate: save a settlement file of this gateway to learn it' : 'no charge'];
+}
 /** The sales of one day: all orders, the prepaid part and the COD part. */
 function fn_day_sales(PDO $pdo, string $day): array
 {
@@ -737,6 +746,21 @@ switch ($action) {
         $q = $pdo->prepare("SELECT u.id, u.file_name, u.day, u.orders_day, u.net, u.gross, u.fee, u.status, u.recon_json, c.name AS channel FROM fn_in_uploads u LEFT JOIN fn_in_channels c ON c.id = u.channel_id WHERE u.recon_json IS NOT NULL AND u.status IN ('ok','void')" . ($cid ? " AND u.channel_id = " . $cid : "") . " ORDER BY u.id DESC LIMIT 40"); $q->execute();
         $list = []; foreach ($q->fetchAll() as $u) { $rc = json_decode((string)$u['recon_json'], true) ?: []; $list[] = ['id' => (int)$u['id'], 'channel' => (string)$u['channel'], 'file' => $u['file_name'], 'day' => $u['day'], 'orders_day' => (string)$u['orders_day'], 'net' => (float)$u['net'], 'status' => $u['status'], 'expected' => (int)($rc['expected']['orders'] ?? 0), 'found' => (int)($rc['found']['orders'] ?? 0), 'pending' => (int)($rc['pending']['orders'] ?? 0), 'missing' => (int)($rc['missing']['orders'] ?? 0), 'gokwik' => !empty($rc['gokwik'])]; }
         json_response(['statements' => $list]);
+        break;
+    }
+    // WHAT WILL COME INTO THE BANK from the sales of a day: per payment mode the gross, the estimated charges, the net, and the day it should arrive
+    case 'fn.in_expected': {
+        $today = fn_today($pdo); $d = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime($today . ' -1 day')); $sl = fn_day_sales($pdo, $d);
+        $lag = ['GoKwik / PayU' => 1, 'Razorpay' => 2, 'UPI QR' => 0, 'Bank transfer' => 0, 'Cash / COD' => 0]; $rows = []; $gP = 0; $cP = 0; $nP = 0;
+        foreach ($sl['modes'] as $m) {
+            $rt = fn_mode_rate($pdo, $m['mode']); $gr = fn_p($m['amount']); $ch = (int)round($gr * $rt['rate'] / 100); $known = isset($lag[$m['mode']]);
+            $rows[] = ['mode' => $m['mode'], 'orders' => $m['orders'], 'gross' => $m['amount'], 'rate' => $rt['rate'], 'rate_src' => $rt['src'], 'charges' => fn_m($ch), 'net' => fn_m($gr - $ch), 'lag' => $known ? $lag[$m['mode']] : null, 'arrive' => $known ? fn_workday_add($d, (int)$lag[$m['mode']]) : '', 'note' => $known ? ($lag[$m['mode']] === 0 ? 'straight to the bank, no gateway charge' : 'T+' . $lag[$m['mode']] . ' working day' . ($lag[$m['mode']] === 1 ? '' : 's') . ' (no Saturday / Sunday)') : 'gateway not known: check these orders'];
+            $gP += $gr; $cP += $ch; $nP += $gr - $ch;
+        }
+        $wd = 10; try { $w = $pdo->query("SELECT v FROM fi_settings WHERE k = 'wait_days'")->fetchColumn(); if ($w !== false && (int)$w > 0) $wd = (int)$w; } catch (Throwable $e) {}
+        $cod = ['orders' => $sl['cod_orders'], 'amount' => $sl['cod'], 'arrive_from' => date('Y-m-d', strtotime($d . ' +7 day')), 'arrive_by' => date('Y-m-d', strtotime($d . ' +' . $wd . ' day')), 'note' => 'cash on delivery: the courier sends it after delivery'];
+        $tot = fn_p($sl['total']); $sum = $gP + fn_p($sl['cod']);
+        json_response(['day' => $d, 'today' => $today, 'sales' => $sl, 'modes' => $rows, 'cod' => $cod, 'totals' => ['prepaid_gross' => fn_m($gP), 'charges' => fn_m($cP), 'prepaid_net' => fn_m($nP), 'cod' => $sl['cod'], 'sales' => $sl['total'], 'tie' => abs($tot - $sum) <= 5, 'gap' => fn_m($tot - $sum)]]);
         break;
     }
     case 'fn.in_upload_recon': {
