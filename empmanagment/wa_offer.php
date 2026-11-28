@@ -63,6 +63,15 @@ if (!function_exists('wof_run')) {
         $price = (int)$ch['rows'][$total][$tc]; $online = [20 => 499, 50 => 1199, 100 => 1810][$size] ?? 0; $onl = $online > 0 ? $online * $qty : 0;
         return ['kind' => $kind, 'pct' => $pct, 'qty' => $qty, 'ml' => $size, 'price' => $price, 'online' => $onl];
     }
+    /** owner 28 Nov 2026 ("why no button to select, 2 options below?"): every offer goes with TWO quick-reply buttons under it (inside the open 24-hour window, so it stays free): "Haan, order karo" / "Dusra size dikhao" (reminder: "Haan, order karo" / "Baad mein"). A tap comes back as his message and the chat bot / salesperson answers it. If the button message cannot be sent, the plain text goes as before. Off: wo_buttons = 0. */
+    function wof_send(PDO $pdo, array $c, string $body, string $kind = 'offer'): array
+    {
+        if ((string)setting_get($pdo, 'wo_buttons', '1') !== '0' && function_exists('wa_send_buttons')) {
+            $btn = $kind === 'follow' ? ['Haan, order karo', 'Baad mein'] : ['Haan, order karo', 'Dusra size dikhao'];
+            try { $r = wa_send_buttons($pdo, $c, $body, $btn, 'offer', 0); if (!empty($r[0])) return $r; } catch (Throwable $e) { }
+        }
+        return wa_send_text($pdo, $c, $body, 'offer', 0);
+    }
     function wof_text(array $o): string
     {
         $n = function (int $v) { return '₹' . number_format($v); }; $total = $o['qty'] * $o['ml']; $pb = (int)round($o['price'] / max(1, $o['qty']));
@@ -124,7 +133,7 @@ if (!function_exists('wof_run')) {
             $emp->execute([$ph, $at]); if ($emp->fetchColumn()) { $ins->execute([$ph, $at, 0, 'a person of ours wrote after the offer', '', date('Y-m-d H:i:s')]); continue; }
             $k10 = substr(preg_replace('/\D+/', '', $ph), -10); $ord->execute([$k10, '91' . $k10, $at]); if ($ord->fetchColumn()) { $ins->execute([$ph, $at, 0, 'ordered', '', date('Y-m-d H:i:s')]); continue; }
             if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $ph)) { $ins->execute([$ph, $at, 0, 'muted (order / ticket)', '', date('Y-m-d H:i:s')]); continue; }
-            $body = $T[abs(crc32($ph)) % count($T)]; $s = wa_send_text($pdo, $c, $body, 'offer', 0);
+            $body = $T[abs(crc32($ph)) % count($T)]; $s = wof_send($pdo, $c, $body, 'follow');
             if (!empty($s[0])) { $n++; $ins->execute([$ph, $at, 2, 'follow-up sent', $body, date('Y-m-d H:i:s')]); } else $ins->execute([$ph, $at, 0, 'not sent: ' . mb_substr((string)($s[1] ?? ''), 0, 100), '', date('Y-m-d H:i:s')]); }
         return $n;
     }
@@ -177,7 +186,7 @@ if (!function_exists('wof_run')) {
             $c = function_exists('wa_contact') ? wa_contact($pdo, $ph) : null; if (!$c) { $note('no contact'); continue; }
             $why = ''; $o = wof_make($pdo, $c, $ch, $in, $out, $asked, $why); if (!$o) { $note($why, 0, [], '', (int)$asked); continue; } $o['said'] = mb_strtolower(implode(' ', $real)); $o['asked'] = $asked; $body = wof_text($o); $res[1]++; $sk = 'made ' . $o['kind'] . ($asked ? ' asked' : ' not-asked'); $GLOBALS['wo_stat'][$sk] = ($GLOBALS['wo_stat'][$sk] ?? 0) + 1; $GLOBALS['wo_stat']['sum price'] = ($GLOBALS['wo_stat']['sum price'] ?? 0) + $o['price']; if ($samples !== null && count($samples) < 6) $samples[] = $o['kind'] . ' ' . $o['pct'] . '% ' . $o['qty'] . 'x' . $o['ml'] . ' ' . ($asked ? 'asked' : 'not-asked') . ' :: ' . str_replace("\n", ' / ', $body);
             if ($simulate || $mode !== 'live') continue;
-            $s = wa_send_text($pdo, $c, $body, 'offer', 0); if (!empty($s[0])) { $res[2]++; $note('sent ' . (string)($s[1] ?? ''), 1, $o, $body, (int)$asked); if (function_exists('wa_event')) { try { wa_event($pdo, $ph, '🎯 Price offer sent (' . $o['kind'] . ', ' . $o['pct'] . '% column, ' . $o['qty'] . ' x ' . $o['ml'] . ' ml)'); } catch (Throwable $e) { } } } else $note('not sent: ' . (string)($s[1] ?? ''), 0, $o, $body, (int)$asked);
+            $s = wof_send($pdo, $c, $body); if (!empty($s[0])) { $res[2]++; $note('sent ' . (string)($s[1] ?? ''), 1, $o, $body, (int)$asked); if (function_exists('wa_event')) { try { wa_event($pdo, $ph, '🎯 Price offer sent (' . $o['kind'] . ', ' . $o['pct'] . '% column, ' . $o['qty'] . ' x ' . $o['ml'] . ' ml)'); } catch (Throwable $e) { } } } else $note('not sent: ' . (string)($s[1] ?? ''), 0, $o, $body, (int)$asked);
         }
         if (!$simulate && $only === '' && $mode === 'live') { try { wof_follow($pdo, $now); } catch (Throwable $e) { } }
         if (!$simulate) { try { setting_set($pdo, 'wo_last_res', json_encode(['at' => date('Y-m-d H:i:s'), 'looked' => $res[0], 'made' => $res[1], 'sent' => $res[2]])); } catch (Throwable $e) { } }

@@ -208,6 +208,20 @@ function fup_tm4u_numbers_update(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_tm4u_numbers_update: ' . $e->getMessage()); }
 }
 /** Once: a NEW TM4U topic with the rest of the owner's Uploadings sheet (order IDs, prepaid, COD, buying, courier charges, total profit, Asti 15%); orders and collection are in Today's numbers. Hand-written. */
+/** Once: a box called "Order ID(s)" that was made as a NUMBER box takes words (several IDs like "56, 57, 58" are not one number: the Save was refused). */
+function fup_orderid_boxes_text(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_orderid_text_v1', '') === '1') return;
+        $u = $pdo->prepare("UPDATE fu_topics SET `fields` = ? WHERE id = ?");
+        foreach ($pdo->query("SELECT id, `fields` FROM fu_topics WHERE `fields` LIKE '%rder%'")->fetchAll() as $r) {
+            $j = json_decode((string)$r['fields'], true); if (!is_array($j)) continue; $ch = false;
+            foreach ($j as &$f) if (is_array($f) && ($f['type'] ?? '') === 'num' && preg_match('/order\s*_?-?\s*(id|no|number)s?\b/i', (string)($f['label'] ?? ''))) { $f['type'] = 'text'; $ch = true; }
+            unset($f); if ($ch) $u->execute([json_encode($j, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
+        }
+        setting_set($pdo, 'fup_orderid_text_v1', '1');
+    } catch (Throwable $e) { error_log('fup_orderid_boxes_text: ' . $e->getMessage()); }
+}
 function fup_tm4u_upload_topic(PDO $pdo): void
 {
     try {
@@ -603,9 +617,9 @@ function fup_seed_sachin_topics(PDO $pdo): void
 function fup_clear_questions(PDO $pdo): void
 {
     try {
-        if ((string)setting_get($pdo, 'fup_no_questions_v1', '') === '1') return;
+        if ((string)setting_get($pdo, 'fup_no_questions_v2', '') === '1') return;
         $pdo->exec("UPDATE fu_updates SET ai_q = '' WHERE ai_q <> ''");
-        setting_set($pdo, 'fup_no_questions_v1', '1');
+        setting_set($pdo, 'fup_no_questions_v2', '1');
     } catch (Throwable $e) { error_log('fup_clear_questions: ' . $e->getMessage()); }
 }
 
@@ -1448,7 +1462,7 @@ function fup_ai_check(PDO $pdo, array $t, array $sec, string $day, string $text,
     if (function_exists('ai_feat')) ai_feat((string)$old);
     if (!is_array($j) || !in_array((string)($j['verdict'] ?? ''), ['clear', 'vague', 'no_progress', 'mismatch'], true)) return ['', '', ''];
     // the owner's order: Claude never asks the staff a question (it kept asking one after another). He still reads the update and leaves his one-line note for the owner. Setting fup_ai_ask = 1 would bring the question back.
-    $v = (string)$j['verdict']; $q = ($v === 'vague' && !$final && (string)setting_get($pdo, 'fup_ai_ask', '0') === '1') ? trim(mb_substr((string)($j['question'] ?? ''), 0, 300)) : '';
+    $v = (string)$j['verdict']; $q = '';      // never a question to the staff (the old fup_ai_ask switch is gone): Claude's check can never make a saved update look unfilled
     return [$v, trim(mb_substr((string)($j['note'] ?? ''), 0, 300)), $q];
 }
 
@@ -1525,7 +1539,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_review_drive($pdo);
     fup_seed_tm4u_topics($pdo);
     fup_tm4u_numbers_update($pdo);
-    fup_tm4u_upload_topic($pdo);
+    fup_tm4u_upload_topic($pdo); fup_orderid_boxes_text($pdo);
     fup_seed_third_party_topics($pdo);
     fup_seed_website_topics($pdo);
     fup_seed_website_topics2($pdo);
@@ -1755,7 +1769,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                     $k = $fd['k']; if (fup_is_upload((string)$fd['type']) || !is_array($in['fields'] ?? null) || !array_key_exists($k, $in['fields'])) continue;   // a file comes through fup.file_put
                     $v = trim((string)$in['fields'][$k]); $lb = '“' . $fd['label'] . '”';
                     if ($v !== '') {
-                        if ($fd['type'] === 'num') { if (!is_numeric($v)) json_response(['error' => $lb . ' must be a number.'], 422); $v = (string)round((float)$v, 2); }
+                        if ($fd['type'] === 'num') { $v = str_replace([',', '₹', ' '], '', $v); if (!is_numeric($v)) json_response(['error' => $lb . ' must be a number.'], 422); $v = (string)round((float)$v, 2); }
                         elseif ($fd['type'] === 'yesno') { $v = strtolower($v); if (!in_array($v, ['yes', 'no'], true)) json_response(['error' => 'Choose Yes or No for ' . $lb . '.'], 422); }
                         elseif ($fd['type'] === 'link') { if (!preg_match('#^https?://[^\s]+\.[^\s]+#i', $v)) json_response(['error' => $lb . ' must be a link that starts with https://'], 422); $v = mb_substr($v, 0, 500); }
                         elseif ($fd['type'] === 'choice') { if (!in_array($v, $fd['opts'], true)) json_response(['error' => 'Choose one of the list for ' . $lb . '.'], 422); }
@@ -1779,8 +1793,13 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                     try { $r = fup_ai_check($pdo, $t, $sec, $day, $text, $f['val'] ?? null, $f['pct'] ?? null, $final, $fvText); fup_put($pdo, (int)$t['id'], $day, ['ai_verdict' => $r[0], 'ai_note' => $r[1], 'ai_q' => $r[2]]); return $r; }
                     catch (Throwable $e) { error_log('fup ai check: ' . $e->getMessage()); return null; }
                 };
-                if (!empty($GLOBALS['__jr_cap']) || !function_exists('fastcgi_finish_request')) { $r = $runAi(); if ($r) $ai = ['verdict' => $r[0], 'note' => $r[1], 'question' => $r[2]]; }   // where the answer cannot be sent early (and in the tests) Claude is read at once
-                else register_shutdown_function(function () use ($runAi) { ignore_user_abort(true); @fastcgi_finish_request(); $runAi(); });
+                // Hostinger runs LiteSpeed: there is no fastcgi_finish_request, only litespeed_finish_request. The old check missed it, so EVERY save waited for
+                // Claude (up to ~30 s) before "Saved" came back: people closed the box or pressed Save again (which did nothing while the first was still going).
+                $early = function_exists('hrms_release') || function_exists('litespeed_finish_request') || function_exists('fastcgi_finish_request');
+                if (!empty($GLOBALS['__jr_cap']) || !$early) { $r = $runAi(); if ($r) $ai = ['verdict' => $r[0], 'note' => $r[1], 'question' => $r[2]]; }   // in the tests Claude is read at once
+                else register_shutdown_function(function () use ($runAi) { ignore_user_abort(true); @set_time_limit(90);
+                    if (function_exists('hrms_release')) hrms_release(); elseif (function_exists('litespeed_finish_request')) @litespeed_finish_request(); else @fastcgi_finish_request();
+                    $runAi(); });
             }
             json_response(['ok' => true, 'ai' => $ai]);
         }

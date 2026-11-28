@@ -8,7 +8,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Follow-up — HRMS</title>
 <link rel="stylesheet" href="assets/css/style.css?v=4">
-<link rel="stylesheet" href="assets/css/boss.css?v=2">
+<link rel="stylesheet" href="assets/css/boss.css?v=3">
 <style>
   .fu{max-width:1500px;margin:0 auto;padding-bottom:40px;}
   .fu *{box-sizing:border-box;}
@@ -171,8 +171,9 @@ guardPage(); renderSidebar('followup');
   const isUp = (ty) => ty === 'file' || ty === 'photo' || ty === 'video';   // fields that take an upload
   const fset = (v) => (v && typeof v === 'object' ? !!v.f : String(v == null ? '' : v).trim() !== '');
   const missing = (t, u) => t.fields.filter((f) => f.req && !fset(u && u.f ? u.f[f.k] : null));
-  const covered = (t, d) => { const u = t.updates[d]; if (!u) return false; if (t.fields.some((f) => f.req)) return !missing(t, u).length && !u.q && (!t.need_text || !!u.text);
-    return !!((u.text && !u.q) || (!t.need_text && t.source && u.val != null)); };
+  // Claude's check NEVER takes a saved update back: what the person saved counts as filled, whatever Claude thinks of it (his note is for the owner only)
+  const covered = (t, d) => { const u = t.updates[d]; if (!u) return false; if (t.fields.some((f) => f.req)) return !missing(t, u).length && (!t.need_text || !!u.text);
+    return !!(u.text || (!t.need_text && t.source && u.val != null)); };
   const fileUrl = (t, d, k, i) => api.buildUrl('fup.file', { topic_id: t.id, day: d, key: k, i: i || 0, token: api.token() });
   const filesOf = (v) => (v && Array.isArray(v.list) && v.list.length ? v.list : (v && v.f ? [{ f: v.f, n: v.n || 'file' }] : []));
   const upIcon = (ty) => (ty === 'photo' ? '📷' : ty === 'video' ? '🎥' : '📎');
@@ -242,7 +243,7 @@ guardPage(); renderSidebar('followup');
   }
   // Claude's check of this one update: a question that is still open, a remark, or a small tick
   function aiLine(u) {
-    if (u.q) return '<div class="fu-ai q">Claude asked: ' + esc(u.q) + ' <b>Not answered.</b></div>';
+    if (!D || !D.manager) return '';      // the staff never see Claude's check: nothing to answer, nothing to worry about
     if (u.ai === 'clear') return '<div class="fu-ai ok">✓ Claude: clear</div>';
     if (u.ai && u.ai_note) return '<div class="fu-ai ' + (u.ai === 'mismatch' ? 'q' : 'w') + '">Claude: ' + esc(u.ai_note) + '</div>';
     return '';
@@ -494,7 +495,9 @@ guardPage(); renderSidebar('followup');
     if ($('addAny')) $('addAny').onclick = () => writeUp(0, '');
     if ($('flip')) $('flip').onclick = () => { SIDE = !SIDE; PREF = SIDE ? '1' : '0'; try { localStorage.setItem('fup_side', PREF); } catch (e) { /* private mode */ } render(); };
   }
-  const run = async (btn, fn) => { if (busy) return; busy = true; if (btn) btn.disabled = true; try { await fn(); } catch (e) { toast(e.message || 'Could not save.'); } busy = false; if (btn) btn.disabled = false; };
+  // a Save pressed while another one is still going used to do NOTHING (no word): now it says so; a stuck one frees itself after 40 s
+  let busyAt = 0;
+  const run = async (btn, fn) => { if (busy && Date.now() - busyAt < 40000) { toast('Still saving — wait a second and press again.', true); return; } busy = true; busyAt = Date.now(); if (btn) btn.disabled = true; try { await fn(); } catch (e) { toast(e.message || 'Could not save.'); } busy = false; if (btn) btn.disabled = false; };
 
   /* ---------------- one day's update of one topic. id = 0: choose the topic too (the "＋ Add update / number" button). The date can be chosen:
      the Admin / HR any earlier date, everybody else today or yesterday. ---------------- */
@@ -508,6 +511,7 @@ guardPage(); renderSidebar('followup');
       + '<div class="fu-row2"><div class="bd-f"><label id="uVl">Number</label><input class="bd-in" id="uV" inputmode="decimal"><div class="hint" id="uVh"></div></div>'
       + '<div class="bd-f"><label>% done</label><input class="bd-in" id="uP" inputmode="numeric" placeholder="0 – 100, if it fits"></div></div>'
       + '<div id="uNums"></div><div id="uF"></div><div class="bd-f"><label id="uTl">Update</label><textarea class="bd-in" id="uT" maxlength="2000" rows="4" placeholder="What happened on this topic?"></textarea><div class="hint" id="uWc"></div></div>'
+      + '<div id="uErr" role="alert" style="display:none;margin-top:12px;background:#fdecea;color:#b3261e;border-radius:12px;padding:10px 12px;font-size:14px;font-weight:700;line-height:1.4"></div>'
       + '<div class="acts"><button class="bd-btn" id="uX">Cancel</button><button class="bd-btn go" id="uOk">Save</button></div>', { sticky: true });
     const q = (i) => m.querySelector(i); let SUMONLY = false;
     const fill = () => {   // show what is already saved for this topic and date
@@ -529,6 +533,32 @@ guardPage(); renderSidebar('followup');
         const calc = () => { if (!auto) return; const c = val(E(col)), b = val(E(buy)); if (c == null || b == null) return; E(pro).value = (c - b).toLocaleString('en-IN'); };
         E(col).addEventListener('input', calc); E(buy).addEventListener('input', calc); E(pro).addEventListener('input', () => { auto = false; hint.textContent = 'Changed by hand. Clear the box to fill it by itself again.'; hint.style.color = '#b45309'; if (E(pro).value.trim() === '') { auto = true; hint.textContent = '✓ Fills itself: collection − buying. You can change it.'; hint.style.color = '#16945a'; calc(); } });
         if (val(E(pro)) == null) calc(); })();
+      // 🏷 ORDER IDs as chips: type an ID and press Enter / space / comma (or paste "56.57.58" or "56, 57, 58") — each becomes its own chip, a repeat or a non-number is
+      // refused at once, and the "Total order(s)" box counts them by itself. What is saved is plain text "56, 57, 58" in the same box (nothing changes on the server).
+      t.fields.filter((f) => f.type === 'text' && /order\s*_?-?\s*(id|no|number)s?\b/i.test(f.label)).forEach((f) => {
+        const ta = q('#uf_' + f.k); if (!ta || ta.dataset.chips) return; ta.dataset.chips = '1';
+        const totF = t.fields.find((x) => x.k !== f.k && /total\s*orders?\b/i.test(x.label) && !isUp(x.type)), tot = totF ? q('#uf_' + totF.k) : null;
+        let ids = [], totAuto = true;
+        const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1.5px solid #d6d9de;border-radius:12px;padding:6px 8px;min-height:44px;background:#fff';
+        const inp = document.createElement('input'); inp.type = 'text'; inp.inputMode = 'numeric'; inp.placeholder = 'Type an order ID, then Enter'; inp.style.cssText = 'border:none;outline:none;flex:1;min-width:140px;height:30px;font-size:15px;background:transparent';
+        const msg = document.createElement('div'); msg.className = 'fu-sub'; msg.style.cssText = 'margin:3px 0 8px;font-weight:700;min-height:16px';
+        const sync = () => {
+          ta.value = ids.join(', '); ta.dispatchEvent(new Event('input', { bubbles: true }));
+          if (tot && totAuto) { tot.value = ids.length ? String(ids.length) : ''; }
+          msg.style.color = '#16945a'; msg.textContent = ids.length ? '✓ ' + ids.length + ' order' + (ids.length === 1 ? '' : 's') + (tot ? ' · Total order fills itself' : '') : '';
+        };
+        const draw = () => { wrap.querySelectorAll('.fu-chip').forEach((c) => c.remove()); ids.forEach((x) => { const c = document.createElement('span'); c.className = 'fu-chip'; c.style.cssText = 'background:#e8f0fe;color:#1a4fb0;border-radius:10px;padding:4px 8px;font-size:14px;font-weight:700;display:inline-flex;gap:6px;align-items:center';
+          c.textContent = '#' + x; const b = document.createElement('button'); b.type = 'button'; b.textContent = '×'; b.setAttribute('aria-label', 'Remove ' + x); b.style.cssText = 'border:none;background:none;color:inherit;font-size:16px;padding:0 2px;cursor:pointer'; b.onclick = () => { ids = ids.filter((y) => y !== x); draw(); }; c.appendChild(b); wrap.insertBefore(c, inp); }); sync(); };
+        const add = (raw) => { let bad = ''; String(raw || '').split(/[\s,.;\/|]+/).forEach((x) => { x = x.replace(/^#/, '').trim(); if (!x) return; if (!/^[A-Za-z]{0,6}-?\d{1,10}$/.test(x)) { bad = '“' + x + '” is not an order ID.'; return; } if (ids.includes(x)) { bad = '#' + x + ' is already there.'; return; } ids.push(x); }); draw(); if (bad) { msg.style.color = '#b3261e'; msg.textContent = bad; } };
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === ',' || e.key === 'Tab' && inp.value.trim()) { e.preventDefault(); add(inp.value); inp.value = ''; } else if (e.key === 'Backspace' && !inp.value && ids.length) { ids.pop(); draw(); } });
+        inp.addEventListener('input', () => { if (/[\s,;\/|]/.test(inp.value)) { add(inp.value); inp.value = ''; } });      // phone keyboards (no Enter key event): a typed comma or space makes the chip; dots ("56.57.58") on Enter / leaving the box
+        inp.addEventListener('paste', (e) => { const tx = (e.clipboardData || window.clipboardData).getData('text'); if (tx) { e.preventDefault(); add(tx); } });
+        inp.addEventListener('blur', () => { if (inp.value.trim()) { add(inp.value); inp.value = ''; } });      // what was typed last is not lost when Save is pressed
+        if (tot) tot.addEventListener('input', (e) => { if (e.isTrusted) totAuto = tot.value.trim() === ''; });
+        ta.style.display = 'none'; ta.insertAdjacentElement('afterend', msg); ta.insertAdjacentElement('afterend', wrap); wrap.appendChild(inp); wrap.addEventListener('click', (e) => { if (e.target === wrap) inp.focus(); });
+        const had = ta.value.trim(); if (had) add(had); else draw();
+        if (tot && had && tot.value.trim() && tot.value.trim() !== String(ids.length)) totAuto = false;      // a Total typed by hand earlier is kept
+      });
       q('#uNote').textContent = t.note || ''; q('#uVl').textContent = 'Number' + (t.unit ? ' (' + t.unit + ')' : '');
       q('#uV').placeholder = t.source ? 'Comes by itself' + (u.val != null ? ': ' + u.val : '') : 'Type the number of this day'; q('#uV').value = u.val != null && !u.auto ? u.val : '';
       const many = t.metrics.length > 1; q('#uNums').innerHTML = many && (u.val != null || (u.vals && Object.keys(u.vals).length)) ? '<div class="fu-lb" style="margin-bottom:2px">Numbers of this day · from the HRMS</div>' + numTxt(t, u) + '<div style="height:10px"></div>' : (many ? '<div class="fu-sub" style="margin-bottom:10px">The numbers of this day are not in the HRMS yet.</div>' : '');
@@ -541,7 +571,11 @@ guardPage(); renderSidebar('followup');
     const wc = (x) => (String(x).trim() ? String(x).trim().split(/\s+/).length : 0);
     const wcShow = () => { const n = wc(q('#uT').value), mw = t.min_words || 0, el = q('#uWc'); if (!mw) { el.textContent = ''; return; } el.textContent = n + ' / ' + mw + ' words' + (n >= mw ? ' ✓' : ' — write it in detail, at least ' + mw + ' words'); el.style.color = n >= mw ? '#16945a' : '#b45309'; el.style.fontWeight = '700'; };
     q('#uT').addEventListener('input', wcShow);
-    fill(); wcShow(); q('#uTop').onchange = () => { fill(); wcShow(); }; q('#uD').onchange = () => { fill(); wcShow(); };
+    // ✍ what is typed is kept on this phone / computer until it is saved (a closed box, a lost connection or a sign-out does not lose it)
+    const dk = () => 'fup_draft_' + q('#uTop').value + '_' + q('#uD').value;
+    q('#uT').addEventListener('input', () => { try { const v = q('#uT').value; if (v.trim()) localStorage.setItem(dk(), v); else localStorage.removeItem(dk()); } catch (e) { /* fine */ } });
+    const draftBack = () => { try { const v = localStorage.getItem(dk()); if (v && v.trim() && v.trim() !== q('#uT').value.trim() && v.length > q('#uT').value.length) { q('#uT').value = v; wcShow(); toast('Your unsaved text is back — press Save.'); } } catch (e) { /* fine */ } };
+    fill(); wcShow(); draftBack(); q('#uTop').onchange = () => { fill(); wcShow(); draftBack(); }; q('#uD').onchange = () => { fill(); wcShow(); draftBack(); };
     q('#uX').onclick = () => BD.close();
     q('#uF').addEventListener('click', async (e) => {      // ✕ on an attached file: take that one off, keep the others
       const b = e.target.closest('[data-fdel]'); if (!b) return; e.preventDefault(); const [k, i] = b.dataset.fdel.split('|'), f = t.fields.find((x) => x.k === k); if (!f) return;
@@ -549,24 +583,30 @@ guardPage(); renderSidebar('followup');
       try { const r = await api.post('fup.file_del', { topic_id: t.id, day: q('#uD').value, key: k, i: Number(i) }); const u2 = t.updates[q('#uD').value] || (t.updates[q('#uD').value] = {}); u2.f = u2.f || {}; if (r.files && r.files.length) u2.f[k] = { f: r.files[0].f, n: r.files[0].n, list: r.files }; else delete u2.f[k]; q('#uf_' + k + '_l').innerHTML = attList(t, q('#uD').value, f, u2.f[k]); toast('Removed.'); }
       catch (x) { b.disabled = false; toast(x.message || 'Could not remove.', true); }
     });
-    q('#uOk').onclick = () => run(q('#uOk'), async () => {
+    // ⚠ every message of this Save is shown IN the box, right above Save (the small black message at the bottom of the screen used to sit BEHIND the box on phones,
+    // so a Save that was refused — a word in a number box, a required box empty — looked like "nothing happened, not saved")
+    const uSay = (msg, bad) => { const e = q('#uErr'); if (e) { e.textContent = msg; e.style.display = msg ? '' : 'none'; try { e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (x) { /* fine */ } } toast(msg, bad); };
+    q('#uOk').onclick = () => run(q('#uOk'), async () => { q('#uErr').style.display = 'none'; try {
       const d = q('#uD').value, text = q('#uT').value.trim(), v = q('#uV').value.trim(), p = q('#uP').value.trim();
-      if (!d) { toast('Choose the date.'); return; }
+      if (!d) { uSay('Choose the date.'); return; }
       const fv = {}, files = []; t.fields.forEach((f) => { const el = q('#uf_' + f.k); if (!el) return; if (isUp(f.type)) { if (el.files) for (let n = 0; n < el.files.length; n++) files.push([f.k, el.files[n]]); } else fv[f.k] = el.type === 'checkbox' ? (el.checked ? 'yes' : 'no') : el.value.trim(); });
+      for (const f of t.fields) if (f.type === 'num' && fv[f.k] !== undefined && fv[f.k] !== '') { const n = String(fv[f.k]).replace(/[,₹\s]/g, ''); if (!/^-?\d+(\.\d+)?$/.test(n)) { uSay('“' + f.label + '” takes ONE number only (you wrote “' + fv[f.k] + '”). Write the words in a text box.', true); try { q('#uf_' + f.k).focus(); } catch (e) { /* fine */ } return; } fv[f.k] = n; }
       const anyF = files.length || Object.keys(fv).some((k) => fv[k] !== '');
-      if (!text && v === '' && p === '' && !anyF) { toast(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
+      if (!text && v === '' && p === '' && !anyF) { uSay(t.fields.length ? 'Fill the fields or write the update.' : (SUMONLY ? 'Write the summary.' : 'Type the number or write the update.')); return; }
       // a required box left empty is told at once (it used to save only the words, and the day stayed "not filled" with no word about why)
       const u1 = t.updates[d] || {}, need = t.fields.filter((f) => f.req && !isUp(f.type) && String(fv[f.k] == null ? '' : fv[f.k]) === '' && !(u1.f && fset(u1.f[f.k])));
       const short = t.fields.find((f) => f.type === 'text' && f.min && String(fv[f.k] || '').trim() && wc(fv[f.k]) < f.min);
-      if (short) { toast('“' + short.label + '”: write at least ' + short.min + ' words. Now ' + wc(fv[short.k]) + '.', true); try { q('#uf_' + short.k).focus(); } catch (e) { /* fine */ } return; }
-      if ((t.min_words || 0) > 0 && wc(text) < t.min_words) { toast('Write the update in detail: at least ' + t.min_words + ' words. Now ' + wc(text) + '.', true); q('#uT').focus(); return; }
-      if (need.length) { toast('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
+      if (short) { uSay('“' + short.label + '”: write at least ' + short.min + ' words. Now ' + wc(fv[short.k]) + '.', true); try { q('#uf_' + short.k).focus(); } catch (e) { /* fine */ } return; }
+      if ((t.min_words || 0) > 0 && wc(text) < t.min_words) { uSay('Write the update in detail: at least ' + t.min_words + ' words. Now ' + wc(text) + '.', true); q('#uT').focus(); return; }
+      if (need.length) { uSay('Fill ' + need.map((f) => f.label).join(', ') + (need.some((f) => f.type === 'num') ? ' (write 0 if there is none)' : '') + ' — then Save.'); return; }
       const body = { topic_id: t.id, day: d, text: text, pct: p }; if (v !== '' || !t.source) body.value = v; if (t.fields.length) body.fields = fv;
       let r = null; if (text || v !== '' || p !== '' || Object.keys(fv).length) r = await api.post('fup.update_save', body);
       let sent = 0; for (const [k, file] of files) { sent++; q('#uOk').textContent = 'Sending file ' + sent + ' of ' + files.length + '…'; const fd = new FormData(); fd.append('topic_id', t.id); fd.append('day', d); fd.append('key', k); fd.append('file', file); await api.upload('fup.file_put', fd); }
+      try { localStorage.removeItem('fup_draft_' + t.id + '_' + d); } catch (e) { /* fine */ }
       BD.close(); toast('Saved.'); await load(true);
       if (d !== D.today) toast('Saved for ' + dayName(d, D.today) + ' — today is still empty.');
       else if (D.days.indexOf(d) < 0) toast('Saved for ' + d + '. Choose more days at the top to see it.');
+    } catch (er) { uSay(er.message || 'Could not save. Check the internet and press Save again.', true); }
     });
     setTimeout(() => { try { (t.source || SUMONLY || q('#uV').value ? q('#uT') : q('#uV')).focus(); } catch (e) { /* fine */ } }, 50);
   }
