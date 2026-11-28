@@ -1092,6 +1092,15 @@ function wag_complaint_sweep(PDO $pdo, int $max = 6): int
             $__pk = function_exists('cx_text_problem') ? cx_text_problem($__t, true) : ''; if ($__pk === '') continue;   // 🛡 owner (25 Nov 2026): the customer's NEW words must name a real problem — whole words only ("fireplace" is not "replace"), and exchange / replace / quality alone do not count
             if (in_array($__pk, ['notdelivered', 'quality', 'refund'], true) && !$ans && !wag_cx_has_order($pdo, $key)) continue;   // "kab aayega", "refund milega?", "fake to nahi?" from somebody who never ordered is a sales question (a parcel that leaked / a wrong item needs no such check)
             $h = ['problem' => $__pk, 'label' => function_exists('cx_problems') ? cx_problems()[$__pk][0] : $h['label']];   // the ticket is named after the NEW words, not after an older message
+            if ($__pk === 'notdelivered') {   // 📦 owner (28 Nov 2026): "kab aayega / abhi tak nahi aaya" while the parcel is moving normally is a TRACKING question, not a complaint: the bot tells the status, no ticket (delayed / failed / RTO / delivered-but-not-received still become tickets)
+                if (!function_exists('wa_ord_track_reply') && is_file(__DIR__ . '/wa_orders.php')) { try { require_once __DIR__ . '/wa_orders.php'; } catch (Throwable $e) { } }
+                $__tr = function_exists('wa_ord_track_reply') ? wa_ord_track_reply($pdo, $key) : null;
+                if ($__tr !== null) {
+                    if (!$ans) { $__li = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__li->execute([$key]); $__mid = (int)$__li->fetchColumn();
+                        if ($__mid > 0 && (!function_exists('wq_guard') || wq_guard($pdo, $key, $__mid, 'reply', 'bot'))) { [$__ok] = wa_send_text($pdo, $c, $__tr, 'bot', 0);
+                            if ($__ok) wa_event($pdo, $key, '📦 Tracking question: the bot told the order status — no complaint raised (the parcel is moving normally)'); elseif (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, $__mid, 'reply'); } }
+                    continue; }
+            }
             if (preg_match('/(policy|agar|\bif\b|rahe (to|too)|hoti hai|hota hai|kya hai|kaise|how|can i|sakte|sakta)/u', $__t) && !preg_match('/(mila|aaya|aayi|hai mera|mere|my (order|parcel|bottle)|order (id|no)|#\d{4})/u', $__t)) continue;
             if (preg_match('/(\bcodes?\b|\bog\b|coupon|promo)/u', $__t)) {   // owner 22 Nov: "Code toh nahi aaya" is the talk about our OG code process, not a complaint - the bot never raises it by itself: it asks the salesperson once (a hint in the chat + a push to the holder), the person decides
                 $__li = $pdo->prepare("SELECT id FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $__li->execute([$key]); $__mid = (int)$__li->fetchColumn();
