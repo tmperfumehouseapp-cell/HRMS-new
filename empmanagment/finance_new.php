@@ -220,7 +220,8 @@ function fn_file_rows(array $rows, int $headRow, array $cols, ?array &$stats = n
         if (($g < 0 && $n < 0) || ($gv == 0.0 && $nv == 0.0)) { $stats['no_amount']++; continue; }
         $net = $n >= 0 ? $nv : $gv - $fv; $gross = $g >= 0 ? $gv : ($n >= 0 ? $nv + $fv : 0.0);
         if ($sign < 0) { $net = -abs($net); $gross = -abs($gross); $fv = $gross - $net; foreach ($parts as $k => $v) $parts[$k] = 0.0; }
-        $oc0 = isset($cols['order']) ? (int)$cols['order'] : -1; $ok0 = $oc0 >= 0 ? fn_okey($r[$oc0] ?? '') : ''; $key = md5(($ok0 !== '' ? $ok0 : implode('|', array_map('strval', $r))) . '|' . round($gross, 2) . '|' . ($sign < 0 ? 'r' : 'p'));
+        $oc0 = isset($cols['order']) ? (int)$cols['order'] : -1; $ok0 = $oc0 >= 0 ? fn_okey($r[$oc0] ?? '') : ''; if ($ok0 === '') { $al0 = isset($cols['order_alt']) ? (int)$cols['order_alt'] : -1; if ($al0 >= 0) $ok0 = fn_okey($r[$al0] ?? ''); }
+        /* no order number in the row: its payment (KWIK…) id is the key */ $key = md5(($ok0 !== '' ? $ok0 : implode('|', array_map('strval', $r))) . '|' . round($gross, 2) . '|' . ($sign < 0 ? 'r' : 'p'));
         $other = 0.0; if ($g >= 0 && $n >= 0 && $sign > 0) { $tot = $gross - $net; $other = max(0.0, round($tot - $fv, 2)); $fv = $fv + $other; }      // everything PayU cut = gross - net; the charge columns explain only a part, the rest is shown as "other deductions"
         $rec = ['i' => $i, 'utr' => $utr, 'gross' => $gross, 'fee' => $fv, 'net' => $net, 'parts' => $parts, 'other' => $other, 'adj' => $sign < 0, 'key' => $key, 'already' => isset($skip[$key])];      // already = an earlier saved file added this same payment as income
         if ($u >= 0 && $utr === '') { $stats['no_utr']++; $stats['pending'][] = $rec; continue; }      // paid by the customer but not settled to the bank yet (PayU gives the UTR after it settles)
@@ -316,6 +317,15 @@ function fn_day_sales_r(PDO $pdo, string $from, string $to): array
     foreach ($m as $k => $v) $t['modes'][] = ['mode' => $k, 'orders' => $v['orders'], 'amount' => $v['amount']]; usort($t['modes'], fn($a, $b) => $b['amount'] <=> $a['amount']); return $t;
 }
 function fn_other_prepaid_r(PDO $pdo, string $from, string $to): array { $n = 0; $a = 0; foreach (fn_range_days($from, $to) as $d) { $x = fn_other_prepaid($pdo, $d); $n += $x['orders']; $a += $x['amount']; } return ['orders' => $n, 'amount' => round($a, 2)]; }
+/** The date n WORKING days after $d: PayU and the other gateways do not settle on Saturday and Sunday, so a Friday sale settles on Monday (T+1). */
+function fn_workday_add(string $d, int $n): string { $t = strtotime($d); $c = 0; $g = 0; while ($c < $n && $g < 30) { $t = strtotime('+1 day', $t); $g++; if ((int)date('N', $t) < 6) $c++; } return date('Y-m-d', $t); }
+/** The charge rate of a payment mode: learned from the last saved settlement files of its channel (charges / gross), else an estimate. */
+function fn_mode_rate(PDO $pdo, string $mode): array
+{
+    $pat = $mode === 'GoKwik / PayU' ? '%payu%' : ($mode === 'Razorpay' ? '%razor%' : ''); $est = ['GoKwik / PayU' => 2.1, 'Razorpay' => 2.0];
+    if ($pat !== '') { try { $q = $pdo->prepare("SELECT u.gross, u.fee FROM fn_in_uploads u JOIN fn_in_channels c ON c.id = u.channel_id WHERE u.status = 'ok' AND u.gross > 0 AND LOWER(c.name) LIKE ? ORDER BY u.id DESC LIMIT 5"); $q->execute([$pat]); $g = 0; $f = 0; $n = 0; foreach ($q->fetchAll() as $r) { $g += (float)$r['gross']; $f += (float)$r['fee']; $n++; } if ($n && $g > 0) return ['rate' => round(100 * $f / $g, 2), 'src' => 'from your last ' . $n . ' saved file' . ($n === 1 ? '' : 's')]; } catch (Throwable $e) {} }
+    return ['rate' => $est[$mode] ?? 0.0, 'src' => isset($est[$mode]) ? 'estimate: save a settlement file of this gateway to learn it' : 'no charge'];
+}
 /** The sales of one day: all orders, the prepaid part and the COD part. */
 function fn_day_sales(PDO $pdo, string $day): array
 {
@@ -427,6 +437,16 @@ function fn_ensure7(PDO $pdo): bool
         @file_put_contents($flag, '1'); return true;
     } catch (Throwable $e) { error_log('fn_ensure7: ' . $e->getMessage()); return false; }
 }
+/** v8: the Cashfree channel (the owner's list: Flipkart, Razorpay, PayU, Snapmint, Cashfree, Myntra, Easebuzz). Added once, only if missing. */
+function fn_ensure8(PDO $pdo): bool
+{
+    $flag = sys_get_temp_dir() . '/hrms_fn_tables_v8_' . substr(md5(__DIR__), 0, 8);
+    if (is_file($flag)) return true;
+    try {
+        $f = $pdo->prepare("SELECT COUNT(*) FROM fn_in_channels WHERE section = 'prepaid' AND LOWER(name) = 'cashfree'"); $f->execute(); if (!(int)$f->fetchColumn()) { $mx = (int)$pdo->query("SELECT COALESCE(MAX(sort_no), 0) FROM fn_in_channels WHERE section = 'prepaid'")->fetchColumn(); $pdo->prepare("INSERT INTO fn_in_channels (section, name, head_id, sort_no, created_at) VALUES ('prepaid', 'Cashfree', 0, ?, ?)")->execute([$mx + 10, date('Y-m-d H:i:s')]); }
+        @file_put_contents($flag, '1'); return true;
+    } catch (Throwable $e) { error_log('fn_ensure8: ' . $e->getMessage()); return false; }
+}
 function fn_p($x): int { return (int)round(((float)$x) * 100); }      // rupees -> paise: all sums are integer paise
 function fn_m(int $p): float { return round($p / 100, 2); }
 function fn_day($s): string { $s = trim((string)$s); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return ''; $t = strtotime($s); return ($t && date('Y-m-d', $t) === $s) ? $s : ''; }
@@ -458,7 +478,7 @@ function fn_balances(PDO $pdo, string $day): array
     return $out;
 }
 
-if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo) || !fn_ensure4($pdo) || !fn_ensure5($pdo) || !fn_ensure6($pdo) || !fn_ensure7($pdo)) fn_err('Could not create the Finance New tables.', 500);
+if (!fn_ensure($pdo) || !fn_ensure2($pdo) || !fn_ensure3($pdo) || !fn_ensure4($pdo) || !fn_ensure5($pdo) || !fn_ensure6($pdo) || !fn_ensure7($pdo) || !fn_ensure8($pdo)) fn_err('Could not create the Finance New tables.', 500);
 $auth = require_auth();
 
 try {
@@ -737,6 +757,66 @@ switch ($action) {
         $q = $pdo->prepare("SELECT u.id, u.file_name, u.day, u.orders_day, u.net, u.gross, u.fee, u.status, u.recon_json, c.name AS channel FROM fn_in_uploads u LEFT JOIN fn_in_channels c ON c.id = u.channel_id WHERE u.recon_json IS NOT NULL AND u.status IN ('ok','void')" . ($cid ? " AND u.channel_id = " . $cid : "") . " ORDER BY u.id DESC LIMIT 40"); $q->execute();
         $list = []; foreach ($q->fetchAll() as $u) { $rc = json_decode((string)$u['recon_json'], true) ?: []; $list[] = ['id' => (int)$u['id'], 'channel' => (string)$u['channel'], 'file' => $u['file_name'], 'day' => $u['day'], 'orders_day' => (string)$u['orders_day'], 'net' => (float)$u['net'], 'status' => $u['status'], 'expected' => (int)($rc['expected']['orders'] ?? 0), 'found' => (int)($rc['found']['orders'] ?? 0), 'pending' => (int)($rc['pending']['orders'] ?? 0), 'missing' => (int)($rc['missing']['orders'] ?? 0), 'gokwik' => !empty($rc['gokwik'])]; }
         json_response(['statements' => $list]);
+        break;
+    }
+    // WHAT WILL COME INTO THE BANK from the sales of a day: per payment mode the gross, the estimated charges, the net, and the day it should arrive
+    case 'fn.in_expected': {
+        $today = fn_today($pdo); $d = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime($today . ' -1 day')); $sl = fn_day_sales($pdo, $d);
+        $lag = ['GoKwik / PayU' => 1, 'Razorpay' => 2, 'UPI QR' => 0, 'Bank transfer' => 0, 'Cash / COD' => 0]; $rows = []; $gP = 0; $cP = 0; $nP = 0;
+        foreach ($sl['modes'] as $m) {
+            $rt = fn_mode_rate($pdo, $m['mode']); $gr = fn_p($m['amount']); $ch = (int)round($gr * $rt['rate'] / 100); $known = isset($lag[$m['mode']]);
+            $rows[] = ['mode' => $m['mode'], 'orders' => $m['orders'], 'gross' => $m['amount'], 'rate' => $rt['rate'], 'rate_src' => $rt['src'], 'charges' => fn_m($ch), 'net' => fn_m($gr - $ch), 'lag' => $known ? $lag[$m['mode']] : null, 'arrive' => $known ? fn_workday_add($d, (int)$lag[$m['mode']]) : '', 'note' => $known ? ($lag[$m['mode']] === 0 ? 'straight to the bank, no gateway charge' : 'T+' . $lag[$m['mode']] . ' working day' . ($lag[$m['mode']] === 1 ? '' : 's') . ' (no Saturday / Sunday)') : 'gateway not known: check these orders'];
+            $gP += $gr; $cP += $ch; $nP += $gr - $ch;
+        }
+        $wd = 10; try { $w = $pdo->query("SELECT v FROM fi_settings WHERE k = 'wait_days'")->fetchColumn(); if ($w !== false && (int)$w > 0) $wd = (int)$w; } catch (Throwable $e) {}
+        $cod = ['orders' => $sl['cod_orders'], 'amount' => $sl['cod'], 'arrive_from' => date('Y-m-d', strtotime($d . ' +7 day')), 'arrive_by' => date('Y-m-d', strtotime($d . ' +' . $wd . ' day')), 'note' => 'cash on delivery: the courier sends it after delivery'];
+        $tot = fn_p($sl['total']); $sum = $gP + fn_p($sl['cod']);
+        json_response(['day' => $d, 'today' => $today, 'sales' => $sl, 'modes' => $rows, 'cod' => $cod, 'totals' => ['prepaid_gross' => fn_m($gP), 'charges' => fn_m($cP), 'prepaid_net' => fn_m($nP), 'cod' => $sl['cod'], 'sales' => $sl['total'], 'tie' => abs($tot - $sum) <= 5, 'gap' => fn_m($tot - $sum)]]);
+        break;
+    }
+    // DATE-WISE money received per gateway / marketplace channel (Flipkart, Razorpay, PayU, Snapmint, Cashfree, Myntra, Easebuzz …) and per bank, for a period
+    case 'fn.in_datewise': {
+        $today = fn_today($pdo); $to = fn_day($_GET['to'] ?? '') ?: $today; $from = fn_day($_GET['from'] ?? '') ?: substr($to, 0, 8) . '01'; if ($from > $to) { $t = $from; $from = $to; $to = $t; } if ((strtotime($to) - strtotime($from)) > 92 * 86400) fn_err('Choose a period of at most 3 months.');
+        $chs = []; $byHead = []; foreach ($pdo->query("SELECT id, section, name, head_id, active FROM fn_in_channels ORDER BY section, active DESC, sort_no, name")->fetchAll() as $c) { $chs[(int)$c['id']] = ['id' => (int)$c['id'], 'name' => $c['name'], 'section' => $c['section'], 'active' => (int)$c['active'], 'total' => 0, 'n' => 0, 'banks' => []]; if ((int)$c['head_id']) $byHead[(int)$c['head_id']] = (int)$c['id']; }
+        $accN = []; foreach ($pdo->query("SELECT id, name FROM fn_accounts")->fetchAll() as $a) $accN[(int)$a['id']] = $a['name'];
+        $heads = []; foreach ($pdo->query("SELECT id, name FROM fn_heads WHERE side = 'in'")->fetchAll() as $h) $heads[(int)$h['id']] = $h['name'];
+        $q = $pdo->prepare("SELECT day, head_id, account_id, SUM(amount) a, COUNT(*) n FROM fn_entries WHERE status = 'ok' AND side = 'in' AND day BETWEEN ? AND ? GROUP BY day, head_id, account_id"); $q->execute([$from, $to]);
+        $days = []; $oth = ['id' => 0, 'name' => 'Other receipts', 'section' => 'other', 'active' => 1, 'total' => 0, 'n' => 0, 'banks' => [], 'lines' => []]; $bank = []; $grand = 0;
+        for ($d = $from, $g = 0; $d <= $to && $g < 100; $d = date('Y-m-d', strtotime($d . ' +1 day')), $g++) $days[$d] = ['day' => $d, 'cells' => [], 'total' => 0];
+        foreach ($q->fetchAll() as $r) {
+            $p = fn_p($r['a']); $cid = $byHead[(int)$r['head_id']] ?? 0; $an = $accN[(int)$r['account_id']] ?? ('bank #' . (int)$r['account_id']);
+            if (!isset($days[$r['day']])) continue; $days[$r['day']]['cells'][$cid] = ($days[$r['day']]['cells'][$cid] ?? 0) + $p; $days[$r['day']]['total'] += $p; $grand += $p; $bank[$an] = ($bank[$an] ?? 0) + $p;
+            if ($cid) { $chs[$cid]['total'] += $p; $chs[$cid]['n'] += (int)$r['n']; $chs[$cid]['banks'][$an] = ($chs[$cid]['banks'][$an] ?? 0) + $p; }
+            else { $oth['total'] += $p; $oth['n'] += (int)$r['n']; $oth['banks'][$an] = ($oth['banks'][$an] ?? 0) + $p; $ln = $heads[(int)$r['head_id']] ?? 'line #' . (int)$r['head_id']; $oth['lines'][$ln] = ($oth['lines'][$ln] ?? 0) + $p; }
+        }
+        $cols = []; foreach ($chs as $c) { if (!$c['active'] && !$c['total']) continue; $bk = []; arsort($c['banks']); foreach ($c['banks'] as $k => $v) $bk[] = ['bank' => $k, 'amount' => fn_m($v)]; $cols[] = ['id' => $c['id'], 'name' => $c['name'], 'section' => $c['section'], 'total' => fn_m($c['total']), 'entries' => $c['n'], 'banks' => $bk]; }
+        if ($oth['total']) { $bk = []; arsort($oth['banks']); foreach ($oth['banks'] as $k => $v) $bk[] = ['bank' => $k, 'amount' => fn_m($v)]; arsort($oth['lines']); $ol = []; foreach ($oth['lines'] as $k => $v) $ol[] = $k . ' ' . fn_m($v); $cols[] = ['id' => 0, 'name' => 'Other receipts', 'section' => 'other', 'total' => fn_m($oth['total']), 'entries' => $oth['n'], 'banks' => $bk, 'hint' => implode(' · ', $ol)]; }
+        $rows = []; foreach ($days as $d) { $cells = []; foreach ($d['cells'] as $k => $v) $cells[(string)$k] = fn_m($v); $rows[] = ['day' => $d['day'], 'cells' => $cells, 'total' => fn_m($d['total'])]; }
+        $bl = []; arsort($bank); foreach ($bank as $k => $v) $bl[] = ['bank' => $k, 'amount' => fn_m($v)];
+        json_response(['from' => $from, 'to' => $to, 'channels' => $cols, 'days' => $rows, 'banks' => $bl, 'total' => fn_m($grand)]);
+        break;
+    }
+    // ORDER BY ORDER: which gateway each order's money comes through, how much, which day it should arrive, into which bank, and whether it already came (a saved settlement file has it)
+    case 'fn.in_order_map': {
+        $today = fn_today($pdo); $to = fn_day($_GET['date'] ?? '') ?: date('Y-m-d', strtotime($today . ' -1 day')); $nd = max(1, min(7, (int)($_GET['days'] ?? 1))); $from = date('Y-m-d', strtotime($to . ' -' . ($nd - 1) . ' day'));
+        $lag = ['GoKwik / PayU' => 1, 'Razorpay' => 2, 'UPI QR' => 0, 'Bank transfer' => 0]; $rate = []; $bank = [];
+        $bankOf = function ($pat) use ($pdo) { try { $q = $pdo->prepare("SELECT a.name FROM fn_entries e JOIN fn_in_channels c ON c.head_id = e.head_id JOIN fn_accounts a ON a.id = e.account_id WHERE e.status = 'ok' AND e.side = 'in' AND LOWER(c.name) LIKE ? GROUP BY a.name ORDER BY SUM(e.amount) DESC LIMIT 1"); $q->execute([$pat]); $v = $q->fetchColumn(); return $v === false ? '' : (string)$v; } catch (Throwable $e) { return ''; } };
+        $bank = ['GoKwik / PayU' => $bankOf('%payu%'), 'Razorpay' => $bankOf('%razor%')];
+        $added = []; try { foreach ($pdo->query("SELECT t.txn_key, u.day FROM fn_in_txn t JOIN fn_in_uploads u ON u.id = t.upload_id AND u.status = 'ok'")->fetchAll() as $r) $added[$r['txn_key']] = $r['day']; } catch (Throwable $e) {}
+        $list = []; $sum = []; $hasFile = [];
+        foreach (fn_range_days($from, $to) as $d) {
+            foreach (fn_day_orders($pdo, $d) as $o) {
+                $pre = $o['pre_p']; $cod = $o['cod_p']; $mode = $pre > 0 ? $o['mode'] : 'COD'; if (!isset($rate[$mode])) { $mr = fn_mode_rate($pdo, $pre > 0 ? $o['mode'] : 'COD'); $rate[$mode] = $mr['rate']; $hasFile[$mode] = strpos((string)$mr['src'], 'from your last') === 0; }
+                $ch = $pre > 0 ? (int)round($pre * $rate[$mode] / 100) : 0; $cal = substr((string)$o['at'], 0, 10); $known = $pre > 0 && isset($lag[$o['mode']]);
+                $came = ''; if ($pre > 0) { foreach (array_merge([$o['key']], array_slice($o['refs'], 0, 2)) as $idk) { $k = md5($idk . '|' . round(fn_m($pre), 2) . '|p'); if (isset($added[$k])) { $came = $added[$k]; break; } } }
+                $arrive = $came !== '' ? $came : ($known ? fn_workday_add($cal, (int)$lag[$o['mode']]) : '');
+                $status = $pre <= 0 ? 'cod' : ($came !== '' ? 'came' : (($known && $lag[$o['mode']] === 0) ? 'direct' : (empty($hasFile[$mode]) ? 'check' : (($arrive !== '' && $arrive < $today) ? 'late' : 'waiting'))));
+                $list[] = ['name' => $o['name'], 'day' => $d, 'customer' => $o['customer'], 'mode' => $mode, 'manual' => !empty($o['manual']), 'prepaid' => fn_m($pre), 'cod' => fn_m($cod), 'total' => fn_m($o['total_p']), 'charges' => fn_m($ch), 'net' => fn_m($pre - $ch), 'arrive' => $arrive, 'bank' => $pre > 0 ? ($bank[$o['mode']] ?? '') : '', 'status' => $status];
+                $k2 = $status; if (!isset($sum[$k2])) $sum[$k2] = ['orders' => 0, 'amount' => 0]; $sum[$k2]['orders']++; $sum[$k2]['amount'] += $status === 'cod' ? $cod : $pre;
+            }
+        }
+        $sm = []; foreach ($sum as $k => $v) $sm[$k] = ['orders' => $v['orders'], 'amount' => fn_m($v['amount'])];
+        json_response(['from' => $from, 'to' => $to, 'today' => $today, 'count' => count($list), 'summary' => $sm, 'orders' => array_slice($list, 0, 800), 'truncated' => count($list) > 800]);
         break;
     }
     case 'fn.in_upload_recon': {

@@ -17,7 +17,7 @@ if (!function_exists('wa_pat_topic')) {
             ['addon', 'Add-on / extra discount', '/add[- ]?on|extra discount|bonus|combo|એડ ઓન|એક્સ્ટ્રા/u'],
             ['launch', 'New perfume / launch', '/launch|new perfume|new arrival|just arrived|naya|નવું|નવી|લોન્ચ|નયા/u'],
             ['surprise', 'Surprise / mystery / curiosity', '/surprise|mystery|secret|guess|curious|સરપ્રાઈઝ|રહસ્ય/u'],
-            ['gift', 'Gift / wedding / festival / season', '/gift|wedding|shaadi|diwali|new year|festival|winter|christmas|valentine|ગિફ્ટ|લગ્ન|દિવાળી|શિયાળ/u'],
+            ['gift', 'Gift / wedding / festival / season', '/gift|wedding|shaadi|diwali|new year|festival|winter|christmas|valentine|black friday|cyber monday|ગિફ્ટ|લગ્ન|દિવાળી|શિયાળ/u'],
             ['reorder', 'Refill / reorder / finished', '/refill|re-?order|reorder|finish|khatam|repeat|again|ફરી|પૂરું|ખતમ/u'],
             ['size', 'Size / ML choice', '/\b\d+ ?ml\b|\bml\b|size|bottle|સાઇઝ|બોટલ/u'],
             ['price', 'Order push (offer · price · combo · deadline)', '/₹|\brs\.?\b|offer|discount|price|% ?off|sale|deal|combo|flat|deadline|sirf|jaldi|aaj hi|abhi order|order (now|kar)|ઓફર|કિંમત|ડિસ્કાઉન્ટ/u'],

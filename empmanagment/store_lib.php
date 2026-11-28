@@ -122,6 +122,84 @@ function st_code_for(int $bottleId): string
 }
 
 /** Digits only, the way a scanner or a typed code arrives. */
+/** 🧴 Shower gel / attar pieces on a store bill (billing is in store_pos.php; these are here so the commission pages see them too). */
+if (!function_exists('st_xpcs')) {
+function st_xpcs($v): int { return max(0, min(50, (int)$v)); }
+function st_pc_load(): bool { if (!function_exists('pc_prices') && is_file(__DIR__ . '/price_charts.php')) require_once __DIR__ . '/price_charts.php'; return function_exists('pc_prices') && function_exists('pc_mix_prices'); }
+/** The 4 bill columns for gel / attar (made once, before any transaction). */
+function st_x_cols(PDO $pdo): void
+{
+    static $ran = false; if ($ran) return; $ran = true;
+    $flag = sys_get_temp_dir() . '/hrms_st_xcols_v3'; if (is_file($flag)) return;
+    try {
+        foreach (['gel_pcs' => 'INT NOT NULL DEFAULT 0', 'attar_pcs' => 'INT NOT NULL DEFAULT 0', 'x_all' => 'TINYINT NOT NULL DEFAULT 0', 'x_gel_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0', 'x_attar_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0'] as $c => $def)
+            if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
+        // 🏷 shower gel / attar WITH barcodes: the items (name, gel or attar, photo) and one barcode per piece (8 digits from 40000001, like the chains)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_xitems (item_id INT AUTO_INCREMENT PRIMARY KEY, seg VARCHAR(8) NOT NULL, name VARCHAR(120) NOT NULL, photo MEDIUMTEXT NULL,
+            active TINYINT NOT NULL DEFAULT 1, created_at DATETIME NOT NULL, created_by VARCHAR(80) NOT NULL DEFAULT '') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_xpieces (piece_id INT AUTO_INCREMENT PRIMARY KEY, item_id INT NOT NULL, code VARCHAR(12) NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'generated',
+            batch VARCHAR(20) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, printed_at DATETIME NULL, print_count INT NOT NULL DEFAULT 0, stocked_at DATETIME NULL, sold_at DATETIME NULL, bill_id INT NULL,
+            UNIQUE KEY uq_st_xp_code (code), KEY idx_st_xp_item (item_id, status), KEY idx_st_xp_bill (bill_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        if (!$pdo->query("SHOW COLUMNS FROM st_xitems LIKE 'product_id'")->fetch()) $pdo->exec("ALTER TABLE st_xitems ADD COLUMN product_id INT NOT NULL DEFAULT 0, ADD KEY idx_st_xi_prod (product_id)");
+        @touch($flag);
+    } catch (Throwable $e) { error_log('st_x_cols: ' . $e->getMessage()); }
+}
+/** Is this Shopify product a shower gel or an attar? (the same words the commission uses for online orders) '' = a perfume. */
+function st_x_seg_of(string $title): string
+{
+    $t = mb_strtolower($title);
+    if (preg_match('/\battar|\bittar|\boud oil|\broll[- ]?on\b/u', $t)) return 'attar';
+    if (preg_match('/shower ?gel|body ?wash|\bgel\b/u', $t)) return 'gel';
+    return '';
+}
+/** 🔄 The shower gel / attar list is made by itself from the products already synced from Shopify (nothing to add by hand): a new one appears,
+ *  one gone from Shopify is hidden (only when it has nothing in stock or waiting). */
+function st_xi_autosync(PDO $pdo): void
+{
+    static $ran = false; if ($ran) return; $ran = true; st_x_cols($pdo);
+    try {
+        $have = []; foreach ($pdo->query("SELECT item_id, product_id, active FROM st_xitems WHERE product_id > 0")->fetchAll() as $r) $have[(int)$r['product_id']] = $r;
+        $seen = []; $ins = $pdo->prepare("INSERT INTO st_xitems (seg, name, photo, active, created_at, created_by, product_id) VALUES (?,?,?,1,?,'shopify',?)");
+        $upd = $pdo->prepare("UPDATE st_xitems SET seg = ?, name = ?, photo = ?, active = 1 WHERE item_id = ?");
+        foreach ($pdo->query("SELECT product_id, title, image FROM st_products WHERE active = 1")->fetchAll() as $p) {
+            $seg = st_x_seg_of((string)$p['title']); if ($seg === '') continue; $pid = (int)$p['product_id']; $seen[$pid] = 1;
+            if (isset($have[$pid])) $upd->execute([$seg, mb_substr((string)$p['title'], 0, 120), (string)$p['image'], (int)$have[$pid]['item_id']]);
+            else $ins->execute([$seg, mb_substr((string)$p['title'], 0, 120), (string)$p['image'], date('Y-m-d H:i:s'), $pid]);
+        }
+        foreach ($have as $pid => $r) if (!isset($seen[$pid]) && (int)$r['active'] === 1) {
+            $n = $pdo->prepare("SELECT COUNT(*) FROM st_xpieces WHERE item_id = ? AND status IN ('generated','stock')"); $n->execute([(int)$r['item_id']]);
+            if (!(int)$n->fetchColumn()) $pdo->prepare("UPDATE st_xitems SET active = 0 WHERE item_id = ?")->execute([(int)$r['item_id']]);
+        }
+    } catch (Throwable $e) { error_log('st_xi_autosync: ' . $e->getMessage()); }
+}
+if (!defined('ST_X_CODE_BASE')) define('ST_X_CODE_BASE', 40000000);      // gel / attar label = piece_id + 40000000 (8 digits: CODE128C needs an even number of digits; chains are 20000000+, bottles 6 digits)
+/** Gel / attar pieces by code: [code => row with seg, name]. */
+function st_find_xpieces(PDO $pdo, array $codes, bool $lock = false): array
+{
+    $codes = array_values(array_unique(array_filter(array_map('st_clean_code', $codes), function ($c) { return strlen($c) === 8 && $c[0] === '4'; })));
+    if (!$codes) return []; st_x_cols($pdo); $in = implode(',', array_fill(0, count($codes), '?'));
+    try { $q = $pdo->prepare("SELECT p.piece_id, p.code, p.status, p.item_id, i.seg, i.name FROM st_xpieces p JOIN st_xitems i ON i.item_id = p.item_id WHERE p.code IN ($in)" . ($lock ? ' FOR UPDATE' : '')); $q->execute($codes); }
+    catch (Throwable $e) { return []; }
+    $o = []; foreach ($q->fetchAll() as $r) $o[(string)$r['code']] = $r; return $o;
+}
+/** The commission of a bill with gel / attar: [pct of the whole bill, rule, commission]. */
+function st_x_com(PDO $pdo, array $ch, int $ml, int $gel, int $attar, float $gross, bool $all, float $xg, float $xa): array
+{
+    if (!st_pc_load() || $gross <= 0) return [null, 'gel / attar: no chart', 0.0];
+    if ($all) {
+        if (pc_mix_kinds($ml, $gel, $attar, 0) >= 2) { $pc = pc_mix_pct($pdo, $ml, $gel, $attar, 0, $gross); return $pc === null ? [null, 'combo price missing', 0.0] : [round($pc, 2), 'combo', $gross * $pc / 100]; }
+        $sg = $gel > 0 ? 'gel' : 'attar'; $pc = pc_pct($pdo, $sg, (float)($gel > 0 ? $gel : $attar), $gross);
+        return $pc === null ? [null, ($sg === 'gel' ? 'shower gel' : 'attar') . ': no price row', 0.0] : [round($pc, 2), $sg === 'gel' ? 'shower gel' : 'attar', $gross * $pc / 100];
+    }
+    $com = 0.0; $perf = max(0.0, $gross - $xg - $xa);
+    if ($ml > 0 && $perf > 0 && function_exists('cm_pct')) { $pc = cm_pct($ch, $ml, $perf); if ($pc !== null) $com += $perf * $pc / 100; }
+    if ($gel > 0 && $xg > 0) { $pc = pc_pct($pdo, 'gel', (float)$gel, $xg); if ($pc !== null) $com += $xg * $pc / 100; }
+    if ($attar > 0 && $xa > 0) { $pc = pc_pct($pdo, 'attar', (float)$attar, $xa); if ($pc !== null) $com += $xa * $pc / 100; }
+    return [round($com / $gross * 100, 2), 'parts (perfume + gel / attar)', $com];
+}
+
+}
+
 function st_clean_code($c): string
 {
     return preg_replace('/\D/', '', (string)$c);
@@ -845,9 +923,9 @@ function st_wa_status(PDO $pdo): array
     return $out;
 }
 /** The template as it can be sent now (approved on at least one WhatsApp account), or null. */
-function st_wa_tpl(PDO $pdo, string $name): ?array
+function st_wa_tpl(PDO $pdo, string $name, string $lang = 'en'): ?array
 {
-    $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$name]); $id = (int)$q->fetchColumn(); if (!$id) return null;
+    $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = ?"); $q->execute([$name, $lang]); $id = (int)$q->fetchColumn(); if (!$id) return null;
     $t = wa_tpl_row($pdo, $id); if (!$t) return null;
     $w = $pdo->prepare("SELECT waba_id FROM wa_tpl_waba WHERE tpl_id = ? AND status = 'APPROVED'"); $w->execute([$id]); $t['ok_wabas'] = array_column($w->fetchAll(), 'waba_id');
     return $t['ok_wabas'] ? $t : null;
@@ -874,22 +952,146 @@ function st_store_waba(PDO $pdo): string
     try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'swa'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; $id = is_array($j) ? (int)($j['number_id'] ?? 0) : 0; if ($id <= 0) return '';
         $q = $pdo->prepare("SELECT * FROM wa_numbers WHERE id = ?"); $q->execute([$id]); $n = $q->fetch(); return $n && function_exists('wa_waba_of') ? wa_waba_of($n) : ''; } catch (Throwable $e) { return ''; }
 }
+/** Asks Meta for every Store template (tmph_store_*) of the Store account and saves its status in HRMS - also for messages HRMS still thinks are drafts
+ *  (approved at Meta without HRMS knowing). Returns [how many saved, error]. */
+function st_wa_tpl_sync(PDO $pdo, string $waba): array
+{
+    if ($waba === '' || !function_exists('wa_api')) return [0, 'no Store account'];
+    $n = 0; $err = ''; $url = '/' . $waba . '/message_templates?limit=100&fields=id,name,language,status,category,rejected_reason,components,quality_score';
+    for ($page = 0; $page < 8 && $url; $page++) {
+        [$c, $d] = wa_api('GET', $url); if ($c < 200 || $c >= 300 || !is_array($d)) { $err = function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'Meta did not answer'; break; }
+        foreach ((array)($d['data'] ?? []) as $x) {
+            $nm = (string)($x['name'] ?? ''); if (strpos($nm, 'tmph_store_') !== 0) continue;
+            $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = ?"); $q->execute([$nm, (string)($x['language'] ?? 'en')]); $tid = (int)$q->fetchColumn(); if (!$tid) $tid = st_wa_tpl_import($pdo, $x); if (!$tid) continue;
+            $st = strtoupper((string)($x['status'] ?? 'PENDING')); $why = (string)($x['rejected_reason'] ?? ''); if ($why === 'NONE') $why = ''; $cat = strtoupper((string)($x['category'] ?? '')); $now = date('Y-m-d H:i:s');
+            $e = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?"); $e->execute([$tid, $waba]);
+            if ((int)$e->fetchColumn() > 0) $pdo->prepare("UPDATE wa_tpl_waba SET status = ?, reason = ?, meta_id = ?, updated_at = ?, category = ? WHERE tpl_id = ? AND waba_id = ?")->execute([$st, mb_substr($why, 0, 300), (string)($x['id'] ?? ''), $now, $cat, $tid, $waba]);
+            else $pdo->prepare("INSERT INTO wa_tpl_waba (tpl_id, waba_id, meta_id, status, reason, updated_at, category) VALUES (?, ?, ?, ?, ?, ?, ?)")->execute([$tid, $waba, (string)($x['id'] ?? ''), $st, mb_substr($why, 0, 300), $now, $cat]);
+            try { $ql = strtoupper((string)($x['quality_score']['score'] ?? '')); if ($ql !== '') $pdo->prepare("UPDATE wa_tpl_waba SET quality = ? WHERE tpl_id = ? AND waba_id = ?")->execute([mb_substr($ql, 0, 10), $tid, $waba]); } catch (Throwable $e2) { }      // GREEN / YELLOW / RED / UNKNOWN
+            $n++;
+        }
+        $url = ''; $nx = (string)($d['paging']['next'] ?? ''); if ($nx !== '' && preg_match('#graph\.facebook\.com/[^/]+(/.+)$#', $nx, $m)) $url = $m[1];
+    }
+    return [$n, $err];
+}
+/** A Store template that is at Meta but not in HRMS (made in WhatsApp Manager, or its HRMS row was deleted): copied into HRMS from Meta's own components so it can be used. Returns the new id or 0. */
+function st_wa_tpl_import(PDO $pdo, array $x): int
+{
+    if (!function_exists('wa_tpl_insert')) return 0;
+    $nm = (string)($x['name'] ?? ''); $lg = (string)($x['language'] ?? 'en'); $hf = ''; $ht = ''; $body = ''; $foot = ''; $btn = []; $ex = [];
+    foreach ((array)($x['components'] ?? []) as $c) { $ty = strtoupper((string)($c['type'] ?? ''));
+        if ($ty === 'HEADER') { $hf = strtoupper((string)($c['format'] ?? 'TEXT')); if ($hf === 'TEXT') $ht = (string)($c['text'] ?? ''); }
+        elseif ($ty === 'BODY') { $body = (string)($c['text'] ?? ''); $ex = array_values(array_map('strval', (array)($c['example']['body_text'][0] ?? []))); }
+        elseif ($ty === 'FOOTER') $foot = (string)($c['text'] ?? '');
+        elseif ($ty === 'BUTTONS') foreach ((array)($c['buttons'] ?? []) as $b) { $bt = strtoupper((string)($b['type'] ?? ''));
+            if ($bt === 'QUICK_REPLY') $btn[] = ['type' => 'QUICK_REPLY', 'text' => (string)($b['text'] ?? '')];
+            elseif ($bt === 'URL') $btn[] = ['type' => 'URL', 'text' => (string)($b['text'] ?? ''), 'url' => (string)($b['url'] ?? ''), 'example' => (string)(((array)($b['example'] ?? []))[0] ?? '')];
+            elseif ($bt === 'PHONE_NUMBER') $btn[] = ['type' => 'PHONE_NUMBER', 'text' => (string)($b['text'] ?? ''), 'phone' => preg_replace('/\D/', '', (string)($b['phone_number'] ?? ''))]; } }
+    if ($body === '') return 0;
+    $lib = 0; if (in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) { try { $base = preg_replace('/(_\d{6,})?(_v\d+)?$/', '', $nm); $q = $pdo->prepare("SELECT header_lib_id FROM wa_templates WHERE (name = ? OR name LIKE ?) AND header_format = ? AND header_lib_id > 0 ORDER BY id DESC LIMIT 1"); $q->execute([$base, $base . '\_%', $hf]); $lib = (int)$q->fetchColumn(); } catch (Throwable $e) { } }      // the photo of the same message family, when HRMS still has one
+    $d = ['name' => $nm, 'language' => $lg, 'category' => strtoupper((string)($x['category'] ?? 'MARKETING')), 'header_format' => $hf, 'header_text' => $ht, 'header_lib_id' => $lib, 'body' => $body, 'footer' => $foot, 'buttons' => $btn, 'examples' => ['body' => $ex], 'folder' => 'Store'];
+    try { [$t, $err] = wa_tpl_clean($d, true); if ($err !== '') { error_log('st_wa_tpl_import ' . $nm . ': ' . $err); return 0; } $t['name'] = $nm; $id = wa_tpl_insert($pdo, $t, 0, 'Store message (copied from Meta)', 'Copied from Meta: it was at Meta but not in HRMS');
+        $c = $pdo->prepare("SELECT name FROM wa_templates WHERE id = ?"); $c->execute([$id]); if ((string)$c->fetchColumn() !== $nm) { $pdo->prepare("UPDATE wa_templates SET name = ? WHERE id = ?")->execute([$nm, $id]); }
+        return (int)$id; } catch (Throwable $e) { error_log('st_wa_tpl_import: ' . $e->getMessage()); return 0; }
+}
+/** A button text Meta accepts: no emoji, no *bold* / _italic_ marks, no new lines (Meta refuses the whole message otherwise). */
+function st_wa_btn_text(string $t): string
+{
+    $t = preg_replace('/[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{2300}-\x{23FF}\x{2B00}-\x{2BFF}\x{FE0F}\x{200D}\x{20E3}\x{3030}\x{303D}\x{3297}\x{3299}\x{00A9}\x{00AE}\x{2122}\x{2190}-\x{21FF}\x{25A0}-\x{25FF}]/u', '', $t) ?? $t;
+    $t = str_replace(['*', '_', '~', '`', "\r", "\n"], ['', '', '', '', ' ', ' '], $t);
+    return mb_substr(trim(preg_replace('/\s+/u', ' ', $t) ?? $t), 0, 25);
+}
+function st_wa_btns_clean(array $b): array { foreach ($b as &$x) if (is_array($x) && isset($x['text'])) $x['text'] = st_wa_btn_text((string)$x['text']); unset($x); return $b; }
+/** The bill messages the owner made later (order_confirmation_v5, v6 … / order_back_v3 …): newest version first, so a new approved version (e.g. without the photo) is used by itself. */
+function st_wa_order_latest(PDO $pdo, bool $back): array
+{
+    $base = $back ? 'tmph_store_order_back_v' : 'tmph_store_order_confirmation_v'; $o = [];
+    try { $q = $pdo->prepare("SELECT name FROM wa_templates WHERE name LIKE ? AND language = 'en'"); $q->execute([str_replace('_', '\\_', $base) . '%']);
+        foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $n) if (preg_match('/^' . preg_quote($base, '/') . '(\d+)$/', (string)$n, $m)) $o[(int)$m[1]] = (string)$n; } catch (Throwable $e) { }
+    krsort($o); return array_values($o);
+}
+/** Names of the order-confirmation messages in the order they are tried (the owner's own wording first, the built-in ones last). */
+function st_wa_order_names(bool $back): array
+{
+    return $back ? ['tmph_store_order_back_v2', 'tmph_store_order_back_v1', 'tmph_store_order_back', 'tmph_store_bill_back_v2', 'tmph_store_bill_back']
+                 : ['tmph_store_order_confirmation_v4', 'tmph_store_order_confirmation_v3', 'tmph_store_order_confirmation_v2', 'tmph_store_order_confirmation', 'tmph_store_order_v2', 'tmph_store_order_v1', 'tmph_store_bill_v2', 'tmph_store_bill'];
+}
+/** What each {{n}} of a bill message gets. The owner writes the message by hand, so the meaning of every {{n}} is read from the words just before it:
+ *  "Hi {{1}}" = name, "Your bill {{2}}" = bill number, "see it here: {{3}}" = bill link, "Save all our numbers: {{4}}" = numbers link, "join our community: {{5}}" = community link,
+ *  "review on Google: {{6}}" = review link, "Came with friends? {{7}}" = friends link, "₹{{3}}" = amount, "b.php?t={{4}}" = the bare token. The built-in (older) messages keep their fixed order. */
+function st_wa_vars(array $t, string $first, string $billNo, float $total, string $token): array
+{
+    $name = (string)($t['name'] ?? ''); $body = (string)($t['body'] ?? '');
+    if (strpos($name, 'tmph_store_bill') === 0 || $body === '') return [$first, $billNo, number_format($total), st_bill_link($token)];      // the original four, as before
+    preg_match_all('/\{\{(\d+)\}\}/', $body, $m); $n = $m[1] ? max(array_map('intval', $m[1])) : 0;
+    $parts = preg_split('/\{\{\d+\}\}/', $body); $order = $m[1];       // $parts[i] is the text just before the i-th placeholder in reading order
+    $kind = []; foreach ($order as $i => $num) {
+        $num = (int)$num; $seg = mb_strtolower(trim((string)($parts[$i] ?? ''))); $seg = mb_substr($seg, -110);
+        if ($num === 1 && $i === 0) $k = 'name';
+        elseif (preg_match('/[?&]t=$/', $seg)) $k = 'token';
+        elseif (preg_match('/(₹|rs\.?|amount|total)\s*$/u', $seg)) $k = 'amount';
+        elseif (preg_match('/bill( no\.?| number)?\s*$/u', $seg)) $k = 'bill_no';
+        elseif (strpos($seg, 'friend') !== false) $k = 'friends';
+        elseif (strpos($seg, 'review') !== false) $k = 'review';
+        elseif (strpos($seg, 'communit') !== false || strpos($seg, 'channel') !== false) $k = 'community';
+        elseif (strpos($seg, 'save') !== false || strpos($seg, 'number') !== false || strpos($seg, 'contact') !== false) $k = 'numbers';
+        else $k = 'bill_link';
+        $kind[$num] = $kind[$num] ?? $k;
+    }
+    $val = ['name' => $first, 'bill_no' => $billNo, 'amount' => number_format($total), 'token' => $token, 'bill_link' => st_short_link($token), 'numbers' => st_short_link($token, 's'), 'community' => st_short_link($token, 'c'), 'review' => st_short_link($token, 'r'), 'friends' => st_short_link($token, 'g')];
+    $out = []; for ($i = 1; $i <= $n; $i++) $out[] = (string)($val[$kind[$i] ?? 'bill_link'] ?? '');
+    return $out;
+}
+/** WhatsApp said a bill message did not arrive: the latest "sent" mark of that customer (last 3 days) is taken away, so the bill shows as NOT sent and the cashier's own Send button works again. */
+function st_wa_bill_failed(PDO $pdo, string $key): void
+{
+    $q = $pdo->prepare("SELECT p.person_id, p.bill_id FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id WHERE RIGHT(p.phone, 10) = ? AND b.created_at > ? ORDER BY p.person_id DESC LIMIT 1");
+    $q->execute([substr($key, -10), date('Y-m-d H:i:s', time() - 3 * 86400)]); $r = $q->fetch(); if (!$r) return;
+    $pdo->prepare("DELETE FROM st_bill_events WHERE person_id = ? AND kind = 'sent' AND who IN ('auto WhatsApp', 'auto WhatsApp (utility)')")->execute([(int)$r['person_id']]);
+    st_event($pdo, (int)$r['person_id'], (int)$r['bill_id'], 'send_failed', 'auto WhatsApp');
+    try { st_wa_util_retry($pdo, (int)$r['person_id']); } catch (Throwable $e) { error_log('st_wa_util_retry: ' . $e->getMessage()); }
+}
+/** The plain UTILITY bill message (no links to review / community): sent ONCE to a customer whose bill message failed (a Marketing message Meta did not deliver, e.g. 131049). */
+const ST_WA_UTIL_BILL = 'tmph_store_order_confirmation_v4_utility';
+function st_wa_util_retry(PDO $pdo, int $personId): void
+{
+    $q = $pdo->prepare("SELECT COUNT(*) FROM st_bill_events WHERE person_id = ? AND kind = 'util_retry'"); $q->execute([$personId]); if ((int)$q->fetchColumn() > 0) return;      // once per customer per bill - also when the utility one fails
+    $q = $pdo->prepare("SELECT p.person_id, p.bill_id, p.name, p.phone, p.token, b.bill_no, b.total FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id WHERE p.person_id = ?"); $q->execute([$personId]); $p = $q->fetch(); if (!$p) return;
+    $t = st_wa_tpl($pdo, ST_WA_UTIL_BILL); if (!$t) { st_event($pdo, $personId, (int)$p['bill_id'], 'util_none', 'utility bill message not approved yet'); return; }
+    [$num, $own] = st_wa_number_for($pdo, $t); if (!$num) return;
+    $key = wa_key((string)$p['phone']); if (strlen($key) !== 10) return;
+    $name = trim((string)$p['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($name);
+    $vars = st_wa_vars($t, $first, (string)$p['bill_no'], (float)$p['total'], (string)$p['token']);
+    $r = wa_tpl_send_components($pdo, $t, $vars, (string)$num['phone_id'], ['url_suffix' => (string)$p['token']]);
+    st_event($pdo, $personId, (int)$p['bill_id'], 'util_retry', 'utility bill message');
+    if (empty($r['ok'])) return;
+    $pl = ['messaging_product' => 'whatsapp', 'to' => '91' . $key, 'type' => 'template', 'template' => ['name' => $t['name'], 'language' => ['code' => $t['language']]]]; if (!empty($r['components'])) $pl['template']['components'] = $r['components'];
+    [$code, $d] = wa_api('POST', '/' . $num['phone_id'] . '/messages', $pl); $wamid = (string)($d['messages'][0]['id'] ?? ''); if ($code < 200 || $code >= 300 || $wamid === '') return;
+    try { $shown = function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vars) : (string)$p['bill_no']; st_wa_log_out($pdo, $own, $wamid, $key, (int)$num['id'], $shown); } catch (Throwable $e) { }
+    st_event($pdo, $personId, (int)$p['bill_id'], 'sent', 'auto WhatsApp (utility)');
+}
 /** One bill → one customer, as a template message from the shop's own WhatsApp number. Returns [ok, note]. */
 function st_wa_send_one(PDO $pdo, array $p, string $billNo, float $total, array $cs): array
 {
     $phone = (string)$p['phone']; $key = wa_key($phone); if ($key === '' || strlen($key) !== 10) return [false, 'not an Indian mobile number'];
     $back = !empty($p['returning_c']) && !empty($cs['skip_returning']);
-    $t = st_wa_tpl($pdo, $back ? 'tmph_store_bill_back' : 'tmph_store_bill'); if (!$t) return [false, 'template not approved yet'];
-    [$num, $own, $why] = st_wa_number_for($pdo, $t);
-    if (!$num) return [false, $why];
+    // the first message that can really go out of the Store number: the "welcome back" ones first for a returning customer, and when none of them is approved on the Store number yet, the new-customer message, so the bill always goes
+    $t = null; $num = null; $own = false; $why = 'template not approved yet'; $r = null; $vars = [];
+    $name = trim((string)$p['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($name);
+    for ($round = 0; $round < 2 && !$t; $round++) {
+        if ($round === 1) { $sw = st_store_waba($pdo); if ($sw === '' || (int)setting_get($pdo, 'st_wa_tsync_at', '0') > time() - 600) break; setting_set($pdo, 'st_wa_tsync_at', (string)time()); st_wa_tpl_sync($pdo, $sw); }      // nothing usable: Meta may have approved it without telling HRMS - ask Meta once (at most every 10 minutes) and try again
+        foreach (array_values(array_unique(array_merge(st_wa_order_latest($pdo, $back), st_wa_order_names($back), $back ? array_merge(st_wa_order_latest($pdo, false), st_wa_order_names(false)) : []))) as $nm) {
+            $t0 = st_wa_tpl($pdo, $nm); if (!$t0) continue; [$n0, $o0, $w0] = st_wa_number_for($pdo, $t0); if (!$n0) { $why = $w0; continue; }
+            $v0 = st_wa_vars($t0, $first, $billNo, $total, (string)$p['token']); $r0 = wa_tpl_send_components($pdo, $t0, $v0, (string)$n0['phone_id'], ['url_suffix' => (string)$p['token']]);
+            if (empty($r0['ok'])) { $why = $nm . ': ' . (string)($r0['error'] ?? 'could not build the message'); continue; }      // e.g. a photo message with no photo chosen: the next approved one is used
+            $t = $t0; $num = $n0; $own = $o0; $r = $r0; $vars = $v0; break;
+        }
+    }
+    if (!$t || !$num) return [false, $why];
     $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
     if ($c && (int)($c['optout'] ?? 0) === 1) return [false, 'customer opted out of WhatsApp'];
     if ($own) { try { $q = $pdo->prepare("SELECT optout FROM st_wa_chat WHERE phone = ?"); $q->execute([$key]); if ((int)$q->fetchColumn() === 1) return [false, 'customer asked the store to stop']; } catch (Throwable $e) { } }
     if (!$c && !$own) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$key, '91' . $key, mb_substr((string)$p['name'], 0, 120), date('Y-m-d H:i:s')]); }
-    $name = trim((string)$p['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($name);
-    $vars = [$first, $billNo, number_format($total), st_bill_link((string)$p['token'])];
-    $r = wa_tpl_send_components($pdo, $t, $vars, (string)$num['phone_id'], ['url_suffix' => (string)$p['token']]);
-    if (empty($r['ok'])) return [false, (string)($r['error'] ?? 'could not build the message')];
     $pl = ['messaging_product' => 'whatsapp', 'to' => '91' . $key, 'type' => 'template', 'template' => ['name' => $t['name'], 'language' => ['code' => $t['language']]]];
     if (!empty($r['components'])) $pl['template']['components'] = $r['components'];
     [$code, $d] = wa_api('POST', '/' . $num['phone_id'] . '/messages', $pl); $wamid = (string)($d['messages'][0]['id'] ?? '');
@@ -906,12 +1108,16 @@ function st_wa_auto(PDO $pdo, int $billId, string $billNo, float $total, array $
         $q = $pdo->prepare("SELECT person_id, name, phone, token, returning_c FROM st_bill_people WHERE bill_id = ? AND declined = 0 AND phone <> '' ORDER BY person_no"); $q->execute([$billId]);
         $people = $q->fetchAll(); if (!$people) return $notes;
         // the first bill ever (or after a failed try): make the templates and send them to Meta, at most once an hour
-        $need = !st_wa_tpl($pdo, 'tmph_store_bill') || !st_wa_tpl($pdo, 'tmph_store_bill_back');
+        $have = false; foreach (st_wa_order_names(false) as $nm) if (st_wa_tpl($pdo, $nm)) { $have = true; break; }      // the owner's own approved message is enough: do not make the built-in ones at Meta again
+        $need = !$have && (!st_wa_tpl($pdo, 'tmph_store_bill') || !st_wa_tpl($pdo, 'tmph_store_bill_back'));
         if ($need && (int)setting_get($pdo, 'st_wa_seed_at', '0') < time() - 3600) { setting_set($pdo, 'st_wa_seed_at', (string)time()); st_wa_seed($pdo); }
         foreach ($people as $p) {
             try { [$ok, $why] = st_wa_send_one($pdo, $p, $billNo, $total, $cs); } catch (Throwable $e) { $ok = false; $why = mb_substr($e->getMessage(), 0, 120); }
             if ($ok) st_event($pdo, (int)$p['person_id'], $billId, 'sent', 'auto WhatsApp');
-            elseif (function_exists('wa_log')) { try { wa_log($pdo, 'store', false, $billNo . ' · ' . $p['phone'] . ' · ' . mb_substr($why, 0, 150)); } catch (Throwable $e) { } }
+            else {
+                try { st_event($pdo, (int)$p['person_id'], $billId, 'auto_failed', mb_substr((string)$why, 0, 78)); } catch (Throwable $e) { }      // why the automatic message did not go: the billing list shows it
+                if (function_exists('wa_log')) { try { wa_log($pdo, 'store', false, $billNo . ' · ' . $p['phone'] . ' · ' . mb_substr($why, 0, 150)); } catch (Throwable $e) { } }
+            }
             $notes[(int)$p['person_id']] = $ok ? 'sent' : $why;
         }
     } catch (Throwable $e) { error_log('st_wa_auto: ' . $e->getMessage()); }
@@ -923,14 +1129,17 @@ function st_people_status(PDO $pdo, array $billIds): array
 {
     if (!$billIds) return [];
     $in = implode(',', array_fill(0, count($billIds), '?'));
-    $st = $pdo->prepare("SELECT p.person_id, p.bill_id, p.person_no, p.name, p.phone, p.token, p.declined, p.reason, p.returning_c, p.visit_no,
+    $st = $pdo->prepare("SELECT p.person_id, p.bill_id, p.person_no, p.name, p.phone, p.token, p.declined, p.reason, p.returning_c, p.visit_no, p.created_at,
             MIN(CASE WHEN e.kind = 'sent' THEN e.at END) sent_at, MIN(CASE WHEN e.kind = 'opened' THEN e.at END) opened_at, MIN(CASE WHEN e.kind = 'contact' THEN e.at END) contact_at,
             MIN(CASE WHEN e.kind = 'community' THEN e.at END) community_at, MIN(CASE WHEN e.kind = 'review' THEN e.at END) review_at
         FROM st_bill_people p LEFT JOIN st_bill_events e ON e.person_id = p.person_id WHERE p.bill_id IN ($in) GROUP BY p.person_id ORDER BY p.bill_id, p.person_no");
     $st->execute(array_values($billIds));
-    $out = [];
-    foreach ($st->fetchAll() as $r) $out[(int)$r['bill_id']][] = ['person_id' => (int)$r['person_id'], 'no' => (int)$r['person_no'], 'name' => $r['name'], 'phone' => $r['phone'], 'declined' => (int)$r['declined'], 'reason' => $r['reason'], 'returning' => (int)$r['returning_c'], 'visit_no' => (int)$r['visit_no'],
-        'sent_at' => $r['sent_at'], 'opened_at' => $r['opened_at'], 'contact_at' => $r['contact_at'], 'community_at' => $r['community_at'], 'review_at' => $r['review_at'], 'link' => st_bill_link((string)$r['token'])];
+    $out = []; $rowsP = $st->fetchAll();
+    $why = []; try { $q = $pdo->prepare("SELECT person_id, who FROM st_bill_events WHERE kind = 'auto_failed' AND bill_id IN ($in) ORDER BY id"); $q->execute(array_values($billIds)); foreach ($q->fetchAll() as $x) $why[(int)$x['person_id']] = (string)$x['who']; } catch (Throwable $e) { }
+    $ws = []; try { $mq = $pdo->prepare("SELECT status, err FROM st_wa_msg WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND ts >= ? ORDER BY id DESC LIMIT 1");
+        foreach ($rowsP as $r) { $ph = substr(preg_replace('/\D/', '', (string)$r['phone']), -10); if (strlen($ph) !== 10 || (int)$r['declined']) continue; $mq->execute([$ph, date('Y-m-d H:i:s', strtotime((string)$r['created_at'] ?: 'now') - 120)]); $m = $mq->fetch(); if ($m) $ws[(int)$r['person_id']] = $m; } } catch (Throwable $e) { }      // what WhatsApp said about the message sent from the Store number (sent / delivered / read / failed + the reason)
+    foreach ($rowsP as $r) $out[(int)$r['bill_id']][] = ['person_id' => (int)$r['person_id'], 'no' => (int)$r['person_no'], 'name' => $r['name'], 'phone' => $r['phone'], 'declined' => (int)$r['declined'], 'reason' => $r['reason'], 'returning' => (int)$r['returning_c'], 'visit_no' => (int)$r['visit_no'],
+        'sent_at' => $r['sent_at'], 'opened_at' => $r['opened_at'], 'contact_at' => $r['contact_at'], 'community_at' => $r['community_at'], 'review_at' => $r['review_at'], 'link' => st_bill_link((string)$r['token']), 'wa_status' => (string)($ws[(int)$r['person_id']]['status'] ?? ''), 'wa_err' => (string)($ws[(int)$r['person_id']]['err'] ?? ''), 'auto_err' => (string)($why[(int)$r['person_id']] ?? '')];
     return $out;
 }
 
@@ -1528,7 +1737,7 @@ function st_bday_send(PDO $pdo, array $v): array
     try {
         if (!st_wa_load() || !wa_tpl_tables($pdo)) return $note(false, 'WhatsApp is not available on this server', 'pending');
         $key = wa_key((string)$v['phone']); if ($key === '' || strlen($key) !== 10) return $note(false, 'not an Indian mobile number', 'failed');
-        $t = st_wa_tpl($pdo, 'tmph_store_bday'); if (!$t) return $note(false, 'birthday template not approved yet', 'pending');
+        $t = st_wa_tpl($pdo, 'tmph_store_bday_v2') ?: st_wa_tpl($pdo, 'tmph_store_bday'); if (!$t) return $note(false, 'birthday template not approved yet', 'pending');
         [$num, $own, $why] = st_wa_number_for($pdo, $t);
         if (!$num) return $note(false, $why, 'pending');
         $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
@@ -1597,6 +1806,19 @@ function st_bday_public(array $v): array
         'valid_from' => (string)$v['valid_from'], 'valid_to' => (string)$v['valid_to'], 'status' => (string)$v['status'], 'wa_status' => (string)$v['wa_status'], 'wa_note' => (string)$v['wa_note'], 'wa_at' => $v['wa_at'], 'redeemed_at' => $v['redeemed_at']];
 }
 /** Once a day by itself (after 9 AM), like the daily sync: the first request claims the day and does the work after its own answer has gone out. */
+/** Store campaigns: when the next sending round may run (a small file, so the check on every request costs nothing). */
+function st_camp_next(int $sec): void { @file_put_contents(sys_get_temp_dir() . '/hrms_st_camp_next', (string)(time() + $sec)); }
+/** Called on every HRMS request: when a Store campaign round is due, it runs AFTER the answer has gone (the page that made the request does not wait). */
+function st_camp_kick(PDO $pdo): void
+{
+    $f = sys_get_temp_dir() . '/hrms_st_camp_next'; $nx = is_file($f) ? (int)@file_get_contents($f) : 0; if ($nx > time()) return;
+    if (!is_file(__DIR__ . '/store_wa_camp.php')) return; @file_put_contents($f, (string)(time() + 20));      // no second round starts while this one runs
+    register_shutdown_function(function () use ($pdo) {
+        if (function_exists('hrms_release')) hrms_release(); elseif (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
+        @ignore_user_abort(true); @set_time_limit(60);
+        try { require_once __DIR__ . '/store_wa_camp.php'; swc_tick($pdo); } catch (Throwable $e) { error_log('st_camp_kick: ' . $e->getMessage()); st_camp_next(60); }
+    });
+}
 function st_bday_daily(PDO $pdo): void
 {
     $day = sys_get_temp_dir() . '/hrms_st_bday_day'; $try = sys_get_temp_dir() . '/hrms_st_bday_try'; $today = date('Y-m-d');
@@ -1710,7 +1932,8 @@ if (!function_exists('budget_store_calc')) {
         $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0; $pool = array_flip(st_pool_ids($pdo));
         $flashList = []; try { if (function_exists('cm_is_live') && !cm_is_live($pdo) && function_exists('flash_offer_list_get')) $flashList = flash_offer_list_get($pdo); } catch (Throwable $e) { }     // a Flash Offer only counts while the old engine pays (the new engine has no flash offers)
         if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
-        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
+        $xc = function_exists('st_x_cols'); if ($xc) st_x_cols($pdo);      // 🧴 shower gel / attar pieces of a bill (store_pos.php)
+        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total" . ($xc ? ", b.gel_pcs, b.attar_pcs, b.x_all, b.x_gel_amt, b.x_attar_amt" : '') . ", e.employee_id AS real_id
             FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
         $q->execute([$from, $to]);
         $all = $q->fetchAll(); $newFrom = st_newpos_from($pdo);
@@ -1727,9 +1950,11 @@ if (!function_exists('budget_store_calc')) {
             foreach ($idx as $i) {
                 $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
                 $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
-                $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
-                $fl = (!$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
-                if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
+                $xg = (int)($b['gel_pcs'] ?? 0); $xa = (int)($b['attar_pcs'] ?? 0); $hasX = ($xg > 0 || $xa > 0) && function_exists('st_x_com');
+                $of = (!$hasX && $ml) ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
+                $fl = (!$hasX && !$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
+                if ($hasX) { [$pct, $rule, $com] = st_x_com($pdo, $ch, $ml, $xg, $xa, $gross, !empty($b['x_all']), (float)($b['x_gel_amt'] ?? 0), (float)($b['x_attar_amt'] ?? 0)); if ($pct === null) $unpriced++; }
+                elseif ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
                 elseif ($fl !== null) { $pct = (float)$fl['pct']; $rule = 'flash offer'; $com = $gross * $pct / 100; }
                 elseif (!$ml) { $noMl++; $rule = 'no ML'; }
                 else {

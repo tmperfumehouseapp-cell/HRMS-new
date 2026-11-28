@@ -235,7 +235,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
         t.innerHTML = '<div class="m"><small>👥 Total customers</small><b>' + n(d.people) + '</b></div><div><small>Repeat (2+ orders)</small><b>' + n(d.repeat) + '</b></div><div><small>New in last 30 days</small><b>' + n(d.new30) + '</b></div><div><small>Store + Online</small><b>' + n(d.both) + '</b></div><div><small>With a risk flag</small><b>' + n(d.risk) + '</b></div>' + (d.spent != null ? '<div><small>Their total spend</small><b>₹' + n(d.spent) + '</b></div>' : '');
       } catch (e) { }
     })();
-    { const fb = document.createElement('div'); const sb = $(el, '#cxS'); sb.parentNode.insertBefore(fb, sb); funnelBox(fb, false); summary(sb); }   // the funnel is new; the old “at a glance” card stays
+    { const fb = document.createElement('div'); const sb = $(el, '#cxS'); sb.parentNode.insertBefore(fb, sb); funnelBox(fb, false); summary(sb); const nd = document.createElement('div'); sb.parentNode.insertBefore(nd, sb.nextSibling); newDays(nd); }   // 📅 new customers day by day, under the at-a-glance card   // the funnel is new; the old “at a glance” card stays
     $(el, '#cxAdd').onclick = () => opts.addCustomers(() => { loadMeta(); load(); }, () => ctx.go('campaigns'));
     $(el, '#cxExp').onclick = function () { exportCsv({ all: 1, cf: cfOut(), q: S.q, except: [] }, S.total, this); };
     // ---------------------------------------------------------------------------------------------------------- filters (left)
@@ -571,6 +571,41 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     if (SUMD) paint(SUMD); else box.innerHTML = '<div class="wp-cd" style="padding:8px 9px;margin:0 0 8px"><span class="wp-hint">Counting customers…</span></div>';
     if (SUMD && Date.now() - SUMT < 300000) return;
     api.get('wa.cust_summary').then((d) => { SUMD = d; SUMT = Date.now(); paint(d); }).catch(() => { if (!SUMD && box.isConnected) box.innerHTML = ''; });
+  }
+  // 📅 New customers day by day (wa.cust_newdays): Last 7 days / Last 30 days / Custom dates; each customer once, on the day they first came, under ONE place:
+  //    💬 Query (Meta ad) · 👥 Community · 📄 CSV / Excel (imported numbers, also the ones who first wrote by replying to a campaign) · ➕ Other (wrote to us directly, added by hand)
+  const ND = { mode: 7, from: '', to: '' };
+  function newDays(box) {
+    if (!box) return;
+    const FN = (n) => Number(n || 0).toLocaleString('en-IN'), iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const COLS = [['query', '💬 Query (Meta ad)', '#2563eb', 'rgba(37,99,235,.12)'], ['community', '👥 Community', '#059669', 'rgba(16,185,129,.13)'], ['csv', '📄 CSV / Excel', '#d97706', 'rgba(245,158,11,.15)'], ['other', '➕ Other', '#6b7280', 'rgba(128,128,128,.12)']];
+    const range = () => { const t = new Date(); if (ND.mode === 'c' && ND.from && ND.to) return [ND.from, ND.to]; const f = new Date(t); f.setDate(f.getDate() - ((ND.mode === 30 ? 30 : 7) - 1)); return [iso(f), iso(t)]; };
+    const dayLab = (k, today) => { const d = new Date(k + 'T00:00:00'), y = new Date(today + 'T00:00:00'); y.setDate(y.getDate() - 1); const nice = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }); return k === today ? `<b>Today</b> <small style="opacity:.6">${nice}</small>` : (k === iso(y) ? `<b>Yesterday</b> <small style="opacity:.6">${nice}</small>` : nice); };
+    const chip = (on, a, l) => `<button type="button" ${a} style="font:inherit;font-size:12px;font-weight:800;border-radius:99px;padding:4px 11px;cursor:pointer;border:1px solid ${on ? '#111827' : 'rgba(128,128,128,.4)'};background:${on ? '#111827' : 'transparent'};color:${on ? '#fff' : 'inherit'}">${l}</button>`;
+    const head = () => { const [f, t] = range(); return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b style="font-size:12.5px">📅 New customers — day by day</b><div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">${chip(ND.mode === 7, 'data-nm="7"', 'Last 7 days')}${chip(ND.mode === 30, 'data-nm="30"', 'Last 30 days')}${chip(ND.mode === 'c', 'data-nm="c"', 'Custom')}${ND.mode === 'c' ? `<input type="date" id="ndF" value="${f}" style="font:inherit;font-size:12px;border:1px solid rgba(128,128,128,.4);border-radius:8px;padding:3px 6px;background:transparent;color:inherit"><span style="font-size:12px;opacity:.6">to</span><input type="date" id="ndT" value="${t}" style="font:inherit;font-size:12px;border:1px solid rgba(128,128,128,.4);border-radius:8px;padding:3px 6px;background:transparent;color:inherit"><button type="button" id="ndGo" style="font:inherit;font-size:12px;font-weight:800;border:0;border-radius:99px;padding:4px 11px;background:#111827;color:#fff;cursor:pointer">Show</button>` : ''}</div></div>`; };
+    const wrap = (inner) => `<div class="wp-cd" style="padding:8px 9px;margin:0 0 8px">${head()}${inner}</div>`;
+    const bind = () => {
+      box.querySelectorAll('[data-nm]').forEach((b) => { b.onclick = () => { const v = b.dataset.nm; ND.mode = v === 'c' ? 'c' : +v; if (ND.mode === 'c' && !ND.from) { const [f, t] = range(); ND.from = f; ND.to = t; } if (ND.mode !== 'c') load(); else paint(null); }; });
+      const go = box.querySelector('#ndGo'); if (go) go.onclick = () => { const f = box.querySelector('#ndF').value, t = box.querySelector('#ndT').value; if (!f || !t) return; ND.from = f <= t ? f : t; ND.to = f <= t ? t : f; load(); };
+    };
+    let last = null;
+    const paint = (d) => {
+      if (!box.isConnected) return; if (d) last = d; d = last;
+      if (!d) { box.innerHTML = wrap('<span class="wp-hint">Counting new customers…</span>'); bind(); return; }
+      if (d.error) { box.innerHTML = wrap(`<span class="wp-hint" style="color:#b91c1c">${d.error}</span>`); bind(); return; }
+      const T = { all: 0, query: 0, community: 0, csv: 0, other: 0 }; d.days.forEach((x) => Object.keys(T).forEach((k) => { T[k] += x[k] || 0; })); const nd = d.days.length || 1, pc = (v) => (T.all ? Math.round(100 * v / T.all) : 0) + '%';
+      const tile = (l, v, sub, col, bg) => `<div style="background:${bg};border-radius:9px;padding:5px 8px;min-width:0"><small style="display:block;font-size:10.5px;color:${col};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l}</small><b style="font-size:15px;color:${col}">${FN(v)}</b><i style="display:block;font-size:10px;opacity:.65;font-style:normal">${sub}</i></div>`;
+      const tiles = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:5px;margin-bottom:8px">${tile('All new · ' + nd + ' day' + (nd === 1 ? '' : 's'), T.all, 'about ' + FN(Math.round(T.all / nd)) + ' a day', 'inherit', 'rgba(128,128,128,.1)')}${COLS.map(([k, l, c, bg]) => tile(l, T[k], pc(T[k]), c, bg)).join('')}</div>`;
+      const th = (l, left) => `<th style="font-size:10.5px;font-weight:800;opacity:.7;text-align:${left ? 'left' : 'right'};padding:4px 6px;border-bottom:1px solid rgba(128,128,128,.25);white-space:nowrap">${l}</th>`;
+      const td = (v, col, b) => `<td style="text-align:right;padding:5px 6px;border-bottom:1px solid rgba(128,128,128,.12);${col ? 'color:' + col + ';' : ''}${b ? 'font-weight:800;' : 'font-weight:600;'}">${FN(v)}</td>`;
+      const bar = (x) => x.all ? `<div style="display:flex;height:7px;border-radius:4px;overflow:hidden;background:rgba(128,128,128,.15);min-width:70px">${COLS.map(([k, , c]) => x[k] ? `<i style="display:block;width:${(100 * x[k] / x.all).toFixed(1)}%;background:${c}"></i>` : '').join('')}</div>` : '';
+      const rows = d.days.map((x) => `<tr><td style="padding:5px 6px;border-bottom:1px solid rgba(128,128,128,.12);white-space:nowrap">${dayLab(x.day, d.today)}</td>${td(x.all, '', true)}${COLS.map(([k, , c]) => td(x[k], c)).join('')}<td style="padding:5px 6px;border-bottom:1px solid rgba(128,128,128,.12);width:22%">${bar(x)}</td></tr>`).join('');
+      const tot = `<tr style="background:rgba(128,128,128,.07)"><td style="padding:6px;font-weight:800">Total</td>${td(T.all, '', true)}${COLS.map(([k, , c]) => td(T[k], c, true)).join('')}<td></td></tr>`;
+      box.innerHTML = wrap(tiles + `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr>${th('Date', true)}${th('All new')}${COLS.map(([, l]) => th(l)).join('')}${th('Share', true)}</tr>${rows}${tot}</table></div><div style="font-size:10.5px;opacity:.65;margin-top:6px">Each customer is counted once, on the day they first came, under one place. CSV / Excel = numbers from your files: Excel import, Campaign Planner and campaign files (also the ones who first wrote by replying to a campaign). Other = wrote to us directly (QR, store, word of mouth) or added by hand. Counted ${String(d.at || '').slice(11, 16)}.</div>`);
+      bind();
+    };
+    const load = () => { const [f, t] = range(); last = null; paint(null); api.get('wa.cust_newdays', { from: f, to: t }).then((d) => paint(d)).catch((e) => paint({ error: e.message || 'Could not count.' })); };
+    load();
   }
   window.WaCust = { mount, panel, summary, funnel: funnelPopup, blank: BLANK };
 })();

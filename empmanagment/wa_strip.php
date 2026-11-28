@@ -121,7 +121,7 @@ if (!function_exists('wa_strip_money')) {
      *  re-sent = for Module A the utility follow-ups (Module B) that went today to people whose marketing failed; delivered = of those, the ones Meta confirmed. Kept 10 minutes. */
     function wa_strip_money(PDO $pdo, string $mod): array
     {
-        $ck = 'wa_strip_money4_' . preg_replace('/\W/', '', $mod); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
+        $ck = 'wa_strip_money5_' . preg_replace('/\W/', '', $mod); $c = json_decode((string)setting_get($pdo, $ck, ''), true);
         if (is_array($c) && !empty($c['t']) && time() - (int)$c['t'] < 600) return $c;
         try { $pdo->exec("SET SESSION MAX_EXECUTION_TIME = 9000"); } catch (Throwable $e) { }
         $t0 = wa_strip_t0($pdo); $P = ['MARKETING' => 1.09, 'UTILITY' => 0.15];
@@ -197,7 +197,9 @@ if (!function_exists('wa_strip_money')) {
                 if ($mod === 'after') { $capL = max(0, (int)$g('wa_aft_cap', '0') - $c1($one("SELECT COUNT(*) FROM wa_aft_plan WHERE id > (SELECT MAX(id) - 600000 FROM wa_aft_plan) AND status = 'sent' AND sent_at >= ?", [$t0]))); if ((int)$g('wa_aft_cap', '0') > 0) { $more = min($more, $capL); $how .= ' · limit left ' . number_format($capL); } } }
             $est = ['sent' => $sentE, 'more' => max(0, (int)$more), 'total' => $sentE + max(0, (int)$more), 'how' => $how];
         } catch (Throwable $e) { $est = null; }
-        $out = ['t' => time(), 'modules' => [['key' => $mod, 'orders' => $orders, 'rev' => round($rev), 'orders_seen' => $seen, 'spent' => $spent, 'bill' => $bill, 'est' => $est, 'failed_n' => $failed, 'resent' => $resent, 'resent_ok' => $resentOk, 'delivery' => $dl]]];
+        /* owner 27 Nov 2026: the orders that came after the Module A RESCUE utility are kept apart (ledger module 'A-rescue'), shown next to Module A's own orders */
+        $rescO = 0; $rescR = 0.0; if ($mod === 'moda') { try { $rr = $one("SELECT COUNT(*), COALESCE(SUM(total), 0) FROM wa_order_attr WHERE order_at >= ? AND module = 'A-rescue'", [$t0]); if ($rr) { $rescO = (int)$rr[0]; $rescR = (float)$rr[1]; } } catch (Throwable $e) { } }
+        $out = ['t' => time(), 'modules' => [['key' => $mod, 'orders' => $orders, 'rev' => round($rev), 'resc_orders' => $rescO, 'resc_rev' => round($rescR), 'orders_seen' => $seen, 'spent' => $spent, 'bill' => $bill, 'est' => $est, 'failed_n' => $failed, 'resent' => $resent, 'resent_ok' => $resentOk, 'delivery' => $dl]]];
         try { setting_set($pdo, $ck, json_encode($out)); } catch (Throwable $e) { }
         return $out;
     }

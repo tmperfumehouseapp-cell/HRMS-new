@@ -9,6 +9,7 @@
   const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
   const CM = { rules: null, code: { on: false, rules: [], shares: {} }, target: {}, status: {}, idx: {}, ord: [], manual: {}, slab: null, flash: [], bonus: [] };
   const STORE_TO_GROUP = { tmperfumehouse: 'tmph' };
+  const isWeb = (o) => (o.store_key === 'manual' || o.source === 'manual') && (o.channel === 'TM Store' || !!o.web) && Number(o.employee_id || 0) >= 0 && !!o.house;   // a website (TM Store) order that is in the HRMS for a salesperson
   const isPre = (fs) => { fs = String(fs || '').toLowerCase(); return fs.indexOf('cod') === -1 && fs.indexOf('pending') === -1; };
   const DEF_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
   function calcCommission(achieved, target, ticket, prepaidPct) {
@@ -78,12 +79,12 @@
     CM.idx = {}; CM.ord = [];
     (orders || []).forEach((o) => {
       if (o.cancelled) return;                                                    // cancelled orders earn nothing
-      if (!STORE_TO_GROUP[o.store_key] && !(o.allocated && o.house)) return;       // only the house stores (+ MySales orders moved to a panel)
+      if (!STORE_TO_GROUP[o.store_key] && !(o.allocated && o.house) && !isWeb(o)) return;       // only the house stores (+ MySales orders moved to a panel) + 🛍 the website orders given to me (since 24 Nov the orders come from the website: without this the sales and the order count of every day stayed 0 while the commission was paid)
       const day = o.biz_date || bizDayOf(o.created_at, dayStart);
       if (day < from || day > to) return;
       const rk = '';
       const amt = Number(o.total || 0), pre = isPre(o.financial_status);
-      const x = { key: (o.store_key || o.source || '') + ':' + o.id, house: o.house || STORE_TO_GROUP[o.store_key] || '', code: o.code || '', amt, pre, ml: o.ml == null ? null : Number(o.ml), x_amt: Number(o.x_amt) || 0, x_com: Number(o.x_com) || 0, x_note: o.x_note || '', x_all: !!o.x_all, x_pct: o.x_pct == null ? null : Number(o.x_pct), day, rk, created: o.created_at, name: String(o.name || o.order_name || '') };
+      const x = { key: (o.store_key || o.source || '') + ':' + (o.id != null ? o.id : (o.manual_order_id || '')), house: o.house || STORE_TO_GROUP[o.store_key] || '', code: o.code || '', amt, pre, ml: o.ml == null ? null : Number(o.ml), x_amt: Number(o.x_amt) || 0, x_com: Number(o.x_com) || 0, x_note: o.x_note || '', x_all: !!o.x_all, x_pct: o.x_pct == null ? null : Number(o.x_pct), day, rk, created: o.created_at, name: String((isWeb(o) && o.mp_no) || o.name || o.order_name || '') };
       const p = calcPrice(x); x.eff = p.eff; x.flat = p.flat;
       CM.ord.push(x);
       const cell = ((CM.idx[rk] = CM.idx[rk] || {})[day] = CM.idx[rk][day] || { ach: 0, n: 0, pre: 0, eff: 0, flat: 0, orders: [] });
@@ -174,7 +175,7 @@
     const by = {};
     (orders || []).forEach((o) => {
       if (o.cancelled) return;
-      if (!STORE_TO_GROUP[o.store_key] && !(o.allocated && o.house)) return;
+      if (!STORE_TO_GROUP[o.store_key] && !(o.allocated && o.house) && !isWeb(o)) return;
       const day = o.biz_date || bizDayOf(o.created_at, dayStart);
       if (day < from || day > to) return;
       const x = by[day] = by[day] || { n: 0, ach: 0 };

@@ -68,7 +68,7 @@
         <div class="mini"><div><b id="stockProducts">–</b><span>perfumes</span></div><div><b id="stockTotal">–</b><span>for sale</span></div></div>
       </div><div class="sx-szrow" id="szRow"></div></div>
       <div class="steps" id="steps"><div class="st on" data-s="gen"><i>1</i><span>Make &amp; print<small>choose sizes, make barcodes, print labels</small></span></div><div class="st" data-s="stick"><i>2</i><span>Stick<small>label on each bottle</small></span></div><div class="st" data-s="scan"><i>3</i><span>Scan into inventory<small>scan each bottle: it joins stock</small></span></div></div>
-      <div class="sx-tabs" id="tabs"><button data-t="gen" class="on"><span id="ti1"></span>1 · Make &amp; print</button><button data-t="scan"><span id="ti2"></span>3 · Scan into inventory</button><button data-t="stock"><span id="ti3"></span>Stock</button><button data-t="plan">Order planner</button><button data-t="chain">Chains</button><button data-t="move">↩ Returns &amp; supplier</button></div>
+      <div class="sx-tabs" id="tabs"><button data-t="gen" class="on"><span id="ti1"></span>1 · Make &amp; print</button><button data-t="scan"><span id="ti2"></span>3 · Scan into inventory</button><button data-t="stock"><span id="ti3"></span>Stock</button><button data-t="plan">Order planner</button><button data-t="chain">Chains</button><button data-t="xi">🧴 Shower gel &amp; Attar</button><button data-t="move">↩ Returns &amp; supplier</button></div>
 
       <!-- MAKE + PRINT (one step: after making, the labels are right there) -->
       <div class="pane on" id="p-gen">
@@ -100,6 +100,14 @@
           <div style="display:flex;align-items:baseline;gap:8px;margin-top:10px;flex-wrap:wrap"><span class="sx-big" id="scanCount">0</span><span class="sx-mut" id="scanWhat">scanned in this sitting</span>
             <span style="flex:1"></span><button class="sx-btn ghost" id="btnAuditReset" style="display:none">Start over</button><button class="sx-btn" id="btnAudit" style="display:none">Check</button></div>
           <div class="log" id="scanLog"></div><div id="auditRes" style="font-size:13px;margin-top:6px"></div></div>
+      </div>
+
+      <!-- SHOWER GEL / ATTAR: added by hand (name, gel or attar, photo). One barcode per piece; stock only after its label is scanned in (tab 3). Price = the shared price chart. -->
+      <div class="pane" id="p-xi">
+        <div class="sx-card" style="margin-bottom:14px"><div class="sx-h">Shower gel &amp; Attar <small class="sx-mut" style="font-weight:600">· taken by itself from Shopify (the same products as online)</small></div>
+          <div class="sx-mut" style="font-size:12.5px;margin-top:4px">Type how many, press <b>Make labels</b> (they print), stick one on each piece, then scan them in <b>3 · Scan into inventory</b>. At the counter scan the sticker: the price comes from the same chart as Budgeting → Commission.</div>
+          <input id="xiQ" class="sx-in" placeholder="Search" style="margin-top:8px;max-width:260px"><div id="xiMsg"></div></div>
+        <div id="xiList" class="sx-mut">Loading…</div>
       </div>
 
       <!-- CHAINS: added by hand (photo, MRP, price - no stock). One barcode per piece; a piece is stock only after its label is scanned in (tab 3). -->
@@ -208,6 +216,7 @@
     document.querySelectorAll('#steps .st').forEach((x) => x.classList.toggle('on', (b.dataset.t === 'scan' && x.dataset.s === 'scan') || (b.dataset.t !== 'scan' && x.dataset.s === 'gen')));
     if (b.dataset.t === 'scan') scanner.focus();
     if (b.dataset.t === 'chain' && (!chData || chDirty)) loadChains();
+    if (b.dataset.t === 'xi' && (!xiData || xiDirty)) loadXi();
     if (b.dataset.t === 'move') { loadMoves(); setTimeout(() => (mvMode === 'vendor' ? $('mvVen1') : $('mvOld')).focus(), 150); }
     if (b.dataset.t === 'plan' && !planBusy) runPlan();      // the planner reads the latest sales and stock every time it is opened (default 600)
     if (b.dataset.t === 'gen' && makeDirty) { makeDirty = false; renderProducts(); }           // scans changed the counts while this tab was hidden
@@ -371,6 +380,8 @@
     $('prodList').classList.toggle('showT', $('tstOn').checked);
     const card = (p) => { const b = BD[p.badge], sold = p.q30 ? `${p.q30} sold in 30 days` : (p.q90 ? 'slow lately' : 'no sales yet'),
       tip = `Sold ${p.q30} in 30 days, ${p.q90} in 90 (this store ${p.src.store} · old POS ${p.src.pos} · online ${p.src.online})`;
+      if (p.seg) { const k = key(p.product_id, 0, 'xpc'), v = plan[k] || 0;      // 🧴 shower gel / attar: one label per PIECE (no ml)
+        return `<div class="prod" title="${esc(tip)}"><div class="nm"><b title="${esc(cleanTitle(p.title))}">${esc(cleanTitle(p.title))}</b><span class="mt"><span class="sx-pill info">${p.seg === 'gel' ? 'Shower gel' : 'Attar'}</span>${b ? `<span class="sx-pill ${b[0]}">${p.badge === 'top' ? 'Top #' + p.rank : b[1]}</span>` : ''}<span>${sold}</span>${p.x_stock ? `<span class="sx-pill good">${p.x_stock} in stock</span>` : ''}${p.x_waiting ? `<span class="sx-pill warn">${p.x_waiting} to scan</span>` : ''}</span></div><div class="sz"><label class="z50${v ? ' on' : ''}"><span class="zc" data-d="1" role="button" tabindex="0" title="Tap to add one piece" aria-label="Add one piece"><b>1</b><i>pc</i></span><input type="number" min="0" max="200" inputmode="numeric" data-k="${k}" value="${v || ''}" placeholder="0"><button type="button" class="bdg" data-d="-1" aria-label="One less">${v || ''}</button></label></div></div>`; }
       return `<div class="prod" title="${esc(tip)}"><div class="nm"><b title="${esc(cleanTitle(p.title))}">${esc(cleanTitle(p.title))}</b><span class="mt">${b ? `<span class="sx-pill ${b[0]}">${p.badge === 'top' ? 'Top #' + p.rank : b[1]}</span>` : ''}<span>${sold}</span>${p.stock_sale ? `<span class="sx-pill good">${p.stock_sale} in stock</span>` : ''}</span></div><div class="sz">${inputs(p, 'sale')}</div><div class="sz t">${inputs(p, 'tester')}</div></div>`; };
     let html = '', last = '';
     list.forEach((p) => { const g = grpOf(p); if (!az && !q && g !== last) { last = g; html += `<div class="sx-grp"><b>${GRP.find((x) => x[0] === g)[1]}</b><span>${all.filter((x) => grpOf(x) === g).length}</span><i></i></div>`; } html += card(p); });
@@ -380,8 +391,8 @@
   }
   const planItems = () => Object.keys(plan).filter((k) => plan[k] > 0).map((k) => { const [pid, ml, kind] = k.split('|'); return { product_id: +pid, ml: +ml, kind, qty: plan[k] }; });
   function updatePlan() {
-    const it = planItems(), n = it.reduce((a, x) => a + x.qty, 0), ml = it.filter((x) => x.kind === 'sale').reduce((a, x) => a + x.qty * x.ml, 0);
-    $('planSum').textContent = n ? `${n} barcodes · ${ml} ml` : 'Nothing chosen'; $('btnMake').disabled = !n;
+    const it = planItems(), n = it.reduce((a, x) => a + x.qty, 0), ml = it.filter((x) => x.kind === 'sale').reduce((a, x) => a + x.qty * x.ml, 0), pc = it.filter((x) => x.kind === 'xpc').reduce((a, x) => a + x.qty, 0);
+    $('planSum').textContent = n ? `${n} barcodes · ${ml} ml${pc ? ' + ' + pc + ' shower gel / attar' : ''}` : 'Nothing chosen'; $('btnMake').disabled = !n;
   }
   $('prodList').addEventListener('input', (e) => { const k = e.target.dataset.k; if (!k) return; const v = Math.max(0, Math.min(200, parseInt(e.target.value, 10) || 0)); if (v) plan[k] = v; else delete plan[k]; const lb = e.target.closest('label'); if (lb) { lb.classList.toggle('on', v > 0); const bg = lb.querySelector('.bdg'); if (bg) bg.textContent = v; } updatePlan(); });
   $('prodList').addEventListener('click', (e) => {
@@ -429,7 +440,13 @@
     const it = planItems(), n = it.reduce((a, x) => a + x.qty, 0);
     if (!n || !confirm(`Make ${n} new barcodes?`)) return;
     $('btnMake').disabled = true;
-    try { const d = await api.post('st_inv.generate', { items: it }); it.forEach((x) => { const p = products.find((q) => q.product_id === x.product_id); if (p) p.waiting = (p.waiting || 0) + x.qty; }); plan = {}; onlyPlan = false; stockDirty = true; renderProducts(); note(d.message); openBatch(d.batch, d.bottles); window.scrollTo({ top: 0, behavior: 'smooth' }); $('btnMake').disabled = false; }
+    const xit = it.filter((x) => x.kind === 'xpc'), pit = it.filter((x) => x.kind !== 'xpc');
+    if (xit.length) {      // 🧴 shower gel / attar labels: made and printed right away
+      try { const d = await api.post('st_xi.make_many', { items: xit.map((x) => ({ product_id: x.product_id, qty: x.qty })) }); xit.forEach((x) => { const p = products.find((q) => q.product_id === x.product_id); if (p) p.x_waiting = (p.x_waiting || 0) + x.qty; delete plan[key(x.product_id, 0, 'xpc')]; }); note(d.message); await printXPieces(d.pieces); xiDirty = true; }
+      catch (e) { note(e.message, 1); updatePlan(); return; }
+      if (!pit.length) { onlyPlan = false; renderProducts(); $('btnMake').disabled = false; return; }
+    }
+    try { const d = await api.post('st_inv.generate', { items: pit }); it.forEach((x) => { const p = products.find((q) => q.product_id === x.product_id); if (p) p.waiting = (p.waiting || 0) + x.qty; }); plan = {}; onlyPlan = false; stockDirty = true; renderProducts(); note(d.message); openBatch(d.batch, d.bottles); window.scrollTo({ top: 0, behavior: 'smooth' }); $('btnMake').disabled = false; }
     catch (e) { note(e.message, 1); updatePlan(); }
   };
 
@@ -526,7 +543,7 @@
     if (!r) return true;                                  // the same code twice in one burst: the first one already answered
     if (r.ok) {
       scanned++; $('scanCount').textContent = scanned; $('scanMsg').innerHTML = `<div class="sx-msg ok">${sxi('ok')}<span>${esc(r.message)}</span></div>`;
-      const lg = $('scanLog'); lg.insertAdjacentHTML('afterbegin', `<div>${esc(code)} · ${esc(r.bottle.title)}${r.bottle.is_chain ? '' : ' ' + r.bottle.ml + ' ml'}${r.bottle.kind === 'tester' ? ' (tester)' : ''}</div>`); if (r.bottle.is_chain) chDirty = true; while (lg.children.length > 150) lg.lastElementChild.remove();
+      const lg = $('scanLog'); lg.insertAdjacentHTML('afterbegin', `<div>${esc(code)} · ${esc(r.bottle.title)}${r.bottle.is_chain ? '' : ' ' + r.bottle.ml + ' ml'}${r.bottle.kind === 'tester' ? ' (tester)' : ''}</div>`); if (r.bottle.is_chain) { chDirty = true; xiDirty = true; } while (lg.children.length > 150) lg.lastElementChild.remove();
       const p = products.find((q) => q.product_id === r.bottle.product_id);      // the Make list and the Stock board are updated here, nothing to refresh
       if (p) { if (r.bottle.kind === 'tester') p.stock_tester = (p.stock_tester || 0) + 1; else p.stock_sale = (p.stock_sale || 0) + 1; if (p.waiting > 0) p.waiting--; }
       makeDirty = true; stockDirty = true; return true;
@@ -861,6 +878,45 @@
       else if (ed) { const c = chData.chains.find((x) => x.chain_id === +ed.dataset.ed); if (!c) return; chEdit = c.chain_id; chPhotoData = ''; $('chName').value = c.name; $('chMrp').value = c.mrp || ''; $('chPrice').value = c.price; $('chPhotoBox').innerHTML = c.photo ? `<img src="${esc(c.photo)}" style="width:100%;height:100%;object-fit:cover">` : '+ photo'; $('chFormTitle').textContent = 'Change “' + c.name + '”'; $('chCancel').style.display = ''; chNote(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }
       else if (rm) { const c = chData.chains.find((x) => x.chain_id === +rm.dataset.rm); if (c && window.confirm('Remove “' + c.name + '” from the list? Old bills keep it.')) { await api.post('st_chain.remove', { chain_id: c.chain_id }); await loadChains(); } }
     } catch (err) { chNote(err.message, 1); await loadChains(); }
+  });
+  // ---- 🧴 shower gel / attar: the same steps as the chains (add, make labels, print, scan in)
+  let xiData = null, xiDirty = false;
+  const xiNote = (m, bad) => { $('xiMsg').innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}" style="margin-top:8px">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
+  const xiSegName = (g) => g === 'gel' ? 'Shower gel' : 'Attar';
+  $('xiQ').addEventListener('input', () => { if (xiData) renderXi(); });
+  async function loadXi() {
+    try { xiData = await api.get('st_xi.list'); xiDirty = false; renderXi(); } catch (e) { $('xiList').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function renderXi() {
+    const q = ($('xiQ').value || '').toLowerCase(), L = xiData.items.filter((x) => !q || x.name.toLowerCase().includes(q)), tot = (g) => L.filter((x) => x.seg === g).reduce((a, x) => a + x.in_stock, 0);
+    $('xiList').innerHTML = (L.length ? `<div style="font-size:13px;margin-bottom:8px">In stock: <b>${tot('gel')}</b> shower gel · <b>${tot('attar')}</b> attar</div>` : '') + (L.length ? L.map((c) => `<div class="sx-card" style="margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      ${c.photo ? `<img src="${esc(c.photo)}" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover">` : '<span style="width:64px;height:64px;border-radius:12px;background:var(--sx-line);display:inline-block"></span>'}
+      <div style="flex:1;min-width:170px"><span class="sx-pill">${xiSegName(c.seg)}</span> <b>${esc(c.name)}</b>
+        <div style="font-size:12.5px;margin-top:3px"><b>${c.in_stock}</b> in stock · ${c.waiting} label${c.waiting === 1 ? '' : 's'} waiting to be scanned · ${c.sold} sold</div></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input class="sx-in" type="number" min="1" max="300" value="1" data-xq="${c.item_id}" style="width:70px" aria-label="How many labels"><button class="sx-btn" data-xmk="${c.item_id}">Make labels</button>
+        ${c.waiting ? `<button class="sx-btn ghost" data-xpr="${c.item_id}">Print ${c.waiting} waiting</button>` : ''}</div></div>`).join('')
+      : 'No shower gel or attar found in the products synced from Shopify (titles with "shower gel" or "attar"). Sync products on the Make &amp; print tab.');
+  }
+  async function printXPieces(pieces) {      // labels of several shower gel / attar products in one print
+    if (!pieces || !pieces.length) return; const pa = $('printArea'); pa.innerHTML = '';
+    pieces.forEach((x) => { const short = cleanTitle(x.name).split(/\s+[-–—]\s+/)[0]; const n = chainLabelNode({ name: short, mrp: 0, price: 0 }, x.code); const t = n.querySelector('.nm div:nth-child(2)'); if (t) t.textContent = x.seg === 'gel' ? 'SHOWER GEL' : 'ATTAR'; const dt = n.querySelector('.dt'); if (dt) dt.textContent = 'TM Perfume House'; pa.appendChild(n); });
+    let st = $('pgStyle'); if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); } st.textContent = `@page{size:${label.w}mm ${label.h}mm;margin:0}`;
+    await new Promise((r) => setTimeout(r, 100)); window.print();
+    try { await api.post('st_xi.mark_printed', { codes: pieces.map((x) => x.code) }); } catch (e) { /* a note only */ }
+  }
+  async function printXi(it, pieces) {
+    if (!pieces.length) return; const pa = $('printArea'); pa.innerHTML = '';
+    pieces.forEach((x) => { const n = chainLabelNode({ name: it.name, mrp: 0, price: 0 }, x.code); const t = n.querySelector('.nm div:nth-child(2)'); if (t) t.textContent = it.seg === 'gel' ? 'SHOWER GEL' : 'ATTAR'; const dt = n.querySelector('.dt'); if (dt) dt.textContent = 'TM Perfume House'; pa.appendChild(n); });
+    let st = $('pgStyle'); if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); } st.textContent = `@page{size:${label.w}mm ${label.h}mm;margin:0}`;
+    await new Promise((r) => setTimeout(r, 100)); window.print();
+    try { await api.post('st_xi.mark_printed', { codes: pieces.map((x) => x.code) }); } catch (e) { /* a note only */ }
+  }
+  $('xiList').addEventListener('click', async (e) => {
+    const mk = e.target.closest('[data-xmk]'), pr = e.target.closest('[data-xpr]');
+    try {
+      if (mk) { const id = +mk.dataset.xmk, qty = +document.querySelector(`[data-xq="${id}"]`).value || 0; mk.disabled = true; const d = await api.post('st_xi.make', { item_id: id, qty }); xiNote(d.message + ' Scan them in “3 · Scan into inventory” once they are stuck on.'); await printXi(d.item, d.pieces); await loadXi(); }
+      else if (pr) { const d = await api.get('st_xi.pieces', { item_id: +pr.dataset.xpr }); await printXi(d.item, d.pieces); await loadXi(); }
+    } catch (err) { xiNote(err.message, 1); await loadXi(); }
   });
   $('ti1').innerHTML = sxi('print'); $('ti2').innerHTML = sxi('scan'); $('ti3').innerHTML = sxi('box');
   loadProducts(); loadLabel(); loadStock(true, true);          // the Stock tab loads itself the first time it is opened (4 heavy calls less on every page open)

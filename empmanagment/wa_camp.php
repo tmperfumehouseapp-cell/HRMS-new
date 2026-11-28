@@ -222,6 +222,29 @@ function wa_log_template_msg(PDO $pdo, string $wamid, string $key, int $numId, s
 {
     try { $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'template', ?, 'sent', ?, 0, ?)")->execute([$wamid, $key, $numId, $shown, $who, date('Y-m-d H:i:s')]); } catch (PDOException $e) { }
 }
+/** 📦 A parcel / order-tracking message (the tmph_cx_* / tmph_cxp_* family, or a utility message about the parcel, courier, tracking or AWB). */
+function wa_tpl_is_parcel(array $t): bool
+{
+    $nm = (string)($t['name'] ?? ''); if (preg_match('/^tmph_cxp?_/i', $nm)) return true;
+    return strtoupper((string)($t['category'] ?? '')) === 'UTILITY' && (bool)preg_match('/parcel|track|courier|shipment|awb|dispatch|पार्सल/iu', (string)($t['body'] ?? ''));
+}
+/** True when the customer has ever ordered: Shopify / WhatsApp-manual orders (wa_cust), website and manual orders (manual_orders), WhatsApp manual orders (wmo_order). Remembered per run. */
+function wa_cust_has_order(PDO $pdo, string $phone): bool
+{
+    static $m = []; $k = substr(preg_replace('/\D+/', '', $phone), -10); if ($k === '') return false; if (isset($m[$k])) return $m[$k]; if (count($m) > 5000) $m = [];
+    $one = function (string $sql) use ($pdo, $k) { try { $q = $pdo->prepare($sql); $q->execute([$k]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; } };
+    return $m[$k] = $one("SELECT 1 FROM wa_cust WHERE phone = ? AND n > 0 LIMIT 1") || $one("SELECT 1 FROM manual_orders WHERE phone = ? LIMIT 1") || $one("SELECT 1 FROM wmo_order WHERE phone = ? AND status = 'confirmed' LIMIT 1");
+}
+/** The ML-wise offer message to send on this number: the first of tmph_style_mlwise, ml_wise_v3, ml_wise_v2, ml_wise that Meta approved for the number's account. null = none. */
+function wa_mlwise_for(PDO $pdo, array $num): ?array
+{
+    static $c = []; $w = function_exists('wa_waba_of') ? wa_waba_of($num) : ''; if (array_key_exists($w, $c)) return $c[$w];
+    $c[$w] = null; try {
+        $q = $pdo->query("SELECT id, name FROM wa_templates WHERE name IN ('tmph_style_mlwise', 'ml_wise_v3', 'ml_wise_v2', 'ml_wise')"); $ids = []; foreach ($q->fetchAll() as $r) $ids[(string)$r['name']] = (int)$r['id'];
+        foreach (['tmph_style_mlwise', 'ml_wise_v3', 'ml_wise_v2', 'ml_wise'] as $nm) { if (empty($ids[$nm])) continue; $t = wa_camp_tpl($pdo, $ids[$nm]); if ($t && ($w === '' || in_array($w, (array)($t['ok_wabas'] ?? []), true))) { $c[$w] = $t; break; } }
+    } catch (Throwable $e) { }
+    return $c[$w];
+}
 /** One template to one customer (used by follow-ups). Returns [ok, wamid|error, errorCode]. */
 function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, string $who): array
 {
@@ -236,6 +259,15 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
     }
     if (in_array($who, ['bot', 'auto', 'flow', 'followup', 'recover', 'campaign'], true) && function_exists('wa_bot_paused') && ($__bp = wa_bot_paused($pdo, (string)$c['phone']))) return [false, 'Bot messages are paused for this customer until ' . date('g:i a', strtotime($__bp)) . '.', 0];   // ⏸ stopped by the salesperson
     if (in_array($who, ['flow', 'followup'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off until tomorrow night.', 0];
+    // 📦 owner (27 Nov 2026): a PARCEL / TRACKING message ("Aapka parcel kahan pahonch gaya?") goes only to a customer who has ORDERED. To anybody else an automatic module (Lineup, Cold, After-Order,
+    //    Module B / C, the rescue) sends the ML-WISE OFFER instead (tmph_style_mlwise, else ml_wise_v3 / v2 / ml_wise: marketing, approved on this number); none approved here = nothing goes. Switch off: wa_noorder_mlwise = 0.
+    if (in_array($who, ['followup', 'recover'], true) && wa_tpl_is_parcel($t) && (string)setting_get($pdo, 'wa_noorder_mlwise', '1') !== '0' && !wa_cust_has_order($pdo, (string)$c['phone'])) {
+        $alt = wa_mlwise_for($pdo, $num); if (!$alt) return [false, 'Parcel / tracking message not sent: this customer has no order, and no ML-wise offer message is approved on this number.', 0];
+        $co = (int)($c['camp_optout'] ?? -1); if ($co < 0) { try { $qq = $pdo->prepare("SELECT camp_optout FROM wa_contacts WHERE phone = ?"); $qq->execute([(string)$c['phone']]); $co = (int)$qq->fetchColumn(); } catch (Throwable $e0) { $co = 0; } }
+        if ($co === 1) return [false, 'Parcel / tracking message not sent: no order, and the customer asked to stop promotional messages (the ML-wise offer is promotional).', 0];
+        $fn = trim((string)preg_split('/\s+/u', trim((string)($c['name'] ?? '')))[0]); $fn = mb_strlen($fn) > 1 ? mb_convert_case($fn, MB_CASE_TITLE) : 'ji';
+        $t = $alt; $vars = (int)($alt['nvars'] ?? 0) > 0 ? [$fn] : [];
+    }
     $to = (string)($c['wa_id'] ?: '91' . $c['phone']);
     if (!in_array(strtoupper((string)($t['header_format'] ?? '')), ['', 'TEXT'], true)) {   // a photo / video / PDF on top needs its own parts
         [$okR, $rq] = wa_camp_request($pdo, $t, $num, $to, $vars, []); if (!$okR) return [false, (string)$rq, 0]; $req = $rq;
@@ -1390,7 +1422,7 @@ function wa_camp_ideal_cfg(PDO $pdo): array
 /** 🎯 Ideal vs actual for one business day: the cumulative spend / replies (queries typed Campaign) / Campaign orders at each checkpoint, a status, a plain-words analysis and the day-end projection. Remembered 3 minutes. */
 function wa_camp_ideal(PDO $pdo, string $day): array
 {
-    $ck = 'camp_ideal13_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
+    $ck = 'camp_ideal14_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
     $cfg = wa_camp_ideal_cfg($pdo); $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     // the ideal day runs 12 noon → 12 noon (setting camp_ideal_start, default 12:00) — not the 10 AM business day of the other boxes
@@ -1412,6 +1444,14 @@ function wa_camp_ideal(PDO $pdo, string $day): array
             foreach ($q->fetchAll() as $r) { $h = (string)$r['h']; if (!isset($H[$h])) continue; $H[$h]['dl'] += (int)$r['dl']; $dripDl += (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] += max(0, (int)$r['dl'] - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; }
         }
     } catch (Throwable $e) { error_log('camp_ideal drip: ' . $e->getMessage()); }
+    $bulkDl = 0;
+    try {   // 📨 owner (28 Nov 2026): the bulk sends from Chats → Select chats (wa_bulk_log) delivered in the same hour: added to Delivered and Spend too (they are paid messages like a campaign)
+        $q = $pdo->prepare("SELECT wamid FROM wa_bulk_log WHERE at >= ? AND at < ?"); $q->execute([date('Y-m-d H:i:s', $t0 - 7200), date('Y-m-d H:i:s', $t1 + 7200)]); $ids = $q->fetchAll(PDO::FETCH_COLUMN);
+        foreach (array_chunk($ids, 800) as $ch) {
+            $q = $pdo->prepare("SELECT DATE_FORMAT(ts, '%Y-%m-%d %H') h, COUNT(*) dl, SUM(bill_cat IN ('utility','authentication')) u, SUM(bill_cat = 'service') sv FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND status IN ('delivered', 'read') AND ts >= ? AND ts < ? GROUP BY h"); $q->execute(array_merge($ch, [$a, $b]));
+            foreach ($q->fetchAll() as $r) { $h = (string)$r['h']; if (!isset($H[$h])) continue; $H[$h]['dl'] += (int)$r['dl']; $bulkDl += (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] += max(0, (int)$r['dl'] - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; }
+        }
+    } catch (Throwable $e) { /* no bulk send yet: the table is made by the first one */ }
     try {   // replies = queries typed Campaign on the live board, by the hour they opened
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ DATE_FORMAT(q.opened_at, '%Y-%m-%d %H') h, COUNT(*) n FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id AND t.type = 'campaign' WHERE q.opened_at >= ? AND q.opened_at < ? GROUP BY h"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (string)$r['h']; if (isset($H[$h])) $H[$h]['replies'] = (int)$r['n']; }
@@ -1461,7 +1501,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         if ($hw && $hb && $hw['h'] !== $hb['h']) $an[] = ['k' => 'warn', 'text' => 'Most expensive hour: ' . $hl($hw['h']) . ' — ₹' . $hw['c'] . ' per reply (₹' . number_format($hw['spend']) . ' for ' . $hw['replies'] . ' replies). Cut or change the message in that slot.'];
         try { $wc = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE status = 'open' AND optout = 0 AND assigned_emp > 0 AND last_in_at >= '" . date('Y-m-d H:i:s', $now - 6 * 3600) . "' AND last_in_at <= '" . date('Y-m-d H:i:s', $now - 600) . "' AND (last_out_at IS NULL OR last_out_at < last_in_at)")->fetchColumn(); if ($wc > 0) $an[] = ['k' => 'warn', 'text' => $wc . ' chat' . ($wc === 1 ? ' is' : 's are') . ' waiting for a reply for more than 10 minutes — each one is a possible order lost.']; } catch (Throwable $e) { }
     }
-    $o = ['day' => $day, 'cfg' => $cfg, 'points' => $pts, 'hourly' => $hourly, 'so_far' => ['ideal' => $so, 'actual' => $act, 'dev' => $dev], 'drip_delivered' => $dripDl, 'projection' => $proj, 'need_per_hour' => $need, 'analysis' => $an, 'hours' => array_map(fn($h, $x) => ['h' => $h, 'spend' => round($x['spend']), 'sent' => $x['sent'], 'replies' => $x['replies'], 'orders' => $x['orders']], array_keys($H), array_values($H)), 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'at' => date('Y-m-d H:i:s')];
+    $o = ['day' => $day, 'cfg' => $cfg, 'points' => $pts, 'hourly' => $hourly, 'so_far' => ['ideal' => $so, 'actual' => $act, 'dev' => $dev], 'drip_delivered' => $dripDl, 'bulk_delivered' => $bulkDl, 'projection' => $proj, 'need_per_hour' => $need, 'analysis' => $an, 'hours' => array_map(fn($h, $x) => ['h' => $h, 'spend' => round($x['spend']), 'sent' => $x['sent'], 'replies' => $x['replies'], 'orders' => $x['orders']], array_keys($H), array_values($H)), 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'at' => date('Y-m-d H:i:s')];
     wa_cpc_put($pdo, $ck, $o); return $o;
 }
 /** 👥 The customer numbers in one small card: how many we have, how many got our campaign messages, how many failed, how many ordered, how many are new, how many replied.
@@ -1736,7 +1776,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.ru_make', 'wa.ru_restart', 'wa.ru_msg', 'wa.ru_learn', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_query_counts', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_newdays', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.ru_make', 'wa.ru_restart', 'wa.ru_msg', 'wa.ru_learn', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_query_counts', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1748,7 +1788,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $hf = strtoupper((string)$r['header_format']); $special = !in_array($hf, ['', 'TEXT'], true);
             if (in_array($p['status'], ['approved', 'partial'], true) && (!$special || $media)) {
                 $row = ['id' => $p['id'], 'name' => $p['name'], 'body' => $p['body'], 'vars' => $p['vars'], 'category' => $p['category'], 'status' => $p['status']];
-                if ($forCamp) $row += ['header_format' => $hf === 'TEXT' ? '' : $hf, 'footer' => (string)$r['footer'], 'buttons' => $r['buttons'], 'folder' => (string)($r['folder'] ?? ''), 'examples' => array_values((array)($r['examples']['body'] ?? [])), 'language' => (string)$r['language'], 'purpose' => (string)$r['purpose']];
+                if ($forCamp) $row += ['header_format' => $hf === 'TEXT' ? '' : $hf, 'footer' => (string)$r['footer'], 'buttons' => $r['buttons'], 'folder' => (string)($r['folder'] ?? ''), 'examples' => array_values((array)($r['examples']['body'] ?? [])), 'language' => (string)$r['language'], 'purpose' => (string)$r['purpose'], 'own_media' => in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && (int)($r['header_lib_id'] ?? 0) > 0 && !empty($p['sendable'])];   // 🖼 the message has its own photo chosen (Pre-made messages): it can go out without picking a file
                 $o[] = $row;
             }
         }
@@ -2124,6 +2164,38 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                 try { @set_time_limit(60); if (function_exists('cfun_fast')) cfun_fast($pdo, 3000, 15, 0); if (function_exists('cfun_tick')) { setting_set($pdo, 'wa_cfun_at', '1970-01-01 00:00:00'); cfun_tick($pdo, true, 20); } if (function_exists('wa_cpc_table') && wa_cpc_table($pdo)) $pdo->prepare("DELETE FROM wa_cp_cache WHERE k = 'cust_sum2'")->execute(); } catch (Throwable $e) { }
             }
             json_response(['ok' => true] + wa_cust_summary($pdo)); }   // 👥 the customer numbers card (Customers screen + Campaigns)
+        case 'wa.cust_newdays': {   // 📅 new customers day by day (?from=&to= YYYY-MM-DD, calendar days, at most 92): all new · Query (Meta ad) · Community · CSV / Excel · Other
+            $to = (string)($_GET['to'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || strtotime($to) === false) $to = date('Y-m-d');
+            $from = (string)($_GET['from'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || strtotime($from) === false) $from = date('Y-m-d', strtotime($to . ' -6 day'));
+            if ($from > $to) [$from, $to] = [$to, $from];
+            if ((strtotime($to) - strtotime($from)) / 86400 > 91) $from = date('Y-m-d', strtotime($to . ' -91 day'));   // one query over at most ~3 months
+            $ck = 'newd2:' . $from . ':' . $to; $hit = wa_cpc_get($pdo, $ck);
+            if ($hit && empty($_GET['fresh']) && $hit['age'] < ($to >= date('Y-m-d') ? 300 : 3600)) json_response($hit['v']);   // today in the range: counted again after 5 min, older days after an hour
+            // one customer = one row of wa_contacts, counted on the day of first_seen, under ONE place:
+            //   source 'query' = came from a Meta ad · 'community' = community link · 'campaign' = first wrote by replying to a campaign (an imported number) or no source but the number came in a CSV / Excel file = CSV / Excel · anything else = Other (wrote to us directly, added by hand)
+            $days = []; for ($t = strtotime($from); $t <= strtotime($to); $t += 86400) { $k = date('Y-m-d', $t); $days[$k] = ['day' => $k, 'all' => 0, 'query' => 0, 'community' => 0, 'csv' => 0, 'other' => 0]; }
+            try {
+                $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(25000) */ DATE(c.first_seen) d, COUNT(*) n, SUM(c.source = 'query') q, SUM(c.source = 'community') cm,
+                        SUM(c.source = 'campaign' OR (c.source NOT IN ('query', 'community', 'campaign') AND EXISTS (SELECT 1 FROM wa_ctags t WHERE t.phone = c.phone AND t.src = 'import'))) cs
+                    FROM wa_contacts c WHERE c.first_seen >= ? AND c.first_seen < ? GROUP BY d");
+                $q->execute([$from . ' 00:00:00', date('Y-m-d', strtotime($to . ' +1 day')) . ' 00:00:00']);
+                foreach ($q->fetchAll() as $r) { $k = (string)$r['d']; if (!isset($days[$k])) continue; $n = (int)$r['n']; $qq = (int)$r['q']; $cm = (int)$r['cm']; $cs = (int)$r['cs'];
+                    $days[$k] = ['day' => $k, 'all' => $n, 'query' => $qq, 'community' => $cm, 'csv' => $cs, 'other' => max(0, $n - $qq - $cm - $cs)]; }
+            } catch (Throwable $e) { json_response(['error' => 'The count took too long. Try a shorter date range.'], 503); }
+            // 📁 owner (28 Nov 2026): numbers that came from a Campaign Planner / campaign FILE (the customer row is made when the campaign message goes, with no import mark) are CSV / Excel too, not Other
+            try {
+                $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(25000) */ c.phone, DATE(c.first_seen) d FROM wa_contacts c WHERE c.first_seen >= ? AND c.first_seen < ? AND c.source NOT IN ('query', 'community', 'campaign')
+                        AND NOT EXISTS (SELECT 1 FROM wa_ctags t WHERE t.phone = c.phone AND t.src = 'import')");
+                $q->execute([$from . ' 00:00:00', date('Y-m-d', strtotime($to . ' +1 day')) . ' 00:00:00']); $oth = [];
+                foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $oth[(string)$r[0]] = (string)$r[1];
+                foreach (array_chunk(array_keys($oth), 1000) as $ch) {
+                    $iq = $pdo->prepare("SELECT DISTINCT phone FROM wa_camp_items WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $iq->execute($ch);
+                    foreach ($iq->fetchAll(PDO::FETCH_COLUMN) as $ph) { $k = $oth[(string)$ph] ?? ''; if ($k !== '' && isset($days[$k]) && $days[$k]['other'] > 0) { $days[$k]['csv']++; $days[$k]['other']--; } }
+                }
+            } catch (Throwable $e) { error_log('newdays planner: ' . $e->getMessage()); }
+            $o = ['ok' => true, 'from' => $from, 'to' => $to, 'today' => date('Y-m-d'), 'days' => array_values(array_reverse($days)), 'at' => date('Y-m-d H:i:s')];
+            wa_cpc_put($pdo, $ck, $o); json_response($o);
+        }
         case 'wa.camp_hourly': {   // ⏱ spend and queries hour by hour for one business day (?day=YYYY-MM-DD, default today)
             $dy = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dy)) { try { $dy = function_exists('wq_day_of') && function_exists('wq_now') ? (string)wq_day_of($pdo, wq_now()) : date('Y-m-d'); } catch (Throwable $e) { $dy = date('Y-m-d'); } }
             json_response(['ok' => true] + wa_camp_hourly($pdo, $dy));

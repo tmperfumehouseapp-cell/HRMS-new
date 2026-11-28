@@ -10,7 +10,16 @@
  */
 if (!function_exists('wa_rs_tick')) {
     function wa_rs_state(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wa_rs_state', ''), true); return is_array($j) && isset($j['pairs']) && is_array($j['pairs']) ? $j : ['pairs' => [], 'day' => '', 'n' => 0]; }
-    function wa_rs_save(PDO $pdo, array $s): void { setting_set($pdo, 'wa_rs_state', json_encode($s)); }
+    /* 27 Nov 2026: the state grew past 65,535 bytes (the TEXT limit of the settings column) and every save failed with "Data too long": the engine did its round, could not save it, and did the same round again every minute — no new message was made since the morning. The waiting times that are over are dropped, and if the state still does not fit, the column is widened once (MEDIUMTEXT) and the save is tried again. */
+    function wa_rs_save(PDO $pdo, array $s): void
+    {
+        if (isset($s['next']) && is_array($s['next'])) { $now = time(); foreach ($s['next'] as $k => $u) if ((int)$u <= $now) unset($s['next'][$k]); }
+        $j = json_encode($s);
+        try { setting_set($pdo, 'wa_rs_state', $j); }
+        catch (Throwable $e) { if (strpos($e->getMessage(), '1406') === false && stripos($e->getMessage(), 'too long') === false) throw $e;
+            $pdo->exec("ALTER TABLE hrms_settings MODIFY setting_value MEDIUMTEXT NULL"); setting_set($pdo, 'wa_rs_state', $j);
+            if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'New-style messages: the saved state had outgrown the settings column (' . strlen($j) . ' bytes); the column is widened and the engine works again'); }
+    }
     /** The shop's own approved messages the Lineup really sends (wln_existing_map in wa_line.php, overridden by the setting wl_map). */
     function wa_rs_line_map(PDO $pdo): array
     {
@@ -53,7 +62,8 @@ if (!function_exists('wa_rs_tick')) {
             . "More of the owner's words for MARKETING offers (use them where the old message is an offer or a new-arrival message; the owner says they are true): \"naye perfumes launch hue hain\", \"naya offer launch hua hai\", \"ek dhamakedaar cheez aayi hai, aapko bahut maza aane wala hai\", \"order par kuch na kuch add-on zaroor milega\", \"extra discount bhi karwa denge\". "
             . "For UTILITY use the same warmth and curiosity WITHOUT those words (no offer, launch, discount, add-on, dhamaka, free): for example \"aapke liye ek khaas update he 👀\", \"ek chhoti si madad\", \"aapka sawal humein yaad he\". "
             . "In MARKETING messages an urgency line (only today / limited stock) is part of the owner's style, but keep it only when the old message already is an offer; never invent a price, a quantity or a date. "
-            . "THE MAIN GOAL (owner, 25 Nov 2026): the customer must WANT TO ORDER, in any way. Every message pushes toward an order: a season hook (winter / wedding / gift), curiosity or a reveal (\"tap to see\"), a clear choice by button, and - in MARKETING - the offer, the combo, the price or the deadline when the old message already has one. Replies alone are worthless; a message that only gets a reply and no order is a failure. For UTILITY (no deal words allowed by Meta) the desire comes from the season, the next perfume, the size choice and the reveal after the tap. "
+            . "THE MAIN GOAL (owner, 25 Nov 2026): the customer must WANT TO ORDER, in any way. Every message pushes toward an order: a season hook (" . ((function_exists('wa_bf_on') || (is_file(__DIR__ . '/wa_style.php') && (require_once __DIR__ . '/wa_style.php'))) && function_exists('wa_bf_on') && wa_bf_on() ? 'THIS WEEK IS BLACK FRIDAY WEEK: in a MARKETING message the hook is Black Friday, by name, first; then winter / wedding / gift. In a UTILITY message never write Black Friday or a sale word, use winter / wedding / gift' : 'winter / wedding / gift') . "), curiosity or a reveal (\"tap to see\"), a clear choice by button, and - in MARKETING - the offer, the combo, the price or the deadline when the old message already has one. Replies alone are worthless; a message that only gets a reply and no order is a failure. For UTILITY (no deal words allowed by Meta) the desire comes from the season, the next perfume, the size choice and the reveal after the tap. "
+            . "THE ORDER PATTERN (owner, 27 Nov 2026, from the orders of the last 15 days): the messages that brought the most orders (1) open with the PRICE AS A QUESTION when the old message has a price (\"1 x 50ml perfume sirf Rs 400 ka ? Kya ? Haan ji !\"), (2) let the customer choose (his own combo, his size, men / women / unisex, for me / a gift) and (3) END WITH ONE EASY QUESTION he can answer with one tap. Write every MARKETING message that way (never invent a price: the price-question only when the old message has a price). For NEW customers the two shapes that sold most are the ADD-ON (something extra with the order: when the old message already has a free item or an extra, lead with it - \"3 x 50ml liya to 1 x 20ml FREE ?\") and the SIZE CHOICE (20 ml / 50 ml / 100 ml as the buttons); gift / festival wording alone sold least. Write every UTILITY message as ONE REAL QUESTION about his own experience or choice (how was it, which size he uses, which kind of fragrance, was our answer in time), answered with one tap; a utility message never says that there is an update, a parcel or an order unless the old message is about his order. "
             . "Examples (utility, no deal words): \"Hi {{1}} 😊 aapne {{3}} ko {{2}} ke bare me poocha tha... abhi bhi chahiye ? Neeche button dabaiye 👇\" and \"Hello {{1}} 🌸 TM Perfume House team yahan he. Koi sawal ho ya perfume chunne me help chahiye to bas ek button dabaiye 🙏\". ";
     }
     /** Too basic / not exciting (owner 25 Nov 2026): the customer-care wording, or no hook word at all (season, gift, surprise, offer, combo, curiosity, a new perfume). */
@@ -62,7 +72,7 @@ if (!function_exists('wa_rs_tick')) {
         if (!function_exists('wa_style_dull') && is_file(__DIR__ . '/wa_style.php')) { try { require_once __DIR__ . '/wa_style.php'; } catch (Throwable $e) { } }
         if (function_exists('wa_style_dull') && wa_style_dull($b) !== '') return true;
         if (!preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B50}]/u', $b)) return true;   /* owner 25 Nov: a plain text with no emoji is not exciting */
-        return !preg_match('/(naya|nayi|naye|nai |khaas|special|season|shaadi|wedding|winter|gift|surprise|dhamaka|intezaar|dekhna|dekhiye|dekhiyega|dekho|dikhao|pick|combo|offer|deal|launch|sirf|flat|deadline|aaj hi|abhi order|jaldi|reveal|maza)/iu', $b);
+        return !preg_match('/(naya|nayi|naye|nai |khaas|special|season|shaadi|wedding|winter|black friday|gift|surprise|dhamaka|intezaar|dekhna|dekhiye|dekhiyega|dekho|dikhao|pick|combo|offer|deal|launch|sirf|flat|deadline|aaj hi|abhi order|jaldi|reveal|maza)/iu', $b);
     }
     /** What "replaced" means for the Cold funnel's own messages and the utility pool: the Cold mapping points to the twin / the old pool message is retired (it is no longer picked). */
     function wa_rs_swap_pool(PDO $pdo, string $src, int $old, int $new): void
@@ -201,11 +211,23 @@ if (!function_exists('wa_rs_tick')) {
                     if (!empty($r['new'])) { $st['pairs'][$old]['v2'] = (int)$r['new']; $o['made']++; wa_rs_save($pdo, $st); }
                     else { if (!empty($r['busy'])) { $st['next'][$old] = time() + 120; $o['note'] = (string)$r['why']; break; } $f2 = (int)($st['fails2'][$old] ?? 0) + 1; $st['fails2'][$old] = $f2; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600); if ($f2 >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old]['v2fail'] = 1; $o['note'] = (string)($r['why'] ?? ''); if (!empty($r['retry'])) break; } }
             }
+            /* 🔁 THIRD PASS (owner 27 Nov 2026: "the new-style messages must follow the order pattern too"): a twin made before the order pattern (27 Nov, 14:30) that brought NO order in the ledger gets one more version in the order pattern, two a round; the twins that did bring an order stay as they are. The new version takes the place of the twin once Meta approved it (the same path as the second pass). Off: wa_rs_v3 = 0. */
+            if ($o['made'] < 2 && (int)($st['n3'] ?? 0) < 700 && (string)setting_get($pdo, 'wa_rs_v3', '1') !== '0' && !preg_match('/claude|busy|overload|timeout|limit/i', (string)$o['note'])) { $o['note'] = '';   /* 27 Nov 16:45: the note of a message the first pass could not make (wrong variables, a deal word) kept this pass from ever starting; only a busy / failing Claude holds it back */
+                $__keep = []; try { foreach ($pdo->query("SELECT DISTINCT tpl_id FROM wa_order_attr WHERE tpl_id > 0")->fetchAll(PDO::FETCH_COLUMN) as $__t) $__keep[(int)$__t] = 1; } catch (Throwable $e) { $__keep = null; }
+                try { $__el = 0; if (is_array($__keep)) foreach ($st['pairs'] as $__o => $__p) { if (!empty($__p['new']) && in_array((string)($__p['st'] ?? ''), ['made', 'replaced'], true) && empty($__p['v2']) && empty($__p['v3']) && !isset($__keep[(int)$__p['new']]) && !isset($__keep[(int)$__o]) && strpos((string)($__p['src'] ?? ''), 'pool:') !== 0) $__el++; } setting_set($pdo, 'wa_rs_v3_dbg', date('H:i:s') . ' pairs ' . count($st['pairs']) . ' · eligible ' . $__el . ' · kept for orders ' . (is_array($__keep) ? count($__keep) : -1) . ' · made so far in this round ' . (int)$o['made']); } catch (Throwable $e) { }
+                if (is_array($__keep)) foreach ($st['pairs'] as $old => $p0) { if ($o['made'] >= 2) break;
+                    if (empty($p0['new']) || !in_array((string)($p0['st'] ?? ''), ['made', 'replaced'], true) || !empty($p0['v2']) || !empty($p0['v3']) || isset($__keep[(int)$p0['new']]) || isset($__keep[(int)$old]) || strpos((string)($p0['src'] ?? ''), 'pool:') === 0) continue;   /* the utility pool is left alone: its few messages that Meta still delivers as utility carry the rescues, and ten new ones were added today */
+                    if ((int)($p0['at'] ?? 0) >= 1795770000 && (int)($p0['v2done'] ?? 0) === 0) continue; if ((int)($p0['v2done'] ?? 0) >= 1795770000) continue;
+                    if ((int)($st['next'][$old] ?? 0) > time()) continue;
+                    $r = wa_rs_make_one($pdo, (int)$old); $st['n3'] = (int)($st['n3'] ?? 0) + 1;
+                    if (!empty($r['new'])) { $st['pairs'][$old]['v2'] = (int)$r['new']; $st['pairs'][$old]['v3'] = 1; unset($st['pairs'][$old]['v2fail']); $o['made']++; wa_rs_save($pdo, $st); }
+                    else { if (!empty($r['busy'])) { $st['next'][$old] = time() + 120; $o['note'] = (string)$r['why']; $st['n3'] = max(0, (int)$st['n3'] - 1); break; } $f3 = (int)($st['fails3'][$old] ?? 0) + 1; $st['fails3'][$old] = $f3; $st['next'][$old] = time() + (!empty($r['retry']) ? 600 : 3600); if ($f3 >= (!empty($r['retry']) ? 30 : 3)) $st['pairs'][$old]['v3'] = -1; $o['note'] = (string)($r['why'] ?? ''); wa_rs_save($pdo, $st); if (!empty($r['retry'])) break; } }
+            }
             wa_rs_save($pdo, $st);
             if ($o['note'] !== '') { $st['why_last'] = $o['note']; $st['why_n'][$o['note']] = (int)($st['why_n'][$o['note']] ?? 0) + 1; wa_rs_save($pdo, $st); }
             if (($o['made'] || $o['replaced']) && function_exists('wa_log')) wa_log($pdo, 'template', true, 'New-style messages: ' . $o['made'] . ' made, ' . $o['replaced'] . ' replaced');
             try { if (!function_exists('wa_style_daily_tick') && is_file(__DIR__ . '/wa_style.php')) require_once __DIR__ . '/wa_style.php'; if (function_exists('wa_style_daily_tick')) { $dn = wa_style_daily_tick($pdo); $o['daily'] = $dn['note'] ?? ''; } } catch (Throwable $e2) { }   // 🆕 up to 7 brand-new messages a day (owner 24 Nov)
-        } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'New-style messages error: ' . mb_substr($e->getMessage(), 0, 120)); $o['note'] = 'error'; }
+        } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'template', false, 'New-style messages error: ' . mb_substr($e->getMessage(), 0, 120)); try { setting_set($pdo, 'wa_rs_err', date('d M H:i:s') . ' ' . mb_substr($e->getMessage(), 0, 200) . ' @' . basename($e->getFile()) . ':' . $e->getLine()); } catch (Throwable $e9) { } $o['note'] = 'error'; }
         return $o;
     }
     function wa_rs_report(PDO $pdo): array

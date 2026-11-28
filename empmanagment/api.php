@@ -2317,6 +2317,17 @@ function shop_order_row(PDO $pdo, array $r): array
  * 🧾 Orders made in HRMS itself (WhatsApp Manual order, WM-00001 …) live only in shop_orders — Shopify never has them. A list read live from Shopify
  * (Order allocation for up to 7 days, Targets, Commission …) adds them here, so they are seen everywhere a Shopify order is.
  */
+/** 🎨 What a manual order (manual_orders row) knows of its perfumes, in the shape of a Shopify order row: total ML, 10 ml pieces, bottle colours, Dress to Impress.
+ *  Website orders (channel 'TM Store') carry them from the shop's lines; a quick entry without perfumes gives nothing (the boxes leave it out, as before). */
+function manual_order_details(array $m): array
+{
+    $o = [];
+    if (isset($m['ml']) && $m['ml'] !== null && (int)$m['ml'] > 0) $o['ml'] = (int)$m['ml'];
+    $c = isset($m['colors']) && $m['colors'] !== null && $m['colors'] !== '' ? json_decode((string)$m['colors'], true) : null;
+    if (is_array($c)) { $o['colors'] = $c; $o['ml10'] = (int)($c['ml10'] ?? 0); }
+    if (array_key_exists('dti', $m) && $m['dti'] !== null) $o['dti'] = $m['dti'] === '' ? 0 : (json_decode((string)$m['dti'], true) ?: 0);   // null = not known (not sent), 0 = none
+    return $o;
+}
 /** The quick-entry orders ("Add orders": 10 orders, ₹24,500 …) are shown on the home page of ONE person only: the Sales Head Pradip Chauhan (or the employee ids in setting qe_viewers). */
 function qe_viewer_ok(PDO $pdo, array $auth): bool
 {
@@ -4022,7 +4033,7 @@ function proof_emp_dept(PDO $pdo, int $empId): int
     } catch (PDOException $e) { return 0; }
 }
 
-/** The owners (Milan Gondaliya, Harsh Patel): "direct" punch — one tap, no photo, no face, no location rule, no proofs, no checklist, no ID card, no shoes.
+/** The owners (Milan Gondaliya, Harsh Patel) and the General Manager Parth Brahmbhatt: "direct" punch — one tap, no photo, no face, no location rule, no proofs, no checklist, no ID card, no shoes.
  *  The list is in settings 'punch_direct_ids' (employee ids); made once from the two names (only a name that matches exactly one working employee). */
 function punch_direct(PDO $pdo, int $empId): bool
 {
@@ -4036,6 +4047,16 @@ function punch_direct(PDO $pdo, int $empId): bool
             }
             setting_set($pdo, 'punch_direct_ids', json_encode($ids));
         } else { $j = json_decode((string)$raw, true); $ids = is_array($j) ? array_map('intval', $j) : []; }
+        // The General Manager Parth Brahmbhatt punches directly too (only him). His name may be typed in different ways (Brahmbhatt / Bramhbhatt /
+        // Brahmabhatt / Bhatt), so: first "Parth" + any of those; if that is not exactly one working employee, then any of those spellings alone.
+        $find = function (string $where) use ($pdo): array { try { return array_map('intval', $pdo->query("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND ($where)")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { return []; } };
+        $nm = "LOWER(REPLACE(COALESCE(full_name, ''), ' ', ''))";
+        $sp = "$nm LIKE '%brahm%' OR $nm LIKE '%bramh%' OR $nm LIKE '%brhm%' OR $nm LIKE '%bhatt%'";
+        $f = $find("$nm LIKE 'parth%' AND ($sp)");
+        if (count($f) !== 1) $f = $find("$nm LIKE '%brahm%' OR $nm LIKE '%bramh%' OR $nm LIKE '%brhm%'");
+        if (count($f) !== 1) $f = $find("$nm LIKE 'parth%'");      // only "Parth" typed, no surname
+        if (count($f) === 1) $ids[] = $f[0];
+        $ids = array_values(array_unique($ids));
     }
     return $empId > 0 && in_array($empId, $ids, true);
 }
@@ -7796,6 +7817,7 @@ function order_product_colors(array $lineItems): array
         $qty = max(1, (int)($li['quantity'] ?? 1));
         $k = 'other';
         if (preg_match('/(?<![A-Za-z0-9])(DG|LG|WH)(?![A-Za-z0-9])/i', (string)($li['title'] ?? ''), $m)) $k = strtolower($m[1]);
+        if (preg_match('/dress\s*to\s*impress|(?<![a-z0-9])tm\s*-?\s*o\.?g\.?(?![a-z0-9])|tm\s*originals?/i', $nm)) $k = 'dg';   // 🟢 owner (26 Nov): the TM OG bottles (Dress to Impress) are ALWAYS Dark green
         $c[$k] += $qty;
     }
     return $c;
@@ -10597,7 +10619,7 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     if (!empty($GLOBALS['lib_fast']) && function_exists('wag_trust_context')) { try { $__tc = wag_trust_context($pdo, $msgs); if ($__tc !== '') { $ask .= "\n" . $__tc; $allowed += teach_nums($__tc); } } catch (Throwable $e) { } }   // "I want to check the fragrance": reviews + try it, no price, no discount
     if (!empty($GLOBALS['lib_fast']) && function_exists('wag_price_context')) { try { $__pq = wag_price_context($pdo, (string)($GLOBALS['lib_phone'] ?? ''), $msgs); if ($__pq !== '') { $ask .= "\n" . $__pq; $allowed += teach_nums($__pq); } } catch (Throwable $e) { } }   // the exact chart price for the quantity the customer chose, starting at the 6.5% level
     if (!empty($GLOBALS['lib_fast'])) { $__c10 = ''; foreach ($msgs as $__m) if (($__m['who'] ?? '') === 'customer') $__c10 .= ' ' . mb_strtolower((string)$__m['text']); if (!preg_match('/10 ?ml/', $__c10)) $ask .= " 10 ML RULE (owner): never mention 10 ml, samples or small bottles yourself. The main offer is the 50 ml / 100 ml combos (20 ml only as 5 x 20 ml). A 10 ml is only a small ADD-ON on top of a combo, and only if the customer asks for it."; }
-    if (!empty($GLOBALS['lib_order_mode'])) $ask .= " ORDER MODE: the customer wants to order or pay. In the customer's language, ONE short step at a time, collect: which perfume(s), size and quantity (repeat the choice back with the store-fact price only); then, instead of asking the details one by one, send the shop's ORDER DETAILS FORM in ONE message, in these words: \"Please provide full details for the order as below: 1. Full Name 2. Address 3. Near By Landmark 4. City 5. State 6. Pincode 7. Email 8. Primary No 9. Alternate No\" (answer in the customer's language; he may send them in one message). When the address is complete send the shop's ADDRESS CHECK (both points, English and Hindi are fine): \"(1) Kindly recheck your delivery address before making payment, as the system may fetch your saved address. (2) If you see an old or incorrect address at the checkout link, select Change Address / Add New Address and update your correct delivery address.\" If he asks about COD say: COD is available, but 35% of the amount must be paid in advance to confirm the order, the rest on delivery (a team member sends the payment link). NEVER ask for, give or confirm payment, never say the order is confirmed, placed, done or dispatched (do not start with \"done\" / \"ok done\"), never invent offers; if the customer's message is about something else (change address, status, price doubt), answer THAT question instead of asking for order details: once the address is complete say a team member will send the payment link and confirm shortly. If they ask for UPI / QR / payment link, say it comes right after the details and address. handoff = false while you are collecting.";
+    if (!empty($GLOBALS['lib_order_mode'])) $ask .= " ORDER MODE: the customer wants to order or pay. In the customer's language, ONE short step at a time, collect: which perfume(s), size and quantity (repeat the choice back with the store-fact price only); never ask for the name, address, e-mail or phone in the same message as the price or before he has named his perfumes (owner, 27 Nov); then, instead of asking the details one by one, send the shop's ORDER DETAILS FORM in ONE message, in these words: \"Please provide full details for the order as below: 1. Full Name 2. Address 3. Near By Landmark 4. City 5. State 6. Pincode 7. Email 8. Primary No 9. Alternate No\" (answer in the customer's language; he may send them in one message). When the address is complete send the shop's ADDRESS CHECK (both points, English and Hindi are fine): \"(1) Kindly recheck your delivery address before making payment, as the system may fetch your saved address. (2) If you see an old or incorrect address at the checkout link, select Change Address / Add New Address and update your correct delivery address.\" If he asks about COD say: COD is available, but 35% of the amount must be paid in advance to confirm the order, the rest on delivery (a team member sends the payment link). NEVER ask for, give or confirm payment, never say the order is confirmed, placed, done or dispatched (do not start with \"done\" / \"ok done\"), never invent offers; if the customer's message is about something else (change address, status, price doubt), answer THAT question instead of asking for order details: once the address is complete say a team member will send the payment link and confirm shortly. If they ask for UPI / QR / payment link, say it comes right after the details and address. handoff = false while you are collecting.";
     if ($judgeOn) $ask .= " Write 3 DIFFERENT candidate replies (for example: one short and direct, one that leads with the benefit or offer, one that asks a single smart question). All three must follow the lessons and the facts.";
     // 💾 PROMPT CACHING. The guidebook + owner corrections are the same for every customer and are ~3/4 of the whole prompt (≈19,000 tokens a call). They were sent inside the
     // customer's message, where nothing is cached, so every call paid them in full. They now sit in the system text (which IS cached: a cached read costs a tenth), and only what
@@ -19735,7 +19757,7 @@ if ($action !== 'login' && $action !== '' && (int)date('G') >= (int)setting_get(
 }
 
 // Store perfumes from Shopify, once a day by itself (first request after 5 AM; syncs after the answer is out; retries every 30 min if it failed).
-if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); st_bday_daily($pdo); } catch (Throwable $e) {} }
+if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); st_bday_daily($pdo); if (function_exists('st_camp_kick')) st_camp_kick($pdo); } catch (Throwable $e) {} }
 
 // Campaign heartbeat: while a WhatsApp campaign is running, any request from the HRMS wakes the sending engine (at most every 30 seconds), so campaigns never wait for a cron job or an open Campaigns page.
 if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') !== 0 && function_exists('curl_init')) {
@@ -31599,6 +31621,7 @@ switch ($action) {
                     'store_key' => 'manual',
                     'store' => ((string)($m['channel'] ?? '') !== '' ? (string)$m['channel'] : 'Manual'),
                     'channel' => (string)($m['channel'] ?? ''),
+                    'mp_no' => (string)($m['mp_no'] ?? ''),   // the shop's / marketplace's own order number (TM10xxx): shown on the salesperson's own sheet
                     'manual_order_id' => (int)$m['manual_order_id'],
                     'salesman' => !empty($m['employee_id']) ? (string)($mNames[(int)$m['employee_id']] ?? '') : '',
                     'employee_id' => (int)($m['employee_id'] ?? 0),
@@ -31607,6 +31630,7 @@ switch ($action) {
                     'house' => (string)($m['house'] ?? ''),   // a quick entry is counted in this panel's boxes (Query / Campaign / collection)
                     'outstanding' => (isset($m['outstanding']) && $m['outstanding'] !== null) ? (float)$m['outstanding'] : null,
                     'batch' => (string)($m['batch'] ?? ''),
+                ] + manual_order_details($m) + [
                     'remarks' => $m['remarks'] ?: '',
                     'created_by' => $m['created_by'] ?: '',
                 ];

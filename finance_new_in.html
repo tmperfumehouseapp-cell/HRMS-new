@@ -22,6 +22,7 @@
   .tb td{padding:7px 6px;border-top:1px solid var(--sx-line);text-align:right;white-space:nowrap}.tb td small{display:block;color:var(--sx-mut);font-size:11px}.tb tr.void td{opacity:.45;text-decoration:line-through}
   .age{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;background:#eef0f3;color:#475467}.age.w{background:#fff4e0;color:#b45309}.age.b{background:#fdecea;color:#b42318}
   .wrap{overflow-x:auto}.cap{font-weight:800;font-size:13px;margin:12px 0 4px}
+  .tb th small{display:block;margin-top:2px}
   .tb tr.tot td{font-weight:800;border-top:2px solid var(--sx-ink);background:#eef0f6}.tb tr.off td{opacity:.5}
   .ov{position:fixed;inset:0;background:rgba(20,22,26,.42);opacity:0;pointer-events:none;transition:opacity .18s;z-index:40}.ov.on{opacity:1;pointer-events:auto}
   .dr{position:fixed;top:0;right:0;bottom:0;width:min(500px,96vw);background:var(--sx-bg);z-index:41;display:flex;flex-direction:column;transform:translateX(104%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:-18px 0 50px rgba(20,22,26,.22);border-radius:26px 0 0 26px}.dr.on{transform:none}
@@ -292,9 +293,51 @@
         <div class="cap">Orders still waiting for the money <small class="sx-mut">${w.orders ? w.orders.waiting + ' orders · ' + m2(w.orders.waiting_amount) : ''}</small></div>
         ${list.length ? `<table class="tb"><tr><th>Order</th><th>Customer</th><th>Placed</th><th>Waiting</th><th>Amount</th></tr>${list.slice(0, 40).map((o) => { const a = Math.max(0, Math.round((new Date(O.today + 'T00:00:00') - new Date(o.day + 'T00:00:00')) / 86400000)); return `<tr><td><b>${esc(o.name)}</b></td><td style="text-align:left">${esc(o.customer || '')}</td><td>${esc(dFmt(o.day))}</td><td><span class="age ${ageCls(a)}">${a} d</span></td><td><b>${m2(o.amount)}</b></td></tr>`; }).join('')}</table>${list.length > 40 ? `<div class="sx-mut" style="margin-top:6px;font-size:12px">Showing the oldest 40 of ${w.orders.waiting}.</div>` : ''}` : '<div class="sx-mut">Nothing is waiting. 🎉</div>'}</div></div>`;
   }
+  // ---------- what will come into the bank from a day's sales
+  let EXP = null, expDay = '';
+  async function loadExp(d) {
+    const el = $('expCard'); if (!el) return;
+    try { EXP = await api.get('fn.in_expected', d ? { date: d } : {}); expDay = EXP.day; drawExp(); }
+    catch (e) { el.innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function drawExp() {
+    const el = $('expCard'); if (!el || !EXP) return; const t = EXP.totals, wk = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }) : '';
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:15px">What will come into the bank <small class="sx-mut">from the sales of</small></div><input class="sx-in" id="expD" type="date" value="${esc(expDay)}" max="${esc(O.today)}" style="width:auto;min-height:34px"></div>
+      <div class="k3" style="margin:8px 0"><div class="k"><small>Sales of the day</small><b style="font-size:19px">${m2(t.sales)}</b><span>${EXP.sales.orders} orders${EXP.sales.manual_orders ? ' · ' + EXP.sales.manual_orders + ' manual' : ''}</span></div><div class="k"><small>Prepaid: net into the bank</small><b style="font-size:19px">${m2(t.prepaid_net)}</b><span>gross ${m2(t.prepaid_gross)} − charges ${m2(t.charges)} (estimate)</span></div><div class="k"><small>COD: comes later</small><b style="font-size:19px">${m2(t.cod)}</b><span>${EXP.cod.orders} orders, the courier remits</span></div></div>
+      <table class="tb"><tr><th>Payment gateway</th><th>Orders</th><th>Gross</th><th>Charges</th><th>Net into the bank</th><th>Arrives</th></tr>${EXP.modes.map((m) => `<tr><td><b>${esc(m.mode)}</b><small>${esc(m.note)}</small></td><td>${m.orders}</td><td>${m2(m.gross)}</td><td>${m.rate ? m2(m.charges) + '<small>' + m.rate + '% · ' + esc(m.rate_src) + '</small>' : '—'}</td><td><b>${m2(m.net)}</b></td><td>${m.arrive ? '<b>' + esc(wk(m.arrive)) + '</b>' : '—'}</td></tr>`).join('')}
+        <tr><td><b>COD</b> (cash on delivery)<small>${esc(EXP.cod.note)}</small></td><td>${EXP.cod.orders}</td><td>${m2(EXP.cod.amount)}</td><td>—</td><td><b>${m2(EXP.cod.amount)}</b><small>before the courier's charges</small></td><td><b>${esc(wk(EXP.cod.arrive_from))} – ${esc(wk(EXP.cod.arrive_by))}</b></td></tr>
+        <tr class="tot"><td>TOTAL ${EXP.totals.tie ? '' : '<small style="color:#b42318">✗ gap ' + m2(EXP.totals.gap) + ' from the sales total</small>'}</td><td>${EXP.sales.orders}</td><td>${m2(t.sales)}</td><td>${m2(t.charges)}</td><td>${m2(Math.round((t.prepaid_net + t.cod) * 100) / 100)}</td><td></td></tr></table>
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">Charges are an estimate: PayU from your last saved settlement files, others by default. The exact amount comes from the settlement file. PayU / Razorpay do not settle on Saturday and Sunday, so a Friday sale arrives on Monday.</div>`;
+    $('expD').onchange = (e) => { if (e.target.value) loadExp(e.target.value); };
+  }
+  // ---------- date-wise money by gateway
+  let DW = null, dwFrom = '', dwTo = '';
+  const monthStart = (d) => d.slice(0, 8) + '01';
+  async function loadDw(f, t) {
+    const el = $('dwCard'); if (!el) return;
+    try { DW = await api.get('fn.in_datewise', { from: f, to: t }); dwFrom = DW.from; dwTo = DW.to; drawDw(); }
+    catch (e) { el.innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function drawDw() {
+    const el = $('dwCard'); if (!el || !DW) return; const ch = DW.channels, dShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }), cell = (v) => v ? m2(v) : '<span class="sx-mut">—</span>';
+    const per = [['This month', monthStart(O.today), O.today], ['Last 7 days', addDays(O.today, -6), O.today], ['Last 30 days', addDays(O.today, -29), O.today]];
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="cap" style="margin:0;flex:1;font-size:15px">Date-wise money received <small class="sx-mut">by gateway / marketplace, from the day the money came</small></div>
+        ${per.map((x) => `<button class="sx-btn" data-dwp="${x[1]}|${x[2]}" style="padding:2px 10px;${dwFrom === x[1] && dwTo === x[2] ? '' : 'opacity:.55'}">${x[0]}</button>`).join('')}<input class="sx-in" id="dwF" type="date" value="${esc(dwFrom)}" max="${esc(O.today)}" style="width:auto;min-height:32px"><input class="sx-in" id="dwT" type="date" value="${esc(dwTo)}" max="${esc(O.today)}" style="width:auto;min-height:32px"><button class="sx-btn" id="dwCsv" style="padding:2px 10px">Download CSV</button></div>
+      <div class="k3" style="margin:8px 0"><div class="k"><small>Received in the period</small><b style="font-size:19px">${m2(DW.total)}</b><span>${esc(dShort(DW.from))} – ${esc(dShort(DW.to))}</span></div>${DW.banks.slice(0, 2).map((b) => `<div class="k"><small>Into ${esc(b.bank)}</small><b style="font-size:19px">${m2(b.amount)}</b></div>`).join('')}</div>
+      <div class="wrap"><table class="tb"><tr><th>Date</th>${ch.map((c) => `<th>${esc(c.name)}<small style="font-weight:600;text-transform:none;letter-spacing:0">${c.banks.length ? esc(c.banks.map((b) => b.bank).join(', ')) : 'no money yet'}</small></th>`).join('')}<th>Total</th></tr>
+        ${DW.days.filter((d) => d.total || DW.days.length <= 40).map((d) => `<tr><td><b>${esc(dShort(d.day))}</b></td>${ch.map((c) => `<td>${cell(d.cells[String(c.id)])}</td>`).join('')}<td><b>${cell(d.total)}</b></td></tr>`).join('')}
+        <tr class="tot"><td>TOTAL</td>${ch.map((c) => `<td>${m2(c.total)}<small style="font-weight:600">${c.entries} entr${c.entries === 1 ? 'y' : 'ies'}</small></td>`).join('')}<td>${m2(DW.total)}</td></tr></table></div>
+      ${ch.some((c) => c.hint) ? `<div class="sx-mut" style="font-size:12px;margin-top:6px">${ch.filter((c) => c.hint).map((c) => esc(c.name) + ': ' + esc(c.hint)).join(' · ')}</div>` : ''}
+      <div class="sx-mut" style="font-size:12px;margin-top:6px">A column shows the money you saved for that channel (UTR files and receipts), by the day it came. A channel with no money has no entry yet in this period.</div>`;
+    el.querySelectorAll('[data-dwp]').forEach((b) => { b.onclick = () => { const [f, t] = b.dataset.dwp.split('|'); loadDw(f, t); }; });
+    $('dwF').onchange = () => { if ($('dwF').value && $('dwT').value) loadDw($('dwF').value, $('dwT').value); }; $('dwT').onchange = $('dwF').onchange;
+    $('dwCsv').onclick = () => { const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"', L = [[q('Date')].concat(ch.map((c) => q(c.name)), [q('Total')]).join(',')]; DW.days.forEach((d) => L.push([q(d.day)].concat(ch.map((c) => d.cells[String(c.id)] || 0), [d.total]).join(','))); L.push([q('TOTAL')].concat(ch.map((c) => c.total), [DW.total]).join(','));
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + L.join('\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'money-by-gateway-' + DW.from + '-to-' + DW.to + '.csv'; document.body.appendChild(a); a.click(); a.remove(); };
+  }
   function draw() {
     const canNext = day < O.today;
-    $('root').innerHTML = `<div class="bar"><div class="nav"><button id="pv" aria-label="Previous day">‹</button><input type="date" id="dp" value="${esc(day)}" max="${esc(O.today)}"><button id="nx" ${canNext ? '' : 'disabled'} aria-label="Next day">›</button></div>${day !== O.today ? '<button class="sx-btn" id="tdy">Today</button>' : ''}<span class="sp"></span></div>${SEC.map(section).join('')}`;
+    $('root').innerHTML = `<div class="bar"><div class="nav"><button id="pv" aria-label="Previous day">‹</button><input type="date" id="dp" value="${esc(day)}" max="${esc(O.today)}"><button id="nx" ${canNext ? '' : 'disabled'} aria-label="Next day">›</button></div>${day !== O.today ? '<button class="sx-btn" id="tdy">Today</button>' : ''}<span class="sp"></span></div><div class="sx-card" id="expCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div><div class="sx-card" id="dwCard" style="margin-bottom:14px"><div class="sx-mut">Loading…</div></div>${SEC.map(section).join('')}`;
+    loadExp(expDay); loadDw(dwFrom || monthStart(O.today), dwTo || O.today);
   }
   async function load(d) {
     try {

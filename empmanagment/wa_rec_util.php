@@ -102,7 +102,8 @@ function wa_ru_numbers(PDO $pdo, int $nowTs, bool $update = true): array
 {
     $rest = json_decode((string)setting_get($pdo, 'wa_ru_rest', ''), true); $rest = is_array($rest) ? $rest : []; $o = [];
     try {
-        $q = $pdo->prepare("SELECT r.number_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ? GROUP BY r.number_id");
+        /* owner 27 Nov 2026: a number is judged by the UTILITY messages that really WENT from it. Until now a refusal at sending (no message left: a paused message, a customer whose bot is paused) and the marketing last-resort messages (which fail with Meta's marketing limit, 131049) counted as the number's failures: 33% "failed" in an hour and every number rested for 2 hours, so Module B sent nothing while it had six usable utility messages */
+        $q = $pdo->prepare("SELECT r.number_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(m.status = 'failed') AS f FROM wa_ru_log r JOIN wa_templates tz ON tz.id = r.tpl_id AND UPPER(tz.category) = 'UTILITY' AND COALESCE(tz.category_now, '') <> 'MARKETING' LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ? AND r.ok = 1 GROUP BY r.number_id");
         $q->execute([date('Y-m-d H:i:s', max($nowTs - 3 * 3600, (int)setting_get($pdo, 'wa_ru_brake_since', '0'))), date('Y-m-d H:i:s', $nowTs - 900)]);
         foreach ($q->fetchAll() as $r) { $id = (int)$r['number_id']; $n = (int)$r['n']; $d = (int)$r['d']; $f = (int)$r['f'];
             if ($update && $n >= 40 && ((float)$d / $n < 0.35 || (float)$f / $n >= 0.3) && (int)($rest[$id] ?? 0) <= $nowTs) { $rest[$id] = $nowTs + 7200; wa_log($pdo, 'campaign', false, 'Utility follow-up: number #' . $id . ' rests for 2 hours (' . $d . ' of ' . $n . ' delivered, ' . $f . ' failed)'); }
@@ -555,7 +556,7 @@ function wa_ru_tick_inner(PDO $pdo): array
                 $t = $j['t']; $hf = strtoupper((string)($t['header_format'] ?? ''));
                 $mk = !in_array(strtolower((string)($t['category'] ?? 'marketing')), ['utility', 'authentication'], true);   // the welcome message that Meta moved to marketing: never to a customer who said Stop to promotions
                 if ($mk && (int)$j['c']['camp_optout'] === 1) { $out[$k] = [false, 'This customer asked to stop promotional messages.', 0]; continue; }
-                if (!in_array($hf, ['', 'TEXT'], true) || !function_exists('wa_http_multi') || !function_exists('wa_tpl_request')) { $out[$k] = wa_send_tpl_one($pdo, $j['c'], $t, $j['num'], $j['vars'], 'recover'); continue; }   // photo / video / PDF on top: the old one-by-one way
+                if (!in_array($hf, ['', 'TEXT'], true) || !function_exists('wa_http_multi') || !function_exists('wa_tpl_request') || (function_exists('wa_tpl_is_parcel') && wa_tpl_is_parcel($t))) { $out[$k] = wa_send_tpl_one($pdo, $j['c'], $t, $j['num'], $j['vars'], 'recover'); continue; }   // photo / video / PDF on top: the old one-by-one way · 📦 a parcel / tracking message too (owner 27 Nov: no order = the ML-wise offer goes instead, decided in wa_send_tpl_one)
                 $rq = wa_tpl_request($t, $j['num'], (string)($j['c']['wa_id'] ?: '91' . $j['c']['phone']), $j['vars']); $reqs[$k] = ['path' => $rq['path'], 'json' => $rq['json']];
             }
             if ($reqs) { $ans = wa_http_multi(array_values($reqs)); $ks = array_keys($reqs); foreach ($ks as $n => $k) { [$code, $d] = $ans[$n] ?? [0, ['error' => ['message' => 'No answer from Meta.']]]; $j = $batch[$k]; $wamid = (string)(is_array($d) ? ($d['messages'][0]['id'] ?? '') : '');
