@@ -1,0 +1,64 @@
+# READ-ONLY (counts only): did the customers who asked "where is my parcel" get the automatic order-update messages, and is anything still pending?
+# Also: how many tracking questions the bot answered without a ticket since the 28 Nov change (#2243).
+name: Tracking tickets and order updates (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Count
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/tt_check.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+          date_default_timezone_set("Asia/Kolkata"); $live = "2026-11-28 17:32:00"; $d7 = date("Y-m-d H:i:s", time() - 7 * 86400);
+          $one = function ($sql, $a = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($a); return $q->fetchColumn(); } catch (Throwable $e) { return "ERR " . substr($e->getMessage(), 0, 150); } };
+          $all = function ($sql, $a = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($a); return $q->fetchAll(); } catch (Throwable $e) { echo "ERR " . substr($e->getMessage(), 0, 150) . "\n"; return []; } };
+          echo "now: " . date("Y-m-d H:i") . " IST\n\n== A. Since the change went live ($live) ==\n";
+          echo "bot told the status instead of a ticket (chat): " . $one("SELECT COUNT(*) FROM wa_messages WHERE mtype = 'event' AND ts >= ? AND body LIKE '%Tracking question: the bot told%'", [$live]) . "\n";
+          echo "ticket menu 'Tracking ID needed' answered: " . $one("SELECT COUNT(*) FROM wa_messages WHERE mtype = 'event' AND ts >= ? AND body LIKE '%Tracking ID asked from the ticket menu%'", [$live]) . "\n";
+          foreach ($all("SELECT problem, COUNT(*) n FROM cx_cases WHERE raised_at >= ? GROUP BY problem ORDER BY n DESC", [$live]) as $r) echo "  new tickets since: " . $r["problem"] . " = " . $r["n"] . "\n";
+          echo "\n== B. Open tracking-type tickets (tracking / not delivered / not dispatched / NDR / RTO) ==\n";
+          $T = $all("SELECT id, phone, problem, raised_at FROM cx_cases WHERE status IN ('open','reopened') AND problem IN ('tracking','notdelivered','notdispatched','ndr','rto')");
+          $byP = []; foreach ($T as $t) $byP[$t["problem"]] = ($byP[$t["problem"]] ?? 0) + 1; echo "open: " . count($T) . " " . json_encode($byP) . "\n";
+          $got = 0; $gotAfter = 0; $none = 0; $fail = 0; $queued = 0; $last = []; $parcel = []; $noParcel = 0;
+          foreach ($T as $t) {
+              $k = substr(preg_replace('/\D+/', '', (string)$t["phone"]), -10); if ($k === '') { $none++; continue; }
+              $s = $all("SELECT status, state, sent_at, parcel_id FROM wa_ord_sent WHERE phone LIKE ? ORDER BY id DESC LIMIT 20", ['%' . $k]);
+              $sent = array_values(array_filter($s, fn($x) => $x["state"] === "sent"));
+              if ($sent) { $got++; $last[$sent[0]["status"]] = ($last[$sent[0]["status"]] ?? 0) + 1; if ((string)$sent[0]["sent_at"] >= (string)$t["raised_at"]) $gotAfter++; } else $none++;
+              foreach ($s as $x) { if ($x["state"] === "failed") $fail++; if ($x["state"] === "queued") $queued++; }
+              $pid = $s ? (int)$s[0]["parcel_id"] : 0; $ps = $pid ? $one("SELECT status FROM dp_dsp_parcels WHERE id = ?", [$pid]) : false;
+              if ($ps === false || $ps === null) $noParcel++; else $parcel[(string)$ps] = ($parcel[(string)$ps] ?? 0) + 1;
+          }
+          echo "customers who got at least one order-update message: $got (an update after the ticket was raised: $gotAfter)\n";
+          echo "customers who got NO order-update message: $none\n";
+          echo "last update they got: " . json_encode($last) . "\n";
+          echo "updates still waiting to go (queued): $queued · updates that failed: $fail\n";
+          echo "their parcel now: " . json_encode($parcel) . " · parcel not found: $noParcel\n";
+          echo "\n== C. All order-update messages, last 7 days ==\n";
+          foreach ($all("SELECT status, state, COUNT(*) n FROM wa_ord_sent WHERE created_at >= ? GROUP BY status, state ORDER BY status, state", [$d7]) as $r) echo "  " . $r["status"] . " / " . $r["state"] . " = " . $r["n"] . "\n";
+          foreach ($all("SELECT err, COUNT(*) n FROM wa_ord_sent WHERE created_at >= ? AND state = 'failed' GROUP BY err ORDER BY n DESC LIMIT 5", [$d7]) as $r) echo "  failed because: " . substr((string)$r["err"], 0, 120) . " = " . $r["n"] . "\n";
+          PHP
+          php /tmp/tt_check.php "$P"; rm -f /tmp/tt_check.php
+          REMOTE
