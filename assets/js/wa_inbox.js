@@ -1653,7 +1653,7 @@
         window.addEventListener('beforeunload', bkLeave); bkPill(); bkUpd();
         const one = async (ph) => {
           const nm = firstName({ name: (S.bulk.info[ph] || {}).name || '' }) || 'ji', v = job.map.map((m) => m.how === 'name' ? nm : m.text.trim());
-          try { if (job.t.manual) await api.post('wa.send', { phone: ph, text: job.t.text.replace(/\{name\}/gi, nm), cid: 'bk' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }); else await api.post('wa.tpl_send', { phone: ph, id: job.t.id, vars: v, header_var: job.t.header_var ? (job.hmap.how === 'name' ? nm : job.hmap.text.trim()) : '' }); job.ok++; }
+          try { if (job.t.manual) await api.post('wa.send', { phone: ph, text: job.t.text.replace(/\{name\}/gi, nm), cid: 'bk' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }); else await api.post('wa.tpl_send', { phone: ph, bulk: 1, id: job.t.id, vars: v, header_var: job.t.header_var ? (job.hmap.how === 'name' ? nm : job.hmap.text.trim()) : '' }); job.ok++; }
           catch (e) { job.bad++; job.fails.push({ ph, name: (S.bulk.info[ph] || {}).name || ph, why: e.message || 'failed' }); }
           job.done++; bkUpd();
         };
