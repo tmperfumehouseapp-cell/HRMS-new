@@ -373,6 +373,15 @@ function wl_knows_choice(PDO $pdo, string $phone): array
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $b) if (preg_match('/(unisex|women|woman|ladies|lady|female|\bmen\b|\bmens\b|\bman\b|gents|male|mahila|purush|महिला|पुरुष|લેડીઝ|જેન્ટ્સ)/iu', (string)$b)) { $g = true; break; } } catch (Throwable $e) { }
     return [$pf, $g];
 }
+/** owner 28 Nov 2026 (the biggest gap: the Lineup's step-6 message "4700", an old plain list, was 55% of all Lineup sends today): the template that half of the step-6 customers get instead - the first approved message of the order pattern (price as a question, spacing, the two buttons) - found by name, approved on 6+ accounts. 0 = none yet. Setting wl_s6_new = 0 switches the test off; wl_s6_pct = share in percent (default 50). */
+function wl_s6_new(PDO $pdo): int
+{
+    static $c = null, $at = 0; if ($c !== null && time() - $at < 600) return $c; $at = time(); $c = 0; if ((string)setting_get($pdo, 'wl_s6_new', '1') === '0') return $c;
+    try { $names = ['tmph_cp_13_bt', 'tmph_cp_14_bt', 'tmph_cp_15_bt', 'tmph_cp_16_bt', 'tmph_cp_17_bt', 'tmph_cp_18_bt', 'tmph_cp_13', 'tmph_cp_14', 'tmph_cp_15', 'tmph_cp_16', 'tmph_cp_17', 'tmph_cp_18']; $in = implode(',', array_fill(0, count($names), '?'));
+        $q = $pdo->prepare("SELECT t.id, t.name, (SELECT COUNT(*) FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND UPPER(w.status) = 'APPROVED') n FROM wa_templates t WHERE t.name IN ($in)"); $q->execute($names); $by = []; foreach ($q->fetchAll(PDO::FETCH_NUM) as $r) $by[(string)$r[1]] = [(int)$r[0], (int)$r[2]];
+        foreach ($names as $n) if (isset($by[$n]) && $by[$n][1] >= 6) { $c = $by[$n][0]; break; } } catch (Throwable $e) { }
+    return $c;
+}
 function wl_block(PDO $pdo, array $c, string $anchor, array $orders = [], bool $first = false, &$until = null): string
 {
     $phone = (string)$c['phone']; $now = time();
@@ -776,8 +785,11 @@ function wln_send_round(PDO $pdo, array $opt, array $cfg, bool $force, int $now,
                 if ($kc[0] !== '') $body = 'Hi ' . ((function_exists('wd_name') && wd_name($c) !== 'ji') ? wd_name($c) . ' ji' : 'ji') . " 😍\n\nAapne " . $kc[0] . " pasand kiya tha na ? 🔥\n\nAapke liye " . $v2 . " !\n\nAaj order karenge to yahi rate pakka ✅\n\nIske saath aur kaunse perfumes jodne hain ? Naam bata dijiye, order abhi bana dete hain 😊";   /* the perfume he named is in the offer */ if (!function_exists('wof_send') && is_file(__DIR__ . '/wa_offer.php')) require_once __DIR__ . '/wa_offer.php'; $s1 = function_exists('wof_send') ? wof_send($pdo, $c, $body) : wa_send_text($pdo, $c, $body, 'offer', 0);   /* with the 2 buttons */
                 if (!empty($s1[0])) { $res = [true, '', (int)($c['last_number_id'] ?? 0), (string)($s1[1] ?? '')]; $key = $fk; $freeSent = true; } } } catch (Throwable $e) { }
         }
-        $tid = (int)($ids[$key] ?? ($ids[$pk] ?? 0)); if (!$freeSent && ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send')))) { $o['waiting']++; continue; }
+        $tid = (int)($ids[$key] ?? ($ids[$pk] ?? 0)); $__origTid = $tid; $__s6u = false;
+        if ((int)$row['step'] === 6 && !$freeSent && ($__s6 = wl_s6_new($pdo)) > 0 && $tid !== $__s6 && (int)(abs(crc32((string)$phone . '|s6')) % 100) < max(0, min(100, (int)setting_get($pdo, 'wl_s6_pct', '50')))) { $tid = $__s6; $__s6u = true; }   /* the test: half of step 6 gets the order-pattern message (the ledger shows orders per message, tpl_id of the plan row) */
+        if (!$freeSent && ($tid <= 0 || (!function_exists('wd_send') && !function_exists('wln_send')))) { $o['waiting']++; continue; }
         if ($res === null) $res = function_exists('wa_camp_ctx') ? wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]) : wd_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0]);   // no Module A / B allowance (wln_send); the stub of the tests has no campaign module
+        if (!$res[0] && $__s6u && $__origTid > 0 && preg_match('/not approved|No number can send|blanks/i', (string)$res[1])) { $tid = $__origTid; $res = wln_send($pdo, $c, ['tpl_id' => $tid, 'number_id' => 0, 'v2' => $v2]); $__s6u = false; }   /* the new message cannot go from this customer's number: the old step-6 message goes, he is not held back */
         /* owner 28 Nov 2026: "the offer went inside the 24 hours - then start straight from the 3rd day": after the free offer the day-2 message is not sent (the next one goes on day 3). Switch: wl_day1_skip2 (1). */
         if ($res[0] && $freeSent && (int)$row['step'] === 1 && (string)setting_get($pdo, 'wl_day1_skip2', '1') === '1') { try { $pdo->prepare("UPDATE wa_line_plan SET status = 'skipped', why = 'free offer went on day 1: day 2 is not needed' WHERE phone = ? AND status = 'planned' AND step = 2")->execute([$phone]); } catch (Throwable $e) { } }
         if ($res[0]) { $tn = time(); $rq = $pdo->prepare("SELECT id FROM wa_line_plan WHERE phone = ? AND status = 'planned' AND step > ? ORDER BY step"); $rq->execute([$phone, (int)$row['step']]); $rq = $pdo->prepare("SELECT id, step FROM wa_line_plan WHERE phone = ? AND status = 'planned' AND step > ? ORDER BY step"); $rq->execute([$phone, (int)$row['step']]); foreach ($rq->fetchAll() as $rr) $pdo->prepare("UPDATE wa_line_plan SET due_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s', wl_due_ts($tn, wl_gap_sum((int)$row['step'], (int)$rr['step']), $cfg['from'], $cfg['to'])), $rr['id']]);   // the next steps: 24 h after THIS message, 24 h after that…
