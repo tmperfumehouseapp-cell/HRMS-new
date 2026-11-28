@@ -287,6 +287,9 @@ function wl_orders_since(PDO $pdo, int $from): array
 {
     $o = []; try { $q = $pdo->prepare("SELECT phone, created_at FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $q->execute([date('Y-m-d H:i:s', $from)]);
         foreach ($q->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '') $o[$k][] = (int)strtotime((string)$r['created_at']); } } catch (Throwable $e) { }
+    /* 28 Nov 2026: since 24 Nov the orders are typed in the panel (manual_orders, ~285 a day) and no longer come from the website (3 a day) - this place read the website orders only, so it no longer saw who ordered. The panel orders are read too. */
+    try { $q = $pdo->prepare("SELECT phone, order_date FROM manual_orders WHERE order_date >= ? AND phone IS NOT NULL AND phone != '' LIMIT 200000"); $q->execute([date('Y-m-d H:i:s', $from)]);
+        foreach ($q->fetchAll() as $r) { $k = function_exists('wa_key') ? wa_key($r['phone']) : substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); if ($k !== '') $o[$k][] = (int)strtotime((string)$r['order_date']); } } catch (Throwable $e) { }
     return $o;
 }
 function wl_ordered_after(array $orders, string $phone, int $t): bool { foreach ($orders[substr(preg_replace('/\D+/', '', $phone), -10)] ?? [] as $x) if ($x >= $t) return true; return false; }
