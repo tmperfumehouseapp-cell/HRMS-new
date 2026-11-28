@@ -208,6 +208,20 @@ function fup_tm4u_numbers_update(PDO $pdo): void
     } catch (Throwable $e) { error_log('fup_tm4u_numbers_update: ' . $e->getMessage()); }
 }
 /** Once: a NEW TM4U topic with the rest of the owner's Uploadings sheet (order IDs, prepaid, COD, buying, courier charges, total profit, Asti 15%); orders and collection are in Today's numbers. Hand-written. */
+/** Once: a box called "Order ID(s)" that was made as a NUMBER box takes words (several IDs like "56, 57, 58" are not one number: the Save was refused). */
+function fup_orderid_boxes_text(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'fup_orderid_text_v1', '') === '1') return;
+        $u = $pdo->prepare("UPDATE fu_topics SET `fields` = ? WHERE id = ?");
+        foreach ($pdo->query("SELECT id, `fields` FROM fu_topics WHERE `fields` LIKE '%rder%'")->fetchAll() as $r) {
+            $j = json_decode((string)$r['fields'], true); if (!is_array($j)) continue; $ch = false;
+            foreach ($j as &$f) if (is_array($f) && ($f['type'] ?? '') === 'num' && preg_match('/order\s*_?-?\s*(id|no|number)s?\b/i', (string)($f['label'] ?? ''))) { $f['type'] = 'text'; $ch = true; }
+            unset($f); if ($ch) $u->execute([json_encode($j, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
+        }
+        setting_set($pdo, 'fup_orderid_text_v1', '1');
+    } catch (Throwable $e) { error_log('fup_orderid_boxes_text: ' . $e->getMessage()); }
+}
 function fup_tm4u_upload_topic(PDO $pdo): void
 {
     try {
@@ -1525,7 +1539,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
     fup_seed_review_drive($pdo);
     fup_seed_tm4u_topics($pdo);
     fup_tm4u_numbers_update($pdo);
-    fup_tm4u_upload_topic($pdo);
+    fup_tm4u_upload_topic($pdo); fup_orderid_boxes_text($pdo);
     fup_seed_third_party_topics($pdo);
     fup_seed_website_topics($pdo);
     fup_seed_website_topics2($pdo);
@@ -1755,7 +1769,7 @@ if (isset($action, $pdo) && is_string($action) && strpos($action, 'fup.') === 0)
                     $k = $fd['k']; if (fup_is_upload((string)$fd['type']) || !is_array($in['fields'] ?? null) || !array_key_exists($k, $in['fields'])) continue;   // a file comes through fup.file_put
                     $v = trim((string)$in['fields'][$k]); $lb = '“' . $fd['label'] . '”';
                     if ($v !== '') {
-                        if ($fd['type'] === 'num') { if (!is_numeric($v)) json_response(['error' => $lb . ' must be a number.'], 422); $v = (string)round((float)$v, 2); }
+                        if ($fd['type'] === 'num') { $v = str_replace([',', '₹', ' '], '', $v); if (!is_numeric($v)) json_response(['error' => $lb . ' must be a number.'], 422); $v = (string)round((float)$v, 2); }
                         elseif ($fd['type'] === 'yesno') { $v = strtolower($v); if (!in_array($v, ['yes', 'no'], true)) json_response(['error' => 'Choose Yes or No for ' . $lb . '.'], 422); }
                         elseif ($fd['type'] === 'link') { if (!preg_match('#^https?://[^\s]+\.[^\s]+#i', $v)) json_response(['error' => $lb . ' must be a link that starts with https://'], 422); $v = mb_substr($v, 0, 500); }
                         elseif ($fd['type'] === 'choice') { if (!in_array($v, $fd['opts'], true)) json_response(['error' => 'Choose one of the list for ' . $lb . '.'], 422); }
