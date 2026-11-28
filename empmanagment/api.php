@@ -32283,6 +32283,16 @@ switch ($action) {
         if ($source === '' || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);
         if ($source === 'manual') {   // a quick-entry order cancelled on the Allocation page: gone at once from Pending, the boxes and the lists (like Remove manual orders)
             if (!ctype_digit($orderId)) json_response(['error' => 'Bad order id.'], 422);
+            // 🛍 a WEBSITE order (TM Store) is a real order of the shop: Cancel must not delete its row — the robot reads the shop again every few minutes and put it straight back as a pending order,
+            //    so it never reached the Cancelled list (owner, 28 Nov). It is marked cancelled like a Shopify order (order_cancels): shown under Cancelled, counted nowhere, Undo brings it back.
+            $wq0 = $pdo->prepare("SELECT channel FROM manual_orders WHERE manual_order_id = ?"); $wq0->execute([(int)$orderId]);
+            if ((string)$wq0->fetchColumn() === 'TM Store') {
+                if (!empty($in['cancel'])) { $by = (string)($auth['username'] ?? $auth['full_name'] ?? '');
+                    $pdo->prepare("INSERT INTO order_cancels (source, order_id, order_name, cancelled_by) VALUES ('manual', ?, ?, ?) ON DUPLICATE KEY UPDATE order_name = VALUES(order_name), cancelled_by = VALUES(cancelled_by), cancelled_at = CURRENT_TIMESTAMP")->execute([$orderId, $name, $by]);
+                    json_response(['message' => ($name !== '' ? $name : 'Website order') . ' cancelled.', 'by' => $by, 'at' => date('Y-m-d H:i:s')]); }
+                $pdo->prepare("DELETE FROM order_cancels WHERE source = 'manual' AND order_id = ?")->execute([$orderId]);
+                json_response(['message' => ($name !== '' ? $name : 'Website order') . ' is back.']);
+            }
             if (empty($in['cancel'])) json_response(['error' => 'A cancelled quick-entry order cannot be brought back. Add it again with Add orders.'], 422);
             $st = $pdo->prepare("DELETE FROM manual_orders WHERE manual_order_id = ? AND batch <> ''"); $st->execute([(int)$orderId]);
             json_response(['message' => ($name !== '' ? $name : 'Quick-entry order') . ' cancelled.', 'by' => (string)($auth['username'] ?? ''), 'at' => date('Y-m-d H:i:s'), 'deleted' => $st->rowCount()]);
